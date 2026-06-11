@@ -1,0 +1,93 @@
+name: soopct
+version: 0.0.0
+container: soopct_${version}_REFERENCE.simg
+
+test_data:
+  output_dir: test_output/soopct
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: SOOP-CT scripts are installed
+    description: Verify the cloned SOOP-CT workflow scripts are available
+    command: |
+      set -e
+      test -f /soop-ct/1dcm2raw.py
+      test -f /soop-ct/2raw2best.py
+      test -f /soop-ct/3best2anon.py
+      test -f /soop-ct/4anon2bids.py
+      test -f /soop-ct/5bids2norm.py
+      echo "soopct scripts found"
+    expected_output_contains: "soopct scripts found"
+
+  - name: SOOP-CT Python dependencies import
+    description: Verify the scientific Python stack used by SOOP-CT imports
+    command: |
+      python - <<'PY'
+      import ants
+      import brainchop
+      import nibabel
+      import numpy
+      import scipy
+      print("soopct dependencies ok")
+      PY
+    expected_output_contains: "soopct dependencies ok"
+
+  - name: dcm2niix converter available
+    description: Verify the DICOM converter called by 1dcm2raw.py is installed
+    command: dcm2niix -h 2>&1 | sed -n '1,8p'
+    expected_output_contains: "Chris Rorden"
+
+  - name: Bundled sample DICOM conversion workflow
+    description: Run the DICOM conversion and best-image selection stages against the bundled SOOP-CT sample data
+    command: |
+      set -e
+      cd /soop-ct
+      python 1dcm2raw.py /soop-ct/DICOM "${output_dir}/raw"
+      python 2raw2best.py "${output_dir}/raw" "${output_dir}/best"
+      test -f "${output_dir}/best/3978620.nii"
+      test -f "${output_dir}/best/3978620.json"
+      echo "soopct conversion workflow ok"
+    expected_output_contains: "soopct conversion workflow ok"
+    timeout: 120
+
+  - name: BrainChop runtime dependencies available
+    description: Verify the BrainChop CLI and TinyGrad compiler dependency are available
+    command: |
+      set -e
+      command -v clang
+      brainchop --help 2>&1 | sed -n '1,40p'
+    expected_output_contains:
+      - "/usr/bin/clang"
+      - "--border MM"
+      - "--no-optimize"
+
+  - name: SOOP-CT BrainChop command matches current CLI
+    description: Verify 3best2anon.py calls BrainChop using the current positional-input CLI without running model inference
+    command: |
+      cd /soop-ct
+      python - <<'PY'
+      import importlib.util
+      from pathlib import Path
+
+      spec = importlib.util.spec_from_file_location("best2anon", "3best2anon.py")
+      module = importlib.util.module_from_spec(spec)
+      spec.loader.exec_module(module)
+
+      captured = {}
+      def fake_run(cmd, check):
+          captured["cmd"] = [str(item) for item in cmd]
+
+      module.subprocess.run = fake_run
+      module.do_brainchop(Path("/tmp/input.nii"), Path("/tmp/output.nii"), True, 25)
+      cmd = captured["cmd"]
+      assert cmd[:2] == ["brainchop", "/tmp/input.nii"], cmd
+      assert "-i" not in cmd, cmd
+      assert "--border" in cmd, cmd
+      assert "--no-optimize" in cmd, cmd
+      print("soopct brainchop command ok")
+      PY
+    expected_output_contains: "soopct brainchop command ok"

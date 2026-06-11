@@ -29,7 +29,7 @@ build:
         - cd eharmonize
         # Replace git+ssh://git@ with https:// in setup.py to avoid SSH issues
         - sed -i "s/git+ssh:\/\/git@/git+https:\/\//" setup.py
-        - python -m pip install --no-cache-dir .
+        - python -m pip install --no-cache-dir "setuptools<81" .
     - deploy:
         path: []
         bins:

@@ -1,0 +1,32 @@
+name: terastitcher
+version: 1.11.10
+container: terastitcher_${version}_REFERENCE.simg
+
+test_data:
+  output_dir: test_output/terastitcher
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: TeraStitcher install tree exists
+    description: Verify the portable TeraStitcher distribution was unpacked under /opt
+    command: test -x /opt/terastitcher-1.11.10/terastitcher
+    expected_exit_code: 0
+
+  - name: terastitcher help renders
+    description: Verify the main stitching CLI starts and prints usage
+    command: terastitcher --help 2>&1 | sed -n '1,20p'
+    expected_output_contains: "terastitcher  [--isotropic]"
+
+  - name: teraconverter help renders
+    description: Verify the volume conversion CLI is available
+    command: teraconverter --help 2>&1 | sed -n '1,20p'
+    expected_output_contains: "teraconverter  -s=<string>"
+
+  - name: mdatagenerator help renders
+    description: Verify the metadata generator CLI is available
+    command: mdatagenerator --help 2>&1 | sed -n '1,20p'
+    expected_output_contains: "mdatagenerator"

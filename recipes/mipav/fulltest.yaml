@@ -1,0 +1,39 @@
+name: mipav
+version: 11.3.3
+container: mipav_${version}_REFERENCE.simg
+
+test_data:
+  output_dir: test_output/mipav
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: MIPAV launcher available
+    description: Verify the installed MIPAV launcher is on PATH
+    command: command -v mipav
+    expected_output_contains: "/usr/local/mipav/mipav"
+
+  - name: Bundled Java runtime available
+    description: Verify MIPAV ships its bundled Java runtime
+    command: /usr/local/mipav/jre/bin/java -version 2>&1 | sed -n '1,3p'
+    expected_output_contains: "OpenJDK Runtime Environment"
+
+  - name: MIPAV application files present
+    description: Verify the installed application metadata and classes are present
+    command: test -f /usr/local/mipav/about.txt && test -f /usr/local/mipav/MipavMain.class && grep -i "Visualization (MIPAV)" /usr/local/mipav/about.txt
+    expected_output_contains: "Visualization (MIPAV)"
+
+  - name: MIPAV starts with writable user home
+    description: Verify startup reaches MIPAV code and extracts native libraries outside the host home
+    command: |
+      export HOME="${output_dir}/home"
+      export _JAVA_OPTIONS="-Duser.home=${output_dir}/home"
+      mkdir -p "$HOME"
+      timeout 12 mipav -version 2>&1 | sed -n '1,35p' || true
+      test -d "${output_dir}/home/mipav/native_library_tmpdir"
+      echo "mipav startup reached native loader"
+    expected_output_contains: "mipav startup reached native loader"
+    timeout: 30
