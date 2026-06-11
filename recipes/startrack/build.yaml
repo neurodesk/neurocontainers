@@ -20,7 +20,10 @@ build:
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
-        MCR_CACHE_ROOT: /tmp/mcr_cache
+
+    - install:
+        - libgomp1
+        - libstdc++6
 
     - template:
         name: matlabmcr
@@ -57,8 +60,24 @@ files:
       set -euo pipefail
 
       mcr_root="${MCRROOT:-{{ context.matlab_runtime_root }}}"
-      export MCR_CACHE_ROOT="${MCR_CACHE_ROOT:-/tmp/mcr_cache}"
-      mkdir -p "${MCR_CACHE_ROOT}"
+      if [ -z "${MCR_CACHE_ROOT:-}" ]; then
+        if [ -n "${HOME:-}" ] && [ "${HOME}" != "/" ] && [ -d "${HOME}" ] && [ -w "${HOME}" ]; then
+          MCR_CACHE_ROOT="${HOME}/.cache/startrack/mcr_cache"
+        else
+          MCR_CACHE_ROOT="/tmp/mcr_cache"
+        fi
+      fi
+
+      if ! mkdir -p "${MCR_CACHE_ROOT}" 2>/dev/null; then
+        echo "Could not create MATLAB Runtime cache in ${MCR_CACHE_ROOT}; falling back to /tmp/mcr_cache" >&2
+        MCR_CACHE_ROOT="/tmp/mcr_cache"
+        mkdir -p "${MCR_CACHE_ROOT}"
+      fi
+      export MCR_CACHE_ROOT
+
+      if ! find "${MCR_CACHE_ROOT}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
+        echo "Preparing MATLAB Runtime cache in ${MCR_CACHE_ROOT}; first StarTrack launch may take a few minutes..." >&2
+      fi
 
       export LD_LIBRARY_PATH=".:${mcr_root}/runtime/glnxa64:${mcr_root}/bin/glnxa64:${mcr_root}/sys/os/glnxa64:${mcr_root}/sys/opengl/lib/glnxa64:${mcr_root}/extern/bin/glnxa64:${LD_LIBRARY_PATH:-}"
 
@@ -99,7 +118,8 @@ readme: |-
   ```
 
   The container installs StarTrack with MATLAB Runtime {{ context.matlab_runtime_version }}.
-  Runtime cache files are written under `/tmp/mcr_cache` by default.
+  Runtime cache files are written under `$HOME/.cache/startrack/mcr_cache` when
+  `$HOME` is writable, with a fallback to `/tmp/mcr_cache`.
 
   More documentation:
   https://nbl-research.github.io/startrack.html
