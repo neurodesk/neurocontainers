@@ -23,10 +23,29 @@ tests:
     expected_output_contains: "/opt/HD-BET/HD_BET/__init__.py"
 
   - name: HD-BET parameter metadata exists
-    description: Verify the patched paths metadata and bundled parameter files are present
-    command: >-
-      /opt/miniconda-latest/envs/hdbet/bin/python -c "from HD_BET import paths; import os; print(paths.folder_with_parameter_files); print(paths.ZENODO_DOWNLOAD_URL); print(os.path.isdir(paths.folder_with_parameter_files))"
-    expected_output_contains: "True"
+    description: Verify bundled parameters satisfy HD-BET without runtime download
+    command: |
+      /opt/miniconda-latest/envs/hdbet/bin/python - <<'PY'
+      from pathlib import Path
+
+      from HD_BET import paths
+      from HD_BET import checkpoint_download
+
+      sentinel = Path(paths.folder_with_parameter_files) / "fold_all" / "checkpoint_final.pth"
+      print(paths.folder_with_parameter_files)
+      print(sentinel)
+      print(sentinel.is_file())
+
+      def fail_download(*args, **kwargs):
+          raise RuntimeError("download attempted")
+
+      checkpoint_download.download_file = fail_download
+      checkpoint_download.maybe_download_parameters()
+      print("model download skipped")
+      PY
+    expected_output_contains:
+      - "True"
+      - "model download skipped"
 
   - name: HD-BET console entrypoint is on PATH
     description: Verify the deployed hd-bet command resolves to the conda environment

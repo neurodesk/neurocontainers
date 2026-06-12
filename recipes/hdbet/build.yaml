@@ -32,10 +32,12 @@ build:
 
     - run:
         - echo 'import os' > /opt/HD-BET/HD_BET/paths.py
-        - echo 'folder_with_parameter_files = "/opt/HD-BET/hd-bet_params/release_2.0.0"' >> /opt/HD-BET/HD_BET/paths.py
+        - echo 'folder_with_parameter_files = "/opt/HD-BET/hd-bet_params"' >> /opt/HD-BET/HD_BET/paths.py
         - echo 'ZENODO_DOWNLOAD_URL = "https://zenodo.org/records/14445620/files/release_v1.5.0.zip?download=1"' >> /opt/HD-BET/HD_BET/paths.py
         - mkdir -p /opt/HD-BET/hd-bet_params
-        - unzip -q {{ get_file("release_v1_5_0_zip") }} -d /opt/HD-BET/hd-bet_params/release_2.0.0
+        - unzip -q {{ get_file("release_v1_5_0_zip") }} -d /opt/HD-BET/hd-bet_params
+        - test -f /opt/HD-BET/hd-bet_params/fold_all/checkpoint_final.pth
+        - chmod -R a+rX /opt/HD-BET/hd-bet_params
         - /opt/miniconda-latest/envs/hdbet/bin/python -m pip install -e .
 
     - environment:
