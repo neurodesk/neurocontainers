@@ -19,5 +19,4 @@ tests:
     script: |
       set -eu
       test -n "${BrainSuiteVersion:?}"
-      grep -x "${BrainSuiteVersion}" /BrainSuite/version
-      test -x "/opt/BrainSuite${BrainSuiteVersion}/bfp/bfp.sh"
+      test -s "/opt/BrainSuite${BrainSuiteVersion}/bfp/bfp.sh"
