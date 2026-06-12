@@ -10,6 +10,48 @@ copyright:
 architectures:
   - x86_64
 
+files:
+  - name: brainvisa-runtime-wrapper
+    executable: true
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      tool="$(basename "$0")"
+      real_binary="/opt/miniconda/envs/brainvisa/bin/${tool}"
+
+      runtime_dir_is_valid() {
+        [ -n "${XDG_RUNTIME_DIR:-}" ] || return 1
+        [ -d "${XDG_RUNTIME_DIR}" ] || return 1
+        [ -w "${XDG_RUNTIME_DIR}" ] || return 1
+        [ -x "${XDG_RUNTIME_DIR}" ] || return 1
+        [ "$(stat -c '%u' "${XDG_RUNTIME_DIR}")" = "$(id -u)" ] || return 1
+        [ "$(stat -c '%a' "${XDG_RUNTIME_DIR}")" = "700" ] || return 1
+      }
+
+      if ! runtime_dir_is_valid; then
+        runtime_base="${TMPDIR:-/tmp}"
+        runtime_base="${runtime_base%/}"
+        runtime_candidate="${runtime_base}/runtime-$(id -u)"
+
+        if mkdir -p "${runtime_candidate}" 2>/dev/null \
+          && chmod 700 "${runtime_candidate}" 2>/dev/null; then
+          export XDG_RUNTIME_DIR="${runtime_candidate}"
+        fi
+
+        if ! runtime_dir_is_valid; then
+          export XDG_RUNTIME_DIR="$(mktemp -d "${runtime_base}/runtime-$(id -u)-XXXXXX")"
+          chmod 700 "${XDG_RUNTIME_DIR}"
+        fi
+      fi
+
+      if [ "${1:-}" = "--neurocontainers-print-xdg-runtime-dir" ]; then
+        printf '%s\n' "${XDG_RUNTIME_DIR}"
+        exit 0
+      fi
+
+      exec "${real_binary}" "$@"
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -42,8 +84,21 @@ build:
     - run:
         - conda run -n brainvisa brainvisa -b --setup
 
+    - run:
+        - mkdir -p /opt/brainvisa-wrapper/bin
+
+    - copy:
+        - brainvisa-runtime-wrapper
+        - /opt/brainvisa-wrapper/bin/brainvisa-runtime-wrapper
+
+    - run:
+        - chmod 755 /opt/brainvisa-wrapper/bin/brainvisa-runtime-wrapper
+        - ln -sf brainvisa-runtime-wrapper /opt/brainvisa-wrapper/bin/brainvisa
+        - ln -sf brainvisa-runtime-wrapper /opt/brainvisa-wrapper/bin/anatomist
+        - ln -sf brainvisa-runtime-wrapper /opt/brainvisa-wrapper/bin/morphologist
+
     - environment:
-        PATH: /opt/miniconda/envs/brainvisa/bin:$PATH
+        PATH: /opt/brainvisa-wrapper/bin:/opt/miniconda/envs/brainvisa/bin:$PATH
         QT_QPA_PLATFORM: xcb
 
 deploy:
@@ -52,6 +107,7 @@ deploy:
     - brainvisa
     - morphologist
   path:
+    - /opt/brainvisa-wrapper/bin
     - /opt/miniconda/envs/brainvisa/bin
 
 gui_apps:

@@ -6,6 +6,17 @@ tests:
       command -v anatomist
       command -v morphologist
 
+  - name: BrainVISA wrapper prepares Qt runtime directory
+    script: |
+      set -eu
+      unset XDG_RUNTIME_DIR
+      runtime_dir="$(brainvisa --neurocontainers-print-xdg-runtime-dir)"
+      test -n "${runtime_dir}"
+      test -d "${runtime_dir}"
+      test -w "${runtime_dir}"
+      test "$(stat -c '%u' "${runtime_dir}")" = "$(id -u)"
+      test "$(stat -c '%a' "${runtime_dir}")" = "700"
+
   - name: BrainVISA Python modules import
     script: |
       set -eu
