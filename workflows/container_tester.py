@@ -344,16 +344,16 @@ class ReleaseContainerDownloader:
         )
         os.makedirs(self.cache_dir, exist_ok=True)
 
-        # Prefer Nectar, matching NeuroDesk's public release path, and fall back
-        # to the AWS S3 mirror if Nectar is unavailable.
+        # Prefer S3 because build-app treats S3 as the release-critical upload.
+        # Nectar is a best-effort mirror and may lag behind an updated S3 object.
         self.base_urls = [
-            (
-                "Nectar Object Storage",
-                "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk",
-            ),
             (
                 "AWS S3",
                 "https://neurocontainers.s3.us-east-2.amazonaws.com",
+            ),
+            (
+                "Nectar Object Storage",
+                "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk",
             ),
         ]
 

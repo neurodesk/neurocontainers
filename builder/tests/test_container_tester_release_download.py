@@ -9,7 +9,7 @@ from workflows import container_tester
 from workflows.container_tester import ContainerTester, ReleaseContainerDownloader
 
 
-def test_release_downloader_falls_back_to_s3_when_nectar_fails(
+def test_release_downloader_prefers_s3_over_nectar(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     downloader = ReleaseContainerDownloader(cache_dir=str(tmp_path))
@@ -17,7 +17,31 @@ def test_release_downloader_falls_back_to_s3_when_nectar_fails(
 
     def fake_urlretrieve(url: str, filename: str, **kwargs) -> tuple[str, None]:
         calls.append(url)
-        if "object-store.rc.nectar.org.au" in url:
+        Path(filename).write_text("simg", encoding="utf-8")
+        return filename, None
+
+    monkeypatch.setattr(
+        container_tester.urllib.request, "urlretrieve", fake_urlretrieve
+    )
+
+    path = downloader.download_from_release("globus", "3.2.8", "20260514")
+
+    assert path == str(tmp_path / "globus_3.2.8_20260514.simg")
+    assert Path(path).read_text(encoding="utf-8") == "simg"
+    assert calls == [
+        "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
+    ]
+
+
+def test_release_downloader_falls_back_to_nectar_when_s3_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    downloader = ReleaseContainerDownloader(cache_dir=str(tmp_path))
+    calls: list[str] = []
+
+    def fake_urlretrieve(url: str, filename: str, **kwargs) -> tuple[str, None]:
+        calls.append(url)
+        if "neurocontainers.s3.us-east-2.amazonaws.com" in url:
             raise HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
         Path(filename).write_text("simg", encoding="utf-8")
         return filename, None
@@ -31,8 +55,8 @@ def test_release_downloader_falls_back_to_s3_when_nectar_fails(
     assert path == str(tmp_path / "globus_3.2.8_20260514.simg")
     assert Path(path).read_text(encoding="utf-8") == "simg"
     assert calls == [
-        "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/globus_3.2.8_20260514.simg",
         "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
+        "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/globus_3.2.8_20260514.simg",
     ]
 
 
@@ -63,7 +87,7 @@ def test_release_downloader_can_refresh_existing_cache(
     assert path == str(cache_path)
     assert cache_path.read_text(encoding="utf-8") == "fresh"
     assert calls == [
-        "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/globus_3.2.8_20260514.simg",
+        "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
     ]
 
 
@@ -94,7 +118,7 @@ def test_release_downloader_prefers_image_basename_from_release_metadata(
     assert path == str(tmp_path / "neurodesktop_20260428_arm64_20260519.simg")
     assert Path(path).read_text(encoding="utf-8") == "arm64 simg"
     assert calls == [
-        "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/neurodesktop_20260428_arm64_20260519.simg",
+        "https://neurocontainers.s3.us-east-2.amazonaws.com/neurodesktop_20260428_arm64_20260519.simg",
     ]
 
 
@@ -124,9 +148,9 @@ def test_release_downloader_falls_back_to_computed_filename(
 
     assert path == str(tmp_path / "globus_3.2.8_20260514.simg")
     assert calls == [
-        "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/custom_globus_20260514.simg",
         "https://neurocontainers.s3.us-east-2.amazonaws.com/custom_globus_20260514.simg",
-        "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/globus_3.2.8_20260514.simg",
+        "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/custom_globus_20260514.simg",
+        "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
     ]
 
 
@@ -180,7 +204,7 @@ def test_release_downloader_accepts_image_basename_with_build_date(
 
     assert path == str(tmp_path / "neurodesktop_20260428_arm64_20260519.simg")
     assert calls == [
-        "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/neurodesktop_20260428_arm64_20260519.simg",
+        "https://neurocontainers.s3.us-east-2.amazonaws.com/neurodesktop_20260428_arm64_20260519.simg",
     ]
 
 
