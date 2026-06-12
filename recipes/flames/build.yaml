@@ -168,7 +168,7 @@ readme: |-
 structured_readme:
   description: "FLAMeS: a deep-learning (nnU-Netv2) model for automated MS lesion segmentation from a single FLAIR image."
   example: |-
-    ml flames/{{ context.version }}
+    ml flames/{{ context.version }} 
     flames -i sub-01_FLAIR.nii.gz -o ./flames_out --device cpu
   documentation: https://huggingface.co/spaces/FrancescoLR/FLAMeS
   citation: |-
