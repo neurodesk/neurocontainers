@@ -72,7 +72,7 @@ build:
         - mkdir -p /tmp/libreoffice
         - tar -xzf {{ get_file(context.libreoffice_archive) }} -C /tmp/libreoffice --strip-components=1
         - apt-get update
-        - apt-get install -y --no-install-recommends /tmp/libreoffice/DEBS/*.deb /tmp/libreoffice/DEBS/desktop-integration/*.deb
+        - find /tmp/libreoffice/DEBS -name "*.deb" | xargs apt-get install -y --no-install-recommends
         - LO_DIR="/opt/libreoffice{{ context.version.split('.')[0] }}.{{ context.version.split('.')[1] }}"
         - test -x "${LO_DIR}/program/soffice"
         - ln -sfn "${LO_DIR}/program/soffice" /usr/local/bin/libreoffice
