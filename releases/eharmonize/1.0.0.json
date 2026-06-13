@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "eharmonize 1.0.0": {
+      "version": "20260611",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
