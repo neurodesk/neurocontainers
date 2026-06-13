@@ -1,0 +1,20 @@
+name: libreoffice
+default_timeout: 120
+
+tests:
+  - name: LibreOffice version check
+    description: Verify LibreOffice starts in CLI mode and reports its version.
+    command: libreoffice --version
+    expected_output_contains: LibreOffice
+
+  - name: LibreOffice GUI launch targets
+    description: Verify the GUI launcher commands for the main LibreOffice applications are available.
+    command: |
+      command -v libreoffice
+      command -v lowriter
+      command -v localc
+      command -v loimpress
+      command -v lodraw
+      command -v lobase
+      command -v lomath
+    expected_exit_code: 0

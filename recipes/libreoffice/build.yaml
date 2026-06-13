@@ -1,0 +1,144 @@
+name: libreoffice
+version: 26.2.4
+
+copyright:
+  - license: MPL-2.0
+    url: https://www.libreoffice.org/about-us/licenses/
+  - license: LGPL-3.0-or-later
+    url: https://www.libreoffice.org/about-us/licenses/
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  libreoffice_archive:
+    try:
+      - value: libreoffice_x86_64_deb
+        condition: arch == "x86_64"
+      - value: libreoffice_aarch64_deb
+        condition: arch == "aarch64"
+
+files:
+  - name: libreoffice_x86_64_deb
+    url: https://download.documentfoundation.org/libreoffice/stable/{{ context.version }}/deb/x86_64/LibreOffice_{{ context.version }}_Linux_x86-64_deb.tar.gz
+    condition: arch == "x86_64"
+  - name: libreoffice_aarch64_deb
+    url: https://download.documentfoundation.org/libreoffice/stable/{{ context.version }}/deb/aarch64/LibreOffice_{{ context.version }}_Linux_aarch64_deb.tar.gz
+    condition: arch == "aarch64"
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        LANG: en_US.UTF-8
+        LANGUAGE: en_US:en
+        LC_ALL: en_US.UTF-8
+
+    - install:
+        - ca-certificates
+        - default-jre
+        - fonts-dejavu
+        - fonts-liberation
+        - fontconfig
+        - hunspell-en-us
+        - hyphen-en-us
+        - libdbus-1-3
+        - libgl1
+        - libglu1-mesa
+        - libgtk-3-0
+        - libnss3
+        - libsm6
+        - libx11-6
+        - libxext6
+        - libxinerama1
+        - libxrandr2
+        - libxrender1
+        - libxtst6
+        - locales
+        - mythes-en-us
+        - tar
+
+    - run:
+        - locale-gen en_US.UTF-8
+
+    - workdir: /tmp
+
+    - run:
+        - mkdir -p /tmp/libreoffice
+        - tar -xzf {{ get_file(context.libreoffice_archive) }} -C /tmp/libreoffice --strip-components=1
+        - apt-get update
+        - apt-get install -y --no-install-recommends /tmp/libreoffice/DEBS/*.deb /tmp/libreoffice/DEBS/desktop-integration/*.deb
+        - LO_DIR="/opt/libreoffice{{ context.version.split('.')[0] }}.{{ context.version.split('.')[1] }}"
+        - test -x "${LO_DIR}/program/soffice"
+        - ln -sfn "${LO_DIR}/program/soffice" /usr/local/bin/libreoffice
+        - ln -sfn "${LO_DIR}/program/soffice" /usr/local/bin/soffice
+        - ln -sfn "${LO_DIR}/program/swriter" /usr/local/bin/lowriter
+        - ln -sfn "${LO_DIR}/program/scalc" /usr/local/bin/localc
+        - ln -sfn "${LO_DIR}/program/simpress" /usr/local/bin/loimpress
+        - ln -sfn "${LO_DIR}/program/sdraw" /usr/local/bin/lodraw
+        - ln -sfn "${LO_DIR}/program/sbase" /usr/local/bin/lobase
+        - ln -sfn "${LO_DIR}/program/smath" /usr/local/bin/lomath
+        - rm -rf /tmp/libreoffice /var/lib/apt/lists/*
+
+    - environment:
+        PATH: /opt/libreoffice{{ context.version.split('.')[0] }}.{{ context.version.split('.')[1] }}/program:$PATH
+
+deploy:
+  bins:
+    - libreoffice
+    - soffice
+    - lowriter
+    - localc
+    - loimpress
+    - lodraw
+    - lobase
+    - lomath
+
+gui_apps:
+  - name: libreofficeGUI
+    exec: libreoffice
+  - name: libreofficeWriterGUI
+    exec: lowriter
+  - name: libreofficeCalcGUI
+    exec: localc
+  - name: libreofficeImpressGUI
+    exec: loimpress
+  - name: libreofficeDrawGUI
+    exec: lodraw
+  - name: libreofficeBaseGUI
+    exec: lobase
+  - name: libreofficeMathGUI
+    exec: lomath
+
+categories:
+  - data organisation
+
+icon: data:image/svg+xml;base64,PHN2ZyBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGhlaWdodD0iNTcuMjIyMDQ2IiBwcmVzZXJ2ZUFzcGVjdFJhdGlvPSJ4TWlkWU1pZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIyOC4yMjIiIHZpZXdCb3g9IjAgMCAxNjkuOTk4NTcgMjguNDcxIiB3aWR0aD0iMzQxLjY2OTI4IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Im01NDM2IDE1OTEuMjI5NnYxMzM1Ljk3MjFoODYyLjkxOTd2LTIwMi40NTA0aC01OTkuMzMzM3YtMTEzMy41MjE3eiIgZmlsbD0iIzE4YTMwMyIgc3Ryb2tlLXdpZHRoPSIyOC4yODQ5IiB0cmFuc2Zvcm09Im1hdHJpeCguMDE4ODc2NTcgMCAwIC4wMTg4NzY1NyAtMTAyLjYxMzA3IC0yOC4wNjk0NjgpIi8+PGcgdHJhbnNmb3JtPSJtYXRyaXgoLjAxODkxODY2IDAgMCAuMDE4OTE4NjYgLTEwMi44NDE4NSAtMjguMTMyMDkzKSI+PHBhdGggZD0ibTY0NTAgMjkyNGgyNjZ2LTk2MGgtMjY2em0xMzQtMTA0M2M4MyAwIDE1MS02NSAxNTEtMTUxIDAtODMtNjgtMTUxLTE1MS0xNTEtODYgMC0xNTMgNjgtMTUzIDE1MSAwIDg2IDY3IDE1MSAxNTMgMTUxeiIgZmlsbD0iIzE4YTMwMyIvPjxwYXRoIGQ9Im03MTcwIDIwNzVoLTN2LTU2N2gtMjYzdjE0MTVoMjU4bDUtMTEyaDNjODMgOTMgMTY3IDEzMiAyOTkgMTMyIDI1NiAwIDQyNS0yMzAgNDI1LTUxNyAwLTI3Ny0xNTEtNDgxLTQxMS00ODEtMTQxIDAtMjIyIDQxLTMxMyAxMzB6bS0zIDM0OGMwLTE2NSA3NS0yNzUgMjE1LTI3NSAxNTYgMCAyMzcgMTExIDIzNyAyOTMgMCAxODEtNzggMjk5LTIzNCAyOTktMTM0IDAtMjE4LTEwNC0yMTgtMjc1eiIgZmlsbD0iIzE4YTMwMyIvPjxwYXRoIGQ9Im04NTk3IDE5NDNjLTEyNiA5LTI0NiA4NC0zMDMgMTkxaC0xbC03LTE3MmgtMjU4djk2MmgyNjV2LTM2NGMwLTE5MSAzNC0yNjAgOTQtMzAyIDU1LTQwIDExNy01NCAyMDMtNTl6IiBmaWxsPSIjMThhMzAzIi8+PHBhdGggZD0ibTk1NTkgMjM4NmMwLTIzOS0xNDYtNDQzLTM5Ny00NDMtMzAyIDAtNDk2IDIwOC00OTYgNTI2IDAgMzA5IDE5OSA0NzQgNDk2IDQ3NCAxNDEgMCAyMzctMjAgMzMwLTYzbC0yNy0xOTZjLTg2IDM2LTE3NiA1OC0yNzAgNTgtMTYwIDAtMjYwLTc0LTI3Mi0yMjVoNjIzYzgtMzQgMTMtODkgMTMtMTMxem0tNDI0LTI0MGMxMTMgMCAxNjggOTMgMTcwIDE5MWgtMzcwYzE5LTExMCA5Ny0xOTEgMjAwLTE5MXoiIGZpbGw9IiMxOGEzMDMiLz48cGF0aCBkPSJtMTAzNDggMTU3MGMtMzUwIDAtNjQxIDI1OC02NDEgNjg4IDAgNDI3IDI5MSA2ODcgNjQxIDY4NyAzNTYgMCA2NDMtMjYwIDY0My02ODcgMC00MzAtMjg3LTY4OC02NDMtNjg4em0wIDEzNGMyNjUgMCA0NjMgMTk4IDQ2MyA1NTQgMCAzNTctMTk4IDU1My00NjMgNTUzLTI1OSAwLTQ2MC0xOTYtNDYwLTU1MyAwLTM1NiAyMDEtNTU0IDQ2MC01NTR6Ii8+PHBhdGggZD0ibTExMjM5IDE5MTJ2NjBoLTE1NXYxMjRoMTU1djgyN2gxNjZ2LTgyN2gyNDN2LTEyNGgtMjQzdi04NmMwLTE3MyA3MS0yNzMgMjA1LTI3MyA2MCAwIDk4IDEwIDEzNiAyMmwxNy0xMjBjLTM4LTE0LTEwMy0yNy0xNTUtMjctMjM1IDAtMzY5IDE1MS0zNjkgNDI0eiIvPjxwYXRoIGQ9Im0xMTc4MyAxOTEydjYwaC0xNTR2MTI0aDE1NHY4MjdoMTY3di04MjdoMjQydi0xMjRoLTI0MnYtODZjMC0xNzMgNzEtMjczIDIwNS0yNzMgNjAgMCA5OCAxMCAxMzUgMjJsMTgtMTIwYy0zNS0xNC0xMDItMjctMTU1LTI3LTIzNiAwLTM3MCAxNTEtMzcwIDQyNHoiLz48cGF0aCBkPSJtMTIzNzggMjkyNGgxNzB2LTk1NGgtMTcwem04NC0xMDkzYzYwIDAgMTA1LTQ0IDEwNS0xMDEgMC01OS00NS0xMDMtMTA1LTEwMy01OCAwLTEwMyA0NC0xMDMgMTAzIDAgNTcgNDUgMTAxIDEwMyAxMDF6Ii8+PHBhdGggZD0ibTEyODgzIDI0NDVjMC0yNDEgMTQ1LTM2NiAzMzItMzY2IDk4IDAgMTg0IDIwIDI1NCA1NWwxOC0xMjZjLTYxLTI5LTE1NS01Ni0yNTgtNTYtMjk2IDAtNTE4IDE3OC01MTggNTEzIDAgMzE1IDIwMiA0NzggNDY2IDQ3OCAxMTkgMCAyMDEtMTIgMjk5LTU1bC0xNS0xMjVjLTg0IDM5LTE3MiA1Ny0yNTQgNTctMTkxIDAtMzI0LTEyMS0zMjQtMzc1eiIvPjxwYXRoIGQ9Im0xNDQxMCAyNDg2YzMtMzQgNy02NSA3LTk2IDAtMjQzLTEyOS00MzgtMzc1LTQzOC0yNjUgMC00NTkgMjIxLTQ1OSA1MTMgMCAzMjQgMTk0IDQ3OCA0NTkgNDc4IDExOCAwIDIwNi0xNyAyOTktNTVsLTE2LTEyNWMtNzIgMzQtMTc4IDU3LTI1OSA1Ny0xOTEgMC0zMTUtMTE3LTMxOC0zMzR6bS0zODItNDA3YzE0NCAwIDIyNSAxMTggMjI1IDI3NmgtNDk4YzI0LTE2NiAxMTctMjc2IDI3My0yNzZ6Ii8+PC9nPjwvc3ZnPg==
+
+readme: |-
+  ----------------------------------
+  ## libreoffice/{{ context.version }} ##
+
+  LibreOffice is a free and open-source office suite with applications for word processing, spreadsheets, presentations, vector drawing, databases, and formula editing.
+
+  Examples:
+  ```
+  libreoffice --version
+  lowriter
+  localc
+  loimpress
+  lodraw
+  lobase
+  lomath
+  ```
+
+  More documentation can be found here: https://documentation.libreoffice.org/
+
+  To run container outside of this environment: ml libreoffice/{{ context.version }}
+
+  ----------------------------------
