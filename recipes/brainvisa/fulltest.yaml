@@ -17,6 +17,32 @@ tests:
       test "$(stat -c '%u' "${runtime_dir}")" = "$(id -u)"
       test "$(stat -c '%a' "${runtime_dir}")" = "700"
 
+  - name: BrainVISA wrapper places MATLAB runtime cache in user home
+    script: |
+      set -eu
+      unset MCR_CACHE_ROOT
+      test_home="$(mktemp -d)"
+      cache_root="$(HOME="${test_home}" brainvisa --neurocontainers-print-mcr-cache-root)"
+      case "${cache_root}" in
+        "${test_home}/"*) ;;
+        *) echo "MCR cache is outside HOME: ${cache_root}"; exit 1 ;;
+      esac
+      test -d "${cache_root}"
+      test -w "${cache_root}"
+      test "$(stat -c '%u' "${cache_root}")" = "$(id -u)"
+      test "$(stat -c '%a' "${cache_root}")" = "700"
+      test "$(HOME="${test_home}" spm12 --neurocontainers-print-mcr-cache-root)" = "${cache_root}"
+      rm -rf "${test_home}"
+
+  - name: BrainVISA wrapper reports MATLAB runtime cache preparation
+    script: |
+      set -eu
+      test_home="$(mktemp -d)"
+      HOME="${test_home}" brainvisa -b --help >/tmp/brainvisa-help.out 2>/tmp/brainvisa-help.err
+      grep -i "brainvisa" /tmp/brainvisa-help.out /tmp/brainvisa-help.err
+      grep "Preparing MATLAB Runtime cache in ${test_home}/.cache/brainvisa/mcr_cache; first BrainVISA launch may take a few minutes..." /tmp/brainvisa-help.err
+      rm -rf "${test_home}"
+
   - name: BrainVISA Python modules import
     script: |
       set -eu

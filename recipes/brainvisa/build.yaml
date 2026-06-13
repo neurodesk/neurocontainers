@@ -19,6 +19,7 @@ files:
 
       tool="$(basename "$0")"
       real_binary="/opt/miniconda/envs/brainvisa/bin/${tool}"
+      export CONDA_PREFIX="/opt/miniconda/envs/brainvisa"
 
       runtime_dir_is_valid() {
         [ -n "${XDG_RUNTIME_DIR:-}" ] || return 1
@@ -45,9 +46,35 @@ files:
         fi
       fi
 
+      if [ -z "${MCR_CACHE_ROOT:-}" ]; then
+        if [ -n "${HOME:-}" ] && [ "${HOME}" != "/" ]; then
+          MCR_CACHE_ROOT="${HOME%/}/.cache/brainvisa/mcr_cache"
+        else
+          MCR_CACHE_ROOT="${TMPDIR:-/tmp}/brainvisa-mcr-cache-$(id -u)"
+        fi
+      fi
+
+      if ! mkdir -p "${MCR_CACHE_ROOT}" 2>/dev/null; then
+        fallback_mcr_cache_root="${TMPDIR:-/tmp}/brainvisa-mcr-cache-$(id -u)"
+        echo "Could not create MATLAB Runtime cache in ${MCR_CACHE_ROOT}; falling back to ${fallback_mcr_cache_root}" >&2
+        MCR_CACHE_ROOT="${fallback_mcr_cache_root}"
+        mkdir -p "${MCR_CACHE_ROOT}"
+      fi
+      chmod 700 "${MCR_CACHE_ROOT}" 2>/dev/null || true
+      export MCR_CACHE_ROOT
+
       if [ "${1:-}" = "--neurocontainers-print-xdg-runtime-dir" ]; then
         printf '%s\n' "${XDG_RUNTIME_DIR}"
         exit 0
+      fi
+
+      if [ "${1:-}" = "--neurocontainers-print-mcr-cache-root" ]; then
+        printf '%s\n' "${MCR_CACHE_ROOT:-}"
+        exit 0
+      fi
+
+      if ! find "${MCR_CACHE_ROOT}" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
+        echo "Preparing MATLAB Runtime cache in ${MCR_CACHE_ROOT}; first BrainVISA launch may take a few minutes..." >&2
       fi
 
       exec "${real_binary}" "$@"
@@ -96,6 +123,7 @@ build:
         - ln -sf brainvisa-runtime-wrapper /opt/brainvisa-wrapper/bin/brainvisa
         - ln -sf brainvisa-runtime-wrapper /opt/brainvisa-wrapper/bin/anatomist
         - ln -sf brainvisa-runtime-wrapper /opt/brainvisa-wrapper/bin/morphologist
+        - ln -sf brainvisa-runtime-wrapper /opt/brainvisa-wrapper/bin/spm12
 
     - environment:
         PATH: /opt/brainvisa-wrapper/bin:/opt/miniconda/envs/brainvisa/bin:$PATH
@@ -148,6 +176,9 @@ readme: |
   brainvisa -b --setup
   anatomist
   ```
+
+  MATLAB Runtime cache files are written under `$HOME/.cache/brainvisa/mcr_cache`
+  when possible, with a fallback to `/tmp/brainvisa-mcr-cache-$(id -u)`.
 
   More documentation can be found here: https://brainvisa.info/web/download.html
 
