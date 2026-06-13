@@ -1,7 +1,7 @@
 {
   "apps": {
     "hdbet 2.0.1": {
-      "version": "20260605",
+      "version": "20260612",
       "exec": "",
       "apptainer_args": []
     }
