@@ -18,16 +18,19 @@ build:
         env_exists: "false"
         mamba: true
     - run:
-        - conda install --override-channels -c conda-forge numpy=1.21 scipy=1.8 networkx=2.7 scikit-learn=1.0 scikit-image matplotlib=3.5 seaborn=0.11 pytables=3.6 pandas pytest nbformat nb_conda traits=6.2
+        - conda install --override-channels -c conda-forge numpy=1.23 pandas=1.4 scipy=1.8 networkx=2.7 scikit-learn=1.0 scikit-image matplotlib=3.5 seaborn=0.11 pytables=3.6 pytest nbformat nb_conda traits=6.2
     - run:
-        - pip install fitlins==0.11.0
+        - pip install fitlins=={{ context.version }}
   add-default-template: true
+deploy:
+  bins:
+    - fitlins
 copyright:
   - license: Apache-2.0
     url: https://github.com/poldracklab/fitlins/blob/master/LICENSE
 readme: |-
   ----------------------------------
-  ## fitlins/0.11.0 ##
+  ## fitlins/{{ context.version }} ##
 
   FitLins is a tool for estimating linear models, defined by the BIDS Stats-Models specification proposal, to BIDS-formatted datasets.
 
@@ -45,7 +48,7 @@ readme: |-
   https://zenodo.org/records/7217447
   ```
 
-  To run container outside of this environment: ml fitlins/0.11.0
+  To run container outside of this environment: ml fitlins/{{ context.version }}
 
   ----------------------------------
 categories:
