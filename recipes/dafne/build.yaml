@@ -23,6 +23,29 @@ variables:
       - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics==3.1.0 protobuf==3.20.3 dafne=={{ context.version }}"
         condition: arch=="aarch64"
 
+files:
+  - name: patch_dafne_dl_annotations.py
+    contents: |-
+      from pathlib import Path
+      import ast
+
+      root = Path("/opt/miniconda-py38_22.11.1-1/lib/python3.8/site-packages/dafne_dl")
+      for path in root.rglob("*.py"):
+          text = path.read_text()
+          if "from __future__ import annotations" in text.splitlines()[:20]:
+              continue
+          tree = ast.parse(text)
+          insert_line = 0
+          if (
+              tree.body
+              and isinstance(tree.body[0], ast.Expr)
+              and isinstance(tree.body[0].value, ast.Str)
+          ):
+              insert_line = tree.body[0].end_lineno or 0
+          lines = text.splitlines()
+          lines.insert(insert_line, "from __future__ import annotations")
+          path.write_text("\n".join(lines) + ("\n" if text.endswith("\n") else ""))
+
 build:
   kind: neurodocker
 
@@ -75,28 +98,7 @@ build:
         XDG_DATA_HOME: /tmp/.local/share
 
     - run:
-        - |
-          python - <<'PY'
-          from pathlib import Path
-          import ast
-
-          root = Path("/opt/miniconda-py38_22.11.1-1/lib/python3.8/site-packages/dafne_dl")
-          for path in root.rglob("*.py"):
-              text = path.read_text()
-              if "from __future__ import annotations" in text.splitlines()[:20]:
-                  continue
-              tree = ast.parse(text)
-              insert_line = 0
-              if (
-                  tree.body
-                  and isinstance(tree.body[0], ast.Expr)
-                  and isinstance(tree.body[0].value, ast.Str)
-              ):
-                  insert_line = tree.body[0].end_lineno or 0
-              lines = text.splitlines()
-              lines.insert(insert_line, "from __future__ import annotations")
-              path.write_text("\n".join(lines) + ("\n" if text.endswith("\n") else ""))
-          PY
+        - python {{ get_file("patch_dafne_dl_annotations.py") }}
         - dafne_bin="$(command -v dafne)"
         - mv "$dafne_bin" "${dafne_bin}.real"
         - printf '%s\n' '#!/usr/bin/env bash' 'export HOME=/tmp' 'export XDG_CACHE_HOME=/tmp/.cache' 'export XDG_CONFIG_HOME=/tmp/.config' 'export XDG_DATA_HOME=/tmp/.local/share' 'export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python' 'mkdir -p "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"' 'exec "$0.real" "$@"' > "$dafne_bin"
