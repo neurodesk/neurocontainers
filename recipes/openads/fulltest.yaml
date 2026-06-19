@@ -5,6 +5,8 @@ container: openads_1.0.0.simg
 environment:
   OPENADS_ENABLE_WEB_UI: "0"
 
+default_timeout: 600
+
 tests:
   - name: Show ads help
     script: |
@@ -36,7 +38,9 @@ tests:
         --all \
         --gpu 1 \
         --output-root /tmp/openads_test_output
-      test -d /tmp/openads_test_output/sub-02e8eb42/DWI
+      test -f /tmp/openads_test_output/sub-02e8eb42/DWI/segment/sub-02e8eb42_metrics.json
+      test -f /tmp/openads_test_output/sub-02e8eb42/DWI/reporting/sub-02e8eb42_automatic_radiological_report.txt
+      test -f /tmp/openads_test_output/sub-02e8eb42/DWI/reporting/sub-02e8eb42_DWIstroke.png
 
   - name: Run PWI example workflow
     script: |
@@ -48,7 +52,9 @@ tests:
         --all \
         --gpu 1 \
         --output-root /tmp/openads_test_output
-      test -d /tmp/openads_test_output/sub-02e8eb42/PWI
+      test -f /tmp/openads_test_output/sub-02e8eb42/PWI/segmentation/sub-02e8eb42_metrics.json
+      test -f /tmp/openads_test_output/sub-02e8eb42/PWI/reporting/sub-02e8eb42_automatic_radiological_report.txt
+      test -f /tmp/openads_test_output/sub-02e8eb42/PWI/reporting/sub-02e8eb42_HP.png
 
   - name: Run selected DWI stages
     script: |
@@ -57,10 +63,10 @@ tests:
       mkdir -p /tmp/openads_test_output
       ads dwi \
         --subject-path /app/assets/examples/dwi/sub-02e8eb42 \
-        --stages prepdata,gen_mask,skull_strip,registration,inference,report \
+        --stages prepdata,gen_mask \
         --gpu 1 \
         --output-root /tmp/openads_test_output
-      test -d /tmp/openads_test_output/sub-02e8eb42/DWI
+      test -f /tmp/openads_test_output/sub-02e8eb42/DWI/preprocess/sub-02e8eb42_DWIbrain-mask.nii.gz
 
   - name: Run selected PWI stages
     script: |
@@ -69,10 +75,11 @@ tests:
       mkdir -p /tmp/openads_test_output
       ads pwi \
         --subject-path /app/assets/examples/pwi/sub-02e8eb42 \
-        --stages prepdata,gen_mask,skull_strip,gen_ttp,registration,ttpadc_coreg,inference,report \
+        --stages prepdata,gen_mask,gen_ttp \
         --gpu 1 \
         --output-root /tmp/openads_test_output
-      test -d /tmp/openads_test_output/sub-02e8eb42/PWI
+      test -f /tmp/openads_test_output/sub-02e8eb42/PWI/preprocess/sub-02e8eb42_DWIbrain-mask.nii.gz
+      test -f /tmp/openads_test_output/sub-02e8eb42/PWI/preprocess/sub-02e8eb42_TTP.nii.gz
 
 cleanup:
   script: |
