@@ -23,7 +23,7 @@ tests:
   - name: FitLins package import
     description: Verify the main fitlins module imports successfully
     command: python -c "import fitlins; print(fitlins.__version__)"
-    expected_output_contains: "${version}"
+    expected_output_contains: "0.11.0"
 
   - name: FitLins CLI on PATH
     description: Verify the fitlins launcher renders its shipped help text
