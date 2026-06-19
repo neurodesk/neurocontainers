@@ -155,9 +155,18 @@ class ApptainerRuntime(ContainerRuntime):
         clean_env: bool = False,
     ) -> subprocess.CompletedProcess:
         cmd = [self._get_command(), "exec"]
+        env = None
 
         if clean_env:
             cmd.append("--cleanenv")
+            env = os.environ.copy()
+            for key in (
+                "APPTAINER_BIND",
+                "APPTAINER_BINDPATH",
+                "SINGULARITY_BIND",
+                "SINGULARITY_BINDPATH",
+            ):
+                env.pop(key, None)
 
         # Add volumes (bind mounts)
         if volumes:
@@ -181,7 +190,7 @@ class ApptainerRuntime(ContainerRuntime):
 
         cmd.extend([container_ref, "bash", "-c", final_script])
 
-        return subprocess.run(cmd, capture_output=True, text=True)
+        return subprocess.run(cmd, capture_output=True, text=True, env=env)
 
     def extract_file(
         self, container_ref: str, file_path: str, output_path: str

@@ -8,11 +8,15 @@ from workflows.container_tester import ApptainerRuntime, ContainerTester
 
 def test_apptainer_runtime_uses_cleanenv_when_requested(monkeypatch) -> None:
     commands: list[list[str]] = []
+    envs: list[dict[str, str] | None] = []
 
     monkeypatch.setattr("workflows.container_tester.shutil.which", lambda name: name)
+    monkeypatch.setenv("APPTAINER_BINDPATH", "/opt:/opt")
+    monkeypatch.setenv("SINGULARITY_BINDPATH", "/opt:/opt")
 
     def fake_run(command, **kwargs):
         commands.append(command)
+        envs.append(kwargs.get("env"))
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
     monkeypatch.setattr("workflows.container_tester.subprocess.run", fake_run)
@@ -23,6 +27,9 @@ def test_apptainer_runtime_uses_cleanenv_when_requested(monkeypatch) -> None:
     assert commands == [
         ["apptainer", "exec", "--cleanenv", "container.simg", "bash", "-c", "true"]
     ]
+    assert envs[0] is not None
+    assert "APPTAINER_BINDPATH" not in envs[0]
+    assert "SINGULARITY_BINDPATH" not in envs[0]
 
 
 def test_builtin_tests_run_with_clean_apptainer_environment(monkeypatch) -> None:
