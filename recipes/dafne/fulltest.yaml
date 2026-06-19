@@ -94,6 +94,30 @@ tests:
       PY
     expected_output_contains: "enabled-image-types"
 
+  - name: DAFNE GUI modules import
+    description: Verify GUI startup imports reach DAFNE UI modules under the packaged Python runtime
+    command: |
+      python - <<'PY'
+      from dafne.ui.MuscleSegmentation import MuscleSegmentation
+
+      print(MuscleSegmentation.__name__)
+      PY
+    expected_output_contains: "MuscleSegmentation"
+    timeout: 60
+
+  - name: Qt XCB platform dependencies available
+    description: Verify the PyQt xcb platform plugin has all system libraries needed for Xvfb startup
+    command: |
+      set -euo pipefail
+      plugin="$(find /opt/miniconda-py38_22.11.1-1 -path '*/platforms/libqxcb.so' | head -1)"
+      test -n "$plugin"
+      ldd "$plugin" | tee /tmp/dafne-libqxcb-ldd.txt
+      if grep -F "not found" /tmp/dafne-libqxcb-ldd.txt; then
+        exit 1
+      fi
+      echo "qt-xcb-dependencies-ok"
+    expected_output_contains: "qt-xcb-dependencies-ok"
+
   - name: Runtime state uses configured temporary locations
     description: Verify DAFNE runtime state avoids persistent home-directory paths
     command: |
