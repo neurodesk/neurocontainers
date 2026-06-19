@@ -13,10 +13,6 @@ build:
     - environment:
         DEBIAN_FRONTEND: noninteractive
 
-    - install:
-        - curl
-        - ca-certificates
-
     - workdir: /opt/terastitcher-{{ context.version }}
 
     - run:
