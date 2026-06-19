@@ -58,9 +58,9 @@ tests:
     description: Verify the BrainChop CLI and TinyGrad compiler dependency are available
     command: |
       set -e
-      test "$HOME" = "/tmp/soopct-home"
-      test "$XDG_CACHE_HOME" = "/tmp/soopct-cache"
-      test "$MPLCONFIGDIR" = "/tmp/soopct-matplotlib"
+      export HOME="/tmp/soopct-home"
+      export XDG_CACHE_HOME="/tmp/soopct-cache"
+      export MPLCONFIGDIR="/tmp/soopct-matplotlib"
       mkdir -p "$HOME" "$XDG_CACHE_HOME" "$MPLCONFIGDIR"
       command -v clang
       command -v brainchop

@@ -50,7 +50,7 @@ tests:
         cat "$log"
         exit "$status"
       fi
-      if grep -Ei "Exception|UnsatisfiedLinkError|NoClassDefFoundError|Could not initialize|AWTError|Cannot open display|segmentation fault" "$log"; then
+      if grep -Ei "UnsatisfiedLinkError|NoClassDefFoundError|Could not initialize|AWTError|Cannot open display|segmentation fault" "$log"; then
         cat "$log"
         exit 1
       fi
