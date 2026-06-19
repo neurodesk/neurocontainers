@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -61,6 +62,60 @@ def test_deploy_script_accepts_world_accessible_executable(tmp_path: Path) -> No
 
     assert returncode == 0
     assert payload["failed"] == 0
+
+
+def test_deploy_script_checks_directory_access_without_find(tmp_path: Path) -> None:
+    tmp_path.chmod(
+        stat.S_IRUSR
+        | stat.S_IWUSR
+        | stat.S_IXUSR
+        | stat.S_IRGRP
+        | stat.S_IXGRP
+        | stat.S_IROTH
+        | stat.S_IXOTH
+    )
+    deploy_dir = tmp_path / "tool"
+    deploy_dir.mkdir()
+    deploy_dir.chmod(
+        stat.S_IRUSR
+        | stat.S_IWUSR
+        | stat.S_IXUSR
+        | stat.S_IRGRP
+        | stat.S_IXGRP
+        | stat.S_IROTH
+        | stat.S_IXOTH
+    )
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for command in ("mktemp", "rm", "stat", "dirname", "tr", "sort"):
+        command_path = shutil.which(command)
+        assert command_path is not None
+        (bin_dir / command).symlink_to(command_path)
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "DEPLOY_BINS": "",
+            "DEPLOY_PATH": str(deploy_dir),
+            "PATH": str(bin_dir),
+        }
+    )
+    result = subprocess.run(
+        ["/bin/bash", str(SCRIPT)],
+        capture_output=True,
+        cwd=tmp_path,
+        env=env,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+
+    assert result.returncode == 0
+    assert {
+        "name": f"directory.access.arbitrary_user:{deploy_dir}",
+        "status": "passed",
+        "message": f"Directory {deploy_dir} is traversable by arbitrary runtime users.",
+    } in payload["tests"]
 
 
 def test_deploy_summary_preserves_runtime_user_access_failures() -> None:

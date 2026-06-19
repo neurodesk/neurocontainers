@@ -159,6 +159,7 @@ class ApptainerRuntime(ContainerRuntime):
 
         if clean_env:
             cmd.append("--cleanenv")
+            cmd.extend(["--no-mount", "hostfs"])
             env = os.environ.copy()
             for key in (
                 "APPTAINER_BIND",

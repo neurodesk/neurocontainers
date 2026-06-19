@@ -104,9 +104,24 @@ mark_visited_file() {
 
 path_has_other_bit() {
     local path="$1"
-    local mode="$2"
+    local mask="$2"
+    local mode
+    local other_digit
+    local mask_digit
 
-    [ -n "$(find "$path" -maxdepth 0 -perm "$mode" -print -quit 2>/dev/null)" ]
+    if command -v find >/dev/null 2>&1; then
+        [ -n "$(find "$path" -maxdepth 0 -perm "$mask" -print -quit 2>/dev/null)" ]
+        return
+    fi
+
+    mode=$(stat -c "%a" "$path" 2>/dev/null || true)
+    if [ -z "$mode" ]; then
+        return 1
+    fi
+
+    other_digit="${mode: -1}"
+    mask_digit="${mask: -1}"
+    [ $((8#$other_digit & 8#$mask_digit)) -ne 0 ]
 }
 
 resolve_path_best_effort() {

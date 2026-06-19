@@ -25,7 +25,17 @@ def test_apptainer_runtime_uses_cleanenv_when_requested(monkeypatch) -> None:
     runtime.run_test("container.simg", "true", clean_env=True)
 
     assert commands == [
-        ["apptainer", "exec", "--cleanenv", "container.simg", "bash", "-c", "true"]
+        [
+            "apptainer",
+            "exec",
+            "--cleanenv",
+            "--no-mount",
+            "hostfs",
+            "container.simg",
+            "bash",
+            "-c",
+            "true",
+        ]
     ]
     assert envs[0] is not None
     assert "APPTAINER_BINDPATH" not in envs[0]
