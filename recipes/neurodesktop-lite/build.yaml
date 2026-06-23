@@ -1,4 +1,4 @@
-name: neurodesktop
+name: neurodesktop-lite
 version: "20260428"
 
 copyright:
@@ -459,7 +459,7 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAQb0lE
 
 readme: |-
   ----------------------------------
-  ## neurodesktop/{{ context.version }} ##
+  ## neurodesktop-lite/{{ context.version }} ##
   Neurodesktop provides a browser-based JupyterLab and LXDE desktop environment with Guacamole, VNC/RDP support, CVMFS-backed NeuroDesk tooling, and workflow utilities.
 
   Launchers:

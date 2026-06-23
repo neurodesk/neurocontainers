@@ -1,11 +1,11 @@
-# neurodesktop container test suite
-# Tests for neurodesktop 20260428 - browser-based JupyterLab and LXDE desktop
+# neurodesktop-lite container test suite
+# Tests for neurodesktop-lite 20260428 - browser-based JupyterLab and LXDE desktop
 # environment with Guacamole, CVMFS-backed NeuroDesk tooling, and workflow
 # utilities.
 
-name: neurodesktop
+name: neurodesktop-lite
 version: "20260428"
-container: neurodesktop_20260428_*.simg
+container: neurodesktop-lite_20260428_*.simg
 default_timeout: 120
 
 test_data:
