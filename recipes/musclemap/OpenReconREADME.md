@@ -64,7 +64,7 @@ Label values are model-specific and depend on the selected `bodyregion`.
 
 ## `wholebody`
 
-For running this in Open Recon we need a reversible int16-safe mapping:
+For running this in Open Recon we need a reversible int12-safe mapping:
 
 `mapped = 3 * (original // 10) + (original % 10)`
 
@@ -76,7 +76,7 @@ Metrics extraction uses the original unscaled labels so MuscleMap can map label
 IDs to anatomy names, even when the returned segmentation overlay is scaled for
 DICOM.
 
-| Region | Anatomy | Side | Value | Int16 Mapped |
+| Region | Anatomy | Side | Value | Int12 Mapped |
 | :--- | :--- | :--- | ---: | ---: |
 | neck | levator scapulae | left | 1101 | 331 |
 | neck | levator scapulae | right | 1102 | 332 |
