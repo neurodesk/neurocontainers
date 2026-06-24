@@ -677,6 +677,15 @@ from steps.label_remap import run as label_remap
 _STEP_TIMEOUT = int(os.environ.get("OPENMSK_STEP_TIMEOUT", "5400"))
 
 
+def _summarize_stream(text, max_chars=12000):
+    text = text or ""
+    if len(text) <= max_chars:
+        return text
+    keep = max_chars // 2
+    omitted = len(text) - (2 * keep)
+    return text[:keep] + "\n... [%d chars omitted] ...\n" % omitted + text[-keep:]
+
+
 def _run_step(module_name, wd, options=None, config_path=None):
     cmd = [sys.executable, "-m", module_name, str(wd)]
     if options:
@@ -686,8 +695,10 @@ def _run_step(module_name, wd, options=None, config_path=None):
     r = _sp.run(cmd, capture_output=True, text=True, timeout=_STEP_TIMEOUT)
     if r.stdout:
         print(r.stdout)
+    if r.stderr:
+        print("%s stderr:\n%s" % (module_name, _summarize_stream(r.stderr)), file=sys.stderr)
     if r.returncode != 0:
-        raise RuntimeError("%s failed (exit %s): %s" % (module_name, r.returncode, r.stderr[-1500:]))
+        raise RuntimeError("%s failed (exit %s)" % (module_name, r.returncode))
     rp = Path(wd) / STEP_RESULT_FILENAME
     res = json.loads(rp.read_text())
     rp.unlink()
@@ -835,12 +846,21 @@ def _run_optional_gpu_step(cmd, label):
 
 def _log_subprocess_result(label, result):
     if result.stdout:
-        logging.info("%s stdout:\n%s", label, result.stdout[-4000:])
+        logging.info("%s stdout:\n%s", label, _summarize_log_stream(result.stdout))
     if result.stderr:
         log_fn = logging.warning if result.returncode else logging.info
-        log_fn("%s stderr:\n%s", label, result.stderr[-4000:])
+        log_fn("%s stderr:\n%s", label, _summarize_log_stream(result.stderr))
     if result.returncode:
         logging.warning("%s exited with code %s", label, result.returncode)
+
+
+def _summarize_log_stream(text, max_chars=12000):
+    text = text or ""
+    if len(text) <= max_chars:
+        return text
+    keep = max_chars // 2
+    omitted = len(text) - (2 * keep)
+    return text[:keep] + f"\n... [{omitted} chars omitted] ...\n" + text[-keep:]
 
 
 def _find_single_output(output_dir, pattern):
@@ -1226,11 +1246,16 @@ def _replace_or_append_minihead_array_tokens(minihead_text, name, values):
     if not values:
         return minihead_text, False
 
+    line_ending = "\r\n" if "\r\n" in minihead_text else "\n"
+    token_lines = "".join(f'    {{ "{value}" }}{line_ending}' for value in values)
     array_text = (
-        f'<ParamArray."{name}">\n'
-        "{\n"
-        + "".join(f'    "{value}"\n' for value in values)
-        + "}\n"
+        f'<ParamArray."{name}">{line_ending}'
+        f"{{{line_ending}"
+        f"    <DefaultSize> {len(values)}{line_ending}"
+        f"    <MaxSize> 2147483647{line_ending}"
+        f'    <Default> <ParamString."">{{ }}{line_ending}'
+        f"{token_lines}"
+        f"}}{line_ending}"
     )
     pattern = re.compile(
         rf'^\s*<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}\s*\n?',
@@ -1238,9 +1263,31 @@ def _replace_or_append_minihead_array_tokens(minihead_text, name, values):
     )
     matches = list(pattern.finditer(minihead_text))
     if matches:
-        if all(match.group(0).strip() == array_text.strip() for match in matches):
-            return minihead_text, False
-        return pattern.sub(array_text, minihead_text), True
+        token_pattern = re.compile(r'^[ \t]*\{\s*"[^"]*"\s*\}\s*$', flags=re.MULTILINE)
+
+        def replace_block(match):
+            block_text = match.group(0)
+            if (
+                "<DefaultSize>" not in block_text
+                or "<MaxSize>" not in block_text
+                or "<Default>" not in block_text
+            ):
+                return array_text
+            if token_pattern.search(block_text):
+                return token_pattern.sub(lambda _match: token_lines.rstrip(), block_text)
+
+            close_matches = list(re.finditer(r'^[ \t]*\}\s*$', block_text, flags=re.MULTILINE))
+            if not close_matches:
+                return array_text
+            close_match = close_matches[-1]
+            return (
+                block_text[: close_match.start()]
+                + token_lines
+                + block_text[close_match.start() :]
+            )
+
+        updated_text = pattern.sub(replace_block, minihead_text)
+        return updated_text, updated_text != minihead_text
 
     return minihead_text.rstrip() + "\n" + array_text, True
 

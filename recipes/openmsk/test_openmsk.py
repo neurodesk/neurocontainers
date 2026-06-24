@@ -68,11 +68,17 @@ def make_source_image_with_minihead():
 <ParamString."ImageTypeValue3">\t{ "M" }
 <ParamArray."ImageTypeValue3">
 {
-    "M"
+    <DefaultSize> 1
+    <MaxSize> 2147483647
+    <Default> <ParamString."">{ }
+    { "M" }
 }
 <ParamArray."ImageTypeValue4">
 {
-    "NONE"
+    <DefaultSize> 1
+    <MaxSize> 2147483647
+    <Default> <ParamString."">{ }
+    { "NONE" }
 }
 <ParamLong."SliceNo">\t{ 99 }
 """
@@ -121,7 +127,33 @@ def test_segment_meta_patches_scanner_visible_minihead_identity():
     assert '<ParamString."SeriesNumberRangeNameUID">\t{ "openmsk_segmentation_101" }' in minihead
     assert '<ParamString."SOPInstanceUID">\t{ "1.2.3.4" }' not in minihead
     assert "ImageTypeValue3" not in minihead
+    assert '<Default> <ParamString."">{ }' in minihead
+    assert '    { "openmsk_segmentation" }' in minihead
+    assert '    "openmsk_segmentation"' not in minihead
     assert '<ParamLong."SliceNo">\t{ 2 }' in minihead
+
+
+def test_original_passthrough_minihead_uses_valid_paramarray_tokens():
+    source = make_source_image_with_minihead()
+
+    restamped = openmsk._restamp_images(
+        [source],
+        openmsk.ORIGINAL_SERIES_INDEX,
+        "openmsk_original",
+        "ORIGINAL",
+        "OpenMSK original",
+    )
+
+    meta = ismrmrd.Meta.deserialize(restamped[0].attribute_string)
+    minihead = decoded_minihead(meta)
+
+    assert first(meta, "ImageTypeValue4") == "openmsk_original"
+    assert '<ParamArray."ImageTypeValue4">' in minihead
+    assert '<DefaultSize> 1' in minihead
+    assert '<MaxSize> 2147483647' in minihead
+    assert '<Default> <ParamString."">{ }' in minihead
+    assert '    { "openmsk_original" }' in minihead
+    assert '    "openmsk_original"' not in minihead
 
 
 class FakeConnection:

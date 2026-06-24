@@ -1,6 +1,7 @@
 import argparse
 import base64
 import copy
+import csv
 import ctypes
 import itertools
 import json
@@ -11,9 +12,11 @@ import shutil
 import subprocess
 import traceback
 import uuid
+import zipfile
 from pathlib import Path
 from time import perf_counter
 import xml.dom.minidom
+import xml.etree.ElementTree as ET
 
 import constants
 import ismrmrd
@@ -60,8 +63,17 @@ SCT_ANALYSIS_REGISTRY = {
         "kind": "label_vertebrae",
         "series_suffix": "sct_label_vertebrae",
     },
+    "sct_spinalcord_area": {
+        "kind": "spinalcord_area",
+        "series_suffix": "sct_spinalcord_area",
+    },
 }
 SCT_ANALYSIS_REGISTRY["sct_deepseg_graymatter"]["kind"] = "deepseg_gm"
+
+SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN = "MEAN(area)"
+SCT_PROCESS_SEGMENTATION_VERT_LEVEL_COLUMN = "VertLevel"
+SCT_SPINALCORD_AREA_METRICS_SERIES_SUFFIX = "sct_spinalcord_area_metrics"
+SCT_LESION_ANALYSIS_METRICS_SERIES_SUFFIX = "sct_lesion_analysis_metrics"
 
 SCT_ANALYSIS_OUTPUTS = {
     "sct_deepseg_gm_sc_7t_t2star": (
@@ -988,7 +1000,15 @@ def _sct_derived_roles():
         for outputs in SCT_ANALYSIS_OUTPUTS.values()
         for output in outputs
     }
-    return analysis_roles | output_roles | {"ORIGINAL", "PASSTHROUGH"}
+    metric_roles = {
+        globals()
+        .get("SCT_SPINALCORD_AREA_METRICS_SERIES_SUFFIX", "sct_spinalcord_area_metrics")
+        .upper(),
+        globals()
+        .get("SCT_LESION_ANALYSIS_METRICS_SERIES_SUFFIX", "sct_lesion_analysis_metrics")
+        .upper(),
+    }
+    return analysis_roles | output_roles | metric_roles | {"ORIGINAL", "PASSTHROUGH"}
 
 
 def _log_and_validate_output_series_contract(output_images, input_images, context):
@@ -2504,6 +2524,1117 @@ def _sct_label_vertebrae_output_path(seg_path, work_dir):
     return Path(work_dir) / f"{_nifti_output_stem(seg_path)}_labeled.nii.gz"
 
 
+def _sct_label_vertebrae_discs_output_path(seg_path, work_dir):
+    return Path(work_dir) / f"{_nifti_output_stem(seg_path)}_labeled_discs.nii.gz"
+
+
+def _format_sct_metric_number(value):
+    numeric_value = float(value)
+    if not np.isfinite(numeric_value):
+        raise ValueError(f"SCT metric value is not finite: {value}")
+    return f"{numeric_value:.4f}".rstrip("0").rstrip(".")
+
+
+def _read_sct_metrics_csv(csv_path):
+    csv_path = Path(csv_path)
+    with csv_path.open(newline="", encoding="utf-8") as csv_file:
+        reader = csv.DictReader(csv_file)
+        fieldnames = [
+            str(field).strip()
+            for field in (reader.fieldnames or [])
+            if _first_non_empty_text(field)
+        ]
+        rows = []
+        for row in reader:
+            cleaned_row = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                cleaned_row[str(key).strip()] = "" if value is None else str(value).strip()
+            if any(cleaned_row.values()):
+                rows.append(cleaned_row)
+    return fieldnames, rows
+
+
+def _read_sct_mean_area(csv_path):
+    fieldnames, rows = _read_sct_metrics_csv(csv_path)
+    normalized_fieldnames = {
+        field.strip(): field
+        for field in fieldnames
+        if _first_non_empty_text(field)
+    }
+    area_field = normalized_fieldnames.get(SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN)
+    if area_field is None:
+        raise ValueError(
+            f"{csv_path} does not contain SCT column "
+            f"{SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN!r}; "
+            f"columns={fieldnames}"
+        )
+
+    for row in rows:
+        value_text = _first_non_empty_text(row.get(area_field))
+        if not value_text:
+            continue
+        try:
+            value = float(value_text)
+        except ValueError as exc:
+            raise ValueError(
+                f"Could not parse {SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN} "
+                f"value {value_text!r} from {csv_path}"
+            ) from exc
+        if np.isfinite(value):
+            return value
+
+    raise ValueError(
+        f"{csv_path} does not contain a finite "
+        f"{SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN} value"
+    )
+
+
+def _sct_metric_row_value(row, fieldname):
+    for key, value in row.items():
+        if str(key).strip() == fieldname:
+            return _first_non_empty_text(value)
+    return ""
+
+
+def _build_spinalcord_area_rows(fieldnames, rows):
+    normalized_fieldnames = {
+        field.strip(): field
+        for field in fieldnames
+        if _first_non_empty_text(field)
+    }
+    area_field = normalized_fieldnames.get(SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN)
+    if area_field is None:
+        raise ValueError(
+            f"SCT metrics CSV does not contain column "
+            f"{SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN!r}; columns={fieldnames}"
+        )
+    level_field = normalized_fieldnames.get(SCT_PROCESS_SEGMENTATION_VERT_LEVEL_COLUMN)
+    metric_rows = []
+    for row_index, row in enumerate(rows):
+        area_text = _first_non_empty_text(row.get(area_field))
+        if not area_text:
+            continue
+        try:
+            area_value = float(area_text)
+        except ValueError as exc:
+            raise ValueError(
+                f"Could not parse {SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN} "
+                f"value {area_text!r} from metrics row {row_index + 1}"
+            ) from exc
+        if not np.isfinite(area_value):
+            continue
+        level_text = _first_non_empty_text(row.get(level_field)) if level_field else ""
+        metric_rows.append(
+            {
+                "level": level_text,
+                "mean_area_mm2": area_value,
+                "mean_area_text": _format_sct_metric_number(area_value),
+                "slice": _sct_metric_row_value(row, "Slice (I->S)"),
+                "std_area": _sct_metric_row_value(row, "STD(area)"),
+            }
+        )
+    if not metric_rows:
+        raise ValueError("SCT metrics CSV does not contain finite MEAN(area) rows")
+    return metric_rows
+
+
+def _format_spinalcord_area_summary(metric_rows):
+    if not metric_rows:
+        return ""
+    if len(metric_rows) == 1 and not _first_non_empty_text(metric_rows[0].get("level")):
+        return (
+            f"Spinal cord area {SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN}="
+            f"{metric_rows[0]['mean_area_text']} mm2"
+        )
+
+    parts = []
+    for row in metric_rows[:8]:
+        level = _first_non_empty_text(row.get("level")) or "unknown"
+        parts.append(f"{level}={row['mean_area_text']}")
+    if len(metric_rows) > 8:
+        parts.append(f"+{len(metric_rows) - 8} more")
+    return "Spinal cord area per level: " + ", ".join(parts) + " mm2"
+
+
+def _read_detected_vertebral_levels(vertfile_path):
+    img = nib.load(str(vertfile_path))
+    data = np.asarray(img.get_fdata(dtype=np.float32))
+    values = np.unique(data[np.isfinite(data)])
+    levels = []
+    for value in values:
+        if value <= 0:
+            continue
+        rounded = int(round(float(value)))
+        if abs(float(value) - rounded) > 1e-3:
+            continue
+        if 1 <= rounded <= 30:
+            levels.append(rounded)
+    levels = sorted(set(levels))
+    if not levels:
+        raise ValueError(f"Could not detect vertebral levels in {vertfile_path}")
+    return levels
+
+
+def _format_vertebral_levels_for_sct(levels):
+    levels = sorted({int(level) for level in levels})
+    if not levels:
+        raise ValueError("No vertebral levels supplied for SCT CSA computation")
+    return ",".join(str(level) for level in levels)
+
+
+def _run_sct_label_vertebrae(input_path, seg_path, work_dir, qc_dir):
+    _run_command(
+        [
+            "sct_label_vertebrae",
+            "-i",
+            str(input_path),
+            "-s",
+            str(seg_path),
+            "-c",
+            "t2",
+            "-ofolder",
+            str(work_dir),
+            "-qc",
+            str(qc_dir),
+        ],
+        cwd=work_dir,
+    )
+    labeled_path = _sct_label_vertebrae_output_path(seg_path, work_dir)
+    discs_path = _sct_label_vertebrae_discs_output_path(seg_path, work_dir)
+    if not labeled_path.exists():
+        raise FileNotFoundError(f"Could not find SCT vertebral labeling output: {labeled_path}")
+    if not discs_path.exists():
+        raise FileNotFoundError(f"Could not find SCT disc labeling output: {discs_path}")
+    return {
+        "labeled_path": labeled_path,
+        "discs_path": discs_path,
+        "levels": _read_detected_vertebral_levels(labeled_path),
+    }
+
+
+def _read_spinalcord_area_metrics(csv_path):
+    fieldnames, rows = _read_sct_metrics_csv(csv_path)
+    metric_rows = _build_spinalcord_area_rows(fieldnames, rows)
+    return {
+        "fieldnames": fieldnames,
+        "rows": metric_rows,
+    }
+
+
+def _average_metric_row_area(metric_rows):
+    values = [
+        float(row["mean_area_mm2"])
+        for row in metric_rows
+        if np.isfinite(float(row["mean_area_mm2"]))
+    ]
+    if not values:
+        raise ValueError("No finite spinal cord area rows found")
+    return float(np.mean(values))
+
+
+def _level_area_text(metric_rows):
+    parts = []
+    for row in metric_rows:
+        level = _first_non_empty_text(row.get("level"))
+        if not level:
+            continue
+        parts.append(f"{level}:{row['mean_area_text']}")
+    return ";".join(parts)
+
+
+def _build_spinalcord_area_metrics(mean_area_mm2, csv_path, metric_rows=None, label_info=None):
+    metric_rows = list(metric_rows or [])
+    if not metric_rows:
+        metric_rows = [
+            {
+                "level": "",
+                "mean_area_mm2": float(mean_area_mm2),
+                "mean_area_text": _format_sct_metric_number(mean_area_mm2),
+                "slice": "",
+                "std_area": "",
+            }
+        ]
+    mean_area_text = _format_sct_metric_number(mean_area_mm2)
+    summary = _format_spinalcord_area_summary(metric_rows)
+    levels = [
+        _first_non_empty_text(row.get("level"))
+        for row in metric_rows
+        if _first_non_empty_text(row.get("level"))
+    ]
+    return {
+        "name": "spinal_cord_area",
+        "source": "sct_process_segmentation",
+        "analysis": "sct_spinalcord_area",
+        "report_kind": "spinalcord_area",
+        "report_series_suffix": SCT_SPINALCORD_AREA_METRICS_SERIES_SUFFIX,
+        "column": SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN,
+        "mean_area_mm2": float(mean_area_mm2),
+        "mean_area_text": mean_area_text,
+        "rows": metric_rows,
+        "levels": levels,
+        "level_area_text": _level_area_text(metric_rows),
+        "level_count": len(levels),
+        "units": "mm2",
+        "summary": summary,
+        "csv_path": str(csv_path),
+        "vertfile_path": str(label_info["labeled_path"]) if label_info else "",
+        "discfile_path": str(label_info["discs_path"]) if label_info else "",
+    }
+
+
+SCT_ANALYZE_LESION_VOLUME_COLUMN = "volume [mm^3]"
+SCT_ANALYZE_LESION_LENGTH_COLUMN = "length [mm]"
+SCT_ANALYZE_LESION_MAX_DIAMETER_COLUMN = "max_equivalent_diameter [mm]"
+SCT_ANALYZE_LESION_MAX_DAMAGE_RATIO_COLUMN = "max_axial_damage_ratio []"
+SCT_ANALYZE_LESION_DORSAL_BRIDGE_COLUMN = "interpolated_dorsal_bridge_width [mm]"
+SCT_ANALYZE_LESION_VENTRAL_BRIDGE_COLUMN = "interpolated_ventral_bridge_width [mm]"
+SCT_ANALYZE_LESION_TOTAL_BRIDGE_COLUMN = "interpolated_total_bridge_width [mm]"
+
+
+def _xml_local_name(tag):
+    return str(tag).rsplit("}", 1)[-1]
+
+
+def _xml_descendants(element, local_name):
+    return [
+        child
+        for child in element.iter()
+        if _xml_local_name(child.tag) == local_name
+    ]
+
+
+def _xlsx_column_index(cell_reference):
+    match = re.match(r"([A-Za-z]+)", _first_non_empty_text(cell_reference))
+    if not match:
+        return 0
+    index = 0
+    for letter in match.group(1).upper():
+        index = index * 26 + (ord(letter) - ord("A") + 1)
+    return max(index - 1, 0)
+
+
+def _xlsx_shared_strings(xlsx_zip):
+    if "xl/sharedStrings.xml" not in xlsx_zip.namelist():
+        return []
+    root = ET.fromstring(xlsx_zip.read("xl/sharedStrings.xml"))
+    shared_strings = []
+    for item in _xml_descendants(root, "si"):
+        shared_strings.append("".join(text_node.text or "" for text_node in _xml_descendants(item, "t")))
+    return shared_strings
+
+
+def _xlsx_cell_text(cell, shared_strings):
+    cell_type = cell.attrib.get("t", "")
+    if cell_type == "inlineStr":
+        return "".join(text_node.text or "" for text_node in _xml_descendants(cell, "t")).strip()
+
+    value_nodes = _xml_descendants(cell, "v")
+    value_text = value_nodes[0].text if value_nodes else ""
+    value_text = "" if value_text is None else str(value_text).strip()
+    if cell_type == "s" and value_text:
+        try:
+            return shared_strings[int(value_text)].strip()
+        except (IndexError, ValueError):
+            return value_text
+    return value_text
+
+
+def _xlsx_sheet_matrix(xlsx_zip, sheet_name, shared_strings):
+    root = ET.fromstring(xlsx_zip.read(sheet_name))
+    matrix = []
+    for row in _xml_descendants(root, "row"):
+        values = []
+        for cell in [child for child in row if _xml_local_name(child.tag) == "c"]:
+            column_index = _xlsx_column_index(cell.attrib.get("r", ""))
+            while len(values) <= column_index:
+                values.append("")
+            values[column_index] = _xlsx_cell_text(cell, shared_strings)
+        if any(_first_non_empty_text(value) for value in values):
+            matrix.append(values)
+    return matrix
+
+
+def _uniquify_table_headers(headers):
+    result = []
+    seen = {}
+    for index, header in enumerate(headers):
+        text = _first_non_empty_text(header) or f"Column{index + 1}"
+        count = seen.get(text, 0) + 1
+        seen[text] = count
+        result.append(text if count == 1 else f"{text}_{count}")
+    return result
+
+
+def _table_rows_from_matrix(matrix):
+    header_index = None
+    for index, row in enumerate(matrix):
+        if sum(1 for value in row if _first_non_empty_text(value)) >= 2:
+            header_index = index
+            break
+    if header_index is None:
+        return [], []
+
+    headers = _uniquify_table_headers(matrix[header_index])
+    rows = []
+    for raw_row in matrix[header_index + 1:]:
+        row = {}
+        for index, header in enumerate(headers):
+            value = raw_row[index] if index < len(raw_row) else ""
+            row[header] = _first_non_empty_text(value)
+        if any(row.values()):
+            rows.append(row)
+    return headers, rows
+
+
+def _read_xlsx_table_rows(xlsx_path):
+    xlsx_path = Path(xlsx_path)
+    with zipfile.ZipFile(xlsx_path) as xlsx_zip:
+        shared_strings = _xlsx_shared_strings(xlsx_zip)
+        worksheet_names = sorted(
+            name
+            for name in xlsx_zip.namelist()
+            if name.startswith("xl/worksheets/") and name.endswith(".xml")
+        )
+        for worksheet_name in worksheet_names:
+            headers, rows = _table_rows_from_matrix(
+                _xlsx_sheet_matrix(xlsx_zip, worksheet_name, shared_strings)
+            )
+            if rows:
+                return headers, rows
+    raise ValueError(f"Could not find tabular lesion metrics in {xlsx_path}")
+
+
+def _normalize_metric_column_name(name):
+    return re.sub(r"\s+", " ", _first_non_empty_text(name)).lower()
+
+
+def _row_value_by_column_names(row, *column_names):
+    wanted = {_normalize_metric_column_name(column_name) for column_name in column_names}
+    for key, value in row.items():
+        if _normalize_metric_column_name(key) in wanted:
+            return _first_non_empty_text(value)
+    return ""
+
+
+def _metric_float_or_none(value):
+    value_text = _first_non_empty_text(value)
+    if not value_text:
+        return None
+    try:
+        value_float = float(value_text)
+    except ValueError:
+        return None
+    return value_float if np.isfinite(value_float) else None
+
+
+def _format_optional_metric_number(value):
+    if value is None:
+        return ""
+    return _format_sct_metric_number(value)
+
+
+def _sct_lesion_metric_rows(table_rows):
+    metric_rows = []
+    for index, row in enumerate(table_rows):
+        metrics = {
+            key: value
+            for key, value in row.items()
+            if _first_non_empty_text(value)
+        }
+        if not metrics:
+            continue
+        lesion_id = _first_non_empty_text(
+            _row_value_by_column_names(row, "label", "lesion", "lesion #", "id")
+        ) or str(index + 1)
+        volume = _metric_float_or_none(
+            _row_value_by_column_names(row, SCT_ANALYZE_LESION_VOLUME_COLUMN)
+        )
+        length = _metric_float_or_none(
+            _row_value_by_column_names(row, SCT_ANALYZE_LESION_LENGTH_COLUMN)
+        )
+        max_diameter = _metric_float_or_none(
+            _row_value_by_column_names(row, SCT_ANALYZE_LESION_MAX_DIAMETER_COLUMN)
+        )
+        max_damage_ratio = _metric_float_or_none(
+            _row_value_by_column_names(row, SCT_ANALYZE_LESION_MAX_DAMAGE_RATIO_COLUMN)
+        )
+        dorsal_bridge = _metric_float_or_none(
+            _row_value_by_column_names(row, SCT_ANALYZE_LESION_DORSAL_BRIDGE_COLUMN)
+        )
+        ventral_bridge = _metric_float_or_none(
+            _row_value_by_column_names(row, SCT_ANALYZE_LESION_VENTRAL_BRIDGE_COLUMN)
+        )
+        total_bridge = _metric_float_or_none(
+            _row_value_by_column_names(row, SCT_ANALYZE_LESION_TOTAL_BRIDGE_COLUMN)
+        )
+        metric_rows.append(
+            {
+                "lesion_id": lesion_id,
+                "metrics": metrics,
+                "volume_mm3": volume,
+                "volume_text": _format_optional_metric_number(volume),
+                "length_mm": length,
+                "length_text": _format_optional_metric_number(length),
+                "max_equivalent_diameter_mm": max_diameter,
+                "max_equivalent_diameter_text": _format_optional_metric_number(max_diameter),
+                "max_axial_damage_ratio": max_damage_ratio,
+                "max_axial_damage_ratio_text": _format_optional_metric_number(max_damage_ratio),
+                "dorsal_bridge_width_mm": dorsal_bridge,
+                "dorsal_bridge_width_text": _format_optional_metric_number(dorsal_bridge),
+                "ventral_bridge_width_mm": ventral_bridge,
+                "ventral_bridge_width_text": _format_optional_metric_number(ventral_bridge),
+                "total_bridge_width_mm": total_bridge,
+                "total_bridge_width_text": _format_optional_metric_number(total_bridge),
+            }
+        )
+    if not metric_rows:
+        raise ValueError("SCT lesion analysis XLSX does not contain lesion metric rows")
+    return metric_rows
+
+
+def _is_total_lesion_metric_row(row):
+    lesion_id = _normalize_metric_column_name(row.get("lesion_id"))
+    return lesion_id.startswith("total") or lesion_id in {"all", "summary", "mean"}
+
+
+def _finite_values(metric_rows, key):
+    values = []
+    for row in metric_rows:
+        value = row.get(key)
+        if value is not None and np.isfinite(float(value)):
+            values.append(float(value))
+    return values
+
+
+def _format_lesion_metrics_summary(metric_rows):
+    lesion_rows = [row for row in metric_rows if not _is_total_lesion_metric_row(row)]
+    lesion_count = len(lesion_rows)
+    volume_values = _finite_values(lesion_rows, "volume_mm3")
+    length_values = _finite_values(lesion_rows, "length_mm")
+    parts = [f"lesions={lesion_count}"]
+    if volume_values:
+        parts.append(f"total volume={_format_sct_metric_number(sum(volume_values))} mm3")
+    if length_values:
+        parts.append(f"max length={_format_sct_metric_number(max(length_values))} mm")
+    return "SCI lesion metrics: " + ", ".join(parts)
+
+
+def _lesion_metrics_text(metric_rows):
+    parts = []
+    for row in metric_rows[:8]:
+        row_parts = []
+        if row.get("volume_text"):
+            row_parts.append(f"volume={row['volume_text']}")
+        if row.get("length_text"):
+            row_parts.append(f"length={row['length_text']}")
+        if row.get("max_axial_damage_ratio_text"):
+            row_parts.append(f"max_damage={row['max_axial_damage_ratio_text']}")
+        if row_parts:
+            parts.append(f"{row['lesion_id']}:" + ",".join(row_parts))
+    if len(metric_rows) > 8:
+        parts.append(f"+{len(metric_rows) - 8} more")
+    return ";".join(parts)
+
+
+def _build_sct_lesion_analysis_metrics(xlsx_path, metric_rows, label_path=None):
+    metric_rows = list(metric_rows)
+    lesion_rows = [row for row in metric_rows if not _is_total_lesion_metric_row(row)]
+    volume_values = _finite_values(lesion_rows, "volume_mm3")
+    length_values = _finite_values(lesion_rows, "length_mm")
+    max_diameter_values = _finite_values(lesion_rows, "max_equivalent_diameter_mm")
+    max_damage_values = _finite_values(lesion_rows, "max_axial_damage_ratio")
+    dorsal_bridge_values = _finite_values(lesion_rows, "dorsal_bridge_width_mm")
+    ventral_bridge_values = _finite_values(lesion_rows, "ventral_bridge_width_mm")
+    total_volume = sum(volume_values) if volume_values else None
+    max_length = max(length_values) if length_values else None
+    max_diameter = max(max_diameter_values) if max_diameter_values else None
+    max_damage = max(max_damage_values) if max_damage_values else None
+    min_dorsal_bridge = min(dorsal_bridge_values) if dorsal_bridge_values else None
+    min_ventral_bridge = min(ventral_bridge_values) if ventral_bridge_values else None
+    return {
+        "name": "sci_lesion_analysis",
+        "source": "sct_analyze_lesion",
+        "analysis": "sct_deepseg_lesion_sci_t2",
+        "report_kind": "sct_lesion_analysis",
+        "report_series_suffix": SCT_LESION_ANALYSIS_METRICS_SERIES_SUFFIX,
+        "summary": _format_lesion_metrics_summary(metric_rows),
+        "rows": metric_rows,
+        "lesion_count": len(lesion_rows),
+        "total_volume_mm3": total_volume,
+        "total_volume_text": _format_optional_metric_number(total_volume),
+        "max_length_mm": max_length,
+        "max_length_text": _format_optional_metric_number(max_length),
+        "max_equivalent_diameter_mm": max_diameter,
+        "max_equivalent_diameter_text": _format_optional_metric_number(max_diameter),
+        "max_axial_damage_ratio": max_damage,
+        "max_axial_damage_ratio_text": _format_optional_metric_number(max_damage),
+        "min_dorsal_bridge_width_mm": min_dorsal_bridge,
+        "min_dorsal_bridge_width_text": _format_optional_metric_number(min_dorsal_bridge),
+        "min_ventral_bridge_width_mm": min_ventral_bridge,
+        "min_ventral_bridge_width_text": _format_optional_metric_number(min_ventral_bridge),
+        "lesion_metrics_text": _lesion_metrics_text(metric_rows),
+        "xlsx_path": str(xlsx_path),
+        "label_path": str(label_path) if label_path else "",
+    }
+
+
+def _find_sct_analyze_lesion_xlsx(analysis_dir):
+    analysis_dir = Path(analysis_dir)
+    candidates = sorted(analysis_dir.glob("*lesion_analysis.xlsx"))
+    if not candidates:
+        candidates = sorted(analysis_dir.glob("*analysis*.xlsx"))
+    if not candidates:
+        candidates = sorted(analysis_dir.glob("*.xlsx"))
+    if not candidates:
+        raise FileNotFoundError(f"Could not find sct_analyze_lesion XLSX output in {analysis_dir}")
+    return candidates[0]
+
+
+def _find_sct_analyze_lesion_label(analysis_dir):
+    analysis_dir = Path(analysis_dir)
+    candidates = sorted(analysis_dir.glob("*lesion_label.nii.gz"))
+    if not candidates:
+        candidates = sorted(analysis_dir.glob("*label.nii.gz"))
+    return candidates[0] if candidates else None
+
+
+def _read_sct_lesion_analysis_metrics(xlsx_path, label_path=None):
+    fieldnames, rows = _read_xlsx_table_rows(xlsx_path)
+    metric_rows = _sct_lesion_metric_rows(rows)
+    metrics = _build_sct_lesion_analysis_metrics(
+        xlsx_path,
+        metric_rows,
+        label_path=label_path,
+    )
+    metrics["columns"] = fieldnames
+    return metrics
+
+
+def _metric_summary(dicom_metrics):
+    if not dicom_metrics:
+        return ""
+    return _first_non_empty_text(dicom_metrics.get("summary"))
+
+
+def _apply_sct_dicom_metrics(meta_obj, dicom_metrics):
+    summary = _metric_summary(dicom_metrics)
+    if not summary:
+        return
+
+    existing_comment = _first_non_empty_text(
+        meta_obj.get("ImageComments"),
+        meta_obj.get("ImageComment"),
+    )
+    image_comment = summary
+    if existing_comment and summary not in existing_comment:
+        image_comment = f"{existing_comment}; {summary}"
+
+    mean_area_text = _first_non_empty_text(dicom_metrics.get("mean_area_text"))
+    if not mean_area_text:
+        mean_area = dicom_metrics.get("mean_area_mm2")
+        if mean_area is not None:
+            mean_area_text = _format_sct_metric_number(mean_area)
+
+    meta_obj["ImageComments"] = image_comment
+    meta_obj["ImageComment"] = image_comment
+    meta_obj["DerivationDescription"] = summary
+    meta_obj["ContentDescription"] = summary
+    meta_obj["SCTMetricName"] = _first_non_empty_text(dicom_metrics.get("name"))
+    metric_source = _first_non_empty_text(dicom_metrics.get("source"))
+    meta_obj["SCTMetricSource"] = metric_source
+
+    if metric_source == "sct_analyze_lesion":
+        meta_obj["SCTAnalyzeLesionCount"] = str(int(dicom_metrics.get("lesion_count") or 0))
+        meta_obj["SCTAnalyzeLesionTotalVolumeMm3"] = _first_non_empty_text(
+            dicom_metrics.get("total_volume_text")
+        )
+        meta_obj["SCTAnalyzeLesionMaxLengthMm"] = _first_non_empty_text(
+            dicom_metrics.get("max_length_text")
+        )
+        meta_obj["SCTAnalyzeLesionMaxEquivalentDiameterMm"] = _first_non_empty_text(
+            dicom_metrics.get("max_equivalent_diameter_text")
+        )
+        meta_obj["SCTAnalyzeLesionMaxAxialDamageRatio"] = _first_non_empty_text(
+            dicom_metrics.get("max_axial_damage_ratio_text")
+        )
+        meta_obj["SCTAnalyzeLesionMinDorsalBridgeWidthMm"] = _first_non_empty_text(
+            dicom_metrics.get("min_dorsal_bridge_width_text")
+        )
+        meta_obj["SCTAnalyzeLesionMinVentralBridgeWidthMm"] = _first_non_empty_text(
+            dicom_metrics.get("min_ventral_bridge_width_text")
+        )
+        meta_obj["SCTAnalyzeLesionRows"] = _first_non_empty_text(
+            dicom_metrics.get("lesion_metrics_text")
+        )
+        meta_obj["SCTAnalyzeLesionXlsx"] = _first_non_empty_text(
+            dicom_metrics.get("xlsx_path")
+        )
+        meta_obj["SCTAnalyzeLesionLabel"] = _first_non_empty_text(
+            dicom_metrics.get("label_path")
+        )
+        return
+
+    meta_obj["SCTProcessSegmentationColumn"] = _first_non_empty_text(
+        dicom_metrics.get("column")
+    )
+    meta_obj["SCTProcessSegmentationMeanAreaMm2"] = mean_area_text
+    meta_obj["SCTProcessSegmentationMeanAreaUnits"] = _first_non_empty_text(
+        dicom_metrics.get("units")
+    )
+    meta_obj["SCTProcessSegmentationPerLevel"] = "1" if dicom_metrics.get("levels") else "0"
+    meta_obj["SCTProcessSegmentationLevelCount"] = str(
+        int(dicom_metrics.get("level_count") or 0)
+    )
+    meta_obj["SCTProcessSegmentationLevels"] = ",".join(
+        str(level) for level in dicom_metrics.get("levels", [])
+    )
+    meta_obj["SCTProcessSegmentationLevelAreasMm2"] = _first_non_empty_text(
+        dicom_metrics.get("level_area_text")
+    )
+    meta_obj["SCTProcessSegmentationVertfile"] = _first_non_empty_text(
+        dicom_metrics.get("vertfile_path")
+    )
+    meta_obj["SCTProcessSegmentationDiscfile"] = _first_non_empty_text(
+        dicom_metrics.get("discfile_path")
+    )
+
+
+def _patch_sct_metric_minihead(minihead_text, dicom_metrics):
+    summary = _metric_summary(dicom_metrics)
+    if not minihead_text or not summary:
+        return minihead_text, False
+
+    changed = False
+    current_text = minihead_text
+    for param_name in (
+        "ImageComment",
+        "ImageComments",
+        "DerivationDescription",
+        "ContentDescription",
+    ):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            param_name,
+            summary,
+        )
+        changed = changed or did_change
+    return current_text, changed
+
+
+def _pil_text_size(draw, text, font):
+    bbox = draw.textbbox((0, 0), str(text), font=font)
+    return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+
+def _truncate_text_to_width(draw, text, font, max_width):
+    text = _first_non_empty_text(text)
+    if _pil_text_size(draw, text, font)[0] <= max_width:
+        return text
+    if max_width <= 0:
+        return ""
+
+    suffix = "..."
+    low = 0
+    high = len(text)
+    while low < high:
+        mid = (low + high + 1) // 2
+        candidate = text[:mid] + suffix
+        if _pil_text_size(draw, candidate, font)[0] <= max_width:
+            low = mid
+        else:
+            high = mid - 1
+    return text[:low] + suffix if low > 0 else suffix
+
+
+def _orient_metrics_report_page(page_array):
+    return np.rot90(np.asarray(page_array), 2).copy()
+
+
+def _render_spinalcord_area_report_page(dicom_metrics, width=768, height=512):
+    from PIL import Image, ImageDraw, ImageFont
+
+    width = max(int(width), 512)
+    height = max(int(height), 384)
+    margin = 28
+    image = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+    line_height = max(14, _pil_text_size(draw, "Ag", font)[1] + 8)
+    available_width = width - 2 * margin
+    value_text = _first_non_empty_text(dicom_metrics.get("mean_area_text"))
+    if not value_text and dicom_metrics.get("mean_area_mm2") is not None:
+        value_text = _format_sct_metric_number(dicom_metrics["mean_area_mm2"])
+
+    rows = list(dicom_metrics.get("rows") or [])
+    has_per_level_rows = any(_first_non_empty_text(row.get("level")) for row in rows)
+    value_label = "Mean across levels" if has_per_level_rows else "Value"
+
+    lines = [
+        ("Spinal Cord Area Metrics", 255),
+        (_metric_summary(dicom_metrics), 235),
+        ("", 0),
+        (f"{value_label}: {value_text} mm2", 255),
+        (f"Source: {_first_non_empty_text(dicom_metrics.get('source'))}", 220),
+        (f"Column: {_first_non_empty_text(dicom_metrics.get('column'))}", 220),
+        (f"CSV: {Path(_first_non_empty_text(dicom_metrics.get('csv_path'))).name}", 180),
+    ]
+    vertfile_name = Path(_first_non_empty_text(dicom_metrics.get("vertfile_path"))).name
+    discfile_name = Path(_first_non_empty_text(dicom_metrics.get("discfile_path"))).name
+    if vertfile_name or discfile_name:
+        lines.append((f"Labels: {vertfile_name} / {discfile_name}", 180))
+
+    y = margin
+    for line, fill in lines:
+        if not line:
+            y += line_height
+            continue
+        draw.text(
+            (margin, y),
+            _truncate_text_to_width(draw, line, font, available_width),
+            fill=fill,
+            font=font,
+        )
+        y += line_height
+
+    if rows:
+        y += max(4, line_height // 2)
+        table_columns = (
+            ("Level", 0, 90),
+            ("MEAN(area) mm2", 100, 145),
+            ("STD(area)", 255, 110),
+            ("Slice", 375, available_width - 375),
+        )
+        for heading, x_offset, max_col_width in table_columns:
+            draw.text(
+                (margin + x_offset, y),
+                _truncate_text_to_width(draw, heading, font, max_col_width),
+                fill=235,
+                font=font,
+            )
+        y += line_height
+        for row_index, row in enumerate(rows):
+            if y + line_height > height - margin:
+                remaining = len(rows) - row_index
+                draw.text(
+                    (margin, y),
+                    f"+{remaining} more levels",
+                    fill=180,
+                    font=font,
+                )
+                break
+            values = (
+                _first_non_empty_text(row.get("level")) or "-",
+                _first_non_empty_text(row.get("mean_area_text")),
+                _first_non_empty_text(row.get("std_area")) or "-",
+                _first_non_empty_text(row.get("slice")) or "-",
+            )
+            for (value, (_, x_offset, max_col_width)) in zip(values, table_columns):
+                draw.text(
+                    (margin + x_offset, y),
+                    _truncate_text_to_width(draw, value, font, max_col_width),
+                    fill=255,
+                    font=font,
+                )
+            y += line_height
+
+    page = np.asarray(image, dtype=np.uint16) * 16
+    return _orient_metrics_report_page(page)
+
+
+def _render_sct_lesion_analysis_report_page(dicom_metrics, width=768, height=512):
+    from PIL import Image, ImageDraw, ImageFont
+
+    width = max(int(width), 512)
+    height = max(int(height), 384)
+    margin = 28
+    image = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+    line_height = max(14, _pil_text_size(draw, "Ag", font)[1] + 8)
+    available_width = width - 2 * margin
+    rows = list(dicom_metrics.get("rows") or [])
+
+    lines = [
+        ("SCI Lesion Metrics", 255),
+        (_metric_summary(dicom_metrics), 235),
+        ("", 0),
+        (
+            "Total volume: "
+            f"{_first_non_empty_text(dicom_metrics.get('total_volume_text')) or '-'} mm3",
+            255,
+        ),
+        (
+            "Max length: "
+            f"{_first_non_empty_text(dicom_metrics.get('max_length_text')) or '-'} mm",
+            255,
+        ),
+        (
+            "Max axial damage ratio: "
+            f"{_first_non_empty_text(dicom_metrics.get('max_axial_damage_ratio_text')) or '-'}",
+            220,
+        ),
+        (
+            "XLSX: "
+            f"{Path(_first_non_empty_text(dicom_metrics.get('xlsx_path'))).name}",
+            180,
+        ),
+    ]
+
+    y = margin
+    for line, fill in lines:
+        if not line:
+            y += line_height
+            continue
+        draw.text(
+            (margin, y),
+            _truncate_text_to_width(draw, line, font, available_width),
+            fill=fill,
+            font=font,
+        )
+        y += line_height
+
+    if rows:
+        y += max(4, line_height // 2)
+        table_columns = (
+            ("Lesion", 0, 70),
+            ("Volume mm3", 80, 115),
+            ("Length mm", 210, 100),
+            ("Max damage", 325, 110),
+            ("Dorsal bridge", 450, available_width - 450),
+        )
+        for heading, x_offset, max_col_width in table_columns:
+            draw.text(
+                (margin + x_offset, y),
+                _truncate_text_to_width(draw, heading, font, max_col_width),
+                fill=235,
+                font=font,
+            )
+        y += line_height
+        for row_index, row in enumerate(rows):
+            if y + line_height > height - margin:
+                draw.text(
+                    (margin, y),
+                    f"+{len(rows) - row_index} more lesions",
+                    fill=180,
+                    font=font,
+                )
+                break
+            values = (
+                _first_non_empty_text(row.get("lesion_id")) or "-",
+                _first_non_empty_text(row.get("volume_text")) or "-",
+                _first_non_empty_text(row.get("length_text")) or "-",
+                _first_non_empty_text(row.get("max_axial_damage_ratio_text")) or "-",
+                _first_non_empty_text(row.get("dorsal_bridge_width_text")) or "-",
+            )
+            for (value, (_, x_offset, max_col_width)) in zip(values, table_columns):
+                draw.text(
+                    (margin + x_offset, y),
+                    _truncate_text_to_width(draw, value, font, max_col_width),
+                    fill=255,
+                    font=font,
+                )
+            y += line_height
+
+    page = np.asarray(image, dtype=np.uint16) * 16
+    return _orient_metrics_report_page(page)
+
+
+def _render_sct_metrics_report_page(dicom_metrics):
+    if dicom_metrics.get("report_kind") == "sct_lesion_analysis":
+        return _render_sct_lesion_analysis_report_page(dicom_metrics)
+    return _render_spinalcord_area_report_page(dicom_metrics)
+
+
+def _metrics_report_series_suffix(dicom_metrics):
+    return _first_non_empty_text(
+        dicom_metrics.get("report_series_suffix"),
+        SCT_SPINALCORD_AREA_METRICS_SERIES_SUFFIX,
+    )
+
+
+def _metrics_report_analysis(dicom_metrics):
+    return _first_non_empty_text(dicom_metrics.get("analysis"), "sct_spinalcord_area")
+
+
+def _build_sct_metrics_report_images(dicom_metrics, source_images, output_series_index):
+    if not dicom_metrics:
+        return []
+    source_images = _as_image_list(source_images)
+    if not source_images:
+        return []
+
+    report_page = _render_sct_metrics_report_page(dicom_metrics)
+    if report_page.ndim != 2:
+        raise ValueError(f"SCT metrics report page must be 2D, got shape {report_page.shape}")
+
+    page_height, page_width = report_page.shape
+    report_volume = report_page[np.newaxis, :, :].astype(np.uint16, copy=False)
+    report_image = ismrmrd.Image.from_array(report_volume, transpose=False)
+    report_header = copy.deepcopy(source_images[0].getHead())
+    report_header.data_type = report_image.data_type
+    report_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    report_header.image_series_index = output_series_index
+    report_header.image_index = 1
+    report_header.slice = 0
+    report_header.contrast = 0
+    _set_header_sequence_field(report_header, "matrix_size", [page_width, page_height, 1])
+    _set_header_sequence_field(
+        report_header,
+        "field_of_view",
+        [float(page_width), float(page_height), 1.0],
+    )
+    _set_header_sequence_field(report_header, "position", [0.0, 0.0, 0.0])
+    _set_header_sequence_field(report_header, "read_dir", [1.0, 0.0, 0.0])
+    _set_header_sequence_field(report_header, "phase_dir", [0.0, 1.0, 0.0])
+    _set_header_sequence_field(report_header, "slice_dir", [0.0, 0.0, 1.0])
+    report_image.setHead(report_header)
+    report_image.image_series_index = int(output_series_index)
+
+    source_meta = _copy_meta(ismrmrd.Meta.deserialize(source_images[0].attribute_string))
+    tmpMeta = _copy_meta(source_meta)
+    _strip_source_parent_refs(tmpMeta)
+    _strip_scanner_write_unsafe_meta(tmpMeta)
+    if "IceMiniHead" in tmpMeta:
+        del tmpMeta["IceMiniHead"]
+
+    output_identity = _build_sct_output_identity(
+        tmpMeta,
+        _metrics_report_analysis(dicom_metrics),
+        output_series_index,
+        series_suffix=_metrics_report_series_suffix(dicom_metrics),
+    )
+    sop_instance_uid = _build_derived_sop_instance_uid(
+        source_meta,
+        _metrics_report_series_suffix(dicom_metrics),
+        output_series_index,
+        0,
+        output_identity["series_instance_uid"],
+    )
+    tmpMeta["DataRole"] = "Image"
+    tmpMeta["ImageProcessingHistory"] = [
+        "PYTHON",
+        "SPINALCORDTOOLBOX",
+        "METRICS_REPORT",
+    ]
+    tmpMeta["WindowCenter"] = "2040"
+    tmpMeta["WindowWidth"] = "4080"
+    tmpMeta["SeriesDescription"] = output_identity["series_description"]
+    tmpMeta["SequenceDescription"] = output_identity["sequence_description"]
+    tmpMeta["ProtocolName"] = output_identity["sequence_description"]
+    tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
+    tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
+    tmpMeta["SOPInstanceUID"] = sop_instance_uid
+    tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+    tmpMeta["ImageTypeValue4"] = output_identity["type_token"]
+    tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+    tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
+    tmpMeta["ImageComments"] = output_identity["series_description"]
+    tmpMeta["ImageComment"] = output_identity["series_description"]
+    tmpMeta["SequenceDescriptionAdditional"] = "or"
+    tmpMeta["Keep_image_geometry"] = "0"
+    tmpMeta["partition_count"] = "1"
+    tmpMeta["slice_count"] = "1"
+    tmpMeta["NumberOfSlices"] = "1"
+    tmpMeta["ImagesInAcquisition"] = "1"
+    tmpMeta["SCTMetricReport"] = "1"
+    _set_output_position_meta(tmpMeta, 0, image_index=1)
+    for geom_key, geom_value in _explicit_header_geometry_meta(report_header).items():
+        tmpMeta[geom_key] = geom_value
+    _apply_sct_dicom_metrics(tmpMeta, dicom_metrics)
+
+    report_image.attribute_string = tmpMeta.serialize()
+    logging.info(
+        "Created SCT metrics report image in image_series_index=%d",
+        output_series_index,
+    )
+    return [report_image]
+
+
+def _build_spinalcord_area_report_images(dicom_metrics, source_images, output_series_index):
+    return _build_sct_metrics_report_images(dicom_metrics, source_images, output_series_index)
+
+
+def _output_spec_with_series_suffix(output_specs, series_suffix):
+    for output_spec in output_specs:
+        if output_spec.get("series_suffix") == series_suffix:
+            return output_spec
+    raise ValueError(f"Could not find SCT output spec with series_suffix={series_suffix!r}")
+
+
+def _attach_sci_lesion_analysis_metrics(output_specs, work_dir, qc_dir):
+    lesion_spec = _output_spec_with_series_suffix(
+        output_specs,
+        "sct_deepseg_lesion_sci_t2_lesion_seg",
+    )
+    cord_spec = _output_spec_with_series_suffix(
+        output_specs,
+        "sct_deepseg_lesion_sci_t2_sc_seg",
+    )
+    analysis_dir = Path(work_dir) / "sct_analyze_lesion"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    _run_command(
+        [
+            "sct_analyze_lesion",
+            "-m",
+            str(lesion_spec["path"]),
+            "-s",
+            str(cord_spec["path"]),
+            "-ofolder",
+            str(analysis_dir),
+            "-qc",
+            str(qc_dir),
+        ],
+        cwd=work_dir,
+    )
+    xlsx_path = _find_sct_analyze_lesion_xlsx(analysis_dir)
+    label_path = _find_sct_analyze_lesion_label(analysis_dir)
+    lesion_spec["dicom_metrics"] = _read_sct_lesion_analysis_metrics(
+        xlsx_path,
+        label_path=label_path,
+    )
+    logging.info(
+        "Computed SCT SCI lesion metrics: %s",
+        lesion_spec["dicom_metrics"]["summary"],
+    )
+    return output_specs
+
+
+def _attach_spinalcord_area_metrics(output_specs, input_path, seg_path, work_dir, qc_dir):
+    label_info = _run_sct_label_vertebrae(input_path, seg_path, work_dir, qc_dir)
+    vertebral_levels = _format_vertebral_levels_for_sct(label_info["levels"])
+    csv_path = Path(work_dir) / "spinalcord_area.csv"
+    _run_command(
+        [
+            "sct_process_segmentation",
+            "-i",
+            str(seg_path),
+            "-vert",
+            vertebral_levels,
+            "-discfile",
+            str(label_info["discs_path"]),
+            "-perlevel",
+            "1",
+            "-o",
+            str(csv_path),
+        ],
+        cwd=work_dir,
+    )
+    metrics_result = _read_spinalcord_area_metrics(csv_path)
+    mean_area = _average_metric_row_area(metrics_result["rows"])
+    metrics = _build_spinalcord_area_metrics(
+        mean_area,
+        csv_path,
+        metric_rows=metrics_result["rows"],
+        label_info=label_info,
+    )
+    logging.info("Computed SCT spinal cord area metric: %s", metrics["summary"])
+    for output_spec in output_specs:
+        output_spec["dicom_metrics"] = metrics
+    return output_specs
+
+
 def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
     if analysis not in SCT_ANALYSIS_REGISTRY:
         supported = ", ".join(_supported_analysis_ids())
@@ -2530,7 +3661,10 @@ def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
             ],
             cwd=work_dir,
         )
-        return _require_sct_output_specs(analysis, output_specs)
+        output_specs = _require_sct_output_specs(analysis, output_specs)
+        if analysis == "sct_deepseg_lesion_sci_t2":
+            return _attach_sci_lesion_analysis_metrics(output_specs, work_dir, qc_dir)
+        return output_specs
 
     if analysis_config["kind"] == "deepseg_gm":
         _run_command(
@@ -2585,6 +3719,35 @@ def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
             raise FileNotFoundError(f"Could not find SCT vertebral labeling output: {labeled_path}")
         return _expected_sct_output_specs(analysis, labeled_path)
 
+    if analysis_config["kind"] == "spinalcord_area":
+        seg_path = precomputed_outputs.get("sct_deepseg_spinalcord")
+        if seg_path is None:
+            seg_path = output_path
+            _run_command(
+                [
+                    "sct_deepseg",
+                    "spinalcord",
+                    "-i",
+                    str(input_path),
+                    "-o",
+                    str(seg_path),
+                    "-qc",
+                    str(qc_dir),
+                ],
+                cwd=work_dir,
+            )
+        output_specs = _require_sct_output_specs(
+            analysis,
+            _expected_sct_output_specs(analysis, seg_path),
+        )
+        return _attach_spinalcord_area_metrics(
+            output_specs,
+            input_path,
+            seg_path,
+            work_dir,
+            qc_dir,
+        )
+
     raise ValueError(f"Unsupported SCT analysis kind: {analysis_config['kind']}")
 
 
@@ -2597,6 +3760,7 @@ def _sct_output_to_mrd_images(
     segmentation_colormap=False,
     source_images=None,
     series_suffix=None,
+    dicom_metrics=None,
 ):
     img = nib.load(str(output_path))
     data = img.get_fdata(dtype=np.float32)
@@ -2652,6 +3816,7 @@ def _sct_output_to_mrd_images(
         maxVal,
         segmentation_colormap=segmentation_colormap,
         series_suffix=series_suffix,
+        dicom_metrics=dicom_metrics,
     )
 
 
@@ -2681,6 +3846,7 @@ def _sct_output_to_source_geometry_images(
     maxVal,
     segmentation_colormap=False,
     series_suffix=None,
+    dicom_metrics=None,
 ):
     source_images = _as_image_list(source_images)
     output_slice_count = int(data.shape[-1])
@@ -2808,6 +3974,7 @@ def _sct_output_to_source_geometry_images(
 
         if segmentation_colormap:
             tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"
+        _apply_sct_dicom_metrics(tmpMeta, dicom_metrics)
 
         minihead_text = _decode_ice_minihead(tmpMeta)
         if minihead_text:
@@ -2825,6 +3992,12 @@ def _sct_output_to_source_geometry_images(
                 is_last_in_series=(iImg == len(source_images) - 1),
             )
             if minihead_changed:
+                tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
+            patched_minihead_text, metric_minihead_changed = _patch_sct_metric_minihead(
+                patched_minihead_text,
+                dicom_metrics,
+            )
+            if metric_minihead_changed:
                 tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
 
         output_image.attribute_string = tmpMeta.serialize()
@@ -3103,6 +4276,7 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
                 precomputed_outputs=precomputed_outputs,
             )
         precomputed_outputs[member_analysis] = output_specs[0]["path"]
+        metrics_report = None
         for output_spec in output_specs:
             output_series_index = derived_series_allocator.allocate(output_spec["series_suffix"])
             imagesOut.extend(
@@ -3115,6 +4289,21 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
                     segmentation_colormap=segmentation_colormap,
                     source_images=ordered_images,
                     series_suffix=output_spec["series_suffix"],
+                    dicom_metrics=output_spec.get("dicom_metrics"),
+                )
+            )
+            if output_spec.get("dicom_metrics"):
+                metrics_report = output_spec["dicom_metrics"]
+
+        if metrics_report:
+            report_series_index = derived_series_allocator.allocate(
+                _metrics_report_series_suffix(metrics_report)
+            )
+            imagesOut.extend(
+                _build_sct_metrics_report_images(
+                    metrics_report,
+                    ordered_images,
+                    report_series_index,
                 )
             )
 

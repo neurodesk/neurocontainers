@@ -2,8 +2,10 @@ import ast
 import base64
 import copy
 import json
+import zipfile
 from pathlib import Path
 
+import nibabel as nib
 import numpy as np
 
 
@@ -184,6 +186,52 @@ def _label_parameter(parameter_id):
     raise AssertionError(f"OpenReconLabel.json does not define a {parameter_id} parameter")
 
 
+def _xml_escape(value):
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _xlsx_column_name(index):
+    index += 1
+    letters = []
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters.append(chr(ord("A") + remainder))
+    return "".join(reversed(letters))
+
+
+def _write_minimal_xlsx(path, rows):
+    sheet_rows = []
+    for row_index, row in enumerate(rows, start=1):
+        cells = []
+        for column_index, value in enumerate(row):
+            cell_ref = f"{_xlsx_column_name(column_index)}{row_index}"
+            cells.append(
+                f'<c r="{cell_ref}" t="inlineStr"><is><t>{_xml_escape(value)}</t></is></c>'
+            )
+        sheet_rows.append(f'<row r="{row_index}">{"".join(cells)}</row>')
+    sheet_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f'<sheetData>{"".join(sheet_rows)}</sheetData>'
+        "</worksheet>"
+    )
+    with zipfile.ZipFile(path, "w") as xlsx_zip:
+        xlsx_zip.writestr(
+            "[Content_Types].xml",
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            "</Types>",
+        )
+        xlsx_zip.writestr("xl/worksheets/sheet1.xml", sheet_xml)
+
+
 def _function_names():
     tree = ast.parse(WRAPPER_PATH.read_text())
     return {
@@ -288,6 +336,7 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
     namespace = {
         "base64": __import__("base64"),
         "copy": copy,
+        "csv": __import__("csv"),
         "ismrmrd": FakeIsmrmrd,
         "json": json,
         "logging": type(
@@ -300,10 +349,13 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
                 "log": staticmethod(lambda *args, **kwargs: None),
             },
         ),
+        "nib": nib,
         "np": np,
         "Path": Path,
         "re": __import__("re"),
         "uuid": __import__("uuid"),
+        "zipfile": zipfile,
+        "ET": __import__("xml.etree.ElementTree", fromlist=["ElementTree"]),
     }
     ast.fix_missing_locations(ast.Module(body=helper_nodes, type_ignores=[]))
     exec(compile(ast.Module(body=helper_nodes, type_ignores=[]), str(WRAPPER_PATH), "exec"), namespace)
@@ -360,6 +412,28 @@ def test_openrecon_exposes_debug_threshold_segment_toggle():
 
     defaults = _module_assignment("OPENRECON_DEFAULTS")
     assert defaults["sctdebugthresholdsegment"] is False
+
+
+def test_openrecon_exposes_spinalcord_area_analysis():
+    choices = _analysis_choices()
+    assert "sct_spinalcord_area" in choices
+
+    helpers = _load_runtime_helpers_for_test(
+        ["_sct_derived_roles", "_supported_analysis_ids"],
+        assignments=[
+            "SCT_ANALYSIS_OUTPUTS",
+            "SCT_ANALYSIS_BUNDLES",
+            "SCT_ANALYSIS_REGISTRY",
+            "SCT_DEEPSEG_TASKS",
+            "SCT_SPINALCORD_AREA_METRICS_SERIES_SUFFIX",
+        ],
+    )
+    assert "sct_spinalcord_area" in helpers["_supported_analysis_ids"]()
+    assert helpers["SCT_ANALYSIS_REGISTRY"]["sct_spinalcord_area"] == {
+        "kind": "spinalcord_area",
+        "series_suffix": "sct_spinalcord_area",
+    }
+    assert "SCT_SPINALCORD_AREA_METRICS" in helpers["_sct_derived_roles"]()
 
 
 def test_passthrough_restamp_uses_fresh_series_identity():
@@ -553,8 +627,10 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
     helpers = _load_runtime_helpers_for_test(
         [
             "_as_image_list",
+            "_apply_sct_dicom_metrics",
             "_build_derived_series_instance_uid",
             "_build_derived_sop_instance_uid",
+            "_build_sct_lesion_analysis_metrics",
             "_build_slice_geometry_records",
             "_build_sct_output_identity",
             "_collect_non_empty_texts",
@@ -564,14 +640,23 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
             "_estimate_slice_spacing",
             "_extract_minihead_array_tokens",
             "_extract_minihead_string_value",
+            "_finite_values",
             "_first_non_empty_text",
+            "_format_lesion_metrics_summary",
+            "_format_optional_metric_number",
             "_format_exam_data_role_sequential_number",
+            "_format_sct_metric_number",
             "_get_meta_values",
             "_get_meta_text",
             "_header_vector",
             "_infer_slice_axis",
+            "_is_total_lesion_metric_row",
+            "_lesion_metrics_text",
+            "_metric_summary",
+            "_normalize_metric_column_name",
             "_normalize_vector",
             "_patch_ice_minihead",
+            "_patch_sct_metric_minihead",
             "_patch_source_image_header_ice_minihead",
             "_remove_minihead_array_param",
             "_remove_minihead_string_param",
@@ -596,6 +681,7 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
         assignments=[
             "SCANNER_PARTITION_INDEX",
             "SCANNER_WRITE_UNSAFE_META_KEYS",
+            "SCT_LESION_ANALYSIS_METRICS_SERIES_SUFFIX",
             "SCT_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY",
             "SCT_SEGMENT_POSTPROCESSING_META_KEY",
             "SCT_SEGMENT_SOURCE_GEOMETRY_META_KEY",
@@ -675,10 +761,168 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
         assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue3") == []
 
 
+def test_sci_lesion_mask_is_embedded_as_segmentation_dicom_series():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_as_image_list",
+            "_apply_sct_dicom_metrics",
+            "_build_derived_series_instance_uid",
+            "_build_derived_sop_instance_uid",
+            "_build_sct_lesion_analysis_metrics",
+            "_build_slice_geometry_records",
+            "_build_sct_output_identity",
+            "_collect_non_empty_texts",
+            "_copy_meta",
+            "_decode_ice_minihead",
+            "_encode_ice_minihead",
+            "_estimate_slice_spacing",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_finite_values",
+            "_first_non_empty_text",
+            "_format_lesion_metrics_summary",
+            "_format_exam_data_role_sequential_number",
+            "_format_optional_metric_number",
+            "_format_sct_metric_number",
+            "_get_meta_values",
+            "_get_meta_text",
+            "_header_vector",
+            "_infer_slice_axis",
+            "_is_total_lesion_metric_row",
+            "_lesion_metrics_text",
+            "_metric_summary",
+            "_normalize_metric_column_name",
+            "_normalize_vector",
+            "_patch_ice_minihead",
+            "_patch_sct_metric_minihead",
+            "_patch_source_image_header_ice_minihead",
+            "_remove_minihead_array_param",
+            "_remove_minihead_string_param",
+            "_replace_minihead_array_token",
+            "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_array_tokens",
+            "_replace_or_append_minihead_bool_param",
+            "_replace_or_append_minihead_exam_data_role",
+            "_replace_or_append_minihead_long_param",
+            "_replace_or_append_minihead_string_param",
+            "_sanitize_minihead_param_value",
+            "_sct_output_to_source_geometry_images",
+            "_source_geometry_header_image_index",
+            "_source_geometry_header_slice",
+            "_source_postprocessing_image_type_identity",
+            "_set_header_sequence_field",
+            "_set_meta_scalar",
+            "_set_output_position_meta",
+            "_strip_scanner_write_unsafe_meta",
+            "_strip_source_parent_refs",
+        ],
+        assignments=[
+            "SCANNER_PARTITION_INDEX",
+            "SCANNER_WRITE_UNSAFE_META_KEYS",
+            "SCT_LESION_ANALYSIS_METRICS_SERIES_SUFFIX",
+            "SCT_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY",
+            "SCT_SEGMENT_POSTPROCESSING_META_KEY",
+            "SCT_SEGMENT_SOURCE_GEOMETRY_META_KEY",
+            "SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY",
+            "SOURCE_PARENT_REFERENCE_META_KEYS",
+            "SOURCE_PARENT_REFERENCE_META_PREFIXES",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_deepseg_lesion_sci_t2": {
+            "series_suffix": "sct_deepseg_lesion_sci_t2",
+        }
+    }
+    source_images = [
+        _contract_image(
+            helpers,
+            series_index=1,
+            role="NORM",
+            series_uid="1.2.3",
+            sop_uid="1.2.3.4.1",
+            slice_index=0,
+            source=True,
+        )
+    ]
+    lesion_mask = np.ones((2, 2, 1), dtype=np.int16)
+    metrics = helpers["_build_sct_lesion_analysis_metrics"](
+        Path("/tmp/output_lesion_analysis.xlsx"),
+        [
+            {
+                "lesion_id": "1",
+                "metrics": {
+                    "label": "1",
+                    "volume [mm^3]": "10.5",
+                    "length [mm]": "2.25",
+                },
+                "volume_mm3": 10.5,
+                "volume_text": "10.5",
+                "length_mm": 2.25,
+                "length_text": "2.25",
+                "max_equivalent_diameter_mm": 4.0,
+                "max_equivalent_diameter_text": "4",
+                "max_axial_damage_ratio": 0.42,
+                "max_axial_damage_ratio_text": "0.42",
+                "dorsal_bridge_width_mm": 1.1,
+                "dorsal_bridge_width_text": "1.1",
+                "ventral_bridge_width_mm": 1.2,
+                "ventral_bridge_width_text": "1.2",
+                "total_bridge_width_mm": 2.3,
+                "total_bridge_width_text": "2.3",
+            }
+        ],
+        label_path=Path("/tmp/output_lesion_label.nii.gz"),
+    )
+
+    outputs = helpers["_sct_output_to_source_geometry_images"](
+        lesion_mask,
+        "sct_deepseg_lesion_sci_t2",
+        source_images,
+        2,
+        1,
+        series_suffix="sct_deepseg_lesion_sci_t2_lesion_seg",
+        dicom_metrics=metrics,
+    )
+
+    assert len(outputs) == 1
+    meta = helpers["FakeMeta"].deserialize(outputs[0].attribute_string)
+    assert meta["DataRole"] == "Segmentation"
+    assert meta["Keep_image_geometry"] == "1"
+    assert meta["SegmentSourceGeometry"] == "1"
+    assert meta["ImageType"] == (
+        "DERIVED\\PRIMARY\\SEGMENTATION\\SCT_DEEPSEG_LESION_SCI_T2_LESION_SEG"
+    )
+    assert meta["DicomImageType"] == (
+        "DERIVED\\PRIMARY\\SEGMENTATION\\SCT_DEEPSEG_LESION_SCI_T2_LESION_SEG"
+    )
+    assert meta["ImageTypeValue4"] == ["SCT_DEEPSEG_LESION_SCI_T2_LESION_SEG"]
+    assert "source_sct_deepseg_lesion_sci_t2_lesion_seg" in meta["ImageComment"]
+    assert "SCI lesion metrics: lesions=1, total volume=10.5 mm3, max length=2.25 mm" in meta["ImageComment"]
+    assert meta["SCTMetricName"] == "sci_lesion_analysis"
+    assert meta["SCTMetricSource"] == "sct_analyze_lesion"
+    assert meta["SCTAnalyzeLesionCount"] == "1"
+    assert meta["SCTAnalyzeLesionTotalVolumeMm3"] == "10.5"
+    assert meta["SCTAnalyzeLesionMaxLengthMm"] == "2.25"
+    assert meta["SCTAnalyzeLesionMaxEquivalentDiameterMm"] == "4"
+    assert meta["SCTAnalyzeLesionMaxAxialDamageRatio"] == "0.42"
+    assert meta["SCTAnalyzeLesionMinDorsalBridgeWidthMm"] == "1.1"
+    assert meta["SCTAnalyzeLesionMinVentralBridgeWidthMm"] == "1.2"
+    assert meta["SCTAnalyzeLesionRows"] == "1:volume=10.5,length=2.25,max_damage=0.42"
+    assert meta["SCTAnalyzeLesionXlsx"] == "/tmp/output_lesion_analysis.xlsx"
+    assert meta["SCTAnalyzeLesionLabel"] == "/tmp/output_lesion_label.nii.gz"
+    minihead = base64.b64decode(meta["IceMiniHead"]).decode("utf-8")
+    assert "sct_deepseg_lesion_sci_t2_lesion_seg" in minihead
+    assert "SCI lesion metrics: lesions=1, total volume=10.5 mm3, max length=2.25 mm" in minihead
+    assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue4") == [
+        "SCT_DEEPSEG_LESION_SCI_T2_LESION_SEG"
+    ]
+
+
 def test_sct_segment_source_geometry_outputs_allow_interleaved_source_slice_order():
     helpers = _load_runtime_helpers_for_test(
         [
             "_as_image_list",
+            "_apply_sct_dicom_metrics",
             "_build_derived_series_instance_uid",
             "_build_derived_sop_instance_uid",
             "_build_slice_geometry_records",
@@ -702,8 +946,10 @@ def test_sct_segment_source_geometry_outputs_allow_interleaved_source_slice_orde
             "_meta_from_image",
             "_meta_int",
             "_minihead_long_value",
+            "_metric_summary",
             "_normalize_vector",
             "_patch_ice_minihead",
+            "_patch_sct_metric_minihead",
             "_patch_source_image_header_ice_minihead",
             "_remove_minihead_array_param",
             "_remove_minihead_string_param",
@@ -1738,23 +1984,869 @@ def test_openrecon_requires_generated_multiclass_files(tmp_path):
             raise AssertionError(f"Expected missing SCT output to fail for {analysis}")
 
 
+def test_read_sct_lesion_analysis_metrics_extracts_xlsx_rows(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_sct_lesion_analysis_metrics",
+            "_finite_values",
+            "_first_non_empty_text",
+            "_format_lesion_metrics_summary",
+            "_format_optional_metric_number",
+            "_format_sct_metric_number",
+            "_is_total_lesion_metric_row",
+            "_lesion_metrics_text",
+            "_metric_float_or_none",
+            "_normalize_metric_column_name",
+            "_read_sct_lesion_analysis_metrics",
+            "_read_xlsx_table_rows",
+            "_row_value_by_column_names",
+            "_sct_lesion_metric_rows",
+            "_table_rows_from_matrix",
+            "_uniquify_table_headers",
+            "_xlsx_cell_text",
+            "_xlsx_column_index",
+            "_xlsx_shared_strings",
+            "_xlsx_sheet_matrix",
+            "_xml_descendants",
+            "_xml_local_name",
+        ],
+        assignments=[
+            "SCT_ANALYZE_LESION_DORSAL_BRIDGE_COLUMN",
+            "SCT_ANALYZE_LESION_LENGTH_COLUMN",
+            "SCT_ANALYZE_LESION_MAX_DAMAGE_RATIO_COLUMN",
+            "SCT_ANALYZE_LESION_MAX_DIAMETER_COLUMN",
+            "SCT_ANALYZE_LESION_TOTAL_BRIDGE_COLUMN",
+            "SCT_ANALYZE_LESION_VENTRAL_BRIDGE_COLUMN",
+            "SCT_ANALYZE_LESION_VOLUME_COLUMN",
+            "SCT_LESION_ANALYSIS_METRICS_SERIES_SUFFIX",
+        ],
+    )
+    xlsx_path = tmp_path / "output_lesion_analysis.xlsx"
+    label_path = tmp_path / "output_lesion_label.nii.gz"
+    _write_minimal_xlsx(
+        xlsx_path,
+        [
+            [
+                "label",
+                "volume [mm^3]",
+                "length [mm]",
+                "max_equivalent_diameter [mm]",
+                "max_axial_damage_ratio []",
+                "interpolated_dorsal_bridge_width [mm]",
+                "interpolated_ventral_bridge_width [mm]",
+            ],
+            ["1", "10.5", "2.25", "4", "0.42", "1.1", "1.2"],
+            ["2", "5", "1", "2", "0.1", "0.9", "1.5"],
+        ],
+    )
+
+    metrics = helpers["_read_sct_lesion_analysis_metrics"](
+        xlsx_path,
+        label_path=label_path,
+    )
+
+    assert metrics["source"] == "sct_analyze_lesion"
+    assert metrics["report_series_suffix"] == "sct_lesion_analysis_metrics"
+    assert metrics["lesion_count"] == 2
+    assert metrics["total_volume_text"] == "15.5"
+    assert metrics["max_length_text"] == "2.25"
+    assert metrics["max_equivalent_diameter_text"] == "4"
+    assert metrics["max_axial_damage_ratio_text"] == "0.42"
+    assert metrics["min_dorsal_bridge_width_text"] == "0.9"
+    assert metrics["min_ventral_bridge_width_text"] == "1.2"
+    assert metrics["summary"] == (
+        "SCI lesion metrics: lesions=2, total volume=15.5 mm3, max length=2.25 mm"
+    )
+    assert metrics["lesion_metrics_text"] == (
+        "1:volume=10.5,length=2.25,max_damage=0.42;"
+        "2:volume=5,length=1,max_damage=0.1"
+    )
+
+
+def test_run_lesion_sci_t2_analysis_returns_lesion_and_cord_masks(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_attach_sci_lesion_analysis_metrics",
+            "_build_sct_lesion_analysis_metrics",
+            "_expected_sct_output_specs",
+            "_find_sct_analyze_lesion_label",
+            "_find_sct_analyze_lesion_xlsx",
+            "_finite_values",
+            "_first_non_empty_text",
+            "_format_lesion_metrics_summary",
+            "_format_optional_metric_number",
+            "_format_sct_metric_number",
+            "_is_total_lesion_metric_row",
+            "_lesion_metrics_text",
+            "_metric_float_or_none",
+            "_normalize_metric_column_name",
+            "_output_spec_with_series_suffix",
+            "_read_sct_lesion_analysis_metrics",
+            "_read_xlsx_table_rows",
+            "_require_sct_output_specs",
+            "_row_value_by_column_names",
+            "_run_sct_analysis",
+            "_sct_lesion_metric_rows",
+            "_supported_analysis_ids",
+            "_table_rows_from_matrix",
+            "_uniquify_table_headers",
+            "_xlsx_cell_text",
+            "_xlsx_column_index",
+            "_xlsx_shared_strings",
+            "_xlsx_sheet_matrix",
+            "_xml_descendants",
+            "_xml_local_name",
+        ],
+        assignments=[
+            "SCT_ANALYSIS_OUTPUTS",
+            "SCT_ANALYSIS_REGISTRY",
+            "SCT_ANALYZE_LESION_DORSAL_BRIDGE_COLUMN",
+            "SCT_ANALYZE_LESION_LENGTH_COLUMN",
+            "SCT_ANALYZE_LESION_MAX_DAMAGE_RATIO_COLUMN",
+            "SCT_ANALYZE_LESION_MAX_DIAMETER_COLUMN",
+            "SCT_ANALYZE_LESION_TOTAL_BRIDGE_COLUMN",
+            "SCT_ANALYZE_LESION_VENTRAL_BRIDGE_COLUMN",
+            "SCT_ANALYZE_LESION_VOLUME_COLUMN",
+            "SCT_DEEPSEG_TASKS",
+            "SCT_LESION_ANALYSIS_METRICS_SERIES_SUFFIX",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_deepseg_lesion_sci_t2": {
+            "kind": "deepseg",
+            "task": "lesion_sci_t2",
+            "series_suffix": "sct_deepseg_lesion_sci_t2",
+        }
+    }
+    commands = []
+
+    def fake_run_command(command, cwd):
+        commands.append((tuple(command), Path(cwd)))
+        if command[0] == "sct_deepseg":
+            assert command[0:2] == ["sct_deepseg", "lesion_sci_t2"]
+            Path(cwd, "output_lesion_seg.nii.gz").write_bytes(b"lesion")
+            Path(cwd, "output_sc_seg.nii.gz").write_bytes(b"cord")
+        elif command[0] == "sct_analyze_lesion":
+            analysis_dir = Path(command[command.index("-ofolder") + 1])
+            _write_minimal_xlsx(
+                analysis_dir / "output_lesion_analysis.xlsx",
+                [
+                    [
+                        "label",
+                        "volume [mm^3]",
+                        "length [mm]",
+                        "max_equivalent_diameter [mm]",
+                        "max_axial_damage_ratio []",
+                    ],
+                    ["1", "10.5", "2.25", "4", "0.42"],
+                    ["2", "5", "1", "2", "0.1"],
+                ],
+            )
+            (analysis_dir / "output_lesion_label.nii.gz").write_bytes(b"label")
+        else:
+            raise AssertionError(f"Unexpected command: {command}")
+
+    helpers["_run_command"] = fake_run_command
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    specs = helpers["_run_sct_analysis"](
+        "sct_deepseg_lesion_sci_t2",
+        tmp_path / "input.nii.gz",
+        work_dir,
+    )
+
+    assert commands[0] == (
+        (
+            "sct_deepseg",
+            "lesion_sci_t2",
+            "-i",
+            str(tmp_path / "input.nii.gz"),
+            "-o",
+            str(work_dir / "output.nii.gz"),
+            "-qc",
+            str(work_dir / "qc_singleSubj"),
+        ),
+        work_dir,
+    )
+    assert commands[1] == (
+        (
+            "sct_analyze_lesion",
+            "-m",
+            str(work_dir / "output_lesion_seg.nii.gz"),
+            "-s",
+            str(work_dir / "output_sc_seg.nii.gz"),
+            "-ofolder",
+            str(work_dir / "sct_analyze_lesion"),
+            "-qc",
+            str(work_dir / "qc_singleSubj"),
+        ),
+        work_dir,
+    )
+    assert [(spec["path"], spec["series_suffix"]) for spec in specs] == [
+        (
+            work_dir / "output_lesion_seg.nii.gz",
+            "sct_deepseg_lesion_sci_t2_lesion_seg",
+        ),
+        (
+            work_dir / "output_sc_seg.nii.gz",
+            "sct_deepseg_lesion_sci_t2_sc_seg",
+        ),
+    ]
+    assert specs[0]["dicom_metrics"]["summary"] == (
+        "SCI lesion metrics: lesions=2, total volume=15.5 mm3, max length=2.25 mm"
+    )
+    assert specs[0]["dicom_metrics"]["xlsx_path"] == str(
+        work_dir / "sct_analyze_lesion" / "output_lesion_analysis.xlsx"
+    )
+    assert "dicom_metrics" not in specs[1]
+
+
 def test_label_vertebrae_output_path_follows_segmentation_filename():
     helpers = _load_runtime_helpers_for_test(
         [
             "_nifti_output_stem",
+            "_sct_label_vertebrae_discs_output_path",
             "_sct_label_vertebrae_output_path",
         ],
     )
     output_path = helpers["_sct_label_vertebrae_output_path"]
+    discs_output_path = helpers["_sct_label_vertebrae_discs_output_path"]
 
     assert output_path(
         Path("/tmp/openrecon/input_seg.nii.gz"),
         Path("/tmp/openrecon"),
     ) == Path("/tmp/openrecon/input_seg_labeled.nii.gz")
+    assert discs_output_path(
+        Path("/tmp/openrecon/input_seg.nii.gz"),
+        Path("/tmp/openrecon"),
+    ) == Path("/tmp/openrecon/input_seg_labeled_discs.nii.gz")
     assert output_path(
         Path("/tmp/openrecon/sct_deepseg_spinalcord/output.nii.gz"),
         Path("/tmp/openrecon/sct_label_vertebrae"),
     ) == Path("/tmp/openrecon/sct_label_vertebrae/output_labeled.nii.gz")
+    assert discs_output_path(
+        Path("/tmp/openrecon/sct_deepseg_spinalcord/output.nii.gz"),
+        Path("/tmp/openrecon/sct_label_vertebrae"),
+    ) == Path("/tmp/openrecon/sct_label_vertebrae/output_labeled_discs.nii.gz")
+
+
+def test_read_sct_mean_area_extracts_process_segmentation_column(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_first_non_empty_text",
+            "_read_sct_metrics_csv",
+            "_read_sct_mean_area",
+        ],
+        assignments=["SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN"],
+    )
+    csv_path = tmp_path / "csa.csv"
+    csv_path.write_text("MEAN(area),STD(area)\n42.5,1.2\n", encoding="utf-8")
+
+    assert helpers["_read_sct_mean_area"](csv_path) == 42.5
+
+
+def test_read_sct_mean_area_rejects_missing_column(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_first_non_empty_text",
+            "_read_sct_metrics_csv",
+            "_read_sct_mean_area",
+        ],
+        assignments=["SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN"],
+    )
+    csv_path = tmp_path / "csa.csv"
+    csv_path.write_text("MEAN(other)\n42.5\n", encoding="utf-8")
+
+    try:
+        helpers["_read_sct_mean_area"](csv_path)
+    except ValueError as exc:
+        assert "MEAN(area)" in str(exc)
+    else:
+        raise AssertionError("Expected missing MEAN(area) column to fail")
+
+
+def test_detected_vertebral_levels_are_read_from_label_volume(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        ["_read_detected_vertebral_levels"],
+    )
+    label_data = np.zeros((3, 3, 3), dtype=np.float32)
+    label_data[1, 1, 0] = 4
+    label_data[1, 1, 1] = 3
+    label_data[1, 1, 2] = 3
+    label_path = tmp_path / "output_labeled.nii.gz"
+    nib.save(nib.Nifti1Image(label_data, np.eye(4)), str(label_path))
+
+    assert helpers["_read_detected_vertebral_levels"](label_path) == [3, 4]
+
+
+def test_format_vertebral_levels_for_sct_sorts_and_deduplicates():
+    helpers = _load_runtime_helpers_for_test(
+        ["_format_vertebral_levels_for_sct"],
+    )
+
+    assert helpers["_format_vertebral_levels_for_sct"]([4, 3, 3]) == "3,4"
+
+
+def test_read_spinalcord_area_metrics_extracts_per_level_rows(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_spinalcord_area_rows",
+            "_first_non_empty_text",
+            "_format_sct_metric_number",
+            "_read_sct_metrics_csv",
+            "_read_spinalcord_area_metrics",
+            "_sct_metric_row_value",
+        ],
+        assignments=[
+            "SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN",
+            "SCT_PROCESS_SEGMENTATION_VERT_LEVEL_COLUMN",
+        ],
+    )
+    csv_path = tmp_path / "csa_perlevel.csv"
+    csv_path.write_text(
+        "VertLevel,MEAN(area),STD(area),Slice (I->S)\n"
+        "3,42.5,1.2,1:2\n"
+        "4,45,1,3:4\n",
+        encoding="utf-8",
+    )
+
+    metrics = helpers["_read_spinalcord_area_metrics"](csv_path)
+
+    assert metrics["rows"] == [
+        {
+            "level": "3",
+            "mean_area_mm2": 42.5,
+            "mean_area_text": "42.5",
+            "slice": "1:2",
+            "std_area": "1.2",
+        },
+        {
+            "level": "4",
+            "mean_area_mm2": 45.0,
+            "mean_area_text": "45",
+            "slice": "3:4",
+            "std_area": "1",
+        },
+    ]
+
+
+def test_run_spinalcord_area_analysis_segments_and_processes_csa(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_average_metric_row_area",
+            "_attach_spinalcord_area_metrics",
+            "_build_spinalcord_area_rows",
+            "_build_spinalcord_area_metrics",
+            "_expected_sct_output_specs",
+            "_first_non_empty_text",
+            "_format_spinalcord_area_summary",
+            "_format_sct_metric_number",
+            "_format_vertebral_levels_for_sct",
+            "_level_area_text",
+            "_nifti_output_stem",
+            "_read_detected_vertebral_levels",
+            "_read_sct_metrics_csv",
+            "_read_sct_mean_area",
+            "_read_spinalcord_area_metrics",
+            "_require_sct_output_specs",
+            "_run_sct_analysis",
+            "_run_sct_label_vertebrae",
+            "_sct_label_vertebrae_discs_output_path",
+            "_sct_label_vertebrae_output_path",
+            "_sct_metric_row_value",
+        ],
+        assignments=[
+            "SCT_ANALYSIS_OUTPUTS",
+            "SCT_ANALYSIS_REGISTRY",
+            "SCT_DEEPSEG_TASKS",
+            "SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN",
+            "SCT_PROCESS_SEGMENTATION_VERT_LEVEL_COLUMN",
+            "SCT_SPINALCORD_AREA_METRICS_SERIES_SUFFIX",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_spinalcord_area": {
+            "kind": "spinalcord_area",
+            "series_suffix": "sct_spinalcord_area",
+        }
+    }
+    commands = []
+
+    def fake_run_command(command, cwd):
+        commands.append((tuple(command), Path(cwd)))
+        if command[0] == "sct_deepseg":
+            Path(command[command.index("-o") + 1]).write_bytes(b"nii")
+        elif command[0] == "sct_label_vertebrae":
+            label_data = np.zeros((3, 3, 3), dtype=np.float32)
+            label_data[1, 1, 0] = 3
+            label_data[1, 1, 1] = 4
+            nib.save(
+                nib.Nifti1Image(label_data, np.eye(4)),
+                str(Path(cwd) / "output_labeled.nii.gz"),
+            )
+            nib.save(
+                nib.Nifti1Image(np.zeros((3, 3, 3), dtype=np.float32), np.eye(4)),
+                str(Path(cwd) / "output_labeled_discs.nii.gz"),
+            )
+        elif command[0] == "sct_process_segmentation":
+            Path(command[command.index("-o") + 1]).write_text(
+                "VertLevel,MEAN(area),STD(area),Slice (I->S)\n"
+                "3,42.5,1.2,1:2\n"
+                "4,45,1,3:4\n",
+                encoding="utf-8",
+            )
+        else:
+            raise AssertionError(f"Unexpected command: {command}")
+
+    helpers["_run_command"] = fake_run_command
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    specs = helpers["_run_sct_analysis"](
+        "sct_spinalcord_area",
+        tmp_path / "input.nii.gz",
+        work_dir,
+    )
+
+    assert [command[0][0] for command in commands] == [
+        "sct_deepseg",
+        "sct_label_vertebrae",
+        "sct_process_segmentation",
+    ]
+    assert commands[0][0][:4] == (
+        "sct_deepseg",
+        "spinalcord",
+        "-i",
+        str(tmp_path / "input.nii.gz"),
+    )
+    assert commands[1][0][:4] == (
+        "sct_label_vertebrae",
+        "-i",
+        str(tmp_path / "input.nii.gz"),
+        "-s",
+    )
+    assert commands[1][0][4] == str(work_dir / "output.nii.gz")
+    assert commands[2][0][:3] == (
+        "sct_process_segmentation",
+        "-i",
+        str(work_dir / "output.nii.gz"),
+    )
+    assert commands[2][0][3:] == (
+        "-vert",
+        "3,4",
+        "-discfile",
+        str(work_dir / "output_labeled_discs.nii.gz"),
+        "-perlevel",
+        "1",
+        "-o",
+        str(work_dir / "spinalcord_area.csv"),
+    )
+    assert len(specs) == 1
+    assert specs[0]["path"] == work_dir / "output.nii.gz"
+    assert specs[0]["series_suffix"] == "sct_spinalcord_area"
+    assert specs[0]["dicom_metrics"]["mean_area_text"] == "43.75"
+    assert specs[0]["dicom_metrics"]["level_count"] == 2
+    assert specs[0]["dicom_metrics"]["level_area_text"] == "3:42.5;4:45"
+    assert specs[0]["dicom_metrics"]["summary"] == (
+        "Spinal cord area per level: 3=42.5, 4=45 mm2"
+    )
+
+
+def test_spinalcord_area_metrics_are_embedded_in_segmentation_meta():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_apply_sct_dicom_metrics",
+            "_as_image_list",
+            "_build_derived_series_instance_uid",
+            "_build_derived_sop_instance_uid",
+            "_build_slice_geometry_records",
+            "_build_sct_output_identity",
+            "_build_spinalcord_area_metrics",
+            "_collect_non_empty_texts",
+            "_copy_meta",
+            "_decode_ice_minihead",
+            "_encode_ice_minihead",
+            "_estimate_slice_spacing",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_format_exam_data_role_sequential_number",
+            "_format_spinalcord_area_summary",
+            "_format_sct_metric_number",
+            "_get_meta_values",
+            "_get_meta_text",
+            "_header_vector",
+            "_infer_slice_axis",
+            "_level_area_text",
+            "_metric_summary",
+            "_normalize_vector",
+            "_patch_ice_minihead",
+            "_patch_sct_metric_minihead",
+            "_patch_source_image_header_ice_minihead",
+            "_remove_minihead_array_param",
+            "_remove_minihead_string_param",
+            "_replace_minihead_array_token",
+            "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_array_tokens",
+            "_replace_or_append_minihead_bool_param",
+            "_replace_or_append_minihead_exam_data_role",
+            "_replace_or_append_minihead_long_param",
+            "_replace_or_append_minihead_string_param",
+            "_sanitize_minihead_param_value",
+            "_sct_output_to_source_geometry_images",
+            "_source_geometry_header_image_index",
+            "_source_geometry_header_slice",
+            "_source_postprocessing_image_type_identity",
+            "_set_header_sequence_field",
+            "_set_meta_scalar",
+            "_set_output_position_meta",
+            "_strip_scanner_write_unsafe_meta",
+            "_strip_source_parent_refs",
+        ],
+        assignments=[
+            "SCANNER_PARTITION_INDEX",
+            "SCANNER_WRITE_UNSAFE_META_KEYS",
+            "SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN",
+            "SCT_SPINALCORD_AREA_METRICS_SERIES_SUFFIX",
+            "SCT_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY",
+            "SCT_SEGMENT_POSTPROCESSING_META_KEY",
+            "SCT_SEGMENT_SOURCE_GEOMETRY_META_KEY",
+            "SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY",
+            "SOURCE_PARENT_REFERENCE_META_KEYS",
+            "SOURCE_PARENT_REFERENCE_META_PREFIXES",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_spinalcord_area": {"series_suffix": "sct_spinalcord_area"}
+    }
+    source_images = [
+        _contract_image(
+            helpers,
+            series_index=1,
+            role="NORM",
+            series_uid="1.2.3",
+            sop_uid="1.2.3.4.1",
+            slice_index=0,
+            source=True,
+        )
+    ]
+    metrics = helpers["_build_spinalcord_area_metrics"](42.5, Path("/tmp/csa.csv"))
+
+    outputs = helpers["_sct_output_to_source_geometry_images"](
+        np.ones((2, 2, 1), dtype=np.int16),
+        "sct_spinalcord_area",
+        source_images,
+        2,
+        1,
+        series_suffix="sct_spinalcord_area",
+        dicom_metrics=metrics,
+    )
+
+    assert len(outputs) == 1
+    meta = helpers["FakeMeta"].deserialize(outputs[0].attribute_string)
+    assert meta["SCTMetricName"] == "spinal_cord_area"
+    assert meta["SCTMetricSource"] == "sct_process_segmentation"
+    assert meta["SCTProcessSegmentationColumn"] == "MEAN(area)"
+    assert meta["SCTProcessSegmentationMeanAreaMm2"] == "42.5"
+    assert meta["SCTProcessSegmentationMeanAreaUnits"] == "mm2"
+    assert meta["SCTProcessSegmentationPerLevel"] == "0"
+    assert meta["SCTProcessSegmentationLevelCount"] == "0"
+    assert meta["SCTProcessSegmentationLevelAreasMm2"] == ""
+    assert meta["DerivationDescription"] == "Spinal cord area MEAN(area)=42.5 mm2"
+    assert "source_sct_spinalcord_area" in meta["ImageComment"]
+    assert "Spinal cord area MEAN(area)=42.5 mm2" in meta["ImageComment"]
+    minihead = base64.b64decode(meta["IceMiniHead"]).decode("utf-8")
+    assert "Spinal cord area MEAN(area)=42.5 mm2" in minihead
+
+
+def test_spinalcord_area_metrics_report_image_is_explicit_dicom_series():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_apply_sct_dicom_metrics",
+            "_as_image_list",
+            "_build_derived_series_instance_uid",
+            "_build_derived_sop_instance_uid",
+            "_build_slice_geometry_records",
+            "_build_sct_output_identity",
+            "_build_sct_metrics_report_images",
+            "_build_spinalcord_area_metrics",
+            "_build_spinalcord_area_report_images",
+            "_copy_meta",
+            "_decode_ice_minihead",
+            "_estimate_slice_spacing",
+            "_explicit_header_geometry_meta",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_format_spinalcord_area_summary",
+            "_format_sct_metric_number",
+            "_get_image_series_index",
+            "_get_meta_text",
+            "_get_meta_values",
+            "_header_vector",
+            "_identity_values",
+            "_image_minihead",
+            "_infer_slice_axis",
+            "_level_area_text",
+            "_meta_from_image",
+            "_meta_int",
+            "_meta_vector",
+            "_metric_summary",
+            "_metrics_report_analysis",
+            "_metrics_report_series_suffix",
+            "_minihead_long_value",
+            "_normalize_vector",
+            "_orient_metrics_report_page",
+            "_pil_text_size",
+            "_read_sct_mean_area",
+            "_render_sct_metrics_report_page",
+            "_render_spinalcord_area_report_page",
+            "_series_contract_role",
+            "_series_slice_limit",
+            "_set_header_sequence_field",
+            "_set_meta_scalar",
+            "_set_output_position_meta",
+            "_strip_scanner_write_unsafe_meta",
+            "_strip_source_parent_refs",
+            "_truncate_text_to_width",
+            "_validate_identity_fields",
+            "_validate_output_images",
+            "_validate_storage_fields",
+        ],
+        assignments=[
+            "SCANNER_PARTITION_INDEX",
+            "SCANNER_WRITE_UNSAFE_META_KEYS",
+            "SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN",
+            "SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY",
+            "SCT_SPINALCORD_AREA_METRICS_SERIES_SUFFIX",
+            "SOURCE_PARENT_REFERENCE_META_KEYS",
+            "SOURCE_PARENT_REFERENCE_META_PREFIXES",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_spinalcord_area": {"series_suffix": "sct_spinalcord_area"}
+    }
+    source_images = [
+        _contract_image(
+            helpers,
+            series_index=1,
+            role="NORM",
+            series_uid="1.2.3",
+            sop_uid="1.2.3.4.1",
+            slice_index=0,
+            source=True,
+        )
+    ]
+    metric_rows = [
+        {
+            "level": "3",
+            "mean_area_mm2": 42.5,
+            "mean_area_text": "42.5",
+            "slice": "1:2",
+            "std_area": "1.2",
+        },
+        {
+            "level": "4",
+            "mean_area_mm2": 45.0,
+            "mean_area_text": "45",
+            "slice": "3:4",
+            "std_area": "1",
+        },
+    ]
+    metrics = helpers["_build_spinalcord_area_metrics"](
+        43.75,
+        Path("/tmp/csa_perlevel.csv"),
+        metric_rows=metric_rows,
+        label_info={
+            "labeled_path": Path("/tmp/output_labeled.nii.gz"),
+            "discs_path": Path("/tmp/output_labeled_discs.nii.gz"),
+        },
+    )
+
+    outputs = helpers["_build_spinalcord_area_report_images"](metrics, source_images, 3)
+
+    assert len(outputs) == 1
+    output = outputs[0]
+    header = output.getHead()
+    meta = helpers["FakeMeta"].deserialize(output.attribute_string)
+    assert header.image_series_index == 3
+    assert header.image_index == 1
+    assert header.slice == 0
+    assert list(header.matrix_size) == [768, 512, 1]
+    np.testing.assert_allclose(list(header.field_of_view), [768.0, 512.0, 1.0])
+    assert output.data.shape == (1, 512, 768)
+    assert np.count_nonzero(output.data) > 0
+    assert meta["DataRole"] == "Image"
+    assert meta["Keep_image_geometry"] == "0"
+    assert meta["partition_count"] == "1"
+    assert meta["slice_count"] == "1"
+    assert meta["NumberOfSlices"] == "1"
+    assert meta["ImagesInAcquisition"] == "1"
+    assert meta["ImageType"] == "DERIVED\\PRIMARY\\M\\SCT_SPINALCORD_AREA_METRICS"
+    assert meta["DicomImageType"] == "DERIVED\\PRIMARY\\M\\SCT_SPINALCORD_AREA_METRICS"
+    assert meta["ImageTypeValue4"] == "SCT_SPINALCORD_AREA_METRICS"
+    assert meta["SCTMetricReport"] == "1"
+    assert meta["SCTMetricName"] == "spinal_cord_area"
+    assert meta["SCTProcessSegmentationMeanAreaMm2"] == "43.75"
+    assert meta["SCTProcessSegmentationPerLevel"] == "1"
+    assert meta["SCTProcessSegmentationLevelCount"] == "2"
+    assert meta["SCTProcessSegmentationLevels"] == "3,4"
+    assert meta["SCTProcessSegmentationLevelAreasMm2"] == "3:42.5;4:45"
+    assert meta["SCTProcessSegmentationVertfile"] == "/tmp/output_labeled.nii.gz"
+    assert meta["SCTProcessSegmentationDiscfile"] == "/tmp/output_labeled_discs.nii.gz"
+    assert meta["DerivationDescription"] == (
+        "Spinal cord area per level: 3=42.5, 4=45 mm2"
+    )
+    assert "Spinal cord area per level: 3=42.5, 4=45 mm2" in meta["ImageComment"]
+    assert "IceMiniHead" not in meta
+
+    helpers["_validate_output_images"](outputs, source_images)
+
+
+def test_sct_lesion_analysis_metrics_report_image_is_explicit_dicom_series():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_apply_sct_dicom_metrics",
+            "_as_image_list",
+            "_build_derived_series_instance_uid",
+            "_build_derived_sop_instance_uid",
+            "_build_slice_geometry_records",
+            "_build_sct_output_identity",
+            "_build_sct_metrics_report_images",
+            "_copy_meta",
+            "_decode_ice_minihead",
+            "_estimate_slice_spacing",
+            "_explicit_header_geometry_meta",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_get_image_series_index",
+            "_get_meta_text",
+            "_get_meta_values",
+            "_header_vector",
+            "_identity_values",
+            "_image_minihead",
+            "_infer_slice_axis",
+            "_meta_from_image",
+            "_meta_int",
+            "_meta_vector",
+            "_metric_summary",
+            "_metrics_report_analysis",
+            "_metrics_report_series_suffix",
+            "_minihead_long_value",
+            "_normalize_vector",
+            "_orient_metrics_report_page",
+            "_pil_text_size",
+            "_render_sct_lesion_analysis_report_page",
+            "_render_sct_metrics_report_page",
+            "_series_contract_role",
+            "_series_slice_limit",
+            "_set_header_sequence_field",
+            "_set_meta_scalar",
+            "_set_output_position_meta",
+            "_strip_scanner_write_unsafe_meta",
+            "_strip_source_parent_refs",
+            "_truncate_text_to_width",
+            "_validate_identity_fields",
+            "_validate_output_images",
+            "_validate_storage_fields",
+        ],
+        assignments=[
+            "SCANNER_PARTITION_INDEX",
+            "SCANNER_WRITE_UNSAFE_META_KEYS",
+            "SCT_LESION_ANALYSIS_METRICS_SERIES_SUFFIX",
+            "SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN",
+            "SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY",
+            "SCT_SPINALCORD_AREA_METRICS_SERIES_SUFFIX",
+            "SOURCE_PARENT_REFERENCE_META_KEYS",
+            "SOURCE_PARENT_REFERENCE_META_PREFIXES",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_deepseg_lesion_sci_t2": {"series_suffix": "sct_deepseg_lesion_sci_t2"}
+    }
+    source_images = [
+        _contract_image(
+            helpers,
+            series_index=1,
+            role="NORM",
+            series_uid="1.2.3",
+            sop_uid="1.2.3.4.1",
+            slice_index=0,
+            source=True,
+        )
+    ]
+    metrics = {
+        "name": "sci_lesion_analysis",
+        "source": "sct_analyze_lesion",
+        "analysis": "sct_deepseg_lesion_sci_t2",
+        "report_kind": "sct_lesion_analysis",
+        "report_series_suffix": "sct_lesion_analysis_metrics",
+        "summary": "SCI lesion metrics: lesions=2, total volume=15.5 mm3, max length=2.25 mm",
+        "lesion_count": 2,
+        "total_volume_text": "15.5",
+        "max_length_text": "2.25",
+        "max_equivalent_diameter_text": "4",
+        "max_axial_damage_ratio_text": "0.42",
+        "min_dorsal_bridge_width_text": "0.9",
+        "min_ventral_bridge_width_text": "1.2",
+        "lesion_metrics_text": "1:volume=10.5,length=2.25,max_damage=0.42;2:volume=5,length=1,max_damage=0.1",
+        "xlsx_path": "/tmp/output_lesion_analysis.xlsx",
+        "label_path": "/tmp/output_lesion_label.nii.gz",
+        "rows": [
+            {
+                "lesion_id": "1",
+                "volume_text": "10.5",
+                "length_text": "2.25",
+                "max_axial_damage_ratio_text": "0.42",
+                "dorsal_bridge_width_text": "1.1",
+            },
+            {
+                "lesion_id": "2",
+                "volume_text": "5",
+                "length_text": "1",
+                "max_axial_damage_ratio_text": "0.1",
+                "dorsal_bridge_width_text": "0.9",
+            },
+        ],
+    }
+
+    outputs = helpers["_build_sct_metrics_report_images"](metrics, source_images, 4)
+
+    assert len(outputs) == 1
+    output = outputs[0]
+    header = output.getHead()
+    meta = helpers["FakeMeta"].deserialize(output.attribute_string)
+    assert header.image_series_index == 4
+    assert header.image_index == 1
+    assert header.slice == 0
+    assert list(header.matrix_size) == [768, 512, 1]
+    assert output.data.shape == (1, 512, 768)
+    assert np.count_nonzero(output.data) > 0
+    assert meta["DataRole"] == "Image"
+    assert meta["Keep_image_geometry"] == "0"
+    assert meta["ImageType"] == "DERIVED\\PRIMARY\\M\\SCT_LESION_ANALYSIS_METRICS"
+    assert meta["DicomImageType"] == "DERIVED\\PRIMARY\\M\\SCT_LESION_ANALYSIS_METRICS"
+    assert meta["ImageTypeValue4"] == "SCT_LESION_ANALYSIS_METRICS"
+    assert meta["SCTMetricReport"] == "1"
+    assert meta["SCTMetricName"] == "sci_lesion_analysis"
+    assert meta["SCTMetricSource"] == "sct_analyze_lesion"
+    assert meta["SCTAnalyzeLesionCount"] == "2"
+    assert meta["SCTAnalyzeLesionTotalVolumeMm3"] == "15.5"
+    assert meta["SCTAnalyzeLesionMaxLengthMm"] == "2.25"
+    assert meta["SCTAnalyzeLesionMaxAxialDamageRatio"] == "0.42"
+    assert meta["SCTAnalyzeLesionRows"] == (
+        "1:volume=10.5,length=2.25,max_damage=0.42;"
+        "2:volume=5,length=1,max_damage=0.1"
+    )
+    assert meta["DerivationDescription"] == (
+        "SCI lesion metrics: lesions=2, total volume=15.5 mm3, max length=2.25 mm"
+    )
+    assert "SCI lesion metrics: lesions=2" in meta["ImageComment"]
+    assert "IceMiniHead" not in meta
+
+    helpers["_validate_output_images"](outputs, source_images)
 
 
 def test_wrapper_strips_source_parent_references_from_derived_meta():

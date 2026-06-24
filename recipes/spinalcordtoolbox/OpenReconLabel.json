@@ -80,6 +80,10 @@
           "name": { "en": "sct_deepseg_spinalcord" }
         },
         {
+          "id": "sct_spinalcord_area",
+          "name": { "en": "sct_spinalcord_area" }
+        },
+        {
           "id": "sct_deepseg_sc_epi",
           "name": { "en": "sct_deepseg_sc_epi" }
         },

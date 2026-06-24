@@ -61,6 +61,8 @@ build:
     - user: root
     - copy: spinalcordtoolbox.py /opt/code/python-ismrmrd-server/spinalcordtoolbox.py
     - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
+    - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - copy: OpenReconREADME.md /opt/code/python-ismrmrd-server/OpenReconREADME.md
     - deploy:
           bins:
             - sct_deepseg

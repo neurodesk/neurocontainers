@@ -1,5 +1,5 @@
 name: openmsk
-version: 0.1.2
+version: 0.1.4
 architectures:
   - x86_64
 
@@ -112,6 +112,9 @@ build:
     - install:
         - bzip2
         - ca-certificates
+        # TensorFlow/cuDNN dlopens libnvrtc.so during DOSMA segmentation.
+        - cuda-nvrtc-11-8
+        - cuda-nvrtc-dev-11-8
         - git
         - libgl1
         - libglib2.0-0
