@@ -68,7 +68,10 @@ calculated per vertebral level. It writes the aggregate mean, per-level
 label filenames into DICOM-facing metadata fields, including `ImageComment`,
 `ImageComments`, `DerivationDescription`, and SCT-specific MRD metadata keys.
 The visible summary has the form
-`Spinal cord area per level: <level>=<value>, ... mm2`.
+`Spinal cord area per level: <level>=<value>, ... mm2`. If vertebral labeling
+or area-metric calculation fails after spinal cord segmentation succeeds, the
+app still returns the segmentation series and skips the metrics metadata and
+metrics report series.
 
 The `sct_deepseg_lesion_sci_t2` mode returns the lesion mask first and the
 spinal cord mask second, then runs `sct_analyze_lesion` on those masks. The

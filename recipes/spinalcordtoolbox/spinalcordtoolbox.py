@@ -3602,33 +3602,43 @@ def _attach_sci_lesion_analysis_metrics(output_specs, work_dir, qc_dir):
 
 
 def _attach_spinalcord_area_metrics(output_specs, input_path, seg_path, work_dir, qc_dir):
-    label_info = _run_sct_label_vertebrae(input_path, seg_path, work_dir, qc_dir)
-    vertebral_levels = _format_vertebral_levels_for_sct(label_info["levels"])
-    csv_path = Path(work_dir) / "spinalcord_area.csv"
-    _run_command(
-        [
-            "sct_process_segmentation",
-            "-i",
-            str(seg_path),
-            "-vert",
-            vertebral_levels,
-            "-discfile",
-            str(label_info["discs_path"]),
-            "-perlevel",
-            "1",
-            "-o",
-            str(csv_path),
-        ],
-        cwd=work_dir,
-    )
-    metrics_result = _read_spinalcord_area_metrics(csv_path)
-    mean_area = _average_metric_row_area(metrics_result["rows"])
-    metrics = _build_spinalcord_area_metrics(
-        mean_area,
-        csv_path,
-        metric_rows=metrics_result["rows"],
-        label_info=label_info,
-    )
+    try:
+        label_info = _run_sct_label_vertebrae(input_path, seg_path, work_dir, qc_dir)
+        vertebral_levels = _format_vertebral_levels_for_sct(label_info["levels"])
+        csv_path = Path(work_dir) / "spinalcord_area.csv"
+        _run_command(
+            [
+                "sct_process_segmentation",
+                "-i",
+                str(seg_path),
+                "-vert",
+                vertebral_levels,
+                "-discfile",
+                str(label_info["discs_path"]),
+                "-perlevel",
+                "1",
+                "-o",
+                str(csv_path),
+            ],
+            cwd=work_dir,
+        )
+        metrics_result = _read_spinalcord_area_metrics(csv_path)
+        mean_area = _average_metric_row_area(metrics_result["rows"])
+        metrics = _build_spinalcord_area_metrics(
+            mean_area,
+            csv_path,
+            metric_rows=metrics_result["rows"],
+            label_info=label_info,
+        )
+    except Exception as exc:
+        logging.warning(
+            "Skipping optional SCT spinal cord area metrics because metrics computation failed; "
+            "returning segmentation without metrics/report: %s",
+            exc,
+            exc_info=True,
+        )
+        return output_specs
+
     logging.info("Computed SCT spinal cord area metric: %s", metrics["summary"])
     for output_spec in output_specs:
         output_spec["dicom_metrics"] = metrics

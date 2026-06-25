@@ -2,6 +2,7 @@ import ast
 import base64
 import copy
 import json
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -353,6 +354,7 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
         "np": np,
         "Path": Path,
         "re": __import__("re"),
+        "subprocess": subprocess,
         "uuid": __import__("uuid"),
         "zipfile": zipfile,
         "ET": __import__("xml.etree.ElementTree", fromlist=["ElementTree"]),
@@ -2451,6 +2453,67 @@ def test_run_spinalcord_area_analysis_segments_and_processes_csa(tmp_path):
     assert specs[0]["dicom_metrics"]["summary"] == (
         "Spinal cord area per level: 3=42.5, 4=45 mm2"
     )
+
+
+def test_run_spinalcord_area_analysis_returns_segmentation_when_metrics_fail(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_attach_spinalcord_area_metrics",
+            "_expected_sct_output_specs",
+            "_format_vertebral_levels_for_sct",
+            "_nifti_output_stem",
+            "_require_sct_output_specs",
+            "_run_sct_analysis",
+            "_run_sct_label_vertebrae",
+            "_sct_label_vertebrae_discs_output_path",
+            "_sct_label_vertebrae_output_path",
+        ],
+        assignments=[
+            "SCT_ANALYSIS_OUTPUTS",
+            "SCT_ANALYSIS_REGISTRY",
+            "SCT_DEEPSEG_TASKS",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_spinalcord_area": {
+            "kind": "spinalcord_area",
+            "series_suffix": "sct_spinalcord_area",
+        }
+    }
+    commands = []
+
+    def fake_run_command(command, cwd):
+        commands.append((tuple(command), Path(cwd)))
+        if command[0] == "sct_deepseg":
+            Path(command[command.index("-o") + 1]).write_bytes(b"nii")
+        elif command[0] == "sct_label_vertebrae":
+            raise subprocess.CalledProcessError(
+                1,
+                command,
+                output="",
+                stderr="ValueError: not enough values to unpack (expected 3, got 0)",
+            )
+        else:
+            raise AssertionError(f"Unexpected command: {command}")
+
+    helpers["_run_command"] = fake_run_command
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    specs = helpers["_run_sct_analysis"](
+        "sct_spinalcord_area",
+        tmp_path / "input.nii.gz",
+        work_dir,
+    )
+
+    assert [command[0][0] for command in commands] == [
+        "sct_deepseg",
+        "sct_label_vertebrae",
+    ]
+    assert len(specs) == 1
+    assert specs[0]["path"] == work_dir / "output.nii.gz"
+    assert specs[0]["series_suffix"] == "sct_spinalcord_area"
+    assert "dicom_metrics" not in specs[0]
 
 
 def test_spinalcord_area_metrics_are_embedded_in_segmentation_meta():
