@@ -992,18 +992,15 @@ def _restamp_images(images, series_index, series_name, type_token, comment):
         output.setHead(header)
         output.image_series_index = series_index
         output.image_index = index + 1
-        image_type = f"DERIVED\\PRIMARY\\M\\{type_token}"
-        output.attribute_string = _derived_meta(
+        output.attribute_string = _passthrough_meta(
             image,
             series_name,
             series_uid,
             series_index,
             index,
-            image_type,
-            "Image",
+            type_token,
             comment,
             _image_abs_max(image.data),
-            source_geometry_segment=False,
             slice_count=len(images),
         ).serialize()
         outputs.append(output)
@@ -1089,6 +1086,71 @@ def _derived_meta(
             exam_data_role=exam_data_role,
             source_geometry_segment=source_geometry_segment,
             output_index=output_index,
+        )
+        if changed:
+            meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
+    return meta
+
+
+def _passthrough_meta(
+    source_image,
+    series_name,
+    series_uid,
+    series_index,
+    output_index,
+    type_token,
+    comment,
+    max_value,
+    *,
+    slice_count,
+):
+    meta = _copy_meta(_meta_from_image(source_image))
+    _strip_source_parent_refs(meta)
+    sop_uid = _derived_uid(series_name, series_index, output_index)
+    source_name = _source_series_name(source_image)
+    fallback_name = source_name or series_name
+
+    for key in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
+        if not _meta_text(meta, key):
+            meta[key] = fallback_name
+    if not _meta_text(meta, "DataRole"):
+        meta["DataRole"] = "Image"
+    if not _meta_text(meta, "ComplexImageComponent"):
+        meta["ComplexImageComponent"] = "MAGNITUDE"
+    if not _meta_text(meta, "ImageType"):
+        meta["ImageType"] = type_token
+    if not _meta_text(meta, "DicomImageType"):
+        meta["DicomImageType"] = _meta_text(meta, "ImageType")
+    if not _meta_text(meta, "ImageTypeValue4"):
+        meta["ImageTypeValue4"] = type_token
+    if not _meta_text(meta, "ImageComments"):
+        meta["ImageComments"] = comment
+    if not _meta_text(meta, "ImageComment"):
+        meta["ImageComment"] = comment
+
+    meta["SeriesNumberRangeNameUID"] = f"{series_name}_{series_index}"
+    meta["SeriesInstanceUID"] = series_uid
+    meta["SOPInstanceUID"] = sop_uid
+    meta["Keep_image_geometry"] = 1
+    window_width = max(max_value, 1.0)
+    meta["WindowCenter"] = str(window_width / 2.0)
+    meta["WindowWidth"] = str(window_width)
+    meta["partition_count"] = "1"
+    meta["slice_count"] = str(slice_count)
+    meta["NumberOfSlices"] = str(slice_count)
+    meta["ImagesInAcquisition"] = str(slice_count)
+    _set_output_storage_meta(meta, output_index)
+    _strip_scanner_write_unsafe_meta(meta)
+
+    minihead = _decode_ice_minihead(meta)
+    if minihead:
+        patched_minihead, changed = _patch_passthrough_ice_minihead(
+            minihead,
+            source_name,
+            f"{series_name}_{series_index}",
+            series_uid,
+            sop_uid,
+            output_index,
         )
         if changed:
             meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
@@ -1201,6 +1263,54 @@ def _patch_derived_ice_minihead(
     return current_text, changed
 
 
+def _patch_passthrough_ice_minihead(
+    minihead_text,
+    source_name,
+    series_grouping,
+    series_uid,
+    sop_uid,
+    output_index,
+):
+    current_text = minihead_text
+    changed = False
+    current_text, did_change = _strip_scanner_write_unsafe_minihead(current_text)
+    changed = changed or did_change
+    for name in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
+        current_text, did_change = _ensure_minihead_string_param(
+            current_text,
+            name,
+            source_name,
+        )
+        changed = changed or did_change
+    for name, value in (
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SeriesInstanceUID", series_uid),
+        ("SOPInstanceUID", sop_uid),
+    ):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            name,
+            value,
+        )
+        changed = changed or did_change
+    for name, value in (
+        ("Actual3DImagePartNumber", SCANNER_PARTITION_INDEX),
+        ("AnatomicalPartitionNo", SCANNER_PARTITION_INDEX),
+        ("AnatomicalSliceNo", output_index),
+        ("ChronSliceNo", output_index),
+        ("NumberInSeries", output_index + 1),
+        ("ProtocolSliceNumber", output_index),
+        ("SliceNo", output_index),
+    ):
+        current_text, did_change = _replace_or_append_minihead_long_param(
+            current_text,
+            name,
+            value,
+        )
+        changed = changed or did_change
+    return current_text, changed
+
+
 def _format_exam_data_role_sequential_number(value):
     return (
         '<DataRole Version="DR2.0">\n'
@@ -1260,6 +1370,17 @@ def _replace_or_append_minihead_string_param(minihead_text, name, value):
         )
 
     return minihead_text.rstrip() + f'\n<ParamString."{name}">\t{{ "{value}" }}\n', True
+
+
+def _ensure_minihead_string_param(minihead_text, name, value):
+    if not value:
+        return minihead_text, False
+    pattern = re.compile(
+        rf'<ParamString\."{re.escape(name)}">\s*\{{\s*"[^"]*"\s*\}}'
+    )
+    if pattern.search(minihead_text):
+        return minihead_text, False
+    return _replace_or_append_minihead_string_param(minihead_text, name, value)
 
 
 def _replace_or_append_minihead_long_param(minihead_text, name, value):
@@ -1382,6 +1503,31 @@ def _meta_text(meta, key):
                 return text
         return ""
     return str(value).strip()
+
+
+def _minihead_string_value(minihead_text, name):
+    match = re.search(
+        rf'<ParamString\."{re.escape(name)}">\s*\{{\s*"([^"]*)"\s*\}}',
+        minihead_text or "",
+    )
+    if not match:
+        return ""
+    return match.group(1).strip()
+
+
+def _source_series_name(source_image):
+    meta = _meta_from_image(source_image)
+    for key in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
+        value = _meta_text(meta, key)
+        if value:
+            return value
+
+    minihead = _decode_ice_minihead(meta)
+    for key in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
+        value = _minihead_string_value(minihead, key)
+        if value:
+            return value
+    return ""
 
 
 def _strip_source_parent_refs(meta):

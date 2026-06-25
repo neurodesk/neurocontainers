@@ -84,9 +84,14 @@ def make_source_image_with_minihead():
 """
     meta = ismrmrd.Meta()
     meta["SeriesDescription"] = "source_series"
+    meta["SequenceDescription"] = "source_sequence"
+    meta["ProtocolName"] = "source_protocol"
     meta["SeriesNumberRangeNameUID"] = "source_group"
     meta["SOPInstanceUID"] = "1.2.3.4"
+    meta["DicomImageType"] = "ORIGINAL\\PRIMARY\\M\\NONE"
+    meta["ImageType"] = "NONE"
     meta["ImageTypeValue3"] = "M"
+    meta["ImageTypeValue4"] = "NONE"
     meta["IceMiniHead"] = base64.b64encode(minihead.encode("utf-8")).decode("ascii")
     image.attribute_string = meta.serialize()
     return image
@@ -141,7 +146,7 @@ def test_segment_meta_patches_scanner_visible_minihead_identity():
     assert '<ParamLong."SliceNo">\t{ 2 }' in minihead
 
 
-def test_original_passthrough_minihead_uses_valid_paramarray_tokens():
+def test_original_passthrough_preserves_source_identity_and_valid_paramarray():
     source = make_source_image_with_minihead()
 
     restamped = openmsk._restamp_images(
@@ -155,13 +160,27 @@ def test_original_passthrough_minihead_uses_valid_paramarray_tokens():
     meta = ismrmrd.Meta.deserialize(restamped[0].attribute_string)
     minihead = decoded_minihead(meta)
 
-    assert first(meta, "ImageTypeValue4") == "openmsk_original"
+    assert first(meta, "SeriesDescription") == "source_series"
+    assert first(meta, "SequenceDescription") == "source_sequence"
+    assert first(meta, "ProtocolName") == "source_protocol"
+    assert first(meta, "SeriesNumberRangeNameUID") == "openmsk_original_100"
+    assert first(meta, "SOPInstanceUID") != "1.2.3.4"
+    assert first(meta, "DicomImageType") == "ORIGINAL\\PRIMARY\\M\\NONE"
+    assert first(meta, "ImageType") == "NONE"
+    assert first(meta, "ImageTypeValue3") is None
+    assert first(meta, "ImageTypeValue4") == "NONE"
+    assert '<ParamString."SeriesDescription">\t{ "source_series" }' in minihead
+    assert '<ParamString."SequenceDescription">\t{ "source_series" }' in minihead
+    assert '<ParamString."ProtocolName">\t{ "source_series" }' in minihead
+    assert '<ParamString."SeriesNumberRangeNameUID">\t{ "openmsk_original_100" }' in minihead
+    assert '<ParamString."SOPInstanceUID">\t{ "1.2.3.4" }' not in minihead
+    assert "ImageTypeValue3" not in minihead
     assert '<ParamArray."ImageTypeValue4">' in minihead
     assert '<DefaultSize> 1' in minihead
     assert '<MaxSize> 2147483647' in minihead
     assert '<Default> <ParamString."">{ }' in minihead
-    assert '    { "openmsk_original" }' in minihead
-    assert '    "openmsk_original"' not in minihead
+    assert '    { "NONE" }' in minihead
+    assert '    "NONE"' not in minihead
 
 
 class FakeConnection:
