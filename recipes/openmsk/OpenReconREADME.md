@@ -24,7 +24,8 @@ still contains the GL/TG private tags.
 ## Parameters
 
 - `sendoriginal`: return original images before derived outputs.
-- `segmodel`: KneePipeline model name (`acl_qdess_bone_july_2024` by default).
+- `segmodel`: KneePipeline model name (`acl_qdess_bone_july_2024` by default;
+  `goyal_sagittal` and `nnunet_knee` are also packaged).
 - `runnsm`: run GPU-only Neural Shape Model fitting if weights are present.
 - `runbscore`: compute BScore after NSM fitting.
 - `computethickness`: run slower mesh/thickness analysis after the segmentation

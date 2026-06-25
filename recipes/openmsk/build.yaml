@@ -1,11 +1,18 @@
 name: openmsk
-version: 0.1.4
+version: 0.1.5
 architectures:
   - x86_64
 
 variables:
   kneepipeline_commit: "61144f23d9001950a70f77cb70d628e1883da86d"
   dosma_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/Goyal_Bone_Cart_July_2024_best_model.h5"
+  dosma_sagittal_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/sagittal_best_model.h5"
+  dosma_coronal_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/coronal_best_model.h5"
+  dosma_axial_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/axial_best_model.h5"
+  nnunet_fullres_dataset_url: "https://huggingface.co/aagatti/nnunet_knee/resolve/main/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/dataset.json"
+  nnunet_fullres_model_config_url: "https://huggingface.co/aagatti/nnunet_knee/resolve/main/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/model_config.json"
+  nnunet_fullres_plans_url: "https://huggingface.co/aagatti/nnunet_knee/resolve/main/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/plans.json"
+  nnunet_fullres_checkpoint_best_url: "https://huggingface.co/aagatti/nnunet_knee/resolve/main/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/fold_1/checkpoint_best.pth"
 
 files:
   - name: openmsk.py
@@ -22,6 +29,20 @@ files:
     filename: enhanced2singleframe.py
   - name: dosma_qdess_model
     url: "{{ context.dosma_model_url }}"
+  - name: dosma_sagittal_model
+    url: "{{ context.dosma_sagittal_model_url }}"
+  - name: dosma_coronal_model
+    url: "{{ context.dosma_coronal_model_url }}"
+  - name: dosma_axial_model
+    url: "{{ context.dosma_axial_model_url }}"
+  - name: nnunet_fullres_dataset
+    url: "{{ context.nnunet_fullres_dataset_url }}"
+  - name: nnunet_fullres_model_config
+    url: "{{ context.nnunet_fullres_model_config_url }}"
+  - name: nnunet_fullres_plans
+    url: "{{ context.nnunet_fullres_plans_url }}"
+  - name: nnunet_fullres_checkpoint_best
+    url: "{{ context.nnunet_fullres_checkpoint_best_url }}"
   - name: openmsk
     contents: |-
       #!/usr/bin/env bash
@@ -171,8 +192,15 @@ build:
         - cd /opt/KneePipeline
         - git checkout {{ context.kneepipeline_commit }}
         - git submodule update --init --recursive
-        - mkdir -p /opt/DOSMA_WEIGHTS /opt/NSM_MODELS
+        - mkdir -p /opt/DOSMA_WEIGHTS /opt/NSM_MODELS /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference/huggingface/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/fold_1
         - cp {{ get_file("dosma_qdess_model") }} /opt/DOSMA_WEIGHTS/Goyal_Bone_Cart_July_2024_best_model.h5
+        - cp {{ get_file("dosma_sagittal_model") }} /opt/DOSMA_WEIGHTS/sagittal_best_model.h5
+        - cp {{ get_file("dosma_coronal_model") }} /opt/DOSMA_WEIGHTS/coronal_best_model.h5
+        - cp {{ get_file("dosma_axial_model") }} /opt/DOSMA_WEIGHTS/axial_best_model.h5
+        - cp {{ get_file("nnunet_fullres_dataset") }} /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference/huggingface/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/dataset.json
+        - cp {{ get_file("nnunet_fullres_model_config") }} /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference/huggingface/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/model_config.json
+        - cp {{ get_file("nnunet_fullres_plans") }} /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference/huggingface/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/plans.json
+        - cp {{ get_file("nnunet_fullres_checkpoint_best") }} /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference/huggingface/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/fold_1/checkpoint_best.pth
         - cp {{ get_file("openmsk_config") }} /opt/KneePipeline/config.json
         - if [ -n "${HF_TOKEN:-}" ]; then python -c "import os; from huggingface_hub import snapshot_download; snapshot_download(repo_id='aagatti/ShapeMedKnee', local_dir='/opt/NSM_MODELS', token=os.environ.get('HF_TOKEN'))"; else echo "HF_TOKEN not set; skipping optional gated ShapeMedKnee NSM weights"; fi
         - find /opt/KneePipeline -name .git -type d -prune -exec rm -rf {} +
@@ -218,8 +246,9 @@ readme: |-
   image-to-image module for qDESS knee MRI. The OpenRecon path receives MRD
   images from the scanner, reconstructs an echo-1 NIfTI, runs KneePipeline, and
   returns bone/cartilage segmentation with geometry copied from the source
-  images. Optional mesh/thickness analysis can run after segmentation when the
-  `computethickness` OpenRecon option is enabled.
+  images. The packaged segmentation models are `acl_qdess_bone_july_2024`,
+  `goyal_sagittal`, and `nnunet_knee`. Optional mesh/thickness analysis can run
+  after segmentation when the `computethickness` OpenRecon option is enabled.
 
   Direct DICOM usage keeps the qDESS GL/TG private tags and can produce the
   full output set including T2:

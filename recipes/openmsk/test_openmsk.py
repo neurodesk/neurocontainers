@@ -96,6 +96,10 @@ def decoded_minihead(meta):
     return base64.b64decode(first(meta, "IceMiniHead")).decode("utf-8")
 
 
+def exam_role_number(value):
+    return f"<CategoryEntry>{int(value)}</CategoryEntry>"
+
+
 def test_segment_meta_patches_scanner_visible_minihead_identity():
     source = make_source_image_with_minihead()
 
@@ -121,12 +125,16 @@ def test_segment_meta_patches_scanner_visible_minihead_identity():
     assert first(meta, "ImageTypeValue3") is None
     assert first(meta, "SegmentSourceGeometry") == "1"
     assert first(meta, "SegmentOutputGeometry") == "2d"
+    assert first(meta, "SegmentPostProcessingChildRole") == str(openmsk.SEGMENT_SERIES_INDEX)
+    assert exam_role_number(openmsk.SEGMENT_SERIES_INDEX) in first(meta, "ExamDataRole")
     assert first(meta, "NumberInSeries") == "3"
     assert first(meta, "SliceNo") == "2"
     assert '<ParamString."SeriesDescription">\t{ "openmsk_segmentation" }' in minihead
     assert '<ParamString."SeriesNumberRangeNameUID">\t{ "openmsk_segmentation_101" }' in minihead
     assert '<ParamString."SOPInstanceUID">\t{ "1.2.3.4" }' not in minihead
     assert "ImageTypeValue3" not in minihead
+    assert '<ParamString."ExamDataRole">' in minihead
+    assert exam_role_number(openmsk.SEGMENT_SERIES_INDEX) in minihead
     assert '<Default> <ParamString."">{ }' in minihead
     assert '    { "openmsk_segmentation" }' in minihead
     assert '    "openmsk_segmentation"' not in minihead
@@ -202,3 +210,73 @@ def test_process_default_sends_segmentation_before_optional_postprocessing(monke
     assert events == ["original_passthrough", "openmsk_segmentation"]
     assert connection.closed
     assert connection.logs == []
+
+
+def test_process_can_skip_originals_when_requested(monkeypatch):
+    events = []
+    source = make_image()
+    source.attribute_string = ismrmrd.Meta().serialize()
+
+    def fake_write_run_config(tmpdir, *_args):
+        path = Path(tmpdir) / "openmsk_config.json"
+        path.write_text("{}")
+        return path
+
+    monkeypatch.setattr(openmsk, "_write_source_nifti", lambda images, *_args: (images, (4, 4, 1)))
+    monkeypatch.setattr(openmsk, "_write_run_config", fake_write_run_config)
+    monkeypatch.setattr(openmsk, "_run_kneepipeline_segmentation", lambda *_args: True)
+    monkeypatch.setattr(
+        openmsk,
+        "_find_single_output",
+        lambda _output_dir, pattern: Path("openmsk_echo1_all-labels.nii.gz")
+        if pattern == "*_all-labels.nii.gz"
+        else None,
+    )
+    monkeypatch.setattr(openmsk, "_nifti_to_mrd_images", lambda *_args, **_kwargs: [make_image()])
+    monkeypatch.setattr(openmsk, "_send_images", lambda _connection, _images, context: events.append(context))
+
+    connection = FakeConnection([source])
+    openmsk.process(
+        connection,
+        {"parameters": {"sendoriginal": False}},
+        metadata=types.SimpleNamespace(encoding=[]),
+    )
+
+    assert events == ["openmsk_segmentation"]
+    assert connection.closed
+    assert connection.logs == []
+
+
+def test_write_run_config_preserves_requested_segmentation_model(tmp_path, monkeypatch):
+    source_config = {
+        "default_seg_model": "acl_qdess_bone_july_2024",
+        "models": {
+            "acl_qdess_bone_july_2024": "/opt/DOSMA_WEIGHTS/default.h5",
+            "goyal_sagittal": "/opt/DOSMA_WEIGHTS/sagittal_best_model.h5",
+        },
+    }
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(source_config))
+    monkeypatch.setattr(openmsk, "KNEEPIPELINE_CONFIG", config_path)
+
+    run_config_path = openmsk._write_run_config(
+        tmp_path,
+        "goyal_sagittal",
+        run_nsm=False,
+        run_bscore=False,
+    )
+    run_config = json.loads(run_config_path.read_text())
+
+    assert run_config["default_seg_model"] == "goyal_sagittal"
+
+
+def test_openrecon_label_keeps_packaged_model_choices():
+    label = json.loads(Path("OpenReconLabel.json").read_text())
+    params = {param["id"]: param for param in label["parameters"]}
+
+    assert params["sendoriginal"]["default"] is True
+    assert [value["id"] for value in params["segmodel"]["values"]] == [
+        "acl_qdess_bone_july_2024",
+        "goyal_sagittal",
+        "nnunet_knee",
+    ]

@@ -36,6 +36,8 @@ T2MAP_SERIES_NAME = "openmsk_t2map"
 SEGMENT_IMAGE_TYPE = f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}"
 T2MAP_IMAGE_TYPE = f"DERIVED\\PRIMARY\\M\\{T2MAP_SERIES_NAME}"
 SCANNER_PARTITION_INDEX = 0
+SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
+SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
 SCANNER_WRITE_UNSAFE_META_KEYS = ("ImageTypeValue3",)
 SOURCE_PARENT_REFERENCE_META_KEYS = {
     "DicomEngineDimString",
@@ -913,6 +915,19 @@ def _nifti_to_mrd_images(
     max_value = float(np.nanmax(data_yxz)) if data_yxz.size else 1.0
     if not np.isfinite(max_value) or max_value <= 0:
         max_value = 1.0
+    min_value = float(np.nanmin(data_yxz)) if data_yxz.size else 0.0
+    if not np.isfinite(min_value):
+        min_value = 0.0
+    if source_geometry_segment:
+        labels = np.unique(data_yxz)
+        logging.info(
+            "Converted OpenMSK segmentation %s shape=%s min=%s max=%s labels=%s",
+            nifti_path,
+            list(data_yxz.shape),
+            min_value,
+            max_value,
+            labels[:32].tolist(),
+        )
 
     series_uid = _derived_uid(series_name, series_index)
     outputs = []
@@ -1041,16 +1056,23 @@ def _derived_meta(
     meta["ImageProcessingHistory"] = ["OPENRECON", "OPENMSK"]
     meta["SequenceDescriptionAdditional"] = "openrecon"
     meta["Keep_image_geometry"] = 1
-    meta["WindowCenter"] = str(max_value / 2.0)
-    meta["WindowWidth"] = str(max(max_value, 1.0))
+    window_width = max_value + 1.0 if source_geometry_segment else max(max_value, 1.0)
+    meta["WindowCenter"] = str(window_width / 2.0)
+    meta["WindowWidth"] = str(max(window_width, 1.0))
     meta["partition_count"] = "1"
     meta["slice_count"] = str(slice_count)
     meta["NumberOfSlices"] = str(slice_count)
     meta["ImagesInAcquisition"] = str(slice_count)
     _set_output_storage_meta(meta, output_index)
+    exam_data_role = None
     if source_geometry_segment:
+        exam_data_role = _format_exam_data_role_sequential_number(series_index)
         meta["SegmentSourceGeometry"] = "1"
         meta["SegmentOutputGeometry"] = "2d"
+        meta[SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY] = str(int(series_index))
+        meta["ExamDataRole"] = exam_data_role
+        if SEGMENT_POSTPROCESSING_META_KEY in meta:
+            del meta[SEGMENT_POSTPROCESSING_META_KEY]
         meta["LUTFileName"] = "MicroDeltaHotMetal.pal"
         _strip_scanner_write_unsafe_meta(meta)
     else:
@@ -1064,6 +1086,7 @@ def _derived_meta(
             series_uid,
             sop_uid,
             image_type,
+            exam_data_role=exam_data_role,
             source_geometry_segment=source_geometry_segment,
             output_index=output_index,
         )
@@ -1114,6 +1137,7 @@ def _patch_derived_ice_minihead(
     sop_uid,
     image_type,
     *,
+    exam_data_role=None,
     source_geometry_segment,
     output_index,
 ):
@@ -1140,6 +1164,11 @@ def _patch_derived_ice_minihead(
         current_text,
         "ImageTypeValue4",
         [series_name],
+    )
+    changed = changed or did_change
+    current_text, did_change = _replace_or_append_minihead_exam_data_role(
+        current_text,
+        exam_data_role,
     )
     changed = changed or did_change
 
@@ -1170,6 +1199,18 @@ def _patch_derived_ice_minihead(
         changed = changed or did_change
 
     return current_text, changed
+
+
+def _format_exam_data_role_sequential_number(value):
+    return (
+        '<DataRole Version="DR2.0">\n'
+        ' <Categories>\n'
+        '  <Category Name="SequentialNumber">\n'
+        f"   <CategoryEntry>{int(value)}</CategoryEntry>\n"
+        "  </Category>\n"
+        " </Categories>\n"
+        "</DataRole>"
+    )
 
 
 def _strip_scanner_write_unsafe_minihead(minihead_text):
@@ -1290,6 +1331,30 @@ def _replace_or_append_minihead_array_tokens(minihead_text, name, values):
         return updated_text, updated_text != minihead_text
 
     return minihead_text.rstrip() + "\n" + array_text, True
+
+
+def _replace_or_append_minihead_exam_data_role(minihead_text, exam_data_role):
+    if not minihead_text or not exam_data_role:
+        return minihead_text, False
+
+    literal = str(exam_data_role).replace('"', '""')
+    pattern = re.compile(
+        r'(<ParamString\."ExamDataRole">\s*\{\s*")(.*?</DataRole>)("\s*\})',
+        flags=re.DOTALL,
+    )
+    matches = list(pattern.finditer(minihead_text))
+    if matches:
+        if all(match.group(2).replace('""', '"') == exam_data_role for match in matches):
+            return minihead_text, False
+        return (
+            pattern.sub(
+                lambda match: f"{match.group(1)}{literal}{match.group(3)}",
+                minihead_text,
+            ),
+            True,
+        )
+
+    return minihead_text.rstrip() + f'\n<ParamString."ExamDataRole">\t{{ "{literal}" }}\n', True
 
 
 def _copy_meta(meta_obj):
