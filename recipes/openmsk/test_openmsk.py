@@ -1,10 +1,12 @@
 import base64
 import json
+import os
 import sys
 import types
 from pathlib import Path
 
 import ismrmrd
+import nibabel as nib
 import numpy as np
 
 
@@ -299,3 +301,66 @@ def test_openrecon_label_keeps_packaged_model_choices():
         "goyal_sagittal",
         "nnunet_knee",
     ]
+
+
+def test_kneepipeline_subprocess_env_prepends_numpy_compat_path(monkeypatch):
+    monkeypatch.setattr(openmsk, "NNUNET_NUMPY_COMPAT_PATH", "/opt/openmsk_compat")
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join(["/opt/openmsk_compat", "/already"]))
+
+    env = openmsk._kneepipeline_subprocess_env()
+
+    assert env["PYTHONPATH"].split(os.pathsep) == ["/opt/openmsk_compat", "/already"]
+
+
+def test_nifti_to_mrd_reindexes_rotated_labels_to_source_grid(tmp_path, monkeypatch):
+    source = make_image()
+
+    reference_xyz = np.array(
+        [
+            [1, 2, 3, 4],
+            [5, 6, 7, 8],
+            [9, 10, 11, 12],
+            [13, 14, 15, 16],
+        ],
+        dtype=np.int16,
+    )[:, :, None]
+    reference_path = tmp_path / "source.nii.gz"
+    nib.save(nib.Nifti1Image(reference_xyz, np.eye(4)), reference_path)
+
+    rotated_xyz = np.zeros_like(reference_xyz)
+    size = reference_xyz.shape[0]
+    for x_index in range(size):
+        for y_index in range(size):
+            rotated_xyz[size - 1 - y_index, x_index, 0] = reference_xyz[x_index, y_index, 0]
+    rotated_affine = np.array(
+        [
+            [0, 1, 0, 0],
+            [-1, 0, 0, size - 1],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    )
+    label_path = tmp_path / "source_all-labels.nii.gz"
+    nib.save(nib.Nifti1Image(rotated_xyz, rotated_affine), label_path)
+
+    def fail_resample(*_args, **_kwargs):
+        raise AssertionError("pure orientation changes must not interpolate label data")
+
+    monkeypatch.setattr(openmsk, "resample_from_to", fail_resample)
+
+    outputs = openmsk._nifti_to_mrd_images(
+        label_path,
+        [source],
+        openmsk.SEGMENT_SERIES_INDEX,
+        openmsk.SEGMENT_SERIES_NAME,
+        openmsk.SEGMENT_IMAGE_TYPE,
+        data_role="Segmentation",
+        dtype=np.int16,
+        comment="OpenMSK segmentation",
+        source_geometry_segment=True,
+        reference_nifti_path=reference_path,
+    )
+
+    expected_yx = reference_xyz[:, :, 0].T
+    np.testing.assert_array_equal(np.squeeze(outputs[0].data), expected_yx)

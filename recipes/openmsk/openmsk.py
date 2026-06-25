@@ -18,6 +18,7 @@ import constants
 import ismrmrd
 import mrdhelper
 import nibabel as nib
+from nibabel.processing import resample_from_to
 import numpy as np
 
 
@@ -26,6 +27,7 @@ KNEEPIPELINE_DIR = Path(os.environ.get("KNEEPIPELINE_HOME", "/opt/KneePipeline")
 KNEEPIPELINE_CONFIG = Path(
     os.environ.get("KNEEPIPELINE_CONFIG", str(KNEEPIPELINE_DIR / "config.json"))
 )
+NNUNET_NUMPY_COMPAT_PATH = os.environ.get("OPENMSK_NNUNET_NUMPY_COMPAT_PATH", "/opt/openmsk_compat")
 OPENMSK_PIPELINE_TIMEOUT = int(os.environ.get("OPENMSK_PIPELINE_TIMEOUT", "5400"))
 
 ORIGINAL_SERIES_INDEX = 100
@@ -173,6 +175,7 @@ def process(connection, config, metadata):
                 dtype=np.int16,
                 comment="OpenMSK segmentation",
                 source_geometry_segment=True,
+                reference_nifti_path=input_path,
             )
             _send_images(connection, segment_images, "openmsk_segmentation")
             sent_images.extend(segment_images)
@@ -240,6 +243,7 @@ def process(connection, config, metadata):
                     dtype=np.float32,
                     comment=metrics_comment or "OpenMSK T2 map",
                     source_geometry_segment=False,
+                    reference_nifti_path=input_path,
                 )
                 _send_images(connection, t2_images, "openmsk_t2map")
                 sent_images.extend(t2_images)
@@ -752,6 +756,7 @@ print(json.dumps(summary, default=str))
     result = subprocess.run(
         cmd,
         cwd=str(KNEEPIPELINE_DIR),
+        env=_kneepipeline_subprocess_env(),
         capture_output=True,
         text=True,
         timeout=OPENMSK_PIPELINE_TIMEOUT,
@@ -812,6 +817,7 @@ if summary["errors"]:
     result = subprocess.run(
         cmd,
         cwd=str(KNEEPIPELINE_DIR),
+        env=_kneepipeline_subprocess_env(),
         capture_output=True,
         text=True,
         timeout=OPENMSK_PIPELINE_TIMEOUT,
@@ -835,6 +841,7 @@ def _run_optional_gpu_step(cmd, label):
         result = subprocess.run(
             cmd,
             cwd=str(KNEEPIPELINE_DIR),
+            env=_kneepipeline_subprocess_env(),
             capture_output=True,
             text=True,
             timeout=1200,
@@ -844,6 +851,19 @@ def _run_optional_gpu_step(cmd, label):
     except Exception:
         logging.warning("%s failed; segmentation output will still be returned:\n%s", label, traceback.format_exc())
         return False
+
+
+def _kneepipeline_subprocess_env():
+    env = os.environ.copy()
+    if not NNUNET_NUMPY_COMPAT_PATH:
+        return env
+
+    current_pythonpath = env.get("PYTHONPATH")
+    parts = [NNUNET_NUMPY_COMPAT_PATH]
+    if current_pythonpath:
+        parts.extend(part for part in current_pythonpath.split(os.pathsep) if part)
+    env["PYTHONPATH"] = os.pathsep.join(dict.fromkeys(parts))
+    return env
 
 
 def _log_subprocess_result(label, result):
@@ -885,8 +905,14 @@ def _nifti_to_mrd_images(
     dtype,
     comment,
     source_geometry_segment,
+    reference_nifti_path=None,
 ):
     img = nib.load(str(nifti_path))
+    img = _nifti_on_reference_grid(
+        img,
+        reference_nifti_path,
+        order=0 if np.issubdtype(dtype, np.integer) else 1,
+    )
     data_xyz = np.asarray(img.dataobj)
     if data_xyz.ndim > 3:
         data_xyz = np.squeeze(data_xyz)
@@ -959,6 +985,83 @@ def _nifti_to_mrd_images(
         ).serialize()
         outputs.append(output)
     return outputs
+
+
+def _nifti_on_reference_grid(img, reference_nifti_path, *, order):
+    if reference_nifti_path is None:
+        return img
+
+    reference = nib.load(str(reference_nifti_path))
+    reference_shape = tuple(reference.shape[:3])
+    image_shape = tuple(img.shape[:3])
+    if image_shape == reference_shape and np.allclose(img.affine, reference.affine, atol=1e-4):
+        return img
+
+    reindexed = _reindex_axis_aligned_nifti(img, reference)
+    if reindexed is not None:
+        return reindexed
+
+    logging.info(
+        "Resampling OpenMSK NIfTI output from shape=%s affine=%s to source shape=%s affine=%s",
+        image_shape,
+        np.array2string(img.affine, precision=4, suppress_small=True),
+        reference_shape,
+        np.array2string(reference.affine, precision=4, suppress_small=True),
+    )
+    return resample_from_to(
+        img,
+        (reference_shape, reference.affine),
+        order=order,
+        mode="constant",
+        cval=0,
+    )
+
+
+def _reindex_axis_aligned_nifti(img, reference):
+    if len(img.shape) < 3 or len(reference.shape) < 3:
+        return None
+
+    transform = np.linalg.inv(img.affine) @ reference.affine
+    linear = transform[:3, :3]
+    offset = transform[:3, 3]
+    rounded_linear = np.rint(linear).astype(int)
+    rounded_offset = np.rint(offset).astype(int)
+    if not (
+        np.allclose(linear, rounded_linear, atol=1e-4)
+        and np.allclose(offset, rounded_offset, atol=1e-4)
+    ):
+        return None
+    if not (
+        np.all(np.sum(np.abs(rounded_linear), axis=0) == 1)
+        and np.all(np.sum(np.abs(rounded_linear), axis=1) == 1)
+    ):
+        return None
+
+    source_shape = tuple(img.shape[:3])
+    target_shape = tuple(reference.shape[:3])
+    source_axis_to_target_axis = []
+    source_indices = []
+    for source_axis in range(3):
+        target_axis = int(np.argmax(np.abs(rounded_linear[source_axis, :])))
+        sign = int(rounded_linear[source_axis, target_axis])
+        indices = sign * np.arange(target_shape[target_axis]) + rounded_offset[source_axis]
+        if indices.size and (indices.min() < 0 or indices.max() >= source_shape[source_axis]):
+            return None
+        source_axis_to_target_axis.append(target_axis)
+        source_indices.append(indices.astype(int, copy=False))
+
+    data = np.asarray(img.dataobj)
+    indexed = data[np.ix_(*source_indices)]
+    axis_order = np.argsort(source_axis_to_target_axis).tolist()
+    if indexed.ndim > 3:
+        axis_order.extend(range(3, indexed.ndim))
+    reindexed = np.transpose(indexed, axis_order)
+    logging.info(
+        "Reindexed axis-aligned OpenMSK NIfTI output from shape=%s to source shape=%s without interpolation",
+        source_shape,
+        target_shape,
+    )
+    return nib.Nifti1Image(reindexed, reference.affine)
 
 
 def _match_volume_shape_yxz(data, target_shape):

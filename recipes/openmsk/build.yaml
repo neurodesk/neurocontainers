@@ -1,5 +1,5 @@
 name: openmsk
-version: 0.1.5
+version: 0.1.6
 architectures:
   - x86_64
 
@@ -27,6 +27,8 @@ files:
     filename: nifti2mrd.py
   - name: enhanced2singleframe.py
     filename: enhanced2singleframe.py
+  - name: nnunet_numpy_compat.py
+    filename: nnunet_numpy_compat.py
   - name: dosma_qdess_model
     url: "{{ context.dosma_model_url }}"
   - name: dosma_sagittal_model
@@ -187,6 +189,8 @@ build:
         - pip install --no-cache-dir mskt nnunetv2==2.4.2 SimpleITK==2.3.1 pandas==2.0.3 pymeshfix==0.16.2
         # KneePipeline's TF 2.11 / nnU-Net numpy compromise (resolved last).
         - pip install --no-cache-dir "numpy==1.24.3"
+        - install -D -m 0644 {{ get_file("nnunet_numpy_compat.py") }} /opt/openmsk_compat/sitecustomize.py
+        - PYTHONPATH=/opt/openmsk_compat python -c "import numpy, numpy._core, numpy._core.multiarray; print('nnU-Net NumPy compat loaded for numpy', numpy.__version__)"
     - run:
         - git clone --recurse-submodules https://github.com/gattia/KneePipeline /opt/KneePipeline
         - cd /opt/KneePipeline
@@ -217,6 +221,8 @@ build:
         OPENMSK_VERSION: "{{ context.version }}"
         KNEEPIPELINE_HOME: /opt/KneePipeline
         KNEEPIPELINE_CONFIG: /opt/KneePipeline/config.json
+        OPENMSK_NNUNET_NUMPY_COMPAT_PATH: /opt/openmsk_compat
+        PYTHONPATH: /opt/openmsk_compat:$PYTHONPATH
         LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
         # The DOSMA qDESS TF models are saved channels-first (NCHW). On a GPU
         # that runs natively; on CPU-only hosts oneDNN is required for NCHW
