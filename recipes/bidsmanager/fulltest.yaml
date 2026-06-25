@@ -1,0 +1,53 @@
+# bidsmanager container test suite
+# Tests for BIDS Manager v1.2.3 - raw-to-BIDS conversion, curation, metadata editing, and validation.
+
+name: bidsmanager
+version: 1.2.3
+container: bidsmanager_1.2.3_20260624.simg
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/bidsmanager
+
+tests:
+  - name: bids-manager package metadata
+    description: Verify the pinned PyPI package is installed.
+    command: python -c "import importlib.metadata as m; print(m.version('bids-manager'))"
+    expected_output_contains: "1.2.3"
+
+  - name: bidsmgr GUI launcher help
+    description: Verify the main launcher starts far enough to print CLI help.
+    command: bidsmgr --help
+    expected_output_contains: "Schema-driven BIDS converter"
+
+  - name: bidsmgr-create help
+    description: Verify the dataset creation CLI entrypoint is available.
+    command: bidsmgr-create --help
+    expected_output_contains: "Create + scaffold a BIDS dataset workspace"
+
+  - name: bidsmgr-scan help
+    description: Verify the scanner CLI entrypoint is available.
+    command: bidsmgr-scan --help
+    expected_output_contains: "dicom_root"
+
+  - name: bidsmgr-convert help
+    description: Verify the conversion CLI entrypoint is available.
+    command: bidsmgr-convert --help
+    expected_output_contains: "project"
+
+  - name: bidsmgr-metadata help
+    description: Verify the metadata CLI entrypoint is available.
+    command: bidsmgr-metadata --help
+    expected_output_contains: "metadata"
+
+  - name: bidsmgr-validate help
+    description: Verify the validator CLI entrypoint is available.
+    command: bidsmgr-validate --help
+    expected_output_contains: "Schema-driven validation"
+
+  - name: dcm2niix help
+    description: Verify the DICOM conversion backend is exposed.
+    command: dcm2niix --help 2>&1 | head -20
+    expected_output_contains: "dcm2niiX"

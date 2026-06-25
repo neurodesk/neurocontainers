@@ -1,0 +1,115 @@
+name: bidsmanager
+version: 1.2.3
+
+copyright:
+  - license: MIT
+    url: https://github.com/ANCPLabOldenburg/BIDS-Manager/blob/main/LICENSE
+
+architectures:
+  - x86_64
+  - aarch64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        XDG_CACHE_HOME: /tmp/bidsmanager/cache
+        XDG_CONFIG_HOME: /tmp/bidsmanager/config
+
+    - install:
+        - python3
+        - python3-pip
+        - python-is-python3
+        - python3-pyqt6
+        - libdbus-1-3
+        - libegl1
+        - libfontconfig1
+        - libglib2.0-0
+        - libgl1
+        - libnss3
+        - libopengl0
+        - libx11-6
+        - libx11-xcb1
+        - libxcb-cursor0
+        - libxcb-icccm4
+        - libxcb-image0
+        - libxcb-keysyms1
+        - libxcb-randr0
+        - libxcb-render-util0
+        - libxcb-shape0
+        - libxcb-xfixes0
+        - libxcb-xinerama0
+        - libxcomposite1
+        - libxdamage1
+        - libxext6
+        - libxi6
+        - libxkbcommon0
+        - libxkbcommon-x11-0
+        - libxrender1
+        - libxshmfence1
+        - xvfb
+
+    - run:
+        - python3 -m pip install --break-system-packages --no-cache-dir bids-manager=={{ context.version }}
+        - mkdir -p /tmp/bidsmanager/cache /tmp/bidsmanager/config
+        - chmod -R a+rwx /tmp/bidsmanager
+
+deploy:
+  bins:
+    - bidsmgr
+    - bidsmgr-create
+    - bidsmgr-project
+    - bidsmgr-scan
+    - bidsmgr-convert
+    - bidsmgr-rebuild
+    - bidsmgr-metadata
+    - bidsmgr-validate
+    - dcm2niix
+
+readme: |-
+  ----------------------------------
+  ## bidsmanager/{{ context.version }} ##
+  BIDS Manager is a GUI and command-line tool for converting, curating, editing, and validating MRI, EEG, MEG, and physiological recordings in BIDS datasets.
+
+  Tools included:
+  ```
+  bidsmgr
+  bidsmgr-create
+  bidsmgr-project
+  bidsmgr-scan
+  bidsmgr-convert
+  bidsmgr-rebuild
+  bidsmgr-metadata
+  bidsmgr-validate
+  dcm2niix
+  ```
+
+  Example:
+  ```
+  ml bidsmanager/{{ context.version }}
+
+  # Launch the GUI:
+  bidsmgr
+
+  # Or use the command-line workflow:
+  bidsmgr-create /data/my_bids_dataset --name "My BIDS dataset"
+  bidsmgr-scan /data/raw /data/my_bids_dataset
+  bidsmgr-convert /data/raw /data/my_bids_dataset
+  bidsmgr-metadata /data/my_bids_dataset
+  bidsmgr-validate /data/my_bids_dataset
+  ```
+
+  More documentation can be found here: https://ancplaboldenburg.github.io/bids_manager_documentation/
+
+  To run container outside of this environment: ml bidsmanager/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "data organisation"
+  - "bids apps"
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAEKADAAQAAAABAAAAEAAAAAA0VXHyAAADBElEQVQ4EXVTy24cRRQ99eru6Wk7mcFjz+DgREqEhFkkimWhIAhCAlkKYcGaT2Drz8jGEguEWEdixSZyCGKBMCyIMAHbyJmYEIgNzsOOHY+nu6urq4rbMww7rnS7VI9z7rmnqxgoLoY3FoRgi1y6ORbaWI4VSr2gea2TIZo5Rp0yaKcumtBGxDbloVv1HNeWXvv4FrsY3lyoJ265flJwIgARAIFBxnuIOpoIekTQrwhABBA1C16dkc557q/I8aZdvPx+g5+/1AATDuAeprRYvtnFns4rgf8XnIMtysYkm3vr6hTevnoWjA3Peg9MvKjQ/f0v8LEC6oSBqBvIWgkWeDwpd7FT/gGn7JwkUPxo5xhffXEXWVaQCj9IyyyazZiAAWRcghNYhNSi9NA+w2MbIPdpLJ/uWnVv/Tk+mDuHRqtGEoigUkKtjMgGI80Ha7SnrQbfBtb1HSWddXyiHWL2whRUIAY9HB6k+PH2fWzce4BXL3Swsf0r3rv8Jl6anEYUhFTDo7M3jbvZBueMA2EkINUQrLXBp0sr6G7u4c7P5IEQeNo7xNdr32Jl8ztYa0khA/NDw+TQNvxn4O2VP9FdP4JmZF5D4e8n+4jjGD3TR59yZ38HZyZPj2Cg+sOonLfW4ZsvH2B8vIZzLzcwPz+DJI7w+OAZojDC1v5vePjs4QgyGCsCV4Gr0HmJ9vQYWGUYxdbWIxz1M4zVYxxkzxEohcykg71/P64iMKMVIThKYzHZicElw+FRDucsTrfaqDo2ziCJktHxajTclkhNYclYT2ZKvPHuGcyebyFLNU5Nn8SpdgtlWaIRncDrM5fwSmd2QGB9WUlPpdFs9aeVg3c+/+wXxImgiwL0+3TnSUEcB+hnGbIiJ19C5CbH2vYaLDPoHm1Seb1Kj+nGggrdctK0PKzT3wgNVL2EapaIWjmCzjFq9KhUM4NMisFtdPTYjNLOhe6K2LXX70/hwx+M5u28zxpZ7nlROq6ZYVYVsPUULslgk9T5RBc2KHplYL6H8B8tzX9y6x+sjlbQtU7xAgAAAABJRU5ErkJggg==
