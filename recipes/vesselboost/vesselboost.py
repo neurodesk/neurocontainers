@@ -39,6 +39,9 @@ VESSELBOOST_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingC
 VESSELBOOST_SEGMENT_SOURCE_GEOMETRY_META_KEY = "SegmentSourceGeometry"
 VESSELBOOST_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY = "SegmentSourceImageHeader"
 VESSELBOOST_SEGMENT_OUTPUT_GEOMETRY_META_KEY = "SegmentOutputGeometry"
+VESSELBOOST_REFORMAT_ORIENTATION_META_KEY = "VesselBoostReformatOrientation"
+VESSELBOOST_REFORMAT_SLICE_INDEX_META_KEY = "VesselBoostReformatSliceIndex"
+VESSELBOOST_REFORMAT_SLICE_COUNT_META_KEY = "VesselBoostReformatSliceCount"
 VESSELBOOST_SEGMENTATION_LABEL = "vesselboost"
 VESSELBOOST_SEGMENTATION_TYPE_TOKEN = VESSELBOOST_SEGMENTATION_LABEL.upper()
 VESSELBOOST_SOURCE_IMAGE_HEADER_FALLBACK_TYPE = (
@@ -288,7 +291,9 @@ def _normalize_vector(vector):
 
 
 def _format_vector(vector):
-    return "[" + ", ".join(f"{float(value):.3f}" for value in vector) + "]"
+    return "[" + ", ".join(
+        f"{float(getattr(value, 'value', value)):.3f}" for value in vector
+    ) + "]"
 
 
 def _infer_slice_axis(image_headers):
@@ -1506,6 +1511,7 @@ def _stamp_vesselboost_output_image(
     original_passthrough_identity=False,
     segment_scanner_postprocessing=True,
     segment_scanner_mip_processing=False,
+    source_geometry_header_from_output_index=False,
 ):
     source_meta = _copy_meta(_meta_from_image(source_image))
     header = image.getHead()
@@ -1514,11 +1520,15 @@ def _stamp_vesselboost_output_image(
         source_image_header_identity or segment_source_geometry_identity
     )
     if source_geometry_identity:
-        header.image_index = _source_geometry_header_image_index(
-            source_image,
-            output_index,
-        )
-        header.slice = _source_geometry_header_slice(source_image, output_index)
+        if source_geometry_header_from_output_index:
+            header.image_index = int(output_index) + 1
+            header.slice = int(output_index)
+        else:
+            header.image_index = _source_geometry_header_image_index(
+                source_image,
+                output_index,
+            )
+            header.slice = _source_geometry_header_slice(source_image, output_index)
     else:
         header.image_index = int(output_index) + 1
         header.slice = int(output_index)
@@ -2616,7 +2626,7 @@ def _build_reformatted_images(
     series_index: int,
     max_val: int,
 ):
-    """Build one explicit 3D MRD volume for a sagittal or coronal reformat.
+    """Build a 2D segmentation-header MRD series for a sagittal/coronal reformat.
 
     volume_yxz is an int16 array with shape (N_y, N_x, N_z), where the axes map
     to the original axial phase_dir, read_dir and slice_dir respectively.
@@ -2676,7 +2686,7 @@ def _build_reformatted_images(
     )
 
     logging.info(
-        "Building %s reformat: n_slices=%d slice_policy=packed_3d_volume "
+        "Building %s reformat: n_slices=%d slice_policy=2d_segmentation_header "
         "slice_spacing=%.4f new_fov=%s series_index=%d target_shape=%s "
         "target_spacing=%.4f",
         orientation,
@@ -2688,10 +2698,10 @@ def _build_reformatted_images(
         target_inplane_spacing,
     )
 
-    reformat_volume_zyx = np.empty(
-        (n_slices, target_inplane_shape[0], target_inplane_shape[1]),
-        dtype=volume_yxz.dtype,
+    first_slice_position = (
+        volume_center - 0.5 * (n_slices - 1) * slice_spacing * new_slice_dir
     )
+    outputs = []
     for j in range(n_slices):
         if orientation == "sagittal":
             # volume_yxz[:, j, :] has shape (N_y, N_z) -> transpose to (N_z, N_y)
@@ -2703,83 +2713,90 @@ def _build_reformatted_images(
             slice2d = np.ascontiguousarray(volume_yxz[j, :, :].T)
 
         slice2d = _resize_2d_nearest(slice2d, target_inplane_shape)
-        reformat_volume_zyx[j, :, :] = slice2d
 
-    mrd_image = ismrmrd.Image.from_array(
-        np.ascontiguousarray(reformat_volume_zyx),
-        transpose=False,
-    )
+        mrd_image = ismrmrd.Image.from_array(
+            slice2d[np.newaxis, np.newaxis, :, :],
+            transpose=False,
+        )
 
-    first_slice_position = (
-        volume_center - 0.5 * (n_slices - 1) * slice_spacing * new_slice_dir
-    )
-    new_header = mrd_image.getHead()
-    new_header.data_type = mrd_image.data_type
-    new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-    new_header.position = tuple(float(v) for v in first_slice_position)
-    new_header.read_dir = tuple(float(v) for v in new_read_dir)
-    new_header.phase_dir = tuple(float(v) for v in new_phase_dir)
-    new_header.slice_dir = tuple(float(v) for v in new_slice_dir)
-    new_header.field_of_view = (
-        ctypes.c_float(new_fov[0]),
-        ctypes.c_float(new_fov[1]),
-        ctypes.c_float(new_fov[2]),
-    )
-    new_header.image_index = 1
-    new_header.image_series_index = series_index
-    new_header.slice = 0
-    new_header.contrast = 0
+        generated_header = mrd_image.getHead()
+        new_header = generated_header
+        new_header.data_type = mrd_image.data_type
+        new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+        new_header.position = tuple(
+            float(v) for v in (first_slice_position + j * slice_spacing * new_slice_dir)
+        )
+        new_header.read_dir = tuple(float(v) for v in new_read_dir)
+        new_header.phase_dir = tuple(float(v) for v in new_phase_dir)
+        new_header.slice_dir = tuple(float(v) for v in new_slice_dir)
+        new_header.field_of_view = (
+            ctypes.c_float(new_fov[0]),
+            ctypes.c_float(new_fov[1]),
+            ctypes.c_float(slice_spacing),
+        )
+        new_header.image_index = j + 1
+        new_header.image_series_index = series_index
+        new_header.slice = j
+        new_header.contrast = 0
 
-    for attr in (
-        "measurement_uid",
-        "patient_table_position",
-        "acquisition_time_stamp",
-        "physiology_time_stamp",
-        "user_int",
-        "user_float",
-    ):
-        try:
-            setattr(new_header, attr, getattr(head_template, attr))
-        except Exception:
-            pass
-    mrd_image.setHead(new_header)
+        for attr in (
+            "measurement_uid",
+            "patient_table_position",
+            "acquisition_time_stamp",
+            "physiology_time_stamp",
+            "user_int",
+            "user_float",
+        ):
+            try:
+                setattr(new_header, attr, getattr(head_template, attr))
+            except Exception:
+                pass
+        mrd_image.setHead(new_header)
 
-    extra_meta = {
-        "WindowCenter": str((max_val + 1) / 2),
-        "WindowWidth": str(max_val + 1),
-        "partition_count": "1",
-        "slice_count": str(n_slices),
-        "NumberOfSlices": str(n_slices),
-        "ImagesInAcquisition": str(n_slices),
-    }
-    extra_meta.update(_explicit_header_geometry_meta(new_header))
-    _stamp_vesselboost_output_image(
-        mrd_image,
-        source_image,
-        output_identity,
-        source_identity,
-        series_index,
-        0,
-        source_identity.get("source_type_token", ""),
-        ["PYTHON", "VESSELBOOST", f"RESLICE_{orientation.upper()}"],
-        extra_meta=extra_meta,
-        keep_image_geometry=0,
-        patch_minihead=False,
-        data_role="Segmentation",
-    )
+        extra_meta = {
+            "WindowCenter": str((max_val + 1) / 2),
+            "WindowWidth": str(max_val + 1),
+            "VesselBoostOutputGeometry": VESSELBOOST_OUTPUT_GEOMETRY_2D,
+            VESSELBOOST_SEGMENT_OUTPUT_GEOMETRY_META_KEY: VESSELBOOST_OUTPUT_GEOMETRY_2D,
+            VESSELBOOST_REFORMAT_ORIENTATION_META_KEY: orientation,
+            VESSELBOOST_REFORMAT_SLICE_INDEX_META_KEY: str(j),
+            VESSELBOOST_REFORMAT_SLICE_COUNT_META_KEY: str(n_slices),
+        }
+        _stamp_vesselboost_output_image(
+            mrd_image,
+            source_image,
+            output_identity,
+            source_identity,
+            series_index,
+            j,
+            source_identity.get("source_type_token", ""),
+            ["PYTHON", "VESSELBOOST", f"RESLICE_{orientation.upper()}"],
+            extra_meta=extra_meta,
+            keep_image_geometry=1,
+            patch_minihead=True,
+            data_role="Segmentation",
+            segment_source_geometry_identity=True,
+            segment_scanner_postprocessing=True,
+            source_geometry_header_from_output_index=True,
+        )
+        outputs.append(mrd_image)
 
     logging.info(
-        "Packed VesselBoost %s reformat into one explicit volume: "
-        "series_index=%d matrix_size=%s field_of_view=%s slice_count=%d "
-        "position=%s",
+        "Built VesselBoost %s reformat as %d source-geometry "
+        "segmentation-header 2D image(s): series_index=%d matrix_size=%s "
+        "field_of_view=%s first_position=%s last_position=%s",
         orientation,
+        len(outputs),
         series_index,
-        _format_vector(mrd_image.getHead().matrix_size),
-        _format_vector(mrd_image.getHead().field_of_view),
-        n_slices,
+        _format_vector(outputs[0].getHead().matrix_size) if outputs else "[]",
+        _format_vector(outputs[0].getHead().field_of_view) if outputs else "[]",
         [round(float(v), 6) for v in first_slice_position],
+        [
+            round(float(v), 6)
+            for v in (first_slice_position + (n_slices - 1) * slice_spacing * new_slice_dir)
+        ],
     )
-    return [mrd_image]
+    return outputs
 
 
 def _build_vesselboost_segmentation_images(

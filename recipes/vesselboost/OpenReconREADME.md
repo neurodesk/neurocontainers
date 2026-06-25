@@ -77,9 +77,14 @@ source-geometry segmentation-header stream with `DataRole = Segmentation`,
 scanner post-processing child-role metadata matching the segmentation
 `image_series_index`, and no `ImageTypeValue3`. This lets scanner-created
 segmentation MIPs appear as their own post-processed segmentation series instead
-of being folded into original MIP side products. Reformatted sagittal and
-coronal outputs remain explicit packed 3D MRD volumes without source-image-header
-stamping.
+of being folded into original MIP side products.
+
+Reformatted sagittal and coronal outputs also use the source-geometry
+segmentation-header stream contract: one 2D `DataRole = Segmentation` image per
+reformat slice, `Keep_image_geometry = 1`, `SegmentSourceGeometry = 1`,
+`SegmentOutputGeometry = 2d`, no `SegmentSourceImageHeader`, and sequential
+reformat slice indices. This avoids sending packed explicit 3D MRD volumes back
+to scanner post-processing.
 
 ## Citation
 
