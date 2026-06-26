@@ -85,8 +85,15 @@ def process(connection, config, metadata):
 
         send_original = _config_bool(config, "sendoriginal", True)
         seg_model = _config_str(config, "segmodel", "acl_qdess_bone_july_2024")
-        run_nsm_requested = _config_bool_any(config, ("runnsm", "run_nsm"), False)
-        run_bscore = _config_bool_any(config, ("runbscore", "run_bscore"), False)
+        legacy_run_nsm_requested = _config_bool_any(config, ("runnsm", "run_nsm"), False)
+        legacy_run_bscore = _config_bool_any(config, ("runbscore", "run_bscore"), False)
+        if legacy_run_nsm_requested or legacy_run_bscore:
+            logging.warning(
+                "NSM/BScore options are disabled in this OpenMSK image because "
+                "the required ShapeMedKnee weights are gated and not packaged"
+            )
+        run_nsm_requested = False
+        run_bscore = False
         run_nsm = run_nsm_requested or run_bscore
         compute_thickness = _config_bool(config, "computethickness", False)
 

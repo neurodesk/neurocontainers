@@ -10,8 +10,6 @@ images arriving as MRD image messages from the scanner.
 - Optional cartilage mesh and thickness outputs in the KneePipeline working
   directory when `computethickness` is enabled.
 - T2 map MRD images only when the pipeline produced `*_t2map.nii.gz`.
-- Optional NSM reconstruction and BScore JSON files when GPU execution and the
-  gated ShapeMedKnee weights are available.
 
 ## qDESS And T2 Caveat
 
@@ -26,8 +24,6 @@ still contains the GL/TG private tags.
 - `sendoriginal`: return original images before derived outputs.
 - `segmodel`: KneePipeline model name (`acl_qdess_bone_july_2024` by default;
   `goyal_sagittal` and `nnunet_knee` are also packaged).
-- `runnsm`: run GPU-only Neural Shape Model fitting if weights are present.
-- `runbscore`: compute BScore after NSM fitting.
 - `computethickness`: run slower mesh/thickness analysis after the segmentation
   has been sent.
 
@@ -38,7 +34,3 @@ source env/bin/activate
 python3 builder/validation.py recipes/openmsk/build.yaml
 python -m builder generate openmsk --recreate --architecture x86_64
 ```
-
-To enable NSM/BScore at build time, provide a Hugging Face token in `HF_TOKEN`
-so the optional `aagatti/ShapeMedKnee` snapshot can be downloaded into
-`/opt/NSM_MODELS`.

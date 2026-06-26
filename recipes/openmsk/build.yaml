@@ -67,20 +67,6 @@ files:
           "type": "fullres",
           "model_name": "Dataset500_KneeMRI"
         },
-        "nsm": {
-          "path_model_config": "/opt/NSM_MODELS/647_nsm_femur_cartilage_v0.0.1/model_config.json",
-          "path_model_state": "/opt/NSM_MODELS/647_nsm_femur_cartilage_v0.0.1/model/2000.pth"
-        },
-        "bscore": {
-          "path_model_folder": "/opt/KneePipeline/BSCORE_MODELS/NSM_Orig_BScore_Bone_Cartilage_April_17_2025"
-        },
-        "nsm_bone_only": {
-          "path_model_config": "/opt/NSM_MODELS/551_nsm_femur_bone_v0.0.1/model_params_config.json",
-          "path_model_state": "/opt/NSM_MODELS/551_nsm_femur_bone_v0.0.1/model/1150.pth"
-        },
-        "bscore_bone_only": {
-          "path_model_folder": "/opt/KneePipeline/BSCORE_MODELS/NSM_Orig_BScore_Bone_Only_April_18_2025"
-        },
         "regions": {
           "cart": {
             "1": "pat_cart",
@@ -206,7 +192,6 @@ build:
         - cp {{ get_file("nnunet_fullres_plans") }} /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference/huggingface/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/plans.json
         - cp {{ get_file("nnunet_fullres_checkpoint_best") }} /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference/huggingface/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/fold_1/checkpoint_best.pth
         - cp {{ get_file("openmsk_config") }} /opt/KneePipeline/config.json
-        - if [ -n "${HF_TOKEN:-}" ]; then python -c "import os; from huggingface_hub import snapshot_download; snapshot_download(repo_id='aagatti/ShapeMedKnee', local_dir='/opt/NSM_MODELS', token=os.environ.get('HF_TOKEN'))"; else echo "HF_TOKEN not set; skipping optional gated ShapeMedKnee NSM weights"; fi
         - find /opt/KneePipeline -name .git -type d -prune -exec rm -rf {} +
         - find /opt/nsm -name .git -type d -prune -exec rm -rf {} +
         - find /opt/DOSMA -name .git -type d -prune -exec rm -rf {} +
@@ -263,10 +248,6 @@ readme: |-
   ml openmsk/{{ context.version }}
   python /opt/KneePipeline/run_pipeline.py /path/to/qDESS/dicom_dir /path/to/out --config /opt/KneePipeline/config.json
   ```
-
-  NSM/BScore require a GPU and optional gated ShapeMedKnee weights in
-  `/opt/NSM_MODELS`. Provide `HF_TOKEN` during the build to download those
-  weights; without it, the image still builds and segmentation runs.
 
   ----------------------------------
 icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiByeD0iNCIgZmlsbD0iIzBmMTcyYSIvPjxwYXRoIGQ9Ik05LjIgMy41YzIuMiAwIDMuOCAxLjYgMy44IDMuNyAwIDEuMy0uNiAyLjQtMS41IDMuMWwtLjkuN2MtLjUuNC0uOC45LS44IDEuNSAwIC43LjUgMS4yIDEuMiAxLjJoMi4yYzEuNyAwIDMgMS40IDMgMy4xIDAgMi4xLTEuNyAzLjctMy44IDMuNyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZTJlOGYwIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik0xNC44IDMuNWMtMi4yIDAtMy44IDEuNi0zLjggMy43IDAgMS4zLjYgMi40IDEuNSAzLjFsLjkuN2MuNS40LjguOS44IDEuNSAwIC43LS41IDEuMi0xLjIgMS4yaC0yLjJjLTEuNyAwLTMgMS40LTMgMy4xIDAgMi4xIDEuNyAzLjcgMy44IDMuNyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMjJjNTVlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjIuMiIgZmlsbD0iIzM4YmRmOCIgZmlsbC1vcGFjaXR5PSIuODUiLz48L3N2Zz4=
