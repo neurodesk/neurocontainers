@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import csv
 import json
 import logging
 import os
@@ -33,10 +34,16 @@ OPENMSK_PIPELINE_TIMEOUT = int(os.environ.get("OPENMSK_PIPELINE_TIMEOUT", "5400"
 ORIGINAL_SERIES_INDEX = 100
 SEGMENT_SERIES_INDEX = 101
 T2MAP_SERIES_INDEX = 102
+SUBREGION_SERIES_INDEX = 103
+METRICS_REPORT_SERIES_INDEX = 104
 SEGMENT_SERIES_NAME = "openmsk_segmentation"
 T2MAP_SERIES_NAME = "openmsk_t2map"
+SUBREGION_SERIES_NAME = "openmsk_subregions"
+METRICS_REPORT_SERIES_NAME = "openmsk_metrics_report"
 SEGMENT_IMAGE_TYPE = f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}"
 T2MAP_IMAGE_TYPE = f"DERIVED\\PRIMARY\\M\\{T2MAP_SERIES_NAME}"
+SUBREGION_IMAGE_TYPE = f"DERIVED\\PRIMARY\\SEGMENTATION\\{SUBREGION_SERIES_NAME}"
+METRICS_REPORT_IMAGE_TYPE = f"DERIVED\\PRIMARY\\M\\{METRICS_REPORT_SERIES_NAME}"
 SCANNER_PARTITION_INDEX = 0
 SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
 SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
@@ -53,6 +60,18 @@ SOURCE_PARENT_REFERENCE_META_PREFIXES = (
     "ReferencedGSPS",
     "ReferencedImageSequence",
 )
+OPENMSK_SEGMENTATION_SUMMARY = "_openmsk_segmentation_summary.json"
+OPENMSK_POSTPROCESSING_SUMMARY = "_openmsk_postprocessing_summary.json"
+QDESS_GL_AREA_TAG = (0x0019, 0x10B6)
+QDESS_TG_TAG = (0x0019, 0x10B7)
+QDESS_DEFAULTS = {
+    "tr_ms": 25.0,
+    "te1_ms": 8.0,
+    "te2_ms": 42.0,
+    "flip_angle_deg": 30.0,
+    "gl_area": 3132.0,
+    "tg_us": 1560.0,
+}
 
 
 def process(connection, config, metadata):
@@ -132,22 +151,40 @@ def process(connection, config, metadata):
             logging.warning("No magnitude image messages received; no OpenMSK derived output")
             return
 
-        source_group = _select_primary_source_group(magnitude_images)
+        source_selection = _select_primary_source(magnitude_images)
+        source_group = source_selection.get("primary") if source_selection else []
         if not source_group:
             logging.warning("No processable qDESS source group selected")
             return
 
         with tempfile.TemporaryDirectory(prefix="openmsk_") as tmpdir:
             tmpdir_path = Path(tmpdir)
-            input_path = tmpdir_path / "openmsk_echo1.nii.gz"
+            echo1_nifti_path = tmpdir_path / "openmsk_echo1.nii.gz"
             output_dir = tmpdir_path / "out"
             output_dir.mkdir()
 
             ordered_sources, nifti_shape = _write_source_nifti(
                 source_group,
-                input_path,
+                echo1_nifti_path,
                 metadata,
             )
+            qdess_params = _resolve_qdess_parameters(
+                config,
+                metadata,
+                source_selection.get("echo_groups", {}),
+            )
+            qdess_dicom_dir = _write_synthetic_qdess_dicom_input(
+                source_selection.get("echo_groups", {}),
+                tmpdir_path / "openmsk_qdess_dicom",
+                metadata,
+                config,
+                qdess_params,
+            )
+            pipeline_input_path = qdess_dicom_dir or echo1_nifti_path
+            if qdess_dicom_dir is not None:
+                logging.info("Using synthesized qDESS DICOM input for KneePipeline: %s", qdess_dicom_dir)
+            else:
+                logging.info("Using echo-1 NIfTI input for KneePipeline: %s", echo1_nifti_path)
             run_config_path = _write_run_config(
                 tmpdir_path,
                 seg_model,
@@ -155,12 +192,13 @@ def process(connection, config, metadata):
                 run_bscore,
             )
 
-            segmentation_ok = _run_kneepipeline_segmentation(
-                input_path,
+            segmentation_result = _run_kneepipeline_segmentation(
+                pipeline_input_path,
                 output_dir,
                 seg_model,
                 run_config_path,
             )
+            segmentation_ok = _step_succeeded(segmentation_result)
             if not segmentation_ok:
                 logging.warning(
                     "KneePipeline segmentation process reported an error; attempting "
@@ -182,29 +220,69 @@ def process(connection, config, metadata):
                 dtype=np.int16,
                 comment="OpenMSK segmentation",
                 source_geometry_segment=True,
-                reference_nifti_path=input_path,
+                reference_nifti_path=echo1_nifti_path,
             )
             _send_images(connection, segment_images, "openmsk_segmentation")
             sent_images.extend(segment_images)
 
             postprocessing_ok = True
-            if compute_thickness or run_nsm:
-                postprocessing_ok = _run_kneepipeline_postprocessing(
+            compute_t2 = _segmentation_is_qdess(segmentation_result)
+            if compute_thickness or compute_t2 or run_nsm:
+                postprocessing_result = _run_kneepipeline_postprocessing(
                     output_dir,
                     run_config_path,
                     compute_thickness,
+                    compute_t2,
                 )
+                postprocessing_ok = _step_succeeded(postprocessing_result)
                 if not postprocessing_ok:
                     logging.warning(
                         "KneePipeline post-processing reported an error after "
                         "segmentation was already sent"
                     )
+            elif _segmentation_skips_step(segmentation_result, "t2_mapping"):
+                logging.info(
+                    "Skipping OpenMSK T2 mapping because KneePipeline identified "
+                    "the OpenRecon input as non-qDESS"
+                )
             else:
                 logging.info("Skipping OpenMSK mesh/thickness post-processing")
 
             metrics_comment = _collect_metrics_comment(output_dir)
             if metrics_comment:
                 logging.info("OpenMSK metrics: %s", metrics_comment)
+
+            subregion_path = _find_single_output(output_dir, "*_subregions-labels.nii.gz")
+            if subregion_path is not None:
+                subregion_images = _nifti_to_mrd_images(
+                    subregion_path,
+                    ordered_sources,
+                    SUBREGION_SERIES_INDEX,
+                    SUBREGION_SERIES_NAME,
+                    SUBREGION_IMAGE_TYPE,
+                    data_role="Segmentation",
+                    dtype=np.int16,
+                    comment=_join_comments("OpenMSK subregion segmentation", metrics_comment),
+                    source_geometry_segment=True,
+                    reference_nifti_path=echo1_nifti_path,
+                    extra_meta=_metrics_extra_meta(metrics_comment),
+                )
+                _send_images(connection, subregion_images, "openmsk_subregions")
+                sent_images.extend(subregion_images)
+            else:
+                logging.info("No OpenMSK subregion segmentation was written")
+
+            metrics_outputs = _collect_metrics_outputs(output_dir)
+            if metrics_outputs:
+                report_images = _build_metrics_report_images(
+                    metrics_outputs,
+                    ordered_sources,
+                    metrics_comment,
+                )
+                _send_images(connection, report_images, "openmsk_metrics_report")
+                sent_images.extend(report_images)
+            else:
+                logging.info("No OpenMSK metrics files were written")
 
             if run_nsm and postprocessing_ok:
                 nsm_type = _nsm_type_for_config(run_config_path)
@@ -250,7 +328,8 @@ def process(connection, config, metadata):
                     dtype=np.float32,
                     comment=metrics_comment or "OpenMSK T2 map",
                     source_geometry_segment=False,
-                    reference_nifti_path=input_path,
+                    reference_nifti_path=echo1_nifti_path,
+                    extra_meta=_metrics_extra_meta(metrics_comment),
                 )
                 _send_images(connection, t2_images, "openmsk_t2map")
                 sent_images.extend(t2_images)
@@ -329,6 +408,13 @@ def _config_bool_any(config, keys, default=False):
     if value is not None:
         return _coerce_bool(value, default)
     return default
+
+
+def _config_float_any(config, keys, default=None):
+    value = _config_value_any(config, keys)
+    if value is None:
+        return default
+    return _coerce_float_or_none(value, default)
 
 
 def _config_str(config, key, default=""):
@@ -451,7 +537,7 @@ def _estimate_slice_spacing(image_headers, slice_axis=None):
     return float(np.median(nonzero_diffs))
 
 
-def _select_primary_source_group(images):
+def _select_primary_source(images):
     grouped = {}
     for image in images:
         key = (
@@ -463,7 +549,7 @@ def _select_primary_source_group(images):
         grouped.setdefault(key, []).append(image)
 
     if not grouped:
-        return []
+        return {}
 
     key, group = max(grouped.items(), key=lambda item: len(item[1]))
     echo_groups = _split_echo_groups(group)
@@ -476,7 +562,17 @@ def _select_primary_source_group(images):
         len(selected),
         {str(k): len(v) for k, v in echo_groups.items()},
     )
-    return selected
+    return {
+        "group_key": key,
+        "primary_echo_key": echo_key,
+        "primary": selected,
+        "echo_groups": echo_groups,
+    }
+
+
+def _select_primary_source_group(images):
+    selection = _select_primary_source(images)
+    return selection.get("primary", [])
 
 
 def _split_echo_groups(images):
@@ -584,6 +680,384 @@ def _write_source_nifti(images, output_path, metadata):
     return ordered_images, data_xyz.shape
 
 
+def _ordered_echo_groups(echo_groups):
+    ordered = []
+    for echo_key in sorted(echo_groups, key=_echo_key_sort):
+        images = list(echo_groups[echo_key])
+        if not images:
+            continue
+        sort_indices, _slice_axis, _records = _slice_sort_indices([image.getHead() for image in images])
+        ordered.append((echo_key, [images[index] for index in sort_indices]))
+    return ordered
+
+
+def _resolve_qdess_parameters(config, metadata, echo_groups):
+    params = {"sources": {}}
+
+    tr_ms, source = _first_available_float(
+        (
+            ("mrd.sequenceParameters.TR", lambda: _metadata_sequence_float(metadata, "TR", 0, unit="ms")),
+            ("openrecon.qdess_tr_ms", lambda: _config_float_any(config, ("qdess_tr_ms", "qdesstrms"))),
+            ("default.qdess_tr_ms", lambda: QDESS_DEFAULTS["tr_ms"]),
+        )
+    )
+    params["tr_ms"] = tr_ms
+    params["sources"]["tr_ms"] = source
+
+    te_values, te_sources = _resolve_qdess_echo_times(config, metadata, echo_groups)
+    params["te_ms"] = te_values
+    params["sources"]["te_ms"] = te_sources
+
+    flip_angle, source = _first_available_float(
+        (
+            ("mrd.sequenceParameters.flipAngle_deg", lambda: _metadata_sequence_float(metadata, "flipAngle_deg", 0)),
+            ("openrecon.qdess_flip_angle_deg", lambda: _config_float_any(config, ("qdess_flip_angle_deg", "qdessflipangledeg"))),
+            ("image_meta.FlipAngle", lambda: _first_image_meta_float(echo_groups, ("FlipAngle", "FA"))),
+            ("default.qdess_flip_angle_deg", lambda: QDESS_DEFAULTS["flip_angle_deg"]),
+        )
+    )
+    params["flip_angle_deg"] = flip_angle
+    params["sources"]["flip_angle_deg"] = source
+
+    gl_area, source = _first_available_float(
+        (
+            ("mrd.userParameters.qdess_gl_area", lambda: _metadata_user_parameter_float(metadata, ("qdess_gl_area", "GL_AREA", "gl_area"))),
+            ("image_meta.qdess_gl_area", lambda: _first_image_meta_float(echo_groups, ("qdess_gl_area", "GL_AREA", "gl_area", "SpoilerGradientArea"))),
+            ("openrecon.qdess_gl_area", lambda: _config_float_any(config, ("qdess_gl_area", "qdessglarea"))),
+            ("default.qdess_gl_area", lambda: QDESS_DEFAULTS["gl_area"]),
+        )
+    )
+    params["gl_area"] = gl_area
+    params["sources"]["gl_area"] = source
+
+    tg_us, source = _first_available_float(
+        (
+            ("mrd.userParameters.qdess_tg_us", lambda: _metadata_user_parameter_float(metadata, ("qdess_tg_us", "TG", "tg_us", "tg"))),
+            ("image_meta.qdess_tg_us", lambda: _first_image_meta_float(echo_groups, ("qdess_tg_us", "TG", "tg_us", "tg", "SpoilerGradientDuration"))),
+            ("openrecon.qdess_tg_us", lambda: _config_float_any(config, ("qdess_tg_us", "qdesstgus"))),
+            ("default.qdess_tg_us", lambda: QDESS_DEFAULTS["tg_us"]),
+        )
+    )
+    params["tg_us"] = tg_us
+    params["sources"]["tg_us"] = source
+
+    logging.info("Resolved qDESS synthesis parameters: %s", params)
+    return params
+
+
+def _resolve_qdess_echo_times(config, metadata, echo_groups):
+    te_values = []
+    te_sources = []
+    seq_te = _metadata_sequence_values_ms(metadata, "TE")
+    if len(seq_te) >= 2:
+        return seq_te[:2], ["mrd.sequenceParameters.TE[0]", "mrd.sequenceParameters.TE[1]"]
+
+    meta_te = _echo_group_meta_echo_times(echo_groups)
+    config_te = [
+        _config_float_any(config, ("qdess_te1_ms", "qdesste1ms")),
+        _config_float_any(config, ("qdess_te2_ms", "qdesste2ms")),
+    ]
+    defaults = [QDESS_DEFAULTS["te1_ms"], QDESS_DEFAULTS["te2_ms"]]
+    for index in range(2):
+        if index < len(seq_te) and seq_te[index] is not None:
+            te_values.append(seq_te[index])
+            te_sources.append(f"mrd.sequenceParameters.TE[{index}]")
+        elif index < len(meta_te) and meta_te[index] is not None:
+            te_values.append(meta_te[index])
+            te_sources.append(f"image_meta.echo_group[{index}]")
+        elif config_te[index] is not None:
+            te_values.append(config_te[index])
+            te_sources.append(f"openrecon.qdess_te{index + 1}_ms")
+        else:
+            te_values.append(defaults[index])
+            te_sources.append(f"default.qdess_te{index + 1}_ms")
+    return te_values, te_sources
+
+
+def _first_available_float(candidates):
+    for source, getter in candidates:
+        value = _coerce_float_or_none(getter())
+        if value is not None:
+            return value, source
+    return None, ""
+
+
+def _metadata_sequence_float(metadata, field_name, index=0, *, unit=None):
+    values = _metadata_sequence_values(metadata, field_name)
+    if len(values) <= index:
+        return None
+    value = _coerce_float_or_none(values[index])
+    if value is None:
+        return None
+    return _seconds_to_ms_if_needed(value) if unit == "ms" else value
+
+
+def _metadata_sequence_values_ms(metadata, field_name):
+    return [_seconds_to_ms_if_needed(value) for value in _metadata_sequence_values(metadata, field_name)]
+
+
+def _metadata_sequence_values(metadata, field_name):
+    try:
+        values = getattr(metadata.sequenceParameters, field_name)
+    except Exception:
+        return []
+    if values is None:
+        return []
+    return [_coerce_float_or_none(value) for value in list(values) if _coerce_float_or_none(value) is not None]
+
+
+def _metadata_user_parameter_float(metadata, names):
+    names = {str(name).lower() for name in names}
+    try:
+        user_parameters = metadata.userParameters
+    except Exception:
+        return None
+    for attr in ("userParameterDouble", "userParameterLong", "userParameterString"):
+        for item in list(getattr(user_parameters, attr, []) or []):
+            name = str(getattr(item, "name", "")).lower()
+            if name in names:
+                return _coerce_float_or_none(getattr(item, "value", None))
+    return None
+
+
+def _echo_group_meta_echo_times(echo_groups):
+    values = []
+    for _echo_key, images in _ordered_echo_groups(echo_groups):
+        value = _first_meta_float(images, ("EchoTime", "TE", "EffectiveEchoTime"))
+        values.append(_seconds_to_ms_if_needed(value) if value is not None else None)
+    return values
+
+
+def _first_image_meta_float(echo_groups, keys):
+    for _echo_key, images in _ordered_echo_groups(echo_groups):
+        value = _first_meta_float(images, keys)
+        if value is not None:
+            return value
+    return None
+
+
+def _first_meta_float(images, keys):
+    for image in images:
+        meta = _meta_from_image(image)
+        for key in keys:
+            value = _coerce_float_or_none(_meta_text(meta, key))
+            if value is not None:
+                return value
+    return None
+
+
+def _seconds_to_ms_if_needed(value):
+    value = _coerce_float_or_none(value)
+    if value is None:
+        return None
+    return value * 1000.0 if 0 < value <= 1.0 else value
+
+
+def _metadata_protocol_name(metadata):
+    try:
+        return str(metadata.measurementInformation.protocolName or "").strip()
+    except Exception:
+        return ""
+
+
+def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config, qdess_params):
+    ordered_groups = _ordered_echo_groups(echo_groups)
+    if len(ordered_groups) < 2:
+        logging.info("Cannot synthesize qDESS DICOM: only %d echo group(s) available", len(ordered_groups))
+        return None
+
+    echo_pairs = ordered_groups[:2]
+    slice_count = len(echo_pairs[0][1])
+    if slice_count == 0 or any(len(images) != slice_count for _key, images in echo_pairs):
+        logging.warning(
+            "Cannot synthesize qDESS DICOM: echo group slice counts differ: %s",
+            [len(images) for _key, images in echo_pairs],
+        )
+        return None
+
+    missing = [key for key in ("tr_ms", "te_ms", "flip_angle_deg", "gl_area", "tg_us") if qdess_params.get(key) is None]
+    if missing:
+        logging.warning("Cannot synthesize qDESS DICOM: missing qDESS parameter(s) %s", missing)
+        return None
+
+    try:
+        import pydicom
+        from pydicom.dataset import FileDataset, FileMetaDataset
+        from pydicom.uid import ExplicitVRLittleEndian, MRImageStorage, generate_uid
+    except Exception:
+        logging.warning("Cannot synthesize qDESS DICOM because pydicom import failed:\n%s", traceback.format_exc())
+        return None
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    study_uid = generate_uid(prefix="2.25.")
+    series_uid = generate_uid(prefix="2.25.")
+    frame_uid = generate_uid(prefix="2.25.")
+    protocol_name = _metadata_protocol_name(metadata) or _source_series_name(echo_pairs[0][1][0]) or "openmsk_qdess"
+    now = _dicom_now()
+
+    all_pixels = []
+    for _echo_key, images in echo_pairs:
+        for image in images:
+            all_pixels.append(_slice_pixels(image))
+    pixel_scale = _dicom_pixel_scale(all_pixels)
+
+    logging.info(
+        "Synthesizing qDESS DICOM series: out=%s slices=%d echo_keys=%s TR=%sms TE=%s flip=%sdeg "
+        "GL_AREA=%s TG=%sus sources=%s",
+        output_dir,
+        slice_count,
+        [str(key) for key, _images in echo_pairs],
+        qdess_params["tr_ms"],
+        qdess_params["te_ms"],
+        qdess_params["flip_angle_deg"],
+        qdess_params["gl_area"],
+        qdess_params["tg_us"],
+        qdess_params.get("sources", {}),
+    )
+
+    written = []
+    for echo_index, (echo_key, images) in enumerate(echo_pairs, start=1):
+        echo_time = float(qdess_params["te_ms"][echo_index - 1])
+        for slice_index, image in enumerate(images, start=1):
+            header = image.getHead()
+            pixels = _dicom_uint16_pixels(_slice_pixels(image), pixel_scale)
+            rows, cols = pixels.shape
+            spacing = _dicom_pixel_spacing(header, rows, cols)
+            file_meta = FileMetaDataset()
+            file_meta.MediaStorageSOPClassUID = MRImageStorage
+            file_meta.MediaStorageSOPInstanceUID = generate_uid(prefix="2.25.")
+            file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+            file_meta.ImplementationClassUID = generate_uid(prefix="2.25.")
+
+            path = output_dir / f"echo{echo_index:02d}_slice{slice_index:04d}.dcm"
+            ds = FileDataset(str(path), {}, file_meta=file_meta, preamble=b"\0" * 128)
+            ds.SpecificCharacterSet = "ISO_IR 100"
+            ds.SOPClassUID = MRImageStorage
+            ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+            ds.StudyInstanceUID = study_uid
+            ds.SeriesInstanceUID = series_uid
+            ds.FrameOfReferenceUID = frame_uid
+            ds.PatientName = "OpenMSK^SyntheticQDESS"
+            ds.PatientID = "OPENMSK"
+            ds.StudyDate = now["date"]
+            ds.StudyTime = now["time"]
+            ds.SeriesDate = now["date"]
+            ds.SeriesTime = now["time"]
+            ds.ContentDate = now["date"]
+            ds.ContentTime = now["time"]
+            ds.Modality = "MR"
+            ds.Manufacturer = "OpenMSK"
+            ds.ManufacturerModelName = "OpenRecon"
+            ds.SeriesDescription = protocol_name
+            ds.ProtocolName = protocol_name
+            ds.ImageType = ["DERIVED", "PRIMARY", "M", "QDESS_SYNTHETIC"]
+            ds.ScanningSequence = "GR"
+            ds.SequenceVariant = "SS"
+            ds.ScanOptions = ""
+            ds.MRAcquisitionType = "3D"
+            ds.InstanceNumber = (echo_index - 1) * slice_count + slice_index
+            ds.EchoNumbers = echo_index
+            ds.add_new((0x0019, 0x107E), "IS", 2)
+            ds.EchoTime = _dicom_ds(echo_time)
+            ds.RepetitionTime = _dicom_ds(qdess_params["tr_ms"])
+            ds.FlipAngle = _dicom_ds(qdess_params["flip_angle_deg"])
+            ds.Rows = rows
+            ds.Columns = cols
+            ds.PixelSpacing = [_dicom_ds(spacing["row_mm"]), _dicom_ds(spacing["col_mm"])]
+            ds.SliceThickness = _dicom_ds(spacing["slice_mm"])
+            ds.SpacingBetweenSlices = _dicom_ds(spacing["slice_mm"])
+            ds.ImageOrientationPatient = _dicom_image_orientation(header)
+            ds.ImagePositionPatient = [_dicom_ds(v) for v in header.position]
+            ds.SliceLocation = _dicom_ds(header.position[2]) if len(header.position) >= 3 else _dicom_ds(slice_index - 1)
+            ds.SamplesPerPixel = 1
+            ds.PhotometricInterpretation = "MONOCHROME2"
+            ds.BitsAllocated = 16
+            ds.BitsStored = 16
+            ds.HighBit = 15
+            ds.PixelRepresentation = 0
+            ds.RescaleIntercept = "0"
+            ds.RescaleSlope = "1"
+            ds.add_new((0x0019, 0x0010), "LO", "SIEMENS MR HEADER")
+            ds.add_new(QDESS_GL_AREA_TAG, "DS", _dicom_ds(qdess_params["gl_area"]))
+            ds.add_new(QDESS_TG_TAG, "DS", _dicom_ds(qdess_params["tg_us"]))
+            ds.PixelData = pixels.tobytes()
+            try:
+                ds.save_as(str(path), enforce_file_format=True)
+            except TypeError:
+                ds.save_as(str(path), write_like_original=False)
+            written.append(path)
+
+    logging.info("Wrote %d synthetic qDESS DICOM file(s) to %s", len(written), output_dir)
+    return output_dir
+
+
+def _dicom_now():
+    from datetime import datetime
+
+    now = datetime.now()
+    return {"date": now.strftime("%Y%m%d"), "time": now.strftime("%H%M%S.%f")}
+
+
+def _dicom_ds(value):
+    value = _coerce_float_or_none(value)
+    if value is None or not np.isfinite(value):
+        return "0"
+    text = f"{value:.8g}"
+    if len(text) <= 16:
+        return text
+    for precision in range(8, 0, -1):
+        text = f"{value:.{precision}e}"
+        if len(text) <= 16:
+            return text
+    return "0"
+
+
+def _dicom_pixel_scale(pixel_arrays):
+    max_value = 0.0
+    for array in pixel_arrays:
+        finite = np.asarray(array, dtype=np.float32)
+        if finite.size:
+            value = float(np.nanmax(finite))
+            if np.isfinite(value):
+                max_value = max(max_value, value)
+    if max_value <= 0:
+        return 1.0
+    return 4095.0 / max_value
+
+
+def _dicom_uint16_pixels(pixel_array, scale):
+    pixels = np.asarray(pixel_array, dtype=np.float32)
+    pixels = np.nan_to_num(pixels, nan=0.0, posinf=0.0, neginf=0.0)
+    pixels = np.clip(np.rint(pixels * float(scale)), 0, np.iinfo(np.uint16).max)
+    return np.ascontiguousarray(pixels.astype(np.uint16, copy=False))
+
+
+def _dicom_pixel_spacing(header, rows, cols):
+    matrix = np.asarray(header.matrix_size[:], dtype=float)
+    fov = np.asarray(header.field_of_view[:], dtype=float)
+    col_mm = fov[0] / matrix[0] if matrix.size > 0 and matrix[0] > 0 else 1.0
+    row_mm = fov[1] / matrix[1] if matrix.size > 1 and matrix[1] > 0 else 1.0
+    slice_mm = fov[2] / matrix[2] if matrix.size > 2 and matrix[2] > 0 else 1.0
+    if not np.isfinite(row_mm) or row_mm <= 0:
+        row_mm = 1.0
+    if not np.isfinite(col_mm) or col_mm <= 0:
+        col_mm = 1.0
+    if not np.isfinite(slice_mm) or slice_mm <= 0:
+        slice_mm = 1.0
+    return {"row_mm": float(row_mm), "col_mm": float(col_mm), "slice_mm": float(slice_mm)}
+
+
+def _dicom_image_orientation(header):
+    read_dir = _normalize_vector(_header_vector(header, "read_dir"))
+    if read_dir is None:
+        read_dir = np.array([1.0, 0.0, 0.0])
+    phase_dir = _normalize_vector(_header_vector(header, "phase_dir"))
+    if phase_dir is None:
+        phase_dir = np.array([0.0, 1.0, 0.0])
+    return [_dicom_ds(v) for v in np.concatenate([read_dir, phase_dir])]
+
+
 def _slice_pixels(image):
     data = np.asarray(image.data)
     if np.iscomplexobj(data):
@@ -665,6 +1139,48 @@ def _nsm_type_for_config(config_path):
     if config.get("perform_bone_and_cart_nsm"):
         return "bone_and_cart"
     return "bone_only"
+
+
+def _read_openmsk_step_summary(output_dir, filename):
+    path = Path(output_dir) / filename
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text())
+    except Exception:
+        logging.warning("Failed to read OpenMSK step summary %s:\n%s", path, traceback.format_exc())
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _step_succeeded(result):
+    if isinstance(result, bool):
+        return result
+    if not isinstance(result, dict):
+        return bool(result)
+    if "ok" in result:
+        return bool(result["ok"])
+    if "returncode" in result:
+        return int(result["returncode"]) == 0
+    return not bool(result.get("errors"))
+
+
+def _segmentation_summary(result):
+    if not isinstance(result, dict):
+        return {}
+    summary = result.get("segmentation")
+    return summary if isinstance(summary, dict) else result
+
+
+def _segmentation_is_qdess(result):
+    summary = _segmentation_summary(result)
+    return bool(summary.get("is_qdess"))
+
+
+def _segmentation_skips_step(result, step_name):
+    summary = _segmentation_summary(result)
+    skip_steps = summary.get("skip_steps") or []
+    return step_name in skip_steps
 
 
 def _run_kneepipeline_segmentation(input_path, output_dir, seg_model, config_path):
@@ -749,6 +1265,8 @@ if remap_table:
     label_remap(working_dir, options={"remap_table": remap_table}, config=config)
 summary["label_remap"] = bool(remap_table)
 
+summary_path = working_dir / "_openmsk_segmentation_summary.json"
+summary_path.write_text(json.dumps(summary, default=str, indent=2))
 print(json.dumps(summary, default=str))
 """
     cmd = [
@@ -769,10 +1287,13 @@ print(json.dumps(summary, default=str))
         timeout=OPENMSK_PIPELINE_TIMEOUT,
     )
     _log_subprocess_result("KneePipeline segmentation", result)
-    return result.returncode == 0
+    summary = _read_openmsk_step_summary(output_dir, OPENMSK_SEGMENTATION_SUMMARY)
+    summary["returncode"] = int(result.returncode)
+    summary["ok"] = result.returncode == 0
+    return summary
 
 
-def _run_kneepipeline_postprocessing(output_dir, config_path, compute_thickness):
+def _run_kneepipeline_postprocessing(output_dir, config_path, compute_thickness, compute_t2):
     script = r"""
 import json
 from pathlib import Path
@@ -787,10 +1308,12 @@ from steps._common import load_config
 working_dir = Path(sys.argv[1])
 config_path = Path(sys.argv[2])
 compute_thickness = json.loads(sys.argv[3])
+compute_t2 = json.loads(sys.argv[4])
 
 config = load_config(str(config_path))
 summary = {
     "compute_thickness": compute_thickness,
+    "compute_t2": compute_t2,
     "errors": {},
 }
 
@@ -804,11 +1327,20 @@ try:
 except Exception:
     summary["errors"]["generate_meshes"] = traceback.format_exc()
 
-summary["t2_mapping"] = {
-    "skipped": True,
-    "reason": "OpenRecon MRD path uses reconstructed NIfTI input without qDESS private tags",
-}
+if compute_t2:
+    try:
+        from steps.t2_mapping import run as t2_mapping
+        summary["t2_mapping"] = t2_mapping(working_dir, config=config)
+    except Exception:
+        summary["errors"]["t2_mapping"] = traceback.format_exc()
+else:
+    summary["t2_mapping"] = {
+        "skipped": True,
+        "reason": "KneePipeline segmentation did not identify the input as qDESS",
+    }
 
+summary_path = working_dir / "_openmsk_postprocessing_summary.json"
+summary_path.write_text(json.dumps(summary, default=str, indent=2))
 print(json.dumps(summary, default=str))
 if summary["errors"]:
     sys.exit(1)
@@ -820,6 +1352,7 @@ if summary["errors"]:
         str(output_dir),
         str(config_path),
         json.dumps(bool(compute_thickness)),
+        json.dumps(bool(compute_t2)),
     ]
     result = subprocess.run(
         cmd,
@@ -830,7 +1363,10 @@ if summary["errors"]:
         timeout=OPENMSK_PIPELINE_TIMEOUT,
     )
     _log_subprocess_result("KneePipeline post-processing", result)
-    return result.returncode == 0
+    summary = _read_openmsk_step_summary(output_dir, OPENMSK_POSTPROCESSING_SUMMARY)
+    summary["returncode"] = int(result.returncode)
+    summary["ok"] = result.returncode == 0
+    return summary
 
 
 def _run_optional_gpu_step(cmd, label):
@@ -913,6 +1449,7 @@ def _nifti_to_mrd_images(
     comment,
     source_geometry_segment,
     reference_nifti_path=None,
+    extra_meta=None,
 ):
     img = nib.load(str(nifti_path))
     img = _nifti_on_reference_grid(
@@ -989,6 +1526,7 @@ def _nifti_to_mrd_images(
             max_value,
             source_geometry_segment=source_geometry_segment,
             slice_count=len(source_images),
+            extra_meta=extra_meta,
         ).serialize()
         outputs.append(output)
     return outputs
@@ -1142,6 +1680,7 @@ def _derived_meta(
     *,
     source_geometry_segment,
     slice_count,
+    extra_meta=None,
 ):
     meta = _copy_meta(_meta_from_image(source_image))
     _strip_source_parent_refs(meta)
@@ -1184,6 +1723,10 @@ def _derived_meta(
         _strip_scanner_write_unsafe_meta(meta)
     else:
         meta["ImageTypeValue3"] = "M"
+    if extra_meta:
+        for key, value in extra_meta.items():
+            if value is not None:
+                meta[key] = str(value)
     minihead = _decode_ice_minihead(meta)
     if minihead:
         patched_minihead, changed = _patch_derived_ice_minihead(
@@ -1664,21 +2207,81 @@ def _derived_uid(*parts):
 
 
 def _collect_metrics_comment(output_dir):
-    summaries = []
-    for pattern, label in (
-        ("*_thickness_results.json", "thickness"),
-        ("*_t2_results.json", "t2"),
-        ("bscore_results.json", "bscore"),
-    ):
-        path = _find_single_output(output_dir, pattern)
-        if path is None:
-            continue
-        try:
-            payload = json.loads(path.read_text())
-        except Exception:
-            continue
-        summaries.append(_summarize_json_metrics(label, payload))
+    summaries = [_summarize_metrics_output(output) for output in _collect_metrics_outputs(output_dir)]
     return "; ".join(item for item in summaries if item)[:1000]
+
+
+def _collect_metrics_outputs(output_dir):
+    summaries = []
+    for json_pattern, csv_pattern, label in (
+        ("*_thickness_results.json", "*_thickness_results.csv", "thickness"),
+        ("*_t2_results.json", None, "t2"),
+        ("bscore_results.json", None, "bscore"),
+    ):
+        json_path = _find_single_output(output_dir, json_pattern)
+        csv_path = _find_single_output(output_dir, csv_pattern) if csv_pattern else None
+        payload = None
+        rows = []
+
+        if json_path is not None:
+            try:
+                payload = json.loads(json_path.read_text())
+            except Exception:
+                payload = None
+
+        if csv_path is not None:
+            rows = _read_metrics_csv_rows(csv_path)
+
+        if payload is None and not rows:
+            continue
+        summaries.append(
+            {
+                "label": label,
+                "json_path": json_path,
+                "csv_path": csv_path,
+                "payload": payload,
+                "rows": rows,
+            }
+        )
+    return summaries
+
+
+def _read_metrics_csv_rows(path):
+    try:
+        with open(path, newline="") as f:
+            return list(csv.DictReader(f))
+    except Exception:
+        logging.warning("Failed to read OpenMSK metrics CSV %s:\n%s", path, traceback.format_exc())
+        return []
+
+
+def _summarize_metrics_output(metrics_output):
+    label = metrics_output["label"]
+    summaries = []
+    summary = _summarize_json_metrics(f"{label}.json", metrics_output.get("payload"))
+    if summary:
+        summaries.append(summary)
+
+    summary = _summarize_csv_metrics(f"{label}.csv", metrics_output.get("rows") or [])
+    if summary:
+        summaries.append(summary)
+
+    return "; ".join(summaries)
+
+
+def _summarize_csv_metrics(label, rows):
+    if not rows:
+        return ""
+    parts = []
+    for key in _csv_fieldnames(rows[0])[:6]:
+        value = _coerce_float_or_none(rows[0].get(key))
+        if value is not None:
+            parts.append(f"{key}={value:.4g}")
+    return f"{label}: " + ", ".join(parts) if parts else label
+
+
+def _csv_fieldnames(row):
+    return sorted(str(key) for key in row.keys() if key is not None)
 
 
 def _summarize_json_metrics(label, payload):
@@ -1692,6 +2295,246 @@ def _summarize_json_metrics(label, payload):
     if not parts:
         return label
     return f"{label}: " + ", ".join(parts)
+
+
+def _metrics_extra_meta(metrics_comment):
+    if not metrics_comment:
+        return {}
+    return {
+        "OpenMSKMetrics": metrics_comment,
+        "DerivationDescription": metrics_comment,
+    }
+
+
+def _join_comments(prefix, metrics_comment):
+    if prefix and metrics_comment:
+        return f"{prefix} | {metrics_comment}"
+    return prefix or metrics_comment or ""
+
+
+def _metrics_report_rows(metrics_outputs):
+    rows = []
+    for metrics_output in metrics_outputs:
+        label = metrics_output["label"]
+        payload = metrics_output.get("payload")
+        if isinstance(payload, dict):
+            for key in sorted(payload.keys()):
+                value = payload[key]
+                if isinstance(value, (int, float)):
+                    rows.append(
+                        {
+                            "source": f"{label}.json",
+                            "metric": str(key),
+                            "value": _format_metric_value(value),
+                        }
+                    )
+
+        csv_rows = metrics_output.get("rows") or []
+        for row_index, csv_row in enumerate(csv_rows, start=1):
+            source = f"{label}.csv"
+            if len(csv_rows) > 1:
+                source = f"{source} row {row_index}"
+            for key in _csv_fieldnames(csv_row):
+                value = csv_row.get(key)
+                if value not in (None, ""):
+                    rows.append(
+                        {
+                            "source": source,
+                            "metric": str(key),
+                            "value": str(value),
+                        }
+                    )
+    return rows
+
+
+def _format_metric_value(value):
+    if isinstance(value, (int, float)):
+        return f"{float(value):.5g}"
+    return str(value)
+
+
+def _coerce_float_or_none(value, default=None):
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _pil_text_size(draw, text, font):
+    try:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    except Exception:
+        return draw.textsize(text, font=font)
+
+
+def _truncate_text_to_width(draw, text, font, max_width):
+    text = str(text)
+    if _pil_text_size(draw, text, font)[0] <= max_width:
+        return text
+    ellipsis = "..."
+    while text and _pil_text_size(draw, text + ellipsis, font)[0] > max_width:
+        text = text[:-1]
+    return text + ellipsis if text else ellipsis
+
+
+def _render_metrics_report_pages(metrics_outputs, width, height):
+    rows = _metrics_report_rows(metrics_outputs)
+    if not rows:
+        return []
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    width = max(int(width), 768)
+    height = max(int(height), 768)
+    margin = 24
+    probe = Image.new("L", (width, height), 0)
+    draw_probe = ImageDraw.Draw(probe)
+    font = ImageFont.load_default()
+    line_height = max(14, _pil_text_size(draw_probe, "Ag", font)[1] + 7)
+    title_lines = [
+        "OpenMSK Metrics",
+        f"Version: {OPENMSK_VERSION}",
+        "Files: "
+        + ", ".join(
+            path.name
+            for output in metrics_outputs
+            for path in (output.get("json_path"), output.get("csv_path"))
+            if path is not None
+        ),
+    ]
+    table_top = margin + (len(title_lines) + 1) * line_height + 8
+    footer_height = line_height + 8
+    rows_per_page = max(1, (height - table_top - margin - footer_height) // line_height - 1)
+    pages = []
+    total_pages = max(1, (len(rows) + rows_per_page - 1) // rows_per_page)
+    column_widths = [
+        int((width - 2 * margin) * 0.18),
+        int((width - 2 * margin) * 0.57),
+        int((width - 2 * margin) * 0.25),
+    ]
+    headers = ("Source", "Metric", "Value")
+
+    for page_index, start in enumerate(range(0, len(rows), rows_per_page), start=1):
+        page_rows = rows[start : start + rows_per_page]
+        image = Image.new("L", (width, height), 0)
+        draw = ImageDraw.Draw(image)
+        y = margin
+        for title_line in title_lines:
+            draw.text(
+                (margin, y),
+                _truncate_text_to_width(draw, title_line, font, width - 2 * margin),
+                fill=255,
+                font=font,
+            )
+            y += line_height
+        draw.text(
+            (margin, y),
+            f"Page {page_index}/{total_pages}    Rows {start + 1}-{start + len(page_rows)} of {len(rows)}",
+            fill=200,
+            font=font,
+        )
+
+        y = table_top
+        x = margin
+        for header, column_width in zip(headers, column_widths):
+            draw.text((x, y), header, fill=255, font=font)
+            x += column_width
+        y += line_height
+        draw.line((margin, y - 2, width - margin, y - 2), fill=120)
+
+        for row in page_rows:
+            x = margin
+            for key, column_width in zip(("source", "metric", "value"), column_widths):
+                draw.text(
+                    (x, y),
+                    _truncate_text_to_width(draw, row.get(key, ""), font, column_width - 8),
+                    fill=220,
+                    font=font,
+                )
+                x += column_width
+            y += line_height
+
+        pages.append(_orient_metrics_report_page(np.asarray(image, dtype=np.uint16) * 16))
+    return pages
+
+
+def _orient_metrics_report_page(page_array):
+    return np.rot90(np.asarray(page_array), 2).copy()
+
+
+def _build_metrics_report_images(metrics_outputs, source_images, metrics_comment):
+    if not source_images:
+        return []
+    rows = _metrics_report_rows(metrics_outputs)
+    if not rows:
+        return []
+
+    base_header = source_images[0].getHead()
+    source_matrix = np.array(base_header.matrix_size[:], dtype=float)
+    source_width = int(source_matrix[0]) if source_matrix.size > 0 and source_matrix[0] > 0 else 512
+    source_height = int(source_matrix[1]) if source_matrix.size > 1 and source_matrix[1] > 0 else 512
+
+    try:
+        pages = _render_metrics_report_pages(
+            metrics_outputs,
+            max(source_width, 768),
+            max(source_height, 768),
+        )
+    except Exception:
+        logging.warning("Failed to render OpenMSK metrics report:\n%s", traceback.format_exc())
+        return []
+
+    if not pages:
+        return []
+
+    series_uid = _derived_uid(METRICS_REPORT_SERIES_NAME, METRICS_REPORT_SERIES_INDEX)
+    outputs = []
+    page_count = len(pages)
+    for index, page in enumerate(pages):
+        page = np.ascontiguousarray(page.astype(np.uint16, copy=False))
+        output = ismrmrd.Image.from_array(page, transpose=False)
+        header = copy.deepcopy(base_header)
+        header.data_type = output.data_type
+        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+        header.image_series_index = METRICS_REPORT_SERIES_INDEX
+        header.image_index = index + 1
+        header.slice = index
+        _set_header_sequence_field(header, "matrix_size", [page.shape[1], page.shape[0], 1])
+        _set_header_sequence_field(header, "field_of_view", [float(page.shape[1]), float(page.shape[0]), float(page_count)])
+        _set_header_sequence_field(header, "position", [0.0, 0.0, float(index)])
+        _set_header_sequence_field(header, "read_dir", [1.0, 0.0, 0.0])
+        _set_header_sequence_field(header, "phase_dir", [0.0, 1.0, 0.0])
+        _set_header_sequence_field(header, "slice_dir", [0.0, 0.0, 1.0])
+        output.setHead(header)
+        output.image_series_index = METRICS_REPORT_SERIES_INDEX
+        output.image_index = index + 1
+        output.attribute_string = _derived_meta(
+            source_images[0],
+            METRICS_REPORT_SERIES_NAME,
+            series_uid,
+            METRICS_REPORT_SERIES_INDEX,
+            index,
+            METRICS_REPORT_IMAGE_TYPE,
+            "Image",
+            metrics_comment or "OpenMSK metrics report",
+            float(np.nanmax(page)) if page.size else 4095.0,
+            source_geometry_segment=False,
+            slice_count=page_count,
+            extra_meta={
+                "Keep_image_geometry": "0",
+                "OpenMSKMetricsRows": str(len(rows)),
+                **_metrics_extra_meta(metrics_comment),
+            },
+        ).serialize()
+        outputs.append(output)
+
+    logging.info(
+        "Created OpenMSK metrics report image series with %d page(s) in image_series_index=%d",
+        page_count,
+        METRICS_REPORT_SERIES_INDEX,
+    )
+    return outputs
 
 
 def _send_images(connection, images, context):

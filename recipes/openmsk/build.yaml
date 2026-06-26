@@ -172,7 +172,7 @@ build:
         - pip install --no-cache-dir '.[ai]'
         # pymeshfix pinned to 0.16.2: pymskt's fix_mesh() calls
         # MeshFix.repair(verbose=...), a kwarg removed in pymeshfix >=0.17.
-        - pip install --no-cache-dir mskt nnunetv2==2.4.2 SimpleITK==2.3.1 pandas==2.0.3 pymeshfix==0.16.2
+        - pip install --no-cache-dir mskt nnunetv2==2.4.2 SimpleITK==2.3.1 pandas==2.0.3 Pillow==10.4.0 pymeshfix==0.16.2
         # KneePipeline's TF 2.11 / nnU-Net numpy compromise (resolved last).
         - pip install --no-cache-dir "numpy==1.24.3"
         - install -D -m 0644 {{ get_file("nnunet_numpy_compat.py") }} /opt/openmsk_compat/sitecustomize.py
@@ -237,9 +237,18 @@ readme: |-
   image-to-image module for qDESS knee MRI. The OpenRecon path receives MRD
   images from the scanner, reconstructs an echo-1 NIfTI, runs KneePipeline, and
   returns bone/cartilage segmentation with geometry copied from the source
-  images. The packaged segmentation models are `acl_qdess_bone_july_2024`,
-  `goyal_sagittal`, and `nnunet_knee`. Optional mesh/thickness analysis can run
-  after segmentation when the `computethickness` OpenRecon option is enabled.
+  images. The wrapper preserves both qDESS echo groups and synthesizes a
+  minimal two-echo DICOM series with TR/TE/flip and GL/TG values so
+  KneePipeline's qDESS loader can run its analytical T2 step from OpenRecon
+  MRD input. It mirrors KneePipeline's split steps: it runs mesh
+  generation/cartilage thickness when requested, runs qDESS T2 mapping when
+  KneePipeline identifies qDESS input, and returns subregion segmentation,
+  T2 maps, and a burned-in metrics report image series whenever those artifacts
+  are written. The same metrics are copied into output metadata comments.
+  The packaged segmentation models are
+  `acl_qdess_bone_july_2024`, `goyal_sagittal`, and `nnunet_knee`. Optional
+  mesh/thickness analysis can run after segmentation when the `computethickness`
+  OpenRecon option is enabled.
 
   Direct DICOM usage keeps the qDESS GL/TG private tags and can produce the
   full output set including T2:

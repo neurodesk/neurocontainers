@@ -7,17 +7,26 @@ images arriving as MRD image messages from the scanner.
 ## Outputs
 
 - Bone and cartilage segmentation as source-geometry derived MRD images.
+- Subregion segmentation as a separate derived MRD segmentation series when
+  KneePipeline writes `*_subregions-labels.nii.gz`.
 - Optional cartilage mesh and thickness outputs in the KneePipeline working
   directory when `computethickness` is enabled.
-- T2 map MRD images only when the pipeline produced `*_t2map.nii.gz`.
+- Metrics comments on derived metric-bearing outputs and a burned-in metrics
+  report image series when KneePipeline writes metrics JSON/CSV files.
+- qDESS T2 map MRD images and per-region T2 metrics when KneePipeline's
+  `steps.t2_mapping` writes `*_t2map.nii.gz` and `*_t2_results.json`.
 
 ## qDESS And T2 Caveat
 
-OpenRecon receives MRD images, not the original DICOM private tags. For the MRD
-path, `openmsk` reconstructs an echo-1 NIfTI and KneePipeline treats it as a
-generic NIfTI, so qDESS T2 mapping is skipped. To run the full pipeline,
-including T2, run `run_pipeline.py` directly on a qDESS DICOM directory that
-still contains the GL/TG private tags.
+OpenRecon receives MRD images, not the original DICOM. To preserve the qDESS
+T2 path, the wrapper keeps both echo groups and writes a minimal two-echo MR
+DICOM series with `EchoNumbers`, TR/TE/flip angle, and DOSMA's qDESS private
+GL/TG tags. TR/TE/flip are read from the MRD header or image metadata when
+available. GL/TG and any missing timing values can be supplied through the
+OpenRecon qDESS fallback fields.
+
+The fallback values are only as good as the protocol values entered on the
+scanner. Runtime logs report where every qDESS value came from.
 
 ## Parameters
 
@@ -26,6 +35,8 @@ still contains the GL/TG private tags.
   `goyal_sagittal` and `nnunet_knee` are also packaged).
 - `computethickness`: run slower mesh/thickness analysis after the segmentation
   has been sent.
+- `qdess_*`: fallback TR, TE1, TE2, flip angle, GL area, and TG values used to
+  synthesize the qDESS DICOM input when MRD metadata is incomplete.
 
 ## Build And Validate
 

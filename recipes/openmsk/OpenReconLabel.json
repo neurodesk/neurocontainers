@@ -83,6 +83,65 @@
       "type": "boolean",
       "information": { "en": "Run slower mesh/thickness analysis after sending the segmentation" },
       "default": false
+    },
+    {
+      "id": "qdess_tr_ms",
+      "label": { "en": "qDESS TR" },
+      "type": "double",
+      "information": { "en": "Fallback repetition time for synthetic qDESS DICOM when MRD sequence parameters are absent" },
+      "minimum": 1.0,
+      "maximum": 200.0,
+      "default": 25.0,
+      "unit": { "en": "ms" }
+    },
+    {
+      "id": "qdess_te1_ms",
+      "label": { "en": "qDESS TE1" },
+      "type": "double",
+      "information": { "en": "Fallback echo-1 time for synthetic qDESS DICOM when MRD sequence parameters are absent" },
+      "minimum": 0.1,
+      "maximum": 200.0,
+      "default": 8.0,
+      "unit": { "en": "ms" }
+    },
+    {
+      "id": "qdess_te2_ms",
+      "label": { "en": "qDESS TE2" },
+      "type": "double",
+      "information": { "en": "Fallback echo-2 time for synthetic qDESS DICOM when MRD sequence parameters are absent" },
+      "minimum": 0.1,
+      "maximum": 300.0,
+      "default": 42.0,
+      "unit": { "en": "ms" }
+    },
+    {
+      "id": "qdess_flip_angle_deg",
+      "label": { "en": "qDESS flip angle" },
+      "type": "double",
+      "information": { "en": "Fallback flip angle for synthetic qDESS DICOM when MRD sequence parameters are absent" },
+      "minimum": 1.0,
+      "maximum": 180.0,
+      "default": 30.0,
+      "unit": { "en": "deg" }
+    },
+    {
+      "id": "qdess_gl_area",
+      "label": { "en": "qDESS GL area" },
+      "type": "double",
+      "information": { "en": "Fallback qDESS spoiler gradient area written to DICOM private tag (0019,10B6)" },
+      "minimum": 0.0,
+      "maximum": 100000.0,
+      "default": 3132.0
+    },
+    {
+      "id": "qdess_tg_us",
+      "label": { "en": "qDESS TG" },
+      "type": "double",
+      "information": { "en": "Fallback qDESS spoiler duration written to DICOM private tag (0019,10B7)" },
+      "minimum": 0.0,
+      "maximum": 100000.0,
+      "default": 1560.0,
+      "unit": { "en": "us" }
     }
   ]
 }
