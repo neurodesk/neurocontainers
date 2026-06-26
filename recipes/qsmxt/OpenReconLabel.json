@@ -93,7 +93,7 @@
       "id": "echotimems",
       "label": { "en": "First echo" },
       "type": "double",
-      "minimum": 0.001,
+      "minimum": 0.1,
       "maximum": 1000.0,
       "default": 20.0,
       "unit": { "en": "ms" },
