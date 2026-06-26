@@ -30,7 +30,16 @@ build:
         DEBIAN_FRONTEND: noninteractive
 
     - install:
+        - bzip2
         - ca-certificates
+        - python3-dev
+        - python-is-python3
+        - python3-pip
+
+    - variables:
+        openrecon_ubuntu_version: "24.04"
+
+    - include: macros/openrecon/neurodocker.yaml
 
     - workdir: /opt/qsmxt
 
@@ -44,12 +53,21 @@ build:
         # alongside the binary, so conversion works out of the box.
         QSMXT_DCM2NIIX: /opt/qsmxt/dcm2niix
 
+    - run:
+        - cp {{ get_file("qsmxt.py") }} /opt/code/python-ismrmrd-server/qsmxt.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - mkdir -p /tmp/share/qsmxt_openrecon
+        - chmod 1777 /tmp/share /tmp/share/qsmxt_openrecon
+
     - deploy:
         path:
           - /opt/qsmxt
         bins:
           - qsmxt
           - dcm2niix
+          - python
+          - siemens_to_ismrmrd
 
 tests:
   - name: qsmxt version and help
@@ -63,7 +81,14 @@ tests:
     script: |
       dcm2niix --version 2>&1 | grep -iq dcm2niix
 
+  - name: OpenRecon runtime import
+    script: |
+      python /opt/code/python-ismrmrd-server/main.py -h 2>&1 | grep 'Example server for MRD streaming format'
+      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import qsmxt, ismrmrd, nibabel, scipy, skimage; print(qsmxt.__file__)" | grep -x '/opt/code/python-ismrmrd-server/qsmxt.py'
+      test -f /opt/code/python-ismrmrd-server/OpenReconLabel.json
+
 categories:
+  - image reconstruction
   - phase processing
   - quantitative imaging
   - structural imaging
@@ -119,6 +144,12 @@ readme: |-
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzUlEQVRIS+2WbUxbZRTHf+Wl0BVBNssKwWyZQBiic2wRjMwo4mLIRBxxuCiMl4QXI8QSWMAgJpIOp58GsiUkBBgZYEwMRLYhGEfc1mbyokF5iwYmiqvAgHYgg9J7vb06oHZMol93Pz7neZ7fOf/zf06uIiPTLLLJz8MDXlhUsmTe5AFpm+I+4N/E2lCipaVZTDeMzM2NoFJp0PjtR6sNdejBhGWEwamvEcQVwjTP8LDPo048J4AoChgNxxkerEWUDq7/tP6R6J9rwnpLwSljMkPTVxziD3pqeXZnCofDilC6quSYE+Dq5bcZHqolMzOT3NxcgoKCmJ2dpaWlhaKiIlTiNnyU2zFZB6mqqiIhIQGr1Up/fz+pqamYTcucPvQTCoXCGXBzup+Wzw6g0+koKCiQIQaDQZJGS1lZGQEBAURHRyMIAnV1dajVanJycuTLoqKi6OjoIHZHFsl7Tq5W5lBB97X3GBz4mMnJSVJSUujsNPBI8BEmf/8G89z3jI2NkZ2dTVtbmxTrpLGxkdraWjRbdsiQyYXrnIi9yi7fiLsDOr84io/3L/T19eEhvao9e48Tsa8Yi2WMT5ufoKamhpmZGQoLC8nKypIlS0tLo6urC7W7L1tVAXx4sHtVHqceXPj8ECEhLjQ3N+Pv78/TB04RujsVm22Juho/ysvL8fPzIyMjQ84wKSmJ0tJSFhcXKSkpob29Hd1TjUQGvrJWwZu5a6Pi4vk38FJfp7e3F09PTyL2F/Jk5DuSPKOca9grV2CXr7i4mOdDjnHpxwbJogJxcXE0NDSQmJjIrwPzfPTy5TVA4JdDq7PIcraKhXNn5EuSk5NpN1zDK/41lga+RejvlnuQnp4uN9Mt0B/Px8NY+OoK4m2pQqnpo6OjvH9Cz46LTWsA5YUfVgHC6AgrbyXKLsrPz5elMBqNslx6vR6NRkNMTIzsInu2PT09mEwmQkNDaW1tlR3VMTyA75kP7g6wr66c1iO0NckWzcvLIzg4GKVSKbvFDp13c2Fleob6+npZGm9vb8bHx6moqKCyshJ1dgqqhBc3BohSdrbqkwjnPwHbXy+5urqa8PBwYmNjsQVsZ3niBuLibcex4OaK6tWXUB874rCuWC/R+oh4y4w40Iet5SxuQ9/Jvre7JT4+HjFkF1teP4xgtiBM3cTloa24P7YbV80251m0EeDOTnHeglV3FCZ+djisjNrHA+/qULi63HOgbliBQzW/jSNcasNdeq1ertP88bd0dohb0M7/D7hzg1rKVus+zNTyP/S/B2JTFdwHbPq35b/04E9NtswA67fKiwAAAABJRU5ErkJggg==
 
 files:
+  - name: qsmxt.py
+    filename: qsmxt.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
   - name: qsmxt_x86_64_tar_gz
     url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.version }}/qsmxt-v{{ context.version }}-x86_64-unknown-linux-gnu.tar.gz
   - name: qsmxt_aarch64_tar_gz

@@ -1,604 +1,1062 @@
-import ismrmrd
-import os
-import itertools
+"""OpenRecon bridge for QSMxT v9.
+
+The OpenRecon side receives reconstructed MRD image messages. QSMxT v9 is a
+BIDS-native Rust binary, so this bridge writes a temporary BIDS MEGRE dataset,
+runs ``qsmxt run``, and converts selected derivatives back to MRD images.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
 import logging
-import traceback
-import numpy as np
-import numpy.fft as fft
-import matplotlib.pyplot as plt
-import xml.dom.minidom
-import base64
-import ctypes
+import os
+from pathlib import Path
 import re
-import mrdhelper
-import constants
-from time import perf_counter
-import nibabel as nib
+import shutil
 import subprocess
-from scipy.ndimage import binary_erosion, binary_dilation, gaussian_filter
-from skimage.measure import label
+import tempfile
+import traceback
+import uuid
 
-# Folder for debug output files
-debugFolder = "/tmp/share/debug"
+import ismrmrd
+import nibabel as nib
+import numpy as np
 
-def process(connection, config, mrdHeader):
-    logging.info("Config: \n%s", config)
+try:
+    import constants
+except ImportError:
+    class constants:
+        MRD_LOGGING_ERROR = 3
 
-    # mrdHeader should be xml formatted MRD header, but may be a string
-    # if it failed conversion earlier
-    try:
-        # Disabled due to incompatibility between PyXB and Python 3.8:
-        # https://github.com/pabigot/pyxb/issues/123
-        # # logging.info("MRD header: \n%s", mrdHeader.toxml('utf-8'))
 
-        logging.info("Incoming dataset contains %d encodings", len(mrdHeader.encoding))
-        logging.info("First encoding is of type '%s', with a matrix size of (%s x %s x %s) and a field of view of (%s x %s x %s)mm^3", 
-            mrdHeader.encoding[0].trajectory, 
-            mrdHeader.encoding[0].encodedSpace.matrixSize.x, 
-            mrdHeader.encoding[0].encodedSpace.matrixSize.y, 
-            mrdHeader.encoding[0].encodedSpace.matrixSize.z, 
-            mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.x, 
-            mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.y, 
-            mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.z)
+RECIPE_NAME = "qsmxt"
+DEFAULT_QSMXT_BINARY = "/opt/qsmxt/qsmxt"
+OPENRECON_WORK_ROOT = Path("/tmp/share/qsmxt_openrecon")
+QSMXT_DERIVATIVE_ROOT = Path("derivatives/qsmxt.rs")
+DEFAULT_ECHO_TIME_MS = 20.0
+DEFAULT_ECHO_SPACING_MS = 5.0
+DEFAULT_FIELD_STRENGTH_T = 3.0
+DEFAULT_B0_DIR = (0.0, 0.0, 1.0)
+OUTPUT_SERIES_START = 180
 
-    except:
-        logging.info("Improperly formatted MRD header: \n%s", mrdHeader)
+QSMXT_OUTPUTS = {
+    "qsm": {
+        "suffix": "Chimap",
+        "token": "QSMXT_CHIMAP",
+        "series": "QSMxT QSM",
+        "units": "ppm",
+    },
+    "mask": {
+        "suffix": "mask",
+        "token": "QSMXT_MASK",
+        "series": "QSMxT mask",
+        "units": "binary",
+    },
+    "magnitude": {
+        "suffix": "magnitude",
+        "token": "QSMXT_MAGNITUDE",
+        "series": "QSMxT magnitude",
+        "units": "a.u.",
+    },
+    "swi": {
+        "suffix": "swi",
+        "token": "QSMXT_SWI",
+        "series": "QSMxT SWI",
+        "units": "a.u.",
+    },
+    "minip": {
+        "suffix": "minIP",
+        "token": "QSMXT_MINIP",
+        "series": "QSMxT minIP",
+        "units": "a.u.",
+    },
+    "t2star": {
+        "suffix": "T2starmap",
+        "token": "QSMXT_T2STAR",
+        "series": "QSMxT T2star",
+        "units": "s",
+    },
+    "r2star": {
+        "suffix": "R2starmap",
+        "token": "QSMXT_R2STAR",
+        "series": "QSMxT R2star",
+        "units": "Hz",
+    },
+}
 
-    # Continuously parse incoming data parsed from MRD messages
-    currentSeries = 0
-    acqGroup = []
-    imgGroup = []
-    waveformGroup = []
+SCANNER_WRITE_UNSAFE_META_KEYS = {
+    "ImageTypeValue3",
+}
+SOURCE_PARENT_REFERENCE_META_KEYS = {
+    "DicomEngineDimString",
+    "MFInstanceNumber",
+    "MultiFrameSOPInstanceUID",
+    "PSMultiFrameSOPInstanceUID",
+    "PSSeriesInstanceUID",
+    "SOPInstanceUID",
+}
+SOURCE_PARENT_REFERENCE_META_PREFIXES = (
+    "ReferencedGSPS",
+    "ReferencedImageSequence",
+)
+
+
+def process(connection, config, metadata):
+    logging.info("QSMxT OpenRecon config: %s", config)
+    input_images = []
+
     try:
         for item in connection:
-            # ----------------------------------------------------------
-            # Raw k-space data messages
-            # ----------------------------------------------------------
-            if isinstance(item, ismrmrd.Acquisition):
-                # Accumulate all imaging readouts in a group
-                if (not item.is_flag_set(ismrmrd.ACQ_IS_NOISE_MEASUREMENT) and
-                    not item.is_flag_set(ismrmrd.ACQ_IS_PARALLEL_CALIBRATION) and
-                    not item.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA) and
-                    not item.is_flag_set(ismrmrd.ACQ_IS_NAVIGATION_DATA)):
-                    acqGroup.append(item)
-
-                # When this criteria is met, run process_raw() on the accumulated
-                # data, which returns images that are sent back to the client.
-                if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
-                    logging.info("Processing a group of k-space data")
-                    image = process_raw(acqGroup, connection, config, mrdHeader)
-                    connection.send_image(image)
-                    acqGroup = []
-
-            # ----------------------------------------------------------
-            # Image data messages
-            # ----------------------------------------------------------
-            elif isinstance(item, ismrmrd.Image):
-                # When this criteria is met, run process_group() on the accumulated
-                # data, which returns images that are sent back to the client.
-                # e.g. when the series number changes:
-                if item.image_series_index != currentSeries:
-                    logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
-                    currentSeries = item.image_series_index
-                    image = process_image(imgGroup, connection, config, mrdHeader)
-                    connection.send_image(image)
-                    imgGroup = []
-
-                # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
-                # if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
-                imgGroup.append(item)
-                # else:
-                # tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
-                # tmpMeta['Keep_image_geometry']    = 1
-                    # item.attribute_string = tmpMeta.serialize()
-
-                    # connection.send_image(item)
-                    # continue
-
-            # ----------------------------------------------------------
-            # Waveform data messages
-            # ----------------------------------------------------------
-            elif isinstance(item, ismrmrd.Waveform):
-                waveformGroup.append(item)
-
-            elif item is None:
+            if item is None:
                 break
-
+            if isinstance(item, ismrmrd.Image):
+                input_images.append(item)
             else:
-                logging.error("Unsupported data type %s", type(item).__name__)
+                logging.info("Ignoring unsupported MRD message %s", type(item).__name__)
 
-        # Extract raw ECG waveform data. Basic sorting to make sure that data 
-        # is time-ordered, but no additional checking for missing data.
-        # ecgData has shape (5 x timepoints)
-        if len(waveformGroup) > 0:
-            waveformGroup.sort(key = lambda item: item.time_stamp)
-            ecgData = [item.data for item in waveformGroup if item.waveform_id == 0]
-            if len(ecgData) > 0:
-                ecgData = np.concatenate(ecgData,1)
+        if not input_images:
+            logging.warning("No image messages received; closing without output")
+            return
 
-        # Process any remaining groups of raw or image data.  This can 
-        # happen if the trigger condition for these groups are not met.
-        # This is also a fallback for handling image data, as the last
-        # image in a series is typically not separately flagged.
-        if len(acqGroup) > 0:
-            logging.info("Processing a group of k-space data (untriggered)")
-            image = process_raw(acqGroup, connection, config, mrdHeader)
-            connection.send_image(image)
-            acqGroup = []
+        settings = _settings_from_config(config, metadata)
+        OPENRECON_WORK_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="run_",
+            dir=str(OPENRECON_WORK_ROOT),
+        ) as work_dir_name:
+            work_dir = Path(work_dir_name)
+            bids_dir = work_dir / "bids"
+            output_dir = work_dir / "output"
 
-        if len(imgGroup) > 0:
-            logging.info("Processing a group of images (untriggered)")
-            image = process_image(imgGroup, connection, config, mrdHeader)
-            connection.send_image(image)
-            imgGroup = []
+            conversion = write_bids_dataset(input_images, metadata, bids_dir, settings)
+            _run_qsmxt(bids_dir, output_dir, settings)
+            output_specs = _find_qsmxt_outputs(output_dir, conversion, settings)
+            output_images = _build_output_images(output_specs, conversion, input_images)
 
-    except Exception as e:
-        logging.error(traceback.format_exc())
-        connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
+        if settings["send_original"]:
+            logging.info("Sending %d original image(s) before QSMxT outputs", len(input_images))
+            _send_images_by_series(connection, input_images)
 
+        if output_images:
+            _validate_output_images(output_images, input_images)
+            _send_images_by_series(connection, output_images)
+        else:
+            logging.warning("QSMxT completed but no requested output files were found")
+
+    except Exception:
+        message = traceback.format_exc()
+        logging.error(message)
+        connection.send_logging(constants.MRD_LOGGING_ERROR, message)
     finally:
         connection.send_close()
 
 
-def process_raw(acqGroup, connection, config, mrdHeader):
-    if len(acqGroup) == 0:
-        return []
-    
-    logging.info(f'-----------------------------------------------')
-    logging.info(f'     process_raw called with {len(acqGroup)} readouts')
-    logging.info(f'-----------------------------------------------')
+def write_bids_dataset(input_images, metadata, bids_dir, settings):
+    series_groups = _group_images_by_series(input_images)
+    magnitude_group, phase_group = _select_magnitude_phase_groups(series_groups)
+    magnitude_images = _sorted_series_images(magnitude_group["images"])
+    phase_images = _sorted_series_images(phase_group["images"])
 
-    # Start timer
-    tic = perf_counter()
+    n_echoes = min(len(magnitude_images), len(phase_images))
+    if n_echoes == 0:
+        raise ValueError("QSMxT requires at least one magnitude and one phase image")
+    if len(magnitude_images) != len(phase_images):
+        logging.warning(
+            "Magnitude/phase frame count mismatch; using first %d pair(s): "
+            "%d magnitude, %d phase",
+            n_echoes,
+            len(magnitude_images),
+            len(phase_images),
+        )
 
-    # Create folder, if necessary
-    if not os.path.exists(debugFolder):
-        os.makedirs(debugFolder)
-        logging.debug("Created folder " + debugFolder + " for debug output files")
+    if settings["max_echoes"] > 0:
+        n_echoes = min(n_echoes, settings["max_echoes"])
 
-    # Format data into single [cha PE RO phs] array
-    lin = [acquisition.idx.kspace_encode_step_1 for acquisition in acqGroup]
-    phs = [acquisition.idx.phase                for acquisition in acqGroup]
+    echo_times = _echo_times_seconds(
+        n_echoes,
+        phase_images[:n_echoes],
+        metadata,
+        settings,
+    )
+    field_strength = settings["field_strength_t"]
+    b0_dir = settings["b0_dir"]
 
-    # Use the zero-padded matrix size
-    data = np.zeros((acqGroup[0].data.shape[0], 
-                     mrdHeader.encoding[0].encodedSpace.matrixSize.y, 
-                     mrdHeader.encoding[0].encodedSpace.matrixSize.x, 
-                     max(phs)+1), 
-                    acqGroup[0].data.dtype)
+    anat_dir = bids_dir / "sub-01" / "anat"
+    anat_dir.mkdir(parents=True, exist_ok=True)
 
-    rawHead = [None]*(max(phs)+1)
+    acquisition_label = _sanitize_bids_label(
+        _source_series_name(magnitude_images[0]) or "openrecon"
+    )
+    if not acquisition_label:
+        acquisition_label = "openrecon"
 
-    for acq, lin, phs in zip(acqGroup, lin, phs):
-        if (lin < data.shape[1]) and (phs < data.shape[3]):
-            # TODO: Account for asymmetric echo in a better way
-            data[:,lin,-acq.data.shape[1]:,phs] = acq.data
+    phase_paths = []
+    magnitude_paths = []
+    for echo_index in range(n_echoes):
+        echo_number = echo_index + 1
+        basename = f"sub-01_acq-{acquisition_label}_echo-{echo_number}"
+        mag_path = anat_dir / f"{basename}_part-mag_MEGRE.nii.gz"
+        phase_path = anat_dir / f"{basename}_part-phase_MEGRE.nii.gz"
 
-            # center line of k-space is encoded in user[5]
-            if (rawHead[phs] is None) or (np.abs(acq.getHead().idx.kspace_encode_step_1 - acq.getHead().idx.user[5]) < np.abs(rawHead[phs].idx.kspace_encode_step_1 - rawHead[phs].idx.user[5])):
-                rawHead[phs] = acq.getHead()
+        mag_volume, affine = _image_to_nifti_volume(
+            magnitude_images[echo_index],
+            kind="magnitude",
+        )
+        phase_volume, phase_affine = _image_to_nifti_volume(
+            phase_images[echo_index],
+            kind="phase",
+        )
+        phase_volume = _phase_to_qsmxt_counts(phase_volume, settings["phase_wrap"])
+        if mag_volume.shape != phase_volume.shape:
+            raise ValueError(
+                "Magnitude and phase echo volumes have different shapes for "
+                f"echo {echo_number}: {mag_volume.shape} vs {phase_volume.shape}"
+            )
 
-    # Flip matrix in RO/PE to be consistent with ICE
-    data = np.flip(data, (1, 2))
+        nib.save(nib.Nifti1Image(mag_volume.astype(np.float32), affine), mag_path)
+        nib.save(nib.Nifti1Image(phase_volume.astype(np.float32), phase_affine), phase_path)
 
-    logging.debug("Raw data is size %s" % (data.shape,))
-    np.save(debugFolder + "/" + "raw.npy", data)
+        sidecar = {
+            "EchoTime": echo_times[echo_index],
+            "MagneticFieldStrength": field_strength,
+            "B0_dir": list(b0_dir),
+            "Modality": "MR",
+            "ProtocolName": _metadata_protocol_name(metadata),
+            "QSMxTOpenReconSource": "ISMRMRD image stream",
+            "QSMxTRawPhaseScale": settings["phase_wrap"],
+        }
+        _write_json(_nifti_sidecar_path(mag_path), dict(sidecar, ImageType=["ORIGINAL", "PRIMARY", "M"]))
+        _write_json(_nifti_sidecar_path(phase_path), dict(sidecar, ImageType=["ORIGINAL", "PRIMARY", "P"]))
 
-    # Fourier Transform
-    data = fft.fftshift( data, axes=(1, 2))
-    data = fft.ifft2(    data, axes=(1, 2))
-    data = fft.ifftshift(data, axes=(1, 2))
-    data *= np.prod(data.shape) # FFT scaling for consistency with ICE
+        magnitude_paths.append(mag_path)
+        phase_paths.append(phase_path)
 
-    # Sum of squares coil combination
-    # Data will be [PE RO phs]
-    data = np.abs(data)
-    data = np.square(data)
-    data = np.sum(data, axis=0)
-    data = np.sqrt(data)
-
-    logging.debug("Image data is size %s" % (data.shape,))
-    np.save(debugFolder + "/" + "img.npy", data)
-
-    # Remove readout oversampling
-    if mrdHeader.encoding[0].reconSpace.matrixSize.x != 0:
-        offset = int((data.shape[1] - mrdHeader.encoding[0].reconSpace.matrixSize.x)/2)
-        data = data[:,offset:offset+mrdHeader.encoding[0].reconSpace.matrixSize.x]
-
-    # Remove phase oversampling
-    if mrdHeader.encoding[0].reconSpace.matrixSize.y != 0:
-        offset = int((data.shape[0] - mrdHeader.encoding[0].reconSpace.matrixSize.y)/2)
-        data = data[offset:offset+mrdHeader.encoding[0].reconSpace.matrixSize.y,:]
-
-    logging.debug("Image without oversampling is size %s" % (data.shape,))
-    np.save(debugFolder + "/" + "imgCrop.npy", data)
-
-    # Measure processing time
-    toc = perf_counter()
-    strProcessTime = "Total processing time: %.2f ms" % ((toc-tic)*1000.0)
-    logging.info(strProcessTime)
-
-    # Send this as a text message back to the client
-    connection.send_logging(constants.MRD_LOGGING_INFO, strProcessTime)
-
-    # Format as ISMRMRD image data
-    imagesOut = []
-    for phs in range(data.shape[2]):
-        # Create new MRD instance for the processed image
-        # data has shape [PE RO phs], i.e. [y x].
-        # from_array() should be called with 'transpose=False' to avoid warnings, and when called
-        # with this option, can take input as: [cha z y x], [z y x], or [y x]
-        tmpImg = ismrmrd.Image.from_array(data[...,phs], transpose=False)
-
-        # Set the header information
-        tmpImg.setHead(mrdhelper.update_img_header_from_raw(tmpImg.getHead(), rawHead[phs]))
-        tmpImg.field_of_view = (ctypes.c_float(mrdHeader.encoding[0].reconSpace.fieldOfView_mm.x), 
-                                ctypes.c_float(mrdHeader.encoding[0].reconSpace.fieldOfView_mm.y), 
-                                ctypes.c_float(mrdHeader.encoding[0].reconSpace.fieldOfView_mm.z))
-        tmpImg.image_index = phs
-
-        # Set ISMRMRD Meta Attributes
-        tmpMeta = ismrmrd.Meta()
-        tmpMeta['DataRole']               = 'Image'
-        tmpMeta['ImageProcessingHistory'] = ['FIRE', 'PYTHON']
-        tmpMeta['Keep_image_geometry']    = 1
-
-        xml = tmpMeta.serialize()
-        logging.debug("Image MetaAttributes: %s", xml)
-        tmpImg.attribute_string = xml
-        imagesOut.append(tmpImg)
-
-    # Call process_image() to invert image contrast
-    imagesOut = process_image(imagesOut, connection, config, mrdHeader)
-
-    return imagesOut
-
-
-def process_image(imgGroup, connection, config, mrdHeader):
-    if len(imgGroup) == 0:
-        return []
-
-    logging.info(f'-----------------------------------------------')
-    logging.info(f'     process_image called with {len(imgGroup)} images')
-    logging.info(f'-----------------------------------------------')
-
-    # Create folder, if necessary
-    if not os.path.exists(debugFolder):
-        os.makedirs(debugFolder)
-        logging.debug("Created folder " + debugFolder + " for debug output files")
-
-    if hasattr(ismrmrd, "get_dtype_from_data_type"):
-        data_type = ismrmrd.get_dtype_from_data_type(imgGroup[0].data_type)
-    else:
-        # Fallback for pyismrmrd versions that removed get_dtype_from_data_type
-        data_type = imgGroup[0].data.dtype
-
-    logging.debug("Processing data with %d images of type %s", len(imgGroup), data_type)
-
-    # Note: The MRD Image class stores data as [cha z y x]
-
-    # Extract image data into a 5D array of size [img cha z y x]
-    data = np.stack([img.data                              for img in imgGroup])
-    head = [img.getHead()                                  for img in imgGroup]
-    meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in imgGroup]
-
-    # Reformat data to [y x z cha img], i.e. [row col] for the first two dimensions
-    # data = data.transpose((3, 4, 2, 1, 0))
-
-    # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
-    data = data.transpose((3, 4, 0, 1, 2))
-
-    # Display MetaAttributes for first image
-    # KP: This needs to be tested on the scanner, testing with replayed DICOMs is no good because meta contains DicomJson inside XML
-    logging.debug('Try logging meta')
-    logging.debug("MetaAttributes[0]: %s", ismrmrd.Meta.serialize(meta[0]))
-
-    # Optional serialization of ICE MiniHeader
-#    logging.debug('Try logging minihead')
-    if 'IceMiniHead' in meta[0]:
-        logging.debug("IceMiniHead[0]: %s", base64.b64decode(meta[0]['IceMiniHead']).decode('utf-8'))
-
-
-    logging.debug("Stebo: Original image data is size %s" % (data.shape,))
-    # e.g. gre with 128x128x10 with phase and magnitude results in [128 128 1 1 1]
-#    np.save(debugFolder + "/" + "imgOrig.npy", data)
-
-    logging.debug('Do the afi stuff.')
-    # Parameters, defaults
-    opre_sendoriginal = False
-    opre_interleaved = False
-    opre_b1output = 'pu'
-    opre_brainmask = True
-    opre_mask_fwhm = 4.0
-    opre_mask_nerode = 2
-    opre_mask_ndilate = 4
-    opre_mask_thresh = 0.6
-    opre_signal_thresh = 0.1
-    opre_b1fwhm = 6.0
-
-    # Finding this from mrdHeader would be better..
-    tr_ratio   = 5
-    nominal_fa = 60
-
-    if ('parameters' in config):
-        if ('sendoriginal' in config['parameters']) and (config['parameters']['sendoriginal'] == True):
-            opre_sendoriginal = True
-        if ('interleaved' in config['parameters']) and (config['parameters']['interleaved'] == True):
-            opre_interleaved = True
-        if ('b1output' in config['parameters']) and (config['parameters']['b1output'] == 'pu'):
-            opre_b1output = 'pu'
-        if ('tr_ratio' in config['parameters']) and (0.1 <= config['parameters']['tr_ratio'] <= 100.0):
-            tr_ratio = config['parameters']['tr_ratio']
-        if ('nominal_fa' in config['parameters']) and (1.0 <= config['parameters']['nominal_fa'] <= 180.0):
-            nominal_fa = config['parameters']['nominal_fa']
-        if ('brainmask' in config['parameters']) and (config['parameters']['brainmask'] == True):
-            opre_brainmask = True
-        if ('mask_fwhm' in config['parameters']) and (1.0 <= config['parameters']['maskfwhm'] <= 10.0):
-            opre_mask_fwhm = config['parameters']['maskfwhm']
-        if ('mask_nerode' in config['parameters']) and (0 <= config['parameters']['masknerode'] <= 20):
-            opre_mask_nerode = config['parameters']['masknerode']
-            opre_mask_nerode = np.around(opre_mask_nerode)
-            opre_mask_nerode = opre_mask_nerode.astype(np.int16)
-        if ('mask_ndilate' in config['parameters']) and (0 <= config['parameters']['maskndilate'] <= 20):
-            opre_mask_ndilate = config['parameters']['maskndilate']
-            opre_mask_ndilate = np.around(opre_mask_ndilate)
-            opre_mask_ndilate = opre_mask_ndilate.astype(np.int16)
-        if ('mask_thresh' in config['parameters']) and (0.0 <= config['parameters']['maskthresh'] <= 1.0):
-            opre_mask_thresh = config['parameters']['mask_thresh']
-        if ('signal_thresh' in config['parameters']) and (0.1 <= config['parameters']['signalthresh'] <= 4096.0):
-            opre_signal_thresh = config['parameters']['signal_thresh']
-        if ('b1fwhm' in config['parameters']) and (-0.0001 <= config['parameters']['b1fwhm'] <= 10.0):
-            opre_b1fwhm = config['parameters']['b1fwhm']
-
-    voxel_sizes = (
-        mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.y / mrdHeader.encoding[0].encodedSpace.matrixSize.y,
-        mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.x / mrdHeader.encoding[0].encodedSpace.matrixSize.x,
-        mrdHeader.encoding[0].encodedSpace.fieldOfView_mm.z / mrdHeader.encoding[0].encodedSpace.matrixSize.z
+    _write_json(
+        bids_dir / "dataset_description.json",
+        {
+            "Name": "QSMxT OpenRecon transient BIDS dataset",
+            "BIDSVersion": "1.9.0",
+            "DatasetType": "raw",
+            "GeneratedBy": [{"Name": "qsmxt-openrecon", "Version": "1"}],
+        },
     )
 
-    if opre_interleaved:
-        # Convert to float to avoid integer division issues later
-        data_tr1 = np.squeeze(data.astype(np.float32)[:,:,::2,0,0])
-        data_tr2 = np.squeeze(data.astype(np.float32)[:,:,1::2,0,0])
-    else:
-        # KP: This would split the data into first half and second half but how is it on the scanner?
-        data_tr1,data_tr2 = np.split(np.squeeze(data.astype(np.float32)),2,axis=2)
+    logging.info(
+        "Wrote QSMxT BIDS input: %d echo pair(s), mag=%s phase=%s",
+        n_echoes,
+        magnitude_paths[0],
+        phase_paths[0],
+    )
+    return {
+        "bids_dir": bids_dir,
+        "anat_dir": anat_dir,
+        "subject": "01",
+        "acquisition_label": acquisition_label,
+        "basename": f"sub-01_acq-{acquisition_label}",
+        "n_echoes": n_echoes,
+        "magnitude_images": magnitude_images[:n_echoes],
+        "phase_images": phase_images[:n_echoes],
+        "anchor_image": magnitude_images[0],
+        "magnitude_paths": magnitude_paths,
+        "phase_paths": phase_paths,
+        "field_strength_t": field_strength,
+        "b0_dir": b0_dir,
+    }
 
-    # For debugging and masking write out with nibabel
-    xform = np.eye(4)
-    tr1_img = nib.nifti1.Nifti1Image(data_tr1, xform)
-    tr2_img = nib.nifti1.Nifti1Image(data_tr2, xform)
-    nib.save(tr1_img, 'nifti_tr1_image.nii')
-    nib.save(tr2_img, 'nifti_tr2_image.nii')
 
-    # Masking
-    if opre_brainmask:
-        subprocess.run(['bet2', 'nifti_tr1_image.nii', 'brain_tr1.nii', '-m'], check=True)
-        subprocess.run(['bet2', 'nifti_tr2_image.nii', 'brain_tr2.nii', '-m'], check=True)
-        mask1 = nib.load('brain_tr1_mask.nii.gz').get_fdata().astype(bool)
-        mask2 = nib.load('brain_tr2_mask.nii.gz').get_fdata().astype(bool)
-#        combined_mask = np.logical_or(mask1,mask2)
-        combined_mask = mask1
+def _run_qsmxt(bids_dir, output_dir, settings):
+    binary = (
+        settings["qsmxt_binary"]
+        or os.environ.get("QSMXT_BINARY")
+        or DEFAULT_QSMXT_BINARY
+    )
+    cmd = [
+        binary,
+        "run",
+        str(bids_dir),
+        str(output_dir),
+        "--force",
+        "--n-procs",
+        str(settings["n_procs"]),
+    ]
 
-        for _ in range(opre_mask_nerode):
-            combined_mask = binary_erosion(combined_mask)
+    _append_optional_arg(cmd, "--qsm-algorithm", settings["qsm_algorithm"])
+    _append_optional_arg(cmd, "--unwrapping-algorithm", settings["unwrapping_algorithm"])
+    _append_optional_arg(cmd, "--bf-algorithm", settings["bf_algorithm"])
+    _append_optional_arg(cmd, "--mask-preset", settings["mask_preset"])
+    _append_optional_arg(cmd, "--qsm-reference", settings["qsm_reference"])
+    # Auto-enable the generation flags for any derivative the user selected in
+    # sendoutputs; otherwise the map is requested but never produced by QSMxT
+    # (minIP is a by-product of the SWI pipeline, so it also needs --do-swi).
+    selected = _selected_output_ids(settings["send_outputs"])
+    do_swi = settings["do_swi"] or "swi" in selected or "minip" in selected
+    do_t2starmap = settings["do_t2starmap"] or "t2star" in selected
+    do_r2starmap = settings["do_r2starmap"] or "r2star" in selected
+    if settings["no_qsm"]:
+        cmd.append("--no-qsm")
+    if do_swi:
+        cmd.append("--do-swi")
+    if do_t2starmap:
+        cmd.append("--do-t2starmap")
+    if do_r2starmap:
+        cmd.append("--do-r2starmap")
+    if not settings["inhomogeneity_correction"]:
+        cmd.append("--no-inhomogeneity-correction")
 
-        # Keep largest connected component (the head)
-        labeled = label(combined_mask)
-        sizes = np.bincount(labeled.ravel())
-        sizes[0] = 0  # ignore background
-        combined_mask = labeled == np.argmax(sizes)
+    logging.info("Running QSMxT: %s", " ".join(cmd))
+    result = subprocess.run(
+        cmd,
+        check=False,
+        text=True,
+        capture_output=True,
+        cwd=str(bids_dir),
+    )
+    if result.stdout:
+        logging.info("QSMxT stdout:\n%s", result.stdout)
+    if result.stderr:
+        logging.info("QSMxT stderr:\n%s", result.stderr)
+    if result.returncode != 0:
+        raise RuntimeError(f"qsmxt failed with exit code {result.returncode}")
 
-        for _ in range(opre_mask_ndilate):
-            combined_mask = binary_dilation(combined_mask)
 
-        # ---- Remove largest external component (background) ----
-        inverted = ~combined_mask
-        labeled = label(inverted)
-        sizes = np.bincount(labeled.ravel())
-        sizes[0] = 0
-        outside = labeled == np.argmax(sizes)
-        final_mask = ~outside
+def _find_qsmxt_outputs(output_dir, conversion, settings):
+    selected = _selected_output_ids(settings["send_outputs"])
+    derivative_anat_dir = (
+        output_dir
+        / QSMXT_DERIVATIVE_ROOT
+        / f"sub-{conversion['subject']}"
+        / "anat"
+    )
+    specs = []
+    for output_id in selected:
+        spec = QSMXT_OUTPUTS[output_id]
+        candidates = sorted(derivative_anat_dir.glob(f"*_{spec['suffix']}.nii*"))
+        if not candidates:
+            logging.info(
+                "Requested QSMxT output %s not found in %s",
+                output_id,
+                derivative_anat_dir,
+            )
+            continue
+        specs.append((output_id, spec, candidates[0]))
+    return specs
 
-        # ---- Smooth and threshold the mask ----
-        sigma_mask = (opre_mask_fwhm / (2 * np.sqrt(2 * np.log(2)))) / np.array(voxel_sizes[:3])
-        smoothed_mask = gaussian_filter(final_mask.astype(np.float32), sigma=sigma_mask)
-        final_mask = smoothed_mask > opre_mask_thresh
 
-    # Processing of AFI data
-    # We want acosd((r*n-1)./(n-r)) where r=image2/image1 and e.g. n=10
- 
-    # Create a mask for valid division (data_tr1 must not be near zero)
-    valid_mask = data_tr1 > opre_signal_thresh
+def _build_output_images(output_specs, conversion, input_images):
+    used_series = {int(image.getHead().image_series_index) for image in input_images}
+    output_images = []
+    for index, (output_id, spec, nifti_path) in enumerate(output_specs):
+        series_index = _reserve_series_index(used_series, OUTPUT_SERIES_START + index)
+        output_images.append(
+            _nifti_to_mrd_image(
+                nifti_path,
+                conversion["anchor_image"],
+                series_index,
+                f"{spec['series']}",
+                spec["token"],
+                output_id,
+                spec["units"],
+            )
+        )
+    return output_images
 
-    # Initialize signal_ratio array
-    signal_ratio = np.zeros_like(data_tr1, dtype=np.float32)
 
-    # Compute signal ratio only where safe
-    signal_ratio[valid_mask] = data_tr2[valid_mask] / data_tr1[valid_mask]
-    
-    # Calculate numerator and denominator
-    numerator = tr_ratio * signal_ratio - 1.0
-    denominator = tr_ratio - signal_ratio
+def _nifti_to_mrd_image(
+    nifti_path,
+    anchor_image,
+    series_index,
+    series_name,
+    image_type_token,
+    output_id,
+    units,
+):
+    nifti = nib.load(str(nifti_path))
+    data_xyz = np.asarray(nifti.get_fdata(dtype=np.float32), dtype=np.float32)
+    data_xyz = np.squeeze(data_xyz)
+    if data_xyz.ndim == 2:
+        data_xyz = data_xyz[:, :, np.newaxis]
+    if data_xyz.ndim != 3:
+        raise ValueError(f"QSMxT output must be 3D, got {nifti_path}: {data_xyz.shape}")
 
-    # Safely compute the ratio term
-    epsilon = 1e-6
-    ratio_term = np.zeros_like(numerator, dtype=np.float32)
-    valid_denominator = np.abs(denominator) > epsilon
-    ratio_term[valid_denominator] = numerator[valid_denominator] / denominator[valid_denominator]
+    data_zyx = np.transpose(data_xyz, (2, 1, 0))
+    output = ismrmrd.Image.from_array(data_zyx.astype(np.float32), transpose=False)
 
-    # Clip ratio term to be in the valid input range for arccos
-    ratio_term_clipped = np.clip(ratio_term, -1.0, 1.0)
+    header = copy.deepcopy(anchor_image.getHead())
+    out_header = output.getHead()
+    header.data_type = output.data_type
+    header.image_type = int(getattr(ismrmrd, "IMTYPE_MAGNITUDE", 1))
+    header.image_series_index = int(series_index)
+    header.image_index = 1
+    header.slice = 0
+    header.contrast = 0
+    _set_header_sequence_field(
+        header,
+        "matrix_size",
+        [int(value) for value in out_header.matrix_size],
+    )
 
-    # Compute the flip angle in degrees
-    actual_fa = np.degrees(np.arccos(ratio_term_clipped))
+    zooms = nifti.header.get_zooms()[:3]
+    if len(zooms) == 3:
+        fov = [
+            float(zooms[0]) * data_xyz.shape[0],
+            float(zooms[1]) * data_xyz.shape[1],
+            float(zooms[2]) * data_xyz.shape[2],
+        ]
+        _set_header_sequence_field(header, "field_of_view", fov)
 
-    # Apply mask to B1 map first
-    if opre_brainmask:
-        actual_fa = actual_fa * final_mask
+    output.setHead(header)
+    output.image_series_index = int(series_index)
+    output.attribute_string = _output_meta(
+        anchor_image,
+        header,
+        series_index,
+        series_name,
+        image_type_token,
+        output_id,
+        units,
+        data_xyz,
+        nifti_path,
+    ).serialize()
+    return output
 
-        if (opre_b1fwhm > 0.1):
-            # Smooth both B1 map and mask
-            sigma_vox = (opre_b1fwhm / (2 * np.sqrt(2 * np.log(2)))) / np.array(voxel_sizes[:3])
-            actual_fa = gaussian_filter(actual_fa, sigma=sigma_vox)
-            smoothed_mask = gaussian_filter(final_mask.astype(np.float32), sigma=sigma_vox)
-            # Normalize to fix smoothing edge effects
-            with np.errstate(invalid='ignore', divide='ignore'):
-                actual_fa = np.divide(actual_fa, smoothed_mask)
-                actual_fa[smoothed_mask == 0] = np.nan
-    else:
-        if (opre_b1fwhm > 0.1):
-            # Smooth whole map without masking
-            sigma_vox = (opre_b1fwhm / (2 * np.sqrt(2 * np.log(2)))) / np.array(voxel_sizes[:3])
-            actual_fa = gaussian_filter(actual_fa, sigma=sigma_vox)    
 
-    # Replace NaNs in actual_fa with 0.1 (for visualization or further processing)
-    actual_fa = np.nan_to_num(actual_fa, nan=0.1)
-
-    # Troubleshooting
-    b1_img = nib.nifti1.Nifti1Image(actual_fa, xform)
-    nib.save(b1_img, 'nifti_b1_image.nii')
-
-    # And restore the other two dimensions
-    actual_fa = actual_fa[..., np.newaxis, np.newaxis]
-
-    if (opre_b1output == 'afa'):
-        data = actual_fa
-    else:
-        data = actual_fa/nominal_fa*100.0
-
-    # Reformat data
-    logging.debug("shape of b1 map")
-    logging.debug(data.shape)
-    #data = data[:, :, :, None, None]
-    data = data.transpose((0, 1, 4, 3, 2))
-
-#    if mrdhelper.get_json_config_param(config, 'options') == 'complex':
-#        # Complex images are requested
-#        data = data.astype(np.complex64)
-#        maxVal = data.max()
-#    else:
-#        # Determine max value (12 or 16 bit)
-    BitsStored = 12
-#        if (mrdhelper.get_userParameterLong_value(mrdHeader, "BitsStored") is not None):
-#            BitsStored = mrdhelper.get_userParameterLong_value(mrdHeader, "BitsStored")
-    maxVal = 2**BitsStored - 1
-
-        # Normalize and convert to int16
-        # Nuh uh, no normalizing here!
-    data = data.astype(np.float64)
-#        data *= maxVal/data.max()
-    data = np.around(data)
-    data = data.astype(np.int16)
-
-    currentSeries = 0
-
-    # Re-slice back into 2D images
-    imagesOut = [None] * data.shape[-1]
-
-    logging.debug("KP350: data is size %s" % (data.shape,))
-    has_nan = np.isnan(data).any()
-    logging.debug("Contains NaN: %s" % has_nan)
-
-    for iImg in range(data.shape[-1]):
-        # Create new MRD instance for the inverted image
-        # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
-        # from_array() should be called with 'transpose=False' to avoid warnings, and when called
-        # with this option, can take input as: [cha z y x], [z y x], or [y x]
-        imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
-
-        # Create a copy of the original fixed header and update the data_type
-        # (we changed it to int16 from all other types)
-        oldHeader = head[iImg]
-        oldHeader.data_type = imagesOut[iImg].data_type
-
-        # Set the image_type to match the data_type for complex data
-        if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
-            oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
-
-        # Unused example, as images are grouped by series before being passed into this function now
-        # oldHeader.image_series_index = currentSeries
-
-        # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
-        if mrdhelper.get_meta_value(meta[iImg], 'IceMiniHead') is not None:
-            if mrdhelper.extract_minihead_bool_param(base64.b64decode(meta[iImg]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
-                currentSeries += 1
-
-        imagesOut[iImg].setHead(oldHeader)
-
-        # Create a copy of the original ISMRMRD Meta attributes and update
-        tmpMeta = meta[iImg]
-        tmpMeta['DataRole']                       = 'Image'
-        tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'AFIB1']
-        tmpMeta['WindowCenter']                   = str((maxVal+1)/2)
-        tmpMeta['WindowWidth']                    = str((maxVal+1))
-#        tmpMeta['SequenceDescriptionAdditional']  = 'FIRE'
-        tmpMeta['SequenceDescriptionAdditional']  = 'AFI B1+ Map'
-        tmpMeta['Keep_image_geometry']            = 1
-
-        if ('parameters' in config) and ('options' in config['parameters']):
-            # Example for sending ROIs
-            if config['parameters']['options'] == 'roi':
-                logging.info("Creating ROI_example")
-                tmpMeta['ROI_example'] = create_example_roi(data.shape)
-
-            # Example for setting colormap
-            if config['parameters']['options'] == 'colormap':
-                tmpMeta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
-
-        # Add image orientation directions to MetaAttributes if not already present
-        if tmpMeta.get('ImageRowDir') is None:
-            tmpMeta['ImageRowDir'] = ["{:.18f}".format(oldHeader.read_dir[0]), "{:.18f}".format(oldHeader.read_dir[1]), "{:.18f}".format(oldHeader.read_dir[2])]
-
-        if tmpMeta.get('ImageColumnDir') is None:
-            tmpMeta['ImageColumnDir'] = ["{:.18f}".format(oldHeader.phase_dir[0]), "{:.18f}".format(oldHeader.phase_dir[1]), "{:.18f}".format(oldHeader.phase_dir[2])]
-
-        metaXml = tmpMeta.serialize()
-        logging.debug("Image MetaAttributes: %s", xml.dom.minidom.parseString(metaXml).toprettyxml())
-        logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
-
-        imagesOut[iImg].attribute_string = metaXml
-
-    # Send a copy of original (unmodified) images back too
-    if opre_sendoriginal:
-        stack = traceback.extract_stack()
-        if stack[-2].name == 'process_raw':
-            logging.warning('sendOriginal is true, but input was raw data, so no original images to return!')
+def _image_to_nifti_volume(image, kind):
+    data = np.asarray(image.data)
+    if data.ndim == 4:
+        if kind == "magnitude":
+            if np.iscomplexobj(data):
+                vol_zyx = np.sqrt(np.sum(np.abs(data) ** 2, axis=0))
+            elif data.shape[0] > 1:
+                vol_zyx = np.sqrt(np.sum(data.astype(np.float32) ** 2, axis=0))
+            else:
+                vol_zyx = data[0]
         else:
-            logging.info('Sending a copy of original unmodified images due to sendOriginal set to True')
-            # In reverse order so that they'll be in correct order as we insert them to the front of the list
-            for image in reversed(imgGroup):
-                # Create a copy to not modify the original inputs
-                tmpImg = image
+            first_channel = data[0]
+            vol_zyx = np.angle(first_channel) if np.iscomplexobj(first_channel) else first_channel
+    else:
+        squeezed = np.squeeze(data)
+        if squeezed.ndim == 2:
+            vol_zyx = squeezed[np.newaxis, :, :]
+        elif squeezed.ndim == 3:
+            vol_zyx = squeezed
+        else:
+            raise ValueError(f"Unsupported MRD image data shape: {data.shape}")
 
-                # Change the series_index to have a different series
-                tmpImg.image_series_index = 99
+    vol_xyz = np.transpose(np.asarray(vol_zyx, dtype=np.float32), (2, 1, 0))
+    return vol_xyz, _affine_from_image(image, vol_xyz.shape)
 
-                # Ensure Keep_image_geometry is set to not reverse image orientation
-                tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
-                tmpMeta['Keep_image_geometry'] = 1
-                tmpImg.attribute_string = tmpMeta.serialize()
 
-                imagesOut.insert(0, tmpImg)
+def _phase_to_qsmxt_counts(phase_volume, phase_wrap):
+    phase = np.asarray(phase_volume, dtype=np.float32)
+    if not phase.size:
+        return phase
+    finite = phase[np.isfinite(phase)]
+    if finite.size == 0:
+        return phase
 
-    return imagesOut
+    data_min = float(np.min(finite))
+    data_max = float(np.max(finite))
+    if -np.pi <= data_min and data_max <= np.pi:
+        return phase
 
-# Create an example ROI <3
-def create_example_roi(img_size):
-    t = np.linspace(0, 2*np.pi)
-    x = 16*np.power(np.sin(t), 3)
-    y = -13*np.cos(t) + 5*np.cos(2*t) + 2*np.cos(3*t) + np.cos(4*t)
+    try:
+        phase_wrap = float(phase_wrap)
+    except (TypeError, ValueError):
+        phase_wrap = 4096.0
+    if phase_wrap <= 0 or abs(phase_wrap - 4096.0) < 1e-6:
+        return phase
+    logging.info(
+        "Rescaling raw phase counts from wrap %.6g to QSMxT 4096-count convention",
+        phase_wrap,
+    )
+    return phase * (4096.0 / phase_wrap)
 
-    # Place ROI in bottom right of image, offset and scaled to 10% of the image size
-    x = (x-np.min(x)) / (np.max(x) - np.min(x))
-    y = (y-np.min(y)) / (np.max(y) - np.min(y))
-    x = (x * 0.10*np.min(img_size[:2])) + (img_size[1]-0.2*np.min(img_size[:2]))
-    y = (y * 0.10*np.min(img_size[:2])) + (img_size[0]-0.2*np.min(img_size[:2]))
 
-    rgb = (1,0,0)  # Red, green, blue color -- normalized to 1
-    thickness  = 1 # Line thickness
-    style      = 0 # Line style (0 = solid, 1 = dashed)
-    visibility = 1 # Line visibility (0 = false, 1 = true)
+def _affine_from_image(image, shape_xyz):
+    header = image.getHead()
+    read_dir = _normalized_or_default(header.read_dir, (1.0, 0.0, 0.0))
+    phase_dir = _normalized_or_default(header.phase_dir, (0.0, 1.0, 0.0))
+    slice_dir = _normalized_or_default(header.slice_dir, (0.0, 0.0, 1.0))
+    fov = np.asarray(header.field_of_view, dtype=float)
+    dims = np.asarray(shape_xyz, dtype=float)
+    voxel = np.divide(fov, dims, out=np.ones(3, dtype=float), where=dims > 0)
+    position = np.asarray(header.position, dtype=float)
+    origin = (
+        position
+        - read_dir * voxel[0] * (shape_xyz[0] - 1) / 2.0
+        - phase_dir * voxel[1] * (shape_xyz[1] - 1) / 2.0
+        - slice_dir * voxel[2] * (shape_xyz[2] - 1) / 2.0
+    )
+    affine = np.eye(4, dtype=float)
+    affine[:3, 0] = read_dir * voxel[0]
+    affine[:3, 1] = phase_dir * voxel[1]
+    affine[:3, 2] = slice_dir * voxel[2]
+    affine[:3, 3] = origin
+    return affine
 
-    roi = mrdhelper.create_roi(x, y, rgb, thickness, style, visibility)
-    return roi
+
+def _settings_from_config(config, metadata=None):
+    params = _config_parameters(config)
+    return {
+        "send_original": _config_bool(params, "sendoriginal", False),
+        "send_outputs": str(params.get("sendoutputs", "qsm") or "qsm"),
+        "max_echoes": _config_int(params, "maxechoes", 0),
+        "echo_times_ms": _config_text(params, "echotimesms", ""),
+        "echo_time_ms": _config_float(params, "echotimems", DEFAULT_ECHO_TIME_MS),
+        "echo_spacing_ms": _config_float(params, "echospacingms", DEFAULT_ECHO_SPACING_MS),
+        "field_strength_t": _config_float(
+            params,
+            "fieldstrength",
+            _metadata_field_strength(metadata) or DEFAULT_FIELD_STRENGTH_T,
+        ),
+        "b0_dir": _config_vector(params, "b0dir", DEFAULT_B0_DIR, length=3),
+        "phase_wrap": _config_float(params, "phasewrap", 4096.0),
+        "qsmxt_binary": _config_text(params, "qsmxtbinary", ""),
+        "qsm_algorithm": _optional_choice(params, "qsmalgorithm"),
+        "unwrapping_algorithm": _optional_choice(params, "unwrappingalgorithm"),
+        "bf_algorithm": _optional_choice(params, "bfalgorithm"),
+        "mask_preset": _optional_choice(params, "maskpreset"),
+        "qsm_reference": _optional_choice(params, "qsmreference"),
+        "n_procs": max(1, _config_int(params, "nprocs", 1)),
+        "no_qsm": _config_bool(params, "noqsm", False),
+        "do_swi": _config_bool(params, "doswi", False),
+        "do_t2starmap": _config_bool(params, "dot2starmap", False),
+        "do_r2starmap": _config_bool(params, "dor2starmap", False),
+        "inhomogeneity_correction": _config_bool(params, "inhomogeneitycorrection", True),
+    }
+
+
+def _group_images_by_series(images):
+    groups = []
+    by_key = {}
+    for order, image in enumerate(images):
+        key = _series_group_key(image)
+        group = by_key.get(key)
+        if group is None:
+            group = {
+                "key": key,
+                "images": [],
+                "order": order,
+            }
+            by_key[key] = group
+            groups.append(group)
+        group["images"].append(image)
+
+    for group in groups:
+        group["kind"] = _classify_series(group["images"])
+        group["name"] = _source_series_name(group["images"][0])
+        logging.info(
+            "Input series %s classified as %s with %d image(s)",
+            group["name"] or group["key"],
+            group["kind"],
+            len(group["images"]),
+        )
+    return groups
+
+
+def _select_magnitude_phase_groups(groups):
+    magnitude_groups = [group for group in groups if group["kind"] == "magnitude"]
+    phase_groups = [group for group in groups if group["kind"] == "phase"]
+
+    if not phase_groups and len(groups) == 2:
+        sorted_groups = sorted(groups, key=_series_signal_range)
+        sorted_groups[0]["kind"] = "phase"
+        sorted_groups[1]["kind"] = "magnitude"
+        phase_groups = [sorted_groups[0]]
+        magnitude_groups = [sorted_groups[1]]
+        logging.warning(
+            "No explicit phase metadata found; using value range fallback: "
+            "%s=phase, %s=magnitude",
+            sorted_groups[0]["name"],
+            sorted_groups[1]["name"],
+        )
+
+    if not magnitude_groups:
+        raise ValueError("No magnitude image series found in MRD stream")
+    if not phase_groups:
+        raise ValueError("No phase image series found in MRD stream")
+    if len(magnitude_groups) > 1 or len(phase_groups) > 1:
+        logging.warning(
+            "Multiple magnitude/phase series found; using first pair: %d magnitude, %d phase",
+            len(magnitude_groups),
+            len(phase_groups),
+        )
+
+    return (
+        sorted(magnitude_groups, key=lambda group: group["order"])[0],
+        sorted(phase_groups, key=lambda group: group["order"])[0],
+    )
+
+
+def _classify_series(images):
+    image = images[0]
+    image_type = int(getattr(image, "image_type", 0))
+    if image_type == int(getattr(ismrmrd, "IMTYPE_PHASE", 2)):
+        return "phase"
+
+    meta = _meta_from_image(image)
+    text = " ".join(
+        [
+            _source_series_name(image),
+            _meta_text(meta, "ComplexImageComponent"),
+            _meta_text(meta, "ImageType"),
+            _meta_text(meta, "DicomImageType"),
+            _meta_text(meta, "ImageTypeValue3"),
+            _meta_text(meta, "ImageTypeValue4"),
+        ]
+    ).upper()
+
+    if re.search(r"(^|[_\\\s-])(PHASE|PHA|P)($|[_\\\s-])", text) or text.endswith("_PHA"):
+        return "phase"
+    if re.search(r"(^|[_\\\s-])(MAG|MAGNITUDE|M)($|[_\\\s-])", text):
+        return "magnitude"
+    if image_type in (0, int(getattr(ismrmrd, "IMTYPE_MAGNITUDE", 1))):
+        return "magnitude"
+    return "unknown"
+
+
+def _series_signal_range(group):
+    data = np.asarray(group["images"][0].data)
+    summary = np.abs(data) if np.iscomplexobj(data) else data
+    return float(np.nanmax(summary) - np.nanmin(summary))
+
+
+def _series_group_key(image):
+    meta = _meta_from_image(image)
+    return (
+        int(image.getHead().image_series_index),
+        _meta_text(meta, "SeriesInstanceUID"),
+        _source_series_name(image),
+    )
+
+
+def _sorted_series_images(images):
+    return sorted(images, key=_image_sort_key)
+
+
+def _image_sort_key(image):
+    header = image.getHead()
+    return (
+        int(getattr(header, "image_index", 0)),
+        int(getattr(header, "contrast", 0)),
+        int(getattr(header, "phase", 0)),
+        int(getattr(header, "repetition", 0)),
+        int(getattr(header, "set", 0)),
+    )
+
+
+def _echo_times_seconds(n_echoes, phase_images, metadata, settings):
+    configured = _parse_float_list(settings.get("echo_times_ms", ""))
+    if configured:
+        values_ms = configured
+    else:
+        values_ms = _metadata_echo_times_ms(metadata)
+        if not values_ms:
+            values_ms = _image_echo_times_ms(phase_images)
+
+    if values_ms:
+        values_ms = list(values_ms)
+        while len(values_ms) < n_echoes:
+            values_ms.append(values_ms[-1] + settings["echo_spacing_ms"])
+        return [float(value) / 1000.0 for value in values_ms[:n_echoes]]
+
+    logging.warning(
+        "No EchoTime found in MRD metadata or config; using %.3f ms + %.3f ms spacing",
+        settings["echo_time_ms"],
+        settings["echo_spacing_ms"],
+    )
+    return [
+        (settings["echo_time_ms"] + index * settings["echo_spacing_ms"]) / 1000.0
+        for index in range(n_echoes)
+    ]
+
+
+def _metadata_echo_times_ms(metadata):
+    sequence = getattr(metadata, "sequenceParameters", None)
+    te = getattr(sequence, "TE", None)
+    if te is None:
+        return []
+    if isinstance(te, (list, tuple)):
+        values = [float(value) for value in te]
+    else:
+        values = [float(te)]
+    if values and max(values) < 1.0:
+        return [value * 1000.0 for value in values]
+    return values
+
+
+def _image_echo_times_ms(images):
+    values = []
+    for image in images:
+        meta = _meta_from_image(image)
+        value = _meta_float(meta, "EchoTime")
+        if value is None:
+            continue
+        values.append(value * 1000.0 if value < 1.0 else value)
+    return values
+
+
+def _metadata_field_strength(metadata):
+    try:
+        value = metadata.acquisitionSystemInformation.systemFieldStrength_T
+    except AttributeError:
+        return None
+    return float(value) if value is not None else None
+
+
+def _metadata_protocol_name(metadata):
+    try:
+        value = metadata.measurementInformation.protocolName
+    except AttributeError:
+        return ""
+    return str(value or "")
+
+
+def _output_meta(
+    source_image,
+    header,
+    series_index,
+    series_name,
+    image_type_token,
+    output_id,
+    units,
+    output_data,
+    nifti_path,
+):
+    meta = _meta_from_image(source_image)
+    _strip_source_parent_refs(meta)
+    _strip_scanner_write_unsafe_meta(meta)
+    if "IceMiniHead" in meta:
+        del meta["IceMiniHead"]
+
+    series_uid = _derived_series_uid(source_image, series_index, series_name)
+    sop_uid = _derived_instance_uid(source_image, series_uid, series_index, series_name)
+    image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
+    center, width = _window_center_width(output_data)
+
+    meta["DataRole"] = "Image"
+    meta["ImageProcessingHistory"] = ["PYTHON", "QSMXT"]
+    meta["ImageType"] = image_type
+    meta["DicomImageType"] = image_type
+    meta["ImageTypeValue4"] = image_type_token
+    meta["ComplexImageComponent"] = "MAGNITUDE"
+    meta["SeriesDescription"] = series_name
+    meta["SequenceDescription"] = series_name
+    meta["ProtocolName"] = series_name
+    meta["ImageComments"] = series_name
+    meta["ImageComment"] = series_name
+    meta["SeriesNumberRangeNameUID"] = _derived_series_grouping(series_name, series_index)
+    meta["SeriesInstanceUID"] = series_uid
+    meta["SOPInstanceUID"] = sop_uid
+    meta["SequenceDescriptionAdditional"] = "openrecon"
+    meta["Keep_image_geometry"] = "0"
+    meta["partition_count"] = "1"
+    slice_count = str(int(output_data.shape[2]))
+    meta["slice_count"] = slice_count
+    meta["NumberOfSlices"] = slice_count
+    meta["ImagesInAcquisition"] = slice_count
+    meta["NumberInSeries"] = "1"
+    meta["SliceNo"] = "0"
+    meta["IsmrmrdSliceNo"] = "0"
+    meta["AnatomicalSliceNo"] = "0"
+    meta["ChronSliceNo"] = "0"
+    meta["ProtocolSliceNumber"] = "0"
+    meta["Actual3DImagePartNumber"] = "0"
+    meta["AnatomicalPartitionNo"] = "0"
+    meta["QSMxTOutput"] = output_id
+    meta["QSMxTUnits"] = units
+    meta["QSMxTSourceFile"] = str(nifti_path)
+    meta["WindowCenter"] = f"{float(center):.6g}"
+    meta["WindowWidth"] = f"{float(width):.6g}"
+    meta.update(_header_geometry_meta(header))
+    _strip_scanner_write_unsafe_meta(meta)
+    return meta
+
+
+def _header_geometry_meta(header):
+    return {
+        "ImageRowDir": [f"{float(value):.18f}" for value in header.read_dir],
+        "ImageColumnDir": [f"{float(value):.18f}" for value in header.phase_dir],
+        "ImageSliceNormDir": [f"{float(value):.18f}" for value in header.slice_dir],
+        "SlicePosLightMarker": [f"{float(value):.18f}" for value in header.position],
+    }
+
+
+def _validate_output_images(output_images, input_images):
+    input_series_indices = {
+        int(image.getHead().image_series_index)
+        for image in input_images
+    }
+    errors = []
+    for index, image in enumerate(output_images):
+        header = image.getHead()
+        series_index = int(header.image_series_index)
+        meta = _meta_from_image(image)
+        if series_index in input_series_indices:
+            errors.append(f"image {index} reuses input series index {series_index}")
+        if _meta_text(meta, "IceMiniHead"):
+            errors.append(f"image {index} keeps source IceMiniHead")
+        if _meta_text(meta, "ImageTypeValue3"):
+            errors.append(f"image {index} keeps unsafe ImageTypeValue3")
+        if not _meta_text(meta, "SeriesInstanceUID"):
+            errors.append(f"image {index} is missing SeriesInstanceUID")
+        if not _meta_text(meta, "SOPInstanceUID"):
+            errors.append(f"image {index} is missing SOPInstanceUID")
+    if errors:
+        raise ValueError("Invalid qsmxt output image contract: " + "; ".join(errors))
+
+
+def _send_images_by_series(connection, images):
+    batches = []
+    batch_by_series = {}
+    for image in images:
+        series_index = int(image.getHead().image_series_index)
+        if series_index not in batch_by_series:
+            batch_by_series[series_index] = []
+            batches.append(batch_by_series[series_index])
+        batch_by_series[series_index].append(image)
+    for batch in batches:
+        connection.send_image(batch)
+
+
+def _config_parameters(config):
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except json.JSONDecodeError:
+            return {}
+    if not isinstance(config, dict):
+        return {}
+    parameters = config.get("parameters", config)
+    return parameters if isinstance(parameters, dict) else {}
+
+
+def _config_bool(params, key, default=False):
+    return _coerce_bool(params.get(key, default), default)
+
+
+def _config_float(params, key, default=0.0):
+    value = params.get(key, default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _config_int(params, key, default=0):
+    value = params.get(key, default)
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _config_text(params, key, default=""):
+    value = params.get(key, default)
+    return str(value if value is not None else default).strip()
+
+
+def _optional_choice(params, key):
+    value = _config_text(params, key, "")
+    return "" if value in {"", "default", "none"} else value
+
+
+def _config_vector(params, key, default, length):
+    values = _parse_float_list(params.get(key, ""))
+    if len(values) == length:
+        return tuple(float(value) for value in values)
+    return tuple(float(value) for value in default)
+
+
+def _parse_float_list(value):
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        parts = value
+    else:
+        parts = re.split(r"[,;\s]+", str(value).strip())
+    values = []
+    for part in parts:
+        if part == "":
+            continue
+        try:
+            values.append(float(part))
+        except (TypeError, ValueError):
+            return []
+    return values
+
+
+def _coerce_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _append_optional_arg(cmd, flag, value):
+    if value:
+        cmd.extend([flag, str(value)])
+
+
+def _selected_output_ids(value):
+    text = str(value or "qsm").strip().lower()
+    if text == "all":
+        return list(QSMXT_OUTPUTS.keys())
+    selected = []
+    for part in re.split(r"[,;\s]+", text):
+        if not part:
+            continue
+        if part not in QSMXT_OUTPUTS:
+            logging.warning("Ignoring unknown QSMxT output selection: %s", part)
+            continue
+        selected.append(part)
+    return selected or ["qsm"]
+
+
+def _reserve_series_index(used, preferred):
+    series_index = int(preferred)
+    while series_index in used:
+        series_index += 1
+    used.add(series_index)
+    return series_index
+
+
+def _write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+
+
+def _nifti_sidecar_path(path):
+    text = str(path)
+    if text.endswith(".nii.gz"):
+        return Path(text[:-7] + ".json")
+    if text.endswith(".nii"):
+        return Path(text[:-4] + ".json")
+    return Path(text + ".json")
+
+
+def _sanitize_bids_label(value):
+    return re.sub(r"[^A-Za-z0-9]+", "", str(value or ""))[:32]
+
+
+def _normalized_or_default(values, default):
+    vector = np.asarray(values, dtype=float)
+    norm = float(np.linalg.norm(vector))
+    if norm <= 0:
+        return np.asarray(default, dtype=float)
+    return vector / norm
+
+
+def _window_center_width(data):
+    values = np.asarray(data, dtype=np.float32)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return 0.0, 1.0
+    data_min = float(np.min(finite))
+    data_max = float(np.max(finite))
+    width = data_max - data_min
+    if width <= 0:
+        width = 1.0
+    return data_min + width / 2.0, width
+
+
+def _set_header_sequence_field(header, field_name, values):
+    target = getattr(header, field_name)
+    for index, value in enumerate(values):
+        target[index] = value
+
+
+def _meta_from_image(image):
+    if not getattr(image, "attribute_string", ""):
+        return ismrmrd.Meta()
+    return ismrmrd.Meta.deserialize(image.attribute_string)
+
+
+def _meta_text(meta, key):
+    value = meta.get(key)
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else ""
+    text = str(value or "").strip()
+    return "" if text.upper() == "N/A" else text
+
+
+def _meta_float(meta, key):
+    value = _meta_text(meta, key)
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _source_series_name(source_image):
+    meta = _meta_from_image(source_image)
+    for key in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
+        value = _meta_text(meta, key)
+        if value:
+            return value
+    return ""
+
+
+def _source_series_uid(source_image):
+    meta = _meta_from_image(source_image)
+    return _meta_text(meta, "SeriesInstanceUID")
+
+
+def _source_sop_uid(source_image):
+    meta = _meta_from_image(source_image)
+    return _meta_text(meta, "SOPInstanceUID")
+
+
+def _strip_source_parent_refs(meta):
+    for key in list(meta.keys()):
+        if key in SOURCE_PARENT_REFERENCE_META_KEYS:
+            del meta[key]
+            continue
+        if any(key.startswith(prefix) for prefix in SOURCE_PARENT_REFERENCE_META_PREFIXES):
+            del meta[key]
+
+
+def _strip_scanner_write_unsafe_meta(meta):
+    for key in SCANNER_WRITE_UNSAFE_META_KEYS:
+        if key in meta:
+            del meta[key]
+
+
+def _derived_series_grouping(series_name, series_index):
+    return f"{_sanitize_bids_label(series_name) or RECIPE_NAME}_{int(series_index)}"
+
+
+def _derived_series_uid(source_image, series_index, series_name):
+    seed = "|".join(
+        [
+            RECIPE_NAME,
+            _source_series_uid(source_image) or _source_series_name(source_image) or "source",
+            str(int(series_index)),
+            series_name,
+        ]
+    )
+    return f"2.25.{uuid.uuid5(uuid.NAMESPACE_URL, seed).int}"
+
+
+def _derived_instance_uid(source_image, series_uid, series_index, series_name):
+    seed = "|".join(
+        [
+            f"{RECIPE_NAME}-instance",
+            series_uid,
+            _source_sop_uid(source_image) or "source",
+            str(int(series_index)),
+            series_name,
+        ]
+    )
+    return f"2.25.{uuid.uuid5(uuid.NAMESPACE_URL, seed).int}"
