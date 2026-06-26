@@ -6,7 +6,6 @@ directives:
   - install:
       - build-essential
       - libxslt1.1
-      - libboost-program-options1.74.0
       - libpugixml1v5
       - vim
       - dos2unix
@@ -20,29 +19,37 @@ directives:
       - libfftw3-dev
       - libpugixml-dev
 
+  - install:
+      - libboost-program-options1.74.0
+    condition: (openrecon_ubuntu_version | default("22.04")) != "24.04"
+
+  - install:
+      - libboost-program-options1.83.0
+    condition: (openrecon_ubuntu_version | default("22.04")) == "24.04"
+
   - run:
       - git clone https://github.com/ismrmrd/ismrmrd.git
-      - cd ./ismrmrd
-      - cmake .
-      - make -j {{ parallel_jobs }}
-      - make install
+      - cd ismrmrd
+      - cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - cmake --build build --parallel {{ parallel_jobs }}
+      - cmake --install build
+      - ldconfig
 
   - run:
       - git clone https://github.com/ismrmrd/siemens_to_ismrmrd.git
       - cd siemens_to_ismrmrd
-      - mkdir build
-      - cd build
-      - cmake -DBUILD_DYNAMIC=ON ..
-      - make -j {{ parallel_jobs }}
-      - make install
+      - cmake -S . -B build -DBUILD_DYNAMIC=ON -DCMAKE_BUILD_TYPE=Release
+      - cmake --build build --parallel {{ parallel_jobs }}
+      - cmake --install build
+      - ldconfig
 
   - run:
-      - pip3 install h5py ismrmrd matplotlib pydicom==3.0.1 pynetdicom nibabel scipy scikit-image 
+      - python3 -m pip install $(python3 -m pip install --help | grep -q -- "--break-system-packages" && echo "--break-system-packages") --no-cache-dir h5py ismrmrd matplotlib pydicom==3.0.1 pynetdicom nibabel scipy scikit-image
 
   - run:
       - git clone https://github.com/ismrmrd/ismrmrd-python-tools.git
       - cd ismrmrd-python-tools
-      - pip3 install --no-cache-dir .
+      - python3 -m pip install $(python3 -m pip install --help | grep -q -- "--break-system-packages" && echo "--break-system-packages") --no-cache-dir .
 
   - run:
       - git clone --branch fix/ismrmrd-compatibility https://github.com/astewartau/python-ismrmrd-server
