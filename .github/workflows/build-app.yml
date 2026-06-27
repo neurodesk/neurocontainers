@@ -55,6 +55,8 @@ env:
 # - secrets.DOCKERHUB_ORG
 # - secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY
 # - secrets.AWS_ROLE_ARN
+# - secrets.QUAY_USERNAME      # v2 OCI publish (quay.io/neurodesk)
+# - secrets.QUAY_ROBOT_TOKEN   # v2 OCI publish (quay.io/neurodesk)
 
 jobs:
   config:
@@ -1051,6 +1053,156 @@ jobs:
           else
             echo "[DEBUG] File upload verified. The file exists in S3."
           fi
+
+  push-quay:
+    needs: [config, build-image, build-simg]
+    # Requires org secrets QUAY_USERNAME + QUAY_ROBOT_TOKEN.
+    if: ${{ inputs.skip_simg_build != 'true' && needs.build-image.outputs.IMGDIFFERS == 'true' && needs.config.outputs.IMAGE_SUFFIX == '' }}
+    continue-on-error: true
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      VERSION: ${{ needs.config.outputs.VERSION }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      LEGACY_IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
+      QUAY_REPO: quay.io/neurodesk/${{ inputs.application }}
+      SIF_MEDIATYPE: application/vnd.sylabs.sif.layer.v1.sif
+    steps:
+      - name: Configure GitHub-hosted runner
+        if: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          BASE_PATH=/mnt
+          sudo swapoff -a && sudo rm -rf "$BASE_PATH"/*
+          sudo mkdir -p "$BASE_PATH/tmp" "$BASE_PATH/docker"
+          sudo chown "$USER" "$BASE_PATH/tmp"
+          printf '{"data-root": "%s"}\n' "$BASE_PATH/docker" | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Install oras
+        run: |
+          curl -fsSL https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin oras
+          oras version
+
+      - name: Login to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Quay
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_ROBOT_TOKEN }}
+
+      - name: Push image to Quay (calver + floating tags)
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          set -euo pipefail
+          SRC="ghcr.io/${GH_REGISTRY}/${LEGACY_IMAGENAME}:${BUILDDATE}"
+          V2_TAG="${VERSION}_${BUILDDATE}"
+          docker pull "${SRC}"
+          docker tag "${SRC}" "${QUAY_REPO}:${V2_TAG}"
+          docker tag "${SRC}" "${QUAY_REPO}:${VERSION}"
+          docker tag "${SRC}" "${QUAY_REPO}:latest"
+          docker push "${QUAY_REPO}:${V2_TAG}"
+          docker push "${QUAY_REPO}:${VERSION}"
+          docker push "${QUAY_REPO}:latest"
+
+      - name: Download SIF (.simg) artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ env.LEGACY_IMAGENAME }}_${{ env.BUILDDATE }}.simg
+          path: /mnt/tmp/
+
+      - name: Attach SIF as OCI Referrer to Quay
+        run: |
+          set -euo pipefail
+          cd /mnt/tmp   # oras path-validation needs a relative SIF path
+          SIF="${LEGACY_IMAGENAME}_${BUILDDATE}.simg"
+          oras attach --artifact-type "${SIF_MEDIATYPE}" \
+            --annotation "org.opencontainers.image.title=${APPLICATION}" \
+            --annotation "org.opencontainers.image.version=${VERSION}_${BUILDDATE}" \
+            "${QUAY_REPO}:${VERSION}_${BUILDDATE}" \
+            "${SIF}:${SIF_MEDIATYPE}"
+
+  push-ghcr:
+    needs: [config, build-image, build-simg]
+    if: ${{ inputs.skip_simg_build != 'true' && needs.build-image.outputs.IMGDIFFERS == 'true' && needs.config.outputs.IMAGE_SUFFIX == '' }}
+    continue-on-error: true
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      VERSION: ${{ needs.config.outputs.VERSION }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      LEGACY_IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
+      SIF_MEDIATYPE: application/vnd.sylabs.sif.layer.v1.sif
+    steps:
+      - name: Configure GitHub-hosted runner
+        if: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          BASE_PATH=/mnt
+          sudo swapoff -a && sudo rm -rf "$BASE_PATH"/*
+          sudo mkdir -p "$BASE_PATH/tmp" "$BASE_PATH/docker"
+          sudo chown "$USER" "$BASE_PATH/tmp"
+          printf '{"data-root": "%s"}\n' "$BASE_PATH/docker" | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Install oras
+        run: |
+          curl -fsSL https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin oras
+          oras version
+
+      - name: Login to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image to GHCR new name (calver + floating tags)
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          set -euo pipefail
+          SRC="ghcr.io/${GH_REGISTRY}/${LEGACY_IMAGENAME}:${BUILDDATE}"
+          DST="ghcr.io/${GH_REGISTRY}/${APPLICATION}"
+          V2_TAG="${VERSION}_${BUILDDATE}"
+          docker pull "${SRC}"
+          docker tag "${SRC}" "${DST}:${V2_TAG}"
+          docker tag "${SRC}" "${DST}:${VERSION}"
+          docker tag "${SRC}" "${DST}:latest"
+          docker push "${DST}:${V2_TAG}"
+          docker push "${DST}:${VERSION}"
+          docker push "${DST}:latest"
+
+      - name: Download SIF (.simg) artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ env.LEGACY_IMAGENAME }}_${{ env.BUILDDATE }}.simg
+          path: /mnt/tmp/
+
+      - name: Attach SIF as OCI Referrer to GHCR
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          set -euo pipefail
+          cd /mnt/tmp   # oras path-validation needs a relative SIF path
+          SIF="${LEGACY_IMAGENAME}_${BUILDDATE}.simg"
+          oras attach --artifact-type "${SIF_MEDIATYPE}" \
+            --annotation "org.opencontainers.image.title=${APPLICATION}" \
+            --annotation "org.opencontainers.image.version=${VERSION}_${BUILDDATE}" \
+            "ghcr.io/${GH_REGISTRY}/${APPLICATION}:${VERSION}_${BUILDDATE}" \
+            "${SIF}:${SIF_MEDIATYPE}"
 
   create-pr:
     needs: [config, build-image, push-dockerhub, upload-nectar, upload-s3]
