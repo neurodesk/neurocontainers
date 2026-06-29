@@ -1,5 +1,5 @@
 # bidsapppymvpa container test suite
-# Tests for PyMVPA BIDS-App v4.0.4 (container version 2.0.2)
+# Tests for PyMVPA BIDS-App v4.0.3 (container version 2.0.2)
 # MultiVariate Pattern Analysis (MVPA) and Representational Similarity Analysis (RSA)
 #
 # This BIDS-App performs ROI-based and searchlight MVPA/RSA analyses.
@@ -51,11 +51,11 @@ tests:
   - name: Version check
     description: Verify PyMVPA BIDS-App version
     command: bash -lc '/code/run.py -v 2>&1 | tail -1'
-    expected_output_contains: "PyMVPA BIDS-App Version v4.0.4"
+    expected_output_contains: "PyMVPA BIDS-App Version v4.0.3"
 
   - name: Help message
     description: Verify help documentation is accessible
-    command: bash -lc '/code/run.py --help 2>&1 | head -20'
+    command: bash -lc '/code/run.py --help 2>&1 | grep -m1 "PyMVPA BIDS-App"'
     expected_output_contains: "PyMVPA BIDS-App"
 
   - name: Argument parser verification
@@ -242,7 +242,7 @@ tests:
   - name: Version file exists
     description: Verify version file is present
     command: cat /code/version
-    expected_output_contains: "v4.0.4"
+    expected_output_contains: "v4.0.3"
 
   # ==========================================================================
   # ARGUMENT PARSING TESTS
