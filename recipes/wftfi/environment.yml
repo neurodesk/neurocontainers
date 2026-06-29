@@ -1,13 +1,11 @@
 channels:
   - conda-forge
-  - anaconda
 dependencies:
-  - cudatoolkit=11.0
   - python=3.8
-  - numpy>=1.20
-  - scipy>1.9
+  - numpy=1.24.*
+  - scipy=1.10.*
+  - matplotlib=3.7.*
   - ipython
-  - matplotlib
   - pip
   - pip:
       - git+https://github.com/BMRRgroup/cbviewer@20c9c8c

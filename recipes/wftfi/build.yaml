@@ -31,9 +31,14 @@ build:
 
     - template:
         name: miniconda
-        version: 4.7.12.1
+        version: py39_24.7.1-0
+        mamba: "true"
         env_name: wfTFI
         yaml_file: /opt/wftfi/environment.yml
+
+    - run:
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'cd /opt/wftfi' 'if [ "$#" -eq 0 ]; then' '  exec /opt/miniconda-py39_24.7.1-0/envs/wfTFI/bin/ipython' 'fi' 'exec /opt/miniconda-py39_24.7.1-0/envs/wfTFI/bin/python "$@"' > /usr/local/bin/wfTFI
+        - chmod 755 /usr/local/bin/wfTFI
 
     - environment:
         DEPLOY_BINS: wfTFI
@@ -41,6 +46,8 @@ build:
     - copy: README.md /README.md
 
 deploy:
+  path:
+    - /usr/local/bin
   bins:
     - wfTFI
 
