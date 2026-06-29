@@ -95,9 +95,9 @@ tests:
     expected_output_contains: "enabled-image-types"
 
   - name: DAFNE GUI modules import
-    description: Verify GUI startup imports reach DAFNE UI modules under the packaged Python runtime
+    description: Verify GUI startup imports reach DAFNE UI modules under a virtual display
     command: |
-      python - <<'PY'
+      xvfb-run -a python - <<'PY'
       from dafne.ui.MuscleSegmentation import MuscleSegmentation
 
       print(MuscleSegmentation.__name__)
