@@ -22,7 +22,7 @@ binaries:
     apt:
     - bc
     - curl
-    - libncurses5
+    - libncurses6
     - libxext6
     - libxmu6
     - libxpm-dev
