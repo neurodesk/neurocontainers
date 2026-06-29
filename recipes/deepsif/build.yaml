@@ -10,7 +10,7 @@ architectures:
 
 files:
   - name: main_tar_gz
-    url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz
+    url: https://github.com/bfinl/DeepSIF/archive/refs/heads/main.tar.gz
   - name: cuda_keyring_1_0_1_all_deb
     url: https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/cuda-keyring_1.0-1_all.deb
 
@@ -21,7 +21,7 @@ files:
     contents: |
       #!/bin/bash
 
-      /opt/miniconda-4.7.12/envs/deepsif-{{ context.version }}/bin/python3 DeepSIF/forward/generate_tvb_data.py $@
+      exec /opt/miniconda-4.7.12/envs/deepsif-{{ context.version }}/bin/python3 /opt/DeepSIF-main/forward/generate_tvb_data.py "$@"
 
 build:
   kind: neurodocker
@@ -91,22 +91,19 @@ build:
     - template:
         name: miniconda
         env_name: base
-        version: 4.7.12
+        version: latest
+        install_path: /opt/miniconda-4.7.12
+        mamba: "true"
 
     - run:
-        - conda install -c conda-forge mamba=0.24.0
+        - conda create -y --override-channels --channel=conda-forge --name=deepsif-0.0.1 python=3.7 mne nomkl numba scipy numpy networkx scikit-learn cython pip numexpr psutil psycopg2 pytables scikit-image simplejson cherrypy docutils werkzeug matplotlib-base h5py
 
     - run:
-        - mamba create --override-channels --channel=conda-forge --name=deepsif-0.0.1 python=3.7 mne nomkl numba scipy numpy networkx scikit-learn cython pip numexpr psutil psycopg2 pytables scikit-image simplejson cherrypy docutils werkzeug matplotlib-base h5py
-
-    - run:
-        - . activate deepsif-0.0.1
-        - pip3 install --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
+        - conda run --name deepsif-0.0.1 python -m pip install --no-cache-dir torch==1.13.1 torchvision==0.14.1 torchaudio==0.13.1 --extra-index-url https://download.pytorch.org/whl/cu113
         - rm -rf ~/.cache/pip/*
 
     - run:
-        - . activate deepsif-0.0.1
-        - pip3 install --no-cache-dir formencode cfflib jinja2 nibabel sqlalchemy sqlalchemy-migrate allensdk tvb-gdist typing BeautifulSoup4 subprocess32 flask-restplus python-keycloak mako pybids tvb-library tvb-framework
+        - conda run --name deepsif-0.0.1 python -m pip install --no-cache-dir tvb-library autocommand inflect jupyter-core==4.12.0
         - rm -rf ~/.cache/pip/*
 
     - environment:
@@ -116,10 +113,10 @@ build:
 
     - run:
         - tar xz -f {{ get_file("main_tar_gz") }}
-        - chmod a+rwx /opt/mne-bids-pipeline-main -R
+        - chmod a+rwx /opt/DeepSIF-main -R
 
     - environment:
-        LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/usr/local/cuda/lib64
+        LD_LIBRARY_PATH: /opt/miniconda-4.7.12/envs/deepsif-0.0.1/lib:$LD_LIBRARY_PATH:/usr/local/cuda/lib64
         RUNLEVEL: "3"
         XDG_RUNTIME_DIR: /neurodesk-storage
 
@@ -141,7 +138,7 @@ readme: |-
 
   Example:
   ```
-  singularity exec --nv deepsif.simg /opt/miniconda-4.7.12/envs/deepsif-{{ context.version }}/bin/python3 DeepSIF/forward/generate_tvb_data.py --a_start 0 --a_end 994
+  singularity exec --nv deepsif.simg generate_tvb_data --a_start 0 --a_end 994
   ```
 
   More documentation can be found here: https://github.com/bfinl/DeepSIF
