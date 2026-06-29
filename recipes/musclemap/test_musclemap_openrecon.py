@@ -162,6 +162,7 @@ def test_openrecon_label_exposes_dixon_segmentation_checkboxes_with_opposed_defa
     label = json.loads(OPENRECON_LABEL_PATH.read_text())
     parameters = {parameter["id"]: parameter for parameter in label["parameters"]}
 
+    # The Siemens OpenRecon UI accepts at most 14 parameter entries.
     assert len(label["parameters"]) <= 14
 
     expected_defaults = {
@@ -1260,3 +1261,384 @@ def test_output_storage_contract_rejects_nonzero_partition_counters():
         assert "scanner partition IceMiniHead Actual3DImagePartNumber=8, expected 0" in message
     else:
         raise AssertionError("Expected validator to reject nonzero scanner partition counters")
+
+
+def test_openrecon_label_exposes_compose_segmentation_choice_defaulting_off():
+    label = json.loads(OPENRECON_LABEL_PATH.read_text())
+    parameters = {parameter["id"]: parameter for parameter in label["parameters"]}
+
+    # The two compose modes are a single mutually-exclusive choice (not two
+    # booleans) to stay within the 14-entry OpenRecon UI limit.
+    assert "composesegmentationnativeff" not in parameters
+    compose = parameters["composesegmentation"]
+    assert compose["type"] == "choice"
+    assert compose["default"] == "off"
+    assert {value["id"] for value in compose["values"]} == {"off", "native", "restamp"}
+
+
+def test_resolve_compose_segmentation_mode_reads_choice_config():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_resolve_compose_segmentation_mode",
+            "_get_config_bool",
+            "_config_parameters",
+            "_as_config_bool",
+        ],
+        assignments=[
+            "composeSegmentationParameterId",
+            "composeSegmentationNativeFfParameterId",
+            "composeSegmentationModeAliases",
+        ],
+    )
+
+    resolve = helpers["_resolve_compose_segmentation_mode"]
+    assert resolve({}) == "off"
+    assert resolve({"composesegmentation": "off"}) == "off"
+    assert resolve({"composesegmentation": "native"}) == "native"
+    assert resolve({"composesegmentation": "restamp"}) == "restamp"
+    assert resolve({"parameters": {"composesegmentation": "reuse_fat_fraction"}}) == "native"
+    # Unknown values degrade to off rather than raising.
+    assert resolve({"composesegmentation": "banana"}) == "off"
+
+
+def test_compose_target_detection_matches_only_fat_fraction():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_is_compose_fat_fraction_image",
+            "_normalize_dixon_token_text",
+            "_decode_ice_minihead",
+            "_extract_dicom_image_type_values",
+            "_extract_minihead_array_tokens",
+            "_get_dicom_image_type_value",
+            "_get_meta_text",
+            "_first_non_empty_text",
+            "_meta_text_values",
+        ],
+        assignments=["composeFatFractionTokenAliases"],
+    )
+
+    fat_fraction = helpers["FakeMeta"](
+        {
+            "ImageType": "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC",
+            "DicomImageType": "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC",
+            "IceMiniHead": _encoded_minihead(
+                series_name="ff", image_type_value4="FAT_FRAC"
+            ),
+        }
+    )
+    water = helpers["FakeMeta"](
+        {
+            "ImageType": "DERIVED\\PRIMARY\\DIXON\\WATER",
+            "DicomImageType": "DERIVED\\PRIMARY\\DIXON\\WATER",
+            "IceMiniHead": _encoded_minihead(image_type_value4="WATER"),
+        }
+    )
+    fat = helpers["FakeMeta"](
+        {
+            "ImageType": "DERIVED\\PRIMARY\\DIXON\\FAT",
+            "DicomImageType": "DERIVED\\PRIMARY\\DIXON\\FAT",
+            "IceMiniHead": _encoded_minihead(image_type_value4="FAT"),
+        }
+    )
+
+    # Meta-only multi-value ImageTypeValue4 list, no ImageType/minihead: every
+    # token must be inspected, not just the first ("NORM").
+    meta_only_multivalue = helpers["FakeMeta"](
+        {"ImageTypeValue4": ["NORM", "FAT_FRAC", "DIS3D"]}
+    )
+
+    assert helpers["_is_compose_fat_fraction_image"](None, meta_obj=fat_fraction) is True
+    assert helpers["_is_compose_fat_fraction_image"](None, meta_obj=meta_only_multivalue) is True
+    assert helpers["_is_compose_fat_fraction_image"](None, meta_obj=water) is False
+    # The real Fat contrast must not be mistaken for Fat-Fraction.
+    assert helpers["_is_compose_fat_fraction_image"](None, meta_obj=fat) is False
+
+
+def test_compose_stamp_uses_fat_fraction_identity_without_postprocessing_child():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_derived_sop_instance_uid",
+            "_copy_meta",
+            "_decode_ice_minihead",
+            "_encode_ice_minihead",
+            "_extract_dicom_image_type_values",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_long_value",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_format_exam_data_role_sequential_number",
+            "_get_dicom_image_type_value",
+            "_get_meta_text",
+            "_meta_text_values",
+            "_minihead_string_literal",
+            "_normalise_identity_tokens",
+            "_patch_ice_minihead",
+            "_patch_output_minihead_storage",
+            "_patch_segment_postprocessing_ice_minihead",
+            "_remove_minihead_array_param",
+            "_remove_minihead_string_param",
+            "_replace_minihead_array_token",
+            "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_array_tokens",
+            "_replace_or_append_minihead_long_param",
+            "_replace_or_append_minihead_raw_string_param",
+            "_replace_or_append_minihead_string_param",
+            "_sanitize_minihead_param_value",
+            "_segment_postprocessing_child_role",
+            "_set_meta_scalar",
+            "_set_output_storage_meta",
+            "_stamp_output_header",
+            "_stamp_output_image",
+            "_strip_scanner_write_unsafe_meta",
+            "_strip_scanner_write_unsafe_minihead",
+            "_strip_source_parent_refs",
+            "_output_meta",
+        ],
+        assignments=[
+            "composeFatFractionImageType",
+            "composeFatFractionTargetImageTypeValue3",
+            "composeFatFractionTypeToken",
+            "scannerPartitionIndex",
+            "scannerWriteUnsafeMetaKeys",
+            "segmentPostProcessingChildRoleMetaKey",
+            "segmentPostProcessingMetaKey",
+            "segmentSourceGeometryMetaKey",
+            "sourceGroupHeaderFields",
+            "sourceParentReferenceMetaKeys",
+            "sourceParentReferenceMetaPrefixes",
+        ],
+    )
+
+    output = helpers["FakeImage"](np.ones((1, 2, 2), dtype=np.int16))
+    output_header = output.getHead()
+    output_header.image_series_index = 1
+    source_meta = helpers["FakeMeta"](
+        {
+            "SeriesDescription": "source_W",
+            "SequenceDescription": "source_W",
+            "ProtocolName": "source_W",
+            "SeriesInstanceUID": "1.2.3",
+            "SOPInstanceUID": "1.2.3.5.8",
+            "SeriesNumberRangeNameUID": "source_group",
+            "ImageType": "DERIVED\\PRIMARY\\DIXON\\WATER",
+            "ImageTypeValue3": "DIXON",
+            "ImageTypeValue4": "WATER",
+            "DicomImageType": "DERIVED\\PRIMARY\\DIXON\\WATER",
+            "IceMiniHead": _encoded_minihead(),
+        }
+    )
+    compose_identity = {
+        "series_description": "Musclemap_FatFraction",
+        "sequence_description": "source_W",
+        "sequence_description_additional": "Water",
+        "grouping": "source_group_FAT_FRAC",
+        "series_instance_uid": "2.25.99",
+    }
+
+    helpers["_stamp_output_image"](
+        output,
+        output_header,
+        source_meta,
+        compose_identity,
+        2,
+        0,
+        helpers["composeFatFractionTypeToken"],
+        ["OPENRECON", "MUSCLEMAP", "COMPOSE_AS_FAT_FRACTION"],
+        image_comment="Musclemap_Water",
+        source_type_token="WATER",
+        extra_meta={"Keep_image_geometry": "1"},
+        target_image_type_value3=helpers["composeFatFractionTargetImageTypeValue3"],
+    )
+
+    meta = helpers["FakeMeta"].deserialize(output.attribute_string)
+    minihead = helpers["_decode_ice_minihead"](meta)
+
+    # Routed to the Fat-Fraction Dixon compose channel...
+    assert meta["ImageType"] == helpers["composeFatFractionImageType"]
+    assert meta["DicomImageType"] == helpers["composeFatFractionImageType"]
+    assert meta["ImageTypeValue3"] == "DIXON"
+    assert meta["ComplexImageComponent"] == "MAGNITUDE"
+    assert meta["DataRole"] == "Image"
+    assert meta["SeriesNumberRangeNameUID"] == "source_group_FAT_FRAC"
+    assert (
+        helpers["_extract_minihead_string_value"](minihead, "ImageType")
+        == helpers["composeFatFractionImageType"]
+    )
+    assert "FAT_FRAC" in helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue4")
+
+    # ...and crucially NOT tagged as a post-processing child, which is what
+    # excludes the default MuscleMap segmentation from the inline composer.
+    assert "ExamDataRole" not in meta
+    assert helpers["segmentSourceGeometryMetaKey"] not in meta
+    assert helpers["segmentPostProcessingMetaKey"] not in meta
+    assert helpers["segmentPostProcessingChildRoleMetaKey"] not in meta
+    assert "WATER" not in meta["ImageType"]
+
+    # Scanner storage identity must still be populated for the output contract.
+    assert meta["SeriesInstanceUID"] == "2.25.99"
+    assert (
+        helpers["_extract_minihead_string_value"](minihead, "SeriesInstanceUID")
+        == "2.25.99"
+    )
+    assert helpers["_extract_minihead_long_value"](minihead, "SliceNo") == 0
+    assert helpers["_extract_minihead_long_value"](minihead, "NumberInSeries") == 1
+
+
+def test_resolve_compose_mode_native_takes_precedence_over_restamp():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_resolve_compose_segmentation_mode",
+            "_get_config_bool",
+            "_config_parameters",
+            "_as_config_bool",
+        ],
+        assignments=[
+            "composeSegmentationParameterId",
+            "composeSegmentationNativeFfParameterId",
+        ],
+    )
+
+    resolve = helpers["_resolve_compose_segmentation_mode"]
+    assert resolve({}) == "off"
+    assert resolve({"composesegmentation": True}) == "restamp"
+    assert resolve({"composesegmentationnativeff": True}) == "native"
+    # native wins when both are enabled
+    assert resolve(
+        {"composesegmentation": True, "composesegmentationnativeff": True}
+    ) == "native"
+
+
+def test_match_ff_carriers_pairs_by_nearest_position_uniquely():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_match_ff_carriers_to_segmentation",
+            "_project_position_along_axis",
+            "_header_vector",
+        ],
+    )
+
+    def carrier_at(z):
+        image = helpers["FakeImage"](np.zeros((1, 1, 2, 2), dtype=np.int16))
+        image.getHead().position = [0.0, 0.0, float(z)]
+        return image
+
+    carriers = [carrier_at(0.0), carrier_at(10.0), carrier_at(20.0)]
+    # Request positions out of order; each must map to its nearest unused carrier.
+    matched = helpers["_match_ff_carriers_to_segmentation"](
+        [19.6, 0.2, 9.9],
+        carriers,
+        [0.0, 0.0, 1.0],
+    )
+    assert matched[0] is carriers[2]
+    assert matched[1] is carriers[0]
+    assert matched[2] is carriers[1]
+
+
+def test_build_native_ff_compose_images_reuses_carrier_identity_and_swaps_pixels():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_native_ff_compose_images",
+            "_match_ff_carriers_to_segmentation",
+            "_project_position_along_axis",
+            "_header_vector",
+            "_copy_meta",
+            "_set_meta_scalar",
+            "_get_first_meta_int",
+            "_is_native_ff_compose_image",
+            "_first_non_empty_text",
+        ],
+        assignments=["composeNativeFfMarkerMetaKey"],
+    )
+
+    def carrier_at(z):
+        image = helpers["FakeImage"](np.zeros((1, 1, 2, 2), dtype=np.int16))
+        head = image.getHead()
+        head.position = [0.0, 0.0, float(z)]
+        head.image_series_index = 3
+        image.attribute_string = helpers["FakeMeta"](
+            {
+                "ImageType": "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC",
+                "SeriesInstanceUID": f"1.2.840.ff.{int(z)}",
+                "SeriesNumberRangeNameUID": "wb_2ptFF",
+            }
+        ).serialize()
+        return image
+
+    carriers = [carrier_at(0.0), carrier_at(1.0)]
+    # label_data shape [y, x, 1, 1, n]; slice 0 all 7, slice 1 all 9.
+    label_data = np.zeros((2, 2, 1, 1, 2), dtype=np.int16)
+    label_data[..., 0] = 7
+    label_data[..., 1] = 9
+    output_slice_records = [
+        {"projected_position": 0.0},
+        {"projected_position": 1.0},
+    ]
+
+    images = helpers["_build_native_ff_compose_images"](
+        label_data,
+        [carrier.getHead() for carrier in carriers],
+        output_slice_records,
+        [0.0, 0.0, 1.0],
+        carriers,
+        "Musclemap_Water",
+    )
+
+    assert images is not None and len(images) == 2
+
+    meta0 = helpers["FakeMeta"].deserialize(images[0].attribute_string)
+    # Verbatim Fat-Fraction identity preserved (this is what keeps ComposingGroup).
+    assert meta0["ImageType"] == "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC"
+    assert meta0["SeriesInstanceUID"] == "1.2.840.ff.0"
+    assert meta0["SeriesNumberRangeNameUID"] == "wb_2ptFF"
+    # Marked + exempt from the derived-output contract checks.
+    assert helpers["_get_first_meta_int"](meta0, [helpers["composeNativeFfMarkerMetaKey"]]) == 1
+    assert helpers["_is_native_ff_compose_image"](images[0]) is True
+    assert meta0["ImageComment"] == "Musclemap_Water"
+    # Pixel data was swapped for the segmentation labels.
+    assert np.all(np.asarray(images[0].data) == 7)
+    assert np.all(np.asarray(images[1].data) == 9)
+
+
+def test_build_native_ff_compose_images_falls_back_when_no_carrier_for_each_slice():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_native_ff_compose_images",
+            "_match_ff_carriers_to_segmentation",
+            "_project_position_along_axis",
+            "_header_vector",
+            "_copy_meta",
+            "_set_meta_scalar",
+            "_get_first_meta_int",
+            "_first_non_empty_text",
+        ],
+        assignments=["composeNativeFfMarkerMetaKey"],
+    )
+
+    # Two segmentation slices but only one carrier -> cannot build a full series.
+    only_carrier = helpers["FakeImage"](np.zeros((1, 1, 2, 2), dtype=np.int16))
+    only_carrier.getHead().position = [0.0, 0.0, 0.0]
+    label_data = np.zeros((2, 2, 1, 1, 2), dtype=np.int16)
+    output_slice_records = [
+        {"projected_position": 0.0},
+        {"projected_position": 1.0},
+    ]
+
+    result = helpers["_build_native_ff_compose_images"](
+        label_data,
+        [only_carrier.getHead()],
+        output_slice_records,
+        [0.0, 0.0, 1.0],
+        [only_carrier],
+        "Musclemap_Water",
+    )
+    assert result is None
+
+    # No carriers at all -> also a clean fallback.
+    assert helpers["_build_native_ff_compose_images"](
+        label_data,
+        [],
+        output_slice_records,
+        [0.0, 0.0, 1.0],
+        [],
+        "Musclemap_Water",
+    ) is None

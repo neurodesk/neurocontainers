@@ -85,6 +85,27 @@
       "default": false
     },
     {
+      "id": "composesegmentation",
+      "label": { "en": "Compose segmentation" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "off",
+          "name": { "en": "Off" }
+        },
+        {
+          "id": "native",
+          "name": { "en": "Whole-body (reuse real Fat-Fraction)" }
+        },
+        {
+          "id": "restamp",
+          "name": { "en": "Whole-body (tag mask as Fat-Fraction)" }
+        }
+      ],
+      "default": "off",
+      "information": { "en": "Whole-body composing by hijacking the Fat-Fraction channel (replaces the real Fat-Fraction series; requires a Dixon protocol that produces Fat-Fraction; re-threshold the Adaptive-blended labelmap offline). 'reuse real Fat-Fraction' overwrites the genuine Fat-Fraction images' pixels so the labels inherit the real ComposingGroup routing (more robust). 'tag mask as Fat-Fraction' re-tags a Water-derived mask as Fat-Fraction." }
+    },
+    {
       "id": "labeltransform",
       "label": { "en": "Label Transform" },
       "type": "boolean",

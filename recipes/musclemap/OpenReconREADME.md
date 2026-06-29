@@ -25,6 +25,7 @@ https://doi.org/10.3390/jimaging10110262
 | ID | Label | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `sendoriginal` | Send original images | boolean | `true` | Return source-native 2D original images before the MuscleMap-derived outputs, with fresh scanner storage identity |
+| `composesegmentation` | Compose segmentation | choice | `off` | Whole-body composing by hijacking the Fat-Fraction channel. `off`; `native` reuses the genuine Fat-Fraction images verbatim and overwrites their pixels with the labels (inherits the real ComposingGroup routing — more robust); `restamp` re-tags a Water-derived mask as Fat-Fraction. Replaces the real Fat-Fraction series; re-threshold the Adaptive-blended labelmap offline |
 | `segmentwater` | Segment Water | boolean | `false` | Run MuscleMap segmentation on the Dixon water image |
 | `segmentinphase` | Segment Inphase | boolean | `false` | Run MuscleMap segmentation on the Dixon in-phase image |
 | `segmentopposedphase` | Segment Opposed Phase | boolean | `true` | Run MuscleMap segmentation on the Dixon opposed-phase image |
@@ -57,6 +58,84 @@ source-geometry 2D masks with fresh series identity, fresh SOP identity,
 the `openreconi2iexample` metrics path: one standalone explicit-volume derived
 image, preferring `image_series_index = 120` when available, with
 `DataRole = Segmentation`, `Keep_image_geometry = 0`, and no `IceMiniHead`.
+
+## Composing the segmentation across stations (`composesegmentation`)
+
+For multi-station whole-body Dixon, the inline composer combines images per
+*declared contrast channel* (Water, Fat, Fat-Fraction) and aborts a channel if it
+receives more images than the protocol declares. A segmentation tagged with its
+own `MUSCLEMAP` image type is claimed by no channel and is therefore never
+composed; tagging it with a contrast that is *also* sent as an original overfills
+that channel and switches composing off for the whole measurement.
+
+`composesegmentation` resolves this by **replacing** the most expendable
+contrast (Fat-Fraction). It is a single choice with two whole-body modes,
+`native` (recommended) and `restamp`, plus `off`.
+
+In the **`restamp`** mode MuscleMap:
+
+1. **Suppresses** the genuine Fat-Fraction passthrough images (matched off the
+   `FAT_FRAC` `ImageTypeValue4` token) so the Fat-Fraction channel receives
+   exactly the per-station image count it expects.
+2. **Stamps** the label volume with the real Fat-Fraction Dixon identity
+   (`ImageType = DERIVED\PRIMARY\DIXON\FAT_FRAC`, IceMiniHead `ImageTypeValue4`
+   `[NORM, FAT_FRAC, DIS3D, DIS2D]`, `ComplexImageComponent = MAGNITUDE`, full
+   per-slice geometry, distinct per-station `SeriesInstanceUID`, shared
+   `SeriesNumberRangeNameUID` so the stations pair) and, critically, **without**
+   the `ExamDataRole` post-processing-child tag that excludes the default
+   segmentation from composing.
+
+Water and Fat originals continue to compose normally; the composed segmentation
+is delivered in the Fat-Fraction "Composed" series.
+
+The **`native`** mode is a more robust variant of the same idea. Instead of
+re-tagging a Water-derived mask as `FAT_FRAC` (which relies on the converter
+assigning the rewritten image the correct `ComposingGroup` on return), it reuses
+the **genuine Fat-Fraction images verbatim** as carriers and only overwrites
+their pixel data with the per-slice segmentation labels. Carriers are matched to
+each station by measurement UID and to each label slice by nearest projected
+position (Water and Fat-Fraction are co-registered). Because the carrier keeps
+the real Fat-Fraction header, IceMiniHead and identity unchanged, the ICE side
+assigns it the same `ComposingGroup` it gives a real Fat-Fraction pass-through —
+removing the routing uncertainty of the restamp mode. These carrier images are
+marked with `MuscleMapComposeNativeFF = 1` and are exempt from the derived-output
+series/storage contract checks (they intentionally reuse the source identity). If
+no usable carriers are found, MuscleMap falls back to the non-composing
+segmentation output for that volume.
+
+Caveats:
+
+- **The real Fat-Fraction series is replaced** by the segmentation. Fat-Fraction
+  is recomputable offline from the composed Water/Fat images.
+- The Fat-Fraction channel composes with **Adaptive** intensity blending, which
+  *averages* voxels in the station-overlap band. Label values in those overlap
+  slices are blended and must be **re-thresholded to the nearest label** offline.
+- Requires a Dixon protocol that actually produces a Fat-Fraction contrast. If no
+  Fat-Fraction images are present, the labels are still stamped as `FAT_FRAC` but
+  the composer has no matching channel to combine them (a warning is logged).
+- **Only one segmentation contrast** is composed. The Fat-Fraction compose
+  container is statically pre-sized to a single contrast's slot count, so if more
+  than one segmentation contrast is selected (e.g. Water and Fat) compose mode
+  restricts segmentation to the first one (display order Water, In-Phase,
+  Opposed-Phase, Fat) — emitting two `FAT_FRAC` series would overfill the channel
+  and switch composing off for the whole measurement.
+
+### How the routing works (ICE composing model)
+
+Composing is statically configured at protocol-prep time, not data-driven. Each
+compose functor listens for a fixed `ComposingGroup` (the configurator-owned
+`HEADER.ComposingGroup` routing key) and a `ComposeType` (ORIG/SUB/MIP/DIXON/…),
+and is pre-sized to `m_iNumberTotal` slots. The only image-controllable lever is
+the `ImageType` / `ImageTypeValue4` filter, which selects the `ComposeType`
+channel. `ComposingGroup` is **not** present in the MRD/IceMiniHead data and
+cannot be set from the OpenRecon module — it is assigned on the ICE side. Within
+one Dixon acquisition the Water, Fat and Fat-Fraction channels all share the same
+`ComposingGroup` and differ only by `ComposeType`, so a mask derived from the
+Water contrast and tagged `FAT_FRAC` lands in the Fat-Fraction container. Because
+`ComposingGroup` is assigned ICE-side on the return path, the residual unknown is
+whether the runtime assigns the rewritten mask the same `ComposingGroup` it gives
+verbatim Fat-Fraction pass-throughs; if it does not, the labels are passed
+through **uncomposed** (a standalone `FAT_FRAC` series) rather than crashing.
 
 # Labels
 
