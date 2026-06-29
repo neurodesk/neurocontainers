@@ -31,6 +31,12 @@ test_data:
   bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
   output_dir: test_output
 
+env_setup: |
+  export HOME="$PWD/test_home"
+  export XDG_CACHE_HOME="$PWD/test_home/.cache"
+  export TEMPLATEFLOW_HOME="$PWD/test_home/.cache/templateflow"
+  mkdir -p "$TEMPLATEFLOW_HOME"
+
 setup:
   script: |
     #!/usr/bin/env bash
@@ -792,10 +798,10 @@ tests:
   - name: AFNI 3drefit space
     description: Set image space attribute (copy then modify)
     command: |
-      bash -lc 'cp ${t1w} test_output/t1w_afni_refit.nii.gz && \
-      /opt/afni-latest/3drefit -space ORIG test_output/t1w_afni_refit.nii.gz 2>&1'
+      bash -lc 'gzip -dc ${t1w} > test_output/t1w_afni_refit.nii && \
+      /opt/afni-latest/3drefit -space ORIG test_output/t1w_afni_refit.nii 2>&1'
     validate:
-      - output_exists: ${output_dir}/t1w_afni_refit.nii.gz
+      - output_exists: ${output_dir}/t1w_afni_refit.nii
 
   # ==========================================================================
   # AFNI TOOLS - 3dTcat for volume selection
