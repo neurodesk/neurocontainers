@@ -30,6 +30,17 @@ build:
     - run:
         - tar -xz -C /opt/niistat-{{ context.version }}/ --strip-components 1 -f {{ get_file("v") }}
 
+    - run:
+        - |
+          curl -L --fail -o /tmp/libsvm-v318.tar.gz https://github.com/cjlin1/libsvm/archive/refs/tags/v318.tar.gz
+          mkdir -p /tmp/libsvm-v318
+          tar -xzf /tmp/libsvm-v318.tar.gz -C /tmp/libsvm-v318 --strip-components 1
+          cp /tmp/libsvm-v318/svm.cpp /tmp/libsvm-v318/svm.h /opt/niistat-{{ context.version }}/
+          cd /opt/niistat-{{ context.version }}/libsvm
+          octave --no-gui --eval "make; exit(0);"
+          test -f svmtrain.mex -a -f svmpredict.mex -a -f libsvmread.mex -a -f libsvmwrite.mex
+          rm -rf /tmp/libsvm-v318 /tmp/libsvm-v318.tar.gz
+
     - workdir: /opt
 
     - copy:
