@@ -14,8 +14,8 @@
 #   USENIX Association, 2011.
 
 name: quickshear
-version: 1.1.0
-container: quickshear_1.1.0_20240606.simg
+version: 1.2.0
+container: quickshear_1.2.0_20260612.simg
 
 required_files:
   - dataset: ds000001

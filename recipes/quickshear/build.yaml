@@ -1,5 +1,5 @@
 name: quickshear
-version: 1.1.0
+version: 1.2.0
 
 copyright:
   - license: BSD-3-Clause
@@ -86,7 +86,11 @@ build:
         - run:
               - cp {{ get_file("invertcontrast.py") }} /opt/code/python-ismrmrd-server/invertcontrast.py
 
-        - entrypoint: bash
+        - run:
+              - printf '%s\n' '#!/usr/bin/env bash' 'set -e' '' 'if [ "$#" -eq 0 ]; then' '  exec /usr/bin/env bash' 'fi' '' 'exec "$@"' > /usr/local/bin/quickshear-entrypoint
+              - chmod +x /usr/local/bin/quickshear-entrypoint
+
+        - entrypoint: /usr/local/bin/quickshear-entrypoint
 
 deploy:
     bins:
