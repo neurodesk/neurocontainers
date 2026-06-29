@@ -51,7 +51,10 @@ build:
   base-image: ghcr.io/spm/spm-docker:docker-matlab-{{ context.version }}
   pkg-manager: apt
   directives:
-    - entrypoint: bash
+    - run:
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -e' '' 'if [ "$#" -eq 0 ]; then' '  exec /usr/bin/env bash' 'fi' '' 'exec "$@"' > /usr/local/bin/spm25-entrypoint
+        - chmod +x /usr/local/bin/spm25-entrypoint
+    - entrypoint: /usr/local/bin/spm25-entrypoint
     - environment:
           PATH: ${PATH}:/opt/spm
     - deploy:
