@@ -17,16 +17,22 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - install:
+        - build-essential
+        - git
     - run:
         - cd /opt
         - git clone https://github.com/MRSI-Psychosis-UP/MRSI-Metabolic-Connectome.git
+    - run:
+        - cd /opt/MRSI-Metabolic-Connectome
+        - sed -i -e 's/^  - python$/  - python=3.10/' -e 's/^  - numpy=2.2.6$/  - numpy=1.26.4/' environment.yaml
     - template:
         name: miniconda
         version: latest
         install_path: /opt/miniconda
     - run:
         - cd /opt/MRSI-Metabolic-Connectome
-        - conda env create -n mrsitooldemo_env -f environment.yaml
+        - CONDA_PLUGINS_USE_SHARDED_REPODATA=false conda env create -n mrsitooldemo_env -f environment.yaml
     - environment:
         DEVANALYSEPATH: /opt/MRSI-Metabolic-Connectome
         PATH: /opt/miniconda/envs/mrsitooldemo_env/bin:$PATH
