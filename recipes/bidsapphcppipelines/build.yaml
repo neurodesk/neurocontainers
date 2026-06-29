@@ -15,6 +15,23 @@ build:
         DEBIAN_FRONTEND: noninteractive
         PATH: $PATH:/
 
+    - file:
+        name: bidsapphcppipelines-entrypoint
+        contents: |-
+          #!/usr/bin/env bash
+          set -e
+
+          if [ "$#" -eq 0 ]; then
+            exec /bin/bash
+          fi
+
+          exec "$@"
+    - copy:
+        - bidsapphcppipelines-entrypoint
+        - /usr/local/bin/bidsapphcppipelines-entrypoint
+    - run:
+        - chmod +x /usr/local/bin/bidsapphcppipelines-entrypoint
+
     - install:
         - qt4-dev-tools
         - libxss1
@@ -22,7 +39,7 @@ build:
         - libxft2
         - libjpeg62-dev
 
-    - entrypoint: bash
+    - entrypoint: /usr/local/bin/bidsapphcppipelines-entrypoint
 
 deploy:
   path:
