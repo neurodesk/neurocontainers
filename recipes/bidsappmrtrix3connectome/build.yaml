@@ -19,7 +19,10 @@ build:
     - environment:
         DEBIAN_FRONTEND: noninteractive
         PATH: ${PATH}:/
-    - entrypoint: bash
+    - run:
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -e' '' 'if [ "$#" -eq 0 ]; then' '  exec /usr/bin/env bash' 'fi' '' 'exec "$@"' > /usr/local/bin/bidsappmrtrix3connectome-entrypoint
+        - chmod +x /usr/local/bin/bidsappmrtrix3connectome-entrypoint
+    - entrypoint: /usr/local/bin/bidsappmrtrix3connectome-entrypoint
 
 deploy:
   path:
