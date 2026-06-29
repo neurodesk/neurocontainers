@@ -15,7 +15,11 @@ build:
         DEBIAN_FRONTEND: noninteractive
         PATH: $PATH:/BrainSuite/
 
-    - entrypoint: bash
+    - run:
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -e' '' 'if [ "$#" -eq 0 ]; then' '  exec /usr/bin/env bash' 'fi' '' 'exec "$@"' > /usr/local/bin/bidsappbrainsuite-entrypoint
+        - chmod +x /usr/local/bin/bidsappbrainsuite-entrypoint
+
+    - entrypoint: /usr/local/bin/bidsappbrainsuite-entrypoint
 
 deploy:
   path:
