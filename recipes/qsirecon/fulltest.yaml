@@ -31,6 +31,12 @@ test_data:
   bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
   output_dir: test_output
 
+env_setup: |
+  export HOME="$PWD/test_home"
+  export XDG_CACHE_HOME="$PWD/test_home/.cache"
+  export TEMPLATEFLOW_HOME="$PWD/test_home/.cache/templateflow"
+  mkdir -p "$TEMPLATEFLOW_HOME"
+
 setup:
   script: |
     #!/usr/bin/env bash
