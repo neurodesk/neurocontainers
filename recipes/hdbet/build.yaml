@@ -19,7 +19,7 @@ build:
     - template:
         name: miniconda
         version: latest
-        conda_install: python=3.10 pip
+        conda_install: "python=3.10 pip setuptools<82"
         env_name: hdbet
         env_exists: "false"
 
