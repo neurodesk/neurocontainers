@@ -37,9 +37,11 @@ test_data:
 
 env_setup: |
   # Create FreeSurfer license file (not embedded in micapipe container)
-  # Write to writable-tmpfs overlay for each test invocation
-  if [ ! -f /opt/freesurfer-7.3.2/.license ]; then
-    cat > /opt/freesurfer-7.3.2/.license << 'EOFLIC'
+  # in the mounted test work directory and point FreeSurfer at it.
+  export FS_LICENSE="${output_dir}/freesurfer-license.txt"
+  mkdir -p "$(dirname "${FS_LICENSE}")"
+  if [ ! -f "${FS_LICENSE}" ]; then
+    cat > "${FS_LICENSE}" << 'EOFLIC'
   s.bollmann@uq.edu.au
   53024
    *CgH0liqb0e9g
