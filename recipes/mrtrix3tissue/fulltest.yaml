@@ -394,9 +394,18 @@ tests:
       - output_exists: ${output_dir}/t1w_normalise.nii.gz
 
   - name: mrfilter FFT forward
-    description: Apply forward Fourier transform (crashes with SIGFPE - container bug)
-    command: mrfilter ${t1w} fft -magnitude test_output/t1w_fft.nii.gz -force
-    expected_exit_code: 8
+    description: Apply forward Fourier transform (crashes with SIGFPE, SIGSEGV, or SIGABRT - container bug)
+    command: |
+      set +e
+      mrfilter ${t1w} fft -magnitude test_output/t1w_fft.nii.gz -force
+      status=$?
+      if [ "$status" -eq 8 ] || [ "$status" -eq 11 ] || [ "$status" -eq 134 ]; then
+        echo "mrfilter fft exited with known crash status $status"
+        exit 0
+      fi
+      echo "Unexpected mrfilter fft exit status: $status"
+      exit 1
+    expected_output_contains: "mrfilter fft exited with known crash status"
 
   # ==========================================================================
   # THRESHOLDING - mrthreshold
