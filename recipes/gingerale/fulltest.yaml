@@ -331,6 +331,15 @@ tests:
       - output_exists: ${output_dir}/gingerale/ale_results/motor_fdrID_thresh.nii
 
   # ==========================================================================
+  # THRESHOLDING METHODS - CLUSTER-LEVEL INFERENCE
+  # ==========================================================================
+  - name: ALE with cluster-level inference
+    description: Apply cluster-level FWE correction with forming threshold
+    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \\\n  test_output/gingerale/foci/minimal_tal.txt \\\n  -ale=test_output/gingerale/ale_results/minimal_clust_ALE \\\n  -thresh=test_output/gingerale/ale_results/minimal_clust_thresh \\\n  -perm=100 \\\n  -p=0.001 \\\n  -clust=0.05 \\\n  2>&1'"
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/minimal_clust_ALE.nii
+
+  # ==========================================================================
   # THRESHOLDING METHODS - PERMUTATION-BASED (FWE)
   # ==========================================================================
   - name: ALE with FWE correction (100 perms)
@@ -345,15 +354,6 @@ tests:
     command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \\\n  test_output/gingerale/foci/minimal_tal.txt \\\n  -ale=test_output/gingerale/ale_results/minimal_fwe500_ALE \\\n  -thresh=test_output/gingerale/ale_results/minimal_fwe500_thresh \\\n  -perm=500 \\\n  -fwe=0.05 \\\n  2>&1'"
     validate:
       - output_exists: ${output_dir}/gingerale/ale_results/minimal_fwe500_ALE.nii
-
-  # ==========================================================================
-  # THRESHOLDING METHODS - CLUSTER-LEVEL INFERENCE
-  # ==========================================================================
-  - name: ALE with cluster-level inference
-    description: Apply cluster-level FWE correction with forming threshold
-    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \\\n  test_output/gingerale/foci/minimal_tal.txt \\\n  -ale=test_output/gingerale/ale_results/minimal_clust_ALE \\\n  -thresh=test_output/gingerale/ale_results/minimal_clust_thresh \\\n  -perm=100 \\\n  -p=0.001 \\\n  -clust=0.05 \\\n  2>&1'"
-    validate:
-      - output_exists: ${output_dir}/gingerale/ale_results/minimal_clust_ALE.nii
 
   # ==========================================================================
   # MINIMUM CLUSTER VOLUME
