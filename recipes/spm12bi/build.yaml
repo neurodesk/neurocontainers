@@ -43,10 +43,11 @@ build:
         - chmod +x /opt/spm12/*
     - template:
         name: miniconda
-        version: py38_4.12.0
+        version: py38_23.11.0-2
+        mamba: "true"
         conda_install: python=3.8 traits nipype numpy scipy h5py scikit-image
     - environment:
-        PATH: /opt/spm12:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        PATH: /opt/spm12:/opt/miniconda-py38_23.11.0-2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         XAPPLRESDIR: /opt/mcr/v97/x11/app-defaults
 
 deploy:
