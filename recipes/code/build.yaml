@@ -15,8 +15,9 @@ build:
 
     - template:
         name: miniconda
-        version: latest
-        conda_install: "python=3.11 nipype jupyter nb_conda_kernels h5py seaborn numpy"
+        version: py311_25.5.1-0
+        mamba: "true"
+        conda_install: "python=3.11 nipype jupyter nb_conda_kernels h5py seaborn numpy pyqt=5 qtconsole"
         pip_install: "osfclient"
 
     - install:
