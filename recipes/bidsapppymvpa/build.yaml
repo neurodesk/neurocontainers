@@ -25,7 +25,6 @@ build:
 
 deploy:
   path:
-    - /opt/fsl-6.0.5.1/bin
     - /code
 
 readme: |
