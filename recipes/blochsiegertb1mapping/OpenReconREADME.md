@@ -83,3 +83,14 @@ sorted frame order within its slice group.
 The mask is computed because it is part of the MATLAB workflow, but it is not
 applied to the B1, BSp, PHSc, or B0 maps because the MATLAB code does not apply
 it before returning those arrays.
+
+## Open Source Development
+
+The source for this OpenRecon package is in the NeuroContainers repository:
+https://github.com/NeuroDesk/neurocontainers/tree/main/recipes/blochsiegertb1mapping
+
+For bugs and feature requests, opening an issue in the NeuroContainers
+repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
+Questions can also be posted in the Neurodesk discussion forum at
+https://github.com/orgs/neurodesk/discussions or sent via
+https://neurodesk.org/contact/.
