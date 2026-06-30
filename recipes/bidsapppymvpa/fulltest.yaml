@@ -55,7 +55,7 @@ tests:
 
   - name: Help message
     description: Verify help documentation is accessible
-    command: bash -lc '/code/run.py --help 2>&1 | head -20'
+    command: bash -lc '/code/run.py --help 2>&1 | grep -m1 "PyMVPA BIDS-App"'
     expected_output_contains: "PyMVPA BIDS-App"
 
   - name: Argument parser verification

@@ -18,11 +18,13 @@ build:
     - environment:
         DEBIAN_FRONTEND: noninteractive
 
-    - entrypoint: bash
+    - run:
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -e' '' 'if [ "$#" -eq 0 ]; then' '  exec /usr/bin/env bash' 'fi' '' 'exec "$@"' > /usr/local/bin/bidsapppymvpa-entrypoint
+        - chmod +x /usr/local/bin/bidsapppymvpa-entrypoint
+    - entrypoint: /usr/local/bin/bidsapppymvpa-entrypoint
 
 deploy:
   path:
-    - /opt/fsl-6.0.5.1/bin
     - /code
 
 readme: |
