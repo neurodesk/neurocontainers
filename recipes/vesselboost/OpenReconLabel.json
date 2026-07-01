@@ -61,7 +61,7 @@
       "label": { "en": "Debug threshold segmentation" },
       "type": "boolean",
       "default": false,
-      "information": { "en": "Skip VesselBoost inference and use the simple threshold segmentation from openreconi2iexample for send-path debugging." }
+      "information": { "en": "Skip VesselBoost inference and create a simple threshold-based segmentation for send-path debugging." }
     },
     {
       "id": "vbuseblending",
@@ -105,7 +105,7 @@
       "label": { "en": "Segmentation MIPs" },
       "type": "boolean",
       "default": false,
-      "information": { "en": "Use the openreconi2iexample 2D segmentation-header delivery mode: the segmentation is sent without source-image-header metadata and becomes the scanner post-processing target for separate segmentation MIPs." }
+      "information": { "en": "Send the segmentation in a 2D segmentation-header format so scanner post-processing can generate separate segmentation MIPs." }
     }
   ]
 }
