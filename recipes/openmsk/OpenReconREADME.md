@@ -35,8 +35,10 @@ scanner. Runtime logs report where every qDESS value came from.
   `goyal_sagittal` and `nnunet_knee` are also packaged).
 - `computethickness`: run slower mesh/thickness analysis after the segmentation
   has been sent.
-- `qdess_*`: fallback TR, TE1, TE2, flip angle, GL area, and TG values used to
-  synthesize the qDESS DICOM input when MRD metadata is incomplete.
+- `qdesstrms`, `qdesste1ms`, `qdesste2ms`, `qdessflipangledeg`,
+  `qdessglarea`, `qdesstgus`: fallback TR, TE1, TE2, flip angle, GL area, and
+  TG values used to synthesize the qDESS DICOM input when MRD metadata is
+  incomplete.
 
 ## Build And Validate
 

@@ -1,5 +1,5 @@
 name: openmsk
-version: 0.1.6
+version: 0.1.7
 architectures:
   - x86_64
 
@@ -131,12 +131,17 @@ build:
         - libsm6
         - libxext6
         - libxrender1
+        # The OpenRecon macro invokes /usr/bin/python3 -m pip after its apt
+        # layer, so the system Python needs pip even though TensorFlow ships a
+        # separate /usr/local Python environment.
+        - python3-pip
         - unzip
 
     # The TensorFlow image keeps pip in its Python 3.11 environment, but the
     # OpenRecon macro's apt layer restores /usr/bin/python3 to Ubuntu's 3.10
-    # interpreter. pip/pip3 ship with a /usr/bin/python3 shebang, so point them
-    # at /usr/bin/python before that apt layer runs.
+    # interpreter. Keep python3-pip installed for the macro's python3 -m pip
+    # calls, and point pip/pip3 at /usr/bin/python for later unqualified pip
+    # calls before that apt layer runs.
     - run:
         - python -m pip --version
         - sed -i '1s|.*|#!/usr/bin/python|' /usr/local/bin/pip /usr/local/bin/pip3
@@ -207,7 +212,7 @@ build:
         KNEEPIPELINE_HOME: /opt/KneePipeline
         KNEEPIPELINE_CONFIG: /opt/KneePipeline/config.json
         OPENMSK_NNUNET_NUMPY_COMPAT_PATH: /opt/openmsk_compat
-        PYTHONPATH: /opt/openmsk_compat:$PYTHONPATH
+        PYTHONPATH: /opt/openmsk_compat
         LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
         # The DOSMA qDESS TF models are saved channels-first (NCHW). On a GPU
         # that runs natively; on CPU-only hosts oneDNN is required for NCHW

@@ -85,7 +85,7 @@
       "default": false
     },
     {
-      "id": "qdess_tr_ms",
+      "id": "qdesstrms",
       "label": { "en": "qDESS TR" },
       "type": "double",
       "information": { "en": "Fallback repetition time for synthetic qDESS DICOM when MRD sequence parameters are absent" },
@@ -95,7 +95,7 @@
       "unit": { "en": "ms" }
     },
     {
-      "id": "qdess_te1_ms",
+      "id": "qdesste1ms",
       "label": { "en": "qDESS TE1" },
       "type": "double",
       "information": { "en": "Fallback echo-1 time for synthetic qDESS DICOM when MRD sequence parameters are absent" },
@@ -105,7 +105,7 @@
       "unit": { "en": "ms" }
     },
     {
-      "id": "qdess_te2_ms",
+      "id": "qdesste2ms",
       "label": { "en": "qDESS TE2" },
       "type": "double",
       "information": { "en": "Fallback echo-2 time for synthetic qDESS DICOM when MRD sequence parameters are absent" },
@@ -115,7 +115,7 @@
       "unit": { "en": "ms" }
     },
     {
-      "id": "qdess_flip_angle_deg",
+      "id": "qdessflipangledeg",
       "label": { "en": "qDESS flip angle" },
       "type": "double",
       "information": { "en": "Fallback flip angle for synthetic qDESS DICOM when MRD sequence parameters are absent" },
@@ -125,7 +125,7 @@
       "unit": { "en": "deg" }
     },
     {
-      "id": "qdess_gl_area",
+      "id": "qdessglarea",
       "label": { "en": "qDESS GL area" },
       "type": "double",
       "information": { "en": "Fallback qDESS spoiler gradient area written to DICOM private tag (0019,10B6)" },
@@ -134,7 +134,7 @@
       "default": 3132.0
     },
     {
-      "id": "qdess_tg_us",
+      "id": "qdesstgus",
       "label": { "en": "qDESS TG" },
       "type": "double",
       "information": { "en": "Fallback qDESS spoiler duration written to DICOM private tag (0019,10B7)" },

@@ -442,12 +442,12 @@ def test_openrecon_label_keeps_packaged_model_choices():
         "nnunet_knee",
     ]
     for key in (
-        "qdess_tr_ms",
-        "qdess_te1_ms",
-        "qdess_te2_ms",
-        "qdess_flip_angle_deg",
-        "qdess_gl_area",
-        "qdess_tg_us",
+        "qdesstrms",
+        "qdesste1ms",
+        "qdesste2ms",
+        "qdessflipangledeg",
+        "qdessglarea",
+        "qdesstgus",
     ):
         assert params[key]["type"] == "double"
 
@@ -512,12 +512,12 @@ def test_synthetic_qdess_dicom_contains_t2_inputs(tmp_path):
     params = openmsk._resolve_qdess_parameters(
         {
             "parameters": {
-                "qdess_tr_ms": 26.0,
-                "qdess_te1_ms": 7.5,
-                "qdess_te2_ms": 41.5,
-                "qdess_flip_angle_deg": 31.0,
-                "qdess_gl_area": 3133.0,
-                "qdess_tg_us": 1559.0,
+                "qdesstrms": 26.0,
+                "qdesste1ms": 7.5,
+                "qdesste2ms": 41.5,
+                "qdessflipangledeg": 31.0,
+                "qdessglarea": 3133.0,
+                "qdesstgus": 1559.0,
             }
         },
         metadata,

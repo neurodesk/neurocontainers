@@ -13,7 +13,7 @@
       "manufacture_date": "2026/06/26",
       "material_number": "qsmxt_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
       "gtin": "00860000171212",
-      "udi": "(01)00860000171212(21)9.0.0",
+      "udi": "(01)00860000171212(21)VERSION_WILL_BE_REPLACED_BY_SCRIPT",
       "safety_advices": "",
       "special_operating_instructions": "OpenRecon QSMxT reconstruction",
       "additional_relevant_information": ""
@@ -71,60 +71,7 @@
       "label": { "en": "Send original" },
       "type": "boolean",
       "information": { "en": "Send original magnitude and phase image series before derived QSMxT output." },
-      "default": false
-    },
-    {
-      "id": "maxechoes",
-      "label": { "en": "Max echoes" },
-      "type": "int",
-      "minimum": 0,
-      "maximum": 128,
-      "default": 0,
-      "information": { "en": "Maximum magnitude/phase echo pairs to write. Use 0 for all pairs." }
-    },
-    {
-      "id": "echotimesms",
-      "label": { "en": "Echo times" },
-      "type": "string",
-      "default": "",
-      "information": { "en": "Optional comma-separated echo times in ms. Used when MRD metadata does not carry TE." }
-    },
-    {
-      "id": "echotimems",
-      "label": { "en": "First echo" },
-      "type": "double",
-      "minimum": 0.1,
-      "maximum": 1000.0,
-      "default": 20.0,
-      "unit": { "en": "ms" },
-      "information": { "en": "Fallback first echo time in ms when echo times are not supplied." }
-    },
-    {
-      "id": "echospacingms",
-      "label": { "en": "Echo spacing" },
-      "type": "double",
-      "minimum": 0.0,
-      "maximum": 1000.0,
-      "default": 5.0,
-      "unit": { "en": "ms" },
-      "information": { "en": "Fallback spacing in ms used to extend missing echo times." }
-    },
-    {
-      "id": "fieldstrength",
-      "label": { "en": "Field strength" },
-      "type": "double",
-      "minimum": 0.1,
-      "maximum": 20.0,
-      "default": 3.0,
-      "unit": { "en": "T" },
-      "information": { "en": "Magnetic field strength written to QSMxT BIDS sidecars when not available in MRD metadata." }
-    },
-    {
-      "id": "b0dir",
-      "label": { "en": "B0 direction" },
-      "type": "string",
-      "default": "0,0,1",
-      "information": { "en": "B0 direction vector written to QSMxT sidecars." }
+      "default": true
     },
     {
       "id": "qsmalgorithm",
@@ -143,8 +90,8 @@
         { "id": "ilsqr", "name": { "en": "iLSQR" } },
         { "id": "qsmart", "name": { "en": "QSMART" } }
       ],
-      "default": "default",
-      "information": { "en": "Optional QSMxT inversion algorithm override." }
+      "default": "rts",
+      "information": { "en": "QSMxT inversion algorithm. RTS is the recommended default for robust inline QSM." }
     },
     {
       "id": "unwrappingalgorithm",
@@ -155,8 +102,8 @@
         { "id": "romeo", "name": { "en": "ROMEO" } },
         { "id": "laplacian", "name": { "en": "Laplacian" } }
       ],
-      "default": "default",
-      "information": { "en": "Optional QSMxT phase unwrapping algorithm override." }
+      "default": "romeo",
+      "information": { "en": "QSMxT phase unwrapping algorithm. ROMEO is the recommended default for multi-echo QSM." }
     },
     {
       "id": "bfalgorithm",
@@ -170,8 +117,8 @@
         { "id": "ismv", "name": { "en": "iSMV" } },
         { "id": "sharp", "name": { "en": "SHARP" } }
       ],
-      "default": "default",
-      "information": { "en": "Optional QSMxT background field removal algorithm override." }
+      "default": "pdf",
+      "information": { "en": "QSMxT background field removal algorithm. PDF is the recommended default for inline QSM." }
     },
     {
       "id": "maskpreset",
@@ -182,8 +129,8 @@
         { "id": "robust-threshold", "name": { "en": "Robust threshold" } },
         { "id": "bet", "name": { "en": "BET" } }
       ],
-      "default": "default",
-      "information": { "en": "Optional QSMxT masking preset override." }
+      "default": "robust-threshold",
+      "information": { "en": "QSMxT masking preset. Robust threshold avoids external BET dependencies and is the recommended inline default." }
     }
   ]
 }
