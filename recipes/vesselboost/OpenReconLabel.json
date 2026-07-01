@@ -101,20 +101,6 @@
       "default": true
     },
     {
-      "id": "vbreslicesagittal",
-      "label": { "en": "Reslice sagittal" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Emit an additional output series with the segmentation resliced in the sagittal plane." }
-    },
-    {
-      "id": "vbreslicecoronal",
-      "label": { "en": "Reslice coronal" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Emit an additional output series with the segmentation resliced in the coronal plane." }
-    },
-    {
       "id": "vbsegmentationmips",
       "label": { "en": "Segmentation MIPs" },
       "type": "boolean",
