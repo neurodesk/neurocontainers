@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "qsmxt 9.0.0": {
+      "version": "20260626",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction",
+    "phase processing",
+    "quantitative imaging",
+    "structural imaging",
+    "workflows"
+  ]
+}
