@@ -106,20 +106,16 @@ dixonImageTypeAliases = {
     "OUTPHASE": "OPPOSED_PHASE",
     "OUT_PHASE": "OPPOSED_PHASE",
 }
-# Whole-body Fat-Fraction composing mode (single GUI choice: off/native/restamp).
+# Whole-body Fat-Fraction composing mode (GUI checkbox: off/native).
 # Fat-Fraction is the most expendable Dixon contrast (recomputable offline from
 # composed Water/Fat), so the segmentation hijacks the FAT_FRACTION inline compose
 # channel and is combined across stations:
-#   restamp - stamp a Water-derived mask with the FAT_FRAC Dixon identity and
-#             suppress the genuine Fat-Fraction images. Relies on the converter
-#             assigning the rewritten image the FF ComposingGroup on return.
-#   native  - reuse the genuine Fat-Fraction images verbatim as carriers and only
-#             overwrite their pixel data with the labels, so the carrier keeps the
-#             real FF header/identity and inherits the configurator-owned
-#             ComposingGroup (more robust). Takes precedence over restamp.
+#   native  - reuse the genuine Fat-Fraction images as carriers, overwrite their
+#             pixel data with the labels, and patch display names to MuscleMap
+#             while preserving FF routing identity.
 # See OpenReconREADME.md for the trade-off and the Adaptive-blending re-threshold
-# caveat. The legacy booleans `composesegmentation`/`composesegmentationnativeff`
-# remain accepted as a programmatic fallback.
+# caveat. The legacy `composesegmentationnativeff` boolean remains accepted as a
+# programmatic fallback.
 composeSegmentationParameterId = "composesegmentation"
 composeSegmentationNativeFfParameterId = "composesegmentationnativeff"
 composeSegmentationModeAliases = {
@@ -129,10 +125,10 @@ composeSegmentationModeAliases = {
     "NONE": "off",
     "DISABLED": "off",
     "FALSE": "off",
-    "RESTAMP": "restamp",
-    "FAT_FRACTION": "restamp",
-    "AS_FAT_FRACTION": "restamp",
-    "TAG": "restamp",
+    "TRUE": "native",
+    "YES": "native",
+    "ON": "native",
+    "ENABLED": "native",
     "NATIVE": "native",
     "NATIVE_FF": "native",
     "REUSE": "native",
@@ -367,9 +363,9 @@ def process(connection, config, metadata):
         elif compose_mode == "native":
             logging.info(
                 "compose_segmentation=native: the genuine Fat-Fraction images will be "
-                "reused verbatim as carriers with their pixel data replaced by the "
-                "segmentation labels, and their original pixels suppressed, so the "
-                "segmentation inherits the real Fat-Fraction ComposingGroup routing",
+                "reused as carriers with their pixel data replaced by the segmentation "
+                "labels and their display names patched to MuscleMap, so the segmentation "
+                "inherits the real Fat-Fraction ComposingGroup routing",
             )
 
         # Genuine Fat-Fraction images, kept aside for native-carrier compose.
@@ -757,14 +753,11 @@ def _resolve_dixon_image_type(meta_obj):
 
 
 def _resolve_compose_segmentation_mode(config):
-    """Resolve the composing mode: 'off', 'restamp', or 'native'.
+    """Resolve the composing mode: 'off' or 'native'.
 
-    Driven by the single ``composesegmentation`` GUI choice (off/native/restamp).
-    'native' (reuse genuine Fat-Fraction carriers, pixel-replace) is the more
-    robust routing path and takes precedence over 'restamp' (Water-derived mask
-    re-tagged as FAT_FRAC). The legacy booleans are still accepted: a separate
-    ``composesegmentationnativeff`` truthy value forces native, and a plain
-    truthy ``composesegmentation`` boolean means restamp.
+    Driven by the ``composesegmentation`` GUI checkbox. A truthy value enables
+    the native Fat-Fraction carrier path. The legacy
+    ``composesegmentationnativeff`` boolean is still accepted.
     """
     parameters = _config_parameters(config)
     raw_mode = parameters.get(composeSegmentationParameterId)
@@ -784,7 +777,7 @@ def _resolve_compose_segmentation_mode(config):
     if _get_config_bool(config, composeSegmentationNativeFfParameterId, False):
         return "native"
     if _as_config_bool(raw_mode):
-        return "restamp"
+        return "native"
     return "off"
 
 
@@ -2951,7 +2944,7 @@ def _log_and_validate_output_series_contract(output_images, input_images, contex
     }
     _log_json_event("OUTPUT_SERIES_CONTRACT", payload)
     # Native-carrier compose images intentionally reuse the genuine Fat-Fraction
-    # identity verbatim (that is what preserves ComposingGroup routing), so they
+    # storage identity (that is what preserves ComposingGroup routing), so they
     # are exempt from the derived-identity / input-reuse contract checks.
     validatable_images = [
         image for image in _as_image_list(output_images)
@@ -4032,13 +4025,14 @@ def _build_native_ff_compose_images(
     carriers,
     image_comment,
     metrics_text=None,
+    display_identity=None,
 ):
     """Build Fat-Fraction carrier images with replaced segmentation pixel data.
 
-    The genuine Fat-Fraction images are reused verbatim (header + attribute
-    string), so the ICE side assigns them the same configurator-owned
-    ComposingGroup as a real FF pass-through; only the pixel data is swapped for
-    the per-slice segmentation labels. Carriers are matched to this station by
+    The genuine Fat-Fraction images are reused as carriers so the ICE side assigns
+    them the same configurator-owned ComposingGroup as a real FF pass-through.
+    Pixel data is swapped for the per-slice segmentation labels, while display
+    names are patched to MuscleMap. Carriers are matched to this station by
     measurement UID and to each output slice by nearest projected position.
     Returns None (caller falls back to the non-composing output) when no usable
     carrier set is available.
@@ -4094,9 +4088,11 @@ def _build_native_ff_compose_images(
         out_image.setHead(out_header)
         out_image.image_series_index = int(getattr(out_header, "image_series_index", 0))
 
-        # Reuse the genuine Fat-Fraction identity verbatim; only mark the image
-        # and refresh the comment so routing-critical fields stay untouched.
+        # Reuse the routing-critical Fat-Fraction identity; only mark the image,
+        # refresh the comment, and patch display names so the resulting composed
+        # series is scanner-visible as MuscleMap rather than the source 2ptFF.
         meta_obj = _copy_meta(ismrmrd.Meta.deserialize(carrier.attribute_string))
+        _patch_native_ff_compose_display_identity(meta_obj, display_identity)
         _set_meta_scalar(meta_obj, composeNativeFfMarkerMetaKey, 1)
         meta_obj["Keep_image_geometry"] = 1
         if image_comment:
@@ -4108,6 +4104,61 @@ def _build_native_ff_compose_images(
         images.append(out_image)
 
     return images
+
+
+def _patch_native_ff_compose_display_identity(meta_obj, display_identity):
+    if not display_identity:
+        return
+
+    series_description = _first_non_empty_text(
+        display_identity.get("series_description"),
+        muscleMapDisplayLabel,
+    )
+    sequence_description = _first_non_empty_text(
+        display_identity.get("sequence_description"),
+        series_description,
+    )
+    sequence_description_additional = _first_non_empty_text(
+        display_identity.get("sequence_description_additional"),
+    )
+    series_grouping = _first_non_empty_text(
+        display_identity.get("grouping"),
+        series_description,
+    )
+
+    for key, value in (
+        ("SeriesDescription", series_description),
+        ("SequenceDescription", sequence_description),
+        ("ProtocolName", sequence_description),
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SequenceDescriptionAdditional", sequence_description_additional),
+    ):
+        if value:
+            meta_obj[key] = value
+
+    minihead_text = _decode_ice_minihead(meta_obj)
+    if not minihead_text:
+        return
+
+    changed = False
+    for key, value in (
+        ("SeriesDescription", series_description),
+        ("SequenceDescription", sequence_description),
+        ("ProtocolName", sequence_description),
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SequenceDescriptionAdditional", sequence_description_additional),
+    ):
+        if not value:
+            continue
+        minihead_text, did_change = _replace_or_append_minihead_string_param(
+            minihead_text,
+            key,
+            value,
+        )
+        changed = changed or did_change
+
+    if changed:
+        meta_obj["IceMiniHead"] = _encode_ice_minihead(minihead_text)
 
 
 def process_image(
@@ -4606,9 +4657,10 @@ def process_image(
             compose_identity["series_instance_uid"],
         )
 
-    # Native-carrier compose: reuse the genuine Fat-Fraction images verbatim and
-    # only replace their pixel data with the segmentation labels. Falls back to
-    # the non-composing MUSCLEMAP segmentation output if no usable carriers exist.
+    # Native-carrier compose: reuse genuine Fat-Fraction images as carriers,
+    # replace their pixel data with the segmentation labels, and patch their
+    # display names to MuscleMap. Falls back to the non-composing MUSCLEMAP
+    # segmentation output if no usable carriers exist.
     native_images = None
     if compose_mode == "native":
         if metrics_in_comments and metrics_comment:
@@ -4627,6 +4679,7 @@ def process_image(
                 if metrics_in_minihead and metrics_minihead_text
                 else None
             ),
+            display_identity=segmentation_identity,
         )
         if native_images is None:
             logging.warning(
@@ -4640,7 +4693,7 @@ def process_image(
         imagesOut = native_images
         logging.info(
             "compose_segmentation=native: built %d Fat-Fraction carrier image(s) with "
-            "segmentation pixel data (verbatim FF identity preserved for compose routing)",
+            "segmentation pixel data (FF storage identity preserved for compose routing)",
             len(imagesOut),
         )
 
