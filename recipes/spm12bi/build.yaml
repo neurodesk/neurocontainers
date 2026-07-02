@@ -27,6 +27,7 @@ build:
         name: matlabmcr
         version: 2019b
         install_path: /opt/mcr
+        ncurses_package: libncurses5
     - environment:
         SPM_VERSION: "12"
         SPM_REVISION: "{{ context.version }}"

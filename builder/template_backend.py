@@ -66,7 +66,7 @@ class TemplateMethod:
         values = deps.get(pkg_manager, [])
         if not isinstance(values, list):
             return []
-        return [str(item) for item in values]
+        return [_render_string(str(item), self) for item in values]
 
     def install(self, pkgs: list[str], opts: str | None = None) -> str:
         return _install_command(self.pkg_manager, tuple(str(item) for item in pkgs), opts)
