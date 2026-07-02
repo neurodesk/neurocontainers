@@ -1,0 +1,248 @@
+name: qsmxt
+version: 9.0.6
+container: qsmxt_9.0.6.simg
+
+test_data:
+  output_dir: test_output
+  fake_qsmxt: test_output/fake-qsmxt
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "${output_dir}"
+    cat > "${fake_qsmxt}" <<'PY'
+    #!/usr/bin/env python3
+    import sys
+    from pathlib import Path
+
+    import nibabel as nib
+    import numpy as np
+
+    if len(sys.argv) < 4 or sys.argv[1] != "run":
+        raise SystemExit(2)
+
+    bids = Path(sys.argv[2])
+    output = Path(sys.argv[3])
+    phase = sorted(bids.glob("sub-*/anat/*_echo-1_part-phase_MEGRE.nii.gz"))[0]
+    image = nib.load(str(phase))
+    data = np.zeros(image.shape, dtype=np.float32) + 1.5
+    name = phase.name.replace("_echo-1_part-phase_MEGRE.nii.gz", "_Chimap.nii")
+    destination = output / "derivatives" / "qsmxt.rs" / "sub-01" / "anat" / name
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    nib.save(nib.Nifti1Image(data, image.affine), str(destination))
+    print(destination)
+    PY
+    chmod +x "${fake_qsmxt}"
+
+tests:
+  - name: QSMxT command line tools
+    description: Verify the packaged QSMxT and bundled dcm2niix entrypoints start
+    script: |
+      set -euo pipefail
+      command -v qsmxt | grep -x /opt/qsmxt/qsmxt
+      command -v dcm2niix | grep -x /opt/qsmxt/dcm2niix
+      qsmxt --version
+      qsmxt --help >/dev/null
+      qsmxt run --help >/dev/null
+      dcm2niix --version 2>&1 | tee "${output_dir}/dcm2niix-version.txt"
+      grep -i dcm2niix "${output_dir}/dcm2niix-version.txt"
+
+  - name: OpenRecon server entrypoints
+    description: Verify the OpenRecon server and deployed qsmxt module are present
+    script: |
+      set -euo pipefail
+      python /opt/code/python-ismrmrd-server/main.py -h > "${output_dir}/openrecon-help.txt" 2>&1
+      grep 'Example server for MRD streaming format' "${output_dir}/openrecon-help.txt"
+      test -f /opt/code/python-ismrmrd-server/qsmxt.py
+      test -f /opt/code/python-ismrmrd-server/OpenReconLabel.json
+      test -f /opt/code/python-ismrmrd-server/OpenReconREADME.md
+
+  - name: OpenRecon label contract
+    description: Verify the installed OpenRecon metadata exposes the expected qsmxt controls
+    script: |
+      set -euo pipefail
+      python - <<'PY'
+      import json
+      from pathlib import Path
+
+      label = Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json")
+      data = json.loads(label.read_text())
+      assert data["general"]["id"] == "qsmxt"
+      assert data["reconstruction"]["emitter"] == "image"
+      assert data["reconstruction"]["injector"] == "image"
+      parameter_ids = {parameter["id"] for parameter in data["parameters"]}
+      expected = {
+          "config",
+          "sendoutputs",
+          "sendoriginal",
+          "qsmalgorithm",
+          "unwrappingalgorithm",
+          "bfalgorithm",
+          "maskpreset",
+      }
+      assert expected <= parameter_ids
+      assert "minip" not in parameter_ids
+      print(label)
+      PY
+
+  - name: OpenRecon bridge imports and display scaling
+    description: Verify the Python bridge imports with runtime dependencies and preserves scanner display scaling
+    script: |
+      set -euo pipefail
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import numpy as np
+      import ismrmrd
+      import nibabel
+      import scipy
+      import skimage
+      import qsmxt
+
+      display, meta = qsmxt._scanner_display_volume(
+          np.asarray([[[-0.01, 0.0, 0.01]]], dtype=np.float32),
+          "qsm",
+          "ppm",
+      )
+
+      assert display.dtype == np.uint16
+      assert display.tolist() == [[[1048, 2048, 3048]]]
+      assert meta["scale"] == 100000.0
+      assert meta["offset"] == 2048.0
+      assert meta["formula"] == "ppm = (display - 2048) / 100000"
+      assert qsmxt.DEFAULT_QSMXT_BINARY == "/opt/qsmxt/qsmxt"
+      print(qsmxt.__file__)
+      PY
+
+  - name: OpenRecon bridge sends derived QSM images
+    description: Run the qsmxt OpenRecon bridge against generated MRD images with a fake QSMxT derivative writer
+    timeout: 180
+    script: |
+      set -euo pipefail
+      FAKE_QSMXT="${fake_qsmxt}" OUTPUT_DIR="${output_dir}" PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import os
+      from pathlib import Path
+
+      import ismrmrd
+      import numpy as np
+      import qsmxt
+
+
+      class FakeAcquisitionSystemInformation:
+          systemFieldStrength_T = 7.0
+
+
+      class FakeMeasurementInformation:
+          protocolName = "gre_qsm"
+
+
+      class FakeSequenceParameters:
+          TE = [20.0]
+
+
+      class FakeMetadata:
+          acquisitionSystemInformation = FakeAcquisitionSystemInformation()
+          measurementInformation = FakeMeasurementInformation()
+          sequenceParameters = FakeSequenceParameters()
+
+
+      class FakeConnection:
+          def __init__(self, images):
+              self.images = images
+              self.sent_batches = []
+              self.logs = []
+              self.closed = False
+
+          def __iter__(self):
+              yield from self.images
+              yield None
+
+          def send_image(self, images):
+              self.sent_batches.append(images if isinstance(images, list) else [images])
+
+          def send_logging(self, level, contents):
+              self.logs.append((level, contents))
+
+          def send_close(self):
+              self.closed = True
+
+
+      def set_header_vector(header, field_name, values):
+          target = getattr(header, field_name)
+          for index, value in enumerate(values):
+              target[index] = value
+
+
+      def image(series_index, image_index, sequence, data, image_type=ismrmrd.IMTYPE_MAGNITUDE):
+          mrd_image = ismrmrd.Image.from_array(data.astype(np.float32), transpose=False)
+          header = mrd_image.getHead()
+          header.image_series_index = series_index
+          header.image_index = image_index
+          header.image_type = image_type
+          set_header_vector(header, "matrix_size", [data.shape[2], data.shape[1], data.shape[0]])
+          set_header_vector(header, "field_of_view", [4.0, 3.0, 2.0])
+          set_header_vector(header, "position", [0.0, 0.0, 0.0])
+          set_header_vector(header, "read_dir", [1.0, 0.0, 0.0])
+          set_header_vector(header, "phase_dir", [0.0, 1.0, 0.0])
+          set_header_vector(header, "slice_dir", [0.0, 0.0, 1.0])
+          mrd_image.setHead(header)
+
+          meta = ismrmrd.Meta()
+          meta["SequenceDescription"] = sequence
+          mrd_image.attribute_string = meta.serialize()
+          return mrd_image
+
+
+      shape_zyx = (2, 3, 4)
+      images = [
+          image(1, 1, "gre_qsm", np.full(shape_zyx, 1001, dtype=np.float32)),
+          image(1, 2, "gre_qsm", np.full(shape_zyx, 1002, dtype=np.float32)),
+          image(2, 1, "gre_qsm_Pha", np.full(shape_zyx, 2001, dtype=np.float32), getattr(ismrmrd, "IMTYPE_PHASE", 2)),
+          image(2, 2, "gre_qsm_Pha", np.full(shape_zyx, 2002, dtype=np.float32), getattr(ismrmrd, "IMTYPE_PHASE", 2)),
+      ]
+      connection = FakeConnection(images)
+      qsmxt.OPENRECON_WORK_ROOT = Path(os.environ["OUTPUT_DIR"]) / "openrecon-work"
+
+      qsmxt.process(
+          connection,
+          {
+              "parameters": {
+                  "qsmxtbinary": os.environ["FAKE_QSMXT"],
+                  "echotimesms": "10,20",
+                  "maxechoes": "2",
+                  "sendoutputs": "qsm",
+              }
+          },
+          FakeMetadata(),
+      )
+
+      assert connection.closed is True
+      assert connection.logs == []
+      assert len(connection.sent_batches) == 1
+      assert len(connection.sent_batches[0]) == 2
+
+      first = connection.sent_batches[0][0]
+      first_header = first.getHead()
+      first_meta = ismrmrd.Meta.deserialize(first.attribute_string)
+      assert int(first_header.image_series_index) == qsmxt.OUTPUT_SERIES_START
+      assert int(first_header.image_index) == 1
+      assert int(first_header.slice) == 0
+      assert first.data.shape == (1, 1, 3, 4)
+      assert first.data.dtype == np.uint16
+      assert np.all(first.data == 3548)
+      assert first_meta["QSMxTOutput"] == "qsm"
+      assert first_meta["ImageType"] == "DERIVED\\PRIMARY\\M\\QSMXT_CHIMAP"
+      assert first_meta["QSMxTDisplayFormula"] == "ppm = (display - 2048) / 1000"
+      assert first_meta["slice_count"] == "2"
+      assert first_meta["NumberOfSlices"] == "2"
+      assert first_meta["ImagesInAcquisition"] == "2"
+      assert first_meta["SliceNo"] == "0"
+      assert first_meta["IsmrmrdSliceNo"] == "0"
+
+      second_meta = ismrmrd.Meta.deserialize(connection.sent_batches[0][1].attribute_string)
+      assert second_meta["NumberInSeries"] == "2"
+      assert second_meta["SliceNo"] == "1"
+      assert second_meta["IsmrmrdSliceNo"] == "1"
+      assert second_meta["SeriesInstanceUID"] == first_meta["SeriesInstanceUID"]
+      assert second_meta["SOPInstanceUID"] != first_meta["SOPInstanceUID"]
+      print("sent derived images:", len(connection.sent_batches[0]))
+      PY
