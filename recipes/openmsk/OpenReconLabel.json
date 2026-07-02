@@ -63,11 +63,19 @@
       "values": [
         {
           "id": "acl_qdess_bone_july_2024",
-          "name": { "en": "ACL qDESS bone/cartilage July 2024" }
+          "name": { "en": "DOSMA qDESS bone/cartilage July 2024" }
         },
         {
           "id": "goyal_sagittal",
           "name": { "en": "Goyal sagittal" }
+        },
+        {
+          "id": "goyal_coronal",
+          "name": { "en": "Goyal coronal" }
+        },
+        {
+          "id": "goyal_axial",
+          "name": { "en": "Goyal axial" }
         },
         {
           "id": "nnunet_knee",

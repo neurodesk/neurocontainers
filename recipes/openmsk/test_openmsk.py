@@ -439,8 +439,12 @@ def test_openrecon_label_keeps_packaged_model_choices():
     assert [value["id"] for value in params["segmodel"]["values"]] == [
         "acl_qdess_bone_july_2024",
         "goyal_sagittal",
+        "goyal_coronal",
+        "goyal_axial",
         "nnunet_knee",
     ]
+    model_names = {value["id"]: value["name"]["en"] for value in params["segmodel"]["values"]}
+    assert model_names["acl_qdess_bone_july_2024"] == "DOSMA qDESS bone/cartilage July 2024"
     for key in (
         "qdesstrms",
         "qdesste1ms",

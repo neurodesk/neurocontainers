@@ -251,9 +251,9 @@ readme: |-
   T2 maps, and a burned-in metrics report image series whenever those artifacts
   are written. The same metrics are copied into output metadata comments.
   The packaged segmentation models are
-  `acl_qdess_bone_july_2024`, `goyal_sagittal`, and `nnunet_knee`. Optional
-  mesh/thickness analysis can run after segmentation when the `computethickness`
-  OpenRecon option is enabled.
+  `acl_qdess_bone_july_2024`, `goyal_sagittal`, `goyal_coronal`,
+  `goyal_axial`, and `nnunet_knee`. Optional mesh/thickness analysis can run
+  after segmentation when the `computethickness` OpenRecon option is enabled.
 
   Direct DICOM usage keeps the qDESS GL/TG private tags and can produce the
   full output set including T2:

@@ -32,7 +32,8 @@ scanner. Runtime logs report where every qDESS value came from.
 
 - `sendoriginal`: return original images before derived outputs.
 - `segmodel`: KneePipeline model name (`acl_qdess_bone_july_2024` by default;
-  `goyal_sagittal` and `nnunet_knee` are also packaged).
+  `goyal_sagittal`, `goyal_coronal`, `goyal_axial`, and `nnunet_knee` are
+  also packaged).
 - `computethickness`: run slower mesh/thickness analysis after the segmentation
   has been sent.
 - `qdesstrms`, `qdesste1ms`, `qdesste2ms`, `qdessflipangledeg`,
