@@ -100,7 +100,10 @@ def _set_image_orientation(image, read_dir, phase_dir, slice_dir):
     image.setHead(header)
 
 
-def _scanner_minihead(echo, slice_index, image_type_value):
+def _scanner_minihead(echo, slice_index, image_type_value, series_end_slices=None):
+    if series_end_slices is None:
+        series_end_slices = {19}
+    is_series_end = echo == 5 and slice_index in series_end_slices
     slice_value = "" if slice_index == 0 else str(slice_index)
     return textwrap.dedent(
         f"""\
@@ -120,8 +123,8 @@ def _scanner_minihead(echo, slice_index, image_type_value):
           {{
             <ParamLong."AnatomicalSliceNo">{{ {slice_index} }}
             <ParamLong."ChronSliceNo">{{ {slice_index} }}
-            <ParamBool."BIsSeriesEnd">{{ "{str(echo == 5 and slice_index == 19).lower()}" }}
-            <ParamBool."ConcatenationEnd">{{ "{str(echo == 5 and slice_index == 19).lower()}" }}
+            <ParamBool."BIsSeriesEnd">{{ "{str(is_series_end).lower()}" }}
+            <ParamBool."ConcatenationEnd">{{ "{str(is_series_end).lower()}" }}
             <ParamString."SeriesInstanceUID">{{ "1.2.826.0.1.series.{image_type_value}" }}
           }}
         }}
@@ -155,6 +158,38 @@ def _scanner_echo_slice_images():
                     image_type=getattr(ismrmrd, "IMTYPE_PHASE", 2),
                     meta_values={"SeriesInstanceUID": "1.2.826.0.1.series.P"},
                     minihead_text=_scanner_minihead(echo, slice_index, "P"),
+                    header_values={"slice": slice_index, "contrast": echo - 1},
+                )
+            )
+    return images
+
+
+def _scanner_echo_slice_images_with_split_end_markers():
+    images = []
+    for slice_index in range(20):
+        for echo in range(1, 6):
+            images.append(
+                _image(
+                    1,
+                    slice_index * 5 + echo,
+                    "gre",
+                    np.full((1, 3, 4), 1000 + echo * 10 + slice_index, dtype=np.float32),
+                    meta_values={"SeriesInstanceUID": "1.2.826.0.1.series.M"},
+                    minihead_text=_scanner_minihead(echo, slice_index, "M", {9, 19}),
+                    header_values={"slice": slice_index, "contrast": echo - 1},
+                )
+            )
+    for slice_index in range(20):
+        for echo in range(1, 6):
+            images.append(
+                _image(
+                    2,
+                    slice_index * 5 + echo,
+                    "gre",
+                    np.full((1, 3, 4), 2000 + echo * 10 + slice_index, dtype=np.float32),
+                    image_type=getattr(ismrmrd, "IMTYPE_PHASE", 2),
+                    meta_values={"SeriesInstanceUID": "1.2.826.0.1.series.P"},
+                    minihead_text=_scanner_minihead(echo, slice_index, "P", {9, 19}),
                     header_values={"slice": slice_index, "contrast": echo - 1},
                 )
             )
@@ -214,6 +249,19 @@ def _fake_qsmxt_binary(tmp_path):
     )
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
     return fake
+
+
+def test_scanner_display_volume_scales_qsm_ppm_range_to_uint12_interval():
+    data = np.asarray([[[-0.01, 0.0, 0.01]]], dtype=np.float32)
+
+    display, meta = qsmxt._scanner_display_volume(data, "qsm", "ppm")
+
+    assert display.dtype == np.uint16
+    assert display.tolist() == [[[1048, 2048, 3048]]]
+    assert meta["scale"] == 100000.0
+    assert meta["offset"] == 2048.0
+    assert meta["formula"] == "ppm = (display - 2048) / 100000"
+    assert meta["clipped_voxels"] == 0
 
 
 def test_write_bids_dataset_pairs_magnitude_and_phase(tmp_path):
@@ -406,8 +454,21 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert int(header.image_index) == 1
     assert int(header.slice) == 0
     assert output.data.shape == (1, 1, 3, 4)
+    assert output.data.dtype == np.uint16
+    assert np.all(output.data == 3548)
     assert meta["QSMxTOutput"] == "qsm"
     assert meta["ImageType"] == "DERIVED\\PRIMARY\\M\\QSMXT_CHIMAP"
+    assert meta["QSMxTDisplayScale"] == "1000"
+    assert meta["QSMxTDisplayOffset"] == "2048"
+    assert meta["QSMxTDisplayFormula"] == "ppm = (display - 2048) / 1000"
+    assert meta["QSMxTDisplayMin"] == "3548"
+    assert meta["QSMxTDisplayMax"] == "3548"
+    assert meta["QSMxTDisplayClippedVoxels"] == "0"
+    assert meta["ImageComment"] == (
+        "QSMxT QSM; scanner display uint16 0-4096; "
+        "ppm = (display - 2048) / 1000"
+    )
+    assert meta["ImageComments"] == meta["ImageComment"]
     assert meta["slice_count"] == "2"
     assert meta["NumberOfSlices"] == "2"
     assert meta["ImagesInAcquisition"] == "2"
@@ -547,6 +608,23 @@ def test_original_passthrough_infers_scanner_slice_count_from_minihead():
     ) == 19
 
 
+def test_original_passthrough_rewrites_source_series_end_markers():
+    outputs = qsmxt._build_original_passthrough_images(
+        _scanner_echo_slice_images_with_split_end_markers()
+    )
+    first_series = _group_test_images_by_series(outputs)[0]
+
+    early_end_meta = ismrmrd.Meta.deserialize(first_series[49].attribute_string)
+    early_end_minihead = qsmxt._decode_ice_minihead(early_end_meta)
+    final_meta = ismrmrd.Meta.deserialize(first_series[-1].attribute_string)
+    final_minihead = qsmxt._decode_ice_minihead(final_meta)
+
+    assert _minihead_bool(early_end_minihead, "BIsSeriesEnd") is False
+    assert _minihead_bool(early_end_minihead, "ConcatenationEnd") is False
+    assert _minihead_bool(final_minihead, "BIsSeriesEnd") is True
+    assert _minihead_bool(final_minihead, "ConcatenationEnd") is True
+
+
 def _group_test_images_by_series(images):
     groups = []
     by_series = {}
@@ -557,6 +635,13 @@ def _group_test_images_by_series(images):
             groups.append(by_series[series_index])
         by_series[series_index].append(image)
     return groups
+
+
+def _minihead_bool(minihead_text, name):
+    marker = f'<ParamBool."{name}">'
+    section = minihead_text.split(marker, 1)[1]
+    value = section.split("{", 1)[1].split("}", 1)[0]
+    return value.strip().strip('"').lower() == "true"
 
 
 def test_process_sends_restamped_originals_before_derived_output(tmp_path, monkeypatch):
