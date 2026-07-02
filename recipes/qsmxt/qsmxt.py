@@ -68,12 +68,6 @@ QSMXT_OUTPUTS = {
         "series": "QSMxT SWI",
         "units": "a.u.",
     },
-    "minip": {
-        "suffix": "minIP",
-        "token": "QSMXT_MINIP",
-        "series": "QSMxT minIP",
-        "units": "a.u.",
-    },
     "t2star": {
         "suffix": "T2starmap",
         "token": "QSMXT_T2STAR",
@@ -350,10 +344,9 @@ def _run_qsmxt(bids_dir, output_dir, settings):
     _append_optional_arg(cmd, "--mask-preset", settings["mask_preset"])
     _append_optional_arg(cmd, "--qsm-reference", settings["qsm_reference"])
     # Auto-enable the generation flags for any derivative the user selected in
-    # sendoutputs; otherwise the map is requested but never produced by QSMxT
-    # (minIP is a by-product of the SWI pipeline, so it also needs --do-swi).
+    # sendoutputs; otherwise the map is requested but never produced by QSMxT.
     selected = _selected_output_ids(settings["send_outputs"])
-    do_swi = settings["do_swi"] or "swi" in selected or "minip" in selected
+    do_swi = settings["do_swi"] or "swi" in selected
     do_t2starmap = settings["do_t2starmap"] or "t2star" in selected
     do_r2starmap = settings["do_r2starmap"] or "r2star" in selected
     if settings["no_qsm"]:

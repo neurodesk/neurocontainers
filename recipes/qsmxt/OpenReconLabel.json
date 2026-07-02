@@ -59,7 +59,6 @@
         { "id": "magnitude", "name": { "en": "Magnitude" } },
         { "id": "mask", "name": { "en": "Mask" } },
         { "id": "swi", "name": { "en": "SWI" } },
-        { "id": "minip", "name": { "en": "SWI minIP" } },
         { "id": "t2star", "name": { "en": "T2 star" } },
         { "id": "r2star", "name": { "en": "R2 star" } }
       ],
