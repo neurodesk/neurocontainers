@@ -1,7 +1,7 @@
 {
   "apps": {
     "code 240320": {
-      "version": "20260602",
+      "version": "20260629",
       "exec": "",
       "apptainer_args": []
     }
