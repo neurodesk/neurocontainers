@@ -370,6 +370,123 @@ def test_run_fulltest_release_uses_release_image_basename(
     ]
 
 
+def test_run_fulltest_release_falls_back_to_docker_conversion(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "cache" / "bidsappbrainsuite_21a_20260629.docker.simg"
+    source.parent.mkdir()
+    source.write_text("simg", encoding="utf-8")
+    release_file = tmp_path / "21a.json"
+    release_file.write_text(
+        json.dumps(
+            {
+                "apps": {
+                    "bidsappbrainsuite 21a": {
+                        "version": "20260629",
+                        "exec": "",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    test_config = tmp_path / "fulltest.yaml"
+    test_config.write_text("tests: []\n", encoding="utf-8")
+    output_dir = tmp_path / "builder"
+
+    calls: list[dict[str, object]] = []
+
+    class FakeDownloader:
+        def extract_image_basename_from_release(self, release_file: str) -> None:
+            return None
+
+        def download_from_release(self, *args, **kwargs) -> None:
+            calls.append({"method": "download", "args": args, "kwargs": kwargs})
+            return None
+
+    class FakeTester:
+        def __init__(self) -> None:
+            self.release_downloader = FakeDownloader()
+
+        def select_runtime(self, runtime: str) -> SimpleNamespace:
+            return SimpleNamespace(name="apptainer")
+
+        def convert_docker_image_to_simg(self, *args, **kwargs) -> str:
+            calls.append({"method": "convert", "args": args, "kwargs": kwargs})
+            return str(source)
+
+        def run_test_suite(self, *args, **kwargs) -> dict[str, object]:
+            return {
+                "total_tests": 1,
+                "passed": 1,
+                "failed": 0,
+                "skipped": 0,
+                "test_results": [{"name": "deploy", "status": "passed"}],
+            }
+
+    monkeypatch.setattr("workflows.release_test_runner.ContainerTester", FakeTester)
+
+    def fake_run(command, **kwargs) -> SimpleNamespace:
+        raw_path = Path(command[command.index("-o") + 1])
+        log_path = Path(command[command.index("--log") + 1])
+        jsonl_path = Path(command[command.index("--jsonl") + 1])
+        raw_path.write_text(
+            json.dumps(
+                {
+                    "summary": {
+                        "total_tests": 0,
+                        "tests_passed": 0,
+                        "tests_failed": 0,
+                    },
+                    "suites": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        log_path.write_text("", encoding="utf-8")
+        jsonl_path.write_text("", encoding="utf-8")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
+
+    status = run_fulltest_release(
+        SimpleNamespace(
+            recipe="bidsappbrainsuite",
+            version="21a",
+            release_file=str(release_file),
+            test_config=str(test_config),
+            output_dir=str(output_dir),
+            results_path=str(output_dir / "results.json"),
+            runtime="apptainer",
+            docker_to_simg=False,
+            docker_registry="neurodesk",
+            docker_save_to_simg="builder/docker-save-to-simg.go",
+            verbose=False,
+            repo_root=str(tmp_path),
+        )
+    )
+
+    assert status == "passed"
+    assert calls == [
+        {
+            "method": "download",
+            "args": ("bidsappbrainsuite", "21a", "20260629"),
+            "kwargs": {"image_basename": None, "use_cache": False},
+        },
+        {
+            "method": "convert",
+            "args": ("bidsappbrainsuite", "21a"),
+            "kwargs": {
+                "release_file": str(release_file),
+                "docker_registry": "neurodesk",
+                "converter_source": "builder/docker-save-to-simg.go",
+                "verbose": False,
+            },
+        },
+    ]
+
+
 def test_build_report_includes_fulltest_summary_and_artifacts() -> None:
     report = build_report(
         {
