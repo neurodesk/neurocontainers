@@ -251,9 +251,20 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
             use_cache=False,
         )
         if not container_ref:
-            raise RuntimeError(
-                f"Unable to download release container {args.recipe}:{args.version}"
-            )
+            try:
+                container_ref = tester.convert_docker_image_to_simg(
+                    args.recipe,
+                    args.version,
+                    release_file=str(release_file),
+                    docker_registry=args.docker_registry,
+                    converter_source=args.docker_save_to_simg,
+                    verbose=args.verbose,
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Unable to download release container {args.recipe}:{args.version}; "
+                    f"Docker-to-SIMG fallback failed: {exc}"
+                ) from exc
     source = Path(container_ref)
     target = containers_dir / source.name
     if source.resolve() != target.resolve():
