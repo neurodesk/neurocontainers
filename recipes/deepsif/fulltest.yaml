@@ -1,0 +1,281 @@
+name: deepsif
+version: 0.0.1
+container: deepsif_${version}_REFERENCE.simg
+default_timeout: 240
+
+python_bin: /opt/miniconda-4.7.12/envs/deepsif-0.0.1/bin/python3
+
+test_data:
+  output_dir: test_output
+
+env_setup: |
+  export PATH=/opt/miniconda-4.7.12/envs/deepsif-0.0.1/bin:$PATH
+  export PYTHONPATH=/opt/DeepSIF-main:$PYTHONPATH
+  export LD_LIBRARY_PATH=/opt/miniconda-4.7.12/envs/deepsif-0.0.1/lib:$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+  export RUNLEVEL=3
+  export XDG_RUNTIME_DIR=/neurodesktop-storage
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: generate_tvb_data entrypoint is deployed
+    description: Verify the deployed DeepSIF data-generation wrapper exists.
+    command: |
+      set -e
+      which generate_tvb_data
+      head -1 /usr/bin/generate_tvb_data
+    expected_output_contains: /usr/bin/generate_tvb_data
+
+  - name: DeepSIF Python environment is available
+    description: Verify the DeepSIF conda environment Python runs.
+    command: |
+      ${python_bin} --version
+      ${python_bin} -c 'import sys; print(sys.executable)'
+    expected_output_contains:
+      - Python 3.7
+      - /opt/miniconda-4.7.12/envs/deepsif-0.0.1/bin/python3
+
+  - name: Source tree and model weights exist
+    description: Verify DeepSIF source, anatomy, and model assets are bundled.
+    command: |
+      set -e
+      test -d /opt/DeepSIF-main
+      test -f /opt/DeepSIF-main/model_weights/model_weights.pt
+      test -f /opt/DeepSIF-main/anatomy/connectivity_76.zip
+      test -f /opt/DeepSIF-main/anatomy/leadfield_75_20k.mat
+      echo "assets present"
+    expected_output_contains: assets present
+
+  - name: Scientific Python stack imports
+    description: Verify the main numerical and neuroimaging dependencies import.
+    command: |
+      ${python_bin} - <<'PY'
+      import h5py
+      import mne
+      import networkx
+      import numpy
+      import scipy
+      import sklearn
+      import skimage
+      print("numpy", numpy.__version__)
+      print("mne", mne.__version__)
+      print("h5py", h5py.__version__)
+      PY
+    expected_output_contains:
+      - numpy
+      - mne
+      - h5py
+
+  - name: PyTorch imports and CPU tensor math works
+    description: Verify DeepSIF's PyTorch runtime is usable without a GPU.
+    command: |
+      ${python_bin} - <<'PY'
+      import torch
+      x = torch.arange(12, dtype=torch.float32).reshape(3, 4)
+      assert x.sum().item() == 66.0
+      print("torch", torch.__version__, "cuda", torch.cuda.is_available())
+      PY
+    expected_output_contains: torch
+
+  - name: TVB imports
+    description: Verify The Virtual Brain dependency used for simulations imports.
+    command: |
+      ${python_bin} - <<'PY'
+      import tvb
+      from tvb.simulator.lab import connectivity, models
+      print("tvb", getattr(tvb, "__version__", "installed"))
+      print(connectivity.Connectivity.__name__, models.JansenRit.__name__)
+      PY
+    expected_output_contains:
+      - tvb
+      - JansenRit
+
+  - name: DeepSIF modules import
+    description: Verify project modules import from the bundled source tree.
+    command: |
+      cd /opt/DeepSIF-main
+      ${python_bin} - <<'PY'
+      import loaders
+      import network
+      import utils
+      print(loaders.SpikeEEGBuild.__name__)
+      print(network.TemporalInverseNet.__name__)
+      print(utils.ispadding([0, 15213, 1]).tolist())
+      PY
+    expected_output_contains:
+      - SpikeEEGBuild
+      - TemporalInverseNet
+
+  - name: TemporalInverseNet forward pass works
+    description: Exercise the DeepSIF neural network on a small synthetic batch.
+    command: |
+      cd /opt/DeepSIF-main
+      ${python_bin} - <<'PY'
+      import torch
+      from network import TemporalInverseNet
+
+      model = TemporalInverseNet(num_sensor=4, num_source=5, temporal_input_size=6)
+      x = torch.randn(2, 4)
+      out = model(x)
+      assert out["last"].shape == (2, 5)
+      print("forward", tuple(out["last"].shape))
+      PY
+    expected_output_contains: forward (2, 5)
+
+  - name: Model parameter counting works
+    description: Verify the DeepSIF model reports trainable parameter counts.
+    command: |
+      cd /opt/DeepSIF-main
+      ${python_bin} - <<'PY'
+      from network import TemporalInverseNet
+
+      model = TemporalInverseNet(num_sensor=4, num_source=5, temporal_input_size=6)
+      assert model.count_parameters() > 0
+      print("params", model.count_parameters())
+      PY
+    expected_output_contains: params
+
+  - name: White noise utility works
+    description: Exercise DeepSIF signal-noise helper on synthetic EEG.
+    command: |
+      cd /opt/DeepSIF-main
+      ${python_bin} - <<'PY'
+      import numpy as np
+      from utils import add_white_noise
+
+      sig = np.ones((4, 100), dtype=float)
+      noisy = add_white_noise(sig, 10)
+      assert noisy.shape == sig.shape
+      print("noise shape", noisy.shape)
+      PY
+    expected_output_contains: noise shape (4, 100)
+
+  - name: Padding utility works
+    description: Verify label-padding helper identifies sentinel values.
+    command: |
+      cd /opt/DeepSIF-main
+      ${python_bin} - <<'PY'
+      import numpy as np
+      from utils import ispadding
+
+      labels = np.array([1, 15213, 2, 0])
+      mask = ispadding(labels)
+      assert mask.tolist() == [False, True, False, False]
+      print("padding", mask.tolist())
+      PY
+    expected_output_contains: padding [False, True, False, False]
+
+  - name: Leadfield MATLAB file loads
+    description: Verify bundled leadfield anatomy data is readable.
+    command: |
+      cd /opt/DeepSIF-main
+      ${python_bin} - <<'PY'
+      from scipy.io import loadmat
+
+      data = loadmat("anatomy/leadfield_75_20k.mat")
+      assert len(data) > 0
+      print("leadfield keys", len(data))
+      PY
+    expected_output_contains: leadfield keys
+
+  - name: Connectivity zip is readable by TVB
+    description: Verify TVB can parse the bundled connectivity archive.
+    timeout: 300
+    command: |
+      cd /opt/DeepSIF-main
+      ${python_bin} - <<'PY'
+      from tvb.simulator.lab import connectivity
+
+      conn = connectivity.Connectivity.from_file(source_file="anatomy/connectivity_76.zip")
+      conn.configure()
+      assert conn.number_of_regions > 0
+      print("regions", conn.number_of_regions)
+      PY
+    expected_output_contains: regions
+
+  - name: Model weights load with torch
+    description: Verify bundled model weights are readable by torch.
+    command: |
+      cd /opt/DeepSIF-main
+      ${python_bin} - <<'PY'
+      import torch
+
+      weights = torch.load("model_weights/model_weights.pt", map_location="cpu")
+      assert weights is not None
+      print("weights", type(weights).__name__)
+      PY
+    expected_output_contains: weights
+
+  - name: Ictal simulation module imports
+    description: Verify ictal simulation code imports with TVB dependencies.
+    command: |
+      cd /opt/DeepSIF-main
+      ${python_bin} - <<'PY'
+      from ictal.jansen_rit_wendling import JansenRit_Wendling
+      import ictal.ictal_simulation as sim
+      print(JansenRit_Wendling.__name__)
+      print(hasattr(sim, "test_single_nmm"))
+      PY
+    expected_output_contains:
+      - JansenRit_Wendling
+      - "True"
+
+  - name: Synthetic MAT output can be written
+    description: Verify scipy can write MATLAB files used by DeepSIF workflows.
+    command: |
+      ${python_bin} - <<'PY'
+      import numpy as np
+      from scipy.io import savemat, loadmat
+
+      savemat("${output_dir}/synthetic_source.mat", {"data": np.ones((3, 4), dtype="float32")})
+      loaded = loadmat("${output_dir}/synthetic_source.mat")["data"]
+      assert loaded.shape == (3, 4)
+      print("mat shape", loaded.shape)
+      PY
+    validate:
+      - output_exists: ${output_dir}/synthetic_source.mat
+
+  - name: Synthetic HDF5 output can be written
+    description: Verify h5py can write data in the format used by loaders.
+    command: |
+      ${python_bin} - <<'PY'
+      import h5py
+      import numpy as np
+
+      with h5py.File("${output_dir}/synthetic_nmm.h5", "w") as f:
+          f.create_dataset("data", data=np.zeros((2, 10, 3), dtype="float32"))
+      print("h5 ok")
+      PY
+    validate:
+      - output_exists: ${output_dir}/synthetic_nmm.h5
+
+  - name: DataLoader batches synthetic tensors
+    description: Exercise PyTorch DataLoader support.
+    command: |
+      ${python_bin} - <<'PY'
+      import torch
+      from torch.utils.data import DataLoader, TensorDataset
+
+      loader = DataLoader(TensorDataset(torch.arange(20).float()), batch_size=5)
+      assert len(list(loader)) == 4
+      print("batches", len(loader))
+      PY
+    expected_output_contains: batches 4
+
+  - name: generate_tvb_data help is available
+    description: Verify the deployed simulation wrapper exposes its CLI arguments.
+    command: generate_tvb_data --help 2>&1 | head -40
+    expected_output_contains:
+      - --a_start
+      - --a_end
+
+  - name: CUDA and cuDNN files are visible
+    description: Verify CUDA/cuDNN runtime files copied by the recipe exist.
+    command: |
+      set -e
+      test -d /usr/local/cuda/lib64
+      ls /usr/local/cuda/lib64/libcudnn* | head -3
+    expected_output_contains: libcudnn
