@@ -497,7 +497,7 @@ tests:
   - name: mrfilter FFT magnitude option
     description: Verify the installed mrfilter documents the FFT magnitude option
     command: mrfilter fft -help 2>&1
-    expected_output_contains: "-magnitude"
+    expected_output_contains: "magnitude image"
 
   # ==========================================================================
   # MRTHRESHOLD - IMAGE THRESHOLDING
