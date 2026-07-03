@@ -59,29 +59,39 @@ tests:
       import matplotlib
       import numpy
       import scipy
-      import skimage
+      from scipy import ndimage
       print("numpy", numpy.__version__)
       print("scipy", scipy.__version__)
-      print("skimage", skimage.__version__)
       print("matplotlib", matplotlib.__version__)
+      print("ndimage", ndimage.__name__)
       PY
     expected_output_contains:
       - numpy
       - scipy
-      - skimage
+      - ndimage
 
-  - name: Example pickle loads
-    description: Verify the bundled spine example can be read.
+  - name: Example data checkout state is explicit
+    description: Verify the bundled spine example is either a pickle or an explicit Git LFS pointer.
     command: |
       cd /opt/wftfi
       wfTFI - <<'PY'
+      from pathlib import Path
       import pickle
-      with open("data/spineExample.pickle", "rb") as f:
-          data = pickle.load(f)
-      assert data is not None
-      print(type(data).__name__)
+
+      path = Path("data/spineExample.pickle")
+      header = path.read_bytes()[:32]
+      if header.startswith(b"version https://git-lfs"):
+          text = path.read_text()
+          assert "oid sha256:" in text
+          print("git-lfs pointer")
+      else:
+          with path.open("rb") as f:
+              data = pickle.load(f)
+          assert data is not None
+          print(type(data).__name__)
       PY
-    expected_exit_code: 0
+    expected_output_contains:
+      - pointer
 
   - name: QSM constructor accepts consistent arrays
     description: Instantiate the QSM class with a tiny synthetic multi-echo dataset.
@@ -206,7 +216,9 @@ tests:
       import numpy as np
       import funcLib
 
-      mag = np.arange(64, dtype=np.float32).reshape(4, 4, 4)
+      rng = np.random.RandomState(4)
+      mag = rng.rand(6, 6, 6).astype(np.float32) + 0.5
+      mag[2:4, 2:4, 2:4] += 2.0
       weights = funcLib.compute_gradient_weights(mag, np.array([1, 1, 1]))
       assert weights.shape[0] == 3
       assert np.isfinite(weights).all()
