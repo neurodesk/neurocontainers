@@ -34,10 +34,14 @@ build:
 
     - install:
         - qt4-dev-tools
+        - tcl
         - libxss1
         - libxext6
         - libxft2
         - libjpeg62-dev
+    - run:
+        - test -x /usr/bin/tclsh
+        - if [ ! -e /bin/tclsh ]; then ln -s /usr/bin/tclsh /bin/tclsh; fi
 
     - entrypoint: /usr/local/bin/bidsapphcppipelines-entrypoint
 
