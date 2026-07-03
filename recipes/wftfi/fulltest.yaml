@@ -1,0 +1,327 @@
+name: wftfi
+version: 1.0.0
+container: wftfi_${version}_REFERENCE.simg
+default_timeout: 180
+
+test_data:
+  output_dir: test_output
+
+env_setup: |
+  export PATH=/opt/miniconda-py39_24.7.1-0/envs/wfTFI/bin:$PATH
+  export PYTHONPATH=/opt/wftfi:$PYTHONPATH
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: wfTFI launcher is deployed
+    description: Verify the deployed wrapper resolves and starts Python from the wfTFI environment.
+    command: |
+      set -e
+      which wfTFI
+      wfTFI - <<'PY'
+      import sys
+      print(sys.executable)
+      PY
+    expected_output_contains:
+      - /usr/local/bin/wfTFI
+      - /opt/miniconda-py39_24.7.1-0/envs/wfTFI/bin/python
+
+  - name: Source tree and sample data exist
+    description: Verify the cloned wfTFI repository and bundled example pickle are present.
+    command: |
+      set -e
+      test -f /opt/wftfi/QSM.py
+      test -f /opt/wftfi/funcLib.py
+      test -f /opt/wftfi/data/spineExample.pickle
+      echo "wfTFI source present"
+    expected_output_contains: wfTFI source present
+
+  - name: wfTFI Python modules import
+    description: Verify the main QSM and numerical helper modules import.
+    command: |
+      wfTFI - <<'PY'
+      import QSM
+      import funcLib
+      print(QSM.QSM.__name__)
+      print(funcLib.gamma_bar)
+      PY
+    expected_output_contains:
+      - QSM
+      - "42.577"
+
+  - name: Scientific Python stack imports
+    description: Verify numerical dependencies used by the wfTFI algorithms import.
+    command: |
+      wfTFI - <<'PY'
+      import matplotlib
+      import numpy
+      import scipy
+      import skimage
+      print("numpy", numpy.__version__)
+      print("scipy", scipy.__version__)
+      print("skimage", skimage.__version__)
+      print("matplotlib", matplotlib.__version__)
+      PY
+    expected_output_contains:
+      - numpy
+      - scipy
+      - skimage
+
+  - name: Example pickle loads
+    description: Verify the bundled spine example can be read.
+    command: |
+      cd /opt/wftfi
+      wfTFI - <<'PY'
+      import pickle
+      with open("data/spineExample.pickle", "rb") as f:
+          data = pickle.load(f)
+      assert data is not None
+      print(type(data).__name__)
+      PY
+    expected_exit_code: 0
+
+  - name: QSM constructor accepts consistent arrays
+    description: Instantiate the QSM class with a tiny synthetic multi-echo dataset.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      from QSM import QSM
+
+      shape = (4, 4, 4)
+      signal = np.ones(shape + (2,), dtype=np.complex64)
+      qsm = QSM(
+          signal=signal,
+          TE_s=np.array([0.004, 0.008], dtype=np.float32),
+          B0dir=np.array([0, 0, 1], dtype=np.float32),
+          voxelSize_mm=np.array([1, 1, 1], dtype=np.float32),
+          fieldStrength_T=3.0,
+          water=np.ones(shape, dtype=np.float32),
+          fat=np.zeros(shape, dtype=np.float32),
+          R2star=np.ones(shape, dtype=np.float32),
+          fieldmap_ppm=np.zeros(shape, dtype=np.float32),
+      )
+      assert qsm._signal.shape == (4, 4, 4, 2)
+      print("qsm init ok")
+      PY
+    expected_output_contains: qsm init ok
+
+  - name: QSM constructor rejects echo mismatch
+    description: Verify shape validation catches invalid echo-time metadata.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      from QSM import QSM
+
+      try:
+          QSM(
+              np.ones((2, 2, 2, 2), dtype=np.complex64),
+              np.array([0.004]),
+              np.array([0, 0, 1]),
+              np.array([1, 1, 1]),
+              3.0,
+              np.ones((2, 2, 2)),
+              np.zeros((2, 2, 2)),
+              np.ones((2, 2, 2)),
+              np.zeros((2, 2, 2)),
+          )
+      except ValueError as exc:
+          print(str(exc))
+      else:
+          raise SystemExit("expected ValueError")
+      PY
+    expected_output_contains: echo time dimension
+
+  - name: Padding helper pads 3D arrays
+    description: Exercise funcLib pad_array3d.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      import funcLib
+
+      arr = np.ones((2, 3, 4), dtype=np.float32)
+      padded = funcLib.pad_array3d(arr, np.array([1, 2, 3]))
+      assert padded.shape == (4, 7, 10)
+      print("padded", padded.shape)
+      PY
+    expected_output_contains: padded (4, 7, 10)
+
+  - name: Trim helper finds nonzero extent
+    description: Exercise funcLib trim_zeros on a synthetic mask.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      import funcLib
+
+      arr = np.zeros((5, 5, 5), dtype=bool)
+      arr[1:4, 2:4, 1:3] = True
+      trimmed, slicing = funcLib.trim_zeros(arr)
+      assert trimmed.shape == (3, 2, 2)
+      print("trimmed", trimmed.shape, slicing)
+      PY
+    expected_output_contains: trimmed (3, 2, 2)
+
+  - name: Reverse padding coefficients are computed
+    description: Verify reverse padding helper returns slicing and padding tuples.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      import funcLib
+
+      params = {
+          "originalShape": (5, 5, 5),
+          "trimmedShape": (3, 3, 3),
+          "paddedShape": (5, 5, 5),
+          "slicingVals": (slice(1, 4), slice(1, 4), slice(1, 4)),
+          "paddingVals": np.array([1, 1, 1]),
+      }
+      rev_slice, rev_pad, rev_no_pad = funcLib.calculateReverseCoefficients(params)
+      assert len(rev_slice) == 3
+      assert len(rev_pad) == 3
+      assert len(rev_no_pad) == 3
+      print("reverse coefficients ok")
+      PY
+    expected_output_contains: reverse coefficients ok
+
+  - name: Dipole kernel has expected shape
+    description: Exercise dipole kernel construction.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      import funcLib
+
+      kernel = funcLib.get_dipoleKernel_kspace((4, 4, 4), np.array([1, 1, 1]), np.array([0, 0, 1]))
+      assert kernel.shape == (4, 4, 4)
+      assert np.isfinite(kernel).all()
+      print("kernel", kernel.shape)
+      PY
+    expected_output_contains: kernel (4, 4, 4)
+
+  - name: Gradient weights are finite
+    description: Exercise gradient weighting on synthetic magnitude data.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      import funcLib
+
+      mag = np.arange(64, dtype=np.float32).reshape(4, 4, 4)
+      weights = funcLib.compute_gradient_weights(mag, np.array([1, 1, 1]))
+      assert weights.shape[0] == 3
+      assert np.isfinite(weights).all()
+      print("weights", weights.shape)
+      PY
+    expected_output_contains: weights
+
+  - name: Conjugate gradient solves identity system
+    description: Verify the iterative solver handles a simple linear system.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      import funcLib
+
+      b = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+      x = funcLib.conjugate_gradient(lambda y: y, b, max_iter=5)
+      assert np.allclose(x, b)
+      print("cg", x.tolist())
+      PY
+    expected_output_contains: cg [1.0, 2.0, 3.0]
+
+  - name: Background field removal returns arrays
+    description: Exercise BFRPDF on a small synthetic field and mask.
+    timeout: 240
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      import funcLib
+
+      field = np.zeros((4, 4, 4), dtype=np.float32)
+      field[1:3, 1:3, 1:3] = 0.01
+      mask = np.zeros_like(field, dtype=bool)
+      mask[1:3, 1:3, 1:3] = True
+      chi, bg, local = funcLib.BFRPDF(field, np.array([0, 0, 1]), np.array([1, 1, 1]), mask, max_iter=2)
+      assert chi.shape == field.shape
+      assert bg.shape == field.shape
+      assert local.shape == field.shape
+      print("bfrpdf ok")
+      PY
+    expected_output_contains: bfrpdf ok
+
+  - name: QSM mask generation works
+    description: Verify tissue-mask thresholding produces a nonempty mask.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      from QSM import QSM
+
+      shape = (4, 4, 4)
+      signal = np.ones(shape + (2,), dtype=np.complex64)
+      qsm = QSM(signal, np.array([0.004, 0.008]), np.array([0, 0, 1]), np.array([1, 1, 1]), 3.0, np.ones(shape), np.zeros(shape), np.ones(shape), np.zeros(shape))
+      qsm.set_tissueMask(5)
+      assert qsm._mask.sum() == 64
+      print("mask voxels", int(qsm._mask.sum()))
+      PY
+    expected_output_contains: mask voxels 64
+
+  - name: QSM data weighting works
+    description: Verify data weighting is computed after mask creation.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      from QSM import QSM
+
+      shape = (4, 4, 4)
+      signal = np.ones(shape + (2,), dtype=np.complex64)
+      qsm = QSM(signal, np.array([0.004, 0.008]), np.array([0, 0, 1]), np.array([1, 1, 1]), 3.0, np.ones(shape), np.zeros(shape), np.ones(shape), np.zeros(shape))
+      qsm.set_tissueMask(5)
+      qsm.set_dataWeighting()
+      assert qsm._dataWeighting.shape == shape
+      print("data weighting", qsm._dataWeighting.shape)
+      PY
+    expected_output_contains: data weighting (4, 4, 4)
+
+  - name: QSM padding parameters work
+    description: Verify the QSM object computes trim and padding state.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      from QSM import QSM
+
+      shape = (4, 4, 4)
+      signal = np.ones(shape + (2,), dtype=np.complex64)
+      qsm = QSM(signal, np.array([0.004, 0.008]), np.array([0, 0, 1]), np.array([1, 1, 1]), 3.0, np.ones(shape), np.zeros(shape), np.ones(shape), np.zeros(shape))
+      qsm.set_tissueMask(5)
+      qsm._setPaddingParams()
+      assert "paddedShape" in qsm._paddingParams
+      print("padded shape", qsm._paddingParams["paddedShape"])
+      PY
+    expected_output_contains: padded shape
+
+  - name: wfTFI wrapper can run a script file
+    description: Verify the wrapper passes script paths through to Python.
+    command: |
+      printf 'print("wrapper script ok")\n' > ${output_dir}/wrapper_check.py
+      wfTFI ${output_dir}/wrapper_check.py
+    expected_output_contains: wrapper script ok
+    validate:
+      - output_exists: ${output_dir}/wrapper_check.py
+
+  - name: README documents wfTFI usage
+    description: Verify shipped documentation mentions water-fat total field inversion.
+    command: grep -i "water-fat total field inversion" /README.md
+    expected_output_contains: water-fat total field inversion
+
+  - name: Numerical smoke output can be saved
+    description: Verify the wfTFI environment can write numpy results.
+    command: |
+      wfTFI - <<'PY'
+      import numpy as np
+      out = np.eye(4, dtype=np.float32)
+      np.save("${output_dir}/wftfi_identity.npy", out)
+      loaded = np.load("${output_dir}/wftfi_identity.npy")
+      assert loaded.shape == (4, 4)
+      print("saved", loaded.shape)
+      PY
+    validate:
+      - output_exists: ${output_dir}/wftfi_identity.npy
