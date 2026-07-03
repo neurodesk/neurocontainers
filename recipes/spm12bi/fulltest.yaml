@@ -120,12 +120,14 @@ tests:
     validate:
       - output_exists: ${output_dir}/synthetic.h5
 
-  - name: SPM directory contains toolbox files
-    description: Verify the standalone SPM distribution includes core MATLAB/toolbox assets.
+  - name: SPM directory contains standalone runtime files
+    description: Verify the standalone SPM distribution includes compiled runtime assets.
     command: |
       set -e
-      test -d /opt/spm12/toolbox
-      find /opt/spm12 -maxdepth 2 -name 'spm*.ctf' -o -name '*.m' | head
+      test -f /opt/spm12/spm12
+      test -f /opt/spm12/spm12.ctf
+      test -f /opt/spm12/run_spm12.sh
+      find /opt/spm12 -maxdepth 1 -type f | head
     expected_exit_code: 0
 
   - name: SPM CTF archive exists
@@ -179,14 +181,16 @@ tests:
     description: Instantiate Normalize12 and set a synthetic input path without running SPM.
     command: |
       python - <<'PY'
+      from pathlib import Path
       from nipype.interfaces import spm
 
+      image_path = Path("${output_dir}") / "nipype_input.nii"
+      image_path.write_bytes(b"placeholder")
       norm = spm.Normalize12()
-      norm.inputs.image_to_align = "${output_dir}/synthetic.h5"
-      assert str(norm.inputs.image_to_align).endswith("synthetic.h5")
+      norm.inputs.image_to_align = str(image_path)
+      assert str(norm.inputs.image_to_align).endswith("nipype_input.nii")
       print("Normalize12 configured")
       PY
-    depends_on: Synthetic NIfTI can be written
     expected_output_contains: Normalize12 configured
 
   - name: Nipype segmentation interface exists
