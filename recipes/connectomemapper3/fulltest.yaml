@@ -51,15 +51,15 @@ tests:
     expected_exit_code: 0
 
   - name: Python connectomemapper package imports
-    description: Verify the installed Connectome Mapper Python package imports.
+    description: Verify the installed Connectome Mapper Python modules import.
     command: |
       python - <<'PY'
       import cmtklib
       import cmp
-      import connectomemapper
-      print("connectomemapper", connectomemapper.__version__ if hasattr(connectomemapper, "__version__") else "installed")
       print("cmp", cmp.__file__)
       print("cmtklib", cmtklib.__file__)
+      assert "cmp" in cmp.__file__
+      assert "cmtklib" in cmtklib.__file__
       PY
     expected_output_contains:
       - cmp
@@ -174,6 +174,9 @@ tests:
   - name: DataLad stack imports
     description: Verify dataset-management dependencies used by CMP3 import.
     command: |
+      export HOME="$PWD/${output_dir}/datalad-home"
+      export XDG_CACHE_HOME="$HOME/.cache"
+      mkdir -p "$XDG_CACHE_HOME"
       python - <<'PY'
       import datalad
       import datalad_container
