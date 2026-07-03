@@ -575,6 +575,51 @@ def test_original_passthrough_restamps_multi_partition_source_geometry():
         assert qsmxt._extract_minihead_long_value(patched_minihead, "SliceNo") == 0
 
 
+def test_original_passthrough_merges_concatenations_into_one_series_per_contrast():
+    # Siemens 3D sequences can split one logical contrast into several
+    # concatenations that arrive as distinct image_series_index values while
+    # sharing a SeriesDescription. The passthrough must emit a single series
+    # per contrast (all slices), not one series per concatenation.
+    def contrast_images(sequence, image_type, series_indices):
+        images = []
+        image_index = 1
+        for series_index in series_indices:
+            for _ in range(3):
+                images.append(
+                    _image(
+                        series_index,
+                        image_index,
+                        sequence,
+                        np.full((1, 4, 4), image_index, dtype=np.float32),
+                        image_type=image_type,
+                    )
+                )
+                image_index += 1
+        return images
+
+    magnitude = contrast_images("qsm_source", ismrmrd.IMTYPE_MAGNITUDE, [3, 5])
+    phase = contrast_images("qsm_source_Pha", ismrmrd.IMTYPE_PHASE, [4, 6])
+
+    outputs = qsmxt._build_original_passthrough_images(magnitude + phase)
+
+    series_counts = {}
+    for output in outputs:
+        series_index = int(output.getHead().image_series_index)
+        series_counts[series_index] = series_counts.get(series_index, 0) + 1
+
+    # Exactly two output series: one magnitude (6 slices) and one phase (6).
+    assert len(series_counts) == 2
+    assert sorted(series_counts.values()) == [6, 6]
+
+    for series_index, count in series_counts.items():
+        numbers = sorted(
+            int(ismrmrd.Meta.deserialize(output.attribute_string)["NumberInSeries"])
+            for output in outputs
+            if int(output.getHead().image_series_index) == series_index
+        )
+        assert numbers == list(range(1, count + 1))
+
+
 def test_original_passthrough_infers_scanner_slice_count_from_minihead():
     outputs = qsmxt._build_original_passthrough_images(_scanner_echo_slice_images())
 

@@ -45,7 +45,7 @@ tests:
       qsmxt --version
       qsmxt --help >/dev/null
       qsmxt run --help >/dev/null
-      dcm2niix --version 2>&1 | tee "${output_dir}/dcm2niix-version.txt"
+      dcm2niix --version > "${output_dir}/dcm2niix-version.txt" 2>&1 || [ "$?" -eq 3 ]
       grep -i dcm2niix "${output_dir}/dcm2niix-version.txt"
 
   - name: OpenRecon server entrypoints

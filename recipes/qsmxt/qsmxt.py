@@ -498,9 +498,17 @@ def _passthrough_source_groups(images):
 
 
 def _passthrough_source_group_key(image):
+    # Group originals by contrast identity (series description + image type +
+    # shape) rather than the raw scanner series index. Siemens 3D sequences
+    # often split one logical contrast into several concatenations that arrive
+    # as separate image_series_index values while sharing a SeriesDescription;
+    # keying on the series index would emit one passthrough series per
+    # concatenation (e.g. magnitude split across two half-slice series). Merging
+    # by contrast identity keeps all slices of a contrast in a single series.
     header = image.getHead()
     return (
-        _series_group_key(image),
+        _source_series_name(image),
+        _classify_series([image]),
         int(getattr(header, "image_type", 0)),
         tuple(int(value) for value in np.asarray(image.data).shape),
     )
