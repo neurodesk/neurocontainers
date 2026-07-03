@@ -91,3 +91,14 @@ When `sctdebugthresholdsegment` is enabled, the wrapper skips SCT model executio
 - `sct_label_vertebrae` and `sct_spinalcord_area` currently use the wrapper's built-in T2 mode (`-c t2`). Use T2-weighted source images for these analyses.
 - SCT's `tumor_edema_cavity_t1_t2` task is not exposed in OpenRecon because it requires separate T1/T2 input images and contrast labels, while this wrapper currently accepts one MRD image series.
 - SCT's `gm_wm_mouse_t1` task is not exposed in OpenRecon because the current test sweep did not identify a valid official mouse T1 dataset for this task.
+
+## Open Source Development
+
+The source for this OpenRecon package is in the NeuroContainers repository:
+https://github.com/NeuroDesk/neurocontainers/tree/main/recipes/spinalcordtoolbox
+
+For bugs and feature requests, opening an issue in the NeuroContainers
+repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
+Questions can also be posted in the Neurodesk discussion forum at
+https://github.com/orgs/neurodesk/discussions or sent via
+https://neurodesk.org/contact/.

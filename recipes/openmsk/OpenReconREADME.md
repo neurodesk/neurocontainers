@@ -32,11 +32,17 @@ scanner. Runtime logs report where every qDESS value came from.
 
 - `sendoriginal`: return original images before derived outputs.
 - `segmodel`: KneePipeline model name (`acl_qdess_bone_july_2024` by default;
-  `goyal_sagittal` and `nnunet_knee` are also packaged).
+  `goyal_sagittal`, `goyal_coronal`, `goyal_axial`, and `nnunet_knee` are
+  also packaged). The packaged `nnunet_knee` path runs nnU-Net with
+  scanner-safe single preprocessing/export worker defaults.
 - `computethickness`: run slower mesh/thickness analysis after the segmentation
   has been sent.
-- `qdess_*`: fallback TR, TE1, TE2, flip angle, GL area, and TG values used to
-  synthesize the qDESS DICOM input when MRD metadata is incomplete.
+- `runnsm`, `runbscore`: accepted for legacy scanner protocol compatibility
+  only; ignored because the gated ShapeMedKnee assets are not packaged.
+- `qdesstrms`, `qdesste1ms`, `qdesste2ms`, `qdessflipangledeg`,
+  `qdessglarea`, `qdesstgus`: fallback TR, TE1, TE2, flip angle, GL area, and
+  TG values used to synthesize the qDESS DICOM input when MRD metadata is
+  incomplete.
 
 ## Build And Validate
 
@@ -45,3 +51,14 @@ source env/bin/activate
 python3 builder/validation.py recipes/openmsk/build.yaml
 python -m builder generate openmsk --recreate --architecture x86_64
 ```
+
+## Open Source Development
+
+The source for this OpenRecon package is in the NeuroContainers repository:
+https://github.com/NeuroDesk/neurocontainers/tree/main/recipes/openmsk
+
+For bugs and feature requests, opening an issue in the NeuroContainers
+repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
+Questions can also be posted in the Neurodesk discussion forum at
+https://github.com/orgs/neurodesk/discussions or sent via
+https://neurodesk.org/contact/.

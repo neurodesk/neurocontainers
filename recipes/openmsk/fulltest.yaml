@@ -2,8 +2,8 @@
 # Focused verification for OpenRecon runtime packaging and lightweight entrypoints.
 
 name: openmsk
-version: 0.1.2
-container: openmsk_0.1.2.simg
+version: 0.1.7
+container: openmsk_0.1.7.simg
 
 test_data:
   output_dir: test_output
@@ -18,12 +18,12 @@ tests:
   - name: openmsk wrapper
     description: Verify the NeuroContainers version wrapper is installed
     script: |
-      openmsk | grep -x 'openmsk 0.1.2'
+      test "$(openmsk)" = "openmsk ${OPENMSK_VERSION}"
 
   - name: OpenRecon server help
     description: Verify the python-ismrmrd server entrypoint starts correctly
     script: |
-      python /opt/code/python-ismrmrd-server/main.py -h 2>&1 | sed -n '1,20p' | grep 'Example server for MRD streaming format'
+      python3 /opt/code/python-ismrmrd-server/main.py -h 2>&1 | sed -n '1,20p' | grep 'Example server for MRD streaming format'
 
   - name: OpenRecon assets
     description: Verify packaged OpenRecon label and README assets are present and readable
@@ -44,11 +44,11 @@ tests:
   - name: OpenMSK module imports
     description: Verify the OpenRecon module imports with its runtime dependencies
     script: |
-      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import openmsk, ismrmrd, nibabel, numpy; print(openmsk.OPENMSK_VERSION)" | grep -x '0.1.2'
+      test "$(PYTHONPATH=/opt/code/python-ismrmrd-server python3 -c "import openmsk, ismrmrd, nibabel, numpy; print(openmsk.OPENMSK_VERSION)")" = "${OPENMSK_VERSION}"
 
   - name: Helper scripts render help
     description: Verify conversion helper scripts start and expose command line help
     script: |
-      python /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py -h 2>&1 | grep 'usage:'
-      python /opt/code/python-ismrmrd-server/nifti2mrd.py -h 2>&1 | grep 'usage:'
-      python /opt/code/python-ismrmrd-server/enhanced2singleframe.py -h 2>&1 | grep 'usage:'
+      python3 /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py -h 2>&1 | grep 'usage:'
+      python3 /opt/code/python-ismrmrd-server/nifti2mrd.py -h 2>&1 | grep 'usage:'
+      python3 /opt/code/python-ismrmrd-server/enhanced2singleframe.py -h 2>&1 | grep 'usage:'

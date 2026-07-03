@@ -1263,20 +1263,18 @@ def test_output_storage_contract_rejects_nonzero_partition_counters():
         raise AssertionError("Expected validator to reject nonzero scanner partition counters")
 
 
-def test_openrecon_label_exposes_compose_segmentation_choice_defaulting_off():
+def test_openrecon_label_exposes_compose_segmentation_checkbox_defaulting_off():
     label = json.loads(OPENRECON_LABEL_PATH.read_text())
     parameters = {parameter["id"]: parameter for parameter in label["parameters"]}
 
-    # The two compose modes are a single mutually-exclusive choice (not two
-    # booleans) to stay within the 14-entry OpenRecon UI limit.
     assert "composesegmentationnativeff" not in parameters
     compose = parameters["composesegmentation"]
-    assert compose["type"] == "choice"
-    assert compose["default"] == "off"
-    assert {value["id"] for value in compose["values"]} == {"off", "native", "restamp"}
+    assert compose["type"] == "boolean"
+    assert compose["default"] is False
+    assert "values" not in compose
 
 
-def test_resolve_compose_segmentation_mode_reads_choice_config():
+def test_resolve_compose_segmentation_mode_reads_checkbox_config():
     helpers = _load_runtime_helpers_for_test(
         [
             "_resolve_compose_segmentation_mode",
@@ -1293,10 +1291,14 @@ def test_resolve_compose_segmentation_mode_reads_choice_config():
 
     resolve = helpers["_resolve_compose_segmentation_mode"]
     assert resolve({}) == "off"
+    assert resolve({"composesegmentation": False}) == "off"
+    assert resolve({"composesegmentation": "false"}) == "off"
     assert resolve({"composesegmentation": "off"}) == "off"
+    assert resolve({"composesegmentation": True}) == "native"
+    assert resolve({"composesegmentation": "true"}) == "native"
     assert resolve({"composesegmentation": "native"}) == "native"
-    assert resolve({"composesegmentation": "restamp"}) == "restamp"
     assert resolve({"parameters": {"composesegmentation": "reuse_fat_fraction"}}) == "native"
+    assert resolve({"composesegmentation": "restamp"}) == "off"
     # Unknown values degrade to off rather than raising.
     assert resolve({"composesegmentation": "banana"}) == "off"
 
@@ -1484,7 +1486,7 @@ def test_compose_stamp_uses_fat_fraction_identity_without_postprocessing_child()
     assert helpers["_extract_minihead_long_value"](minihead, "NumberInSeries") == 1
 
 
-def test_resolve_compose_mode_native_takes_precedence_over_restamp():
+def test_resolve_compose_mode_legacy_native_flag_still_enables_native():
     helpers = _load_runtime_helpers_for_test(
         [
             "_resolve_compose_segmentation_mode",
@@ -1500,9 +1502,8 @@ def test_resolve_compose_mode_native_takes_precedence_over_restamp():
 
     resolve = helpers["_resolve_compose_segmentation_mode"]
     assert resolve({}) == "off"
-    assert resolve({"composesegmentation": True}) == "restamp"
+    assert resolve({"composesegmentation": True}) == "native"
     assert resolve({"composesegmentationnativeff": True}) == "native"
-    # native wins when both are enabled
     assert resolve(
         {"composesegmentation": True, "composesegmentationnativeff": True}
     ) == "native"
@@ -1538,6 +1539,7 @@ def test_build_native_ff_compose_images_reuses_carrier_identity_and_swaps_pixels
     helpers = _load_runtime_helpers_for_test(
         [
             "_build_native_ff_compose_images",
+            "_patch_native_ff_compose_display_identity",
             "_match_ff_carriers_to_segmentation",
             "_project_position_along_axis",
             "_header_vector",
@@ -1545,9 +1547,14 @@ def test_build_native_ff_compose_images_reuses_carrier_identity_and_swaps_pixels
             "_set_meta_scalar",
             "_get_first_meta_int",
             "_is_native_ff_compose_image",
+            "_decode_ice_minihead",
+            "_encode_ice_minihead",
+            "_extract_minihead_string_value",
+            "_replace_or_append_minihead_string_param",
+            "_sanitize_minihead_param_value",
             "_first_non_empty_text",
         ],
-        assignments=["composeNativeFfMarkerMetaKey"],
+        assignments=["composeNativeFfMarkerMetaKey", "muscleMapDisplayLabel"],
     )
 
     def carrier_at(z):
@@ -1560,6 +1567,12 @@ def test_build_native_ff_compose_images_reuses_carrier_identity_and_swaps_pixels
                 "ImageType": "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC",
                 "SeriesInstanceUID": f"1.2.840.ff.{int(z)}",
                 "SeriesNumberRangeNameUID": "wb_2ptFF",
+                "IceMiniHead": _encoded_minihead(
+                    series_name="wb_2ptFF",
+                    series_uid=f"1.2.840.ff.{int(z)}",
+                    series_group="wb_2ptFF",
+                    image_type_value4="FAT_FRAC",
+                ),
             }
         ).serialize()
         return image
@@ -1581,15 +1594,35 @@ def test_build_native_ff_compose_images_reuses_carrier_identity_and_swaps_pixels
         [0.0, 0.0, 1.0],
         carriers,
         "Musclemap_Water",
+        display_identity={
+            "series_description": "Musclemap",
+            "sequence_description": "Musclemap",
+            "sequence_description_additional": "Opposed_Phase",
+            "grouping": "wb_Musclemap_Opposed_Phase",
+        },
     )
 
     assert images is not None and len(images) == 2
 
     meta0 = helpers["FakeMeta"].deserialize(images[0].attribute_string)
-    # Verbatim Fat-Fraction identity preserved (this is what keeps ComposingGroup).
+    # Routing-critical Fat-Fraction identity preserved.
     assert meta0["ImageType"] == "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC"
     assert meta0["SeriesInstanceUID"] == "1.2.840.ff.0"
-    assert meta0["SeriesNumberRangeNameUID"] == "wb_2ptFF"
+    # Scanner-visible display naming is MuscleMap, not the reused 2ptFF carrier.
+    assert meta0["SeriesDescription"] == "Musclemap"
+    assert meta0["SequenceDescription"] == "Musclemap"
+    assert meta0["ProtocolName"] == "Musclemap"
+    assert meta0["SeriesNumberRangeNameUID"] == "wb_Musclemap_Opposed_Phase"
+    assert meta0["SequenceDescriptionAdditional"] == "Opposed_Phase"
+    minihead0 = helpers["_decode_ice_minihead"](meta0)
+    assert helpers["_extract_minihead_string_value"](minihead0, "SeriesDescription") == "Musclemap"
+    assert helpers["_extract_minihead_string_value"](minihead0, "SequenceDescription") == "Musclemap"
+    assert helpers["_extract_minihead_string_value"](minihead0, "ProtocolName") == "Musclemap"
+    assert helpers["_extract_minihead_string_value"](
+        minihead0,
+        "SeriesNumberRangeNameUID",
+    ) == "wb_Musclemap_Opposed_Phase"
+    assert helpers["_extract_minihead_string_value"](minihead0, "SeriesInstanceUID") == "1.2.840.ff.0"
     # Marked + exempt from the derived-output contract checks.
     assert helpers["_get_first_meta_int"](meta0, [helpers["composeNativeFfMarkerMetaKey"]]) == 1
     assert helpers["_is_native_ff_compose_image"](images[0]) is True

@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "wftfi 1.0.0": {
+      "version": "20260629",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "quantitative imaging",
+    "phase processing"
+  ]
+}

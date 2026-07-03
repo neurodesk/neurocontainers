@@ -1,12 +1,14 @@
 {
   "apps": {
-    "physioGUI-physio r2021a": {
-      "version": "20220220",
-      "exec": "bash run_spm12.sh /opt/mcr/v99/ fmri"
-    },
     "physio r2021a": {
-      "version": "20220220",
-      "exec": ""
+      "version": "20260702",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "physioGUI-physio r2021a": {
+      "version": "20260702",
+      "exec": "bash run_spm12.sh /opt/mcr/v99/ fmri",
+      "apptainer_args": []
     }
   },
   "categories": [

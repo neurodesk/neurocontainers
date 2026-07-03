@@ -1,0 +1,258 @@
+name: mrsimetabolicconnectome
+version: 1.0.0
+container: mrsimetabolicconnectome_${version}_REFERENCE.simg
+default_timeout: 180
+
+test_data:
+  output_dir: test_output
+
+env_setup: |
+  export DEVANALYSEPATH=/opt/MRSI-Metabolic-Connectome
+  export PATH=/opt/miniconda/envs/mrsitooldemo_env/bin:$PATH
+  export PYTHONPATH=/opt/MRSI-Metabolic-Connectome:$PYTHONPATH
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: Conda environment Python is active
+    description: Verify the deployed MRSI conda environment is first on PATH.
+    command: |
+      set -e
+      which python
+      python --version
+    expected_output_contains:
+      - /opt/miniconda/envs/mrsitooldemo_env/bin/python
+      - Python 3.10
+
+  - name: Source tree and environment metadata exist
+    description: Verify the cloned MRSI-Metabolic-Connectome source tree is present.
+    command: |
+      set -e
+      test -d "$DEVANALYSEPATH/mrsitoolbox"
+      test -f "$DEVANALYSEPATH/environment.yaml"
+      test -f "$DEVANALYSEPATH/experiments/Preprocessing/registration_mrsi_to_t1.py"
+      echo "source tree present"
+    expected_output_contains: source tree present
+
+  - name: Core scientific Python stack imports
+    description: Verify key numeric and neuroimaging dependencies import.
+    command: |
+      python - <<'PY'
+      import nibabel
+      import nilearn
+      import networkx
+      import numpy
+      import pandas
+      import scipy
+      import sklearn
+
+      print("numpy", numpy.__version__)
+      print("nibabel", nibabel.__version__)
+      print("networkx", networkx.__version__)
+      PY
+    expected_output_contains:
+      - numpy
+      - nibabel
+      - networkx
+
+  - name: MRSI toolbox package imports
+    description: Verify internal toolbox modules import from the installed source tree.
+    command: |
+      python - <<'PY'
+      import mrsitoolbox
+      from mrsitoolbox.connectomics.mesim import MeSiM
+      from mrsitoolbox.connectomics.network import NetBasedAnalysis
+      from mrsitoolbox.tools.imgtools import ImageTools
+
+      print(mrsitoolbox.__file__)
+      print(MeSiM.__name__, NetBasedAnalysis.__name__, ImageTools.__name__)
+      PY
+    expected_output_contains:
+      - /opt/MRSI-Metabolic-Connectome/mrsitoolbox
+      - MeSiM
+
+  - name: Preprocessing registration help is available
+    description: Verify the documented preprocessing script starts and exposes arguments.
+    command: python "$DEVANALYSEPATH/experiments/Preprocessing/registration_mrsi_to_t1.py" --help 2>&1 | head -40
+    expected_output_contains:
+      - --group
+      - --subject_id
+
+  - name: T1 to MNI registration help is available
+    description: Verify the MNI registration script starts and exposes arguments.
+    command: python "$DEVANALYSEPATH/experiments/Preprocessing/registration_t1_to_MNI.py" --help 2>&1 | head -40
+    expected_exit_code: 0
+
+  - name: Population qmask help is available
+    description: Verify the population qmask preprocessing script starts.
+    command: python "$DEVANALYSEPATH/experiments/Preprocessing/compute_pop_qmask.py" --help 2>&1 | head -40
+    expected_exit_code: 0
+
+  - name: MetSiM subject pipeline help is available
+    description: Verify the subject-level metabolic similarity pipeline starts.
+    command: python "$DEVANALYSEPATH/experiments/MetSiM_pipeline/construct_MetSiM_subject.py" --help 2>&1 | head -40
+    expected_exit_code: 0
+
+  - name: MetSiM population pipeline help is available
+    description: Verify the population-level metabolic similarity pipeline starts.
+    command: python "$DEVANALYSEPATH/experiments/MetSiM_pipeline/construct_MetSiM_pop.py" --help 2>&1 | head -40
+    expected_exit_code: 0
+
+  - name: Parcel mapping script help is available
+    description: Verify the MRSI parcel mapping script starts.
+    command: python "$DEVANALYSEPATH/experiments/MetSiM_pipeline/map_parcel_image_to_mrsi.py" --help 2>&1 | head -40
+    expected_exit_code: 0
+
+  - name: Network threshold by value works
+    description: Exercise NetBasedAnalysis binarization on a small synthetic matrix.
+    command: |
+      python - <<'PY'
+      import numpy as np
+      from mrsitoolbox.connectomics.network import NetBasedAnalysis
+
+      matrix = np.array([[0.0, 0.2, 0.8], [0.2, 0.0, -0.7], [0.8, -0.7, 0.0]])
+      out = NetBasedAnalysis().binarize(matrix, threshold=0.5, mode="abs")
+      assert out.sum() == 4
+      print(out.astype(int))
+      PY
+    expected_output_contains: "[[0 0 1]"
+
+  - name: Network density threshold works
+    description: Verify density thresholding computes a finite cutoff.
+    command: |
+      python - <<'PY'
+      import numpy as np
+      from mrsitoolbox.connectomics.network import NetBasedAnalysis
+
+      matrix = np.arange(16, dtype=float).reshape(4, 4)
+      threshold = NetBasedAnalysis().threshold_density(matrix, 0.25)
+      assert threshold == 12
+      print("density threshold", threshold)
+      PY
+    expected_output_contains: density threshold 12.0
+
+  - name: MeSiM parcellation maps metabolites to parcels
+    description: Exercise parcel concentration extraction on synthetic 4D MRSI data.
+    command: |
+      python - <<'PY'
+      import numpy as np
+      from mrsitoolbox.connectomics.mesim import MeSiM
+
+      img = np.zeros((2, 2, 2, 2), dtype=float)
+      img[..., 0] = 1
+      img[..., 1] = 2
+      parcels = np.array([[[1, 1], [2, 2]], [[1, 1], [2, 2]]])
+      header = {1: {"label": "A"}, 2: {"label": "B"}}
+      concentrations = MeSiM().parcellate_vectorized(
+          img, parcels, header, rescale="raw", parcel_concentrations=None
+      )
+      assert set(concentrations) == {1, 2}
+      print("parcel ids", sorted(concentrations))
+      PY
+    expected_output_contains: parcel ids [1, 2]
+
+  - name: Metabolic similarity matrix computes on synthetic data
+    description: Exercise the parallel similarity helper with a tiny parcel table.
+    command: |
+      python - <<'PY'
+      import numpy as np
+      from mrsitoolbox.connectomics.mesim import MeSiM
+
+      parcel_conc = {
+          1: [1, 2, 3, 4, 5, 6],
+          2: [6, 5, 4, 3, 2, 1],
+          3: [1, 1, 2, 2, 3, 3],
+      }
+      mat, pval = MeSiM()._compute_metsim_parallel(
+          parcel_conc, [], corr_mode="spearman", n_workers=1, hide_progress=True
+      )
+      assert mat.shape == (3, 3)
+      assert pval.shape == (3, 3)
+      print("metsim shape", mat.shape)
+      PY
+    expected_output_contains: metsim shape (3, 3)
+
+  - name: FileTools can write a NIfTI image
+    description: Verify toolbox NIfTI writing helpers work with synthetic data.
+    command: |
+      python - <<'PY'
+      import numpy as np
+      import nibabel as nib
+      from pathlib import Path
+
+      path = Path("${output_dir}") / "synthetic_mrsi.nii.gz"
+      img = nib.Nifti1Image(np.ones((3, 3, 3), dtype="float32"), affine=np.eye(4))
+      nib.save(img, path)
+      loaded = nib.load(path)
+      assert loaded.shape == (3, 3, 3)
+      print("wrote", path)
+      PY
+    validate:
+      - output_exists: ${output_dir}/synthetic_mrsi.nii.gz
+
+  - name: NetworkX graph construction works
+    description: Verify graph dependencies used by connectomics helpers are usable.
+    command: |
+      python - <<'PY'
+      import networkx as nx
+      import numpy as np
+
+      adj = np.array([[0, 1, 1], [1, 0, 0], [1, 0, 0]])
+      graph = nx.from_numpy_array(adj)
+      assert graph.number_of_edges() == 2
+      print("edges", graph.number_of_edges())
+      PY
+    expected_output_contains: edges 2
+
+  - name: Participant list data is bundled
+    description: Verify repository TSV files used by pipeline examples are present and readable.
+    command: |
+      python - <<'PY'
+      import pandas as pd
+      from pathlib import Path
+
+      path = Path("/opt/MRSI-Metabolic-Connectome/experiments/participant_list/selected_Dummy-Project_sessions_mrsi.tsv")
+      df = pd.read_csv(path, sep="\t")
+      assert len(df) > 0
+      print("participants", len(df))
+      PY
+    expected_output_contains: participants
+
+  - name: Structure metadata JSON is readable
+    description: Verify bundled structure metadata can be parsed.
+    command: |
+      python - <<'PY'
+      import json
+      from pathlib import Path
+
+      data = json.loads(Path("/opt/MRSI-Metabolic-Connectome/data/structure.json").read_text())
+      assert isinstance(data, dict)
+      print("structure keys", len(data))
+      PY
+    expected_output_contains: structure keys
+
+  - name: Package metadata is installed
+    description: Verify the source checkout exposes Python package metadata.
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+
+      root = Path("/opt/MRSI-Metabolic-Connectome")
+      assert (root / "pyproject.toml").exists()
+      assert (root / "requirements.txt").exists()
+      print("metadata ok")
+      PY
+    expected_output_contains: metadata ok
+
+  - name: CLI scripts compile
+    description: Compile key Python scripts to catch syntax/runtime import regressions.
+    command: |
+      python -m py_compile \
+        "$DEVANALYSEPATH/experiments/Preprocessing/registration_mrsi_to_t1.py" \
+        "$DEVANALYSEPATH/experiments/MetSiM_pipeline/construct_MetSiM_subject.py" \
+        "$DEVANALYSEPATH/scripts/set_env_paths.py"
+      echo "compile ok"
+    expected_output_contains: compile ok

@@ -87,23 +87,9 @@
     {
       "id": "composesegmentation",
       "label": { "en": "Compose segmentation" },
-      "type": "choice",
-      "values": [
-        {
-          "id": "off",
-          "name": { "en": "Off" }
-        },
-        {
-          "id": "native",
-          "name": { "en": "Whole-body (reuse real Fat-Fraction)" }
-        },
-        {
-          "id": "restamp",
-          "name": { "en": "Whole-body (tag mask as Fat-Fraction)" }
-        }
-      ],
-      "default": "off",
-      "information": { "en": "Whole-body composing by hijacking the Fat-Fraction channel (replaces the real Fat-Fraction series; requires a Dixon protocol that produces Fat-Fraction; re-threshold the Adaptive-blended labelmap offline). 'reuse real Fat-Fraction' overwrites the genuine Fat-Fraction images' pixels so the labels inherit the real ComposingGroup routing (more robust). 'tag mask as Fat-Fraction' re-tags a Water-derived mask as Fat-Fraction." }
+      "type": "boolean",
+      "information": { "en": "Enable whole-body composing by replacing the Fat-Fraction series with MuscleMap labels. The segmentation may be computed from the selected source contrast, such as Opposed Phase, but the scanner-composed output is routed through the Fat-Fraction/2ptFF compose channel and may be named like Composed_2ptFF_COMP_1. If multiple segmentation contrasts are selected, compose mode uses only the first selected contrast in this order: Water, In-Phase, Opposed Phase, Fat. Requires a Dixon protocol that produces Fat-Fraction. Re-threshold the Adaptive-blended labelmap offline." },
+      "default": false
     },
     {
       "id": "labeltransform",

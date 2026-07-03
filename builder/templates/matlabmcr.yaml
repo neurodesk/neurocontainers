@@ -8,6 +8,7 @@ binaries:
     optional:
       curl_opts: ''
       install_path: /opt/MCR-{{ self.version }}
+      ncurses_package: libncurses6
   urls:
     2023b: https://ssd.mathworks.com/supportfiles/downloads/R2023b/Release/9/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2023b_Update_9_glnxa64.zip
     2023a: https://ssd.mathworks.com/supportfiles/downloads/R2023a/Release/5/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2023a_Update_5_glnxa64.zip
@@ -22,7 +23,7 @@ binaries:
     apt:
     - bc
     - curl
-    - libncurses6
+    - '{{ self.ncurses_package }}'
     - libxext6
     - libxmu6
     - libxpm-dev

@@ -16,9 +16,7 @@ When `vbsegmentationmips` is enabled, the source-geometry segmentation stream
 uses the `openrecon` suffix to mirror `openreconi2iexample`.
 By default, OpenRecon returns restamped original MRA images first as
 `<source>_original`, then sends one source-image-header 2D VesselBoost
-segmentation image per source image. Optional sagittal and coronal reformat
-series are named `<source>_vesselboost_sagittal` and
-`<source>_vesselboost_coronal`.
+segmentation image per source image.
 
 ## GUI Parameters
 
@@ -32,8 +30,6 @@ series are named `<source>_vesselboost_sagittal` and
 | N4 bias field correction | `vbbiasfieldcorrection` | boolean | `true` | Enable N4 bias field correction before VesselBoost inference. |
 | Denoising | `vbdenoising` | boolean | `false` | Enable non-local means denoising before VesselBoost inference. |
 | Brain masking | `vbbrainextraction` | boolean | `true` | Enable SynthStrip brain extraction during preprocessing. This is used only when N4 bias field correction or denoising is enabled. |
-| Reslice sagittal | `vbreslicesagittal` | boolean | `false` | Emit an additional sagittal reformat series of the segmentation. |
-| Reslice coronal | `vbreslicecoronal` | boolean | `false` | Emit an additional coronal reformat series of the segmentation. |
 | Segmentation MIPs | `vbsegmentationmips` | boolean | `false` | Use the `openreconi2iexample` 2D segmentation-header delivery mode so scanner post-processing targets the segmentation stream. |
 
 ## Preprocessing Combinations
@@ -79,13 +75,6 @@ scanner post-processing child-role metadata matching the segmentation
 segmentation MIPs appear as their own post-processed segmentation series instead
 of being folded into original MIP side products.
 
-Reformatted sagittal and coronal outputs also use the source-geometry
-segmentation-header stream contract: one 2D `DataRole = Segmentation` image per
-reformat slice, `Keep_image_geometry = 1`, `SegmentSourceGeometry = 1`,
-`SegmentOutputGeometry = 2d`, no `SegmentSourceImageHeader`, and sequential
-reformat slice indices. This avoids sending packed explicit 3D MRD volumes back
-to scanner post-processing.
-
 ## Citation
 
 Please cite VesselBoost if you use this reconstruction in research:
@@ -107,3 +96,14 @@ Please cite VesselBoost if you use this reconstruction in research:
   langid = {english}
 }
 ```
+
+## Open Source Development
+
+The source for this OpenRecon package is in the NeuroContainers repository:
+https://github.com/NeuroDesk/neurocontainers/tree/main/recipes/vesselboost
+
+For bugs and feature requests, opening an issue in the NeuroContainers
+repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
+Questions can also be posted in the Neurodesk discussion forum at
+https://github.com/orgs/neurodesk/discussions or sent via
+https://neurodesk.org/contact/.

@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.0.0
+version: 9.0.7
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
@@ -10,6 +10,7 @@ architectures:
   - aarch64
 
 variables:
+  qsmxt_source_version: 9.0.0
   qsmxt_tarball:
     try:
       - value: qsmxt_x86_64_tar_gz
@@ -79,7 +80,8 @@ tests:
 
   - name: dcm2niix available
     script: |
-      dcm2niix --version 2>&1 | grep -iq dcm2niix
+      dcm2niix --version > /tmp/dcm2niix-version.txt 2>&1 || [ "$?" -eq 3 ]
+      grep -iq dcm2niix /tmp/dcm2niix-version.txt
 
   - name: OpenRecon runtime import
     script: |
@@ -95,7 +97,7 @@ categories:
   - workflows
 
 structured_readme:
-  description: QSMxT is an end-to-end software toolbox for Quantitative Susceptibility Mapping (QSM), rebuilt in Rust as a single self-contained binary. It reconstructs QSM from BIDS datasets, converts DICOMs to BIDS, and provides an interactive TUI.
+  description: QSMxT is an end-to-end software toolbox for Quantitative Susceptibility Mapping (QSM), rebuilt in Rust as a single self-contained binary. This container packages upstream QSMxT {{ context.qsmxt_source_version }}. It reconstructs QSM from BIDS datasets, converts DICOMs to BIDS, and provides an interactive TUI.
   example: |-
     ml qsmxt/{{ context.version }}
 
@@ -114,7 +116,8 @@ readme: |-
   ## qsmxt/{{ context.version }} ##
 
   QSMxT is an end-to-end software toolbox for Quantitative Susceptibility Mapping
-  (QSM). Version 9 is a ground-up reimplementation in Rust: a single
+  (QSM). This container packages upstream QSMxT {{ context.qsmxt_source_version }}.
+  Version 9 is a ground-up reimplementation in Rust: a single
   self-contained binary that reconstructs QSM from BIDS datasets, converts DICOMs
   to BIDS, and includes an interactive TUI. A pinned dcm2niix is bundled.
 
@@ -151,6 +154,6 @@ files:
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
   - name: qsmxt_x86_64_tar_gz
-    url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.version }}/qsmxt-v{{ context.version }}-x86_64-unknown-linux-gnu.tar.gz
+    url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.qsmxt_source_version }}/qsmxt-v{{ context.qsmxt_source_version }}-x86_64-unknown-linux-gnu.tar.gz
   - name: qsmxt_aarch64_tar_gz
-    url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.version }}/qsmxt-v{{ context.version }}-aarch64-unknown-linux-gnu.tar.gz
+    url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.qsmxt_source_version }}/qsmxt-v{{ context.qsmxt_source_version }}-aarch64-unknown-linux-gnu.tar.gz

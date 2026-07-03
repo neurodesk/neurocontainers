@@ -206,3 +206,16 @@ def test_matlabmcr_template_uses_release_named_runtime_dirs_for_r2023b() -> None
     assert env["MATLABCMD"].strip() == "/opt/mcr/R2023b/toolbox/matlab"
     assert env["MCRROOT"].strip() == "/opt/mcr/R2023b"
     assert env["XAPPLRESDIR"].strip() == "/opt/mcr/R2023b/x11/app-defaults"
+
+
+def test_matlabmcr_template_allows_legacy_ncurses_package() -> None:
+    directives = []
+    apply_builtin_template(
+        "matlabmcr",
+        {"version": "2019b", "install_path": "/opt/mcr", "ncurses_package": "libncurses5"},
+        "apt",
+        directives.append,
+    )
+    command = "\n".join(item.command for item in directives if isinstance(item, Run))
+    assert "libncurses5" in command
+    assert "libncurses6" not in command

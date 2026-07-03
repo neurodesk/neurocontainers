@@ -69,3 +69,14 @@ the trajectory and raw data.
 - The container does not store runtime files under `/home`; use mounted paths
   such as `/tmp` or another accessible filesystem location for external
   trajectory files.
+
+## Open Source Development
+
+The source for this OpenRecon package is in the NeuroContainers repository:
+https://github.com/NeuroDesk/neurocontainers/tree/main/recipes/sodiumnufft
+
+For bugs and feature requests, opening an issue in the NeuroContainers
+repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
+Questions can also be posted in the Neurodesk discussion forum at
+https://github.com/orgs/neurodesk/discussions or sent via
+https://neurodesk.org/contact/.

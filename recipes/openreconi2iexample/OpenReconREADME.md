@@ -8,6 +8,21 @@ magnitude images, upsample the slice direction, threshold each slice into a
 segmentation, return segment reformats, compute a maximum intensity projection,
 and send foreground-region volume metrics.
 
+## Recommended README Structure
+
+Use this file as the reference structure for new OpenRecon package README files:
+
+1. Start with what the package does and the sequence or image stream it ideally
+   needs.
+2. Describe the relevant input and output sequence, including returned-series
+   ordering when scanner behavior depends on it.
+3. Document all scanner UI parameters from `OpenReconLabel.json`.
+4. Add runtime notes only for scanner-visible behavior, caveats, and validation
+   details that users need to interpret results.
+5. Finish with an Open Source Development section that links to the recipe's
+   GitHub folder, asks users to open NeuroContainers issues for bugs and feature
+   requests, and lists the discussion forum and contact form as alternatives.
+
 ## Inputs
 
 - Reconstructed MRD `ismrmrd.Image` messages.
@@ -76,6 +91,23 @@ The segment output estimates a bright-foreground threshold per source volume
 group, keeps the largest connected foreground object in each slice, and stores
 the result as binary `uint16` segmentation data. Metrics reuse the same
 foreground segmentation logic even when `segment` is disabled.
+
+## UI Parameters
+
+| GUI label | Parameter id | Type | Default | Description |
+| --- | --- | --- | --- | --- |
+| config | `config` | choice | `openreconi2iexample` | Selects the MRD server configuration. |
+| Send original images | `sendoriginal` | boolean | `true` | Return copied original 2D images before derived outputs. |
+| Original native identity (experimental) | `originalnativeidentity` | boolean | `false` | Preserve native source series identity for whole-body Dixon composing tests. |
+| Invert | `invert` | boolean | `false` | Send inverted magnitude images. |
+| Upsampled | `upsampled` | boolean | `false` | Interpolate between slices and send one volume with twice as many slices. |
+| Segment | `segment` | boolean | `true` | Segment the brightest foreground object. |
+| Segment header geometry | `segmentheadergeometry` | choice | `2d_segment_header` | Select the segmentation geometry, header identity, and scanner postprocessing target. |
+| Segmentation colourmap | `segmentationcolormap` | boolean | `false` | Add `MicroDeltaHotMetal.pal` LUT metadata to segmentation outputs. |
+| Send sagittal segment reformat | `sendreformatsagittal` | boolean | `false` | Send explicit sagittal 3D segment reformat volume(s). |
+| Send coronal segment reformat | `sendreformatcoronal` | boolean | `false` | Send explicit coronal 3D segment reformat volume(s). |
+| Computed MIP output | `sendcomputedmip` | boolean | `false` | Compute and send one maximum intensity projection image. |
+| Send metrics | `sendmetrics` | boolean | `false` | Send region volume in image comments and as a DICOM metrics table image. |
 
 ## Scanner Option Test Matrix
 
@@ -204,3 +236,14 @@ version `1.0.78`.
 - Segment reformats are explicit 3D volumes with centered slab geometry,
   `SegmentReformat = 1`, and `SegmentReformatOrientation = sagittal` or
   `coronal`. They are not stamped for later scanner postprocessing.
+
+## Open Source Development
+
+The source for this OpenRecon package is in the NeuroContainers repository:
+https://github.com/NeuroDesk/neurocontainers/tree/main/recipes/openreconi2iexample
+
+For bugs and feature requests, opening an issue in the NeuroContainers
+repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
+Questions can also be posted in the Neurodesk discussion forum at
+https://github.com/orgs/neurodesk/discussions or sent via
+https://neurodesk.org/contact/.

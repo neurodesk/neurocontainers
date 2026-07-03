@@ -30,6 +30,7 @@ build:
         name: matlabmcr
         install_path: /opt/mcr
         version: 2020b
+        ncurses_package: libncurses5
 
     - environment:
         MCR_INHIBIT_CTF_LOCK: "1"
