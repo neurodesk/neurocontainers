@@ -1,0 +1,272 @@
+name: flames
+version: 1.0.0
+container: flames_${version}_REFERENCE.simg
+default_timeout: 240
+
+test_data:
+  output_dir: test_output
+
+env_setup: |
+  set -e
+  export PATH=/opt/miniforge3/envs/flames/bin:/opt/flames/bin:${PATH}
+  export nnUNet_results=/opt/flames/model
+  export nnUNet_raw=/tmp/nnunet_raw
+  export nnUNet_preprocessed=/tmp/nnunet_preprocessed
+  export MPLBACKEND=Agg
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}/flair ${output_dir}/pred /tmp/nnunet_raw /tmp/nnunet_preprocessed
+    python - <<'PY'
+    from pathlib import Path
+
+    import nibabel as nib
+    import numpy as np
+
+    out = Path("${output_dir}") / "flair" / "synthetic_flair.nii.gz"
+    data = np.zeros((32, 32, 32), dtype=np.float32)
+    grid = np.indices(data.shape)
+    sphere = ((grid[0] - 16) ** 2 + (grid[1] - 16) ** 2 + (grid[2] - 16) ** 2) < 25
+    lesion = ((grid[0] - 11) ** 2 + (grid[1] - 18) ** 2 + (grid[2] - 14) ** 2) < 6
+    data[sphere] = 120.0
+    data[lesion] = 600.0
+    nib.save(nib.Nifti1Image(data, np.eye(4)), out)
+    print(out)
+    PY
+
+tests:
+  - name: FLAMeS wrapper is deployed
+    description: Verify the primary FLAMeS command is available from the deployed PATH
+    command: which flames
+    expected_output_contains: "/opt/flames/bin/flames"
+
+  - name: nnUNetv2 predict entrypoint is deployed
+    description: Verify the nnU-Net prediction command resolves from the conda environment
+    command: which nnUNetv2_predict
+    expected_output_contains: "/opt/miniforge3/envs/flames/bin/nnUNetv2_predict"
+
+  - name: HD-BET entrypoint is deployed
+    description: Verify the optional skull-stripping command resolves from the conda environment
+    command: which hd-bet
+    expected_output_contains: "/opt/miniforge3/envs/flames/bin/hd-bet"
+
+  - name: FLAMeS help documents required arguments
+    description: Verify the wrapper starts and exposes the expected user-facing options
+    command: flames --help 2>&1
+    expected_output_contains:
+      - "Usage: flames"
+      - "--skull-strip"
+      - "--device"
+
+  - name: FLAMeS missing arguments fail with usage
+    description: Verify incomplete invocations stop before launching inference
+    command: |
+      set +e
+      flames > ${output_dir}/flames_usage.txt 2>&1
+      status=$?
+      cat ${output_dir}/flames_usage.txt
+      test "$status" -eq 1
+    expected_output_contains: "Usage: flames"
+
+  - name: nnUNetv2 predict help is available
+    description: Verify nnU-Net can import and render its prediction CLI help
+    command: nnUNetv2_predict -h 2>&1 | head -80
+    expected_output_contains:
+      - "usage:"
+      - "-i"
+      - "-o"
+      - "-d"
+
+  - name: HD-BET help is available
+    description: Verify HD-BET can import and render its CLI help
+    command: hd-bet -h 2>&1 | head -80
+    expected_output_contains:
+      - "usage:"
+      - "-i"
+      - "-o"
+      - "-device"
+
+  - name: Conda Python version is pinned
+    description: Verify the FLAMeS runtime uses the expected Python major and minor version
+    command: python --version
+    expected_output_contains: "Python 3.11"
+
+  - name: Scientific Python stack imports
+    description: Verify the core runtime dependencies imported by FLAMeS and nnU-Net are installed
+    command: |
+      python - <<'PY'
+      import matplotlib
+      import nibabel
+      import nnunetv2
+      import numpy
+      import scipy
+      import torch
+      import torchvision
+
+      print("matplotlib", matplotlib.__version__)
+      print("nibabel", nibabel.__version__)
+      print("nnunetv2", nnunetv2.__file__)
+      print("numpy", numpy.__version__)
+      print("scipy", scipy.__version__)
+      print("torch", torch.__version__)
+      print("torchvision", torchvision.__version__)
+      PY
+    expected_output_contains:
+      - "nnunetv2"
+      - "torch"
+      - "torchvision"
+
+  - name: Torch CPU tensor operation works
+    description: Verify the CPU-only Torch install can execute a small tensor operation
+    command: |
+      python - <<'PY'
+      import torch
+
+      x = torch.arange(9, dtype=torch.float32).reshape(3, 3)
+      y = torch.mm(x, torch.eye(3))
+      print(float(y.sum()))
+      PY
+    expected_output_contains: "36.0"
+
+  - name: Synthetic FLAIR image is readable
+    description: Verify nibabel can read the generated NIfTI test image used by downstream checks
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+
+      import nibabel as nib
+
+      path = Path("${output_dir}") / "flair" / "synthetic_flair.nii.gz"
+      image = nib.load(path)
+      print(image.shape)
+      print(float(image.get_fdata().max()))
+      PY
+    expected_output_contains:
+      - "(32, 32, 32)"
+      - "600.0"
+
+  - name: Synthetic lesion morphology works
+    description: Verify scipy can label connected components in the synthetic FLAIR image
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+
+      path = Path("${output_dir}") / "flair" / "synthetic_flair.nii.gz"
+      data = nib.load(path).get_fdata()
+      labels, count = ndimage.label(data > 500)
+      print(count)
+      print(int(np.sum(labels > 0)))
+      PY
+    expected_output_contains: "1"
+
+  - name: Matplotlib can render a diagnostic slice
+    description: Verify matplotlib uses a noninteractive backend and can write output under the test directory
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+
+      import matplotlib
+      matplotlib.use("Agg")
+      import matplotlib.pyplot as plt
+      import nibabel as nib
+
+      image = nib.load(Path("${output_dir}") / "flair" / "synthetic_flair.nii.gz").get_fdata()
+      out = Path("${output_dir}") / "synthetic_flair_slice.png"
+      plt.imshow(image[:, :, 16], cmap="gray")
+      plt.axis("off")
+      plt.savefig(out, bbox_inches="tight", pad_inches=0)
+      print(out.is_file())
+      PY
+    expected_output_contains: "True"
+
+  - name: nnUNet runtime directories are configured
+    description: Verify nnU-Net environment variables point to bundled models and writable scratch directories
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+      import os
+
+      for key in ("nnUNet_results", "nnUNet_raw", "nnUNet_preprocessed"):
+          value = os.environ[key]
+          path = Path(value)
+          path.mkdir(parents=True, exist_ok=True)
+          print(f"{key}={value}:{path.exists()}")
+      PY
+    expected_output_contains:
+      - "nnUNet_results=/opt/flames/model:True"
+      - "nnUNet_raw=/tmp/nnunet_raw:True"
+      - "nnUNet_preprocessed=/tmp/nnunet_preprocessed:True"
+
+  - name: FLAMeS model bundle is installed
+    description: Verify the nnU-Net results bundle was unpacked under the expected location
+    command: |
+      test -d /opt/flames/model
+      find /opt/flames/model -maxdepth 4 -type d | sort | head -40
+    expected_output_contains: "Dataset004_WML"
+
+  - name: FLAMeS model metadata exists
+    description: Verify the bundled model contains nnU-Net dataset or plans metadata
+    command: |
+      find /opt/flames/model -name dataset.json -o -name plans.json | sort
+    expected_output_contains: ".json"
+
+  - name: FLAMeS model checkpoints exist
+    description: Verify model checkpoint files are present for offline inference
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+
+      checkpoints = sorted(Path("/opt/flames/model").rglob("*.pth"))
+      print(len(checkpoints))
+      print(checkpoints[0] if checkpoints else "missing")
+      assert checkpoints
+      PY
+    expected_output_contains: ".pth"
+
+  - name: HD-BET uses baked parameter directory
+    description: Verify the installed HD-BET package points to the immutable parameter directory
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+
+      from HD_BET import paths
+
+      param_dir = Path(paths.folder_with_parameter_files)
+      print(param_dir)
+      print(param_dir.is_dir())
+      PY
+    expected_output_contains:
+      - "/opt/hd-bet_params"
+      - "True"
+
+  - name: HD-BET parameter files exist
+    description: Verify all five HD-BET model parameter files were baked into the image
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+
+      param_dir = Path("/opt/hd-bet_params")
+      for index in range(5):
+          path = param_dir / f"{index}.model"
+          print(path, path.is_file())
+          assert path.is_file()
+      PY
+    expected_output_contains:
+      - "0.model True"
+      - "4.model True"
+
+  - name: FLAMeS wrapper launches the expected inference command
+    description: Verify the wrapper stages nnU-Net modality files and calls the trained configuration
+    command: |
+      grep -F 'case_0000.nii.gz' /opt/flames/bin/flames
+      grep -F 'nnUNetv2_predict' /opt/flames/bin/flames
+      grep -F 'nnUNetTrainer_8000epochs' /opt/flames/bin/flames
+    expected_output_contains:
+      - "case_0000.nii.gz"
+      - "nnUNetv2_predict"
+      - "nnUNetTrainer_8000epochs"
