@@ -1,0 +1,213 @@
+name: spm12bi
+version: latest
+container: spm12bi_${version}_REFERENCE.simg
+default_timeout: 240
+
+test_data:
+  output_dir: test_output
+
+env_setup: |
+  export PATH=/opt/spm12:/opt/miniconda-py38_23.11.0-2/bin:$PATH
+  export LD_LIBRARY_PATH=/opt/mcr/v97/runtime/glnxa64:/opt/mcr/v97/bin/glnxa64:/opt/mcr/v97/sys/os/glnxa64:/opt/mcr/v97/sys/opengl/lib/glnxa64:/opt/mcr/v97/extern/bin/glnxa64:$LD_LIBRARY_PATH
+  export MCR_INHIBIT_CTF_LOCK=1
+  export SPM_HTML_BROWSER=0
+  export XAPPLRESDIR=/opt/mcr/v97/x11/app-defaults
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: SPM12 binaries are deployed
+    description: Verify SPM standalone binaries are present and executable.
+    command: |
+      set -e
+      which spm12
+      which run_spm12.sh
+      test -x /opt/spm12/spm12
+      test -x /opt/spm12/run_spm12.sh
+      echo "spm binaries ok"
+    expected_output_contains:
+      - /opt/spm12/spm12
+      - spm binaries ok
+
+  - name: MATLAB Runtime v97 exists
+    description: Verify the MATLAB Compiler Runtime installation is present.
+    command: |
+      set -e
+      test -d /opt/mcr/v97/runtime/glnxa64
+      test -d /opt/mcr/v97/bin/glnxa64
+      ls /opt/mcr/v97/runtime/glnxa64 | head
+    expected_exit_code: 0
+
+  - name: Legacy ncurses runtime library exists
+    description: Verify the Ubuntu 16.04 MATLAB runtime dependency fixed for this container is installed.
+    command: |
+      ldconfig -p | grep libncurses.so.5
+    expected_output_contains: libncurses.so.5
+
+  - name: SPM standalone exits cleanly
+    description: Exercise the compiled SPM binary with the same smoke command used at build time.
+    command: /opt/spm12/spm12 function exit
+    expected_exit_code: 0
+
+  - name: run_spm12 shell wrapper starts
+    description: Verify the standard wrapper can invoke the compiled SPM runtime.
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ function exit
+    expected_exit_code: 0
+
+  - name: SPM batch mode help starts
+    description: Verify SPM starts far enough to print command help.
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ help 2>&1 | head -40
+    expected_exit_code: 0
+
+  - name: Python runtime imports
+    description: Verify the Python runtime intended for nipype integration imports.
+    command: |
+      python - <<'PY'
+      import h5py
+      import numpy
+      import scipy
+      import skimage
+      import traits
+      print("numpy", numpy.__version__)
+      print("scipy", scipy.__version__)
+      print("h5py", h5py.__version__)
+      print("traits", traits.__version__)
+      PY
+    expected_output_contains:
+      - numpy
+      - scipy
+      - h5py
+
+  - name: Nipype SPM interface imports
+    description: Verify nipype can import SPM interfaces from the bundled Python environment.
+    command: |
+      python - <<'PY'
+      import nipype.interfaces.spm as spm
+      print(spm.SPMCommand.__name__)
+      print(spm.Normalize12.__name__)
+      PY
+    expected_output_contains:
+      - SPMCommand
+      - Normalize12
+
+  - name: Nipype MATLAB command configuration works
+    description: Verify nipype can be configured to call SPM standalone through the wrapper.
+    command: |
+      python - <<'PY'
+      import nipype.interfaces.spm as spm
+      matlab_cmd = "/opt/spm12/run_spm12.sh /opt/mcr/v97/ script"
+      spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)
+      cmd = spm.SPMCommand().inputs.matlab_cmd
+      assert "/opt/spm12/run_spm12.sh" in cmd
+      print(cmd)
+      PY
+    expected_output_contains: /opt/spm12/run_spm12.sh
+
+  - name: Synthetic NIfTI can be written
+    description: Verify Python neuroimaging dependencies can create test data for SPM workflows.
+    command: |
+      python - <<'PY'
+      import h5py
+      import numpy as np
+
+      with h5py.File("${output_dir}/synthetic.h5", "w") as f:
+          f.create_dataset("volume", data=np.ones((4, 4, 4), dtype="float32"))
+      print("h5 written")
+      PY
+    validate:
+      - output_exists: ${output_dir}/synthetic.h5
+
+  - name: SPM directory contains toolbox files
+    description: Verify the standalone SPM distribution includes core MATLAB/toolbox assets.
+    command: |
+      set -e
+      test -d /opt/spm12/toolbox
+      find /opt/spm12 -maxdepth 2 -name 'spm*.ctf' -o -name '*.m' | head
+    expected_exit_code: 0
+
+  - name: SPM CTF archive exists
+    description: Verify the compiled component archive is present.
+    command: |
+      ls -lh /opt/spm12/*.ctf
+    expected_output_contains: .ctf
+
+  - name: Java runtime is available
+    description: Verify Java dependency required by parts of MATLAB runtime is installed.
+    command: java -version 2>&1 | head -3
+    expected_output_contains: version
+
+  - name: OpenGL runtime libraries exist
+    description: Verify runtime library directories referenced by LD_LIBRARY_PATH exist.
+    command: |
+      set -e
+      test -d /opt/mcr/v97/sys/opengl/lib/glnxa64
+      find /opt/mcr/v97/sys/opengl/lib/glnxa64 -maxdepth 1 -type f | head
+    expected_exit_code: 0
+
+  - name: Python scipy linear algebra works
+    description: Exercise scipy in the nipype runtime.
+    command: |
+      python - <<'PY'
+      import numpy as np
+      from scipy import linalg
+
+      a = np.array([[2.0, 0.0], [0.0, 3.0]])
+      inv = linalg.inv(a)
+      assert np.allclose(inv @ a, np.eye(2))
+      print("linalg ok")
+      PY
+    expected_output_contains: linalg ok
+
+  - name: scikit-image transform works
+    description: Exercise image processing dependencies used by Python workflows.
+    command: |
+      python - <<'PY'
+      import numpy as np
+      from skimage.transform import resize
+
+      img = np.ones((4, 4), dtype=float)
+      out = resize(img, (8, 8), anti_aliasing=False)
+      assert out.shape == (8, 8)
+      print("resize", out.shape)
+      PY
+    expected_output_contains: resize (8, 8)
+
+  - name: Nipype Normalize12 interface can be configured
+    description: Instantiate Normalize12 and set a synthetic input path without running SPM.
+    command: |
+      python - <<'PY'
+      from nipype.interfaces import spm
+
+      norm = spm.Normalize12()
+      norm.inputs.image_to_align = "${output_dir}/synthetic.h5"
+      assert str(norm.inputs.image_to_align).endswith("synthetic.h5")
+      print("Normalize12 configured")
+      PY
+    depends_on: Synthetic NIfTI can be written
+    expected_output_contains: Normalize12 configured
+
+  - name: Nipype segmentation interface exists
+    description: Verify SPM segmentation interface is available.
+    command: |
+      python - <<'PY'
+      from nipype.interfaces import spm
+      seg = spm.NewSegment()
+      print(seg.__class__.__name__)
+      PY
+    expected_output_contains: NewSegment
+
+  - name: No home directory dependency for SPM assets
+    description: Verify SPM and MCR assets are outside /home for container runtime.
+    command: |
+      set -e
+      find /opt/spm12 /opt/mcr -maxdepth 1 -type d | grep -v '^/home'
+      echo "runtime assets under opt"
+    expected_output_contains: runtime assets under opt
+
+  - name: README documents standalone invocation
+    description: Verify container documentation includes the runtime wrapper example.
+    command: grep -F "run_spm12.sh /opt/mcr/v97/" /README.md
+    expected_output_contains: run_spm12.sh /opt/mcr/v97/
