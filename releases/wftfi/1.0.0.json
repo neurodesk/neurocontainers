@@ -1,12 +1,13 @@
 {
   "apps": {
-    "hdbet 2.0.1": {
+    "wftfi 1.0.0": {
       "version": "20260629",
       "exec": "",
       "apptainer_args": []
     }
   },
   "categories": [
-    "image segmentation"
+    "quantitative imaging",
+    "phase processing"
   ]
 }

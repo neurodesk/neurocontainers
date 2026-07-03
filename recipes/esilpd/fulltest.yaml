@@ -1,0 +1,277 @@
+name: esilpd
+version: 0.0.1
+container: esilpd_${version}_REFERENCE.simg
+default_timeout: 240
+
+python_bin: /opt/miniconda-py39_23.11.0-2/envs/esilpd-0.0.1/bin/python
+
+test_data:
+  output_dir: test_output
+
+env_setup: |
+  export PATH=/opt/miniconda-py39_23.11.0-2/envs/esilpd-0.0.1/bin:$PATH
+  export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+  export XDG_RUNTIME_DIR=/neurodesktop-storage
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: VS Code wrapper is deployed
+    description: Verify the deployed code wrapper and VS Code binary are present.
+    command: |
+      set -e
+      which code
+      test -x /usr/bin/code
+      test -d /opt/vscode-extensions
+      echo "code wrapper ok"
+    expected_output_contains:
+      - /usr/local/sbin/code
+      - code wrapper ok
+
+  - name: Python environment is available
+    description: Verify the esilpd conda environment Python runs.
+    command: |
+      ${python_bin} --version
+      ${python_bin} -c 'import sys; print(sys.executable)'
+    expected_output_contains:
+      - Python 3.9
+      - /opt/miniconda-py39_23.11.0-2/envs/esilpd-0.0.1/bin/python
+
+  - name: MNE imports and reports version
+    description: Verify the primary EEG/MEG analysis package imports.
+    command: |
+      ${python_bin} - <<'PY'
+      import mne
+      print("mne", mne.__version__)
+      PY
+    expected_output_contains: mne
+
+  - name: PyTorch imports and CPU tensor math works
+    description: Verify PyTorch is installed and usable without requiring a GPU.
+    command: |
+      ${python_bin} - <<'PY'
+      import torch
+      x = torch.arange(6, dtype=torch.float32).reshape(2, 3)
+      assert torch.isclose(x.mean(), torch.tensor(2.5))
+      print("torch", torch.__version__, "cuda", torch.cuda.is_available())
+      PY
+    expected_output_contains: torch
+
+  - name: Torchvision and torchaudio import
+    description: Verify companion PyTorch packages import.
+    command: |
+      ${python_bin} - <<'PY'
+      import torchaudio
+      import torchvision
+      print("torchaudio", torchaudio.__version__)
+      print("torchvision", torchvision.__version__)
+      PY
+    expected_output_contains:
+      - torchaudio
+      - torchvision
+
+  - name: JAX imports and computes
+    description: Verify JAX is available for numerical work.
+    command: |
+      ${python_bin} - <<'PY'
+      import jax
+      import jax.numpy as jnp
+      x = jnp.array([1.0, 2.0, 3.0])
+      assert float(jnp.sum(x)) == 6.0
+      print("jax", jax.__version__)
+      PY
+    expected_output_contains: jax
+
+  - name: Scientific Python stack imports
+    description: Verify key scientific dependencies installed by the recipe import.
+    command: |
+      ${python_bin} - <<'PY'
+      import bids
+      import joblib
+      import numpy
+      import pandas
+      import scipy
+      import seaborn
+      import skimage
+      print("numpy", numpy.__version__)
+      print("pybids", bids.__version__)
+      print("skimage", skimage.__version__)
+      PY
+    expected_output_contains:
+      - numpy
+      - pybids
+      - skimage
+
+  - name: MNE BIDS pipeline source is bundled
+    description: Verify the bundled mne-bids-pipeline checkout exists.
+    command: |
+      set -e
+      test -d /opt/mne-bids-pipeline-main
+      test -f /opt/mne-bids-pipeline-main/README.md
+      find /opt/mne-bids-pipeline-main -maxdepth 2 -type f -name '*.py' | head -5
+    expected_output_contains: .py
+
+  - name: MNE creates synthetic RawArray
+    description: Exercise MNE object creation with synthetic EEG data.
+    command: |
+      ${python_bin} - <<'PY'
+      import mne
+      import numpy as np
+
+      info = mne.create_info(["Fz", "Cz"], sfreq=100.0, ch_types="eeg")
+      raw = mne.io.RawArray(np.zeros((2, 200)), info, verbose=False)
+      assert raw.n_times == 200
+      print("raw", raw.info["nchan"], raw.n_times)
+      PY
+    expected_output_contains: raw 2 200
+
+  - name: MNE events can be generated
+    description: Verify MNE event handling on synthetic annotations.
+    command: |
+      ${python_bin} - <<'PY'
+      import mne
+      import numpy as np
+
+      info = mne.create_info(["Fz"], sfreq=100.0, ch_types="eeg")
+      raw = mne.io.RawArray(np.zeros((1, 300)), info, verbose=False)
+      raw.set_annotations(mne.Annotations([0.5, 1.5], [0.1, 0.1], ["a", "b"]))
+      events, ids = mne.events_from_annotations(raw, verbose=False)
+      assert events.shape[0] == 2
+      print("events", events.shape[0], sorted(ids))
+      PY
+    expected_output_contains: events 2
+
+  - name: MNE epochs synthetic data
+    description: Exercise epoch construction on synthetic EEG.
+    command: |
+      ${python_bin} - <<'PY'
+      import mne
+      import numpy as np
+
+      info = mne.create_info(["Fz", "Cz"], sfreq=100.0, ch_types="eeg")
+      data = np.random.RandomState(1).randn(2, 500) * 1e-6
+      raw = mne.io.RawArray(data, info, verbose=False)
+      events = np.array([[100, 0, 1], [300, 0, 1]])
+      epochs = mne.Epochs(raw, events, tmin=-0.1, tmax=0.2, baseline=None, preload=True, verbose=False)
+      assert len(epochs) == 2
+      print("epochs", len(epochs), epochs.get_data().shape)
+      PY
+    expected_output_contains: epochs 2
+
+  - name: MNE time frequency transform works
+    description: Exercise a lightweight Morlet transform on synthetic epochs.
+    timeout: 300
+    command: |
+      ${python_bin} - <<'PY'
+      import mne
+      import numpy as np
+
+      info = mne.create_info(["Fz"], sfreq=100.0, ch_types="eeg")
+      raw = mne.io.RawArray(np.random.RandomState(2).randn(1, 500) * 1e-6, info, verbose=False)
+      events = np.array([[200, 0, 1]])
+      epochs = mne.Epochs(raw, events, tmin=-0.5, tmax=0.5, baseline=None, preload=True, verbose=False)
+      power = mne.time_frequency.tfr_morlet(epochs, freqs=[8, 12], n_cycles=3, return_itc=False, verbose=False)
+      assert power.data.shape[1] == 2
+      print("tfr", power.data.shape)
+      PY
+    expected_output_contains: tfr
+
+  - name: PyTorch DataLoader works
+    description: Verify the machine learning stack can batch synthetic tensors.
+    command: |
+      ${python_bin} - <<'PY'
+      import torch
+      from torch.utils.data import DataLoader, TensorDataset
+
+      ds = TensorDataset(torch.arange(12).reshape(6, 2).float())
+      batches = list(DataLoader(ds, batch_size=3))
+      assert len(batches) == 2
+      print("batches", len(batches))
+      PY
+    expected_output_contains: batches 2
+
+  - name: JAX gradient works
+    description: Verify automatic differentiation works in JAX.
+    command: |
+      ${python_bin} - <<'PY'
+      import jax
+      import jax.numpy as jnp
+
+      grad = jax.grad(lambda x: jnp.sum(x * x))(jnp.array([2.0, 3.0]))
+      assert grad.tolist() == [4.0, 6.0]
+      print("grad", grad.tolist())
+      PY
+    expected_output_contains: grad [4.0, 6.0]
+
+  - name: scikit-image filters work
+    description: Verify image-processing dependencies operate on synthetic data.
+    command: |
+      ${python_bin} - <<'PY'
+      import numpy as np
+      from skimage.filters import sobel
+
+      img = np.zeros((16, 16), dtype=float)
+      img[4:12, 4:12] = 1
+      edges = sobel(img)
+      assert edges.max() > 0
+      print("edge max", round(float(edges.max()), 3))
+      PY
+    expected_output_contains: edge max
+
+  - name: ODL imports and creates uniform space
+    description: Verify the inverse-problem dependency ODL is functional.
+    command: |
+      ${python_bin} - <<'PY'
+      import odl
+
+      space = odl.uniform_discr([0, 0], [1, 1], [8, 8])
+      elem = space.one()
+      assert elem.shape == (8, 8)
+      print("odl", elem.shape)
+      PY
+    expected_output_contains: odl (8, 8)
+
+  - name: OSF client command is installed
+    description: Verify osfclient CLI is available for documented data access workflows.
+    command: |
+      ${python_bin} -m osfclient --help 2>&1 | head -20
+    expected_output_contains: usage
+
+  - name: IPython kernel package imports
+    description: Verify notebook support installed by the recipe imports.
+    command: |
+      ${python_bin} - <<'PY'
+      import ipykernel
+      import jupyter_core
+      print("ipykernel", ipykernel.__version__)
+      print("jupyter_core", jupyter_core.__version__)
+      PY
+    expected_output_contains:
+      - ipykernel
+      - jupyter_core
+
+  - name: CUDA libraries are visible
+    description: Verify CUDA and cuDNN files copied by the recipe exist.
+    command: |
+      set -e
+      test -d /usr/local/cuda/lib64
+      ls /usr/local/cuda/lib64/libcudnn* | head -3
+    expected_output_contains: libcudnn
+
+  - name: Synthetic EEG artifact can be saved
+    description: Verify the analysis stack can write an MNE FIF artifact.
+    command: |
+      ${python_bin} - <<'PY'
+      import mne
+      import numpy as np
+
+      info = mne.create_info(["Fz"], sfreq=100.0, ch_types="eeg")
+      raw = mne.io.RawArray(np.zeros((1, 100)), info, verbose=False)
+      raw.save("${output_dir}/synthetic_raw.fif", overwrite=True, verbose=False)
+      print("saved fif")
+      PY
+    validate:
+      - output_exists: ${output_dir}/synthetic_raw.fif

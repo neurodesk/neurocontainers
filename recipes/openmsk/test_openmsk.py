@@ -1,4 +1,5 @@
 import base64
+import importlib.util
 import json
 import os
 import sys
@@ -56,6 +57,25 @@ def make_image():
     header.field_of_view[:] = [4.0, 4.0, 1.0]
     header.matrix_size[:] = [4, 4, 1]
     image.setHead(header)
+    return image
+
+
+def make_series_image(series_index, slice_index, position_z, series_name, *, echo_time=None):
+    image = make_image()
+    header = image.getHead()
+    header.image_series_index = series_index
+    header.image_index = slice_index + 1
+    header.slice = slice_index
+    header.position[:] = [0.0, 0.0, float(position_z)]
+    image.setHead(header)
+
+    meta = ismrmrd.Meta()
+    meta["SeriesDescription"] = series_name
+    meta["SequenceDescription"] = series_name
+    meta["ProtocolName"] = series_name
+    if echo_time is not None:
+        meta["EchoTime"] = str(echo_time)
+    image.attribute_string = meta.serialize()
     return image
 
 
@@ -324,6 +344,123 @@ def test_process_uses_synthetic_qdess_dicom_when_two_echoes_available(monkeypatc
     assert connection.logs == []
 
 
+def test_select_primary_source_keeps_qdess_echo_series_together():
+    images = [
+        make_series_image(11, 0, 0.0, "wip_dess_fastwater_goyal_sag_FID"),
+        make_series_image(11, 1, 1.0, "wip_dess_fastwater_goyal_sag_FID"),
+        make_series_image(12, 0, 0.0, "wip_dess_fastwater_goyal_sag_SE"),
+        make_series_image(12, 1, 1.0, "wip_dess_fastwater_goyal_sag_SE"),
+    ]
+
+    selection = openmsk._select_primary_source(images)
+
+    assert set(selection["echo_groups"]) == {"FID", "SE"}
+    assert [len(group) for group in selection["echo_groups"].values()] == [2, 2]
+    assert len(selection["primary"]) == 2
+
+
+def test_split_echo_groups_prefers_named_dess_fid_se_over_base_series():
+    images = [
+        make_series_image(10, 0, 0.0, "wip_dess_fastwater_goyal_sag"),
+        make_series_image(10, 1, 1.0, "wip_dess_fastwater_goyal_sag"),
+        make_series_image(11, 0, 0.0, "wip_dess_fastwater_goyal_sag_FID"),
+        make_series_image(11, 1, 1.0, "wip_dess_fastwater_goyal_sag_FID"),
+        make_series_image(12, 0, 0.0, "wip_dess_fastwater_goyal_sag_SE"),
+        make_series_image(12, 1, 1.0, "wip_dess_fastwater_goyal_sag_SE"),
+    ]
+
+    groups = openmsk._split_echo_groups(images)
+
+    assert list(groups) == ["FID", "SE"]
+    assert [int(image.image_series_index) for image in groups["FID"]] == [11, 11]
+    assert [int(image.image_series_index) for image in groups["SE"]] == [12, 12]
+
+
+def test_process_does_not_fallback_from_requested_model_failure(monkeypatch):
+    events = []
+    model_calls = []
+    source = make_image()
+    source.attribute_string = ismrmrd.Meta().serialize()
+
+    def fake_write_run_config(tmpdir, seg_model, *_args):
+        path = Path(tmpdir) / f"{seg_model}.json"
+        path.write_text(json.dumps({"default_seg_model": seg_model}))
+        return path
+
+    def fake_segmentation(_input_path, output_dir, seg_model, _config_path):
+        model_calls.append(seg_model)
+        return {"ok": False, "segmentation": {"is_qdess": False, "skip_steps": ["t2_mapping"]}}
+
+    monkeypatch.setattr(openmsk, "_write_source_nifti", lambda images, *_args: (images, (4, 4, 1)))
+    monkeypatch.setattr(openmsk, "_write_run_config", fake_write_run_config)
+    monkeypatch.setattr(openmsk, "_run_kneepipeline_segmentation", fake_segmentation)
+    monkeypatch.setattr(openmsk, "_send_images", lambda _connection, _images, context: events.append(context))
+
+    connection = FakeConnection([source])
+    openmsk.process(
+        connection,
+        {"parameters": {"segmodel": "nnunet_knee", "computethickness": True}},
+        metadata=types.SimpleNamespace(encoding=[]),
+    )
+
+    assert model_calls == ["nnunet_knee"]
+    assert events == ["original_passthrough"]
+    assert len(connection.logs) == 1
+    assert "did not write *_all-labels.nii.gz" in connection.logs[0][1]
+    assert connection.closed
+
+
+def test_process_reports_missing_labels_without_traceback(monkeypatch):
+    events = []
+    source = make_image()
+    source.attribute_string = ismrmrd.Meta().serialize()
+
+    def fake_write_run_config(tmpdir, seg_model, *_args):
+        path = Path(tmpdir) / f"{seg_model}.json"
+        path.write_text(json.dumps({"default_seg_model": seg_model}))
+        return path
+
+    monkeypatch.setattr(openmsk, "_write_source_nifti", lambda images, *_args: (images, (4, 4, 1)))
+    monkeypatch.setattr(openmsk, "_write_run_config", fake_write_run_config)
+    monkeypatch.setattr(
+        openmsk,
+        "_run_kneepipeline_segmentation",
+        lambda *_args: {"ok": False, "segmentation": {"is_qdess": False, "skip_steps": ["t2_mapping"]}},
+    )
+    monkeypatch.setattr(openmsk, "_send_images", lambda _connection, _images, context: events.append(context))
+
+    connection = FakeConnection([source])
+    openmsk.process(connection, {}, metadata=types.SimpleNamespace(encoding=[]))
+
+    assert events == ["original_passthrough"]
+    assert len(connection.logs) == 1
+    assert "did not write *_all-labels.nii.gz" in connection.logs[0][1]
+    assert "Traceback" not in connection.logs[0][1]
+    assert connection.closed
+
+
+def test_nnunet_worker_patch_adds_scanner_safe_predict_flags(tmp_path):
+    patch_path = Path("openmsk_nnunet_worker_patch.py")
+    spec = importlib.util.spec_from_file_location("openmsk_nnunet_worker_patch", patch_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    command_block = """                    '--disable_tta',
+                    '-device', 'cuda'
+"""
+    inference_path = tmp_path / "inference.py"
+    inference_path.write_text(command_block * 3)
+
+    assert module.patch_inference_file(inference_path) is True
+    patched = inference_path.read_text()
+    assert patched.count("OPENMSK_NNUNET_NUM_PROCESSES_PREPROCESSING") == 3
+    assert patched.count("OPENMSK_NNUNET_NUM_PROCESSES_EXPORT") == 3
+    assert "'-npp', os.environ.get('OPENMSK_NNUNET_NUM_PROCESSES_PREPROCESSING', '1')" in patched
+    assert "'-nps', os.environ.get('OPENMSK_NNUNET_NUM_PROCESSES_EXPORT', '1')" in patched
+    assert "--disable_progress_bar" in patched
+    assert module.patch_inference_file(inference_path) is False
+
+
 def test_process_can_skip_originals_when_requested(monkeypatch):
     events = []
     source = make_image()
@@ -439,8 +576,16 @@ def test_openrecon_label_keeps_packaged_model_choices():
     assert [value["id"] for value in params["segmodel"]["values"]] == [
         "acl_qdess_bone_july_2024",
         "goyal_sagittal",
+        "goyal_coronal",
+        "goyal_axial",
         "nnunet_knee",
     ]
+    model_names = {value["id"]: value["name"]["en"] for value in params["segmodel"]["values"]}
+    assert model_names["acl_qdess_bone_july_2024"] == "DOSMA qDESS bone/cartilage July 2024"
+    assert params["runnsm"]["type"] == "boolean"
+    assert params["runnsm"]["default"] is False
+    assert params["runbscore"]["type"] == "boolean"
+    assert params["runbscore"]["default"] is False
     for key in (
         "qdesstrms",
         "qdesste1ms",

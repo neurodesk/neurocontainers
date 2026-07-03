@@ -63,11 +63,19 @@
       "values": [
         {
           "id": "acl_qdess_bone_july_2024",
-          "name": { "en": "ACL qDESS bone/cartilage July 2024" }
+          "name": { "en": "DOSMA qDESS bone/cartilage July 2024" }
         },
         {
           "id": "goyal_sagittal",
           "name": { "en": "Goyal sagittal" }
+        },
+        {
+          "id": "goyal_coronal",
+          "name": { "en": "Goyal coronal" }
+        },
+        {
+          "id": "goyal_axial",
+          "name": { "en": "Goyal axial" }
         },
         {
           "id": "nnunet_knee",
@@ -82,6 +90,20 @@
       "label": { "en": "Compute thickness" },
       "type": "boolean",
       "information": { "en": "Run slower mesh/thickness analysis after sending the segmentation" },
+      "default": false
+    },
+    {
+      "id": "runnsm",
+      "label": { "en": "Legacy NSM flag" },
+      "type": "boolean",
+      "information": { "en": "Accepted for older scanner protocols only; ignored because ShapeMedKnee assets are not packaged" },
+      "default": false
+    },
+    {
+      "id": "runbscore",
+      "label": { "en": "Legacy BScore flag" },
+      "type": "boolean",
+      "information": { "en": "Accepted for older scanner protocols only; ignored because ShapeMedKnee assets are not packaged" },
       "default": false
     },
     {

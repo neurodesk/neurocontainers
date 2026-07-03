@@ -30,6 +30,7 @@ KNEEPIPELINE_CONFIG = Path(
 )
 NNUNET_NUMPY_COMPAT_PATH = os.environ.get("OPENMSK_NNUNET_NUMPY_COMPAT_PATH", "/opt/openmsk_compat")
 OPENMSK_PIPELINE_TIMEOUT = int(os.environ.get("OPENMSK_PIPELINE_TIMEOUT", "5400"))
+DEFAULT_SEG_MODEL = "acl_qdess_bone_july_2024"
 
 ORIGINAL_SERIES_INDEX = 100
 SEGMENT_SERIES_INDEX = 101
@@ -103,7 +104,7 @@ def process(connection, config, metadata):
                 logging.warning("Unsupported MRD message type: %s", type(item).__name__)
 
         send_original = _config_bool(config, "sendoriginal", True)
-        seg_model = _config_str(config, "segmodel", "acl_qdess_bone_july_2024")
+        seg_model = _config_str(config, "segmodel", DEFAULT_SEG_MODEL)
         legacy_run_nsm_requested = _config_bool_any(config, ("runnsm", "run_nsm"), False)
         legacy_run_bscore = _config_bool_any(config, ("runbscore", "run_bscore"), False)
         if legacy_run_nsm_requested or legacy_run_bscore:
@@ -208,7 +209,10 @@ def process(connection, config, metadata):
 
             segment_path = _find_single_output(output_dir, "*_all-labels.nii.gz")
             if segment_path is None:
-                raise FileNotFoundError(f"KneePipeline did not write *_all-labels.nii.gz in {output_dir}")
+                message = f"KneePipeline did not write *_all-labels.nii.gz in {output_dir}"
+                logging.error(message)
+                connection.send_logging(constants.MRD_LOGGING_ERROR, message)
+                return
 
             segment_images = _nifti_to_mrd_images(
                 segment_path,
@@ -335,8 +339,8 @@ def process(connection, config, metadata):
                 sent_images.extend(t2_images)
             else:
                 logging.info(
-                    "No T2 map was written. This is expected for OpenRecon MRD/NIfTI "
-                    "input because qDESS GL/TG private tags are not present."
+                    "No T2 map was written; check the qDESS echo grouping, synthesized "
+                    "DICOM parameter logs, and KneePipeline t2_mapping status."
                 )
 
     except Exception:
@@ -540,12 +544,7 @@ def _estimate_slice_spacing(image_headers, slice_axis=None):
 def _select_primary_source(images):
     grouped = {}
     for image in images:
-        key = (
-            int(getattr(image, "image_series_index", 0)),
-            int(getattr(image, "average", 0)),
-            int(getattr(image, "repetition", 0)),
-            int(getattr(image, "set", 0)),
-        )
+        key = _source_group_key(image)
         grouped.setdefault(key, []).append(image)
 
     if not grouped:
@@ -570,12 +569,29 @@ def _select_primary_source(images):
     }
 
 
+def _source_group_key(image):
+    header = image.getHead()
+    matrix = tuple(int(value) for value in header.matrix_size[:])
+    fov = tuple(round(float(value), 4) for value in header.field_of_view[:])
+    return (
+        int(getattr(image, "average", 0)),
+        int(getattr(image, "repetition", 0)),
+        int(getattr(image, "set", 0)),
+        matrix,
+        fov,
+    )
+
+
 def _select_primary_source_group(images):
     selection = _select_primary_source(images)
     return selection.get("primary", [])
 
 
 def _split_echo_groups(images):
+    named_echo_groups = _split_named_dess_echo_groups(images)
+    if named_echo_groups:
+        return named_echo_groups
+
     contrast_values = {int(getattr(image, "contrast", 0)) for image in images}
     if len(contrast_values) > 1:
         return _group_by_header_field(images, "contrast")
@@ -588,6 +604,10 @@ def _split_echo_groups(images):
             echo_time_groups.setdefault(echo_time, []).append(image)
     if len(echo_time_groups) > 1:
         return echo_time_groups
+
+    source_series_groups = _split_source_series_groups(images)
+    if source_series_groups:
+        return source_series_groups
 
     return _split_duplicate_slice_positions(images)
 
@@ -604,6 +624,47 @@ def _group_by_header_field(images, field_name):
     for image in images:
         groups.setdefault(int(getattr(image, field_name, 0)), []).append(image)
     return groups
+
+
+def _split_named_dess_echo_groups(images):
+    groups = {}
+    for image in images:
+        key = _named_dess_echo_key(image)
+        if key is not None:
+            groups.setdefault(key, []).append(image)
+
+    selected = {
+        key: groups[key]
+        for key in ("FID", "SE")
+        if key in groups
+    }
+    if len(selected) >= 2 and _echo_group_counts_match(selected):
+        return selected
+    return {}
+
+
+def _named_dess_echo_key(image):
+    source_name = _source_series_name(image).lower()
+    if not source_name or "dess" not in source_name:
+        return None
+    if re.search(r"(^|[_\W])fid($|[_\W])", source_name):
+        return "FID"
+    if re.search(r"(^|[_\W])se($|[_\W])", source_name):
+        return "SE"
+    return None
+
+
+def _split_source_series_groups(images):
+    groups = _group_by_header_field(images, "image_series_index")
+    groups = {key: value for key, value in groups.items() if key}
+    if len(groups) > 1 and _echo_group_counts_match(groups):
+        return groups
+    return {}
+
+
+def _echo_group_counts_match(groups):
+    counts = {len(images) for images in groups.values()}
+    return len(counts) == 1 and next(iter(counts), 0) > 0
 
 
 def _split_duplicate_slice_positions(images):

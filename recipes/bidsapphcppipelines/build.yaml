@@ -45,12 +45,10 @@ deploy:
   path:
     - /usr/local/fsl/bin
     - /opt/workbench/bin_linux64
-    - /usr/local/miniconda/bin
     - /opt/freesurfer/bin
     - /opt/freesurfer/fsfast/bin
     - /opt/freesurfer/tktools
     - /opt/freesurfer/mni/bin
-    - /
 
 categories:
   - bids apps

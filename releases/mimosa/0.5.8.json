@@ -1,6 +1,6 @@
 {
   "apps": {
-    "hdbet 2.0.1": {
+    "mimosa 0.5.8": {
       "version": "20260629",
       "exec": "",
       "apptainer_args": []

@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.0.4
+version: 9.0.7
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
@@ -80,7 +80,8 @@ tests:
 
   - name: dcm2niix available
     script: |
-      dcm2niix --version 2>&1 | grep -iq dcm2niix
+      dcm2niix --version > /tmp/dcm2niix-version.txt 2>&1 || [ "$?" -eq 3 ]
+      grep -iq dcm2niix /tmp/dcm2niix-version.txt
 
   - name: OpenRecon runtime import
     script: |

@@ -1,12 +1,12 @@
 {
   "apps": {
-    "hdbet 2.0.1": {
-      "version": "20260629",
+    "spm12bi latest": {
+      "version": "20260702",
       "exec": "",
       "apptainer_args": []
     }
   },
   "categories": [
-    "image segmentation"
+    "functional imaging"
   ]
 }

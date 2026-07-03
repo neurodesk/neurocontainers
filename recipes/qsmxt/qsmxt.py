@@ -42,6 +42,21 @@ DEFAULT_B0_DIR = (0.0, 0.0, 1.0)
 ORIGINAL_SERIES_START = 100
 OUTPUT_SERIES_START = 180
 SCANNER_PARTITION_INDEX = 0
+SCANNER_DISPLAY_MIN = 0
+SCANNER_DISPLAY_MAX = 4096
+SCANNER_DISPLAY_CENTER = 2048
+SCANNER_DISPLAY_SCALE_FACTORS = (
+    1000000.0,
+    100000.0,
+    10000.0,
+    1000.0,
+    100.0,
+    10.0,
+    1.0,
+    0.1,
+    0.01,
+    0.001,
+)
 
 QSMXT_OUTPUTS = {
     "qsm": {
@@ -483,9 +498,17 @@ def _passthrough_source_groups(images):
 
 
 def _passthrough_source_group_key(image):
+    # Group originals by contrast identity (series description + image type +
+    # shape) rather than the raw scanner series index. Siemens 3D sequences
+    # often split one logical contrast into several concatenations that arrive
+    # as separate image_series_index values while sharing a SeriesDescription;
+    # keying on the series index would emit one passthrough series per
+    # concatenation (e.g. magnitude split across two half-slice series). Merging
+    # by contrast identity keeps all slices of a contrast in a single series.
     header = image.getHead()
     return (
-        _series_group_key(image),
+        _source_series_name(image),
+        _classify_series([image]),
         int(getattr(header, "image_type", 0)),
         tuple(int(value) for value in np.asarray(image.data).shape),
     )
@@ -590,6 +613,7 @@ def _original_passthrough_meta(
             series_uid,
             sop_uid,
             storage_fields,
+            output_index == image_count - 1,
         )
         if changed:
             meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
@@ -746,6 +770,7 @@ def _patch_original_ice_minihead(
     series_uid,
     sop_uid,
     storage_fields,
+    is_series_end,
 ):
     current_text = minihead_text
     changed = False
@@ -772,6 +797,14 @@ def _patch_original_ice_minihead(
         )
         changed = changed or did_change
 
+    for key in ("BIsSeriesEnd", "ConcatenationEnd"):
+        current_text, did_change = _replace_or_append_minihead_bool_param(
+            current_text,
+            key,
+            is_series_end,
+        )
+        changed = changed or did_change
+
     return current_text, changed
 
 
@@ -793,13 +826,15 @@ def _nifti_to_mrd_images(
         raise ValueError(f"QSMxT output must be 3D, got {nifti_path}: {data_xyz.shape}")
 
     data_zyx = np.transpose(data_xyz, (2, 1, 0))
+    display_data_zyx, display_meta = _scanner_display_volume(data_zyx, output_id, units)
+    display_data_xyz = np.transpose(display_data_zyx, (2, 1, 0))
     slice_count = int(data_zyx.shape[0])
     volume_fov = _nifti_field_of_view(nifti, data_xyz.shape)
     output_images = []
 
     for slice_index in range(slice_count):
-        slice_data = data_zyx[slice_index:slice_index + 1]
-        output = ismrmrd.Image.from_array(slice_data.astype(np.float32), transpose=False)
+        slice_data = display_data_zyx[slice_index:slice_index + 1]
+        output = ismrmrd.Image.from_array(slice_data.astype(np.uint16), transpose=False)
 
         header = copy.deepcopy(anchor_image.getHead())
         out_header = output.getHead()
@@ -832,10 +867,11 @@ def _nifti_to_mrd_images(
             image_type_token,
             output_id,
             units,
-            data_xyz,
+            display_data_xyz,
             nifti_path,
             slice_index,
             slice_count,
+            display_meta,
         ).serialize()
         output_images.append(output)
 
@@ -1352,6 +1388,7 @@ def _output_meta(
     nifti_path,
     slice_index,
     slice_count,
+    display_meta,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -1370,6 +1407,7 @@ def _output_meta(
     image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
     center, width = _window_center_width(output_data)
     slice_number = str(int(slice_index))
+    image_comment = _scanner_display_comment(series_name, display_meta)
 
     meta["DataRole"] = "Image"
     meta["ImageProcessingHistory"] = ["PYTHON", "QSMXT"]
@@ -1380,8 +1418,8 @@ def _output_meta(
     meta["SeriesDescription"] = series_name
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
-    meta["ImageComments"] = series_name
-    meta["ImageComment"] = series_name
+    meta["ImageComments"] = image_comment
+    meta["ImageComment"] = image_comment
     meta["SeriesNumberRangeNameUID"] = _derived_series_grouping(series_name, series_index)
     meta["SeriesInstanceUID"] = series_uid
     meta["SOPInstanceUID"] = sop_uid
@@ -1404,6 +1442,14 @@ def _output_meta(
     meta["QSMxTOutput"] = output_id
     meta["QSMxTUnits"] = units
     meta["QSMxTSourceFile"] = str(nifti_path)
+    meta["QSMxTDisplayScale"] = _format_display_number(display_meta["scale"])
+    meta["QSMxTDisplayOffset"] = _format_display_number(display_meta["offset"])
+    meta["QSMxTDisplayFormula"] = display_meta["formula"]
+    meta["QSMxTDisplayInputMin"] = f"{float(display_meta['input_min']):.6g}"
+    meta["QSMxTDisplayInputMax"] = f"{float(display_meta['input_max']):.6g}"
+    meta["QSMxTDisplayMin"] = str(int(display_meta["display_min"]))
+    meta["QSMxTDisplayMax"] = str(int(display_meta["display_max"]))
+    meta["QSMxTDisplayClippedVoxels"] = str(int(display_meta["clipped_voxels"]))
     meta["WindowCenter"] = f"{float(center):.6g}"
     meta["WindowWidth"] = f"{float(width):.6g}"
     meta.update(_header_geometry_meta(header))
@@ -1441,6 +1487,19 @@ def _validate_output_images(output_images, input_images):
             errors.append(f"image {index} is missing SeriesInstanceUID")
         if not _meta_text(meta, "SOPInstanceUID"):
             errors.append(f"image {index} is missing SOPInstanceUID")
+        if np.asarray(image.data).dtype != np.uint16:
+            errors.append(f"image {index} data is not uint16")
+        if image.data.size:
+            data_min = int(np.min(image.data))
+            data_max = int(np.max(image.data))
+            if data_min < SCANNER_DISPLAY_MIN or data_max > SCANNER_DISPLAY_MAX:
+                errors.append(
+                    f"image {index} data range {data_min}..{data_max} is outside "
+                    f"{SCANNER_DISPLAY_MIN}..{SCANNER_DISPLAY_MAX}"
+                )
+        for key in ("QSMxTDisplayScale", "QSMxTDisplayOffset", "QSMxTDisplayFormula"):
+            if not _meta_text(meta, key):
+                errors.append(f"image {index} is missing {key}")
 
         slice_index = _meta_int(meta, "SliceNo")
         if slice_index is None:
@@ -1599,6 +1658,18 @@ def _validate_original_passthrough_images(output_images, input_images):
                             "original image "
                             f"{index} has MiniHead {minihead_key}={minihead_value}, "
                             f"Meta {storage_key}={meta_value}"
+                        )
+                expected_end = image_count is not None and number_in_series == image_count
+                for minihead_key in ("BIsSeriesEnd", "ConcatenationEnd"):
+                    minihead_value = _extract_minihead_bool_value(
+                        minihead_text,
+                        minihead_key,
+                    )
+                    if minihead_value is not None and minihead_value != expected_end:
+                        errors.append(
+                            "original image "
+                            f"{index} has MiniHead {minihead_key}={minihead_value}, "
+                            f"expected {expected_end}"
                         )
     for series_index, record in series_records.items():
         expected = record["expected"]
@@ -1801,6 +1872,99 @@ def _window_center_width(data):
     return data_min + width / 2.0, width
 
 
+def _scanner_display_volume(data, output_id, units):
+    values = np.asarray(data, dtype=np.float32)
+    finite = values[np.isfinite(values)]
+
+    if output_id == "mask" or units == "binary":
+        display = np.where(np.nan_to_num(values, nan=0.0) > 0, SCANNER_DISPLAY_MAX, 0)
+        display = display.astype(np.uint16, copy=False)
+        return display, {
+            "scale": float(SCANNER_DISPLAY_MAX),
+            "offset": 0.0,
+            "units": units,
+            "formula": f"{units} = display / {SCANNER_DISPLAY_MAX}",
+            "clipped_voxels": 0,
+            "input_min": float(np.min(finite)) if finite.size else 0.0,
+            "input_max": float(np.max(finite)) if finite.size else 0.0,
+            "display_min": int(np.min(display)) if display.size else 0,
+            "display_max": int(np.max(display)) if display.size else 0,
+        }
+
+    input_min = float(np.min(finite)) if finite.size else 0.0
+    input_max = float(np.max(finite)) if finite.size else 0.0
+    offset = float(SCANNER_DISPLAY_CENTER) if _scanner_display_needs_offset(
+        output_id,
+        input_min,
+    ) else 0.0
+    scale = _scanner_display_scale(input_min, input_max, offset)
+    cleaned = np.nan_to_num(values, nan=0.0, posinf=input_max, neginf=input_min)
+    scaled = cleaned * scale + offset
+    clipped_voxels = int(
+        np.count_nonzero(
+            (scaled < SCANNER_DISPLAY_MIN) | (scaled > SCANNER_DISPLAY_MAX)
+        )
+    )
+    display = np.clip(np.rint(scaled), SCANNER_DISPLAY_MIN, SCANNER_DISPLAY_MAX)
+    display = display.astype(np.uint16, copy=False)
+    formula = _scanner_display_formula(units, offset, scale)
+
+    return display, {
+        "scale": float(scale),
+        "offset": float(offset),
+        "units": units,
+        "formula": formula,
+        "clipped_voxels": clipped_voxels,
+        "input_min": input_min,
+        "input_max": input_max,
+        "display_min": int(np.min(display)) if display.size else 0,
+        "display_max": int(np.max(display)) if display.size else 0,
+    }
+
+
+def _scanner_display_needs_offset(output_id, input_min):
+    return output_id == "qsm" or input_min < 0.0
+
+
+def _scanner_display_scale(input_min, input_max, offset):
+    limits = []
+    if input_max > 0.0:
+        limits.append((SCANNER_DISPLAY_MAX - offset) / input_max)
+    if input_min < 0.0:
+        limits.append((SCANNER_DISPLAY_MIN - offset) / input_min)
+    max_scale = min(limits) if limits else SCANNER_DISPLAY_SCALE_FACTORS[0]
+    if max_scale <= 0.0 or not np.isfinite(max_scale):
+        max_scale = SCANNER_DISPLAY_SCALE_FACTORS[-1]
+
+    for factor in SCANNER_DISPLAY_SCALE_FACTORS:
+        if factor <= max_scale + 1e-9:
+            return factor
+    return SCANNER_DISPLAY_SCALE_FACTORS[-1]
+
+
+def _scanner_display_formula(units, offset, scale):
+    units_text = units or "value"
+    scale_text = _format_display_number(scale)
+    if offset:
+        offset_text = _format_display_number(offset)
+        return f"{units_text} = (display - {offset_text}) / {scale_text}"
+    return f"{units_text} = display / {scale_text}"
+
+
+def _scanner_display_comment(series_name, display_meta):
+    return (
+        f"{series_name}; scanner display uint16 0-{SCANNER_DISPLAY_MAX}; "
+        f"{display_meta['formula']}"
+    )
+
+
+def _format_display_number(value):
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.6g}"
+
+
 def _set_header_sequence_field(header, field_name, values):
     target = getattr(header, field_name)
     for index, value in enumerate(values):
@@ -1882,6 +2046,23 @@ def _extract_minihead_long_value(minihead_text, name):
         return None
 
 
+def _extract_minihead_bool_value(minihead_text, name):
+    if not minihead_text:
+        return None
+    match = re.search(
+        rf'<ParamBool\."{re.escape(name)}">\s*\{{\s*"?([^"}}]*)"?\s*\}}',
+        minihead_text,
+    )
+    if not match:
+        return None
+    value = match.group(1).strip().lower()
+    if value in {"true", "1"}:
+        return True
+    if value in {"false", "0"}:
+        return False
+    return None
+
+
 def _sanitize_minihead_value(value):
     text = str(value if value is not None else "").strip()
     return text.replace('"', "'").replace("\r", " ").replace("\n", " ")
@@ -1934,6 +2115,31 @@ def _replace_or_append_minihead_long_param(minihead_text, name, value):
         )
 
     appended_param = f'\n<ParamLong."{name}">\t{{ {value} }}\n'
+    return minihead_text.rstrip() + appended_param, True
+
+
+def _replace_or_append_minihead_bool_param(minihead_text, name, value):
+    if not minihead_text:
+        return minihead_text, False
+
+    value_text = "true" if bool(value) else "false"
+    pattern = re.compile(
+        rf'(<ParamBool\."{re.escape(name)}">\s*\{{\s*)"?[^"}}]*"?(\s*\}})'
+    )
+    match = pattern.search(minihead_text)
+    replacement_value = f'"{value_text}"'
+    if match:
+        replacement = f"{match.group(1)}{replacement_value}{match.group(2)}"
+        if match.group(0) == replacement:
+            return minihead_text, False
+        return (
+            minihead_text[:match.start()]
+            + replacement
+            + minihead_text[match.end():],
+            True,
+        )
+
+    appended_param = f'\n<ParamBool."{name}">\t{{ {replacement_value} }}\n'
     return minihead_text.rstrip() + appended_param, True
 
 
