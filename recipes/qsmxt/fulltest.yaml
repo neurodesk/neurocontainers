@@ -82,6 +82,8 @@ tests:
           "maskpreset",
       }
       assert expected <= parameter_ids
+      send_original = next(parameter for parameter in data["parameters"] if parameter["id"] == "sendoriginal")
+      assert send_original["default"] is False
       assert "minip" not in parameter_ids
       print(label)
       PY

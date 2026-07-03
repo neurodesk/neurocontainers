@@ -34,9 +34,10 @@ adapter; for example, `t2_swi_tra_wave4_2mm` does not provide the required
 unfiltered phase data and should not be used for QSMxT. Start from a plain GRE
 sequence instead, and enable both phase and magnitude reconstruction.
 
-The scanner UI defaults are set for a robust inline QSM run: originals are
-returned before the QSM map, QSM inversion uses RTS, unwrapping uses ROMEO,
-background-field removal uses PDF, and masking uses the robust-threshold preset.
+The scanner UI defaults are set for a robust inline QSM run: only the QSM map is
+returned, QSM inversion uses RTS, unwrapping uses ROMEO, background-field removal
+uses PDF, and masking uses the robust-threshold preset. Enable `sendoriginal`
+only when the original magnitude and phase series are needed for debugging.
 
 ## Input Data
 
@@ -49,7 +50,7 @@ Do not use filtered SWI phase images as QSMxT input.
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `qsmxt` | Selects the MRD server configuration. |
 | Output maps | `sendoutputs` | choice | `qsm` | Selects which QSMxT derivatives are sent back. |
-| Send original | `sendoriginal` | boolean | `true` | Sends original magnitude and phase image series before derived outputs. |
+| Send original | `sendoriginal` | boolean | `false` | Sends original magnitude and phase image series before derived outputs. |
 | QSM algorithm | `qsmalgorithm` | choice | `rts` | QSMxT inversion algorithm. |
 | Unwrap | `unwrappingalgorithm` | choice | `romeo` | QSMxT phase-unwrapping algorithm. |
 | Background | `bfalgorithm` | choice | `pdf` | QSMxT background-field removal algorithm. |

@@ -29,6 +29,8 @@ files:
     filename: enhanced2singleframe.py
   - name: nnunet_numpy_compat.py
     filename: nnunet_numpy_compat.py
+  - name: openmsk_nnunet_worker_patch.py
+    filename: openmsk_nnunet_worker_patch.py
   - name: dosma_qdess_model
     url: "{{ context.dosma_model_url }}"
   - name: dosma_sagittal_model
@@ -187,6 +189,7 @@ build:
         - cd /opt/KneePipeline
         - git checkout {{ context.kneepipeline_commit }}
         - git submodule update --init --recursive
+        - python {{ get_file("openmsk_nnunet_worker_patch.py") }} /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference/scripts/inference.py
         - mkdir -p /opt/DOSMA_WEIGHTS /opt/NSM_MODELS /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference/huggingface/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/fold_1
         - cp {{ get_file("dosma_qdess_model") }} /opt/DOSMA_WEIGHTS/Goyal_Bone_Cart_July_2024_best_model.h5
         - cp {{ get_file("dosma_sagittal_model") }} /opt/DOSMA_WEIGHTS/sagittal_best_model.h5
@@ -212,6 +215,8 @@ build:
         KNEEPIPELINE_HOME: /opt/KneePipeline
         KNEEPIPELINE_CONFIG: /opt/KneePipeline/config.json
         OPENMSK_NNUNET_NUMPY_COMPAT_PATH: /opt/openmsk_compat
+        OPENMSK_NNUNET_NUM_PROCESSES_PREPROCESSING: "1"
+        OPENMSK_NNUNET_NUM_PROCESSES_EXPORT: "1"
         PYTHONPATH: /opt/openmsk_compat
         LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
         # The DOSMA qDESS TF models are saved channels-first (NCHW). On a GPU
@@ -254,6 +259,11 @@ readme: |-
   `acl_qdess_bone_july_2024`, `goyal_sagittal`, `goyal_coronal`,
   `goyal_axial`, and `nnunet_knee`. Optional mesh/thickness analysis can run
   after segmentation when the `computethickness` OpenRecon option is enabled.
+  The `nnunet_knee` path is packaged with single preprocessing/export worker
+  defaults for scanner-side memory stability.
+  Legacy `runnsm` and `runbscore` protocol parameters are accepted for scanner
+  conversion compatibility but ignored because gated ShapeMedKnee assets are not
+  packaged.
 
   Direct DICOM usage keeps the qDESS GL/TG private tags and can produce the
   full output set including T2:

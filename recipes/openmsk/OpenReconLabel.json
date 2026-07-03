@@ -93,6 +93,20 @@
       "default": false
     },
     {
+      "id": "runnsm",
+      "label": { "en": "Legacy NSM flag" },
+      "type": "boolean",
+      "information": { "en": "Accepted for older scanner protocols only; ignored because ShapeMedKnee assets are not packaged" },
+      "default": false
+    },
+    {
+      "id": "runbscore",
+      "label": { "en": "Legacy BScore flag" },
+      "type": "boolean",
+      "information": { "en": "Accepted for older scanner protocols only; ignored because ShapeMedKnee assets are not packaged" },
+      "default": false
+    },
+    {
       "id": "qdesstrms",
       "label": { "en": "qDESS TR" },
       "type": "double",

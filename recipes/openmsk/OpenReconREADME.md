@@ -33,9 +33,12 @@ scanner. Runtime logs report where every qDESS value came from.
 - `sendoriginal`: return original images before derived outputs.
 - `segmodel`: KneePipeline model name (`acl_qdess_bone_july_2024` by default;
   `goyal_sagittal`, `goyal_coronal`, `goyal_axial`, and `nnunet_knee` are
-  also packaged).
+  also packaged). The packaged `nnunet_knee` path runs nnU-Net with
+  scanner-safe single preprocessing/export worker defaults.
 - `computethickness`: run slower mesh/thickness analysis after the segmentation
   has been sent.
+- `runnsm`, `runbscore`: accepted for legacy scanner protocol compatibility
+  only; ignored because the gated ShapeMedKnee assets are not packaged.
 - `qdesstrms`, `qdesste1ms`, `qdesste2ms`, `qdessflipangledeg`,
   `qdessglarea`, `qdesstgus`: fallback TR, TE1, TE2, flip angle, GL area, and
   TG values used to synthesize the qDESS DICOM input when MRD metadata is
