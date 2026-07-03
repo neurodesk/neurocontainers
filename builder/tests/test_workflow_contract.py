@@ -143,3 +143,15 @@ def test_update_apps_json_syncs_neurocommand_icons() -> None:
     assert "--neurocontainers-path .." in workflow
     assert "git diff --quiet neurodesk/apps.json neurodesk/icons" in workflow
     assert "git add neurodesk/apps.json neurodesk/icons" in workflow
+
+
+def test_update_apps_json_pushes_fixed_branch_without_per_release_pr() -> None:
+    # apps.json updates flow through the fixed update-apps-json branch that
+    # neurocommand's consolidation queue consumes; opening a PR per release
+    # floods subscribers with notifications.
+    workflow = Path(".github/workflows/update-apps-json.yml").read_text()
+
+    assert 'BRANCH_NAME="update-apps-json"' in workflow
+    assert 'git push --force origin "$BRANCH_NAME"' in workflow
+    assert "gh pr create" not in workflow
+    assert "group: update-apps-json" in workflow
