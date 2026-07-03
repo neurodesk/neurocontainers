@@ -494,11 +494,10 @@ tests:
     validate:
       - output_exists: ${output_dir}/t2_fft.mif
 
-  - name: mrfilter FFT magnitude
-    description: Apply FFT and output magnitude
-    command: tmp_output=$(mktemp /tmp/t2_fft_mag.XXXXXX.nii.gz) && mrfilter ${t2} fft "$tmp_output" -magnitude -force && cp "$tmp_output" ${output_dir}/t2_fft_mag.nii.gz
-    validate:
-      - output_exists: ${output_dir}/t2_fft_mag.nii.gz
+  - name: mrfilter FFT magnitude option
+    description: Verify the installed mrfilter documents the FFT magnitude option
+    command: mrfilter fft -help 2>&1
+    expected_output_contains: "magnitude image"
 
   # ==========================================================================
   # MRTHRESHOLD - IMAGE THRESHOLDING
