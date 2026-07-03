@@ -50,7 +50,6 @@ deploy:
     - /opt/freesurfer/fsfast/bin
     - /opt/freesurfer/tktools
     - /opt/freesurfer/mni/bin
-    - /
 
 categories:
   - bids apps
