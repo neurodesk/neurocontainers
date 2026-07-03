@@ -24,7 +24,6 @@ build:
 deploy:
   path:
     - /BrainSuite/QC
-    - /bfp
     - /opt/BrainSuite21a/bin
     - /opt/BrainSuite21a/svreg/bin
     - /opt/BrainSuite21a/bdp
