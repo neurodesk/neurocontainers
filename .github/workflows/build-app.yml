@@ -1115,6 +1115,32 @@ jobs:
           docker push "${QUAY_REPO}:${VERSION}"
           docker push "${QUAY_REPO}:latest"
 
+      # New Quay repos are created PRIVATE on first push, which breaks anonymous
+      # pulls. Flip to public via the API so publishing stays hands-off. Needs an
+      # OAuth token (repo:admin) in secrets.QUAY_API_TOKEN — the robot registry
+      # token used above cannot call the REST API. Idempotent (already-public is a
+      # no-op) and non-fatal: a missing token or API error only warns.
+      - name: Make Quay repo public
+        env:
+          QUAY_API_TOKEN: ${{ secrets.QUAY_API_TOKEN }}
+        run: |
+          set -uo pipefail
+          if [ -z "${QUAY_API_TOKEN:-}" ]; then
+            echo "QUAY_API_TOKEN not set; skipping visibility change for neurodesk/${APPLICATION}."
+            exit 0
+          fi
+          code=$(curl -sS -o /tmp/quay_vis.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer ${QUAY_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"visibility":"public"}' \
+            "https://quay.io/api/v1/repository/neurodesk/${APPLICATION}/changevisibility") || true
+          if [ "${code}" = "200" ]; then
+            echo "neurodesk/${APPLICATION} is public (HTTP ${code})."
+          else
+            echo "::warning::Could not set neurodesk/${APPLICATION} public (HTTP ${code})."
+            cat /tmp/quay_vis.json 2>/dev/null || true
+          fi
+
       - name: Download SIF (.simg) artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
