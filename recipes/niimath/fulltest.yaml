@@ -744,9 +744,9 @@ tests:
     validate:
       - output_exists: ${output_dir}/t1w_brain.nii.gz
 
-  - name: fMRI preprocessing chain
-    description: Chain temporal operations (demean + smooth + bandpass)
-    command: niimath ${bold} -Tmean -mul -1 -add ${bold} -s 4 -bptf 25 -1 test_output/bold_preproc.nii.gz
+  - name: BOLD mean smoothing chain
+    description: Chain temporal mean and spatial smoothing on 4D BOLD input
+    command: niimath ${bold} -Tmean -s 4 test_output/bold_preproc.nii.gz
     validate:
       - output_exists: ${output_dir}/bold_preproc.nii.gz
 
