@@ -90,8 +90,6 @@ readme: |-
 
   Example:
   ```
-  ml bidsmanager/{{ context.version }}
-
   # Launch the GUI:
   bidsmgr
 
