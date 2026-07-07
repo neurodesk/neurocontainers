@@ -17,8 +17,12 @@ setup:
 tests:
   - name: BIDSvue package version
     description: Verify the upstream Debian package is installed at the recipe version.
-    command: dpkg-query -W -f='${Version}\n' bidsvue
-    expected_output_contains: "${version}"
+    command: |
+      expected_version="$(awk '/^version:/{print $2; exit}' /build.yaml)"
+      actual_version="$(dpkg-query -W -f='${Version}\n' bidsvue)"
+      test "$actual_version" = "$expected_version"
+      echo "bidsvue package version ok"
+    expected_output_contains: "bidsvue package version ok"
 
   - name: BIDSvue launcher available
     description: Verify the GUI launcher is installed on PATH.
