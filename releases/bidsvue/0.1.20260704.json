@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "bidsvue 0.1.20260704": {
+      "version": "20260707",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "BIDSvue-bidsvue 0.1.20260704": {
+      "version": "20260707",
+      "exec": "bidsvue",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation",
+    "bids apps",
+    "visualization"
+  ]
+}
