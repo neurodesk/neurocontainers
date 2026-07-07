@@ -1,0 +1,46 @@
+# BIDSvue container test suite
+# Tests for BIDSvue v0.1.20260704 - desktop UI for creating, inspecting, and modifying BIDS datasets.
+
+name: bidsvue
+version: 0.1.20260704
+container: bidsvue_${version}_REFERENCE.simg
+
+test_data:
+  output_dir: test_output/bidsvue
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: BIDSvue package version
+    description: Verify the upstream Debian package is installed at the recipe version.
+    command: dpkg-query -W -f='${Version}\n' bidsvue
+    expected_output_contains: "${version}"
+
+  - name: BIDSvue launcher available
+    description: Verify the GUI launcher is installed on PATH.
+    command: command -v bidsvue
+    expected_output_contains: "/usr/bin/bidsvue"
+
+  - name: BIDSvue desktop metadata installed
+    description: Verify the desktop entry and official icon are installed.
+    command: |
+      test -f /usr/share/applications/BIDSvue.desktop
+      grep -q "Name=BIDSvue" /usr/share/applications/BIDSvue.desktop
+      grep -q "Exec=bidsvue" /usr/share/applications/BIDSvue.desktop
+      test -f /usr/share/icons/hicolor/32x32/apps/bidsvue.png
+      echo "bidsvue desktop metadata ok"
+    expected_output_contains: "bidsvue desktop metadata ok"
+
+  - name: BIDSvue runtime libraries resolved
+    description: Verify the launcher has no missing shared-library dependencies.
+    command: |
+      ldd /usr/bin/bidsvue | tee "${output_dir}/bidsvue-ldd.txt"
+      if grep -q "not found" "${output_dir}/bidsvue-ldd.txt"; then
+        exit 1
+      fi
+      echo "bidsvue runtime libraries resolved"
+    expected_output_contains: "bidsvue runtime libraries resolved"

@@ -136,9 +136,26 @@ tests:
       toolname --help
 ```
 
+### Release Test Format (fulltest.yaml)
+
+Every new recipe should include `recipes/<name>/fulltest.yaml` for release/runtime smoke testing:
+
+```yaml
+name: toolname
+version: 1.0.0
+container: toolname_${version}_REFERENCE.simg
+
+tests:
+  - name: tool launcher available
+    description: Verify the main runtime entrypoint is installed.
+    command: command -v toolname
+    expected_output_contains: "toolname"
+```
+
 ### Testing Guidance
 
 - Prefer tests that exercise shared builder behavior, workflow contracts, schema validation, or real container/runtime behavior.
+- Every new recipe must include a focused `recipes/<name>/fulltest.yaml` unless there is a documented reason it cannot be tested. The test should prove the user-visible runtime contract, such as the main launcher, version/package metadata, required assets, desktop entry, or a small real command.
 - For recipe-only fixes, usually validate the recipe and regenerate the Dockerfile; add or update `test.yaml` only when it checks behavior a user or CI actually relies on.
 - Do not add one-off regression tests that only match hardcoded strings already visible in git history or in the same recipe diff. These tests are brittle, duplicate version control, and create maintenance noise without proving behavior.
 - Avoid recipe-specific Python tests unless the recipe exposes a reusable bug class or the assertion is meaningfully stronger than `builder/validation.py` plus Dockerfile generation.
@@ -179,7 +196,7 @@ The validation schema matches the Zod schema from `neurocontainers-ui`.
 ### Add a New Container Recipe
 1. `sf-init <toolname> <version>` to scaffold
 2. Edit `recipes/<toolname>/build.yaml` with build instructions
-3. Optionally create `recipes/<toolname>/test.yaml`
+3. Create `recipes/<toolname>/fulltest.yaml` with focused runtime smoke tests
 4. Validate: `python -m builder generate <toolname> --recreate`
 5. Build and test: `sf-build <toolname>` or `sf-login <toolname>` for interactive debugging
 

@@ -1,0 +1,84 @@
+name: bidsvue
+version: 0.1.20260704
+
+copyright:
+  - license: BSD-2-Clause
+    url: https://github.com/niivue/BIDSvue/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        XDG_CACHE_HOME: /tmp/bidsvue/cache
+        XDG_CONFIG_HOME: /tmp/bidsvue/config
+        XDG_DATA_HOME: /tmp/bidsvue/data
+        WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+
+    - install:
+        - ca-certificates
+        - libgtk-3-0
+        - libwebkit2gtk-4.1-0
+
+    - workdir: /opt
+
+    - run:
+        - cp {{ get_file("bidsvue_deb") }} bidsvue.deb
+        - apt-get install -y ./bidsvue.deb
+        - rm -f bidsvue.deb
+        - mkdir -p /tmp/bidsvue/cache /tmp/bidsvue/config /tmp/bidsvue/data
+        - chmod -R a+rwx /tmp/bidsvue
+
+    - test:
+        name: check BIDSvue install
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          test -x /usr/bin/bidsvue
+          test -f /usr/share/applications/BIDSvue.desktop
+          test -f /usr/share/icons/hicolor/32x32/apps/bidsvue.png
+          grep -q "Name=BIDSvue" /usr/share/applications/BIDSvue.desktop
+
+deploy:
+  bins:
+    - bidsvue
+
+categories:
+  - "data organisation"
+  - "bids apps"
+  - "visualization"
+
+gui_apps:
+  - name: "BIDSvue"
+    exec: "bidsvue"
+
+icon: data:image/png;base64,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
+
+readme: |-
+  ----------------------------------
+  ## bidsvue/{{ context.version }} ##
+
+  BIDSvue is a cross-platform desktop UI for creating, inspecting, and modifying BIDS neuroimaging datasets.
+
+  Example:
+  ```
+  ml bidsvue/{{ context.version }}
+  bidsvue
+  ```
+
+  More documentation can be found here: https://github.com/niivue/BIDSvue
+
+  To run container outside of this environment: ml bidsvue/{{ context.version }}
+
+  ----------------------------------
+
+files:
+  - name: bidsvue_deb
+    url: https://github.com/niivue/BIDSvue/releases/download/v{{ context.version }}/bidsvue_{{ context.version }}_amd64.deb
