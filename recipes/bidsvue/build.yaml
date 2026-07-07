@@ -53,7 +53,6 @@ deploy:
 categories:
   - "data organisation"
   - "bids apps"
-  - "visualization"
 
 gui_apps:
   - name: "BIDSvue"
@@ -69,7 +68,6 @@ readme: |-
 
   Example:
   ```
-  ml bidsvue/{{ context.version }}
   bidsvue
   ```
 
