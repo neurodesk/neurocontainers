@@ -349,8 +349,6 @@ def _run_qsmxt(bids_dir, output_dir, settings):
         str(bids_dir),
         str(output_dir),
         "--force",
-        "--n-procs",
-        str(settings["n_procs"]),
     ]
 
     _append_optional_arg(cmd, "--qsm-algorithm", settings["qsm_algorithm"])
@@ -1121,7 +1119,6 @@ def _settings_from_config(config, metadata=None):
         "bf_algorithm": _optional_choice(params, "bfalgorithm"),
         "mask_preset": _optional_choice(params, "maskpreset"),
         "qsm_reference": _optional_choice(params, "qsmreference"),
-        "n_procs": max(1, _config_int(params, "nprocs", 1)),
         "no_qsm": _config_bool(params, "noqsm", False),
         "do_swi": _config_bool(params, "doswi", False),
         "do_t2starmap": _config_bool(params, "dot2starmap", False),

@@ -235,6 +235,8 @@ def _fake_qsmxt_binary(tmp_path):
 
             if len(sys.argv) < 4 or sys.argv[1] != "run":
                 raise SystemExit(2)
+            if "--n-procs" in sys.argv:
+                raise SystemExit("qsmxt OpenRecon should let QSMxT auto-detect CPU cores")
             bids = Path(sys.argv[2])
             output = Path(sys.argv[3])
             phase = sorted(bids.glob("sub-*/anat/*_echo-1_part-phase_MEGRE.nii.gz"))[0]

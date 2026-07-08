@@ -21,6 +21,8 @@ setup:
 
     if len(sys.argv) < 4 or sys.argv[1] != "run":
         raise SystemExit(2)
+    if "--n-procs" in sys.argv:
+        raise SystemExit("qsmxt OpenRecon should let QSMxT auto-detect CPU cores")
 
     bids = Path(sys.argv[2])
     output = Path(sys.argv[3])
