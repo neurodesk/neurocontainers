@@ -349,6 +349,8 @@ def _run_qsmxt(bids_dir, output_dir, settings):
         str(bids_dir),
         str(output_dir),
         "--force",
+        "--n-procs",
+        "24",
     ]
 
     _append_optional_arg(cmd, "--qsm-algorithm", settings["qsm_algorithm"])
