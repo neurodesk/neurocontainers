@@ -65,6 +65,7 @@ build:
 deploy:
   bins:
     - spm12
+    - run_spm12.sh
 
 readme: |-
   ----------------------------------
