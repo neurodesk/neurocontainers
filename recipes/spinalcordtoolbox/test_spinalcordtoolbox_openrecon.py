@@ -416,6 +416,122 @@ def test_openrecon_exposes_debug_threshold_segment_toggle():
     assert defaults["sctdebugthresholdsegment"] is False
 
 
+def test_repeated_slice_positions_are_split_into_sct_input_volumes():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_sct_input_volumes",
+            "_build_slice_geometry_records",
+            "_format_vector",
+            "_header_vector",
+            "_infer_slice_axis",
+            "_log_affine_slice_consistency",
+            "_log_slice_geometry",
+            "_log_slice_sort_mapping",
+            "_normalize_vector",
+            "_slice_slot_key",
+            "_slice_sort_indices",
+            "_split_source_images_by_volume",
+        ],
+    )
+    images = []
+    for slice_index in range(3):
+        for volume_index in range(2):
+            image = helpers["FakeImage"](np.zeros((1, 2, 2), dtype=np.int16))
+            head = image.getHead()
+            head.image_index = slice_index + 1
+            head.slice = slice_index
+            head.matrix_size = [2, 2, 3]
+            head.field_of_view = [2.0, 2.0, 9.0]
+            head.position = [0.0, 0.0, slice_index * 3.0]
+            head.read_dir = [1.0, 0.0, 0.0]
+            head.phase_dir = [0.0, 1.0, 0.0]
+            head.slice_dir = [0.0, 0.0, 1.0]
+            image.attribute_string = helpers["FakeMeta"]({
+                "SeriesDescription": f"epi_vol_{volume_index + 1}",
+            }).serialize()
+            images.append(image)
+
+    volumes = helpers["_build_sct_input_volumes"](images)
+
+    assert len(volumes) == 2
+    assert [volume["input_indices"] for volume in volumes] == [[0, 2, 4], [1, 3, 5]]
+    assert [volume["series_label_suffix"] for volume in volumes] == ["vol001", "vol002"]
+    assert [
+        [image.getHead().slice for image in volume["images"]]
+        for volume in volumes
+    ] == [[0, 1, 2], [0, 1, 2]]
+
+
+def test_repeated_positions_split_volumes_even_with_global_slice_numbers():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_slice_geometry_records",
+            "_header_vector",
+            "_infer_slice_axis",
+            "_normalize_vector",
+            "_slice_slot_key",
+            "_split_source_images_by_volume",
+        ],
+    )
+    headers = []
+    for volume_index in range(2):
+        for slice_index in range(3):
+            header = helpers["FakeHead"]()
+            header.slice = volume_index * 3 + slice_index
+            header.position = [0.0, 0.0, slice_index * 3.0]
+            header.slice_dir = [0.0, 0.0, 1.0]
+            headers.append(header)
+
+    assert helpers["_split_source_images_by_volume"](headers) == [[0, 1, 2], [3, 4, 5]]
+
+
+def test_volume_series_label_uniquifies_grouping_without_changing_role_token():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_derived_series_instance_uid",
+            "_build_passthrough_output_identity",
+            "_build_sct_output_identity",
+            "_decode_ice_minihead",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_get_meta_text",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_deepseg_sc_epi": {"series_suffix": "sct_deepseg_sc_epi"}
+    }
+    source_meta = helpers["FakeMeta"]({
+        "SeriesDescription": "rest_EPI",
+        "SeriesNumberRangeNameUID": "rest_EPI_group",
+        "SeriesInstanceUID": "1.2.3",
+        "ImageTypeValue4": "M",
+    })
+
+    segmentation_identity = helpers["_build_sct_output_identity"](
+        source_meta,
+        "sct_deepseg_sc_epi",
+        33,
+        series_suffix="sct_deepseg_sc_epi",
+        series_label_suffix="vol002",
+    )
+    original_identity = helpers["_build_passthrough_output_identity"](
+        source_meta,
+        "ORIGINAL",
+        32,
+        series_label_suffix="vol002",
+    )
+
+    assert segmentation_identity["series_description"] == "rest_EPI_sct_deepseg_sc_epi_vol002"
+    assert segmentation_identity["grouping"] == "rest_EPI_group_sct_deepseg_sc_epi_vol002"
+    assert segmentation_identity["type_token"] == "SCT_DEEPSEG_SC_EPI"
+    assert segmentation_identity["display_token"] == "sct_deepseg_sc_epi"
+    assert segmentation_identity["image_comment"] == "sct_deepseg_sc_epi_vol002"
+    assert original_identity["series_description"] == "rest_EPI_original_vol002"
+    assert original_identity["grouping"] == "rest_EPI_group_original_vol002"
+    assert original_identity["type_token"] == "ORIGINAL"
+
+
 def test_openrecon_exposes_spinalcord_area_analysis():
     choices = _analysis_choices()
     assert "sct_spinalcord_area" in choices
@@ -2514,6 +2630,63 @@ def test_run_spinalcord_area_analysis_returns_segmentation_when_metrics_fail(tmp
     assert specs[0]["path"] == work_dir / "output.nii.gz"
     assert specs[0]["series_suffix"] == "sct_spinalcord_area"
     assert "dicom_metrics" not in specs[0]
+
+
+def test_run_rootlets_analysis_omits_qc_report(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_expected_sct_output_specs",
+            "_require_sct_output_specs",
+            "_run_sct_analysis",
+        ],
+        assignments=[
+            "SCT_ANALYSIS_OUTPUTS",
+            "SCT_ANALYSIS_REGISTRY",
+            "SCT_DEEPSEG_TASKS",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_deepseg_rootlets": {
+            "kind": "deepseg",
+            "task": "rootlets",
+            "series_suffix": "sct_deepseg_rootlets",
+        }
+    }
+    commands = []
+
+    def fake_run_command(command, cwd):
+        commands.append((tuple(command), Path(cwd)))
+        Path(command[command.index("-o") + 1]).write_bytes(b"nii")
+
+    helpers["_run_command"] = fake_run_command
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    specs = helpers["_run_sct_analysis"](
+        "sct_deepseg_rootlets",
+        tmp_path / "input.nii.gz",
+        work_dir,
+    )
+
+    assert commands == [
+        (
+            (
+                "sct_deepseg",
+                "rootlets",
+                "-i",
+                str(tmp_path / "input.nii.gz"),
+                "-o",
+                str(work_dir / "output.nii.gz"),
+            ),
+            work_dir,
+        )
+    ]
+    assert specs == (
+        {
+            "path": work_dir / "output.nii.gz",
+            "series_suffix": "sct_deepseg_rootlets",
+        },
+    )
 
 
 def test_spinalcord_area_metrics_are_embedded_in_segmentation_meta():

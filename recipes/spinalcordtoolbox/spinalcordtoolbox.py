@@ -612,6 +612,122 @@ def _slice_sort_indices(image_headers):
     return [record["input_index"] for record in sorted_records], slice_axis, records
 
 
+def _slice_slot_key(record, use_projected_position=True):
+    if use_projected_position:
+        return (round(float(record["projected_position"]), 3),)
+    return (int(record["slice"]),)
+
+
+def _split_source_images_by_volume(image_headers, slice_axis=None):
+    image_headers = list(image_headers)
+    if len(image_headers) <= 1:
+        return [list(range(len(image_headers)))]
+
+    if slice_axis is None:
+        slice_axis = _infer_slice_axis(image_headers)
+
+    _, records = _build_slice_geometry_records(
+        image_headers,
+        input_indices=list(range(len(image_headers))),
+        slice_axis=slice_axis,
+    )
+    projected_slot_keys = [
+        _slice_slot_key(record, use_projected_position=True)
+        for record in records
+    ]
+    use_projected_position = len(set(projected_slot_keys)) > 1
+    if use_projected_position:
+        slot_keys = projected_slot_keys
+    else:
+        slot_keys = [
+            _slice_slot_key(record, use_projected_position=False)
+            for record in records
+        ]
+    if len(set(slot_keys)) == len(slot_keys):
+        return [list(range(len(image_headers)))]
+
+    volumes = []
+    volume_slot_keys = []
+    for input_index, slot_key in enumerate(slot_keys):
+        target_volume_index = None
+        for volume_index, seen_slot_keys in enumerate(volume_slot_keys):
+            if slot_key not in seen_slot_keys:
+                target_volume_index = volume_index
+                break
+
+        if target_volume_index is None:
+            target_volume_index = len(volumes)
+            volumes.append([])
+            volume_slot_keys.append(set())
+
+        volumes[target_volume_index].append(input_index)
+        volume_slot_keys[target_volume_index].add(slot_key)
+
+    return volumes
+
+
+def _build_sct_input_volumes(imgGroup):
+    unsorted_head = [img.getHead() for img in imgGroup]
+    slice_axis = _infer_slice_axis(unsorted_head)
+    _log_slice_geometry("Incoming SCT source", unsorted_head, slice_axis=slice_axis)
+
+    volume_input_groups = _split_source_images_by_volume(
+        unsorted_head,
+        slice_axis=slice_axis,
+    )
+    if len(volume_input_groups) > 1:
+        logging.info(
+            "Detected %d SCT input volume(s) from repeated slice geometry: sizes=%s",
+            len(volume_input_groups),
+            ",".join(str(len(group)) for group in volume_input_groups),
+        )
+
+    volumes = []
+    include_label_suffix = len(volume_input_groups) > 1
+    for volume_index, input_indices in enumerate(volume_input_groups, start=1):
+        volume_images = [imgGroup[input_index] for input_index in input_indices]
+        volume_unsorted_head = [unsorted_head[input_index] for input_index in input_indices]
+        local_sort_indices, volume_slice_axis, _ = _slice_sort_indices(volume_unsorted_head)
+        _log_slice_sort_mapping(local_sort_indices)
+        ordered_input_indices = [
+            input_indices[local_index]
+            for local_index in local_sort_indices
+        ]
+        ordered_images = [imgGroup[input_index] for input_index in ordered_input_indices]
+        ordered_head = [unsorted_head[input_index] for input_index in ordered_input_indices]
+        ordered_meta = [
+            ismrmrd.Meta.deserialize(img.attribute_string)
+            for img in ordered_images
+        ]
+        volume_label = f"volume {volume_index}/{len(volume_input_groups)}"
+        _log_slice_geometry(
+            f"Sorted SCT source {volume_label}",
+            ordered_head,
+            input_indices=ordered_input_indices,
+            slice_axis=volume_slice_axis,
+        )
+        volumes.append(
+            {
+                "index": volume_index,
+                "count": len(volume_input_groups),
+                "label": volume_label,
+                "directory_name": f"volume_{volume_index:03d}",
+                "series_label_suffix": (
+                    f"vol{volume_index:03d}"
+                    if include_label_suffix
+                    else ""
+                ),
+                "input_indices": ordered_input_indices,
+                "images": ordered_images,
+                "head": ordered_head,
+                "meta": ordered_meta,
+                "slice_axis": volume_slice_axis,
+            }
+        )
+
+    return volumes
+
+
 def _log_slice_geometry(label, image_headers, input_indices=None, slice_axis=None):
     slice_axis, records = _build_slice_geometry_records(
         image_headers,
@@ -2270,7 +2386,13 @@ def _resolve_requested_analyses(analysis):
     raise ValueError(f"Unsupported SCT analysis '{analysis}'. Supported analyses: {supported}")
 
 
-def _build_sct_output_identity(source_meta, analysis, output_series_index, series_suffix=None):
+def _build_sct_output_identity(
+    source_meta,
+    analysis,
+    output_series_index,
+    series_suffix=None,
+    series_label_suffix=None,
+):
     source_minihead = _decode_ice_minihead(source_meta)
     source_series = _first_non_empty_text(
         _get_meta_text(source_meta, "SeriesDescription"),
@@ -2291,8 +2413,10 @@ def _build_sct_output_identity(source_meta, analysis, output_series_index, serie
         _extract_minihead_array_tokens(source_minihead, "ImageTypeValue4"),
     )
     suffix = series_suffix or SCT_ANALYSIS_REGISTRY[analysis]["series_suffix"]
-    series_description = f"{source_series}_{suffix}" if source_series else suffix
-    grouping = f"{source_grouping}_{suffix}" if source_grouping else series_description
+    label_suffix = _first_non_empty_text(series_label_suffix)
+    display_suffix = f"{suffix}_{label_suffix}" if label_suffix else suffix
+    series_description = f"{source_series}_{display_suffix}" if source_series else display_suffix
+    grouping = f"{source_grouping}_{display_suffix}" if source_grouping else series_description
     type_token = suffix.upper()
     return {
         "series_description": series_description,
@@ -2308,11 +2432,16 @@ def _build_sct_output_identity(source_meta, analysis, output_series_index, serie
         "source_type_token": source_type_token,
         "type_token": type_token,
         "display_token": suffix,
-        "image_comment": suffix,
+        "image_comment": display_suffix,
     }
 
 
-def _build_passthrough_output_identity(source_meta, role, output_series_index):
+def _build_passthrough_output_identity(
+    source_meta,
+    role,
+    output_series_index,
+    series_label_suffix=None,
+):
     role = _first_non_empty_text(role).upper() or "PASSTHROUGH"
     source_minihead = _decode_ice_minihead(source_meta)
     source_series = _first_non_empty_text(
@@ -2334,8 +2463,10 @@ def _build_passthrough_output_identity(source_meta, role, output_series_index):
         _extract_minihead_array_tokens(source_minihead, "ImageTypeValue4"),
     )
     suffix = role.lower()
-    series_description = f"{source_series}_{suffix}" if source_series else suffix
-    grouping = f"{source_grouping}_{suffix}" if source_grouping else series_description
+    label_suffix = _first_non_empty_text(series_label_suffix)
+    display_suffix = f"{suffix}_{label_suffix}" if label_suffix else suffix
+    series_description = f"{source_series}_{display_suffix}" if source_series else display_suffix
+    grouping = f"{source_grouping}_{display_suffix}" if source_grouping else series_description
     return {
         "series_description": series_description,
         "sequence_description": series_description,
@@ -2350,11 +2481,16 @@ def _build_passthrough_output_identity(source_meta, role, output_series_index):
         "source_type_token": source_type_token,
         "type_token": role,
         "display_token": role,
-        "image_comment": suffix,
+        "image_comment": display_suffix,
     }
 
 
-def _restamp_passthrough_images(images, role, output_series_index):
+def _restamp_passthrough_images(
+    images,
+    role,
+    output_series_index,
+    series_label_suffix=None,
+):
     restamped_images = []
     image_list = _as_image_list(images)
     output_count = len(image_list)
@@ -2378,7 +2514,12 @@ def _restamp_passthrough_images(images, role, output_series_index):
         source_meta = _copy_meta(ismrmrd.Meta.deserialize(image.attribute_string))
         tmpMeta = _copy_meta(source_meta)
         _strip_source_parent_refs(tmpMeta)
-        output_identity = _build_passthrough_output_identity(tmpMeta, role, output_series_index)
+        output_identity = _build_passthrough_output_identity(
+            tmpMeta,
+            role,
+            output_series_index,
+            series_label_suffix=series_label_suffix,
+        )
         is_original_output = output_identity["type_token"] == "ORIGINAL"
         if not is_original_output:
             _strip_scanner_write_unsafe_meta(tmpMeta)
@@ -3458,7 +3599,12 @@ def _metrics_report_analysis(dicom_metrics):
     return _first_non_empty_text(dicom_metrics.get("analysis"), "sct_spinalcord_area")
 
 
-def _build_sct_metrics_report_images(dicom_metrics, source_images, output_series_index):
+def _build_sct_metrics_report_images(
+    dicom_metrics,
+    source_images,
+    output_series_index,
+    series_label_suffix=None,
+):
     if not dicom_metrics:
         return []
     source_images = _as_image_list(source_images)
@@ -3504,6 +3650,7 @@ def _build_sct_metrics_report_images(dicom_metrics, source_images, output_series
         _metrics_report_analysis(dicom_metrics),
         output_series_index,
         series_suffix=_metrics_report_series_suffix(dicom_metrics),
+        series_label_suffix=series_label_suffix,
     )
     sop_instance_uid = _build_derived_sop_instance_uid(
         source_meta,
@@ -3552,8 +3699,18 @@ def _build_sct_metrics_report_images(dicom_metrics, source_images, output_series
     return [report_image]
 
 
-def _build_spinalcord_area_report_images(dicom_metrics, source_images, output_series_index):
-    return _build_sct_metrics_report_images(dicom_metrics, source_images, output_series_index)
+def _build_spinalcord_area_report_images(
+    dicom_metrics,
+    source_images,
+    output_series_index,
+    series_label_suffix=None,
+):
+    return _build_sct_metrics_report_images(
+        dicom_metrics,
+        source_images,
+        output_series_index,
+        series_label_suffix=series_label_suffix,
+    )
 
 
 def _output_spec_with_series_suffix(output_specs, series_suffix):
@@ -3658,19 +3815,17 @@ def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
     output_specs = _expected_sct_output_specs(analysis, output_path)
 
     if analysis_config["kind"] == "deepseg":
-        _run_command(
-            [
-                "sct_deepseg",
-                analysis_config["task"],
-                "-i",
-                str(input_path),
-                "-o",
-                str(output_path),
-                "-qc",
-                str(qc_dir),
-            ],
-            cwd=work_dir,
-        )
+        command = [
+            "sct_deepseg",
+            analysis_config["task"],
+            "-i",
+            str(input_path),
+            "-o",
+            str(output_path),
+        ]
+        if analysis_config["task"] != "rootlets":
+            command.extend(["-qc", str(qc_dir)])
+        _run_command(command, cwd=work_dir)
         output_specs = _require_sct_output_specs(analysis, output_specs)
         if analysis == "sct_deepseg_lesion_sci_t2":
             return _attach_sci_lesion_analysis_metrics(output_specs, work_dir, qc_dir)
@@ -3771,6 +3926,7 @@ def _sct_output_to_mrd_images(
     source_images=None,
     series_suffix=None,
     dicom_metrics=None,
+    series_label_suffix=None,
 ):
     img = nib.load(str(output_path))
     data = img.get_fdata(dtype=np.float32)
@@ -3827,6 +3983,7 @@ def _sct_output_to_mrd_images(
         segmentation_colormap=segmentation_colormap,
         series_suffix=series_suffix,
         dicom_metrics=dicom_metrics,
+        series_label_suffix=series_label_suffix,
     )
 
 
@@ -3857,6 +4014,7 @@ def _sct_output_to_source_geometry_images(
     segmentation_colormap=False,
     series_suffix=None,
     dicom_metrics=None,
+    series_label_suffix=None,
 ):
     source_images = _as_image_list(source_images)
     output_slice_count = int(data.shape[-1])
@@ -3872,6 +4030,7 @@ def _sct_output_to_source_geometry_images(
         analysis,
         output_series_index,
         series_suffix=series_suffix,
+        series_label_suffix=series_label_suffix,
     )
     outputs = []
     source_headers = [source_image.getHead() for source_image in source_images]
@@ -4136,186 +4295,196 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
         debug_threshold_segment,
     )
 
-    unsorted_head = [img.getHead() for img in imgGroup]
-    slice_sort_indices, slice_axis, _ = _slice_sort_indices(unsorted_head)
-    _log_slice_geometry("Incoming SCT source", unsorted_head, slice_axis=slice_axis)
-    _log_slice_sort_mapping(slice_sort_indices)
-
-    ordered_images = [imgGroup[index] for index in slice_sort_indices]
-    data = np.stack([img.data for img in ordered_images])
-    head = [unsorted_head[index] for index in slice_sort_indices]
-    meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in ordered_images]
     if derived_series_allocator is None:
         logging.warning(
             "No connection-level series allocator supplied; building fallback allocator from this image group only"
         )
         derived_series_allocator = _build_connection_series_allocator(imgGroup)
 
-    _log_slice_geometry(
-        "Sorted SCT source",
-        head,
-        input_indices=slice_sort_indices,
-        slice_axis=slice_axis,
-    )
-
-    matrix = np.asarray(head[0].matrix_size[:], dtype=float)
-    fov = np.asarray(head[0].field_of_view[:], dtype=float)
-    if matrix.size < 3 or fov.size < 3:
-        raise ValueError(
-            "MRD image geometry is incomplete: "
-            f"matrix_size={matrix.tolist()} field_of_view={fov.tolist()}"
-        )
-
-    matrix = matrix[:3].copy()
-    fov = fov[:3].copy()
-    if matrix[2] != len(ordered_images):
-        matrix[2] = len(ordered_images)
-
-    slice_thickness = float(fov[2])
-    measured_slice_spacing = _estimate_slice_spacing(head, slice_axis=slice_axis)
-    if measured_slice_spacing is not None:
-        if abs(float(measured_slice_spacing) - slice_thickness) > 0.05:
-            logging.warning(
-                "MRD slice thickness %.6f differs from measured slice spacing %.6f; "
-                "using measured spacing for NIfTI affine",
-                slice_thickness,
-                float(measured_slice_spacing),
-            )
-        fov[2] = measured_slice_spacing * len(ordered_images)
-    else:
-        fov[2] = slice_thickness * len(ordered_images)
-
-    if np.any(matrix <= 0) or np.any(fov <= 0):
-        raise ValueError(
-            "MRD image geometry has non-positive matrix or FOV values: "
-            f"matrix_size={matrix.tolist()} field_of_view={fov.tolist()}"
-        )
-
-    voxel_size = fov / matrix
-    _log_affine_slice_consistency(head, voxel_size)
-
-    data = data.transpose((3, 4, 0, 1, 2))
-    data = np.squeeze(data)
-    if data.ndim != 3:
-        logging.warning(
-            "OpenRecon input shape after squeeze is %s (%dD). SCT expects 3D input.",
-            data.shape,
-            data.ndim,
-        )
-    if np.iscomplexobj(data):
-        logging.warning("Complex-valued input received; converting to magnitude for SCT.")
-        data = np.abs(data)
-
+    sct_input_volumes = _build_sct_input_volumes(imgGroup)
     workspace_root = Path(debugFolder) / OPENRECON_WORKSPACE_ROOT
     request_work_dir = workspace_root / requested_analysis
     if request_work_dir.exists():
         shutil.rmtree(request_work_dir)
     request_work_dir.mkdir(parents=True, exist_ok=True)
-    input_path = request_work_dir / "input.nii.gz"
-
-    affine = compute_nifti_affine(head[0], voxel_size)
-    logging.info("Computed SCT input NIfTI affine:\n%s", affine)
-
-    if data.ndim == 2:
-        data_nifti = np.asarray(data[:, :, None])
-    elif data.ndim == 3:
-        data_nifti = np.asarray(data)
-    else:
-        data_nifti = np.asarray(data)
-
-    new_img = nib.nifti1.Nifti1Image(data_nifti, affine)
-    new_img.header.set_xyzt_units(xyz="mm", t="sec")
-    new_img.header.set_dim_info(freq=1, phase=0, slice=2)
-    new_img.set_qform(affine, code=1)
-    new_img.set_sform(affine, code=1)
-    nib.save(new_img, str(input_path))
-    logging.info(
-        "Saved SCT input image to %s with shape=%s dtype=%s zooms=%s",
-        input_path,
-        new_img.shape,
-        new_img.get_data_dtype(),
-        new_img.header.get_zooms(),
-    )
 
     imagesOut = []
-    if send_original:
-        if called_from_raw:
-            logging.warning("sendoriginal is true, but input was raw data, so no original images to return.")
+    if send_original and called_from_raw:
+        logging.warning("sendoriginal is true, but input was raw data, so no original images to return.")
+
+    for volume in sct_input_volumes:
+        ordered_images = volume["images"]
+        head = volume["head"]
+        meta = volume["meta"]
+        slice_axis = volume["slice_axis"]
+        volume_label_suffix = volume["series_label_suffix"]
+
+        logging.info(
+            "Processing SCT %s: source_images=%d series_label_suffix=%s",
+            volume["label"],
+            len(ordered_images),
+            volume_label_suffix or "none",
+        )
+
+        data = np.stack([img.data for img in ordered_images])
+        matrix = np.asarray(head[0].matrix_size[:], dtype=float)
+        fov = np.asarray(head[0].field_of_view[:], dtype=float)
+        if matrix.size < 3 or fov.size < 3:
+            raise ValueError(
+                "MRD image geometry is incomplete: "
+                f"matrix_size={matrix.tolist()} field_of_view={fov.tolist()}"
+            )
+
+        matrix = matrix[:3].copy()
+        fov = fov[:3].copy()
+        if matrix[2] != len(ordered_images):
+            matrix[2] = len(ordered_images)
+
+        slice_thickness = float(fov[2])
+        measured_slice_spacing = _estimate_slice_spacing(head, slice_axis=slice_axis)
+        if measured_slice_spacing is not None:
+            if abs(float(measured_slice_spacing) - slice_thickness) > 0.05:
+                logging.warning(
+                    "MRD slice thickness %.6f differs from measured slice spacing %.6f; "
+                    "using measured spacing for NIfTI affine",
+                    slice_thickness,
+                    float(measured_slice_spacing),
+                )
+            fov[2] = measured_slice_spacing * len(ordered_images)
         else:
+            fov[2] = slice_thickness * len(ordered_images)
+
+        if np.any(matrix <= 0) or np.any(fov <= 0):
+            raise ValueError(
+                "MRD image geometry has non-positive matrix or FOV values: "
+                f"matrix_size={matrix.tolist()} field_of_view={fov.tolist()}"
+            )
+
+        voxel_size = fov / matrix
+        _log_affine_slice_consistency(head, voxel_size)
+
+        data = data.transpose((3, 4, 0, 1, 2))
+        data = np.squeeze(data)
+        if data.ndim != 3:
+            logging.warning(
+                "OpenRecon input shape after squeeze is %s (%dD). SCT expects 3D input.",
+                data.shape,
+                data.ndim,
+            )
+        if np.iscomplexobj(data):
+            logging.warning("Complex-valued input received; converting to magnitude for SCT.")
+            data = np.abs(data)
+
+        volume_work_dir = request_work_dir
+        if volume["count"] > 1:
+            volume_work_dir = request_work_dir / volume["directory_name"]
+        volume_work_dir.mkdir(parents=True, exist_ok=True)
+        input_path = volume_work_dir / "input.nii.gz"
+
+        affine = compute_nifti_affine(head[0], voxel_size)
+        logging.info("Computed SCT input NIfTI affine for %s:\n%s", volume["label"], affine)
+
+        if data.ndim == 2:
+            data_nifti = np.asarray(data[:, :, None])
+        elif data.ndim == 3:
+            data_nifti = np.asarray(data)
+        else:
+            data_nifti = np.asarray(data)
+
+        new_img = nib.nifti1.Nifti1Image(data_nifti, affine)
+        new_img.header.set_xyzt_units(xyz="mm", t="sec")
+        new_img.header.set_dim_info(freq=1, phase=0, slice=2)
+        new_img.set_qform(affine, code=1)
+        new_img.set_sform(affine, code=1)
+        nib.save(new_img, str(input_path))
+        logging.info(
+            "Saved SCT input image to %s with shape=%s dtype=%s zooms=%s",
+            input_path,
+            new_img.shape,
+            new_img.get_data_dtype(),
+            new_img.header.get_zooms(),
+        )
+
+        if send_original and not called_from_raw:
             original_passthrough_index = derived_series_allocator.allocate("ORIGINAL")
             logging.info(
-                "Preparing original SCT source images as first derived original series_index=%d",
+                "Preparing original SCT source images as derived original "
+                "series_index=%d for %s",
                 original_passthrough_index,
+                volume["label"],
             )
             ordered_original_images = [
-                original_images[index] for index in slice_sort_indices
+                original_images[index] for index in volume["input_indices"]
             ]
             imagesOut.extend(
                 _restamp_passthrough_images(
                     ordered_original_images,
                     "ORIGINAL",
                     original_passthrough_index,
+                    series_label_suffix=volume_label_suffix,
                 )
             )
 
-    precomputed_outputs = {}
-    for member_analysis in analyses:
-        member_work_dir = request_work_dir
-        if len(analyses) > 1:
-            member_work_dir = request_work_dir / member_analysis
-        member_work_dir.mkdir(parents=True, exist_ok=True)
-        if debug_threshold_segment:
-            logging.warning(
-                "sctdebugthresholdsegment is enabled; skipping SCT model execution "
-                "and using a simple threshold segmentation instead."
-            )
-            output_specs = _expected_sct_output_specs(
-                member_analysis,
-                member_work_dir / "output.nii.gz",
-            )
-            output_specs = _write_debug_threshold_sct_outputs(
-                data_nifti,
-                affine,
-                output_specs,
-            )
-        else:
-            output_specs = _run_sct_analysis(
-                member_analysis,
-                input_path,
-                member_work_dir,
-                precomputed_outputs=precomputed_outputs,
-            )
-        precomputed_outputs[member_analysis] = output_specs[0]["path"]
-        metrics_report = None
-        for output_spec in output_specs:
-            output_series_index = derived_series_allocator.allocate(output_spec["series_suffix"])
-            imagesOut.extend(
-                _sct_output_to_mrd_images(
-                    output_spec["path"],
+        precomputed_outputs = {}
+        for member_analysis in analyses:
+            member_work_dir = volume_work_dir
+            if len(analyses) > 1:
+                member_work_dir = volume_work_dir / member_analysis
+            member_work_dir.mkdir(parents=True, exist_ok=True)
+            if debug_threshold_segment:
+                logging.warning(
+                    "sctdebugthresholdsegment is enabled; skipping SCT model execution "
+                    "and using a simple threshold segmentation instead."
+                )
+                output_specs = _expected_sct_output_specs(
                     member_analysis,
-                    head,
-                    meta,
-                    output_series_index,
-                    segmentation_colormap=segmentation_colormap,
-                    source_images=ordered_images,
-                    series_suffix=output_spec["series_suffix"],
-                    dicom_metrics=output_spec.get("dicom_metrics"),
+                    member_work_dir / "output.nii.gz",
                 )
-            )
-            if output_spec.get("dicom_metrics"):
-                metrics_report = output_spec["dicom_metrics"]
+                output_specs = _write_debug_threshold_sct_outputs(
+                    data_nifti,
+                    affine,
+                    output_specs,
+                )
+            else:
+                output_specs = _run_sct_analysis(
+                    member_analysis,
+                    input_path,
+                    member_work_dir,
+                    precomputed_outputs=precomputed_outputs,
+                )
+            precomputed_outputs[member_analysis] = output_specs[0]["path"]
+            metrics_report = None
+            for output_spec in output_specs:
+                output_series_index = derived_series_allocator.allocate(output_spec["series_suffix"])
+                imagesOut.extend(
+                    _sct_output_to_mrd_images(
+                        output_spec["path"],
+                        member_analysis,
+                        head,
+                        meta,
+                        output_series_index,
+                        segmentation_colormap=segmentation_colormap,
+                        source_images=ordered_images,
+                        series_suffix=output_spec["series_suffix"],
+                        dicom_metrics=output_spec.get("dicom_metrics"),
+                        series_label_suffix=volume_label_suffix,
+                    )
+                )
+                if output_spec.get("dicom_metrics"):
+                    metrics_report = output_spec["dicom_metrics"]
 
-        if metrics_report:
-            report_series_index = derived_series_allocator.allocate(
-                _metrics_report_series_suffix(metrics_report)
-            )
-            imagesOut.extend(
-                _build_sct_metrics_report_images(
-                    metrics_report,
-                    ordered_images,
-                    report_series_index,
+            if metrics_report:
+                report_series_index = derived_series_allocator.allocate(
+                    _metrics_report_series_suffix(metrics_report)
                 )
-            )
+                imagesOut.extend(
+                    _build_sct_metrics_report_images(
+                        metrics_report,
+                        ordered_images,
+                        report_series_index,
+                        series_label_suffix=volume_label_suffix,
+                    )
+                )
 
     return imagesOut
 
