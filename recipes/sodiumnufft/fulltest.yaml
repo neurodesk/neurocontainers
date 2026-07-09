@@ -2,8 +2,8 @@
 # Focused verification for OpenRecon runtime assets and sodium NUFFT imports.
 
 name: sodiumnufft
-version: 0.1.0
-container: sodiumnufft_0.1.0.simg
+version: 0.1.1
+container: sodiumnufft_0.1.1.simg
 
 test_data:
   output_dir: test_output
@@ -28,11 +28,15 @@ tests:
       from pathlib import Path
       import h5py
 
-      trajectory = Path("/opt/sodiumnufft/23NA_n50_trajectory.h5")
+      trajectories = [
+          Path("/opt/sodiumnufft/23NA_n50_trajectory.h5"),
+          Path("/opt/sodiumnufft/23Na_n28_trajectory.h5"),
+      ]
       label = Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json")
-      with h5py.File(trajectory, "r") as handle:
-          assert "k" in handle, list(handle.keys())
-          print("trajectory", handle["k"].shape)
+      for trajectory in trajectories:
+          with h5py.File(trajectory, "r") as handle:
+              assert "k" in handle, list(handle.keys())
+              print("trajectory", trajectory.name, handle["k"].shape)
       data = json.loads(label.read_text())
       assert data
       print(label)

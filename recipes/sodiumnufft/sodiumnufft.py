@@ -19,11 +19,16 @@ import mrdhelper
 
 
 debugFolder = "/tmp/share/debug"
+BUNDLED_TRAJECTORIES = {
+    "23Na_n50": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
+    "23Na_n28": "/opt/sodiumnufft/23Na_n28_trajectory.h5",
+}
 OPENRECON_DEFAULTS = {
     "config": "sodiumnufft",
     "matrixsize": 128,
     "fovcm": 22.0,
-    "trajectoryfile": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
+    "trajectorypreset": "23Na_n28",
+    "trajectoryfile": "",
     "trajectorydataset": "k",
     "trajectorysampleoffset": 0,
     "rejectbadreadouts": True,
@@ -151,6 +156,35 @@ def _load_trajectory_from_file(path_text, dataset_name):
     return _normalize_trajectory_array(trajectory)
 
 
+def _resolve_trajectory_file(config):
+    explicit_file = _config_str(
+        config,
+        "trajectoryfile",
+        OPENRECON_DEFAULTS["trajectoryfile"],
+    ).strip()
+    if explicit_file:
+        logging.info("Using trajectory file override: %s", explicit_file)
+        return explicit_file
+
+    preset = _config_str(
+        config,
+        "trajectorypreset",
+        OPENRECON_DEFAULTS["trajectorypreset"],
+    ).strip() or OPENRECON_DEFAULTS["trajectorypreset"]
+
+    if preset in BUNDLED_TRAJECTORIES:
+        trajectory_file = BUNDLED_TRAJECTORIES[preset]
+        logging.info("Using bundled trajectory preset %s: %s", preset, trajectory_file)
+        return trajectory_file
+
+    valid_presets = ", ".join(sorted(BUNDLED_TRAJECTORIES))
+    raise ValueError(
+        f"Unknown trajectory preset '{preset}'. "
+        f"Expected one of: {valid_presets}. "
+        "Use 'trajectoryfile' to provide an explicit external HDF5 path."
+    )
+
+
 def _load_trajectory(acquisitions, config):
     embedded_trajectory = []
     for acquisition in acquisitions:
@@ -167,15 +201,11 @@ def _load_trajectory(acquisitions, config):
         logging.info("Using embedded ISMRMRD trajectory with shape %s", trajectory.shape)
         return trajectory
 
-    trajectory_file = _config_str(
-        config,
-        "trajectoryfile",
-        OPENRECON_DEFAULTS["trajectoryfile"],
-    ).strip()
+    trajectory_file = _resolve_trajectory_file(config)
     if not trajectory_file:
         raise ValueError(
             "No embedded trajectory found in the MRD acquisitions and no "
-            "'trajectoryfile' parameter was provided."
+            "'trajectorypreset' or 'trajectoryfile' parameter was provided."
         )
 
     trajectory_dataset = _config_str(

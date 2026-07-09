@@ -25,29 +25,30 @@ This reconstruction expects ISMRMRD raw acquisitions for a 3D sodium scan.
 Trajectory input is resolved in this order:
 
 1. Embedded ISMRMRD trajectories from the incoming acquisitions.
-2. The bundled HDF5 file at `/opt/sodiumnufft/23NA_n50_trajectory.h5`.
-3. An external HDF5 file provided through the `trajectoryfile` parameter.
+2. An external HDF5 file provided through the `trajectoryfile` parameter.
+3. The bundled HDF5 file selected by `trajectorypreset`.
 
 For Siemens Twix `.dat` files, the container also includes
 `/opt/code/python-ismrmrd-server/siemens_twix2mrd.py`. That helper uses the
 bundled `siemens_to_ismrmrd` converter in `--skipSyncData` mode and materializes
 the resulting MRD message stream into an ISMRMRD HDF5 dataset.
 
-The trajectory dataset defaults to `k`. The code expects the
-trajectory values to match the standalone script convention: k-space units in
-`1/cm`, multiplied by the reconstruction field of view in cm before the adjoint
-NUFFT. For the bundled `23NA_n50_trajectory.h5`, the default
-`trajectorysampleoffset=10` skips the 10-sample lead-in that otherwise misaligns
-the trajectory and raw data.
+The bundled trajectory presets are `23Na_n50`
+(`/opt/sodiumnufft/23NA_n50_trajectory.h5`) and `23Na_n28`
+(`/opt/sodiumnufft/23Na_n28_trajectory.h5`). The trajectory dataset defaults to
+`k`. The code expects the trajectory values to match the standalone script
+convention: k-space units in `1/cm`, multiplied by the reconstruction field of
+view in cm before the adjoint NUFFT.
 
 ## GUI Parameters
 
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `sodiumnufft` | Selects the MRD server configuration. |
-| Trajectory file | `trajectoryfile` | string | `/opt/sodiumnufft/23NA_n50_trajectory.h5` | HDF5 trajectory path used when trajectories are not embedded in the MRD data. The recipe bundles this default file into the container. |
+| Trajectory file | `trajectoryfile` | string | empty | Optional external HDF5 trajectory path used when trajectories are not embedded in the MRD data. Leave empty to use the bundled trajectory selection. |
+| Bundled trajectory | `trajectorypreset` | choice | `23Na_n28` | Bundled trajectory used when no external trajectory file path is provided. Choices: `23Na_n50`, `23Na_n28`. |
 | Trajectory dataset | `trajectorydataset` | string | `k` | Dataset name inside the trajectory HDF5 file. |
-| Trajectory sample offset | `trajectorysampleoffset` | integer | `10` | Number of leading trajectory samples to skip before pairing the external trajectory with the raw data. |
+| Trajectory sample offset | `trajectorysampleoffset` | integer | `0` | Number of leading trajectory samples to skip before pairing the external trajectory with the raw data. |
 | Matrix size | `matrixsize` | integer | `128` | Final isotropic reconstruction matrix. |
 | FOV cm | `fovcm` | string | `22.0` | Reconstruction field of view in cm. |
 | Reject weak samples | `rejectbadreadouts` | boolean | `true` | Zero low-signal sample columns using the histogram rule from the standalone script. |
