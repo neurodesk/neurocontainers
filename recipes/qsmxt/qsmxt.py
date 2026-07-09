@@ -329,6 +329,7 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
         "magnitude_images": [image for group in magnitude_echo_groups for image in group],
         "phase_images": [image for group in phase_echo_groups for image in group],
         "anchor_image": magnitude_echo_groups[0][0],
+        "source_geometry_images": _sorted_stack_images(magnitude_echo_groups[0]),
         "magnitude_paths": magnitude_paths,
         "phase_paths": phase_paths,
         "field_strength_t": field_strength,
@@ -428,6 +429,7 @@ def _build_output_images(output_specs, conversion, input_images):
                 spec["token"],
                 output_id,
                 spec["units"],
+                source_geometry_images=conversion.get("source_geometry_images"),
             )
         )
     return output_images
@@ -816,6 +818,8 @@ def _nifti_to_mrd_images(
     image_type_token,
     output_id,
     units,
+    *,
+    source_geometry_images=None,
 ):
     nifti = nib.load(str(nifti_path))
     data_xyz = np.asarray(nifti.get_fdata(dtype=np.float32), dtype=np.float32)
@@ -830,37 +834,72 @@ def _nifti_to_mrd_images(
     display_data_xyz = np.transpose(display_data_zyx, (2, 1, 0))
     slice_count = int(data_zyx.shape[0])
     volume_fov = _nifti_field_of_view(nifti, data_xyz.shape)
+    source_geometry_images = _source_geometry_images_for_output(
+        source_geometry_images,
+        data_zyx,
+    )
+    use_source_geometry = bool(source_geometry_images)
+    if use_source_geometry:
+        logging.info(
+            "Using source MRD slice geometry for QSMxT output %s (%d slices)",
+            nifti_path,
+            len(source_geometry_images),
+        )
+    else:
+        logging.info(
+            "Using explicit NIfTI affine geometry for QSMxT output %s",
+            nifti_path,
+        )
     output_images = []
 
     for slice_index in range(slice_count):
         slice_data = display_data_zyx[slice_index:slice_index + 1]
         output = ismrmrd.Image.from_array(slice_data.astype(np.uint16), transpose=False)
 
-        header = copy.deepcopy(anchor_image.getHead())
+        source_image = (
+            source_geometry_images[slice_index]
+            if use_source_geometry
+            else anchor_image
+        )
+        header = copy.deepcopy(source_image.getHead())
         out_header = output.getHead()
+        if use_source_geometry:
+            slice_number = _source_slice_index_for_output(
+                source_image,
+                slice_index,
+                slice_count,
+            )
+        else:
+            slice_number = int(slice_index)
         header.data_type = output.data_type
         header.image_type = int(getattr(ismrmrd, "IMTYPE_MAGNITUDE", 1))
         header.image_series_index = int(series_index)
         header.image_index = slice_index + 1
-        header.slice = slice_index
+        header.slice = slice_number
         header.contrast = 0
         _set_header_sequence_field(
             header,
             "matrix_size",
             [int(value) for value in out_header.matrix_size],
         )
-        if volume_fov:
+        if volume_fov and not use_source_geometry:
             _set_header_sequence_field(header, "field_of_view", volume_fov)
-        _set_header_sequence_field(
-            header,
-            "position",
-            _slice_position_from_affine(nifti, data_xyz.shape, slice_index, anchor_image),
-        )
+        if not use_source_geometry:
+            _set_header_sequence_field(
+                header,
+                "position",
+                _slice_position_from_affine(
+                    nifti,
+                    data_xyz.shape,
+                    slice_index,
+                    anchor_image,
+                ),
+            )
 
         output.setHead(header)
         output.image_series_index = int(series_index)
         output.attribute_string = _output_meta(
-            anchor_image,
+            source_image,
             header,
             series_index,
             series_name,
@@ -872,10 +911,74 @@ def _nifti_to_mrd_images(
             slice_index,
             slice_count,
             display_meta,
+            source_geometry=use_source_geometry,
+            slice_number=slice_number,
         ).serialize()
         output_images.append(output)
 
     return output_images
+
+
+def _source_geometry_images_for_output(source_images, data_zyx):
+    if not source_images:
+        return []
+    slice_count = int(data_zyx.shape[0])
+    ordered_images = _sorted_stack_images(source_images)
+    if len(ordered_images) != slice_count:
+        logging.info(
+            "QSMxT source geometry image count %d does not match output slice "
+            "count %d; keeping derivative affine geometry",
+            len(ordered_images),
+            slice_count,
+        )
+        return []
+
+    expected_shape_yx = tuple(int(value) for value in data_zyx.shape[1:])
+    seen_slice_indices = set()
+    for image in ordered_images:
+        source_slice_index = _source_slice_index_hint(image)
+        if not 0 <= source_slice_index < slice_count:
+            logging.info(
+                "QSMxT source geometry slice index %s is outside output slice "
+                "range [0..%d); keeping derivative affine geometry",
+                source_slice_index,
+                slice_count,
+            )
+            return []
+        if source_slice_index in seen_slice_indices:
+            logging.info(
+                "QSMxT source geometry has duplicate SliceNo %d; keeping "
+                "derivative affine geometry",
+                source_slice_index,
+            )
+            return []
+        seen_slice_indices.add(source_slice_index)
+
+        source_shape_yx = _single_slice_shape_yx(image)
+        if source_shape_yx != expected_shape_yx:
+            logging.info(
+                "QSMxT source geometry shape %s does not match output slice "
+                "shape %s; keeping derivative affine geometry",
+                source_shape_yx,
+                expected_shape_yx,
+            )
+            return []
+    return ordered_images
+
+
+def _single_slice_shape_yx(image):
+    volume_xyz, _ = _image_to_nifti_volume(image, kind="magnitude")
+    volume_zyx = np.transpose(volume_xyz, (2, 1, 0))
+    if int(volume_zyx.shape[0]) != 1:
+        return None
+    return tuple(int(value) for value in volume_zyx.shape[1:])
+
+
+def _source_slice_index_for_output(source_image, fallback_index, slice_count):
+    slice_index = _source_slice_index_hint(source_image)
+    if 0 <= slice_index < slice_count:
+        return int(slice_index)
+    return int(fallback_index)
 
 
 def _nifti_field_of_view(nifti, shape_xyz):
@@ -1388,6 +1491,9 @@ def _output_meta(
     slice_index,
     slice_count,
     display_meta,
+    *,
+    source_geometry=False,
+    slice_number=None,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -1405,7 +1511,9 @@ def _output_meta(
     )
     image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
     center, width = _window_center_width(output_data)
-    slice_number = str(int(slice_index))
+    if slice_number is None:
+        slice_number = slice_index
+    slice_number = str(int(slice_number))
     image_comment = _scanner_display_comment(series_name, display_meta)
 
     meta["DataRole"] = "Image"
@@ -1423,7 +1531,7 @@ def _output_meta(
     meta["SeriesInstanceUID"] = series_uid
     meta["SOPInstanceUID"] = sop_uid
     meta["SequenceDescriptionAdditional"] = "openrecon"
-    meta["Keep_image_geometry"] = "0"
+    meta["Keep_image_geometry"] = "1" if source_geometry else "0"
     meta["partition_count"] = "1"
     slice_count_text = str(int(slice_count))
     meta["slice_count"] = slice_count_text

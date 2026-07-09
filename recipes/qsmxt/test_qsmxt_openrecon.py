@@ -221,8 +221,9 @@ def _input_images():
     return images
 
 
-def _fake_qsmxt_binary(tmp_path):
+def _fake_qsmxt_binary(tmp_path, affine_offset=None):
     fake = tmp_path / "qsmxt"
+    affine_offset = list(affine_offset or [0.0, 0.0, 0.0])
     fake.write_text(
         textwrap.dedent(
             f"""\
@@ -246,10 +247,12 @@ def _fake_qsmxt_binary(tmp_path):
             phase = sorted(bids.glob("sub-*/anat/*_echo-1_part-phase_MEGRE.nii.gz"))[0]
             img = nib.load(str(phase))
             data = np.zeros(img.shape, dtype=np.float32) + 1.5
+            affine = img.affine.copy()
+            affine[:3, 3] += np.asarray({affine_offset!r}, dtype=float)
             name = phase.name.replace("_echo-1_part-phase_MEGRE.nii.gz", "_Chimap.nii")
             dest = output / "derivatives" / "qsmxt.rs" / "sub-01" / "anat" / name
             dest.parent.mkdir(parents=True, exist_ok=True)
-            nib.save(nib.Nifti1Image(data, img.affine), str(dest))
+            nib.save(nib.Nifti1Image(data, affine), str(dest))
             """
         )
     )
@@ -767,3 +770,56 @@ def test_process_handles_scanner_echo_slice_stream_with_original_passthrough(
     assert last_original_meta["NumberInSeries"] == "100"
     assert first_derived_meta["QSMxTOutput"] == "qsm"
     assert first_derived_meta["slice_count"] == "20"
+
+
+def test_derived_outputs_use_original_source_geometry_when_originals_are_sent(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    fake_qsmxt = _fake_qsmxt_binary(tmp_path, affine_offset=[100.0, -50.0, 25.0])
+    images = _scanner_echo_slice_images()
+    for image in images:
+        header = image.getHead()
+        slice_index = int(getattr(header, "slice", 0))
+        _set_header_vector(
+            header,
+            "position",
+            [10.0, 20.0, 30.0 + 1.5 * slice_index],
+        )
+        image.setHead(header)
+    connection = FakeConnection(images)
+
+    qsmxt.process(
+        connection,
+        {
+            "parameters": {
+                "qsmxtbinary": str(fake_qsmxt),
+                "sendoriginal": "true",
+            }
+        },
+        FakeMetadata(),
+    )
+
+    assert connection.closed is True
+    assert connection.logs == []
+    assert [len(batch) for batch in connection.sent_batches] == [100, 100, 20]
+
+    magnitude_originals = connection.sent_batches[0]
+    qsm_outputs = connection.sent_batches[-1]
+    source_by_slice = {}
+    for image in magnitude_originals:
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        source_by_slice.setdefault(int(meta["SliceNo"]), image)
+
+    for output in qsm_outputs:
+        output_meta = ismrmrd.Meta.deserialize(output.attribute_string)
+        source = source_by_slice[int(output_meta["SliceNo"])]
+        source_header = source.getHead()
+        output_header = output.getHead()
+
+        assert output_meta["Keep_image_geometry"] == "1"
+        np.testing.assert_allclose(output_header.position, source_header.position)
+        np.testing.assert_allclose(output_header.read_dir, source_header.read_dir)
+        np.testing.assert_allclose(output_header.phase_dir, source_header.phase_dir)
+        np.testing.assert_allclose(output_header.slice_dir, source_header.slice_dir)
