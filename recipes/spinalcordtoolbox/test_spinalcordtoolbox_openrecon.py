@@ -1,11 +1,13 @@
 import ast
 import base64
 import copy
+import importlib.util
 import json
 import subprocess
 import zipfile
 from pathlib import Path
 
+import h5py
 import nibabel as nib
 import numpy as np
 
@@ -13,6 +15,7 @@ import numpy as np
 RECIPE_DIR = Path(__file__).resolve().parent
 WRAPPER_PATH = RECIPE_DIR / "spinalcordtoolbox.py"
 LABEL_PATH = RECIPE_DIR / "OpenReconLabel.json"
+NIFTI2MRD_PATH = RECIPE_DIR / "nifti2mrd.py"
 
 
 EXPECTED_DEEPSEG_TASKS = {
@@ -240,6 +243,13 @@ def _function_names():
         for node in tree.body
         if isinstance(node, ast.FunctionDef)
     }
+
+
+def _load_nifti2mrd_module():
+    spec = importlib.util.spec_from_file_location("nifti2mrd_for_test", NIFTI2MRD_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _load_helper_for_test(helper_name):
@@ -2030,6 +2040,29 @@ def test_debug_threshold_segmentation_keeps_largest_component_per_slice():
     assert np.all(output[1:3, 1:3, 0] == 7)
     assert output[4, 4, 0] == 0
     assert np.count_nonzero(output[:, :, 1]) == 0
+
+
+def test_nifti2mrd_preserves_sagittal_volume_geometry(tmp_path):
+    nifti2mrd = _load_nifti2mrd_module()
+    data = np.arange(4 * 8 * 8, dtype=np.float32).reshape((4, 8, 8))
+    input_path = tmp_path / "PatSAG_Se7_Res1.0_1.0_Spac1.0.nii.gz"
+    output_path = tmp_path / "sagittal.mrd.h5"
+    img = nib.Nifti1Image(data, np.eye(4))
+    img.set_qform(np.eye(4), code=1)
+    img.set_sform(np.eye(4), code=1)
+    nib.save(img, input_path)
+
+    nifti2mrd.convert_nifti_to_ismrmrd(str(input_path), str(output_path))
+
+    with h5py.File(output_path, "r") as h5_file:
+        headers = h5_file["dataset/image_7/header"][:]
+        mrd_data_shape = h5_file["dataset/image_7/data"].shape
+
+    assert len(headers) == 4
+    assert mrd_data_shape == (4, 1, 1, 8, 8)
+    np.testing.assert_array_equal(headers["matrix_size"][0], [8, 8, 1])
+    np.testing.assert_allclose(headers["field_of_view"][0], [8.0, 8.0, 1.0])
+    np.testing.assert_array_equal(headers["slice"], np.arange(4, dtype=headers["slice"].dtype))
 
 
 def test_openrecon_declares_multiclass_output_series():

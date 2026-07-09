@@ -60,6 +60,35 @@ except ImportError as e:
     IMTYPE_MAGNITUDE = 1
 
 
+def _normalize_axis_vector(vector):
+    size = np.linalg.norm(vector)
+    if size > 0:
+        return vector / size, size
+    return vector, size
+
+
+def _select_nifti_slice_axis(shape, voxel_sizes):
+    shape = np.asarray(shape[:3], dtype=int)
+    voxel_sizes = np.asarray(voxel_sizes[:3], dtype=float)
+
+    sorted_spacings = np.sort(voxel_sizes)
+    if sorted_spacings[-1] > sorted_spacings[-2] * 1.2:
+        return int(np.argmax(voxel_sizes))
+
+    min_dim = int(np.min(shape))
+    min_dim_axes = np.flatnonzero(shape == min_dim)
+    if len(min_dim_axes) == 1:
+        return int(min_dim_axes[0])
+
+    return 2
+
+
+def _nifti_to_mrd_axis_order(shape, voxel_sizes):
+    slice_axis = _select_nifti_slice_axis(shape, voxel_sizes)
+    in_plane_axes = [axis for axis in range(3) if axis != slice_axis]
+    return in_plane_axes[0], in_plane_axes[1], slice_axis
+
+
 def extract_orientation_from_affine(affine, shape):
     """
     Extract position and direction vectors from NIfTI affine matrix
@@ -84,23 +113,34 @@ def extract_orientation_from_affine(affine, shape):
     rotation_scale = affine[:3, :3]
     translation = affine[:3, 3]
     
-    # Extract direction vectors (columns of the rotation matrix)
-    # These need to be normalized to get unit direction vectors
-    col0 = rotation_scale[:, 0]  # First axis (usually X/readout)
-    col1 = rotation_scale[:, 1]  # Second axis (usually Y/phase)
-    col2 = rotation_scale[:, 2]  # Third axis (usually Z/slice)
-    
-    # Calculate voxel sizes from the direction vectors
-    voxel_size_x = np.linalg.norm(col0)
-    voxel_size_y = np.linalg.norm(col1)
-    voxel_size_z = np.linalg.norm(col2)
-    
-    print(f"   Voxel sizes from affine: [{voxel_size_x:.4f}, {voxel_size_y:.4f}, {voxel_size_z:.4f}] mm")
-    
-    # Normalize to get unit direction vectors
-    read_dir = col0 / voxel_size_x if voxel_size_x > 0 else col0
-    phase_dir = col1 / voxel_size_y if voxel_size_y > 0 else col1
-    slice_dir = col2 / voxel_size_z if voxel_size_z > 0 else col2
+    direction_by_axis = []
+    voxel_size_by_axis = []
+    for axis in range(3):
+        direction, voxel_size = _normalize_axis_vector(rotation_scale[:, axis])
+        direction_by_axis.append(direction)
+        voxel_size_by_axis.append(voxel_size)
+
+    voxel_size_by_axis = np.asarray(voxel_size_by_axis, dtype=float)
+    axis_order = _nifti_to_mrd_axis_order(shape, voxel_size_by_axis)
+    read_axis, phase_axis, slice_axis = axis_order
+
+    print(
+        "   Voxel sizes from affine: "
+        f"[{voxel_size_by_axis[0]:.4f}, {voxel_size_by_axis[1]:.4f}, {voxel_size_by_axis[2]:.4f}] mm"
+    )
+    print(
+        "   NIfTI axis order for MRD slices: "
+        f"read={read_axis} phase={phase_axis} slice={slice_axis}"
+    )
+
+    read_dir = direction_by_axis[read_axis].copy()
+    phase_dir = direction_by_axis[phase_axis].copy()
+    slice_dir = direction_by_axis[slice_axis].copy()
+    voxel_size = [
+        float(voxel_size_by_axis[read_axis]),
+        float(voxel_size_by_axis[phase_axis]),
+        float(voxel_size_by_axis[slice_axis]),
+    ]
     
     # Position is the translation (position of first voxel)
     position = translation.copy()
@@ -130,7 +170,9 @@ def extract_orientation_from_affine(affine, shape):
         'read_dir': read_dir.tolist(),
         'phase_dir': phase_dir.tolist(),
         'slice_dir': slice_dir.tolist(),
-        'voxel_size': [voxel_size_x, voxel_size_y, voxel_size_z]
+        'voxel_size': voxel_size,
+        'axis_order': list(axis_order),
+        'slice_axis': int(slice_axis),
     }
 
 
@@ -210,14 +252,6 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     print(f"🔢 Value range: {data.min():.2f} - {data.max():.2f}")
     print(f"📊 Data type: {data.dtype}")
     
-    # Extract orientation information from affine matrix
-    orientation_info = extract_orientation_from_affine(affine, data.shape)
-    
-    # Normalize data to reasonable range for medical imaging
-    if data.max() > 4095:  # If values are very high, normalize
-        data = (data / data.max()) * 4095
-        print(f"🔧 Normalized data to range: {data.min():.2f} - {data.max():.2f}")
-    
     # Ensure we have 3D data
     if len(data.shape) == 2:
         data = data[:, :, np.newaxis]
@@ -225,6 +259,15 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     elif len(data.shape) == 4:
         data = data[:, :, :, 0]  # Take first volume
         print(f"📝 Reduced 4D to 3D: {data.shape}")
+
+    # Extract orientation information from affine matrix after normalizing
+    # dimensionality, so the slice-axis choice matches the volume being written.
+    orientation_info = extract_orientation_from_affine(affine, data.shape)
+
+    # Normalize data to reasonable range for medical imaging
+    if data.max() > 4095:  # If values are very high, normalize
+        data = (data / data.max()) * 4095
+        print(f"🔧 Normalized data to range: {data.min():.2f} - {data.max():.2f}")
     
     # Create ISMRMRD Image object
     print("🏗️ Creating ISMRMRD Image object...")
@@ -232,14 +275,18 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     # For magnitude/T2W images, keep as real float32 data
     if np.iscomplexobj(data):
         # If complex, take magnitude
-        ismrmrd_data = np.abs(data).astype(np.float32)
+        nifti_data = np.abs(data).astype(np.float32)
         print("🔧 Converted complex data to magnitude (float32)")
     else:
         # Keep as real float32
-        ismrmrd_data = data.astype(np.float32)
+        nifti_data = data.astype(np.float32)
+
+    ismrmrd_data = np.ascontiguousarray(
+        np.transpose(nifti_data, orientation_info["axis_order"])
+    )
     
     print(f"📊 ISMRMRD data type: {ismrmrd_data.dtype}")
-    print(f"📐 NIfTI data shape: {ismrmrd_data.shape}")
+    print(f"📐 MRD volume data shape: {ismrmrd_data.shape}")
     
     # Create ISMRMRD image - no transpose, keep data as-is
     # Let ISMRMRD handle storage format internally
@@ -267,6 +314,8 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     metadata['read_dir'] = orientation_info['read_dir']
     metadata['phase_dir'] = orientation_info['phase_dir']
     metadata['slice_dir'] = orientation_info['slice_dir']
+    metadata['NiftiAxisOrder'] = orientation_info['axis_order']
+    metadata['NiftiSliceAxis'] = orientation_info['slice_axis']
     
     # Update pixel spacing from actual affine-derived voxel sizes
     voxel_size = orientation_info['voxel_size']
@@ -279,25 +328,26 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     if hasattr(ismrmrd_image, 'matrix_size'):
         print(f"📏 ISMRMRD matrix_size attribute: {ismrmrd_image.matrix_size}")
     
-    # CRITICAL: ISMRMRD stores data in reversed/transposed order (column-major Fortran order)
-    # Original data: [624, 512, 416] but ISMRMRD reads it as [416, 512, 624]
-    # So we need to reverse the FOV array to match: [Z_fov, Y_fov, X_fov]
-    # Correction: Based on testing, the order should be [Y_fov, Z_fov, X_fov]
     field_of_view = [
-        ismrmrd_data.shape[1] * voxel_size[1],  # Y
-        ismrmrd_data.shape[2] * voxel_size[2],  # Z
-        ismrmrd_data.shape[0] * voxel_size[0]   # X
+        ismrmrd_data.shape[0] * voxel_size[0],
+        ismrmrd_data.shape[1] * voxel_size[1],
+        ismrmrd_data.shape[2] * voxel_size[2],
     ]
     
     metadata['PixelSpacing'] = [voxel_size[0], voxel_size[1]]
     metadata['SliceThickness'] = voxel_size[2]
     metadata['field_of_view'] = field_of_view
+    metadata['MrdVolumeShape'] = [int(value) for value in ismrmrd_data.shape]
+    metadata['MrdSliceCount'] = int(ismrmrd_data.shape[2])
+    metadata['MrdSliceMatrix'] = [
+        int(ismrmrd_data.shape[0]),
+        int(ismrmrd_data.shape[1]),
+    ]
     
     print(f"📏 Voxel spacing: [{voxel_size[0]}, {voxel_size[1]}, {voxel_size[2]}] mm")
-    print(f"📏 Field of view (reversed for ISMRMRD): {field_of_view} mm")
+    print(f"📏 Field of view: {field_of_view} mm")
     print(f"📏 Target matrix: {ismrmrd_data.shape[0]} x {ismrmrd_data.shape[1]} x {ismrmrd_data.shape[2]}")
-    # print(f"📏 ISMRMRD stores as: 416 x 512 x 624")
-    print(f"📏 Expected voxel: [{field_of_view[0]/ismrmrd_data.shape[1]:.8f}, {field_of_view[1]/ismrmrd_data.shape[2]:.8f}, {field_of_view[2]/ismrmrd_data.shape[0]:.8f}]")
+    print(f"📏 Expected voxel: [{field_of_view[0]/ismrmrd_data.shape[0]:.8f}, {field_of_view[1]/ismrmrd_data.shape[1]:.8f}, {field_of_view[2]/ismrmrd_data.shape[2]:.8f}]")
     
     # Set image metadata
     if hasattr(ismrmrd_image, 'meta'):
@@ -582,9 +632,9 @@ def main():
         
         print("\n📋 Conversion Summary:")
         print(f"   Input file: {nifti_file}")
-        print(f"   Original 3D volume shape: {ismrmrd_image.data.shape}")
-        print(f"   Number of 2D slices saved: {ismrmrd_image.data.shape[2]}")
-        print(f"   Each slice shape: [{ismrmrd_image.data.shape[0]}, {ismrmrd_image.data.shape[1]}]")
+        print(f"   MRD volume image shape: {ismrmrd_image.data.shape}")
+        print(f"   Number of 2D slices saved: {metadata.get('MrdSliceCount', 'Unknown')}")
+        print(f"   Each slice shape: {metadata.get('MrdSliceMatrix', 'Unknown')}")
         print(f"   Series: {metadata.get('SeriesNumber', 'Unknown')}")
         print(f"   PixelSpacing: {metadata.get('PixelSpacing', 'Unknown')}")
         print(f"   SliceThickness: {metadata.get('SliceThickness', 'Unknown')}")
