@@ -70,7 +70,7 @@ deploy:
 readme: |-
   ----------------------------------
   ## spm12/{{ context.version }} ##
-  SPM12 standalone with Matlab Compiler Runtime
+  SPM12 standalone with Matlab Compiler Runtime included
 
   Example:
   ```
