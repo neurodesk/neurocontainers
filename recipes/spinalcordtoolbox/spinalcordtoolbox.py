@@ -377,10 +377,13 @@ def compute_nifti_affine(image_header, voxel_size):
     slice_dir = np.asarray(image_header.slice_dir, dtype=float) * lps_to_ras
 
     affine = np.eye(4)
+    # process_image writes NIfTI data as (phase, read, slice), while MRD
+    # matrix_size/field_of_view store spacing in (read, phase, slice) order.
+    # Affine columns must follow the NIfTI data axes.
     affine[:3, :3] = np.column_stack(
         [
-            voxel_size[0] * read_dir,
             voxel_size[1] * phase_dir,
+            voxel_size[0] * read_dir,
             voxel_size[2] * slice_dir,
         ]
     )
@@ -3789,12 +3792,38 @@ def _attach_spinalcord_area_metrics(output_specs, input_path, seg_path, work_dir
         )
     except Exception as exc:
         logging.warning(
-            "Skipping optional SCT spinal cord area metrics because metrics computation failed; "
-            "returning segmentation without metrics/report: %s",
+            "SCT per-level spinal cord area metrics failed; falling back to scalar "
+            "sct_process_segmentation output: %s",
             exc,
             exc_info=True,
         )
-        return output_specs
+        csv_path = Path(work_dir) / "spinalcord_area_basic.csv"
+        try:
+            _run_command(
+                [
+                    "sct_process_segmentation",
+                    "-i",
+                    str(seg_path),
+                    "-o",
+                    str(csv_path),
+                ],
+                cwd=work_dir,
+            )
+            metrics_result = _read_spinalcord_area_metrics(csv_path)
+            mean_area = _average_metric_row_area(metrics_result["rows"])
+            metrics = _build_spinalcord_area_metrics(
+                mean_area,
+                csv_path,
+                metric_rows=metrics_result["rows"],
+            )
+        except Exception as fallback_exc:
+            logging.warning(
+                "Skipping optional SCT spinal cord area metrics because scalar "
+                "metrics fallback failed; returning segmentation without metrics/report: %s",
+                fallback_exc,
+                exc_info=True,
+            )
+            return output_specs
 
     logging.info("Computed SCT spinal cord area metric: %s", metrics["summary"])
     for output_spec in output_specs:

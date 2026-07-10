@@ -25,7 +25,7 @@ Reference: Jan Valošek, Julien Cohen-Adad, Reproducible Spinal Cord Quantitativ
 | Analysis id | SCT command | Required input data |
 | --- | --- | --- |
 | `sct_deepseg_spinalcord` | `sct_deepseg spinalcord` | 3D spinal cord MRI. This model is intended to be contrast-agnostic and was tested here with T1w, T2w, MT, and DWI-derived mean images. |
-| `sct_spinalcord_area` | `sct_deepseg spinalcord`, then `sct_label_vertebrae`, then `sct_process_segmentation -discfile <disc_labels> -perlevel 1` | 3D T2-weighted spinal cord MRI. Returns the spinal cord segmentation and embeds per-vertebral-level `MEAN(area)` values from `sct_process_segmentation` in the returned DICOM metadata. |
+| `sct_spinalcord_area` | `sct_deepseg spinalcord`, then `sct_label_vertebrae`, then `sct_process_segmentation -discfile <disc_labels> -perlevel 1`; falls back to `sct_process_segmentation -i <cord_seg>` | 3D T2-weighted spinal cord MRI. Returns the spinal cord segmentation and embeds `MEAN(area)` values from `sct_process_segmentation` in the returned DICOM metadata. |
 | `sct_deepseg_sc_epi` | `sct_deepseg sc_epi` | EPI-BOLD fMRI image volume containing the spinal cord. |
 | `sct_deepseg_sc_lumbar_t2` | `sct_deepseg sc_lumbar_t2` | Lumbar spinal cord T2-weighted MRI. |
 | `sct_deepseg_sc_mouse_t1` | `sct_deepseg sc_mouse_t1` | Mouse spinal cord T1-weighted MRI. |
@@ -69,7 +69,9 @@ label filenames into DICOM-facing metadata fields, including `ImageComment`,
 `ImageComments`, `DerivationDescription`, and SCT-specific MRD metadata keys.
 The visible summary has the form
 `Spinal cord area per level: <level>=<value>, ... mm2`. If vertebral labeling
-or area-metric calculation fails after spinal cord segmentation succeeds, the
+or per-level area calculation fails after spinal cord segmentation succeeds,
+the app falls back to plain `sct_process_segmentation -i <cord_seg>` and embeds
+the scalar `MEAN(area)` value instead. If that scalar fallback also fails, the
 app still returns the segmentation series and skips the metrics metadata and
 metrics report series.
 

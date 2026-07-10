@@ -495,6 +495,22 @@ def test_repeated_positions_split_volumes_even_with_global_slice_numbers():
     assert helpers["_split_source_images_by_volume"](headers) == [[0, 1, 2], [3, 4, 5]]
 
 
+def test_compute_nifti_affine_matches_phase_read_slice_data_axes():
+    helpers = _load_runtime_helpers_for_test(["compute_nifti_affine"])
+    header = helpers["FakeHead"]()
+    header.position = [10.0, 20.0, 30.0]
+    header.read_dir = [1.0, 0.0, 0.0]
+    header.phase_dir = [0.0, 1.0, 0.0]
+    header.slice_dir = [0.0, 0.0, 1.0]
+
+    affine = helpers["compute_nifti_affine"](header, [0.82, 0.57, 3.3])
+
+    np.testing.assert_allclose(affine[:3, 0], [0.0, -0.57, 0.0])
+    np.testing.assert_allclose(affine[:3, 1], [-0.82, 0.0, 0.0])
+    np.testing.assert_allclose(affine[:3, 2], [0.0, 0.0, 3.3])
+    np.testing.assert_allclose(affine[:3, 3], [-10.0, -20.0, 30.0])
+
+
 def test_volume_series_label_uniquifies_grouping_without_changing_role_token():
     helpers = _load_runtime_helpers_for_test(
         [
@@ -2604,23 +2620,36 @@ def test_run_spinalcord_area_analysis_segments_and_processes_csa(tmp_path):
     )
 
 
-def test_run_spinalcord_area_analysis_returns_segmentation_when_metrics_fail(tmp_path):
+def test_run_spinalcord_area_analysis_falls_back_to_scalar_metrics_when_per_level_fails(tmp_path):
     helpers = _load_runtime_helpers_for_test(
         [
+            "_average_metric_row_area",
             "_attach_spinalcord_area_metrics",
+            "_build_spinalcord_area_rows",
+            "_build_spinalcord_area_metrics",
             "_expected_sct_output_specs",
+            "_first_non_empty_text",
+            "_format_spinalcord_area_summary",
+            "_format_sct_metric_number",
             "_format_vertebral_levels_for_sct",
+            "_level_area_text",
             "_nifti_output_stem",
+            "_read_sct_metrics_csv",
+            "_read_spinalcord_area_metrics",
             "_require_sct_output_specs",
             "_run_sct_analysis",
             "_run_sct_label_vertebrae",
             "_sct_label_vertebrae_discs_output_path",
             "_sct_label_vertebrae_output_path",
+            "_sct_metric_row_value",
         ],
         assignments=[
             "SCT_ANALYSIS_OUTPUTS",
             "SCT_ANALYSIS_REGISTRY",
             "SCT_DEEPSEG_TASKS",
+            "SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN",
+            "SCT_PROCESS_SEGMENTATION_VERT_LEVEL_COLUMN",
+            "SCT_SPINALCORD_AREA_METRICS_SERIES_SUFFIX",
         ],
     )
     helpers["SCT_ANALYSIS_REGISTRY"] = {
@@ -2642,6 +2671,11 @@ def test_run_spinalcord_area_analysis_returns_segmentation_when_metrics_fail(tmp
                 output="",
                 stderr="ValueError: not enough values to unpack (expected 3, got 0)",
             )
+        elif command[0] == "sct_process_segmentation":
+            Path(command[command.index("-o") + 1]).write_text(
+                "MEAN(area),STD(area)\n42.5,1.2\n",
+                encoding="utf-8",
+            )
         else:
             raise AssertionError(f"Unexpected command: {command}")
 
@@ -2658,6 +2692,101 @@ def test_run_spinalcord_area_analysis_returns_segmentation_when_metrics_fail(tmp
     assert [command[0][0] for command in commands] == [
         "sct_deepseg",
         "sct_label_vertebrae",
+        "sct_process_segmentation",
+    ]
+    assert commands[2][0] == (
+        "sct_process_segmentation",
+        "-i",
+        str(work_dir / "output.nii.gz"),
+        "-o",
+        str(work_dir / "spinalcord_area_basic.csv"),
+    )
+    assert len(specs) == 1
+    assert specs[0]["path"] == work_dir / "output.nii.gz"
+    assert specs[0]["series_suffix"] == "sct_spinalcord_area"
+    assert specs[0]["dicom_metrics"]["mean_area_text"] == "42.5"
+    assert specs[0]["dicom_metrics"]["level_count"] == 0
+    assert specs[0]["dicom_metrics"]["level_area_text"] == ""
+    assert specs[0]["dicom_metrics"]["summary"] == (
+        "Spinal cord area MEAN(area)=42.5 mm2"
+    )
+
+
+def test_run_spinalcord_area_analysis_returns_segmentation_when_scalar_fallback_fails(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_average_metric_row_area",
+            "_attach_spinalcord_area_metrics",
+            "_build_spinalcord_area_rows",
+            "_build_spinalcord_area_metrics",
+            "_expected_sct_output_specs",
+            "_first_non_empty_text",
+            "_format_spinalcord_area_summary",
+            "_format_sct_metric_number",
+            "_format_vertebral_levels_for_sct",
+            "_level_area_text",
+            "_nifti_output_stem",
+            "_read_sct_metrics_csv",
+            "_read_spinalcord_area_metrics",
+            "_require_sct_output_specs",
+            "_run_sct_analysis",
+            "_run_sct_label_vertebrae",
+            "_sct_label_vertebrae_discs_output_path",
+            "_sct_label_vertebrae_output_path",
+            "_sct_metric_row_value",
+        ],
+        assignments=[
+            "SCT_ANALYSIS_OUTPUTS",
+            "SCT_ANALYSIS_REGISTRY",
+            "SCT_DEEPSEG_TASKS",
+            "SCT_PROCESS_SEGMENTATION_MEAN_AREA_COLUMN",
+            "SCT_PROCESS_SEGMENTATION_VERT_LEVEL_COLUMN",
+            "SCT_SPINALCORD_AREA_METRICS_SERIES_SUFFIX",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_spinalcord_area": {
+            "kind": "spinalcord_area",
+            "series_suffix": "sct_spinalcord_area",
+        }
+    }
+    commands = []
+
+    def fake_run_command(command, cwd):
+        commands.append((tuple(command), Path(cwd)))
+        if command[0] == "sct_deepseg":
+            Path(command[command.index("-o") + 1]).write_bytes(b"nii")
+        elif command[0] == "sct_label_vertebrae":
+            raise subprocess.CalledProcessError(
+                1,
+                command,
+                output="",
+                stderr="ValueError: not enough values to unpack (expected 3, got 0)",
+            )
+        elif command[0] == "sct_process_segmentation":
+            raise subprocess.CalledProcessError(
+                1,
+                command,
+                output="",
+                stderr="failed to compute CSA",
+            )
+        else:
+            raise AssertionError(f"Unexpected command: {command}")
+
+    helpers["_run_command"] = fake_run_command
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+
+    specs = helpers["_run_sct_analysis"](
+        "sct_spinalcord_area",
+        tmp_path / "input.nii.gz",
+        work_dir,
+    )
+
+    assert [command[0][0] for command in commands] == [
+        "sct_deepseg",
+        "sct_label_vertebrae",
+        "sct_process_segmentation",
     ]
     assert len(specs) == 1
     assert specs[0]["path"] == work_dir / "output.nii.gz"
