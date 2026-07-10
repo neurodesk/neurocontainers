@@ -221,6 +221,35 @@ def _input_images():
     return images
 
 
+def _packed_scanner_images():
+    shape_zyx = (144, 3, 4)
+    images = []
+    for series_index, sequence, image_type, image_type_value in (
+        (1, "gre_qsm", ismrmrd.IMTYPE_MAGNITUDE, "M"),
+        (2, "gre_qsm_Pha", getattr(ismrmrd, "IMTYPE_PHASE", 2), "P"),
+    ):
+        image = _image(
+            series_index,
+            1,
+            sequence,
+            np.full(shape_zyx, 1000 + series_index, dtype=np.float32),
+            image_type=image_type,
+            meta_values={
+                "NumberOfSlices": str(shape_zyx[0]),
+                "slice_count": str(shape_zyx[0]),
+                "SlicePosLightMarker": ["10", "20", "30"],
+            },
+            minihead_text=_scanner_minihead(1, 0, image_type_value),
+            header_values={"contrast": 0, "slice": 0},
+        )
+        header = image.getHead()
+        _set_header_vector(header, "field_of_view", [4.0, 3.0, 1.0])
+        _set_header_vector(header, "position", [10.0, 20.0, 30.0])
+        image.setHead(header)
+        images.append(image)
+    return images
+
+
 def _fake_qsmxt_binary(tmp_path, affine_offset=None):
     fake = tmp_path / "qsmxt"
     affine_offset = list(affine_offset or [0.0, 0.0, 0.0])
@@ -294,6 +323,10 @@ def test_write_bids_dataset_pairs_magnitude_and_phase(tmp_path):
         "sub-01_acq-greqsm_echo-2_part-phase_MEGRE.nii.gz"
     )
 
+    magnitude = nib.load(str(result["magnitude_paths"][0]))
+    np.testing.assert_allclose(magnitude.header.get_zooms()[:3], [1.0, 1.0, 1.0])
+    np.testing.assert_allclose(magnitude.affine[:3, 3], [-1.5, -1.0, -0.5])
+
     phase_sidecar = qsmxt.json.loads(qsmxt._nifti_sidecar_path(result["phase_paths"][0]).read_text())
     assert phase_sidecar["EchoTime"] == 0.01
     assert phase_sidecar["MagneticFieldStrength"] == 7.0
@@ -353,6 +386,23 @@ def test_write_bids_dataset_allows_hidden_b0_dir_override(tmp_path):
     assert sidecar["B0_dir"] == [1.0, 0.0, 0.0]
     assert result["b0_dir"] == (1.0, 0.0, 0.0)
     assert result["b0_dir_source"] == "config"
+
+
+def test_write_bids_dataset_preserves_scanner_packed_volume_slice_spacing(tmp_path):
+    settings = qsmxt._settings_from_config({}, FakeMetadata())
+
+    result = qsmxt.write_bids_dataset(
+        _packed_scanner_images(),
+        FakeMetadata(),
+        tmp_path / "bids",
+        settings,
+    )
+
+    magnitude = nib.load(str(result["magnitude_paths"][0]))
+    assert magnitude.shape == (4, 3, 144)
+    np.testing.assert_allclose(magnitude.header.get_zooms()[:3], [1.0, 1.0, 1.0])
+    np.testing.assert_allclose(magnitude.affine[:3, 2], [0.0, 0.0, 1.0])
+    np.testing.assert_allclose(magnitude.affine[:3, 3], [8.5, 19.0, 30.0])
 
 
 def test_write_bids_dataset_stacks_single_slice_echo_groups_from_metadata(tmp_path):
@@ -498,6 +548,32 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert second_meta["IsmrmrdSliceNo"] == "1"
     assert second_meta["SeriesInstanceUID"] == meta["SeriesInstanceUID"]
     assert second_meta["SOPInstanceUID"] != meta["SOPInstanceUID"]
+
+
+def test_process_returns_scanner_packed_volume_as_one_mm_slices(tmp_path, monkeypatch):
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    fake_qsmxt = _fake_qsmxt_binary(tmp_path)
+    connection = FakeConnection(_packed_scanner_images())
+
+    qsmxt.process(
+        connection,
+        {"parameters": {"qsmxtbinary": str(fake_qsmxt)}},
+        FakeMetadata(),
+    )
+
+    assert connection.closed is True
+    assert connection.logs == []
+    assert len(connection.sent_batches) == 1
+    assert len(connection.sent_batches[0]) == 144
+
+    first = connection.sent_batches[0][0]
+    last = connection.sent_batches[0][-1]
+    first_meta = ismrmrd.Meta.deserialize(first.attribute_string)
+    np.testing.assert_allclose(first.getHead().field_of_view, [4.0, 3.0, 1.0])
+    np.testing.assert_allclose(first.getHead().position, [10.0, 20.0, 30.0])
+    np.testing.assert_allclose(last.getHead().position, [10.0, 20.0, 173.0])
+    assert first_meta["Keep_image_geometry"] == "0"
+    assert first_meta["NumberOfSlices"] == "144"
 
 
 def test_original_passthrough_restamps_multi_partition_source_geometry():

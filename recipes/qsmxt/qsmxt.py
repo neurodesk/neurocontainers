@@ -833,7 +833,7 @@ def _nifti_to_mrd_images(
     display_data_zyx, display_meta = _scanner_display_volume(data_zyx, output_id, units)
     display_data_xyz = np.transpose(display_data_zyx, (2, 1, 0))
     slice_count = int(data_zyx.shape[0])
-    volume_fov = _nifti_field_of_view(nifti, data_xyz.shape)
+    slice_fov = _nifti_slice_field_of_view(nifti, data_xyz.shape)
     source_geometry_images = _source_geometry_images_for_output(
         source_geometry_images,
         data_zyx,
@@ -882,8 +882,8 @@ def _nifti_to_mrd_images(
             "matrix_size",
             [int(value) for value in out_header.matrix_size],
         )
-        if volume_fov and not use_source_geometry:
-            _set_header_sequence_field(header, "field_of_view", volume_fov)
+        if slice_fov and not use_source_geometry:
+            _set_header_sequence_field(header, "field_of_view", slice_fov)
         if not use_source_geometry:
             _set_header_sequence_field(
                 header,
@@ -981,14 +981,14 @@ def _source_slice_index_for_output(source_image, fallback_index, slice_count):
     return int(fallback_index)
 
 
-def _nifti_field_of_view(nifti, shape_xyz):
+def _nifti_slice_field_of_view(nifti, shape_xyz):
     zooms = nifti.header.get_zooms()[:3]
     if len(zooms) != 3:
         return None
     return [
         float(zooms[0]) * int(shape_xyz[0]),
         float(zooms[1]) * int(shape_xyz[1]),
-        float(zooms[2]) * int(shape_xyz[2]),
+        float(zooms[2]),
     ]
 
 
@@ -1109,19 +1109,68 @@ def _affine_from_image(image, shape_xyz):
     fov = np.asarray(header.field_of_view, dtype=float)
     dims = np.asarray(shape_xyz, dtype=float)
     voxel = np.divide(fov, dims, out=np.ones(3, dtype=float), where=dims > 0)
+    packed_slice_spacing = _scanner_packed_volume_slice_spacing(
+        image,
+        shape_xyz,
+        fov,
+        voxel,
+    )
+    if packed_slice_spacing is not None:
+        voxel[2] = packed_slice_spacing
+        logging.info(
+            "Using scanner packed-volume slice spacing %.6g mm for %d slices",
+            packed_slice_spacing,
+            int(shape_xyz[2]),
+        )
     position = np.asarray(header.position, dtype=float)
     origin = (
         position
         - read_dir * voxel[0] * (shape_xyz[0] - 1) / 2.0
         - phase_dir * voxel[1] * (shape_xyz[1] - 1) / 2.0
-        - slice_dir * voxel[2] * (shape_xyz[2] - 1) / 2.0
     )
+    if packed_slice_spacing is None:
+        origin -= slice_dir * voxel[2] * (shape_xyz[2] - 1) / 2.0
     affine = np.eye(4, dtype=float)
     affine[:3, 0] = read_dir * voxel[0]
     affine[:3, 1] = phase_dir * voxel[1]
     affine[:3, 2] = slice_dir * voxel[2]
     affine[:3, 3] = origin
     return affine
+
+
+def _scanner_packed_volume_slice_spacing(image, shape_xyz, fov, voxel):
+    slice_count = int(shape_xyz[2])
+    if slice_count <= 1:
+        return None
+
+    meta = _meta_from_image(image)
+    declared_slice_count = (
+        _meta_int(meta, "NumberOfSlices")
+        or _meta_int(meta, "slice_count")
+    )
+    has_scanner_geometry = bool(_decode_ice_minihead(meta)) or bool(
+        _meta_text(meta, "SlicePosLightMarker")
+    )
+    if not has_scanner_geometry:
+        return None
+    if declared_slice_count is not None and declared_slice_count != slice_count:
+        return None
+
+    in_plane_voxels = [
+        value
+        for value in voxel[:2]
+        if value > 0 and np.isfinite(value)
+    ]
+    if not in_plane_voxels or fov[2] <= 0 or not np.isfinite(fov[2]):
+        return None
+
+    # Siemens packed image messages report field_of_view[2] as the spacing of
+    # one partition. Treating it as the full slab FOV produced 1/144 mm voxels
+    # for the 144-slice scanner testcase. Keep normal total-FOV semantics unless
+    # that interpretation is clearly implausible relative to the in-plane grid.
+    if voxel[2] >= min(in_plane_voxels) * 0.1:
+        return None
+    return float(fov[2])
 
 
 def _affine_from_image_stack(images, shape_xyz):
