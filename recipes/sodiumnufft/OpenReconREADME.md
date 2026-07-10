@@ -16,7 +16,10 @@
 
 The output is a derived magnitude series named
 `<protocol>_sodiumnufft`. If the protocol name is unavailable, the fallback
-series name is `sodiumnufft`.
+series name is `sodiumnufft`. The NUFFT is computed on an isotropic grid, and
+the scanner-facing output preserves that reconstructed slice count. The output
+is emitted as one 2D image message per reconstructed slice so the scanner can
+store the stack as one derived series instead of splitting a packed volume.
 
 ## Input Requirements
 
@@ -25,31 +28,31 @@ This reconstruction expects ISMRMRD raw acquisitions for a 3D sodium scan.
 Trajectory input is resolved in this order:
 
 1. Embedded ISMRMRD trajectories from the incoming acquisitions.
-2. An external HDF5 file provided through the `trajectoryfile` parameter.
-3. The bundled HDF5 file selected by `trajectorypreset`.
+2. The bundled HDF5 file selected by the `trajectoryfile` parameter.
+3. An external HDF5 file injected through the `trajectoryfile` runtime config.
 
 For Siemens Twix `.dat` files, the container also includes
 `/opt/code/python-ismrmrd-server/siemens_twix2mrd.py`. That helper uses the
 bundled `siemens_to_ismrmrd` converter in `--skipSyncData` mode and materializes
 the resulting MRD message stream into an ISMRMRD HDF5 dataset.
 
-The bundled trajectory presets are `23Na_n50`
-(`/opt/sodiumnufft/23NA_n50_trajectory.h5`) and `23Na_n28`
-(`/opt/sodiumnufft/23Na_n28_trajectory.h5`). The trajectory dataset defaults to
-`k`. The code expects the trajectory values to match the standalone script
-convention: k-space units in `1/cm`, multiplied by the reconstruction field of
-view in cm before the adjoint NUFFT.
+The bundled trajectory choices resolve to
+`/opt/sodiumnufft/23Na_n28_trajectory.h5` and
+`/opt/sodiumnufft/23NA_n50_trajectory.h5`. The trajectory dataset defaults to
+`k`. The code also accepts the aliases `sodiumn28`, `sodiumn50`, `23Na_n28`,
+and `23Na_n50`, or an explicit HDF5 file path if the runtime config is supplied
+outside the scanner UI. The code expects the trajectory values to match the
+standalone script convention: k-space units in `1/cm`, multiplied by the
+reconstruction field of view in cm before the adjoint NUFFT.
 
 ## GUI Parameters
 
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `sodiumnufft` | Selects the MRD server configuration. |
-| Trajectory file | `trajectoryfile` | string | empty | Optional external HDF5 trajectory path used when trajectories are not embedded in the MRD data. Leave empty to use the bundled trajectory selection. |
-| Bundled trajectory | `trajectorypreset` | choice | `23Na_n28` | Bundled trajectory used when no external trajectory file path is provided. Choices: `23Na_n50`, `23Na_n28`. |
-| Trajectory dataset | `trajectorydataset` | string | `k` | Dataset name inside the trajectory HDF5 file. |
+| Bundled trajectory | `trajectoryfile` | choice | `/opt/sodiumnufft/23Na_n28_trajectory.h5` | Bundled trajectory used when trajectories are not embedded in the MRD data. Choices: n28 or n50 bundled HDF5 path. |
 | Trajectory sample offset | `trajectorysampleoffset` | integer | `0` | Number of leading trajectory samples to skip before pairing the external trajectory with the raw data. |
-| Matrix size | `matrixsize` | integer | `128` | Final isotropic reconstruction matrix. |
+| Matrix size | `matrixsize` | integer | `64` | Final isotropic NUFFT reconstruction matrix. This controls both the in-plane size and output slice count. |
 | FOV cm | `fovcm` | string | `22.0` | Reconstruction field of view in cm. |
 | Reject weak samples | `rejectbadreadouts` | boolean | `true` | Zero low-signal sample columns using the histogram rule from the standalone script. |
 | Reject sigma | `badreadoutsigma` | string | `3.0` | Sigma multiplier used for weak-sample rejection. |
@@ -65,7 +68,8 @@ view in cm before the adjoint NUFFT.
 
 - The reconstruction is implemented for raw k-space input. If image data is
   sent to this app, the images are returned unchanged.
-- The derived output is magnitude-only.
+- The derived output is magnitude-only and is emitted as one 2D image per
+  reconstructed slice with the requested reconstruction FOV and slice spacing.
 - `maxcoils` is mainly useful for faster smoke tests and debugging.
 - The container does not store runtime files under `/home`; use mounted paths
   such as `/tmp` or another accessible filesystem location for external

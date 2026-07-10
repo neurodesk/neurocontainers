@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from time import perf_counter
 import traceback
+import uuid
 
 import h5py
 import ismrmrd
@@ -20,12 +21,14 @@ import mrdhelper
 
 debugFolder = "/tmp/share/debug"
 BUNDLED_TRAJECTORIES = {
+    "sodiumn50": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
+    "sodiumn28": "/opt/sodiumnufft/23Na_n28_trajectory.h5",
     "23Na_n50": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
     "23Na_n28": "/opt/sodiumnufft/23Na_n28_trajectory.h5",
 }
 OPENRECON_DEFAULTS = {
     "config": "sodiumnufft",
-    "matrixsize": 128,
+    "matrixsize": 64,
     "fovcm": 22.0,
     "trajectorypreset": "23Na_n28",
     "trajectoryfile": "",
@@ -43,6 +46,9 @@ OPENRECON_DEFAULTS = {
 }
 OUTPUT_SERIES_DESCRIPTION = "sodiumnufft"
 OUTPUT_IMAGE_COMMENT = "23Na NUFFT Sum-of-Squares"
+OUTPUT_IMAGE_SERIES_INDEX = 1
+SCANNER_DISPLAY_MIN = 0
+SCANNER_DISPLAY_MAX = 4096
 
 
 def _get_config_value(config, key, default, value_type):
@@ -163,6 +169,10 @@ def _resolve_trajectory_file(config):
         OPENRECON_DEFAULTS["trajectoryfile"],
     ).strip()
     if explicit_file:
+        if explicit_file in BUNDLED_TRAJECTORIES:
+            trajectory_file = BUNDLED_TRAJECTORIES[explicit_file]
+            logging.info("Using bundled trajectory %s: %s", explicit_file, trajectory_file)
+            return trajectory_file
         logging.info("Using trajectory file override: %s", explicit_file)
         return explicit_file
 
@@ -422,8 +432,73 @@ def _combine_sum_of_squares(coil_images):
     return combined
 
 
+def _format_display_number(value):
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.6g}"
+
+
+def _scale_volume_to_display_range(volume):
+    values = np.asarray(volume, dtype=np.float32)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        display = np.zeros(values.shape, dtype=np.uint16)
+        return display, {
+            "input_min": 0.0,
+            "input_max": 0.0,
+            "scale": 1.0,
+            "display_min": 0,
+            "display_max": 0,
+            "formula": "value = display",
+        }
+
+    input_min = float(np.min(finite))
+    input_max = float(np.max(finite))
+    input_range = input_max - input_min
+    if input_range <= 0.0 or not np.isfinite(input_range):
+        display = np.zeros(values.shape, dtype=np.uint16)
+        return display, {
+            "input_min": input_min,
+            "input_max": input_max,
+            "scale": 1.0,
+            "display_min": 0,
+            "display_max": 0,
+            "formula": f"value = display + {_format_display_number(input_min)}",
+        }
+
+    scale = float(SCANNER_DISPLAY_MAX - SCANNER_DISPLAY_MIN) / input_range
+    cleaned = np.nan_to_num(values, nan=input_min, posinf=input_max, neginf=input_min)
+    display = np.rint((cleaned - input_min) * scale + SCANNER_DISPLAY_MIN)
+    display = np.clip(display, SCANNER_DISPLAY_MIN, SCANNER_DISPLAY_MAX)
+    display = display.astype(np.uint16, copy=False)
+    scale_text = _format_display_number(scale)
+    min_text = _format_display_number(input_min)
+    return display, {
+        "input_min": input_min,
+        "input_max": input_max,
+        "scale": scale,
+        "display_min": int(np.min(display)) if display.size else 0,
+        "display_max": int(np.max(display)) if display.size else 0,
+        "formula": f"value = display / {scale_text} + {min_text}",
+    }
+
+
+def _scanner_display_comment(display_meta):
+    return (
+        f"{OUTPUT_IMAGE_COMMENT}; scanner display uint16 "
+        f"{SCANNER_DISPLAY_MIN}-{SCANNER_DISPLAY_MAX}; {display_meta['formula']}"
+    )
+
+
+def _new_dicom_uid():
+    return f"2.25.{uuid.uuid4().int}"
+
+
 def _build_output_images(volume, reference_head, metadata, output_fov_mm):
-    matrix_size = int(volume.shape[2])
+    volume = np.asarray(volume, dtype=np.float32)
+    if volume.ndim != 3:
+        raise ValueError(f"Reconstructed volume must be 3D, got shape {volume.shape}")
 
     read_dir = np.asarray(reference_head.read_dir, dtype=float)
     phase_dir = np.asarray(reference_head.phase_dir, dtype=float)
@@ -434,21 +509,32 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
     else:
         slice_dir = slice_dir / slice_dir_norm
 
-    slice_spacing = output_fov_mm / max(matrix_size, 1)
     center_position = np.asarray(reference_head.position, dtype=float)
-    first_slice_position = center_position - 0.5 * (matrix_size - 1) * slice_spacing * slice_dir
 
     series_description = f"{_safe_protocol_name(metadata)}_{OUTPUT_SERIES_DESCRIPTION}"
+    series_grouping = f"{series_description}_{OUTPUT_IMAGE_SERIES_INDEX}"
+    series_uid = _new_dicom_uid()
+    output_fov_mm = float(output_fov_mm)
+    display_volume, display_meta = _scale_volume_to_display_range(volume)
+    slice_count = int(display_volume.shape[2])
+    slice_spacing = output_fov_mm / max(slice_count, 1)
+    first_slice_position = (
+        center_position - 0.5 * (slice_count - 1) * slice_spacing * slice_dir
+    )
+    image_comment = _scanner_display_comment(display_meta)
+
     images_out = []
-    for slice_index in range(matrix_size):
-        slice_data = np.asarray(volume[:, :, slice_index], dtype=np.float32)
+    for slice_index in range(slice_count):
+        slice_data = np.ascontiguousarray(display_volume[:, :, slice_index].T)
         image = ismrmrd.Image.from_array(slice_data, transpose=False)
 
         new_header = mrdhelper.update_img_header_from_raw(image.getHead(), reference_head)
         new_header.data_type = image.data_type
         new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+        new_header.image_series_index = OUTPUT_IMAGE_SERIES_INDEX
         new_header.image_index = slice_index + 1
         new_header.slice = slice_index
+        new_header.matrix_size = tuple(int(value) for value in image.getHead().matrix_size)
         new_header.position = tuple(
             float(value)
             for value in (first_slice_position + slice_index * slice_spacing * slice_dir)
@@ -457,26 +543,59 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
         new_header.phase_dir = tuple(float(value) for value in phase_dir)
         new_header.slice_dir = tuple(float(value) for value in slice_dir)
         new_header.field_of_view = (
-            float(output_fov_mm),
-            float(output_fov_mm),
-            float(output_fov_mm),
+            output_fov_mm,
+            output_fov_mm,
+            float(slice_spacing),
         )
         image.setHead(new_header)
+        image.image_series_index = OUTPUT_IMAGE_SERIES_INDEX
         image.field_of_view = (
             ctypes.c_float(output_fov_mm),
             ctypes.c_float(output_fov_mm),
-            ctypes.c_float(output_fov_mm),
+            ctypes.c_float(slice_spacing),
         )
 
         meta = ismrmrd.Meta()
         meta["DataRole"] = "Image"
         meta["ImageProcessingHistory"] = ["PYTHON", "SIGPY", "NUFFT"]
+        meta["ImageType"] = "DERIVED\\PRIMARY\\M\\SODIUMNUFFT"
+        meta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\SODIUMNUFFT"
+        meta["ImageTypeValue4"] = "SODIUMNUFFT"
+        meta["ComplexImageComponent"] = "MAGNITUDE"
         meta["SequenceDescriptionAdditional"] = OUTPUT_IMAGE_COMMENT
         meta["SeriesDescription"] = series_description
-        meta["ImageComment"] = OUTPUT_IMAGE_COMMENT
+        meta["SequenceDescription"] = series_description
+        meta["ProtocolName"] = series_description
+        meta["SeriesNumberRangeNameUID"] = series_grouping
+        meta["SeriesInstanceUID"] = series_uid
+        meta["SOPInstanceUID"] = _new_dicom_uid()
+        meta["ImageComment"] = image_comment
+        meta["ImageComments"] = image_comment
         meta["Keep_image_geometry"] = 1
+        meta["partition_count"] = 1
+        meta["slice_count"] = slice_count
+        meta["NumberOfSlices"] = slice_count
+        meta["ImagesInAcquisition"] = slice_count
+        meta["NumberInSeries"] = slice_index + 1
+        meta["SliceNo"] = slice_index
+        meta["IsmrmrdSliceNo"] = slice_index
+        meta["AnatomicalSliceNo"] = slice_index
+        meta["ChronSliceNo"] = slice_index
+        meta["ProtocolSliceNumber"] = slice_index
+        meta["Actual3DImagePartNumber"] = 0
+        meta["AnatomicalPartitionNo"] = 0
         meta["ImageRowDir"] = [f"{float(value):.18f}" for value in read_dir]
         meta["ImageColumnDir"] = [f"{float(value):.18f}" for value in phase_dir]
+        meta["ImageSliceNormDir"] = [f"{float(value):.18f}" for value in slice_dir]
+        meta["SlicePosLightMarker"] = [
+            f"{float(value):.18f}" for value in new_header.position
+        ]
+        meta["SodiumNUFFTDisplayScale"] = _format_display_number(display_meta["scale"])
+        meta["SodiumNUFFTDisplayInputMin"] = f"{float(display_meta['input_min']):.6g}"
+        meta["SodiumNUFFTDisplayInputMax"] = f"{float(display_meta['input_max']):.6g}"
+        meta["SodiumNUFFTDisplayMin"] = str(int(display_meta["display_min"]))
+        meta["SodiumNUFFTDisplayMax"] = str(int(display_meta["display_max"]))
+        meta["SodiumNUFFTDisplayFormula"] = display_meta["formula"]
         image.attribute_string = meta.serialize()
         images_out.append(image)
 

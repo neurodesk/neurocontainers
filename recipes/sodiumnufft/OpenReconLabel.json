@@ -49,34 +49,20 @@
     },
     {
       "id": "trajectoryfile",
-      "label": { "en": "Trajectory file" },
-      "type": "string",
-      "default": "",
-      "information": { "en": "Optional external HDF5 trajectory file path used when the MRD data does not contain embedded trajectories. Leave empty to use the bundled trajectory selected below." }
-    },
-    {
-      "id": "trajectorypreset",
       "label": { "en": "Bundled trajectory" },
       "type": "choice",
       "values": [
         {
-          "id": "23Na_n50",
-          "name": { "en": "23Na n50" }
+          "id": "/opt/sodiumnufft/23Na_n28_trajectory.h5",
+          "name": { "en": "23Na n28" }
         },
         {
-          "id": "23Na_n28",
-          "name": { "en": "23Na n28" }
+          "id": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
+          "name": { "en": "23Na n50" }
         }
       ],
-      "default": "23Na_n28",
-      "information": { "en": "Bundled trajectory used when no external trajectory file path is provided." }
-    },
-    {
-      "id": "trajectorydataset",
-      "label": { "en": "Trajectory dataset" },
-      "type": "string",
-      "default": "k",
-      "information": { "en": "Dataset name inside the selected trajectory HDF5 file." }
+      "default": "/opt/sodiumnufft/23Na_n28_trajectory.h5",
+      "information": { "en": "Bundled HDF5 trajectory used when the MRD data does not contain embedded trajectories." }
     },
     {
       "id": "trajectorysampleoffset",
@@ -93,8 +79,8 @@
       "type": "int",
       "minimum": 32,
       "maximum": 512,
-      "default": 128,
-      "information": { "en": "Final isotropic reconstruction matrix." }
+      "default": 64,
+      "information": { "en": "Final isotropic NUFFT reconstruction matrix. This controls both the in-plane size and output slice count." }
     },
     {
       "id": "fovcm",
