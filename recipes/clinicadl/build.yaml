@@ -22,7 +22,7 @@ build:
         install_path: /opt/miniconda
         conda_install: python=3.10 pip
     - run:
-        - source /opt/miniconda/bin/activate && conda create -y -n clinicadlEnv python=3.10 pip
+        - conda create -y -n clinicadlEnv python=3.10 pip
         - conda run -n clinicadlEnv pip install clinicadl clinica
     - template:
         name: fsl
