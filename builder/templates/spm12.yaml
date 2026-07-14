@@ -32,9 +32,6 @@ binaries:
       FORCE_SPMMCR: '1'
       SPM_HTML_BROWSER: '0'
       SPMMCRCMD: '{{ self.install_path }}/run_spm12.sh {{ self.matlab_install_path }}/{{ self.urls[self.version]["mcr-version"] }} script'
-      LD_LIBRARY_PATH: $LD_LIBRARY_PATH:{{ self.matlab_install_path }}/{{ self.urls[self.version]["mcr-version"] }}/runtime/glnxa64:{{ self.matlab_install_path
-        }}/{{ self.urls[self.version]["mcr-version"] }}/bin/glnxa64:{{ self.matlab_install_path }}/{{ self.urls[self.version]["mcr-version"]
-        }}/sys/os/glnxa64:{{ self.matlab_install_path }}/{{ self.urls[self.version]["mcr-version"] }}/sys/opengl/lib/glnxa64
       MATLABCMD: '{{ self.matlab_install_path }}/{{ self.urls[self.version]["mcr-version"] }}/toolbox/matlab'
       MCR_INHIBIT_CTF_LOCK: '1'
   - run: 'export TMPDIR="$(mktemp -d)"
