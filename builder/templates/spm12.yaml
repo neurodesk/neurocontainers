@@ -23,7 +23,7 @@ binaries:
     - libxpm-dev
     - libxt6
     debs:
-    - http://mirrors.kernel.org/debian/pool/main/libx/libxp/libxp6_1.0.2-2_amd64.deb
+    - https://archive.debian.org/debian/pool/main/libx/libxp/libxp6_1.0.2-2_amd64.deb
     yum:
     - curl
     - unzip
