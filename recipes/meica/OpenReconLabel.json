@@ -3,7 +3,7 @@
     "name": { "en": "ME-ICA" },
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
-    "information": { "en": "Multi-echo fMRI denoising and optimal combination with ME-ICA v4." },
+    "information": { "en": "Multi-echo fMRI denoising with apparent dR2* and T2* outputs from ME-ICA v4." },
     "id": "meica",
     "regulatory_information": {
       "device_trade_name": "ME-ICA",
@@ -45,26 +45,6 @@
       ],
       "default": "meica",
       "information": { "en": "Run the ME-ICA OpenRecon image adapter." }
-    },
-    {
-      "id": "output",
-      "label": { "en": "Output" },
-      "type": "choice",
-      "values": [
-        { "id": "medn", "name": { "en": "Conservative denoised" } },
-        { "id": "tsoc", "name": { "en": "Optimally combined" } },
-        { "id": "hikts", "name": { "en": "High-kappa denoised" } },
-        { "id": "all", "name": { "en": "All time-series outputs" } }
-      ],
-      "default": "medn",
-      "information": { "en": "Select the ME-ICA time series returned to the scanner." }
-    },
-    {
-      "id": "sendoriginal",
-      "label": { "en": "Send original images" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Return the incoming reconstructed echo images before the derived ME-ICA series." }
     }
   ]
 }

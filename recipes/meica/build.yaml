@@ -65,11 +65,6 @@ build:
     - deploy:
         bins:
           - meica.py
-          - dcm2niix
-          - python
-          - siemens_to_ismrmrd
-        path:
-          - /opt/meica/me-ica/meica-afni-runtime/utils
 
 tests:
   - name: ME-ICA command and runtime
@@ -93,7 +88,7 @@ categories:
   - workflows
 
 structured_readme:
-  description: ME-ICA v4 is a comprehensive multi-echo fMRI processing and denoising pipeline. This container packages the tagged ME-ICA source, its matched distributed AFNI runtime, and an OpenRecon image-to-image adapter that converts multi-echo MRD magnitude images to NIfTI, runs ME-ICA, and returns denoised or optimally combined time series.
+  description: ME-ICA v4 is a comprehensive multi-echo fMRI processing and denoising pipeline. This container packages the tagged ME-ICA source, its matched distributed AFNI runtime, and an OpenRecon image-to-image adapter that converts multi-echo MRD magnitude images to NIfTI, runs ME-ICA, and returns the denoised BOLD-like apparent dR2* series and T2* map.
   example: |-
     ml meica/{{ context.version }}
 
@@ -122,7 +117,8 @@ readme: |-
 
   OpenRecon expects at least three echoes. Echo times are read from the MRD
   sequence header, and ME-ICA runs with 24 CPU workers.
-  The default returned series is the conservative ME-ICA denoised output.
+  OpenRecon always returns the denoised BOLD-like apparent dR2* series and the
+  T2* map (`dr2s_epi` and `t2s_epi`); there is no scanner output selector.
 
   Documentation: https://github.com/ME-ICA/me-ica
 

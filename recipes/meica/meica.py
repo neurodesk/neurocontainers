@@ -1,8 +1,8 @@
 """OpenRecon image-to-image adapter for ME-ICA v4.
 
 The adapter converts reconstructed multi-echo magnitude MRD images into one
-four-dimensional NIfTI file per echo, runs ME-ICA, and converts selected output
-time series back into scanner-displayable MRD image messages.
+four-dimensional NIfTI file per echo, runs ME-ICA, and returns the denoised
+BOLD-like apparent dR2* series and T2* map as scanner-displayable MRD images.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import traceback
 
 import ismrmrd
 import nibabel as nib
+from nibabel.processing import resample_from_to
 import numpy as np
 
 try:
@@ -32,9 +33,8 @@ DEFAULT_CPUS = 24
 OPENRECON_WORK_ROOT = Path("/tmp/share/meica_openrecon")
 OUTPUT_SERIES_START = 200
 OUTPUT_SPECS = {
-    "medn": ("MEICA_MEDN", "ME-ICA conservative denoised"),
-    "tsoc": ("MEICA_TSOC", "ME-ICA optimally combined"),
-    "hikts": ("MEICA_HIKTS", "ME-ICA high-kappa denoised"),
+    "dr2s": ("MEICA_DR2S", "ME-ICA denoised BOLD-like apparent dR2*"),
+    "t2s": ("MEICA_T2S", "ME-ICA T2* map"),
 }
 
 
@@ -65,11 +65,9 @@ def process(connection, config, metadata):
                 magnitude_images, metadata, work_dir / "input", settings
             )
             _run_meica(conversion, work_dir / "output", settings)
-            selected = _find_outputs(work_dir / "output", settings["output"])
+            selected = _find_outputs(work_dir / "output")
             output_images = _outputs_to_mrd(selected, conversion, images)
 
-        if settings["send_original"]:
-            connection.send_image([_original_passthrough(image) for image in images])
         for series in output_images:
             connection.send_image(series)
     except Exception:
@@ -110,6 +108,7 @@ def write_meica_inputs(images, metadata, input_dir, settings):
                 "anchor": _ordered_slices(time_groups[0])[0],
                 "first_timepoint": _ordered_slices(time_groups[0]),
                 "shape": data.shape[:3],
+                "affine": affine.copy(),
             }
         elif data.shape[:3] != reference_shape or data.shape[3] != reference_timepoints:
             raise ValueError(
@@ -180,21 +179,22 @@ def _run_meica(conversion, output_dir, settings):
         raise RuntimeError(f"ME-ICA failed with exit code {result.returncode}")
 
 
-def _find_outputs(output_dir, requested):
-    output_ids = list(OUTPUT_SPECS) if requested == "all" else [requested]
+def _find_outputs(output_dir):
     found = []
-    for output_id in output_ids:
-        candidates = sorted(output_dir.glob(f"openrecon_{output_id}_*.nii*"))
+    for output_id in OUTPUT_SPECS:
+        candidates = [
+            candidate
+            for candidate in (
+                output_dir / f"openrecon_{output_id}_epi.nii.gz",
+                output_dir / f"openrecon_{output_id}_epi.nii",
+            )
+            if candidate.is_file()
+        ]
         if not candidates:
-            if requested != "all":
-                raise FileNotFoundError(
-                    f"ME-ICA did not create the requested {output_id} time series"
-                )
-            logging.warning("ME-ICA output %s was not produced", output_id)
-            continue
+            raise FileNotFoundError(
+                f"ME-ICA did not create the required {output_id}_epi output"
+            )
         found.append((output_id, candidates[0]))
-    if not found:
-        raise FileNotFoundError("ME-ICA completed without a selected NIfTI output")
     return found
 
 
@@ -220,16 +220,11 @@ def _outputs_to_mrd(selected, conversion, input_images):
 
 def _nifti_to_mrd_series(path, source_geometry, series_index, role, description):
     nifti = nib.load(str(path))
-    data = np.asarray(nifti.get_fdata(dtype=np.float32), dtype=np.float32)
+    data = _output_data_in_source_space(nifti, source_geometry, path)
     if data.ndim == 3:
         data = data[:, :, :, np.newaxis]
     if data.ndim != 4:
         raise ValueError(f"ME-ICA output must be 3D or 4D, got {path}: {data.shape}")
-    if tuple(data.shape[:3]) != tuple(source_geometry["shape"]):
-        raise ValueError(
-            f"ME-ICA output geometry changed from {source_geometry['shape']} "
-            f"to {data.shape[:3]}"
-        )
 
     display, scale, offset = _scanner_display_data(data)
     data_zyxt = np.transpose(display, (2, 1, 0, 3))
@@ -279,6 +274,42 @@ def _nifti_to_mrd_series(path, source_geometry, series_index, role, description)
             image_index += 1
     logging.info("Prepared %d MRD images for %s", len(output), role)
     return output
+
+
+def _output_data_in_source_space(nifti, source_geometry, path):
+    source_shape = tuple(source_geometry["shape"])
+    source_affine = np.asarray(source_geometry["affine"], dtype=float)
+    if (
+        tuple(nifti.shape[:3]) == source_shape
+        and np.allclose(nifti.affine, source_affine, rtol=1e-5, atol=1e-4)
+    ):
+        return np.asarray(nifti.get_fdata(dtype=np.float32), dtype=np.float32)
+
+    logging.info(
+        "Resampling ME-ICA output %s from %s to scanner grid %s",
+        path,
+        nifti.shape[:3],
+        source_shape,
+    )
+    if len(nifti.shape) == 3:
+        resampled = resample_from_to(
+            nifti, (source_shape, source_affine), order=1
+        )
+        return np.asarray(resampled.get_fdata(dtype=np.float32), dtype=np.float32)
+    if len(nifti.shape) != 4:
+        raise ValueError(f"ME-ICA output must be 3D or 4D, got {path}: {nifti.shape}")
+
+    data = np.empty(source_shape + (nifti.shape[3],), dtype=np.float32)
+    for time_index in range(nifti.shape[3]):
+        volume = nib.Nifti1Image(
+            np.asanyarray(nifti.dataobj[..., time_index]),
+            nifti.affine,
+        )
+        resampled = resample_from_to(
+            volume, (source_shape, source_affine), order=1
+        )
+        data[..., time_index] = resampled.get_fdata(dtype=np.float32)
+    return data
 
 
 def _group_echo_images(images):
@@ -395,13 +426,8 @@ def _resolve_echo_times_ms(echo_groups, metadata):
 
 def _settings(config):
     params = _config_parameters(config)
-    output = str(params.get("output", "medn") or "medn").lower()
-    if output not in {*OUTPUT_SPECS, "all"}:
-        raise ValueError(f"Unsupported ME-ICA output selection: {output}")
     return {
-        "output": output,
         "cpus": DEFAULT_CPUS,
-        "send_original": _as_bool(params.get("sendoriginal", False)),
         "binary": str(
             params.get("meicabinary")
             or os.environ.get("MEICA_BINARY")
@@ -420,12 +446,6 @@ def _config_parameters(config):
         return {}
     params = config.get("parameters", config)
     return params if isinstance(params, dict) else {}
-
-
-def _as_bool(value):
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _is_magnitude(image):
@@ -622,14 +642,6 @@ def _derived_meta(
     meta["ImagesInAcquisition"] = str(slices * timepoints)
     meta["NumberInSeries"] = str(image_index)
     return meta
-
-
-def _original_passthrough(image):
-    original = copy.deepcopy(image)
-    meta = _meta(original)
-    meta["Keep_image_geometry"] = "1"
-    original.attribute_string = meta.serialize()
-    return original
 
 
 def _meta(image):

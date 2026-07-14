@@ -38,7 +38,11 @@ setup:
     data = np.mean([image.get_fdata(dtype=np.float32) for image in images], axis=0)
     nib.save(
         nib.Nifti1Image(data.astype(np.float32), images[0].affine),
-        Path.cwd() / "openrecon_medn_epi.nii.gz",
+        Path.cwd() / "openrecon_dr2s_epi.nii.gz",
+    )
+    nib.save(
+        nib.Nifti1Image(data.mean(axis=3).astype(np.float32), images[0].affine),
+        Path.cwd() / "openrecon_t2s_epi.nii.gz",
     )
     PY
     chmod +x "${fake_meica}"
@@ -68,11 +72,8 @@ tests:
       assert data["reconstruction"]["emitter"] == "image"
       assert data["reconstruction"]["injector"] == "image"
       assert data["reconstruction"]["content_qualification_type"] == "RESEARCH"
-      assert {item["id"] for item in data["parameters"]} == {
-          "config", "output", "sendoriginal"
-      }
+      assert {item["id"] for item in data["parameters"]} == {"config"}
       assert data["reconstruction"]["min_count_required_cpu_cores"] == 24
-      assert next(item for item in data["parameters"] if item["id"] == "output")["default"] == "medn"
       print(path)
       PY
 
@@ -167,8 +168,6 @@ tests:
           {
               "parameters": {
                   "meicabinary": os.environ["FAKE_MEICA"],
-                  "output": "medn",
-                  "sendoriginal": False,
               }
           },
           Metadata(),
@@ -176,16 +175,27 @@ tests:
 
       assert connection.closed
       assert not connection.logs, connection.logs
-      assert len(connection.sent) == 1
-      derived = connection.sent[0]
-      assert len(derived) == 4
-      assert {int(image.getHead().repetition) for image in derived} == {0, 1}
-      assert {int(image.getHead().slice) for image in derived} == {0, 1}
-      assert len({int(image.getHead().image_series_index) for image in derived}) == 1
-      for image in derived:
-          meta = ismrmrd.Meta.deserialize(image.attribute_string)
-          assert meta["ImageTypeValue4"] == "MEICA_MEDN"
-          assert meta["Keep_image_geometry"] == "1"
-          assert "IceMiniHead" not in meta
-      print(f"returned {len(derived)} ME-ICA MRD images")
+      assert len(connection.sent) == 2
+      by_role = {}
+      for derived in connection.sent:
+          roles = {
+              ismrmrd.Meta.deserialize(image.attribute_string)["ImageTypeValue4"]
+              for image in derived
+          }
+          assert len(roles) == 1
+          by_role[roles.pop()] = derived
+          assert len({int(image.getHead().image_series_index) for image in derived}) == 1
+          for image in derived:
+              meta = ismrmrd.Meta.deserialize(image.attribute_string)
+              assert meta["Keep_image_geometry"] == "1"
+              assert "IceMiniHead" not in meta
+
+      assert set(by_role) == {"MEICA_DR2S", "MEICA_T2S"}
+      assert len(by_role["MEICA_DR2S"]) == 4
+      assert {int(image.getHead().repetition) for image in by_role["MEICA_DR2S"]} == {0, 1}
+      assert {int(image.getHead().slice) for image in by_role["MEICA_DR2S"]} == {0, 1}
+      assert len(by_role["MEICA_T2S"]) == 2
+      assert {int(image.getHead().repetition) for image in by_role["MEICA_T2S"]} == {0}
+      assert {int(image.getHead().slice) for image in by_role["MEICA_T2S"]} == {0, 1}
+      print("returned apparent dR2* and T2* ME-ICA MRD series")
       PY
