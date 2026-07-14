@@ -65,7 +65,7 @@ build:
           - showtc
           - showxy
           - showhist
-          - resamp1tc
+          - resampletc
           - resamplenifti
           - python
 categories:
@@ -84,7 +84,7 @@ readme: |-
   The suite includes the core `rapidtide` program (RIPTiDe delay mapping), `happy`
   (cardiac waveform extraction from fMRI), registration helpers (`rapidtide2std`,
   `happy2std`), the `tidepool` GUI viewer, and a number of time course/NIfTI
-  utilities (`showtc`, `showxcorrx`, `showxy`, `showhist`, `resamp1tc`,
+  utilities (`showtc`, `showxcorrx`, `showxy`, `showhist`, `resampletc`,
   `resamplenifti`).
 
   Example:
