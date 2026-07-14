@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "meica 4.0.1": {
+      "version": "20260714",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "image reconstruction",
+    "quality control",
+    "workflows"
+  ]
+}
