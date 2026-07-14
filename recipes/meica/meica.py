@@ -12,7 +12,6 @@ import json
 import logging
 import os
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 import traceback
@@ -29,6 +28,7 @@ except ImportError:
 
 
 DEFAULT_MEICA_BINARY = "/usr/local/bin/meica.py"
+DEFAULT_CPUS = 24
 OPENRECON_WORK_ROOT = Path("/tmp/share/meica_openrecon")
 OUTPUT_SERIES_START = 200
 OUTPUT_SPECS = {
@@ -83,15 +83,13 @@ def process(connection, config, metadata):
 def write_meica_inputs(images, metadata, input_dir, settings):
     """Write one four-dimensional NIfTI dataset for each detected echo."""
     input_dir.mkdir(parents=True, exist_ok=True)
-    echo_groups = _group_echo_images(images, settings["echo_times_ms"])
+    echo_groups = _group_echo_images(images)
     if len(echo_groups) < 3:
         raise ValueError(
             f"ME-ICA requires at least three echoes; detected {len(echo_groups)}"
         )
 
-    echo_times_ms = _resolve_echo_times_ms(
-        echo_groups, metadata, settings["echo_times_ms"]
-    )
+    echo_times_ms = _resolve_echo_times_ms(echo_groups, metadata)
     datasets = []
     reference_shape = None
     reference_timepoints = None
@@ -283,7 +281,7 @@ def _nifti_to_mrd_series(path, source_geometry, series_index, role, description)
     return output
 
 
-def _group_echo_images(images, configured_echo_times):
+def _group_echo_images(images):
     numbered = [_echo_number(image) for image in images]
     times = [_image_echo_time_ms(image) for image in images]
     contrasts = [int(getattr(image.getHead(), "contrast", 0)) for image in images]
@@ -295,18 +293,8 @@ def _group_echo_images(images, configured_echo_times):
         keys = [("time", round(value, 6) if value is not None else None) for value in times]
     elif len(set(contrasts)) > 1:
         keys = [("contrast", value) for value in contrasts]
-    elif len(set(series)) > 1 and (
-        not configured_echo_times or len(set(series)) == len(configured_echo_times)
-    ):
+    elif len(set(series)) > 1:
         keys = [("series", value) for value in series]
-    elif configured_echo_times and all(_is_packed_volume(image) for image in images):
-        count = len(configured_echo_times)
-        keys = [("ordered", index % count) for index in range(len(images))]
-        logging.warning(
-            "No echo identity metadata found; assigning packed volumes to %d "
-            "echoes in stream order",
-            count,
-        )
     else:
         raise ValueError(
             "Could not separate ME-ICA echoes. Preserve EchoNumber, EchoTime, "
@@ -323,7 +311,7 @@ def _group_echo_images(images, configured_echo_times):
             order.append(key)
         groups[key].append(image)
 
-    if all(key[0] in {"number", "time", "contrast", "series", "ordered"} for key in order):
+    if all(key[0] in {"number", "time", "contrast", "series"} for key in order):
         order.sort(key=lambda key: key[1])
     logging.info(
         "Detected ME-ICA echo groups %s with image counts %s",
@@ -389,21 +377,11 @@ def _image_to_volume(image):
     return np.transpose(np.asarray(volume_zyx, dtype=np.float32), (2, 1, 0))
 
 
-def _resolve_echo_times_ms(echo_groups, metadata, configured):
-    if configured:
-        values = configured
-        source = "config"
-    else:
-        values = _metadata_echo_times_ms(metadata)
-        source = "MRD header"
-        if not values:
-            values = [_image_echo_time_ms(group[0]) for group in echo_groups]
-            source = "image metadata"
+def _resolve_echo_times_ms(echo_groups, metadata):
+    values = _metadata_echo_times_ms(metadata)
+    source = "MRD header"
     if not values or any(value is None for value in values):
-        raise ValueError(
-            "ME-ICA echo times are missing; set echotimesms to a comma-separated "
-            "list in milliseconds"
-        )
+        raise ValueError("ME-ICA echo times are missing from the MRD header")
     if len(values) != len(echo_groups):
         raise ValueError(
             f"Detected {len(echo_groups)} echoes but resolved {len(values)} echo times"
@@ -417,18 +395,12 @@ def _resolve_echo_times_ms(echo_groups, metadata, configured):
 
 def _settings(config):
     params = _config_parameters(config)
-    echo_times = _parse_float_list(params.get("echotimesms", ""))
     output = str(params.get("output", "medn") or "medn").lower()
     if output not in {*OUTPUT_SPECS, "all"}:
         raise ValueError(f"Unsupported ME-ICA output selection: {output}")
-    try:
-        cpus = int(params.get("cpus", 4))
-    except (TypeError, ValueError):
-        cpus = 4
     return {
-        "echo_times_ms": echo_times,
         "output": output,
-        "cpus": max(1, cpus),
+        "cpus": DEFAULT_CPUS,
         "send_original": _as_bool(params.get("sendoriginal", False)),
         "binary": str(
             params.get("meicabinary")
@@ -448,16 +420,6 @@ def _config_parameters(config):
         return {}
     params = config.get("parameters", config)
     return params if isinstance(params, dict) else {}
-
-
-def _parse_float_list(value):
-    if value is None or value == "":
-        return []
-    if isinstance(value, (list, tuple)):
-        parts = value
-    else:
-        parts = re.split(r"[,;\s]+", str(value).strip())
-    return [float(part) for part in parts if str(part).strip()]
 
 
 def _as_bool(value):

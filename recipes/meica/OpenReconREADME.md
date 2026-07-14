@@ -5,10 +5,10 @@ them by echo and repetition, writes one four-dimensional NIfTI time series per
 echo, runs ME-ICA v4, and returns the selected result as a derived MRD series.
 
 ME-ICA requires at least three echoes with matching spatial dimensions and time
-points. The adapter uses `EchoTime`, `EchoNumber`, MRD `contrast`, `repetition`,
-and slice fields when they are available. If echo times are not present in the
-MRD header or image metadata, enter them in milliseconds with `echotimesms`, for
-example `12,28,44`.
+points. Echo times are read from the MRD sequence header. The adapter uses
+`EchoTime`, `EchoNumber`, MRD `contrast`, `repetition`, and slice fields to
+separate the incoming time series. It reports an error if the sequence header
+does not contain echo times. ME-ICA runs with 24 CPU workers.
 
 The default `medn` output is ME-ICA's conservative denoised BOLD time series.
 `tsoc` returns the optimally combined raw multi-echo series, `hikts` returns the
@@ -24,8 +24,6 @@ ME-ICA and is intentionally not required by this inline adapter.
 | --- | --- | --- | --- |
 | config | `config` | `meica` | Selects the ME-ICA server module. |
 | Output | `output` | `medn` | Selects the returned ME-ICA time series. |
-| Echo times (ms) | `echotimesms` | empty | Overrides echo times from MRD metadata. |
-| CPU cores | `cpus` | `4` | Controls ME-ICA parallelism. |
 | Send original images | `sendoriginal` | `false` | Returns incoming echo images before derivatives. |
 
 ME-ICA is a research tool and is not intended for standard clinical use.

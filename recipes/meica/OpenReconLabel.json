@@ -31,8 +31,8 @@
     "can_use_gpu": false,
     "min_count_required_gpus": 0,
     "min_required_gpu_memory": 0,
-    "min_required_memory": 16000,
-    "min_count_required_cpu_cores": 4,
+    "min_required_memory": 32000,
+    "min_count_required_cpu_cores": 24,
     "content_qualification_type": "RESEARCH"
   },
   "parameters": [
@@ -58,26 +58,6 @@
       ],
       "default": "medn",
       "information": { "en": "Select the ME-ICA time series returned to the scanner." }
-    },
-    {
-      "id": "echotimesms",
-      "label": { "en": "Echo times (ms)" },
-      "type": "string",
-      "default": "",
-      "information": { "en": "Optional comma-separated echo times in milliseconds, for example 12,28,44. MRD metadata is used when this is empty." }
-    },
-    {
-      "id": "cpus",
-      "label": { "en": "CPU cores" },
-      "type": "choice",
-      "values": [
-        { "id": "4", "name": { "en": "4" } },
-        { "id": "8", "name": { "en": "8" } },
-        { "id": "16", "name": { "en": "16" } },
-        { "id": "24", "name": { "en": "24" } }
-      ],
-      "default": "4",
-      "information": { "en": "Maximum CPUs and OpenMP threads used by ME-ICA." }
     },
     {
       "id": "sendoriginal",

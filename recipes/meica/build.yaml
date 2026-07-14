@@ -120,8 +120,8 @@ readme: |-
   meica.py -d rest_e1.nii.gz rest_e2.nii.gz rest_e3.nii.gz -e 12 28 44
   ```
 
-  OpenRecon expects at least three echoes. Echo times can be read from MRD
-  metadata or supplied in the scanner UI as a comma-separated millisecond list.
+  OpenRecon expects at least three echoes. Echo times are read from the MRD
+  sequence header, and ME-ICA runs with 24 CPU workers.
   The default returned series is the conservative ME-ICA denoised output.
 
   Documentation: https://github.com/ME-ICA/me-ica

@@ -30,7 +30,7 @@ setup:
     datasets = args[data_start:echo_start]
     echo_times = [float(value) for value in args[echo_start + 1:cpu_start]]
     assert echo_times == [10.0, 25.0, 40.0]
-    assert args[cpu_start + 1] == "4"
+    assert args[cpu_start + 1] == "24"
     assert args[prefix_start + 1] == "openrecon"
     assert "--OVERWRITE_NOWAIT" in args
 
@@ -69,8 +69,9 @@ tests:
       assert data["reconstruction"]["injector"] == "image"
       assert data["reconstruction"]["content_qualification_type"] == "RESEARCH"
       assert {item["id"] for item in data["parameters"]} == {
-          "config", "output", "echotimesms", "cpus", "sendoriginal"
+          "config", "output", "sendoriginal"
       }
+      assert data["reconstruction"]["min_count_required_cpu_cores"] == 24
       assert next(item for item in data["parameters"] if item["id"] == "output")["default"] == "medn"
       print(path)
       PY
@@ -149,7 +150,6 @@ tests:
           set_vector(header.slice_dir, [0.0, 0.0, 1.0])
           image.setHead(header)
           meta = ismrmrd.Meta()
-          meta["EchoTime"] = str([10.0, 25.0, 40.0][echo - 1])
           meta["SequenceDescription"] = "multi_echo_epi"
           image.attribute_string = meta.serialize()
           return image
@@ -167,9 +167,7 @@ tests:
           {
               "parameters": {
                   "meicabinary": os.environ["FAKE_MEICA"],
-                  "echotimesms": "10,25,40",
                   "output": "medn",
-                  "cpus": "4",
                   "sendoriginal": False,
               }
           },
