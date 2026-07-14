@@ -22,8 +22,6 @@ binaries:
     - libxmu6
     - libxpm-dev
     - libxt6
-    debs:
-    - https://archive.debian.org/debian/pool/main/libx/libxp/libxp6_1.0.2-2_amd64.deb
     yum:
     - curl
     - unzip
@@ -43,6 +41,14 @@ binaries:
   - run: 'export TMPDIR="$(mktemp -d)"
 
       {{ self.install_dependencies() }}
+
+      echo "Installing archived libXp runtime ..."
+
+      curl -fsSL --retry 5 -o "$TMPDIR/libxp6.deb" https://archive.debian.org/debian/pool/main/libx/libxp/libxp6_1.0.2-2_amd64.deb
+
+      dpkg-deb --extract "$TMPDIR/libxp6.deb" /
+
+      rm -f "$TMPDIR/libxp6.deb"
 
       echo "Downloading MATLAB Compiler Runtime ..."
 
