@@ -1,0 +1,107 @@
+name: rapidtide
+version: 3.1.11
+architectures:
+  - x86_64
+structured_readme:
+  description: >-
+    Rapidtide is a suite of Python tools for performing time delay (and
+    similarity) analysis on fMRI and other physiological data. Its principal
+    use is to find and remove low frequency systemic (non-neuronal) blood
+    signals - such as those arising from respiration and the cardiac cycle -
+    by mapping the time delay of a moving blood-borne regressor throughout the
+    brain (the RIPTiDe algorithm). The package also includes happy, a tool for
+    cardiac waveform extraction and cardiac cycle analysis of fMRI data, and a
+    number of supporting time course and NIfTI utilities.
+  example: |-
+    # Run a rapidtide time delay analysis on a resting state BOLD run
+    rapidtide \
+        sub-01_task-rest_bold.nii.gz \
+        sub-01_rapidtide \
+        --filterband lfo \
+        --searchrange -10 10 \
+        --passes 3
+
+    # Extract cardiac information from an fMRI dataset with happy
+    happy \
+        sub-01_task-rest_bold.nii.gz \
+        sub-01_task-rest_bold.json \
+        sub-01_happy
+  documentation: https://rapidtide.readthedocs.io/en/latest/
+  citation: |-
+    Frederick, B, Salo, T, Drucker, J, Zhang, D, & Han, X. (2024).
+    bbfrederick/rapidtide: Rapidtide. Zenodo. https://doi.org/10.5281/zenodo.814990
+
+    Erdogan S, Tong Y, Hocke L, Lindsey K, Frederick B. (2016). Correcting
+    resting state fMRI-BOLD signals for blood arrival time enhances functional
+    connectivity analysis. Front. Hum. Neurosci. 10:311.
+    https://doi.org/10.3389/fnhum.2016.00311
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - libgl1
+        - libglib2.0-0
+        - libegl1
+    - template:
+        name: miniconda
+        version: py310_25.5.1-0
+        install_path: /opt/miniconda
+        env_name: rapidtide
+        env_exists: "false"
+        pip_install: rapidtide=={{ context.version }}
+    - environment:
+        PATH: /opt/miniconda/envs/rapidtide/bin:/opt/miniconda/bin:$PATH
+    - deploy:
+        path: []
+        bins:
+          - rapidtide
+          - happy
+          - showxcorrx
+          - rapidtide2std
+          - happy2std
+          - tidepool
+          - showtc
+          - showxy
+          - showhist
+          - resamp1tc
+          - resamplenifti
+          - python
+categories:
+  - functional imaging
+icon: data:image/png;base64,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
+
+readme: |-
+  ----------------------------------
+  ## rapidtide/{{ context.version }} ##
+
+  Rapidtide is a suite of Python programs used to perform time delay analysis on
+  functional imaging data to find time lagged correlations between the voxelwise
+  time series and other time series, primarily to identify and remove low
+  frequency systemic (non-neuronal) hemodynamic signals.
+
+  The suite includes the core `rapidtide` program (RIPTiDe delay mapping), `happy`
+  (cardiac waveform extraction from fMRI), registration helpers (`rapidtide2std`,
+  `happy2std`), the `tidepool` GUI viewer, and a number of time course/NIfTI
+  utilities (`showtc`, `showxcorrx`, `showxy`, `showhist`, `resamp1tc`,
+  `resamplenifti`).
+
+  Example:
+  ```
+  rapidtide \
+      sub-01_task-rest_bold.nii.gz \
+      sub-01_rapidtide \
+      --filterband lfo \
+      --searchrange -10 10 \
+      --passes 3
+  ```
+
+  More documentation can be found here: https://rapidtide.readthedocs.io/en/latest/
+
+  To run container outside of this environment: ml rapidtide/{{ context.version }}
+
+  ----------------------------------
+copyright:
+  - license: Apache-2.0
+    url: https://spdx.org/licenses/Apache-2.0.html

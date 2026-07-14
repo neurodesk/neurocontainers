@@ -1,0 +1,33 @@
+# rapidtide container test suite
+# Tests for rapidtide v3.1.11 - time delay analysis of fMRI data (RIPTiDe)
+#
+# Documentation: https://rapidtide.readthedocs.io/en/latest/
+
+name: rapidtide
+version: 3.1.11
+container: rapidtide_3.1.11.simg
+
+tests:
+  - name: rapidtide launcher available
+    description: Verify the core rapidtide entrypoint is installed and on PATH.
+    command: command -v rapidtide
+    expected_output_contains: "rapidtide"
+    expected_exit_code: 0
+
+  - name: rapidtide reports version
+    description: Verify rapidtide runs and reports the installed version.
+    command: rapidtide --version
+    expected_output_contains: "3.1.11"
+    expected_exit_code: 0
+
+  - name: happy launcher available
+    description: Verify the happy cardiac analysis entrypoint is installed.
+    command: happy --help
+    expected_output_contains: "happy"
+    expected_exit_code: 0
+
+  - name: rapidtide package importable
+    description: Verify the rapidtide Python package imports successfully.
+    command: python -c "import rapidtide; print(rapidtide.__version__)"
+    expected_output_contains: "3.1.11"
+    expected_exit_code: 0
