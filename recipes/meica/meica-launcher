@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec /opt/meica/venv/bin/python /opt/meica/me-ica/meica.py "$@"

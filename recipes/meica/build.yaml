@@ -1,0 +1,148 @@
+name: meica
+version: 4.0.1
+copyright:
+  - license: CC-BY-NC-SA-4.0
+    url: https://github.com/ME-ICA/me-ica/blob/{{ context.version }}/LICENSE
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - bash
+        - bzip2
+        - ca-certificates
+        - coreutils
+        - gzip
+        - python3-pip
+        - python3-venv
+        - python-is-python3
+        - tar
+        - tcsh
+
+    - variables:
+        openrecon_ubuntu_version: "24.04"
+
+    - include: macros/openrecon/neurodocker.yaml
+
+    - workdir: /opt/meica
+
+    - run:
+        - mkdir -p /opt/meica/me-ica
+        - tar -xzf {{ get_file("meica_source") }} -C /opt/meica/me-ica --strip-components=1
+        - tar -xzf {{ get_file("meica_afni_runtime") }} -C /opt/meica/me-ica
+        - python3 -m venv /opt/meica/venv
+        - /opt/meica/venv/bin/pip install --no-cache-dir --upgrade pip
+        - /opt/meica/venv/bin/pip install --no-cache-dir -r /opt/meica/me-ica/requirements.txt
+        - chmod +x /opt/meica/me-ica/meica.py /opt/meica/me-ica/meica-afni-runtime/activate_meica_afni
+        - test -x /opt/meica/me-ica/meica-afni-runtime/bin/3dinfo
+        - test -x /opt/meica/me-ica/meica-afni-runtime/utils/dcm2niix
+
+    - environment:
+        MEICA_REPO: /opt/meica/me-ica
+        MEICA_SOURCE_TAG: "{{ context.version }}"
+        MEICA_RUNTIME_TAG: "{{ context.version }}"
+        MEICA_AFNI_RUNTIME: /opt/meica/me-ica/meica-afni-runtime
+        MEICA_AFNI_RUNTIME_ACTIVATE: /opt/meica/me-ica/meica-afni-runtime/activate_meica_afni
+        MEICA_REQUIRE_DISTRIBUTED_AFNI: "1"
+        PATH: /opt/meica/me-ica/meica-afni-runtime/utils:$PATH
+
+    - run:
+        - cp {{ get_file("meica_launcher") }} /usr/local/bin/meica.py
+        - chmod +x /usr/local/bin/meica.py
+        - cp {{ get_file("meica_openrecon") }} /opt/code/python-ismrmrd-server/meica.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - mkdir -p /tmp/share/meica_openrecon
+        - chmod 1777 /tmp/share /tmp/share/meica_openrecon
+
+    - deploy:
+        bins:
+          - meica.py
+          - dcm2niix
+          - python
+          - siemens_to_ismrmrd
+        path:
+          - /opt/meica/me-ica/meica-afni-runtime/utils
+
+tests:
+  - name: ME-ICA command and runtime
+    script: |
+      meica.py -h
+      test -x "${MEICA_AFNI_RUNTIME}/bin/3dinfo"
+      dcm2niix --version > /tmp/dcm2niix-version.txt 2>&1 || [ "$?" -eq 3 ]
+      grep -iq dcm2niix /tmp/dcm2niix-version.txt
+
+  - name: OpenRecon bridge imports
+    script: |
+      python /opt/code/python-ismrmrd-server/main.py -h 2>&1 | grep 'Example server for MRD streaming format'
+      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import meica, ismrmrd, nibabel, numpy; print(meica.__file__)" | grep -x /opt/code/python-ismrmrd-server/meica.py
+      test -f /opt/code/python-ismrmrd-server/OpenReconLabel.json
+      test -f /opt/code/python-ismrmrd-server/OpenReconREADME.md
+
+categories:
+  - functional imaging
+  - image reconstruction
+  - quality control
+  - workflows
+
+structured_readme:
+  description: ME-ICA v4 is a comprehensive multi-echo fMRI processing and denoising pipeline. This container packages the tagged ME-ICA source, its matched distributed AFNI runtime, and an OpenRecon image-to-image adapter that converts multi-echo MRD magnitude images to NIfTI, runs ME-ICA, and returns denoised or optimally combined time series.
+  example: |-
+    ml meica/{{ context.version }}
+
+    # Standard command-line usage with three echo NIfTI time series:
+    meica.py -d rest_e1.nii.gz rest_e2.nii.gz rest_e3.nii.gz -e 12 28 44
+
+    # The OpenRecon adapter is selected with config=meica and requires
+    # at least three reconstructed magnitude echoes.
+  documentation: https://github.com/ME-ICA/me-ica
+  citation: "Kundu P, Brenowitz ND, Voon V, Worbe Y, Vertes PE, Inati SJ, Saad ZS, Bandettini PA, Bullmore ET. Integrated strategy for improving functional connectivity mapping using multiecho fMRI. PNAS 110.40 (2013): 16187-16192. https://doi.org/10.1073/pnas.1301725110"
+
+readme: |-
+  ----------------------------------
+  ## meica/{{ context.version }} ##
+
+  ME-ICA v4 is a comprehensive multi-echo fMRI processing pipeline. It uses
+  echo-time dependence to separate BOLD-like signals from non-BOLD artifacts.
+  This recipe includes the matched upstream AFNI runtime and an OpenRecon
+  adapter for reconstructed multi-echo magnitude image streams.
+
+  Command-line example:
+  ```bash
+  ml meica/{{ context.version }}
+  meica.py -d rest_e1.nii.gz rest_e2.nii.gz rest_e3.nii.gz -e 12 28 44
+  ```
+
+  OpenRecon expects at least three echoes. Echo times can be read from MRD
+  metadata or supplied in the scanner UI as a comma-separated millisecond list.
+  The default returned series is the conservative ME-ICA denoised output.
+
+  Documentation: https://github.com/ME-ICA/me-ica
+
+  ME-ICA is a research tool and is not intended for standard clinical use.
+
+  License: CC-BY-NC-SA-4.0
+  ----------------------------------
+
+icon: data:image/png;base64,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
+
+files:
+  - name: meica_source
+    url: https://github.com/ME-ICA/me-ica/archive/refs/tags/{{ context.version }}.tar.gz
+  - name: meica_afni_runtime
+    url: https://github.com/ME-ICA/meica-afni/releases/download/{{ context.version }}/meica-afni-runtime-linux-x86_64.tar.gz
+  - name: meica_launcher
+    filename: meica-launcher
+  - name: meica_openrecon
+    filename: meica.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
