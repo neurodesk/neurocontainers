@@ -22,7 +22,6 @@ binaries:
     - libxmu6
     - libxpm-dev
     - libxt6
-    - multiarch-support
     debs:
     - http://mirrors.kernel.org/debian/pool/main/libx/libxp/libxp6_1.0.2-2_amd64.deb
     yum:

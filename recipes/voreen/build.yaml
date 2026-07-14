@@ -29,7 +29,7 @@ build:
         - tar -xf voreen-src-{{ context.version }}-unix.tar.gz
 
     - run:
-        - cd /root/voreen-src-unix-nightly && mkdir build && cd build && cmake .. && make -j8 && export VRN_DEPLOYMENT=ON && export VRN_ADD_INSTALL_TARGET=ON && export CMAKE_INSTALL_PREFIX=/usr/share/voreen/ && make install && rm -rf /root/*
+        - cd /root/voreen-src-unix-nightly && mkdir build && cd build && cmake -DVRN_DEPLOYMENT=ON -DVRN_ADD_INSTALL_TARGET=ON -DCMAKE_INSTALL_PREFIX=/usr/share/voreen .. && make -j8 && make install && rm -rf /root/*
 
 deploy:
   bins:

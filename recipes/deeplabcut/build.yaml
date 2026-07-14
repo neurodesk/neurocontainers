@@ -60,6 +60,7 @@ build:
           dependencies:
             - python=3.10
             - pip
+            - setuptools<81
             - ipython
             - jupyter
             - nb_conda
