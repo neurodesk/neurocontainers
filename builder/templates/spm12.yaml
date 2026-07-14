@@ -45,15 +45,15 @@ binaries:
 
       curl -fL --retry 5 -o "$TMPDIR/mcr.zip" {{ self.urls[self.version].mcr }}
 
-      unzip -q "$TMPDIR/mcr.zip" -d "$TMPDIR/mcr"
-
-      "$TMPDIR/mcr/install" -destinationFolder "{{ self.matlab_install_path }}" -agreeToLicense yes -mode silent
-
       echo "Downloading standalone SPM12 ..."
 
       curl -fL --retry 5 -o "$TMPDIR/spm12.zip" {{ self.urls[self.version].spm }}
 
+      unzip -q "$TMPDIR/mcr.zip" -d "$TMPDIR/mcr"
+
       unzip -q "$TMPDIR/spm12.zip" -d "$TMPDIR"
+
+      "$TMPDIR/mcr/install" -destinationFolder "{{ self.matlab_install_path }}" -agreeToLicense yes -mode silent
 
       mkdir -p {{ self.install_path }}
 
