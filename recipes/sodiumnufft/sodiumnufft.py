@@ -570,33 +570,33 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
     series_uid = _new_dicom_uid()
     output_fov_mm = float(output_fov_mm)
     display_volume, display_meta = _scale_volume_to_display_range(volume)
-    partition_count = int(display_volume.shape[2])
-    partition_spacing = output_fov_mm / max(partition_count, 1)
-    first_partition_position = (
-        center_position - 0.5 * (partition_count - 1) * partition_spacing * slice_dir
+    slice_count = int(display_volume.shape[2])
+    slice_spacing = output_fov_mm / max(slice_count, 1)
+    first_slice_position = (
+        center_position - 0.5 * (slice_count - 1) * slice_spacing * slice_dir
     )
     image_comment = _scanner_display_comment(display_meta)
 
     images_out = []
-    for partition_index in range(partition_count):
-        slice_data = np.ascontiguousarray(display_volume[:, :, partition_index].T)
+    for slice_index in range(slice_count):
+        packed_slice = display_volume[:, :, slice_index].T
+        slice_data = np.ascontiguousarray(np.fliplr(np.flipud(packed_slice)))
         image = ismrmrd.Image.from_array(slice_data, transpose=False)
 
         new_header = mrdhelper.update_img_header_from_raw(image.getHead(), reference_head)
         new_header.data_type = image.data_type
         new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
         new_header.image_series_index = OUTPUT_IMAGE_SERIES_INDEX
-        new_header.image_index = partition_index + 1
-        # A 3D acquisition contains one slab (slice 0) composed of N
-        # partitions. Advertising every partition as a separate slice makes
-        # the Siemens injector fall back to the protocol's 32-image slab size.
-        new_header.slice = 0
+        new_header.image_index = slice_index + 1
+        # Declare the reconstructed matrix depth explicitly so the scanner
+        # does not infer volume boundaries from the protocol's Slices per Slab.
+        new_header.slice = slice_index
         new_header.matrix_size = tuple(int(value) for value in image.getHead().matrix_size)
         new_header.position = tuple(
             float(value)
             for value in (
-                first_partition_position
-                + partition_index * partition_spacing * slice_dir
+                first_slice_position
+                + slice_index * slice_spacing * slice_dir
             )
         )
         new_header.read_dir = tuple(float(value) for value in read_dir)
@@ -605,14 +605,14 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
         new_header.field_of_view = (
             output_fov_mm,
             output_fov_mm,
-            float(partition_spacing),
+            float(slice_spacing),
         )
         image.setHead(new_header)
         image.image_series_index = OUTPUT_IMAGE_SERIES_INDEX
         image.field_of_view = (
             ctypes.c_float(output_fov_mm),
             ctypes.c_float(output_fov_mm),
-            ctypes.c_float(partition_spacing),
+            ctypes.c_float(slice_spacing),
         )
 
         meta = ismrmrd.Meta()
@@ -632,22 +632,19 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
         meta["ImageComment"] = image_comment
         meta["ImageComments"] = image_comment
         meta["Keep_image_geometry"] = 1
-        meta["partition_count"] = partition_count
-        meta["slice_count"] = 1
-        meta["NumberOfSlices"] = 1
-        meta["ImagesInAcquisition"] = partition_count
-        meta["NumberInSeries"] = partition_index + 1
-        meta["SliceNo"] = 0
-        meta["IsmrmrdSliceNo"] = 0
-        meta["AnatomicalSliceNo"] = 0
-        meta["ChronSliceNo"] = partition_index
-        meta["ProtocolSliceNumber"] = 0
-        meta["Actual3DImagePartNumber"] = partition_index
-        # Siemens mini-headers use both spellings in the wild. Supplying the
-        # native `Ima` alias lets UseIceFillingMiniHeader preserve the 3D
-        # partition index instead of rebuilding it from the sequence protocol.
-        meta["Actual3DImaPartNumber"] = partition_index
-        meta["AnatomicalPartitionNo"] = partition_index
+        meta["partition_count"] = 1
+        meta["slice_count"] = slice_count
+        meta["NumberOfSlices"] = slice_count
+        meta["ImagesInAcquisition"] = slice_count
+        meta["NumberInSeries"] = slice_index + 1
+        meta["SliceNo"] = slice_index
+        meta["IsmrmrdSliceNo"] = slice_index
+        meta["AnatomicalSliceNo"] = slice_index
+        meta["ChronSliceNo"] = slice_index
+        meta["ProtocolSliceNumber"] = slice_index
+        meta["Actual3DImagePartNumber"] = 0
+        meta["Actual3DImaPartNumber"] = 0
+        meta["AnatomicalPartitionNo"] = 0
         meta["ImageRowDir"] = [f"{float(value):.18f}" for value in read_dir]
         meta["ImageColumnDir"] = [f"{float(value):.18f}" for value in phase_dir]
         meta["ImageSliceNormDir"] = [f"{float(value):.18f}" for value in slice_dir]

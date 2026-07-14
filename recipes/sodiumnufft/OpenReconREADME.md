@@ -52,7 +52,7 @@ reconstruction field of view in cm before the adjoint NUFFT.
 | config | `config` | choice | `sodiumnufft` | Selects the MRD server configuration. |
 | Bundled trajectory | `trajectoryfile` | choice | `/opt/sodiumnufft/23Na_n28_trajectory.h5` | Bundled trajectory used when trajectories are not embedded in the MRD data. Choices: n28 or n50 bundled HDF5 path. |
 | Trajectory sample offset | `trajectorysampleoffset` | integer | `0` | Number of leading trajectory samples to skip before pairing the external trajectory with the raw data. |
-| Matrix size | `matrixsize` | integer | `64` | Final isotropic NUFFT reconstruction matrix. This controls both the in-plane size and output partition count. |
+| Matrix size | `matrixsize` | integer | `64` | Final isotropic NUFFT reconstruction matrix. This controls both the in-plane size and output slice count. |
 | FOV cm | `fovcm` | string | `22.0` | Reconstruction field of view in cm. |
 | Reject weak samples | `rejectbadreadouts` | boolean | `true` | Zero low-signal sample columns using the histogram rule from the standalone script. |
 | Reject sigma | `badreadoutsigma` | string | `3.0` | Sigma multiplier used for weak-sample rejection. |
@@ -68,9 +68,12 @@ reconstruction field of view in cm before the adjoint NUFFT.
 
 - The reconstruction is implemented for raw k-space input. If image data is
   sent to this app, the images are returned unchanged.
-- The derived output is magnitude-only and is emitted as one 2D image per 3D
-  partition. All partitions belong to one slab and retain the requested FOV
-  and partition spacing.
+- The derived output is magnitude-only and is emitted as one 2D image per
+  reconstructed matrix slice. Slice count and volume grouping therefore follow
+  the reconstruction matrix (normally the scanner Base Resolution), not the
+  protocol's Slices per Slab value.
+- Output pixels are flipped up-down and then left-right to match the ICE
+  reconstruction display orientation.
 - Each reconstruction logs the FIRE-visible CPU count, CPU affinity, cgroup
   limits, configured worker cap, and effective number of coil workers.
 - `maxcoils` is mainly useful for faster smoke tests and debugging.
