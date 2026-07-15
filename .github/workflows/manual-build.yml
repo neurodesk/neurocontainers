@@ -19,6 +19,7 @@ on:
         required: true
         type: choice
         options:
+        - "neurodesk-syd2-arcrunner-neurocontainers"
         - "neurodesk-syd-arcrunner-neurocontainers"
         - "neurodesk-arcrunner-neurocontainers"
         - "blacksmith-8vcpu-ubuntu-2404"
@@ -98,6 +99,9 @@ jobs:
             ;;
           "neurodesk-syd-arcrunner-neurocontainers")
             runner='"neurodesk-syd-arcrunner-neurocontainers"'
+            ;;
+          "neurodesk-syd2-arcrunner-neurocontainers")
+            runner='"neurodesk-syd2-arcrunner-neurocontainers"'
             ;;
           "blacksmith-8vcpu-ubuntu-2404"|"blacksmith-8vcpu-ubuntu-2404-arm"|"ubuntu-22.04"|"self-hosted")
             runner="\"$CHOICE\""
