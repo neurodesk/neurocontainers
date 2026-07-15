@@ -1,0 +1,305 @@
+name: mrtrix3src
+version: latest
+container: mrtrix3src_${version}_REFERENCE.simg
+default_timeout: 60
+tests:
+- name: mrconvert resolves on PATH
+  command: command -v mrconvert
+  expected_exit_code: 0
+- name: mrconvert is executable
+  command: test -x "$(command -v mrconvert)"
+  expected_exit_code: 0
+- name: mrconvert has no missing shared libraries
+  command: '! ldd "$(command -v mrconvert)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrinfo resolves on PATH
+  command: command -v mrinfo
+  expected_exit_code: 0
+- name: mrinfo is executable
+  command: test -x "$(command -v mrinfo)"
+  expected_exit_code: 0
+- name: mrinfo has no missing shared libraries
+  command: '! ldd "$(command -v mrinfo)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrcalc resolves on PATH
+  command: command -v mrcalc
+  expected_exit_code: 0
+- name: mrcalc is executable
+  command: test -x "$(command -v mrcalc)"
+  expected_exit_code: 0
+- name: mrcalc has no missing shared libraries
+  command: '! ldd "$(command -v mrcalc)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrgrid resolves on PATH
+  command: command -v mrgrid
+  expected_exit_code: 0
+- name: mrgrid is executable
+  command: test -x "$(command -v mrgrid)"
+  expected_exit_code: 0
+- name: mrgrid has no missing shared libraries
+  command: '! ldd "$(command -v mrgrid)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrtransform resolves on PATH
+  command: command -v mrtransform
+  expected_exit_code: 0
+- name: mrtransform is executable
+  command: test -x "$(command -v mrtransform)"
+  expected_exit_code: 0
+- name: mrtransform has no missing shared libraries
+  command: '! ldd "$(command -v mrtransform)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrmath resolves on PATH
+  command: command -v mrmath
+  expected_exit_code: 0
+- name: mrmath is executable
+  command: test -x "$(command -v mrmath)"
+  expected_exit_code: 0
+- name: mrmath has no missing shared libraries
+  command: '! ldd "$(command -v mrmath)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrcat resolves on PATH
+  command: command -v mrcat
+  expected_exit_code: 0
+- name: mrcat is executable
+  command: test -x "$(command -v mrcat)"
+  expected_exit_code: 0
+- name: mrcat has no missing shared libraries
+  command: '! ldd "$(command -v mrcat)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrcrop resolves on PATH
+  command: command -v mrcrop
+  expected_exit_code: 0
+- name: mrcrop is executable
+  command: test -x "$(command -v mrcrop)"
+  expected_exit_code: 0
+- name: mrcrop has no missing shared libraries
+  command: '! ldd "$(command -v mrcrop)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrpad resolves on PATH
+  command: command -v mrpad
+  expected_exit_code: 0
+- name: mrpad is executable
+  command: test -x "$(command -v mrpad)"
+  expected_exit_code: 0
+- name: mrpad has no missing shared libraries
+  command: '! ldd "$(command -v mrpad)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrstats resolves on PATH
+  command: command -v mrstats
+  expected_exit_code: 0
+- name: mrstats is executable
+  command: test -x "$(command -v mrstats)"
+  expected_exit_code: 0
+- name: mrstats has no missing shared libraries
+  command: '! ldd "$(command -v mrstats)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrthreshold resolves on PATH
+  command: command -v mrthreshold
+  expected_exit_code: 0
+- name: mrthreshold is executable
+  command: test -x "$(command -v mrthreshold)"
+  expected_exit_code: 0
+- name: mrthreshold has no missing shared libraries
+  command: '! ldd "$(command -v mrthreshold)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrfilter resolves on PATH
+  command: command -v mrfilter
+  expected_exit_code: 0
+- name: mrfilter is executable
+  command: test -x "$(command -v mrfilter)"
+  expected_exit_code: 0
+- name: mrfilter has no missing shared libraries
+  command: '! ldd "$(command -v mrfilter)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrdegibbs resolves on PATH
+  command: command -v mrdegibbs
+  expected_exit_code: 0
+- name: mrdegibbs is executable
+  command: test -x "$(command -v mrdegibbs)"
+  expected_exit_code: 0
+- name: mrdegibbs has no missing shared libraries
+  command: '! ldd "$(command -v mrdegibbs)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: dwidenoise resolves on PATH
+  command: command -v dwidenoise
+  expected_exit_code: 0
+- name: dwidenoise is executable
+  command: test -x "$(command -v dwidenoise)"
+  expected_exit_code: 0
+- name: dwidenoise has no missing shared libraries
+  command: '! ldd "$(command -v dwidenoise)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: dwi2tensor resolves on PATH
+  command: command -v dwi2tensor
+  expected_exit_code: 0
+- name: dwi2tensor is executable
+  command: test -x "$(command -v dwi2tensor)"
+  expected_exit_code: 0
+- name: dwi2tensor has no missing shared libraries
+  command: '! ldd "$(command -v dwi2tensor)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: tensor2metric resolves on PATH
+  command: command -v tensor2metric
+  expected_exit_code: 0
+- name: tensor2metric is executable
+  command: test -x "$(command -v tensor2metric)"
+  expected_exit_code: 0
+- name: tensor2metric has no missing shared libraries
+  command: '! ldd "$(command -v tensor2metric)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: dwi2response resolves on PATH
+  command: command -v dwi2response
+  expected_exit_code: 0
+- name: dwi2response is executable
+  command: test -x "$(command -v dwi2response)"
+  expected_exit_code: 0
+- name: dwi2response has no missing shared libraries
+  command: '! ldd "$(command -v dwi2response)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: dwi2fod resolves on PATH
+  command: command -v dwi2fod
+  expected_exit_code: 0
+- name: dwi2fod is executable
+  command: test -x "$(command -v dwi2fod)"
+  expected_exit_code: 0
+- name: dwi2fod has no missing shared libraries
+  command: '! ldd "$(command -v dwi2fod)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: dwiextract resolves on PATH
+  command: command -v dwiextract
+  expected_exit_code: 0
+- name: dwiextract is executable
+  command: test -x "$(command -v dwiextract)"
+  expected_exit_code: 0
+- name: dwiextract has no missing shared libraries
+  command: '! ldd "$(command -v dwiextract)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: dwigradcheck resolves on PATH
+  command: command -v dwigradcheck
+  expected_exit_code: 0
+- name: dwigradcheck is executable
+  command: test -x "$(command -v dwigradcheck)"
+  expected_exit_code: 0
+- name: dwigradcheck has no missing shared libraries
+  command: '! ldd "$(command -v dwigradcheck)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: dwifslpreproc resolves on PATH
+  command: command -v dwifslpreproc
+  expected_exit_code: 0
+- name: dwifslpreproc is executable
+  command: test -x "$(command -v dwifslpreproc)"
+  expected_exit_code: 0
+- name: dwifslpreproc has no missing shared libraries
+  command: '! ldd "$(command -v dwifslpreproc)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: dwibiascorrect resolves on PATH
+  command: command -v dwibiascorrect
+  expected_exit_code: 0
+- name: dwibiascorrect is executable
+  command: test -x "$(command -v dwibiascorrect)"
+  expected_exit_code: 0
+- name: dwibiascorrect has no missing shared libraries
+  command: '! ldd "$(command -v dwibiascorrect)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: tckgen resolves on PATH
+  command: command -v tckgen
+  expected_exit_code: 0
+- name: tckgen is executable
+  command: test -x "$(command -v tckgen)"
+  expected_exit_code: 0
+- name: tckgen has no missing shared libraries
+  command: '! ldd "$(command -v tckgen)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: tckedit resolves on PATH
+  command: command -v tckedit
+  expected_exit_code: 0
+- name: tckedit is executable
+  command: test -x "$(command -v tckedit)"
+  expected_exit_code: 0
+- name: tckedit has no missing shared libraries
+  command: '! ldd "$(command -v tckedit)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: tckmap resolves on PATH
+  command: command -v tckmap
+  expected_exit_code: 0
+- name: tckmap is executable
+  command: test -x "$(command -v tckmap)"
+  expected_exit_code: 0
+- name: tckmap has no missing shared libraries
+  command: '! ldd "$(command -v tckmap)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: tcksift resolves on PATH
+  command: command -v tcksift
+  expected_exit_code: 0
+- name: tcksift is executable
+  command: test -x "$(command -v tcksift)"
+  expected_exit_code: 0
+- name: tcksift has no missing shared libraries
+  command: '! ldd "$(command -v tcksift)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: tcksift2 resolves on PATH
+  command: command -v tcksift2
+  expected_exit_code: 0
+- name: tcksift2 is executable
+  command: test -x "$(command -v tcksift2)"
+  expected_exit_code: 0
+- name: tcksift2 has no missing shared libraries
+  command: '! ldd "$(command -v tcksift2)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: tckstats resolves on PATH
+  command: command -v tckstats
+  expected_exit_code: 0
+- name: tckstats is executable
+  command: test -x "$(command -v tckstats)"
+  expected_exit_code: 0
+- name: tckstats has no missing shared libraries
+  command: '! ldd "$(command -v tckstats)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: tcksample resolves on PATH
+  command: command -v tcksample
+  expected_exit_code: 0
+- name: tcksample is executable
+  command: test -x "$(command -v tcksample)"
+  expected_exit_code: 0
+- name: tcksample has no missing shared libraries
+  command: '! ldd "$(command -v tcksample)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: 5ttgen resolves on PATH
+  command: command -v 5ttgen
+  expected_exit_code: 0
+- name: 5ttgen is executable
+  command: test -x "$(command -v 5ttgen)"
+  expected_exit_code: 0
+- name: 5ttgen has no missing shared libraries
+  command: '! ldd "$(command -v 5ttgen)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: 5tt2gmwmi resolves on PATH
+  command: command -v 5tt2gmwmi
+  expected_exit_code: 0
+- name: 5tt2gmwmi is executable
+  command: test -x "$(command -v 5tt2gmwmi)"
+  expected_exit_code: 0
+- name: 5tt2gmwmi has no missing shared libraries
+  command: '! ldd "$(command -v 5tt2gmwmi)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: labelconvert resolves on PATH
+  command: command -v labelconvert
+  expected_exit_code: 0
+- name: labelconvert is executable
+  command: test -x "$(command -v labelconvert)"
+  expected_exit_code: 0
+- name: labelconvert has no missing shared libraries
+  command: '! ldd "$(command -v labelconvert)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrview resolves on PATH
+  command: command -v mrview
+  expected_exit_code: 0
+- name: mrview is executable
+  command: test -x "$(command -v mrview)"
+  expected_exit_code: 0
+- name: mrview has no missing shared libraries
+  command: '! ldd "$(command -v mrview)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: MRtrix source installation exists
+  command: test -d /opt/mrtrix3-latest
+  expected_exit_code: 0
