@@ -1,0 +1,305 @@
+name: deepisles
+version: '1.1'
+container: deepisles_${version}_REFERENCE.simg
+default_timeout: 60
+tests:
+- name: Python imports gdown
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import gdown'
+  expected_exit_code: 0
+- name: Python locates gdown
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("gdown") is not None'
+  expected_exit_code: 0
+- name: Python imports six
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import six'
+  expected_exit_code: 0
+- name: Python locates six
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("six") is not None'
+  expected_exit_code: 0
+- name: Python imports yaml
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import yaml'
+  expected_exit_code: 0
+- name: Python locates yaml
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("yaml") is not None'
+  expected_exit_code: 0
+- name: Python imports tqdm
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import tqdm'
+  expected_exit_code: 0
+- name: Python locates tqdm
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("tqdm") is not None'
+  expected_exit_code: 0
+- name: Python imports numpy
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import numpy'
+  expected_exit_code: 0
+- name: Python locates numpy
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("numpy") is not None'
+  expected_exit_code: 0
+- name: Python imports sympy
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import sympy'
+  expected_exit_code: 0
+- name: Python locates sympy
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("sympy") is not None'
+  expected_exit_code: 0
+- name: Python imports scipy
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import scipy'
+  expected_exit_code: 0
+- name: Python locates scipy
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("scipy") is not None'
+  expected_exit_code: 0
+- name: Python imports pandas
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import pandas'
+  expected_exit_code: 0
+- name: Python locates pandas
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pandas") is not None'
+  expected_exit_code: 0
+- name: Python imports einops
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import einops'
+  expected_exit_code: 0
+- name: Python locates einops
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("einops") is not None'
+  expected_exit_code: 0
+- name: Python imports PIL
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import PIL'
+  expected_exit_code: 0
+- name: Python locates PIL
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("PIL") is not None'
+  expected_exit_code: 0
+- name: Python imports plotly
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import plotly'
+  expected_exit_code: 0
+- name: Python locates plotly
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("plotly") is not None'
+  expected_exit_code: 0
+- name: Python imports imageio
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import imageio'
+  expected_exit_code: 0
+- name: Python locates imageio
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("imageio") is not None'
+  expected_exit_code: 0
+- name: Python imports matplotlib
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import matplotlib'
+  expected_exit_code: 0
+- name: Python locates matplotlib
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("matplotlib") is not None'
+  expected_exit_code: 0
+- name: Python imports sklearn
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import sklearn'
+  expected_exit_code: 0
+- name: Python locates sklearn
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("sklearn") is not None'
+  expected_exit_code: 0
+- name: Python imports skimage
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import skimage'
+  expected_exit_code: 0
+- name: Python locates skimage
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("skimage") is not None'
+  expected_exit_code: 0
+- name: Python imports cv2
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import cv2'
+  expected_exit_code: 0
+- name: Python locates cv2
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("cv2") is not None'
+  expected_exit_code: 0
+- name: Python imports itk
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import itk'
+  expected_exit_code: 0
+- name: Python locates itk
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("itk") is not None'
+  expected_exit_code: 0
+- name: Python imports medpy
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import medpy'
+  expected_exit_code: 0
+- name: Python locates medpy
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("medpy") is not None'
+  expected_exit_code: 0
+- name: Python imports nibabel
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import nibabel'
+  expected_exit_code: 0
+- name: Python locates nibabel
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("nibabel") is not None'
+  expected_exit_code: 0
+- name: Python imports pydicom
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import pydicom'
+  expected_exit_code: 0
+- name: Python locates pydicom
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pydicom") is not None'
+  expected_exit_code: 0
+- name: Python imports SimpleITK
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import SimpleITK'
+  expected_exit_code: 0
+- name: Python locates SimpleITK
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("SimpleITK") is not None'
+  expected_exit_code: 0
+- name: Python imports networkx
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import networkx'
+  expected_exit_code: 0
+- name: Python locates networkx
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("networkx") is not None'
+  expected_exit_code: 0
+- name: Python imports opt_einsum
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import opt_einsum'
+  expected_exit_code: 0
+- name: Python locates opt_einsum
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("opt_einsum") is not None'
+  expected_exit_code: 0
+- name: Python imports torchmetrics
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import torchmetrics'
+  expected_exit_code: 0
+- name: Python locates torchmetrics
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("torchmetrics") is not None'
+  expected_exit_code: 0
+- name: Python imports pytorch_lightning
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import pytorch_lightning'
+  expected_exit_code: 0
+- name: Python locates pytorch_lightning
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pytorch_lightning") is not None'
+  expected_exit_code: 0
+- name: Python imports performer_pytorch
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import performer_pytorch'
+  expected_exit_code: 0
+- name: Python locates performer_pytorch
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("performer_pytorch") is not None'
+  expected_exit_code: 0
+- name: Python imports evalutils
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import evalutils'
+  expected_exit_code: 0
+- name: Python locates evalutils
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("evalutils") is not None'
+  expected_exit_code: 0
+- name: Python imports batchgenerators
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import batchgenerators'
+  expected_exit_code: 0
+- name: Python locates batchgenerators
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("batchgenerators") is not None'
+  expected_exit_code: 0
+- name: Python imports cc3d
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import cc3d'
+  expected_exit_code: 0
+- name: Python locates cc3d
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("cc3d") is not None'
+  expected_exit_code: 0
+- name: Python imports monai
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import monai'
+  expected_exit_code: 0
+- name: Python locates monai
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("monai") is not None'
+  expected_exit_code: 0
+- name: Python imports colorama
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import colorama'
+  expected_exit_code: 0
+- name: Python locates colorama
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("colorama") is not None'
+  expected_exit_code: 0
+- name: Python imports dicom2nifti
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import dicom2nifti'
+  expected_exit_code: 0
+- name: Python locates dicom2nifti
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("dicom2nifti") is not None'
+  expected_exit_code: 0
+- name: Python imports nnunet
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import nnunet'
+  expected_exit_code: 0
+- name: Python locates nnunet
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("nnunet") is not None'
+  expected_exit_code: 0
+- name: Python imports openslide
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import openslide'
+  expected_exit_code: 0
+- name: Python locates openslide
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("openslide") is not None'
+  expected_exit_code: 0
+- name: Python imports torch
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import torch'
+  expected_exit_code: 0
+- name: Python locates torch
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("torch") is not None'
+  expected_exit_code: 0
+- name: Python imports torchvision
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import torchvision'
+  expected_exit_code: 0
+- name: Python locates torchvision
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("torchvision") is not None'
+  expected_exit_code: 0
+- name: Python imports gdcm
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import gdcm'
+  expected_exit_code: 0
+- name: Python locates gdcm
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("gdcm") is not None'
+  expected_exit_code: 0
+- name: Python imports requests
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import requests'
+  expected_exit_code: 0
+- name: Python locates requests
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import importlib.util; assert importlib.util.find_spec("requests") is not None'
+  expected_exit_code: 0
+- name: DeepISLES environment exists
+  command: test -d /opt/miniconda/envs/deepisles
+  expected_exit_code: 0
+- name: DeepISLES Python is executable
+  command: test -x /opt/miniconda/envs/deepisles/bin/python
+  expected_exit_code: 0
+- name: DeepISLES pip is executable
+  command: test -x /opt/miniconda/envs/deepisles/bin/pip
+  expected_exit_code: 0
+- name: DeepISLES conda metadata exists
+  command: test -d /opt/miniconda/envs/deepisles/conda-meta
+  expected_exit_code: 0
+- name: DeepISLES has broad package coverage
+  command: test "$(find /opt/miniconda/envs/deepisles/conda-meta -name '*.json' | wc -l)" -ge 100
+  expected_exit_code: 0
+- name: DeepISLES source checkout exists
+  command: test -d /opt/DeepIsles
+  expected_exit_code: 0
+- name: DeepISLES prediction script exists
+  command: test -f /opt/DeepIsles/scripts/predict.py
+  expected_exit_code: 0
+- name: SEALS source exists
+  command: test -d /opt/DeepIsles/src/SEALS
+  expected_exit_code: 0
+- name: Factorizer source exists
+  command: test -d /opt/DeepIsles/src/FACTORIZER
+  expected_exit_code: 0
+- name: HD-BET source exists
+  command: test -d /opt/DeepIsles/src/HD-BET
+  expected_exit_code: 0
+- name: DeepISLES weight files exist
+  command: find /opt/DeepIsles -type f \( -name '*.pth' -o -name '*.pt' -o -name '*.ckpt' \) | grep -q .
+  expected_exit_code: 0
+- name: 7-Zip is available
+  command: command -v 7za
+  expected_exit_code: 0
+- name: Base Conda is executable
+  command: test -x /opt/miniconda/bin/conda
+  expected_exit_code: 0
+- name: Python reports a version
+  command: /opt/miniconda/envs/deepisles/bin/python --version
+  expected_exit_code: 0
+- name: PyTorch creates a tensor
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import torch; assert torch.ones(2).sum().item() == 2'
+  expected_exit_code: 0
+- name: NumPy performs linear algebra
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import numpy as n; assert n.linalg.det(n.eye(2)) == 1'
+  expected_exit_code: 0
+- name: SciPy performs convolution
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import numpy as n; from scipy.ndimage import convolve; assert convolve(n.ones((2,2)), n.ones((1,1))).shape == (2,2)'
+  expected_exit_code: 0
+- name: scikit-image creates a transform
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import numpy as n; from skimage.transform import resize; assert resize(n.ones((2,2)), (4,4)).shape == (4,4)'
+  expected_exit_code: 0
+- name: Nibabel creates a NIfTI image
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import nibabel as n, numpy as x; assert n.Nifti1Image(x.zeros((2,2,2)), x.eye(4)).shape == (2,2,2)'
+  expected_exit_code: 0
+- name: SimpleITK creates an image
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import SimpleITK as s; assert s.Image(2,2,s.sitkUInt8).GetSize() == (2,2)'
+  expected_exit_code: 0
+- name: Connected components labels data
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import cc3d, numpy as n; assert cc3d.connected_components(n.ones((2,2,2), dtype=n.uint8)).max() == 1'
+  expected_exit_code: 0
+- name: OpenCV resizes an image
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import cv2, numpy as n; assert cv2.resize(n.ones((2,2)), (4,4)).shape == (4,4)'
+  expected_exit_code: 0
+- name: Pydicom creates a dataset
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'from pydicom.dataset import Dataset; d=Dataset(); d.PatientName="Test"; assert str(d.PatientName)=="Test"'
+  expected_exit_code: 0
+- name: DeepISLES PATH uses its environment
+  command: case "$PATH" in /opt/miniconda/envs/deepisles/bin:*) exit 0;; *) exit 1;; esac
+  expected_exit_code: 0
