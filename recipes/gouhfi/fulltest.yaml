@@ -1,0 +1,313 @@
+name: gouhfi
+version: 0.0.1
+container: gouhfi_0.0.1_20260527.simg
+default_timeout: 300
+
+env:
+  GOUHFI_HOME: /opt/GOUHFI
+  nnUNet_raw: /opt/GOUHFI/nnUNet_raw
+  nnUNet_preprocessed: /opt/GOUHFI/nnUNet_preprocessed
+  nnUNet_results: /opt/GOUHFI/trained_model
+
+tests:
+  - name: Python reports version
+    command: "python --version"
+    expected_exit_code: 0
+  - name: GOUHFI distribution metadata is installed
+    command: "python -c \"import importlib.metadata as m; assert m.version('gouhfi'); print(m.version('gouhfi'))\""
+    expected_exit_code: 0
+  - name: GOUHFI imports from the installed source tree
+    command: "python -c \"import data_utils; assert data_utils.__file__.startswith('/opt/GOUHFI/'); print(data_utils.__file__)\""
+    expected_exit_code: 0
+  - name: GOUHFI home directory exists
+    command: "test -d /opt/GOUHFI"
+    expected_exit_code: 0
+  - name: GOUHFI README is bundled
+    command: "test -s /opt/GOUHFI/README.md"
+    expected_exit_code: 0
+  - name: GOUHFI license is bundled
+    command: "test -s /opt/GOUHFI/LICENSE"
+    expected_exit_code: 0
+  - name: GOUHFI project metadata is bundled
+    command: "test -s /opt/GOUHFI/pyproject.toml"
+    expected_exit_code: 0
+  - name: GOUHFI setup script is bundled
+    command: "test -s /opt/GOUHFI/setup.py"
+    expected_exit_code: 0
+  - name: Example raw NIfTI image is bundled
+    command: "test -s /opt/GOUHFI/test_data/input-images-raw/sub004-t1w-07iso_0000.nii.gz"
+    expected_exit_code: 0
+  - name: Example NIfTI image loads
+    command: "python -c \"import nibabel as nib; nib.load('/opt/GOUHFI/test_data/input-images-raw/sub004-t1w-07iso_0000.nii.gz'); print('ok')\""
+    expected_exit_code: 0
+  - name: Example NIfTI image is three dimensional
+    command: "python -c \"import nibabel as nib; assert len(nib.load('/opt/GOUHFI/test_data/input-images-raw/sub004-t1w-07iso_0000.nii.gz').shape) == 3\""
+    expected_exit_code: 0
+  - name: Example NIfTI image values are finite
+    command: "python -c \"import nibabel as nib, numpy as np; assert np.isfinite(nib.load('/opt/GOUHFI/test_data/input-images-raw/sub004-t1w-07iso_0000.nii.gz').get_fdata()).all()\""
+    expected_exit_code: 0
+  - name: Example NIfTI image has nonempty dimensions
+    command: "python -c \"import nibabel as nib; assert all(n > 0 for n in nib.load('/opt/GOUHFI/test_data/input-images-raw/sub004-t1w-07iso_0000.nii.gz').shape)\""
+    expected_exit_code: 0
+  - name: Example NIfTI voxel spacing is positive
+    command: "python -c \"import nibabel as nib; assert all(v > 0 for v in nib.load('/opt/GOUHFI/test_data/input-images-raw/sub004-t1w-07iso_0000.nii.gz').header.get_zooms()[:3])\""
+    expected_exit_code: 0
+  - name: Example NIfTI affine is nonsingular
+    command: "python -c \"import nibabel as nib, numpy as np; assert abs(np.linalg.det(nib.load('/opt/GOUHFI/test_data/input-images-raw/sub004-t1w-07iso_0000.nii.gz').affine[:3,:3])) > 0\""
+    expected_exit_code: 0
+  - name: run_gouhfi displays help
+    command: "run_gouhfi --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: run_conforming displays help
+    command: "run_conforming --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: run_brain_extraction displays help
+    command: "run_brain_extraction --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: run_preprocessing displays help
+    command: "run_preprocessing --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: run_labels_reordering displays help
+    command: "run_labels_reordering --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: run_renaming displays help
+    command: "run_renaming --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: run_add_label displays help
+    command: "run_add_label --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: run_vol_extraction displays help
+    command: "run_vol_extraction --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: run_label_modif displays help
+    command: "run_label_modif --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_plan_and_preprocess displays help
+    command: "nnUNetv2_plan_and_preprocess --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_extract_fingerprint displays help
+    command: "nnUNetv2_extract_fingerprint --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_plan_experiment displays help
+    command: "nnUNetv2_plan_experiment --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_preprocess displays help
+    command: "nnUNetv2_preprocess --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_train displays help
+    command: "nnUNetv2_train --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_predict_from_modelfolder displays help
+    command: "nnUNetv2_predict_from_modelfolder --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_predict displays help
+    command: "nnUNetv2_predict --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_convert_old_nnUNet_dataset displays help
+    command: "nnUNetv2_convert_old_nnUNet_dataset --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_find_best_configuration displays help
+    command: "nnUNetv2_find_best_configuration --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_determine_postprocessing displays help
+    command: "nnUNetv2_determine_postprocessing --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_apply_postprocessing displays help
+    command: "nnUNetv2_apply_postprocessing --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_ensemble displays help
+    command: "nnUNetv2_ensemble --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_evaluate_folder displays help
+    command: "nnUNetv2_evaluate_folder --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_evaluate_simple displays help
+    command: "nnUNetv2_evaluate_simple --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: nnUNetv2_convert_MSD_dataset displays help
+    command: "nnUNetv2_convert_MSD_dataset --help 2>&1 | grep -qi usage"
+    expected_exit_code: 0
+  - name: ants dependency imports
+    command: "python -c \"import ants; print('ok')\""
+    expected_exit_code: 0
+  - name: antspynet dependency imports
+    command: "python -c \"import antspynet; print('ok')\""
+    expected_exit_code: 0
+  - name: skimage dependency imports
+    command: "python -c \"import skimage; print('ok')\""
+    expected_exit_code: 0
+  - name: acvl_utils dependency imports
+    command: "python -c \"import acvl_utils; print('ok')\""
+    expected_exit_code: 0
+  - name: dynamic_network_architectures dependency imports
+    command: "python -c \"import dynamic_network_architectures; print('ok')\""
+    expected_exit_code: 0
+  - name: tqdm dependency imports
+    command: "python -c \"import tqdm; print('ok')\""
+    expected_exit_code: 0
+  - name: dicom2nifti dependency imports
+    command: "python -c \"import dicom2nifti; print('ok')\""
+    expected_exit_code: 0
+  - name: scipy dependency imports
+    command: "python -c \"import scipy; print('ok')\""
+    expected_exit_code: 0
+  - name: batchgenerators dependency imports
+    command: "python -c \"import batchgenerators; print('ok')\""
+    expected_exit_code: 0
+  - name: numpy dependency imports
+    command: "python -c \"import numpy; print('ok')\""
+    expected_exit_code: 0
+  - name: sklearn dependency imports
+    command: "python -c \"import sklearn; print('ok')\""
+    expected_exit_code: 0
+  - name: SimpleITK dependency imports
+    command: "python -c \"import SimpleITK; print('ok')\""
+    expected_exit_code: 0
+  - name: pandas dependency imports
+    command: "python -c \"import pandas; print('ok')\""
+    expected_exit_code: 0
+  - name: graphviz dependency imports
+    command: "python -c \"import graphviz; print('ok')\""
+    expected_exit_code: 0
+  - name: tifffile dependency imports
+    command: "python -c \"import tifffile; print('ok')\""
+    expected_exit_code: 0
+  - name: requests dependency imports
+    command: "python -c \"import requests; print('ok')\""
+    expected_exit_code: 0
+  - name: nibabel dependency imports
+    command: "python -c \"import nibabel; print('ok')\""
+    expected_exit_code: 0
+  - name: matplotlib dependency imports
+    command: "python -c \"import matplotlib; print('ok')\""
+    expected_exit_code: 0
+  - name: seaborn dependency imports
+    command: "python -c \"import seaborn; print('ok')\""
+    expected_exit_code: 0
+  - name: imagecodecs dependency imports
+    command: "python -c \"import imagecodecs; print('ok')\""
+    expected_exit_code: 0
+  - name: yacs dependency imports
+    command: "python -c \"import yacs; print('ok')\""
+    expected_exit_code: 0
+  - name: batchgeneratorsv2 dependency imports
+    command: "python -c \"import batchgeneratorsv2; print('ok')\""
+    expected_exit_code: 0
+  - name: einops dependency imports
+    command: "python -c \"import einops; print('ok')\""
+    expected_exit_code: 0
+  - name: blosc2 dependency imports
+    command: "python -c \"import blosc2; print('ok')\""
+    expected_exit_code: 0
+  - name: sympy dependency imports
+    command: "python -c \"import sympy; print('ok')\""
+    expected_exit_code: 0
+  - name: torch dependency imports
+    command: "python -c \"import torch; print('ok')\""
+    expected_exit_code: 0
+  - name: data_utils.conform_images module imports
+    command: "python -c \"import data_utils.conform_images; print('ok')\""
+    expected_exit_code: 0
+  - name: data_utils.conform_labels module imports
+    command: "python -c \"import data_utils.conform_labels; print('ok')\""
+    expected_exit_code: 0
+  - name: data_utils.get_volume_values module imports
+    command: "python -c \"import data_utils.get_volume_values; print('ok')\""
+    expected_exit_code: 0
+  - name: data_utils.preprocessing_pipeline module imports
+    command: "python -c \"import data_utils.preprocessing_pipeline; print('ok')\""
+    expected_exit_code: 0
+  - name: data_utils.remove_keep_reindex_labels module imports
+    command: "python -c \"import data_utils.remove_keep_reindex_labels; print('ok')\""
+    expected_exit_code: 0
+  - name: data_utils.rename_files_nnunet_convention module imports
+    command: "python -c \"import data_utils.rename_files_nnunet_convention; print('ok')\""
+    expected_exit_code: 0
+  - name: data_utils.reorder_labels_freesurfer_lut module imports
+    command: "python -c \"import data_utils.reorder_labels_freesurfer_lut; print('ok')\""
+    expected_exit_code: 0
+  - name: nnunetv2.configuration module imports
+    command: "python -c \"import nnunetv2.configuration; print('ok')\""
+    expected_exit_code: 0
+  - name: nnunetv2.imageio.nibabel_reader_writer module imports
+    command: "python -c \"import nnunetv2.imageio.nibabel_reader_writer; print('ok')\""
+    expected_exit_code: 0
+  - name: run_inference.gouhfi_inference_postpro_reo module imports
+    command: "python -c \"import run_inference.gouhfi_inference_postpro_reo; print('ok')\""
+    expected_exit_code: 0
+  - name: misc/freesurfer-label-list-lut.txt asset is nonempty
+    command: "test -s /opt/GOUHFI/misc/freesurfer-label-list-lut.txt"
+    expected_exit_code: 0
+  - name: misc/freesurfer_brain_labels_lut.txt asset is nonempty
+    command: "test -s /opt/GOUHFI/misc/freesurfer_brain_labels_lut.txt"
+    expected_exit_code: 0
+  - name: misc/freesurfer_cortex_labels_lut.txt asset is nonempty
+    command: "test -s /opt/GOUHFI/misc/freesurfer_cortex_labels_lut.txt"
+    expected_exit_code: 0
+  - name: misc/gouhfi-label-list-lut.txt asset is nonempty
+    command: "test -s /opt/GOUHFI/misc/gouhfi-label-list-lut.txt"
+    expected_exit_code: 0
+  - name: misc/gouhfi_v1p0_labels_lut.txt asset is nonempty
+    command: "test -s /opt/GOUHFI/misc/gouhfi_v1p0_labels_lut.txt"
+    expected_exit_code: 0
+  - name: misc/gouhfi_v2p0_all_labels_lut.txt asset is nonempty
+    command: "test -s /opt/GOUHFI/misc/gouhfi_v2p0_all_labels_lut.txt"
+    expected_exit_code: 0
+  - name: misc/gouhfi_v2p0_brain_labels_lut.txt asset is nonempty
+    command: "test -s /opt/GOUHFI/misc/gouhfi_v2p0_brain_labels_lut.txt"
+    expected_exit_code: 0
+  - name: misc/gouhfi_v2p0_cortex_labels_lut.txt asset is nonempty
+    command: "test -s /opt/GOUHFI/misc/gouhfi_v2p0_cortex_labels_lut.txt"
+    expected_exit_code: 0
+  - name: misc/generation_classes_gouhfi.npy asset is nonempty
+    command: "test -s /opt/GOUHFI/misc/generation_classes_gouhfi.npy"
+    expected_exit_code: 0
+  - name: misc/segmentation_labels_gouhfi.npy asset is nonempty
+    command: "test -s /opt/GOUHFI/misc/segmentation_labels_gouhfi.npy"
+    expected_exit_code: 0
+  - name: Fold 0 checkpoint is bundled
+    command: "test -s /opt/GOUHFI/trained_model/Dataset014_gouhfi/nnUNetTrainer_NoDA_500epochs_AdamW__nnUNetResEncL__3d_fullres/fold_0/checkpoint_best.pth"
+    expected_exit_code: 0
+  - name: Fold 1 checkpoint is bundled
+    command: "test -s /opt/GOUHFI/trained_model/Dataset014_gouhfi/nnUNetTrainer_NoDA_500epochs_AdamW__nnUNetResEncL__3d_fullres/fold_1/checkpoint_best.pth"
+    expected_exit_code: 0
+  - name: Fold 2 checkpoint is bundled
+    command: "test -s /opt/GOUHFI/trained_model/Dataset014_gouhfi/nnUNetTrainer_NoDA_500epochs_AdamW__nnUNetResEncL__3d_fullres/fold_2/checkpoint_best.pth"
+    expected_exit_code: 0
+  - name: Fold 3 checkpoint is bundled
+    command: "test -s /opt/GOUHFI/trained_model/Dataset014_gouhfi/nnUNetTrainer_NoDA_500epochs_AdamW__nnUNetResEncL__3d_fullres/fold_3/checkpoint_best.pth"
+    expected_exit_code: 0
+  - name: Fold 4 checkpoint is bundled
+    command: "test -s /opt/GOUHFI/trained_model/Dataset014_gouhfi/nnUNetTrainer_NoDA_500epochs_AdamW__nnUNetResEncL__3d_fullres/fold_4/checkpoint_best.pth"
+    expected_exit_code: 0
+  - name: Fold 0 debug metadata is bundled
+    command: "python -c \"import json; json.load(open('/opt/GOUHFI/trained_model/Dataset014_gouhfi/nnUNetTrainer_NoDA_500epochs_AdamW__nnUNetResEncL__3d_fullres/fold_0/debug.json')); print('ok')\""
+    expected_exit_code: 0
+  - name: Fold 1 debug metadata is bundled
+    command: "python -c \"import json; json.load(open('/opt/GOUHFI/trained_model/Dataset014_gouhfi/nnUNetTrainer_NoDA_500epochs_AdamW__nnUNetResEncL__3d_fullres/fold_1/debug.json')); print('ok')\""
+    expected_exit_code: 0
+  - name: Fold 2 debug metadata is bundled
+    command: "python -c \"import json; json.load(open('/opt/GOUHFI/trained_model/Dataset014_gouhfi/nnUNetTrainer_NoDA_500epochs_AdamW__nnUNetResEncL__3d_fullres/fold_2/debug.json')); print('ok')\""
+    expected_exit_code: 0
+  - name: Fold 3 debug metadata is bundled
+    command: "python -c \"import json; json.load(open('/opt/GOUHFI/trained_model/Dataset014_gouhfi/nnUNetTrainer_NoDA_500epochs_AdamW__nnUNetResEncL__3d_fullres/fold_3/debug.json')); print('ok')\""
+    expected_exit_code: 0
+  - name: Fold 4 debug metadata is bundled
+    command: "python -c \"import json; json.load(open('/opt/GOUHFI/trained_model/Dataset014_gouhfi/nnUNetTrainer_NoDA_500epochs_AdamW__nnUNetResEncL__3d_fullres/fold_4/debug.json')); print('ok')\""
+    expected_exit_code: 0
+  - name: NumPy numerical operation succeeds
+    command: "python -c \"import numpy as np; a=np.arange(27).reshape(3,3,3); assert int(a.sum()) == 351\""
+    expected_exit_code: 0
+  - name: SciPy connected-component labeling succeeds
+    command: "python -c \"import numpy as np; from scipy import ndimage; a=np.zeros((5,5), dtype=int); a[1,1]=a[3,3]=1; _, n=ndimage.label(a); assert n == 2\""
+    expected_exit_code: 0
+  - name: NiBabel NIfTI round trip succeeds
+    command: "python -c \"import nibabel as nib, numpy as np, tempfile, os; p=tempfile.mktemp(suffix='.nii.gz'); nib.save(nib.Nifti1Image(np.ones((3,4,5), dtype=np.float32), np.eye(4)),p); assert nib.load(p).shape==(3,4,5); os.unlink(p)\""
+    expected_exit_code: 0
+  - name: SimpleITK image operation succeeds
+    command: "python -c \"import SimpleITK as sitk; image=sitk.Image([4,5,6], sitk.sitkFloat32); assert image.GetSize()==(4,5,6)\""
+    expected_exit_code: 0
+  - name: PyTorch CPU tensor operation succeeds
+    command: "python -c \"import torch; x=torch.arange(6, device='cpu').reshape(2,3); assert x.sum().item()==15\""
+    expected_exit_code: 0
+
