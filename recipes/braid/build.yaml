@@ -67,8 +67,7 @@ build:
     - template:
         name: ants
         version: 2.3.1
-        method: source
-        make_opts: "-j4"
+        method: binaries
     - workdir: /opt
     - run:
         - git clone https://github.com/MASILab/BRAID.git
