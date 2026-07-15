@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "lesionquantificationtoolkit 0.1.0": {
+      "version": "20260715",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging"
+  ]
+}
