@@ -38,7 +38,7 @@ build:
         path:
           - /opt/fsl-6.0.4/bin
           - /opt/mrtrix3-3.0.3/bin
-          - /opt/ants-2.3.1/bin
+          - /opt/ants-2.3.4
           - /opt/convert3d-1.0.0/bin
         bins:
           - braid_one_sample_inference
@@ -59,16 +59,15 @@ build:
     - template:
         name: mrtrix3
         version: 3.0.3
-        method: source
-        build_processes: "1"
+        method: binaries
+        libtiff_package: libtiff5
     - template:
         name: convert3d
         version: 1.0.0
     - template:
         name: ants
-        version: 2.3.1
-        method: source
-        make_opts: "-j4"
+        version: 2.3.4
+        method: binaries
     - workdir: /opt
     - run:
         - git clone https://github.com/MASILab/BRAID.git

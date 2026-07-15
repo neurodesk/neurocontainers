@@ -1,6 +1,5 @@
 name: civet
 version: 2.1.1
-draft: true # this recipe doesn't work
 copyright:
   - name: CIVET license
     url: https://github.com/aces/CIVET_Full_Project/blob/master/LICENSE

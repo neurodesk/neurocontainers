@@ -103,7 +103,7 @@ build:
             - conda create --name deepisles python=3.8.* pip=23.3.1 -y
             - conda activate deepisles
             - conda install pytorch=1.11 torchvision=0.12 cudatoolkit=11.3 -c pytorch -c conda-forge
-            - conda install -c conda-forge openslide-python
+            - conda install -c conda-forge openslide-python libffi=3.2.1
 
         - run:
             - . /root/.bashrc
@@ -113,7 +113,7 @@ build:
         - run:
             - . /root/.bashrc
             - conda activate deepisles
-            - pip install --no-deps dicom2nifti==2.6.0
+            - pip install --no-deps dicom2nifti==2.4.8
             - pip install --no-deps nnunet==1.7.0
 
         - run:
@@ -137,6 +137,11 @@ build:
             - . /root/.bashrc
             - conda activate deepisles
             - pip install -r requirements.txt
+
+        - run:
+            - . /root/.bashrc
+            - conda activate deepisles
+            - python -c "import dicom2nifti; import openslide"
 
         - environment:
             CONDA_DEFAULT_ENV: deepisles

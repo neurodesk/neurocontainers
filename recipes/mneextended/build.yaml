@@ -6,15 +6,13 @@ architectures:
 
 build:
   kind: neurodocker
-  base-image: debian/eol:stretch
+  base-image: debian:bullseye
   pkg-manager: apt
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
     - install:
-        - midori
         - xdg-utils
-        - python-pyqt5
         - unzip
         - git
         - apt-transport-https
@@ -37,7 +35,6 @@ build:
         - libgl1-mesa-dri
         - mesa-utils
         - libgl1-mesa-glx
-        - spyder
     - copy: mne-extended.yml /opt/mne-extended.yml
     - template:
         name: miniconda
