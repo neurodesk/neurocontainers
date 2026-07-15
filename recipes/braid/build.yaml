@@ -59,8 +59,8 @@ build:
     - template:
         name: mrtrix3
         version: 3.0.3
-        method: source
-        build_processes: "1"
+        method: binaries
+        libtiff_package: libtiff5
     - template:
         name: convert3d
         version: 1.0.0
