@@ -156,14 +156,14 @@ tests:
 - name: minc_modify_header has no missing shared libraries
   command: '! ldd "$(command -v minc_modify_header)" 2>&1 | grep "not found"'
   expected_exit_code: 0
-- name: minc_copy_header resolves on PATH
-  command: command -v minc_copy_header
+- name: mincheader resolves on PATH
+  command: command -v mincheader
   expected_exit_code: 0
-- name: minc_copy_header is executable
-  command: test -x "$(command -v minc_copy_header)"
+- name: mincheader is executable
+  command: test -x "$(command -v mincheader)"
   expected_exit_code: 0
-- name: minc_copy_header has no missing shared libraries
-  command: '! ldd "$(command -v minc_copy_header)" 2>&1 | grep "not found"'
+- name: mincheader has no missing shared libraries
+  command: '! ldd "$(command -v mincheader)" 2>&1 | grep "not found"'
   expected_exit_code: 0
 - name: mincdump resolves on PATH
   command: command -v mincdump
@@ -249,8 +249,8 @@ tests:
 - name: CIVET shared data directory exists
   command: test -d /CIVET_Full_Project/Linux-x86_64/share
   expected_exit_code: 0
-- name: CIVET brain-view data exists
-  command: test -d "$BRAINVIEW"
+- name: CIVET shared data is populated
+  command: find "$MNI_DATAPATH" -mindepth 1 -maxdepth 1 | grep -q .
   expected_exit_code: 0
 - name: CIVET MNI data exists
   command: test -d "$MNI_DATAPATH"
