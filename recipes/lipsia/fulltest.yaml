@@ -1,0 +1,305 @@
+name: lipsia
+version: 3.1.1
+container: lipsia_${version}_REFERENCE.simg
+default_timeout: 60
+tests:
+- name: vbcm resolves on PATH
+  command: command -v vbcm
+  expected_exit_code: 0
+- name: vbcm is executable
+  command: test -x "$(command -v vbcm)"
+  expected_exit_code: 0
+- name: vbcm has resolved shared libraries
+  command: '! ldd "$(command -v vbcm)" | grep "not found"'
+  expected_exit_code: 0
+- name: vbinarize resolves on PATH
+  command: command -v vbinarize
+  expected_exit_code: 0
+- name: vbinarize is executable
+  command: test -x "$(command -v vbinarize)"
+  expected_exit_code: 0
+- name: vbinarize has resolved shared libraries
+  command: '! ldd "$(command -v vbinarize)" | grep "not found"'
+  expected_exit_code: 0
+- name: vccm resolves on PATH
+  command: command -v vccm
+  expected_exit_code: 0
+- name: vccm is executable
+  command: test -x "$(command -v vccm)"
+  expected_exit_code: 0
+- name: vccm has resolved shared libraries
+  command: '! ldd "$(command -v vccm)" | grep "not found"'
+  expected_exit_code: 0
+- name: vcuttrials resolves on PATH
+  command: command -v vcuttrials
+  expected_exit_code: 0
+- name: vcuttrials is executable
+  command: test -x "$(command -v vcuttrials)"
+  expected_exit_code: 0
+- name: vcuttrials has resolved shared libraries
+  command: '! ldd "$(command -v vcuttrials)" | grep "not found"'
+  expected_exit_code: 0
+- name: vdenoise resolves on PATH
+  command: command -v vdenoise
+  expected_exit_code: 0
+- name: vdenoise is executable
+  command: test -x "$(command -v vdenoise)"
+  expected_exit_code: 0
+- name: vdenoise has resolved shared libraries
+  command: '! ldd "$(command -v vdenoise)" | grep "not found"'
+  expected_exit_code: 0
+- name: vdetrend resolves on PATH
+  command: command -v vdetrend
+  expected_exit_code: 0
+- name: vdetrend is executable
+  command: test -x "$(command -v vdetrend)"
+  expected_exit_code: 0
+- name: vdetrend has resolved shared libraries
+  command: '! ldd "$(command -v vdetrend)" | grep "not found"'
+  expected_exit_code: 0
+- name: vdicom resolves on PATH
+  command: command -v vdicom
+  expected_exit_code: 0
+- name: vdicom is executable
+  command: test -x "$(command -v vdicom)"
+  expected_exit_code: 0
+- name: vdicom has resolved shared libraries
+  command: '! ldd "$(command -v vdicom)" | grep "not found"'
+  expected_exit_code: 0
+- name: vecm resolves on PATH
+  command: command -v vecm
+  expected_exit_code: 0
+- name: vecm is executable
+  command: test -x "$(command -v vecm)"
+  expected_exit_code: 0
+- name: vecm has resolved shared libraries
+  command: '! ldd "$(command -v vecm)" | grep "not found"'
+  expected_exit_code: 0
+- name: vhubness resolves on PATH
+  command: command -v vhubness
+  expected_exit_code: 0
+- name: vhubness is executable
+  command: test -x "$(command -v vhubness)"
+  expected_exit_code: 0
+- name: vhubness has resolved shared libraries
+  command: '! ldd "$(command -v vhubness)" | grep "not found"'
+  expected_exit_code: 0
+- name: vlisa_2ndlevel resolves on PATH
+  command: command -v vlisa_2ndlevel
+  expected_exit_code: 0
+- name: vlisa_2ndlevel is executable
+  command: test -x "$(command -v vlisa_2ndlevel)"
+  expected_exit_code: 0
+- name: vlisa_2ndlevel has resolved shared libraries
+  command: '! ldd "$(command -v vlisa_2ndlevel)" | grep "not found"'
+  expected_exit_code: 0
+- name: vlisa_applythreshold resolves on PATH
+  command: command -v vlisa_applythreshold
+  expected_exit_code: 0
+- name: vlisa_applythreshold is executable
+  command: test -x "$(command -v vlisa_applythreshold)"
+  expected_exit_code: 0
+- name: vlisa_applythreshold has resolved shared libraries
+  command: '! ldd "$(command -v vlisa_applythreshold)" | grep "not found"'
+  expected_exit_code: 0
+- name: vlisa_generic resolves on PATH
+  command: command -v vlisa_generic
+  expected_exit_code: 0
+- name: vlisa_generic is executable
+  command: test -x "$(command -v vlisa_generic)"
+  expected_exit_code: 0
+- name: vlisa_generic has resolved shared libraries
+  command: '! ldd "$(command -v vlisa_generic)" | grep "not found"'
+  expected_exit_code: 0
+- name: vlisa_onesample resolves on PATH
+  command: command -v vlisa_onesample
+  expected_exit_code: 0
+- name: vlisa_onesample is executable
+  command: test -x "$(command -v vlisa_onesample)"
+  expected_exit_code: 0
+- name: vlisa_onesample has resolved shared libraries
+  command: '! ldd "$(command -v vlisa_onesample)" | grep "not found"'
+  expected_exit_code: 0
+- name: vlisa_precoloring resolves on PATH
+  command: command -v vlisa_precoloring
+  expected_exit_code: 0
+- name: vlisa_precoloring is executable
+  command: test -x "$(command -v vlisa_precoloring)"
+  expected_exit_code: 0
+- name: vlisa_precoloring has resolved shared libraries
+  command: '! ldd "$(command -v vlisa_precoloring)" | grep "not found"'
+  expected_exit_code: 0
+- name: vlisa_prewhitening resolves on PATH
+  command: command -v vlisa_prewhitening
+  expected_exit_code: 0
+- name: vlisa_prewhitening is executable
+  command: test -x "$(command -v vlisa_prewhitening)"
+  expected_exit_code: 0
+- name: vlisa_prewhitening has resolved shared libraries
+  command: '! ldd "$(command -v vlisa_prewhitening)" | grep "not found"'
+  expected_exit_code: 0
+- name: vlisa_twosample resolves on PATH
+  command: command -v vlisa_twosample
+  expected_exit_code: 0
+- name: vlisa_twosample is executable
+  command: test -x "$(command -v vlisa_twosample)"
+  expected_exit_code: 0
+- name: vlisa_twosample has resolved shared libraries
+  command: '! ldd "$(command -v vlisa_twosample)" | grep "not found"'
+  expected_exit_code: 0
+- name: vnifti resolves on PATH
+  command: command -v vnifti
+  expected_exit_code: 0
+- name: vnifti is executable
+  command: test -x "$(command -v vnifti)"
+  expected_exit_code: 0
+- name: vnifti has resolved shared libraries
+  command: '! ldd "$(command -v vnifti)" | grep "not found"'
+  expected_exit_code: 0
+- name: vpreprocess resolves on PATH
+  command: command -v vpreprocess
+  expected_exit_code: 0
+- name: vpreprocess is executable
+  command: test -x "$(command -v vpreprocess)"
+  expected_exit_code: 0
+- name: vpreprocess has resolved shared libraries
+  command: '! ldd "$(command -v vpreprocess)" | grep "not found"'
+  expected_exit_code: 0
+- name: vreadconnectome resolves on PATH
+  command: command -v vreadconnectome
+  expected_exit_code: 0
+- name: vreadconnectome is executable
+  command: test -x "$(command -v vreadconnectome)"
+  expected_exit_code: 0
+- name: vreadconnectome has resolved shared libraries
+  command: '! ldd "$(command -v vreadconnectome)" | grep "not found"'
+  expected_exit_code: 0
+- name: vsml resolves on PATH
+  command: command -v vsml
+  expected_exit_code: 0
+- name: vsml is executable
+  command: test -x "$(command -v vsml)"
+  expected_exit_code: 0
+- name: vsml has resolved shared libraries
+  command: '! ldd "$(command -v vsml)" | grep "not found"'
+  expected_exit_code: 0
+- name: vsml_statistics resolves on PATH
+  command: command -v vsml_statistics
+  expected_exit_code: 0
+- name: vsml_statistics is executable
+  command: test -x "$(command -v vsml_statistics)"
+  expected_exit_code: 0
+- name: vsml_statistics has resolved shared libraries
+  command: '! ldd "$(command -v vsml_statistics)" | grep "not found"'
+  expected_exit_code: 0
+- name: vspectralecm resolves on PATH
+  command: command -v vspectralecm
+  expected_exit_code: 0
+- name: vspectralecm is executable
+  command: test -x "$(command -v vspectralecm)"
+  expected_exit_code: 0
+- name: vspectralecm has resolved shared libraries
+  command: '! ldd "$(command -v vspectralecm)" | grep "not found"'
+  expected_exit_code: 0
+- name: vsrad resolves on PATH
+  command: command -v vsrad
+  expected_exit_code: 0
+- name: vsrad is executable
+  command: test -x "$(command -v vsrad)"
+  expected_exit_code: 0
+- name: vsrad has resolved shared libraries
+  command: '! ldd "$(command -v vsrad)" | grep "not found"'
+  expected_exit_code: 0
+- name: vted resolves on PATH
+  command: command -v vted
+  expected_exit_code: 0
+- name: vted is executable
+  command: test -x "$(command -v vted)"
+  expected_exit_code: 0
+- name: vted has resolved shared libraries
+  command: '! ldd "$(command -v vted)" | grep "not found"'
+  expected_exit_code: 0
+- name: vtedfdr resolves on PATH
+  command: command -v vtedfdr
+  expected_exit_code: 0
+- name: vtedfdr is executable
+  command: test -x "$(command -v vtedfdr)"
+  expected_exit_code: 0
+- name: vtedfdr has resolved shared libraries
+  command: '! ldd "$(command -v vtedfdr)" | grep "not found"'
+  expected_exit_code: 0
+- name: vapplymask resolves on PATH
+  command: command -v vapplymask
+  expected_exit_code: 0
+- name: vapplymask is executable
+  command: test -x "$(command -v vapplymask)"
+  expected_exit_code: 0
+- name: vapplymask has resolved shared libraries
+  command: '! ldd "$(command -v vapplymask)" | grep "not found"'
+  expected_exit_code: 0
+- name: LIPSIA installation directory exists
+  command: test -d /opt/lipsia
+  expected_exit_code: 0
+- name: LIPSIA binary directory exists
+  command: test -d /opt/lipsia/bin
+  expected_exit_code: 0
+- name: LIPSIA library directory exists
+  command: test -d /opt/lipsia/lib
+  expected_exit_code: 0
+- name: LIPSIA include directory exists
+  command: test -d /opt/lipsia/include
+  expected_exit_code: 0
+- name: LIPSIA contains at least 26 commands
+  command: test "$(find /opt/lipsia/bin -maxdepth 1 -type f | wc -l)" -ge 26
+  expected_exit_code: 0
+- name: LIPSIA libraries are installed
+  command: find /opt/lipsia/lib -maxdepth 1 -type f | grep -q .
+  expected_exit_code: 0
+- name: ViaIO headers are installed
+  command: test -d /opt/lipsia/include/viaio
+  expected_exit_code: 0
+- name: Via headers are installed
+  command: test -d /opt/lipsia/include/via
+  expected_exit_code: 0
+- name: ViaIO image header is installed
+  command: test -f /opt/lipsia/include/viaio/VImage.h
+  expected_exit_code: 0
+- name: NIfTI headers are installed
+  command: test -f /opt/lipsia/include/nifti/nifti1.h
+  expected_exit_code: 0
+- name: NIfTI IO header is installed
+  command: test -f /opt/lipsia/include/nifti/nifti1_io.h
+  expected_exit_code: 0
+- name: LIPSIA setup script is installed
+  command: test -f /opt/lipsia/lipsia-setup.sh
+  expected_exit_code: 0
+- name: GSL runtime is linked
+  command: ldconfig -p | grep -q libgsl
+  expected_exit_code: 0
+- name: OpenBLAS runtime is linked
+  command: ldconfig -p | grep -q libopenblas
+  expected_exit_code: 0
+- name: zlib runtime is linked
+  command: ldconfig -p | grep -q libz.so
+  expected_exit_code: 0
+- name: C++ runtime is linked
+  command: ldconfig -p | grep -q libstdc++
+  expected_exit_code: 0
+- name: Git is available
+  command: git --version
+  expected_exit_code: 0
+- name: Curl is available
+  command: curl --version >/dev/null
+  expected_exit_code: 0
+- name: Wget is available
+  command: wget --version >/dev/null
+  expected_exit_code: 0
+- name: Unzip is available
+  command: unzip -v >/dev/null
+  expected_exit_code: 0
+- name: Bash is available
+  command: bash --version >/dev/null
+  expected_exit_code: 0
+- name: LIPSIA PATH points to its binaries
+  command: case "$PATH" in */opt/lipsia/bin/*|*/opt/lipsia/bin) exit 0;; *) exit 1;; esac
+  expected_exit_code: 0
