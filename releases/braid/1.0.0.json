@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "braid 1.0.0": {
+      "version": "20260715",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "diffusion imaging",
+    "machine learning"
+  ]
+}
