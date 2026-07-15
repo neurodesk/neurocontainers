@@ -37,6 +37,7 @@ build:
     - template:
         name: mrtrix3
         version: 3.0.4
+        libtiff_package: libtiff5
     - template:
         name: dcm2niix
         version: latest

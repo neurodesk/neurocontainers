@@ -8,13 +8,14 @@ binaries:
     optional:
       install_path: /opt/mrtrix3-{{ self.version }}
       build_processes: '1'
+      libtiff_package: libtiff6
   dependencies:
     apt:
     - bzip2
     - ca-certificates
     - curl
     - libpng16-16
-    - libtiff6
+    - '{{ self.libtiff_package }}'
     yum:
     - bzip2
     - curl

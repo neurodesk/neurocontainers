@@ -13,18 +13,16 @@ structured_readme:
     Routier, A., Burgos, N., Díaz, M., Bacci, M., Bottani, S., El-Rifai O., Fontanella, S., Gori, P., Guillon, J., Guyot, A., Hassanaly, R., Jacquemont, T., Lu, P., Marcoux, A., Moreau, T., Samper-González, J., Teichmann, M., Thibeau-Sutre, E., Vaillant G., Wen, J., Wild, A., Habert, M.-O., Durrleman, S., and Colliot, O.: ‘Clinica: An Open Source Software Platform for Reproducible Clinical Neuroscience Studies’, 2021. doi:10.3389/fninf.2021.689675
 build:
   kind: neurodocker
-  base-image: ubuntu:24.04
+  base-image: ubuntu:22.04
   pkg-manager: apt
   directives:
     - template:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
-        conda_install:
-          - python=3.10
-          - pip
+        conda_install: python=3.10 pip
     - run:
-        - source /opt/miniconda/bin/activate && conda create -y -n clinicadlEnv python=3.10 pip
+        - conda create -y -n clinicadlEnv python=3.10 pip
         - conda run -n clinicadlEnv pip install clinicadl clinica
     - template:
         name: fsl
@@ -41,6 +39,7 @@ build:
     - template:
         name: mrtrix3
         version: 3.0.4
+        libtiff_package: libtiff5
     - template:
         name: dcm2niix
         version: latest
