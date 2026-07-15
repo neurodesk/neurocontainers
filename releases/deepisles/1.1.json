@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "deepisles 1.1": {
+      "version": "20251118",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "image segmentation"
+  ]
+}
