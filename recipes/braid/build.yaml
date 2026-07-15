@@ -38,7 +38,7 @@ build:
         path:
           - /opt/fsl-6.0.4/bin
           - /opt/mrtrix3-3.0.3/bin
-          - /opt/ants-2.3.1/bin
+          - /opt/ants-2.3.4
           - /opt/convert3d-1.0.0/bin
         bins:
           - braid_one_sample_inference
@@ -66,7 +66,7 @@ build:
         version: 1.0.0
     - template:
         name: ants
-        version: 2.3.1
+        version: 2.3.4
         method: binaries
     - workdir: /opt
     - run:
