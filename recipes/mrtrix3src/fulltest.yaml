@@ -66,23 +66,23 @@ tests:
 - name: mrcat has no missing shared libraries
   command: '! ldd "$(command -v mrcat)" 2>&1 | grep "not found"'
   expected_exit_code: 0
-- name: mrcrop resolves on PATH
-  command: command -v mrcrop
+- name: maskfilter resolves on PATH
+  command: command -v maskfilter
   expected_exit_code: 0
-- name: mrcrop is executable
-  command: test -x "$(command -v mrcrop)"
+- name: maskfilter is executable
+  command: test -x "$(command -v maskfilter)"
   expected_exit_code: 0
-- name: mrcrop has no missing shared libraries
-  command: '! ldd "$(command -v mrcrop)" 2>&1 | grep "not found"'
+- name: maskfilter has no missing shared libraries
+  command: '! ldd "$(command -v maskfilter)" 2>&1 | grep "not found"'
   expected_exit_code: 0
-- name: mrpad resolves on PATH
-  command: command -v mrpad
+- name: mrregister resolves on PATH
+  command: command -v mrregister
   expected_exit_code: 0
-- name: mrpad is executable
-  command: test -x "$(command -v mrpad)"
+- name: mrregister is executable
+  command: test -x "$(command -v mrregister)"
   expected_exit_code: 0
-- name: mrpad has no missing shared libraries
-  command: '! ldd "$(command -v mrpad)" 2>&1 | grep "not found"'
+- name: mrregister has no missing shared libraries
+  command: '! ldd "$(command -v mrregister)" 2>&1 | grep "not found"'
   expected_exit_code: 0
 - name: mrstats resolves on PATH
   command: command -v mrstats
