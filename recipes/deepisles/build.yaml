@@ -137,6 +137,10 @@ build:
             - . /root/.bashrc
             - conda activate deepisles
             - pip install -r requirements.txt
+
+        - run:
+            - . /root/.bashrc
+            - conda activate deepisles
             - python -c "import dicom2nifti; import openslide"
 
         - environment:
