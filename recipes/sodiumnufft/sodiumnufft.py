@@ -554,7 +554,10 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
     if volume.ndim != 3:
         raise ValueError(f"Reconstructed volume must be 3D, got shape {volume.shape}")
 
-    read_dir = np.asarray(reference_head.read_dir, dtype=float)
+    # The display data is flipped left-right below to match the native ICE
+    # reconstruction. Reverse the corresponding direction vector as well so
+    # the scanner's R/L marker describes the displayed pixels correctly.
+    read_dir = -np.asarray(reference_head.read_dir, dtype=float)
     phase_dir = np.asarray(reference_head.phase_dir, dtype=float)
     slice_dir = np.asarray(reference_head.slice_dir, dtype=float)
     slice_dir_norm = float(np.linalg.norm(slice_dir))
@@ -571,96 +574,87 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
     output_fov_mm = float(output_fov_mm)
     display_volume, display_meta = _scale_volume_to_display_range(volume)
     slice_count = int(display_volume.shape[2])
-    slice_spacing = output_fov_mm / max(slice_count, 1)
-    first_slice_position = (
-        center_position - 0.5 * (slice_count - 1) * slice_spacing * slice_dir
-    )
     image_comment = _scanner_display_comment(display_meta)
 
-    images_out = []
-    for slice_index in range(slice_count):
-        packed_slice = display_volume[:, :, slice_index].T
-        slice_data = np.ascontiguousarray(np.fliplr(np.flipud(packed_slice)))
-        image = ismrmrd.Image.from_array(slice_data, transpose=False)
+    # Pack the complete matrix as one explicit 3D MRD image. Sending 64
+    # separate 2D messages lets ICE refill each mini-header from the source
+    # protocol's NoImagesPerSlab=32 and causes the DICOM writer to flush two
+    # 32-frame volumes. One [z, y, x] image gives the writer one 64-frame
+    # volume, matching the native ICE reconstruction contract.
+    packed_volume = np.ascontiguousarray(
+        display_volume[::-1, ::-1, :].transpose(2, 1, 0)
+    )
+    image = ismrmrd.Image.from_array(packed_volume, transpose=False)
 
-        new_header = mrdhelper.update_img_header_from_raw(image.getHead(), reference_head)
-        new_header.data_type = image.data_type
-        new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-        new_header.image_series_index = OUTPUT_IMAGE_SERIES_INDEX
-        new_header.image_index = slice_index + 1
-        # Declare the reconstructed matrix depth explicitly so the scanner
-        # does not infer volume boundaries from the protocol's Slices per Slab.
-        new_header.slice = slice_index
-        new_header.matrix_size = tuple(int(value) for value in image.getHead().matrix_size)
-        new_header.position = tuple(
-            float(value)
-            for value in (
-                first_slice_position
-                + slice_index * slice_spacing * slice_dir
-            )
-        )
-        new_header.read_dir = tuple(float(value) for value in read_dir)
-        new_header.phase_dir = tuple(float(value) for value in phase_dir)
-        new_header.slice_dir = tuple(float(value) for value in slice_dir)
-        new_header.field_of_view = (
-            output_fov_mm,
-            output_fov_mm,
-            float(slice_spacing),
-        )
-        image.setHead(new_header)
-        image.image_series_index = OUTPUT_IMAGE_SERIES_INDEX
-        image.field_of_view = (
-            ctypes.c_float(output_fov_mm),
-            ctypes.c_float(output_fov_mm),
-            ctypes.c_float(slice_spacing),
-        )
+    new_header = mrdhelper.update_img_header_from_raw(image.getHead(), reference_head)
+    new_header.data_type = image.data_type
+    new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    new_header.image_series_index = OUTPUT_IMAGE_SERIES_INDEX
+    new_header.image_index = 1
+    new_header.slice = 0
+    new_header.matrix_size = tuple(int(value) for value in image.getHead().matrix_size)
+    new_header.position = tuple(float(value) for value in center_position)
+    new_header.read_dir = tuple(float(value) for value in read_dir)
+    new_header.phase_dir = tuple(float(value) for value in phase_dir)
+    new_header.slice_dir = tuple(float(value) for value in slice_dir)
+    new_header.field_of_view = (
+        output_fov_mm,
+        output_fov_mm,
+        output_fov_mm,
+    )
+    image.setHead(new_header)
+    image.image_series_index = OUTPUT_IMAGE_SERIES_INDEX
+    image.field_of_view = (
+        ctypes.c_float(output_fov_mm),
+        ctypes.c_float(output_fov_mm),
+        ctypes.c_float(output_fov_mm),
+    )
 
-        meta = ismrmrd.Meta()
-        meta["DataRole"] = "Image"
-        meta["ImageProcessingHistory"] = ["PYTHON", "SIGPY", "NUFFT"]
-        meta["ImageType"] = "DERIVED\\PRIMARY\\M\\SODIUMNUFFT"
-        meta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\SODIUMNUFFT"
-        meta["ImageTypeValue4"] = "SODIUMNUFFT"
-        meta["ComplexImageComponent"] = "MAGNITUDE"
-        meta["SequenceDescriptionAdditional"] = OUTPUT_IMAGE_COMMENT
-        meta["SeriesDescription"] = series_description
-        meta["SequenceDescription"] = series_description
-        meta["ProtocolName"] = series_description
-        meta["SeriesNumberRangeNameUID"] = series_grouping
-        meta["SeriesInstanceUID"] = series_uid
-        meta["SOPInstanceUID"] = _new_dicom_uid()
-        meta["ImageComment"] = image_comment
-        meta["ImageComments"] = image_comment
-        meta["Keep_image_geometry"] = 1
-        meta["partition_count"] = 1
-        meta["slice_count"] = slice_count
-        meta["NumberOfSlices"] = slice_count
-        meta["ImagesInAcquisition"] = slice_count
-        meta["NumberInSeries"] = slice_index + 1
-        meta["SliceNo"] = slice_index
-        meta["IsmrmrdSliceNo"] = slice_index
-        meta["AnatomicalSliceNo"] = slice_index
-        meta["ChronSliceNo"] = slice_index
-        meta["ProtocolSliceNumber"] = slice_index
-        meta["Actual3DImagePartNumber"] = 0
-        meta["Actual3DImaPartNumber"] = 0
-        meta["AnatomicalPartitionNo"] = 0
-        meta["ImageRowDir"] = [f"{float(value):.18f}" for value in read_dir]
-        meta["ImageColumnDir"] = [f"{float(value):.18f}" for value in phase_dir]
-        meta["ImageSliceNormDir"] = [f"{float(value):.18f}" for value in slice_dir]
-        meta["SlicePosLightMarker"] = [
-            f"{float(value):.18f}" for value in new_header.position
-        ]
-        meta["SodiumNUFFTDisplayScale"] = _format_display_number(display_meta["scale"])
-        meta["SodiumNUFFTDisplayInputMin"] = f"{float(display_meta['input_min']):.6g}"
-        meta["SodiumNUFFTDisplayInputMax"] = f"{float(display_meta['input_max']):.6g}"
-        meta["SodiumNUFFTDisplayMin"] = str(int(display_meta["display_min"]))
-        meta["SodiumNUFFTDisplayMax"] = str(int(display_meta["display_max"]))
-        meta["SodiumNUFFTDisplayFormula"] = display_meta["formula"]
-        image.attribute_string = meta.serialize()
-        images_out.append(image)
+    meta = ismrmrd.Meta()
+    meta["DataRole"] = "Image"
+    meta["ImageProcessingHistory"] = ["PYTHON", "SIGPY", "NUFFT"]
+    meta["ImageType"] = "DERIVED\\PRIMARY\\M\\SODIUMNUFFT"
+    meta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\SODIUMNUFFT"
+    meta["ImageTypeValue4"] = "SODIUMNUFFT"
+    meta["ComplexImageComponent"] = "MAGNITUDE"
+    meta["SequenceDescriptionAdditional"] = OUTPUT_IMAGE_COMMENT
+    meta["SeriesDescription"] = series_description
+    meta["SequenceDescription"] = series_description
+    meta["ProtocolName"] = series_description
+    meta["SeriesNumberRangeNameUID"] = series_grouping
+    meta["SeriesInstanceUID"] = series_uid
+    meta["SOPInstanceUID"] = _new_dicom_uid()
+    meta["ImageComment"] = image_comment
+    meta["ImageComments"] = image_comment
+    meta["Keep_image_geometry"] = 0
+    meta["partition_count"] = 1
+    meta["slice_count"] = slice_count
+    meta["NumberOfSlices"] = slice_count
+    meta["ImagesInAcquisition"] = slice_count
+    meta["NumberInSeries"] = 1
+    meta["SliceNo"] = 0
+    meta["IsmrmrdSliceNo"] = 0
+    meta["AnatomicalSliceNo"] = 0
+    meta["ChronSliceNo"] = 0
+    meta["ProtocolSliceNumber"] = 0
+    meta["Actual3DImagePartNumber"] = 0
+    meta["Actual3DImaPartNumber"] = 0
+    meta["AnatomicalPartitionNo"] = 0
+    meta["ImageRowDir"] = [f"{float(value):.18f}" for value in read_dir]
+    meta["ImageColumnDir"] = [f"{float(value):.18f}" for value in phase_dir]
+    meta["ImageSliceNormDir"] = [f"{float(value):.18f}" for value in slice_dir]
+    meta["SlicePosLightMarker"] = [
+        f"{float(value):.18f}" for value in new_header.position
+    ]
+    meta["SodiumNUFFTDisplayScale"] = _format_display_number(display_meta["scale"])
+    meta["SodiumNUFFTDisplayInputMin"] = f"{float(display_meta['input_min']):.6g}"
+    meta["SodiumNUFFTDisplayInputMax"] = f"{float(display_meta['input_max']):.6g}"
+    meta["SodiumNUFFTDisplayMin"] = str(int(display_meta["display_min"]))
+    meta["SodiumNUFFTDisplayMax"] = str(int(display_meta["display_max"]))
+    meta["SodiumNUFFTDisplayFormula"] = display_meta["formula"]
+    image.attribute_string = meta.serialize()
 
-    return images_out
+    return [image]
 
 
 def process(connection, config, metadata):

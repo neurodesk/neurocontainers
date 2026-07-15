@@ -13,7 +13,7 @@ RECIPE_DIR = Path(__file__).resolve().parent
 
 
 class ReferenceHead:
-    read_dir = (1.0, 0.0, 0.0)
+    read_dir = (-1.0, 0.0, 0.0)
     phase_dir = (0.0, 1.0, 0.0)
     slice_dir = (0.0, 0.0, 1.0)
     position = (10.0, 20.0, 30.0)
@@ -75,7 +75,7 @@ def _import_sodiumnufft_with_runtime_stubs(monkeypatch):
     return importlib.import_module("sodiumnufft")
 
 
-def test_build_output_images_declares_reconstructed_matrix_as_slice_stack(monkeypatch):
+def test_build_output_images_emits_one_explicit_volume(monkeypatch):
     sodiumnufft = _import_sodiumnufft_with_runtime_stubs(monkeypatch)
     volume = np.ones((2, 3, 4), dtype=np.float32)
 
@@ -86,32 +86,24 @@ def test_build_output_images_declares_reconstructed_matrix_as_slice_stack(monkey
         output_fov_mm=80.0,
     )
 
-    assert len(images) == 4
+    assert len(images) == 1
 
     first = images[0]
     first_head = first.getHead()
-    assert first.data.shape == (1, 1, 3, 2)
+    assert first.data.shape == (1, 4, 3, 2)
     assert first.data.dtype == np.uint16
     assert int(first.data.min()) == 0
     assert int(first.data.max()) == 0
-    assert [int(value) for value in first_head.matrix_size] == [2, 3, 1]
+    assert [int(value) for value in first_head.matrix_size] == [2, 3, 4]
     assert first_head.image_type == ismrmrd.IMTYPE_MAGNITUDE
     assert first_head.image_series_index == 1
     assert first.image_series_index == 1
     assert first_head.image_index == 1
     assert first_head.slice == 0
-    assert [float(value) for value in first_head.position] == [10.0, 20.0, 0.0]
-    assert [float(value) for value in first_head.field_of_view] == [80.0, 80.0, 20.0]
-
-    second_head = images[1].getHead()
-    assert second_head.image_index == 2
-    assert second_head.slice == 1
-    assert [float(value) for value in second_head.position] == [10.0, 20.0, 20.0]
-
-    last_head = images[-1].getHead()
-    assert last_head.image_index == 4
-    assert last_head.slice == 3
-    assert [float(value) for value in last_head.position] == [10.0, 20.0, 60.0]
+    assert [float(value) for value in first_head.position] == [10.0, 20.0, 30.0]
+    assert [float(value) for value in first_head.field_of_view] == [80.0, 80.0, 80.0]
+    assert [float(value) for value in first_head.read_dir] == [1.0, 0.0, 0.0]
+    assert [float(value) for value in first_head.phase_dir] == [0.0, 1.0, 0.0]
 
     meta = ismrmrd.Meta.deserialize(first.attribute_string)
     assert meta["SeriesDescription"] == "tpiTqf_23Na_n28_TE05_FIRE_sodiumnufft"
@@ -124,7 +116,7 @@ def test_build_output_images_declares_reconstructed_matrix_as_slice_stack(monkey
     assert meta["DicomImageType"] == "DERIVED\\PRIMARY\\M\\SODIUMNUFFT"
     assert meta["ImageTypeValue4"] == "SODIUMNUFFT"
     assert meta["ComplexImageComponent"] == "MAGNITUDE"
-    assert meta["Keep_image_geometry"] == "1"
+    assert meta["Keep_image_geometry"] == "0"
     assert meta["partition_count"] == "1"
     assert meta["slice_count"] == "4"
     assert meta["NumberOfSlices"] == "4"
@@ -150,21 +142,19 @@ def test_build_output_images_declares_reconstructed_matrix_as_slice_stack(monkey
     )
     assert meta["ImageComments"] == meta["ImageComment"]
 
-    last_meta = ismrmrd.Meta.deserialize(images[-1].attribute_string)
-    assert last_meta["SeriesInstanceUID"] == meta["SeriesInstanceUID"]
-    assert last_meta["SOPInstanceUID"] != meta["SOPInstanceUID"]
-    assert last_meta["NumberInSeries"] == "4"
-    assert last_meta["SliceNo"] == "3"
-    assert last_meta["IsmrmrdSliceNo"] == "3"
-    assert last_meta["AnatomicalSliceNo"] == "3"
-    assert last_meta["ChronSliceNo"] == "3"
-    assert last_meta["ProtocolSliceNumber"] == "3"
-    assert last_meta["Actual3DImagePartNumber"] == "0"
-    assert last_meta["Actual3DImaPartNumber"] == "0"
-    assert last_meta["AnatomicalPartitionNo"] == "0"
+    assert meta["ImageRowDir"] == [
+        "1.000000000000000000",
+        "-0.000000000000000000",
+        "-0.000000000000000000",
+    ]
+    assert meta["ImageColumnDir"] == [
+        "0.000000000000000000",
+        "1.000000000000000000",
+        "0.000000000000000000",
+    ]
 
 
-def test_output_slice_data_and_positions_advance_together(monkeypatch):
+def test_output_volume_data_preserves_slice_order(monkeypatch):
     sodiumnufft = _import_sodiumnufft_with_runtime_stubs(monkeypatch)
     volume = np.broadcast_to(
         np.arange(4, dtype=np.float32),
@@ -178,14 +168,15 @@ def test_output_slice_data_and_positions_advance_together(monkeypatch):
         output_fov_mm=80.0,
     )
 
-    slice_values = [int(np.asarray(image.data).mean()) for image in images]
-    slice_positions = [float(image.getHead().position[2]) for image in images]
+    slice_values = [
+        int(np.asarray(images[0].data)[0, index].mean())
+        for index in range(4)
+    ]
 
     assert slice_values == [0, 1365, 2731, 4096]
-    assert slice_positions == [0.0, 20.0, 40.0, 60.0]
 
 
-def test_output_slices_are_flipped_up_down_then_left_right(monkeypatch):
+def test_output_volume_is_flipped_up_down_then_left_right(monkeypatch):
     sodiumnufft = _import_sodiumnufft_with_runtime_stubs(monkeypatch)
     volume = np.arange(1, 7, dtype=np.float32).reshape(2, 3, 1)
 
@@ -198,9 +189,9 @@ def test_output_slices_are_flipped_up_down_then_left_right(monkeypatch):
 
     display_volume, _ = sodiumnufft._scale_volume_to_display_range(volume)
     packed_without_display_flips = display_volume[:, :, 0].T
-    expected = np.flip(packed_without_display_flips, axis=(0, 1))
+    expected = np.flip(packed_without_display_flips, axis=(0, 1))[np.newaxis, ...]
 
-    np.testing.assert_array_equal(np.squeeze(images[0].data), expected)
+    np.testing.assert_array_equal(np.asarray(images[0].data)[0], expected)
 
 
 def test_log_cpu_resources_reports_container_limits(monkeypatch, caplog):
@@ -330,6 +321,10 @@ def test_process_raw_parallel_coils_match_serial_reconstruction(monkeypatch):
 
     assert len(serial_threads) == 1
     assert len(parallel_threads) == 3
+    assert len(serial_images) == 1
+    assert len(parallel_images) == 1
+    assert serial_images[0].data.shape == (1, 2, 2, 2)
+    assert [int(value) for value in serial_images[0].getHead().matrix_size] == [2, 2, 2]
     serial_coils = serial_arrays["sodiumnufft_coil_images.npy"]
     assert serial_coils.shape == (3, 2, 2, 2)
     assert len({complex(coil[0, 0, 0]) for coil in serial_coils}) == 3

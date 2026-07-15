@@ -68,12 +68,13 @@ reconstruction field of view in cm before the adjoint NUFFT.
 
 - The reconstruction is implemented for raw k-space input. If image data is
   sent to this app, the images are returned unchanged.
-- The derived output is magnitude-only and is emitted as one 2D image per
-  reconstructed matrix slice. Slice count and volume grouping therefore follow
-  the reconstruction matrix (normally the scanner Base Resolution), not the
-  protocol's Slices per Slab value.
+- The derived output is magnitude-only and is emitted as one explicit 3D MRD
+  image whose depth is the reconstructed matrix size. This prevents the Siemens
+  injector from grouping separate 2D messages using the source protocol's
+  Slices per Slab value and produces one 64-frame volume like the ICE recon.
 - Output pixels are flipped up-down and then left-right to match the ICE
-  reconstruction display orientation.
+  reconstruction display orientation. The read direction is reversed with the
+  left-right pixel flip so scanner R/L markers remain correct.
 - Each reconstruction logs the FIRE-visible CPU count, CPU affinity, cgroup
   limits, configured worker cap, and effective number of coil workers.
 - `maxcoils` is mainly useful for faster smoke tests and debugging.
