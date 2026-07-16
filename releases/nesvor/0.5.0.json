@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "nesvor 0.5.0": {
+      "version": "20260716",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction",
+    "structural imaging",
+    "machine learning"
+  ]
+}
