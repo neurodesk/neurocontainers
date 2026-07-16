@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "dhcpstructuralpipeline 1.1": {
+      "version": "20260716",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "image segmentation",
+    "workflows"
+  ]
+}
