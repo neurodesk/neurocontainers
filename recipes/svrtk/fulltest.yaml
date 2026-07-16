@@ -1,0 +1,17 @@
+name: svrtk
+version: "20260626"
+container: svrtk_20260626_REFERENCE.simg
+default_timeout: 120
+
+tests:
+  - name: mirtk available
+    description: Verify the MIRTK/SVRTK reconstruction binary is on PATH.
+    command: mirtk --version
+  - name: auto brain reconstruction script available
+    description: Verify the automated brain reconstruction launcher is deployed.
+    command: command -v auto-brain-reconstruction.sh
+    expected_output_contains: auto-brain-reconstruction.sh
+  - name: BOUNTI segmentation script available
+    description: Verify the automated BOUNTI brain tissue segmentation launcher is deployed.
+    command: command -v auto-brain-bounti-segmentation-fetal.sh
+    expected_output_contains: auto-brain-bounti-segmentation-fetal.sh
