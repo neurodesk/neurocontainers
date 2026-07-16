@@ -1,0 +1,27 @@
+# mrspectros container test suite
+# Verifies the MR_spectroS MATLAB source tree is installed and the Octave
+# runtime used to inspect/run it is available.
+name: mrspectros
+version: 1.0.20220707
+container: mrspectros_${version}_REFERENCE.simg
+
+tests:
+  - name: Octave runtime available
+    description: Verify GNU Octave is installed to run the MR_spectroS MATLAB code.
+    command: octave --version 2>/dev/null | head -1
+    expected_output_contains: "GNU Octave"
+
+  - name: MR_spectroS source installed
+    description: Verify the reconstruction entry point is present on disk.
+    command: test -f "$MRSPECTROS_HOME/reconstruct.m" && echo "reconstruct found"
+    expected_output_contains: "reconstruct found"
+
+  - name: MR_spectroS fitting sources present
+    description: Verify the fitting subpackage is shipped in the source tree.
+    command: test -d "$MRSPECTROS_HOME/fitting" && echo "fitting dir found"
+    expected_output_contains: "fitting dir found"
+
+  - name: Documentation included
+    description: Verify the upstream README describing the library is bundled.
+    command: test -f "$MRSPECTROS_HOME/README.md" && echo "readme found"
+    expected_output_contains: "readme found"

@@ -1,0 +1,79 @@
+name: profit1d
+version: 1.0.20210801
+
+copyright:
+  - license: MIT
+    url: https://gitlab.tuebingen.mpg.de/AG_Henning/ProFit-1D/-/blob/master/LICENSE
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  commit: a817b9ea71b39babd2987f9d9fc3761295b2a4e0
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - octave
+        - ca-certificates
+
+    - workdir: /opt/profit1d-{{ context.version }}
+
+    - run:
+        - tar -xz -C /opt/profit1d-{{ context.version }}/ --strip-components 1 -f {{ get_file("source") }}
+
+    - environment:
+        PROFIT_HOME: /opt/profit1d-{{ context.version }}
+
+deploy:
+  bins:
+    - octave
+
+files:
+  - name: source
+    url: https://gitlab.tuebingen.mpg.de/AG_Henning/ProFit-1D/-/archive/{{ context.commit }}/ProFit-1D-{{ context.commit }}.tar.gz
+
+categories:
+  - spectroscopy
+  - quantitative imaging
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABFElEQVR42u3awQ3CMAyFYW/BDqzFEozIVuWAxKmgxHlOY+dH8oVKVfLl2RESdrs/jp3LAAAAAAAAAAAAAAAAAAAAAAAAAAAAmFDP1/GtbROwwuYBAACAnADKIZo2AaoE2ZVX4MgppgVQRRiAXQFULSQF6F2Mov+XuwV6FgNAVYDWRZUC8AykcglQA4w+Tw3Qcs2lBWi9w8sk4Oz7EYAzwFGI8AS0bkLZIksA/Frovw20nLB6RljkT1zPBqKfuwB6e9KTDOUGpQnwLKi3VACeIWkR9/ZVANNbQAkQ+R43gHcqexMQhbT8DJiVIinAKhsfTYF54p+x5DOgNEC106cFAOgAqP7hT1IAAAAAAAAAAAAAAHzqDRnSdjxoZIxbAAAAAElFTkSuQmCC
+
+readme: |
+  ----------------------------------
+  ## profit1d/{{ context.version }} ##
+  ProFit-1D is a 1D spectral fitting software for magnetic resonance
+  spectroscopy (MRS), developed by the AG Henning group at the Max Planck
+  Institute for Biological Cybernetics. It performs linear-combination model
+  fitting of MR spectra with a spline baseline and provides open-source
+  validation data sets.
+
+  The library is written in MATLAB. This container ships the ProFit-1D source
+  tree at `$PROFIT_HOME` together with GNU Octave so the code can be inspected
+  and run. Sample basis sets and example data are included under
+  `$PROFIT_HOME/sampleData` and `$PROFIT_HOME/sampleBasisSet`.
+
+  Example:
+  ```
+  octave
+  >> addpath(genpath(getenv('PROFIT_HOME')))
+  >> ls(fullfile(getenv('PROFIT_HOME'), 'sampleData'))
+  ```
+
+  Reference:
+  Borbath, T.; Murali-Manohar, S.; Dorst, J.; Wright, A.; Henning, A.
+  ProFit-1D - A 1D fitting software and open-source validation data sets.
+  Magnetic Resonance in Medicine 86(6), 2910-2929 (2021).
+
+  Source: https://gitlab.tuebingen.mpg.de/AG_Henning/ProFit-1D
+
+  To run container outside of this environment: ml profit1d/{{ context.version }}
+  ----------------------------------

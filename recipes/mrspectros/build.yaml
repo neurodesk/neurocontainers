@@ -1,0 +1,77 @@
+name: mrspectros
+version: 1.0.20220707
+
+copyright:
+  - license: MIT
+    url: https://gitlab.tuebingen.mpg.de/AG_Henning/MR_spectroS/-/blob/master/LICENSE
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  commit: 0b14aa455bc2ed5ba2e390db7754e4548885751d
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - octave
+        - ca-certificates
+
+    - workdir: /opt/mrspectros-{{ context.version }}
+
+    - run:
+        - tar -xz -C /opt/mrspectros-{{ context.version }}/ --strip-components 1 -f {{ get_file("source") }}
+
+    - environment:
+        MRSPECTROS_HOME: /opt/mrspectros-{{ context.version }}
+
+deploy:
+  bins:
+    - octave
+
+files:
+  - name: source
+    url: https://gitlab.tuebingen.mpg.de/AG_Henning/MR_spectroS/-/archive/{{ context.commit }}/MR_spectroS-{{ context.commit }}.tar.gz
+
+categories:
+  - spectroscopy
+  - image reconstruction
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABFUlEQVR42u3aQQoCMQyF4RzEQ3gAj+jaI3oNXQiuRmnTl06T/kI2Dgzt15cUQbvcrq+dywAAAAAAAAAAAAAAAAAAAAAAAAAAAJhQ9+fjW9smYIXNAwAAADkBlEM0bQJUCbIzr8CRU0wLoIowALsCqFpICtC7GEX/L3cL9CwGgKoArYsqBeAZSOUSoAYYfZ4aoOWaSwvQeoeXScDR9yMAR4CjEOEJaN2EskWWAPi10H8baDlh9YywyJ+4ng1EP3cB9PakJxnKDUoT4FlQb6kAPEPSIu7tswCmt4ASIPI9bgDvVPYmIApp+RkwK0VSgFU2PpoC88Q/Y8lnQGmAaqdPCwDQAVD9w5+kAAAAAAAAAAAAAAD41Bu8wGxMxfIJJQAAAABJRU5ErkJggg==
+
+readme: |
+  ----------------------------------
+  ## mrspectros/{{ context.version }} ##
+  MR_spectroS is a MATLAB library for reconstruction and processing of magnetic
+  resonance spectroscopy (MRS) data, developed by the AG Henning group at the
+  Max Planck Institute for Biological Cybernetics. It provides preprocessing
+  (metabolite cycling, frequency alignment, averaging, eddy current correction,
+  coil combination, HSVD water suppression), LCModel-based spectral fitting, and
+  absolute concentration (mmol/kg) quantification, with support for upfield,
+  downfield, macromolecular and functional MRS spectra.
+
+  The library is written in MATLAB. This container ships the MR_spectroS source
+  tree at `$MRSPECTROS_HOME` together with GNU Octave so the code can be
+  inspected and run. Note that reading raw scanner data additionally requires
+  the `mapVBVD`/Gannet functions and some MATLAB File Exchange packages that are
+  not redistributed here (see the upstream README).
+
+  Example:
+  ```
+  octave
+  >> addpath(genpath(getenv('MRSPECTROS_HOME')))
+  >> help reconstruct
+  ```
+
+  Source: https://gitlab.tuebingen.mpg.de/AG_Henning/MR_spectroS
+
+  To run container outside of this environment: ml mrspectros/{{ context.version }}
+  ----------------------------------

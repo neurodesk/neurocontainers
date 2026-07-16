@@ -1,0 +1,27 @@
+# profit1d container test suite
+# Verifies the ProFit-1D MATLAB source tree is installed and the Octave
+# runtime used to inspect/run it is available.
+name: profit1d
+version: 1.0.20210801
+container: profit1d_${version}_REFERENCE.simg
+
+tests:
+  - name: Octave runtime available
+    description: Verify GNU Octave is installed to run the ProFit-1D MATLAB code.
+    command: octave --version 2>/dev/null | head -1
+    expected_output_contains: "GNU Octave"
+
+  - name: ProFit-1D source installed
+    description: Verify the main ProFit-1D entry point is present on disk.
+    command: test -f "$PROFIT_HOME/startProFit.m" && echo "startProFit found"
+    expected_output_contains: "startProFit found"
+
+  - name: ProFit-1D fitting sources present
+    description: Verify the core fitting routine is shipped in the source tree.
+    command: test -f "$PROFIT_HOME/src/ProfitFitting/profit.m" && echo "profit.m found"
+    expected_output_contains: "profit.m found"
+
+  - name: Sample data included
+    description: Verify the bundled sample data set is available.
+    command: ls "$PROFIT_HOME/sampleData"/*.RAW 2>/dev/null | head -1
+    expected_output_contains: ".RAW"
