@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "niftymic 0.9": {
+      "version": "20260716",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction",
+    "structural imaging"
+  ]
+}
