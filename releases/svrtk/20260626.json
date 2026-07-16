@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "svrtk 20260626": {
+      "version": "20260716",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction",
+    "structural imaging",
+    "body"
+  ]
+}
