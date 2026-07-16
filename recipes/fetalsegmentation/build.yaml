@@ -1,0 +1,61 @@
+name: fetalsegmentation
+version: "20241116"
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/SVRTK/SVRTK/blob/master/LICENSE
+  - license: GPL-3.0-only
+    url: https://github.com/SVRTK/auto-proc-svrtk/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: fetalsvrtk/segmentation:general_auto_amd
+  pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
+
+  directives:
+    - run:
+        # The MONAI segmentation pipelines, atlases and trained models ship
+        # under /home in the upstream image, but /home is masked at runtime in
+        # Neurodesk. Relocate them to /opt and repoint the hard-coded paths.
+        - if [ -d /home/auto-proc-svrtk ]; then mv /home/auto-proc-svrtk /opt/auto-proc-svrtk; fi
+        - sed -i -e 's#^software_path=/home#software_path=/opt#' -e 's#/home/auto-proc-svrtk#/opt/auto-proc-svrtk#g' -e 's#^default_run_dir=/home/tmp_proc#default_run_dir=/tmp/svrtk_proc#' /opt/auto-proc-svrtk/scripts/*.sh
+
+    - environment:
+        PATH: /opt/auto-proc-svrtk/scripts:/bin/MIRTK/build/bin:/bin/MIRTK/build/lib/tools:$PATH
+
+    - deploy:
+        path:
+          - /opt/auto-proc-svrtk/scripts
+          - /bin/MIRTK/build/bin
+        bins:
+          - mirtk
+          - auto-brain-bounti-segmentation-fetal.sh
+          - auto-body-reconstruction.sh
+
+structured_readme:
+  description: >-
+    Automated 3D deep-learning (MONAI) segmentation pipelines for fetal MRI from
+    the SVRTK group at King's College London. The image provides BOUNTI (Brain
+    vOlumetry and aUtomated parcellatioN for 3D feTal MRI) fetal brain tissue
+    segmentation into 19 regions, along with fetal body organ, head/face and
+    whole-body BTFE segmentation pipelines. Inputs are typically 3D
+    super-resolution reconstructed fetal MRI volumes.
+  example: |-
+    # BOUNTI automated fetal brain tissue segmentation (19 ROIs)
+    auto-brain-bounti-segmentation-fetal.sh /data/svr_volumes /data/segmentations
+  documentation: https://hub.docker.com/r/fetalsvrtk/segmentation
+  citation: >-
+    Uus, A. U., Kyriakopoulou, V., Makropoulos, A., Fukami-Gartner, A.,
+    Cromb, D., Davidson, A., ... Deprez, M. (2023). BOUNTI: Brain vOlumetry and
+    aUtomated parcellatioN for 3D feTal MRI. bioRxiv 2023.04.18.537347.
+    https://doi.org/10.1101/2023.04.18.537347
+
+categories:
+  - image segmentation
+  - structural imaging
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAEF0lEQVR4nO2ca2gUVxTH/7uTzcbV1fisxYivoIkSE02l+II+JPWD8YNIUIiIL8RSRL+oCK1YsBjRUqEmWD9URKq0lNJShYAvxKjR1WyMRhQ1anRbY3xmH0lmN/aDZpLZR86dnTst3T2/T5k79x7O+XHuzGR2E4BhzGBLalXlzjeS8/h3+HyL4XrFF/xfpSRCUJZdKFiqyQGEa+rbYiqKiUcf3ZS4g9JFDtBnrfEFpZOcbhLULHYNSmNiBaVj93QTp3Y7NSHtiHLAW4yABRH0COLt1UMvF9xBBCyIgAURsCACFkTAgghYEAELImBBBCyIgAURsCACFkSQYWSyZ/FyFA8fGfec2tUFv9qJ+22v4Gn5G0fuNOL044fCcb721GDb5XMxc1fnF+LAR/O148eBNuQcqgQA3C9fhzHugUZK0PHx70dwxhc/x26kdZDDbsdgZxamDXsPayYX4tTCpTj06QLYbWKfTW4snIGhWf1kpSMNS7fYsolTsCp/qtBctyMTm4o+tDKdpDC0xaKpbm7C/D9/BgC4MhxYODYXh+eVQunVNUty83GgsV4o3hcF0/Ft/WU8CQWE5o89XBUzlu104sXKDbqxjTUn8d01j1DMaKR1UDCs4uidm6huvqcbH+MeJBzDleHA1uKZslKSguV3sRcd7eScjkhE+3nt5CLkDHBbmZIhpAlyZThQNiEPJTnjdOPHHtwl1x681aBJcioKviyeJSst05i6Bn02ehzerNuc8PwZ30Psqqsl4zzyt2F/oxfrC4oBACvypqKirhb3Xr80k54ULNtifwX92HrxLIJhVWj+N1cuaHMddju++mC2VakZwjJB77sGoGZRufBt/kkogO8brmrH5ROnYFL2EKvSE8aUoOrmJtiqKmCrqkDWD7sx7ZcfcdbXrJ23Adg3twQjXf2F4u3y1qJN7QQAKDYbts+YYyY9KUjroI5IBN7WFiw98Ydu3KkoKJuQJxTjWXtI97xSlpuPgqHDZaWYFNK3mC/g17qgm/EDs4XX7/Fe0h4NbHh72/8vkS5oVH833I5M3Zja1SW8/lVnB3Z7L2nHTkWRllsySBOUaVdQNGwEfppXGnOu/lmLoVh7Gzx4GgrKSs0Ulj4HAW9fT/zWdNtQ3ICqYmfdReyZ9YmZ9KRg6a8avoAfpcd/RUAVexbqTeX1OvgCfguyMoapDoomFA6jtT2IG89bcezBXRy8dR3+qAu2KO2RMHZcPY99c0tkpmiYnvcS/P0gPe++O83vpAlYEAELImBBBCyIgAURsCACFkTAgghYEAELImBBBCyIoEdQEn90n7L0csEdRMCCCPSCeJvFOIjtoHSWFKd23mIE8QWlYxclqDlxB6WTpD5qFZOQqp94CDSB2DUoFbtJsCb+F10MYyn/AOq+JyL5h+2mAAAAAElFTkSuQmCC

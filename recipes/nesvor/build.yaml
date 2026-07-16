@@ -1,0 +1,48 @@
+name: nesvor
+version: 0.5.0
+
+copyright:
+  - license: MIT
+    url: https://github.com/daviddmc/NeSVoR/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: junshenxu/nesvor:v0.5.0
+  pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
+
+  directives:
+    - deploy:
+        bins:
+          - nesvor
+
+structured_readme:
+  description: >-
+    NeSVoR is a GPU-accelerated package for slice-to-volume reconstruction of
+    fetal and neonatal brain MRI. It uses an implicit neural representation to
+    reconstruct a high-resolution isotropic 3D volume from multiple stacks of
+    motion-corrupted 2D slices, supporting both rigid and deformable motion. A
+    CUDA-capable GPU is required (run the container with `--nv` under
+    Singularity/Apptainer).
+  example: |-
+    # 3D reconstruction from multiple stacks (requires a GPU)
+    nesvor reconstruct \
+      --input-stacks stack1.nii.gz stack2.nii.gz stack3.nii.gz \
+      --thicknesses 3.0 3.0 3.0 \
+      --output-volume /data/volume.nii.gz
+  documentation: https://nesvor.readthedocs.io
+  citation: >-
+    Xu, J., Moyer, D., Gagoski, B., Iglesias, J. E., Grant, P. E., Golland, P.,
+    & Adalsteinsson, E. (2023). NeSVoR: Implicit Neural Representation for
+    Slice-to-Volume Reconstruction in MRI. IEEE Transactions on Medical
+    Imaging, 42(6), 1707-1719. https://doi.org/10.1109/TMI.2023.3236216
+
+categories:
+  - image reconstruction
+  - structural imaging
+  - machine learning
+icon: data:image/png;base64,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

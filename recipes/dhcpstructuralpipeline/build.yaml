@@ -1,0 +1,54 @@
+name: dhcpstructuralpipeline
+version: "1.1"
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BioMedIA/dhcp-structural-pipeline/blob/master/LICENSE.txt
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: biomedia/dhcp-structural-pipeline:latest
+  pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
+
+  directives:
+    - environment:
+        FSLDIR: /usr/local/fsl
+        FSLOUTPUTTYPE: NIFTI_GZ
+        PATH: /usr/src/structural-pipeline:/usr/local/fsl/bin:$PATH
+
+    - deploy:
+        path:
+          - /usr/src/structural-pipeline
+        bins:
+          - dhcp-pipeline.sh
+
+structured_readme:
+  description: >-
+    The dHCP (developing Human Connectome Project) structural pipeline performs
+    automated structural analysis of neonatal brain MRI (T1w and T2w),
+    including tissue and structural segmentation, cortical surface extraction,
+    inflation and spherical projection. It is designed for neonatal data with a
+    post-menstrual age of 28-44 weeks.
+  example: |-
+    # Run the structural pipeline for one neonatal subject/session
+    dhcp-pipeline.sh subject1 session1 -a 40 \
+      -T2 /data/sub-subject1_T2w.nii.gz \
+      -t 8
+  documentation: https://github.com/BioMedIA/dhcp-structural-pipeline
+  citation: >-
+    Makropoulos, A., Robinson, E. C., Schuh, A., Wright, R., Fitzgibbon, S.,
+    Bozek, J., ... Rueckert, D. (2018). The developing human connectome
+    project: A minimal processing pipeline for neonatal cortical surface
+    reconstruction. NeuroImage, 173, 88-112.
+    https://doi.org/10.1016/j.neuroimage.2018.01.054
+
+categories:
+  - structural imaging
+  - image segmentation
+  - workflows
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAE5UlEQVR4nO2cbVBUVRjH/+vCLrAssLiskSQMiExgxZvyorRr6pAvpFMaRQNKDWNqEtEHGMVhKnNiqplqasxmdCa1sQ9RWqPMCNWIWkEUZUnRusACNuM4uLwI5LLM7YOz6x735ZzLXmvYPb9vz9lzz3nOj+fevXv3LACH4wuymRyUvaZMkDqR/4KOpiOi18t8wGyV4glWWXNYOvmbHIB9TV4t+qMYd3irJo8VFChyAO9rdSsokOTY8bRmpmtQIOMiKBCrx467tc+hdQg07nTATzEKXBAFhyB+et3G2QWvIApcEAUuiAIXRIELosAFUeCCKHBBFLggClwQBS6IAhdEgQuiECTlYGGhITjbeJBoe2r7HpjMg474yHuv4P6FCY74+59+Q+Xet9yOV19dgfWrljvia0MWrC2t8prDkvRUGPKy8FBqMmLmahARrsKUzYYhywgu9w2grfMSWlrbMTw6xrQmSQX9nyQnLsDequcI+XaCguSIi9UhLlYHQ14WXqoowaMluzA2PkEd1y8E6XMz8XrtdigVCqb+iuAgyOVypr6zXlBKUjz21ZByBEHAqZbz+LzpW5jMVyAIAu6dF4OCnHQUP7Ya2ugo5vFnvaCXtz2DECVZOfvePYwvz7QSbSbzIEzmQRw/cQZVFU9DANsDVNGCIsJVKC8ugiE/CzptNMYnJvFr11841tgEY++A2OF8Ii0lERmLU4i25tY2FznO3LRa0fDBx8xziBI0/54YHHijFrE6raNNEamGIS8L+txMfHTsCzHD+Ux+9oMubZ+ebJZ0DmZBcrkcDXt2EXKckclk2Fb6uOgE8rIewI+n2f+iziQn3EfE1ikbuow9MxrLE8yCVhcsRUpSPNH2VfM5HDp+EmM3JlCQk46anVsQGqKUNEFvREWqiXhkdAw227SkczALWrEsm4h7+6/gtXcOQRBuXexOfX0BMXM12Ll1s6QJisGei5QwC1qYEEfE59p/cUmota1TtCAxd9J3MjxC3g1HRUZALpdjelq6KmL+LKYKCyViy7Drrfp1y6jvGYnA2Ee+ayqCg5C2KFHSOZgFjU9MErEmSu3SJ1oT4XtGIviu46JL25NFqySdg1mQqW+QiJcvSYdMRu5cezgnQ5qsGLnU3YPO37uJtkJDLtatXObxGKVCgZodZYiMCGeag1nQNxc6iDgxfj52V5Yjdp4WalUY1jySj/LiItbhJOPtg5/gn5tWoq2+ugJ1Lz6LxSlJCA1RIkSpQFJ8HLZsXocTh9/EpvUrIWPc4Mt8kW45346yTWuRnLjA0baxUI+NhXrWIe4K3SYz6hoOYH/tDigUwQBu3ZNtKNRjgwS5MVeQzTaNmv3v4+q1625fFwQBHx5t9DmhmXD2h5+xtfpV/Hm5j6m/dcrG/E4n6qPGwN9XUfJCHcqLi7AiPxs6rQY3xidx8Q8jjn52GsbeATxf+oSYISXD2NOP0sp6LM1IgyEvE+mpixCj1UCtCsOUbRpDlhEYe/vR3tmF5tY2pmdBgNM+ab4/iMS+d5o/k6bABVHggihwQRS4IApcEAUuiAIXRIELosAFUeCCKHBBFLggCg5BM/nRvb/i7IJXEAUuiAIhiJ9mrg5cKiiQJblbOz/FKLgVFIhV5GnNHisokCR5WyuTBH/9xoOlCJiuQf5YTaxr4v+ii8O5q/wLd01vRoeBwgEAAAAASUVORK5CYII=

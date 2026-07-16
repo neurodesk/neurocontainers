@@ -1,0 +1,13 @@
+name: niftymic
+version: 0.9
+container: niftymic_0.9_REFERENCE.simg
+default_timeout: 120
+
+tests:
+  - name: reconstruction pipeline available
+    description: Verify the main NiftyMIC reconstruction pipeline launcher is on PATH.
+    command: command -v niftymic_run_reconstruction_pipeline
+    expected_output_contains: niftymic_run_reconstruction_pipeline
+  - name: reconstruction help
+    description: Verify the volume reconstruction entrypoint runs and prints help.
+    command: niftymic_reconstruct_volume --help

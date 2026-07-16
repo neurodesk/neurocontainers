@@ -1,0 +1,85 @@
+name: fetalsynthseg
+version: 1.0.0
+
+copyright:
+  - name: FetalSynthSeg Academic Non-Commercial Research License (UNIL)
+    url: https://github.com/Medical-Image-Analysis-Laboratory/FetalSynthSeg/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: vzalevskyi/fetalsynthseg:latest
+  pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
+
+  directives:
+    - run:
+        # Locate the bundled inference script at build time and expose it as a
+        # stable `fetalsynthseg` launcher (see files: below for the logic). If
+        # the code lives under /home (masked at runtime in Neurodesk) it is
+        # copied into /opt first.
+        - bash {{ get_file("setup_fetalsynthseg.sh") }}
+
+    - environment:
+        PATH: /opt/fetalsynthseg:$PATH
+
+    - deploy:
+        path:
+          - /opt/fetalsynthseg
+        bins:
+          - fetalsynthseg
+
+files:
+  - name: setup_fetalsynthseg.sh
+    contents: |
+      #!/usr/bin/env bash
+      # Expose the FetalSynthSeg inference script (predict.py) as a stable
+      # `fetalsynthseg` launcher, relocating it out of /home if necessary.
+      set -e
+      mkdir -p /opt/fetalsynthseg
+      PREDICT="$(find / -maxdepth 6 -name predict.py 2>/dev/null | head -n1)"
+      if [ -z "$PREDICT" ]; then
+        echo "ERROR: predict.py not found in image" >&2
+        exit 1
+      fi
+      WD="$(dirname "$PREDICT")"
+      case "$WD" in
+        /home/*)
+          cp -a "$WD" /opt/fetalsynthseg/app
+          WD=/opt/fetalsynthseg/app
+          ;;
+      esac
+      cat > /opt/fetalsynthseg/fetalsynthseg <<EOF
+      #!/usr/bin/env bash
+      cd "$WD"
+      exec python3 predict.py "\$@"
+      EOF
+      chmod +x /opt/fetalsynthseg/fetalsynthseg
+
+structured_readme:
+  description: >-
+    FetalSynthSeg is a deep-learning fetal brain MRI tissue segmentation tool
+    from the Medical Image Analysis Laboratory (CHUV/UNIL). It uses a domain
+    randomization (SynthSeg-style) training strategy so that a single model
+    generalises across acquisition protocols and field strengths. It is
+    optimised for super-resolution reconstructed fetal brain volumes
+    (gestational age 18-36 weeks), preferably skull-stripped. A CUDA-capable GPU
+    is recommended (run with `--nv` under Singularity/Apptainer); CPU inference
+    is possible but slow. Licensed for academic non-commercial research only.
+  example: |-
+    # Segment a reconstructed fetal brain volume
+    fetalsynthseg --model MODEL --input /data/recon.nii.gz --output /data --gpu
+  documentation: https://github.com/Medical-Image-Analysis-Laboratory/FetalSynthSeg
+  citation: >-
+    Zalevskyi, V., Sanchez, T., Roulet, M., Aviles Verdera, J., Hutter, J.,
+    Kebiri, H., & Bach Cuadra, M. (2024). Improving cross-domain brain tissue
+    segmentation in fetal MRI with synthetic data. MICCAI 2024, LNCS 15003.
+    https://doi.org/10.1007/978-3-031-72384-1_41
+
+categories:
+  - image segmentation
+  - machine learning
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAD1UlEQVR4nO2cS2gTURSG/5lJJjWN1tagJVIftSA+CkoEqdCKCIKCS18rUUQRXejGpYi4cV0R1wouBEEXXbgRqRvxgSi1BRW1VWuK1qa1ddqZ5I4LbZo0k5ybdDKtmfPtZubck5yPc++dSdICDDMXlHIGDV5stt1+I14Qu/yh5HqlB/yvUgohK0uVCao2OYB8TUUtVqMYJ4p1U8EO8oscoHitjoL8JGeaQjVLrUF+Jk+QH7tnGqfaVSrAb8x2wFOMgAURZATx9Joh2wV3EAELImBBBCyIgAURsCACFkTAgghYEAELImBBBCyIgAURBMoZFD11H8HYZun45L0LMF7ezTuvr9mO8NYDCDZtgbZ4BRRNh5gcgzCSEL+GYCX6YCV6MfWuG2Ji2DG3GzmKUZagOaOoqNt/BeH4obxLam0D1NoGINoMfW0bgAKC3cghwbxMscjOM46FeZ1DBlc6aOp9N37eOiYXrAUQ2XEi55TR04WJ7utIjQwAiopAdB1q1u9GOH4IaiRamRySeD7FgsvXQwlFMsfCGEXy7nlApDPnrK+vYH19hfHua6htOw7bNFzPIYvngtRFdTnHtmXkFJZzLWVi/PGNiuSQxfM1KD1rJ9GWNGLJ3ot/F1UPc8iS+dK+lA/tS9nmxe8khq7Gs15RxfJzj6AtXTkrMA0r0QvrWy+swdcwPz1F6seHAu/ahRwE0z9o8H6btwVGuy6h4cgNQNVmzqsagrFWBGOtwL/dyUr0YfxRJyb7HrifQ5J52ean3j7E8M2jSH1/XzQu2LgB9YevY/GucxXJIYMrU6ykbT7n1RXoq7Yh1NIBfVUcwVgrFD2cH2cLfO/cg9Twx8rkcGD+plg2tg2z/xnM/md/j1UNelMckY7TCLV0zMQpKkIt7c7FuZGjCAvrYVWkYfY/xcjtkxC/kzmX1Npl3uXIHlPyiDmi1cVQf7ATgWhzwRhbpABb5JwTxqirOWTxfoopKmo27UPNxr0wPz2B0dMFc+A50qODgEhDa1iNSPvpvHsa8/NLd3NIMn9rkKJAX9uWedouhjnwAtYXh+LcyEHg/RokLCCdkg63Er0YuXPW/RySeN5B6bEhJK7GEVrXDn31NgQbN0Crb4IarocSCMG2JiEmhmF9e4PJvgcwerrynrPcyCFLWfdBfmD6PmhhbfMLEBZEwIIIWBABCyJgQQQsiIAFEbAgAhZEwIIIWBABCyLICCrnj+6rlWwX3EEELIggRxBPs3wHeR3kZ0lOtfMUI3AU5McuKlRzwQ7yk6RitUpJqNZvPGSaQGoNqsZukq2J/0UXw1SUP6mv/y9sw82fAAAAAElFTkSuQmCC

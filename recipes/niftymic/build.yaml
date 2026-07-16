@@ -1,0 +1,58 @@
+name: niftymic
+version: 0.9
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/gift-surg/NiftyMIC/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: renbem/niftymic:v0.9
+  pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
+
+  directives:
+    - deploy:
+        bins:
+          - niftymic_run_reconstruction_pipeline
+          - niftymic_reconstruct_volume
+          - niftymic_reconstruct_volume_from_slices
+          - niftymic_segment_fetal_brains
+          - niftymic_correct_bias_field
+          - niftymic_register_image
+
+structured_readme:
+  description: >-
+    NiftyMIC is a Python-based research toolkit developed within the GIFT-Surg
+    project for motion-corrected super-resolution reconstruction (SRR) of fetal
+    brain MRI. It reconstructs an isotropic, high-resolution volume from
+    multiple, possibly motion-corrupted, stacks of low-resolution 2D slices and
+    includes automatic fetal brain segmentation (MONAIfbs), bias-field
+    correction and volumetric registration.
+  example: |-
+    # Fully automated reconstruction pipeline from multiple stacks
+    niftymic_run_reconstruction_pipeline \
+      --filenames stack1.nii.gz stack2.nii.gz stack3.nii.gz \
+      --dir-output /data/output
+
+    # Automatic fetal brain masking
+    niftymic_segment_fetal_brains \
+      --filenames stack1.nii.gz \
+      --filenames-masks stack1_mask.nii.gz
+  documentation: https://github.com/gift-surg/NiftyMIC
+  citation: >-
+    Ebner, M., Wang, G., Li, W., Aertsen, M., Patel, P. A., Aughwane, R.,
+    Melbourne, A., Doel, T., Dymarkowski, S., De Coppi, P., David, A. L.,
+    Deprest, J., Ourselin, S., & Vercauteren, T. (2020). An automated framework
+    for localization, segmentation and super-resolution reconstruction of fetal
+    brain MRI. NeuroImage, 206, 116324.
+    https://doi.org/10.1016/j.neuroimage.2019.116324
+
+categories:
+  - image reconstruction
+  - structural imaging
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEgAAABICAYAAABV7bNHAAAE+0lEQVR4nO2cT2gTWRzHvzOZNG3Spk2zaZKNa7WVWqQWwV5MwRZBWhsriAoKoeJJ0EMFvSl4UfCgB4+KIPhfUVS0pVpatOJWDwt7WLB/dKG2qU0y2URN2pi00z1IJxnz500m48Im73PqezPzm9/75PdeeNNpAQolHxglF/3e3r6sdiL/Bc4XL3Ier+wL/q9SMiFXFivnpEKTA8gfU1aLhSgmHdmqKWMFFYscIPtY0woqJjkrZBqzrDWomEkRVIzVs0K6sbOkE4qNHx3QKUaACiIgCqLTK0GyC1pBBKggAlQQASqIABVEgAoiQAURoIIIUEEEqCACVBABKogAFUSAk3NS86VLMDQ0SPpmrl3D9NWrKefWuFyoP3FCbMd4Hn/s20eMBwB/9vRgYXo6bQ6Vmzdjw/nzKf2BkRFMnD4tZxiKUFxB9r17wRmNauYCa3e3omM/E8WCNHo9HAcOqJkLLB0dYLXalH6tyYTq1lZV7yWXvNYg2+7d0JpMauUCzmhE9datKf01XV1gOFmrgerkJYjV6eBwu9XKBQBg3bVL2sEwsLpcqt4jFxR9LEI8Lk4Fa3c3Zu/cQczvV5xEeHwc5evXAwCMzc0oW70aCx8/AgCqWlqgs9sT546NobyxUVZcQ309LDt2wLhxI3R2OzRlZYgHg4h6PAi8fAl+aAiLX79mjaGogvwDAxDi8e8BtFqs6ulREkYkODqKGM+LbevOnYmfkxbn8Pg4IpOTxHisVou648fRfOUK7Hv2wNDQAK6iAgzHocRigXHTJqzt7cWao0fJsXIcCwAg5vfD++SJ2K7p7ERp0qecM4IAX3+/2LR0doItKUGJ2QyT0yn2J98zG+tOnpRIzgfFK5/nxg1YXS6wOh0YjsOqgwfx/tw5xYl4+/rgcLvBsCy4igqY29qgs9nAaDQAgKX5efBDQ+JUzER1ayvMbW2SvoWpKUxdvozw2BiEaBSlDgeqWlqgMRiIeSkWFA8GMffwIX7dvx8A8Mv27fDcvKk0HGI+H0Jv38K0ZQuA74t1icUiHucHByFEo8Q4lo4OaZ6hEP7q7cXi589iX2RyUtZUBfL8FvPcvo2l+XkAAMOy+O3QoXzCSaZQRVMTdFZr2mPZMPxQYYHhYYmcXMlL0OKXL/h0/77YNre3Q19Xpzhe8M0bxHy+lP7wu3eIfPggKwZXXi5pR+fmFOcDqLBZnb13L/FVyTD5bQmWl+Ht60vplls9ALAYDkvapTab8nyggqClSASzd+8mAqbZKuSCr78fy4Igic8PD8u+PjIxIWmbt20DV1mpOB9VHnd8evAA8VBIjVCI8TyCo6Ni2//8OYRv32Rf7x8YkLS1VVVoungRJqcTWpMJGr0ehvp6ONxu1B4+TIynygZHiEbhuXULa44cUSMcxk+dUnztP69fIzAyAnPSnq6sthaNZ8+mnOt/9owYT7UHZt7HjxELBNQKlxfvz5yB9+lTVWKptkUWYjF4rl/H2mPH1AqpPJd4HH9fuADvo0ewdHUl9mKlpYiHQojOzCDw6hX4wUFiLPH9YPp+kJSVd6fpM2kCVBABKogAFUSACiJABRGggghQQQSoIAJUEAEqiAAVRIAKIiAKUvJH94VKsgtaQQSoIAISQXSapTpIqaBilpRu7HSKEUgrqBirKNOYM1ZQMUnKNlZZEgr1Nx5yikDWGlSI1SR3TPRfdFEoP5V/AUxsgrwFSABUAAAAAElFTkSuQmCC

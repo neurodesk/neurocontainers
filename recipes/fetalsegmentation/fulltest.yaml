@@ -1,0 +1,13 @@
+name: fetalsegmentation
+version: "20241116"
+container: fetalsegmentation_20241116_REFERENCE.simg
+default_timeout: 120
+
+tests:
+  - name: BOUNTI segmentation script available
+    description: Verify the automated BOUNTI brain tissue segmentation launcher is deployed.
+    command: command -v auto-brain-bounti-segmentation-fetal.sh
+    expected_output_contains: auto-brain-bounti-segmentation-fetal.sh
+  - name: mirtk available
+    description: Verify the MIRTK binary used by the pipelines is on PATH.
+    command: mirtk --version

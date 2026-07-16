@@ -1,0 +1,71 @@
+name: svrtk
+version: "20260626"
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/SVRTK/SVRTK/blob/master/LICENSE
+  - license: GPL-3.0-only
+    url: https://github.com/SVRTK/auto-proc-svrtk/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: fetalsvrtk/svrtk:general_auto_amd
+  pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
+
+  directives:
+    - run:
+        # The automated processing scripts, atlases and trained models ship
+        # under /home in the upstream image, but /home is masked at runtime in
+        # Neurodesk. Relocate them to /opt and repoint the hard-coded paths.
+        - if [ -d /home/auto-proc-svrtk ]; then mv /home/auto-proc-svrtk /opt/auto-proc-svrtk; fi
+        - sed -i -e 's#^software_path=/home#software_path=/opt#' -e 's#/home/auto-proc-svrtk#/opt/auto-proc-svrtk#g' -e 's#^default_run_dir=/home/tmp_proc#default_run_dir=/tmp/svrtk_proc#' /opt/auto-proc-svrtk/scripts/*.sh
+
+    - environment:
+        PATH: /opt/auto-proc-svrtk/scripts:/bin/MIRTK/build/bin:/bin/MIRTK/build/lib/tools:$PATH
+
+    - deploy:
+        path:
+          - /opt/auto-proc-svrtk/scripts
+          - /bin/MIRTK/build/bin
+        bins:
+          - mirtk
+          - auto-brain-reconstruction.sh
+          - auto-body-reconstruction.sh
+          - auto-thorax-reconstruction.sh
+          - auto-brain-bounti-segmentation-fetal.sh
+
+structured_readme:
+  description: >-
+    SVRTK (Slice-to-Volume Reconstruction ToolKit) is a MIRTK-based C++ toolkit
+    from King's College London for motion-corrected super-resolution
+    reconstruction of fetal and neonatal MRI (brain, body, thorax, heart,
+    placenta and diffusion). This container bundles the compiled MIRTK/SVRTK
+    tools together with the automated deep-learning driven processing scripts
+    (auto-proc-svrtk), including the BOUNTI fetal brain tissue segmentation
+    pipeline.
+  example: |-
+    # Automated 3D fetal brain SVR reconstruction from stacks of 2D slices
+    auto-brain-reconstruction.sh /data/input_stacks /data/output_recon
+
+    # BOUNTI automated fetal brain tissue segmentation of a 3D SVR volume
+    auto-brain-bounti-segmentation-fetal.sh /data/svr_volumes /data/segmentations
+
+    # Manual reconstruction with MIRTK
+    mirtk reconstruct output.nii.gz 3 stack1.nii.gz stack2.nii.gz -thickness 2.5 2.5
+  documentation: https://github.com/SVRTK/SVRTK
+  citation: >-
+    Kuklisova-Murgasova, M., Quaghebeur, G., Rutherford, M. A., Hajnal, J. V., &
+    Schnabel, J. A. (2012). Reconstruction of fetal brain MRI with intensity
+    matching and complete outlier removal. Medical Image Analysis, 16(8),
+    1550-1564. https://doi.org/10.1016/j.media.2012.07.004
+
+categories:
+  - image reconstruction
+  - structural imaging
+  - body
+icon: data:image/png;base64,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
