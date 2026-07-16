@@ -10,4 +10,5 @@ tests:
     expected_output_contains: auto-brain-bounti-segmentation-fetal.sh
   - name: mirtk available
     description: Verify the MIRTK binary used by the pipelines is on PATH.
-    command: mirtk --version
+    command: mirtk --help
+    expected_output_contains: "Usage:"
