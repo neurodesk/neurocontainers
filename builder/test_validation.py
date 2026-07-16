@@ -35,7 +35,7 @@ def test_valid_minimal_recipe():
         "name": "test-app",
         "version": "1.0.0",
         "architectures": ["x86_64"],
-        "categories": ["programming"],
+        "categories": ["fetal imaging"],
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
@@ -52,6 +52,7 @@ def test_valid_minimal_recipe():
     assert result.name == "test-app"
     assert result.version == "1.0.0"
     assert result.architectures == ["x86_64"]
+    assert result.categories == ["fetal imaging"]
 
 
 def test_valid_complex_recipe():
