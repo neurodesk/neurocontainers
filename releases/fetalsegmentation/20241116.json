@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "fetalsegmentation 20241116": {
+      "version": "20260716",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging"
+  ]
+}
