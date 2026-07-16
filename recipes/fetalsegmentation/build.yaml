@@ -23,7 +23,9 @@ build:
         # under /home in the upstream image, but /home is masked at runtime in
         # Neurodesk. Relocate them to /opt and repoint the hard-coded paths.
         - if [ -d /home/auto-proc-svrtk ]; then mv /home/auto-proc-svrtk /opt/auto-proc-svrtk; fi
+        - rm -rf /opt/auto-proc-svrtk/.git
         - sed -i -e 's#^software_path=/home#software_path=/opt#' -e 's#/home/auto-proc-svrtk#/opt/auto-proc-svrtk#g' -e 's#^default_run_dir=/home/tmp_proc#default_run_dir=/tmp/svrtk_proc#' /opt/auto-proc-svrtk/scripts/*.sh
+        - find /opt/auto-proc-svrtk/scripts -maxdepth 1 -type f -name '*.sh' -exec chmod a+rx {} +
 
     - environment:
         PATH: /opt/auto-proc-svrtk/scripts:/bin/MIRTK/build/bin:/bin/MIRTK/build/lib/tools:$PATH

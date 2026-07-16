@@ -27,7 +27,8 @@ This workflow runs automatically when a pull request targeting `master` or `main
    - Checks out the repo and installs Python requirements.
    - Verifies container runtimes (`docker`, `apptainer` or `singularity`) so the self-hosted machine has the necessary binaries.
    - Locates `recipes/<name>/fulltest.yaml`. Recipes without fulltests produce a skipped report instead of falling back to legacy test formats.
-   - Runs `workflows/release_test_runner.py`, which downloads or converts the release container, runs the deploy bins/path check, and executes `fulltest.yaml` through `builder/run_tests.py`. The `continue-on-error` flag lets subsequent steps gather logs even when tests fail.
+   - Runs Dive against the published Docker image using `.github/.dive-ci.yml`, then runs `workflows/release_test_runner.py`, which downloads or converts the release container, runs the deploy bins/path check, and executes `fulltest.yaml` through `builder/run_tests.py`. Dive findings and fulltest results are reported together on the release PR; wasted-space findings do not open separate issues.
+   - The `continue-on-error` flag lets subsequent steps gather logs even when tests fail.
    - Generates Markdown via `workflows/generate_test_report.py` and uploads both the JSON and Markdown artifacts as `test-results-<name>`.
    - Uses `actions/github-script` to post (or update) a PR comment containing the Markdown report for that specific container.
 3. **`summarize-results` job** (Ubuntu runner) aggregates every `test-results-*.json` artifact, prints a count of passed/failed recipes, and updates a single “Container Test Summary” PR comment. If any container failed, this job calls `core.setFailed`, which fails the workflow and surfaces red status in the PR checks.

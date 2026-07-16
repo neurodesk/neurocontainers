@@ -64,6 +64,18 @@ def test_build_app_workflow_stages_without_hidden_docker_builds() -> None:
     assert "docker buildx build" in build_image_job
 
 
+def test_dive_waste_check_is_reported_on_release_pr_without_opening_an_issue() -> None:
+    build_workflow = Path(".github/workflows/build-app.yml").read_text()
+    release_test_workflow = Path(".github/workflows/test-release-pr.yml").read_text()
+
+    assert "Analyze image layer waste with Dive" not in build_workflow
+    assert "Open issue for Dive wasted space" not in build_workflow
+    assert "Analyze image layer waste with Dive" in release_test_workflow
+    assert "Dive image layer waste analysis" in release_test_workflow
+    assert "dive-status-${{ matrix.release.name }}.txt" in release_test_workflow
+    assert "gh issue create" not in release_test_workflow
+
+
 def test_nectar_mirrors_are_best_effort() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     push_nectar_job = workflow.split("  push-nectar-registry:", 1)[1].split("  build-simg:", 1)[0]
