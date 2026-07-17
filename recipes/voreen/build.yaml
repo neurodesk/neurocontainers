@@ -12,6 +12,8 @@ build:
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
+        PATH: /usr/share/voreen:$PATH
+        LD_LIBRARY_PATH: /usr/share/voreen
 
     - install:
         - build-essential
