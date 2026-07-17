@@ -58,8 +58,8 @@ tests:
   - name: python has no missing shared libraries
     command: assert_linked "$(command -v python)"
     expected_exit_code: 0
-  - name: python target exists
-    command: test -e "$(readlink -f "$(command -v python)")"
+  - name: Traits package version
+    command: python -c 'from importlib.metadata import version; assert version("traits") == "6.4.3"'
     expected_exit_code: 0
   - name: conda resolves on PATH
     command: command -v conda
@@ -70,8 +70,8 @@ tests:
   - name: conda has no missing shared libraries
     command: assert_linked "$(command -v conda)"
     expected_exit_code: 0
-  - name: conda target exists
-    command: test -e "$(readlink -f "$(command -v conda)")"
+  - name: setuptools package version
+    command: python -c 'from importlib.metadata import version; assert version("setuptools") == "80.9.0"'
     expected_exit_code: 0
   - name: fslmaths resolves on PATH
     command: command -v fslmaths
