@@ -70,7 +70,9 @@ build:
             - pip:
               - torch
               - torchvision
-              - deeplabcut[gui,modelzoo,wandb]=={{ context.version }}
+              - deeplabcut[gui,modelzoo,tf]=={{ context.version }}
+              - tensorflow==2.12.1
+              - wandb==0.17.9
     - copy: deeplabcut_env.yaml /opt/deeplabcut_env.yaml
     - template:
         name: miniconda
