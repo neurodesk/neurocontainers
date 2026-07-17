@@ -73,7 +73,8 @@ build:
     - run:
         - mkdir -p /opt/BRAID
         - tar xzf {{ get_file("braid_tar_gz") }} --strip-components=1 -C /opt/BRAID
-        - /usr/bin/python3 -m pip install --no-cache-dir /opt/BRAID
+        - /usr/bin/python3 -m pip install --no-cache-dir setuptools==80.9.0 wheel==0.45.1
+        - /usr/bin/python3 -m pip install --no-cache-dir --no-build-isolation /opt/BRAID
         - /usr/bin/python3 -c "import braid, monai, nibabel, torch"
         - test -x /usr/local/bin/braid_one_sample_inference
         - test -x /usr/local/bin/braid_io_dir_wrapper
