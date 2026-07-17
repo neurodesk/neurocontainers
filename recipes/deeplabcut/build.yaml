@@ -70,7 +70,7 @@ build:
             - pip:
               - torch
               - torchvision
-              - deeplabcut[gui,modelzoo,wandb]==3.0.0rc8
+              - deeplabcut[gui,modelzoo,wandb]=={{ context.version }}
     - copy: deeplabcut_env.yaml /opt/deeplabcut_env.yaml
     - template:
         name: miniconda

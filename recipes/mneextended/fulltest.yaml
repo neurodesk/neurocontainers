@@ -247,13 +247,13 @@ tests:
   command: find /opt/vscode-extensions -maxdepth 1 -type d -name 'ms-toolsai.jupyter-renderers-*' | grep -q .
   expected_exit_code: 0
 - name: MNE BIDS pipeline exists
-  command: test -d /opt/mne-bids-pipeline-main
+  command: test -d /opt/mne-bids-pipeline
   expected_exit_code: 0
 - name: MNE BIDS pipeline runner exists
-  command: test -f /opt/mne-bids-pipeline-main/run.py
+  command: test -f /opt/mne-bids-pipeline/run.py
   expected_exit_code: 0
 - name: MNE BIDS pipeline is readable
-  command: find /opt/mne-bids-pipeline-main -type f -readable | grep -q .
+  command: find /opt/mne-bids-pipeline -type f -readable | grep -q .
   expected_exit_code: 0
 - name: Base Conda is executable
   command: test -x /opt/miniconda-4.7.12/bin/conda
@@ -277,7 +277,7 @@ tests:
   command: command -v xdg-open
   expected_exit_code: 0
 - name: Qt5 runtime is linked
-  command: ldconfig -p | grep -q libQt5Core
+  command: test -e /opt/miniconda-4.7.12/envs/mne-extended/lib/libQt5Core.so.5
   expected_exit_code: 0
 - name: GTK3 runtime is linked
   command: ldconfig -p | grep -q libgtk-3

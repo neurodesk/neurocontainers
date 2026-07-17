@@ -23,7 +23,7 @@ build:
         conda_install: python=3.10 pip
     - run:
         - conda create -y -n clinicadlEnv python=3.10 pip
-        - conda run -n clinicadlEnv pip install clinicadl clinica
+        - conda run -n clinicadlEnv pip install clinicadl=={{ context.version }} clinica
     - template:
         name: fsl
         version: 6.0.7.16
@@ -45,7 +45,9 @@ build:
         version: latest
     - deploy:
         path:
-          - /opt/miniconda
+          - /opt/miniconda/envs/clinicadlEnv/bin
+    - environment:
+        PATH: /opt/miniconda/envs/clinicadlEnv/bin:$PATH
     - test:
         name: testScript
         script: |-

@@ -21,7 +21,7 @@ build:
         version: py310_25.5.1-0
         install_path: /opt/miniconda
         conda_install: python=3.10
-        pip_install: clinica
+        pip_install: clinica=={{ context.version }}
     - template:
         name: fsl
         version: 6.0.7.16
