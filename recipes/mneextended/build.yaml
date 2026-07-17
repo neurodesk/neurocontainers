@@ -53,6 +53,7 @@ build:
     - workdir: /opt/
     - run:
         - mkdir -p /opt/mne-bids-pipeline
+        - echo "d23a78551dccfef70e295626f07ceab76d33a8b666d1a8938b6f7b6a8b2e5e3d  {{ get_file("mne_bids_pipeline_tar_gz") }}" | sha256sum -c -
         - tar xz -f {{ get_file("mne_bids_pipeline_tar_gz") }} --strip-components=1 -C /opt/mne-bids-pipeline
         - chmod a+rwx /opt/mne-bids-pipeline -R
     - copy: code /usr/local/sbin/code

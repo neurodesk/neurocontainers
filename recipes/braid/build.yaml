@@ -72,6 +72,7 @@ build:
     - workdir: /opt
     - run:
         - mkdir -p /opt/BRAID
+        - echo "090f9a99c8a256bc63645e751693ebc677fdabfab08d8cb5871834fbe8877200  {{ get_file("braid_tar_gz") }}" | sha256sum -c -
         - tar xzf {{ get_file("braid_tar_gz") }} --strip-components=1 -C /opt/BRAID
         - /usr/bin/python3 -m pip install --no-cache-dir setuptools==80.9.0 wheel==0.45.1
         - /usr/bin/python3 -m pip install --no-cache-dir --no-build-isolation /opt/BRAID

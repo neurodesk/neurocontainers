@@ -2,6 +2,8 @@ name: clinicadl
 version: 1.6.1
 architectures:
   - x86_64
+variables:
+  clinica_version: 0.7.7
 structured_readme:
   description: |-
     Framework for the reproducible processing of neuroimaging data with deep learning methods
@@ -23,7 +25,7 @@ build:
         conda_install: python=3.10 pip
     - run:
         - conda create -y -n clinicadlEnv python=3.10 pip
-        - conda run -n clinicadlEnv pip install clinicadl=={{ context.version }} clinica
+        - conda run -n clinicadlEnv pip install clinicadl=={{ context.version }} clinica=={{ context.clinica_version }}
     - template:
         name: fsl
         version: 6.0.7.16

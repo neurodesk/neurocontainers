@@ -66,11 +66,16 @@ build:
   directives:
     - install: r-base r-base-dev libgsl-dev
     - run:
+        - echo "f33609bf485abd190e65ff5d0fdab438b759294c47b921d983d89d6f053a2d95  {{ get_file("gsl_tar_gz") }}" | sha256sum -c -
+        - echo "74defd06cd5e94c4e810916b93436673c8bc1dca4ba7295ce1f47b799b62dcf7  {{ get_file("aws_methods_tar_gz") }}" | sha256sum -c -
+        - echo "9ab2c58290be25dbe00e5edc32406f92cc1663745ea5f12224c33a32678f392c  {{ get_file("aws_tar_gz") }}" | sha256sum -c -
+        - echo "fc343b31b9c113817f70c5c93d4a20d5ae194988c6d40ad00718fac1dd4975c3  {{ get_file("lqt_tar_gz") }}" | sha256sum -c -
         - |-
           R --slave -e 'options(repos = c(CRAN = "https://cloud.r-project.org")); \
             if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes"); \
             remotes::install_local("{{ get_file("gsl_tar_gz") }}", upgrade = "never"); \
-            install.packages("aws", dependencies = TRUE); \
+            remotes::install_local("{{ get_file("aws_methods_tar_gz") }}", upgrade = "never"); \
+            remotes::install_local("{{ get_file("aws_tar_gz") }}", dependencies = NA, upgrade = "never"); \
             remotes::install_local("{{ get_file("lqt_tar_gz") }}", dependencies = NA, upgrade = "never", build_vignettes = FALSE)'
         - R --slave -e 'library(LQT); stopifnot(as.character(packageVersion("LQT")) == "{{ context.version }}")'
     - test:
@@ -83,6 +88,10 @@ build:
 files:
   - name: gsl_tar_gz
     url: https://cloud.r-project.org/src/contrib/Archive/gsl/gsl_2.1-8.tar.gz
+  - name: aws_methods_tar_gz
+    url: https://cloud.r-project.org/src/contrib/Archive/awsMethods/awsMethods_1.1-0.tar.gz
+  - name: aws_tar_gz
+    url: https://cloud.r-project.org/src/contrib/Archive/aws/aws_2.5-6.tar.gz
   - name: lqt_tar_gz
     url: https://github.com/jdwor/LQT/archive/ab5801bd5ef2d5a9c3c6d75c332d0ef2fa6968b8.tar.gz
 categories:
