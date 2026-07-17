@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "svrtk 20260626": {
+      "version": "20260716",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "fetal imaging",
+    "image reconstruction",
+    "structural imaging",
+    "body"
+  ]
+}
