@@ -10,7 +10,7 @@ tests:
   command: test -x "$(command -v clinica)"
   expected_exit_code: 0
 - name: clinica has no missing shared libraries
-  command: ! ldd "$(command -v clinica)" 2>&1 | grep "not found"
+  command: target="$(command -v clinica)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: clinica package version
   command: /opt/miniconda/bin/python -c 'from importlib.metadata import version; assert version("clinica") == "0.10.0"'
@@ -22,7 +22,7 @@ tests:
   command: test -x "$(command -v python)"
   expected_exit_code: 0
 - name: python has no missing shared libraries
-  command: ! ldd "$(command -v python)" 2>&1 | grep "not found"
+  command: target="$(command -v python)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: python target exists
   command: test -e "$(readlink -f "$(command -v python)")"
@@ -34,7 +34,7 @@ tests:
   command: test -x "$(command -v conda)"
   expected_exit_code: 0
 - name: conda has no missing shared libraries
-  command: ! ldd "$(command -v conda)" 2>&1 | grep "not found"
+  command: target="$(command -v conda)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: conda target exists
   command: test -e "$(readlink -f "$(command -v conda)")"
@@ -46,7 +46,7 @@ tests:
   command: test -x "$(command -v fslmaths)"
   expected_exit_code: 0
 - name: fslmaths has no missing shared libraries
-  command: ! ldd "$(command -v fslmaths)" 2>&1 | grep "not found"
+  command: target="$(command -v fslmaths)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: fslmaths target exists
   command: test -e "$(readlink -f "$(command -v fslmaths)")"
@@ -58,7 +58,7 @@ tests:
   command: test -x "$(command -v bet)"
   expected_exit_code: 0
 - name: bet has no missing shared libraries
-  command: ! ldd "$(command -v bet)" 2>&1 | grep "not found"
+  command: target="$(command -v bet)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: bet target exists
   command: test -e "$(readlink -f "$(command -v bet)")"
@@ -70,7 +70,7 @@ tests:
   command: test -x "$(command -v flirt)"
   expected_exit_code: 0
 - name: flirt has no missing shared libraries
-  command: ! ldd "$(command -v flirt)" 2>&1 | grep "not found"
+  command: target="$(command -v flirt)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: flirt target exists
   command: test -e "$(readlink -f "$(command -v flirt)")"
@@ -82,7 +82,7 @@ tests:
   command: test -x "$(command -v fast)"
   expected_exit_code: 0
 - name: fast has no missing shared libraries
-  command: ! ldd "$(command -v fast)" 2>&1 | grep "not found"
+  command: target="$(command -v fast)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: fast target exists
   command: test -e "$(readlink -f "$(command -v fast)")"
@@ -94,7 +94,7 @@ tests:
   command: test -x "$(command -v fnirt)"
   expected_exit_code: 0
 - name: fnirt has no missing shared libraries
-  command: ! ldd "$(command -v fnirt)" 2>&1 | grep "not found"
+  command: target="$(command -v fnirt)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: fnirt target exists
   command: test -e "$(readlink -f "$(command -v fnirt)")"
@@ -106,7 +106,7 @@ tests:
   command: test -x "$(command -v applywarp)"
   expected_exit_code: 0
 - name: applywarp has no missing shared libraries
-  command: ! ldd "$(command -v applywarp)" 2>&1 | grep "not found"
+  command: target="$(command -v applywarp)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: applywarp target exists
   command: test -e "$(readlink -f "$(command -v applywarp)")"
@@ -118,7 +118,7 @@ tests:
   command: test -x "$(command -v fslstats)"
   expected_exit_code: 0
 - name: fslstats has no missing shared libraries
-  command: ! ldd "$(command -v fslstats)" 2>&1 | grep "not found"
+  command: target="$(command -v fslstats)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: fslstats target exists
   command: test -e "$(readlink -f "$(command -v fslstats)")"
@@ -130,7 +130,7 @@ tests:
   command: test -x "$(command -v fslroi)"
   expected_exit_code: 0
 - name: fslroi has no missing shared libraries
-  command: ! ldd "$(command -v fslroi)" 2>&1 | grep "not found"
+  command: target="$(command -v fslroi)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: fslroi target exists
   command: test -e "$(readlink -f "$(command -v fslroi)")"
@@ -142,7 +142,7 @@ tests:
   command: test -x "$(command -v recon-all)"
   expected_exit_code: 0
 - name: recon-all has no missing shared libraries
-  command: ! ldd "$(command -v recon-all)" 2>&1 | grep "not found"
+  command: target="$(command -v recon-all)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: recon-all target exists
   command: test -e "$(readlink -f "$(command -v recon-all)")"
@@ -154,7 +154,7 @@ tests:
   command: test -x "$(command -v mri_convert)"
   expected_exit_code: 0
 - name: mri_convert has no missing shared libraries
-  command: ! ldd "$(command -v mri_convert)" 2>&1 | grep "not found"
+  command: target="$(command -v mri_convert)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: mri_convert target exists
   command: test -e "$(readlink -f "$(command -v mri_convert)")"
@@ -166,7 +166,7 @@ tests:
   command: test -x "$(command -v mri_info)"
   expected_exit_code: 0
 - name: mri_info has no missing shared libraries
-  command: ! ldd "$(command -v mri_info)" 2>&1 | grep "not found"
+  command: target="$(command -v mri_info)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: mri_info target exists
   command: test -e "$(readlink -f "$(command -v mri_info)")"
@@ -178,7 +178,7 @@ tests:
   command: test -x "$(command -v mri_vol2vol)"
   expected_exit_code: 0
 - name: mri_vol2vol has no missing shared libraries
-  command: ! ldd "$(command -v mri_vol2vol)" 2>&1 | grep "not found"
+  command: target="$(command -v mri_vol2vol)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: mri_vol2vol target exists
   command: test -e "$(readlink -f "$(command -v mri_vol2vol)")"
@@ -190,7 +190,7 @@ tests:
   command: test -x "$(command -v mris_convert)"
   expected_exit_code: 0
 - name: mris_convert has no missing shared libraries
-  command: ! ldd "$(command -v mris_convert)" 2>&1 | grep "not found"
+  command: target="$(command -v mris_convert)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: mris_convert target exists
   command: test -e "$(readlink -f "$(command -v mris_convert)")"
@@ -202,7 +202,7 @@ tests:
   command: test -x "$(command -v antsRegistration)"
   expected_exit_code: 0
 - name: antsRegistration has no missing shared libraries
-  command: ! ldd "$(command -v antsRegistration)" 2>&1 | grep "not found"
+  command: target="$(command -v antsRegistration)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: antsRegistration target exists
   command: test -e "$(readlink -f "$(command -v antsRegistration)")"
@@ -214,7 +214,7 @@ tests:
   command: test -x "$(command -v antsApplyTransforms)"
   expected_exit_code: 0
 - name: antsApplyTransforms has no missing shared libraries
-  command: ! ldd "$(command -v antsApplyTransforms)" 2>&1 | grep "not found"
+  command: target="$(command -v antsApplyTransforms)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: antsApplyTransforms target exists
   command: test -e "$(readlink -f "$(command -v antsApplyTransforms)")"
@@ -226,7 +226,7 @@ tests:
   command: test -x "$(command -v N4BiasFieldCorrection)"
   expected_exit_code: 0
 - name: N4BiasFieldCorrection has no missing shared libraries
-  command: ! ldd "$(command -v N4BiasFieldCorrection)" 2>&1 | grep "not found"
+  command: target="$(command -v N4BiasFieldCorrection)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: N4BiasFieldCorrection target exists
   command: test -e "$(readlink -f "$(command -v N4BiasFieldCorrection)")"
@@ -238,7 +238,7 @@ tests:
   command: test -x "$(command -v mrconvert)"
   expected_exit_code: 0
 - name: mrconvert has no missing shared libraries
-  command: ! ldd "$(command -v mrconvert)" 2>&1 | grep "not found"
+  command: target="$(command -v mrconvert)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: mrconvert target exists
   command: test -e "$(readlink -f "$(command -v mrconvert)")"
@@ -250,7 +250,7 @@ tests:
   command: test -x "$(command -v mrinfo)"
   expected_exit_code: 0
 - name: mrinfo has no missing shared libraries
-  command: ! ldd "$(command -v mrinfo)" 2>&1 | grep "not found"
+  command: target="$(command -v mrinfo)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: mrinfo target exists
   command: test -e "$(readlink -f "$(command -v mrinfo)")"
@@ -262,7 +262,7 @@ tests:
   command: test -x "$(command -v dwidenoise)"
   expected_exit_code: 0
 - name: dwidenoise has no missing shared libraries
-  command: ! ldd "$(command -v dwidenoise)" 2>&1 | grep "not found"
+  command: target="$(command -v dwidenoise)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: dwidenoise target exists
   command: test -e "$(readlink -f "$(command -v dwidenoise)")"
@@ -274,7 +274,7 @@ tests:
   command: test -x "$(command -v dwi2tensor)"
   expected_exit_code: 0
 - name: dwi2tensor has no missing shared libraries
-  command: ! ldd "$(command -v dwi2tensor)" 2>&1 | grep "not found"
+  command: target="$(command -v dwi2tensor)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: dwi2tensor target exists
   command: test -e "$(readlink -f "$(command -v dwi2tensor)")"
@@ -286,7 +286,7 @@ tests:
   command: test -x "$(command -v tckgen)"
   expected_exit_code: 0
 - name: tckgen has no missing shared libraries
-  command: ! ldd "$(command -v tckgen)" 2>&1 | grep "not found"
+  command: target="$(command -v tckgen)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: tckgen target exists
   command: test -e "$(readlink -f "$(command -v tckgen)")"
@@ -298,7 +298,7 @@ tests:
   command: test -x "$(command -v dcm2niix)"
   expected_exit_code: 0
 - name: dcm2niix has no missing shared libraries
-  command: ! ldd "$(command -v dcm2niix)" 2>&1 | grep "not found"
+  command: target="$(command -v dcm2niix)" && test -n "$target" && ldd "$target" 2>&1 | awk '/not found/ { missing=1 } END { exit missing }'
   expected_exit_code: 0
 - name: dcm2niix target exists
   command: test -e "$(readlink -f "$(command -v dcm2niix)")"
