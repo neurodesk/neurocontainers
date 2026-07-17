@@ -13,7 +13,7 @@ tests:
   command: test -e "$(readlink -f "$(command -v voreenve)")"
   expected_exit_code: 0
 - name: voreenve has no missing shared libraries
-  command: ! ldd "$(command -v voreenve)" 2>&1 | grep "not found"
+  command: ldd "$(command -v voreenve)" 2>&1 | awk '/not found/ { found=1 } END { exit found }'
   expected_exit_code: 0
 - name: voreentool resolves on PATH
   command: command -v voreentool
@@ -25,7 +25,7 @@ tests:
   command: test -e "$(readlink -f "$(command -v voreentool)")"
   expected_exit_code: 0
 - name: voreentool has no missing shared libraries
-  command: ! ldd "$(command -v voreentool)" 2>&1 | grep "not found"
+  command: ldd "$(command -v voreentool)" 2>&1 | awk '/not found/ { found=1 } END { exit found }'
   expected_exit_code: 0
 - name: libefsw.so exists
   command: test -f /usr/share/voreen/libefsw.so
@@ -37,7 +37,7 @@ tests:
   command: readelf -h /usr/share/voreen/libefsw.so >/dev/null
   expected_exit_code: 0
 - name: libefsw.so dependencies resolve
-  command: ! ldd /usr/share/voreen/libefsw.so 2>&1 | grep "not found"
+  command: ldd /usr/share/voreen/libefsw.so 2>&1 | awk '/not found/ { found=1 } END { exit found }'
   expected_exit_code: 0
 - name: libtgt.so exists
   command: test -f /usr/share/voreen/libtgt.so
@@ -49,7 +49,7 @@ tests:
   command: readelf -h /usr/share/voreen/libtgt.so >/dev/null
   expected_exit_code: 0
 - name: libtgt.so dependencies resolve
-  command: ! ldd /usr/share/voreen/libtgt.so 2>&1 | grep "not found"
+  command: ldd /usr/share/voreen/libtgt.so 2>&1 | awk '/not found/ { found=1 } END { exit found }'
   expected_exit_code: 0
 - name: libvoreen_core.so exists
   command: test -f /usr/share/voreen/libvoreen_core.so
@@ -61,7 +61,7 @@ tests:
   command: readelf -h /usr/share/voreen/libvoreen_core.so >/dev/null
   expected_exit_code: 0
 - name: libvoreen_core.so dependencies resolve
-  command: ! ldd /usr/share/voreen/libvoreen_core.so 2>&1 | grep "not found"
+  command: ldd /usr/share/voreen/libvoreen_core.so 2>&1 | awk '/not found/ { found=1 } END { exit found }'
   expected_exit_code: 0
 - name: libvoreen_qt.so exists
   command: test -f /usr/share/voreen/libvoreen_qt.so
@@ -73,7 +73,7 @@ tests:
   command: readelf -h /usr/share/voreen/libvoreen_qt.so >/dev/null
   expected_exit_code: 0
 - name: libvoreen_qt.so dependencies resolve
-  command: ! ldd /usr/share/voreen/libvoreen_qt.so 2>&1 | grep "not found"
+  command: ldd /usr/share/voreen/libvoreen_qt.so 2>&1 | awk '/not found/ { found=1 } END { exit found }'
   expected_exit_code: 0
 - name: data directory exists
   command: test -d /usr/share/voreen/data
