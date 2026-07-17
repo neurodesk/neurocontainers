@@ -13,6 +13,9 @@ copyright:
 architectures:
   - x86_64
 
+variables:
+  upstream_commit: 0ef4bb446129a71c69684c186048e87c0abbbd9b
+
 build:
   kind: neurodocker
   base-image: neurodebian:nd20.04-non-free
@@ -108,10 +111,13 @@ build:
     - run:
         - npm install -g npm@9.5.1 pm2 typescript tsc-watch bids-validator@1.14.8
 
-    # Clone ezBIDS application first
+    # Install the pinned ezBIDS application and keep multipart uploads below
+    # the Jupyter Server proxy's Tornado 100-part limit.
     - run:
         - mkdir -p /app
-        - git clone https://github.com/openneuropet/ezbids_docker /app/ezbids
+        - mkdir -p /app/ezbids
+        - tar -xzf {{ get_file("ezbids_source_tar_gz") }} -C /app/ezbids --strip-components=1
+        - cd /app/ezbids && git apply {{ get_file("tornado_multipart_limit_patch") }}
         - cd /app/ezbids && ./generate_keys.sh
         - chmod 644 /app/ezbids/api/ezbids.key /app/ezbids/api/ezbids.pub
 
@@ -179,6 +185,12 @@ deploy:
         port: 8082
 
 files:
+  - name: ezbids_source_tar_gz
+    url: https://github.com/openneuropet/ezbids_docker/archive/{{ context.upstream_commit }}.tar.gz
+
+  - name: tornado_multipart_limit_patch
+    filename: tornado-multipart-limit.patch
+
   - name: start-ezbids.sh
     contents: |
       #!/bin/bash

@@ -1,0 +1,17 @@
+diff --git a/ui/src/Upload.vue b/ui/src/Upload.vue
+index 487fd94..2b101d5 100644
+--- a/ui/src/Upload.vue
++++ b/ui/src/Upload.vue
+@@ -367,7 +367,9 @@ export default defineComponent({
+                 entry.file = file; // Store for retry if needed
+                 batchSize += file.size;
+ 
+-                // Limit batch size - if exceeded, release entry for next batch
+-                if (batchEntries.length > 0 && (batchEntries.length >= 500 || batchSize > 1024 * 1024 * 300)) {
++                // Each file adds files, paths, and mtimes multipart fields. Keep
++                // the request below Tornado's default 100-part parser limit in
++                // the Jupyter Server proxy path.
++                if (batchEntries.length > 0 && (batchEntries.length >= 30 || batchSize > 1024 * 1024 * 300)) {
+                     entry.uploading = false;
+                     break;
+                 }
