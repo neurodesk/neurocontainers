@@ -41,6 +41,8 @@ build:
     - template:
         name: dcm2niix
         version: latest
+    - environment:
+        LD_LIBRARY_PATH: /opt/miniconda/lib:$LD_LIBRARY_PATH
     - deploy:
         path: []
         bins:
