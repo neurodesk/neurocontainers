@@ -285,8 +285,8 @@ tests:
 - name: OpenGL runtime is linked
   command: ldconfig -p | grep -q libGL.so
   expected_exit_code: 0
-- name: Neuro user exists
-  command: id neuro >/dev/null
+- name: MNE BIDS pipeline runner compiles
+  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -m py_compile /opt/mne-bids-pipeline/run.py
   expected_exit_code: 0
 - name: XDG runtime directory is configured
   command: test "$XDG_RUNTIME_DIR" = /neurodesktop-storage
