@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "fetalsynthseg 1.0.0": {
+      "version": "20260716",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "fetal imaging",
+    "image segmentation",
+    "machine learning"
+  ]
+}
