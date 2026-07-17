@@ -71,7 +71,7 @@ build:
               - torch
               - torchvision
               - deeplabcut[gui,modelzoo,tf]=={{ context.version }}
-              - tensorflow==2.12.1
+              - tensorflow==2.12.0
               - wandb==0.17.9
     - copy: deeplabcut_env.yaml /opt/deeplabcut_env.yaml
     - template:
