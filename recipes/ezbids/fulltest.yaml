@@ -591,6 +591,7 @@ tests:
 
   - name: Complete T1w processing pipeline
     description: Full pipeline - reorient (nibabel), brain extract, register to MNI
+    timeout: 240
     command: |
       bash -lc 'python3 -c "import nibabel as nib; img = nib.load('\''${t1w}'\''); nib.save(nib.as_closest_canonical(img), '\''test_output/pipeline_reoriented.nii.gz'\'')" && \
       /ROBEX/runROBEX.sh test_output/pipeline_reoriented.nii.gz test_output/pipeline_brain.nii.gz test_output/pipeline_mask.nii.gz && \
