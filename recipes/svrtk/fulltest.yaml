@@ -16,3 +16,17 @@ tests:
     description: Verify the automated BOUNTI brain tissue segmentation launcher is deployed.
     command: command -v auto-brain-bounti-segmentation-fetal.sh
     expected_output_contains: auto-brain-bounti-segmentation-fetal.sh
+  - name: brain reference template avoids nested gzip
+    description: Verify the empty reference volume is unpacked to avoid CVMFS DPI false positives.
+    command: |
+      set -eu
+      template_dir=/opt/auto-proc-svrtk/templates/reo-brain-template-042026
+      scripts_dir=/opt/auto-proc-svrtk/scripts
+      test -f "${template_dir}/dl-ref-1mm.nii"
+      test "$(stat -c %s "${template_dir}/dl-ref-1mm.nii")" -eq 135797096
+      test ! -e "${template_dir}/dl-ref-1mm.nii.gz"
+      grep -q 'dl-ref-1mm\.nii' "${scripts_dir}/auto-brain-reconstruction-2026.sh"
+      grep -q 'dl-ref-1mm\.nii' "${scripts_dir}/auto-brain-055t-reconstruction-2026.sh"
+      ! grep -q 'dl-ref-1mm\.nii\.gz' "${scripts_dir}/auto-brain-reconstruction-2026.sh" "${scripts_dir}/auto-brain-055t-reconstruction-2026.sh"
+      echo "Brain reference template is CVMFS-safe"
+    expected_output_contains: Brain reference template is CVMFS-safe
