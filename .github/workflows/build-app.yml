@@ -1275,12 +1275,21 @@ jobs:
             docker buildx imagetools create -t "${tgt}:${V2_TAG}" -t "${tgt}:${VERSION}" -t "${tgt}:latest" $SRCS
           done
 
-      - name: Download SIF (.simg) artifacts
-        uses: actions/download-artifact@v4
+      # build-simg uploads SIFs with `archive: false` (raw, un-zipped, to skip zip
+      # overhead on large images). Those raw artifacts require the matching pinned
+      # download-artifact used elsewhere in this file — the floating @v4 fails to
+      # download+extract them. `merge` only runs for arm-capable apps, so fetch both
+      # arches' SIFs by name.
+      - name: Download amd64 SIF (.simg)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          pattern: "*.simg"
-          path: /mnt/tmp
-          merge-multiple: true
+          name: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          path: /mnt/tmp/
+      - name: Download arm64 SIF (.simg)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}_arm64_${{ needs.config.outputs.BUILDDATE }}.simg
+          path: /mnt/tmp/
 
       - name: Attach per-arch SIFs as OCI referrers
         run: |
