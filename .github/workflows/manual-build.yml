@@ -72,6 +72,11 @@ on:
         required: false
         type: boolean
         default: false
+      multiarch:
+        description: 'Build amd64+arm64 multi-arch OCI index (arm-capable recipes only)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   list-apps:
@@ -133,4 +138,5 @@ jobs:
       force_create_pr: ${{ github.event.inputs.force_create_pr }}
       skip_docker_build: ${{ github.event.inputs.skip_docker_build }}
       skip_simg_build: ${{ github.event.inputs.skip_simg_build }}
+      multiarch: ${{ github.event.inputs.multiarch }}
     secrets: inherit
