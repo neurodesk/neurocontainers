@@ -64,3 +64,27 @@ def test_generate_apps_json_rejects_duplicate_app_identity(tmp_path) -> None:
         ),
     ):
         generate_apps_json(str(releases_dir), str(tmp_path / "apps.json"))
+
+
+def test_merge_includes_named_arm64_variant(tmp_path) -> None:
+    release_path = tmp_path / "1.0.0.json"
+    release_path.write_text(
+        json.dumps(
+            {
+                "variant": "arm64",
+                "architecture": "aarch64",
+                "apps": {
+                    "tool_arm64 1.0.0": {
+                        "version": "20260102",
+                        "exec": "",
+                        "apptainer_args": [],
+                    }
+                },
+                "categories": ["workflows"],
+            }
+        )
+    )
+
+    merged = merge_container_releases("tool_arm64", [("1.0.0", str(release_path))])
+
+    assert merged["apps"]["tool_arm64 1.0.0"]["version"] == "20260102"

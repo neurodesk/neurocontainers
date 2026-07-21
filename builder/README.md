@@ -27,6 +27,7 @@ A common workflow involves building the container and running a command inside i
 All build commands (`sf-build`, `sf-login`, `sf-test`, `sf-make`) support architecture options:
 
 - `--architecture <arch>`: Specify the target architecture (e.g., `x86_64`, `aarch64`, `arm64`). Defaults to the current machine's architecture.
+- `--variant <name>`: Build a named container variant declared by the recipe. The variant selects its architecture and gets a distinct container name such as `myrecipe_arm64`.
 - `--ignore-architectures`: Ignore architecture compatibility checks in the recipe.
 - `--generate-release`: Generate release files after successful build (for `sf-build` and `sf-login`).
 
@@ -34,6 +35,9 @@ Example usage:
 ```sh
 # Build for ARM64 architecture
 sf-build myrecipe --architecture aarch64
+
+# Build the independently published myrecipe_arm64 container
+sf-build myrecipe --variant arm64
 
 # Build ignoring architecture restrictions
 sf-build myrecipe --architecture x86_64 --ignore-architectures
@@ -68,6 +72,11 @@ copyright:
 architectures:
   - x86_64
   - aarch64
+
+variants:
+  arm64:
+    architecture: aarch64
+    description: Native ARM64 build
 
 readme: |
     This is a recipe for {{ context.name }}/{{ context.version }}
