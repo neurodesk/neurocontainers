@@ -2,8 +2,8 @@
 
 `openreconi2iexample` is a minimal OpenRecon image-in/image-out reference. It
 receives reconstructed MRD image messages and sends outputs according to the
-enabled output options. The scanner label defaults enable original pass-through
-and segmentation. It can re-emit the original scan, invert
+enabled output options. The scanner label defaults enable original pass-through,
+inversion, and segmentation. It can re-emit the original scan, invert
 magnitude images, upsample the slice direction, threshold each slice into a
 segmentation, return segment reformats, compute a maximum intensity projection,
 and send foreground-region volume metrics.
@@ -34,8 +34,8 @@ Use this file as the reference structure for new OpenRecon package README files:
 
 ## Outputs
 
-- No output is sent if all output options are disabled or no parameter payload is
-  provided.
+- With no parameter payload, inversion is enabled and the other outputs are
+  disabled. No output is sent if every output option is explicitly disabled.
 - `<source>-inverted`: inverted magnitude images on `image_series_index = 99`
   when `invert` is true. If the source geometry advertises fewer slice or
   partition slots than the number of received images, these are packed into one
@@ -99,7 +99,7 @@ foreground segmentation logic even when `segment` is disabled.
 | config | `config` | choice | `openreconi2iexample` | Selects the MRD server configuration. |
 | Send original images | `sendoriginal` | boolean | `true` | Return copied original 2D images before derived outputs. |
 | Original native identity (experimental) | `originalnativeidentity` | boolean | `false` | Preserve native source series identity for whole-body Dixon composing tests. |
-| Invert | `invert` | boolean | `false` | Send inverted magnitude images. |
+| Invert | `invert` | boolean | `true` | Send inverted magnitude images. |
 | Upsampled | `upsampled` | boolean | `false` | Interpolate between slices and send one volume with twice as many slices. |
 | Segment | `segment` | boolean | `true` | Segment the brightest foreground object. |
 | Segment header geometry | `segmentheadergeometry` | choice | `2d_segment_header` | Select the segmentation geometry, header identity, and scanner postprocessing target. |
