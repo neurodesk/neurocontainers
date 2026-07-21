@@ -3,10 +3,6 @@ version: 1.0.0
 architectures:
   - x86_64
   - aarch64
-variants:
-  arm64:
-    architecture: aarch64
-    description: Native ARM64 build
 structured_readme:
   description: This tool was commited for the workshop.
   example: hello

@@ -14,9 +14,9 @@ architectures:
   - aarch64
 variants:
   gpu:
-    architecture: x86_64
-  arm64:
-    architecture: aarch64
+    architectures:
+      - x86_64
+      - aarch64
 """
     )
 
@@ -29,13 +29,19 @@ variants:
         },
         {
             "application": "tool",
+            "variant": "arm64",
+            "architecture": "aarch64",
+            "runner": '"arm-runner"',
+        },
+        {
+            "application": "tool",
             "variant": "gpu",
             "architecture": "x86_64",
             "runner": '"x86-runner"',
         },
         {
             "application": "tool",
-            "variant": "arm64",
+            "variant": "gpu_arm64",
             "architecture": "aarch64",
             "runner": '"arm-runner"',
         },
