@@ -9,6 +9,8 @@ from pathlib import Path
 
 import yaml
 
+from builder.variants import variant_specs
+
 
 def build_matrix(
     repo_root: Path,
@@ -20,24 +22,12 @@ def build_matrix(
     for application in applications:
         recipe_path = repo_root / "recipes" / application / "build.yaml"
         recipe = yaml.safe_load(recipe_path.read_text(encoding="utf-8"))
-        architectures = recipe.get("architectures") or []
-        if not architectures:
-            raise ValueError(f"{recipe_path} does not declare architectures")
-
-        matrix.append(
-            {
-                "application": application,
-                "variant": "",
-                "architecture": str(architectures[0]),
-                "runner": default_runner,
-            }
-        )
-        for variant, config in (recipe.get("variants") or {}).items():
-            architecture = str(config["architecture"])
+        for spec in variant_specs(recipe):
+            architecture = spec["architecture"]
             matrix.append(
                 {
                     "application": application,
-                    "variant": str(variant),
+                    "variant": spec["variant"],
                     "architecture": architecture,
                     "runner": arm64_runner if architecture == "aarch64" else default_runner,
                 }

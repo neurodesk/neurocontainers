@@ -85,7 +85,7 @@ jobs:
           ARM64_RUNNER: '"blacksmith-8vcpu-ubuntu-2404-arm"'
         run: |
           python3 -m pip install pyyaml
-          build_matrix=$(python3 tools/variant_matrix.py \
+          build_matrix=$(python3 -m tools.variant_matrix \
             --applications "$APPLICATIONS" \
             --default-runner "$DEFAULT_RUNNER" \
             --arm64-runner "$ARM64_RUNNER")
@@ -101,5 +101,6 @@ jobs:
     with:
       application: ${{ matrix.application }}
       variant: ${{ matrix.variant }}
+      architecture: ${{ matrix.architecture }}
       runner: ${{ matrix.runner }}
     secrets: inherit

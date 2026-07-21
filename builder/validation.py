@@ -629,8 +629,25 @@ class NeuroDockerBuildRecipe:
 
 @attrs.define
 class VariantConfig:
-    architecture: str = attrs.field(validator=validate_architecture)
+    architecture: Optional[str] = attrs.field(
+        default=None, validator=attrs.validators.optional(validate_architecture)
+    )
+    architectures: Optional[List[str]] = attrs.field(default=None)
     description: Optional[str] = attrs.field(default=None)
+    options: Optional[Dict[str, bool]] = attrs.field(default=None)
+
+    @architectures.validator
+    def _validate_architectures(self, attribute, value):
+        if value is None:
+            return
+        if not value:
+            raise ValueError("Variant architectures must not be empty")
+        for architecture in value:
+            validate_architecture(None, attribute, architecture)
+
+    def __attrs_post_init__(self):
+        if self.architecture is not None and self.architectures is not None:
+            raise ValueError("Variant must use architecture or architectures, not both")
 
 
 # ============================================================================
@@ -686,11 +703,28 @@ class ContainerRecipe:
                 raise ValueError(
                     f"Variant name '{name}' must contain only lowercase letters, numbers, underscores, or hyphens"
                 )
-            if variant.architecture not in self.architectures:
+            if name == "arm64" or name.endswith("_arm64"):
                 raise ValueError(
-                    f"Variant '{name}' uses architecture '{variant.architecture}', "
-                    "which is not listed in architectures"
+                    f"Variant name '{name}' conflicts with the automatic ARM64 suffix"
                 )
+            variant_architectures = variant.architectures or (
+                [variant.architecture] if variant.architecture else []
+            )
+            for architecture in variant_architectures:
+                if architecture not in self.architectures:
+                    raise ValueError(
+                        f"Variant '{name}' uses architecture '{architecture}', "
+                        "which is not listed in architectures"
+                    )
+            for option, enabled in (variant.options or {}).items():
+                if option not in (self.options or {}):
+                    raise ValueError(
+                        f"Variant '{name}' sets unknown recipe option '{option}'"
+                    )
+                if not isinstance(enabled, bool):
+                    raise ValueError(
+                        f"Variant '{name}' option '{option}' must be true or false"
+                    )
 
     @categories.validator
     def _validate_categories(self, attribute, value):

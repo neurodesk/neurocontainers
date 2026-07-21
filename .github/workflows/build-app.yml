@@ -16,6 +16,9 @@ on:
       variant:
         required: false
         type: string
+      architecture:
+        required: true
+        type: string
       runner:
         required: true
         type: string
@@ -149,11 +152,10 @@ jobs:
             echo "Recipe version not found for $APPLICATION"
             exit 1
           fi
-          ARCHITECTURE="x86_64"
+          ARCHITECTURE="${{ inputs.architecture }}"
           IMAGE_SUFFIX=""
           RELEASE_VERSION="$VERSION"
-          if [[ "${{ inputs.runner }}" == *"arm"* ]]; then
-            ARCHITECTURE="aarch64"
+          if [ "$ARCHITECTURE" = "aarch64" ]; then
             IMAGE_SUFFIX="_arm64"
             RELEASE_VERSION="${VERSION}-arm64"
           fi

@@ -128,7 +128,7 @@ jobs:
         ARM64_RUNNER: ${{ steps.select_runner.outputs.arm64_runner }}
       run: |
         python3 -m pip install pyyaml
-        build_matrix=$(python3 tools/variant_matrix.py \
+        build_matrix=$(python3 -m tools.variant_matrix \
           --applications "$APPLICATIONS" \
           --default-runner "$DEFAULT_RUNNER" \
           --arm64-runner "$ARM64_RUNNER")
@@ -144,6 +144,7 @@ jobs:
     with:
       application: ${{ matrix.application }}
       variant: ${{ matrix.variant }}
+      architecture: ${{ matrix.architecture }}
       runner: ${{ matrix.runner }}
       disable_auto_upload: ${{ github.event.inputs.disable_auto_upload }}
       force_push_ghcr: ${{ github.event.inputs.force_push_ghcr }}

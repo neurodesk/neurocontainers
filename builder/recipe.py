@@ -17,6 +17,7 @@ from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
 from .cache import sha256_text
+from .variants import concrete_variant_specs, variant_specs
 
 
 ARCHITECTURE_ALIASES = {
@@ -148,30 +149,6 @@ def normalize_architecture(value: str | None) -> str:
         return ARCHITECTURE_ALIASES[arch]
     except KeyError as exc:
         raise ValueError(f"unsupported architecture: {arch}") from exc
-
-
-def variant_specs(recipe: dict[str, Any]) -> list[dict[str, str]]:
-    """Return the concrete containers declared by a logical recipe."""
-    architectures = [normalize_architecture(str(item)) for item in recipe.get("architectures", [])]
-    if not architectures:
-        raise ValueError(f"recipe {recipe.get('name', '<unknown>')} has no architectures")
-
-    specs = [
-        {
-            "variant": "",
-            "name": str(recipe["name"]),
-            "architecture": architectures[0],
-        }
-    ]
-    for variant_name, config in (recipe.get("variants") or {}).items():
-        specs.append(
-            {
-                "variant": str(variant_name),
-                "name": f"{recipe['name']}_{variant_name}",
-                "architecture": normalize_architecture(str(config["architecture"])),
-            }
-        )
-    return specs
 
 
 def _split_install(value: Any) -> list[str]:
@@ -308,20 +285,36 @@ def compile_recipe(
 ) -> CompiledRecipe:
     recipe_file = load_recipe_file(recipe_dir)
     recipe = recipe_file.data
-    variant_name = variant or ""
-    variants = recipe.get("variants") or {}
-    if variant_name and variant_name not in variants:
-        available = ", ".join(sorted(variants)) or "none"
-        raise ValueError(f"unknown variant '{variant_name}' for {recipe['name']}; available: {available}")
-    variant_arch = variants.get(variant_name, {}).get("architecture") if variant_name else None
-    if architecture is not None and variant_arch is not None:
-        requested_arch = normalize_architecture(architecture)
-        declared_arch = normalize_architecture(str(variant_arch))
-        if requested_arch != declared_arch:
-            raise ValueError(
-                f"variant '{variant_name}' requires architecture {declared_arch}, got {requested_arch}"
-            )
-    arch = normalize_architecture(str(variant_arch) if variant_arch is not None else architecture)
+    specs = concrete_variant_specs(recipe)
+    requested_arch = normalize_architecture(architecture) if architecture is not None else None
+    requested_variant = variant or ""
+    selection_arch = requested_arch
+    if not requested_variant or requested_variant in (recipe.get("variants") or {}):
+        selection_arch = requested_arch or normalize_architecture(None)
+    candidates = [spec for spec in specs if spec["variant"] == requested_variant]
+    if not requested_variant:
+        candidates = [
+            spec
+            for spec in specs
+            if not spec["recipe_variant"] and spec["architecture"] == selection_arch
+        ]
+    elif requested_variant in (recipe.get("variants") or {}):
+        candidates = [
+            spec
+            for spec in specs
+            if spec["recipe_variant"] == requested_variant and spec["architecture"] == selection_arch
+        ]
+    if requested_arch is not None:
+        candidates = [spec for spec in candidates if spec["architecture"] == requested_arch]
+    if not candidates:
+        available = ", ".join(str(spec["variant"]) or "default" for spec in specs)
+        raise ValueError(
+            f"unknown variant/architecture '{requested_variant or 'default'}'/{selection_arch or 'default'} "
+            f"for {recipe['name']}; available: {available}"
+        )
+    selected_variant = candidates[0]
+    variant_name = str(selected_variant["variant"])
+    arch = str(selected_variant["architecture"])
     allowed = [str(item) for item in recipe.get("architectures", [])]
     if arch not in allowed and not ignore_architecture:
         raise ValueError(f"architecture {arch} not supported by {recipe['name']}")
@@ -332,13 +325,14 @@ def compile_recipe(
         for key, value in (recipe.get("options") or {}).items()
         if isinstance(value, dict)
     }
+    option_values.update(selected_variant["options"])
     option_values.update(option_overrides or {})
     version = str(recipe["version"])
     for key, value in (recipe.get("options") or {}).items():
         if option_values.get(str(key)) and isinstance(value, dict):
             version += str(value.get("version_suffix") or "")
     context = RenderContext(
-        name=f"{recipe['name']}_{variant_name}" if variant_name else recipe["name"],
+        name=str(selected_variant["name"]),
         version=version,
         original_version=recipe["version"],
         arch=arch,

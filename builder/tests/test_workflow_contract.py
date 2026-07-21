@@ -24,9 +24,12 @@ def test_workflows_expand_named_variants_and_pass_identity_to_builder() -> None:
 
     assert 'variant: ${{ matrix.variant }}' in manual_workflow
     assert 'variant: ${{ matrix.variant }}' in auto_workflow
-    assert "tools/variant_matrix.py" in manual_workflow
-    assert "tools/variant_matrix.py" in auto_workflow
+    assert 'architecture: ${{ matrix.architecture }}' in manual_workflow
+    assert 'architecture: ${{ matrix.architecture }}' in auto_workflow
+    assert "-m tools.variant_matrix" in manual_workflow
+    assert "-m tools.variant_matrix" in auto_workflow
     assert 'VARIANT_ARGS=(--variant "$VARIANT")' in build_workflow
+    assert 'ARCHITECTURE="${{ inputs.architecture }}"' in build_workflow
     assert 'CONTAINER_NAME="${APPLICATION}_${VARIANT}"' in build_workflow
 
 
