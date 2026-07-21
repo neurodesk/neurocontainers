@@ -19,7 +19,14 @@ def test_cmd_login_returns_docker_exit_code_without_traceback(
     monkeypatch.setattr(
         cli,
         "compile_from_args",
-        lambda args: (object(), SimpleNamespace(tag="tool:1.0")),
+        lambda args: (
+            object(),
+            SimpleNamespace(
+                tag="tool:1.0",
+                architecture="x86_64",
+                recipe_dir=cli.Path("/repo/recipes/tool"),
+            ),
+        ),
     )
     monkeypatch.setattr(
         subprocess,
@@ -35,7 +42,19 @@ def test_cmd_login_returns_docker_exit_code_without_traceback(
     )
 
     assert cli.cmd_login(args) == 130
-    assert commands == [["docker", "run", "--rm", "-it", "tool:1.0"]]
+    assert commands == [
+        [
+            "docker",
+            "run",
+            "--platform",
+            "linux/amd64",
+            "--rm",
+            "-v",
+            "/repo/recipes/tool:/buildhostdirectory",
+            "-it",
+            "tool:1.0",
+        ]
+    ]
 
 
 def test_cmd_stage_can_download_declared_url_files(

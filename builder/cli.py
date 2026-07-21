@@ -6,7 +6,13 @@ import shutil
 import sys
 from pathlib import Path
 
-from .adapters import BuildInputs, BuildKitAdapter, DockerAdapter, SifAdapter
+from .adapters import (
+    BuildInputs,
+    BuildKitAdapter,
+    DockerAdapter,
+    SifAdapter,
+    platform_for_architecture,
+)
 from .config import default_config, resolve_recipe
 from .dockerfile import render_dockerfile
 from .recipe import compile_recipe
@@ -305,10 +311,18 @@ def cmd_login(args: argparse.Namespace) -> int:
     if args.dry_run:
         return 0
     config, compiled = compile_from_args(args)
-    command = ["docker", "run", "--rm", "-it"]
+    command = [
+        "docker",
+        "run",
+        "--platform",
+        platform_for_architecture(compiled.architecture),
+        "--rm",
+        "-v",
+        f"{compiled.recipe_dir.resolve()}:/buildhostdirectory",
+    ]
     if args.offline_mode:
         command.extend(["--network", "none"])
-    command.append(compiled.tag)
+    command.extend(["-it", compiled.tag])
     print(" ".join(command))
     import subprocess
 
