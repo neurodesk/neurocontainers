@@ -326,6 +326,7 @@ def test_run_fulltest_release_uses_release_image_basename(
             output_dir=str(output_dir),
             results_path=str(output_dir / "results.json"),
             runtime="apptainer",
+            candidate_container=None,
             docker_to_simg=False,
             docker_registry="neurodesk",
             docker_save_to_simg="builder/docker-save-to-simg.go",
@@ -368,6 +369,69 @@ def test_run_fulltest_release_uses_release_image_basename(
             str(output_dir / "fulltest-work-neurodesktop"),
         ]
     ]
+
+
+def test_run_fulltest_release_uses_local_candidate(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "candidate.simg"
+    source.write_text("simg", encoding="utf-8")
+    test_config = tmp_path / "fulltest.yaml"
+    test_config.write_text("tests: []\n", encoding="utf-8")
+    output_dir = tmp_path / "builder"
+
+    class FakeTester:
+        def select_runtime(self, runtime: str) -> SimpleNamespace:
+            return SimpleNamespace(name="apptainer")
+
+        def run_test_suite(self, *args, **kwargs) -> dict[str, object]:
+            return {
+                "total_tests": 1,
+                "passed": 1,
+                "failed": 0,
+                "skipped": 0,
+                "test_results": [{"name": "deploy", "status": "passed"}],
+            }
+
+    def fake_run(command, **kwargs) -> SimpleNamespace:
+        Path(command[command.index("-o") + 1]).write_text(
+            json.dumps(
+                {
+                    "summary": {
+                        "total_tests": 0,
+                        "tests_passed": 0,
+                        "tests_failed": 0,
+                    },
+                    "suites": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        Path(command[command.index("--log") + 1]).write_text("", encoding="utf-8")
+        Path(command[command.index("--jsonl") + 1]).write_text("", encoding="utf-8")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("workflows.release_test_runner.ContainerTester", FakeTester)
+    monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
+
+    status = run_fulltest_release(
+        SimpleNamespace(
+            recipe="demo",
+            version="1.2.3",
+            release_file=str(tmp_path / "not-published.json"),
+            candidate_container=str(source),
+            test_config=str(test_config),
+            output_dir=str(output_dir),
+            results_path=str(output_dir / "results.json"),
+            runtime="apptainer",
+            docker_to_simg=False,
+            docker_registry="neurodesk",
+            docker_save_to_simg="builder/docker-save-to-simg.go",
+            verbose=False,
+            repo_root=str(tmp_path),
+        )
+    )
+
+    assert status == "passed"
+    assert (output_dir / "fulltest-containers" / source.name).is_file()
 
 
 def test_run_fulltest_release_falls_back_to_docker_conversion(
