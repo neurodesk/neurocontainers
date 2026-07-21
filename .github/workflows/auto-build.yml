@@ -23,8 +23,7 @@ jobs:
     runs-on: ubuntu-22.04
     if: ${{ !contains(github.event.head_commit.message, 'skipci') && !contains(github.event.head_commit.message, 'skip-ci') && !contains(github.event.head_commit.message, 'skip ci') }}
     outputs:
-      app_list: ${{ steps.find_changed_recipes.outputs.app_list }}
-      runner: ${{ steps.select_runner.outputs.runner }}
+      build_matrix: ${{ steps.expand_variants.outputs.build_matrix }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -78,15 +77,29 @@ jobs:
             runner='"ubuntu-22.04"'
           fi
           echo "runner=${runner}" >> "$GITHUB_OUTPUT"
+      - name: Expand named variants
+        id: expand_variants
+        env:
+          APPLICATIONS: ${{ steps.find_changed_recipes.outputs.app_list }}
+          DEFAULT_RUNNER: ${{ steps.select_runner.outputs.runner }}
+          ARM64_RUNNER: '"blacksmith-8vcpu-ubuntu-2404-arm"'
+        run: |
+          python3 -m pip install pyyaml
+          build_matrix=$(python3 tools/variant_matrix.py \
+            --applications "$APPLICATIONS" \
+            --default-runner "$DEFAULT_RUNNER" \
+            --arm64-runner "$ARM64_RUNNER")
+          echo "build_matrix=${build_matrix}" >> "$GITHUB_OUTPUT"
 
   build-app:
     needs: list-apps
     strategy:
       fail-fast: false
       matrix:
-        application: ${{ fromJSON(needs.list-apps.outputs.app_list) }}
+        include: ${{ fromJSON(needs.list-apps.outputs.build_matrix) }}
     uses: ./.github/workflows/build-app.yml
     with:
       application: ${{ matrix.application }}
-      runner: ${{ needs.list-apps.outputs.runner }}
+      variant: ${{ matrix.variant }}
+      runner: ${{ matrix.runner }}
     secrets: inherit

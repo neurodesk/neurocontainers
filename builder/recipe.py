@@ -110,6 +110,8 @@ class CompiledRecipe:
     recipe: dict[str, Any]
     recipe_dir: Path
     name: str
+    base_name: str
+    variant: str
     version: str
     architecture: str
     readme: str
@@ -146,6 +148,30 @@ def normalize_architecture(value: str | None) -> str:
         return ARCHITECTURE_ALIASES[arch]
     except KeyError as exc:
         raise ValueError(f"unsupported architecture: {arch}") from exc
+
+
+def variant_specs(recipe: dict[str, Any]) -> list[dict[str, str]]:
+    """Return the concrete containers declared by a logical recipe."""
+    architectures = [normalize_architecture(str(item)) for item in recipe.get("architectures", [])]
+    if not architectures:
+        raise ValueError(f"recipe {recipe.get('name', '<unknown>')} has no architectures")
+
+    specs = [
+        {
+            "variant": "",
+            "name": str(recipe["name"]),
+            "architecture": architectures[0],
+        }
+    ]
+    for variant_name, config in (recipe.get("variants") or {}).items():
+        specs.append(
+            {
+                "variant": str(variant_name),
+                "name": f"{recipe['name']}_{variant_name}",
+                "architecture": normalize_architecture(str(config["architecture"])),
+            }
+        )
+    return specs
 
 
 def _split_install(value: Any) -> list[str]:
@@ -273,6 +299,7 @@ def compile_recipe(
     recipe_dir: Path,
     *,
     architecture: str | None = None,
+    variant: str | None = None,
     ignore_architecture: bool = False,
     local_keys: set[str] | None = None,
     include_dirs: tuple[Path, ...] = (),
@@ -281,7 +308,20 @@ def compile_recipe(
 ) -> CompiledRecipe:
     recipe_file = load_recipe_file(recipe_dir)
     recipe = recipe_file.data
-    arch = normalize_architecture(architecture)
+    variant_name = variant or ""
+    variants = recipe.get("variants") or {}
+    if variant_name and variant_name not in variants:
+        available = ", ".join(sorted(variants)) or "none"
+        raise ValueError(f"unknown variant '{variant_name}' for {recipe['name']}; available: {available}")
+    variant_arch = variants.get(variant_name, {}).get("architecture") if variant_name else None
+    if architecture is not None and variant_arch is not None:
+        requested_arch = normalize_architecture(architecture)
+        declared_arch = normalize_architecture(str(variant_arch))
+        if requested_arch != declared_arch:
+            raise ValueError(
+                f"variant '{variant_name}' requires architecture {declared_arch}, got {requested_arch}"
+            )
+    arch = normalize_architecture(str(variant_arch) if variant_arch is not None else architecture)
     allowed = [str(item) for item in recipe.get("architectures", [])]
     if arch not in allowed and not ignore_architecture:
         raise ValueError(f"architecture {arch} not supported by {recipe['name']}")
@@ -298,10 +338,11 @@ def compile_recipe(
         if option_values.get(str(key)) and isinstance(value, dict):
             version += str(value.get("version_suffix") or "")
     context = RenderContext(
-        name=recipe["name"],
+        name=f"{recipe['name']}_{variant_name}" if variant_name else recipe["name"],
         version=version,
         original_version=recipe["version"],
         arch=arch,
+        variant=variant_name,
         parallel_jobs=parallel_jobs or (os.cpu_count() or 1),
         local_keys=local_keys or set(),
         options=SimpleNamespace(**option_values),
@@ -527,7 +568,9 @@ def compile_recipe(
     return CompiledRecipe(
         recipe=_render_release_recipe(recipe, renderer, context),
         recipe_dir=recipe_dir,
-        name=recipe["name"],
+        name=context.name,
+        base_name=recipe["name"],
+        variant=variant_name,
         version=version,
         architecture=arch,
         readme=readme,

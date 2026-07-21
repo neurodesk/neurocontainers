@@ -46,6 +46,7 @@ def test_cmd_stage_can_download_declared_url_files(
         name="tool",
         version="1.0",
         architecture="x86_64",
+        variant="",
         staging_plan=SimpleNamespace(files={"archive": object()}),
     )
     config = SimpleNamespace(repo_root=object(), output_root=object())

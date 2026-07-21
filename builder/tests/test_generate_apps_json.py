@@ -30,3 +30,27 @@ def test_merge_container_releases_preserves_visibility_flags(tmp_path) -> None:
     assert merged["show_in_applist"] is False
     assert merged["apps"]["tool 1.0.0"]["version"] == "20260102"
     assert merged["categories"] == ["workflows"]
+
+
+def test_merge_includes_named_arm64_variant(tmp_path) -> None:
+    release_path = tmp_path / "1.0.0.json"
+    release_path.write_text(
+        json.dumps(
+            {
+                "variant": "arm64",
+                "architecture": "aarch64",
+                "apps": {
+                    "tool_arm64 1.0.0": {
+                        "version": "20260102",
+                        "exec": "",
+                        "apptainer_args": [],
+                    }
+                },
+                "categories": ["workflows"],
+            }
+        )
+    )
+
+    merged = merge_container_releases("tool_arm64", [("1.0.0", str(release_path))])
+
+    assert merged["apps"]["tool_arm64 1.0.0"]["version"] == "20260102"
