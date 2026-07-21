@@ -1,0 +1,57 @@
+name: brainles-preprocessing
+version: 0.6.10
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABOUlEQVR42u3dsRHCMAwF0CxBywhUDMQajMIATMQSrAAVC3CHogQnsp9OdYp39p2U4nualFK7rMPxVKiJbOrVE83KTL3SrMM0gk7eaBydjNFoOvOMxtSZYQSIzgIjQHQWGKEBBAjQZkBcfhglvnK5v6t0U6BCLmmpPFBpnbhREqgDnaARIEDtgbrRiRg5Qa4YoD0CmYNM0naxlkC2eUCAAAECBAgQIEBf+/y4VemmQIVc0lJ5oNI6caMkUAc6QSNAgNoDdaMTMXKCXDFAewQyB5mk7WK2eb87AAECBAgQIECANgd6Xl9VuilQIZe0VB6otE7cKAnUgU7QCBCg9kDd6ESMnCBXDNAegcxBJmm7mPAF2R2AAAESYyYFDxAjSZx/AhJ2y2ixjsBtRmvoCP33bIRnNlqKKKXm1wc7XnMcuYuNogAAAABJRU5ErkJggg==
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - git
+        - wget
+        - ca-certificates
+        - unzip
+
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: "python=3.11 pip"
+        env_name: brainles
+        env_exists: "false"
+
+    - run:
+        # Core library. antspyx (registration) + SimpleITK ship self-contained
+        # manylinux wheels, so no extra system libraries are needed on x86_64.
+        - /opt/miniconda-latest/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.version }}
+        - /opt/miniconda-latest/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')"
+
+    - environment:
+        PATH: /opt/miniconda-latest/envs/brainles/bin:$PATH
+
+deploy:
+  path:
+    - /opt/miniconda-latest/envs/brainles/bin
+
+tests:
+  - name: "import brainles_preprocessing"
+    script: |
+      python -c "import brainles_preprocessing; from brainles_preprocessing.preprocessor import Preprocessor; print('ok')"
+
+categories:
+  - image registration
+  - structural imaging
+
+readme: |
+  ----------------------------------
+  ## brainles-preprocessing/{{ context.version }} ##
+  brainles-preprocessing (BrainLesion Suite) provides a preprocessing pipeline
+  for brain MRI: co-registration, atlas alignment, skull-stripping, defacing
+  and intensity normalization.
+
+  This is a Python library (no command-line tool). It is configured in code via
+  Modality / Preprocessor classes:
