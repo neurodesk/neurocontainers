@@ -19,23 +19,23 @@ build:
 
     - template:
         name: miniconda
-        version: latest
-        conda_install: "python=3.11 pip"
+        version: py311_24.9.2-0
+        conda_install: "python=3.11.10 pip=24.2"
         env_name: brainles
         env_exists: "false"
 
     - run:
         # Core library. antspyx (registration) + SimpleITK ship self-contained
         # manylinux wheels, so no extra system libraries are needed on x86_64.
-        - /opt/miniconda-latest/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.version }}
-        - /opt/miniconda-latest/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')"
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.version }}
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')"
 
     - environment:
-        PATH: /opt/miniconda-latest/envs/brainles/bin:$PATH
+        PATH: /opt/miniconda-py311_24.9.2-0/envs/brainles/bin:$PATH
 
 deploy:
   path:
-    - /opt/miniconda-latest/envs/brainles/bin
+    - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin
 
 tests:
   - name: "import brainles_preprocessing"
@@ -55,3 +55,23 @@ readme: |
 
   This is a Python library (no command-line tool). It is configured in code via
   Modality / Preprocessor classes:
+
+  ```
+  ml brainles-preprocessing/{{ context.version }}
+  python -c "from brainles_preprocessing.preprocessor import Preprocessor; print('ok')"
+  ```
+
+  Registration uses the bundled antspyx backend (CPU) out of the box.
+  Brain extraction backends (HD-BET, SynthStrip) and extra registration
+  backends (greedy, elastix) are optional extras and are NOT installed here to
+  keep the image lean. HD-BET is available as its own Neurodesk module
+  (`ml hdbet`) and can be used alongside this one.
+
+  Docs: https://github.com/BrainLesion/preprocessing
+
+  To run container outside of this environment: ml brainles-preprocessing/{{ context.version }}
+  ----------------------------------
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BrainLesion/preprocessing/blob/main/LICENSE
