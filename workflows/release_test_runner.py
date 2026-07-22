@@ -211,6 +211,7 @@ def _skipped_results(
 
 
 def run_fulltest_release(args: argparse.Namespace) -> str:
+    """Run deploy and fulltest checks against a release or local candidate."""
     release_file = Path(args.release_file)
     test_config = Path(args.test_config)
     output_dir = Path(args.output_dir)
@@ -224,16 +225,17 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
     containers_dir.mkdir(parents=True, exist_ok=True)
     fulltest_work_dir.mkdir(parents=True, exist_ok=True)
 
-    build_date = _release_build_date(release_file)
     tester = ContainerTester()
-    image_basename = tester.release_downloader.extract_image_basename_from_release(
-        str(release_file)
-    )
     runtime = tester.select_runtime(args.runtime)
     if runtime.name != "apptainer":
         raise RuntimeError("fulltest.yaml release tests currently require Apptainer/Singularity")
 
-    if args.docker_to_simg:
+    if getattr(args, "candidate_container", None):
+        source = Path(args.candidate_container)
+        if not source.is_file():
+            raise RuntimeError(f"Candidate container not found: {source}")
+        container_ref = str(source)
+    elif args.docker_to_simg:
         container_ref = tester.convert_docker_image_to_simg(
             args.recipe,
             args.version,
@@ -243,6 +245,10 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
             verbose=args.verbose,
         )
     else:
+        build_date = _release_build_date(release_file)
+        image_basename = tester.release_downloader.extract_image_basename_from_release(
+            str(release_file)
+        )
         container_ref = tester.release_downloader.download_from_release(
             args.recipe,
             args.version,
@@ -331,6 +337,7 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse release-test integration command-line options."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--recipe", required=True)
     parser.add_argument("--version", required=True)
@@ -343,6 +350,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--github-output", default=os.environ.get("GITHUB_OUTPUT"))
     parser.add_argument("--docker-to-simg", action="store_true")
+    parser.add_argument(
+        "--candidate-container",
+        help="Test this local SIF instead of downloading a published release",
+    )
     parser.add_argument("--docker-registry", default="neurodesk")
     parser.add_argument("--docker-save-to-simg", default="builder/docker-save-to-simg.go")
     parser.add_argument("--verbose", action="store_true")
