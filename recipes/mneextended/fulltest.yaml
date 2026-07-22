@@ -213,8 +213,8 @@ tests:
   - name: MNE Extended conda metadata exists
     command: test -d /opt/miniconda-4.7.12/envs/mne-extended/conda-meta
     expected_exit_code: 0
-  - name: MNE Extended has broad package coverage
-    command: test "$(find /opt/miniconda-4.7.12/envs/mne-extended/conda-meta -name '*.json' | wc -l)" -ge 100
+  - name: MNE Extended required package metadata exists
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.metadata as m; [m.version(name) for name in ("mne", "mne-bids", "autoreject", "mnelab")]'
     expected_exit_code: 0
   - name: MNE version is pinned
     command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import mne; assert mne.__version__ == "${version}"'
@@ -295,7 +295,7 @@ tests:
     command: test "$DONT_PROMPT_WSL_INSTALL" = 1
     expected_exit_code: 0
   - name: VS Code extension files are readable
-    command: find /opt/vscode-extensions -type f -readable | grep -q .
+    command: test -z "$(find /opt/vscode-extensions -type f ! -readable -print -quit)"
     expected_exit_code: 0
   - name: VS Code data directory exists
     command: test -d /opt/vscode-data
