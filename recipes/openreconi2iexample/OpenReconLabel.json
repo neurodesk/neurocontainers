@@ -68,7 +68,7 @@
       "label": { "en": "Invert" },
       "type": "boolean",
       "information": { "en": "Send inverted magnitude images" },
-      "default": false
+      "default": true
     },
     {
       "id": "upsampled",

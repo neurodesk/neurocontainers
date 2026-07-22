@@ -1,0 +1,69 @@
+name: panoptica
+version: 1.4.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - git
+        - wget
+        - ca-certificates
+
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: "python=3.11 pip"
+        env_name: panoptica
+        env_exists: "false"
+
+    - run:
+        - /opt/miniconda-latest/envs/panoptica/bin/python -m pip install --no-cache-dir panoptica=={{ context.version }}
+        # sanity import at build time so a broken solve fails the build, not the user
+        - /opt/miniconda-latest/envs/panoptica/bin/python -c "import panoptica; print('panoptica', panoptica.__version__)"
+
+    - environment:
+        PATH: /opt/miniconda-latest/envs/panoptica/bin:$PATH
+
+deploy:
+  path:
+    - /opt/miniconda-latest/envs/panoptica/bin
+
+tests:
+  - name: "import panoptica"
+    script: |
+      python -c "import panoptica; print(panoptica.__version__)"
+
+categories:
+  - quality control
+  - image segmentation
+
+readme: |
+  ----------------------------------
+  ## panoptica/{{ context.version }} ##
+  panoptica is a Python framework for instance-wise evaluation of 3D
+  segmentation maps (matching, panoptic quality, Dice, etc.), from the
+  BrainLesion Suite.
+
+  This is a Python library (no command-line tool). Load the module, then
+  use it from Python or a Jupyter kernel:
+
+  ```
+  ml panoptica/{{ context.version }}
+  python -c "import panoptica; print(panoptica.__version__)"
+  ```
+
+  Docs: https://github.com/BrainLesion/panoptica
+
+  To run container outside of this environment: ml panoptica/{{ context.version }}
+  ----------------------------------
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BrainLesion/panoptica/blob/main/LICENSE
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABVklEQVR42u3dsW3DMBAFUC8RwKUXSOXJPIcH8RhZIGWGCVx5A1s8focK+T6ul/AANTzh83AQkV3meDr/oyEy1GsmmjDTrDQZphV06kbr6FSMVtNpM1pTp8EIEJ0OI0B0OozQvAXo8+erdcqvfv/+aJ1hQAWXslTBpUcqABTR2WgU0Wky2pHOS6OgTq8RIEB/AhTXeWIU19luBAgQIECAAAECBAgQIECAAAECBAiQE0VAgPYBNP1eLAA092Y1AzTxbj4MtMoPHlAAAQIECNCCQL+XS+uUn3W73ltnGFDBpSxVcOmU6gWK6Gw0iui0GnUBBXVeGgV1mowAARoFFNd5YhTX2W4ECBAgQIAAAQIECBAgQIAAAQIECJATRUBdQAO/sr0BBbo75t6LZdpfJt6shvuD5tvNa6BSY6YFT5WiJk51rgqBVUrTYXTUbP9eGtdGuHhEREbmARPVBZd0K96gAAAAAElFTkSuQmCC
