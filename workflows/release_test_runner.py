@@ -211,6 +211,7 @@ def _skipped_results(
 
 
 def run_fulltest_release(args: argparse.Namespace) -> str:
+    """Run deploy and fulltest checks against a release or local candidate."""
     release_file = Path(args.release_file)
     test_config = Path(args.test_config)
     output_dir = Path(args.output_dir)
@@ -336,6 +337,7 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse release-test integration command-line options."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--recipe", required=True)
     parser.add_argument("--version", required=True)

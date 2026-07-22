@@ -242,6 +242,7 @@ def test_run_fulltest_release_uses_release_image_basename(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    """Release tests honor architecture-specific image basenames in metadata."""
     source = tmp_path / "cache" / "neurodesktop_20260428_arm64_20260519.simg"
     source.parent.mkdir()
     source.write_text("simg", encoding="utf-8")
