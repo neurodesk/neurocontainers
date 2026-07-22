@@ -217,7 +217,7 @@ tests:
     command: test "$(find /opt/miniconda-4.7.12/envs/mne-extended/conda-meta -name '*.json' | wc -l)" -ge 100
     expected_exit_code: 0
   - name: MNE version is pinned
-    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import mne; assert mne.__version__ == "1.1.0"'
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import mne; assert mne.__version__ == "${version}"'
     expected_exit_code: 0
   - name: Code wrapper resolves
     command: command -v code

@@ -16,7 +16,7 @@ tests:
     command: R --slave -e 'library(LQT)'
     expected_exit_code: 0
   - name: LQT package version
-    command: R --slave -e 'stopifnot(as.character(packageVersion("LQT")) == "0.1.0")'
+    command: R --slave -e 'stopifnot(as.character(packageVersion("LQT")) == "${version}")'
     expected_exit_code: 0
   - name: LQT package title
     command: R --slave -e 'stopifnot(packageDescription("LQT")$Title == "Lesion Quantification Toolkit")'

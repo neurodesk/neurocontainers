@@ -89,7 +89,7 @@ build:
               MINC_COMPRESS: "4"
               MINC_FORCE_V2: "1"
               MNI_DATAPATH: /CIVET_Full_Project/Linux-x86_64/share
-              PATH: /CIVET_Full_Project/Linux-x86_64/CIVET-2.1.1:/CIVET_Full_Project/Linux-x86_64/CIVET-2.1.1/progs:/CIVET_Full_Project/Linux-x86_64/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+              PATH: /CIVET_Full_Project/Linux-x86_64/CIVET-{{ context.version }}:/CIVET_Full_Project/Linux-x86_64/CIVET-{{ context.version }}/progs:/CIVET_Full_Project/Linux-x86_64/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
               PERL5LIB: /CIVET_Full_Project/Linux-x86_64/perl
               R_LIBS: /CIVET_Full_Project/Linux-x86_64/R_LIBS
               VOLUME_CACHE_THRESHOLD: "-1"

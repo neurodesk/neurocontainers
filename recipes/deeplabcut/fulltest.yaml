@@ -10,7 +10,7 @@ tests:
     command: python -c 'import importlib.util; assert importlib.util.find_spec("deeplabcut") is not None'
     expected_exit_code: 0
   - name: deeplabcut reports the expected version
-    command: python -c 'from importlib.metadata import version; assert version("deeplabcut") == "2.3.11"'
+    command: python -c 'from importlib.metadata import version; assert version("deeplabcut") == "${version}"'
     expected_exit_code: 0
   - name: deeplabcut records installed files
     command: python -c 'from importlib.metadata import files; assert files("deeplabcut")'

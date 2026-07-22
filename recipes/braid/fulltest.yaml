@@ -304,7 +304,7 @@ tests:
     command: find /opt/braid-v1.0 -type f \( -name '*.pth' -o -name '*.pt' -o -name '*.ckpt' \) | grep -q .
     expected_exit_code: 0
   - name: BRAID package metadata is installed
-    command: python3 -c 'import importlib.metadata as m; assert m.version("braid") == "1.0.0"'
+    command: python3 -c 'import importlib.metadata as m; assert m.version("braid") == "${version}"'
     expected_exit_code: 0
   - name: FSL installation directory exists
     command: test -d /opt/fsl-6.0.4

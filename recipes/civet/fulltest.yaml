@@ -253,10 +253,10 @@ tests:
     command: test -d /CIVET_Full_Project/Linux-x86_64
     expected_exit_code: 0
   - name: CIVET pipeline directory exists
-    command: test -d /CIVET_Full_Project/Linux-x86_64/CIVET-2.1.1
+    command: test -d /CIVET_Full_Project/Linux-x86_64/CIVET-${version}
     expected_exit_code: 0
   - name: CIVET program directory exists
-    command: test -d /CIVET_Full_Project/Linux-x86_64/CIVET-2.1.1/progs
+    command: test -d /CIVET_Full_Project/Linux-x86_64/CIVET-${version}/progs
     expected_exit_code: 0
   - name: CIVET binary directory exists
     command: test -d /CIVET_Full_Project/Linux-x86_64/bin
@@ -277,7 +277,7 @@ tests:
     command: test -d "$MNI_DATAPATH"
     expected_exit_code: 0
   - name: CIVET PATH includes pipeline
-    command: case "$PATH" in */CIVET-2.1.1/*) exit 0;; *) exit 1;; esac
+    command: case "$PATH" in */CIVET-${version}/*) exit 0;; *) exit 1;; esac
     expected_exit_code: 0
   - name: CIVET PATH includes binaries
     command: case "$PATH" in */Linux-x86_64/bin*) exit 0;; *) exit 1;; esac
@@ -304,7 +304,7 @@ tests:
     command: find /CIVET_Full_Project/Linux-x86_64/lib -maxdepth 1 -type f \( -name '*.so' -o -name '*.so.*' \) | grep -q .
     expected_exit_code: 0
   - name: CIVET pipeline contains Perl programs
-    command: find /CIVET_Full_Project/Linux-x86_64/CIVET-2.1.1 -type f -name '*.pl' | grep -q .
+    command: find /CIVET_Full_Project/Linux-x86_64/CIVET-${version} -type f -name '*.pl' | grep -q .
     expected_exit_code: 0
   - name: Perl runtime is available
     command: perl --version >/dev/null
