@@ -103,6 +103,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          git fetch origin "refs/pull/${PR_NUMBER}/head"
+          test "$(git rev-parse FETCH_HEAD)" = "${HEAD_SHA}"
           python tools/one_pr_release.py verify --bundle promotion-bundle \
             --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}" \
             --output verified-manifests.json
