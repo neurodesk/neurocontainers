@@ -71,9 +71,9 @@ build:
         - echo "9ab2c58290be25dbe00e5edc32406f92cc1663745ea5f12224c33a32678f392c  {{ get_file("aws_tar_gz") }}" | sha256sum -c -
         - echo "fc343b31b9c113817f70c5c93d4a20d5ae194988c6d40ad00718fac1dd4975c3  {{ get_file("lqt_tar_gz") }}" | sha256sum -c -
         - |-
-          R --slave -e 'options(repos = c(CRAN = "https://packagemanager.posit.co/cran/2026-07-15")); \
-            install.packages(c("neurobase", "R.matlab", "igraph", "ggplot2", "network", \
-              "patchwork", "reshape2", "pbmcapply", "purrr", "dplyr", "RNiftyReg"), \
+          R --slave -e 'options(repos = c(CRAN = "https://packagemanager.posit.co/cran/2026-07-15"));
+            install.packages(c("neurobase", "R.matlab", "igraph", "ggplot2", "network",
+              "patchwork", "reshape2", "pbmcapply", "purrr", "dplyr", "RNiftyReg"),
               dependencies = c("Depends", "Imports", "LinkingTo"))'
         - R CMD INSTALL {{ get_file("gsl_tar_gz") }}
         - R CMD INSTALL {{ get_file("aws_methods_tar_gz") }}
