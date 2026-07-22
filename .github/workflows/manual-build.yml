@@ -37,6 +37,11 @@ on:
         required: false
         type: boolean
         default: false
+      force_push_quay:
+        description: 'Force push to Quay (v2)'
+        required: false
+        type: boolean
+        default: false
       force_push_dockerhub:
         description: 'Force push to DockerHub'
         required: false
@@ -126,6 +131,7 @@ jobs:
       runner: ${{ needs.list-apps.outputs.runner }}
       disable_auto_upload: ${{ github.event.inputs.disable_auto_upload }}
       force_push_ghcr: ${{ github.event.inputs.force_push_ghcr }}
+      force_push_quay: ${{ github.event.inputs.force_push_quay }}
       force_push_dockerhub: ${{ github.event.inputs.force_push_dockerhub }}
       force_push_nectar_registry: ${{ github.event.inputs.force_push_nectar_registry }}
       force_upload_nectar: ${{ github.event.inputs.force_upload_nectar }}

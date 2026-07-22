@@ -22,6 +22,9 @@ on:
       force_push_ghcr:
         required: false
         type: string
+      force_push_quay:
+        required: false
+        type: string
       force_push_dockerhub:
         required: false
         type: string
@@ -959,7 +962,7 @@ jobs:
   push-quay:
     needs: [config, build-image, build-simg]
     # Requires org secrets QUAY_USERNAME + QUAY_ROBOT_TOKEN.
-    if: ${{ inputs.skip_simg_build != 'true' && needs.build-image.outputs.IMGDIFFERS == 'true' && needs.config.outputs.IMAGE_SUFFIX == '' }}
+    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_quay == 'true') && needs.config.outputs.IMAGE_SUFFIX == '' }}
     continue-on-error: true
     runs-on: ubuntu-22.04
     permissions:
@@ -1062,7 +1065,7 @@ jobs:
 
   push-ghcr:
     needs: [config, build-image, build-simg]
-    if: ${{ inputs.skip_simg_build != 'true' && needs.build-image.outputs.IMGDIFFERS == 'true' && needs.config.outputs.IMAGE_SUFFIX == '' }}
+    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_ghcr == 'true') && needs.config.outputs.IMAGE_SUFFIX == '' }}
     continue-on-error: true
     runs-on: ubuntu-22.04
     permissions:
