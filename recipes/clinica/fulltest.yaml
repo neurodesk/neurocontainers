@@ -23,6 +23,11 @@ env_setup: |
     fi
     ! grep -q "not found" <<< "$output"
   }
+  assert_conda_libstdcpp() {
+    local output
+    output="$(ldd "$(readlink -f "$1")" 2>&1)" || return 1
+    awk '$1 == "libstdc++.so.6" { found=1; conda=($3 ~ "^/opt/miniconda/lib/") } END { exit !(found && conda) }' <<< "$output"
+  }
 tests:
   - name: clinica resolves on PATH
     command: command -v clinica
@@ -261,8 +266,8 @@ tests:
   - name: mrconvert has no missing shared libraries
     command: assert_linked "$(command -v mrconvert)"
     expected_exit_code: 0
-  - name: mrconvert target exists
-    command: test -e "$(readlink -f "$(command -v mrconvert)")"
+  - name: mrconvert uses Conda libstdc++
+    command: assert_conda_libstdcpp "$(command -v mrconvert)"
     expected_exit_code: 0
   - name: mrinfo resolves on PATH
     command: command -v mrinfo
@@ -273,8 +278,8 @@ tests:
   - name: mrinfo has no missing shared libraries
     command: assert_linked "$(command -v mrinfo)"
     expected_exit_code: 0
-  - name: mrinfo target exists
-    command: test -e "$(readlink -f "$(command -v mrinfo)")"
+  - name: mrinfo uses Conda libstdc++
+    command: assert_conda_libstdcpp "$(command -v mrinfo)"
     expected_exit_code: 0
   - name: dwidenoise resolves on PATH
     command: command -v dwidenoise
@@ -285,8 +290,8 @@ tests:
   - name: dwidenoise has no missing shared libraries
     command: assert_linked "$(command -v dwidenoise)"
     expected_exit_code: 0
-  - name: dwidenoise target exists
-    command: test -e "$(readlink -f "$(command -v dwidenoise)")"
+  - name: dwidenoise uses Conda libstdc++
+    command: assert_conda_libstdcpp "$(command -v dwidenoise)"
     expected_exit_code: 0
   - name: dwi2tensor resolves on PATH
     command: command -v dwi2tensor
@@ -297,8 +302,8 @@ tests:
   - name: dwi2tensor has no missing shared libraries
     command: assert_linked "$(command -v dwi2tensor)"
     expected_exit_code: 0
-  - name: dwi2tensor target exists
-    command: test -e "$(readlink -f "$(command -v dwi2tensor)")"
+  - name: dwi2tensor uses Conda libstdc++
+    command: assert_conda_libstdcpp "$(command -v dwi2tensor)"
     expected_exit_code: 0
   - name: tckgen resolves on PATH
     command: command -v tckgen
@@ -309,8 +314,8 @@ tests:
   - name: tckgen has no missing shared libraries
     command: assert_linked "$(command -v tckgen)"
     expected_exit_code: 0
-  - name: tckgen target exists
-    command: test -e "$(readlink -f "$(command -v tckgen)")"
+  - name: tckgen uses Conda libstdc++
+    command: assert_conda_libstdcpp "$(command -v tckgen)"
     expected_exit_code: 0
   - name: dcm2niix resolves on PATH
     command: command -v dcm2niix
