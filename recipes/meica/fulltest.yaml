@@ -58,6 +58,45 @@ tests:
       test -x "${MEICA_AFNI_RUNTIME}/bin/3dinfo"
       test -x "${MEICA_AFNI_RUNTIME}/utils/dcm2niix"
 
+  - name: Functional skull stripping threshold fallback
+    description: Use a nonzero threshold mask when functional 3dSkullStrip fails
+    script: |
+      set -euo pipefail
+      OUTPUT_DIR="${output_dir}" python - <<'PY'
+      import os
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+
+      data = np.zeros((12, 12, 12), dtype=np.float32)
+      data[5:7, 5:7, 5:7] = 10
+      nib.save(
+          nib.Nifti1Image(data, np.eye(4)),
+          Path(os.environ["OUTPUT_DIR"]) / "sparse-functional.nii.gz",
+      )
+      PY
+      PATH="${MEICA_AFNI_RUNTIME}/bin:${PATH}" \
+        MEICA_3DSKULLSTRIP=/usr/bin/false meica-skullstrip-fallback \
+        -no_avoid_eyes \
+        -prefix "${output_dir}/sparse-functional-mask.nii.gz" \
+        -overwrite \
+        -input "${output_dir}/sparse-functional.nii.gz"
+      OUTPUT_DIR="${output_dir}" python - <<'PY'
+      import os
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+
+      mask = nib.load(
+          Path(os.environ["OUTPUT_DIR"]) / "sparse-functional-mask.nii.gz"
+      ).get_fdata()
+      assert set(np.unique(mask)) == {0.0, 1.0}
+      assert np.count_nonzero(mask) == 8
+      print("created a nonempty binary mask from sparse functional data")
+      PY
+
   - name: OpenRecon metadata contract
     description: Verify the scanner label exposes the ME-ICA adapter and focused controls
     script: |

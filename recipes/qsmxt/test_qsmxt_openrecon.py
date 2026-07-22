@@ -302,6 +302,32 @@ def test_scanner_display_volume_scales_qsm_ppm_range_to_uint12_interval():
     assert meta["clipped_voxels"] == 0
 
 
+def test_scanner_display_volume_maps_mask_foreground_to_valid_uint12_maximum():
+    data = np.asarray([[[0.0, 1.0]]], dtype=np.float32)
+
+    display, meta = qsmxt._scanner_display_volume(data, "mask", "binary")
+
+    assert display.dtype == np.uint16
+    assert display.tolist() == [[[0, 4095]]]
+    assert meta["scale"] == 4095.0
+    assert meta["formula"] == "binary = display / 4095"
+    assert meta["display_max"] == 4095
+
+
+def test_scanner_display_volume_ignores_sparse_t2star_fit_outlier_for_scaling():
+    data = np.full((10, 10, 10), 0.05, dtype=np.float32)
+    data[0, 0, 0] = 10000.0
+
+    display, meta = qsmxt._scanner_display_volume(data, "t2star", "s")
+
+    assert display.dtype == np.uint16
+    assert np.all(display.reshape(-1)[1:] == 500)
+    assert display[0, 0, 0] == 4095
+    assert meta["scale"] == 10000.0
+    assert meta["clipped_voxels"] == 1
+    assert meta["input_max"] == 10000.0
+
+
 def test_write_bids_dataset_pairs_magnitude_and_phase(tmp_path):
     settings = qsmxt._settings_from_config(
         {"parameters": {"echotimesms": "10,20"}},
@@ -520,11 +546,13 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert meta["QSMxTDisplayScale"] == "1000"
     assert meta["QSMxTDisplayOffset"] == "2048"
     assert meta["QSMxTDisplayFormula"] == "ppm = (display - 2048) / 1000"
+    assert meta["QSMxTDisplayScaleInputMin"] == "1.5"
+    assert meta["QSMxTDisplayScaleInputMax"] == "1.5"
     assert meta["QSMxTDisplayMin"] == "3548"
     assert meta["QSMxTDisplayMax"] == "3548"
     assert meta["QSMxTDisplayClippedVoxels"] == "0"
     assert meta["ImageComment"] == (
-        "QSMxT QSM; scanner display uint16 0-4096; "
+        "QSMxT QSM; scanner display uint16 0-4095; "
         "ppm = (display - 2048) / 1000"
     )
     assert meta["ImageComments"] == meta["ImageComment"]

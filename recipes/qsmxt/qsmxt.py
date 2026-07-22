@@ -43,8 +43,10 @@ ORIGINAL_SERIES_START = 100
 OUTPUT_SERIES_START = 180
 SCANNER_PARTITION_INDEX = 0
 SCANNER_DISPLAY_MIN = 0
-SCANNER_DISPLAY_MAX = 4096
+SCANNER_DISPLAY_MAX = 4095
 SCANNER_DISPLAY_CENTER = 2048
+T2STAR_SCALE_PERCENTILE = 99.9
+T2STAR_SCALE_MIN_POSITIVE_VOXELS = 100
 SCANNER_DISPLAY_SCALE_FACTORS = (
     1000000.0,
     100000.0,
@@ -831,6 +833,19 @@ def _nifti_to_mrd_images(
 
     data_zyx = np.transpose(data_xyz, (2, 1, 0))
     display_data_zyx, display_meta = _scanner_display_volume(data_zyx, output_id, units)
+    logging.info(
+        "QSMxT output %s display conversion: input=%.6g..%.6g, "
+        "scale-input=%.6g..%.6g, scale=%.6g, display=%d..%d, clipped=%d",
+        output_id,
+        display_meta["input_min"],
+        display_meta["input_max"],
+        display_meta["scale_input_min"],
+        display_meta["scale_input_max"],
+        display_meta["scale"],
+        display_meta["display_min"],
+        display_meta["display_max"],
+        display_meta["clipped_voxels"],
+    )
     display_data_xyz = np.transpose(display_data_zyx, (2, 1, 0))
     slice_count = int(data_zyx.shape[0])
     slice_fov = _nifti_slice_field_of_view(nifti, data_xyz.shape)
@@ -1603,6 +1618,12 @@ def _output_meta(
     meta["QSMxTDisplayFormula"] = display_meta["formula"]
     meta["QSMxTDisplayInputMin"] = f"{float(display_meta['input_min']):.6g}"
     meta["QSMxTDisplayInputMax"] = f"{float(display_meta['input_max']):.6g}"
+    meta["QSMxTDisplayScaleInputMin"] = (
+        f"{float(display_meta['scale_input_min']):.6g}"
+    )
+    meta["QSMxTDisplayScaleInputMax"] = (
+        f"{float(display_meta['scale_input_max']):.6g}"
+    )
     meta["QSMxTDisplayMin"] = str(int(display_meta["display_min"]))
     meta["QSMxTDisplayMax"] = str(int(display_meta["display_max"]))
     meta["QSMxTDisplayClippedVoxels"] = str(int(display_meta["clipped_voxels"]))
@@ -1653,7 +1674,13 @@ def _validate_output_images(output_images, input_images):
                     f"image {index} data range {data_min}..{data_max} is outside "
                     f"{SCANNER_DISPLAY_MIN}..{SCANNER_DISPLAY_MAX}"
                 )
-        for key in ("QSMxTDisplayScale", "QSMxTDisplayOffset", "QSMxTDisplayFormula"):
+        for key in (
+            "QSMxTDisplayScale",
+            "QSMxTDisplayOffset",
+            "QSMxTDisplayFormula",
+            "QSMxTDisplayScaleInputMin",
+            "QSMxTDisplayScaleInputMax",
+        ):
             if not _meta_text(meta, key):
                 errors.append(f"image {index} is missing {key}")
 
@@ -2043,18 +2070,29 @@ def _scanner_display_volume(data, output_id, units):
             "clipped_voxels": 0,
             "input_min": float(np.min(finite)) if finite.size else 0.0,
             "input_max": float(np.max(finite)) if finite.size else 0.0,
+            "scale_input_min": 0.0,
+            "scale_input_max": 1.0,
             "display_min": int(np.min(display)) if display.size else 0,
             "display_max": int(np.max(display)) if display.size else 0,
         }
 
     input_min = float(np.min(finite)) if finite.size else 0.0
     input_max = float(np.max(finite)) if finite.size else 0.0
-    offset = float(SCANNER_DISPLAY_CENTER) if _scanner_display_needs_offset(
+    scale_input_min, scale_input_max = _scanner_display_scale_range(
+        values,
         output_id,
         input_min,
+        input_max,
+    )
+    offset = float(SCANNER_DISPLAY_CENTER) if _scanner_display_needs_offset(
+        output_id,
+        scale_input_min,
     ) else 0.0
-    scale = _scanner_display_scale(input_min, input_max, offset)
-    cleaned = np.nan_to_num(values, nan=0.0, posinf=input_max, neginf=input_min)
+    scale = _scanner_display_scale(scale_input_min, scale_input_max, offset)
+    if output_id == "t2star":
+        cleaned = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
+    else:
+        cleaned = np.nan_to_num(values, nan=0.0, posinf=input_max, neginf=input_min)
     scaled = cleaned * scale + offset
     clipped_voxels = int(
         np.count_nonzero(
@@ -2073,9 +2111,27 @@ def _scanner_display_volume(data, output_id, units):
         "clipped_voxels": clipped_voxels,
         "input_min": input_min,
         "input_max": input_max,
+        "scale_input_min": scale_input_min,
+        "scale_input_max": scale_input_max,
         "display_min": int(np.min(display)) if display.size else 0,
         "display_max": int(np.max(display)) if display.size else 0,
     }
+
+
+def _scanner_display_scale_range(values, output_id, input_min, input_max):
+    if output_id != "t2star":
+        return input_min, input_max
+
+    finite_positive = values[np.isfinite(values) & (values > 0.0)]
+    if finite_positive.size < T2STAR_SCALE_MIN_POSITIVE_VOXELS:
+        return 0.0, input_max
+
+    robust_max = float(
+        np.percentile(finite_positive, T2STAR_SCALE_PERCENTILE, method="lower")
+    )
+    if robust_max <= 0.0 or not np.isfinite(robust_max):
+        return 0.0, input_max
+    return 0.0, min(input_max, robust_max)
 
 
 def _scanner_display_needs_offset(output_id, input_min):

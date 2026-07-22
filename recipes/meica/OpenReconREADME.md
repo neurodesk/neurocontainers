@@ -5,10 +5,19 @@ them by echo and repetition, writes one four-dimensional NIfTI time series per
 echo, runs ME-ICA v4, and returns two fixed derived MRD series.
 
 ME-ICA requires at least three echoes with matching spatial dimensions and time
-points. Echo times are read from the MRD sequence header. The adapter uses
-`EchoTime`, `EchoNumber`, MRD `contrast`, `repetition`, and slice fields to
-separate the incoming time series. It reports an error if the sequence header
-does not contain echo times. ME-ICA runs with 24 CPU workers.
+points, and each echo must contain at least 21 time points. A 20-time-point
+input passes AFNI despiking but fails when ME-ICA's initial motion-correction
+step selects volume and matrix indices 0 through 20 inclusive. Longer fMRI
+runs are strongly recommended for meaningful ICA results. Echo times are read
+from the MRD sequence header. The adapter uses `EchoTime`, `EchoNumber`, MRD
+`contrast`, `repetition`, and slice fields to separate the incoming time
+series. It reports an error if the sequence header does not contain echo times.
+ME-ICA runs with 24 CPU workers.
+
+If AFNI cannot skull-strip the optimally combined functional reference, the
+adapter retries that masking step with a simple positive-value (`value > 0`)
+threshold. Completely empty inputs still fail instead of producing an empty
+mask.
 
 OpenRecon always returns two derived series. The `dr2s_epi` series is the
 denoised BOLD-like time series expressed as apparent `dR2*` in `s^-1`. The

@@ -28,6 +28,12 @@ debugging, but they are not shown in the scanner UI.
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
 QSMxT derivatives that exist after the run.
 
+Derived outputs are converted to unsigned 12-bit display values in the valid
+`0..4095` range. Binary masks use `0` and `4095`. T2* scaling uses the 99.9th
+percentile of positive finite fits so isolated extreme fits are clipped instead
+of quantizing the useful map to zero. The original range, scaling range, scale,
+inverse formula, and clipped-voxel count are included in the returned metadata.
+
 QSMxT needs unfiltered phase data. SWI sequences that already apply SWI-specific
 phase processing or filtering are not suitable inputs for this OpenRecon
 adapter; for example, `t2_swi_tra_wave4_2mm` does not provide the required

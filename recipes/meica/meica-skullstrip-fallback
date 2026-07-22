@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+input=""
+prefix=""
+arguments=("$@")
+
+while (( $# > 0 )); do
+    case "$1" in
+        -input)
+            input="${2:-}"
+            shift 2
+            ;;
+        -input=*)
+            input="${1#*=}"
+            shift
+            ;;
+        -prefix)
+            prefix="${2:-}"
+            shift 2
+            ;;
+        -prefix=*)
+            prefix="${1#*=}"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+skullstrip_binary="${MEICA_3DSKULLSTRIP:-3dSkullStrip}"
+if "${skullstrip_binary}" "${arguments[@]}"; then
+    exit 0
+else
+    skullstrip_status=$?
+fi
+
+if [[ -z "${input}" || -z "${prefix}" ]]; then
+    echo "ME-ICA threshold fallback requires 3dSkullStrip -input and -prefix arguments" >&2
+    exit "${skullstrip_status}"
+fi
+
+maximum="$(3dBrickStat -slow -max "${input}")" || exit "${skullstrip_status}"
+if ! awk -v maximum="${maximum}" 'BEGIN { exit !(maximum > 0) }'; then
+    echo "ME-ICA threshold fallback refused an input with no positive signal: ${input}" >&2
+    exit "${skullstrip_status}"
+fi
+
+echo "WARNING: 3dSkullStrip failed; applying a value > 0 threshold mask to ${input}" >&2
+3dcalc \
+    -overwrite \
+    -a "${input}" \
+    -expr 'ispositive(a)' \
+    -prefix "${prefix}"
+
+mask_maximum="$(3dBrickStat -slow -max "${prefix}")" || exit "${skullstrip_status}"
+if ! awk -v maximum="${mask_maximum}" 'BEGIN { exit !(maximum > 0) }'; then
+    echo "ME-ICA threshold fallback produced an empty mask: ${prefix}" >&2
+    exit "${skullstrip_status}"
+fi

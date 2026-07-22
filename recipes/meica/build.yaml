@@ -20,6 +20,7 @@ build:
         - ca-certificates
         - coreutils
         - gzip
+        - patch
         - python3-pip
         - python3-venv
         - python-is-python3
@@ -36,6 +37,7 @@ build:
     - run:
         - mkdir -p /opt/meica/me-ica
         - tar -xzf {{ get_file("meica_source") }} -C /opt/meica/me-ica --strip-components=1
+        - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_skullstrip_patch") }}
         - tar -xzf {{ get_file("meica_afni_runtime") }} -C /opt/meica/me-ica
         - python3 -m venv /opt/meica/venv
         - /opt/meica/venv/bin/pip install --no-cache-dir --upgrade pip
@@ -56,6 +58,8 @@ build:
     - run:
         - cp {{ get_file("meica_launcher") }} /usr/local/bin/meica.py
         - chmod +x /usr/local/bin/meica.py
+        - cp {{ get_file("meica_skullstrip_fallback") }} /usr/local/bin/meica-skullstrip-fallback
+        - chmod +x /usr/local/bin/meica-skullstrip-fallback
         - cp {{ get_file("meica_openrecon") }} /opt/code/python-ismrmrd-server/meica.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
@@ -136,6 +140,10 @@ files:
     url: https://github.com/ME-ICA/meica-afni/releases/download/{{ context.version }}/meica-afni-runtime-linux-x86_64.tar.gz
   - name: meica_launcher
     filename: meica-launcher
+  - name: meica_skullstrip_fallback
+    filename: meica-skullstrip-fallback
+  - name: meica_skullstrip_patch
+    filename: meica-skullstrip-fallback.patch
   - name: meica_openrecon
     filename: meica.py
   - name: OpenReconLabel.json
