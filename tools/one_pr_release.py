@@ -26,6 +26,21 @@ from builder.release import release_data
 REPO_ROOT = SCRIPT_REPO_ROOT
 VERSION_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 RECIPE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+CANDIDATE_MANIFEST_FIELDS = (
+    "recipe",
+    "version",
+    "build_date",
+    "image_name",
+    "candidate_tag",
+    "docker_archive",
+    "docker_sha256",
+    "sif",
+    "sif_sha256",
+    "release_json",
+    "pr_number",
+    "head_sha",
+    "recipe_fingerprint",
+)
 
 
 def run_git(*args: str) -> str:
@@ -232,11 +247,28 @@ def candidate_file(candidate_dir: Path, value: Any, field: str) -> Path:
     return path
 
 
+def load_candidate_manifest(candidate_dir: Path) -> dict[str, Any]:
+    """Load a candidate manifest and require its complete object schema."""
+    path = candidate_dir / "manifest.json"
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"Unable to read candidate manifest {path}: {error}") from error
+    if not isinstance(manifest, dict):
+        raise RuntimeError(f"Candidate manifest must be a JSON object: {path}")
+    missing = [field for field in CANDIDATE_MANIFEST_FIELDS if field not in manifest]
+    if missing:
+        raise RuntimeError(
+            f"Candidate manifest {path} is missing fields: {', '.join(missing)}"
+        )
+    return manifest
+
+
 def verify_candidate(
     candidate_dir: Path, expected_head_sha: str, expected_pr_number: int | None = None
 ) -> dict[str, Any]:
     """Verify a candidate against its PR identity and the merged recipe."""
-    manifest = json.loads((candidate_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest = load_candidate_manifest(candidate_dir)
     recipe = validate_recipe_identifier(manifest.get("recipe"))
     if candidate_dir.name != recipe:
         raise RuntimeError(f"Candidate directory does not match recipe {recipe}")
@@ -261,6 +293,7 @@ def verify_candidate(
     expected_values = {
         "version": expected_info["version"],
         "build_date": expected_info["build_date"],
+        "image_name": expected_info["image_name"],
         "candidate_tag": expected_info["candidate_tag"],
         "docker_archive": expected_info["docker_archive"],
         "sif": expected_info["sif"],

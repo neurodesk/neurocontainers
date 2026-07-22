@@ -13,6 +13,7 @@ from tools import one_pr_release
 
 
 def write_recipe(root: Path, name: str = "demo", version: str = "1.2.3") -> Path:
+    """Create a minimal recipe fixture."""
     recipe_dir = root / "recipes" / name
     recipe_dir.mkdir(parents=True)
     recipe = {
@@ -33,7 +34,9 @@ def write_recipe(root: Path, name: str = "demo", version: str = "1.2.3") -> Path
 
 
 def test_run_git_reports_command_and_stderr(monkeypatch) -> None:
+    """Git failures include the attempted command and captured diagnostic."""
     def fail(*args, **kwargs) -> None:
+        """Simulate Git returning a captured fatal diagnostic."""
         raise subprocess.CalledProcessError(
             128, ["git", "show", "missing"], stderr="fatal: bad revision"
         )
@@ -51,6 +54,7 @@ def test_run_git_reports_command_and_stderr(monkeypatch) -> None:
 
 
 def test_load_recipe_wraps_read_and_yaml_errors(tmp_path: Path, monkeypatch) -> None:
+    """Recipe read and parse errors retain their path and original cause."""
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
     path = tmp_path / "recipes" / "demo" / "build.yaml"
 
@@ -83,6 +87,7 @@ def test_load_recipe_wraps_read_and_yaml_errors(tmp_path: Path, monkeypatch) -> 
 
 
 def test_detect_recipes_accepts_recipe_only_change(tmp_path: Path, monkeypatch) -> None:
+    """Recipe-only changes are eligible for candidate builds."""
     write_recipe(tmp_path)
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(
@@ -95,6 +100,7 @@ def test_detect_recipes_accepts_recipe_only_change(tmp_path: Path, monkeypatch) 
 
 
 def test_detect_recipes_rejects_mixed_pr(tmp_path: Path, monkeypatch) -> None:
+    """Mixed automation and recipe changes cannot cross the trust boundary."""
     write_recipe(tmp_path)
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(
@@ -112,6 +118,7 @@ def test_detect_recipes_rejects_mixed_pr(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_detect_recipes_requires_fulltest(tmp_path: Path, monkeypatch) -> None:
+    """Every candidate recipe must provide a runtime test suite."""
     recipe_dir = write_recipe(tmp_path)
     (recipe_dir / "fulltest.yaml").unlink()
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
@@ -132,6 +139,7 @@ def test_detect_recipes_requires_fulltest(tmp_path: Path, monkeypatch) -> None:
 def test_inspect_recipe_rejects_missing_or_unsafe_version(
     tmp_path: Path, monkeypatch
 ) -> None:
+    """Missing and path-unsafe versions are rejected before naming files."""
     recipe_dir = write_recipe(tmp_path)
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
 
@@ -158,10 +166,12 @@ def test_inspect_recipe_rejects_missing_or_unsafe_version(
 def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     tmp_path: Path, monkeypatch
 ) -> None:
+    """Candidate promotion is bound to safe paths, recipe state, PR, and head."""
     recipe_dir = write_recipe(tmp_path)
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
 
     def build_date_for_head(recipe: str, revision: str = "HEAD") -> str:
+        """Return the deterministic fixture date for the expected PR head."""
         assert recipe == "demo"
         assert revision == "abc123"
         return "20260721"
@@ -181,6 +191,7 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
         "recipe": "demo",
         "version": "1.2.3",
         "build_date": "20260721",
+        "image_name": "demo_1.2.3",
         "pr_number": 42,
         "head_sha": "abc123",
         "candidate_tag": "nd-candidate-demo:abc123",
@@ -254,6 +265,7 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
 def test_materialize_rejects_unverified_release_path(
     tmp_path: Path, monkeypatch
 ) -> None:
+    """Materialization rejects traversal and escaping release symlinks."""
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path / "repo")
     bundle = tmp_path / "bundle"
     manifests = tmp_path / "verified.json"
@@ -304,3 +316,40 @@ def test_materialize_rejects_unverified_release_path(
         assert "escapes" in str(error)
     else:
         raise AssertionError("escaping release symlink was accepted")
+
+
+def test_candidate_manifest_requires_object_and_complete_schema(tmp_path: Path) -> None:
+    """Malformed or incomplete manifests fail with actionable errors."""
+    candidate_dir = tmp_path / "demo"
+    candidate_dir.mkdir()
+    manifest_path = candidate_dir / "manifest.json"
+    manifest_path.write_text("[]", encoding="utf-8")
+
+    try:
+        one_pr_release.load_candidate_manifest(candidate_dir)
+    except RuntimeError as error:
+        assert "must be a JSON object" in str(error)
+    else:
+        raise AssertionError("non-object candidate manifest was accepted")
+
+    manifest_path.write_text(json.dumps({"recipe": "demo"}), encoding="utf-8")
+    try:
+        one_pr_release.load_candidate_manifest(candidate_dir)
+    except RuntimeError as error:
+        assert "missing fields" in str(error)
+        assert "docker_sha256" in str(error)
+        assert "sif_sha256" in str(error)
+    else:
+        raise AssertionError("incomplete candidate manifest was accepted")
+
+
+def test_one_pr_workflows_preserve_fork_reporting_contract() -> None:
+    """Fork runs resolve PRs by SHA and reports render as Markdown."""
+    promotion = Path(".github/workflows/promote-container-candidate.yml").read_text()
+    reporter = Path(".github/workflows/report-container-candidate.yml").read_text()
+
+    assert "item.head_sha === pr.head.sha" in promotion
+    assert "item.pull_requests" not in promotion
+    assert "listPullRequestsAssociatedWithCommit" in reporter
+    assert "if (prs.length === 0) return" not in reporter
+    assert "].join('\\n');" in reporter

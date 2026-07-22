@@ -21,8 +21,23 @@ jobs:
         with:
           script: |
             const run = context.payload.workflow_run;
-            const prs = run.pull_requests || [];
-            if (prs.length === 0) return;
+            let prs = run.pull_requests || [];
+            if (prs.length === 0) {
+              const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: run.head_sha,
+              });
+              prs = associated.data.filter(pr =>
+                pr.head.sha === run.head_sha &&
+                pr.head.ref === run.head_branch &&
+                (!run.head_repository || pr.head.repo?.full_name === run.head_repository.full_name)
+              );
+            }
+            if (prs.length !== 1) {
+              core.warning(`Expected one PR for candidate run ${run.id}, found ${prs.length}.`);
+              return;
+            }
             const artifacts = await github.paginate(
               github.rest.actions.listWorkflowRunArtifacts,
               {owner: context.repo.owner, repo: context.repo.repo, run_id: run.id, per_page: 100}
@@ -31,27 +46,29 @@ jobs:
             const marker = '<!-- one-pr-container-candidate -->';
             const status = run.conclusion === 'success' ? '✅ passed' : `❌ ${run.conclusion}`;
             const list = names.length ? names.map(name => `- \`${name}\``).join('\n') : '- None';
-            const body = `${marker}
-            ## Container candidate
-
-            **Status:** ${status}
-            **Workflow:** [run ${run.run_number}](${run.html_url})
-
-            ${list}
-
-            Download the tested Docker archive, SIF, results, and release JSON preview:
-
-            \`gh run download ${run.id} --repo ${context.repo.owner}/${context.repo.repo}\`
-
-            Then test a candidate interactively with:
-
-            \`apptainer shell candidate-*/*.simg\`
-
-            Or load its exact Docker image with:
-
-            \`docker load --input candidate-*/*.docker.tar\`
-
-            Nothing is published until this PR merges.`;
+            const body = [
+              marker,
+              '## Container candidate',
+              '',
+              `**Status:** ${status}`,
+              `**Workflow:** [run ${run.run_number}](${run.html_url})`,
+              '',
+              list,
+              '',
+              'Download the tested Docker archive, SIF, results, and release JSON preview:',
+              '',
+              `\`gh run download ${run.id} --repo ${context.repo.owner}/${context.repo.repo}\``,
+              '',
+              'Then test a candidate interactively with:',
+              '',
+              '`apptainer shell candidate-*/*.simg`',
+              '',
+              'Or load its exact Docker image with:',
+              '',
+              '`docker load --input candidate-*/*.docker.tar`',
+              '',
+              'Nothing is published until this PR merges.',
+            ].join('\n');
             const issue_number = prs[0].number;
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner, repo: context.repo.repo, issue_number, per_page: 100,

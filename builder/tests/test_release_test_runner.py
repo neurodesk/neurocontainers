@@ -372,6 +372,7 @@ def test_run_fulltest_release_uses_release_image_basename(
 
 
 def test_run_fulltest_release_uses_local_candidate(tmp_path: Path, monkeypatch) -> None:
+    """A local candidate bypasses published-release download and conversion."""
     source = tmp_path / "candidate.simg"
     source.write_text("simg", encoding="utf-8")
     test_config = tmp_path / "fulltest.yaml"

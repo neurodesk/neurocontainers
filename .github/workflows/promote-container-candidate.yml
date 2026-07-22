@@ -66,9 +66,11 @@ jobs:
               workflow_id: workflow.id, head_sha: pr.head.sha,
               event: 'pull_request', status: 'completed', per_page: 50,
             });
+            // Fork-originated runs can have an empty pull_requests array. The
+            // API query and this explicit comparison bind the run to the head;
+            // the downloaded manifest later binds it to the PR number.
             const run = response.data.workflow_runs.find(item =>
-              item.conclusion === 'success' &&
-              (item.pull_requests || []).some(candidate => candidate.number === pr.number)
+              item.conclusion === 'success' && item.head_sha === pr.head.sha
             );
             if (!run) throw new Error(`No successful candidate run for ${pr.head.sha}`);
             const artifacts = await github.paginate(
