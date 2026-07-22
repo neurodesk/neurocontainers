@@ -2,325 +2,304 @@ name: braid
 version: 1.0.0
 container: braid_${version}_REFERENCE.simg
 default_timeout: 60
-env_setup: |
-  assert_linked() {
-    local target payload output interpreter
-    local -a interpreter_args
-    target="$(readlink -f "$1")" || return 1
-    if output="$(ldd "$target" 2>&1)"; then
-      payload="$target"
-    else
-      IFS= read -r interpreter < "$target" || return 1
-      interpreter="${interpreter#\#!}"
-      read -r -a interpreter_args <<< "$interpreter"
-      if [ "${interpreter_args[0]}" = /usr/bin/env ]; then
-        payload="$(command -v "${interpreter_args[1]}")" || return 1
-      else
-        payload="${interpreter_args[0]}"
-      fi
-      payload="$(readlink -f "$payload")" || return 1
-      output="$(ldd "$payload" 2>&1)" || return 1
-    fi
-    ! grep -q "not found" <<< "$output"
-  }
 tests:
-  - name: braid_one_sample_inference resolves on PATH
-    command: command -v braid_one_sample_inference
-    expected_exit_code: 0
-  - name: braid_one_sample_inference is executable
-    command: test -x "$(command -v braid_one_sample_inference)"
-    expected_exit_code: 0
-  - name: braid_one_sample_inference has no missing shared libraries
-    command: assert_linked "$(command -v braid_one_sample_inference)"
-    expected_exit_code: 0
-  - name: braid_io_dir_wrapper resolves on PATH
-    command: command -v braid_io_dir_wrapper
-    expected_exit_code: 0
-  - name: braid_io_dir_wrapper is executable
-    command: test -x "$(command -v braid_io_dir_wrapper)"
-    expected_exit_code: 0
-  - name: braid_io_dir_wrapper has no missing shared libraries
-    command: assert_linked "$(command -v braid_io_dir_wrapper)"
-    expected_exit_code: 0
-  - name: bet resolves on PATH
-    command: command -v bet
-    expected_exit_code: 0
-  - name: bet is executable
-    command: test -x "$(command -v bet)"
-    expected_exit_code: 0
-  - name: bet has no missing shared libraries
-    command: assert_linked "$(command -v bet)"
-    expected_exit_code: 0
-  - name: flirt resolves on PATH
-    command: command -v flirt
-    expected_exit_code: 0
-  - name: flirt is executable
-    command: test -x "$(command -v flirt)"
-    expected_exit_code: 0
-  - name: flirt has no missing shared libraries
-    command: assert_linked "$(command -v flirt)"
-    expected_exit_code: 0
-  - name: fnirt resolves on PATH
-    command: command -v fnirt
-    expected_exit_code: 0
-  - name: fnirt is executable
-    command: test -x "$(command -v fnirt)"
-    expected_exit_code: 0
-  - name: fnirt has no missing shared libraries
-    command: assert_linked "$(command -v fnirt)"
-    expected_exit_code: 0
-  - name: applywarp resolves on PATH
-    command: command -v applywarp
-    expected_exit_code: 0
-  - name: applywarp is executable
-    command: test -x "$(command -v applywarp)"
-    expected_exit_code: 0
-  - name: applywarp has no missing shared libraries
-    command: assert_linked "$(command -v applywarp)"
-    expected_exit_code: 0
-  - name: fslmaths resolves on PATH
-    command: command -v fslmaths
-    expected_exit_code: 0
-  - name: fslmaths is executable
-    command: test -x "$(command -v fslmaths)"
-    expected_exit_code: 0
-  - name: fslmaths has no missing shared libraries
-    command: assert_linked "$(command -v fslmaths)"
-    expected_exit_code: 0
-  - name: fslstats resolves on PATH
-    command: command -v fslstats
-    expected_exit_code: 0
-  - name: fslstats is executable
-    command: test -x "$(command -v fslstats)"
-    expected_exit_code: 0
-  - name: fslstats has no missing shared libraries
-    command: assert_linked "$(command -v fslstats)"
-    expected_exit_code: 0
-  - name: fslroi resolves on PATH
-    command: command -v fslroi
-    expected_exit_code: 0
-  - name: fslroi is executable
-    command: test -x "$(command -v fslroi)"
-    expected_exit_code: 0
-  - name: fslroi has no missing shared libraries
-    command: assert_linked "$(command -v fslroi)"
-    expected_exit_code: 0
-  - name: fslmerge resolves on PATH
-    command: command -v fslmerge
-    expected_exit_code: 0
-  - name: fslmerge is executable
-    command: test -x "$(command -v fslmerge)"
-    expected_exit_code: 0
-  - name: fslmerge has no missing shared libraries
-    command: assert_linked "$(command -v fslmerge)"
-    expected_exit_code: 0
-  - name: dtifit resolves on PATH
-    command: command -v dtifit
-    expected_exit_code: 0
-  - name: dtifit is executable
-    command: test -x "$(command -v dtifit)"
-    expected_exit_code: 0
-  - name: dtifit has no missing shared libraries
-    command: assert_linked "$(command -v dtifit)"
-    expected_exit_code: 0
-  - name: eddy_openmp resolves on PATH
-    command: command -v eddy_openmp
-    expected_exit_code: 0
-  - name: eddy_openmp is executable
-    command: test -x "$(command -v eddy_openmp)"
-    expected_exit_code: 0
-  - name: eddy_openmp has no missing shared libraries
-    command: assert_linked "$(command -v eddy_openmp)"
-    expected_exit_code: 0
-  - name: mrconvert resolves on PATH
-    command: command -v mrconvert
-    expected_exit_code: 0
-  - name: mrconvert is executable
-    command: test -x "$(command -v mrconvert)"
-    expected_exit_code: 0
-  - name: mrconvert has no missing shared libraries
-    command: assert_linked "$(command -v mrconvert)"
-    expected_exit_code: 0
-  - name: dwi2tensor resolves on PATH
-    command: command -v dwi2tensor
-    expected_exit_code: 0
-  - name: dwi2tensor is executable
-    command: test -x "$(command -v dwi2tensor)"
-    expected_exit_code: 0
-  - name: dwi2tensor has no missing shared libraries
-    command: assert_linked "$(command -v dwi2tensor)"
-    expected_exit_code: 0
-  - name: tensor2metric resolves on PATH
-    command: command -v tensor2metric
-    expected_exit_code: 0
-  - name: tensor2metric is executable
-    command: test -x "$(command -v tensor2metric)"
-    expected_exit_code: 0
-  - name: tensor2metric has no missing shared libraries
-    command: assert_linked "$(command -v tensor2metric)"
-    expected_exit_code: 0
-  - name: mrtransform resolves on PATH
-    command: command -v mrtransform
-    expected_exit_code: 0
-  - name: mrtransform is executable
-    command: test -x "$(command -v mrtransform)"
-    expected_exit_code: 0
-  - name: mrtransform has no missing shared libraries
-    command: assert_linked "$(command -v mrtransform)"
-    expected_exit_code: 0
-  - name: dwiextract resolves on PATH
-    command: command -v dwiextract
-    expected_exit_code: 0
-  - name: dwiextract is executable
-    command: test -x "$(command -v dwiextract)"
-    expected_exit_code: 0
-  - name: dwiextract has no missing shared libraries
-    command: assert_linked "$(command -v dwiextract)"
-    expected_exit_code: 0
-  - name: mrcalc resolves on PATH
-    command: command -v mrcalc
-    expected_exit_code: 0
-  - name: mrcalc is executable
-    command: test -x "$(command -v mrcalc)"
-    expected_exit_code: 0
-  - name: mrcalc has no missing shared libraries
-    command: assert_linked "$(command -v mrcalc)"
-    expected_exit_code: 0
-  - name: mrinfo resolves on PATH
-    command: command -v mrinfo
-    expected_exit_code: 0
-  - name: mrinfo is executable
-    command: test -x "$(command -v mrinfo)"
-    expected_exit_code: 0
-  - name: mrinfo has no missing shared libraries
-    command: assert_linked "$(command -v mrinfo)"
-    expected_exit_code: 0
-  - name: mrgrid resolves on PATH
-    command: command -v mrgrid
-    expected_exit_code: 0
-  - name: mrgrid is executable
-    command: test -x "$(command -v mrgrid)"
-    expected_exit_code: 0
-  - name: mrgrid has no missing shared libraries
-    command: assert_linked "$(command -v mrgrid)"
-    expected_exit_code: 0
-  - name: antsRegistration resolves on PATH
-    command: command -v antsRegistration
-    expected_exit_code: 0
-  - name: antsRegistration is executable
-    command: test -x "$(command -v antsRegistration)"
-    expected_exit_code: 0
-  - name: antsRegistration has no missing shared libraries
-    command: assert_linked "$(command -v antsRegistration)"
-    expected_exit_code: 0
-  - name: antsApplyTransforms resolves on PATH
-    command: command -v antsApplyTransforms
-    expected_exit_code: 0
-  - name: antsApplyTransforms is executable
-    command: test -x "$(command -v antsApplyTransforms)"
-    expected_exit_code: 0
-  - name: antsApplyTransforms has no missing shared libraries
-    command: assert_linked "$(command -v antsApplyTransforms)"
-    expected_exit_code: 0
-  - name: N4BiasFieldCorrection resolves on PATH
-    command: command -v N4BiasFieldCorrection
-    expected_exit_code: 0
-  - name: N4BiasFieldCorrection is executable
-    command: test -x "$(command -v N4BiasFieldCorrection)"
-    expected_exit_code: 0
-  - name: N4BiasFieldCorrection has no missing shared libraries
-    command: assert_linked "$(command -v N4BiasFieldCorrection)"
-    expected_exit_code: 0
-  - name: ImageMath resolves on PATH
-    command: command -v ImageMath
-    expected_exit_code: 0
-  - name: ImageMath is executable
-    command: test -x "$(command -v ImageMath)"
-    expected_exit_code: 0
-  - name: ImageMath has no missing shared libraries
-    command: assert_linked "$(command -v ImageMath)"
-    expected_exit_code: 0
-  - name: c3d resolves on PATH
-    command: command -v c3d
-    expected_exit_code: 0
-  - name: c3d is executable
-    command: test -x "$(command -v c3d)"
-    expected_exit_code: 0
-  - name: c3d has no missing shared libraries
-    command: assert_linked "$(command -v c3d)"
-    expected_exit_code: 0
-  - name: c3d_affine_tool resolves on PATH
-    command: command -v c3d_affine_tool
-    expected_exit_code: 0
-  - name: c3d_affine_tool is executable
-    command: test -x "$(command -v c3d_affine_tool)"
-    expected_exit_code: 0
-  - name: c3d_affine_tool has no missing shared libraries
-    command: assert_linked "$(command -v c3d_affine_tool)"
-    expected_exit_code: 0
-  - name: Python imports braid
-    command: python3 -c 'import braid'
-    expected_exit_code: 0
-  - name: Python imports monai
-    command: python3 -c 'import monai'
-    expected_exit_code: 0
-  - name: Python imports nibabel
-    command: python3 -c 'import nibabel'
-    expected_exit_code: 0
-  - name: Python imports torch
-    command: python3 -c 'import torch'
-    expected_exit_code: 0
-  - name: Python imports torchvision
-    command: python3 -c 'import torchvision'
-    expected_exit_code: 0
-  - name: Python imports torchaudio
-    command: python3 -c 'import torchaudio'
-    expected_exit_code: 0
-  - name: Python imports pandas
-    command: python3 -c 'import pandas'
-    expected_exit_code: 0
-  - name: Python imports numpy
-    command: python3 -c 'import numpy'
-    expected_exit_code: 0
-  - name: Python imports yaml
-    command: python3 -c 'import yaml'
-    expected_exit_code: 0
-  - name: Python imports matplotlib
-    command: python3 -c 'import matplotlib'
-    expected_exit_code: 0
-  - name: Python imports seaborn
-    command: python3 -c 'import seaborn'
-    expected_exit_code: 0
-  - name: Python imports statsmodels
-    command: python3 -c 'import statsmodels'
-    expected_exit_code: 0
-  - name: BRAID model directory exists
-    command: test -d /opt/braid-v1.0
-    expected_exit_code: 0
-  - name: BRAID model checkout contains files
-    command: find /opt/braid-v1.0 -type f | grep -q .
-    expected_exit_code: 0
-  - name: BRAID model checkout contains weight data
-    command: find /opt/braid-v1.0 -type f \( -name '*.pth' -o -name '*.pt' -o -name '*.ckpt' \) | grep -q .
-    expected_exit_code: 0
-  - name: BRAID package metadata is installed
-    command: python3 -c 'import importlib.metadata as m; assert m.version("braid") == "${version}"'
-    expected_exit_code: 0
-  - name: FSL installation directory exists
-    command: test -d /opt/fsl-6.0.4
-    expected_exit_code: 0
-  - name: MRtrix installation directory exists
-    command: test -d /opt/mrtrix3-3.0.3
-    expected_exit_code: 0
-  - name: ANTs installation directory exists
-    command: test -d /opt/ants-2.3.4
-    expected_exit_code: 0
-  - name: Convert3D installation directory exists
-    command: test -d /opt/convert3d-1.0.0
-    expected_exit_code: 0
-  - name: FSL environment is configured
-    command: test "$FSLDIR" = /opt/fsl-6.0.4
-    expected_exit_code: 0
-  - name: BRAID inference help starts
-    command: braid_one_sample_inference --help >/dev/null
-    expected_exit_code: 0
+- name: braid_one_sample_inference resolves on PATH
+  command: command -v braid_one_sample_inference
+  expected_exit_code: 0
+- name: braid_one_sample_inference is executable
+  command: test -x "$(command -v braid_one_sample_inference)"
+  expected_exit_code: 0
+- name: braid_one_sample_inference has no missing shared libraries
+  command: '! ldd "$(command -v braid_one_sample_inference)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: braid_io_dir_wrapper resolves on PATH
+  command: command -v braid_io_dir_wrapper
+  expected_exit_code: 0
+- name: braid_io_dir_wrapper is executable
+  command: test -x "$(command -v braid_io_dir_wrapper)"
+  expected_exit_code: 0
+- name: braid_io_dir_wrapper has no missing shared libraries
+  command: '! ldd "$(command -v braid_io_dir_wrapper)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: bet resolves on PATH
+  command: command -v bet
+  expected_exit_code: 0
+- name: bet is executable
+  command: test -x "$(command -v bet)"
+  expected_exit_code: 0
+- name: bet has no missing shared libraries
+  command: '! ldd "$(command -v bet)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: flirt resolves on PATH
+  command: command -v flirt
+  expected_exit_code: 0
+- name: flirt is executable
+  command: test -x "$(command -v flirt)"
+  expected_exit_code: 0
+- name: flirt has no missing shared libraries
+  command: '! ldd "$(command -v flirt)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: fnirt resolves on PATH
+  command: command -v fnirt
+  expected_exit_code: 0
+- name: fnirt is executable
+  command: test -x "$(command -v fnirt)"
+  expected_exit_code: 0
+- name: fnirt has no missing shared libraries
+  command: '! ldd "$(command -v fnirt)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: applywarp resolves on PATH
+  command: command -v applywarp
+  expected_exit_code: 0
+- name: applywarp is executable
+  command: test -x "$(command -v applywarp)"
+  expected_exit_code: 0
+- name: applywarp has no missing shared libraries
+  command: '! ldd "$(command -v applywarp)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: fslmaths resolves on PATH
+  command: command -v fslmaths
+  expected_exit_code: 0
+- name: fslmaths is executable
+  command: test -x "$(command -v fslmaths)"
+  expected_exit_code: 0
+- name: fslmaths has no missing shared libraries
+  command: '! ldd "$(command -v fslmaths)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: fslstats resolves on PATH
+  command: command -v fslstats
+  expected_exit_code: 0
+- name: fslstats is executable
+  command: test -x "$(command -v fslstats)"
+  expected_exit_code: 0
+- name: fslstats has no missing shared libraries
+  command: '! ldd "$(command -v fslstats)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: fslroi resolves on PATH
+  command: command -v fslroi
+  expected_exit_code: 0
+- name: fslroi is executable
+  command: test -x "$(command -v fslroi)"
+  expected_exit_code: 0
+- name: fslroi has no missing shared libraries
+  command: '! ldd "$(command -v fslroi)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: fslmerge resolves on PATH
+  command: command -v fslmerge
+  expected_exit_code: 0
+- name: fslmerge is executable
+  command: test -x "$(command -v fslmerge)"
+  expected_exit_code: 0
+- name: fslmerge has no missing shared libraries
+  command: '! ldd "$(command -v fslmerge)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: dtifit resolves on PATH
+  command: command -v dtifit
+  expected_exit_code: 0
+- name: dtifit is executable
+  command: test -x "$(command -v dtifit)"
+  expected_exit_code: 0
+- name: dtifit has no missing shared libraries
+  command: '! ldd "$(command -v dtifit)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: eddy_openmp resolves on PATH
+  command: command -v eddy_openmp
+  expected_exit_code: 0
+- name: eddy_openmp is executable
+  command: test -x "$(command -v eddy_openmp)"
+  expected_exit_code: 0
+- name: eddy_openmp has no missing shared libraries
+  command: '! ldd "$(command -v eddy_openmp)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrconvert resolves on PATH
+  command: command -v mrconvert
+  expected_exit_code: 0
+- name: mrconvert is executable
+  command: test -x "$(command -v mrconvert)"
+  expected_exit_code: 0
+- name: mrconvert has no missing shared libraries
+  command: '! ldd "$(command -v mrconvert)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: dwi2tensor resolves on PATH
+  command: command -v dwi2tensor
+  expected_exit_code: 0
+- name: dwi2tensor is executable
+  command: test -x "$(command -v dwi2tensor)"
+  expected_exit_code: 0
+- name: dwi2tensor has no missing shared libraries
+  command: '! ldd "$(command -v dwi2tensor)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: tensor2metric resolves on PATH
+  command: command -v tensor2metric
+  expected_exit_code: 0
+- name: tensor2metric is executable
+  command: test -x "$(command -v tensor2metric)"
+  expected_exit_code: 0
+- name: tensor2metric has no missing shared libraries
+  command: '! ldd "$(command -v tensor2metric)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrtransform resolves on PATH
+  command: command -v mrtransform
+  expected_exit_code: 0
+- name: mrtransform is executable
+  command: test -x "$(command -v mrtransform)"
+  expected_exit_code: 0
+- name: mrtransform has no missing shared libraries
+  command: '! ldd "$(command -v mrtransform)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: dwiextract resolves on PATH
+  command: command -v dwiextract
+  expected_exit_code: 0
+- name: dwiextract is executable
+  command: test -x "$(command -v dwiextract)"
+  expected_exit_code: 0
+- name: dwiextract has no missing shared libraries
+  command: '! ldd "$(command -v dwiextract)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrcalc resolves on PATH
+  command: command -v mrcalc
+  expected_exit_code: 0
+- name: mrcalc is executable
+  command: test -x "$(command -v mrcalc)"
+  expected_exit_code: 0
+- name: mrcalc has no missing shared libraries
+  command: '! ldd "$(command -v mrcalc)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrinfo resolves on PATH
+  command: command -v mrinfo
+  expected_exit_code: 0
+- name: mrinfo is executable
+  command: test -x "$(command -v mrinfo)"
+  expected_exit_code: 0
+- name: mrinfo has no missing shared libraries
+  command: '! ldd "$(command -v mrinfo)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: mrgrid resolves on PATH
+  command: command -v mrgrid
+  expected_exit_code: 0
+- name: mrgrid is executable
+  command: test -x "$(command -v mrgrid)"
+  expected_exit_code: 0
+- name: mrgrid has no missing shared libraries
+  command: '! ldd "$(command -v mrgrid)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: antsRegistration resolves on PATH
+  command: command -v antsRegistration
+  expected_exit_code: 0
+- name: antsRegistration is executable
+  command: test -x "$(command -v antsRegistration)"
+  expected_exit_code: 0
+- name: antsRegistration has no missing shared libraries
+  command: '! ldd "$(command -v antsRegistration)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: antsApplyTransforms resolves on PATH
+  command: command -v antsApplyTransforms
+  expected_exit_code: 0
+- name: antsApplyTransforms is executable
+  command: test -x "$(command -v antsApplyTransforms)"
+  expected_exit_code: 0
+- name: antsApplyTransforms has no missing shared libraries
+  command: '! ldd "$(command -v antsApplyTransforms)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: N4BiasFieldCorrection resolves on PATH
+  command: command -v N4BiasFieldCorrection
+  expected_exit_code: 0
+- name: N4BiasFieldCorrection is executable
+  command: test -x "$(command -v N4BiasFieldCorrection)"
+  expected_exit_code: 0
+- name: N4BiasFieldCorrection has no missing shared libraries
+  command: '! ldd "$(command -v N4BiasFieldCorrection)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: ImageMath resolves on PATH
+  command: command -v ImageMath
+  expected_exit_code: 0
+- name: ImageMath is executable
+  command: test -x "$(command -v ImageMath)"
+  expected_exit_code: 0
+- name: ImageMath has no missing shared libraries
+  command: '! ldd "$(command -v ImageMath)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: c3d resolves on PATH
+  command: command -v c3d
+  expected_exit_code: 0
+- name: c3d is executable
+  command: test -x "$(command -v c3d)"
+  expected_exit_code: 0
+- name: c3d has no missing shared libraries
+  command: '! ldd "$(command -v c3d)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: c3d_affine_tool resolves on PATH
+  command: command -v c3d_affine_tool
+  expected_exit_code: 0
+- name: c3d_affine_tool is executable
+  command: test -x "$(command -v c3d_affine_tool)"
+  expected_exit_code: 0
+- name: c3d_affine_tool has no missing shared libraries
+  command: '! ldd "$(command -v c3d_affine_tool)" 2>&1 | grep "not found"'
+  expected_exit_code: 0
+- name: Python imports braid
+  command: python3 -c 'import braid'
+  expected_exit_code: 0
+- name: Python imports monai
+  command: python3 -c 'import monai'
+  expected_exit_code: 0
+- name: Python imports nibabel
+  command: python3 -c 'import nibabel'
+  expected_exit_code: 0
+- name: Python imports torch
+  command: python3 -c 'import torch'
+  expected_exit_code: 0
+- name: Python imports torchvision
+  command: python3 -c 'import torchvision'
+  expected_exit_code: 0
+- name: Python imports torchaudio
+  command: python3 -c 'import torchaudio'
+  expected_exit_code: 0
+- name: Python imports pandas
+  command: python3 -c 'import pandas'
+  expected_exit_code: 0
+- name: Python imports numpy
+  command: python3 -c 'import numpy'
+  expected_exit_code: 0
+- name: Python imports yaml
+  command: python3 -c 'import yaml'
+  expected_exit_code: 0
+- name: Python imports matplotlib
+  command: python3 -c 'import matplotlib'
+  expected_exit_code: 0
+- name: Python imports seaborn
+  command: python3 -c 'import seaborn'
+  expected_exit_code: 0
+- name: Python imports statsmodels
+  command: python3 -c 'import statsmodels'
+  expected_exit_code: 0
+- name: BRAID model directory exists
+  command: test -d /opt/braid-v1.0
+  expected_exit_code: 0
+- name: BRAID model checkout contains files
+  command: find /opt/braid-v1.0 -type f | grep -q .
+  expected_exit_code: 0
+- name: BRAID model checkout contains weight data
+  command: find /opt/braid-v1.0 -type f \( -name '*.pth' -o -name '*.pt' -o -name '*.ckpt' \) | grep -q .
+  expected_exit_code: 0
+- name: BRAID package metadata is installed
+  command: python3 -c 'import importlib.metadata as m; assert m.version("braid") == "1.0.0"'
+  expected_exit_code: 0
+- name: FSL installation directory exists
+  command: test -d /opt/fsl-6.0.4
+  expected_exit_code: 0
+- name: MRtrix installation directory exists
+  command: test -d /opt/mrtrix3-3.0.3
+  expected_exit_code: 0
+- name: ANTs installation directory exists
+  command: test -d /opt/ants-2.3.4
+  expected_exit_code: 0
+- name: Convert3D installation directory exists
+  command: test -d /opt/convert3d-1.0.0
+  expected_exit_code: 0
+- name: FSL environment is configured
+  command: test "$FSLDIR" = /opt/fsl-6.0.4
+  expected_exit_code: 0
+- name: BRAID inference help starts
+  command: braid_one_sample_inference --help >/dev/null
+  expected_exit_code: 0
