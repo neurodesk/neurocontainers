@@ -3,303 +3,303 @@ version: 1.1.0
 container: mneextended_${version}_REFERENCE.simg
 default_timeout: 60
 tests:
-- name: Python imports mne
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import mne'
-  expected_exit_code: 0
-- name: Python locates mne
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("mne") is not None'
-  expected_exit_code: 0
-- name: Python imports jupyter
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import jupyter'
-  expected_exit_code: 0
-- name: Python locates jupyter
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("jupyter") is not None'
-  expected_exit_code: 0
-- name: Python imports mne_bids
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import mne_bids'
-  expected_exit_code: 0
-- name: Python locates mne_bids
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("mne_bids") is not None'
-  expected_exit_code: 0
-- name: Python imports mnelab
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import mnelab'
-  expected_exit_code: 0
-- name: Python locates mnelab
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("mnelab") is not None'
-  expected_exit_code: 0
-- name: Python imports nb_conda_kernels
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import nb_conda_kernels'
-  expected_exit_code: 0
-- name: Python locates nb_conda_kernels
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("nb_conda_kernels") is not None'
-  expected_exit_code: 0
-- name: Python imports tables
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import tables'
-  expected_exit_code: 0
-- name: Python locates tables
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("tables") is not None'
-  expected_exit_code: 0
-- name: Python imports h5py
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import h5py'
-  expected_exit_code: 0
-- name: Python locates h5py
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("h5py") is not None'
-  expected_exit_code: 0
-- name: Python imports h5io
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import h5io'
-  expected_exit_code: 0
-- name: Python locates h5io
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("h5io") is not None'
-  expected_exit_code: 0
-- name: Python imports pymatreader
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pymatreader'
-  expected_exit_code: 0
-- name: Python locates pymatreader
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pymatreader") is not None'
-  expected_exit_code: 0
-- name: Python imports seaborn
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import seaborn'
-  expected_exit_code: 0
-- name: Python locates seaborn
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("seaborn") is not None'
-  expected_exit_code: 0
-- name: Python imports statsmodels
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import statsmodels'
-  expected_exit_code: 0
-- name: Python locates statsmodels
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("statsmodels") is not None'
-  expected_exit_code: 0
-- name: Python imports pybv
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pybv'
-  expected_exit_code: 0
-- name: Python locates pybv
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pybv") is not None'
-  expected_exit_code: 0
-- name: Python imports sklearn
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import sklearn'
-  expected_exit_code: 0
-- name: Python locates sklearn
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("sklearn") is not None'
-  expected_exit_code: 0
-- name: Python imports pyxdf
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pyxdf'
-  expected_exit_code: 0
-- name: Python locates pyxdf
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pyxdf") is not None'
-  expected_exit_code: 0
-- name: Python imports pyedflib
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pyedflib'
-  expected_exit_code: 0
-- name: Python locates pyedflib
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pyedflib") is not None'
-  expected_exit_code: 0
-- name: Python imports neurokit2
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import neurokit2'
-  expected_exit_code: 0
-- name: Python locates neurokit2
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("neurokit2") is not None'
-  expected_exit_code: 0
-- name: Python imports autoreject
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import autoreject'
-  expected_exit_code: 0
-- name: Python locates autoreject
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("autoreject") is not None'
-  expected_exit_code: 0
-- name: Python imports coloredlogs
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import coloredlogs'
-  expected_exit_code: 0
-- name: Python locates coloredlogs
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("coloredlogs") is not None'
-  expected_exit_code: 0
-- name: Python imports pandas
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pandas'
-  expected_exit_code: 0
-- name: Python locates pandas
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pandas") is not None'
-  expected_exit_code: 0
-- name: Python imports openpyxl
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import openpyxl'
-  expected_exit_code: 0
-- name: Python locates openpyxl
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("openpyxl") is not None'
-  expected_exit_code: 0
-- name: Python imports json_tricks
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import json_tricks'
-  expected_exit_code: 0
-- name: Python locates json_tricks
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("json_tricks") is not None'
-  expected_exit_code: 0
-- name: Python imports fire
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import fire'
-  expected_exit_code: 0
-- name: Python locates fire
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("fire") is not None'
-  expected_exit_code: 0
-- name: Python imports typing_extensions
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import typing_extensions'
-  expected_exit_code: 0
-- name: Python locates typing_extensions
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("typing_extensions") is not None'
-  expected_exit_code: 0
-- name: Python imports picard
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import picard'
-  expected_exit_code: 0
-- name: Python locates picard
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("picard") is not None'
-  expected_exit_code: 0
-- name: Python imports dask
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import dask'
-  expected_exit_code: 0
-- name: Python locates dask
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("dask") is not None'
-  expected_exit_code: 0
-- name: Python imports distributed
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import distributed'
-  expected_exit_code: 0
-- name: Python locates distributed
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("distributed") is not None'
-  expected_exit_code: 0
-- name: Python imports psutil
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import psutil'
-  expected_exit_code: 0
-- name: Python locates psutil
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("psutil") is not None'
-  expected_exit_code: 0
-- name: Python imports joblib
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import joblib'
-  expected_exit_code: 0
-- name: Python locates joblib
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("joblib") is not None'
-  expected_exit_code: 0
-- name: Python imports jupyter_server_proxy
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import jupyter_server_proxy'
-  expected_exit_code: 0
-- name: Python locates jupyter_server_proxy
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("jupyter_server_proxy") is not None'
-  expected_exit_code: 0
-- name: Python imports PyQt5
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import PyQt5'
-  expected_exit_code: 0
-- name: Python locates PyQt5
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("PyQt5") is not None'
-  expected_exit_code: 0
-- name: Python imports pyvista
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pyvista'
-  expected_exit_code: 0
-- name: Python locates pyvista
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pyvista") is not None'
-  expected_exit_code: 0
-- name: Python imports pyvistaqt
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pyvistaqt'
-  expected_exit_code: 0
-- name: Python locates pyvistaqt
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pyvistaqt") is not None'
-  expected_exit_code: 0
-- name: MNE Extended environment exists
-  command: test -d /opt/miniconda-4.7.12/envs/mne-extended
-  expected_exit_code: 0
-- name: MNE Extended Python is executable
-  command: test -x /opt/miniconda-4.7.12/envs/mne-extended/bin/python
-  expected_exit_code: 0
-- name: MNE Extended pip is executable
-  command: test -x /opt/miniconda-4.7.12/envs/mne-extended/bin/pip
-  expected_exit_code: 0
-- name: MNE Extended Jupyter is executable
-  command: test -x /opt/miniconda-4.7.12/envs/mne-extended/bin/jupyter
-  expected_exit_code: 0
-- name: MNE Extended IPython is executable
-  command: test -x /opt/miniconda-4.7.12/envs/mne-extended/bin/ipython
-  expected_exit_code: 0
-- name: MNE Extended conda metadata exists
-  command: test -d /opt/miniconda-4.7.12/envs/mne-extended/conda-meta
-  expected_exit_code: 0
-- name: MNE Extended has broad package coverage
-  command: test "$(find /opt/miniconda-4.7.12/envs/mne-extended/conda-meta -name '*.json' | wc -l)" -ge 100
-  expected_exit_code: 0
-- name: MNE version is pinned
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import mne; assert mne.__version__ == "1.1.0"'
-  expected_exit_code: 0
-- name: Code wrapper resolves
-  command: command -v code
-  expected_exit_code: 0
-- name: Code wrapper is executable
-  command: test -x /usr/local/sbin/code
-  expected_exit_code: 0
-- name: VS Code installation exists
-  command: test -x /usr/share/code/code
-  expected_exit_code: 0
-- name: VS Code extensions directory exists
-  command: test -d /opt/vscode-extensions
-  expected_exit_code: 0
-- name: VS Code Python extension exists
-  command: find /opt/vscode-extensions -maxdepth 1 -type d -name 'ms-python.python-*' | grep -q .
-  expected_exit_code: 0
-- name: VS Code Pylance extension exists
-  command: find /opt/vscode-extensions -maxdepth 1 -type d -name 'ms-python.vscode-pylance-*' | grep -q .
-  expected_exit_code: 0
-- name: VS Code Jupyter extension exists
-  command: find /opt/vscode-extensions -maxdepth 1 -type d -name 'ms-toolsai.jupyter-*' | grep -q .
-  expected_exit_code: 0
-- name: VS Code Jupyter keymap exists
-  command: find /opt/vscode-extensions -maxdepth 1 -type d -name 'ms-toolsai.jupyter-keymap-*' | grep -q .
-  expected_exit_code: 0
-- name: VS Code Jupyter renderers exist
-  command: find /opt/vscode-extensions -maxdepth 1 -type d -name 'ms-toolsai.jupyter-renderers-*' | grep -q .
-  expected_exit_code: 0
-- name: MNE BIDS pipeline exists
-  command: test -d /opt/mne-bids-pipeline-main
-  expected_exit_code: 0
-- name: MNE BIDS pipeline runner exists
-  command: test -f /opt/mne-bids-pipeline-main/run.py
-  expected_exit_code: 0
-- name: MNE BIDS pipeline is readable
-  command: find /opt/mne-bids-pipeline-main -type f -readable | grep -q .
-  expected_exit_code: 0
-- name: Base Conda is executable
-  command: test -x /opt/miniconda-4.7.12/bin/conda
-  expected_exit_code: 0
-- name: Base Mamba is executable
-  command: test -x /opt/miniconda-4.7.12/bin/mamba
-  expected_exit_code: 0
-- name: Wget resolves
-  command: command -v wget
-  expected_exit_code: 0
-- name: Unzip resolves
-  command: command -v unzip
-  expected_exit_code: 0
-- name: Git resolves
-  command: command -v git
-  expected_exit_code: 0
-- name: Curl resolves
-  command: command -v curl
-  expected_exit_code: 0
-- name: xdg-open resolves
-  command: command -v xdg-open
-  expected_exit_code: 0
-- name: Qt5 runtime is linked
-  command: ldconfig -p | grep -q libQt5Core
-  expected_exit_code: 0
-- name: GTK3 runtime is linked
-  command: ldconfig -p | grep -q libgtk-3
-  expected_exit_code: 0
-- name: OpenGL runtime is linked
-  command: ldconfig -p | grep -q libGL.so
-  expected_exit_code: 0
-- name: Neuro user exists
-  command: id neuro >/dev/null
-  expected_exit_code: 0
-- name: XDG runtime directory is configured
-  command: test "$XDG_RUNTIME_DIR" = /neurodesktop-storage
-  expected_exit_code: 0
-- name: WSL prompt is disabled
-  command: test "$DONT_PROMPT_WSL_INSTALL" = 1
-  expected_exit_code: 0
-- name: VS Code extension files are readable
-  command: find /opt/vscode-extensions -type f -readable | grep -q .
-  expected_exit_code: 0
-- name: VS Code data directory exists
-  command: test -d /opt/vscode-data
-  expected_exit_code: 0
-- name: MNE environment Python reports a version
-  command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python --version
-  expected_exit_code: 0
+  - name: Python imports mne
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import mne'
+    expected_exit_code: 0
+  - name: Python locates mne
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("mne") is not None'
+    expected_exit_code: 0
+  - name: Python imports jupyter
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import jupyter'
+    expected_exit_code: 0
+  - name: Python locates jupyter
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("jupyter") is not None'
+    expected_exit_code: 0
+  - name: Python imports mne_bids
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import mne_bids'
+    expected_exit_code: 0
+  - name: Python locates mne_bids
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("mne_bids") is not None'
+    expected_exit_code: 0
+  - name: Python imports mnelab
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import mnelab'
+    expected_exit_code: 0
+  - name: Python locates mnelab
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("mnelab") is not None'
+    expected_exit_code: 0
+  - name: Python imports nb_conda_kernels
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import nb_conda_kernels'
+    expected_exit_code: 0
+  - name: Python locates nb_conda_kernels
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("nb_conda_kernels") is not None'
+    expected_exit_code: 0
+  - name: Python imports tables
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import tables'
+    expected_exit_code: 0
+  - name: Python locates tables
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("tables") is not None'
+    expected_exit_code: 0
+  - name: Python imports h5py
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import h5py'
+    expected_exit_code: 0
+  - name: Python locates h5py
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("h5py") is not None'
+    expected_exit_code: 0
+  - name: Python imports h5io
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import h5io'
+    expected_exit_code: 0
+  - name: Python locates h5io
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("h5io") is not None'
+    expected_exit_code: 0
+  - name: Python imports pymatreader
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pymatreader'
+    expected_exit_code: 0
+  - name: Python locates pymatreader
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pymatreader") is not None'
+    expected_exit_code: 0
+  - name: Python imports seaborn
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import seaborn'
+    expected_exit_code: 0
+  - name: Python locates seaborn
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("seaborn") is not None'
+    expected_exit_code: 0
+  - name: Python imports statsmodels
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import statsmodels'
+    expected_exit_code: 0
+  - name: Python locates statsmodels
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("statsmodels") is not None'
+    expected_exit_code: 0
+  - name: Python imports pybv
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pybv'
+    expected_exit_code: 0
+  - name: Python locates pybv
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pybv") is not None'
+    expected_exit_code: 0
+  - name: Python imports sklearn
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import sklearn'
+    expected_exit_code: 0
+  - name: Python locates sklearn
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("sklearn") is not None'
+    expected_exit_code: 0
+  - name: Python imports pyxdf
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pyxdf'
+    expected_exit_code: 0
+  - name: Python locates pyxdf
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pyxdf") is not None'
+    expected_exit_code: 0
+  - name: Python imports pyedflib
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pyedflib'
+    expected_exit_code: 0
+  - name: Python locates pyedflib
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pyedflib") is not None'
+    expected_exit_code: 0
+  - name: Python imports neurokit2
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import neurokit2'
+    expected_exit_code: 0
+  - name: Python locates neurokit2
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("neurokit2") is not None'
+    expected_exit_code: 0
+  - name: Python imports autoreject
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import autoreject'
+    expected_exit_code: 0
+  - name: Python locates autoreject
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("autoreject") is not None'
+    expected_exit_code: 0
+  - name: Python imports coloredlogs
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import coloredlogs'
+    expected_exit_code: 0
+  - name: Python locates coloredlogs
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("coloredlogs") is not None'
+    expected_exit_code: 0
+  - name: Python imports pandas
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pandas'
+    expected_exit_code: 0
+  - name: Python locates pandas
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pandas") is not None'
+    expected_exit_code: 0
+  - name: Python imports openpyxl
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import openpyxl'
+    expected_exit_code: 0
+  - name: Python locates openpyxl
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("openpyxl") is not None'
+    expected_exit_code: 0
+  - name: Python imports json_tricks
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import json_tricks'
+    expected_exit_code: 0
+  - name: Python locates json_tricks
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("json_tricks") is not None'
+    expected_exit_code: 0
+  - name: Python imports fire
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import fire'
+    expected_exit_code: 0
+  - name: Python locates fire
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("fire") is not None'
+    expected_exit_code: 0
+  - name: Python imports typing_extensions
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import typing_extensions'
+    expected_exit_code: 0
+  - name: Python locates typing_extensions
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("typing_extensions") is not None'
+    expected_exit_code: 0
+  - name: Python imports picard
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import picard'
+    expected_exit_code: 0
+  - name: Python locates picard
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("picard") is not None'
+    expected_exit_code: 0
+  - name: Python imports dask
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import dask'
+    expected_exit_code: 0
+  - name: Python locates dask
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("dask") is not None'
+    expected_exit_code: 0
+  - name: Python imports distributed
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import distributed'
+    expected_exit_code: 0
+  - name: Python locates distributed
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("distributed") is not None'
+    expected_exit_code: 0
+  - name: Python imports psutil
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import psutil'
+    expected_exit_code: 0
+  - name: Python locates psutil
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("psutil") is not None'
+    expected_exit_code: 0
+  - name: Python imports joblib
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import joblib'
+    expected_exit_code: 0
+  - name: Python locates joblib
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("joblib") is not None'
+    expected_exit_code: 0
+  - name: Python imports jupyter_server_proxy
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import jupyter_server_proxy'
+    expected_exit_code: 0
+  - name: Python locates jupyter_server_proxy
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("jupyter_server_proxy") is not None'
+    expected_exit_code: 0
+  - name: Python imports PyQt5
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import PyQt5'
+    expected_exit_code: 0
+  - name: Python locates PyQt5
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("PyQt5") is not None'
+    expected_exit_code: 0
+  - name: Python imports pyvista
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pyvista'
+    expected_exit_code: 0
+  - name: Python locates pyvista
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pyvista") is not None'
+    expected_exit_code: 0
+  - name: Python imports pyvistaqt
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import pyvistaqt'
+    expected_exit_code: 0
+  - name: Python locates pyvistaqt
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import importlib.util; assert importlib.util.find_spec("pyvistaqt") is not None'
+    expected_exit_code: 0
+  - name: MNE Extended environment exists
+    command: test -d /opt/miniconda-4.7.12/envs/mne-extended
+    expected_exit_code: 0
+  - name: MNE Extended Python is executable
+    command: test -x /opt/miniconda-4.7.12/envs/mne-extended/bin/python
+    expected_exit_code: 0
+  - name: MNE Extended pip is executable
+    command: test -x /opt/miniconda-4.7.12/envs/mne-extended/bin/pip
+    expected_exit_code: 0
+  - name: MNE Extended Jupyter is executable
+    command: test -x /opt/miniconda-4.7.12/envs/mne-extended/bin/jupyter
+    expected_exit_code: 0
+  - name: MNE Extended IPython is executable
+    command: test -x /opt/miniconda-4.7.12/envs/mne-extended/bin/ipython
+    expected_exit_code: 0
+  - name: MNE Extended conda metadata exists
+    command: test -d /opt/miniconda-4.7.12/envs/mne-extended/conda-meta
+    expected_exit_code: 0
+  - name: MNE Extended has broad package coverage
+    command: test "$(find /opt/miniconda-4.7.12/envs/mne-extended/conda-meta -name '*.json' | wc -l)" -ge 100
+    expected_exit_code: 0
+  - name: MNE version is pinned
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import mne; assert mne.__version__ == "${version}"'
+    expected_exit_code: 0
+  - name: Code wrapper resolves
+    command: command -v code
+    expected_exit_code: 0
+  - name: Code wrapper is executable
+    command: test -x /usr/local/sbin/code
+    expected_exit_code: 0
+  - name: VS Code installation exists
+    command: test -x /usr/share/code/code
+    expected_exit_code: 0
+  - name: VS Code extensions directory exists
+    command: test -d /opt/vscode-extensions
+    expected_exit_code: 0
+  - name: VS Code Python extension exists
+    command: find /opt/vscode-extensions -maxdepth 1 -type d -name 'ms-python.python-*' | grep -q .
+    expected_exit_code: 0
+  - name: VS Code Pylance extension exists
+    command: find /opt/vscode-extensions -maxdepth 1 -type d -name 'ms-python.vscode-pylance-*' | grep -q .
+    expected_exit_code: 0
+  - name: VS Code Jupyter extension exists
+    command: find /opt/vscode-extensions -maxdepth 1 -type d -name 'ms-toolsai.jupyter-*' | grep -q .
+    expected_exit_code: 0
+  - name: VS Code Jupyter keymap exists
+    command: find /opt/vscode-extensions -maxdepth 1 -type d -name 'ms-toolsai.jupyter-keymap-*' | grep -q .
+    expected_exit_code: 0
+  - name: VS Code Jupyter renderers exist
+    command: find /opt/vscode-extensions -maxdepth 1 -type d -name 'ms-toolsai.jupyter-renderers-*' | grep -q .
+    expected_exit_code: 0
+  - name: MNE BIDS pipeline exists
+    command: test -d /opt/mne-bids-pipeline
+    expected_exit_code: 0
+  - name: MNE BIDS pipeline runner exists
+    command: test -f /opt/mne-bids-pipeline/run.py
+    expected_exit_code: 0
+  - name: MNE BIDS pipeline is readable
+    command: test -z "$(find /opt/mne-bids-pipeline -type f ! -readable -print -quit)"
+    expected_exit_code: 0
+  - name: Base Conda is executable
+    command: test -x /opt/miniconda-4.7.12/bin/conda
+    expected_exit_code: 0
+  - name: Base Mamba is executable
+    command: test -x /opt/miniconda-4.7.12/bin/mamba
+    expected_exit_code: 0
+  - name: Wget resolves
+    command: command -v wget
+    expected_exit_code: 0
+  - name: Unzip resolves
+    command: command -v unzip
+    expected_exit_code: 0
+  - name: Git resolves
+    command: command -v git
+    expected_exit_code: 0
+  - name: Curl resolves
+    command: command -v curl
+    expected_exit_code: 0
+  - name: xdg-open resolves
+    command: command -v xdg-open
+    expected_exit_code: 0
+  - name: Qt5 runtime is linked
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import ctypes; ctypes.CDLL("/opt/miniconda-4.7.12/envs/mne-extended/lib/libQt5Core.so.5")'
+    expected_exit_code: 0
+  - name: GTK3 runtime is linked
+    command: ldconfig -p | grep -q libgtk-3
+    expected_exit_code: 0
+  - name: OpenGL runtime is linked
+    command: ldconfig -p | grep -q libGL.so
+    expected_exit_code: 0
+  - name: MNE BIDS pipeline runner compiles
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python -c 'import ast, pathlib; ast.parse(pathlib.Path("/opt/mne-bids-pipeline/run.py").read_text())'
+    expected_exit_code: 0
+  - name: XDG runtime directory is configured
+    command: test "$XDG_RUNTIME_DIR" = /neurodesktop-storage
+    expected_exit_code: 0
+  - name: WSL prompt is disabled
+    command: test "$DONT_PROMPT_WSL_INSTALL" = 1
+    expected_exit_code: 0
+  - name: VS Code extension files are readable
+    command: find /opt/vscode-extensions -type f -readable | grep -q .
+    expected_exit_code: 0
+  - name: VS Code data directory exists
+    command: test -d /opt/vscode-data
+    expected_exit_code: 0
+  - name: MNE environment Python reports a version
+    command: /opt/miniconda-4.7.12/envs/mne-extended/bin/python --version
+    expected_exit_code: 0
