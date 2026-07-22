@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,9 +23,11 @@ if str(SCRIPT_REPO_ROOT) not in sys.path:
 from builder.release import release_data
 
 REPO_ROOT = SCRIPT_REPO_ROOT
+VERSION_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def run_git(*args: str) -> str:
+    """Run Git in the selected repository and return stripped stdout."""
     result = subprocess.run(
         ["git", *args],
         cwd=REPO_ROOT,
@@ -36,6 +39,7 @@ def run_git(*args: str) -> str:
 
 
 def sha256_file(path: Path) -> str:
+    """Return the SHA-256 digest of a file without loading it into memory."""
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -44,6 +48,7 @@ def sha256_file(path: Path) -> str:
 
 
 def recipe_fingerprint(recipe: str) -> str:
+    """Hash every file and relative path in a recipe directory."""
     recipe_dir = REPO_ROOT / "recipes" / recipe
     if not (recipe_dir / "build.yaml").is_file():
         raise RuntimeError(f"Missing recipe: {recipe_dir / 'build.yaml'}")
@@ -59,11 +64,13 @@ def recipe_fingerprint(recipe: str) -> str:
 
 
 def changed_files(base: str, head: str) -> list[str]:
+    """List paths changed between a base commit and PR head."""
     output = run_git("diff", "--name-only", f"{base}...{head}")
     return [line for line in output.splitlines() if line]
 
 
 def detect_recipes(base: str, head: str) -> list[str]:
+    """Return changed recipes after enforcing the recipe-only PR boundary."""
     paths = changed_files(base, head)
     recipes = {
         parts[1]
@@ -89,6 +96,7 @@ def detect_recipes(base: str, head: str) -> list[str]:
 
 
 def build_date(recipe: str) -> str:
+    """Return the last build.yaml commit date in release-tag format."""
     value = run_git(
         "log",
         "-1",
@@ -103,6 +111,7 @@ def build_date(recipe: str) -> str:
 
 
 def load_recipe(recipe: str) -> dict[str, Any]:
+    """Load a recipe build file and require a mapping at its root."""
     path = REPO_ROOT / "recipes" / recipe / "build.yaml"
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -111,7 +120,16 @@ def load_recipe(recipe: str) -> dict[str, Any]:
 
 
 def inspect_recipe(recipe: str, head_sha: str) -> dict[str, str]:
-    version = str(load_recipe(recipe)["version"])
+    """Derive safe candidate names and release identifiers for a recipe."""
+    data = load_recipe(recipe)
+    if "version" not in data:
+        raise RuntimeError(f"Recipe {recipe} build.yaml is missing a version field")
+    version = str(data["version"])
+    if not VERSION_PATTERN.fullmatch(version):
+        raise RuntimeError(
+            f"Recipe {recipe} has an invalid version {version!r}; "
+            "use only letters, numbers, dots, underscores, and hyphens"
+        )
     date = build_date(recipe)
     image_name = f"{recipe}_{version}"
     return {
@@ -126,6 +144,7 @@ def inspect_recipe(recipe: str, head_sha: str) -> dict[str, str]:
 
 
 def write_output(values: dict[str, str]) -> None:
+    """Write values as GitHub step outputs or print them for local use."""
     output = os.environ.get("GITHUB_OUTPUT")
     if not output:
         for key, value in values.items():
@@ -137,14 +156,17 @@ def write_output(values: dict[str, str]) -> None:
 
 
 def command_detect(args: argparse.Namespace) -> None:
+    """Implement the detect CLI command."""
     write_output({"recipes": json.dumps(detect_recipes(args.base, args.head))})
 
 
 def command_inspect(args: argparse.Namespace) -> None:
+    """Implement the inspect CLI command."""
     write_output(inspect_recipe(args.recipe, args.head_sha))
 
 
 def command_manifest(args: argparse.Namespace) -> None:
+    """Create the release preview and provenance manifest for a candidate."""
     info = inspect_recipe(args.recipe, args.head_sha)
     candidate_dir = Path(args.candidate_dir)
     docker_archive = candidate_dir / info["docker_archive"]
@@ -175,6 +197,7 @@ def command_manifest(args: argparse.Namespace) -> None:
 def verify_candidate(
     candidate_dir: Path, expected_head_sha: str, expected_pr_number: int | None = None
 ) -> dict[str, Any]:
+    """Verify a candidate against its PR identity and the merged recipe."""
     manifest = json.loads((candidate_dir / "manifest.json").read_text(encoding="utf-8"))
     recipe = str(manifest["recipe"])
     if manifest["head_sha"] != expected_head_sha:
@@ -207,6 +230,7 @@ def verify_candidate(
 
 
 def command_verify(args: argparse.Namespace) -> None:
+    """Verify all candidate directories and write their trusted manifests."""
     manifests = [
         verify_candidate(path.parent, args.head_sha, args.pr_number)
         for path in sorted(Path(args.bundle).glob("*/manifest.json"))
@@ -219,6 +243,7 @@ def command_verify(args: argparse.Namespace) -> None:
 
 
 def command_materialize(args: argparse.Namespace) -> None:
+    """Copy verified release previews into the repository release tree."""
     bundle = Path(args.bundle)
     manifests = json.loads(Path(args.manifests).read_text(encoding="utf-8"))
     for manifest in manifests:
@@ -228,6 +253,7 @@ def command_materialize(args: argparse.Namespace) -> None:
 
 
 def parser() -> argparse.ArgumentParser:
+    """Build the command-line parser."""
     result = argparse.ArgumentParser()
     result.add_argument("--repo-root", default=str(REPO_ROOT))
     subparsers = result.add_subparsers(dest="command", required=True)
@@ -264,6 +290,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """Run the selected command against the requested repository root."""
     global REPO_ROOT
     args = parser().parse_args()
     REPO_ROOT = Path(args.repo_root).resolve()

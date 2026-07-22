@@ -29,6 +29,9 @@ second build.
   this repository, and add the App as the ruleset bypass actor for `main`.
 - Store its credentials as `NEUROCONTAINERS_RELEASE_APP_ID` and
   `NEUROCONTAINERS_RELEASE_APP_PRIVATE_KEY`.
+- Store the Nectar registry account name as
+  `REGISTRY_RC_NECTAR_ORG_AU_USERNAME`; its key remains in
+  `REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY`.
 - Keep ARC runners ephemeral. Fork approval remains the point where maintainers
   decide whether untrusted recipe build commands may run.
 

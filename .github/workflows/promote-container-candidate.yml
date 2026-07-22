@@ -30,12 +30,15 @@ jobs:
         with:
           app-id: ${{ secrets.NEUROCONTAINERS_RELEASE_APP_ID }}
           private-key: ${{ secrets.NEUROCONTAINERS_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - name: Checkout trusted main
         uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
+          # Intentionally retained for the final ruleset-authorized metadata push.
+          persist-credentials: true
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -120,7 +123,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: registry.rc.nectar.org.au
-          username: s.bollmann@uq.edu.au
+          username: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME }}
           password: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
       - name: Log in to Quay
         continue-on-error: true
@@ -200,8 +203,14 @@ jobs:
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          curl -fsSL https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz \
-            | sudo tar -xz -C /usr/local/bin oras
+          oras_archive="${RUNNER_TEMP}/oras_1.2.0_linux_amd64.tar.gz"
+          curl -fsSL \
+            https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz \
+            -o "${oras_archive}"
+          echo "5b3f1cbb86d869eee68120b9b45b9be983f3738442f87ee5f06b00edd0bab336  ${oras_archive}" \
+            | sha256sum -c -
+          sudo tar -xzf "${oras_archive}" -C /usr/local/bin oras
+          rm "${oras_archive}"
           jq -c '.[]' verified-manifests.json | while read -r manifest; do
             recipe="$(echo "${manifest}" | jq -r '.recipe')"
             version="$(echo "${manifest}" | jq -r '.version')"
@@ -232,8 +241,19 @@ jobs:
             exit 0
           fi
           git commit -m "Publish tested container release metadata [skipci]"
-          git pull --rebase origin main
-          python tools/one_pr_release.py verify --bundle promotion-bundle \
-            --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}" \
-            --output verified-manifests.json
-          git push origin HEAD:main
+          for attempt in 1 2 3; do
+            if ! git pull --rebase origin main; then
+              git rebase --abort || true
+              sleep $((attempt * 5))
+              continue
+            fi
+            python tools/one_pr_release.py verify --bundle promotion-bundle \
+              --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}" \
+              --output verified-manifests.json
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::Release metadata push failed after three attempts; artifacts are already published."
+          exit 1

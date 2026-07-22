@@ -77,6 +77,32 @@ def test_detect_recipes_requires_fulltest(tmp_path: Path, monkeypatch) -> None:
         raise AssertionError("recipe without fulltest was accepted")
 
 
+def test_inspect_recipe_rejects_missing_or_unsafe_version(
+    tmp_path: Path, monkeypatch
+) -> None:
+    recipe_dir = write_recipe(tmp_path)
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+
+    recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text(encoding="utf-8"))
+    recipe.pop("version")
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe), encoding="utf-8")
+    try:
+        one_pr_release.inspect_recipe("demo", "abc123")
+    except RuntimeError as error:
+        assert "missing a version field" in str(error)
+    else:
+        raise AssertionError("missing version was accepted")
+
+    recipe["version"] = "../../unsafe"
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe), encoding="utf-8")
+    try:
+        one_pr_release.inspect_recipe("demo", "abc123")
+    except RuntimeError as error:
+        assert "invalid version" in str(error)
+    else:
+        raise AssertionError("unsafe version was accepted")
+
+
 def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     tmp_path: Path, monkeypatch
 ) -> None:
