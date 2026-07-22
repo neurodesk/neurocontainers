@@ -1,0 +1,305 @@
+name: deeplabcut
+version: 2.3.11
+container: deeplabcut_${version}_REFERENCE.simg
+default_timeout: 60
+tests:
+  - name: deeplabcut imports
+    command: python -c 'import deeplabcut'
+    expected_exit_code: 0
+  - name: deeplabcut is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("deeplabcut") is not None'
+    expected_exit_code: 0
+  - name: deeplabcut reports the expected version
+    command: python -c 'from importlib.metadata import version; assert version("deeplabcut") == "${version}"'
+    expected_exit_code: 0
+  - name: deeplabcut records installed files
+    command: python -c 'from importlib.metadata import files; assert files("deeplabcut")'
+    expected_exit_code: 0
+  - name: torch imports
+    command: python -c 'import torch'
+    expected_exit_code: 0
+  - name: torch is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("torch") is not None'
+    expected_exit_code: 0
+  - name: torch has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("torch")'
+    expected_exit_code: 0
+  - name: torch records installed files
+    command: python -c 'from importlib.metadata import files; assert files("torch")'
+    expected_exit_code: 0
+  - name: torchvision imports
+    command: python -c 'import torchvision'
+    expected_exit_code: 0
+  - name: torchvision is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("torchvision") is not None'
+    expected_exit_code: 0
+  - name: torchvision has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("torchvision")'
+    expected_exit_code: 0
+  - name: torchvision records installed files
+    command: python -c 'from importlib.metadata import files; assert files("torchvision")'
+    expected_exit_code: 0
+  - name: numpy imports
+    command: python -c 'import numpy'
+    expected_exit_code: 0
+  - name: numpy is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("numpy") is not None'
+    expected_exit_code: 0
+  - name: numpy has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("numpy")'
+    expected_exit_code: 0
+  - name: numpy records installed files
+    command: python -c 'from importlib.metadata import files; assert files("numpy")'
+    expected_exit_code: 0
+  - name: pandas imports
+    command: python -c 'import pandas'
+    expected_exit_code: 0
+  - name: pandas is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("pandas") is not None'
+    expected_exit_code: 0
+  - name: pandas has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("pandas")'
+    expected_exit_code: 0
+  - name: pandas records installed files
+    command: python -c 'from importlib.metadata import files; assert files("pandas")'
+    expected_exit_code: 0
+  - name: scipy imports
+    command: python -c 'import scipy'
+    expected_exit_code: 0
+  - name: scipy is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("scipy") is not None'
+    expected_exit_code: 0
+  - name: scipy has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("scipy")'
+    expected_exit_code: 0
+  - name: scipy records installed files
+    command: python -c 'from importlib.metadata import files; assert files("scipy")'
+    expected_exit_code: 0
+  - name: sklearn imports
+    command: python -c 'import sklearn'
+    expected_exit_code: 0
+  - name: sklearn is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("sklearn") is not None'
+    expected_exit_code: 0
+  - name: scikit-learn has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("scikit-learn")'
+    expected_exit_code: 0
+  - name: scikit-learn records installed files
+    command: python -c 'from importlib.metadata import files; assert files("scikit-learn")'
+    expected_exit_code: 0
+  - name: skimage imports
+    command: python -c 'import skimage'
+    expected_exit_code: 0
+  - name: skimage is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("skimage") is not None'
+    expected_exit_code: 0
+  - name: scikit-image has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("scikit-image")'
+    expected_exit_code: 0
+  - name: scikit-image records installed files
+    command: python -c 'from importlib.metadata import files; assert files("scikit-image")'
+    expected_exit_code: 0
+  - name: matplotlib imports
+    command: python -c 'import matplotlib'
+    expected_exit_code: 0
+  - name: matplotlib is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("matplotlib") is not None'
+    expected_exit_code: 0
+  - name: matplotlib has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("matplotlib")'
+    expected_exit_code: 0
+  - name: matplotlib records installed files
+    command: python -c 'from importlib.metadata import files; assert files("matplotlib")'
+    expected_exit_code: 0
+  - name: statsmodels imports
+    command: python -c 'import statsmodels'
+    expected_exit_code: 0
+  - name: statsmodels is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("statsmodels") is not None'
+    expected_exit_code: 0
+  - name: statsmodels has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("statsmodels")'
+    expected_exit_code: 0
+  - name: statsmodels records installed files
+    command: python -c 'from importlib.metadata import files; assert files("statsmodels")'
+    expected_exit_code: 0
+  - name: tables imports
+    command: python -c 'import tables'
+    expected_exit_code: 0
+  - name: tables is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("tables") is not None'
+    expected_exit_code: 0
+  - name: tables has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("tables")'
+    expected_exit_code: 0
+  - name: tables records installed files
+    command: python -c 'from importlib.metadata import files; assert files("tables")'
+    expected_exit_code: 0
+  - name: tqdm imports
+    command: python -c 'import tqdm'
+    expected_exit_code: 0
+  - name: tqdm is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("tqdm") is not None'
+    expected_exit_code: 0
+  - name: tqdm has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("tqdm")'
+    expected_exit_code: 0
+  - name: tqdm records installed files
+    command: python -c 'from importlib.metadata import files; assert files("tqdm")'
+    expected_exit_code: 0
+  - name: PIL imports
+    command: python -c 'import PIL'
+    expected_exit_code: 0
+  - name: PIL is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("PIL") is not None'
+    expected_exit_code: 0
+  - name: Pillow has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("Pillow")'
+    expected_exit_code: 0
+  - name: Pillow records installed files
+    command: python -c 'from importlib.metadata import files; assert files("Pillow")'
+    expected_exit_code: 0
+  - name: networkx imports
+    command: python -c 'import networkx'
+    expected_exit_code: 0
+  - name: networkx is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("networkx") is not None'
+    expected_exit_code: 0
+  - name: networkx has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("networkx")'
+    expected_exit_code: 0
+  - name: networkx records installed files
+    command: python -c 'from importlib.metadata import files; assert files("networkx")'
+    expected_exit_code: 0
+  - name: numba imports
+    command: python -c 'import numba'
+    expected_exit_code: 0
+  - name: numba is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("numba") is not None'
+    expected_exit_code: 0
+  - name: numba has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("numba")'
+    expected_exit_code: 0
+  - name: numba records installed files
+    command: python -c 'from importlib.metadata import files; assert files("numba")'
+    expected_exit_code: 0
+  - name: dlclibrary imports
+    command: python -c 'import dlclibrary'
+    expected_exit_code: 0
+  - name: dlclibrary is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("dlclibrary") is not None'
+    expected_exit_code: 0
+  - name: dlclibrary has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("dlclibrary")'
+    expected_exit_code: 0
+  - name: dlclibrary records installed files
+    command: python -c 'from importlib.metadata import files; assert files("dlclibrary")'
+    expected_exit_code: 0
+  - name: filterpy imports
+    command: python -c 'import filterpy'
+    expected_exit_code: 0
+  - name: filterpy is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("filterpy") is not None'
+    expected_exit_code: 0
+  - name: filterpy has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("filterpy")'
+    expected_exit_code: 0
+  - name: filterpy records installed files
+    command: python -c 'from importlib.metadata import files; assert files("filterpy")'
+    expected_exit_code: 0
+  - name: ruamel.yaml imports
+    command: python -c 'import ruamel.yaml'
+    expected_exit_code: 0
+  - name: ruamel.yaml is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("ruamel.yaml") is not None'
+    expected_exit_code: 0
+  - name: ruamel.yaml has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("ruamel.yaml")'
+    expected_exit_code: 0
+  - name: ruamel.yaml records installed files
+    command: python -c 'from importlib.metadata import files; assert files("ruamel.yaml")'
+    expected_exit_code: 0
+  - name: imgaug imports
+    command: python -c 'import imgaug'
+    expected_exit_code: 0
+  - name: imgaug is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("imgaug") is not None'
+    expected_exit_code: 0
+  - name: imgaug has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("imgaug")'
+    expected_exit_code: 0
+  - name: imgaug records installed files
+    command: python -c 'from importlib.metadata import files; assert files("imgaug")'
+    expected_exit_code: 0
+  - name: imageio_ffmpeg imports
+    command: python -c 'import imageio_ffmpeg'
+    expected_exit_code: 0
+  - name: imageio_ffmpeg is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("imageio_ffmpeg") is not None'
+    expected_exit_code: 0
+  - name: imageio-ffmpeg has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("imageio-ffmpeg")'
+    expected_exit_code: 0
+  - name: imageio-ffmpeg records installed files
+    command: python -c 'from importlib.metadata import files; assert files("imageio-ffmpeg")'
+    expected_exit_code: 0
+  - name: yaml imports
+    command: python -c 'import yaml'
+    expected_exit_code: 0
+  - name: yaml is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("yaml") is not None'
+    expected_exit_code: 0
+  - name: PyYAML has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("PyYAML")'
+    expected_exit_code: 0
+  - name: PyYAML records installed files
+    command: python -c 'from importlib.metadata import files; assert files("PyYAML")'
+    expected_exit_code: 0
+  - name: IPython imports
+    command: python -c 'import IPython'
+    expected_exit_code: 0
+  - name: IPython is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("IPython") is not None'
+    expected_exit_code: 0
+  - name: ipython has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("ipython")'
+    expected_exit_code: 0
+  - name: ipython records installed files
+    command: python -c 'from importlib.metadata import files; assert files("ipython")'
+    expected_exit_code: 0
+  - name: jupyter imports
+    command: python -c 'import jupyter'
+    expected_exit_code: 0
+  - name: jupyter is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("jupyter") is not None'
+    expected_exit_code: 0
+  - name: jupyter has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("jupyter")'
+    expected_exit_code: 0
+  - name: jupyter records installed files
+    command: python -c 'from importlib.metadata import files; assert files("jupyter")'
+    expected_exit_code: 0
+  - name: notebook imports
+    command: python -c 'import notebook'
+    expected_exit_code: 0
+  - name: notebook is discoverable
+    command: python -c 'import importlib.util; assert importlib.util.find_spec("notebook") is not None'
+    expected_exit_code: 0
+  - name: notebook has package metadata
+    command: python -c 'from importlib.metadata import version; assert version("notebook")'
+    expected_exit_code: 0
+  - name: notebook records installed files
+    command: python -c 'from importlib.metadata import files; assert files("notebook")'
+    expected_exit_code: 0
+  - name: wandb imports
+    command: python -c 'import wandb'
+    expected_exit_code: 0
+  - name: TensorFlow imports
+    command: python -c 'import tensorflow'
+    expected_exit_code: 0
+  - name: wandb reports the expected version
+    command: python -c 'from importlib.metadata import version; assert version("wandb") == "0.17.9"'
+    expected_exit_code: 0
+  - name: TensorFlow reports the expected version
+    command: python -c 'from importlib.metadata import version; assert version("tensorflow") == "2.12.0"'
+    expected_exit_code: 0
