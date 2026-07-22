@@ -1,0 +1,326 @@
+name: civet
+version: 2.1.1
+container: civet_${version}_REFERENCE.simg
+default_timeout: 60
+env_setup: |
+  assert_linked() {
+    local target payload output interpreter
+    local -a interpreter_args
+    target="$(readlink -f "$1")" || return 1
+    if output="$(ldd "$target" 2>&1)"; then
+      payload="$target"
+    else
+      IFS= read -r interpreter < "$target" || return 1
+      interpreter="${interpreter#\#!}"
+      read -r -a interpreter_args <<< "$interpreter"
+      if [ "${interpreter_args[0]}" = /usr/bin/env ]; then
+        payload="$(command -v "${interpreter_args[1]}")" || return 1
+      else
+        payload="${interpreter_args[0]}"
+      fi
+      payload="$(readlink -f "$payload")" || return 1
+      output="$(ldd "$payload" 2>&1)" || return 1
+    fi
+    ! grep -q "not found" <<< "$output"
+  }
+tests:
+  - name: CIVET_Processing_Pipeline resolves on PATH
+    command: command -v CIVET_Processing_Pipeline
+    expected_exit_code: 0
+  - name: CIVET_Processing_Pipeline is executable
+    command: test -x "$(command -v CIVET_Processing_Pipeline)"
+    expected_exit_code: 0
+  - name: CIVET_Processing_Pipeline script compiles
+    command: perl -c "$(command -v CIVET_Processing_Pipeline)"
+    expected_exit_code: 0
+  - name: mincinfo resolves on PATH
+    command: command -v mincinfo
+    expected_exit_code: 0
+  - name: mincinfo is executable
+    command: test -x "$(command -v mincinfo)"
+    expected_exit_code: 0
+  - name: mincinfo has no missing shared libraries
+    command: assert_linked "$(command -v mincinfo)"
+    expected_exit_code: 0
+  - name: mincstats resolves on PATH
+    command: command -v mincstats
+    expected_exit_code: 0
+  - name: mincstats is executable
+    command: test -x "$(command -v mincstats)"
+    expected_exit_code: 0
+  - name: mincstats has no missing shared libraries
+    command: assert_linked "$(command -v mincstats)"
+    expected_exit_code: 0
+  - name: mincmath resolves on PATH
+    command: command -v mincmath
+    expected_exit_code: 0
+  - name: mincmath is executable
+    command: test -x "$(command -v mincmath)"
+    expected_exit_code: 0
+  - name: mincmath has no missing shared libraries
+    command: assert_linked "$(command -v mincmath)"
+    expected_exit_code: 0
+  - name: minccalc resolves on PATH
+    command: command -v minccalc
+    expected_exit_code: 0
+  - name: minccalc is executable
+    command: test -x "$(command -v minccalc)"
+    expected_exit_code: 0
+  - name: minccalc has no missing shared libraries
+    command: assert_linked "$(command -v minccalc)"
+    expected_exit_code: 0
+  - name: mincresample resolves on PATH
+    command: command -v mincresample
+    expected_exit_code: 0
+  - name: mincresample is executable
+    command: test -x "$(command -v mincresample)"
+    expected_exit_code: 0
+  - name: mincresample has no missing shared libraries
+    command: assert_linked "$(command -v mincresample)"
+    expected_exit_code: 0
+  - name: mincreshape resolves on PATH
+    command: command -v mincreshape
+    expected_exit_code: 0
+  - name: mincreshape is executable
+    command: test -x "$(command -v mincreshape)"
+    expected_exit_code: 0
+  - name: mincreshape has no missing shared libraries
+    command: assert_linked "$(command -v mincreshape)"
+    expected_exit_code: 0
+  - name: mincaverage resolves on PATH
+    command: command -v mincaverage
+    expected_exit_code: 0
+  - name: mincaverage is executable
+    command: test -x "$(command -v mincaverage)"
+    expected_exit_code: 0
+  - name: mincaverage has no missing shared libraries
+    command: assert_linked "$(command -v mincaverage)"
+    expected_exit_code: 0
+  - name: mincconcat resolves on PATH
+    command: command -v mincconcat
+    expected_exit_code: 0
+  - name: mincconcat is executable
+    command: test -x "$(command -v mincconcat)"
+    expected_exit_code: 0
+  - name: mincconcat has no missing shared libraries
+    command: assert_linked "$(command -v mincconcat)"
+    expected_exit_code: 0
+  - name: mincconvert resolves on PATH
+    command: command -v mincconvert
+    expected_exit_code: 0
+  - name: mincconvert is executable
+    command: test -x "$(command -v mincconvert)"
+    expected_exit_code: 0
+  - name: mincconvert has no missing shared libraries
+    command: assert_linked "$(command -v mincconvert)"
+    expected_exit_code: 0
+  - name: mincpik resolves on PATH
+    command: command -v mincpik
+    expected_exit_code: 0
+  - name: mincpik is executable
+    command: test -x "$(command -v mincpik)"
+    expected_exit_code: 0
+  - name: mincpik has no missing shared libraries
+    command: assert_linked "$(command -v mincpik)"
+    expected_exit_code: 0
+  - name: minctoraw resolves on PATH
+    command: command -v minctoraw
+    expected_exit_code: 0
+  - name: minctoraw is executable
+    command: test -x "$(command -v minctoraw)"
+    expected_exit_code: 0
+  - name: minctoraw has no missing shared libraries
+    command: assert_linked "$(command -v minctoraw)"
+    expected_exit_code: 0
+  - name: rawtominc resolves on PATH
+    command: command -v rawtominc
+    expected_exit_code: 0
+  - name: rawtominc is executable
+    command: test -x "$(command -v rawtominc)"
+    expected_exit_code: 0
+  - name: rawtominc has no missing shared libraries
+    command: assert_linked "$(command -v rawtominc)"
+    expected_exit_code: 0
+  - name: mincextract resolves on PATH
+    command: command -v mincextract
+    expected_exit_code: 0
+  - name: mincextract is executable
+    command: test -x "$(command -v mincextract)"
+    expected_exit_code: 0
+  - name: mincextract has no missing shared libraries
+    command: assert_linked "$(command -v mincextract)"
+    expected_exit_code: 0
+  - name: minclookup resolves on PATH
+    command: command -v minclookup
+    expected_exit_code: 0
+  - name: minclookup is executable
+    command: test -x "$(command -v minclookup)"
+    expected_exit_code: 0
+  - name: minclookup has no missing shared libraries
+    command: assert_linked "$(command -v minclookup)"
+    expected_exit_code: 0
+  - name: mincmorph resolves on PATH
+    command: command -v mincmorph
+    expected_exit_code: 0
+  - name: mincmorph is executable
+    command: test -x "$(command -v mincmorph)"
+    expected_exit_code: 0
+  - name: mincmorph has no missing shared libraries
+    command: assert_linked "$(command -v mincmorph)"
+    expected_exit_code: 0
+  - name: minc_modify_header resolves on PATH
+    command: command -v minc_modify_header
+    expected_exit_code: 0
+  - name: minc_modify_header is executable
+    command: test -x "$(command -v minc_modify_header)"
+    expected_exit_code: 0
+  - name: minc_modify_header has no missing shared libraries
+    command: assert_linked "$(command -v minc_modify_header)"
+    expected_exit_code: 0
+  - name: mincheader resolves on PATH
+    command: command -v mincheader
+    expected_exit_code: 0
+  - name: mincheader is executable
+    command: test -x "$(command -v mincheader)"
+    expected_exit_code: 0
+  - name: mincheader has no missing shared libraries
+    command: assert_linked "$(command -v mincheader)"
+    expected_exit_code: 0
+  - name: mincdump resolves on PATH
+    command: command -v mincdump
+    expected_exit_code: 0
+  - name: mincdump is executable
+    command: test -x "$(command -v mincdump)"
+    expected_exit_code: 0
+  - name: mincdump has no missing shared libraries
+    command: assert_linked "$(command -v mincdump)"
+    expected_exit_code: 0
+  - name: mincgen resolves on PATH
+    command: command -v mincgen
+    expected_exit_code: 0
+  - name: mincgen is executable
+    command: test -x "$(command -v mincgen)"
+    expected_exit_code: 0
+  - name: mincgen has no missing shared libraries
+    command: assert_linked "$(command -v mincgen)"
+    expected_exit_code: 0
+  - name: mincview resolves on PATH
+    command: command -v mincview
+    expected_exit_code: 0
+  - name: mincview is executable
+    command: test -x "$(command -v mincview)"
+    expected_exit_code: 0
+  - name: mincview launcher help starts
+    command: mincview -help 2>&1 | grep -q 'Usage:'
+    expected_exit_code: 0
+  - name: minctracc resolves on PATH
+    command: command -v minctracc
+    expected_exit_code: 0
+  - name: minctracc is executable
+    command: test -x "$(command -v minctracc)"
+    expected_exit_code: 0
+  - name: minctracc has no missing shared libraries
+    command: assert_linked "$(command -v minctracc)"
+    expected_exit_code: 0
+  - name: xfmconcat resolves on PATH
+    command: command -v xfmconcat
+    expected_exit_code: 0
+  - name: xfmconcat is executable
+    command: test -x "$(command -v xfmconcat)"
+    expected_exit_code: 0
+  - name: xfmconcat has no missing shared libraries
+    command: assert_linked "$(command -v xfmconcat)"
+    expected_exit_code: 0
+  - name: xfminvert resolves on PATH
+    command: command -v xfminvert
+    expected_exit_code: 0
+  - name: xfminvert is executable
+    command: test -x "$(command -v xfminvert)"
+    expected_exit_code: 0
+  - name: xfminvert has no missing shared libraries
+    command: assert_linked "$(command -v xfminvert)"
+    expected_exit_code: 0
+  - name: param2xfm resolves on PATH
+    command: command -v param2xfm
+    expected_exit_code: 0
+  - name: param2xfm is executable
+    command: test -x "$(command -v param2xfm)"
+    expected_exit_code: 0
+  - name: param2xfm has no missing shared libraries
+    command: assert_linked "$(command -v param2xfm)"
+    expected_exit_code: 0
+  - name: CIVET installation root exists
+    command: test -d /CIVET_Full_Project/Linux-x86_64
+    expected_exit_code: 0
+  - name: CIVET pipeline directory exists
+    command: test -d /CIVET_Full_Project/Linux-x86_64/CIVET-${version}
+    expected_exit_code: 0
+  - name: CIVET program directory exists
+    command: test -d /CIVET_Full_Project/Linux-x86_64/CIVET-${version}/progs
+    expected_exit_code: 0
+  - name: CIVET binary directory exists
+    command: test -d /CIVET_Full_Project/Linux-x86_64/bin
+    expected_exit_code: 0
+  - name: CIVET library directory exists
+    command: test -d /CIVET_Full_Project/Linux-x86_64/lib
+    expected_exit_code: 0
+  - name: CIVET Perl library directory exists
+    command: test -d /CIVET_Full_Project/Linux-x86_64/perl
+    expected_exit_code: 0
+  - name: CIVET shared data directory exists
+    command: test -d /CIVET_Full_Project/Linux-x86_64/share
+    expected_exit_code: 0
+  - name: CIVET shared data is populated
+    command: find "$MNI_DATAPATH" -mindepth 1 -maxdepth 1 | grep -q .
+    expected_exit_code: 0
+  - name: CIVET MNI data exists
+    command: test -d "$MNI_DATAPATH"
+    expected_exit_code: 0
+  - name: CIVET PATH includes pipeline
+    command: case "$PATH" in */CIVET-${version}/*) exit 0;; *) exit 1;; esac
+    expected_exit_code: 0
+  - name: CIVET PATH includes binaries
+    command: case "$PATH" in */Linux-x86_64/bin*) exit 0;; *) exit 1;; esac
+    expected_exit_code: 0
+  - name: CIVET Perl path is configured
+    command: test -n "$PERL5LIB"
+    expected_exit_code: 0
+  - name: CIVET scheduler is configured
+    command: test "$CIVET_JOB_SCHEDULER" = DEFAULT
+    expected_exit_code: 0
+  - name: MINC v2 output is enabled
+    command: test "$MINC_FORCE_V2" = 1
+    expected_exit_code: 0
+  - name: MINC compression is configured
+    command: test "$MINC_COMPRESS" = 4
+    expected_exit_code: 0
+  - name: Volume cache threshold is configured
+    command: test "$VOLUME_CACHE_THRESHOLD" = -1
+    expected_exit_code: 0
+  - name: CIVET installs at least 100 binaries
+    command: test "$(find /CIVET_Full_Project/Linux-x86_64/bin -maxdepth 1 -type f -executable | wc -l)" -ge 100
+    expected_exit_code: 0
+  - name: CIVET installs shared libraries
+    command: find /CIVET_Full_Project/Linux-x86_64/lib -maxdepth 1 -type f \( -name '*.so' -o -name '*.so.*' \) | grep -q .
+    expected_exit_code: 0
+  - name: CIVET pipeline contains Perl programs
+    command: find /CIVET_Full_Project/Linux-x86_64/CIVET-${version} -type f -name '*.pl' | grep -q .
+    expected_exit_code: 0
+  - name: Perl runtime is available
+    command: perl --version >/dev/null
+    expected_exit_code: 0
+  - name: ImageMagick runtime is available
+    command: convert --version >/dev/null
+    expected_exit_code: 0
+  - name: Gnuplot runtime is available
+    command: gnuplot --version >/dev/null
+    expected_exit_code: 0
+  - name: Git LFS runtime is available
+    command: git lfs version >/dev/null
+    expected_exit_code: 0
+  - name: zlib runtime is linked
+    command: ldconfig -p | grep -q libz.so
+    expected_exit_code: 0
+  - name: TIFF runtime is linked
+    command: ldconfig -p | grep -q libtiff
+    expected_exit_code: 0
