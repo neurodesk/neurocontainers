@@ -207,6 +207,18 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     verified = one_pr_release.verify_candidate(candidate_dir, "abc123", 42)
     assert verified["recipe"] == "demo"
 
+    manifest["image_name"] = "forged_image"
+    (candidate_dir / "manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    try:
+        one_pr_release.verify_candidate(candidate_dir, "abc123", 42)
+    except RuntimeError as error:
+        assert "image_name mismatch" in str(error)
+    else:
+        raise AssertionError("tampered image name was accepted")
+    manifest["image_name"] = "demo_1.2.3"
+
     manifest["candidate_tag"] = "attacker-controlled:latest"
     (candidate_dir / "manifest.json").write_text(
         json.dumps(manifest), encoding="utf-8"
@@ -345,8 +357,13 @@ def test_candidate_manifest_requires_object_and_complete_schema(tmp_path: Path) 
 
 def test_one_pr_workflows_preserve_fork_reporting_contract() -> None:
     """Fork runs resolve PRs by SHA and reports render as Markdown."""
-    promotion = Path(".github/workflows/promote-container-candidate.yml").read_text()
-    reporter = Path(".github/workflows/report-container-candidate.yml").read_text()
+    repo_root = Path(__file__).resolve().parents[2]
+    promotion = (repo_root / ".github/workflows/promote-container-candidate.yml").read_text(
+        encoding="utf-8"
+    )
+    reporter = (repo_root / ".github/workflows/report-container-candidate.yml").read_text(
+        encoding="utf-8"
+    )
 
     assert "item.head_sha === pr.head.sha" in promotion
     assert "item.pull_requests" not in promotion
