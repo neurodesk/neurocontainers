@@ -627,6 +627,29 @@ class NeuroDockerBuildRecipe:
     fix_locale_def: Optional[bool] = attrs.field(default=None)
 
 
+@attrs.define
+class VariantConfig:
+    architecture: Optional[str] = attrs.field(
+        default=None, validator=attrs.validators.optional(validate_architecture)
+    )
+    architectures: Optional[List[str]] = attrs.field(default=None)
+    description: Optional[str] = attrs.field(default=None)
+    options: Optional[Dict[str, bool]] = attrs.field(default=None)
+
+    @architectures.validator
+    def _validate_architectures(self, attribute, value):
+        if value is None:
+            return
+        if not value:
+            raise ValueError("Variant architectures must not be empty")
+        for architecture in value:
+            validate_architecture(None, attribute, architecture)
+
+    def __attrs_post_init__(self):
+        if self.architecture is not None and self.architectures is not None:
+            raise ValueError("Variant must use architecture or architectures, not both")
+
+
 # ============================================================================
 # Main Container Recipe Schema
 # ============================================================================
@@ -638,6 +661,7 @@ class ContainerRecipe:
     version: str = attrs.field(validator=validate_non_empty_string)
     architectures: List[str] = attrs.field(validator=attrs.validators.min_len(1))
     build: NeuroDockerBuildRecipe = attrs.field()
+    variants: Optional[Dict[str, VariantConfig]] = attrs.field(default=None)
     auto_update: Optional[AutoUpdate] = attrs.field(default=None)
     icon: Optional[str] = attrs.field(default=None)
     copyright: Optional[List[Union[CustomCopyrightInfo, SPDXCopyrightInfo]]] = (
@@ -669,6 +693,38 @@ class ContainerRecipe:
                 raise ValueError(
                     f"Architecture '{arch}' not supported. Must be one of: {ARCHITECTURES}"
                 )
+
+    @variants.validator
+    def _validate_variants(self, attribute, value):
+        if not value:
+            return
+        for name, variant in value.items():
+            if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name):
+                raise ValueError(
+                    f"Variant name '{name}' must contain only lowercase letters, numbers, underscores, or hyphens"
+                )
+            if name == "arm64" or name.endswith("_arm64"):
+                raise ValueError(
+                    f"Variant name '{name}' conflicts with the automatic ARM64 suffix"
+                )
+            variant_architectures = variant.architectures or (
+                [variant.architecture] if variant.architecture else []
+            )
+            for architecture in variant_architectures:
+                if architecture not in self.architectures:
+                    raise ValueError(
+                        f"Variant '{name}' uses architecture '{architecture}', "
+                        "which is not listed in architectures"
+                    )
+            for option, enabled in (variant.options or {}).items():
+                if option not in (self.options or {}):
+                    raise ValueError(
+                        f"Variant '{name}' sets unknown recipe option '{option}'"
+                    )
+                if not isinstance(enabled, bool):
+                    raise ValueError(
+                        f"Variant '{name}' option '{option}' must be true or false"
+                    )
 
     @categories.validator
     def _validate_categories(self, attribute, value):
@@ -876,6 +932,12 @@ def validate_recipe_dict(
 
         build_recipe = NeuroDockerBuildRecipe(**build_dict)
         recipe_copy["build"] = build_recipe
+
+        if "variants" in recipe_copy and recipe_copy["variants"]:
+            recipe_copy["variants"] = {
+                str(name): VariantConfig(**config)
+                for name, config in recipe_copy["variants"].items()
+            }
 
         # Parse files if present
         if "files" in recipe_copy and recipe_copy["files"]:

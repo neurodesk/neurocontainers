@@ -17,6 +17,7 @@ from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
 from .cache import sha256_text
+from .variants import concrete_variant_specs, variant_specs
 
 
 ARCHITECTURE_ALIASES = {
@@ -110,6 +111,8 @@ class CompiledRecipe:
     recipe: dict[str, Any]
     recipe_dir: Path
     name: str
+    base_name: str
+    variant: str
     version: str
     architecture: str
     readme: str
@@ -273,6 +276,7 @@ def compile_recipe(
     recipe_dir: Path,
     *,
     architecture: str | None = None,
+    variant: str | None = None,
     ignore_architecture: bool = False,
     local_keys: set[str] | None = None,
     include_dirs: tuple[Path, ...] = (),
@@ -281,7 +285,36 @@ def compile_recipe(
 ) -> CompiledRecipe:
     recipe_file = load_recipe_file(recipe_dir)
     recipe = recipe_file.data
-    arch = normalize_architecture(architecture)
+    specs = concrete_variant_specs(recipe)
+    requested_arch = normalize_architecture(architecture) if architecture is not None else None
+    requested_variant = variant or ""
+    selection_arch = requested_arch
+    if not requested_variant or requested_variant in (recipe.get("variants") or {}):
+        selection_arch = requested_arch or normalize_architecture(None)
+    candidates = [spec for spec in specs if spec["variant"] == requested_variant]
+    if not requested_variant:
+        candidates = [
+            spec
+            for spec in specs
+            if not spec["recipe_variant"] and spec["architecture"] == selection_arch
+        ]
+    elif requested_variant in (recipe.get("variants") or {}):
+        candidates = [
+            spec
+            for spec in specs
+            if spec["recipe_variant"] == requested_variant and spec["architecture"] == selection_arch
+        ]
+    if requested_arch is not None:
+        candidates = [spec for spec in candidates if spec["architecture"] == requested_arch]
+    if not candidates:
+        available = ", ".join(str(spec["variant"]) or "default" for spec in specs)
+        raise ValueError(
+            f"unknown variant/architecture '{requested_variant or 'default'}'/{selection_arch or 'default'} "
+            f"for {recipe['name']}; available: {available}"
+        )
+    selected_variant = candidates[0]
+    variant_name = str(selected_variant["variant"])
+    arch = str(selected_variant["architecture"])
     allowed = [str(item) for item in recipe.get("architectures", [])]
     if arch not in allowed and not ignore_architecture:
         raise ValueError(f"architecture {arch} not supported by {recipe['name']}")
@@ -292,16 +325,18 @@ def compile_recipe(
         for key, value in (recipe.get("options") or {}).items()
         if isinstance(value, dict)
     }
+    option_values.update(selected_variant["options"])
     option_values.update(option_overrides or {})
     version = str(recipe["version"])
     for key, value in (recipe.get("options") or {}).items():
         if option_values.get(str(key)) and isinstance(value, dict):
             version += str(value.get("version_suffix") or "")
     context = RenderContext(
-        name=recipe["name"],
+        name=str(selected_variant["name"]),
         version=version,
         original_version=recipe["version"],
         arch=arch,
+        variant=variant_name,
         parallel_jobs=parallel_jobs or (os.cpu_count() or 1),
         local_keys=local_keys or set(),
         options=SimpleNamespace(**option_values),
@@ -527,7 +562,9 @@ def compile_recipe(
     return CompiledRecipe(
         recipe=_render_release_recipe(recipe, renderer, context),
         recipe_dir=recipe_dir,
-        name=recipe["name"],
+        name=context.name,
+        base_name=recipe["name"],
+        variant=variant_name,
         version=version,
         architecture=arch,
         readme=readme,

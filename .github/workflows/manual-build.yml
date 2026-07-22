@@ -77,9 +77,9 @@ jobs:
   list-apps:
     runs-on: ubuntu-22.04
     outputs:
-      app_list: ${{ steps.process_app_list.outputs.app_list }}
-      runner: ${{ steps.select_runner.outputs.runner }}
+      build_matrix: ${{ steps.expand_variants.outputs.build_matrix }}
     steps:
+    - uses: actions/checkout@v5
     - name: Process input list of applications
       id: process_app_list
       run: |
@@ -113,17 +113,39 @@ jobs:
         esac
         echo "runner=${runner}"
         echo "runner=${runner}" >> "$GITHUB_OUTPUT"
+        if [[ "$CHOICE" == *"arm"* ]]; then
+          echo 'default_runner="blacksmith-8vcpu-ubuntu-2404"' >> "$GITHUB_OUTPUT"
+          echo "arm64_runner=${runner}" >> "$GITHUB_OUTPUT"
+        else
+          echo "default_runner=${runner}" >> "$GITHUB_OUTPUT"
+          echo 'arm64_runner="blacksmith-8vcpu-ubuntu-2404-arm"' >> "$GITHUB_OUTPUT"
+        fi
+    - name: Expand named variants
+      id: expand_variants
+      env:
+        APPLICATIONS: ${{ steps.process_app_list.outputs.app_list }}
+        DEFAULT_RUNNER: ${{ steps.select_runner.outputs.default_runner }}
+        ARM64_RUNNER: ${{ steps.select_runner.outputs.arm64_runner }}
+      run: |
+        python3 -m pip install pyyaml
+        build_matrix=$(python3 -m tools.variant_matrix \
+          --applications "$APPLICATIONS" \
+          --default-runner "$DEFAULT_RUNNER" \
+          --arm64-runner "$ARM64_RUNNER")
+        echo "build_matrix=${build_matrix}" >> "$GITHUB_OUTPUT"
 
   build-app:
     needs: list-apps
     strategy:
       fail-fast: false
       matrix:
-        application: ${{ fromJSON(needs.list-apps.outputs.app_list) }}
+        include: ${{ fromJSON(needs.list-apps.outputs.build_matrix) }}
     uses: ./.github/workflows/build-app.yml
     with:
       application: ${{ matrix.application }}
-      runner: ${{ needs.list-apps.outputs.runner }}
+      variant: ${{ matrix.variant }}
+      architecture: ${{ matrix.architecture }}
+      runner: ${{ matrix.runner }}
       disable_auto_upload: ${{ github.event.inputs.disable_auto_upload }}
       force_push_ghcr: ${{ github.event.inputs.force_push_ghcr }}
       force_push_dockerhub: ${{ github.event.inputs.force_push_dockerhub }}

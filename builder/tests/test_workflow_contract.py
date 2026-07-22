@@ -13,8 +13,24 @@ def test_build_app_workflow_uses_staged_cache_context() -> None:
 def test_build_app_workflow_uses_version_stable_build_cache_ref() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
 
-    assert "CACHE_REF=ghcr.io/${GH_REGISTRY}/${APPLICATION}${IMAGE_SUFFIX}:buildcache" in workflow
+    assert "CACHE_REF=ghcr.io/${GH_REGISTRY}/${CONTAINER_NAME}:buildcache" in workflow
     assert "CACHE_REF=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:buildcache" not in workflow
+
+
+def test_workflows_expand_named_variants_and_pass_identity_to_builder() -> None:
+    build_workflow = Path(".github/workflows/build-app.yml").read_text()
+    manual_workflow = Path(".github/workflows/manual-build.yml").read_text()
+    auto_workflow = Path(".github/workflows/auto-build.yml").read_text()
+
+    assert 'variant: ${{ matrix.variant }}' in manual_workflow
+    assert 'variant: ${{ matrix.variant }}' in auto_workflow
+    assert 'architecture: ${{ matrix.architecture }}' in manual_workflow
+    assert 'architecture: ${{ matrix.architecture }}' in auto_workflow
+    assert "-m tools.variant_matrix" in manual_workflow
+    assert "-m tools.variant_matrix" in auto_workflow
+    assert 'VARIANT_ARGS=(--variant "$VARIANT")' in build_workflow
+    assert 'ARCHITECTURE="${{ inputs.architecture }}"' in build_workflow
+    assert 'CONTAINER_NAME="${APPLICATION}_${VARIANT}"' in build_workflow
 
 
 def test_build_app_workflow_strips_version_inline_comments() -> None:

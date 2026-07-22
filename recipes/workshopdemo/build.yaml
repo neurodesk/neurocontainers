@@ -14,6 +14,9 @@ build:
   pkg-manager: apt
   directives:
     - install: hello
+deploy:
+  bins:
+    - hello
 categories:
   - functional imaging
   - workflows

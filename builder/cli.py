@@ -15,7 +15,7 @@ from .adapters import (
 )
 from .config import default_config, resolve_recipe
 from .dockerfile import render_dockerfile
-from .recipe import compile_recipe
+from .recipe import compile_recipe, load_recipe, variant_specs
 from .release import build_date_for_recipe, release_data, release_version, write_github_release_outputs, write_release_file
 from .staging import materialize_plan
 from .tester import ContainerTesterAdapter, TestRequest
@@ -58,6 +58,7 @@ def write_build_files(
 def add_common_recipe_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("recipe", nargs="?", help="Recipe name or recipe directory")
     parser.add_argument("--architecture", default=None, help="Target architecture")
+    parser.add_argument("--variant", default=None, help="Named container variant")
     parser.add_argument("--ignore-architectures", action="store_true")
     parser.add_argument("--output-root", type=Path, default=None)
     parser.add_argument("--recreate", action="store_true")
@@ -102,6 +103,7 @@ def compile_from_args(args: argparse.Namespace):
     return config, compile_recipe(
         recipe_dir,
         architecture=args.architecture,
+        variant=args.variant,
         ignore_architecture=args.ignore_architectures,
         local_keys=local_keys(args.local),
         include_dirs=config.include_dirs,
@@ -133,6 +135,7 @@ def cmd_stage(args: argparse.Namespace) -> int:
         "name": compiled.name,
         "version": compiled.version,
         "architecture": compiled.architecture,
+        "variant": compiled.variant,
         "build_dir": str(build_dir),
         "dockerfile": str(dockerfile_path),
         "declared_files": sorted(compiled.staging_plan.files),
@@ -144,8 +147,15 @@ def cmd_stage(args: argparse.Namespace) -> int:
 def cmd_release(args: argparse.Namespace) -> int:
     config, compiled = compile_from_args(args)
     date = build_date_for_recipe(config.repo_root, compiled.recipe_dir)
-    data = release_data(compiled.name, compiled.version, compiled.recipe, date, compiled.architecture)
-    version = release_version(compiled.version, compiled.architecture)
+    data = release_data(
+        compiled.name,
+        compiled.version,
+        compiled.recipe,
+        date,
+        compiled.architecture,
+        compiled.variant,
+    )
+    version = release_version(compiled.version, compiled.architecture, compiled.variant)
     if args.write:
         path = write_release_file(config.repo_root, compiled.name, version, data)
         write_github_release_outputs(compiled.name, version, data)
@@ -195,8 +205,15 @@ def cmd_build(args: argparse.Namespace) -> int:
     print(" ".join(str(part) for part in command))
     if getattr(args, "generate_release", False) and not args.dry_run:
         date = build_date_for_recipe(config.repo_root, compiled.recipe_dir)
-        version = release_version(compiled.version, compiled.architecture)
-        data = release_data(compiled.name, compiled.version, compiled.recipe, date, compiled.architecture)
+        version = release_version(compiled.version, compiled.architecture, compiled.variant)
+        data = release_data(
+            compiled.name,
+            compiled.version,
+            compiled.recipe,
+            date,
+            compiled.architecture,
+            compiled.variant,
+        )
         path = write_release_file(
             config.repo_root,
             compiled.name,
@@ -306,6 +323,13 @@ def cmd_cache(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_variants(args: argparse.Namespace) -> int:
+    config = default_config()
+    recipe_dir = resolve_recipe(config, args.recipe or str(Path.cwd()))
+    print(json.dumps(variant_specs(load_recipe(recipe_dir))))
+    return 0
+
+
 def cmd_login(args: argparse.Namespace) -> int:
     cmd_build(args)
     if args.dry_run:
@@ -346,6 +370,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_recipe_args(release)
     release.add_argument("--write", action="store_true", help="Write into releases/")
     release.set_defaults(func=cmd_release)
+
+    variants = subparsers.add_parser("variants", help="List concrete containers for a recipe")
+    variants.add_argument("recipe", nargs="?", help="Recipe name or recipe directory")
+    variants.set_defaults(func=cmd_variants)
 
     build = subparsers.add_parser("build", help="Stage and build a recipe")
     add_common_recipe_args(build)

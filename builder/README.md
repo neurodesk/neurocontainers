@@ -27,6 +27,7 @@ A common workflow involves building the container and running a command inside i
 All build commands (`sf-build`, `sf-login`, `sf-test`, `sf-make`) support architecture options:
 
 - `--architecture <arch>`: Specify the target architecture (e.g., `x86_64`, `aarch64`, `arm64`). Defaults to the current machine's architecture.
+- `--variant <name>`: Build an arbitrary named alternative declared by the recipe, such as `gpu` or `cuda12`.
 - `--ignore-architectures`: Ignore architecture compatibility checks in the recipe.
 - `--generate-release`: Generate release files after successful build (for `sf-build` and `sf-login`).
 
@@ -34,6 +35,12 @@ Example usage:
 ```sh
 # Build for ARM64 architecture
 sf-build myrecipe --architecture aarch64
+
+# Equivalent: build the automatically named myrecipe_arm64 container
+sf-build myrecipe --variant arm64
+
+# Build a declared GPU alternative
+sf-build myrecipe --variant gpu
 
 # Build ignoring architecture restrictions
 sf-build myrecipe --architecture x86_64 --ignore-architectures
@@ -69,9 +76,29 @@ architectures:
   - x86_64
   - aarch64
 
+variants:
+  gpu:
+    architectures:
+      - x86_64
+      - aarch64
+    description: CUDA-enabled build
+    options:
+      gpu: true
+
+options:
+  gpu:
+    description: Install GPU dependencies
+    default: false
+
 readme: |
     This is a recipe for {{ context.name }}/{{ context.version }}
 ```
+
+Architectures are concrete variants automatically: `aarch64` produces
+`qsmxt_arm64`. Declared alternatives are independent of architecture, so the
+example above produces `qsmxt_gpu` and `qsmxt_gpu_arm64`. Variant `options`
+preset the same boolean recipe options used by `context.options.<name>`
+conditions.
 
 If your readme is externally hosted you can include it using `readme_url`.
 
