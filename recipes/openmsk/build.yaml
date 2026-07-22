@@ -1,5 +1,5 @@
 name: openmsk
-version: 0.1.7
+version: 0.1.8
 architectures:
   - x86_64
 
