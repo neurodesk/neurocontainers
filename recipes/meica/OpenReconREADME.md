@@ -15,8 +15,9 @@ series. It reports an error if the sequence header does not contain echo times.
 ME-ICA runs with 24 CPU workers.
 
 If AFNI cannot skull-strip the optimally combined functional reference, the
-adapter retries that masking step with a simple positive-value (`value > 0`)
-threshold. Completely empty inputs still fail instead of producing an empty
+adapter treats every nonzero voxel as phantom foreground, closes one-voxel
+gaps, and fills enclosed holes so that the complete phantom interior is
+segmented. Completely empty inputs still fail instead of producing an empty
 mask.
 
 OpenRecon always returns two derived series. The `dr2s_epi` series is the

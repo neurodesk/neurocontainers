@@ -41,21 +41,18 @@ if [[ -z "${input}" || -z "${prefix}" ]]; then
     exit "${skullstrip_status}"
 fi
 
-maximum="$(3dBrickStat -slow -max "${input}")" || exit "${skullstrip_status}"
-if ! awk -v maximum="${maximum}" 'BEGIN { exit !(maximum > 0) }'; then
-    echo "ME-ICA threshold fallback refused an input with no positive signal: ${input}" >&2
+echo "WARNING: 3dSkullStrip failed; filling the complete nonzero phantom envelope in ${input}" >&2
+if ! 3dmask_tool \
+    -overwrite \
+    -input "${input}" \
+    -prefix "${prefix}" \
+    -dilate_result 1 -1 \
+    -fill_holes; then
     exit "${skullstrip_status}"
 fi
 
-echo "WARNING: 3dSkullStrip failed; applying a value > 0 threshold mask to ${input}" >&2
-3dcalc \
-    -overwrite \
-    -a "${input}" \
-    -expr 'ispositive(a)' \
-    -prefix "${prefix}"
-
 mask_maximum="$(3dBrickStat -slow -max "${prefix}")" || exit "${skullstrip_status}"
 if ! awk -v maximum="${mask_maximum}" 'BEGIN { exit !(maximum > 0) }'; then
-    echo "ME-ICA threshold fallback produced an empty mask: ${prefix}" >&2
+    echo "ME-ICA phantom fallback refused an input with no nonzero signal: ${input}" >&2
     exit "${skullstrip_status}"
 fi

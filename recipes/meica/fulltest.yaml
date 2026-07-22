@@ -58,8 +58,8 @@ tests:
       test -x "${MEICA_AFNI_RUNTIME}/bin/3dinfo"
       test -x "${MEICA_AFNI_RUNTIME}/utils/dcm2niix"
 
-  - name: Functional skull stripping threshold fallback
-    description: Use a nonzero threshold mask when functional 3dSkullStrip fails
+  - name: Functional phantom skull stripping fallback
+    description: Fill the complete nonzero phantom envelope when functional 3dSkullStrip fails
     script: |
       set -euo pipefail
       OUTPUT_DIR="${output_dir}" python - <<'PY'
@@ -70,18 +70,24 @@ tests:
       import numpy as np
 
       data = np.zeros((12, 12, 12), dtype=np.float32)
-      data[5:7, 5:7, 5:7] = 10
+      data[2:10, 2:10, 2:10] = 10
+      data[4:8, 4:8, 4:8] = 0
+      data[3, 3, 3] = -5
       nib.save(
           nib.Nifti1Image(data, np.eye(4)),
-          Path(os.environ["OUTPUT_DIR"]) / "sparse-functional.nii.gz",
+          Path(os.environ["OUTPUT_DIR"]) / "phantom-functional.nii.gz",
+      )
+      nib.save(
+          nib.Nifti1Image(np.zeros_like(data), np.eye(4)),
+          Path(os.environ["OUTPUT_DIR"]) / "empty-functional.nii.gz",
       )
       PY
       PATH="${MEICA_AFNI_RUNTIME}/bin:${PATH}" \
         MEICA_3DSKULLSTRIP=/usr/bin/false meica-skullstrip-fallback \
         -no_avoid_eyes \
-        -prefix "${output_dir}/sparse-functional-mask.nii.gz" \
+        -prefix "${output_dir}/phantom-functional-mask.nii.gz" \
         -overwrite \
-        -input "${output_dir}/sparse-functional.nii.gz"
+        -input "${output_dir}/phantom-functional.nii.gz"
       OUTPUT_DIR="${output_dir}" python - <<'PY'
       import os
       from pathlib import Path
@@ -90,12 +96,22 @@ tests:
       import numpy as np
 
       mask = nib.load(
-          Path(os.environ["OUTPUT_DIR"]) / "sparse-functional-mask.nii.gz"
+          Path(os.environ["OUTPUT_DIR"]) / "phantom-functional-mask.nii.gz"
       ).get_fdata()
       assert set(np.unique(mask)) == {0.0, 1.0}
-      assert np.count_nonzero(mask) == 8
-      print("created a nonempty binary mask from sparse functional data")
+      assert np.count_nonzero(mask) == 8**3
+      assert np.all(mask[2:10, 2:10, 2:10] == 1)
+      assert np.all(mask[:2] == 0)
+      assert np.all(mask[10:] == 0)
+      print("segmented the complete phantom envelope")
       PY
+      if PATH="${MEICA_AFNI_RUNTIME}/bin:${PATH}" \
+        MEICA_3DSKULLSTRIP=/usr/bin/false meica-skullstrip-fallback \
+        -prefix "${output_dir}/empty-functional-mask.nii.gz" \
+        -input "${output_dir}/empty-functional.nii.gz"; then
+        echo "empty phantom fallback input unexpectedly succeeded" >&2
+        exit 1
+      fi
 
   - name: OpenRecon metadata contract
     description: Verify the scanner label exposes the ME-ICA adapter and focused controls
