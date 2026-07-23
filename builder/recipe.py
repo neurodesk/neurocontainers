@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import shlex
-import hashlib
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import yaml
@@ -16,7 +18,7 @@ from .staging import CopySource, StagingPlan, declared_file_from_mapping
 from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
-from .cache import sha256_text
+from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT, sha256_text
 
 
 ARCHITECTURE_ALIASES = {
@@ -85,6 +87,67 @@ def _render_release_recipe(
         if key in rendered_recipe:
             rendered_recipe[key] = renderer.render_value(rendered_recipe[key], context)
     return rendered_recipe
+
+
+def _render_structured_readme(
+    recipe: dict[str, Any],
+    renderer: TemplateRenderer,
+    context: RenderContext,
+) -> str:
+    structured = recipe.get("structured_readme")
+    if not isinstance(structured, dict):
+        return ""
+
+    rendered = renderer.render_value(structured, context)
+    fields = {
+        key: str(rendered.get(key) or "").strip()
+        for key in ("description", "example", "documentation", "citation")
+    }
+    if not any(fields.values()):
+        return ""
+
+    sections = [
+        "----------------------------------",
+        f"## {context.name}/{context.version} ##",
+    ]
+    if fields["description"]:
+        sections.append(fields["description"])
+    if fields["example"]:
+        sections.append(f'Example:\n```\n{fields["example"]}\n```')
+    if fields["documentation"]:
+        sections.append(
+            f'More documentation can be found here: {fields["documentation"]}'
+        )
+    if fields["citation"]:
+        sections.append(f'Citation:\n```\n{fields["citation"]}\n```')
+    sections.extend(
+        [
+            f"To run container outside of this environment: ml {context.name}/{context.version}",
+            "----------------------------------",
+        ]
+    )
+    return "\n\n".join(sections)
+
+
+def _read_readme_url(url: str) -> str:
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": DEFAULT_USER_AGENT},
+    )
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+        ) as response:
+            return response.read().decode("utf-8")
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        TimeoutError,
+        OSError,
+        UnicodeDecodeError,
+    ) as exc:
+        raise ValueError(f"failed to load readme_url {url}: {exc}") from exc
 
 
 @dataclass
@@ -343,11 +406,21 @@ def compile_recipe(
         register_file(mapping)
 
     readme = str(recipe.get("readme") or "")
-    if readme == "":
+    if not readme.strip():
         readme_path = recipe_dir / "README.md"
         if readme_path.exists():
             readme = readme_path.read_text()
     readme = renderer.render_string(readme, context)
+    if not readme.strip():
+        readme = _render_structured_readme(recipe, renderer, context)
+    if not readme.strip() and recipe.get("readme_url"):
+        readme_url = renderer.render_string(str(recipe["readme_url"]), context)
+        readme = _read_readme_url(readme_url)
+    if not readme.strip():
+        raise ValueError(
+            f"{recipe['name']}: README content cannot be empty; set readme, "
+            "add README.md, provide structured_readme, or set readme_url"
+        )
 
     build = dict(recipe["build"])
     build["base-image"] = _check_docker_image(str(renderer.render_value(build["base-image"], context)))
