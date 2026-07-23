@@ -66,7 +66,12 @@ def process(connection, config, metadata):
             )
             _run_meica(conversion, work_dir / "output", settings)
             selected = _find_outputs(work_dir / "output")
-            output_images = _outputs_to_mrd(selected, conversion, images)
+            output_images = _outputs_to_mrd(
+                selected,
+                conversion,
+                images,
+                settings["send_float32"],
+            )
 
         if settings["send_original"]:
             connection.send_image([_original_passthrough(image) for image in images])
@@ -200,7 +205,7 @@ def _find_outputs(output_dir):
     return found
 
 
-def _outputs_to_mrd(selected, conversion, input_images):
+def _outputs_to_mrd(selected, conversion, input_images, send_float32=False):
     used_series = {
         int(image.getHead().image_series_index) for image in input_images
     }
@@ -215,12 +220,20 @@ def _outputs_to_mrd(selected, conversion, input_images):
                 series_index,
                 role,
                 description,
+                send_float32,
             )
         )
     return all_series
 
 
-def _nifti_to_mrd_series(path, source_geometry, series_index, role, description):
+def _nifti_to_mrd_series(
+    path,
+    source_geometry,
+    series_index,
+    role,
+    description,
+    send_float32=False,
+):
     nifti = nib.load(str(path))
     data = _output_data_in_source_space(nifti, source_geometry, path)
     if data.ndim == 3:
@@ -228,8 +241,20 @@ def _nifti_to_mrd_series(path, source_geometry, series_index, role, description)
     if data.ndim != 4:
         raise ValueError(f"ME-ICA output must be 3D or 4D, got {path}: {data.shape}")
 
-    display, scale, offset = _scanner_display_data(data)
-    data_zyxt = np.transpose(display, (2, 1, 0, 3))
+    if send_float32:
+        scanner_data = np.asarray(data, dtype=np.float32)
+        output_dtype = np.float32
+        scale = 1.0
+        offset = 0.0
+        inverse_formula = "value = pixel"
+        output_data_type = "float32"
+    else:
+        scanner_data, scale, offset = _scanner_display_data(data)
+        output_dtype = np.uint16
+        inverse_formula = "value = display / MEICAScale + MEICAOffset"
+        output_data_type = "uint16"
+    window_center, window_width = _scanner_window(data, send_float32)
+    data_zyxt = np.transpose(scanner_data, (2, 1, 0, 3))
     source_slices = source_geometry["first_timepoint"]
     anchor = source_geometry["anchor"]
     output = []
@@ -238,7 +263,10 @@ def _nifti_to_mrd_series(path, source_geometry, series_index, role, description)
     for time_index in range(data_zyxt.shape[3]):
         for slice_index in range(data_zyxt.shape[0]):
             slice_data = data_zyxt[slice_index:slice_index + 1, :, :, time_index]
-            result = ismrmrd.Image.from_array(slice_data.astype(np.uint16), transpose=False)
+            result = ismrmrd.Image.from_array(
+                slice_data.astype(output_dtype, copy=False),
+                transpose=False,
+            )
             geometry_image = _geometry_image_for_slice(
                 source_slices, anchor, slice_index, data_zyxt.shape[0]
             )
@@ -271,6 +299,10 @@ def _nifti_to_mrd_series(path, source_geometry, series_index, role, description)
                 data_zyxt.shape[3],
                 scale,
                 offset,
+                inverse_formula,
+                output_data_type,
+                window_center,
+                window_width,
             ).serialize()
             output.append(result)
             image_index += 1
@@ -431,6 +463,7 @@ def _settings(config):
     return {
         "cpus": DEFAULT_CPUS,
         "send_original": _as_bool(params.get("sendoriginal", True)),
+        "send_float32": _as_bool(params.get("sendfloat32", False)),
         "binary": str(
             params.get("meicabinary")
             or os.environ.get("MEICA_BINARY")
@@ -613,6 +646,22 @@ def _scanner_display_data(data):
     return display, scale, float(low)
 
 
+def _scanner_window(data, float32_output):
+    if not float32_output:
+        return 2047.5, 4095.0
+    finite = data[np.isfinite(data)]
+    if not finite.size:
+        return 0.0, 1.0
+    low, high = np.percentile(finite, [0.5, 99.5])
+    if high <= low:
+        low = float(np.min(finite))
+        high = float(np.max(finite))
+    width = float(high - low)
+    if width <= 0.0:
+        return float(low), 1.0
+    return float(low + width / 2.0), width
+
+
 def _geometry_image_for_slice(source_slices, anchor, slice_index, slice_count):
     if len(source_slices) == slice_count:
         return source_slices[slice_index]
@@ -630,7 +679,8 @@ def _packed_slice_position(header, slice_index, slice_count):
 
 def _derived_meta(
     source, series_index, role, description, image_index,
-    slices, timepoints, scale, offset,
+    slices, timepoints, scale, offset, inverse_formula,
+    output_data_type, window_center, window_width,
 ):
     meta = _meta(source)
     for key in ("IceMiniHead", "SOPInstanceUID", "SeriesInstanceUID"):
@@ -646,7 +696,10 @@ def _derived_meta(
     meta["ImageTypeValue4"] = role
     meta["MEICAScale"] = f"{scale:.12g}"
     meta["MEICAOffset"] = f"{offset:.12g}"
-    meta["MEICAInverseScaleFormula"] = "value = display / MEICAScale + MEICAOffset"
+    meta["MEICAInverseScaleFormula"] = inverse_formula
+    meta["MEICAOutputDataType"] = output_data_type
+    meta["WindowCenter"] = f"{window_center:.12g}"
+    meta["WindowWidth"] = f"{window_width:.12g}"
     meta["NumberOfSlices"] = str(slices)
     meta["ImagesInAcquisition"] = str(slices * timepoints)
     meta["NumberInSeries"] = str(image_index)

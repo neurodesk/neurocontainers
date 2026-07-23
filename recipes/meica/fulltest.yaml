@@ -128,13 +128,18 @@ tests:
       assert data["reconstruction"]["injector"] == "image"
       assert data["reconstruction"]["content_qualification_type"] == "RESEARCH"
       assert {item["id"] for item in data["parameters"]} == {
-          "config", "sendoriginal"
+          "config", "sendoriginal", "sendfloat32"
       }
       send_original = next(
           item for item in data["parameters"] if item["id"] == "sendoriginal"
       )
       assert send_original["type"] == "boolean"
       assert send_original["default"] is True
+      send_float32 = next(
+          item for item in data["parameters"] if item["id"] == "sendfloat32"
+      )
+      assert send_float32["type"] == "boolean"
+      assert send_float32["default"] is False
       assert data["reconstruction"]["min_count_required_cpu_cores"] == 24
       print(path)
       PY
@@ -261,6 +266,8 @@ tests:
               meta = ismrmrd.Meta.deserialize(image.attribute_string)
               assert meta["Keep_image_geometry"] == "1"
               assert "IceMiniHead" not in meta
+              assert image.data.dtype == np.uint16
+              assert meta["MEICAOutputDataType"] == "uint16"
 
       assert set(by_role) == {"MEICA_DR2S", "MEICA_T2S"}
       assert len(by_role["MEICA_DR2S"]) == 4
@@ -289,5 +296,47 @@ tests:
           for series in derived_only.sent
       }
       assert derived_only_roles == {"MEICA_DR2S", "MEICA_T2S"}
-      print("returned original, apparent dR2*, and T2* ME-ICA MRD series")
+
+      float32_connection = Connection(images)
+      meica.process(
+          float32_connection,
+          {
+              "parameters": {
+                  "meicabinary": os.environ["FAKE_MEICA"],
+                  "sendoriginal": False,
+                  "sendfloat32": True,
+              }
+          },
+          Metadata(),
+      )
+      assert float32_connection.closed
+      assert not float32_connection.logs, float32_connection.logs
+      assert len(float32_connection.sent) == 2
+      float32_by_role = {
+          ismrmrd.Meta.deserialize(series[0].attribute_string)[
+              "ImageTypeValue4"
+          ]: series
+          for series in float32_connection.sent
+      }
+      assert set(float32_by_role) == {"MEICA_DR2S", "MEICA_T2S"}
+      for role, series in float32_by_role.items():
+          assert all(image.data.dtype == np.float32 for image in series)
+          for image in series:
+              meta = ismrmrd.Meta.deserialize(image.attribute_string)
+              assert meta["MEICAOutputDataType"] == "float32"
+              assert meta["MEICAScale"] == "1"
+              assert meta["MEICAOffset"] == "0"
+              assert meta["MEICAInverseScaleFormula"] == "value = pixel"
+              assert float(meta["WindowWidth"]) > 0
+              if role == "MEICA_T2S":
+                  assert float(meta["WindowCenter"]) == 205.0
+      dr2s_values = np.concatenate(
+          [np.asarray(image.data).ravel() for image in float32_by_role["MEICA_DR2S"]]
+      )
+      t2s_values = np.concatenate(
+          [np.asarray(image.data).ravel() for image in float32_by_role["MEICA_T2S"]]
+      )
+      assert set(np.unique(dr2s_values)) == {200.0, 210.0}
+      assert set(np.unique(t2s_values)) == {205.0}
+      print("returned uint16 and optional float32 dR2* and T2* ME-ICA MRD series")
       PY

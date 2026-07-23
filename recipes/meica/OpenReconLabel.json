@@ -52,6 +52,13 @@
       "type": "boolean",
       "default": true,
       "information": { "en": "Return the incoming reconstructed echo images before the derived ME-ICA series." }
+    },
+    {
+      "id": "sendfloat32",
+      "label": { "en": "Send results as float32" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Send the derived dR2* and T2* values as unscaled float32 pixels instead of scanner-display uint16 pixels." }
     }
   ]
 }
