@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+reviews:
+  auto_review:
+    labels:
+      - "!automated"
+    ignore_title_keywords:
+      - "Add release for"
+      - "Update release for"
