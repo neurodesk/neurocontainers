@@ -55,11 +55,10 @@ class Metadata:
     encoding = [Encoding()]
 
 
-def _import_sodiumnufft_with_runtime_stubs(monkeypatch):
+def _import_sodiumgridding_with_runtime_stubs(monkeypatch):
     constants = types.ModuleType("constants")
     constants.MRD_LOGGING_INFO = 1
     mrdhelper = types.ModuleType("mrdhelper")
-    sigpy = types.ModuleType("sigpy")
 
     def update_img_header_from_raw(image_header, reference_head):
         del reference_head
@@ -70,16 +69,15 @@ def _import_sodiumnufft_with_runtime_stubs(monkeypatch):
     monkeypatch.syspath_prepend(str(RECIPE_DIR))
     monkeypatch.setitem(sys.modules, "constants", constants)
     monkeypatch.setitem(sys.modules, "mrdhelper", mrdhelper)
-    monkeypatch.setitem(sys.modules, "sigpy", sigpy)
-    monkeypatch.delitem(sys.modules, "sodiumnufft", raising=False)
-    return importlib.import_module("sodiumnufft")
+    monkeypatch.delitem(sys.modules, "sodiumgridding", raising=False)
+    return importlib.import_module("sodiumgridding")
 
 
 def test_build_output_images_emits_one_explicit_volume(monkeypatch):
-    sodiumnufft = _import_sodiumnufft_with_runtime_stubs(monkeypatch)
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
     volume = np.ones((2, 3, 4), dtype=np.float32)
 
-    images = sodiumnufft._build_output_images(
+    images = sodiumgridding._build_output_images(
         volume,
         ReferenceHead(),
         Metadata(),
@@ -103,18 +101,24 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
     assert [float(value) for value in first_head.position] == [10.0, 20.0, 30.0]
     assert [float(value) for value in first_head.field_of_view] == [80.0, 80.0, 80.0]
     assert [float(value) for value in first_head.read_dir] == [1.0, 0.0, 0.0]
-    assert [float(value) for value in first_head.phase_dir] == [0.0, 1.0, 0.0]
+    assert [float(value) for value in first_head.phase_dir] == [0.0, -1.0, 0.0]
 
     meta = ismrmrd.Meta.deserialize(first.attribute_string)
-    assert meta["SeriesDescription"] == "tpiTqf_23Na_n28_TE05_FIRE_sodiumnufft"
+    assert meta["SeriesDescription"] == "tpiTqf_23Na_n28_TE05_FIRE_sodiumgridding"
     assert meta["SequenceDescription"] == meta["SeriesDescription"]
     assert meta["ProtocolName"] == meta["SeriesDescription"]
-    assert meta["SeriesNumberRangeNameUID"] == "tpiTqf_23Na_n28_TE05_FIRE_sodiumnufft_1"
+    assert meta["SeriesNumberRangeNameUID"] == "tpiTqf_23Na_n28_TE05_FIRE_sodiumgridding_1"
     assert meta["SeriesInstanceUID"].startswith("2.25.")
     assert meta["SOPInstanceUID"].startswith("2.25.")
-    assert meta["ImageType"] == "DERIVED\\PRIMARY\\M\\SODIUMNUFFT"
-    assert meta["DicomImageType"] == "DERIVED\\PRIMARY\\M\\SODIUMNUFFT"
-    assert meta["ImageTypeValue4"] == "SODIUMNUFFT"
+    assert meta["ImageType"] == "DERIVED\\PRIMARY\\M\\SODIUMGRIDDING"
+    assert meta["DicomImageType"] == "DERIVED\\PRIMARY\\M\\SODIUMGRIDDING"
+    assert meta["ImageTypeValue4"] == "SODIUMGRIDDING"
+    assert meta["ImageProcessingHistory"] == [
+        "PYTHON",
+        "NUMBA",
+        "KAISERBESSEL",
+        "GRIDDING",
+    ]
     assert meta["ComplexImageComponent"] == "MAGNITUDE"
     assert meta["Keep_image_geometry"] == "0"
     assert meta["partition_count"] == "1"
@@ -130,14 +134,14 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
     assert meta["Actual3DImagePartNumber"] == "0"
     assert meta["Actual3DImaPartNumber"] == "0"
     assert meta["AnatomicalPartitionNo"] == "0"
-    assert meta["SodiumNUFFTDisplayScale"] == "1"
-    assert meta["SodiumNUFFTDisplayInputMin"] == "1"
-    assert meta["SodiumNUFFTDisplayInputMax"] == "1"
-    assert meta["SodiumNUFFTDisplayMin"] == "0"
-    assert meta["SodiumNUFFTDisplayMax"] == "0"
-    assert meta["SodiumNUFFTDisplayFormula"] == "value = display + 1"
+    assert meta["SodiumGriddingDisplayScale"] == "1"
+    assert meta["SodiumGriddingDisplayInputMin"] == "1"
+    assert meta["SodiumGriddingDisplayInputMax"] == "1"
+    assert meta["SodiumGriddingDisplayMin"] == "0"
+    assert meta["SodiumGriddingDisplayMax"] == "0"
+    assert meta["SodiumGriddingDisplayFormula"] == "value = display + 1"
     assert meta["ImageComment"] == (
-        "23Na NUFFT Sum-of-Squares; scanner display uint16 0-4096; "
+        "23Na Kaiser-Bessel Gridding; scanner display uint16 0-4096; "
         "value = display + 1"
     )
     assert meta["ImageComments"] == meta["ImageComment"]
@@ -148,20 +152,20 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
         "-0.000000000000000000",
     ]
     assert meta["ImageColumnDir"] == [
-        "0.000000000000000000",
-        "1.000000000000000000",
-        "0.000000000000000000",
+        "-0.000000000000000000",
+        "-1.000000000000000000",
+        "-0.000000000000000000",
     ]
 
 
 def test_output_volume_data_preserves_slice_order(monkeypatch):
-    sodiumnufft = _import_sodiumnufft_with_runtime_stubs(monkeypatch)
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
     volume = np.broadcast_to(
         np.arange(4, dtype=np.float32),
         (2, 3, 4),
     ).copy()
 
-    images = sodiumnufft._build_output_images(
+    images = sodiumgridding._build_output_images(
         volume,
         ReferenceHead(),
         Metadata(),
@@ -176,40 +180,38 @@ def test_output_volume_data_preserves_slice_order(monkeypatch):
     assert slice_values == [0, 1365, 2731, 4096]
 
 
-def test_output_volume_is_flipped_left_right_only(monkeypatch):
-    sodiumnufft = _import_sodiumnufft_with_runtime_stubs(monkeypatch)
+def test_output_volume_is_flipped_up_down_then_left_right(monkeypatch):
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
     volume = np.arange(1, 7, dtype=np.float32).reshape(2, 3, 1)
 
-    images = sodiumnufft._build_output_images(
+    images = sodiumgridding._build_output_images(
         volume,
         ReferenceHead(),
         Metadata(),
         output_fov_mm=80.0,
     )
 
-    # Only the read/column axis (x) is reversed; the phase/row axis (y) stays
-    # natural so anterior is not flipped to the bottom (the v0.1.8 "AP flip").
-    display_volume, _ = sodiumnufft._scale_volume_to_display_range(volume)
+    display_volume, _ = sodiumgridding._scale_volume_to_display_range(volume)
     packed_without_display_flips = display_volume[:, :, 0].T
-    expected = np.flip(packed_without_display_flips, axis=1)[np.newaxis, ...]
+    expected = np.flip(packed_without_display_flips, axis=(0, 1))[np.newaxis, ...]
 
     np.testing.assert_array_equal(np.asarray(images[0].data)[0], expected)
 
 
 def test_log_cpu_resources_reports_container_limits(monkeypatch, caplog):
-    sodiumnufft = _import_sodiumnufft_with_runtime_stubs(monkeypatch)
-    monkeypatch.setattr(sodiumnufft.os, "cpu_count", lambda: 32)
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    monkeypatch.setattr(sodiumgridding.os, "cpu_count", lambda: 32)
     monkeypatch.setattr(
-        sodiumnufft.os,
+        sodiumgridding.os,
         "sched_getaffinity",
         lambda process_id: {2, 3, 4, 5},
         raising=False,
     )
-    monkeypatch.setattr(sodiumnufft, "_cgroup_cpu_limit", lambda: "600000 100000")
-    monkeypatch.setattr(sodiumnufft, "_cgroup_cpuset", lambda: "2-5")
+    monkeypatch.setattr(sodiumgridding, "_cgroup_cpu_limit", lambda: "600000 100000")
+    monkeypatch.setattr(sodiumgridding, "_cgroup_cpuset", lambda: "2-5")
 
     with caplog.at_level(logging.INFO):
-        sodiumnufft._log_cpu_resources(
+        sodiumgridding._log_cpu_resources(
             configured_max_workers=6,
             effective_coil_workers=3,
         )
@@ -222,8 +224,80 @@ def test_log_cpu_resources_reports_container_limits(monkeypatch, caplog):
     ) in caplog.text
 
 
-def test_process_raw_parallel_coils_match_serial_reconstruction(monkeypatch):
-    sodiumnufft = _import_sodiumnufft_with_runtime_stubs(monkeypatch)
+def test_coil_compression_retains_dominant_signal_subspace(monkeypatch):
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    dominant = np.arange(1, 13, dtype=np.float32).reshape(3, 4).astype(np.complex64)
+    coil_data = np.stack(
+        [
+            dominant,
+            2.0j * dominant,
+            np.full_like(dominant, 0.01 + 0.01j),
+        ]
+    )
+
+    compressed, cumulative_variance, compression_matrix = (
+        sodiumgridding._compress_coils_by_variance(
+            coil_data,
+            variance_retention=0.9,
+        )
+    )
+
+    assert compressed.shape == (1, 3, 4)
+    assert compression_matrix.shape == (3, 1)
+    assert cumulative_variance[0] >= 0.9
+
+
+def test_kaiser_bessel_gridding_reconstructs_a_finite_center_sample(monkeypatch):
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    coordinates = np.zeros((1, 3), dtype=np.float32)
+    dcf = np.ones(1, dtype=np.float32)
+    deapodization = sodiumgridding._compute_deapodization_kb(
+        4,
+        oversampling=2,
+    )
+
+    image = sodiumgridding._regrid_3d_kb(
+        np.array([1.0 + 0.0j], dtype=np.complex64),
+        coordinates,
+        grid_size=4,
+        dcf=dcf,
+        deapodization=deapodization,
+        oversampling=2,
+    )
+
+    assert image.shape == (4, 4, 4)
+    assert np.all(np.isfinite(image))
+    assert float(np.abs(image).max()) > 0.0
+
+
+def test_iterative_kaiser_bessel_dcf_is_finite_and_normalized(monkeypatch):
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    coordinates = np.array(
+        [
+            [-0.2, 0.0, 0.0],
+            [0.0, -0.2, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 0.2, 0.0],
+            [0.2, 0.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+
+    dcf = sodiumgridding._compute_dcf_kb(
+        coordinates,
+        grid_size=4,
+        oversampling=2,
+        num_iterations=2,
+    )
+
+    assert dcf.shape == (5,)
+    assert np.all(np.isfinite(dcf))
+    assert np.all(dcf > 0.0)
+    assert np.isclose(np.median(dcf), 1.0)
+
+
+def test_process_raw_parallel_grids_match_serial_reconstruction(monkeypatch):
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
 
     acquisitions = []
     readout_data = (
@@ -244,22 +318,41 @@ def test_process_raw_parallel_coils_match_serial_reconstruction(monkeypatch):
     trajectory = np.zeros((4, 2, 3), dtype=np.float32)
     trajectory[:, :, 0] = np.arange(1, 5, dtype=np.float32)[:, np.newaxis]
     trajectory[:, :, 1] = np.array([0.25, 0.5], dtype=np.float32)
-    monkeypatch.setattr(sodiumnufft, "_load_trajectory", lambda group, config: trajectory)
-    monkeypatch.setattr(sodiumnufft, "_ensure_debug_folder", lambda: None)
+    monkeypatch.setattr(sodiumgridding, "_load_trajectory", lambda group, config: trajectory)
+    monkeypatch.setattr(sodiumgridding, "_ensure_debug_folder", lambda: None)
     monkeypatch.setattr(
-        sodiumnufft,
+        sodiumgridding,
         "_config_int",
         lambda config, key, default: int(config.get(key, default)),
     )
     monkeypatch.setattr(
-        sodiumnufft,
+        sodiumgridding,
         "_config_float",
         lambda config, key, default: float(config.get(key, default)),
     )
     monkeypatch.setattr(
-        sodiumnufft,
+        sodiumgridding,
         "_config_bool",
         lambda config, key, default: bool(config.get(key, default)),
+    )
+    monkeypatch.setattr(
+        sodiumgridding,
+        "_config_str",
+        lambda config, key, default: str(config.get(key, default)),
+    )
+    monkeypatch.setattr(
+        sodiumgridding,
+        "_compute_dcf_kb",
+        lambda coordinates, grid_size, oversampling, num_iterations: np.ones(
+            len(coordinates), dtype=np.float32
+        ),
+    )
+    monkeypatch.setattr(
+        sodiumgridding,
+        "_compute_deapodization_kb",
+        lambda grid_size, oversampling: np.ones(
+            (grid_size, grid_size, grid_size), dtype=np.float32
+        ),
     )
 
     class Connection:
@@ -273,31 +366,41 @@ def test_process_raw_parallel_coils_match_serial_reconstruction(monkeypatch):
         saved_arrays = {}
         thread_ids = set()
         thread_ids_lock = threading.Lock()
-        barrier = threading.Barrier(3, timeout=2.0) if require_parallel else None
+        barrier = threading.Barrier(2, timeout=2.0) if require_parallel else None
+        call_count = 0
 
-        def fake_nufft_adjoint(weighted_data, coordinates, output_shape):
-            del coordinates
+        def fake_regrid(
+            kspace_data,
+            normalized_coordinates,
+            grid_size,
+            dcf,
+            deapodization,
+            oversampling,
+        ):
+            del normalized_coordinates, dcf, deapodization, oversampling
+            nonlocal call_count
             with thread_ids_lock:
                 thread_ids.add(threading.get_ident())
-            if barrier is not None:
+                call_count += 1
+                current_call = call_count
+            if barrier is not None and current_call <= 2:
                 barrier.wait()
             fingerprint = np.vdot(
-                np.arange(1, weighted_data.size + 1, dtype=np.float32),
-                weighted_data,
+                np.arange(1, kspace_data.size + 1, dtype=np.float32),
+                kspace_data,
             )
-            return np.full(output_shape, fingerprint, dtype=np.complex64)
+            return np.full(
+                (grid_size, grid_size, grid_size),
+                fingerprint,
+                dtype=np.complex64,
+            )
 
         def capture_array(path, array):
             saved_arrays[Path(path).name] = np.array(array, copy=True)
 
-        monkeypatch.setattr(
-            sodiumnufft.sigpy,
-            "nufft_adjoint",
-            fake_nufft_adjoint,
-            raising=False,
-        )
-        monkeypatch.setattr(sodiumnufft.np, "save", capture_array)
-        images = sodiumnufft.process_raw(
+        monkeypatch.setattr(sodiumgridding, "_regrid_3d_kb", fake_regrid)
+        monkeypatch.setattr(sodiumgridding.np, "save", capture_array)
+        images = sodiumgridding.process_raw(
             acquisitions,
             Connection(),
             {
@@ -307,6 +410,9 @@ def test_process_raw_parallel_coils_match_serial_reconstruction(monkeypatch):
                 "applyfermifilter": False,
                 "dcfiterations": 0,
                 "maxworkers": max_workers,
+                "coilvarianceretention": 1.0,
+                "coilcombinemode": "SoS",
+                "applyn4biascorrection": False,
             },
             Metadata(),
         )
@@ -322,26 +428,26 @@ def test_process_raw_parallel_coils_match_serial_reconstruction(monkeypatch):
     )
 
     assert len(serial_threads) == 1
-    assert len(parallel_threads) == 3
+    assert len(parallel_threads) >= 2
     assert len(serial_images) == 1
     assert len(parallel_images) == 1
     assert serial_images[0].data.shape == (1, 2, 2, 2)
     assert [int(value) for value in serial_images[0].getHead().matrix_size] == [2, 2, 2]
-    serial_coils = serial_arrays["sodiumnufft_coil_images.npy"]
+    serial_coils = serial_arrays["sodiumgridding_coil_images.npy"]
     assert serial_coils.shape == (3, 2, 2, 2)
     assert len({complex(coil[0, 0, 0]) for coil in serial_coils}) == 3
     np.testing.assert_array_equal(
-        parallel_arrays["sodiumnufft_coil_images.npy"],
+        parallel_arrays["sodiumgridding_coil_images.npy"],
         serial_coils,
     )
     expected_magnitude = np.sqrt(np.sum(np.abs(serial_coils) ** 2, axis=0))
     np.testing.assert_allclose(
-        serial_arrays["sodiumnufft_magnitude_volume.npy"],
+        serial_arrays["sodiumgridding_magnitude_volume.npy"],
         expected_magnitude,
     )
     np.testing.assert_array_equal(
-        parallel_arrays["sodiumnufft_magnitude_volume.npy"],
-        serial_arrays["sodiumnufft_magnitude_volume.npy"],
+        parallel_arrays["sodiumgridding_magnitude_volume.npy"],
+        serial_arrays["sodiumgridding_magnitude_volume.npy"],
     )
     for serial_image, parallel_image in zip(serial_images, parallel_images, strict=True):
         np.testing.assert_array_equal(parallel_image.data, serial_image.data)

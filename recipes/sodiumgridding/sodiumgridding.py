@@ -5,30 +5,41 @@ import ctypes
 import logging
 import os
 from pathlib import Path
+import threading
 from time import perf_counter
 import traceback
 import uuid
 
 import h5py
 import ismrmrd
+import numba
 import numpy as np
 import scipy.ndimage as ndi
-import sigpy
 
 import constants
 import mrdhelper
 
 
+try:
+    import pyfftw
+
+    pyfftw.interfaces.cache.enable()
+    USE_PYFFTW = True
+except ImportError:
+    pyfftw = None
+    USE_PYFFTW = False
+
+
 debugFolder = "/tmp/share/debug"
 BUNDLED_TRAJECTORIES = {
-    "sodiumn50": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
-    "sodiumn28": "/opt/sodiumnufft/23Na_n28_trajectory.h5",
-    "23Na_n50": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
-    "23Na_n28": "/opt/sodiumnufft/23Na_n28_trajectory.h5",
+    "sodiumn50": "/opt/sodiumgridding/23Na_n50_trajectory.h5",
+    "sodiumn28": "/opt/sodiumgridding/23Na_n28_trajectory.h5",
+    "23Na_n50": "/opt/sodiumgridding/23Na_n50_trajectory.h5",
+    "23Na_n28": "/opt/sodiumgridding/23Na_n28_trajectory.h5",
 }
 OPENRECON_DEFAULTS = {
-    "config": "sodiumnufft",
-    "matrixsize": 64,
+    "config": "sodiumgridding",
+    "matrixsize": 128,
     "fovcm": 22.0,
     "trajectorypreset": "23Na_n28",
     "trajectoryfile": "",
@@ -38,17 +49,56 @@ OPENRECON_DEFAULTS = {
     "badreadoutsigma": 3.0,
     "centerwindow": 5,
     "applyfermifilter": True,
-    "fermiwidth": 0.15,
-    "fermicutoff": 0.9,
-    "dcfiterations": 0,
-    "maxcoils": 0,
-    "maxworkers": 6,
+    "fermiwidth": 0.05,
+    "fermicutoff": 0.98,
+    "dcfiterations": 5,
+    "maxcoils": 16,
+    "maxworkers": 8,
+    "coilvarianceretention": 0.9,
+    "coilcombinemode": "AC",
+    "applyn4biascorrection": True,
 }
-OUTPUT_SERIES_DESCRIPTION = "sodiumnufft"
-OUTPUT_IMAGE_COMMENT = "23Na NUFFT Sum-of-Squares"
+OUTPUT_SERIES_DESCRIPTION = "sodiumgridding"
+OUTPUT_IMAGE_COMMENT = "23Na Kaiser-Bessel Gridding"
 OUTPUT_IMAGE_SERIES_INDEX = 1
 SCANNER_DISPLAY_MIN = 0
 SCANNER_DISPLAY_MAX = 4096
+OVERSAMPLING = 2
+KB_KERNEL_WIDTH = 3.0
+KB_LUT_SIZE = 2048
+MAX_SIMULTANEOUS_GRIDS = 2
+N4_SHRINK_FACTOR = 2
+N4_MAX_ITERATIONS = [50, 50, 50, 50]
+GRID_SEMAPHORE = threading.Semaphore(MAX_SIMULTANEOUS_GRIDS)
+
+
+def _kaiser_bessel_parameters(kernel_width=KB_KERNEL_WIDTH, oversampling=OVERSAMPLING):
+    radicand = (kernel_width / oversampling * (oversampling - 0.5)) ** 2 - 0.8
+    if radicand <= 0:
+        raise ValueError(
+            "Kaiser-Bessel parameters require a positive beta radicand; "
+            f"got kernel_width={kernel_width} oversampling={oversampling}"
+        )
+    beta = float(np.pi * np.sqrt(radicand))
+    distances = np.linspace(
+        0.0,
+        0.5 * kernel_width,
+        KB_LUT_SIZE,
+        dtype=np.float64,
+    )
+    lut = np.i0(
+        beta
+        * np.sqrt(
+            np.maximum(
+                0.0,
+                1.0 - (distances / (0.5 * kernel_width)) ** 2,
+            )
+        )
+    ) / np.i0(beta)
+    return beta, np.asarray(lut, dtype=np.float64)
+
+
+KB_BETA, KB_LUT = _kaiser_bessel_parameters()
 
 
 def _get_config_value(config, key, default, value_type):
@@ -156,14 +206,291 @@ def _safe_protocol_name(metadata):
     return OUTPUT_SERIES_DESCRIPTION
 
 
-def estimate_dcf_iterative(coord, img_shape, num_iter=10):
-    dcf = np.ones(coord.shape[0], dtype=np.complex64)
-    for idx in range(num_iter):
-        psf = sigpy.nufft_adjoint(dcf, coord, img_shape)
-        back = sigpy.nufft(psf, coord)
-        dcf = dcf / (np.abs(back) + 1e-8)
-        logging.info("DCF iter %d/%d", idx + 1, num_iter)
-    return np.real(dcf).astype(np.float32, copy=False)
+@numba.njit(fastmath=True)
+def _kaiser_bessel_weight_lut(distance, kernel_width, lut):
+    half_width = 0.5 * kernel_width
+    if distance > half_width:
+        return 0.0
+
+    lut_position = distance / half_width * (len(lut) - 1)
+    index = int(np.floor(lut_position))
+    if index >= len(lut) - 1:
+        return lut[len(lut) - 1]
+
+    fraction = lut_position - index
+    return lut[index] * (1.0 - fraction) + lut[index + 1] * fraction
+
+
+@numba.njit
+def _grid_kb_complex(
+    grid,
+    normalized_coordinates,
+    weights,
+    grid_size,
+    oversampling,
+    kernel_width,
+    lut,
+):
+    oversampled_size = grid_size * oversampling
+    half_width = 0.5 * kernel_width
+
+    for point_index in range(len(normalized_coordinates)):
+        grid_x = (normalized_coordinates[point_index, 0] + 0.5) * oversampled_size - 0.5
+        grid_y = (normalized_coordinates[point_index, 1] + 0.5) * oversampled_size - 0.5
+        grid_z = (normalized_coordinates[point_index, 2] + 0.5) * oversampled_size - 0.5
+        x_min = int(np.ceil(grid_x - half_width))
+        x_max = int(np.floor(grid_x + half_width))
+        y_min = int(np.ceil(grid_y - half_width))
+        y_max = int(np.floor(grid_y + half_width))
+        z_min = int(np.ceil(grid_z - half_width))
+        z_max = int(np.floor(grid_z + half_width))
+        value = weights[point_index]
+
+        for z_index in range(z_min, z_max + 1):
+            if 0 <= z_index < oversampled_size:
+                z_weight = _kaiser_bessel_weight_lut(
+                    abs(grid_z - z_index), kernel_width, lut
+                )
+                for y_index in range(y_min, y_max + 1):
+                    if 0 <= y_index < oversampled_size:
+                        y_weight = _kaiser_bessel_weight_lut(
+                            abs(grid_y - y_index), kernel_width, lut
+                        )
+                        for x_index in range(x_min, x_max + 1):
+                            if 0 <= x_index < oversampled_size:
+                                x_weight = _kaiser_bessel_weight_lut(
+                                    abs(grid_x - x_index), kernel_width, lut
+                                )
+                                grid[z_index, y_index, x_index] += (
+                                    value * x_weight * y_weight * z_weight
+                                )
+
+
+@numba.njit(fastmath=True)
+def _grid_kb_real(
+    grid,
+    normalized_coordinates,
+    weights,
+    grid_size,
+    oversampling,
+    kernel_width,
+    lut,
+):
+    oversampled_size = grid_size * oversampling
+    half_width = 0.5 * kernel_width
+
+    for point_index in range(len(normalized_coordinates)):
+        grid_x = (normalized_coordinates[point_index, 0] + 0.5) * oversampled_size - 0.5
+        grid_y = (normalized_coordinates[point_index, 1] + 0.5) * oversampled_size - 0.5
+        grid_z = (normalized_coordinates[point_index, 2] + 0.5) * oversampled_size - 0.5
+        x_min = int(np.ceil(grid_x - half_width))
+        x_max = int(np.floor(grid_x + half_width))
+        y_min = int(np.ceil(grid_y - half_width))
+        y_max = int(np.floor(grid_y + half_width))
+        z_min = int(np.ceil(grid_z - half_width))
+        z_max = int(np.floor(grid_z + half_width))
+        value = weights[point_index]
+
+        for z_index in range(z_min, z_max + 1):
+            if 0 <= z_index < oversampled_size:
+                z_weight = _kaiser_bessel_weight_lut(
+                    abs(grid_z - z_index), kernel_width, lut
+                )
+                for y_index in range(y_min, y_max + 1):
+                    if 0 <= y_index < oversampled_size:
+                        y_weight = _kaiser_bessel_weight_lut(
+                            abs(grid_y - y_index), kernel_width, lut
+                        )
+                        for x_index in range(x_min, x_max + 1):
+                            if 0 <= x_index < oversampled_size:
+                                x_weight = _kaiser_bessel_weight_lut(
+                                    abs(grid_x - x_index), kernel_width, lut
+                                )
+                                grid[z_index, y_index, x_index] += (
+                                    value * x_weight * y_weight * z_weight
+                                )
+
+
+@numba.njit(fastmath=True)
+def _sample_kb(
+    values,
+    grid,
+    normalized_coordinates,
+    grid_size,
+    oversampling,
+    kernel_width,
+    lut,
+):
+    oversampled_size = grid_size * oversampling
+    half_width = 0.5 * kernel_width
+
+    for point_index in range(len(normalized_coordinates)):
+        grid_x = (normalized_coordinates[point_index, 0] + 0.5) * oversampled_size - 0.5
+        grid_y = (normalized_coordinates[point_index, 1] + 0.5) * oversampled_size - 0.5
+        grid_z = (normalized_coordinates[point_index, 2] + 0.5) * oversampled_size - 0.5
+        x_min = int(np.ceil(grid_x - half_width))
+        x_max = int(np.floor(grid_x + half_width))
+        y_min = int(np.ceil(grid_y - half_width))
+        y_max = int(np.floor(grid_y + half_width))
+        z_min = int(np.ceil(grid_z - half_width))
+        z_max = int(np.floor(grid_z + half_width))
+        value = 0.0
+
+        for z_index in range(z_min, z_max + 1):
+            if 0 <= z_index < oversampled_size:
+                z_weight = _kaiser_bessel_weight_lut(
+                    abs(grid_z - z_index), kernel_width, lut
+                )
+                for y_index in range(y_min, y_max + 1):
+                    if 0 <= y_index < oversampled_size:
+                        y_weight = _kaiser_bessel_weight_lut(
+                            abs(grid_y - y_index), kernel_width, lut
+                        )
+                        for x_index in range(x_min, x_max + 1):
+                            if 0 <= x_index < oversampled_size:
+                                x_weight = _kaiser_bessel_weight_lut(
+                                    abs(grid_x - x_index), kernel_width, lut
+                                )
+                                value += (
+                                    grid[z_index, y_index, x_index]
+                                    * x_weight
+                                    * y_weight
+                                    * z_weight
+                                )
+        values[point_index] = value
+
+
+def _normalize_grid_coordinates(trajectory, matrix_size, fov_cm):
+    physical_coordinates = np.asarray(trajectory, dtype=np.float32).reshape(-1, 3)
+    normalized = physical_coordinates * (float(fov_cm) / float(matrix_size))
+    max_coordinate = float(np.max(np.abs(normalized))) if normalized.size else 0.0
+    if max_coordinate > 0.5 + 1e-5:
+        logging.warning(
+            "Normalized trajectory extends beyond the gridding FOV: max_abs=%.6f",
+            max_coordinate,
+        )
+    return np.asarray(normalized, dtype=np.float32)
+
+
+def _compute_dcf_kb(
+    normalized_coordinates,
+    grid_size,
+    oversampling=OVERSAMPLING,
+    num_iterations=5,
+):
+    oversampled_size = grid_size * oversampling
+    dcf = np.ones(len(normalized_coordinates), dtype=np.float64)
+
+    for iteration in range(num_iterations):
+        logging.info("Computing Kaiser-Bessel DCF iteration %d/%d", iteration + 1, num_iterations)
+        density_grid = np.zeros(
+            (oversampled_size, oversampled_size, oversampled_size),
+            dtype=np.float64,
+        )
+        _grid_kb_real(
+            density_grid,
+            normalized_coordinates,
+            dcf,
+            grid_size,
+            oversampling,
+            KB_KERNEL_WIDTH,
+            KB_LUT,
+        )
+        sampled_density = np.zeros_like(dcf)
+        _sample_kb(
+            sampled_density,
+            density_grid,
+            normalized_coordinates,
+            grid_size,
+            oversampling,
+            KB_KERNEL_WIDTH,
+            KB_LUT,
+        )
+        sampled_density[sampled_density < 1e-9] = 1.0
+        dcf /= sampled_density
+        median = float(np.median(dcf))
+        if median > 0.0 and np.isfinite(median):
+            dcf /= median
+
+    return np.asarray(dcf, dtype=np.float32)
+
+
+def _compute_deapodization_kb(grid_size, oversampling=OVERSAMPLING):
+    oversampled_size = grid_size * oversampling
+    kernel_1d = np.zeros(oversampled_size, dtype=np.complex128)
+    grid_center = 0.5 * oversampled_size - 0.5
+    half_width = 0.5 * KB_KERNEL_WIDTH
+    index_min = int(np.ceil(grid_center - half_width))
+    index_max = int(np.floor(grid_center + half_width))
+
+    for index in range(index_min, index_max + 1):
+        if 0 <= index < oversampled_size:
+            distance = abs(grid_center - index)
+            ratio = distance / half_width
+            kernel_1d[index] = np.i0(
+                KB_BETA * np.sqrt(max(0.0, 1.0 - ratio * ratio))
+            ) / np.i0(KB_BETA)
+
+    response_1d = (
+        np.fft.ifftshift(np.fft.ifft(np.fft.ifftshift(kernel_1d)))
+        * oversampled_size
+    )
+    start = (oversampled_size - grid_size) // 2
+    stop = start + grid_size
+    deapodization_1d = np.abs(response_1d[start:stop])
+    deapodization = np.multiply.outer(
+        np.multiply.outer(deapodization_1d, deapodization_1d).ravel(),
+        deapodization_1d,
+    ).reshape(grid_size, grid_size, grid_size)
+    deapodization /= np.nanmax(deapodization)
+    deapodization = np.where(deapodization < 1e-8, 1e-8, deapodization)
+    return np.asarray(deapodization, dtype=np.float32)
+
+
+def _regrid_3d_kb(
+    kspace_data,
+    normalized_coordinates,
+    grid_size,
+    dcf,
+    deapodization,
+    oversampling=OVERSAMPLING,
+):
+    oversampled_size = grid_size * oversampling
+    weighted_data = (
+        np.asarray(kspace_data).ravel() * np.asarray(dcf).ravel()
+    ).astype(np.complex128)
+    grid = np.zeros(
+        (oversampled_size, oversampled_size, oversampled_size),
+        dtype=np.complex128,
+    )
+    _grid_kb_complex(
+        grid,
+        normalized_coordinates,
+        weighted_data,
+        grid_size,
+        oversampling,
+        KB_KERNEL_WIDTH,
+        KB_LUT,
+    )
+
+    shifted_grid = np.fft.ifftshift(grid)
+    if USE_PYFFTW:
+        inverse_fft = pyfftw.builders.ifftn(
+            shifted_grid,
+            auto_align_input=True,
+            auto_contiguous=True,
+            threads=-1,
+        )
+        transformed_grid = inverse_fft()
+    else:
+        transformed_grid = np.fft.ifftn(shifted_grid)
+
+    oversampled_image = np.fft.ifftshift(transformed_grid) * (oversampled_size**3)
+    start = (oversampled_size - grid_size) // 2
+    stop = start + grid_size
+    image = oversampled_image[start:stop, start:stop, start:stop].copy()
+    image /= deapodization
+    return np.asarray(image, dtype=np.complex64)
 
 
 def _normalize_trajectory_array(traj):
@@ -382,57 +709,29 @@ def _compute_sample_mask_and_scale(coil_data, sigma):
     return filtered, bad_columns
 
 
-def _compute_clipped_radial_dcf(abs_k):
-    if abs_k.size == 0:
-        return np.array([], dtype=np.float32)
-
-    dcf = np.square(abs_k, dtype=np.float32)
-    if abs_k.ndim != 2 or abs_k.shape[0] < 2:
-        return dcf.ravel()
-
-    dk = abs_k[1:, 0] - abs_k[:-1, 0]
-    if dk.size == 0 or float(np.max(dk)) <= 0:
-        return dcf.ravel()
-
-    twist_indices = np.where(dk > 0.99 * float(np.max(dk)))[0]
-    if twist_indices.size == 0:
-        return dcf.ravel()
-
-    abs_k_twist = float(abs_k[int(twist_indices.max()), 0])
-    return np.asarray(np.clip(dcf, 1e-6, abs_k_twist ** 2), dtype=np.float32).ravel()
-
-
-def _build_reconstruction_weights(
+def _build_fermi_filter(
     trajectory,
-    matrix_size,
-    fov_cm,
     apply_fermi_filter,
     fermi_width,
     fermi_cutoff,
-    dcf_iterations,
 ):
+    if not apply_fermi_filter:
+        return np.ones(trajectory.shape[:2], dtype=np.float32)
+
     abs_k = np.linalg.norm(trajectory, axis=-1)
+    abs_k_max = float(np.max(abs_k)) if abs_k.size else 0.0
+    if abs_k_max <= 0.0:
+        return np.ones(trajectory.shape[:2], dtype=np.float32)
 
-    if dcf_iterations > 0:
-        coordinates = np.asarray(trajectory.reshape(-1, 3) * float(fov_cm), dtype=np.float32)
-        weights = estimate_dcf_iterative(
-            coordinates,
-            (matrix_size, matrix_size, matrix_size),
-            num_iter=dcf_iterations,
+    normalized_radius = abs_k / abs_k_max
+    fermi_filter = 1.0 / (
+        1.0
+        + np.exp(
+            (normalized_radius - float(fermi_cutoff))
+            / max(float(fermi_width), 1e-6)
         )
-    else:
-        weights = _compute_clipped_radial_dcf(abs_k)
-
-    if apply_fermi_filter:
-        abs_k_max = float(np.max(abs_k)) if abs_k.size else 0.0
-        if abs_k_max > 0:
-            abs_k_norm = abs_k / abs_k_max
-            fermi_filter = 1.0 / (
-                1.0 + np.exp((abs_k_norm - float(fermi_cutoff)) / max(float(fermi_width), 1e-6))
-            )
-            weights = weights * fermi_filter.ravel().astype(np.float32, copy=False)
-
-    return np.asarray(weights, dtype=np.float32), abs_k
+    )
+    return np.asarray(fermi_filter, dtype=np.float32)
 
 
 def _prepare_single_coil_data(
@@ -441,6 +740,7 @@ def _prepare_single_coil_data(
     reject_bad_readouts,
     bad_readout_sigma,
     center_window,
+    fermi_filter,
 ):
     working_data = np.asarray(coil_data.T, dtype=np.complex64)
 
@@ -465,25 +765,177 @@ def _prepare_single_coil_data(
     if reference_mean > 0:
         working_data *= 2.0 / reference_mean
 
-    return np.asarray(working_data, dtype=np.complex64)
+    return np.asarray(working_data * fermi_filter, dtype=np.complex64)
 
 
-def _reconstruct_single_coil(coil_index, coil_data, coordinates, weights, matrix_size, stage_label):
-    logging.info("Starting %s NUFFT for coil %d", stage_label, coil_index)
-    reconstructed = sigpy.nufft_adjoint(
-        coil_data.ravel() * weights,
-        coordinates,
-        (matrix_size, matrix_size, matrix_size),
+def _compress_coils_by_variance(coil_data, variance_retention=0.9, epsilon=1e-12):
+    num_input_coils = int(coil_data.shape[0])
+    if num_input_coils <= 1:
+        return (
+            np.asarray(coil_data, dtype=np.complex64),
+            np.array([1.0], dtype=np.float32),
+            np.eye(num_input_coils, dtype=np.complex64),
+        )
+
+    data_2d = np.asarray(coil_data).reshape(num_input_coils, -1)
+    covariance = data_2d @ data_2d.conj().T
+    covariance /= max(data_2d.shape[1], 1)
+    eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+    order = np.argsort(eigenvalues)[::-1]
+    eigenvalues = np.maximum(eigenvalues[order].real, 0.0)
+    eigenvectors = eigenvectors[:, order]
+
+    total_variance = float(eigenvalues.sum())
+    if total_variance <= epsilon:
+        logging.warning(
+            "Coil compression skipped because covariance has near-zero variance"
+        )
+        return (
+            np.asarray(coil_data, dtype=np.complex64),
+            np.ones(num_input_coils, dtype=np.float32),
+            np.eye(num_input_coils, dtype=np.complex64),
+        )
+
+    cumulative_variance = np.cumsum(eigenvalues) / total_variance
+    retention = float(np.clip(variance_retention, 0.0, 1.0))
+    num_virtual_coils = min(
+        num_input_coils,
+        int(np.searchsorted(cumulative_variance, retention) + 1),
     )
-    logging.info("Finished %s NUFFT for coil %d", stage_label, coil_index)
-    return coil_index, np.asarray(reconstructed, dtype=np.complex64)
+    compression_matrix = np.asarray(
+        eigenvectors[:, :num_virtual_coils],
+        dtype=np.complex64,
+    )
+    compressed_data = np.einsum(
+        "cv,c...->v...",
+        compression_matrix.conj(),
+        coil_data,
+        optimize=True,
+    )
+
+    logging.info(
+        "Coil compression: %d physical coils -> %d virtual coils "
+        "(%.2f%% variance retained)",
+        num_input_coils,
+        num_virtual_coils,
+        100.0 * cumulative_variance[num_virtual_coils - 1],
+    )
+    logging.info(
+        "Cumulative coil variance: %s",
+        np.array2string(cumulative_variance[:num_virtual_coils], precision=4),
+    )
+    return (
+        np.asarray(compressed_data, dtype=np.complex64),
+        np.asarray(cumulative_variance, dtype=np.float32),
+        compression_matrix,
+    )
 
 
-def _combine_sum_of_squares(coil_images):
-    logging.info("Combining coils with root-sum-of-squares")
-    combined = np.sqrt(np.sum(np.abs(coil_images) ** 2, axis=0)).astype(np.float32)
-    logging.info("Finished root-sum-of-squares coil combination")
-    return combined
+def _reconstruct_single_virtual_coil(
+    coil_index,
+    coil_data,
+    normalized_coordinates,
+    dcf,
+    deapodization,
+    matrix_size,
+):
+    logging.info("Starting Kaiser-Bessel gridding for virtual coil %d", coil_index)
+    with GRID_SEMAPHORE:
+        reconstructed = _regrid_3d_kb(
+            coil_data.ravel(),
+            normalized_coordinates,
+            grid_size=matrix_size,
+            dcf=dcf,
+            deapodization=deapodization,
+            oversampling=OVERSAMPLING,
+        )
+    logging.info("Finished Kaiser-Bessel gridding for virtual coil %d", coil_index)
+    return coil_index, reconstructed
+
+
+def _estimate_sensitivities(coil_images, smooth_sigma=None, epsilon=1e-8):
+    num_coils, matrix_x, _, _ = coil_images.shape
+    if smooth_sigma is None:
+        smooth_sigma = matrix_x / 32.0
+    logging.info(
+        "Estimating sensitivities for %d virtual coils with sigma %.2f voxels",
+        num_coils,
+        smooth_sigma,
+    )
+
+    smoothed = np.zeros_like(coil_images, dtype=np.complex64)
+    for coil_index in range(num_coils):
+        real = ndi.gaussian_filter(coil_images[coil_index].real, smooth_sigma)
+        imaginary = ndi.gaussian_filter(coil_images[coil_index].imag, smooth_sigma)
+        smoothed[coil_index] = real + 1j * imaginary
+
+    root_sum_of_squares = np.sqrt(np.sum(np.abs(smoothed) ** 2, axis=0)) + epsilon
+    smoothed /= root_sum_of_squares[None, ...]
+    return np.asarray(smoothed, dtype=np.complex64)
+
+
+def _combine_coils(coil_images, mode="AC"):
+    normalized_mode = str(mode).strip().upper()
+    if coil_images.shape[0] == 1:
+        logging.info("Single virtual coil: skipping coil combination")
+        return np.asarray(np.abs(coil_images[0]), dtype=np.float32)
+
+    if normalized_mode == "SOS":
+        logging.info("Combining virtual coils with root-sum-of-squares")
+        return np.asarray(
+            np.sqrt(np.sum(np.abs(coil_images) ** 2, axis=0)),
+            dtype=np.float32,
+        )
+
+    if normalized_mode == "AC":
+        sensitivity_maps = _estimate_sensitivities(coil_images)
+        logging.info("Combining virtual coils adaptively")
+        combined = np.sum(np.conj(sensitivity_maps) * coil_images, axis=0)
+        return np.asarray(np.abs(combined), dtype=np.float32)
+
+    raise ValueError("coilcombinemode must be 'AC' or 'SoS'")
+
+
+def _n4_bias_field_correct(volume):
+    try:
+        import SimpleITK as sitk
+    except ImportError as error:
+        raise RuntimeError(
+            "N4 bias correction requires the SimpleITK runtime dependency"
+        ) from error
+
+    values = np.asarray(volume, dtype=np.float32)
+    if not values.size or float(np.max(values)) <= 0.0:
+        logging.warning("Skipping N4 bias correction for an empty image")
+        return values
+
+    image_zyx = values.swapaxes(0, 2)
+    sitk_image = sitk.GetImageFromArray(image_zyx)
+    mask = sitk.OtsuThreshold(sitk_image, 0, 1, 512)
+    mask = sitk.BinaryMorphologicalClosing(mask, [9, 9, 9])
+    mask = sitk.BinaryFillhole(mask)
+
+    if N4_SHRINK_FACTOR > 1:
+        shrink = [int(N4_SHRINK_FACTOR)] * sitk_image.GetDimension()
+        correction_image = sitk.Shrink(sitk_image, shrink)
+        correction_mask = sitk.Shrink(mask, shrink)
+    else:
+        correction_image = sitk_image
+        correction_mask = mask
+
+    corrector = sitk.N4BiasFieldCorrectionImageFilter()
+    corrector.SetMaximumNumberOfIterations(N4_MAX_ITERATIONS)
+    corrector.SetConvergenceThreshold(0.001)
+    corrector.SetSplineOrder(3)
+    corrector.SetWienerFilterNoise(0.1)
+    corrector.SetBiasFieldFullWidthAtHalfMaximum(0.15)
+    corrector.Execute(correction_image, correction_mask)
+    log_bias_field = corrector.GetLogBiasFieldAsImage(sitk_image)
+    corrected = sitk_image / sitk.Exp(log_bias_field)
+    return np.asarray(
+        sitk.GetArrayFromImage(corrected).swapaxes(0, 2),
+        dtype=np.float32,
+    )
 
 
 def _format_display_number(value):
@@ -554,20 +1006,11 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
     if volume.ndim != 3:
         raise ValueError(f"Reconstructed volume must be 3D, got shape {volume.shape}")
 
-    # Match the native ICE reconstruction display orientation. The two in-plane
-    # axes are NOT symmetric:
-    #   * Read (L/R, columns): the NUFFT x-axis runs opposite to the scanner
-    #     read convention, so the column pixels are reversed below AND read_dir
-    #     is negated here so the R/L marker stays consistent (verified correct
-    #     on the scanner).
-    #   * Phase (A/P, rows): the NUFFT y-axis already matches the scanner phase
-    #     convention. Reversing the rows put anterior at the bottom (the v0.1.8
-    #     "AP flip"), and negating phase_dir instead only relabelled A->P and
-    #     flipped the through-plane H/F marker (read x phase handedness) without
-    #     moving the pixels. So keep the rows natural and phase_dir un-negated.
-    #   * Slice (H/F): keep slice_dir natural.
+    # The display data is flipped along both in-plane axes below. Reverse the
+    # corresponding direction vectors so scanner orientation markers continue
+    # to describe the displayed pixels correctly.
     read_dir = -np.asarray(reference_head.read_dir, dtype=float)
-    phase_dir = np.asarray(reference_head.phase_dir, dtype=float)
+    phase_dir = -np.asarray(reference_head.phase_dir, dtype=float)
     slice_dir = np.asarray(reference_head.slice_dir, dtype=float)
     slice_dir_norm = float(np.linalg.norm(slice_dir))
     if slice_dir_norm < 1e-6:
@@ -585,22 +1028,13 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
     slice_count = int(display_volume.shape[2])
     image_comment = _scanner_display_comment(display_meta)
 
-    # Pack the complete matrix as one explicit 3D MRD image [z, y, x].
-    # NOTE: on its own this does NOT produce a single 64-frame DICOM volume.
-    # With UseIceFillingMiniHeader=true (FIRE OpenRecon XML) the scanner numbers
-    # every frame from the acquisition protocol's Slices-per-Slab
-    # (NoImagesPerSlab), so that protocol value must equal the reconstruction
-    # base resolution (matrixsize). When they differ -- here NoImagesPerSlab=32
-    # vs matrixsize=64 -- the DICOM writer flushes two 32-frame volumes and the
-    # partition counter folds (1..32 then 32..1); confirmed in
-    # logfile_v0.1.8.log (two "flush data (32 frames) by series '36'" entries).
-    # The remedy is a scanner-side protocol change (set Slices-per-Slab equal to
-    # the reconstruction base resolution) and cannot be made from this recon
-    # container.
-    # Reverse only the read/column axis (x); keep the phase/row axis (y) and the
-    # slice axis (z) in natural order (see the read/phase/slice note above).
+    # Pack the complete matrix as one explicit 3D MRD image. Sending 64
+    # separate 2D messages lets ICE refill each mini-header from the source
+    # protocol's NoImagesPerSlab=32 and causes the DICOM writer to flush two
+    # 32-frame volumes. One [z, y, x] image gives the writer one 64-frame
+    # volume, matching the native ICE reconstruction contract.
     packed_volume = np.ascontiguousarray(
-        display_volume[::-1, :, :].transpose(2, 1, 0)
+        display_volume[::-1, ::-1, :].transpose(2, 1, 0)
     )
     image = ismrmrd.Image.from_array(packed_volume, transpose=False)
 
@@ -630,10 +1064,10 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
 
     meta = ismrmrd.Meta()
     meta["DataRole"] = "Image"
-    meta["ImageProcessingHistory"] = ["PYTHON", "SIGPY", "NUFFT"]
-    meta["ImageType"] = "DERIVED\\PRIMARY\\M\\SODIUMNUFFT"
-    meta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\SODIUMNUFFT"
-    meta["ImageTypeValue4"] = "SODIUMNUFFT"
+    meta["ImageProcessingHistory"] = ["PYTHON", "NUMBA", "KAISERBESSEL", "GRIDDING"]
+    meta["ImageType"] = "DERIVED\\PRIMARY\\M\\SODIUMGRIDDING"
+    meta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\SODIUMGRIDDING"
+    meta["ImageTypeValue4"] = "SODIUMGRIDDING"
     meta["ComplexImageComponent"] = "MAGNITUDE"
     meta["SequenceDescriptionAdditional"] = OUTPUT_IMAGE_COMMENT
     meta["SeriesDescription"] = series_description
@@ -664,12 +1098,12 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
     meta["SlicePosLightMarker"] = [
         f"{float(value):.18f}" for value in new_header.position
     ]
-    meta["SodiumNUFFTDisplayScale"] = _format_display_number(display_meta["scale"])
-    meta["SodiumNUFFTDisplayInputMin"] = f"{float(display_meta['input_min']):.6g}"
-    meta["SodiumNUFFTDisplayInputMax"] = f"{float(display_meta['input_max']):.6g}"
-    meta["SodiumNUFFTDisplayMin"] = str(int(display_meta["display_min"]))
-    meta["SodiumNUFFTDisplayMax"] = str(int(display_meta["display_max"]))
-    meta["SodiumNUFFTDisplayFormula"] = display_meta["formula"]
+    meta["SodiumGriddingDisplayScale"] = _format_display_number(display_meta["scale"])
+    meta["SodiumGriddingDisplayInputMin"] = f"{float(display_meta['input_min']):.6g}"
+    meta["SodiumGriddingDisplayInputMax"] = f"{float(display_meta['input_max']):.6g}"
+    meta["SodiumGriddingDisplayMin"] = str(int(display_meta["display_min"]))
+    meta["SodiumGriddingDisplayMax"] = str(int(display_meta["display_max"]))
+    meta["SodiumGriddingDisplayFormula"] = display_meta["formula"]
     image.attribute_string = meta.serialize()
 
     return [image]
@@ -783,6 +1217,27 @@ def process_raw(group, connection, config, metadata):
         1,
         _config_int(config, "maxworkers", OPENRECON_DEFAULTS["maxworkers"]),
     )
+    coil_variance_retention = float(
+        np.clip(
+            _config_float(
+                config,
+                "coilvarianceretention",
+                OPENRECON_DEFAULTS["coilvarianceretention"],
+            ),
+            0.0,
+            1.0,
+        )
+    )
+    coil_combine_mode = _config_str(
+        config,
+        "coilcombinemode",
+        OPENRECON_DEFAULTS["coilcombinemode"],
+    )
+    apply_n4_bias_correction = _config_bool(
+        config,
+        "applyn4biascorrection",
+        OPENRECON_DEFAULTS["applyn4biascorrection"],
+    )
 
     data = _build_data_array(group)
     trajectory = _load_trajectory(group, config)
@@ -800,29 +1255,37 @@ def process_raw(group, connection, config, metadata):
         data = data[:max_coils]
 
     logging.info(
-        "Running sodium NUFFT with coils=%d readouts=%d samples=%d matrix=%d fov_cm=%.3f",
+        "Running sodium Kaiser-Bessel gridding with physical_coils=%d "
+        "readouts=%d samples=%d matrix=%d oversampling=%d fov_cm=%.3f",
         data.shape[0],
         data.shape[1],
         data.shape[2],
         matrix_size,
+        OVERSAMPLING,
         fov_cm,
     )
     logging.info("Trajectory shape after clipping: %s", trajectory.shape)
+    logging.info(
+        "Gridding configuration: kernel_width=%.1f beta=%.6f dcf_iterations=%d "
+        "coil_variance_retention=%.3f coil_combine_mode=%s n4=%s pyfftw=%s",
+        KB_KERNEL_WIDTH,
+        KB_BETA,
+        dcf_iterations,
+        coil_variance_retention,
+        coil_combine_mode,
+        apply_n4_bias_correction,
+        USE_PYFFTW,
+    )
     reference_head = group[len(group) // 2].getHead()
-    max_workers = min(configured_max_workers, data.shape[0])
-    _log_cpu_resources(configured_max_workers, max_workers)
-    reconstruction_weights, _ = _build_reconstruction_weights(
+    fermi_filter = _build_fermi_filter(
         trajectory,
-        matrix_size=matrix_size,
-        fov_cm=fov_cm,
         apply_fermi_filter=apply_fermi_filter,
         fermi_width=fermi_width,
         fermi_cutoff=fermi_cutoff,
-        dcf_iterations=dcf_iterations,
     )
 
     prepared_data = []
-    logging.info("Preparing %d coils for reconstruction", data.shape[0])
+    logging.info("Preparing %d physical coils before compression", data.shape[0])
     for coil_index in range(data.shape[0]):
         prepared_data.append(
             _prepare_single_coil_data(
@@ -831,49 +1294,96 @@ def process_raw(group, connection, config, metadata):
                 reject_bad_readouts=reject_bad_readouts,
                 bad_readout_sigma=bad_readout_sigma,
                 center_window=center_window,
+                fermi_filter=fermi_filter,
             )
         )
     logging.info("Finished coil data preparation")
+    prepared_data = np.asarray(prepared_data, dtype=np.complex64)
+    virtual_coil_data, cumulative_variance, compression_matrix = (
+        _compress_coils_by_variance(
+            prepared_data,
+            variance_retention=coil_variance_retention,
+        )
+    )
+
+    normalized_coordinates = _normalize_grid_coordinates(
+        trajectory,
+        matrix_size=matrix_size,
+        fov_cm=fov_cm,
+    )
+    logging.info("Computing Kaiser-Bessel density compensation")
+    dcf = _compute_dcf_kb(
+        normalized_coordinates,
+        grid_size=matrix_size,
+        oversampling=OVERSAMPLING,
+        num_iterations=dcf_iterations,
+    )
+    logging.info("Computing Kaiser-Bessel deapodization")
+    deapodization = _compute_deapodization_kb(
+        matrix_size,
+        oversampling=OVERSAMPLING,
+    )
+
+    max_workers = min(configured_max_workers, virtual_coil_data.shape[0])
+    _log_cpu_resources(configured_max_workers, max_workers)
 
     coil_images = np.zeros(
-        (data.shape[0], matrix_size, matrix_size, matrix_size),
+        (virtual_coil_data.shape[0], matrix_size, matrix_size, matrix_size),
         dtype=np.complex64,
     )
 
     logging.info(
-        "Launching full-resolution NUFFTs for %d coils with up to %d workers",
-        data.shape[0],
+        "Launching full-resolution gridding for %d virtual coils with up to "
+        "%d workers and %d simultaneous grids",
+        virtual_coil_data.shape[0],
         max_workers,
+        MAX_SIMULTANEOUS_GRIDS,
     )
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
             executor.submit(
-                _reconstruct_single_coil,
+                _reconstruct_single_virtual_coil,
                 coil_index,
-                prepared_data[coil_index],
-                np.asarray(trajectory[: prepared_data[coil_index].shape[0], : prepared_data[coil_index].shape[1], :].reshape(-1, 3) * float(fov_cm), dtype=np.float32),
-                reconstruction_weights,
+                virtual_coil_data[coil_index],
+                normalized_coordinates,
+                dcf,
+                deapodization,
                 matrix_size,
-                "full-resolution",
             )
-            for coil_index in range(data.shape[0])
+            for coil_index in range(virtual_coil_data.shape[0])
         ]
         for future in futures:
             coil_index, reconstructed = future.result()
             coil_images[coil_index] = reconstructed
-            logging.info("Collected full-resolution reconstruction for coil %d", coil_index)
+            logging.info(
+                "Collected full-resolution reconstruction for virtual coil %d",
+                coil_index,
+            )
 
-    combined_magnitude_volume = _combine_sum_of_squares(coil_images)
-    np.save(os.path.join(debugFolder, "sodiumnufft_coil_images.npy"), coil_images)
-    np.save(os.path.join(debugFolder, "sodiumnufft_magnitude_volume.npy"), combined_magnitude_volume)
+    combined_magnitude_volume = _combine_coils(coil_images, mode=coil_combine_mode)
+    output_volume = combined_magnitude_volume
+    if apply_n4_bias_correction:
+        logging.info("Running N4 bias field correction")
+        output_volume = _n4_bias_field_correct(combined_magnitude_volume)
+        logging.info("Finished N4 bias field correction")
+
+    np.save(os.path.join(debugFolder, "sodiumgridding_virtual_coil_data.npy"), virtual_coil_data)
+    np.save(os.path.join(debugFolder, "sodiumgridding_coil_variance.npy"), cumulative_variance)
+    np.save(os.path.join(debugFolder, "sodiumgridding_compression_matrix.npy"), compression_matrix)
+    np.save(os.path.join(debugFolder, "sodiumgridding_coil_images.npy"), coil_images)
+    np.save(
+        os.path.join(debugFolder, "sodiumgridding_magnitude_volume.npy"),
+        combined_magnitude_volume,
+    )
+    np.save(os.path.join(debugFolder, "sodiumgridding_output_volume.npy"), output_volume)
 
     process_time_ms = (perf_counter() - tic) * 1000.0
-    message = f"Sodium NUFFT processing time: {process_time_ms:.2f} ms"
+    message = f"Sodium gridding processing time: {process_time_ms:.2f} ms"
     logging.info(message)
     connection.send_logging(constants.MRD_LOGGING_INFO, message)
 
     return _build_output_images(
-        combined_magnitude_volume,
+        output_volume,
         reference_head,
         metadata,
         output_fov_mm=float(fov_cm) * 10.0,

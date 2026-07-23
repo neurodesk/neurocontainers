@@ -1,0 +1,172 @@
+{
+  "general": {
+    "name": { "en": "sodiumgridding" },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": { "en": "3D sodium Kaiser-Bessel gridding with coil compression, adaptive combination, and optional N4 correction." },
+    "id": "sodiumgridding",
+    "regulatory_information": {
+      "device_trade_name": "sodiumgridding",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "Erlangen, Germany",
+      "made_in": "DE",
+      "manufacture_date": "2023/02/14",
+      "material_number": "sodiumgridding_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "00860000171212",
+      "udi": "(01)00860000171212(21)1.3.0",
+      "safety_advices": "",
+      "special_operating_instructions": "OpenRecon sodium Kaiser-Bessel gridding from raw k-space to magnitude image data",
+      "additional_relevant_information": ""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "raw",
+    "injector": "compleximage",
+    "can_process_adjustment_data": true,
+    "can_use_gpu": false,
+    "min_required_memory": 32000,
+    "min_count_required_cpu_cores": 10,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": { "en": "config" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "sodiumgridding",
+          "name": { "en": "sodiumgridding" }
+        }
+      ],
+      "default": "sodiumgridding",
+      "information": { "en": "Define the config to be executed by the MRD server." }
+    },
+    {
+      "id": "trajectoryfile",
+      "label": { "en": "Bundled trajectory" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "/opt/sodiumgridding/23Na_n28_trajectory.h5",
+          "name": { "en": "23Na n28" }
+        },
+        {
+          "id": "/opt/sodiumgridding/23Na_n50_trajectory.h5",
+          "name": { "en": "23Na n50" }
+        }
+      ],
+      "default": "/opt/sodiumgridding/23Na_n28_trajectory.h5",
+      "information": { "en": "Bundled HDF5 trajectory used when the MRD data does not contain embedded trajectories." }
+    },
+    {
+      "id": "trajectorysampleoffset",
+      "label": { "en": "Trajectory sample offset" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 128,
+      "default": 0,
+      "information": { "en": "Number of leading trajectory samples to skip before pairing the external trajectory with the MRD raw samples." }
+    },
+    {
+      "id": "matrixsize",
+      "label": { "en": "Matrix size" },
+      "type": "int",
+      "minimum": 32,
+      "maximum": 512,
+      "default": 128,
+      "information": { "en": "Final isotropic gridding reconstruction matrix. Oversampling is fixed at 2, producing a 256 cubed working grid for the default matrix." }
+    },
+    {
+      "id": "fovcm",
+      "label": { "en": "FOV cm" },
+      "type": "string",
+      "default": "22.0",
+      "information": { "en": "Reconstruction field of view in cm. Trajectories are interpreted in 1/cm units." }
+    },
+    {
+      "id": "applyfermifilter",
+      "label": { "en": "Apply Fermi filter" },
+      "type": "boolean",
+      "default": true,
+      "information": { "en": "Apply the optional k-space Fermi taper before coil compression and gridding." }
+    },
+    {
+      "id": "fermiwidth",
+      "label": { "en": "Fermi width" },
+      "type": "string",
+      "default": "0.05",
+      "information": { "en": "Width parameter for the optional Fermi filter." }
+    },
+    {
+      "id": "fermicutoff",
+      "label": { "en": "Fermi cutoff" },
+      "type": "string",
+      "default": "0.98",
+      "information": { "en": "Cutoff parameter for the optional Fermi filter." }
+    },
+    {
+      "id": "dcfiterations",
+      "label": { "en": "DCF iterations" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 50,
+      "default": 5,
+      "information": { "en": "Number of iterative Kaiser-Bessel density compensation updates. Use 0 for uniform weights." }
+    },
+    {
+      "id": "maxcoils",
+      "label": { "en": "Max coils" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 128,
+      "default": 16,
+      "information": { "en": "Limit reconstruction to the first N physical coils before compression. Use 0 for all coils." }
+    },
+    {
+      "id": "maxworkers",
+      "label": { "en": "Max workers" },
+      "type": "int",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 8,
+      "information": { "en": "Maximum number of parallel virtual-coil reconstructions. At most two oversampled grids are resident concurrently." }
+    },
+    {
+      "id": "coilvarianceretention",
+      "label": { "en": "Coil variance" },
+      "type": "string",
+      "default": "0.9",
+      "information": { "en": "Fraction of physical-coil signal variance retained during virtual coil compression, from 0 to 1." }
+    },
+    {
+      "id": "coilcombinemode",
+      "label": { "en": "Coil combination" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "AC",
+          "name": { "en": "Adaptive combine" }
+        },
+        {
+          "id": "SoS",
+          "name": { "en": "Sum of squares" }
+        }
+      ],
+      "default": "AC",
+      "information": { "en": "Combine reconstructed virtual coils using sensitivity-weighted adaptive combination or sum of squares." }
+    },
+    {
+      "id": "applyn4biascorrection",
+      "label": { "en": "N4 correction" },
+      "type": "boolean",
+      "default": true,
+      "information": { "en": "Apply N4 bias field correction to the combined magnitude volume before scanner display scaling." }
+    }
+  ]
+}

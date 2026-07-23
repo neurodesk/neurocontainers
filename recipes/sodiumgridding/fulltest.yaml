@@ -1,9 +1,9 @@
-# sodiumnufft container test suite
-# Focused verification for OpenRecon runtime assets and sodium NUFFT imports.
+# sodiumgridding container test suite
+# Focused verification for the OpenRecon runtime and gridding dependencies.
 
-name: sodiumnufft
-version: 0.1.10
-container: sodiumnufft_0.1.10.simg
+name: sodiumgridding
+version: 0.1.0
+container: sodiumgridding_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output
@@ -29,8 +29,8 @@ tests:
       import h5py
 
       trajectories = [
-          Path("/opt/sodiumnufft/23NA_n50_trajectory.h5"),
-          Path("/opt/sodiumnufft/23Na_n28_trajectory.h5"),
+          Path("/opt/sodiumgridding/23Na_n50_trajectory.h5"),
+          Path("/opt/sodiumgridding/23Na_n28_trajectory.h5"),
       ]
       label = Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json")
       for trajectory in trajectories:
@@ -42,10 +42,10 @@ tests:
       print(label)
       PY
 
-  - name: Sodium NUFFT module imports
+  - name: Sodium gridding module imports
     description: Verify the reconstruction module imports with its runtime dependencies
     script: |
-      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import sodiumnufft, ismrmrd, h5py, scipy, sigpy, twixtools; print(sodiumnufft.__file__)" | grep -x '/opt/code/python-ismrmrd-server/sodiumnufft.py'
+      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import SimpleITK, h5py, ismrmrd, numba, pyfftw, scipy, sodiumgridding, twixtools; print(sodiumgridding.__file__)" | grep -x '/opt/code/python-ismrmrd-server/sodiumgridding.py'
 
   - name: Helper scripts render help
     description: Verify conversion helper scripts start and expose command line help

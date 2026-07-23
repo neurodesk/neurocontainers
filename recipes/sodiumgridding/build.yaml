@@ -1,5 +1,5 @@
-name: sodiumnufft
-version: 0.1.10
+name: sodiumgridding
+version: 0.1.0
 
 copyright:
   - license: MIT
@@ -9,8 +9,8 @@ architectures:
   - x86_64
 
 files:
-  - name: sodiumnufft.py
-    filename: sodiumnufft.py
+  - name: sodiumgridding.py
+    filename: sodiumgridding.py
   - name: twix2mrd.py
     filename: twix2mrd.py
   - name: siemens_twix2mrd.py
@@ -34,6 +34,7 @@ build:
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
+        NUMBA_CACHE_DIR: /tmp/numba-sodiumgridding
     - install:
         - bzip2
         - ca-certificates
@@ -45,17 +46,17 @@ build:
     - run:
         - ldconfig
     - run:
-        - pip3 install --no-cache-dir sigpy==0.1.27 twixtools
-    - workdir: /opt/sodiumnufft
+        - pip3 install --no-cache-dir numba==0.66.0 pyFFTW==0.15.0 SimpleITK==2.5.5 twixtools==0.24
+    - workdir: /opt/sodiumgridding
     - run:
-        - cp {{ get_file("sodiumnufft.py") }} /opt/code/python-ismrmrd-server/sodiumnufft.py
+        - cp {{ get_file("sodiumgridding.py") }} /opt/code/python-ismrmrd-server/sodiumgridding.py
         - cp {{ get_file("twix2mrd.py") }} /opt/code/python-ismrmrd-server/twix2mrd.py
         - cp {{ get_file("siemens_twix2mrd.py") }} /opt/code/python-ismrmrd-server/siemens_twix2mrd.py
         - cp {{ get_file("mrd2nifti.py") }} /opt/code/python-ismrmrd-server/mrd2nifti.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
     - run:
-        - cp {{ get_file("sodium_trajectory_n50") }} /opt/sodiumnufft/23NA_n50_trajectory.h5
-        - cp {{ get_file("sodium_trajectory_n28") }} /opt/sodiumnufft/23Na_n28_trajectory.h5
+        - cp {{ get_file("sodium_trajectory_n50") }} /opt/sodiumgridding/23Na_n50_trajectory.h5
+        - cp {{ get_file("sodium_trajectory_n28") }} /opt/sodiumgridding/23Na_n28_trajectory.h5
 
 deploy:
   bins:
@@ -68,21 +69,22 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAACXBI
 
 readme: |-
   ----------------------------------
-  ## sodiumnufft/{{ context.version }} ##
-  This container runs a sodium NUFFT reconstruction for OpenRecon using `sigpy`
-  and the python-ismrmrd-server.
+  ## sodiumgridding/{{ context.version }} ##
+  This container runs a 3D sodium Kaiser-Bessel gridding reconstruction for
+  OpenRecon. It includes variance-based coil compression, adaptive or
+  sum-of-squares coil combination, and optional N4 bias correction.
 
   Build the recipe with:
   ```bash
   source env/bin/activate
-  python -m builder generate sodiumnufft --recreate --architecture x86_64
+  python -m builder generate sodiumgridding --recreate --architecture x86_64
   ```
 
   Full build:
   ```bash
   source env/bin/activate
-  sf-build sodiumnufft --architecture x86_64
+  sf-build sodiumgridding --architecture x86_64
   ```
 
-  OpenRecon runtime notes are documented in `recipes/sodiumnufft/OpenReconREADME.md`.
+  OpenRecon runtime notes are documented in `recipes/sodiumgridding/OpenReconREADME.md`.
   ----------------------------------
