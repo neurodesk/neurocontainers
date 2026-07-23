@@ -127,7 +127,14 @@ tests:
       assert data["reconstruction"]["emitter"] == "image"
       assert data["reconstruction"]["injector"] == "image"
       assert data["reconstruction"]["content_qualification_type"] == "RESEARCH"
-      assert {item["id"] for item in data["parameters"]} == {"config"}
+      assert {item["id"] for item in data["parameters"]} == {
+          "config", "sendoriginal"
+      }
+      send_original = next(
+          item for item in data["parameters"] if item["id"] == "sendoriginal"
+      )
+      assert send_original["type"] == "boolean"
+      assert send_original["default"] is True
       assert data["reconstruction"]["min_count_required_cpu_cores"] == 24
       print(path)
       PY
@@ -230,9 +237,19 @@ tests:
 
       assert connection.closed
       assert not connection.logs, connection.logs
-      assert len(connection.sent) == 2
+      assert len(connection.sent) == 3
+      originals = connection.sent[0]
+      assert len(originals) == len(images)
+      assert all(original is not source for original, source in zip(originals, images))
+      for original, source in zip(originals, images):
+          assert np.array_equal(original.data, source.data)
+          assert original.getHead() == source.getHead()
+          meta = ismrmrd.Meta.deserialize(original.attribute_string)
+          assert meta["Keep_image_geometry"] == "1"
+          assert meta["SequenceDescription"] == "multi_echo_epi"
+
       by_role = {}
-      for derived in connection.sent:
+      for derived in connection.sent[1:]:
           roles = {
               ismrmrd.Meta.deserialize(image.attribute_string)["ImageTypeValue4"]
               for image in derived
@@ -252,5 +269,25 @@ tests:
       assert len(by_role["MEICA_T2S"]) == 2
       assert {int(image.getHead().repetition) for image in by_role["MEICA_T2S"]} == {0}
       assert {int(image.getHead().slice) for image in by_role["MEICA_T2S"]} == {0, 1}
-      print("returned apparent dR2* and T2* ME-ICA MRD series")
+
+      derived_only = Connection(images)
+      meica.process(
+          derived_only,
+          {
+              "parameters": {
+                  "meicabinary": os.environ["FAKE_MEICA"],
+                  "sendoriginal": False,
+              }
+          },
+          Metadata(),
+      )
+      assert derived_only.closed
+      assert not derived_only.logs, derived_only.logs
+      assert len(derived_only.sent) == 2
+      derived_only_roles = {
+          ismrmrd.Meta.deserialize(series[0].attribute_string)["ImageTypeValue4"]
+          for series in derived_only.sent
+      }
+      assert derived_only_roles == {"MEICA_DR2S", "MEICA_T2S"}
+      print("returned original, apparent dR2*, and T2* ME-ICA MRD series")
       PY

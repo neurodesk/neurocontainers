@@ -100,7 +100,8 @@ structured_readme:
     meica.py -d rest_e1.nii.gz rest_e2.nii.gz rest_e3.nii.gz -e 12 28 44
 
     # The OpenRecon adapter is selected with config=meica and requires
-    # at least three reconstructed magnitude echoes.
+    # at least three reconstructed magnitude echoes. It sends the original
+    # echo images by default, followed by the derived dR2* and T2* series.
   documentation: https://github.com/ME-ICA/me-ica
   citation: "Kundu P, Brenowitz ND, Voon V, Worbe Y, Vertes PE, Inati SJ, Saad ZS, Bandettini PA, Bullmore ET. Integrated strategy for improving functional connectivity mapping using multiecho fMRI. PNAS 110.40 (2013): 16187-16192. https://doi.org/10.1073/pnas.1301725110"
 
@@ -122,7 +123,9 @@ readme: |-
   OpenRecon expects at least three echoes. Echo times are read from the MRD
   sequence header, and ME-ICA runs with 24 CPU workers.
   OpenRecon always returns the denoised BOLD-like apparent dR2* series and the
-  T2* map (`dr2s_epi` and `t2s_epi`); there is no scanner output selector.
+  T2* map (`dr2s_epi` and `t2s_epi`); there is no scanner output selector. It
+  also returns the original echo images by default. Disable `sendoriginal` to
+  return only the derived ME-ICA series.
 
   Documentation: https://github.com/ME-ICA/me-ica
 

@@ -45,6 +45,13 @@
       ],
       "default": "meica",
       "information": { "en": "Run the ME-ICA OpenRecon image adapter." }
+    },
+    {
+      "id": "sendoriginal",
+      "label": { "en": "Send original images" },
+      "type": "boolean",
+      "default": true,
+      "information": { "en": "Return the incoming reconstructed echo images before the derived ME-ICA series." }
     }
   ]
 }

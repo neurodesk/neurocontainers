@@ -68,6 +68,8 @@ def process(connection, config, metadata):
             selected = _find_outputs(work_dir / "output")
             output_images = _outputs_to_mrd(selected, conversion, images)
 
+        if settings["send_original"]:
+            connection.send_image([_original_passthrough(image) for image in images])
         for series in output_images:
             connection.send_image(series)
     except Exception:
@@ -428,6 +430,7 @@ def _settings(config):
     params = _config_parameters(config)
     return {
         "cpus": DEFAULT_CPUS,
+        "send_original": _as_bool(params.get("sendoriginal", True)),
         "binary": str(
             params.get("meicabinary")
             or os.environ.get("MEICA_BINARY")
@@ -446,6 +449,12 @@ def _config_parameters(config):
         return {}
     params = config.get("parameters", config)
     return params if isinstance(params, dict) else {}
+
+
+def _as_bool(value):
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _is_magnitude(image):
@@ -642,6 +651,14 @@ def _derived_meta(
     meta["ImagesInAcquisition"] = str(slices * timepoints)
     meta["NumberInSeries"] = str(image_index)
     return meta
+
+
+def _original_passthrough(image):
+    original = copy.deepcopy(image)
+    meta = _meta(original)
+    meta["Keep_image_geometry"] = "1"
+    original.attribute_string = meta.serialize()
+    return original
 
 
 def _meta(image):

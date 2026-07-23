@@ -22,8 +22,10 @@ mask.
 
 OpenRecon always returns two derived series. The `dr2s_epi` series is the
 denoised BOLD-like time series expressed as apparent `dR2*` in `s^-1`. The
-`t2s_epi` series is the T2* map. These outputs are fixed and are not selectable
-in the scanner GUI.
+`t2s_epi` series is the T2* map. These derived outputs are fixed and are not
+selectable in the scanner GUI. By default, the adapter also returns the
+incoming reconstructed echo images before the two derived series. Disable
+`sendoriginal` to return only the ME-ICA outputs.
 
 The input must be reconstructed magnitude multi-echo EPI. Phase images and raw
 k-space acquisitions are not ME-ICA inputs. An anatomical image is optional in
@@ -34,6 +36,7 @@ ME-ICA and is intentionally not required by this inline adapter.
 | GUI label | Parameter id | Default | Description |
 | --- | --- | --- | --- |
 | config | `config` | `meica` | Selects the ME-ICA server module. |
+| Send original images | `sendoriginal` | `true` | Return the incoming echo images before the derived ME-ICA outputs. |
 
 ME-ICA is a research tool and is not intended for standard clinical use.
 

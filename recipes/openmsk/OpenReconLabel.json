@@ -130,7 +130,7 @@
       "id": "qdesste2ms",
       "label": { "en": "qDESS TE2" },
       "type": "double",
-      "information": { "en": "Fallback echo-2 time for synthetic qDESS DICOM when MRD sequence parameters are absent" },
+      "information": { "en": "Fallback echo-2 time when MRD has no sequence TE; a single MRD qDESS TE is shared by both S1/S2 volumes" },
       "minimum": 0.1,
       "maximum": 300.0,
       "default": 42.0,
