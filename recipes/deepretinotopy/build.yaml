@@ -1,5 +1,5 @@
 name: deepretinotopy
-version: 1.0.18
+version: 1.0.19
 
 copyright:
   - license: GPL-3.0
@@ -27,20 +27,28 @@ build:
         pip_install: packaging osfclient==0.0.5 nibabel sympy==1.13.1
         version: latest
 
+    # pyg_lib and torch_sparse are deliberately NOT installed: their pt25cu124
+    # wheels need GLIBC_2.29+, but the freesurfer base image is CentOS 8
+    # (glibc 2.28), so they fail to load at runtime with
+    # "libm.so.6: version `GLIBC_2.29' not found" and torch_geometric silently
+    # disables them. Nothing here needs them -- utils/model.py only uses
+    # SplineConv, which is backed by torch_spline_conv. Re-add them if the base
+    # image ever moves to glibc 2.29+.
     - run:
         - pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
-        - pip install --no-cache-dir pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.5.1+cu124.html
+        - pip install --no-cache-dir torch_scatter torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.5.1+cu124.html
         - pip install --no-cache-dir torch_geometric==2.6.1
-        - python -c "import torch" 2>/dev/null || { echo "Failed to import module"; exit 1; }
-        - python -c "import torch_geometric; print('PyG working')"
+        - python -c "import torch; print('torch', torch.__version__)"
+        - python -c "import torch_scatter, torch_cluster, torch_spline_conv; print('PyG extensions OK')"
+        - python -c "from torch_geometric.nn import SplineConv; print('PyG working')"
 
     - workdir: /opt
 
     - run:
         - git clone https://github.com/felenitaribeiro/deepRetinotopy_TheToolbox.git
         - cd deepRetinotopy_TheToolbox
-        - git checkout fd8382bfa168727feb53946fdab4fe838908e5f2
-        - for file in osfstorage/new_models/deepRetinotopy_polarAngle_LH_model5.pt osfstorage/new_models/deepRetinotopy_eccentricity_LH_model2.pt osfstorage/new_models/deepRetinotopy_pRFsize_LH_model5.pt osfstorage/new_models/deepRetinotopy_polarAngle_RH_model4.pt osfstorage/new_models/deepRetinotopy_eccentricity_RH_model2.pt osfstorage/new_models/deepRetinotopy_pRFsize_RH_model5.pt; do path="${file#osfstorage/new_}"; mkdir -p "${path%/*}"; chmod 777 "${path%/*}"; osf -p ermbz fetch "$file" "$path"; echo "$file"; new_path=$(echo "$path" | sed -E 's/model[0-9]+/model/'); mv "$path" "$new_path"; echo "Renamed $path to $new_path"; done
+        - git checkout f2e3f83854813d57927232f64aa54b5dc04bb1f5
+        - for file in osfstorage/models/v2/deepRetinotopy_visualCoord_LH_model5.pt osfstorage/models/v2/deepRetinotopy_pRFsize_LH_model4.pt osfstorage/models/v2/deepRetinotopy_visualCoord_RH_model1.pt osfstorage/models/v2/deepRetinotopy_pRFsize_RH_model5.pt; do path="models/$(basename "$file")"; mkdir -p models; chmod 777 models; osf -p ermbz fetch "$file" "$path"; echo "$file"; new_path=$(echo "$path" | sed -E 's/model[0-9]+/model/'); mv "$path" "$new_path"; echo "Renamed $path to $new_path"; done
 
     - run:
         - yum clean all
@@ -50,8 +58,8 @@ build:
         - rm -rf /var/lib/rpm/Packages
         - rm -rf /tmp/*
         - rm -rf ~/.cache/pip/*
-        - rm -rf /opt/miniconda/lib/python3.12/site-packages/torchvision/datasets/*
-        - rm -rf /opt/miniconda/lib/python3.12/site-packages/*/__pycache__/*
+        - rm -rf /opt/miniconda-latest/lib/python3.12/site-packages/torchvision/datasets/*
+        - rm -rf /opt/miniconda-latest/lib/python3.12/site-packages/*/__pycache__/*
 
     - workdir: /opt/deepRetinotopy_TheToolbox
 
@@ -72,13 +80,14 @@ deploy:
     - 4_signmaps.py
     - transform_polarangle_lh.py
     - midthickness_surf.py
+    - reconstruct_coords_native.py
 
 readme: |-
   ----------------------------------
   ## deepretinotopy/{{ context.version }} ##
 
   This container has FreeSurfer 7.3.2, Connectome Workbench v1.5.0, PyTorch 2.5.1 (gpu), and PyTorch geometric 2.6.1 (gpu). These packages are required for data preparation and model inference. 
-  Use this container for GPU inference and 1.0.11 for CPU inference.
+  Use this container for GPU/CPU inference.
 
   Example:
   ```
