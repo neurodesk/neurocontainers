@@ -11,6 +11,11 @@ architectures:
   - x86_64
   - aarch64
 
+options:
+  glass:
+    description: "Boot the LXDE desktop directly on a cc Glass display"
+    default: false
+
 show_in_menu: false
 show_in_applist: false
 
@@ -444,6 +449,42 @@ build:
         - ln -s /neurodesktop-storage/containers /neurocommand/local/containers
         - rm -rf /root/.cache /home/${NB_USER}/.cache
 
+    - condition: context.options.glass
+      install:
+        - build-essential
+        - fonts-dejavu-core
+        - libx11-6
+        - libx11-dev
+        - systemd
+        - systemd-sysv
+        - x11-xserver-utils
+        - xclip
+        - xserver-xorg-core
+        - xserver-xorg-input-evdev
+
+    - condition: context.options.glass
+      run:
+        - cc -x c -O2 -Wall -Wextra -o /usr/local/bin/glass-clipboard {{ get_file("glass_clipboard_source") }} -lX11
+        - cc -x c -O2 -Wall -Wextra -o /usr/local/bin/glass-resize {{ get_file("glass_resize_source") }}
+        - install -m 0755 {{ get_file("glass_session") }} /usr/local/sbin/neurodesktop-glass-session
+        - install -m 0755 {{ get_file("glass_cvmfs_mount") }} /usr/local/sbin/neurodesktop-glass-cvmfs
+        - install -m 0644 {{ get_file("glass_service") }} /etc/systemd/system/neurodesktop-glass.service
+        - install -m 0644 {{ get_file("glass_target") }} /etc/systemd/system/glass.target
+        - install -m 0644 {{ get_file("glass_xorg_config") }} /etc/X11/xorg.conf
+        - if [ -x /usr/bin/systemctl.orig ]; then mv -f /usr/bin/systemctl.orig /usr/bin/systemctl; fi
+        - mkdir -p /etc/systemd/system/glass.target.wants
+        - ln -sf /etc/systemd/system/neurodesktop-glass.service /etc/systemd/system/glass.target.wants/neurodesktop-glass.service
+        - ln -sf /etc/systemd/system/glass.target /etc/systemd/system/default.target
+        - ln -sf /dev/null /etc/systemd/system/apt-daily.timer
+        - ln -sf /dev/null /etc/systemd/system/apt-daily-upgrade.timer
+        - ln -sf /dev/null /etc/systemd/system/systemd-networkd-wait-online.service
+        - sed -i 's#^CVMFS_CACHE_BASE=.*#CVMFS_CACHE_BASE=/var/lib/cvmfs#' /etc/cvmfs/default.local
+        - install -d -o cvmfs -g cvmfs -m 0700 /var/lib/cvmfs /var/lib/cvmfs/shared
+        - truncate -s 0 /etc/machine-id
+        - DEBIAN_FRONTEND=noninteractive apt-get purge --yes build-essential libx11-dev
+        - apt-get clean
+        - rm -rf /var/lib/apt/lists/*
+
     - workdir: /home/${NB_USER}
 
 deploy:
@@ -589,6 +630,13 @@ files:
 
   - name: bashrc_append
     contents: |
+      # Desktop terminals start non-login shells, so /etc/profile.d/lmod.sh is
+      # not sourced. Initialise Lmod here as part of the system-wide Bash
+      # configuration so `module` and its `ml` shorthand work immediately.
+      if ! type module >/dev/null 2>&1 && [ -r /usr/share/lmod/lmod/init/bash ]; then
+          source /usr/share/lmod/lmod/init/bash
+      fi
+
       source /opt/neurodesktop/environment_variables.sh
 
       # Neurodesk persistent bash history
@@ -644,3 +692,139 @@ files:
           export NEURODESKTOP_TOMCAT_PORT="${NEURODESK_WEBAPP_PORT}"
       fi
       exec /opt/neurodesktop/guacamole.sh
+
+  - name: glass_clipboard_source
+    filename: glass-clipboard.c
+    condition: context.options.glass
+
+  - name: glass_resize_source
+    filename: glass-resize.c
+    condition: context.options.glass
+
+  - name: glass_xorg_config
+    filename: xorg.conf
+    condition: context.options.glass
+
+  - name: glass_session
+    condition: context.options.glass
+    executable: true
+    contents: |
+      #!/bin/sh
+      set -eu
+
+      install -d -o 1000 -g 100 -m 0700 /run/user/1000
+      install -d -m 0755 /run/dbus
+      install -d -o 1000 -g 100 -m 0755 /home/jovyan
+      /usr/local/sbin/neurodesktop-glass-cvmfs \
+          >/var/log/neurodesktop-glass-cvmfs.log 2>&1 &
+      if [ -d /opt/jovyan_defaults ]; then
+          cp -an /opt/jovyan_defaults/. /home/jovyan/
+          chown -R 1000:100 /home/jovyan
+      fi
+      rm -f /tmp/.X0-lock /tmp/.X11-unix/X0
+
+      /usr/bin/dbus-daemon --system --nofork --nopidfile &
+      dbus_pid=$!
+      /usr/lib/xorg/Xorg :0 \
+          -noreset \
+          -nolisten tcp \
+          -novtswitch \
+          -sharevts \
+          -logfile /var/log/neurodesktop-glass-Xorg.log &
+      xorg_pid=$!
+
+      cleanup() {
+          kill "$xorg_pid" 2>/dev/null || true
+          kill "$dbus_pid" 2>/dev/null || true
+      }
+      trap cleanup EXIT INT TERM
+
+      attempt=0
+      while [ ! -S /tmp/.X11-unix/X0 ]; do
+          attempt=$((attempt + 1))
+          if [ "$attempt" -ge 200 ]; then
+              echo "neurodesktop-glass: Xorg did not create display :0" >&2
+              exit 1
+          fi
+          sleep 0.05
+      done
+
+      attempt=0
+      while [ ! -S /run/dbus/system_bus_socket ]; do
+          attempt=$((attempt + 1))
+          if [ "$attempt" -ge 200 ]; then
+              echo "neurodesktop-glass: D-Bus did not create the system bus socket" >&2
+              exit 1
+          fi
+          sleep 0.05
+      done
+
+      exec setpriv --reuid=1000 --regid=100 --clear-groups env \
+          DISPLAY=:0 \
+          HOME=/home/jovyan \
+          USER=jovyan \
+          LOGNAME=jovyan \
+          XDG_RUNTIME_DIR=/run/user/1000 \
+          dbus-run-session -- sh -lc '
+              /usr/local/bin/glass-clipboard &
+              /usr/local/bin/glass-resize &
+              exec startlxde
+          '
+
+  - name: glass_service
+    condition: context.options.glass
+    contents: |
+      [Unit]
+      Description=Neurodesktop Glass LXDE session
+      DefaultDependencies=no
+      After=ccx3-stage2.service
+      Wants=ccx3-stage2.service
+
+      [Service]
+      Type=simple
+      ExecStart=/usr/local/sbin/neurodesktop-glass-session
+      Restart=on-failure
+      RestartSec=1s
+      StandardOutput=append:/run/neurodesktop-glass.log
+      StandardError=inherit
+
+      [Install]
+      WantedBy=glass.target
+
+  - name: glass_cvmfs_mount
+    condition: context.options.glass
+    executable: true
+    contents: |
+      #!/bin/sh
+      set -eu
+
+      repository=neurodesk.ardc.edu.au
+      mountpoint=/cvmfs/$repository
+      selected=/etc/cvmfs/config.d/$repository.conf
+      default_config=/etc/cvmfs/config.d/$repository.conf.direct.asia
+
+      if mountpoint -q "$mountpoint"; then
+          exit 0
+      fi
+
+      install -d -o cvmfs -g cvmfs -m 0700 /var/lib/cvmfs /var/lib/cvmfs/shared
+      install -d -o cvmfs -g cvmfs -m 0755 "$mountpoint"
+
+      # The first endpoint in this configuration is Neurodesk's global
+      # geoproximity service. The regional endpoints remain fallbacks.
+      if [ ! -f "$selected" ]; then
+          cp "$default_config" "$selected"
+      fi
+
+      mount -t cvmfs "$repository" "$mountpoint"
+      test -d "$mountpoint/neurodesk-modules"
+
+  - name: glass_target
+    condition: context.options.glass
+    contents: |
+      [Unit]
+      Description=Neurodesktop Glass desktop
+      DefaultDependencies=no
+      Wants=ccx3-stage2.service neurodesktop-glass.service
+      After=ccx3-stage2.service
+      AllowIsolate=yes

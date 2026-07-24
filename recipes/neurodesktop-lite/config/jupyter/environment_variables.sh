@@ -294,11 +294,16 @@ esac
 # This is needed to make app containers writable as a workaround for macos with Apple Silicon.
 # We need to do it here for the desktop and in the dockerfile for the jupyter notebook.
 #
-# Host note: some setuid Singularity installations reject directory overlays for
-# non-root users. If /tmp/apptainer_overlay fails on a host, use a rootless
-# launch mode, a writable overlay image, or the host-runtime nested container
-# path documented in /opt/neurodesktop/nested_container_runtime.sh.
-export neurodesk_singularity_opts=" --overlay /tmp/apptainer_overlay "
+# Keep each user's writable app-container overlay in their private runtime
+# directory when one is available. Desktop terminals source this file directly,
+# so create the directory here rather than relying on the Jupyter launcher.
+export NEURODESKTOP_APPTAINER_OVERLAY="${XDG_RUNTIME_DIR:-/tmp}/apptainer_overlay"
+if install -d -m 0700 "${NEURODESKTOP_APPTAINER_OVERLAY}" 2>/dev/null; then
+        export neurodesk_singularity_opts=" --overlay ${NEURODESKTOP_APPTAINER_OVERLAY} "
+else
+        echo "[WARN] Could not create writable Apptainer overlay at ${NEURODESKTOP_APPTAINER_OVERLAY}." >&2
+        export neurodesk_singularity_opts=""
+fi
 # export neurodesk_singularity_opts=" -w " THIS DOES NOT WORK FOR SIMG FILES IN OFFLINE MODE
 # There is a small delay in using --overlay in comparison to -w - maybe it would be faster to use a fixed size overlay file instead?
 

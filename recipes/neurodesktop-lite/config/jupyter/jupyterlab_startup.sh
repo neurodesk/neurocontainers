@@ -237,8 +237,9 @@ if ! grep -iq 'cpu.*hz' /proc/cpuinfo; then
     fi
 fi
 
-# ensure overlay directory exists
-mkdir -p /tmp/apptainer_overlay
+# environment_variables.sh creates this for terminals too; retain the startup
+# check for callers that invoke this script without sourcing the environment.
+install -d -m 0700 "${NEURODESKTOP_APPTAINER_OVERLAY:-/tmp/apptainer_overlay}"
 
 # ensure goose config directory exists
 mkdir -p ${HOME}/.config/goose
