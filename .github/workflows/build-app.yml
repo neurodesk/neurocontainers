@@ -43,6 +43,9 @@ on:
       skip_simg_build:
         required: false
         type: string
+      multiarch:
+        required: false
+        type: string        # 'true' enables the amd64+arm64 index path
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -69,7 +72,8 @@ jobs:
       ARCHITECTURE: ${{ steps.envars.outputs.ARCHITECTURE }}
       IMAGE_SUFFIX: ${{ steps.envars.outputs.IMAGE_SUFFIX }}
       RELEASE_VERSION: ${{ steps.envars.outputs.RELEASE_VERSION }}
-      IMAGE_FINGERPRINT_CACHE: ${{ steps.getfingerprint.outputs.IMAGE_FINGERPRINT_CACHE }}
+      BUILD_MATRIX: ${{ steps.matrix.outputs.BUILD_MATRIX }}
+      ARM64_ENABLED: ${{ steps.matrix.outputs.ARM64_ENABLED }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -186,50 +190,43 @@ jobs:
           echo "APPLICATION: $APPLICATION"
           python3 -m builder stage "$APPLICATION" --recreate --architecture "$ARCHITECTURE"
 
-      - name: Set image variables
-        id: imgvars
+      - name: Build arch matrix
+        id: matrix
         env:
-          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+          RUNNER_JSON: ${{ inputs.runner }}
+          MULTIARCH: ${{ inputs.multiarch }}
+          APPLICATION: ${{ inputs.application }}
         run: |
-          DOCKERFILE_PATH=$(find "./build/$APPLICATION/" -type f -iname "*.dockerfile" | head -1)
-          # if the dockerfile is not found, exit with error
-          if [ -z "$DOCKERFILE_PATH" ]; then
-            echo "Dockerfile not found for $APPLICATION"
-            exit 1
+          set -euo pipefail
+          # The base leg's arch follows inputs.runner, preserving today's single-arch
+          # behavior exactly: an arm runner builds arm64, everything else builds amd64.
+          # (Do NOT hardcode amd64 here — that would build the wrong arch when someone
+          # manually dispatches on the arm runner without multiarch.)
+          BASE_RUNNER=$(printf '%s' "$RUNNER_JSON" | jq -r 'if type=="array" then .[0] else . end' 2>/dev/null || printf '%s' "$RUNNER_JSON")
+          case "$BASE_RUNNER" in
+            *arm*) BASE=$(jq -nc --arg r "$BASE_RUNNER" '{arch:"arm64",architecture:"aarch64",image_suffix:"_arm64",runner:$r}'); BASE_IS_AMD64=false ;;
+            *)     BASE=$(jq -nc --arg r "$BASE_RUNNER" '{arch:"amd64",architecture:"x86_64",image_suffix:"",runner:$r}'); BASE_IS_AMD64=true ;;
+          esac
+          LEGS=$(jq -nc --argjson b "$BASE" '[$b]')
+          ARM64_ENABLED=false
+          # Opt-in arm64 leg: multiarch=true, an amd64 base (dispatch multiarch on an
+          # amd64 runner), AND the recipe declares aarch64/arm64.
+          if [ "$MULTIARCH" = "true" ] && [ "$BASE_IS_AMD64" = "true" ] && \
+             awk '/^architectures:/{f=1;next} f&&/^[^[:space:]#-]/{f=0} f&&/aarch64|arm64/{print}' \
+               "recipes/${APPLICATION}/build.yaml" | grep -q .; then
+            ARM64_ENABLED=true
+            LEGS=$(printf '%s' "$LEGS" | jq -c '. + [{arch:"arm64",architecture:"aarch64",image_suffix:"_arm64",runner:"blacksmith-8vcpu-ubuntu-2404-arm"}]')
           fi
-          DOCKERFILE=$(basename "$DOCKERFILE_PATH")
-          BASE_IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
-          IMAGENAME="${BASE_IMAGENAME}${IMAGE_SUFFIX}"
-          echo "DOCKERFILE: $DOCKERFILE"
-          echo "IMAGENAME: $IMAGENAME"
-          echo "DOCKERFILE=$DOCKERFILE" >> "$GITHUB_ENV"
-          echo "IMAGENAME=$IMAGENAME" >> "$GITHUB_ENV"
-
-      - name: Login to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull latest image from registry and get fingerprint
-        id: getfingerprint
-        if: inputs.skip_docker_build != 'true'
-        env:
-          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
-        run: |
-          IMAGE_FINGERPRINT_CACHE=""
-          IMAGE_REF="ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest"
-          if docker pull "$IMAGE_REF"; then
-            IMAGE_FINGERPRINT_CACHE=$(python3 builder/image_fingerprint.py "$IMAGE_REF")
-          fi
-          echo "IMAGE_FINGERPRINT_CACHE=$IMAGE_FINGERPRINT_CACHE" >> "$GITHUB_OUTPUT"
+          echo "BUILD_MATRIX=$(printf '%s' "$LEGS" | jq -c .)" >> "$GITHUB_OUTPUT"
+          echo "ARM64_ENABLED=$ARM64_ENABLED" >> "$GITHUB_OUTPUT"
 
   build-image:
     needs: config
-    runs-on: ${{ fromJSON(inputs.runner) }}
-    outputs:
-      IMGDIFFERS: ${{ steps.imgcompare.outputs.IMGDIFFERS }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.config.outputs.BUILD_MATRIX) }}
+    runs-on: ${{ matrix.runner }}
 
     permissions:
       packages: write
@@ -240,10 +237,9 @@ jobs:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
-      IMAGE_FINGERPRINT_CACHE: ${{ needs.config.outputs.IMAGE_FINGERPRINT_CACHE }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
-      ARCHITECTURE: ${{ needs.config.outputs.ARCHITECTURE }}
-      IMAGE_SUFFIX: ${{ needs.config.outputs.IMAGE_SUFFIX }}
+      ARCHITECTURE: ${{ matrix.architecture }}
+      IMAGE_SUFFIX: ${{ matrix.image_suffix }}
     steps:
       - name: Set runner base path
         run: |
@@ -363,12 +359,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Pull latest image from registry and get fingerprint
+        id: getfingerprint
+        if: inputs.skip_docker_build != 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          # Per-arch fingerprint of the previously published :latest for THIS arch's
+          # image name (…${IMAGE_SUFFIX}). Relocated here from `config` so each matrix
+          # leg compares against its own arch's cached image (a single config-level
+          # fingerprint would be wrong for two arches).
+          IMAGE_FINGERPRINT_CACHE=""
+          IMAGE_REF="ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest"
+          if docker pull "$IMAGE_REF"; then
+            IMAGE_FINGERPRINT_CACHE=$(python3 builder/image_fingerprint.py "$IMAGE_REF")
+          fi
+          echo "IMAGE_FINGERPRINT_CACHE=$IMAGE_FINGERPRINT_CACHE" >> "$GITHUB_ENV"
+
       - name: Set up Docker Buildx
-        if: ${{ inputs.skip_docker_build != 'true' && !contains(inputs.runner, 'blacksmith') }}
+        if: ${{ inputs.skip_docker_build != 'true' && !contains(matrix.runner, 'blacksmith') }}
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
 
       - name: Set up Blacksmith Docker builder
-        if: ${{ inputs.skip_docker_build != 'true' && contains(inputs.runner, 'blacksmith') }}
+        if: ${{ inputs.skip_docker_build != 'true' && contains(matrix.runner, 'blacksmith') }}
         uses: useblacksmith/setup-docker-builder@v1
 
       - name: Debug Dockerfile
@@ -384,7 +397,7 @@ jobs:
         env:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
-          IS_BLACKSMITH_RUNNER: ${{ contains(inputs.runner, 'blacksmith') }}
+          IS_BLACKSMITH_RUNNER: ${{ contains(matrix.runner, 'blacksmith') }}
         run: |
           cd "./build/${APPLICATION}"
           CACHE_REF=ghcr.io/${GH_REGISTRY}/${APPLICATION}${IMAGE_SUFFIX}:buildcache
@@ -497,50 +510,55 @@ jobs:
             docker push ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest
           fi
 
-  # push-ghcr:
-  #   needs: [config, build-image]
-  #   if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_ghcr == 'true' }}
-  #   runs-on: ubuntu-22.04
-  #   permissions:
-  #     packages: write
+      - name: Record leg status
+        if: always()
+        run: |
+          mkdir -p st
+          printf '%s' "${{ steps.imgcompare.outputs.IMGDIFFERS || 'false' }}" > "st/imgdiffers-${{ matrix.arch }}.txt"
+          printf '%s' "${{ job.status }}" > "st/status-${{ matrix.arch }}.txt"
 
-  #   steps:
-  #     - name: Configure runner
-  #       run: |
-  #         sudo swapoff -a && sudo rm -rf /mnt/*
-  #         sudo mkdir -p /mnt/tmp
-  #         sudo chown $USER /mnt/tmp
-  #         sudo mkdir -p /mnt/docker
-  #         echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
-  #         sudo systemctl restart docker
+      - name: Upload leg status
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: imgstatus-${{ matrix.arch }}
+          path: st/
+          retention-days: 1
 
-  #     - name: Download build artifact
-  #       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-  #       with:
-  #         name: ${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}
-  #         path: /tmp/
-
-  #     - name: Load Docker Image from Artifact
-  #       if: inputs.skip_docker_build != 'true'
-  #       run: docker load --input /tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
-
-  #     - name: Login to GHCR
-  #       uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
-  #       with:
-  #         registry: ghcr.io
-  #         username: ${{ github.repository_owner }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
-
-  #     - name: Push to GHCR
-  #       env:
-  #         GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
-  #       run: |
-  #         docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:latest
-  #         docker push --all-tags ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}
+  decide:
+    needs: [config, build-image]
+    if: ${{ always() }}
+    runs-on: ubuntu-22.04
+    outputs:
+      amd64_built:   ${{ steps.d.outputs.amd64_built }}
+      arm64_built:   ${{ steps.d.outputs.arm64_built }}
+      amd64_differs: ${{ steps.d.outputs.amd64_differs }}
+      arm64_differs: ${{ steps.d.outputs.arm64_differs }}
+      any_differs:   ${{ steps.d.outputs.any_differs }}
+    steps:
+      - name: Download per-leg status artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: imgstatus-*
+          path: st
+          merge-multiple: true
+      - name: Aggregate leg status
+        id: d
+        run: |
+          set -euo pipefail
+          # Matrix job outputs collapse (last-writer-wins) in GH Actions, so the
+          # per-leg build/diff verdicts are aggregated here from status artifacts.
+          read_ok(){ [ "$(cat st/status-$1.txt 2>/dev/null)" = success ] && echo true || echo false; }
+          read_diff(){ [ "$(cat st/imgdiffers-$1.txt 2>/dev/null)" = true ] && echo true || echo false; }
+          ab=$(read_ok amd64); rb=$(read_ok arm64)
+          ad=$(read_diff amd64); rd=$(read_diff arm64)
+          any=false; { [ "$ad" = true ] || [ "$rd" = true ]; } && any=true
+          { echo "amd64_built=$ab"; echo "arm64_built=$rb";
+            echo "amd64_differs=$ad"; echo "arm64_differs=$rd"; echo "any_differs=$any"; } >> "$GITHUB_OUTPUT"
 
   push-dockerhub:
-    needs: [config, build-image]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_dockerhub == 'true' }}
+    needs: [config, build-image, decide]
+    if: ${{ needs.decide.outputs.amd64_differs == 'true' || inputs.force_push_dockerhub == 'true' }}
     # Docker Hub is a public mirror. GHCR, SIF generation, and object storage are
     # the release-critical outputs, so transient Docker Hub failures should not
     # block release PR creation.
@@ -612,8 +630,8 @@ jobs:
           done
 
   push-nectar-registry:
-    needs: [config, build-image]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_nectar_registry == 'true' }}
+    needs: [config, build-image, decide]
+    if: ${{ needs.decide.outputs.amd64_differs == 'true' || inputs.force_push_nectar_registry == 'true' }}
     # Nectar is a best-effort mirror; outages must not block the release path.
     continue-on-error: true
     runs-on: ubuntu-22.04
@@ -670,16 +688,20 @@ jobs:
           docker push "${NECTAR_IMAGE}:latest"
 
   build-simg:
-    needs: [config, build-image]
-    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false') }}
-    runs-on: ${{ fromJSON(inputs.runner) }}
+    needs: [config, build-image, decide]
+    if: ${{ inputs.skip_simg_build != 'true' && (needs.decide.outputs.any_differs == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.config.outputs.BUILD_MATRIX) }}
+    runs-on: ${{ matrix.runner }}
     permissions:
       packages: write
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ matrix.image_suffix }}
 
     steps:
       - name: Set runner base path
@@ -822,8 +844,8 @@ jobs:
           retention-days: 7
 
   upload-nectar:
-    needs: [config, build-image, build-simg]
-    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true') }}
+    needs: [config, build-image, build-simg, decide]
+    if: ${{ inputs.skip_simg_build != 'true' && (needs.decide.outputs.amd64_differs == 'true' || inputs.force_upload_nectar == 'true') }}
     # Nectar object storage is a best-effort mirror; S3 remains the blocking upload.
     continue-on-error: true
     runs-on: ${{ fromJSON(inputs.runner) }}
@@ -909,8 +931,12 @@ jobs:
           echo "[DEBUG] Done with uploading to Nectar Object Storage!"
 
   upload-s3:
-    needs: [config, build-image, build-simg]
-    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true') }}
+    needs: [config, build-image, build-simg, decide]
+    if: ${{ inputs.skip_simg_build != 'true' && (needs.decide.outputs.any_differs == 'true' || inputs.force_upload_s3 == 'true') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.config.outputs.BUILD_MATRIX) }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
@@ -918,7 +944,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ matrix.image_suffix }}
       AWSCLI_ARCH: x86_64
     steps:
       - name: Configure runner
@@ -957,9 +983,12 @@ jobs:
           fi
 
   push-quay:
-    needs: [config, build-image, build-simg]
+    needs: [config, build-image, build-simg, decide]
     # Requires org secrets QUAY_USERNAME + QUAY_ROBOT_TOKEN.
-    if: ${{ inputs.skip_simg_build != 'true' && needs.build-image.outputs.IMGDIFFERS == 'true' && needs.config.outputs.IMAGE_SUFFIX == '' }}
+    # amd64 single-arch v2 publish (+ SIF-attach-to-tag) for amd64-ONLY recipes.
+    # Arm-capable recipes publish via the `merge` job instead (all-or-nothing, like
+    # neurodesktop: if an arm leg fails, the whole multi-arch publish is skipped).
+    if: ${{ inputs.skip_simg_build != 'true' && needs.config.outputs.ARM64_ENABLED != 'true' && needs.decide.outputs.amd64_built == 'true' && needs.decide.outputs.amd64_differs == 'true' }}
     continue-on-error: true
     runs-on: ubuntu-22.04
     permissions:
@@ -1061,8 +1090,10 @@ jobs:
             "${SIF}:${SIF_MEDIATYPE}"
 
   push-ghcr:
-    needs: [config, build-image, build-simg]
-    if: ${{ inputs.skip_simg_build != 'true' && needs.build-image.outputs.IMGDIFFERS == 'true' && needs.config.outputs.IMAGE_SUFFIX == '' }}
+    needs: [config, build-image, build-simg, decide]
+    # amd64 single-arch v2 GHCR publish (+ SIF-attach-to-tag) for amd64-ONLY recipes;
+    # see push-quay for the all-or-nothing rationale. Arm-capable recipes use `merge`.
+    if: ${{ inputs.skip_simg_build != 'true' && needs.config.outputs.ARM64_ENABLED != 'true' && needs.decide.outputs.amd64_built == 'true' && needs.decide.outputs.amd64_differs == 'true' }}
     continue-on-error: true
     runs-on: ubuntu-22.04
     permissions:
@@ -1132,9 +1163,153 @@ jobs:
             "ghcr.io/${GH_REGISTRY}/${APPLICATION}:${VERSION}_${BUILDDATE}" \
             "${SIF}:${SIF_MEDIATYPE}"
 
+  merge:
+    # Multi-arch (amd64+arm64) OCI index publish for arm-capable recipes. Runs ONLY
+    # when BOTH legs succeed and something changed; if either arch leg fails, the
+    # implicit needs-gate skips this job so nothing publishes (all-or-nothing, like
+    # neurodesktop). amd64-only recipes publish via push-quay/push-ghcr instead.
+    needs: [config, build-image, build-simg, decide]
+    if: ${{ inputs.skip_simg_build != 'true'
+            && needs.config.outputs.ARM64_ENABLED == 'true'
+            && needs.decide.outputs.amd64_built == 'true'
+            && needs.decide.outputs.arm64_built == 'true'
+            && needs.decide.outputs.any_differs == 'true' }}
+    continue-on-error: true
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      VERSION: ${{ needs.config.outputs.VERSION }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
+      BUILD_MATRIX: ${{ needs.config.outputs.BUILD_MATRIX }}
+      GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+      QUAY_REPO: quay.io/neurodesk/${{ inputs.application }}
+      SIF_MEDIATYPE: application/vnd.sylabs.sif.layer.v1.sif
+    steps:
+      - name: Configure GitHub-hosted runner
+        if: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          BASE_PATH=/mnt
+          sudo swapoff -a && sudo rm -rf "$BASE_PATH"/*
+          sudo mkdir -p "$BASE_PATH/tmp" "$BASE_PATH/docker"
+          sudo chown "$USER" "$BASE_PATH/tmp"
+          printf '{"data-root": "%s"}\n' "$BASE_PATH/docker" | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+
+      - name: Install oras
+        run: |
+          curl -fsSL https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin oras
+          oras version
+
+      - name: Login to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Quay
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_ROBOT_TOKEN }}
+
+      - name: Create multi-arch index on Quay + GHCR
+        run: |
+          set -euo pipefail
+          V2_TAG="${VERSION}_${BUILDDATE}"
+          # Build the per-arch GHCR source list from the build matrix. build-image
+          # always pushes each arch's :${IMAGETAG} (PR#1), so both children resolve.
+          SRCS=$(printf '%s' "$BUILD_MATRIX" | jq -r --arg reg "$GH_REGISTRY" --arg app "$APPLICATION" --arg ver "$VERSION" --arg tag "$IMAGETAG" \
+            '[.[] | "ghcr.io/\($reg)/\($app)_\($ver)\(.image_suffix):\($tag)"] | join(" ")')
+          echo "Per-arch source images: $SRCS"
+          for tgt in "$QUAY_REPO" "ghcr.io/${GH_REGISTRY}/${APPLICATION}"; do
+            docker buildx imagetools create -t "${tgt}:${V2_TAG}" -t "${tgt}:${VERSION}" -t "${tgt}:latest" $SRCS
+          done
+
+      # build-simg uploads SIFs with `archive: false` (raw, un-zipped, to skip zip
+      # overhead on large images). Those raw artifacts require the matching pinned
+      # download-artifact used elsewhere in this file — the floating @v4 fails to
+      # download+extract them. `merge` only runs for arm-capable apps, so fetch both
+      # arches' SIFs by name.
+      - name: Download amd64 SIF (.simg)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          path: /mnt/tmp/
+      - name: Download arm64 SIF (.simg)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}_arm64_${{ needs.config.outputs.BUILDDATE }}.simg
+          path: /mnt/tmp/
+
+      - name: Attach per-arch SIFs as OCI referrers
+        run: |
+          set -euo pipefail
+          cd /mnt/tmp   # oras path-validation needs a relative SIF path
+          V2_TAG="${VERSION}_${BUILDDATE}"
+          sel='.manifests[] | select(.platform.os=="linux" and .platform.architecture==$a and ((.annotations["vnd.docker.reference.type"]//"")!="attestation-manifest")) | .digest'
+          for reg_repo in "${QUAY_REPO}" "ghcr.io/${GH_REGISTRY}/${APPLICATION}"; do
+            INDEX="${reg_repo}:${V2_TAG}"
+            RAW=$(docker buildx imagetools inspect --raw "$INDEX")
+            # Per-arch child attach: each arch's SIF -> that arch's child manifest.
+            for arch in amd64 arm64; do
+              suffix=$([ "$arch" = arm64 ] && echo _arm64 || echo "")
+              SIF="${APPLICATION}_${VERSION}${suffix}_${BUILDDATE}.simg"
+              CHILD=$(jq -r --arg a "$arch" "$sel" <<<"$RAW")
+              oras attach --artifact-type "$SIF_MEDIATYPE" \
+                --annotation "org.opencontainers.image.title=${APPLICATION}" \
+                --annotation "io.neurodesk.arch=${arch}" \
+                "${reg_repo}@${CHILD}" "${SIF}:${SIF_MEDIATYPE}"
+            done
+            # C-iii dual-attach: the amd64 SIF ALSO lives on the INDEX manifest, because
+            # today's consumer resolves manifests/<tag> -> (index) digest -> referrers.
+            # Attaching to the tag ref resolves to the index digest (oras does no platform
+            # selection on attach) -- exactly what the consumer looks up -- which avoids a
+            # brittle `imagetools inspect --format` digest extraction.
+            oras attach --artifact-type "$SIF_MEDIATYPE" \
+              --annotation "org.opencontainers.image.title=${APPLICATION}" \
+              --annotation "io.neurodesk.arch=amd64" \
+              "${INDEX}" "${APPLICATION}_${VERSION}_${BUILDDATE}.simg:${SIF_MEDIATYPE}"
+          done
+
+      # New Quay repos are created PRIVATE on first push; flip to public via the API
+      # so publishing stays hands-off. Idempotent and non-fatal (see push-quay).
+      - name: Make Quay repo public
+        env:
+          QUAY_API_TOKEN: ${{ secrets.QUAY_API_TOKEN }}
+        run: |
+          set -uo pipefail
+          if [ -z "${QUAY_API_TOKEN:-}" ]; then
+            echo "QUAY_API_TOKEN not set; skipping visibility change for neurodesk/${APPLICATION}."
+            exit 0
+          fi
+          code=$(curl -sS -o /tmp/quay_vis.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer ${QUAY_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"visibility":"public"}' \
+            "https://quay.io/api/v1/repository/neurodesk/${APPLICATION}/changevisibility") || true
+          if [ "${code}" = "200" ]; then
+            echo "neurodesk/${APPLICATION} is public (HTTP ${code})."
+          else
+            echo "::warning::Could not set neurodesk/${APPLICATION} public (HTTP ${code})."
+            cat /tmp/quay_vis.json 2>/dev/null || true
+          fi
+
   create-pr:
-    needs: [config, build-image, push-dockerhub, upload-nectar, upload-s3]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true'}}
+    needs: [config, build-image, push-dockerhub, upload-nectar, upload-s3, decide]
+    if: ${{ needs.decide.outputs.any_differs == 'true' || inputs.force_create_pr == 'true'}}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.config.outputs.BUILD_MATRIX) }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
@@ -1143,8 +1318,8 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
-      ARCHITECTURE: ${{ needs.config.outputs.ARCHITECTURE }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ matrix.image_suffix }}
+      ARCHITECTURE: ${{ matrix.architecture }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
     steps:
     - uses: actions/checkout@v5
@@ -1416,7 +1591,7 @@ jobs:
         echo "bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE" >> $GITHUB_STEP_SUMMARY
 
   report-auto-build-failure:
-    needs: [config, build-image, push-dockerhub, build-simg, upload-s3, create-pr]
+    needs: [config, build-image, push-dockerhub, build-simg, upload-s3, create-pr, decide, merge]
     if: ${{ always() && !cancelled() && github.event_name == 'push' && contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-22.04
     permissions:
@@ -1435,6 +1610,7 @@ jobs:
       BUILD_SIMG_RESULT: ${{ needs.build-simg.result }}
       UPLOAD_S3_RESULT: ${{ needs.upload-s3.result }}
       CREATE_PR_RESULT: ${{ needs.create-pr.result }}
+      MERGE_RESULT: ${{ needs.merge.result }}
       GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION || github.token }}
     steps:
       - name: Open or update auto-build failure issue
@@ -1487,6 +1663,7 @@ jobs:
             echo "- build-simg: \`${BUILD_SIMG_RESULT}\`"
             echo "- upload-s3: \`${UPLOAD_S3_RESULT}\`"
             echo "- create-pr: \`${CREATE_PR_RESULT}\`"
+            echo "- merge (multi-arch index): \`${MERGE_RESULT}\`"
             echo ""
             echo "Please check the workflow logs and push a fix or rerun the build once the underlying problem is resolved."
           } > "${body}"
