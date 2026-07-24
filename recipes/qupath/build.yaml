@@ -1,64 +1,214 @@
 name: qupath
-version: 0.6.0
+version: 0.7.0
 architectures:
   - x86_64
+
+variables:
+  cellpose_version: 3.1.1.2
+  cellpose_extension_version: 0.12.1
+  torch_version: 2.6.0
+
+files:
+  - name: qupath_archive
+    url: https://github.com/qupath/qupath/releases/download/v{{ context.version }}/QuPath-v{{ context.version }}-Linux.tar.xz
+  - name: cellpose_extension_archive
+    url: https://github.com/BIOP/qupath-extension-cellpose/releases/download/v{{ context.cellpose_extension_version }}/qupath-extension-cellpose-{{ context.cellpose_extension_version }}.zip
+  - name: cellpose_cyto3_model
+    url: https://www.cellpose.org/models/cyto3
+  - name: cellpose_cyto3_size_model
+    url: https://www.cellpose.org/models/size_cyto3.npy
+  - name: qupath-wrapper
+    executable: true
+    contents: |-
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      if [ -n "${QUPATH_PREFS_ROOT:-}" ]; then
+        prefs_root="${QUPATH_PREFS_ROOT}"
+      elif [ -n "${XDG_CONFIG_HOME:-}" ]; then
+        prefs_root="${XDG_CONFIG_HOME%/}/qupath/java-prefs"
+      else
+        prefs_root="${TMPDIR:-/tmp}/qupath-$(id -u)/java-prefs"
+      fi
+
+      qupath_java_options="-Djava.util.prefs.userRoot=${prefs_root}"
+      if [ -n "${JAVA_TOOL_OPTIONS:-}" ]; then
+        qupath_java_options="${qupath_java_options} ${JAVA_TOOL_OPTIONS}"
+      fi
+      export JAVA_TOOL_OPTIONS="${qupath_java_options}"
+
+      prefs_marker="${prefs_root}/.neurocontainers-initialized"
+      if [ ! -f "${prefs_marker}" ]; then
+        mkdir -p "${prefs_root}"
+        /usr/local/bin/QuPath/bin/QuPath script --cmd \
+          "java.util.prefs.Preferences.importPreferences(new java.io.FileInputStream('/opt/qupath-config/preferences.xml'))" \
+          >/dev/null 2>&1
+        touch "${prefs_marker}"
+      fi
+
+      exec /usr/local/bin/QuPath/bin/QuPath "$@"
+  - name: qupath-preferences
+    contents: |-
+      <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+      <!DOCTYPE preferences SYSTEM "http://java.sun.com/dtd/preferences.dtd">
+      <preferences EXTERNAL_XML_VERSION="1.0">
+        <root type="user">
+          <map/>
+          <node name="io.github.qupath">
+            <map/>
+            <node name="0.7">
+              <map>
+                <entry key="cellposePythonPath" value="/opt/cellpose/bin/python"/>
+                <entry key="userPath" value="/opt/qupath-user"/>
+              </map>
+            </node>
+          </node>
+        </root>
+      </preferences>
+  - name: qupath-extension-registry
+    contents: |-
+      {
+        "catalogs": [
+          {
+            "name": "QuPath catalog",
+            "description": "Extensions maintained by the QuPath team",
+            "uri": "https://github.com/qupath/qupath-catalog",
+            "rawUri": "https://raw.githubusercontent.com/qupath/qupath-catalog/refs/heads/main/catalog.json",
+            "deletable": false,
+            "extensions": []
+          },
+          {
+            "name": "QuPath-BIOP catalog",
+            "description": "Extensions maintained by the BIOP team",
+            "uri": "https://github.com/BIOP/qupath-biop-catalog",
+            "rawUri": "https://raw.githubusercontent.com/BIOP/qupath-biop-catalog/refs/heads/main/catalog.json",
+            "deletable": true,
+            "extensions": [
+              {
+                "name": "QuPath Cellpose extension",
+                "installedVersion": "v{{ context.cellpose_extension_version }}",
+                "optionalDependenciesInstalled": false
+              }
+            ]
+          }
+        ]
+      }
+
 structured_readme:
-  description: QuPath is an open-source software for bioimage analysis, especially digital pathology.
+  description: QuPath is an open-source software for bioimage analysis, especially digital pathology. This container includes the BIOP Cellpose extension and a preconfigured Cellpose 3 environment.
   example: QuPath --help
   documentation: https://qupath.github.io/
   citation: ''
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - install: xz-utils libgtk-3-0 libglib2.0-0 libx11-6 libxext6 libxrender1 libxtst6 libxi6 libxxf86vm1 libgl1 libglu1-mesa libxcomposite1 libxcursor1 libxdamage1 libxrandr2
-    - file:
-        name: QuPath-v0.6.0-Linux.tar.xz
-        url: https://github.com/qupath/qupath/releases/download/v0.6.0/QuPath-v0.6.0-Linux.tar.xz
+    - install:
+        - libcom-err2
+        - libgl1
+        - libglib2.0-0
+        - libglu1-mesa
+        - libgtk-3-0
+        - libice6
+        - libsm6
+        - libx11-6
+        - libxcomposite1
+        - libxcursor1
+        - libxdamage1
+        - libxext6
+        - libxi6
+        - libxrandr2
+        - libxrender1
+        - libxtst6
+        - libxxf86vm1
+        - python3
+        - python3-venv
+        - unzip
+        - xz-utils
+
     - run:
-        - tar -xvJf {{ get_file("QuPath-v0.6.0-Linux.tar.xz") }}
-        - mv QuPath /usr/local/bin
-        - chmod u+x /usr/local/bin/QuPath/bin/QuPath
+        - tar -xJf {{ get_file("qupath_archive") }} -C /usr/local/bin
+
+    - run:
+        - python3 -m venv /opt/cellpose
+        - /opt/cellpose/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        - /opt/cellpose/bin/python -m pip install --no-cache-dir torch=={{ context.torch_version }} --index-url https://download.pytorch.org/whl/cu124
+        - /opt/cellpose/bin/python -m pip install --no-cache-dir cellpose=={{ context.cellpose_version }} scikit-image
+        - mkdir -p /opt/cellpose/models
+        - cp {{ get_file("cellpose_cyto3_model") }} /opt/cellpose/models/cyto3
+        - cp {{ get_file("cellpose_cyto3_size_model") }} /opt/cellpose/models/size_cyto3.npy
+
+    - run:
+        - mkdir -p "/opt/qupath-user/extensions/catalogs/QuPath-BIOP catalog/QuPath Cellpose extension/v{{ context.cellpose_extension_version }}/main-jar"
+        - unzip -q {{ get_file("cellpose_extension_archive") }} -d "/opt/qupath-user/extensions/catalogs/QuPath-BIOP catalog/QuPath Cellpose extension/v{{ context.cellpose_extension_version }}/main-jar"
+        - mkdir -p /opt/qupath-user/extensions/catalogs /opt/qupath-config /opt/qupath-wrapper/bin
+        - cp {{ get_file("qupath-extension-registry") }} /opt/qupath-user/extensions/catalogs/registry.json
+        - cp {{ get_file("qupath-preferences") }} /opt/qupath-config/preferences.xml
+
+    - copy:
+        - qupath-wrapper
+        - /opt/qupath-wrapper/bin/QuPath
+
     - environment:
-        PATH: /usr/local/bin/QuPath/bin:$PATH
+        CELLPOSE_LOCAL_MODELS_PATH: /opt/cellpose/models
+        PATH: /opt/qupath-wrapper/bin:/opt/cellpose/bin:/usr/local/bin/QuPath/bin:$PATH
+
     - deploy:
         path:
+          - /opt/qupath-wrapper/bin
+          - /opt/cellpose/bin
           - /usr/local/bin/QuPath/bin
+
     - test:
         name: testScript
         script: |-
           #!/bin/bash
+          set -e
           QuPath --version
+          cellpose --version
+          test -f "/opt/qupath-user/extensions/catalogs/QuPath-BIOP catalog/QuPath Cellpose extension/v{{ context.cellpose_extension_version }}/main-jar/qupath-extension-cellpose-{{ context.cellpose_extension_version }}.jar"
+          test -f "/opt/qupath-user/extensions/catalogs/QuPath-BIOP catalog/QuPath Cellpose extension/v{{ context.cellpose_extension_version }}/main-jar/run-cellpose-qc.py"
+
 icon: data:image/png;base64,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
 categories:
   - image segmentation
   - structural imaging
   - data organisation
 gui_apps:
-  - name: "qupathGUI"
-    exec: "QuPath"
+  - name: qupathGUI
+    exec: QuPath
 readme: |-
   ----------------------------------
-  ## qupath/0.6.0 ##
+  ## qupath/{{ context.version }} ##
 
   QuPath is an open-source software for bioimage analysis, especially digital pathology.
+
+  This container also includes:
+  - BIOP QuPath Cellpose extension {{ context.cellpose_extension_version }}
+  - Cellpose {{ context.cellpose_version }} with the Cellpose 3 `cyto3` model
+  - CUDA-enabled PyTorch {{ context.torch_version }} with CPU fallback
+
+  QuPath is preconfigured to use `/opt/cellpose/bin/python` for Cellpose. You can confirm or change this under `Edit > Preferences > Cellpose/Omnipose`.
 
   Example:
   ```
   QuPath --help
+  cellpose --version
   ```
 
-  More documentation can be found here: https://qupath.github.io/
+  More documentation can be found here:
+  - https://qupath.github.io/
+  - https://github.com/BIOP/qupath-extension-cellpose
 
-  Citation:
-  ```
-
-  ```
-
-  To run container outside of this environment: ml qupath/0.0.1
+  To run the container outside of this environment: `ml qupath/{{ context.version }}`
 
   ----------------------------------
 copyright:
   - license: GPL-3.0-only
-    url: https://www.gnu.org/licenses/gpl-3.0-standalone.html
+    url: https://github.com/qupath/qupath/blob/v{{ context.version }}/LICENSE
+  - license: Apache-2.0
+    url: https://github.com/BIOP/qupath-extension-cellpose/blob/v{{ context.cellpose_extension_version }}/LICENSE
+  - license: BSD-3-Clause
+    url: https://github.com/MouseLand/cellpose/blob/v{{ context.cellpose_version }}/LICENSE

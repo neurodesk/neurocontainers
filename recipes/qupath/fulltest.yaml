@@ -1,5 +1,5 @@
 # QuPath container test suite
-# Tests for QuPath v0.6.0 - Open-source bioimage analysis software for digital pathology
+# Tests for QuPath v0.7.0 with Cellpose 3 - Open-source bioimage analysis software for digital pathology
 #
 # QuPath is designed for whole slide image analysis and digital pathology.
 # It supports formats like SVS, TIFF, OME-TIFF, OME-Zarr, and other bioimage formats.
@@ -11,8 +11,8 @@
 # QuPath's primary format, but OME-TIFF conversion and basic tests can still run.
 
 name: qupath
-version: 0.6.0
-container: qupath_0.6.0_20250805.simg
+version: 0.7.0
+container: qupath_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output
@@ -32,12 +32,32 @@ tests:
   - name: Version check
     description: Verify QuPath binary runs and reports version
     command: QuPath --version 2>&1
-    expected_output_contains: "QuPath v0.6.0"
+    expected_output_contains: "QuPath v0.7.0"
 
   - name: Version detailed info
     description: Check detailed version information including build time
     command: QuPath --version 2>&1
-    expected_output_contains: "Version: 0.6.0"
+    expected_output_contains: "Version: 0.7.0"
+
+  - name: Cellpose version check
+    description: Verify the bundled Cellpose 3 environment is available
+    command: cellpose --version 2>&1
+    expected_output_contains: "3.1.1.2"
+
+  - name: Cellpose Python environment
+    description: Verify the configured Cellpose Python executable imports the requested release
+    command: /opt/cellpose/bin/python -c "import importlib.metadata; print(importlib.metadata.version('cellpose'))"
+    expected_output_contains: "3.1.1.2"
+
+  - name: Cellpose extension installed
+    description: Verify QuPath includes the catalog-managed BIOP Cellpose extension
+    command: find /opt/qupath-user/extensions -name 'qupath-extension-cellpose-*.jar' -print
+    expected_output_contains: "qupath-extension-cellpose"
+
+  - name: Cellpose extension preconfigured
+    description: Verify QuPath preferences point the extension at the bundled Cellpose Python environment
+    command: grep 'cellposePythonPath.*\/opt\/cellpose\/bin\/python' /opt/qupath-config/preferences.xml
+    expected_output_contains: "/opt/cellpose/bin/python"
 
   - name: Main help
     description: Display main QuPath help message
@@ -287,7 +307,7 @@ tests:
   - name: Script inline version access
     description: Access QuPath version via script
     command: QuPath script --cmd "println qupath.lib.gui.QuPathGUI.getVersion()" 2>&1
-    expected_output_contains: "0.6.0"
+    expected_output_contains: "0.7.0"
 
   - name: Script inline multiline
     description: Execute multiline Groovy script
