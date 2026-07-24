@@ -279,7 +279,6 @@ categories:
   - image segmentation
   - quantitative imaging
 copyright:
-  # Upstream license files were not present in the checked-out sources.
   - license: NOASSERTION
     url: https://github.com/gattia/KneePipeline
   - license: NOASSERTION
