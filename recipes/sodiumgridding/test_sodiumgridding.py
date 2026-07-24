@@ -88,11 +88,11 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
 
     first = images[0]
     first_head = first.getHead()
-    assert first.data.shape == (1, 4, 3, 2)
+    assert first.data.shape == (1, 2, 3, 4)
     assert first.data.dtype == np.uint16
     assert int(first.data.min()) == 0
     assert int(first.data.max()) == 0
-    assert [int(value) for value in first_head.matrix_size] == [2, 3, 4]
+    assert [int(value) for value in first_head.matrix_size] == [4, 3, 2]
     assert first_head.image_type == ismrmrd.IMTYPE_MAGNITUDE
     assert first_head.image_series_index == 1
     assert first.image_series_index == 1
@@ -101,7 +101,7 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
     assert [float(value) for value in first_head.position] == [10.0, 20.0, 30.0]
     assert [float(value) for value in first_head.field_of_view] == [80.0, 80.0, 80.0]
     assert [float(value) for value in first_head.read_dir] == [1.0, 0.0, 0.0]
-    assert [float(value) for value in first_head.phase_dir] == [0.0, -1.0, 0.0]
+    assert [float(value) for value in first_head.phase_dir] == [0.0, 1.0, 0.0]
 
     meta = ismrmrd.Meta.deserialize(first.attribute_string)
     assert meta["SeriesDescription"] == "tpiTqf_23Na_n28_TE05_FIRE_sodiumgridding"
@@ -122,9 +122,9 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
     assert meta["ComplexImageComponent"] == "MAGNITUDE"
     assert meta["Keep_image_geometry"] == "0"
     assert meta["partition_count"] == "1"
-    assert meta["slice_count"] == "4"
-    assert meta["NumberOfSlices"] == "4"
-    assert meta["ImagesInAcquisition"] == "4"
+    assert meta["slice_count"] == "2"
+    assert meta["NumberOfSlices"] == "2"
+    assert meta["ImagesInAcquisition"] == "2"
     assert meta["NumberInSeries"] == "1"
     assert meta["SliceNo"] == "0"
     assert meta["IsmrmrdSliceNo"] == "0"
@@ -152,17 +152,17 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
         "-0.000000000000000000",
     ]
     assert meta["ImageColumnDir"] == [
-        "-0.000000000000000000",
-        "-1.000000000000000000",
-        "-0.000000000000000000",
+        "0.000000000000000000",
+        "1.000000000000000000",
+        "0.000000000000000000",
     ]
 
 
 def test_output_volume_data_preserves_slice_order(monkeypatch):
     sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
     volume = np.broadcast_to(
-        np.arange(4, dtype=np.float32),
-        (2, 3, 4),
+        np.arange(4, dtype=np.float32)[:, np.newaxis, np.newaxis],
+        (4, 2, 3),
     ).copy()
 
     images = sodiumgridding._build_output_images(
@@ -180,9 +180,9 @@ def test_output_volume_data_preserves_slice_order(monkeypatch):
     assert slice_values == [0, 1365, 2731, 4096]
 
 
-def test_output_volume_is_flipped_up_down_then_left_right(monkeypatch):
+def test_output_volume_matches_validated_offline_orientation(monkeypatch):
     sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
-    volume = np.arange(1, 7, dtype=np.float32).reshape(2, 3, 1)
+    volume = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)
 
     images = sodiumgridding._build_output_images(
         volume,
@@ -192,10 +192,9 @@ def test_output_volume_is_flipped_up_down_then_left_right(monkeypatch):
     )
 
     display_volume, _ = sodiumgridding._scale_volume_to_display_range(volume)
-    packed_without_display_flips = display_volume[:, :, 0].T
-    expected = np.flip(packed_without_display_flips, axis=(0, 1))[np.newaxis, ...]
+    expected = np.flip(display_volume, axis=(1, 2))[np.newaxis, ...]
 
-    np.testing.assert_array_equal(np.asarray(images[0].data)[0], expected)
+    np.testing.assert_array_equal(np.asarray(images[0].data), expected)
 
 
 def test_log_cpu_resources_reports_container_limits(monkeypatch, caplog):

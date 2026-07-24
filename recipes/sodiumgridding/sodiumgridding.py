@@ -1006,11 +1006,11 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
     if volume.ndim != 3:
         raise ValueError(f"Reconstructed volume must be 3D, got shape {volume.shape}")
 
-    # The display data is flipped along both in-plane axes below. Reverse the
-    # corresponding direction vectors so scanner orientation markers continue
-    # to describe the displayed pixels correctly.
+    # Preserve the scanner direction metadata that produces the validated A/R
+    # markers. Pixel orientation is handled independently when the reconstructed
+    # (z, y, x) volume is packed below.
     read_dir = -np.asarray(reference_head.read_dir, dtype=float)
-    phase_dir = -np.asarray(reference_head.phase_dir, dtype=float)
+    phase_dir = np.asarray(reference_head.phase_dir, dtype=float)
     slice_dir = np.asarray(reference_head.slice_dir, dtype=float)
     slice_dir_norm = float(np.linalg.norm(slice_dir))
     if slice_dir_norm < 1e-6:
@@ -1025,16 +1025,18 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
     series_uid = _new_dicom_uid()
     output_fov_mm = float(output_fov_mm)
     display_volume, display_meta = _scale_volume_to_display_range(volume)
-    slice_count = int(display_volume.shape[2])
+    slice_count = int(display_volume.shape[0])
     image_comment = _scanner_display_comment(display_meta)
 
-    # Pack the complete matrix as one explicit 3D MRD image. Sending 64
+    # The gridding kernel already returns (z, y, x). Match the validated offline
+    # correction by flipping only the two in-plane axes, y and x, without an
+    # axis swap. Pack the complete matrix as one explicit 3D MRD image. Sending 64
     # separate 2D messages lets ICE refill each mini-header from the source
     # protocol's NoImagesPerSlab=32 and causes the DICOM writer to flush two
     # 32-frame volumes. One [z, y, x] image gives the writer one 64-frame
     # volume, matching the native ICE reconstruction contract.
     packed_volume = np.ascontiguousarray(
-        display_volume[::-1, ::-1, :].transpose(2, 1, 0)
+        display_volume[:, ::-1, ::-1]
     )
     image = ismrmrd.Image.from_array(packed_volume, transpose=False)
 

@@ -71,8 +71,10 @@ width is fixed at `3.0`, matching the supplied implementation.
 
 - The derived output is magnitude-only and is emitted as one explicit 3D MRD
   image in `[z, y, x]` order.
-- Output pixels and both in-plane direction vectors are flipped to retain the
-  established ICE display orientation and scanner markers.
+- The gridding result is already in `[z, y, x]` order. Output packing preserves
+  that axis order and flips the phase/up-down and read/left-right pixel axes,
+  matching the validated offline DICOM correction. Direction metadata retains
+  the scanner-validated `A` and `R` markers.
 - Each run logs the FIRE-visible CPU count, affinity, cgroup limits, configured
   worker cap, effective virtual-coil workers, and whether pyFFTW is available.
 - Debug arrays are written below `/tmp/share/debug` with the
