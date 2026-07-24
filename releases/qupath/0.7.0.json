@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "qupath 0.7.0": {
+      "version": "20260723",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "qupathGUI-qupath 0.7.0": {
+      "version": "20260723",
+      "exec": "QuPath",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging",
+    "data organisation"
+  ]
+}
