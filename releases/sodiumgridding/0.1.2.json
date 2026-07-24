@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "sodiumgridding 0.1.2": {
+      "version": "20260723",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction"
+  ]
+}
