@@ -104,7 +104,10 @@ def test_miniconda_template_bootstraps_python_and_pip_for_pip_install() -> None:
 
 
 def test_miniconda_template_escapes_pip_packages_inside_bash_c() -> None:
-    compiled = compile_recipe(Path(__file__).resolve().parent / "fixtures" / "miniconda_pip_install")
+    compiled = compile_recipe(
+        Path(__file__).resolve().parent / "fixtures" / "miniconda_pip_install",
+        architecture="x86_64",
+    )
     dockerfile = render_dockerfile(compiled.definition)
 
     assert '\\"examplepkg==1.2.3\\"' in dockerfile

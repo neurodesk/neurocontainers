@@ -114,7 +114,7 @@ path_has_other_bit() {
         return
     fi
 
-    mode=$(stat -c "%a" "$path" 2>/dev/null || true)
+    mode=$(stat -c "%a" "$path" 2>/dev/null || stat -f "%OLp" "$path" 2>/dev/null || true)
     if [ -z "$mode" ]; then
         return 1
     fi
