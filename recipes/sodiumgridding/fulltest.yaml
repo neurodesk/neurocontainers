@@ -2,7 +2,7 @@
 # Focused verification for the OpenRecon runtime and gridding dependencies.
 
 name: sodiumgridding
-version: 0.1.2
+version: 0.1.3
 container: sodiumgridding_${version}_REFERENCE.simg
 
 test_data:
@@ -40,6 +40,27 @@ tests:
       data = json.loads(label.read_text())
       assert data
       print(label)
+      PY
+
+  - name: Orientation choices match the reconstruction module
+    description: Verify the scanner UI offers exactly the orientations the module implements
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import json
+      from pathlib import Path
+      import sodiumgridding
+
+      label = json.loads(
+          Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json").read_text()
+      )
+      parameters = {item["id"]: item for item in label["parameters"]}
+      offered = {value["id"] for value in parameters["orientation"]["values"]}
+      implemented = set(sodiumgridding.ORIENTATION_IN_PLANE_TRANSFORMS)
+      assert offered == implemented, (offered ^ implemented)
+      assert parameters["orientation"]["default"] == sodiumgridding.DEFAULT_ORIENTATION
+      assert "orientationflipslice" in parameters
+      assert "orientationdebugseries" in parameters
+      print("orientation choices:", sorted(offered))
       PY
 
   - name: Sodium gridding module imports

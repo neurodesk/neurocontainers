@@ -62,6 +62,9 @@ message stream as an ISMRMRD HDF5 dataset.
 | Coil variance | `coilvarianceretention` | string | `0.9` | Fraction of physical-coil variance retained during compression. |
 | Coil combination | `coilcombinemode` | choice | `AC` | Use adaptive combination (`AC`) or sum-of-squares (`SoS`). |
 | N4 correction | `applyn4biascorrection` | boolean | `true` | Apply N4 bias field correction after coil combination. |
+| Orientation | `orientation` | choice | `zyx` | Mapping from trajectory components to the image read and phase axes. The only control over output pixel orientation. |
+| Reverse slice order | `orientationflipslice` | boolean | `false` | Reverse the through-plane axis of the output volume. |
+| Orientation debug sweep | `orientationdebugseries` | boolean | `false` | Emit one labelled series per in-plane orientation to identify the correct value in a single run. |
 
 Weak-readout rejection remains enabled with the standalone defaults of three
 standard deviations and a five-sample half-window. The Kaiser-Bessel kernel
@@ -71,12 +74,29 @@ width is fixed at `3.0`, matching the supplied implementation.
 
 - The derived output is magnitude-only and is emitted as one explicit 3D MRD
   image in `[z, y, x]` order.
-- The gridding result is already in `[z, y, x]` order. Output packing preserves
-  that axis order and flips the phase/up-down and read/left-right pixel axes,
-  matching the validated offline DICOM correction. Direction metadata retains
-  the scanner-validated `A` and `R` markers.
+- Orientation has exactly one owner: the `orientation` parameter, which selects
+  how the gridded volume axes are reinterpreted as the MRD
+  `(slice, phase, read)` layout. The acquisition's `read_dir`, `phase_dir` and
+  `slice_dir` are always emitted unmodified, and `Keep_image_geometry` is `1` so
+  ICE keeps that description instead of rebuilding the geometry and applying its
+  own flip. Never correct orientation by negating a direction vector: with
+  `UseIceFillingMiniHeader` and `IsFlipAndShiftImages` enabled and
+  `NormOrientation` disabled, a sign change relabels markers without moving a
+  single pixel, so the correction is silently lost.
+- The gridding kernel writes `grid[iz, iy, ix]` with `ix` taken from trajectory
+  component 0, so the reconstructed volume is
+  `(component 2, component 1, component 0)`. Which component is the sequence's
+  read, phase and slice axis is a property of the trajectory file and cannot be
+  derived from the recipe. Determine it once with `orientationdebugseries`,
+  which emits all eight in-plane variants as separate series suffixed
+  `_ori_<key>`; identify the anatomically correct series against the localizer,
+  then set that key as `orientation` and disable the sweep.
 - Each run logs the FIRE-visible CPU count, affinity, cgroup limits, configured
   worker cap, effective virtual-coil workers, and whether pyFFTW is available.
+- Each run also logs the resolved configuration, the per-component trajectory
+  k-space extent, the acquisition geometry with anatomical direction labels such
+  as `R->L`, the intensity centroid of the reconstructed and packed volumes, and
+  the orientation transform and series identity of every emitted image.
 - Debug arrays are written below `/tmp/share/debug` with the
   `sodiumgridding_` prefix. Runtime data is never stored under `/home`.
 

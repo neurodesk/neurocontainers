@@ -32,13 +32,19 @@ def _to_canonical_volume(image, component):
         return np.asarray(array[:, :, np.newaxis])
 
     if array.ndim == 3:
+        # MRD image data is always stored as (channels, z, y, x), so a squeezed
+        # 3D volume is (slice, phase, read) and must be transposed to the
+        # (read, phase, slice) order this converter and the affine below assume.
+        # Do not branch on shape: for a cubic matrix, shape equals matrix_size
+        # and its reverse, so a shape-based check silently skips the transpose
+        # and the affine then maps read_dir onto the slice axis.
         matrix_size = tuple(int(value) for value in image.getHead().matrix_size)
-        if all(value > 0 for value in matrix_size):
-            if array.shape == matrix_size:
-                return np.asarray(array)
-            if array.shape == matrix_size[::-1]:
-                return np.asarray(array.transpose((2, 1, 0)))
-        return np.asarray(array)
+        if all(value > 0 for value in matrix_size) and array.shape != matrix_size[::-1]:
+            raise ValueError(
+                f"Image data shape {array.shape} does not match the header "
+                f"matrix_size {matrix_size} in (z, y, x) order"
+            )
+        return np.asarray(array.transpose((2, 1, 0)))
 
     raise ValueError(
         f"Unsupported ISMRMRD image data shape {np.asarray(image.data).shape} after squeezing to {array.shape}"

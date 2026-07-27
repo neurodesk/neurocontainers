@@ -167,6 +167,37 @@
       "type": "boolean",
       "default": true,
       "information": { "en": "Apply N4 bias field correction to the combined magnitude volume before scanner display scaling." }
+    },
+    {
+      "id": "orientation",
+      "label": { "en": "Orientation" },
+      "type": "choice",
+      "values": [
+        { "id": "zyx", "name": { "en": "zyx (component 0 = read)" } },
+        { "id": "zyx_fx", "name": { "en": "zyx, reverse columns" } },
+        { "id": "zyx_fy", "name": { "en": "zyx, reverse rows" } },
+        { "id": "zyx_fxy", "name": { "en": "zyx, reverse rows and columns" } },
+        { "id": "zxy", "name": { "en": "zxy (component 0 = phase)" } },
+        { "id": "zxy_fx", "name": { "en": "zxy, reverse columns" } },
+        { "id": "zxy_fy", "name": { "en": "zxy, reverse rows" } },
+        { "id": "zxy_fxy", "name": { "en": "zxy, reverse rows and columns" } }
+      ],
+      "default": "zyx",
+      "information": { "en": "Mapping from trajectory components to the image read and phase axes. This is the only control over output pixel orientation; direction metadata is always emitted unmodified." }
+    },
+    {
+      "id": "orientationflipslice",
+      "label": { "en": "Reverse slice order" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Reverse the through-plane (slice) axis of the output volume. Verify against the localizer before enabling." }
+    },
+    {
+      "id": "orientationdebugseries",
+      "label": { "en": "Orientation debug sweep" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Emit one series per in-plane orientation, each labelled with its orientation key, so the anatomically correct value can be identified in a single run. Research use only; disable for normal reconstructions." }
     }
   ]
 }

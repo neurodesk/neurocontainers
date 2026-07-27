@@ -100,7 +100,7 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
     assert first_head.slice == 0
     assert [float(value) for value in first_head.position] == [10.0, 20.0, 30.0]
     assert [float(value) for value in first_head.field_of_view] == [80.0, 80.0, 80.0]
-    assert [float(value) for value in first_head.read_dir] == [1.0, 0.0, 0.0]
+    assert [float(value) for value in first_head.read_dir] == [-1.0, 0.0, 0.0]
     assert [float(value) for value in first_head.phase_dir] == [0.0, 1.0, 0.0]
 
     meta = ismrmrd.Meta.deserialize(first.attribute_string)
@@ -120,7 +120,7 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
         "GRIDDING",
     ]
     assert meta["ComplexImageComponent"] == "MAGNITUDE"
-    assert meta["Keep_image_geometry"] == "0"
+    assert meta["Keep_image_geometry"] == "1"
     assert meta["partition_count"] == "1"
     assert meta["slice_count"] == "2"
     assert meta["NumberOfSlices"] == "2"
@@ -147,9 +147,9 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
     assert meta["ImageComments"] == meta["ImageComment"]
 
     assert meta["ImageRowDir"] == [
-        "1.000000000000000000",
-        "-0.000000000000000000",
-        "-0.000000000000000000",
+        "-1.000000000000000000",
+        "0.000000000000000000",
+        "0.000000000000000000",
     ]
     assert meta["ImageColumnDir"] == [
         "0.000000000000000000",
@@ -180,7 +180,13 @@ def test_output_volume_data_preserves_slice_order(monkeypatch):
     assert slice_values == [0, 1365, 2731, 4096]
 
 
-def test_output_volume_matches_validated_offline_orientation(monkeypatch):
+def test_default_orientation_emits_the_volume_unchanged(monkeypatch):
+    """The default path must apply no hidden flip.
+
+    Orientation is owned by the 'orientation' parameter alone, so with the
+    default value the emitted pixels are the display volume verbatim. This is
+    the guard against a correction being reintroduced inside the packing step.
+    """
     sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
     volume = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)
 
@@ -192,9 +198,115 @@ def test_output_volume_matches_validated_offline_orientation(monkeypatch):
     )
 
     display_volume, _ = sodiumgridding._scale_volume_to_display_range(volume)
-    expected = np.flip(display_volume, axis=(1, 2))[np.newaxis, ...]
+    np.testing.assert_array_equal(
+        np.asarray(images[0].data),
+        display_volume[np.newaxis, ...],
+    )
 
-    np.testing.assert_array_equal(np.asarray(images[0].data), expected)
+
+def test_orientation_never_compensates_in_the_direction_metadata(monkeypatch):
+    """Every orientation must emit the acquisition's own direction vectors.
+
+    Under this FIRE configuration a negated direction vector relabels markers
+    without moving pixels, so a correction expressed there is silently lost.
+    Geometry has exactly one owner and it is the pixel packing.
+    """
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    volume = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)
+    display_volume, _ = sodiumgridding._scale_volume_to_display_range(volume)
+
+    for orientation in sodiumgridding.ORIENTATION_IN_PLANE_TRANSFORMS:
+        for flip_slice in (False, True):
+            images = sodiumgridding._build_output_images(
+                volume,
+                ReferenceHead(),
+                Metadata(),
+                output_fov_mm=80.0,
+                orientation=orientation,
+                flip_slice=flip_slice,
+            )
+            head = images[0].getHead()
+            data = np.asarray(images[0].data)[0]
+
+            assert [float(value) for value in head.read_dir] == list(ReferenceHead.read_dir)
+            assert [float(value) for value in head.phase_dir] == list(ReferenceHead.phase_dir)
+            assert [float(value) for value in head.slice_dir] == list(ReferenceHead.slice_dir)
+
+            # matrix_size is (columns, rows, slices) and must describe the data.
+            assert [int(value) for value in head.matrix_size] == list(data.shape[::-1])
+            assert data.shape[0] == int(
+                ismrmrd.Meta.deserialize(images[0].attribute_string)["slice_count"]
+            )
+
+            # Only axis order changes: no resampling, no value loss.
+            np.testing.assert_array_equal(
+                np.sort(data, axis=None),
+                np.sort(display_volume, axis=None),
+            )
+
+
+def test_orientation_transform_moves_the_expected_axes(monkeypatch):
+    """Each orientation key must do what its name says, and nothing more."""
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    volume = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+
+    oriented, key = sodiumgridding._orient_volume(volume, "zyx")
+    assert key == "zyx"
+    np.testing.assert_array_equal(oriented, volume)
+
+    oriented, _ = sodiumgridding._orient_volume(volume, "zyx_fx")
+    np.testing.assert_array_equal(oriented, volume[:, :, ::-1])
+
+    oriented, _ = sodiumgridding._orient_volume(volume, "zyx_fy")
+    np.testing.assert_array_equal(oriented, volume[:, ::-1, :])
+
+    oriented, _ = sodiumgridding._orient_volume(volume, "zxy")
+    np.testing.assert_array_equal(oriented, volume.transpose(0, 2, 1))
+
+    oriented, _ = sodiumgridding._orient_volume(volume, "zxy_fxy")
+    np.testing.assert_array_equal(
+        oriented,
+        volume.transpose(0, 2, 1)[:, ::-1, ::-1],
+    )
+
+    oriented, _ = sodiumgridding._orient_volume(volume, "zyx", flip_slice=True)
+    np.testing.assert_array_equal(oriented, volume[::-1, :, :])
+
+    oriented, key = sodiumgridding._orient_volume(volume, "not-an-orientation")
+    assert key == sodiumgridding.DEFAULT_ORIENTATION
+    np.testing.assert_array_equal(oriented, volume)
+
+
+def test_orientation_debug_sweep_emits_one_labelled_series_per_transform(monkeypatch):
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    volume = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)
+
+    images = sodiumgridding._build_output_images(
+        volume,
+        ReferenceHead(),
+        Metadata(),
+        output_fov_mm=80.0,
+        emit_debug_series=True,
+    )
+
+    assert len(images) == len(sodiumgridding.ORIENTATION_DEBUG_ORDER)
+
+    series_indices = []
+    orderings = []
+    for image, orientation in zip(images, sodiumgridding.ORIENTATION_DEBUG_ORDER):
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        assert meta["SeriesDescription"].endswith(f"_ori_{orientation}")
+        assert meta["SodiumGriddingOrientation"] == orientation
+        # Geometry is identical across the sweep; only the pixel order differs,
+        # which is what makes the anatomically correct series identifiable.
+        assert [float(value) for value in image.getHead().read_dir] == list(
+            ReferenceHead.read_dir
+        )
+        series_indices.append(image.getHead().image_series_index)
+        orderings.append(np.asarray(image.data).tobytes())
+
+    assert len(set(series_indices)) == len(images)
+    assert len(set(orderings)) == len(images)
 
 
 def test_log_cpu_resources_reports_container_limits(monkeypatch, caplog):
@@ -450,3 +562,34 @@ def test_process_raw_parallel_grids_match_serial_reconstruction(monkeypatch):
     )
     for serial_image, parallel_image in zip(serial_images, parallel_images, strict=True):
         np.testing.assert_array_equal(parallel_image.data, serial_image.data)
+
+
+def _import_mrd2nifti():
+    spec = importlib.util.spec_from_file_location(
+        "mrd2nifti", RECIPE_DIR / "mrd2nifti.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_mrd2nifti_transposes_cubic_volumes_to_read_phase_slice():
+    """A cubic matrix must not skip the (z, y, x) -> (x, y, z) transpose.
+
+    MRD image data is always (channels, z, y, x). When the matrix is cubic a
+    shape-based check matches both the header order and its reverse, so an
+    untransposed volume passes silently and the affine then maps read_dir onto
+    the slice axis.
+    """
+    mrd2nifti = _import_mrd2nifti()
+
+    for shape in ((2, 3, 4), (4, 4, 4)):
+        volume_zyx = np.arange(np.prod(shape), dtype=np.uint16).reshape(shape)
+        image = ismrmrd.Image.from_array(volume_zyx, transpose=False)
+
+        canonical = mrd2nifti._to_canonical_volume(image, "magnitude")
+
+        np.testing.assert_array_equal(canonical, volume_zyx.transpose(2, 1, 0))
+        assert canonical.shape == tuple(
+            int(value) for value in image.getHead().matrix_size
+        )
