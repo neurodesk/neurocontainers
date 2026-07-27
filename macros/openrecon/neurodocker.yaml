@@ -45,7 +45,7 @@ directives:
       - ldconfig
 
   - run:
-      - python3 -m pip install $(python3 -m pip install --help | grep -q -- "--break-system-packages" && echo "--break-system-packages") --no-cache-dir h5py ismrmrd==1.14 "xsdata<24.4" matplotlib pydicom==3.0.1 pynetdicom nibabel scipy scikit-image
+      - python3 -m pip install $(python3 -m pip install --help | grep -q -- "--break-system-packages" && echo "--break-system-packages") --no-cache-dir h5py ismrmrd==1.14.2 "xsdata<24.4" matplotlib pydicom==3.0.1 pynetdicom nibabel scipy scikit-image
 
   - run:
       - git clone https://github.com/ismrmrd/ismrmrd-python-tools.git
