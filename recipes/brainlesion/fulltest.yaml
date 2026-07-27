@@ -17,28 +17,28 @@ tests:
     command: python -c 'import site; assert site.ENABLE_USER_SITE is False'
 
   - name: brainles_aurora distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_aurora"); assert d.version and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_aurora"); assert d.version == "0.2.7" and len(tuple(d.files or ())) > 5'
 
   - name: brainles_preprocessing distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_preprocessing"); assert d.version and len(tuple(d.files or ())) > 20'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_preprocessing"); assert d.version == "0.6.10" and len(tuple(d.files or ())) > 20'
 
   - name: brats distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("brats"); assert d.version and len(tuple(d.files or ())) > 10'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("brats"); assert d.version == "0.0.27" and len(tuple(d.files or ())) > 10'
 
   - name: deep_quality_estimation distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("deep_quality_estimation"); assert d.version and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("deep_quality_estimation"); assert d.version == "0.0.3" and len(tuple(d.files or ())) > 5'
 
   - name: gliomoda distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("gliomoda"); assert d.version and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("gliomoda"); assert d.version == "0.0.3" and len(tuple(d.files or ())) > 5'
 
   - name: loguru distribution is pinned
     command: python -c 'from importlib.metadata import version; assert version("loguru") == "0.7.3"'
 
   - name: panoptica distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("panoptica"); assert d.version and len(tuple(d.files or ())) > 20'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("panoptica"); assert d.version == "1.5.1" and len(tuple(d.files or ())) > 20'
 
   - name: petu distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("petu"); assert d.version and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("petu"); assert d.version == "0.0.5" and len(tuple(d.files or ())) > 5'
 
   - name: brainles_aurora imports
     command: python -c 'import brainles_aurora'
