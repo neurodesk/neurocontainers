@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "clinicadl 1.6.1": {
+      "version": "20260722",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "workflows"
+  ]
+}

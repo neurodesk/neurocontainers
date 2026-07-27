@@ -5,6 +5,7 @@ import os
 import shutil
 import stat
 import subprocess
+import tempfile
 from pathlib import Path
 
 from workflows.summarize_deploy_results import _summarise_builtin, summarise_results_file
@@ -65,49 +66,54 @@ def test_deploy_script_accepts_world_accessible_executable(tmp_path: Path) -> No
 
 
 def test_deploy_script_checks_directory_access_without_find(tmp_path: Path) -> None:
-    tmp_path.chmod(
-        stat.S_IRUSR
-        | stat.S_IWUSR
-        | stat.S_IXUSR
-        | stat.S_IRGRP
-        | stat.S_IXGRP
-        | stat.S_IROTH
-        | stat.S_IXOTH
-    )
-    deploy_dir = tmp_path / "tool"
-    deploy_dir.mkdir()
-    deploy_dir.chmod(
-        stat.S_IRUSR
-        | stat.S_IWUSR
-        | stat.S_IXUSR
-        | stat.S_IRGRP
-        | stat.S_IXGRP
-        | stat.S_IROTH
-        | stat.S_IXOTH
-    )
+    deploy_root = Path(tempfile.mkdtemp(prefix="neurocontainers-deploy-", dir="/tmp"))
+    try:
+        deploy_root.chmod(
+            stat.S_IRUSR
+            | stat.S_IWUSR
+            | stat.S_IXUSR
+            | stat.S_IRGRP
+            | stat.S_IXGRP
+            | stat.S_IROTH
+            | stat.S_IXOTH
+        )
+        deploy_dir = deploy_root / "tool"
+        deploy_dir.mkdir()
+        deploy_dir.chmod(
+            stat.S_IRUSR
+            | stat.S_IWUSR
+            | stat.S_IXUSR
+            | stat.S_IRGRP
+            | stat.S_IXGRP
+            | stat.S_IROTH
+            | stat.S_IXOTH
+        )
 
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    for command in ("mktemp", "rm", "stat", "dirname", "tr", "sort"):
-        command_path = shutil.which(command)
-        assert command_path is not None
-        (bin_dir / command).symlink_to(command_path)
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        for command in ("mktemp", "rm", "stat", "dirname", "tr", "sort"):
+            command_path = shutil.which(command)
+            assert command_path is not None
+            (bin_dir / command).symlink_to(command_path)
 
-    env = os.environ.copy()
-    env.update(
-        {
-            "DEPLOY_BINS": "",
-            "DEPLOY_PATH": str(deploy_dir),
-            "PATH": str(bin_dir),
-        }
-    )
-    result = subprocess.run(
-        ["/bin/bash", str(SCRIPT)],
-        capture_output=True,
-        cwd=tmp_path,
-        env=env,
-        text=True,
-    )
+        env = os.environ.copy()
+        env.update(
+            {
+                "DEPLOY_BINS": "",
+                "DEPLOY_PATH": str(deploy_dir),
+                "PATH": str(bin_dir),
+            }
+        )
+        result = subprocess.run(
+            ["/bin/bash", str(SCRIPT)],
+            capture_output=True,
+            cwd=tmp_path,
+            env=env,
+            text=True,
+        )
+    finally:
+        shutil.rmtree(deploy_root)
+
     payload = json.loads(result.stdout)
 
     assert result.returncode == 0

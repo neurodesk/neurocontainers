@@ -7,7 +7,7 @@ This environment contains MNE Python and some additional tools with dependencies
 
 Example:
 ```
-source /opt/miniconda-4.7.12/etc/profile.d/conda.sh
+source /opt/miniconda/etc/profile.d/conda.sh
 conda activate mne-extended 
 ```
 

@@ -15,11 +15,13 @@ def test_dcm2niix_release_contract_matches_existing_metadata_keys() -> None:
         architecture="x86_64",
         include_dirs=config.include_dirs,
     )
-    generated = release_data(compiled.name, compiled.version, compiled.recipe, "20241125")
+    build_date = "20990102"
+    generated = release_data(compiled.name, compiled.version, compiled.recipe, build_date)
     existing = json.loads((config.repo_root / "releases/dcm2niix/v1.0.20240202.json").read_text())
     app_name = "dcm2niix v1.0.20240202"
     assert generated["categories"] == existing["categories"]
-    assert generated["apps"][app_name]["version"] == existing["apps"][app_name]["version"]
+    assert generated["apps"][app_name].keys() == existing["apps"][app_name].keys()
+    assert generated["apps"][app_name]["version"] == build_date
     assert generated["apps"][app_name]["exec"] == existing["apps"][app_name]["exec"]
 
 
@@ -32,7 +34,7 @@ def test_supported_recipe_contracts_have_deploy_and_embedded_metadata() -> None:
         "afni",
         "connectomeworkbench",
         "bidscoin",
-        "neurodesktop",
+        "neurodesktop-lite",
     ):
         compiled = compile_recipe(
             resolve_recipe(config, name),
