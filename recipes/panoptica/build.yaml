@@ -23,9 +23,9 @@ build:
         env_exists: "false"
 
     - run:
-        - /opt/miniconda-latest/envs/panoptica/bin/python -m pip install --no-cache-dir SimpleITK==2.5.5 panoptica=={{ context.version }}
+        - /opt/miniconda-latest/envs/panoptica/bin/python -m pip install --no-cache-dir nibabel==5.4.2 SimpleITK==2.5.5 panoptica=={{ context.version }}
         # sanity import at build time so a broken solve fails the build, not the user
-        - /opt/miniconda-latest/envs/panoptica/bin/python -c "import SimpleITK, panoptica; print('panoptica', panoptica.__version__)"
+        - /opt/miniconda-latest/envs/panoptica/bin/python -c "from importlib.metadata import version; import nibabel, SimpleITK, panoptica; print('panoptica', version('panoptica'))"
 
     - environment:
         PATH: /opt/miniconda-latest/envs/panoptica/bin:$PATH
@@ -37,7 +37,7 @@ deploy:
 tests:
   - name: "import panoptica"
     script: |
-      python -c "import panoptica; print(panoptica.__version__)"
+      python -c "from importlib.metadata import version; import panoptica; print(version('panoptica'))"
 
 categories:
   - quality control
@@ -55,7 +55,7 @@ readme: |
 
   ```
   ml panoptica/{{ context.version }}
-  python -c "import panoptica; print(panoptica.__version__)"
+  python -c "from importlib.metadata import version; import panoptica; print(version('panoptica'))"
   ```
 
   Docs: https://github.com/BrainLesion/panoptica
