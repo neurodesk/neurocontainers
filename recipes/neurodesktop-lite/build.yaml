@@ -475,11 +475,9 @@ build:
         - mkdir -p /etc/systemd/system/glass.target.wants
         - ln -sf /etc/systemd/system/neurodesktop-glass.service /etc/systemd/system/glass.target.wants/neurodesktop-glass.service
         - ln -sf /etc/systemd/system/glass.target /etc/systemd/system/default.target
-        - ln -sf /dev/null /etc/systemd/system/apt-daily.timer
-        - ln -sf /dev/null /etc/systemd/system/apt-daily-upgrade.timer
-        - ln -sf /dev/null /etc/systemd/system/systemd-networkd-wait-online.service
-        - sed -i 's#^CVMFS_CACHE_BASE=.*#CVMFS_CACHE_BASE=/var/lib/cvmfs#' /etc/cvmfs/default.local
-        - install -d -o cvmfs -g cvmfs -m 0700 /var/lib/cvmfs /var/lib/cvmfs/shared
+        - sed -i 's#^CVMFS_CACHE_BASE=.*#CVMFS_CACHE_BASE=/home/jovyan/.cvmfs_cache#' /etc/cvmfs/default.local
+        - printf '\nCVMFS_USER=jovyan\n' >> /etc/cvmfs/default.local
+        - install -d -o ${NB_USER} -g users -m 0700 /home/${NB_USER}/.cvmfs_cache /home/${NB_USER}/.cvmfs_cache/shared
         - truncate -s 0 /etc/machine-id
         - DEBIAN_FRONTEND=noninteractive apt-get purge --yes build-essential libx11-dev
         - apt-get clean
@@ -714,30 +712,23 @@ files:
 
       install -d -o 1000 -g 100 -m 0700 /run/user/1000
       install -d -m 0755 /run/dbus
-      install -d -o 1000 -g 100 -m 0755 /home/jovyan
-      /usr/local/sbin/neurodesktop-glass-cvmfs \
-          >/var/log/neurodesktop-glass-cvmfs.log 2>&1 &
       if [ -d /opt/jovyan_defaults ]; then
-          cp -an /opt/jovyan_defaults/. /home/jovyan/
-          chown -R 1000:100 /home/jovyan
+          setpriv --reuid=1000 --regid=100 --clear-groups \
+              cp -a --update=none /opt/jovyan_defaults/. /home/jovyan/
+      fi
+      if ! /usr/local/sbin/neurodesktop-glass-cvmfs \
+          >/var/log/neurodesktop-glass-cvmfs.log 2>&1; then
+          echo "neurodesktop-glass: CVMFS mount failed; see /var/log/neurodesktop-glass-cvmfs.log" >&2
       fi
       rm -f /tmp/.X0-lock /tmp/.X11-unix/X0
 
       /usr/bin/dbus-daemon --system --nofork --nopidfile &
-      dbus_pid=$!
       /usr/lib/xorg/Xorg :0 \
           -noreset \
           -nolisten tcp \
           -novtswitch \
           -sharevts \
           -logfile /var/log/neurodesktop-glass-Xorg.log &
-      xorg_pid=$!
-
-      cleanup() {
-          kill "$xorg_pid" 2>/dev/null || true
-          kill "$dbus_pid" 2>/dev/null || true
-      }
-      trap cleanup EXIT INT TERM
 
       attempt=0
       while [ ! -S /tmp/.X11-unix/X0 ]; do
@@ -807,11 +798,12 @@ files:
           exit 0
       fi
 
-      install -d -o cvmfs -g cvmfs -m 0700 /var/lib/cvmfs /var/lib/cvmfs/shared
+      cache_base=/home/jovyan/.cvmfs_cache
+      install -d -o jovyan -g users -m 0700 "$cache_base" "$cache_base/shared"
       install -d -o cvmfs -g cvmfs -m 0755 "$mountpoint"
 
-      # The first endpoint in this configuration is Neurodesk's global
-      # geoproximity service. The regional endpoints remain fallbacks.
+      # The Asia configuration prefers the Brisbane endpoint selected by the
+      # regional probe. Other regional endpoints remain fallbacks.
       if [ ! -f "$selected" ]; then
           cp "$default_config" "$selected"
       fi
@@ -825,6 +817,5 @@ files:
       [Unit]
       Description=Neurodesktop Glass desktop
       DefaultDependencies=no
-      Wants=ccx3-stage2.service neurodesktop-glass.service
-      After=ccx3-stage2.service
+      Wants=neurodesktop-glass.service
       AllowIsolate=yes
