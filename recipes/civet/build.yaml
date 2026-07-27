@@ -25,6 +25,7 @@ build:
 
         - install:
               - perl
+              - tcsh
               - imagemagick
               - gnuplot-nox
               - locales
