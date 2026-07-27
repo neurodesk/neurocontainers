@@ -464,6 +464,13 @@ build:
 
     - condition: context.options.glass
       run:
+        - mkdir -p /etc/sudoers.d
+        - printf '%s\n' 'jovyan ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/neurodesktop-glass
+        - chmod 0440 /etc/sudoers.d/neurodesktop-glass
+        - rmdir /neurodesktop-storage
+        - ln -s /vmsh-neurodesktop-storage /neurodesktop-storage
+        - ln -sfn /neurodesktop-storage /opt/jovyan_defaults/neurodesktop-storage
+        - ln -sfn /neurodesktop-storage /home/jovyan/neurodesktop-storage
         - cc -x c -O2 -Wall -Wextra -o /usr/local/bin/glass-clipboard {{ get_file("glass_clipboard_source") }} -lX11
         - cc -x c -O2 -Wall -Wextra -o /usr/local/bin/glass-resize {{ get_file("glass_resize_source") }}
         - install -m 0755 {{ get_file("glass_session") }} /usr/local/sbin/neurodesktop-glass-session
@@ -739,6 +746,12 @@ files:
           fi
           sleep 0.05
       done
+
+      # Xorg owns tty1 as its foreground process group and resets the virtual
+      # console while starting. Put it in raw mode after Xorg has acquired it
+      # so graphical Ctrl-C/Ctrl-Z input cannot kill or suspend the server.
+      sleep 1
+      stty -F /dev/tty1 raw -echo
 
       attempt=0
       while [ ! -S /run/dbus/system_bus_socket ]; do

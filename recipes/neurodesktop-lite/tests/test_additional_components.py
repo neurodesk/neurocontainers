@@ -107,6 +107,25 @@ def test_desktop_storage():
     assert os.path.exists("/neurodesktop-storage"), "/neurodesktop-storage is missing"
 
 
+def test_glass_desktop_user_defaults():
+    """Verify the direct Glass session has its required user conveniences."""
+    if not os.path.exists("/etc/systemd/system/neurodesktop-glass.service"):
+        pytest.skip("Glass desktop support is not installed")
+
+    storage_link = "/home/jovyan/neurodesktop-storage"
+    assert os.path.islink(storage_link), f"{storage_link} is not a symlink"
+    assert os.path.realpath(storage_link) == "/neurodesktop-storage"
+
+    if os.geteuid() == 0:
+        sudo_check = "su -s /bin/bash -c 'sudo -n true' jovyan"
+    elif run_cmd("id -un")[1] == "jovyan":
+        sudo_check = "sudo -n true"
+    else:
+        pytest.skip("Passwordless sudo check requires root or jovyan")
+    code, output = run_cmd(sudo_check)
+    assert code == 0, f"jovyan passwordless sudo failed: {output}"
+
+
 def test_build_toolchain_removed():
     """Verify the broad build-only toolchain is not retained in the runtime image."""
     code, output = run_cmd("dpkg-query -W -f='${Status}' build-essential 2>/dev/null")
