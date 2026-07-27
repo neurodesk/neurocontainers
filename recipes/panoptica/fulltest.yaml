@@ -18,6 +18,7 @@ tests:
     description: Verify Panoptica and the libraries used by its evaluation pipeline import together.
     command: |
       python - <<'PY'
+      import SimpleITK
       import cc3d
       import numpy
       import pandas
@@ -26,8 +27,11 @@ tests:
       import skimage
 
       print(panoptica.__file__)
+      print("SimpleITK", SimpleITK.__version__)
       PY
-    expected_output_contains: "/site-packages/panoptica/__init__.py"
+    expected_output_contains:
+      - "/site-packages/panoptica/__init__.py"
+      - "SimpleITK 2.5.5"
 
   - name: Matched instance evaluation
     description: Exercise a perfect instance match and verify the resulting detection and quality metrics.

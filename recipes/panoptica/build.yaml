@@ -23,9 +23,9 @@ build:
         env_exists: "false"
 
     - run:
-        - /opt/miniconda-latest/envs/panoptica/bin/python -m pip install --no-cache-dir panoptica=={{ context.version }}
+        - /opt/miniconda-latest/envs/panoptica/bin/python -m pip install --no-cache-dir SimpleITK==2.5.5 panoptica=={{ context.version }}
         # sanity import at build time so a broken solve fails the build, not the user
-        - /opt/miniconda-latest/envs/panoptica/bin/python -c "import panoptica; print('panoptica', panoptica.__version__)"
+        - /opt/miniconda-latest/envs/panoptica/bin/python -c "import SimpleITK, panoptica; print('panoptica', panoptica.__version__)"
 
     - environment:
         PATH: /opt/miniconda-latest/envs/panoptica/bin:$PATH
