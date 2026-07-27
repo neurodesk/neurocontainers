@@ -210,8 +210,8 @@ tests:
   - name: mincview is executable
     command: test -x "$(command -v mincview)"
     expected_exit_code: 0
-  - name: mincview launcher help starts
-    command: mincview -help 2>&1 | grep -q 'Usage:'
+  - name: mincview help reports usage
+    command: output="$(mincview -help 2>&1 || true)" && grep -q 'Usage:' <<< "$output"
     expected_exit_code: 0
   - name: minctracc resolves on PATH
     command: command -v minctracc
