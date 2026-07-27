@@ -59,6 +59,38 @@ tests:
       - "code-server"
       - "apptainer"
 
+  - name: Desktop terminals initialize Lmod
+    description: Verify a non-login interactive Bash shell exposes module and ml
+    command: |
+      bash --noprofile --norc -ic '
+        set -eo pipefail
+        source /etc/bash.bashrc
+        type module
+        type ml
+        ml --help >/dev/null
+        echo lmod-terminal-ok
+      '
+    expected_output_contains: "lmod-terminal-ok"
+
+  - name: App container overlay is ready for terminal tools
+    description: Verify sourcing the desktop environment creates its private writable overlay
+    command: |
+      bash -c '
+        set -eo pipefail
+        runtime="$(mktemp -d)"
+        trap '"'"'rm -rf "$runtime"'"'"' EXIT
+        XDG_RUNTIME_DIR="$runtime"
+        source /opt/neurodesktop/environment_variables.sh
+        test -d "$NEURODESKTOP_APPTAINER_OVERLAY"
+        test "$(stat -c %a "$NEURODESKTOP_APPTAINER_OVERLAY")" = 700
+        case "$neurodesk_singularity_opts" in
+          *"$NEURODESKTOP_APPTAINER_OVERLAY"*) ;;
+          *) exit 1 ;;
+        esac
+        echo app-overlay-ready
+      '
+    expected_output_contains: "app-overlay-ready"
+
   - name: Neurodesktop version environment
     description: Verify the image exposes the recipe version
     command: bash -lc 'echo "NEURODESKTOP_VERSION=${NEURODESKTOP_VERSION:-missing}"'

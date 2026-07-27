@@ -13,4 +13,4 @@ Error while waiting event for user namespace mappings: no event received
 
 This is a host security-policy limitation rather than a broken Neurodesk app container. Supported workarounds are to run on a host profile that permits the nested runtime, disable Ubuntu's AppArmor user-namespace restriction for the deployment, or bind a host setuid Singularity runtime and set `NEURODESKTOP_NESTED_CONTAINER_RUNTIME=host`.
 
-The default `neurodesk_singularity_opts` uses `/tmp/apptainer_overlay` for app containers. Some setuid Singularity installations reject directory overlays for non-root users; in those environments use a rootless/user-namespace launch mode, a writable overlay image, or the host-runtime path above.
+The default `neurodesk_singularity_opts` uses a private `apptainer_overlay` under `$XDG_RUNTIME_DIR` (falling back to `/tmp`) for app containers. Some setuid Singularity installations reject directory overlays for non-root users; in those environments use a rootless/user-namespace launch mode, a writable overlay image, or the host-runtime path above.
