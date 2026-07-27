@@ -1,0 +1,501 @@
+{
+  "$id": "https://siemens-healthineers.com/openrecon/engraving",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenRecon Labels Schema",
+  "type": "object",
+  "description": "Open Recon related labels are stored into their own container to not interfere with future other uses of labels.",
+  "required": [
+    "general",
+    "reconstruction",
+    "parameters"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "parameters": {
+      "type": "array",
+      "description": "The runtime parameters here define which parameters are sent to the container using the ISMRMRD protocol at runtime as part of the flexible XML header.",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/properties/parameters/$defs/int"
+          },
+          {
+            "$ref": "#/properties/parameters/$defs/double"
+          },
+          {
+            "$ref": "#/properties/parameters/$defs/string"
+          },
+          {
+            "$ref": "#/properties/parameters/$defs/boolean"
+          },
+          {
+            "$ref": "#/properties/parameters/$defs/choice"
+          }
+        ]
+      },
+      "maxItems": 14,
+      "uniqueItems": true,
+      "$defs": {
+        "multilingual_string": {
+          "type": "object",
+          "required": [
+            "en"
+          ],
+          "properties": {
+            "en": {
+              "type": "string"
+            }
+          }
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9]+$"
+        },
+        "unit": {
+          "type": "object",
+          "required": [
+            "en"
+          ],
+          "properties": {
+            "en": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 3
+            }
+          }
+        },
+        "boolean": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "id",
+            "label",
+            "default"
+          ],
+          "properties": {
+            "type": {
+              "const": "boolean"
+            },
+            "id": {
+              "$ref": "#/properties/parameters/$defs/id"
+            },
+            "label": {
+              "$ref": "#/properties/parameters/$defs/multilingual_string"
+            },
+            "information": {
+              "$ref": "#/properties/parameters/$defs/multilingual_string"
+            },
+            "default": {
+              "type": "boolean"
+            }
+          }
+        },
+        "string": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "id",
+            "label"
+          ],
+          "properties": {
+            "type": {
+              "const": "string"
+            },
+            "id": {
+              "$ref": "#/properties/parameters/$defs/id"
+            },
+            "label": {
+              "$ref": "#/properties/parameters/$defs/multilingual_string"
+            },
+            "information": {
+              "$ref": "#/properties/parameters/$defs/multilingual_string"
+            },
+            "default": {
+              "type": "string"
+            },
+            "isLargeText": {
+              "type": "boolean"
+            }
+          }
+        },
+        "choice": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "id",
+            "label",
+            "default",
+            "values"
+          ],
+          "properties": {
+            "type": {
+              "const": "choice"
+            },
+            "id": {
+              "$ref": "#/properties/parameters/$defs/id"
+            },
+            "label": {
+              "$ref": "#/properties/parameters/$defs/multilingual_string"
+            },
+            "information": {
+              "$ref": "#/properties/parameters/$defs/multilingual_string"
+            },
+            "default": {
+              "type": "string"
+            },
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "object",
+                    "required": [
+                      "en"
+                    ],
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "int": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "id",
+            "label",
+            "minimum",
+            "maximum",
+            "default"
+          ],
+          "properties": {
+            "type": {
+              "const": "int"
+            },
+            "id": {
+              "$ref": "#/properties/parameters/$defs/id"
+            },
+            "label": {
+              "$ref": "#/properties/parameters/$defs/multilingual_string"
+            },
+            "information": {
+              "$ref": "#/properties/parameters/$defs/multilingual_string"
+            },
+            "minimum": {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647
+            },
+            "maximum": {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647
+            },
+            "default": {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647
+            },
+            "unit": {
+              "$ref": "#/properties/parameters/$defs/unit"
+            }
+          }
+        },
+        "double": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "id",
+            "label",
+            "minimum",
+            "maximum",
+            "default"
+          ],
+          "properties": {
+            "type": {
+              "const": "double"
+            },
+            "id": {
+              "$ref": "#/properties/parameters/$defs/id"
+            },
+            "label": {
+              "$ref": "#/properties/parameters/$defs/multilingual_string"
+            },
+            "information": {
+              "$ref": "#/properties/parameters/$defs/multilingual_string"
+            },
+            "minimum": {
+              "type": "number",
+              "multipleOf": 0.1,
+              "minimum": -179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368,
+              "maximum": 179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368
+            },
+            "maximum": {
+              "type": "number",
+              "multipleOf": 0.1,
+              "minimum": -179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368,
+              "maximum": 179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368
+            },
+            "default": {
+              "type": "number",
+              "multipleOf": 0.1,
+              "minimum": -179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368,
+              "maximum": 179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368
+            },
+            "unit": {
+              "$ref": "#/properties/parameters/$defs/unit"
+            }
+          }
+        }
+      }
+    },
+    "reconstruction": {
+      "type": "object",
+      "description": "This part of the container description will contain the static information not used for runtime communication with the container.",
+      "required": [
+        "transfer_protocol",
+        "port",
+        "emitter",
+        "injector",
+        "can_use_gpu",
+        "min_required_memory",
+        "min_count_required_cpu_cores"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "transfer_protocol": {
+          "description": "transfer protocol",
+          "type": "object",
+          "required": [
+            "protocol",
+            "version"
+          ],
+          "properties": {
+            "protocol": {
+              "type": "string",
+              "enum": [
+                "ISMRMRD"
+              ]
+            },
+            "version": {
+              "description": "The protocol version used.",
+              "type": "string",
+              "enum": [
+                "1.4.1"
+              ]
+            }
+          }
+        },
+        "port": {
+          "description": "Internal tcp/ip port the image recon application is listening on.",
+          "type": "integer"
+        },
+        "emitter": {
+          "description": "What type of emitter from the ICE pipeline to use.",
+          "type": "string",
+          "enum": [
+            "raw",
+            "image"
+          ]
+        },
+        "injector": {
+          "description": "What type of injector into the ICE pipeline to use.",
+          "type": "string",
+          "enum": [
+            "compleximage",
+            "image"
+          ]
+        },
+        "can_process_adjustment_data": {
+          "description": "Whether this container is able to make use of adjustmentdata.",
+          "type": "boolean"
+        },
+        "can_use_gpu": {
+          "description": "Wheter the image can make use of gpus.",
+          "type": "boolean"
+        },
+        "min_count_required_gpus": {
+          "description": "Minimum required count of gpus. If set to zero with can_use_gpu set to true we expect the image to be able to optionally make use of a gpu if it gets access to one.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_required_gpu_memory": {
+          "description": "Minimum required gpu memory in MegaByte.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_count_required_cpu_cores": {
+          "description": "Minimum required count of cpu cores.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "min_required_memory": {
+          "description": "Minimum required host memory in MegaByte.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "content_qualification_type": {
+          "type": "string",
+          "description": "This will indicate whether this container is a medical product and after checking a number of other measures will allow outputs of the container to be flagged as for diagnostic use.",
+          "enum": [
+            "PRODUCT",
+            "SERVICE",
+            "RESEARCH"
+          ]
+        },
+        "require_readout_filter_off": {
+          "type": "boolean",
+          "description": "This container requires that filtering in readout direction is not performed"
+        },
+        "channel_compression": {
+          "type": "object",
+          "description": "",
+          "additionalProperties": false,
+          "properties": {
+            "require_state": {
+              "type": "string",
+              "description": "This indicates that the container requires a particular state of the coil compression functionality and can either force it to be off or on.",
+              "enum": [
+                "on",
+                "off"
+              ]
+            },
+            "require_number_target_channels": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "This indicates that the container requires this particular value of the number of channels after coil compression. Must be larger than zero. Only has an effect if coil compression is active."
+            }
+          }
+        }
+      }
+    },
+    "general": {
+      "type": "object",
+      "description": "This part of the container tooltip will contain the static information not used for runtime communication with the container.",
+      "required": [
+        "name",
+        "version",
+        "vendor",
+        "information",
+        "id",
+        "regulatory_information"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "regulatory_information": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "device_trade_name",
+            "production_identifier",
+            "manufacturer_address",
+            "made_in",
+            "manufacture_date",
+            "material_number",
+            "gtin",
+            "udi",
+            "safety_advices",
+            "special_operating_instructions",
+            "additional_relevant_information"
+          ],
+          "properties": {
+            "device_trade_name": {
+              "type": "string"
+            },
+            "production_identifier": {
+              "type": "string"
+            },
+            "manufacturer_address": {
+              "type": "string"
+            },
+            "made_in": {
+              "type": "string"
+            },
+            "manufacture_date": {
+              "type": "string"
+            },
+            "material_number": {
+              "type": "string"
+            },
+            "gtin": {
+              "type": "string"
+            },
+            "udi": {
+              "type": "string"
+            },
+            "safety_advices": {
+              "type": "string"
+            },
+            "special_operating_instructions": {
+              "type": "string"
+            },
+            "additional_relevant_information": {
+              "type": "string"
+            }
+          }
+        },
+        "version": {
+          "description": "Version of the product.",
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+        },
+        "name": {
+          "description": "User facing name of this image.",
+          "type": "object",
+          "required": [
+            "en"
+          ],
+          "properties": {
+            "en": {
+              "type": "string"
+            }
+          }
+        },
+        "license_string": {
+          "description": "Identifier for a license check.",
+          "type": "string"
+        },
+        "id": {
+          "description": "This is an identifier of this particular algorithm in form of this image. It is invariant to the language chosen.",
+          "type": "string"
+        },
+        "vendor": {
+          "description": "Legal vendor or developer of this image.",
+          "type": "string"
+        },
+        "information": {
+          "description": "User facing description of this image.",
+          "type": "object",
+          "required": [
+            "en"
+          ],
+          "properties": {
+            "en": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

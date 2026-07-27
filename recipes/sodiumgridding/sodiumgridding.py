@@ -94,6 +94,7 @@ ORIENTATION_IN_PLANE_TRANSFORMS = {
     "zxy_fxy": (True, True, True),
 }
 DEFAULT_ORIENTATION = "zyx"
+ORIENTATION_DEBUG_SELECTION = "debug"
 ORIENTATION_DEBUG_ORDER = (
     "zyx",
     "zyx_fx",
@@ -1106,6 +1107,21 @@ def _resolve_orientation(orientation):
     return key
 
 
+def _resolve_orientation_config(config):
+    selection = _config_str(config, "orientation", OPENRECON_DEFAULTS["orientation"])
+    emit_debug_series = selection.strip().lower() == ORIENTATION_DEBUG_SELECTION
+    # Keep accepting the former hidden boolean for manually supplied configs.
+    emit_debug_series = emit_debug_series or _config_bool(
+        config,
+        "orientationdebugseries",
+        OPENRECON_DEFAULTS["orientationdebugseries"],
+    )
+    orientation = (
+        DEFAULT_ORIENTATION if emit_debug_series else _resolve_orientation(selection)
+    )
+    return orientation, emit_debug_series
+
+
 def _orient_volume(volume, orientation, flip_slice=False):
     """Reinterpret a gridded (z, y, x) volume as the MRD (slice, phase, read) layout.
 
@@ -1550,20 +1566,12 @@ def process_raw(group, connection, config, metadata):
         "applyn4biascorrection",
         OPENRECON_DEFAULTS["applyn4biascorrection"],
     )
-    orientation = _resolve_orientation(
-        _config_str(config, "orientation", OPENRECON_DEFAULTS["orientation"])
-    )
+    orientation, orientation_debug_series = _resolve_orientation_config(config)
     orientation_flip_slice = _config_bool(
         config,
         "orientationflipslice",
         OPENRECON_DEFAULTS["orientationflipslice"],
     )
-    orientation_debug_series = _config_bool(
-        config,
-        "orientationdebugseries",
-        OPENRECON_DEFAULTS["orientationdebugseries"],
-    )
-
     logging.info(
         "Resolved configuration: matrixsize=%d fovcm=%.3f trajectorysampleoffset=%d "
         "rejectbadreadouts=%s badreadoutsigma=%.3f centerwindow=%d "

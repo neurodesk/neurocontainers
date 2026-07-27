@@ -55,11 +55,16 @@ tests:
       )
       parameters = {item["id"]: item for item in label["parameters"]}
       offered = {value["id"] for value in parameters["orientation"]["values"]}
-      implemented = set(sodiumgridding.ORIENTATION_IN_PLANE_TRANSFORMS)
+      implemented = set(sodiumgridding.ORIENTATION_IN_PLANE_TRANSFORMS) | {
+          sodiumgridding.ORIENTATION_DEBUG_SELECTION
+      }
       assert offered == implemented, (offered ^ implemented)
       assert parameters["orientation"]["default"] == sodiumgridding.DEFAULT_ORIENTATION
       assert "orientationflipslice" in parameters
-      assert "orientationdebugseries" in parameters
+      assert "orientationdebugseries" not in parameters
+      assert "fermiwidth" not in parameters
+      assert "fermicutoff" not in parameters
+      assert len(label["parameters"]) <= 14
       print("orientation choices:", sorted(offered))
       PY
 

@@ -94,21 +94,7 @@
       "label": { "en": "Apply Fermi filter" },
       "type": "boolean",
       "default": true,
-      "information": { "en": "Apply the optional k-space Fermi taper before coil compression and gridding." }
-    },
-    {
-      "id": "fermiwidth",
-      "label": { "en": "Fermi width" },
-      "type": "string",
-      "default": "0.05",
-      "information": { "en": "Width parameter for the optional Fermi filter." }
-    },
-    {
-      "id": "fermicutoff",
-      "label": { "en": "Fermi cutoff" },
-      "type": "string",
-      "default": "0.98",
-      "information": { "en": "Cutoff parameter for the optional Fermi filter." }
+      "information": { "en": "Apply the k-space Fermi taper with fixed width 0.05 and cutoff 0.98 before coil compression and gridding." }
     },
     {
       "id": "dcfiterations",
@@ -180,10 +166,11 @@
         { "id": "zxy", "name": { "en": "zxy (component 0 = phase)" } },
         { "id": "zxy_fx", "name": { "en": "zxy, reverse columns" } },
         { "id": "zxy_fy", "name": { "en": "zxy, reverse rows" } },
-        { "id": "zxy_fxy", "name": { "en": "zxy, reverse rows and columns" } }
+        { "id": "zxy_fxy", "name": { "en": "zxy, reverse rows and columns" } },
+        { "id": "debug", "name": { "en": "Debug sweep (all orientations)" } }
       ],
       "default": "zyx",
-      "information": { "en": "Mapping from trajectory components to the image read and phase axes. This is the only control over output pixel orientation; direction metadata is always emitted unmodified." }
+      "information": { "en": "Mapping from trajectory components to the image read and phase axes. Select debug to emit every orientation as a labelled series. Direction metadata is always emitted unmodified." }
     },
     {
       "id": "orientationflipslice",
@@ -191,13 +178,6 @@
       "type": "boolean",
       "default": false,
       "information": { "en": "Reverse the through-plane (slice) axis of the output volume. Verify against the localizer before enabling." }
-    },
-    {
-      "id": "orientationdebugseries",
-      "label": { "en": "Orientation debug sweep" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Emit one series per in-plane orientation, each labelled with its orientation key, so the anatomically correct value can be identified in a single run. Research use only; disable for normal reconstructions." }
     }
   ]
 }

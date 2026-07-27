@@ -277,6 +277,27 @@ def test_orientation_transform_moves_the_expected_axes(monkeypatch):
     np.testing.assert_array_equal(oriented, volume)
 
 
+def test_orientation_debug_choice_enables_the_existing_sweep(monkeypatch):
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    monkeypatch.setattr(
+        sodiumgridding,
+        "_config_str",
+        lambda config, key, default: str(config.get(key, default)),
+    )
+    monkeypatch.setattr(
+        sodiumgridding,
+        "_config_bool",
+        lambda config, key, default: bool(config.get(key, default)),
+    )
+
+    orientation, emit_debug_series = sodiumgridding._resolve_orientation_config(
+        {"orientation": sodiumgridding.ORIENTATION_DEBUG_SELECTION}
+    )
+
+    assert orientation == sodiumgridding.DEFAULT_ORIENTATION
+    assert emit_debug_series is True
+
+
 def test_orientation_debug_sweep_emits_one_labelled_series_per_transform(monkeypatch):
     sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
     volume = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)

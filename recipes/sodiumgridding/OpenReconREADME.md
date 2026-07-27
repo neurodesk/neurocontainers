@@ -53,22 +53,20 @@ message stream as an ISMRMRD HDF5 dataset.
 | Trajectory sample offset | `trajectorysampleoffset` | integer | `0` | Skip leading trajectory samples before alignment with raw data. |
 | Matrix size | `matrixsize` | integer | `128` | Final isotropic matrix size. Gridding uses a fixed oversampling factor of two. |
 | FOV cm | `fovcm` | string | `22.0` | Reconstruction field of view in centimetres. |
-| Apply Fermi filter | `applyfermifilter` | boolean | `true` | Apply the radial k-space Fermi taper before compression. |
-| Fermi width | `fermiwidth` | string | `0.05` | Fermi transition width. |
-| Fermi cutoff | `fermicutoff` | string | `0.98` | Normalized Fermi cutoff. |
+| Apply Fermi filter | `applyfermifilter` | boolean | `true` | Apply the radial k-space Fermi taper with fixed width `0.05` and cutoff `0.98` before compression. |
 | DCF iterations | `dcfiterations` | integer | `5` | Kaiser-Bessel density compensation iterations; use `0` for uniform weights. |
 | Max coils | `maxcoils` | integer | `16` | Limit physical coils before compression; use `0` for all coils. |
 | Max workers | `maxworkers` | integer | `8` | Parallel virtual-coil workers. At most two oversampled grids are resident concurrently. |
 | Coil variance | `coilvarianceretention` | string | `0.9` | Fraction of physical-coil variance retained during compression. |
 | Coil combination | `coilcombinemode` | choice | `AC` | Use adaptive combination (`AC`) or sum-of-squares (`SoS`). |
 | N4 correction | `applyn4biascorrection` | boolean | `true` | Apply N4 bias field correction after coil combination. |
-| Orientation | `orientation` | choice | `zyx` | Mapping from trajectory components to the image read and phase axes. The only control over output pixel orientation. |
+| Orientation | `orientation` | choice | `zyx` | Mapping from trajectory components to the image read and phase axes. Select `debug` to emit all orientations as labelled series. |
 | Reverse slice order | `orientationflipslice` | boolean | `false` | Reverse the through-plane axis of the output volume. |
-| Orientation debug sweep | `orientationdebugseries` | boolean | `false` | Emit one labelled series per in-plane orientation to identify the correct value in a single run. |
 
 Weak-readout rejection remains enabled with the standalone defaults of three
 standard deviations and a five-sample half-window. The Kaiser-Bessel kernel
-width is fixed at `3.0`, matching the supplied implementation.
+width is fixed at `3.0`; Fermi width and cutoff are fixed at `0.05` and `0.98`,
+matching the supplied implementation.
 
 ## Runtime notes
 
@@ -87,10 +85,10 @@ width is fixed at `3.0`, matching the supplied implementation.
   component 0, so the reconstructed volume is
   `(component 2, component 1, component 0)`. Which component is the sequence's
   read, phase and slice axis is a property of the trajectory file and cannot be
-  derived from the recipe. Determine it once with `orientationdebugseries`,
-  which emits all eight in-plane variants as separate series suffixed
+  derived from the recipe. Determine it once by selecting `debug` for
+  `orientation`, which emits all eight in-plane variants as separate series suffixed
   `_ori_<key>`; identify the anatomically correct series against the localizer,
-  then set that key as `orientation` and disable the sweep.
+  then set that key as `orientation`.
 - Each run logs the FIRE-visible CPU count, affinity, cgroup limits, configured
   worker cap, effective virtual-coil workers, and whether pyFFTW is available.
 - Each run also logs the resolved configuration, the per-component trajectory
