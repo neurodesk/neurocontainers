@@ -85,9 +85,9 @@ tests:
       set -e
       model=/opt/flames/model
       test -d "$model"
-      find "$model" -type f | grep -E '/dataset\\.json$'
-      find "$model" -type f | grep -E '/plans\\.json$'
-      find "$model" -type f | grep -E '/checkpoint_final\\.pth$'
+      find "$model" -type f | grep -E '/dataset\.json$'
+      find "$model" -type f | grep -E '/plans\.json$'
+      find "$model" -type f | grep -E '/checkpoint_final\.pth$'
       echo "model-assets-ok"
     expected_output_contains: "model-assets-ok"
 
