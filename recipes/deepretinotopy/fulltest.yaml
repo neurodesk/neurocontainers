@@ -1,5 +1,9 @@
 # deepretinotopy container test suite
-# Tests for deepretinotopy v1.0.18 - Deep learning-based retinotopic mapping
+# Tests for deepretinotopy v1.0.19 - Deep learning-based retinotopic mapping
+#
+# NOTE: This file is GENERATED from container/fulltest.yaml.tmpl in
+# felenitaribeiro/deepRetinotopy_TheToolbox via container/render_fulltest.py.
+# Do not edit here by hand -- change the template/manifest and re-render.
 #
 # Container includes:
 #   - deepRetinotopy toolbox (geometric deep learning for visual cortex mapping)
@@ -15,8 +19,8 @@
 #   - BOLD: functional MRI timeseries
 
 name: deepretinotopy
-version: 1.0.18
-container: deepretinotopy_1.0.18_20250909.simg
+version: 1.0.19
+container: deepretinotopy_${version}_REFERENCE.simg
 
 required_files:
   - dataset: ds000001
@@ -103,30 +107,22 @@ tests:
   # ===========================================================================
   # DEEPRETINOTOPY MODEL TESTS
   # ===========================================================================
-  - name: Polar angle models exist
-    description: Verify polar angle prediction models are installed
-    command: bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_polarAngle_*.pt'
-    expected_output_contains: "deepRetinotopy_polarAngle_LH_model.pt"
-
-  - name: Eccentricity models exist
-    description: Verify eccentricity prediction models are installed
-    command: bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_eccentricity_*.pt'
-    expected_output_contains: "deepRetinotopy_eccentricity_LH_model.pt"
-
+  - name: Visual field coordinate models exist
+    description: Verify visual field coordinate (polar angle + eccentricity) prediction models are installed
+    command: bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_visualCoord_*.pt'
+    expected_output_contains: deepRetinotopy_visualCoord_LH_model.pt
   - name: pRF size models exist
     description: Verify pRF size prediction models are installed
     command: bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_pRFsize_*.pt'
-    expected_output_contains: "deepRetinotopy_pRFsize_LH_model.pt"
-
+    expected_output_contains: deepRetinotopy_pRFsize_LH_model.pt
   - name: Model file count
-    description: Verify all 6 model files are present (LH/RH for 3 maps)
+    description: Verify all 4 model files are present (LH/RH for 2 maps)
     command: bash -lc 'ls /opt/deepRetinotopy_TheToolbox/models/*.pt | wc -l'
-    expected_output_contains: "6"
-
+    expected_output_contains: '4'
   - name: Load PyTorch model
     description: Test loading a deepRetinotopy model file
-    command: "bash -lc 'python -c \"import torch; m=torch.load('\"'\"'/opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_polarAngle_LH_model.pt'\"'\"', map_location='\"'\"'cpu'\"'\"', weights_only=False); print('\"'\"'Model loaded successfully'\"'\"')\"'"
-    expected_output_contains: "Model loaded successfully"
+    command: bash -lc 'python -c "import torch; m=torch.load('"'"'/opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_visualCoord_LH_model.pt'"'"', map_location='"'"'cpu'"'"', weights_only=False); print('"'"'Model loaded successfully'"'"')"'
+    expected_output_contains: Model loaded successfully
 
   # ===========================================================================
   # DEEPRETINOTOPY UTILITY SCRIPTS

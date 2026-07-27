@@ -58,6 +58,7 @@ build:
         - rm -rf /var/lib/rpm/Packages
         - rm -rf /tmp/*
         - rm -rf ~/.cache/pip/*
+        - conda clean -afy && rm -rf /opt/miniconda-latest/pkgs
         - rm -rf /opt/miniconda-latest/lib/python3.12/site-packages/torchvision/datasets/*
         - rm -rf /opt/miniconda-latest/lib/python3.12/site-packages/*/__pycache__/*
 
