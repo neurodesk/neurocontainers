@@ -170,14 +170,14 @@
         { "id": "debug", "name": { "en": "Debug sweep (all orientations)" } }
       ],
       "default": "zyx",
-      "information": { "en": "Mapping from trajectory components to the image read and phase axes. Select debug to emit every orientation as a labelled series. Direction metadata is always emitted unmodified." }
+      "information": { "en": "Map trajectory components into the acquisition read and phase axes. Select debug to emit 16 labelled series, every mapping with the slice axis both kept and reversed, each rotated into the standard display frame." }
     },
     {
       "id": "orientationflipslice",
-      "label": { "en": "Reverse slice order" },
+      "label": { "en": "Reverse trajectory slice axis" },
       "type": "boolean",
       "default": false,
-      "information": { "en": "Reverse the through-plane (slice) axis of the output volume. Verify against the localizer before enabling." }
+      "information": { "en": "Reverse trajectory component 2 before the acquisition frame is rotated into the standard display view." }
     }
   ]
 }

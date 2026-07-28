@@ -2,6 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 import ctypes
+from itertools import permutations
 import logging
 import os
 from pathlib import Path
@@ -65,23 +66,13 @@ OUTPUT_SERIES_DESCRIPTION = "sodiumgridding"
 OUTPUT_IMAGE_COMMENT = "23Na Kaiser-Bessel Gridding"
 OUTPUT_IMAGE_SERIES_INDEX = 1
 
-# Orientation is owned in exactly one place: the reinterpretation of the gridded
-# volume axes as the MRD (slice, phase, read) layout. The direction vectors are
-# never modified -- they are the acquisition's own geometry and always describe
-# the emitted pixels. Flipping a direction vector cannot move pixels under this
-# FIRE configuration (UseIceFillingMiniHeader=1, IsFlipAndShiftImages=1,
-# NormOrientation disabled), so any correction expressed that way is invisible.
+# Trajectory-to-acquisition orientation is the first geometry stage.
 #
 # The gridding kernel writes grid[iz, iy, ix] with ix taken from trajectory
 # component 0, so the reconstructed volume is (component 2, component 1,
-# component 0). Which trajectory component is the readout, phase and slice axis
-# of the sequence is a property of the trajectory file and cannot be determined
-# from this code; "orientation" selects that mapping. Values transpose and/or
-# reverse the two in-plane axes, applied in that order:
-#   zyx     component 0 -> read (columns), component 1 -> phase (rows)
-#   zxy     component 0 -> phase (rows),   component 1 -> read (columns)
-#   _fy     additionally reverse the rows (phase axis)
-#   _fx     additionally reverse the columns (read axis)
+# component 0). Which trajectory component maps to the acquisition's read and
+# phase axes is not encoded by the trajectory file. The orientation setting
+# selects that mapping and any component-sign corrections.
 ORIENTATION_IN_PLANE_TRANSFORMS = {
     # key: (transpose_in_plane, reverse_rows, reverse_columns)
     "zyx": (False, False, False),
@@ -95,19 +86,66 @@ ORIENTATION_IN_PLANE_TRANSFORMS = {
 }
 DEFAULT_ORIENTATION = "zyx"
 ORIENTATION_DEBUG_SELECTION = "debug"
-ORIENTATION_DEBUG_ORDER = (
-    "zyx",
-    "zyx_fx",
-    "zyx_fy",
-    "zyx_fxy",
-    "zxy",
-    "zxy_fx",
-    "zxy_fy",
-    "zxy_fxy",
-)
+ORIENTATION_DEBUG_ORDER = tuple(ORIENTATION_IN_PLANE_TRANSFORMS)
+#
 # ISMRMRD direction vectors are in the DICOM/Siemens patient coordinate system
 # (+x left, +y posterior, +z head). Labels below are (negative, positive).
 PATIENT_AXIS_LABELS = (("R", "L"), ("A", "P"), ("F", "H"))
+
+# The FIRE Configurator disables NormOrientation, so nothing downstream rotates
+# our images into the DICOM standard display view. The native ICE reconstruction
+# is emitted in that view, so this app has to produce it itself, otherwise the
+# two series are mirrored relative to each other on screen.
+#
+# The standard view is the right-handed frame
+#   columns increase toward the patient's Left      (+x)
+#   rows    increase toward the patient's Posterior (+y)
+#   slices  increase toward the patient's Head      (+z)
+#
+# The slice sign is measured from the native reference series in
+# sodiumgridding_v0.1.3.PNG. That volume is centred at isocenter -- the scanner
+# logfile records "dSag, dCor, Tra = 0; 0; 0" for the native reconstruction --
+# and holds 128 slices over 220 mm, so frame 48 of 128 lies at
+#   (47 - 63.5) * 220/128 = -28.36 mm
+# along the slice axis. The reference displays that frame at SP F28.4, that is
+# at z = -28.4, which is only possible if the slice axis points toward the Head.
+#
+# Version 0.1.3 targeted the Feet instead and displayed the same frame at H29.
+# Because reversing one axis of a right-handed frame also swaps the side the
+# viewer looks from, that single sign error is what produced the apparent 180
+# degree rotation about the anterior-posterior axis: R/L exchanged on the left
+# edge, the view-from marker flipped H/F, and slice 48 showing what the
+# reference shows at slice 81.
+#
+# Targets are ordered (slices, rows, columns) to match the emitted array.
+DISPLAY_FRAME_TARGETS = (
+    (0.0, 0.0, 1.0),
+    (0.0, 1.0, 0.0),
+    (1.0, 0.0, 0.0),
+)
+DISPLAY_FRAME_AXIS_NAMES = ("slices", "rows", "columns")
+
+
+def _validate_display_frame_targets(targets):
+    """Return the handedness of the display targets, refusing a left-handed set.
+
+    Every physical acquisition frame is right-handed. Reaching the targets by
+    permuting and reversing its axes keeps that property only if the targets are
+    right-handed too, so a left-handed target set can only be a sign mistake: it
+    reverses one axis too many and silently emits a volume the scanner draws
+    from the opposite side. That is exactly how 0.1.3 shipped.
+    """
+    slices, rows, columns = (np.asarray(target, dtype=float) for target in targets)
+    handedness = float(np.dot(np.cross(columns, rows), slices))
+    if handedness <= 0.0:
+        raise ValueError(
+            "DISPLAY_FRAME_TARGETS must form a right-handed (columns, rows, "
+            f"slices) frame, but columns x rows . slices = {handedness:+.3f}"
+        )
+    return handedness
+
+
+DISPLAY_FRAME_HANDEDNESS = _validate_display_frame_targets(DISPLAY_FRAME_TARGETS)
 SCANNER_DISPLAY_MIN = 0
 SCANNER_DISPLAY_MAX = 4096
 OVERSAMPLING = 2
@@ -1073,17 +1111,30 @@ def _log_trajectory_extent(trajectory):
         )
 
 
-def _direction_label(vector):
-    """Describe a patient-space direction vector as, for example, 'R->L'."""
+def _direction_letters(vector):
+    """Return the anatomical letters at the start and end of a direction vector.
+
+    ``(-x, +x)`` yields ``("L", "R")`` because the vector begins on the
+    patient's left and ends on the right. The scanner labels the edges of a
+    displayed image with exactly these two letters.
+    """
     values = np.asarray(vector, dtype=float)
     norm = float(np.linalg.norm(values))
     if norm < 1e-6:
-        return "undefined"
+        return ("?", "?")
     unit = values / norm
     axis = int(np.argmax(np.abs(unit)))
     start, end = PATIENT_AXIS_LABELS[axis]
     if unit[axis] < 0:
         start, end = end, start
+    return (start, end)
+
+
+def _direction_label(vector):
+    """Describe a patient-space direction vector as, for example, 'R->L'."""
+    start, end = _direction_letters(vector)
+    if start == "?":
+        return "undefined"
     return f"{start}->{end}"
 
 
@@ -1092,6 +1143,48 @@ def _format_direction(vector):
     components = ",".join(f"{float(value):+.4f}" for value in values)
     obliquity = float(np.max(np.abs(values))) if values.size else 0.0
     return f"{_direction_label(values)} [{components}] alignment={obliquity:.4f}"
+
+
+def _position_label(position):
+    """Format a patient-space position the way the scanner prints one, 'R6.3 P2.3 H35.4'."""
+    values = np.asarray(position, dtype=float)
+    parts = []
+    for axis in range(3):
+        value = float(values[axis])
+        negative, positive = PATIENT_AXIS_LABELS[axis]
+        parts.append(f"{positive if value >= 0.0 else negative}{abs(value):.1f}")
+    return " ".join(parts)
+
+
+def _slice_position_label(position):
+    """Format the dominant component of a position, matching the scanner 'SP' field."""
+    values = np.asarray(position, dtype=float)
+    axis = int(np.argmax(np.abs(values)))
+    value = float(values[axis])
+    negative, positive = PATIENT_AXIS_LABELS[axis]
+    return f"{positive if value >= 0.0 else negative}{abs(value):.1f}"
+
+
+def _unit_vector(vector, fallback=(0.0, 0.0, 1.0)):
+    values = np.asarray(vector, dtype=float)
+    norm = float(np.linalg.norm(values))
+    if norm < 1e-6:
+        return np.asarray(fallback, dtype=float)
+    return values / norm
+
+
+def _frame_position(center_position, slice_dir, frame_index, slice_count, slice_spacing_mm):
+    """Patient-space centre of one emitted frame.
+
+    ``center_position`` is the centre of the whole volume, which is what the MRD
+    header carries, so frame ``frame_index`` of ``slice_count`` sits half a
+    volume away from it minus its own offset. ``frame_index`` is zero based;
+    the scanner numbers the same frame ``frame_index + 1``.
+    """
+    offset = (float(frame_index) - (float(slice_count) - 1.0) / 2.0) * float(
+        slice_spacing_mm
+    )
+    return np.asarray(center_position, dtype=float) + offset * _unit_vector(slice_dir)
 
 
 def _resolve_orientation(orientation):
@@ -1107,30 +1200,37 @@ def _resolve_orientation(orientation):
     return key
 
 
+def _resolve_orientation_selection(selection):
+    """Split a UI orientation value into (orientation, emit_debug_series).
+
+    ``ORIENTATION_DEBUG_SELECTION`` is one of the values the scanner UI offers,
+    so every entry point that accepts an orientation has to understand it. This
+    is the single place that mapping is made.
+    """
+    if str(selection).strip().lower() == ORIENTATION_DEBUG_SELECTION:
+        return DEFAULT_ORIENTATION, True
+    return _resolve_orientation(selection), False
+
+
 def _resolve_orientation_config(config):
     selection = _config_str(config, "orientation", OPENRECON_DEFAULTS["orientation"])
-    emit_debug_series = selection.strip().lower() == ORIENTATION_DEBUG_SELECTION
-    # Keep accepting the former hidden boolean for manually supplied configs.
-    emit_debug_series = emit_debug_series or _config_bool(
+    orientation, emit_debug_series = _resolve_orientation_selection(selection)
+    # Continue accepting the older boolean in manually supplied JSON configs.
+    if _config_bool(
         config,
         "orientationdebugseries",
         OPENRECON_DEFAULTS["orientationdebugseries"],
-    )
-    orientation = (
-        DEFAULT_ORIENTATION if emit_debug_series else _resolve_orientation(selection)
-    )
+    ):
+        orientation, emit_debug_series = DEFAULT_ORIENTATION, True
     return orientation, emit_debug_series
 
 
 def _orient_volume(volume, orientation, flip_slice=False):
-    """Reinterpret a gridded (z, y, x) volume as the MRD (slice, phase, read) layout.
-
-    This is the only place output pixels are reordered. Callers must not flip or
-    permute the volume anywhere else, and must not compensate by negating the
-    direction vectors.
-    """
+    """Map trajectory components into acquisition (slice, phase, read) axes."""
     key = _resolve_orientation(orientation)
-    transpose_in_plane, reverse_rows, reverse_columns = ORIENTATION_IN_PLANE_TRANSFORMS[key]
+    transpose_in_plane, reverse_rows, reverse_columns = (
+        ORIENTATION_IN_PLANE_TRANSFORMS[key]
+    )
 
     oriented = np.asarray(volume)
     if transpose_in_plane:
@@ -1143,6 +1243,206 @@ def _orient_volume(volume, orientation, flip_slice=False):
         oriented = oriented[::-1, :, :]
 
     return np.ascontiguousarray(oriented), key
+
+
+def _canonicalize_to_display_frame(volume, axis_directions):
+    """Rotate a (slices, rows, columns) volume into the DICOM standard display view.
+
+    ``axis_directions`` are the patient-space directions of the volume's own
+    axes, in the same (slices, rows, columns) order. The returned directions
+    describe the returned volume, so the header stays exactly as honest as it
+    was on input: this is a change of display convention, not a correction
+    layered on top of one.
+
+    The permutation and signs are derived from the acquisition's own vectors
+    rather than hardcoded, so obliquity and a non-HFS patient position are
+    handled without a second code path.
+    """
+    directions = [np.asarray(vector, dtype=float) for vector in axis_directions]
+    unit_directions = []
+    for vector in directions:
+        norm = float(np.linalg.norm(vector))
+        unit_directions.append(vector / norm if norm > 1e-6 else vector)
+
+    targets = [np.asarray(target, dtype=float) for target in DISPLAY_FRAME_TARGETS]
+
+    # Choose all three axes as one assignment. Greedy target-by-target matching
+    # can consume the second-best axis early and force a wrong mapping for a
+    # valid oblique rotation.
+    permutation = max(
+        permutations(range(3)),
+        key=lambda candidate: sum(
+            abs(float(np.dot(unit_directions[candidate[index]], targets[index])))
+            for index in range(3)
+        ),
+    )
+    signs = [
+        -1.0
+        if float(np.dot(unit_directions[permutation[index]], targets[index])) < 0.0
+        else 1.0
+        for index in range(3)
+    ]
+
+    canonical = np.asarray(volume).transpose(*permutation)
+    for output_axis, sign in enumerate(signs):
+        if sign < 0.0:
+            canonical = np.flip(canonical, axis=output_axis)
+
+    canonical_directions = [
+        signs[output_axis] * directions[permutation[output_axis]]
+        for output_axis in range(3)
+    ]
+    return np.ascontiguousarray(canonical), canonical_directions, permutation, signs
+
+
+def _log_display_frame(permutation, signs, canonical_directions, shape):
+    logging.info(
+        "DICOM display frame: NormOrientation is disabled on the scanner, so the "
+        "volume is rotated into the standard view here (columns to L, rows to P, "
+        "slices to H). Direction metadata is transformed with the pixels."
+    )
+    for output_axis, name in enumerate(DISPLAY_FRAME_AXIS_NAMES):
+        logging.info(
+            "Display frame axis %d (%s): source axis %d %s -> %s",
+            output_axis,
+            name,
+            permutation[output_axis],
+            "reversed" if signs[output_axis] < 0.0 else "kept",
+            _format_direction(canonical_directions[output_axis]),
+        )
+    logging.info("Display frame shape: %s", tuple(int(size) for size in shape))
+
+    slices, rows, columns = canonical_directions
+    handedness = float(np.dot(np.cross(_unit_vector(columns), _unit_vector(rows)),
+                              _unit_vector(slices)))
+    if handedness > 0.0:
+        logging.info(
+            "Display frame handedness: right-handed (columns x rows . slices = "
+            "%+.3f), matching the native reconstruction.",
+            handedness,
+        )
+    else:
+        logging.error(
+            "Display frame handedness: LEFT-handed (columns x rows . slices = "
+            "%+.3f). The scanner will draw this volume from the opposite side of "
+            "the native reconstruction. An acquisition frame is always "
+            "right-handed, so this means an axis was reversed without its "
+            "direction vector, or DISPLAY_FRAME_TARGETS is inconsistent.",
+            handedness,
+        )
+
+
+def _log_emitted_geometry(center_position, read_dir, phase_dir, slice_dir, shape, fov_mm):
+    """Log what the scanner should display, so one screenshot can confirm or refute it.
+
+    Everything here is derived from the header this app is about to emit. If the
+    scanner shows something different, the header was overridden downstream
+    rather than computed wrongly here, and that distinction is the whole reason
+    this block exists: 0.1.3 could not be diagnosed from its own log.
+    """
+    slice_count = int(shape[0])
+    spacing = float(fov_mm) / float(slice_count) if slice_count else 0.0
+
+    left, right = _direction_letters(read_dir)
+    top, bottom = _direction_letters(phase_dir)
+    view_from, _ = _direction_letters(slice_dir)
+
+    logging.info(
+        "Predicted scanner display: left edge '%s', right edge '%s', top edge "
+        "'%s', bottom edge '%s', viewed from '%s' (the boxed marker). The native "
+        "transversal reconstruction shows R, L, A, P and F.",
+        left,
+        right,
+        top,
+        bottom,
+        view_from,
+    )
+    logging.info(
+        "Emitted volume centre: %s [%s], slice spacing %.5f mm over %d slices",
+        _position_label(center_position),
+        ",".join(f"{float(value):+.3f}" for value in center_position),
+        spacing,
+        slice_count,
+    )
+
+    if slice_count:
+        sample_indices = sorted(
+            {0, slice_count // 4, slice_count // 2, (3 * slice_count) // 4, slice_count - 1}
+        )
+        for index in sample_indices:
+            position = _frame_position(
+                center_position, slice_dir, index, slice_count, spacing
+            )
+            logging.info(
+                "Predicted frame %d/%d (scanner numbering): SP %s, full position %s",
+                index + 1,
+                slice_count,
+                _slice_position_label(position),
+                _position_label(position),
+            )
+        logging.info(
+            "Compare any one of those against the scanner's SP field for the same "
+            "frame number. A match confirms the emitted geometry is honoured; a "
+            "sign difference means the slice axis is reversed relative to the "
+            "native series; a different magnitude means the volume centre or the "
+            "field of view disagrees."
+        )
+
+
+def _log_patient_space_localisation(label, volume, center_position, axis_directions, fov_mm):
+    """Log where the signal actually sits in patient coordinates.
+
+    Voxel-index centroids cannot be compared against a scanner screenshot, but
+    these positions can. They are what distinguishes a volume that is merely
+    stored back to front from one whose content is genuinely in the wrong place.
+    """
+    values = np.asarray(volume, dtype=np.float64)
+    if values.ndim != 3 or not values.size:
+        logging.info("Patient-space localisation [%s]: unavailable", label)
+        return
+
+    total = float(values.sum())
+    if total <= 0.0:
+        logging.info("Patient-space localisation [%s]: no signal", label)
+        return
+
+    centroid_position = np.asarray(center_position, dtype=float).copy()
+    for axis, name in enumerate(DISPLAY_FRAME_AXIS_NAMES):
+        profile = values.sum(
+            axis=tuple(other for other in range(3) if other != axis)
+        )
+        count = int(profile.size)
+        spacing = float(fov_mm) / float(count)
+        indices = np.arange(count, dtype=np.float64)
+        centroid_index = float((profile * indices).sum() / profile.sum())
+        peak_index = int(np.argmax(profile))
+
+        above = np.flatnonzero(profile >= 0.1 * float(profile.max()))
+        extent_mm = (float(above[-1] - above[0]) + 1.0) * spacing if above.size else 0.0
+
+        offset_mm = (centroid_index - (count - 1) / 2.0) * spacing
+        direction = _unit_vector(axis_directions[axis])
+        centroid_position = centroid_position + offset_mm * direction
+
+        logging.info(
+            "Patient-space localisation [%s] %s (%s): centroid index %.2f/%d "
+            "(%+.2f mm from centre), peak index %d, signal extent %.1f mm",
+            label,
+            name,
+            _direction_label(direction),
+            centroid_index,
+            count,
+            offset_mm,
+            peak_index,
+            extent_mm,
+        )
+
+    logging.info(
+        "Patient-space localisation [%s]: intensity centroid at %s [%s]",
+        label,
+        _position_label(centroid_position),
+        ",".join(f"{float(value):+.3f}" for value in centroid_position),
+    )
 
 
 def _log_volume_statistics(label, volume):
@@ -1200,43 +1500,53 @@ def _log_reference_geometry(reference_head, metadata):
     logging.info("Acquisition phase_dir (MRD y, rows):    %s", _format_direction(reference_head.phase_dir))
     logging.info("Acquisition slice_dir (MRD z, slices):  %s", _format_direction(reference_head.slice_dir))
     logging.info(
-        "Direction vectors are emitted unmodified. Under this FIRE configuration "
-        "(UseIceFillingMiniHeader, IsFlipAndShiftImages, NormOrientation disabled) "
-        "they relabel markers only; pixel order is controlled solely by the "
-        "'orientation' parameter."
+        "Acquisition volume centre: %s",
+        _position_label(reference_head.position),
+    )
+    acquisition_handedness = float(
+        np.dot(
+            np.cross(
+                _unit_vector(reference_head.read_dir),
+                _unit_vector(reference_head.phase_dir),
+            ),
+            _unit_vector(reference_head.slice_dir),
+        )
+    )
+    logging.info(
+        "Acquisition frame handedness: %+.3f (%s). A physical acquisition is "
+        "always right-handed; anything else means the incoming vectors are "
+        "inconsistent and no downstream mapping can be trusted.",
+        acquisition_handedness,
+        "right-handed" if acquisition_handedness > 0.0 else "LEFT-handed",
+    )
+    logging.info(
+        "Direction vectors are only ever transformed together with the pixels. "
+        "Under this FIRE configuration (UseIceFillingMiniHeader, "
+        "IsFlipAndShiftImages, NormOrientation disabled) a lone sign change "
+        "relabels markers without moving a pixel."
     )
 
 
-def _log_output_orientation(orientation_key, flip_slice, packed_shape, reference_head):
-    transpose_in_plane, reverse_rows, reverse_columns = ORIENTATION_IN_PLANE_TRANSFORMS[
-        orientation_key
-    ]
+def _log_acquisition_axes(packed_shape, reference_head, orientation_key, flip_slice):
+    transpose_in_plane, reverse_rows, reverse_columns = (
+        ORIENTATION_IN_PLANE_TRANSFORMS[orientation_key]
+    )
     logging.info(
-        "Output orientation '%s': in_plane_transpose=%s reverse_rows=%s "
-        "reverse_columns=%s flip_slice=%s packed_shape=%s",
+        "Trajectory orientation '%s': transpose_in_plane=%s reverse_rows=%s "
+        "reverse_columns=%s reverse_slices=%s",
         orientation_key,
         transpose_in_plane,
         reverse_rows,
         reverse_columns,
         flip_slice,
-        tuple(int(size) for size in packed_shape),
     )
     logging.info(
-        "Output axis meaning: axis0=slices along %s, axis1=rows along %s, "
-        "axis2=columns along %s",
+        "Acquisition-frame volume: shape=%s, slices along %s, rows along %s, "
+        "columns along %s",
+        tuple(int(size) for size in packed_shape),
         _direction_label(reference_head.slice_dir),
         _direction_label(reference_head.phase_dir),
         _direction_label(reference_head.read_dir),
-    )
-    source_rows = "trajectory component 0" if transpose_in_plane else "trajectory component 1"
-    source_columns = "trajectory component 1" if transpose_in_plane else "trajectory component 0"
-    logging.info(
-        "Output source axes: slices=trajectory component 2%s, rows=%s%s, columns=%s%s",
-        " (reversed)" if flip_slice else "",
-        source_rows,
-        " (reversed)" if reverse_rows else "",
-        source_columns,
-        " (reversed)" if reverse_columns else "",
     )
 
 
@@ -1265,36 +1575,53 @@ def _build_output_images(
         display_meta["formula"],
     )
 
+    # Accept every value the scanner UI offers, including the debug selection,
+    # so passing a configured orientation straight through cannot silently fall
+    # back to the default.
+    orientation, selects_debug_series = _resolve_orientation_selection(orientation)
+    emit_debug_series = emit_debug_series or selects_debug_series
+
     if emit_debug_series:
-        orientation_keys = list(ORIENTATION_DEBUG_ORDER)
+        # Sweep the slice reversal as well as the in-plane mappings. The eight
+        # in-plane keys leave the through-plane axis untouched, so a sweep over
+        # them alone cannot reach a volume whose slice order is wrong -- which is
+        # precisely the failure 0.1.3 had, and precisely the one its debug sweep
+        # could not have surfaced.
+        sweep = [
+            (key, slice_flip)
+            for key in ORIENTATION_DEBUG_ORDER
+            for slice_flip in (False, True)
+        ]
         logging.warning(
-            "Orientation debug sweep enabled: emitting %d series, one per in-plane "
-            "transform (%s). The direction metadata is identical in every series, "
-            "so only the pixel order differs. Identify the anatomically correct "
-            "series from its SeriesDescription suffix and set that value as the "
-            "'orientation' parameter, then disable this sweep.",
-            len(orientation_keys),
-            ", ".join(orientation_keys),
+            "Orientation debug sweep enabled: emitting %d canonicalized series, "
+            "every combination of the %d trajectory mappings (%s) with the slice "
+            "axis kept and reversed. Series are suffixed '_ori_<key>_fz<0|1>'. "
+            "Identify the anatomically correct one against an asymmetric object "
+            "or a marker on a known side, then set 'orientation' to its key and "
+            "'orientationflipslice' to its fz digit. The four 'zxy' mappings are "
+            "already excluded by the phantom aspect ratio measured in "
+            "sodiumgridding_v0.1.3.PNG and are emitted only as a cross-check.",
+            len(sweep),
+            len(ORIENTATION_DEBUG_ORDER),
+            ", ".join(ORIENTATION_DEBUG_ORDER),
         )
     else:
-        orientation_keys = [_resolve_orientation(orientation)]
+        sweep = [(orientation, flip_slice)]
 
-    images = []
-    for offset, orientation_key in enumerate(orientation_keys):
-        images.append(
-            _build_single_output_image(
-                display_volume,
-                display_meta,
-                reference_head,
-                metadata,
-                output_fov_mm=output_fov_mm,
-                orientation_key=orientation_key,
-                flip_slice=flip_slice,
-                series_index=OUTPUT_IMAGE_SERIES_INDEX + offset,
-                label_series=emit_debug_series,
-            )
+    return [
+        _build_single_output_image(
+            display_volume,
+            display_meta,
+            reference_head,
+            metadata,
+            output_fov_mm=output_fov_mm,
+            orientation_key=orientation_key,
+            flip_slice=slice_flip,
+            series_index=OUTPUT_IMAGE_SERIES_INDEX + offset,
+            label_series=emit_debug_series,
         )
-    return images
+        for offset, (orientation_key, slice_flip) in enumerate(sweep)
+    ]
 
 
 def _build_single_output_image(
@@ -1308,9 +1635,10 @@ def _build_single_output_image(
     series_index,
     label_series,
 ):
-    # The acquisition's own direction vectors are emitted unmodified so that the
-    # header always describes the pixels that are actually sent. Orientation is
-    # corrected by reordering pixels in _orient_volume and nowhere else.
+    # Stage 1 resolves the trajectory components against the acquisition axes.
+    # Stage 2 transforms the acquisition vectors together with the pixels in
+    # _canonicalize_to_display_frame; no display correction changes metadata
+    # without changing the corresponding pixels.
     read_dir = np.asarray(reference_head.read_dir, dtype=float)
     phase_dir = np.asarray(reference_head.phase_dir, dtype=float)
     slice_dir = np.asarray(reference_head.slice_dir, dtype=float)
@@ -1325,7 +1653,9 @@ def _build_single_output_image(
 
     series_description = f"{_safe_protocol_name(metadata)}_{OUTPUT_SERIES_DESCRIPTION}"
     if label_series:
-        series_description = f"{series_description}_ori_{orientation_key}"
+        series_description = (
+            f"{series_description}_ori_{orientation_key}_fz{int(bool(flip_slice))}"
+        )
     series_grouping = f"{series_description}_{series_index}"
     series_uid = _new_dicom_uid()
     output_fov_mm = float(output_fov_mm)
@@ -1336,14 +1666,48 @@ def _build_single_output_image(
     # NoImagesPerSlab=32 and causes the DICOM writer to flush two 32-frame
     # volumes. One [z, y, x] image gives the writer one 64-frame volume,
     # matching the native ICE reconstruction contract.
+    #
+    # Stage 1 maps trajectory components into the acquisition's slice, phase
+    # and read axes. Stage 2 rotates that acquisition frame into the standard
+    # display view while transforming its direction vectors with the pixels.
     packed_volume, orientation_key = _orient_volume(
         display_volume,
         orientation_key,
         flip_slice=flip_slice,
     )
+    _log_acquisition_axes(
+        packed_volume.shape,
+        reference_head,
+        orientation_key,
+        flip_slice,
+    )
+
+    packed_volume, canonical_directions, permutation, signs = (
+        _canonicalize_to_display_frame(
+            packed_volume,
+            (slice_dir, phase_dir, read_dir),
+        )
+    )
+    slice_dir, phase_dir, read_dir = canonical_directions
+    _log_display_frame(permutation, signs, canonical_directions, packed_volume.shape)
+    _log_emitted_geometry(
+        center_position,
+        read_dir,
+        phase_dir,
+        slice_dir,
+        packed_volume.shape,
+        output_fov_mm,
+    )
+
     slice_count = int(packed_volume.shape[0])
-    _log_output_orientation(orientation_key, flip_slice, packed_volume.shape, reference_head)
-    _log_volume_statistics(f"packed output '{orientation_key}'", packed_volume)
+    _log_volume_statistics("packed output", packed_volume)
+    _log_patient_space_localisation(
+        "packed output",
+        packed_volume,
+        center_position,
+        canonical_directions,
+        output_fov_mm,
+    )
     image = ismrmrd.Image.from_array(packed_volume, transpose=False)
 
     new_header = mrdhelper.update_img_header_from_raw(image.getHead(), reference_head)
@@ -1387,8 +1751,8 @@ def _build_single_output_image(
     meta["ImageComment"] = image_comment
     meta["ImageComments"] = image_comment
     # 1 tells ICE to keep the geometry described in this header instead of
-    # rebuilding it and applying its own flip/shift. Combined with the unmodified
-    # direction vectors above, geometry then has exactly one owner.
+    # rebuilding it and applying its own flip/shift. The vectors above describe
+    # the canonicalized pixels, so geometry has exactly one owner.
     meta["Keep_image_geometry"] = 1
     meta["partition_count"] = 1
     meta["slice_count"] = slice_count
@@ -1422,6 +1786,7 @@ def _build_single_output_image(
     logging.info(
         "Emitting image: series_index=%d series_description='%s' matrix_size=%s "
         "slice_count=%d fov_mm=%.3f orientation='%s' flip_slice=%s "
+        "columns=%s rows=%s slices=%s "
         "Keep_image_geometry=%s series_uid=%s",
         series_index,
         series_description,
@@ -1430,6 +1795,9 @@ def _build_single_output_image(
         output_fov_mm,
         orientation_key,
         flip_slice,
+        _direction_label(read_dir),
+        _direction_label(phase_dir),
+        _direction_label(slice_dir),
         meta["Keep_image_geometry"],
         series_uid,
     )

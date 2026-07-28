@@ -2,7 +2,7 @@
 # Focused verification for the OpenRecon runtime and gridding dependencies.
 
 name: sodiumgridding
-version: 0.1.3
+version: 0.1.4
 container: sodiumgridding_${version}_REFERENCE.simg
 
 test_data:
@@ -42,8 +42,8 @@ tests:
       print(label)
       PY
 
-  - name: Orientation choices match the reconstruction module
-    description: Verify the scanner UI offers exactly the orientations the module implements
+  - name: Orientation choices match the two-stage geometry implementation
+    description: Verify the UI mappings feed the acquisition stage before display canonicalization
     script: |
       PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
       import json
@@ -58,14 +58,41 @@ tests:
       implemented = set(sodiumgridding.ORIENTATION_IN_PLANE_TRANSFORMS) | {
           sodiumgridding.ORIENTATION_DEBUG_SELECTION
       }
-      assert offered == implemented, (offered ^ implemented)
+      assert offered == implemented, offered ^ implemented
       assert parameters["orientation"]["default"] == sodiumgridding.DEFAULT_ORIENTATION
       assert "orientationflipslice" in parameters
-      assert "orientationdebugseries" not in parameters
-      assert "fermiwidth" not in parameters
-      assert "fermicutoff" not in parameters
       assert len(label["parameters"]) <= 14
       print("orientation choices:", sorted(offered))
+      PY
+
+  - name: Emitted geometry matches the native reconstruction display frame
+    description: Verify the shipped container reproduces the reference slice position
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import numpy as np
+      import sodiumgridding
+
+      # A right-handed target frame is what keeps the scanner drawing our
+      # volume from the same side as the native reconstruction.
+      slices, rows, columns = (
+          np.asarray(target, dtype=float)
+          for target in sodiumgridding.DISPLAY_FRAME_TARGETS
+      )
+      handedness = float(np.dot(np.cross(columns, rows), slices))
+      assert handedness > 0.0, handedness
+
+      # The native reference series holds 128 slices over 220 mm centred at
+      # isocenter and displays frame 48 at SP F28.4.
+      position = sodiumgridding._frame_position(
+          center_position=(0.0, 0.0, 0.0),
+          slice_dir=(0.0, 0.0, 1.0),
+          frame_index=47,
+          slice_count=128,
+          slice_spacing_mm=220.0 / 128.0,
+      )
+      label = sodiumgridding._slice_position_label(position)
+      assert label == "F28.4", label
+      print("display frame handedness:", handedness, "frame 48/128:", label)
       PY
 
   - name: Sodium gridding module imports

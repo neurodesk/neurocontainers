@@ -7,6 +7,7 @@ import types
 
 import ismrmrd
 import numpy as np
+import pytest
 
 
 RECIPE_DIR = Path(__file__).resolve().parent
@@ -100,8 +101,11 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
     assert first_head.slice == 0
     assert [float(value) for value in first_head.position] == [10.0, 20.0, 30.0]
     assert [float(value) for value in first_head.field_of_view] == [80.0, 80.0, 80.0]
-    assert [float(value) for value in first_head.read_dir] == [-1.0, 0.0, 0.0]
+    # Canonicalized into the DICOM display frame: columns toward L, rows toward
+    # P, slices toward H.
+    assert [float(value) for value in first_head.read_dir] == [1.0, 0.0, 0.0]
     assert [float(value) for value in first_head.phase_dir] == [0.0, 1.0, 0.0]
+    assert [float(value) for value in first_head.slice_dir] == [0.0, 0.0, 1.0]
 
     meta = ismrmrd.Meta.deserialize(first.attribute_string)
     assert meta["SeriesDescription"] == "tpiTqf_23Na_n28_TE05_FIRE_sodiumgridding"
@@ -147,9 +151,9 @@ def test_build_output_images_emits_one_explicit_volume(monkeypatch):
     assert meta["ImageComments"] == meta["ImageComment"]
 
     assert meta["ImageRowDir"] == [
-        "-1.000000000000000000",
-        "0.000000000000000000",
-        "0.000000000000000000",
+        "1.000000000000000000",
+        "-0.000000000000000000",
+        "-0.000000000000000000",
     ]
     assert meta["ImageColumnDir"] == [
         "0.000000000000000000",
@@ -177,18 +181,31 @@ def test_output_volume_data_preserves_slice_order(monkeypatch):
         for index in range(4)
     ]
 
+    # ReferenceHead's slice_dir already points toward the head, which is the
+    # display frame's slice target, so the slice order is preserved.
     assert slice_values == [0, 1365, 2731, 4096]
 
 
-def test_default_orientation_emits_the_volume_unchanged(monkeypatch):
-    """The default path must apply no hidden flip.
+def test_geometry_is_never_corrected_independently_of_the_pixels(monkeypatch):
+    """The header must describe the pixels that are actually emitted.
 
-    Orientation is owned by the 'orientation' parameter alone, so with the
-    default value the emitted pixels are the display volume verbatim. This is
-    the guard against a correction being reintroduced inside the packing step.
+    Under this FIRE configuration a direction vector negated on its own
+    relabels markers without moving a pixel, so a correction expressed that way
+    is silently lost. The emitted vectors must therefore always be a signed
+    permutation of the acquisition's own, and the volume must be nothing but a
+    reordering of the reconstructed one.
     """
     sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
     volume = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)
+    display_volume, _ = sodiumgridding._scale_volume_to_display_range(volume)
+    acquisition_axes = [
+        np.asarray(vector, dtype=float)
+        for vector in (
+            ReferenceHead.read_dir,
+            ReferenceHead.phase_dir,
+            ReferenceHead.slice_dir,
+        )
+    ]
 
     images = sodiumgridding._build_output_images(
         volume,
@@ -196,57 +213,63 @@ def test_default_orientation_emits_the_volume_unchanged(monkeypatch):
         Metadata(),
         output_fov_mm=80.0,
     )
+    head = images[0].getHead()
+    data = np.asarray(images[0].data)[0]
 
-    display_volume, _ = sodiumgridding._scale_volume_to_display_range(volume)
+    for emitted in (head.read_dir, head.phase_dir, head.slice_dir):
+        emitted_vector = np.asarray([float(value) for value in emitted])
+        assert any(
+            np.allclose(emitted_vector, axis) or np.allclose(emitted_vector, -axis)
+            for axis in acquisition_axes
+        )
+
+    # matrix_size is (columns, rows, slices) and must describe the data.
+    assert [int(value) for value in head.matrix_size] == list(data.shape[::-1])
+    assert data.shape[0] == int(
+        ismrmrd.Meta.deserialize(images[0].attribute_string)["slice_count"]
+    )
+
+    # Only axis order changes: no resampling, no value loss.
     np.testing.assert_array_equal(
-        np.asarray(images[0].data),
-        display_volume[np.newaxis, ...],
+        np.sort(data, axis=None),
+        np.sort(display_volume, axis=None),
     )
 
 
-def test_orientation_never_compensates_in_the_direction_metadata(monkeypatch):
-    """Every orientation must emit the acquisition's own direction vectors.
+def test_default_trajectory_orientation_applies_the_configured_mapping(monkeypatch):
+    """The default ``zyx`` selection leaves the gridded axes in place.
 
-    Under this FIRE configuration a negated direction vector relabels markers
-    without moving pixels, so a correction expressed there is silently lost.
-    Geometry has exactly one owner and it is the pixel packing.
+    This verifies the configuration contract, not that ``zyx`` is the correct
+    scanner setting. A round phantom cannot settle the in-plane mapping; the
+    debug sweep must be compared using asymmetric anatomy or a marker.
     """
     sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
-    volume = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)
+
+    class NoRotationHead:
+        # Already in the display frame, so canonicalization is the identity and
+        # the trajectory-to-axis mapping is observable on its own.
+        read_dir = (1.0, 0.0, 0.0)
+        phase_dir = (0.0, 1.0, 0.0)
+        slice_dir = (0.0, 0.0, 1.0)
+        position = (0.0, 0.0, 0.0)
+
+    volume = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+
+    images = sodiumgridding._build_output_images(
+        volume,
+        NoRotationHead(),
+        Metadata(),
+        output_fov_mm=80.0,
+    )
+
     display_volume, _ = sodiumgridding._scale_volume_to_display_range(volume)
-
-    for orientation in sodiumgridding.ORIENTATION_IN_PLANE_TRANSFORMS:
-        for flip_slice in (False, True):
-            images = sodiumgridding._build_output_images(
-                volume,
-                ReferenceHead(),
-                Metadata(),
-                output_fov_mm=80.0,
-                orientation=orientation,
-                flip_slice=flip_slice,
-            )
-            head = images[0].getHead()
-            data = np.asarray(images[0].data)[0]
-
-            assert [float(value) for value in head.read_dir] == list(ReferenceHead.read_dir)
-            assert [float(value) for value in head.phase_dir] == list(ReferenceHead.phase_dir)
-            assert [float(value) for value in head.slice_dir] == list(ReferenceHead.slice_dir)
-
-            # matrix_size is (columns, rows, slices) and must describe the data.
-            assert [int(value) for value in head.matrix_size] == list(data.shape[::-1])
-            assert data.shape[0] == int(
-                ismrmrd.Meta.deserialize(images[0].attribute_string)["slice_count"]
-            )
-
-            # Only axis order changes: no resampling, no value loss.
-            np.testing.assert_array_equal(
-                np.sort(data, axis=None),
-                np.sort(display_volume, axis=None),
-            )
+    np.testing.assert_array_equal(
+        np.asarray(images[0].data), display_volume[np.newaxis, ...]
+    )
 
 
 def test_orientation_transform_moves_the_expected_axes(monkeypatch):
-    """Each orientation key must do what its name says, and nothing more."""
+    """The first stage maps trajectory components into acquisition axes."""
     sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
     volume = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
 
@@ -272,10 +295,6 @@ def test_orientation_transform_moves_the_expected_axes(monkeypatch):
     oriented, _ = sodiumgridding._orient_volume(volume, "zyx", flip_slice=True)
     np.testing.assert_array_equal(oriented, volume[::-1, :, :])
 
-    oriented, key = sodiumgridding._orient_volume(volume, "not-an-orientation")
-    assert key == sodiumgridding.DEFAULT_ORIENTATION
-    np.testing.assert_array_equal(oriented, volume)
-
 
 def test_orientation_debug_choice_enables_the_existing_sweep(monkeypatch):
     sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
@@ -298,7 +317,39 @@ def test_orientation_debug_choice_enables_the_existing_sweep(monkeypatch):
     assert emit_debug_series is True
 
 
-def test_orientation_debug_sweep_emits_one_labelled_series_per_transform(monkeypatch):
+def test_every_ui_orientation_value_is_accepted_without_falling_back(monkeypatch):
+    """A configured orientation must never degrade to the default silently.
+
+    The debug selection is one of the values the scanner UI offers, so passing
+    a configured value straight into _build_output_images has to enable the
+    sweep rather than warn and emit a single default series.
+    """
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    volume = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)
+
+    images = sodiumgridding._build_output_images(
+        volume,
+        ReferenceHead(),
+        Metadata(),
+        output_fov_mm=80.0,
+        orientation=sodiumgridding.ORIENTATION_DEBUG_SELECTION,
+    )
+    assert len(images) == 2 * len(sodiumgridding.ORIENTATION_DEBUG_ORDER)
+
+    for selection in sodiumgridding.ORIENTATION_IN_PLANE_TRANSFORMS:
+        images = sodiumgridding._build_output_images(
+            volume,
+            ReferenceHead(),
+            Metadata(),
+            output_fov_mm=80.0,
+            orientation=selection,
+        )
+        assert len(images) == 1
+        meta = ismrmrd.Meta.deserialize(images[0].attribute_string)
+        assert meta["SodiumGriddingOrientation"] == selection
+
+
+def test_orientation_debug_sweep_is_canonicalized_after_each_transform(monkeypatch):
     sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
     volume = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)
 
@@ -310,23 +361,32 @@ def test_orientation_debug_sweep_emits_one_labelled_series_per_transform(monkeyp
         emit_debug_series=True,
     )
 
-    assert len(images) == len(sodiumgridding.ORIENTATION_DEBUG_ORDER)
+    # Every in-plane mapping is swept against both slice orders. Sweeping the
+    # in-plane keys alone cannot reach a volume whose through-plane axis is
+    # reversed, which is the error 0.1.3 shipped.
+    expected = [
+        (orientation, slice_flip)
+        for orientation in sodiumgridding.ORIENTATION_DEBUG_ORDER
+        for slice_flip in (False, True)
+    ]
+    assert len(images) == len(expected) == 2 * len(
+        sodiumgridding.ORIENTATION_DEBUG_ORDER
+    )
 
-    series_indices = []
     orderings = []
-    for image, orientation in zip(images, sodiumgridding.ORIENTATION_DEBUG_ORDER):
+    for image, (orientation, slice_flip) in zip(images, expected):
         meta = ismrmrd.Meta.deserialize(image.attribute_string)
-        assert meta["SeriesDescription"].endswith(f"_ori_{orientation}")
+        suffix = f"_ori_{orientation}_fz{int(slice_flip)}"
+        assert meta["SeriesDescription"].endswith(suffix)
         assert meta["SodiumGriddingOrientation"] == orientation
-        # Geometry is identical across the sweep; only the pixel order differs,
-        # which is what makes the anatomically correct series identifiable.
-        assert [float(value) for value in image.getHead().read_dir] == list(
-            ReferenceHead.read_dir
-        )
-        series_indices.append(image.getHead().image_series_index)
+        assert meta["SodiumGriddingOrientationFlipSlice"] == str(int(slice_flip))
+        # The header is canonicalized identically in every series, so only the
+        # pixel order distinguishes them.
+        assert sodiumgridding._direction_label(image.getHead().read_dir) == "R->L"
+        assert sodiumgridding._direction_label(image.getHead().phase_dir) == "A->P"
+        assert sodiumgridding._direction_label(image.getHead().slice_dir) == "F->H"
         orderings.append(np.asarray(image.data).tobytes())
 
-    assert len(set(series_indices)) == len(images)
     assert len(set(orderings)) == len(images)
 
 
@@ -614,3 +674,203 @@ def test_mrd2nifti_transposes_cubic_volumes_to_read_phase_slice():
         assert canonical.shape == tuple(
             int(value) for value in image.getHead().matrix_size
         )
+
+
+def test_output_is_canonicalized_to_the_dicom_display_frame(monkeypatch):
+    """The emitted volume must land in the native reconstruction's display view.
+
+    The scanner disables NormOrientation, so nothing downstream rotates our
+    images into the DICOM standard view that the native reconstruction uses.
+    Measured from the reference series: R on the left edge, A at the top, and
+    slice index increasing toward the head, which frame 48 of 128 at SP F28.4
+    pins down for a volume centred at isocenter.
+    """
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+
+    # A single bright voxel at the first slice, first row, first column of the
+    # acquisition frame, so the applied transform is directly observable.
+    volume = np.zeros((8, 8, 8), dtype=np.float32)
+    volume[0, 0, 0] = 1.0
+
+    images = sodiumgridding._build_output_images(
+        volume,
+        ReferenceHead(),
+        Metadata(),
+        output_fov_mm=220.0,
+    )
+    head = images[0].getHead()
+    data = np.asarray(images[0].data)[0]
+
+    # ReferenceHead's read_dir points toward R, so only the column axis is
+    # reversed; phase_dir already points toward P and slice_dir toward H.
+    assert sodiumgridding._direction_label(head.read_dir) == "R->L"
+    assert sodiumgridding._direction_label(head.phase_dir) == "A->P"
+    assert sodiumgridding._direction_label(head.slice_dir) == "F->H"
+
+    # The pixels move with the metadata: the marker voxel is now at the last
+    # column, and its slice and row are unchanged.
+    marker = tuple(int(value) for value in np.argwhere(data == data.max())[0])
+    assert marker == (0, 0, 7)
+
+    # The emitted frame must be right-handed, like every real acquisition and
+    # like the native reconstruction. A left-handed frame is drawn from the
+    # opposite side, which is how 0.1.3 came out mirrored against the reference.
+    handedness = float(
+        np.dot(np.cross(head.read_dir, head.phase_dir), head.slice_dir)
+    )
+    assert handedness > 0.0
+
+
+def test_display_frame_canonicalization_handles_an_oblique_acquisition(monkeypatch):
+    """The transform derives the globally best mapping for an oblique scan."""
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+
+    class ObliqueHead:
+        # A valid orthonormal rotation where greedy target-by-target matching
+        # picks the wrong assignment. Axes are deliberately far from cardinal.
+        slice_dir = (-0.74455325, 0.66169736, 0.08830099)
+        phase_dir = (-0.41733090, -0.35813228, -0.83521027)
+        read_dir = (-0.52103300, -0.65870924, 0.54279531)
+        position = (0.0, 0.0, 0.0)
+
+    volume = np.zeros((2, 3, 4), dtype=np.float32)
+    volume[0, 0, 0] = 1.0
+
+    images = sodiumgridding._build_output_images(
+        volume,
+        ObliqueHead(),
+        Metadata(),
+        output_fov_mm=220.0,
+    )
+    head = images[0].getHead()
+    data = np.asarray(images[0].data)[0]
+
+    assert sodiumgridding._direction_label(head.read_dir) == "R->L"
+    assert sodiumgridding._direction_label(head.phase_dir) == "A->P"
+    assert sodiumgridding._direction_label(head.slice_dir) == "F->H"
+    assert data.shape == (3, 4, 2)
+    marker = tuple(int(value) for value in np.argwhere(data == data.max())[0])
+    assert marker == (2, 3, 1)
+
+    handedness = float(
+        np.dot(np.cross(head.read_dir, head.phase_dir), head.slice_dir)
+    )
+    assert handedness > 0.0
+
+
+def test_display_frame_targets_are_right_handed(monkeypatch):
+    """A left-handed target set reverses one axis too many.
+
+    Permuting and reversing a real acquisition frame reaches the targets only if
+    they share its handedness. Version 0.1.3 targeted slices toward the feet
+    against columns toward the left and rows toward the posterior, which is
+    left-handed, and the scanner consequently drew the volume from the opposite
+    side of the native reconstruction.
+    """
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+
+    slices, rows, columns = (
+        np.asarray(target, dtype=float)
+        for target in sodiumgridding.DISPLAY_FRAME_TARGETS
+    )
+    assert float(np.dot(np.cross(columns, rows), slices)) > 0.0
+
+    with pytest.raises(ValueError):
+        sodiumgridding._validate_display_frame_targets(
+            ((0.0, 0.0, -1.0), (0.0, 1.0, 0.0), (1.0, 0.0, 0.0))
+        )
+
+
+def test_every_swept_geometry_is_a_proper_rotation_of_the_acquisition(monkeypatch):
+    """No sweep entry may mirror the volume.
+
+    The sweep exists to find the right pixel ordering, so every entry has to
+    remain a rigid reordering of the acquisition. If one of them emitted a
+    left-handed frame, selecting it would fix the display while silently
+    mirroring the anatomy.
+    """
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    volume = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)
+
+    images = sodiumgridding._build_output_images(
+        volume,
+        ReferenceHead(),
+        Metadata(),
+        output_fov_mm=220.0,
+        emit_debug_series=True,
+    )
+
+    for image in images:
+        head = image.getHead()
+        handedness = float(
+            np.dot(np.cross(head.read_dir, head.phase_dir), head.slice_dir)
+        )
+        assert handedness > 0.0
+
+
+def test_predicted_frame_position_matches_the_native_reference(monkeypatch):
+    """Reproduce the SP value the native reconstruction displays.
+
+    The reference series in sodiumgridding_v0.1.3.PNG holds 128 slices over
+    220 mm centred at isocenter and shows frame 48 at SP F28.4. Emitting the
+    same geometry must predict the same position, which is the single number
+    that distinguishes the corrected slice direction from the 0.1.3 one.
+    """
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+
+    position = sodiumgridding._frame_position(
+        center_position=(0.0, 0.0, 0.0),
+        slice_dir=(0.0, 0.0, 1.0),
+        frame_index=47,
+        slice_count=128,
+        slice_spacing_mm=220.0 / 128.0,
+    )
+
+    assert sodiumgridding._slice_position_label(position) == "F28.4"
+
+    reversed_position = sodiumgridding._frame_position(
+        center_position=(0.0, 0.0, 0.0),
+        slice_dir=(0.0, 0.0, -1.0),
+        frame_index=47,
+        slice_count=128,
+        slice_spacing_mm=220.0 / 128.0,
+    )
+
+    # What 0.1.3 emitted, and what the scanner displayed for it.
+    assert sodiumgridding._slice_position_label(reversed_position) == "H28.4"
+
+
+def test_emitted_geometry_logging_predicts_the_scanner_display(monkeypatch, caplog):
+    """The log alone must be enough to tell a wrong header from an ignored one.
+
+    Version 0.1.3 could not be diagnosed from its own output, because nothing it
+    logged could be compared against the scanner screenshot.
+    """
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    volume = np.zeros((128, 4, 4), dtype=np.float32)
+    volume[40] = 1.0
+
+    class CenteredHead:
+        read_dir = (-1.0, 0.0, 0.0)
+        phase_dir = (0.0, 1.0, 0.0)
+        slice_dir = (0.0, 0.0, 1.0)
+        position = (0.0, 0.0, 0.0)
+
+    with caplog.at_level(logging.INFO):
+        sodiumgridding._build_output_images(
+            volume,
+            CenteredHead(),
+            Metadata(),
+            output_fov_mm=220.0,
+        )
+
+    # The edge letters the native transversal reconstruction shows.
+    assert "left edge 'R'" in caplog.text
+    assert "top edge 'A'" in caplog.text
+    assert "viewed from 'F'" in caplog.text
+    # A frame position that can be read straight off the scanner.
+    assert "Predicted frame 1/128" in caplog.text
+    assert "Predicted frame 128/128" in caplog.text
+    # Where the signal actually sits, in patient coordinates rather than voxels.
+    assert "intensity centroid at" in caplog.text
+    assert "right-handed" in caplog.text
