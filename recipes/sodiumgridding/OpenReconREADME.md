@@ -60,7 +60,7 @@ message stream as an ISMRMRD HDF5 dataset.
 | Coil variance | `coilvarianceretention` | string | `0.9` | Fraction of physical-coil variance retained during compression. |
 | Coil combination | `coilcombinemode` | choice | `AC` | Use adaptive combination (`AC`) or sum-of-squares (`SoS`). |
 | N4 correction | `applyn4biascorrection` | boolean | `true` | Apply N4 bias field correction after coil combination. |
-| Orientation | `orientation` | choice | `zyx` | Map trajectory components into the acquisition read and phase axes. Select `debug` to emit every mapping, with the slice axis both kept and reversed, as labelled series. |
+| Orientation | `orientation` | choice | `zyx_fy` | Map trajectory components into the acquisition read and phase axes. The default reverses the rows, which the anterior-posterior axis requires. Select `debug` to emit every mapping, with the slice axis both kept and reversed, as labelled series. |
 | Reverse trajectory slice axis | `orientationflipslice` | boolean | `false` | Reverse trajectory component 2 before display-frame canonicalization. |
 
 Weak-readout rejection remains enabled with the standalone defaults of three
@@ -75,17 +75,31 @@ matching the supplied implementation.
 - Geometry is handled in three stages. First, `orientation` maps the
   trajectory components into the acquisition `(slice, phase, read)` frame and
   `orientationflipslice` optionally reverses its through-plane axis. The default
-  `zyx` mapping is partly verified. The in-plane transpose is excluded by
-  measurement: in `sodiumgridding_v0.1.3.PNG` the head phantom outline spans
-  262 px along the rows against 187 px along the columns, a ratio of 1.40, and a
-  head is elongated anterior-posterior, which is the direction the rows run for
-  that transversal protocol. A transpose would have produced 0.71, so the four
-  `zxy` mappings are ruled out. What remains unverified is the sign choice,
-  above all left-right, which a laterally symmetric phantom cannot reveal.
-  Excluding that needs one scan of an asymmetric object or a marker placed on a
-  known side. Select `debug` to emit all sixteen variants as series suffixed
-  `_ori_<key>_fz<0|1>`, compare them against that object, then set `orientation`
-  to the matching key and `orientationflipslice` to its `fz` digit.
+  is `zyx_fy`, which reverses the rows.
+- That row reversal is measured. With `zyx` the anterior-posterior axis comes
+  out flipped, the anatomy mirrored top to bottom while the markers stay
+  correct, which is what the 0.1.5 scanner run showed. It is visible in the
+  earlier figures too: the app's row centroid is the negation of the native
+  reference's, `A9.3` against `P9.3` in `sodiumgridding_v0.1.3.PNG` and `A7.9`
+  against `P12.6` in the 0.1.4 pair. Trajectory component 1 simply runs opposite
+  to the acquisition's `phase_dir`.
+- Unlike the stage 3 slice compensation, this is an honest correction rather
+  than a workaround. The header always described the acquisition's true axes; it
+  was the trajectory-to-axis mapping that had the sign wrong, so reversing the
+  rows brings the pixels into agreement with `phase_dir` instead of away from
+  it, and the emitted in-plane geometry is valid for export.
+- The in-plane transpose is excluded by measurement: in
+  `sodiumgridding_v0.1.3.PNG` the head phantom outline spans 262 px along the
+  rows against 187 px along the columns, a ratio of 1.40, and a head is
+  elongated anterior-posterior, which is the direction the rows run for that
+  transversal protocol. A transpose would have produced 0.71, so the four `zxy`
+  mappings are ruled out.
+- **The left-right sign is still unverified**, and a laterally symmetric phantom
+  cannot reveal it. Settling it needs one scan of an asymmetric object or a
+  marker placed on a known side. Select `debug` to emit all sixteen variants as
+  series suffixed `_ori_<key>_fz<0|1>`, compare them against that object, then
+  set `orientation` to the matching key and `orientationflipslice` to its `fz`
+  digit.
 - The sweep covers the slice reversal as well as the eight in-plane mappings.
   The in-plane keys only transpose or reverse the two in-plane axes, so a sweep
   over them alone cannot reach a volume whose through-plane axis is wrong. That

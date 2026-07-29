@@ -58,7 +58,7 @@ OPENRECON_DEFAULTS = {
     "coilvarianceretention": 0.9,
     "coilcombinemode": "AC",
     "applyn4biascorrection": True,
-    "orientation": "zyx",
+    "orientation": "zyx_fy",
     "orientationflipslice": False,
     "orientationdebugseries": False,
 }
@@ -84,7 +84,22 @@ ORIENTATION_IN_PLANE_TRANSFORMS = {
     "zxy_fy": (True, True, False),
     "zxy_fxy": (True, True, True),
 }
-DEFAULT_ORIENTATION = "zyx"
+# Trajectory component 1 runs opposite to the acquisition's phase_dir, so the
+# rows have to be reversed to make the gridded pixels match the header. Measured
+# on the scanner from the 0.1.5 run: with 'zyx' the anterior-posterior axis is
+# flipped, the anatomy appearing mirrored top to bottom while the markers stay
+# correct. It shows in the earlier figures too, where the app's row centroid is
+# the negation of the native reference's: A9.3 against P9.3 in
+# sodiumgridding_v0.1.3.PNG and A7.9 against P12.6 in the 0.1.4 pair.
+#
+# Unlike the stage 3 slice compensation, this is an honest correction rather
+# than a workaround. The header always described the acquisition's true axes; it
+# was the trajectory-to-axis mapping that had the sign wrong, so reversing the
+# rows brings the pixels into agreement with phase_dir instead of away from it.
+#
+# The left-right sign remains unverified: a laterally symmetric phantom cannot
+# reveal it. Only the row sign is corrected here.
+DEFAULT_ORIENTATION = "zyx_fy"
 ORIENTATION_DEBUG_SELECTION = "debug"
 ORIENTATION_DEBUG_ORDER = tuple(ORIENTATION_IN_PLANE_TRANSFORMS)
 #

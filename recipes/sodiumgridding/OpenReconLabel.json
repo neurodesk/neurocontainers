@@ -169,8 +169,8 @@
         { "id": "zxy_fxy", "name": { "en": "zxy, reverse rows and columns" } },
         { "id": "debug", "name": { "en": "Debug sweep (all orientations)" } }
       ],
-      "default": "zyx",
-      "information": { "en": "Map trajectory components into the acquisition read and phase axes. Select debug to emit 16 labelled series, every mapping with the slice axis both kept and reversed, each rotated into the standard display frame." }
+      "default": "zyx_fy",
+      "information": { "en": "Map trajectory components into the acquisition read and phase axes. The default reverses the rows, which the anterior-posterior axis requires. Select debug to emit 16 labelled series, every mapping with the slice axis both kept and reversed, each rotated into the standard display frame." }
     },
     {
       "id": "orientationflipslice",

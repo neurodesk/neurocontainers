@@ -242,12 +242,16 @@ def test_emitted_vectors_are_a_signed_permutation_of_the_acquisition(monkeypatch
     )
 
 
-def test_default_trajectory_orientation_applies_the_configured_mapping(monkeypatch):
-    """The default ``zyx`` selection leaves the gridded axes in place.
+def test_default_trajectory_orientation_reverses_the_rows(monkeypatch):
+    """The shipped default must correct the anterior-posterior axis.
 
-    This verifies the configuration contract, not that ``zyx`` is the correct
-    scanner setting. A round phantom cannot settle the in-plane mapping; the
-    debug sweep must be compared using asymmetric anatomy or a marker.
+    Trajectory component 1 runs opposite to the acquisition's phase_dir, so the
+    default has to reverse the rows to bring the gridded pixels into agreement
+    with the header. This was measured on the scanner: with ``zyx`` the
+    anatomy is mirrored top to bottom while the markers stay correct.
+
+    The left-right sign is deliberately not asserted here. A symmetric phantom
+    cannot settle it, so it remains open and the debug sweep exists for it.
     """
     sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
 
@@ -259,7 +263,11 @@ def test_default_trajectory_orientation_applies_the_configured_mapping(monkeypat
         slice_dir = (0.0, 0.0, 1.0)
         position = (0.0, 0.0, 0.0)
 
+    assert sodiumgridding.DEFAULT_ORIENTATION == "zyx_fy"
+    assert sodiumgridding.OPENRECON_DEFAULTS["orientation"] == "zyx_fy"
+
     volume = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+    display_volume, _ = sodiumgridding._scale_volume_to_display_range(volume)
 
     images = sodiumgridding._build_output_images(
         volume,
@@ -268,11 +276,30 @@ def test_default_trajectory_orientation_applies_the_configured_mapping(monkeypat
         output_fov_mm=80.0,
     )
 
-    display_volume, _ = sodiumgridding._scale_volume_to_display_range(volume)
-    # Canonicalization is the identity for this head, so the only difference
-    # from the gridded volume is the stage 3 frame-stacking compensation.
+    # Canonicalization is the identity for this head, so the emitted volume
+    # differs from the gridded one by exactly two reorderings: the default's row
+    # reversal and the stage 3 frame-stacking compensation.
     np.testing.assert_array_equal(
-        np.asarray(images[0].data), display_volume[np.newaxis, ::-1, :, :]
+        np.asarray(images[0].data), display_volume[np.newaxis, ::-1, ::-1, :]
+    )
+
+    # The row reversal must not touch the labels. That is the whole point: the
+    # image flips, the markers stay put.
+    head = images[0].getHead()
+    assert sodiumgridding._direction_label(head.phase_dir) == "A->P"
+    assert sodiumgridding._direction_label(head.read_dir) == "R->L"
+
+    # Selecting 'zyx' explicitly still leaves the rows alone, so the mapping
+    # remains a configuration choice rather than a hardcoded flip.
+    unflipped = sodiumgridding._build_output_images(
+        volume,
+        NoRotationHead(),
+        Metadata(),
+        output_fov_mm=80.0,
+        orientation="zyx",
+    )
+    np.testing.assert_array_equal(
+        np.asarray(unflipped[0].data), display_volume[np.newaxis, ::-1, :, :]
     )
 
 
@@ -700,11 +727,14 @@ def test_output_is_canonicalized_to_the_dicom_display_frame(monkeypatch):
     volume = np.zeros((8, 8, 8), dtype=np.float32)
     volume[0, 0, 0] = 1.0
 
+    # 'zyx' rather than the default, so this isolates the display-frame rotation
+    # and the stacking compensation from the trajectory-axis mapping.
     images = sodiumgridding._build_output_images(
         volume,
         ReferenceHead(),
         Metadata(),
         output_fov_mm=220.0,
+        orientation="zyx",
     )
     head = images[0].getHead()
     data = np.asarray(images[0].data)[0]
@@ -747,11 +777,14 @@ def test_display_frame_canonicalization_handles_an_oblique_acquisition(monkeypat
     volume = np.zeros((2, 3, 4), dtype=np.float32)
     volume[0, 0, 0] = 1.0
 
+    # 'zyx' rather than the default, so the assertions below describe the
+    # oblique rotation alone.
     images = sodiumgridding._build_output_images(
         volume,
         ObliqueHead(),
         Metadata(),
         output_fov_mm=220.0,
+        orientation="zyx",
     )
     head = images[0].getHead()
     data = np.asarray(images[0].data)[0]
