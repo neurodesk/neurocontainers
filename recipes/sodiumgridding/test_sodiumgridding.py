@@ -182,18 +182,24 @@ def test_output_volume_data_preserves_slice_order(monkeypatch):
     ]
 
     # ReferenceHead's slice_dir already points toward the head, which is the
-    # display frame's slice target, so the slice order is preserved.
-    assert slice_values == [0, 1365, 2731, 4096]
+    # display frame's slice target, so stage 2 preserves the slice order. Stage 3
+    # then reverses it to compensate for how ICE stacks the frames.
+    assert slice_values == [4096, 2731, 1365, 0]
+
+    # The header still describes the acquisition. Reversing the vector too would
+    # cancel the compensation, because ICE positions frames from that vector.
+    assert [float(value) for value in images[0].getHead().slice_dir] == [0.0, 0.0, 1.0]
 
 
-def test_geometry_is_never_corrected_independently_of_the_pixels(monkeypatch):
-    """The header must describe the pixels that are actually emitted.
+def test_emitted_vectors_are_a_signed_permutation_of_the_acquisition(monkeypatch):
+    """The emitted geometry must be a rigid relabelling of the acquisition's.
 
-    Under this FIRE configuration a direction vector negated on its own
-    relabels markers without moving a pixel, so a correction expressed that way
-    is silently lost. The emitted vectors must therefore always be a signed
-    permutation of the acquisition's own, and the volume must be nothing but a
-    reordering of the reconstructed one.
+    No direction vector may be invented, no voxel resampled, and the declared
+    matrix size must describe the data. The one deliberate exception is stage 3,
+    which reverses the frame order without its vector to compensate for ICE;
+    that is a reordering too, so every assertion here still holds, and its
+    effect on header-driven consumers is pinned by
+    ``test_emitted_mrd_is_mirrored_for_a_consumer_that_ignores_the_flag``.
     """
     sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
     volume = np.arange(1, 25, dtype=np.float32).reshape(2, 3, 4)
@@ -263,8 +269,10 @@ def test_default_trajectory_orientation_applies_the_configured_mapping(monkeypat
     )
 
     display_volume, _ = sodiumgridding._scale_volume_to_display_range(volume)
+    # Canonicalization is the identity for this head, so the only difference
+    # from the gridded volume is the stage 3 frame-stacking compensation.
     np.testing.assert_array_equal(
-        np.asarray(images[0].data), display_volume[np.newaxis, ...]
+        np.asarray(images[0].data), display_volume[np.newaxis, ::-1, :, :]
     )
 
 
@@ -707,14 +715,17 @@ def test_output_is_canonicalized_to_the_dicom_display_frame(monkeypatch):
     assert sodiumgridding._direction_label(head.phase_dir) == "A->P"
     assert sodiumgridding._direction_label(head.slice_dir) == "F->H"
 
-    # The pixels move with the metadata: the marker voxel is now at the last
-    # column, and its slice and row are unchanged.
+    # The pixels move with the metadata: stage 2 puts the marker voxel in the
+    # last column and leaves its row alone, then stage 3 reverses the frames and
+    # moves it to the last slice.
     marker = tuple(int(value) for value in np.argwhere(data == data.max())[0])
-    assert marker == (0, 0, 7)
+    assert marker == (7, 0, 7)
 
-    # The emitted frame must be right-handed, like every real acquisition and
-    # like the native reconstruction. A left-handed frame is drawn from the
-    # opposite side, which is how 0.1.3 came out mirrored against the reference.
+    # The emitted frame must be right-handed under the DICOM rule, like the
+    # native reconstruction. A left-handed one is drawn from the opposite side,
+    # which is how 0.1.3 came out mirrored against the reference. The incoming
+    # acquisition frame is a separate matter: it is DICOM-left-handed by the
+    # Siemens PRS convention, which is expected rather than a defect.
     handedness = float(
         np.dot(np.cross(head.read_dir, head.phase_dir), head.slice_dir)
     )
@@ -750,7 +761,7 @@ def test_display_frame_canonicalization_handles_an_oblique_acquisition(monkeypat
     assert sodiumgridding._direction_label(head.slice_dir) == "F->H"
     assert data.shape == (3, 4, 2)
     marker = tuple(int(value) for value in np.argwhere(data == data.max())[0])
-    assert marker == (2, 3, 1)
+    assert marker == (0, 3, 1)
 
     handedness = float(
         np.dot(np.cross(head.read_dir, head.phase_dir), head.slice_dir)
@@ -806,6 +817,202 @@ def test_every_swept_geometry_is_a_proper_rotation_of_the_acquisition(monkeypatc
             np.dot(np.cross(head.read_dir, head.phase_dir), head.slice_dir)
         )
         assert handedness > 0.0
+
+
+def test_ice_frame_stacking_compensation_moves_pixels_without_the_vector(monkeypatch):
+    """Stage 3 must reverse the frames alone.
+
+    ICE positions the frames of an emitted 3D volume against slice_dir, so the
+    pixels have to be reversed to land on the right patient coordinates.
+    Reversing slice_dir along with them would be a change of storage convention
+    and would cancel: ICE would derive its positions from the negated vector and
+    the anatomy would not move by a single slice. That is why the 0.1.4
+    display-frame rotation, honest by construction, corrected the in-plane view
+    but left the through-plane one inverted.
+    """
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    volume = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+    slice_dir = np.array([0.0, 0.0, 1.0])
+
+    compensated, content_dir, reversed_frames = (
+        sodiumgridding._compensate_ice_frame_stacking(volume, slice_dir)
+    )
+
+    assert sodiumgridding.ICE_STACKS_FRAMES_AGAINST_SLICE_DIR is True
+    assert reversed_frames is True
+    np.testing.assert_array_equal(compensated, volume[::-1])
+    # The reported content direction is reversed so the logging stays truthful,
+    # but the header vector handed to the scanner is not.
+    np.testing.assert_allclose(content_dir, [0.0, 0.0, -1.0])
+
+    monkeypatch.setattr(
+        sodiumgridding, "ICE_STACKS_FRAMES_AGAINST_SLICE_DIR", False
+    )
+    untouched, unchanged_dir, untouched_flag = (
+        sodiumgridding._compensate_ice_frame_stacking(volume, slice_dir)
+    )
+    np.testing.assert_array_equal(untouched, volume)
+    np.testing.assert_allclose(unchanged_dir, slice_dir)
+    assert untouched_flag is False
+
+
+def _emitted_volume_and_header(sodiumgridding, head, volume, fov_mm):
+    images = sodiumgridding._build_output_images(
+        volume, head, Metadata(), output_fov_mm=fov_mm
+    )
+    image = images[0]
+    return image, np.asarray(image.data)[0], image.getHead()
+
+
+def _centroid_position_from_header(data, header, fov_mm):
+    """Locate the signal the way a header-driven consumer would.
+
+    Deliberately independent of sodiumgridding's own helpers: this is the
+    calculation an outside reader of the emitted MRD performs, so it must not
+    reuse the code under test.
+    """
+    counts = np.asarray(data, dtype=float)
+    axes_directions = (header.slice_dir, header.phase_dir, header.read_dir)
+    position = np.asarray([float(value) for value in header.position])
+    for axis, direction in enumerate(axes_directions):
+        profile = counts.sum(axis=tuple(o for o in range(3) if o != axis))
+        length = profile.size
+        spacing = fov_mm / length
+        index = float((profile * np.arange(length)).sum() / profile.sum())
+        position = position + (index - (length - 1) / 2.0) * spacing * np.asarray(
+            [float(value) for value in direction]
+        )
+    return position
+
+
+def test_emitted_mrd_is_mirrored_for_a_consumer_that_ignores_the_flag(monkeypatch):
+    """Pin the cost of the scanner workaround.
+
+    Stage 3 makes the emitted pixels disagree with the emitted slice_dir on
+    purpose, so a reader that builds geometry from the header alone places the
+    volume mirrored through-plane. That is a real limitation of the emitted MRD,
+    not a detail, and it must fail loudly here if anyone assumes otherwise.
+    """
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+
+    class MeasuredHead:
+        read_dir = (-1.0, 0.0, 0.0)
+        phase_dir = (0.0, 1.0, 0.0)
+        slice_dir = (0.0, 0.0, 1.0)
+        position = (0.0, 0.0, 0.0)
+
+    # Bulk on acquisition slices 32..52 of 128, which is the feet side.
+    volume = np.zeros((128, 8, 8), dtype=np.float32)
+    volume[32:52] = 1.0
+
+    image, data, header = _emitted_volume_and_header(
+        sodiumgridding, MeasuredHead(), volume, 220.0
+    )
+
+    meta = ismrmrd.Meta.deserialize(image.attribute_string)
+    assert meta[sodiumgridding.OUTPUT_FRAME_ORDER_REVERSED_ATTRIBUTE] == "1"
+
+    naive = _centroid_position_from_header(data, header, 220.0)
+    # Toward the head: the wrong side, because the flag was ignored.
+    assert naive[2] > 0.0
+
+    # Honouring the flag restores the feet side the reconstruction found.
+    corrected = _centroid_position_from_header(data[::-1], header, 220.0)
+    assert corrected[2] < 0.0
+    np.testing.assert_allclose(corrected[2], -naive[2], atol=1e-6)
+
+
+def test_mrd2nifti_undoes_the_frame_reversal(monkeypatch, tmp_path):
+    """The bundled converter must export patient geometry, not display order.
+
+    This exercises the real emitted image through the real converter, so it
+    fails if either side of the contract is dropped.
+    """
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+    mrd2nifti = _import_mrd2nifti()
+
+    class MeasuredHead:
+        read_dir = (-1.0, 0.0, 0.0)
+        phase_dir = (0.0, 1.0, 0.0)
+        slice_dir = (0.0, 0.0, 1.0)
+        position = (0.0, 0.0, 0.0)
+
+    volume = np.zeros((32, 8, 8), dtype=np.float32)
+    volume[4:10] = 1.0          # bulk on the feet side of the acquisition
+
+    images = sodiumgridding._build_output_images(
+        volume, MeasuredHead(), Metadata(), output_fov_mm=220.0
+    )
+
+    mrd_path = tmp_path / "emitted.h5"
+    dataset = ismrmrd.Dataset(str(mrd_path), "dataset", create_if_needed=True)
+    dataset.append_image("image_0", images[0])
+    dataset.close()
+
+    nifti_path = tmp_path / "emitted.nii.gz"
+    mrd2nifti.convert_mrd_to_nifti(
+        input_path=mrd_path, output_path=nifti_path, image_series="image_0"
+    )
+
+    nib = pytest.importorskip("nibabel")
+    exported = nib.load(str(nifti_path))
+    data = np.asarray(exported.dataobj)
+    affine = exported.affine
+
+    # Centre of mass in voxels, mapped to patient space through the affine the
+    # converter wrote. The bulk must land toward the feet, matching the
+    # reconstruction, not toward the head.
+    total = data.sum()
+    indices = [
+        float((data.sum(axis=tuple(o for o in range(3) if o != axis))
+               * np.arange(data.shape[axis])).sum() / total)
+        for axis in range(3)
+    ]
+    patient = affine[:3, :3] @ np.asarray(indices) + affine[:3, 3]
+    assert patient[2] < 0.0, patient
+
+
+def test_emitted_content_lands_where_the_native_reference_shows_it(monkeypatch, caplog):
+    """End to end against the 2026-07-28 measurement.
+
+    The acquisition geometry, the reconstructed centroid and the native
+    reference slice position are all taken from that run: the phantom bulk sits
+    at F37 and the 64-slice reference shows a full cross-section at F43. The
+    emitted volume must report its centroid on that same side.
+    """
+    sodiumgridding = _import_sodiumgridding_with_runtime_stubs(monkeypatch)
+
+    class MeasuredHead:
+        read_dir = (-1.0, 0.0, 0.0)
+        phase_dir = (0.0, 1.0, 0.0)
+        slice_dir = (0.0, 0.0, 1.0)
+        position = (0.0, 0.0, 0.0)
+
+    # A bulk centred on acquisition slice 42 of 128, which is F37 for a 220 mm
+    # volume at isocenter.
+    volume = np.zeros((128, 8, 8), dtype=np.float32)
+    volume[32:52] = 1.0
+
+    with caplog.at_level(logging.INFO):
+        images = sodiumgridding._build_output_images(
+            volume,
+            MeasuredHead(),
+            Metadata(),
+            output_fov_mm=220.0,
+        )
+
+    assert "intensity centroid at" in caplog.text
+    centroid_line = next(
+        line for line in caplog.text.splitlines() if "intensity centroid at" in line
+    )
+    # Toward the feet, matching the native reference, not toward the head.
+    assert " F3" in centroid_line, centroid_line
+
+    # The bulk must sit in the second half of the emitted frames, because ICE
+    # numbers them from the head end.
+    data = np.asarray(images[0].data)[0]
+    bulk = np.flatnonzero(data.mean(axis=(1, 2)) > 0)
+    assert bulk.min() > 128 // 2
 
 
 def test_predicted_frame_position_matches_the_native_reference(monkeypatch):

@@ -72,7 +72,7 @@ matching the supplied implementation.
 
 - The derived output is magnitude-only and is emitted as one explicit 3D MRD
   image in `[z, y, x]` order.
-- Geometry is handled in two composable stages. First, `orientation` maps the
+- Geometry is handled in three stages. First, `orientation` maps the
   trajectory components into the acquisition `(slice, phase, read)` frame and
   `orientationflipslice` optionally reverses its through-plane axis. The default
   `zyx` mapping is partly verified. The in-plane transpose is excluded by
@@ -97,13 +97,20 @@ matching the supplied implementation.
   and signs are derived from the acquisition's own `read_dir`, `phase_dir` and
   `slice_dir`, rather than hardcoded, and the vectors are transformed together
   with the pixels. This preserves honest geometry for oblique acquisitions.
-- Those three targets form a right-handed frame, and
-  `_validate_display_frame_targets` refuses to import the module if they ever
-  stop doing so. Permuting and reversing a real acquisition frame reaches the
-  targets only if they share its handedness, so a left-handed target set can
-  only be a sign mistake: it reverses one axis too many and the scanner draws
-  the volume from the opposite side. The handedness of both the incoming
-  acquisition frame and the emitted frame is logged on every run.
+- Those three targets form a right-handed frame under the DICOM rule
+  `columns x rows = normal`, and `_validate_display_frame_targets` refuses to
+  import the module if they ever stop doing so. A left-handed target set is a
+  sign mistake: it reverses one axis too many, and the boxed view-from marker
+  then points at the opposite side from the native series.
+- The incoming acquisition frame is DICOM-left-handed and that is expected, not
+  a defect. Siemens builds its PRS frame so that `phase x read = slice`, the
+  opposite cross-product order, which the measured
+  `read_dir=(-1,0,0)`, `phase_dir=(0,1,0)`, `slice_dir=(0,0,1)` satisfies
+  exactly. The log therefore checks the acquisition against the Siemens rule and
+  only the emitted frame against the DICOM one.
+- The boxed view-from marker follows `columns x rows`, not `slice_dir`. That is
+  why it read `H` in 0.1.3 and `F` in 0.1.4 even though the emitted `slice_dir`
+  was `F->H` in both. Only the frame positions depend on `slice_dir`.
 - That rotation is required because the FIRE Configurator sets
   `DisableNormOrientation`, so nothing downstream rotates the image into the
   standard view. The native ICE reconstruction is emitted in that view, so
@@ -115,21 +122,76 @@ matching the supplied implementation.
   reconstruction, and holds 128 slices over 220 mm, so frame 48 of 128 lies at
   `(47 - 63.5) * 220/128 = -28.36 mm` along the slice axis. The reference
   displays that frame at `SP F28.4`, so its slice axis points toward the Head.
-- Version 0.1.3 targeted the Feet instead and displayed the same frame at `H29`.
-  Reversing one axis of a right-handed frame also swaps the side the viewer
-  looks from, so that single sign error produced the apparent 180 degree
-  rotation about the anterior-posterior axis: `L` instead of `R` on the left
-  edge, the view-from marker showing `H` instead of `F`, and slice 48 showing
-  what the reference shows at slice 81. The pixel content itself was in the
-  right place. Comparing the object extents in that figure shows it: the app
-  image at `H28.4` spans 110 x 156 mm while the reference at `F28.4` spans
-  45 x 87 mm, so the widest part of the phantom really does sit toward the head,
-  and a genuinely reversed volume would have put it toward the feet.
+- Third, `_compensate_ice_frame_stacking` reverses the emitted frame order,
+  because ICE stacks the frames of a 3D volume against `slice_dir`. This is the
+  only stage that moves pixels without moving the matching direction vector, and
+  deliberately so: transforming both is a change of storage convention and
+  cancels, since ICE derives the frame positions from that same vector. Stage 2
+  therefore cannot correct a through-plane error, only stage 3 can. Set
+  `ICE_STACKS_FRAMES_AGAINST_SLICE_DIR` to `False` if a future FIRE release
+  stops inverting the stacking.
+- The inversion is measured, twice, with the same emitted `slice_dir` of `F->H`:
+  in 0.1.3 frame 48 of 128 over 220 mm had a header position of `F28.4` and the
+  scanner showed `H29`; in 0.1.4 frame 41 of 128 had a header position of
+  `F40.4` and the scanner showed `H41`. Same magnitude, opposite sign.
+- The reconstructed pixels themselves are in the right place. The 0.1.4 log puts
+  the emitted volume's intensity centroid at `F37.0`, and the native 64-slice
+  reference shows a full-width cross-section at `F43.0`. Were the content
+  reversed, its bulk would sit at `H37` and that reference slice would be
+  nearly empty rather than the largest one in the series.
+- Stage 3 is a scanner-only workaround and it has a real cost: the emitted MRD
+  image is not self-consistent. Its pixels are reversed relative to the
+  `slice_dir` in its own header, so anything that builds geometry from that
+  header and ignores the declaration below places the volume mirrored
+  through-plane. There is no way to avoid this while ICE inverts the stacking,
+  because reversing the vector along with the pixels cancels the correction. The
+  choice is which consumer to satisfy, and stage 3 chooses the scanner.
+- Every emitted image therefore carries
+  `SodiumGriddingIceFrameOrderReversed`, `1` when stage 3 reversed its frames.
+  The bundled `mrd2nifti.py` honours it and reverses the slice axis back before
+  building the affine, so NIfTI export is correct. Any other consumer of the raw
+  MRD must do the same. `test_emitted_mrd_is_mirrored_for_a_consumer_that_
+  ignores_the_flag` pins what happens when it does not.
+- A second consequence is that the emitted frame order runs `H->F` while the
+  native series runs `F->H`, so the two series do not scroll together by frame
+  number. Making them agree would require emitting `slice_dir` negated instead
+  of reversing the pixels, which only works if ICE derives the stacking from the
+  emitted vector rather than inverting it unconditionally. That has not been
+  measured.
+- **Not yet verified on the scanner.** The inversion is measured from 0.1.3 and
+  0.1.4, but the correction shipped in 0.1.5 has only been checked against
+  synthetic volumes and the logged prediction. Confirming it needs a 0.1.5 run
+  plus an exported DICOM whose per-frame `ImagePositionPatient` and
+  `ImageOrientationPatient` are dumped and compared against the native series.
+  The 0.1.4 screenshot shows `SP 0.0`, so the `TP` field alone does not
+  establish that the exported geometry is valid.
+- The `SP` field of the app series reads `0.0`, which is the volume centre this
+  app emits, while the native series shows a per-frame slice position. The
+  frame-dependent value appears in the `TP` field instead. Whether ICE writes
+  per-frame `ImagePositionPatient` values for the emitted multi-frame volume at
+  all is still unconfirmed; dumping that tag from an exported DICOM would settle
+  it, and is worth doing before trusting the series for anything quantitative.
+- Version 0.1.3 emitted the acquisition frame unrotated, which put `L` on the
+  left edge and the view-from marker on `H`. Stage 2 fixed both in 0.1.4, and
+  that figure confirms it: the app series now shows `R`, `A` and `F` exactly
+  like the native one. Only the through-plane position remained wrong, which
+  stage 3 addresses.
+- Do not read the through-plane direction off the displayed area of an object.
+  The 0.1.3 note in this file argued from the app image spanning 110 x 156 mm
+  against the reference's 45 x 87 mm at the mirrored position, and concluded the
+  phantom's widest part sat toward the head. That inference was unsound: those
+  two panels were windowed at `W 3172` and `W 2187`, so the comparison measured
+  the display window as much as the object, and the two figures are from
+  different sessions in which the phantom need not have been placed the same
+  way. Argue from the logged signal extent and centroid instead, which are
+  measured on the volume rather than on the screen.
 - `Keep_image_geometry` is `1` so ICE keeps the emitted description instead of
-  rebuilding the geometry and applying its own flip. Never correct orientation
-  by negating a direction vector on its own: with `UseIceFillingMiniHeader` and
-  `IsFlipAndShiftImages` enabled, a lone sign change relabels markers without
-  moving a single pixel, so the correction is silently lost.
+  rebuilding the geometry and applying its own flip. ICE does read `slice_dir`,
+  because negating it moves every frame position, which is exactly why stage 3
+  reverses the pixels alone. The in-plane vectors behave differently: with
+  `UseIceFillingMiniHeader` and `IsFlipAndShiftImages` enabled, negating
+  `read_dir` or `phase_dir` on its own relabels an edge without moving a pixel,
+  so an in-plane correction expressed that way is silently lost.
 - The scanner reads its parameter values from
   `%CustomerIceProgs%\fire\config\wip_070_fire_sodiumgridding.json`. That file
   is deployed separately from the container image, so after changing
@@ -165,8 +227,13 @@ matching the supplied implementation.
     a patient-space position such as `R1.7 P1.7 F28.4`. This is what tells a
     volume that is merely stored back to front from one whose content is
     genuinely in the wrong place, without needing an image at all.
-  - `Acquisition frame handedness` and `Display frame handedness` must both be
-    right-handed. A left-handed emitted frame is logged at error level.
+  - `Display frame handedness` must be right-handed under the DICOM rule; a
+    left-handed emitted frame is logged at error level. The acquisition frame is
+    checked separately, against the Siemens `phase x read = slice` rule, because
+    measured data is DICOM-left-handed by convention.
+  - `ICE frame-stacking compensation applied` is logged as a warning whenever
+    stage 3 reverses the frames, because that is the point where the emitted
+    pixels stop agreeing with the emitted `slice_dir`.
 - Debug arrays are written below `/tmp/share/debug` with the
   `sodiumgridding_` prefix. Runtime data is never stored under `/home`.
 

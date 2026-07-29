@@ -129,11 +129,16 @@ DISPLAY_FRAME_AXIS_NAMES = ("slices", "rows", "columns")
 def _validate_display_frame_targets(targets):
     """Return the handedness of the display targets, refusing a left-handed set.
 
-    Every physical acquisition frame is right-handed. Reaching the targets by
-    permuting and reversing its axes keeps that property only if the targets are
-    right-handed too, so a left-handed target set can only be a sign mistake: it
-    reverses one axis too many and silently emits a volume the scanner draws
-    from the opposite side. That is exactly how 0.1.3 shipped.
+    The targets describe the emitted DICOM frame, which the native
+    reconstruction builds right-handed under the rule columns x rows = normal. A
+    left-handed target set can therefore only be a sign mistake: it reverses one
+    axis too many and puts the boxed view-from marker on the opposite side from
+    the native series. That is exactly how 0.1.3 shipped.
+
+    This says nothing about the incoming acquisition frame, which is
+    DICOM-left-handed by convention because Siemens builds its PRS frame as
+    phase x read = slice. _log_reference_geometry checks that one against the
+    Siemens rule instead.
     """
     slices, rows, columns = (np.asarray(target, dtype=float) for target in targets)
     handedness = float(np.dot(np.cross(columns, rows), slices))
@@ -146,6 +151,37 @@ def _validate_display_frame_targets(targets):
 
 
 DISPLAY_FRAME_HANDEDNESS = _validate_display_frame_targets(DISPLAY_FRAME_TARGETS)
+
+# ICE stacks the frames of an emitted 3D volume against slice_dir, so the
+# emitted frame order has to be reversed to compensate.
+#
+# Measured twice on the scanner with the same emitted slice_dir of F->H:
+#   0.1.3, frame 48 of 128 over 220 mm: header says F28.4, scanner shows H29
+#   0.1.4, frame 41 of 128 over 220 mm: header says F40.4, scanner shows H41
+# Same magnitude, opposite sign, both times.
+#
+# The pixels themselves are in the right place. In the 0.1.4 run the emitted
+# volume's intensity centroid is at F37.0, and the native 64-slice reference
+# shows a full-width cross-section at F43.0. Were our content reversed, its bulk
+# would sit at H37 and that reference slice would be nearly empty.
+#
+# Only the pixels may be reversed here, never slice_dir along with them.
+# Transforming both is a change of storage convention and therefore a no-op: ICE
+# derives the frame positions from slice_dir too, so the reversal would cancel
+# and the displayed anatomy would not move by a single slice. That is why the
+# 0.1.4 display-frame rotation, which is honest by construction, corrected the
+# in-plane view but could not correct this.
+#
+# Set to False to emit the frame order unchanged, which is the right thing to do
+# if a future FIRE release stops inverting the stacking. The log reports the
+# predicted frame positions either way, so one screenshot settles it.
+ICE_STACKS_FRAMES_AGAINST_SLICE_DIR = True
+
+# Set on every emitted image to declare whether stage 3 reversed its frames.
+# The compensation makes the pixels disagree with the emitted slice_dir on
+# purpose, so this attribute is the contract that lets a consumer reading the
+# header undo it rather than silently mirroring the volume.
+OUTPUT_FRAME_ORDER_REVERSED_ATTRIBUTE = "SodiumGriddingIceFrameOrderReversed"
 SCANNER_DISPLAY_MIN = 0
 SCANNER_DISPLAY_MAX = 4096
 OVERSAMPLING = 2
@@ -1252,7 +1288,9 @@ def _canonicalize_to_display_frame(volume, axis_directions):
     axes, in the same (slices, rows, columns) order. The returned directions
     describe the returned volume, so the header stays exactly as honest as it
     was on input: this is a change of display convention, not a correction
-    layered on top of one.
+    layered on top of one. That also means it cannot move the anatomy, which is
+    why stage 3 exists and why the emitted image is not self-consistent by the
+    time it leaves _build_single_output_image.
 
     The permutation and signs are derived from the acquisition's own vectors
     rather than hardcoded, so obliquity and a non-HFS patient position are
@@ -1332,6 +1370,41 @@ def _log_display_frame(permutation, signs, canonical_directions, shape):
         )
 
 
+def _compensate_ice_frame_stacking(volume, slice_dir):
+    """Reverse the emitted frame order for the scanner, deliberately breaking the header.
+
+    Returns ``(volume, content_slice_dir, reversed_frames)``. ``slice_dir`` comes
+    back unchanged when no compensation is applied.
+
+    When it is applied only the pixels move. Negating the vector as well would
+    cancel the reversal, because ICE positions the frames from that same vector,
+    so there is no emitted volume that is both header-consistent and displayed
+    correctly by this FIRE pipeline. This function chooses the scanner, and the
+    resulting image therefore carries ``OUTPUT_FRAME_ORDER_REVERSED_ATTRIBUTE``
+    so that consumers reading the header instead -- ``mrd2nifti`` above all --
+    can undo it. Anything that reads ``slice_dir`` and ignores that attribute
+    will place the volume mirrored through-plane.
+    """
+    if not ICE_STACKS_FRAMES_AGAINST_SLICE_DIR:
+        return volume, np.asarray(slice_dir, dtype=float), False
+
+    logging.warning(
+        "ICE frame-stacking compensation applied: the emitted frame order is "
+        "reversed because ICE positions frames against slice_dir. The emitted "
+        "slice_dir still describes the acquisition, so the pixels and the "
+        "header disagree by design and '%s' is set to 1 to declare it. The "
+        "content runs along %s with increasing frame number. Any consumer that "
+        "builds geometry from slice_dir must honour that attribute.",
+        OUTPUT_FRAME_ORDER_REVERSED_ATTRIBUTE,
+        _direction_label(-np.asarray(slice_dir, dtype=float)),
+    )
+    return (
+        np.ascontiguousarray(np.flip(np.asarray(volume), axis=0)),
+        -np.asarray(slice_dir, dtype=float),
+        True,
+    )
+
+
 def _log_emitted_geometry(center_position, read_dir, phase_dir, slice_dir, shape, fov_mm):
     """Log what the scanner should display, so one screenshot can confirm or refute it.
 
@@ -1345,7 +1418,13 @@ def _log_emitted_geometry(center_position, read_dir, phase_dir, slice_dir, shape
 
     left, right = _direction_letters(read_dir)
     top, bottom = _direction_letters(phase_dir)
-    view_from, _ = _direction_letters(slice_dir)
+    # The boxed marker is the side the viewer has to look from for the screen
+    # basis to be proper, so it follows the DICOM normal columns x rows, not
+    # slice_dir. That is why it read 'H' in 0.1.3 and 'F' in 0.1.4 even though
+    # the emitted slice_dir was F->H both times.
+    view_from, _ = _direction_letters(
+        np.cross(_unit_vector(read_dir), _unit_vector(phase_dir))
+    )
 
     logging.info(
         "Predicted scanner display: left edge '%s', right edge '%s', top edge "
@@ -1381,11 +1460,14 @@ def _log_emitted_geometry(center_position, read_dir, phase_dir, slice_dir, shape
                 _position_label(position),
             )
         logging.info(
-            "Compare any one of those against the scanner's SP field for the same "
-            "frame number. A match confirms the emitted geometry is honoured; a "
-            "sign difference means the slice axis is reversed relative to the "
-            "native series; a different magnitude means the volume centre or the "
-            "field of view disagrees."
+            "Those positions are where the emitted content sits, with the ICE "
+            "frame-stacking compensation (%s) already accounted for. Compare any "
+            "one of them against the scanner's slice position for the same frame "
+            "number. A match confirms the geometry end to end; a sign difference "
+            "means ICE has changed how it stacks frames and "
+            "ICE_STACKS_FRAMES_AGAINST_SLICE_DIR must be flipped; a different "
+            "magnitude means the volume centre or the field of view disagrees.",
+            "on" if ICE_STACKS_FRAMES_AGAINST_SLICE_DIR else "off",
         )
 
 
@@ -1503,27 +1585,35 @@ def _log_reference_geometry(reference_head, metadata):
         "Acquisition volume centre: %s",
         _position_label(reference_head.position),
     )
-    acquisition_handedness = float(
+    # Siemens builds its PRS frame so that phase x read = slice, which is the
+    # opposite cross-product order from DICOM's column x row = normal. Measured
+    # data therefore arrives DICOM-left-handed, and that is expected, not a
+    # defect: read_dir=(-1,0,0), phase_dir=(0,1,0), slice_dir=(0,0,1) satisfies
+    # the Siemens rule exactly. Only the emitted frame has to be DICOM
+    # right-handed, and _log_display_frame checks that one.
+    prs_handedness = float(
         np.dot(
             np.cross(
-                _unit_vector(reference_head.read_dir),
                 _unit_vector(reference_head.phase_dir),
+                _unit_vector(reference_head.read_dir),
             ),
             _unit_vector(reference_head.slice_dir),
         )
     )
     logging.info(
-        "Acquisition frame handedness: %+.3f (%s). A physical acquisition is "
-        "always right-handed; anything else means the incoming vectors are "
-        "inconsistent and no downstream mapping can be trusted.",
-        acquisition_handedness,
-        "right-handed" if acquisition_handedness > 0.0 else "LEFT-handed",
+        "Acquisition frame: phase x read . slice = %+.3f (%s under the Siemens "
+        "PRS convention). A value near zero would mean the incoming vectors are "
+        "not orthonormal and no downstream mapping could be trusted.",
+        prs_handedness,
+        "consistent" if prs_handedness > 0.0 else "INCONSISTENT",
     )
     logging.info(
-        "Direction vectors are only ever transformed together with the pixels. "
-        "Under this FIRE configuration (UseIceFillingMiniHeader, "
-        "IsFlipAndShiftImages, NormOrientation disabled) a lone sign change "
-        "relabels markers without moving a pixel."
+        "Geometry stages: 1) trajectory components mapped onto the acquisition "
+        "axes, 2) that frame rotated into the DICOM display view with the "
+        "direction vectors transformed together with the pixels, 3) the frame "
+        "order reversed on its own to compensate for how ICE stacks a 3D volume. "
+        "Stage 2 cannot change where the anatomy lands, only how it is stored; "
+        "stage 3 is the only stage that moves it."
     )
 
 
@@ -1690,11 +1780,17 @@ def _build_single_output_image(
     )
     slice_dir, phase_dir, read_dir = canonical_directions
     _log_display_frame(permutation, signs, canonical_directions, packed_volume.shape)
+
+    # Stage 3 compensates for the scanner rather than describing the data, so it
+    # is the only place the emitted pixels stop matching the emitted slice_dir.
+    packed_volume, content_slice_dir, frames_reversed = _compensate_ice_frame_stacking(
+        packed_volume, slice_dir
+    )
     _log_emitted_geometry(
         center_position,
         read_dir,
         phase_dir,
-        slice_dir,
+        content_slice_dir,
         packed_volume.shape,
         output_fov_mm,
     )
@@ -1705,7 +1801,7 @@ def _build_single_output_image(
         "packed output",
         packed_volume,
         center_position,
-        canonical_directions,
+        (content_slice_dir, phase_dir, read_dir),
         output_fov_mm,
     )
     image = ismrmrd.Image.from_array(packed_volume, transpose=False)
@@ -1751,8 +1847,11 @@ def _build_single_output_image(
     meta["ImageComment"] = image_comment
     meta["ImageComments"] = image_comment
     # 1 tells ICE to keep the geometry described in this header instead of
-    # rebuilding it and applying its own flip/shift. The vectors above describe
-    # the canonicalized pixels, so geometry has exactly one owner.
+    # rebuilding it and applying its own flip/shift. The in-plane vectors
+    # describe the emitted pixels. slice_dir does not: stage 3 reverses the
+    # frames against it on purpose, because ICE stacks them that way, and
+    # OUTPUT_FRAME_ORDER_REVERSED_ATTRIBUTE below declares that so a consumer
+    # reading this header can undo it.
     meta["Keep_image_geometry"] = 1
     meta["partition_count"] = 1
     meta["slice_count"] = slice_count
@@ -1781,6 +1880,7 @@ def _build_single_output_image(
     meta["SodiumGriddingDisplayFormula"] = display_meta["formula"]
     meta["SodiumGriddingOrientation"] = orientation_key
     meta["SodiumGriddingOrientationFlipSlice"] = str(int(bool(flip_slice)))
+    meta[OUTPUT_FRAME_ORDER_REVERSED_ATTRIBUTE] = str(int(bool(frames_reversed)))
     image.attribute_string = meta.serialize()
 
     logging.info(

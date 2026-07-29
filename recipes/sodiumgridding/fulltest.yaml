@@ -2,7 +2,7 @@
 # Focused verification for the OpenRecon runtime and gridding dependencies.
 
 name: sodiumgridding
-version: 0.1.4
+version: 0.1.5
 container: sodiumgridding_${version}_REFERENCE.simg
 
 test_data:
@@ -42,8 +42,8 @@ tests:
       print(label)
       PY
 
-  - name: Orientation choices match the two-stage geometry implementation
-    description: Verify the UI mappings feed the acquisition stage before display canonicalization
+  - name: Orientation choices match the three-stage geometry implementation
+    description: Verify the UI mappings feed the acquisition stage before canonicalization and stacking compensation
     script: |
       PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
       import json
@@ -92,6 +92,34 @@ tests:
       )
       label = sodiumgridding._slice_position_label(position)
       assert label == "F28.4", label
+
+      # Stage 3 must reverse the frames alone. Reversing slice_dir with them
+      # would cancel, because ICE positions the frames from that vector.
+      volume = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+      compensated, content_dir, reversed_frames = (
+          sodiumgridding._compensate_ice_frame_stacking(
+              volume, np.array([0.0, 0.0, 1.0])
+          )
+      )
+      assert sodiumgridding.ICE_STACKS_FRAMES_AGAINST_SLICE_DIR is True
+      assert reversed_frames is True
+      np.testing.assert_array_equal(compensated, volume[::-1])
+      np.testing.assert_allclose(content_dir, [0.0, 0.0, -1.0])
+
+      # The reversal makes the emitted pixels disagree with the emitted
+      # slice_dir, so the container must ship the declaration that lets a
+      # header-driven consumer undo it, and mrd2nifti must honour it.
+      import importlib.util
+
+      spec = importlib.util.spec_from_file_location(
+          "mrd2nifti", "/opt/code/python-ismrmrd-server/mrd2nifti.py"
+      )
+      mrd2nifti = importlib.util.module_from_spec(spec)
+      spec.loader.exec_module(mrd2nifti)
+      assert (
+          mrd2nifti.FRAME_ORDER_REVERSED_ATTRIBUTE
+          == sodiumgridding.OUTPUT_FRAME_ORDER_REVERSED_ATTRIBUTE
+      ), mrd2nifti.FRAME_ORDER_REVERSED_ATTRIBUTE
       print("display frame handedness:", handedness, "frame 48/128:", label)
       PY
 

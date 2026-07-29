@@ -19,6 +19,34 @@ def _extract_component(image_data, component):
     return np.asarray(np.abs(array), dtype=np.float32)
 
 
+# Mirrors sodiumgridding.OUTPUT_FRAME_ORDER_REVERSED_ATTRIBUTE. Duplicated
+# rather than imported so this converter stays usable on its own, without the
+# reconstruction module's runtime dependencies.
+FRAME_ORDER_REVERSED_ATTRIBUTE = "SodiumGriddingIceFrameOrderReversed"
+
+
+def _frames_are_reversed(image):
+    """Report whether the producer reversed the frame order against slice_dir.
+
+    sodiumgridding emits its volume with the frames reversed to compensate for
+    how ICE stacks them, which makes the pixels disagree with the emitted
+    slice_dir on purpose. Building an affine from that header without undoing
+    the reversal mirrors the volume through-plane, so this attribute has to be
+    honoured rather than ignored.
+    """
+    attributes = getattr(image, "attribute_string", None)
+    if not attributes:
+        return False
+    try:
+        meta = ismrmrd.Meta.deserialize(attributes)
+    except Exception:
+        return False
+    value = meta.get(FRAME_ORDER_REVERSED_ATTRIBUTE)
+    if value is None:
+        return False
+    return str(value).strip() not in ("", "0", "false", "False")
+
+
 def _to_canonical_volume(image, component):
     array = np.squeeze(_extract_component(image.data, component))
 
@@ -77,6 +105,18 @@ def convert_mrd_to_nifti(input_path, output_path, group_name="dataset", image_se
                     f"expected matching in-plane shape {(nx, ny)}"
                 )
         volume = np.concatenate(volume_blocks, axis=2)
+
+        # Undo the producer's ICE frame-stacking compensation before the affine
+        # is built from slice_dir, so the NIfTI describes the patient geometry
+        # rather than the scanner display order. Axis 2 here is the MRD slice
+        # axis, which _to_canonical_volume moved from axis 0.
+        if _frames_are_reversed(first_image):
+            print(
+                f"Input declares {FRAME_ORDER_REVERSED_ATTRIBUTE}; reversing the "
+                "slice axis so it matches the header slice_dir"
+            )
+            volume = np.ascontiguousarray(volume[:, :, ::-1])
+
         nz = volume.shape[2]
 
         fov = np.array([float(value) for value in first_image.field_of_view], dtype=np.float32)
