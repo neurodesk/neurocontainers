@@ -1,0 +1,181 @@
+# SynthSeg container test suite
+#
+# SynthSeg is a contrast- and resolution-agnostic brain MRI segmentation tool.
+# This container packages FreeSurfer's mri_synthseg together with the trained
+# weights published in FreeSurfer 8.2.0, plus the OpenRecon MRD wrapper.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33 mm (3D structural)
+#
+# Note: mri_synthseg is a deep learning model. The one end-to-end segmentation
+# below runs with --fast --cpu and still takes several minutes on CPU-only test
+# runners; every other test is a fast asset/interface check.
+
+name: synthseg
+version: 8.2.0
+container: synthseg_8.2.0_REFERENCE.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}/synthseg
+
+tests:
+  # ==========================================================================
+  # LAUNCHER AND ENVIRONMENT
+  # ==========================================================================
+  - name: mri_synthseg launcher available
+    description: Verify the main runtime entrypoint is installed and on PATH
+    command: command -v mri_synthseg
+    expected_output_contains: "mri_synthseg"
+
+  - name: mri_synthseg help
+    description: Verify mri_synthseg starts, imports TensorFlow, and prints usage
+    command: mri_synthseg --help
+    expected_output_contains: "--parc"
+
+  - name: FREESURFER_HOME is set
+    description: mri_synthseg resolves all models relative to FREESURFER_HOME
+    command: bash -lc 'test -n "$FREESURFER_HOME" && echo "FREESURFER_HOME=$FREESURFER_HOME"'
+    expected_output_contains: "FREESURFER_HOME=/opt/freesurfer-synthseg"
+
+  - name: FreeSurfer colour lookup table installed
+    description: mri_synthseg reads FreeSurferColorLUT.txt unless --noaddctab is used
+    command: bash -lc 'grep -c "Left-Hippocampus" "$FREESURFER_HOME/FreeSurferColorLUT.txt"'
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # TRAINED MODELS
+  # ==========================================================================
+  - name: Segmentation models installed
+    description: Verify all SynthSeg network weights are present
+    command: |
+      bash -lc 'for m in synthseg_1.0.h5 synthseg_2.0.h5 synthseg_robust_2.0.h5 synthseg_parc_2.0.h5 synthseg_qc_2.0.h5 synthseg_photo_both_1.0.h5 synthseg_photo_single_1.0.h5; do
+        test -s "$FREESURFER_HOME/models/$m" || { echo "MISSING $m"; exit 1; }
+      done; echo "all synthseg models present"'
+    expected_output_contains: "all synthseg models present"
+
+  - name: Model weights are readable HDF5
+    description: Guard against truncated or HTML-error downloads of the annexed weights
+    command: |
+      bash -lc 'python -c "
+      import glob, h5py, os
+      paths = sorted(glob.glob(os.path.join(os.environ[\"FREESURFER_HOME\"], \"models\", \"*.h5\")))
+      assert paths, \"no model files found\"
+      for path in paths:
+          with h5py.File(path, \"r\") as handle:
+              assert len(handle.keys()) > 0, path
+      print(\"validated\", len(paths), \"hdf5 models\")
+      "'
+    expected_output_contains: "validated 7 hdf5 models"
+
+  - name: Label and structure-name arrays installed
+    description: Verify the .npy label/name/topology arrays load with numpy
+    command: |
+      bash -lc 'python -c "
+      import glob, numpy, os
+      paths = sorted(glob.glob(os.path.join(os.environ[\"FREESURFER_HOME\"], \"models\", \"*.npy\")))
+      for path in paths:
+          numpy.load(path, allow_pickle=False)
+      print(\"validated\", len(paths), \"npy arrays\")
+      "'
+    expected_output_contains: "validated 19 npy arrays"
+
+  # ==========================================================================
+  # PYTHON RUNTIME
+  # ==========================================================================
+  - name: TensorFlow pinned to a Keras 2 release
+    description: mri_synthseg 8.2.0 needs BatchNormalization(fused=False), removed in Keras 3
+    command: |
+      python -c "import tensorflow as tf; print('tensorflow', tf.__version__); assert tf.__version__.startswith('2.13.')"
+    expected_output_contains: "tensorflow 2.13."
+
+  - name: NumPy pinned below the scalar-conversion removal
+    description: mri_synthseg assigns size-1 arrays into scalar slots, which errors on numpy >= 2
+    command: |
+      python -c "import numpy; print('numpy', numpy.__version__); assert int(numpy.__version__.split('.')[0]) < 2"
+    expected_output_contains: "numpy 1."
+
+  - name: Imaging dependencies importable
+    description: Verify surfa, nibabel and scipy are available for mri_synthseg
+    command: |
+      python -c "import surfa, nibabel, scipy; print('surfa', surfa.__version__, 'nibabel', nibabel.__version__)"
+    expected_output_contains: "surfa"
+
+  # ==========================================================================
+  # OPENRECON RUNTIME
+  # ==========================================================================
+  - name: OpenRecon server help
+    description: Verify the python-ismrmrd server entrypoint starts correctly
+    command: |
+      bash -lc "python /opt/code/python-ismrmrd-server/main.py -h 2>&1 | sed -n '1,20p'"
+    expected_output_contains: "Example server for MRD streaming format"
+
+  - name: OpenRecon assets installed
+    description: Verify the scanner label and README are copied into the server directory
+    command: |
+      bash -lc 'python -c "
+      import json
+      from pathlib import Path
+      label = json.loads(Path(\"/opt/code/python-ismrmrd-server/OpenReconLabel.json\").read_text())
+      assert label[\"general\"][\"id\"] == \"synthseg\"
+      assert Path(\"/opt/code/python-ismrmrd-server/OpenReconREADME.md\").stat().st_size > 0
+      print(\"openrecon assets ok, parameters:\", len(label[\"parameters\"]))
+      "'
+    expected_output_contains: "openrecon assets ok"
+
+  - name: synthseg MRD wrapper imports
+    description: Verify the reconstruction module imports with server-side helpers
+    command: |
+      bash -lc 'PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import synthseg, ismrmrd, numpy; print(synthseg.__file__)"'
+    expected_output_contains: "/opt/code/python-ismrmrd-server/synthseg.py"
+
+  - name: OpenRecon parameter matrix generates
+    description: Verify the wrapper can emit a config for every scanner option combination
+    command: |
+      bash -lc 'PYTHONPATH=/opt/code/python-ismrmrd-server python /opt/code/python-ismrmrd-server/synthseg.py --write-openrecon-test-configs ${output_dir}/synthseg/configs | head -1'
+    expected_output_contains: "OpenRecon test config"
+
+  # ==========================================================================
+  # END-TO-END SEGMENTATION
+  # ==========================================================================
+  - name: Segment a T1w volume onto the input grid
+    description: >-
+      Run the real network in fast CPU mode with --keepgeom, which is the mode
+      the OpenRecon wrapper uses, and check that the output is a FreeSurfer
+      label map on the input grid.
+    command: |
+      bash -lc 'mri_synthseg --i "${t1w}" --o ${output_dir}/synthseg/t1w_seg.nii.gz \
+        --fast --cpu --threads 4 --keepgeom --noaddctab \
+        --vol ${output_dir}/synthseg/t1w_volumes.csv'
+    validate:
+      - output_exists: ${output_dir}/synthseg/t1w_seg.nii.gz
+      - output_exists: ${output_dir}/synthseg/t1w_volumes.csv
+
+  - name: Segmentation matches the input geometry and label set
+    description: >-
+      --keepgeom must return the label map on the source grid, and the values
+      must be FreeSurfer label indices rather than rescaled intensities.
+    command: |
+      bash -lc 'python -c "
+      import nibabel, numpy
+      source = nibabel.load(\"${t1w}\")
+      seg = nibabel.load(\"${output_dir}/synthseg/t1w_seg.nii.gz\")
+      assert seg.shape == source.shape, (seg.shape, source.shape)
+      assert numpy.allclose(seg.affine, source.affine, atol=1e-3)
+      labels = numpy.unique(numpy.asarray(seg.dataobj).astype(int))
+      # 2 = Left-Cerebral-White-Matter, 3 = Left-Cerebral-Cortex in FreeSurferColorLUT
+      assert {2, 3}.issubset(set(labels.tolist())), labels[:32]
+      print(\"segmentation ok, distinct labels:\", labels.size)
+      "'
+    expected_output_contains: "segmentation ok"
