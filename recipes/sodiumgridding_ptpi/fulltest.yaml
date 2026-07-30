@@ -77,7 +77,7 @@ tests:
       assert "orientationflipslice" not in parameters
       for selection in sorted(offered):
           resolved, flip_slice, _ = sodiumgridding_ptpi._resolve_orientation_with_slice_flip(
-              {"orientation": selection}
+              {"parameters": {"orientation": selection}}
           )
           assert flip_slice == selection.endswith(suffix), selection
           if selection != sodiumgridding.ORIENTATION_DEBUG_SELECTION:

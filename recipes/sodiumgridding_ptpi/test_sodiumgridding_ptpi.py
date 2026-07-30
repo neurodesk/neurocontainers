@@ -21,7 +21,9 @@ def _import_sodiumgridding_ptpi_with_runtime_stubs(monkeypatch):
 
     def get_json_config_param(config, key, default=None, type=None):
         del type
-        return config.get(key, default)
+        if not isinstance(config, dict):
+            return default
+        return config.get("parameters", {}).get(key, default)
 
     mrdhelper.update_img_header_from_raw = update_img_header_from_raw
     mrdhelper.get_json_config_param = get_json_config_param
@@ -68,13 +70,36 @@ def test_resolve_orientation_with_slice_flip_folds_suffix_into_selection(monkeyp
     sodiumgridding_ptpi = _import_sodiumgridding_ptpi_with_runtime_stubs(monkeypatch)
     resolve = sodiumgridding_ptpi._resolve_orientation_with_slice_flip
 
-    assert resolve({"orientation": "zxy_fxy"}) == ("zxy_fxy", False, False)
-    assert resolve({"orientation": "zxy_fxy_fz"}) == ("zxy_fxy", True, False)
-    assert resolve({"orientation": "zyx_fz"}) == ("zyx", True, False)
-    assert resolve({"orientation": "debug"}) == ("zyx", False, True)
+    assert resolve({"parameters": {"orientation": "zxy_fxy"}}) == (
+        "zxy_fxy",
+        False,
+        False,
+    )
+    assert resolve({"parameters": {"orientation": "zxy_fxy_fz"}}) == (
+        "zxy_fxy",
+        True,
+        False,
+    )
+    assert resolve({"parameters": {"orientation": "zyx_fz"}}) == (
+        "zyx",
+        True,
+        False,
+    )
+    assert resolve({"parameters": {"orientation": "debug"}}) == (
+        "zyx",
+        False,
+        True,
+    )
 
     # The retired boolean still works when supplied in a manual JSON config.
-    assert resolve({"orientation": "zyx", "orientationflipslice": True}) == (
+    assert resolve(
+        {
+            "parameters": {
+                "orientation": "zyx",
+                "orientationflipslice": True,
+            }
+        }
+    ) == (
         "zyx",
         True,
         False,
@@ -95,7 +120,9 @@ def test_machine_limits_fall_back_to_environment(monkeypatch):
 
     # An explicit config value still wins over the environment default.
     monkeypatch.setenv(sodiumgridding_ptpi.MAX_WORKERS_ENV_VAR, "3")
-    sodiumgridding_ptpi._configure_core({"maxworkers": 5}, matrix_size=64, fov_cm=20.0)
+    sodiumgridding_ptpi._configure_core(
+        {"parameters": {"maxworkers": 5}}, matrix_size=64, fov_cm=20.0
+    )
     assert sodiumgridding_ptpi.core.MAX_WORKERS == 5
 
     sodiumgridding_ptpi._configure_core({}, matrix_size=64, fov_cm=20.0)
@@ -107,18 +134,20 @@ def test_configure_core_disables_standalone_outputs(monkeypatch):
 
     sodiumgridding_ptpi._configure_core(
         {
-            "dcfiterations": 2,
-            "maxworkers": 3,
-            "coilcompression": True,
-            "coilvarianceretention": "0.95",
-            "coilcompressionsource": "te1",
-            "coilcombinemode": "SoS",
-            "echonormalizationmode": "te1",
-            "fieldmapdeltates": "0.0045",
-            "fieldmapunwrapmethod": "axis",
-            "runphasecorrection": False,
-            "phaselowrankrank": 4,
-            "applyn4biascorrection": False,
+            "parameters": {
+                "dcfiterations": 2,
+                "maxworkers": 3,
+                "coilcompression": True,
+                "coilvarianceretention": "0.95",
+                "coilcompressionsource": "te1",
+                "coilcombinemode": "SoS",
+                "echonormalizationmode": "te1",
+                "fieldmapdeltates": "0.0045",
+                "fieldmapunwrapmethod": "axis",
+                "runphasecorrection": False,
+                "phaselowrankrank": 4,
+                "applyn4biascorrection": False,
+            }
         },
         matrix_size=64,
         fov_cm=20.0,
