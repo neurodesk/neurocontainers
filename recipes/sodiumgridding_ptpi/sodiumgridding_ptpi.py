@@ -51,9 +51,42 @@ OPENRECON_DEFAULTS = {
     "orientationdebugseries": False,
 }
 
+# The OpenRecon packaging schema allows at most 14 label parameters, and the
+# dual-echo pTPI reconstruction needs more knobs than that. Three of them are
+# therefore not spent on a parameter slot of their own:
+#
+#   * slice reversal rides along in the ``orientation`` choice as an ``_fz``
+#     suffix, since it is part of the same trajectory-to-display mapping;
+#   * ``maxcoils`` and ``maxworkers`` are machine-level knobs rather than
+#     reconstruction parameters, so they are set on the container instead.
+#
+# All three stay readable from a manually supplied JSON config, so the MRD
+# contract itself is unchanged.
+ORIENTATION_FLIP_SLICE_SUFFIX = "_fz"
+MAX_COILS_ENV_VAR = "SODIUMGRIDDING_PTPI_MAX_COILS"
+MAX_WORKERS_ENV_VAR = "SODIUMGRIDDING_PTPI_MAX_WORKERS"
+
 
 def _ensure_debug_folder():
     os.makedirs(debugFolder, exist_ok=True)
+
+
+def _env_int_default(key, env_var):
+    """Resolve an int default from the environment, falling back to the label default."""
+    raw = os.environ.get(env_var, "").strip()
+    if not raw:
+        return OPENRECON_DEFAULTS[key]
+    try:
+        return int(raw)
+    except ValueError:
+        logging.warning(
+            "Ignoring invalid %s=%r; using %s=%s",
+            env_var,
+            raw,
+            key,
+            OPENRECON_DEFAULTS[key],
+        )
+        return OPENRECON_DEFAULTS[key]
 
 
 def _config_bool(config, key):
@@ -70,6 +103,41 @@ def _config_float(config, key):
 
 def _config_str(config, key):
     return openrecon_base._config_str(config, key, OPENRECON_DEFAULTS[key])
+
+
+def _resolve_orientation_with_slice_flip(config):
+    """Split the UI orientation value into (orientation, flip_slice, debug_series).
+
+    An ``_fz`` suffix on the selection means "reverse the slice axis", which the
+    shared base module takes as a separate ``flip_slice`` argument.
+    """
+    selection = openrecon_base._config_str(
+        config,
+        "orientation",
+        OPENRECON_DEFAULTS["orientation"],
+    ).strip().lower()
+
+    flip_slice = selection.endswith(ORIENTATION_FLIP_SLICE_SUFFIX)
+    if flip_slice:
+        selection = selection[: -len(ORIENTATION_FLIP_SLICE_SUFFIX)]
+
+    orientation, emit_debug_series = openrecon_base._resolve_orientation_selection(
+        selection
+    )
+    if openrecon_base._config_bool(
+        config,
+        "orientationdebugseries",
+        OPENRECON_DEFAULTS["orientationdebugseries"],
+    ):
+        orientation, emit_debug_series = openrecon_base.DEFAULT_ORIENTATION, True
+    # Continue accepting the standalone boolean in manually supplied JSON configs.
+    if openrecon_base._config_bool(
+        config,
+        "orientationflipslice",
+        OPENRECON_DEFAULTS["orientationflipslice"],
+    ):
+        flip_slice = True
+    return orientation, flip_slice, emit_debug_series
 
 
 def _load_dual_trajectory(config):
@@ -186,7 +254,14 @@ def _configure_core(config, matrix_size, fov_cm):
     core.N = int(matrix_size)
     core.FOV_CM = float(fov_cm)
     core.DCF_ITER = max(0, _config_int(config, "dcfiterations"))
-    core.MAX_WORKERS = max(1, _config_int(config, "maxworkers"))
+    core.MAX_WORKERS = max(
+        1,
+        openrecon_base._config_int(
+            config,
+            "maxworkers",
+            _env_int_default("maxworkers", MAX_WORKERS_ENV_VAR),
+        ),
+    )
     core.COIL_COMPRESSION = _config_bool(config, "coilcompression")
     core.COIL_VARIANCE_RETENTION = float(
         np.clip(_config_float(config, "coilvarianceretention"), 0.0, 1.0)
@@ -301,12 +376,11 @@ def process_raw(group, connection, config, metadata):
         raise ValueError(f"fovcm must be positive, got {fov_cm}")
 
     _configure_core(config, matrix_size, fov_cm)
-    orientation, orientation_debug_series = openrecon_base._resolve_orientation_config(config)
-    orientation_flip_slice = openrecon_base._config_bool(
-        config,
-        "orientationflipslice",
-        OPENRECON_DEFAULTS["orientationflipslice"],
-    )
+    (
+        orientation,
+        orientation_flip_slice,
+        orientation_debug_series,
+    ) = _resolve_orientation_with_slice_flip(config)
 
     logging.info(
         "Resolved pTPI configuration: matrixsize=%d fovcm=%.3f dcfiterations=%d "
@@ -335,7 +409,14 @@ def process_raw(group, connection, config, metadata):
     )
 
     data_all = _build_interleaved_data_array(group)
-    max_coils = max(0, _config_int(config, "maxcoils"))
+    max_coils = max(
+        0,
+        openrecon_base._config_int(
+            config,
+            "maxcoils",
+            _env_int_default("maxcoils", MAX_COILS_ENV_VAR),
+        ),
+    )
     if 0 < max_coils < data_all.shape[0]:
         logging.warning("Limiting reconstruction to first %d of %d coils", max_coils, data_all.shape[0])
         data_all = data_all[:max_coils]
