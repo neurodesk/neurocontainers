@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "sodiumgridding_ptpi 0.1.0": {
+      "version": "20260729",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction"
+  ]
+}
