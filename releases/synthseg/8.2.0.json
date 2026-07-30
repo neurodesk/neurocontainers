@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "synthseg 8.2.0": {
+      "version": "20260730",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging",
+    "machine learning"
+  ]
+}
