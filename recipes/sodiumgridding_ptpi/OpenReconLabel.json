@@ -94,24 +94,6 @@
       "information": { "en": "Number of iterative Kaiser-Bessel density compensation updates. Use 0 for uniform weights." }
     },
     {
-      "id": "maxcoils",
-      "label": { "en": "Max coils" },
-      "type": "int",
-      "minimum": 0,
-      "maximum": 128,
-      "default": 0,
-      "information": { "en": "Limit physical coils before compression. Use 0 for all coils." }
-    },
-    {
-      "id": "maxworkers",
-      "label": { "en": "Max workers" },
-      "type": "int",
-      "minimum": 1,
-      "maximum": 64,
-      "default": 8,
-      "information": { "en": "Maximum number of parallel coil reconstructions." }
-    },
-    {
       "id": "coilcompression",
       "label": { "en": "Coil compression" },
       "type": "boolean",
@@ -197,17 +179,18 @@
         { "id": "zxy_fx", "name": { "en": "zxy, reverse columns" } },
         { "id": "zxy_fy", "name": { "en": "zxy, reverse rows" } },
         { "id": "zxy_fxy", "name": { "en": "zxy, reverse rows and columns" } },
+        { "id": "zyx_fz", "name": { "en": "zyx, reverse slices" } },
+        { "id": "zyx_fx_fz", "name": { "en": "zyx, reverse columns and slices" } },
+        { "id": "zyx_fy_fz", "name": { "en": "zyx, reverse rows and slices" } },
+        { "id": "zyx_fxy_fz", "name": { "en": "zyx, reverse rows, columns and slices" } },
+        { "id": "zxy_fz", "name": { "en": "zxy, reverse slices" } },
+        { "id": "zxy_fx_fz", "name": { "en": "zxy, reverse columns and slices" } },
+        { "id": "zxy_fy_fz", "name": { "en": "zxy, reverse rows and slices" } },
+        { "id": "zxy_fxy_fz", "name": { "en": "zxy, reverse rows, columns and slices" } },
         { "id": "debug", "name": { "en": "Debug sweep (all orientations)" } }
       ],
       "default": "zyx",
-      "information": { "en": "Map trajectory components into acquisition read/phase axes. Debug emits every mapping with slice kept/reversed." }
-    },
-    {
-      "id": "orientationflipslice",
-      "label": { "en": "Reverse slice axis" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Reverse trajectory component 2 before display-frame canonicalization." }
+      "information": { "en": "Map trajectory components into acquisition read/phase axes. The _fz variants also reverse the slice axis. Debug emits every mapping with slice kept/reversed." }
     }
   ]
 }

@@ -59,8 +59,6 @@ for both echoes and infers sample timing from `sampling_time_us`.
 | Matrix size | `matrixsize` | int | `128` | Final isotropic reconstruction matrix. |
 | FOV cm | `fovcm` | string | `22.0` | Reconstruction field of view in centimetres. |
 | DCF iterations | `dcfiterations` | int | `5` | Kaiser-Bessel density compensation iterations. |
-| Max coils | `maxcoils` | int | `0` | Limit physical coils before compression; `0` uses all. |
-| Max workers | `maxworkers` | int | `8` | Parallel coil reconstruction workers. |
 | Coil compression | `coilcompression` | boolean | `true` | Use PCA variance-retention coil compression. |
 | Coil variance | `coilvarianceretention` | string | `0.9` | Variance retained by the compression basis. |
 | Coil combination | `coilcombinemode` | choice | `AC` | Adaptive combine or sum-of-squares. |
@@ -69,8 +67,20 @@ for both echoes and infers sample timing from `sampling_time_us`.
 | Phase correction | `runphasecorrection` | boolean | `true` | Run low-rank phase correction for both echoes. |
 | Low-rank rank | `phaselowrankrank` | int | `10` | Rank used for the low-rank phase table. |
 | N4 correction | `applyn4biascorrection` | boolean | `true` | Apply N4 bias correction to the final echoes. |
-| Orientation | `orientation` | choice | `zyx` | Shared sodiumgridding trajectory/display mapping. |
-| Reverse slice axis | `orientationflipslice` | boolean | `false` | Reverse trajectory component 2 before display canonicalization. |
+| Orientation | `orientation` | choice | `zyx` | Shared sodiumgridding trajectory/display mapping; `_fz` variants also reverse the slice axis. |
+
+The OpenRecon packaging schema allows at most 14 label parameters, so three
+settings are not exposed as parameters of their own:
+
+| Setting | Where it lives | Default |
+| --- | --- | --- |
+| Reverse slice axis | `_fz` suffix on the `orientation` choice | off |
+| Max coils | `SODIUMGRIDDING_PTPI_MAX_COILS` container env var | `0` (all coils) |
+| Max workers | `SODIUMGRIDDING_PTPI_MAX_WORKERS` container env var | `8` |
+
+All three are still read from `maxcoils`, `maxworkers`, and
+`orientationflipslice` when supplied in a manual JSON config, so the MRD
+contract is unchanged.
 
 ## Runtime Notes
 
@@ -82,8 +92,8 @@ for both echoes and infers sample timing from `sampling_time_us`.
   the supplied standalone script.
 - Geometry handling is delegated to `sodiumgridding.py`, so orientation changes
   should be validated the same way: use `orientation=debug` on an asymmetric
-  object or a known-side marker, then set `orientation` and
-  `orientationflipslice` to the matching result.
+  object or a known-side marker, then set `orientation` to the matching result,
+  adding the `_fz` suffix if the matching series had its slices reversed.
 
 ## Build
 

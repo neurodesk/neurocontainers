@@ -41,6 +41,10 @@ build:
     - environment:
         DEBIAN_FRONTEND: noninteractive
         NUMBA_CACHE_DIR: /tmp/numba-sodiumgridding
+        # Machine-level reconstruction limits. The OpenRecon label is capped at
+        # 14 parameters, so these are set here instead of in the scanner UI.
+        SODIUMGRIDDING_PTPI_MAX_COILS: "0"
+        SODIUMGRIDDING_PTPI_MAX_WORKERS: "8"
     - install:
         - bzip2
         - ca-certificates
