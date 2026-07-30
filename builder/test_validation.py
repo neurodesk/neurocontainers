@@ -130,6 +130,29 @@ def test_invalid_recipe_empty_name():
     assert any("name" in error.lower() and "empty" in error.lower() for error in errors)
 
 
+def test_invalid_recipe_name_with_underscore():
+    """Test validation rejects recipe names containing underscores."""
+    recipe = {
+        "name": "test_app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["programming"],
+        "icon": VALID_ICON,
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": []
+        }
+    }
+
+    errors = get_validation_errors(recipe)
+    assert any(
+        "name" in error.lower() and "underscore" in error.lower()
+        for error in errors
+    )
+
+
 def test_invalid_architecture():
     """Test validation fails for unsupported architecture"""
     recipe = {

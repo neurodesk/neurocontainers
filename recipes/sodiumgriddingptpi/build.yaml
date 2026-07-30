@@ -1,4 +1,4 @@
-name: sodiumgridding_ptpi
+name: sodiumgriddingptpi
 version: 0.1.0
 
 copyright:
@@ -83,7 +83,7 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAACXBI
 
 readme: |-
   ----------------------------------
-  ## sodiumgridding_ptpi/{{ context.version }} ##
+  ## sodiumgriddingptpi/{{ context.version }} ##
   This container runs a dual-echo palindromic TPI Kaiser-Bessel gridding
   reconstruction for OpenRecon. It includes variance-based coil compression,
   TE1/TE2 field-map estimation, low-rank phase correction, adaptive or
@@ -92,14 +92,14 @@ readme: |-
   Build the recipe with:
   ```bash
   source env/bin/activate
-  python -m builder generate sodiumgridding_ptpi --recreate --architecture x86_64
+  python -m builder generate sodiumgriddingptpi --recreate --architecture x86_64
   ```
 
   Full build:
   ```bash
   source env/bin/activate
-  sf-build sodiumgridding_ptpi --architecture x86_64
+  sf-build sodiumgriddingptpi --architecture x86_64
   ```
 
-  OpenRecon runtime notes are documented in `recipes/sodiumgridding_ptpi/OpenReconREADME.md`.
+  OpenRecon runtime notes are documented in `recipes/sodiumgriddingptpi/OpenReconREADME.md`.
   ----------------------------------

@@ -1,9 +1,9 @@
-# sodiumgridding_ptpi container test suite
+# sodiumgriddingptpi container test suite
 # Focused verification for the OpenRecon runtime, pTPI assets, and gridding dependencies.
 
-name: sodiumgridding_ptpi
+name: sodiumgriddingptpi
 version: 0.1.0
-container: sodiumgridding_ptpi_${version}_REFERENCE.simg
+container: sodiumgriddingptpi_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output
@@ -40,7 +40,7 @@ tests:
               assert {"k_echo1", "k_echo2_forward_order"} <= keys or "k" in keys, sorted(keys)
               print("trajectory", trajectory.name, sorted(keys))
       data = json.loads(label.read_text())
-      assert data["general"]["id"] == "sodiumgridding_ptpi"
+      assert data["general"]["id"] == "sodiumgriddingptpi"
       parameters = {item["id"]: item for item in data["parameters"]}
       offered = {value["id"] for value in parameters["trajectoryfile"]["values"]}
       expected = {str(path) for path in trajectories}

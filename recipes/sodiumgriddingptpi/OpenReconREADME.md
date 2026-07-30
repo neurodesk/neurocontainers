@@ -99,6 +99,6 @@ contract is unchanged.
 
 ```bash
 source env/bin/activate
-python -m builder generate sodiumgridding_ptpi --recreate --architecture x86_64
-sf-build sodiumgridding_ptpi --architecture x86_64
+python -m builder generate sodiumgriddingptpi --recreate --architecture x86_64
+sf-build sodiumgriddingptpi --architecture x86_64
 ```
