@@ -167,3 +167,14 @@ def test_update_apps_json_pushes_fixed_branch_without_per_release_pr() -> None:
     assert 'git push --force origin "$BRANCH_NAME"' in workflow
     assert "gh pr create" not in workflow
     assert "group: update-apps-json" in workflow
+
+
+def test_update_apps_json_runs_for_release_file_pushes() -> None:
+    # Release metadata can be removed directly from main as well as merged via
+    # a PR. A main-branch push trigger covers both paths and avoids leaving the
+    # fixed update branch with a stale release snapshot.
+    workflow = Path(".github/workflows/update-apps-json.yml").read_text()
+
+    assert "  push:\n    branches: [main]\n    paths:\n      - \"releases/**/*.json\"" in workflow
+    assert "pull_request:" not in workflow
+    assert "github.event.pull_request.merged" not in workflow
