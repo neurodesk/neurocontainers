@@ -107,8 +107,8 @@ tests:
       be = np.zeros((100, 1), dtype=int)
       data = NormData.from_ndarrays('synthetic', X, Y, batch_effects=be)
       train, test = data.train_test_split()
-      print(f'train subjects: {train.subjects.size}, test subjects: {test.subjects.size}')
-      assert train.subjects.size + test.subjects.size == 100, 'split lost subjects'
+      print(f'train subjects: {train.subject_ids.size}, test subjects: {test.subject_ids.size}')
+      assert train.subject_ids.size + test.subject_ids.size == 100, 'split lost subjects'
       print('NormData split test passed')
       "
     expected_output_contains: "NormData split test passed"
@@ -128,7 +128,7 @@ tests:
       })
       data = NormData.from_dataframe('df_data', df, covariates=['age'],
                                      batch_effects=['site'], response_vars=['thickness'])
-      print(f'covariates: {list(data.covariate.values)}')
+      print(f'covariates: {list(data.covariates.values)}')
       print('NormData from_dataframe test passed')
       "
     expected_output_contains: "NormData from_dataframe test passed"
