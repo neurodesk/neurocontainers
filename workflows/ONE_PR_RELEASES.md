@@ -6,15 +6,21 @@ artifacts after merge. They no longer create a second release-metadata PR.
 ## Flow
 
 1. A recipe-only PR runs `PR container candidate` with `contents: read` and no
-   secrets on an ephemeral ARC runner.
-2. It builds a Docker archive and SIF, runs the deploy/fulltest and Dive checks,
-   generates the release JSON preview, and stores everything for 30 days.
+   secrets on an ephemeral ARC runner. Each recipe fans out into one candidate
+   per concrete container it declares, so a recipe listing both architectures
+   builds `<name>` on the ARC pool and `<name>_arm64` on an ephemeral ARM64
+   runner.
+2. Each candidate builds a Docker archive and SIF, runs the deploy/fulltest and
+   Dive checks, generates the release JSON preview, and stores everything for
+   30 days under its own container identity.
 3. A trusted `workflow_run` posts download/testing instructions on the PR but
    never opens or executes its artifacts.
 4. `Container release gate` is the stable required check for branch rules.
 5. After merge, `Promote merged container candidate` selects the successful run
    for the exact PR head SHA. It verifies the PR number, recipe fingerprint,
    artifact hashes, and release metadata before publishing the tested files.
+   The variant a candidate claims is re-resolved against the merged recipe, so a
+   candidate cannot promote itself into an identity the recipe never declared.
 6. The promoter commits the generated JSON to `releases/` on `main`. That push
    triggers the existing apps/webapps update workflows.
 

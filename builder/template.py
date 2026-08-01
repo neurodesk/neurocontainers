@@ -23,6 +23,7 @@ class RenderContext:
     name: str
     version: str
     arch: str
+    variant: str = ""
     original_version: str | None = None
     parallel_jobs: int = 1
     values: dict[str, Any] = field(default_factory=dict)
