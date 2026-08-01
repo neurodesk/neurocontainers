@@ -1,10 +1,12 @@
 name: PR container candidate
 
 on:
+  # No paths filter: "Container release gate" is a required status check, so it
+  # has to report on every pull request. A path-filtered workflow never runs for
+  # non-recipe changes, and a required check that never reports blocks the merge
+  # forever. The gate short-circuits below when no recipes changed.
   pull_request:
     types: [opened, synchronize, reopened]
-    paths:
-      - "recipes/**"
 
 permissions:
   contents: read
@@ -58,6 +60,7 @@ jobs:
   candidate:
     name: candidate (${{ matrix.recipe }})
     needs: detect
+    if: ${{ needs.detect.outputs.recipes != '[]' }}
     # ARC pods are ephemeral; untrusted recipe build commands never run on a
     # persistent self-hosted machine.
     runs-on: neurodesk-syd-arcrunner-neurocontainers
@@ -192,6 +195,11 @@ jobs:
         env:
           DETECT_RESULT: ${{ needs.detect.result }}
           CANDIDATE_RESULT: ${{ needs.candidate.result }}
+          RECIPES: ${{ needs.detect.outputs.recipes }}
         run: |
           test "${DETECT_RESULT}" = success
+          if [ "${RECIPES}" = "[]" ]; then
+            echo "No recipe changes in this pull request; nothing to build."
+            exit 0
+          fi
           test "${CANDIDATE_RESULT}" = success
