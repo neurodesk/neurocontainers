@@ -141,6 +141,20 @@ jobs:
           mkdir -p "candidate/${CONTAINER}"
           docker save "${CANDIDATE_TAG}" --output "candidate/${CONTAINER}/${DOCKER_ARCHIVE}"
           apptainer build "candidate/${CONTAINER}/${SIF}" "docker-archive://candidate/${CONTAINER}/${DOCKER_ARCHIVE}"
+      - name: Install fulltest data dependencies
+        # A fulltest.yaml may declare required_files, which run_tests.py fetches
+        # with datalad. Without these the suite dies on FileNotFoundError before
+        # a single assertion runs. run-fulltest.yml and test-release-pr.yml
+        # provision the same way.
+        run: |
+          uv pip install --system datalad datalad-installer
+          datalad-installer --sudo ok git-annex -m datalad/packages
+          git-annex version
+          datalad --version
+      - name: Configure git for DataLad
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Run deploy and fulltest checks
         id: fulltest
         continue-on-error: true
