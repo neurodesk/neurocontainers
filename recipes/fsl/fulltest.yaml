@@ -7,7 +7,7 @@
 #   - BOLD: 4D functional data
 
 name: fsl
-version: 6.0.7.18
+version: 6.0.7.22
 
 required_files:
   - dataset: ds000001

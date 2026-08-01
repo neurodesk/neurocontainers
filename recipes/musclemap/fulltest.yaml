@@ -2,7 +2,7 @@
 # Focused verification for runtime packaging and lightweight entrypoints.
 
 name: musclemap
-version: "1.3.38"
+version: "1.3.45"
 
 test_data:
   output_dir: test_output

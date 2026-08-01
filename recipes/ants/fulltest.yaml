@@ -13,7 +13,7 @@
 #           Neuroimage. 2011 Feb 1;54(3):2033-44.
 
 name: ants
-version: 2.6.0
+version: 2.6.5
 
 required_files:
   - dataset: ds000001

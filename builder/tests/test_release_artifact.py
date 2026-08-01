@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -278,32 +279,10 @@ def test_unexpanded_version_template_is_rejected(tmp_path: Path) -> None:
     assert "unexpanded template" in resolution.error
 
 
-def test_fallback_to_newest_release_is_reported(tmp_path: Path) -> None:
+def test_an_older_release_never_stands_in_for_the_current_version(tmp_path: Path) -> None:
+    """A fulltest tests the container the recipe builds now, not its predecessor."""
     releases = tmp_path / "releases"
     write_release(releases, "tool", "1.2.3", version="20250101", exec="")
-    containers = tmp_path / "containers"
-    expected = touch(containers, "tool_1.2.3_20250101.simg")
-
-    resolution = resolve_suite_container(
-        recipe="tool",
-        version="9.9.9",
-        declared=None,
-        pinned=False,
-        containers_dir=containers,
-        releases_dir=releases,
-    )
-
-    assert resolution.error is None
-    assert resolution.path == expected
-    assert resolution.source == "release-metadata-latest"
-    assert any("falling back" in note for note in resolution.notes)
-
-
-def test_malformed_release_metadata_is_not_mistaken_for_an_unreleased_recipe(
-    tmp_path: Path,
-) -> None:
-    releases = tmp_path / "releases"
-    write_release(releases, "tool", "1.2.3", version="not-a-build-date", exec="")
     containers = tmp_path / "containers"
     touch(containers, "tool_1.2.3_20250101.simg")
 
@@ -317,8 +296,63 @@ def test_malformed_release_metadata_is_not_mistaken_for_an_unreleased_recipe(
     )
 
     assert resolution.path is None
-    assert "No usable build date" in resolution.error
-    assert "1.2.3.json" in resolution.error
+    assert "tool_9.9.9" in resolution.error
+
+
+def test_unreleased_version_uses_the_locally_built_container(tmp_path: Path) -> None:
+    """Between a version bump and its first build, sf-make's SIF is the target."""
+    releases = tmp_path / "releases"
+    write_release(releases, "tool", "1.2.3", version="20250101", exec="")
+    sifs = tmp_path / "sifs"
+    local = touch(sifs, "tool_9.9.9.sif")
+
+    resolution = resolve_suite_container(
+        recipe="tool",
+        version="9.9.9",
+        declared=None,
+        pinned=False,
+        containers_dir=sifs,
+        releases_dir=releases,
+    )
+
+    assert resolution.error is None
+    assert resolution.path == local
+    assert any("no release yet" in note for note in resolution.notes)
+
+
+def test_malformed_release_metadata_is_reported(tmp_path: Path) -> None:
+    releases = tmp_path / "releases"
+    write_release(releases, "tool", "1.2.3", version="not-a-build-date", exec="")
+    containers = tmp_path / "containers"
+    touch(containers, "tool_1.2.3_20250101.simg")
+
+    resolution = resolve_suite_container(
+        recipe="tool",
+        version="1.2.3",
+        declared=None,
+        pinned=False,
+        containers_dir=containers,
+        releases_dir=releases,
+    )
+
+    assert resolution.path is None
+    assert "Build date missing" in resolution.error or "not-a-build-date" in resolution.error
+
+
+def fulltest_version(config: dict) -> str:
+    """Mirror the top-level variable expansion run_tests.py applies to version:."""
+    version = str(config.get("version", "") or "")
+    for key, value in config.items():
+        if key != "version" and isinstance(value, (str, int, float)):
+            version = version.replace(f"${{{key}}}", str(value))
+    return version
+
+
+def recipe_version(build_yaml: Path) -> str:
+    match = re.search(r"^version:\s*(.+)$", build_yaml.read_text(encoding="utf-8"), re.M)
+    if not match:
+        return ""
+    return re.sub(r"\s+#.*$", "", match.group(1).strip()).strip().strip("\"'")
 
 
 def test_repository_fulltests_declare_a_resolvable_name_and_version() -> None:
@@ -328,12 +362,7 @@ def test_repository_fulltests_declare_a_resolvable_name_and_version() -> None:
         recipe = config_path.parent.name
         config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         name = str(config.get("name", "") or "")
-        version = str(config.get("version", "") or "")
-
-        # Mirror the top-level variable expansion run_tests.py applies.
-        for key, value in config.items():
-            if key != "version" and isinstance(value, (str, int, float)):
-                version = version.replace(f"${{{key}}}", str(value))
+        version = fulltest_version(config)
 
         if name != recipe:
             offenders.append(f"{recipe}: name is {name or '(missing)'}")
@@ -343,6 +372,28 @@ def test_repository_fulltests_declare_a_resolvable_name_and_version() -> None:
             offenders.append(f"{recipe}: version {version} is an unexpanded template")
 
     assert not offenders, "\n".join(offenders)
+
+
+def test_repository_fulltests_target_the_version_their_recipe_builds() -> None:
+    """A fulltest lagging its recipe silently tests a container we no longer ship."""
+    offenders = []
+    for config_path in sorted((REPO_ROOT / "recipes").glob("*/fulltest.yaml")):
+        build_yaml = config_path.parent / "build.yaml"
+        if not build_yaml.is_file():
+            continue
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        declared = fulltest_version(config)
+        built = recipe_version(build_yaml)
+        if built and declared != built:
+            offenders.append(
+                f"{config_path.parent.name}: fulltest tests {declared}, "
+                f"build.yaml builds {built}"
+            )
+
+    assert not offenders, (
+        "fulltest.yaml must declare the version its build.yaml builds, so the suite "
+        "runs against the container the recipe produces:\n" + "\n".join(offenders)
+    )
 
 
 def test_repository_fulltests_do_not_hardcode_release_artifacts() -> None:

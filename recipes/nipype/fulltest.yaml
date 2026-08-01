@@ -5,7 +5,7 @@
 # and facilitates interaction between these packages within a single workflow.
 
 name: nipype
-version: 1.8.3
+version: 1.8.5
 
 required_files:
   - dataset: ds000001
@@ -40,7 +40,7 @@ tests:
   - name: Nipype version check
     description: Verify nipype module imports and reports version
     command: python -c "import nipype; print('nipype version:', nipype.__version__)"
-    expected_output_contains: "1.8.3"
+    expected_output_contains: "${version}"
     expected_exit_code: 0
 
   - name: Import nipype.pipeline

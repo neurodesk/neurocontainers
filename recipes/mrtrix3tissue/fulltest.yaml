@@ -11,7 +11,7 @@
 # Note: MRtrix3 uses MIF format internally but supports NIfTI I/O
 
 name: mrtrix3tissue
-version: 5.2.8
+version: 5.2.9
 
 required_files:
   - dataset: ds000001
@@ -39,7 +39,7 @@ tests:
   - name: Version check
     description: Verify MRtrix3Tissue binary runs and reports version
     command: mrconvert --version 2>&1 | head -1
-    expected_output_contains: "3Tissue_v5.2.8"
+    expected_output_contains: "3Tissue_v${version}"
 
   - name: mrinfo basic header display
     description: Display image header information for T1w image

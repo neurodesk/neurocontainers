@@ -151,9 +151,18 @@ tests:
     expected_output_contains: "toolname"
 ```
 
-`name:` must match the recipe directory and `version:` must be present and name a
-release of that recipe, because those two fields are what the artifact is
-resolved from.
+A fulltest always tests the container the recipe builds now, so `name:` must
+match the recipe directory and `version:` must match `build.yaml`. Bump both
+together; an older release is never substituted for a version that has not been
+built yet. Where a test needs the version — a `--version` string, an install
+path — write `${version}` instead of spelling it out, so the assertion follows
+the recipe:
+
+```yaml
+- name: reports its version
+  command: toolname --version
+  expected_output_contains: "${version}"
+```
 
 Do not add a `container:` key. The artifact under test is resolved from
 `releases/<name>/<version>.json`, so a hardcoded SIF name only ever goes stale;
