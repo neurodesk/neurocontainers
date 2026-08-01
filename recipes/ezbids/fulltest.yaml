@@ -17,7 +17,6 @@
 
 name: ezbids
 version: 1.1.0
-container: ezbids_1.1.0_20260127.simg
 
 required_files:
   - dataset: ds000001

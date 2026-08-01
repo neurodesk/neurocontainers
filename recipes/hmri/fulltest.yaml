@@ -19,7 +19,6 @@
 
 name: hmri
 version: 0.6.1
-container: hmri_0.6.1_20231107.simg
 
 # Define path variables for convenience
 paths:

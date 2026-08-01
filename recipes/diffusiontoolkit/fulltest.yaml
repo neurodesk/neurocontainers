@@ -38,7 +38,6 @@
 
 name: diffusiontoolkit
 version: 0.6.4.1
-container: diffusiontoolkit_0.6.4.1_20220303.simg
 
 required_files:
   - dataset: ds000001

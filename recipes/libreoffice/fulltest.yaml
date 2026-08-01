@@ -1,4 +1,5 @@
 name: libreoffice
+version: 26.2.4
 default_timeout: 120
 
 tests:

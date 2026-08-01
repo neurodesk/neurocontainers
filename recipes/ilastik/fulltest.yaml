@@ -21,7 +21,6 @@
 
 name: ilastik
 version: 1.4.0
-container: ilastik_1.4.0_20230720.simg
 
 test_data:
   # ilastik works with various image formats

@@ -27,6 +27,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 import yaml
 
+from builder.release_artifact import normalise_image_basename, release_filename
+
 
 class ContainerRuntime:
     """Base class for container runtime implementations"""
@@ -473,31 +475,8 @@ class ReleaseContainerDownloader:
             size /= 1024
         return f"{size_bytes} B"
 
-    @staticmethod
-    def normalise_image_basename(image: Optional[str]) -> Optional[str]:
-        """Return a safe SIF image basename from release metadata."""
-        if not image:
-            return None
-
-        image_text = str(image).strip()
-        parsed = urllib.parse.urlparse(image_text)
-        image_path = parsed.path if parsed.scheme and parsed.path else image_text
-        basename = image_path.replace("\\", "/").rsplit("/", 1)[-1]
-        if basename.endswith(".simg"):
-            basename = basename[:-5]
-        elif basename.endswith(".sif"):
-            basename = basename[:-4]
-        basename = basename.strip()
-        if not basename or basename in {".", ".."}:
-            return None
-        return basename
-
-    @staticmethod
-    def release_filename(image_basename: str, build_date: str) -> str:
-        """Return the release SIF filename for an image basename and build date."""
-        if image_basename.endswith(f"_{build_date}"):
-            return f"{image_basename}.simg"
-        return f"{image_basename}_{build_date}.simg"
+    normalise_image_basename = staticmethod(normalise_image_basename)
+    release_filename = staticmethod(release_filename)
 
     def extract_image_basename_from_release(self, release_file: str) -> Optional[str]:
         """Extract the release image basename from release JSON metadata."""

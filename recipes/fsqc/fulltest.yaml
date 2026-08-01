@@ -13,7 +13,6 @@
 
 name: fsqc
 version: 2.1.4
-container: fsqc_2.1.4_20251126.simg
 
 test_data:
   output_dir: test_output

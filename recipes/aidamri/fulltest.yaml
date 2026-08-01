@@ -1,6 +1,5 @@
 name: aidamri
 version: "2.0"
-container: aidamri_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output/aidamri

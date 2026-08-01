@@ -3,7 +3,6 @@
 
 name: openreconexample
 version: 1.0.0
-container: openreconexample_1.0.0.simg
 
 test_data:
   output_dir: test_output

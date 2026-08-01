@@ -20,7 +20,6 @@
 
 name: mricron
 version: 1.0.20190902
-container: mricron_1.0.20190902_20220311.simg
 
 required_files:
   - dataset: ds000001

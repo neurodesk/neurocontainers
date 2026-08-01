@@ -1,6 +1,5 @@
 name: clinicadl
 version: 1.6.1
-container: clinicadl_${version}_REFERENCE.simg
 default_timeout: 60
 clinica_version: 0.7.7
 env_setup: |

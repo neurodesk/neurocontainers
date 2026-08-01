@@ -18,7 +18,6 @@
 
 name: bidscoin
 version: 4.6.2
-container: bidscoin_4.6.2_20250621.simg
 
 required_files:
   - dataset: ds000001

@@ -3,7 +3,6 @@
 
 name: meica
 version: 4.0.1
-container: meica_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output
@@ -165,15 +164,12 @@ tests:
       import numpy as np
       import meica
 
-
       class SequenceParameters:
           TE = [10.0, 25.0, 40.0]
           TR = [1500.0]
 
-
       class Metadata:
           sequenceParameters = SequenceParameters()
-
 
       class Connection:
           def __init__(self, images):
@@ -195,11 +191,9 @@ tests:
           def send_close(self):
               self.closed = True
 
-
       def set_vector(target, values):
           for index, value in enumerate(values):
               target[index] = value
-
 
       def mrd_image(echo, repetition):
           data = np.full((2, 3, 4), 100 * echo + 10 * repetition, dtype=np.float32)
@@ -221,7 +215,6 @@ tests:
           meta["SequenceDescription"] = "multi_echo_epi"
           image.attribute_string = meta.serialize()
           return image
-
 
       images = [
           mrd_image(echo, repetition)

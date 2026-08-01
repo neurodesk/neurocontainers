@@ -19,7 +19,6 @@
 
 name: brainstorm
 version: "3.211130"
-container: brainstorm_3.211130_20211207.simg
 
 required_files:
   - dataset: ds000001

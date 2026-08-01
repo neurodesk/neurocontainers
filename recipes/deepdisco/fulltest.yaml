@@ -1,6 +1,5 @@
 name: deepdisco
 version: '20251008'
-container: deepdisco_20251008_20260526.simg
 default_timeout: 120
 tests:
 - name: DeepDisco installation smoke test

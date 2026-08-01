@@ -21,7 +21,6 @@
 
 name: synthstrip
 version: 7.4.1
-container: synthstrip_7.4.1_20240913.simg
 
 required_files:
   - dataset: ds000001

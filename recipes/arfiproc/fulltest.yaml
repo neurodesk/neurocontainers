@@ -3,7 +3,6 @@
 
 name: arfiproc
 version: 1.0.0
-container: arfiproc_1.0.0.simg
 
 test_data:
   output_dir: test_output

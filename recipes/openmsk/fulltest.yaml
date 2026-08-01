@@ -2,8 +2,7 @@
 # Focused verification for OpenRecon runtime packaging and lightweight entrypoints.
 
 name: openmsk
-version: 0.1.7
-container: openmsk_0.1.7.simg
+version: 0.1.9
 
 test_data:
   output_dir: test_output

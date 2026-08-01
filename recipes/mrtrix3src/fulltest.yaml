@@ -1,6 +1,5 @@
 name: mrtrix3src
 version: latest
-container: mrtrix3src_${version}_REFERENCE.simg
 default_timeout: 60
 tests:
 - name: mrconvert resolves on PATH

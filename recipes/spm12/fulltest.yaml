@@ -17,7 +17,6 @@
 
 name: spm12
 version: r7771
-container: spm12_r7771_20230609.simg
 
 # Container paths
 container_paths:

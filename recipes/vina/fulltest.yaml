@@ -3,7 +3,6 @@
 
 name: vina
 version: 1.2.3
-container: vina_1.2.3.simg
 
 test_data:
   output_dir: test_output

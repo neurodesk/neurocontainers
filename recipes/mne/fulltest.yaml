@@ -1,6 +1,5 @@
 name: mne
 version: 1.12.1
-container: mne_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output

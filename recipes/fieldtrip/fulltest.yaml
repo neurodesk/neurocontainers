@@ -15,7 +15,6 @@
 
 name: fieldtrip
 version: "20220617"
-container: fieldtrip_20220617_20220627.simg
 
 # FieldTrip works with MEG/EEG data, not NIfTI. Tests use simulated data.
 # Scripts are MATLAB code to be saved as .m files and executed via the compiled runtime.

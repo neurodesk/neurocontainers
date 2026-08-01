@@ -19,7 +19,6 @@
 
 name: fatsegnet
 version: 1.0.gpu
-container: fatsegnet_1.0.gpu_20201212.simg
 
 required_files:
   - dataset: ds000001

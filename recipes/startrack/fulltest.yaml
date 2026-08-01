@@ -1,6 +1,5 @@
 name: startrack
 version: '20250920'
-container: startrack_20250920_20260526.simg
 default_timeout: 120
 tests:
 - name: StarTrack installation smoke test

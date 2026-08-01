@@ -10,8 +10,7 @@
 # help messages, and option parsing.
 
 name: topaz
-version: 0.2.5a
-container: topaz_0.2.5a_20211006.simg
+version: 0.2.5
 
 tests:
   # ==========================================================================

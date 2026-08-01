@@ -3,7 +3,6 @@
 
 name: eharmonize
 version: 1.0.0
-container: eharmonize_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output

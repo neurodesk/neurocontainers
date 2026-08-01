@@ -14,7 +14,6 @@
 
 name: conn
 version: 22a
-container: conn_22a_20231115.simg
 default_timeout: 300
 
 required_files:

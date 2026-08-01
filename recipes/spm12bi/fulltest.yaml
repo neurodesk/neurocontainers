@@ -1,6 +1,5 @@
 name: spm12bi
 version: latest
-container: spm12bi_${version}_REFERENCE.simg
 default_timeout: 240
 
 test_data:

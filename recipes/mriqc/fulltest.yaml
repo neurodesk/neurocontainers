@@ -14,7 +14,6 @@
 
 name: mriqc
 version: 24.0.2
-container: mriqc_24.0.2_20241108.simg
 
 required_files:
   - dataset: ds000001

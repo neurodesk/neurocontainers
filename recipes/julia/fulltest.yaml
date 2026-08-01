@@ -12,7 +12,6 @@
 
 name: julia
 version: 1.9.4
-container: julia_1.9.4_20240405.simg
 
 test_data:
   output_dir: test_output

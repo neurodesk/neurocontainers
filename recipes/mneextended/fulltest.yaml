@@ -1,6 +1,5 @@
 name: mneextended
 version: 1.1.0
-container: mneextended_${version}_REFERENCE.simg
 default_timeout: 60
 tests:
   - name: Python imports mne

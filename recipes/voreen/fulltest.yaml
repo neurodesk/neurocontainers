@@ -1,6 +1,5 @@
 name: voreen
 version: 5.3.0
-container: voreen_${version}_REFERENCE.simg
 default_timeout: 60
 env_setup: |
   assert_linked() {

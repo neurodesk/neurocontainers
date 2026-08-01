@@ -1,6 +1,5 @@
 name: afib1
 version: 1.6.0
-container: afib1_1.6.0.simg
 
 test_data:
   output_dir: test_output

@@ -1,3 +1,6 @@
+name: mede
+version: 0.0.12
+
 tests:
   - name: MEDE command line help
     script: |

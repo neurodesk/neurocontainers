@@ -30,7 +30,6 @@
 
 name: brainnetviewer
 version: 1.7.20191031
-container: brainnetviewer_1.7.20191031_20240904.simg
 
 required_files:
   - dataset: ds000001

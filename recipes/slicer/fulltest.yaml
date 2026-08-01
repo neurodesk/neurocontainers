@@ -15,7 +15,6 @@
 
 name: slicer
 version: 5.10.0
-container: slicer_5.10.0_20251110.simg
 
 required_files:
   - dataset: ds000001

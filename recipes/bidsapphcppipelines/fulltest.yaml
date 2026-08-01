@@ -16,8 +16,7 @@
 # individual tools available in the container.
 
 name: bidsapphcppipelines
-version: 4.3.0_20230524
-container: bidsapphcppipelines_4.3.0_20230524.simg
+version: 4.3.0
 
 required_files:
   - dataset: ds000001

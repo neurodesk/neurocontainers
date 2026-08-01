@@ -15,7 +15,6 @@
 
 name: fastsurfer
 version: 2.4.2
-container: fastsurfer_2.4.2_20260115.simg
 
 required_files:
   - dataset: ds000001

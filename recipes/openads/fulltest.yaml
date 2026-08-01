@@ -1,6 +1,5 @@
 name: openads
 version: 1.0.0
-container: openads_1.0.0.simg
 
 environment:
   OPENADS_ENABLE_WEB_UI: "0"

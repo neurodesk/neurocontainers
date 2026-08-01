@@ -3,7 +3,6 @@
 
 name: sodiumgriddingptpi
 version: 0.1.0
-container: sodiumgriddingptpi_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output

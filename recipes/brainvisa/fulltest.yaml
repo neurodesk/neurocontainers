@@ -1,3 +1,6 @@
+name: brainvisa
+version: 6.0.38
+
 tests:
   - name: BrainVISA launchers are available
     script: |

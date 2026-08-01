@@ -1,6 +1,5 @@
 name: mrsiproc
 version: 0.2.0
-container: mrsiproc_${version}_REFERENCE.simg
 
 env_setup: |
   export LD_LIBRARY_PATH=/opt/MATLAB_Runtime_R2021b/v911/runtime/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/bin/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/os/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/opengl/lib/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/extern/bin/glnxa64:$LD_LIBRARY_PATH

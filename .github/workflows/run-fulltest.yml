@@ -265,6 +265,8 @@ jobs:
               str(suite_path),
               "-c",
               str(containers_dir),
+              "--container",
+              str(container_file),
               "-o",
               str(output_json),
               "--log",

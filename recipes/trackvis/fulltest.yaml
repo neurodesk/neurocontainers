@@ -19,7 +19,6 @@
 
 name: trackvis
 version: 0.6.1
-container: trackvis_0.6.1_20220303.simg
 
 binaries:
   track_vis: /opt/trackvis-0.6.1/track_vis
