@@ -11,8 +11,7 @@
 #   - CUDA Toolkit 11.8
 
 name: relion
-version: 4.0.1
-container: relion_4.0.1.sm61_20240528.simg
+version: 4.0.1.sm75
 
 tests:
   # ==========================================================================

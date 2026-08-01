@@ -16,7 +16,6 @@
 
 name: lcmodel
 version: "6.3"
-container: lcmodel_6.3_20220222.simg
 
 test_data:
   lcmodel_dir: /opt/lcmodel-6.3/.lcmodel

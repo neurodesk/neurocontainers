@@ -3,7 +3,6 @@
 
 name: bidsmanager
 version: 1.2.3
-container: bidsmanager_1.2.3_20260624.simg
 
 setup:
   script: |

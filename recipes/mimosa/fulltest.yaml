@@ -1,6 +1,5 @@
 name: mimosa
 version: 0.5.8
-container: mimosa_${version}_REFERENCE.simg
 default_timeout: 240
 
 test_data:

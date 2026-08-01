@@ -14,7 +14,6 @@
 
 name: palmettobug
 version: 0.0.3
-container: palmettobug_0.0.3_20250424.simg
 
 test_data:
   output_dir: test_output

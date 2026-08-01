@@ -15,7 +15,6 @@
 
 name: tractseg
 version: '2.9'
-container: tractseg_2.9_20250702.simg
 
 required_files:
   - dataset: ds000001

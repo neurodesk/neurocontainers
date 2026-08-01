@@ -1,6 +1,5 @@
 name: fetalsynthseg
 version: 1.0.0
-container: fetalsynthseg_1.0.0_REFERENCE.simg
 default_timeout: 120
 
 tests:

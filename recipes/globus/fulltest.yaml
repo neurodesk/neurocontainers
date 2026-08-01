@@ -8,7 +8,6 @@
 name: globus
 globus_version: "3.2.8"
 version: "${globus_version}"
-container: globus_${globus_version}_*.simg
 
 globus_dir: /opt/globusconnectpersonal-${globus_version}
 

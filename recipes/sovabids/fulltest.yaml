@@ -9,7 +9,6 @@
 
 name: sovabids
 version: 0.3.1a0
-container: sovabids_0.3.1a0_20221202.simg
 
 # Environment activation command for all tests
 env_setup: source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate sovabids

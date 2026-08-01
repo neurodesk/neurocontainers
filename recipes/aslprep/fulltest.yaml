@@ -13,8 +13,7 @@
 # in ds000001, so we test the bundled tools (FSL, ANTs, FreeSurfer utilities)
 
 name: aslprep
-version: 0.7.5
-container: aslprep_0.7.5_20260413.simg
+version: 26.0.2
 
 required_files:
   - dataset: ds000001
@@ -45,7 +44,7 @@ tests:
   - name: ASLPrep version check
     description: Verify aslprep binary runs and reports version
     command: aslprep --version
-    expected_output_contains: "ASLPrep v0.7.5"
+    expected_output_contains: "ASLPrep v${version}"
 
   - name: ASLPrep help
     description: Verify aslprep help displays correctly

@@ -16,7 +16,6 @@
 
 name: brkraw
 version: 0.3.11
-container: brkraw_0.3.11_20240320.simg
 
 required_files:
   - dataset: ds000001

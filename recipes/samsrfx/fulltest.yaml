@@ -9,7 +9,6 @@
 
 name: samsrfx
 version: v10.004
-container: samsrfx_v10.004_20241127.simg
 
 # Note: This container runs compiled MATLAB code, so tests focus on:
 # - Container structure and file integrity

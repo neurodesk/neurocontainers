@@ -19,8 +19,12 @@ Usage:
     ./run_tests.py -l                       # List available test files
     ./run_tests.py niimath.yaml -f "smooth" # Filter tests by name pattern
     ./run_tests.py --retry results/test_results_20260210.jsonl  # Re-run failed tests
+    ./run_tests.py recipes/niimath/fulltest.yaml --container sifs/niimath.sif
 
 Test files are loaded from tests/ directory. Tests run in work/ directory.
+
+Each suite runs against the artifact described by releases/<recipe>/<version>.json
+unless --container names one explicitly; see workflows/TESTING.md.
 """
 
 import argparse
@@ -53,7 +57,14 @@ from rich.table import Table
 from rich.panel import Panel
 from rich import box
 
+try:  # Imported as builder.run_tests by the test suite, run as a script by CI.
+    from builder.release_artifact import resolve_suite_container
+except ImportError:  # pragma: no cover - exercised by `uv run builder/run_tests.py`
+    from release_artifact import resolve_suite_container
+
 console = Console()
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def container_runtime_command() -> str:
@@ -100,20 +111,11 @@ class TestSuiteResult:
     results: list[TestResult] = field(default_factory=list)
 
 
-def find_container(container_pattern: str, containers_dir: Path) -> Path | None:
-    """Find container file matching pattern."""
-    if containers_dir.exists():
-        # Try exact match first
-        exact = containers_dir / container_pattern
-        if exact.exists():
-            return exact
-
-        # Try glob pattern
-        base_name = container_pattern.replace(".simg", "").split("_")[0]
-        matches = list(containers_dir.glob(f"{base_name}_*.simg"))
-        if matches:
-            return sorted(matches)[-1]  # Return newest version
-
+def default_releases_dir() -> Path | None:
+    """Locate the release metadata tree relative to the repo or the caller."""
+    for candidate in (Path.cwd() / "releases", REPO_ROOT / "releases"):
+        if candidate.is_dir():
+            return candidate
     return None
 
 
@@ -138,6 +140,7 @@ def collect_top_level_variables(config: dict[str, Any]) -> dict[str, str]:
     """Extract top-level scalar values available for fulltest substitution."""
     reserved_keys = {
         "container",
+        "pin_container",
         "test_data",
         "setup",
         "cleanup",
@@ -619,6 +622,8 @@ def run_test_suite(
     result_queue: Any = None,
     running_tests: Any = None,
     test_names: set[str] | None = None,
+    releases_dir: Path | None = None,
+    container_override: str | None = None,
 ) -> TestSuiteResult:
     """Run all tests in a YAML file."""
     start_time = time.time()
@@ -630,14 +635,27 @@ def run_test_suite(
     suite_name = config.get("name", yaml_path.stem)
     default_timeout = config.get("default_timeout", 120)  # Default 2 minutes
     top_level_variables = collect_top_level_variables(config)
-    container_name = substitute_variables(
+    declared_container = substitute_variables(
         str(config.get("container", "")),
         top_level_variables,
     )
 
-    # Find container
-    container_path = find_container(container_name, containers_dir)
-    if not container_path:
+    resolution = resolve_suite_container(
+        recipe=str(config.get("name", "") or yaml_path.parent.name),
+        version=substitute_variables(
+            str(config.get("version", "") or ""),
+            top_level_variables,
+        ),
+        declared=declared_container,
+        pinned=bool(config.get("pin_container", False)),
+        containers_dir=containers_dir,
+        releases_dir=releases_dir,
+        override=container_override,
+    )
+    container_name = resolution.reference or declared_container
+    for note in resolution.notes:
+        console.print(f"[yellow]{suite_name}: {note}[/]")
+    if resolution.error or resolution.path is None:
         return TestSuiteResult(
             name=suite_name,
             container=container_name,
@@ -647,9 +665,10 @@ def run_test_suite(
                 name="Container lookup",
                 passed=False,
                 duration=0,
-                message=f"Container not found: {container_name}",
+                message=resolution.error or f"Container not found: {container_name}",
             )],
         )
+    container_path = resolution.path
 
     # Prepare required data files (datalad cache + hardlinks)
     required_files = config.get("required_files", [])
@@ -932,11 +951,13 @@ def run_test_suite(
 
 def run_test_suite_wrapper(args: tuple) -> TestSuiteResult:
     """Wrapper for parallel execution."""
-    yaml_path, containers_dir, work_dir, test_filter, verbose, result_queue, running_tests, test_names = args
+    (yaml_path, containers_dir, work_dir, test_filter, verbose, result_queue, running_tests,
+     test_names, releases_dir, container_override) = args
     return run_test_suite(
         yaml_path, containers_dir, work_dir, test_filter, verbose,
         on_test_complete=None, result_queue=result_queue, running_tests=running_tests,
-        test_names=test_names,
+        test_names=test_names, releases_dir=releases_dir,
+        container_override=container_override,
     )
 
 
@@ -969,6 +990,21 @@ def main():
         type=Path,
         default=Path("containers"),
         help="Directory containing container files (default: containers)",
+    )
+    parser.add_argument(
+        "--container",
+        type=str,
+        help="Run every suite against this container file, overriding release resolution",
+    )
+    parser.add_argument(
+        "--releases-dir",
+        type=Path,
+        help="Release metadata tree used to resolve container artifacts (default: ./releases)",
+    )
+    parser.add_argument(
+        "--no-release-metadata",
+        action="store_true",
+        help="Ignore releases/ and resolve containers from containers-dir alone",
     )
     parser.add_argument(
         "--work-dir",
@@ -1044,6 +1080,13 @@ def main():
     work_dir = args.work_dir.resolve()
     containers_dir = args.containers_dir.resolve()
 
+    if args.no_release_metadata:
+        releases_dir = None
+    elif args.releases_dir is not None:
+        releases_dir = args.releases_dir.resolve()
+    else:
+        releases_dir = default_releases_dir()
+
     # Ensure work directory exists
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1074,8 +1117,9 @@ def main():
     if args.yaml_files:
         yaml_files = []
         for pattern in args.yaml_files:
-            # Check tests/ directory first
-            yaml_files.extend(tests_dir.glob(pattern))
+            # Check tests/ directory first (Path.glob rejects absolute patterns)
+            if not Path(pattern).is_absolute():
+                yaml_files.extend(tests_dir.glob(pattern))
             # Also check if absolute/relative path was given
             if Path(pattern).exists():
                 yaml_files.append(Path(pattern))
@@ -1237,7 +1281,8 @@ def main():
                     executor.submit(
                         run_test_suite_wrapper,
                         (yaml_path, containers_dir, work_dir, args.filter, False, result_queue, running_tests,
-                         retry_map.get(_yaml_suite_name(yaml_path)) if retry_map else None),
+                         retry_map.get(_yaml_suite_name(yaml_path)) if retry_map else None,
+                         releases_dir, args.container),
                     ): yaml_path
                     for yaml_path in yaml_files
                 }
@@ -1265,6 +1310,8 @@ def main():
                 verbose=not args.quiet,
                 on_test_complete=write_test_result_callback,
                 test_names=suite_test_names,
+                releases_dir=releases_dir,
+                container_override=args.container,
             )
             all_results.append(result)
 

@@ -1,6 +1,5 @@
 name: brainlesion
 version: 1.0.0
-container: brainlesion_${version}_REFERENCE.simg
 default_timeout: 120
 
 env:

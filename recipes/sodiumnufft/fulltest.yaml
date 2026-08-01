@@ -3,7 +3,6 @@
 
 name: sodiumnufft
 version: 0.1.10
-container: sodiumnufft_0.1.10.simg
 
 test_data:
   output_dir: test_output

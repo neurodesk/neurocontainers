@@ -1,6 +1,5 @@
 name: blender
 version: 5.0.1
-container: blender_5.0.1_20260304.simg
 default_timeout: 120
 tests:
 - name: Check blender version

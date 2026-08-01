@@ -9,7 +9,6 @@
 
 name: surfice
 version: 1.0.20210730
-container: surfice_1.0.20210730_20211218.simg
 
 # Environment setup for headless rendering
 env:

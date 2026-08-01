@@ -22,7 +22,6 @@
 
 name: gingerale
 version: 3.0.2
-container: gingerale_3.0.2_20250804.simg
 
 test_data:
   output_dir: test_output

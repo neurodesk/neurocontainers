@@ -1,6 +1,5 @@
 name: mipav
 version: 11.3.3
-container: mipav_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output/mipav

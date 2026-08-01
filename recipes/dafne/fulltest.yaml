@@ -5,7 +5,6 @@
 
 name: dafne
 version: 1.8a4
-container: dafne_1.8a4_20260602.simg
 
 default_timeout: 120
 

@@ -1,6 +1,5 @@
 name: lesionquantificationtoolkit
 version: 0.1.0
-container: lesionquantificationtoolkit_${version}_REFERENCE.simg
 default_timeout: 60
 tests:
   - name: R resolves on PATH

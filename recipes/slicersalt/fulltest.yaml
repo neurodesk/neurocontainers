@@ -9,7 +9,6 @@
 
 name: slicersalt
 version: 3.0.0
-container: slicersalt_3.0.0_20210301.simg
 
 # Environment setup required for CLI modules
 env:

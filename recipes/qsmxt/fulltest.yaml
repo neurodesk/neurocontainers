@@ -1,6 +1,5 @@
 name: qsmxt
-version: 9.0.6
-container: qsmxt_9.0.6.simg
+version: 9.8.1
 
 test_data:
   output_dir: test_output
@@ -134,24 +133,19 @@ tests:
       import numpy as np
       import qsmxt
 
-
       class FakeAcquisitionSystemInformation:
           systemFieldStrength_T = 7.0
-
 
       class FakeMeasurementInformation:
           protocolName = "gre_qsm"
 
-
       class FakeSequenceParameters:
           TE = [20.0]
-
 
       class FakeMetadata:
           acquisitionSystemInformation = FakeAcquisitionSystemInformation()
           measurementInformation = FakeMeasurementInformation()
           sequenceParameters = FakeSequenceParameters()
-
 
       class FakeConnection:
           def __init__(self, images):
@@ -173,12 +167,10 @@ tests:
           def send_close(self):
               self.closed = True
 
-
       def set_header_vector(header, field_name, values):
           target = getattr(header, field_name)
           for index, value in enumerate(values):
               target[index] = value
-
 
       def image(series_index, image_index, sequence, data, image_type=ismrmrd.IMTYPE_MAGNITUDE):
           mrd_image = ismrmrd.Image.from_array(data.astype(np.float32), transpose=False)
@@ -198,7 +190,6 @@ tests:
           meta["SequenceDescription"] = sequence
           mrd_image.attribute_string = meta.serialize()
           return mrd_image
-
 
       shape_zyx = (2, 3, 4)
       images = [

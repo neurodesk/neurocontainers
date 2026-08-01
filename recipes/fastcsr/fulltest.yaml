@@ -16,8 +16,7 @@
 #           https://doi.org/10.1186/s40708-022-00155-7
 
 name: fastcsr
-version: "1.0_20231213"
-container: fastcsr_1.0_20231213.simg
+version: "1.0"
 
 required_files:
   - dataset: ds000001

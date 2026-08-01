@@ -16,7 +16,6 @@
 
 name: qsirecon
 version: 1.1.0
-container: qsirecon_1.1.0_20250423.simg
 
 required_files:
   - dataset: ds000001

@@ -1,3 +1,6 @@
+name: brainsuite
+version: 23a
+
 tests:
   - name: BrainSuite BIDS App runner is available
     script: |

@@ -1,6 +1,5 @@
 name: civet
 version: 2.1.1
-container: civet_${version}_REFERENCE.simg
 default_timeout: 60
 env_setup: |
   assert_linked() {

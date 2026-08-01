@@ -3,7 +3,6 @@
 
 name: openreconi2iexample
 version: 1.0.89
-container: openreconi2iexample_1.0.89.simg
 
 test_data:
   output_dir: test_output

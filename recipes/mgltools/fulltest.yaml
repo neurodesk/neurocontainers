@@ -12,7 +12,6 @@
 
 name: mgltools
 version: 1.5.7
-container: mgltools_1.5.7_20230313.simg
 
 # Note: MGLTools uses Python 2.7 and specialized scripts
 # Most utilities are in /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/

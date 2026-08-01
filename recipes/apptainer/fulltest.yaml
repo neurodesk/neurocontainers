@@ -7,7 +7,6 @@
 
 name: apptainer
 version: 1.4.4
-container: apptainer_1.4.4*.simg
 
 setup:
   script: |

@@ -5,7 +5,6 @@
 
 name: rapidtide
 version: 3.1.11
-container: rapidtide_3.1.11.simg
 
 tests:
   - name: rapidtide launcher available

@@ -1,6 +1,5 @@
 name: vertexwiser
 version: 1.5.1
-container: vertexwiser_${version}_REFERENCE.simg
 default_timeout: 180
 
 test_data:

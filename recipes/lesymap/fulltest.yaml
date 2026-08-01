@@ -19,7 +19,6 @@
 
 name: lesymap
 version: 0.0.0.9222
-container: lesymap_0.0.0.9222_20250730.simg
 
 required_files:
   - dataset: ds000001

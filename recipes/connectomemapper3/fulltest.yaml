@@ -1,6 +1,5 @@
 name: connectomemapper3
 version: 3.2.0
-container: connectomemapper3_${version}_REFERENCE.simg
 default_timeout: 240
 
 test_data:

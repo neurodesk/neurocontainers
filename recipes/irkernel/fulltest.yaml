@@ -1,6 +1,5 @@
 name: irkernel
 version: 4.4.3
-container: irkernel_4.4.3.simg
 
 test_data:
   output_dir: test_output

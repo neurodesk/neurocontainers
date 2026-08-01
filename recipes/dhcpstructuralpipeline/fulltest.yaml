@@ -1,6 +1,5 @@
 name: dhcpstructuralpipeline
 version: "1.1"
-container: dhcpstructuralpipeline_1.1_REFERENCE.simg
 default_timeout: 120
 
 tests:

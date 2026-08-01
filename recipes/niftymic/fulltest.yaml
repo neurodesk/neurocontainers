@@ -1,6 +1,5 @@
 name: niftymic
 version: 0.9
-container: niftymic_0.9_REFERENCE.simg
 default_timeout: 120
 
 tests:

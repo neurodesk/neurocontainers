@@ -14,7 +14,6 @@
 
 name: cat12
 version: "26.0.rc3"
-container: cat12_26.0.rc3_20260519.simg
 
 # Container paths
 container_paths:

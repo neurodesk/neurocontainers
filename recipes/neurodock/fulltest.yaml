@@ -14,7 +14,6 @@
 
 name: neurodock
 version: 1.0.0
-container: neurodock_1.0.0_20241122.simg
 
 required_files:
   - dataset: ds000001

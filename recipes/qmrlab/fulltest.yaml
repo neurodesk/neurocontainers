@@ -19,7 +19,6 @@
 
 name: qmrlab
 version: 2.4.2
-container: qmrlab_2.4.2_20240828.simg
 
 required_files:
   - dataset: ds000001

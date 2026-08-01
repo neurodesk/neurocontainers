@@ -1,6 +1,5 @@
 name: terastitcher
 version: 1.11.10
-container: terastitcher_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output/terastitcher

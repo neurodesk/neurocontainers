@@ -1,6 +1,5 @@
 name: gouhfi
 version: 0.0.1
-container: gouhfi_0.0.1_20260527.simg
 default_timeout: 300
 
 env:

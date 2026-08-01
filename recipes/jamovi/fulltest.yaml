@@ -1,6 +1,5 @@
 name: jamovi
 version: 2.7.4
-container: jamovi_2.7.4_20260527.simg
 default_timeout: 120
 tests:
 - name: Test jamovi version

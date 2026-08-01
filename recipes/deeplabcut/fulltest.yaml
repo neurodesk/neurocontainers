@@ -1,6 +1,5 @@
 name: deeplabcut
 version: 2.3.11
-container: deeplabcut_${version}_REFERENCE.simg
 default_timeout: 60
 tests:
   - name: deeplabcut imports

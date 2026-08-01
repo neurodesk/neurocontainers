@@ -15,7 +15,6 @@
 
 name: gigaconnectome
 version: 0.6.0
-container: gigaconnectome_0.6.0_20250630.simg
 
 required_files:
   - dataset: ds000001

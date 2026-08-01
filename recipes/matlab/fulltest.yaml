@@ -1,12 +1,15 @@
 # matlab container test suite
-# Tests for MATLAB R2022b - MathWorks scientific computing environment
+# Tests for MATLAB - MathWorks scientific computing environment
 #
 # These tests verify container integrity WITHOUT requiring a MATLAB license.
 # All tests use file system checks, binary availability, help output, and
 # version info extraction rather than matlab -batch (which needs a license).
 #
+# Everything below is keyed off ${version}, so the suite follows the release
+# the recipe builds instead of needing an edit at each MATLAB upgrade.
+#
 # Container includes:
-#   - MATLAB R2022b (Update 7) at /opt/matlab/R2022b/
+#   - MATLAB at /opt/matlab/R${version}/
 #   - Image Processing Toolbox
 #   - Signal Processing Toolbox
 #   - Statistics and Machine Learning Toolbox
@@ -15,7 +18,6 @@
 #   - Computer Vision Toolbox
 #   - Bioinformatics Toolbox
 #   - Text Analytics Toolbox
-#   - ~37 toolbox directories total
 #
 # Not included in this build:
 #   - Optimization Toolbox (optim)
@@ -26,11 +28,10 @@
 #   - No bundled Boost libraries
 
 name: matlab
-version: R2022b
-container: matlab_2022b_20250124.simg
+version: 2025b
 
 test_data:
-  matlab_root: /opt/matlab/R2022b
+  matlab_root: /opt/matlab/R${version}
   output_dir: test_output
 
 setup:
@@ -88,22 +89,10 @@ tests:
     expected_output_contains: "VersionInfo OK"
     expected_exit_code: 0
 
-  - name: Version is R2022b
+  - name: Release matches the recipe version
     description: Extract release version from VersionInfo.xml
-    command: grep -o 'R2022b' ${matlab_root}/VersionInfo.xml | head -1
-    expected_output_contains: "R2022b"
-    expected_exit_code: 0
-
-  - name: Version number 9.13
-    description: Extract numeric version from VersionInfo.xml
-    command: grep -oP 'version>9\.13' ${matlab_root}/VersionInfo.xml | head -1
-    expected_output_contains: "9.13"
-    expected_exit_code: 0
-
-  - name: Update 7 installed
-    description: Verify update level from VersionInfo.xml
-    command: grep -oP 'description>[^<]*Update 7' ${matlab_root}/VersionInfo.xml | head -1
-    expected_output_contains: "Update 7"
+    command: grep -o "R${version}" ${matlab_root}/VersionInfo.xml | head -1
+    expected_output_contains: "R${version}"
     expected_exit_code: 0
 
   # ==========================================================================

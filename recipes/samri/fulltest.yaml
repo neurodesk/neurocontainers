@@ -1,3 +1,6 @@
+name: samri
+version: "0.5"
+
 tests:
   - name: SAMRI command line help
     script: |
