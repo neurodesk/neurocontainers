@@ -99,6 +99,19 @@ def test_detect_recipes_accepts_recipe_only_change(tmp_path: Path, monkeypatch) 
     assert one_pr_release.detect_recipes("base", "head") == ["demo"]
 
 
+def test_detect_recipes_allows_pr_without_recipes(tmp_path: Path, monkeypatch) -> None:
+    """The release gate is required on every PR, so a non-recipe PR must pass."""
+    write_recipe(tmp_path)
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        one_pr_release,
+        "changed_files",
+        lambda base, head: ["builder/cli.py", "README.md"],
+    )
+
+    assert one_pr_release.detect_recipes("base", "head") == []
+
+
 def test_detect_recipes_rejects_mixed_pr(tmp_path: Path, monkeypatch) -> None:
     """Mixed automation and recipe changes cannot cross the trust boundary."""
     write_recipe(tmp_path)

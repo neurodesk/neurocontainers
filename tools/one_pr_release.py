@@ -104,7 +104,10 @@ def detect_recipes(base: str, head: str) -> list[str]:
         and parts[2] == "build.yaml"
     }
     if not recipes:
-        raise RuntimeError("No recipes/*/build.yaml change found")
+        # Not an error: the release gate is a required status check, so it also
+        # runs on pull requests that touch no recipe. An empty list tells the
+        # workflow there is nothing to build.
+        return []
 
     allowed = tuple(f"recipes/{recipe}/" for recipe in recipes)
     unrelated = [path for path in paths if not path.startswith(allowed)]
