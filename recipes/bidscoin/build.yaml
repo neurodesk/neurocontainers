@@ -10,6 +10,9 @@ architectures:
   - x86_64
   - aarch64
 
+auto_update:
+  method: github_release
+  repo: Donders-Institute/bidscoin
 build:
   kind: neurodocker
 

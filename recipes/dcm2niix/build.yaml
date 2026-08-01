@@ -12,6 +12,9 @@ architectures:
 variables:
   dcm2niix_source_dir: dcm2niix-{{ context.version | replace('v', '', 1) }}
 
+auto_update:
+  method: github_release
+  repo: rordenlab/dcm2niix
 build:
   kind: neurodocker
 

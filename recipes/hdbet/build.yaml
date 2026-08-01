@@ -5,6 +5,9 @@ architectures:
   - x86_64
   - aarch64
 
+auto_update:
+  method: github_release
+  repo: MIC-DKFZ/HD-BET
 build:
   kind: neurodocker
   base-image: ubuntu:20.04

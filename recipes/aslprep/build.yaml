@@ -5,6 +5,9 @@ copyright:
     url: https://github.com/pennlinc/aslprep/blob/main/LICENSE.md
 architectures:
   - x86_64
+auto_update:
+  method: github_release
+  repo: pennlinc/aslprep
 build:
   kind: neurodocker
   base-image: pennlinc/aslprep:{{ context.version }}

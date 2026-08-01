@@ -5,6 +5,9 @@ version: "21a"
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: bids-apps/BrainSuite
 build:
   kind: neurodocker
   base-image: bids/brainsuite:v21a

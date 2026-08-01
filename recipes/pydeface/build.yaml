@@ -13,6 +13,9 @@ variables:
   conda_dir: /opt/miniconda-{{ context.conda_version }}
   conda_download_url: https://repo.anaconda.com/miniconda/Miniconda3-{{ context.conda_version }}-Linux-x86_64.sh
 
+auto_update:
+  method: github_release
+  repo: poldracklab/pydeface
 build:
   kind: neurodocker
 

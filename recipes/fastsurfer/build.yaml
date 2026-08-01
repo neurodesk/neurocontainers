@@ -76,6 +76,9 @@ readme: |-
   To run container outside of this environment: ml fastsurfer/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: github_release
+  repo: Deep-MI/FastSurfer
 build:
   kind: neurodocker
   base-image: deepmi/fastsurfer:cpu-v{{ context.version }}

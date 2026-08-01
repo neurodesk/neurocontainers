@@ -15,6 +15,9 @@ variables:
   niftyreg_revision: 83d8d1182ed4c227ce4764f1fdab3b1797eecd8d
   fsl_version: 5.0.11
 
+auto_update:
+  method: github_release
+  repo: Aswendt-Lab/AIDAmri
 build:
   kind: neurodocker
   base-image: ubuntu:20.04

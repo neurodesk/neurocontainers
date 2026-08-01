@@ -8,6 +8,9 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: FCP-INDI/C-PAC
 build:
   kind: neurodocker
 

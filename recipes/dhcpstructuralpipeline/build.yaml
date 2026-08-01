@@ -8,6 +8,9 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: BioMedIA/dhcp-structural-pipeline
 build:
   kind: neurodocker
   base-image: biomedia/dhcp-structural-pipeline:latest

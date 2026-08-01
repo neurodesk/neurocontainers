@@ -14,6 +14,9 @@ files:
   - name: cartool_installer
     url: "{{ context.cartool_installer_url }}"
 
+auto_update:
+  method: github_release
+  repo: DenisBrunet/Cartool
 build:
   kind: neurodocker
   base-image: ubuntu:22.04

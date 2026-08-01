@@ -55,6 +55,9 @@ readme: |-
 
   ----------------------------------
 
+auto_update:
+  method: github_release
+  repo: rubykong/cbig_network_correspondence
 build:
   kind: neurodocker
 

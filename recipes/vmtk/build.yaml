@@ -12,6 +12,9 @@ variables:
   miniforge_version: 24.7.1-2
   python_version: "3.10"
 
+auto_update:
+  method: github_release
+  repo: vmtk/vmtk
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

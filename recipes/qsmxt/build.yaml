@@ -18,6 +18,9 @@ variables:
       - value: qsmxt_aarch64_tar_gz
         condition: arch == "aarch64"
 
+auto_update:
+  method: github_release
+  repo: QSMxT/QSMxT
 build:
   kind: neurodocker
   # QSMxT v9 is a single self-contained Rust binary (https://github.com/QSMxT/QSMxT).

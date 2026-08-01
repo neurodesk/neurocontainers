@@ -8,6 +8,9 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: korbinian90/CompileMRI.jl
 build:
   kind: neurodocker
 

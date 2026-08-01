@@ -5,6 +5,9 @@ copyright:
     url: https://github.com/lipsia-fmri/lipsia/blob/master/LICENSE.md
 architectures:
   - x86_64
+auto_update:
+  method: github_release
+  repo: lipsia-fmri/lipsia
 build:
   kind: neurodocker
   base-image: ubuntu:18.04

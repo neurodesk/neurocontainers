@@ -6,6 +6,9 @@ copyright:
 architectures:
   - x86_64
   - aarch64
+auto_update:
+  method: github_release
+  repo: neurolabusc/MRIcron
 build:
   kind: neurodocker
   base-image: centos:7

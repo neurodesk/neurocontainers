@@ -68,6 +68,9 @@ readme: |-
   To run container outside of this environment: ml fsqc/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: github_release
+  repo: deep-mi/fsqc
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

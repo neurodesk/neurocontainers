@@ -17,6 +17,9 @@ variables:
   mrtrix3_source_dir: /src/mrtrix3
   install_path: /opt/mrtrix3
 
+auto_update:
+  method: github_release
+  repo: Lestropie/dwidenoise2
 build:
   kind: neurodocker
   base-image: debian:bookworm-slim

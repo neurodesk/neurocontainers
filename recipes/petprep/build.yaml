@@ -5,6 +5,9 @@ copyright:
     url: https://github.com/nipreps/petprep/blob/main/LICENSE
 architectures:
   - x86_64
+auto_update:
+  method: github_release
+  repo: nipreps/petprep
 build:
   kind: neurodocker
   base-image: nipreps/petprep:{{ context.version }}

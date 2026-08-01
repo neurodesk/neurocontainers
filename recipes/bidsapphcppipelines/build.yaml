@@ -5,6 +5,9 @@ version: 4.3.0
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: bids-apps/HCPPipelines
 build:
   kind: neurodocker
   base-image: bids/hcppipelines:v4.3.0-3

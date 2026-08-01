@@ -11,6 +11,9 @@ architectures:
 variables:
   prequal_dir: /opt/PreQual-{{ context.version }}
 
+auto_update:
+  method: github_release
+  repo: MASILab/PreQual
 build:
   kind: neurodocker
   base-image: ubuntu:20.04

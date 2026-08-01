@@ -17,6 +17,9 @@ files:
   - name: dependencies.R
     filename: dependencies.R
 
+auto_update:
+  method: github_release
+  repo: jlizier/jidt
 build:
   kind: neurodocker
   base-image: ubuntu:22.04

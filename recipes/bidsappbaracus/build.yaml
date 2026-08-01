@@ -5,6 +5,9 @@ version: 1.1.4
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: bids-apps/baracus
 build:
   kind: neurodocker
   base-image: bids/baracus:v1.1.4

@@ -4,6 +4,9 @@ version: 2.1.3
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: BrainLesion/panoptica
 build:
   kind: neurodocker
   base-image: ubuntu:22.04

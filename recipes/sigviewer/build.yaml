@@ -8,6 +8,9 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: cbrnr/sigviewer
 build:
   kind: neurodocker
   base-image: neurodebian:bullseye

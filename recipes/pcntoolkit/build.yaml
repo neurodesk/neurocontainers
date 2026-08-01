@@ -33,6 +33,9 @@ structured_readme:
     Al-Khaledi, A., Wolfers, T., Beckmann, C. F., Kia, S. M., & Marquand, A. F. (2026). 
     Protocol update: The Normative Modelling Paradigm for Computational Psychiatry. 
     bioRxiv [Preprint]. https://doi.org/10.64898/2026.02.17.706268.
+auto_update:
+  method: github_release
+  repo: predictive-clinical-neuroscience/PCNtoolkit
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

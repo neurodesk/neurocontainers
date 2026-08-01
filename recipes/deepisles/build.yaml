@@ -49,6 +49,9 @@ readme: |-
 
   ----------------------------------
 
+auto_update:
+  method: github_release
+  repo: ezequieldlrosa/DeepIsles
 build:
   kind: neurodocker
 

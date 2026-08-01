@@ -14,6 +14,9 @@ architectures:
   - x86_64
   - aarch64
 
+auto_update:
+  method: github_release
+  repo: astewartau/dicompare-web
 build:
   kind: neurodocker
   base-image: ubuntu:22.04

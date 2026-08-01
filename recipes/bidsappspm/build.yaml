@@ -5,6 +5,9 @@ version: 0.0.20
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: bids-apps/SPM
 build:
   kind: neurodocker
   base-image: bids/spm:v0.0.20

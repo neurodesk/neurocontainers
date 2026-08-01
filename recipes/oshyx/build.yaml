@@ -4,6 +4,9 @@ version: "0.4"
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: Cadaei-Yuvxvs/OSHy-X
 build:
   kind: neurodocker
   base-image: jerync/oshyx_0.4:20220614

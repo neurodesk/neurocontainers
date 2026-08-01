@@ -49,6 +49,9 @@ structured_readme:
 
     Neuroimage 215 (2020): 116835.
     https://doi.org/10.1016/j.neuroimage.2020.116835
+auto_update:
+  method: github_release
+  repo: daducci/AMICO
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

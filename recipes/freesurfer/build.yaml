@@ -10,6 +10,9 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: freesurfer/freesurfer
 build:
   kind: neurodocker
 

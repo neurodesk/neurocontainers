@@ -22,6 +22,9 @@ files:
   - name: cat12.zip
     url: https://github.com/ChristianGaser/cat12/releases/download/{{ context.version }}/cat-standalone-Linux.zip
 
+auto_update:
+  method: github_release
+  repo: ChristianGaser/cat12
 build:
   kind: neurodocker
 

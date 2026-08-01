@@ -45,6 +45,9 @@ files:
   - name: mouse_brain_atlases_generator_source
     url: https://codeload.github.com/IBT-FMI/mouse-brain-atlases_generator/tar.gz/{{ context.mouse_brain_atlases_generator_commit }}
 
+auto_update:
+  method: github_release
+  repo: IBT-FMI/SAMRI
 build:
   kind: neurodocker
   base-image: vnmd/fsl_6.0.3:20200905
