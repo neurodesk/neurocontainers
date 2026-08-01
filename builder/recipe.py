@@ -19,7 +19,7 @@ from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
 from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT, sha256_text
-from .variants import concrete_variant_specs, variant_specs
+from .variants import concrete_variant_specs, forced_variant_spec, variant_specs
 
 
 ARCHITECTURE_ALIASES = {
@@ -369,6 +369,15 @@ def compile_recipe(
         ]
     if requested_arch is not None:
         candidates = [spec for spec in candidates if spec["architecture"] == requested_arch]
+    if not candidates and ignore_architecture:
+        forced_arch = requested_arch
+        if forced_arch is None:
+            forced_arch = (
+                "aarch64"
+                if requested_variant == "arm64" or requested_variant.endswith("_arm64")
+                else normalize_architecture(None)
+            )
+        candidates = [forced_variant_spec(recipe, requested_variant, forced_arch)]
     if not candidates:
         available = ", ".join(str(spec["variant"]) or "default" for spec in specs)
         raise ValueError(

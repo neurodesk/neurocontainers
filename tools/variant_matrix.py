@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import yaml
@@ -21,6 +22,12 @@ def build_matrix(
     matrix: list[dict[str, str]] = []
     for application in applications:
         recipe_path = repo_root / "recipes" / application / "build.yaml"
+        if not recipe_path.is_file():
+            # A deleted recipe still shows up in the changed-paths list. Skipping
+            # it keeps the rest of the batch buildable; failing here would expand
+            # one missing recipe into zero builds for every other application.
+            print(f"skipping {application}: no build.yaml", file=sys.stderr)
+            continue
         recipe = yaml.safe_load(recipe_path.read_text(encoding="utf-8"))
         for spec in variant_specs(recipe):
             architecture = spec["architecture"]

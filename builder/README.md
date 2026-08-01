@@ -100,6 +100,12 @@ example above produces `qsmxt_gpu` and `qsmxt_gpu_arm64`. Variant `options`
 preset the same boolean recipe options used by `context.options.<name>`
 conditions.
 
+Each concrete identity is a container in its own right: it builds as its own PR
+candidate, publishes to its own `ghcr.io`/`quay.io` repository, and gets its own
+`releases/<container>/<version>.json`. Adding `aarch64` to a recipe therefore
+adds an ARM64 build to every PR that touches it, so declare it only once the
+recipe actually builds on ARM64.
+
 If your readme is externally hosted you can include it using `readme_url`.
 
 ```yaml

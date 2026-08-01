@@ -113,12 +113,23 @@ jobs:
         esac
         echo "runner=${runner}"
         echo "runner=${runner}" >> "$GITHUB_OUTPUT"
+        # A dispatch picks one runner, but a recipe can declare both
+        # architectures. The architecture the choice does not cover falls back
+        # to a pool this repository can actually schedule: forks have no access
+        # to the ARC or Blacksmith runner groups.
+        if [ "${GITHUB_REPOSITORY}" = "neurodesk/neurocontainers" ]; then
+          fallback_x86='"blacksmith-8vcpu-ubuntu-2404"'
+          fallback_arm64='"blacksmith-8vcpu-ubuntu-2404-arm"'
+        else
+          fallback_x86='"ubuntu-22.04"'
+          fallback_arm64='"ubuntu-24.04-arm"'
+        fi
         if [[ "$CHOICE" == *"arm"* ]]; then
-          echo 'default_runner="blacksmith-8vcpu-ubuntu-2404"' >> "$GITHUB_OUTPUT"
+          echo "default_runner=${fallback_x86}" >> "$GITHUB_OUTPUT"
           echo "arm64_runner=${runner}" >> "$GITHUB_OUTPUT"
         else
           echo "default_runner=${runner}" >> "$GITHUB_OUTPUT"
-          echo 'arm64_runner="blacksmith-8vcpu-ubuntu-2404-arm"' >> "$GITHUB_OUTPUT"
+          echo "arm64_runner=${fallback_arm64}" >> "$GITHUB_OUTPUT"
         fi
     - name: Expand named variants
       id: expand_variants

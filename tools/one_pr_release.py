@@ -22,12 +22,16 @@ if str(SCRIPT_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPT_REPO_ROOT))
 
 from builder.release import release_data
+from builder.variants import concrete_variant_specs
 
 REPO_ROOT = SCRIPT_REPO_ROOT
 VERSION_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 RECIPE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 CANDIDATE_MANIFEST_FIELDS = (
     "recipe",
+    "container",
+    "variant",
+    "architecture",
     "version",
     "build_date",
     "image_name",
@@ -151,8 +155,24 @@ def load_recipe(recipe: str) -> dict[str, Any]:
     return data
 
 
-def inspect_recipe(recipe: str, head_sha: str) -> dict[str, str]:
-    """Derive safe candidate names and release identifiers for a recipe."""
+def resolve_variant(recipe: str, variant: str) -> dict[str, Any]:
+    """Return the declared concrete identity for a recipe variant selector.
+
+    The selector reaches promotion inside an untrusted candidate manifest, so it
+    is always resolved against the merged recipe rather than trusted as a name.
+    """
+    data = load_recipe(recipe)
+    for spec in concrete_variant_specs(data):
+        if str(spec["variant"]) == variant:
+            return spec
+    declared = ", ".join(str(spec["variant"]) or "default" for spec in concrete_variant_specs(data))
+    raise RuntimeError(
+        f"Recipe {recipe} does not declare variant {variant or 'default'!r}; declared: {declared}"
+    )
+
+
+def inspect_recipe(recipe: str, head_sha: str, variant: str = "") -> dict[str, str]:
+    """Derive safe candidate names and release identifiers for a recipe variant."""
     data = load_recipe(recipe)
     if "version" not in data:
         raise RuntimeError(f"Recipe {recipe} build.yaml is missing a version field")
@@ -162,14 +182,19 @@ def inspect_recipe(recipe: str, head_sha: str) -> dict[str, str]:
             f"Recipe {recipe} has an invalid version {version!r}; "
             "use only letters, numbers, dots, underscores, and hyphens"
         )
+    spec = resolve_variant(recipe, variant)
+    container = validate_recipe_identifier(str(spec["name"]))
     date = build_date(recipe, head_sha)
-    image_name = f"{recipe}_{version}"
+    image_name = f"{container}_{version}"
     return {
         "recipe": recipe,
+        "container": container,
+        "variant": variant,
+        "architecture": str(spec["architecture"]),
         "version": version,
         "build_date": date,
         "image_name": image_name,
-        "candidate_tag": f"nd-candidate-{recipe}:{head_sha[:12]}",
+        "candidate_tag": f"nd-candidate-{container}:{head_sha[:12]}",
         "docker_archive": f"{image_name}_{date}.docker.tar",
         "sif": f"{image_name}_{date}.simg",
     }
@@ -187,19 +212,43 @@ def write_output(values: dict[str, str]) -> None:
             handle.write(f"{key}={value}\n")
 
 
+def detect_targets(recipes: list[str]) -> list[dict[str, str]]:
+    """Expand changed recipes into the concrete containers they now declare."""
+    targets = []
+    for recipe in recipes:
+        for spec in concrete_variant_specs(load_recipe(recipe)):
+            targets.append(
+                {
+                    "recipe": recipe,
+                    "variant": str(spec["variant"]),
+                    "architecture": str(spec["architecture"]),
+                    # The identity becomes an artifact name and a build path, so
+                    # it is checked here rather than only at promotion time.
+                    "container": validate_recipe_identifier(str(spec["name"])),
+                }
+            )
+    return targets
+
+
 def command_detect(args: argparse.Namespace) -> None:
     """Implement the detect CLI command."""
-    write_output({"recipes": json.dumps(detect_recipes(args.base, args.head))})
+    recipes = detect_recipes(args.base, args.head)
+    write_output(
+        {
+            "recipes": json.dumps(recipes),
+            "targets": json.dumps(detect_targets(recipes)),
+        }
+    )
 
 
 def command_inspect(args: argparse.Namespace) -> None:
     """Implement the inspect CLI command."""
-    write_output(inspect_recipe(args.recipe, args.head_sha))
+    write_output(inspect_recipe(args.recipe, args.head_sha, args.variant))
 
 
 def command_manifest(args: argparse.Namespace) -> None:
     """Create the release preview and provenance manifest for a candidate."""
-    info = inspect_recipe(args.recipe, args.head_sha)
+    info = inspect_recipe(args.recipe, args.head_sha, args.variant)
     candidate_dir = Path(args.candidate_dir)
     docker_archive = candidate_dir / info["docker_archive"]
     sif = candidate_dir / info["sif"]
@@ -208,7 +257,12 @@ def command_manifest(args: argparse.Namespace) -> None:
 
     recipe = load_recipe(args.recipe)
     metadata = release_data(
-        args.recipe, info["version"], recipe, info["build_date"], "x86_64"
+        info["container"],
+        info["version"],
+        recipe,
+        info["build_date"],
+        info["architecture"],
+        info["variant"],
     )
     release_path = candidate_dir / f"{info['version']}.json"
     release_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
@@ -270,16 +324,25 @@ def verify_candidate(
     """Verify a candidate against its PR identity and the merged recipe."""
     manifest = load_candidate_manifest(candidate_dir)
     recipe = validate_recipe_identifier(manifest.get("recipe"))
-    if candidate_dir.name != recipe:
-        raise RuntimeError(f"Candidate directory does not match recipe {recipe}")
+    variant = manifest.get("variant")
+    if not isinstance(variant, str):
+        raise RuntimeError(f"Invalid candidate variant for {recipe}: {variant!r}")
+    # Resolving the selector against the merged recipe is what stops a candidate
+    # from inventing a container identity and promoting itself into an
+    # unrelated releases/ directory.
+    expected_info = inspect_recipe(recipe, expected_head_sha, variant)
+    container = expected_info["container"]
+    if candidate_dir.name != container:
+        raise RuntimeError(f"Candidate directory does not match container {container}")
+    if manifest.get("container") != container:
+        raise RuntimeError(f"Candidate container mismatch for {recipe}")
     if manifest["head_sha"] != expected_head_sha:
-        raise RuntimeError(f"Candidate head SHA mismatch for {recipe}")
+        raise RuntimeError(f"Candidate head SHA mismatch for {container}")
     if expected_pr_number is not None and manifest["pr_number"] != expected_pr_number:
-        raise RuntimeError(f"Candidate PR number mismatch for {recipe}")
+        raise RuntimeError(f"Candidate PR number mismatch for {container}")
     if manifest["recipe_fingerprint"] != recipe_fingerprint(recipe):
-        raise RuntimeError(f"Merged recipe differs from tested candidate: {recipe}")
+        raise RuntimeError(f"Merged recipe differs from tested candidate: {container}")
 
-    expected_info = inspect_recipe(recipe, expected_head_sha)
     expected_release_json = f"{expected_info['version']}.json"
     paths = {
         "docker_archive": candidate_file(
@@ -291,6 +354,9 @@ def verify_candidate(
         ),
     }
     expected_values = {
+        "container": container,
+        "variant": variant,
+        "architecture": expected_info["architecture"],
         "version": expected_info["version"],
         "build_date": expected_info["build_date"],
         "image_name": expected_info["image_name"],
@@ -302,7 +368,7 @@ def verify_candidate(
     for field, expected in expected_values.items():
         if manifest.get(field) != expected:
             raise RuntimeError(
-                f"Candidate {field} mismatch for {recipe}: "
+                f"Candidate {field} mismatch for {container}: "
                 f"expected {expected!r}, got {manifest.get(field)!r}"
             )
     for filename_key, digest_key in (
@@ -314,15 +380,16 @@ def verify_candidate(
             raise RuntimeError(f"Checksum mismatch: {path}")
 
     expected_release = release_data(
-        recipe,
+        container,
         expected_info["version"],
         load_recipe(recipe),
         expected_info["build_date"],
-        "x86_64",
+        expected_info["architecture"],
+        variant,
     )
     actual_release = json.loads(paths["release_json"].read_text(encoding="utf-8"))
     if actual_release != expected_release:
-        raise RuntimeError(f"Release JSON mismatch for {recipe}")
+        raise RuntimeError(f"Release JSON mismatch for {container}")
     return {**manifest, **expected_values, "recipe": recipe}
 
 
@@ -345,16 +412,17 @@ def command_materialize(args: argparse.Namespace) -> None:
     manifests = json.loads(Path(args.manifests).read_text(encoding="utf-8"))
     for manifest in manifests:
         recipe = validate_recipe_identifier(manifest.get("recipe"))
+        container = validate_recipe_identifier(manifest.get("container"))
         version = manifest.get("version")
         if not isinstance(version, str) or not VERSION_PATTERN.fullmatch(version):
-            raise RuntimeError(f"Invalid verified version for {recipe}: {version!r}")
+            raise RuntimeError(f"Invalid verified version for {container}: {version!r}")
         expected_release_json = f"{version}.json"
         if manifest.get("release_json") != expected_release_json:
-            raise RuntimeError(f"Invalid verified release JSON for {recipe}")
+            raise RuntimeError(f"Invalid verified release JSON for {container}")
         source = candidate_file(
-            bundle / recipe, manifest["release_json"], "release JSON"
+            bundle / container, manifest["release_json"], "release JSON"
         )
-        destination = REPO_ROOT / "releases" / recipe / expected_release_json
+        destination = REPO_ROOT / "releases" / container / expected_release_json
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
 
@@ -373,11 +441,13 @@ def parser() -> argparse.ArgumentParser:
     inspect = subparsers.add_parser("inspect")
     inspect.add_argument("--recipe", required=True)
     inspect.add_argument("--head-sha", required=True)
+    inspect.add_argument("--variant", default="")
     inspect.set_defaults(func=command_inspect)
 
     manifest = subparsers.add_parser("manifest")
     manifest.add_argument("--recipe", required=True)
     manifest.add_argument("--head-sha", required=True)
+    manifest.add_argument("--variant", default="")
     manifest.add_argument("--pr-number", required=True, type=int)
     manifest.add_argument("--candidate-dir", required=True)
     manifest.set_defaults(func=command_manifest)

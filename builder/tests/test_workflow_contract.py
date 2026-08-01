@@ -17,20 +17,41 @@ def test_build_app_workflow_uses_version_stable_build_cache_ref() -> None:
     assert "CACHE_REF=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:buildcache" not in workflow
 
 
-def test_workflows_expand_named_variants_and_pass_identity_to_builder() -> None:
+def test_manual_workflow_expands_named_variants_and_passes_identity_to_builder() -> None:
     build_workflow = Path(".github/workflows/build-app.yml").read_text()
     manual_workflow = Path(".github/workflows/manual-build.yml").read_text()
-    auto_workflow = Path(".github/workflows/auto-build.yml").read_text()
 
-    assert 'variant: ${{ matrix.variant }}' in manual_workflow
-    assert 'variant: ${{ matrix.variant }}' in auto_workflow
-    assert 'architecture: ${{ matrix.architecture }}' in manual_workflow
-    assert 'architecture: ${{ matrix.architecture }}' in auto_workflow
+    assert "variant: ${{ matrix.variant }}" in manual_workflow
+    assert "architecture: ${{ matrix.architecture }}" in manual_workflow
     assert "-m tools.variant_matrix" in manual_workflow
-    assert "-m tools.variant_matrix" in auto_workflow
     assert 'VARIANT_ARGS=(--variant "$VARIANT")' in build_workflow
     assert 'ARCHITECTURE="${{ inputs.architecture }}"' in build_workflow
     assert 'CONTAINER_NAME="${APPLICATION}_${VARIANT}"' in build_workflow
+
+
+def test_candidate_workflow_builds_every_declared_variant() -> None:
+    candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
+
+    assert "include: ${{ fromJSON(needs.detect.outputs.targets) }}" in candidate_workflow
+    assert '--architecture "${ARCHITECTURE}" --variant "${VARIANT}"' in candidate_workflow
+    # aarch64 candidates must not land on the x86 ARC pool.
+    assert "matrix.architecture == 'aarch64'" in candidate_workflow
+    assert "--architecture x86_64" not in candidate_workflow
+
+
+def test_candidate_artifacts_and_promotion_key_off_container_identity() -> None:
+    candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
+    promote_workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
+
+    assert (
+        "name: candidate-${{ matrix.container }}-${{ github.event.pull_request.head.sha }}"
+        in candidate_workflow
+    )
+    assert "path: candidate/${{ matrix.container }}/" in candidate_workflow
+    # Two variants of one recipe publish to different registry repositories.
+    assert 'ghcr="ghcr.io/${GH_REGISTRY}/${container}"' in promote_workflow
+    assert 'quay="quay.io/neurodesk/${container}"' in promote_workflow
+    assert "${recipe}" not in promote_workflow
 
 
 def test_build_app_workflow_strips_version_inline_comments() -> None:

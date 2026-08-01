@@ -189,6 +189,9 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     (candidate_dir / "1.2.3.json").write_text(json.dumps(release), encoding="utf-8")
     manifest = {
         "recipe": "demo",
+        "container": "demo",
+        "variant": "",
+        "architecture": "x86_64",
         "version": "1.2.3",
         "build_date": "20260721",
         "image_name": "demo_1.2.3",
@@ -274,6 +277,69 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
         raise AssertionError("changed recipe matched stale candidate")
 
 
+def test_verify_candidate_rejects_a_variant_the_recipe_does_not_declare(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A candidate cannot invent a container identity to promote itself into."""
+    write_recipe(tmp_path)
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        one_pr_release, "build_date", lambda recipe, revision="HEAD": "20260721"
+    )
+    candidate_dir = tmp_path / "bundle" / "demo_gpu"
+    candidate_dir.mkdir(parents=True)
+    manifest = {
+        "recipe": "demo",
+        "container": "demo_gpu",
+        "variant": "gpu",
+        "architecture": "x86_64",
+        "version": "1.2.3",
+        "build_date": "20260721",
+        "image_name": "demo_gpu_1.2.3",
+        "candidate_tag": "nd-candidate-demo_gpu:abc123",
+        "docker_archive": "demo_gpu_1.2.3_20260721.docker.tar",
+        "docker_sha256": "0" * 64,
+        "sif": "demo_gpu_1.2.3_20260721.simg",
+        "sif_sha256": "0" * 64,
+        "release_json": "1.2.3.json",
+        "pr_number": 42,
+        "head_sha": "abc123",
+        "recipe_fingerprint": one_pr_release.recipe_fingerprint("demo"),
+    }
+    (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    try:
+        one_pr_release.verify_candidate(candidate_dir, "abc123", 42)
+    except RuntimeError as error:
+        assert "does not declare variant" in str(error)
+    else:
+        raise AssertionError("undeclared variant identity was accepted")
+
+
+def test_detect_targets_expands_declared_architectures(tmp_path: Path, monkeypatch) -> None:
+    """Every architecture a recipe declares becomes its own build target."""
+    recipe_dir = write_recipe(tmp_path)
+    recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text(encoding="utf-8"))
+    recipe["architectures"] = ["x86_64", "aarch64"]
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe), encoding="utf-8")
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+
+    assert one_pr_release.detect_targets(["demo"]) == [
+        {
+            "recipe": "demo",
+            "variant": "",
+            "architecture": "x86_64",
+            "container": "demo",
+        },
+        {
+            "recipe": "demo",
+            "variant": "arm64",
+            "architecture": "aarch64",
+            "container": "demo_arm64",
+        },
+    ]
+
+
 def test_materialize_rejects_unverified_release_path(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -286,6 +352,7 @@ def test_materialize_rejects_unverified_release_path(
             [
                 {
                     "recipe": "demo",
+                    "container": "demo",
                     "version": "1.2.3",
                     "release_json": "../outside.json",
                 }
@@ -313,6 +380,7 @@ def test_materialize_rejects_unverified_release_path(
             [
                 {
                     "recipe": "demo",
+                    "container": "demo",
                     "version": "1.2.3",
                     "release_json": "1.2.3.json",
                 }
