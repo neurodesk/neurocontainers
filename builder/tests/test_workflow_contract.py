@@ -41,6 +41,28 @@ def test_build_app_workflow_compares_image_config_not_only_rootfs() -> None:
     assert "ROOTFS_NEW" not in workflow
 
 
+def test_config_job_fingerprints_latest_without_pulling_it() -> None:
+    # `docker inspect` needs the image locally, so fingerprinting :latest used
+    # to download every layer just to read the small config object.
+    workflow = Path(".github/workflows/build-app.yml").read_text()
+    config_job = workflow.split("  config:", 1)[1].split("  build-image:", 1)[0]
+
+    assert "docker pull" not in config_job
+    assert (
+        "python3 builder/image_fingerprint.py \\\n"
+        '            --remote --allow-missing --architecture "$ARCHITECTURE" "$IMAGE_REF"'
+    ) in config_job
+
+
+def test_build_image_job_fingerprints_the_new_image_locally() -> None:
+    # The new image only exists in the local daemon at comparison time.
+    workflow = Path(".github/workflows/build-app.yml").read_text()
+    build_image_job = workflow.split("  build-image:", 1)[1].split("  push-dockerhub:", 1)[0]
+
+    assert 'python3 builder/image_fingerprint.py "$IMAGE_REF"' in build_image_job
+    assert "--remote" not in build_image_job
+
+
 def test_create_pr_job_generates_release_without_rebuilding() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     create_pr_job = workflow.split("  create-pr:", 1)[1]

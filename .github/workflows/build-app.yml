@@ -212,16 +212,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull latest image from registry and get fingerprint
+      - name: Read latest image fingerprint from registry
         id: getfingerprint
         if: inputs.skip_docker_build != 'true'
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          IMAGE_FINGERPRINT_CACHE=""
+          # Registry metadata only: the fingerprint needs the image config
+          # object, not the filesystem layers, so the layers stay in the
+          # registry. An unreadable or missing :latest degrades to an empty
+          # baseline, which takes the normal first-build path (IMGDIFFERS=true).
           IMAGE_REF="ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest"
-          if docker pull "$IMAGE_REF"; then
-            IMAGE_FINGERPRINT_CACHE=$(python3 builder/image_fingerprint.py "$IMAGE_REF")
+          if ! IMAGE_FINGERPRINT_CACHE=$(python3 builder/image_fingerprint.py \
+            --remote --allow-missing --architecture "$ARCHITECTURE" "$IMAGE_REF"); then
+            echo "::warning::Could not read the remote fingerprint for $IMAGE_REF; treating the image as changed."
+            IMAGE_FINGERPRINT_CACHE=""
           fi
           echo "IMAGE_FINGERPRINT_CACHE=$IMAGE_FINGERPRINT_CACHE" >> "$GITHUB_OUTPUT"
 
