@@ -105,18 +105,22 @@ def newer(current_version, upstream_version):
     return result
 
 
-def tag_to_recipe_version(tag):
+def tag_to_recipe_version(tag, current_version=""):
     """Map an upstream tag to the value that belongs in the recipe's version field.
 
     Recipes template URLs off ``{{ context.version }}`` (sometimes prefixed with a
-    literal ``v``), so only the leading ``v`` is dropped. Anything that does not
-    parse cleanly afterwards is left for a human.
+    literal ``v``), so the leading ``v`` is normally dropped. A recipe that already
+    carries the prefix in its own version keeps it, so the module name a user loads
+    does not change shape underneath them. Anything that does not parse cleanly
+    afterwards is left for a human.
     """
     candidate = (tag or "").strip()
     if candidate[:1] in ("v", "V"):
         candidate = candidate[1:]
     if not candidate:
         return None
+    if (current_version or "").strip()[:1] in ("v", "V"):
+        candidate = f"v{candidate}"
     try:
         version.parse(candidate)
     except Exception as e:
@@ -373,19 +377,19 @@ def submit_bump(path, name, current_version, new_version, repo, tag, base_branch
 
     if not dry_run and (pull_request_exists(branch) or remote_branch_exists(branch)):
         print(f"branch/PR already exists for {branch}; skipping.")
-        return True
+        return "exists"
 
     updated, result = prepare_bump(path, current_version, new_version, repo, tag)
     if updated is None:
         print(f"cannot auto-bump {path}: {result}")
-        return False
+        return None
     changes = result
 
     if dry_run:
         print(f"=== dry run: would open {branch} ===")
         for change in changes:
             print(" -", change)
-        return True
+        return "opened"
 
     closes = find_stale_update_issues(path)
     body_lines = [
@@ -426,7 +430,7 @@ def submit_bump(path, name, current_version, new_version, repo, tag, base_branch
     finally:
         git("checkout", "--force", base_branch, check=False)
         git("clean", "-fd", "--", os.path.dirname(path) or ".", check=False)
-    return True
+    return "opened"
 
 
 def open_manual_issue(path, name, current_version, tag, repo, note):
@@ -461,8 +465,18 @@ def main():
         default=os.getenv("AUTO_UPDATE_DRY_RUN") == "1",
         help="report what would change without touching git or the GitHub API",
     )
+    parser.add_argument(
+        "--max-prs",
+        type=int,
+        default=int(os.getenv("AUTO_UPDATE_MAX_PRS") or 5),
+        help="stop after opening this many pull requests in one run (0 = no limit). "
+        "Every bump PR triggers a full container build, so a backlog is worked "
+        "through over several weekly runs rather than all at once.",
+    )
     args = parser.parse_args()
     dry_run = args.dry_run
+    opened = 0
+    deferred = []
 
     base_branch = "main"
     if not dry_run:
@@ -525,7 +539,7 @@ def main():
             print("current version is Up-to-date.")
             continue
 
-        new_version = tag_to_recipe_version(up)
+        new_version = tag_to_recipe_version(up, cur)
         if not new_version:
             open_manual_issue(
                 path,
@@ -538,6 +552,11 @@ def main():
             )
             continue
 
+        if args.max_prs and opened >= args.max_prs:
+            deferred.append(f"{name} {cur} -> {new_version}")
+            print(f"reached --max-prs={args.max_prs}; deferring {name} to a later run.")
+            continue
+
         try:
             submitted = submit_bump(
                 path, name, cur, new_version, repo, up, base_branch, dry_run
@@ -545,9 +564,12 @@ def main():
         except Exception as e:
             print(f"Failed to open bump PR for {path}: {e}")
             print(traceback.format_exc())
-            submitted = False
+            submitted = None
 
-        if not submitted and not dry_run:
+        if submitted == "opened":
+            opened += 1
+
+        if submitted is None and not dry_run:
             open_manual_issue(
                 path,
                 name,
@@ -557,6 +579,13 @@ def main():
                 "An automatic version-bump pull request could not be created. "
                 "Please bump the recipe manually.",
             )
+
+
+    print(f"\nPull requests opened this run: {opened}")
+    if deferred:
+        print(f"Deferred to a later run ({len(deferred)}):")
+        for item in deferred:
+            print(" -", item)
 
 
 if __name__ == "__main__":
