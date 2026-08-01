@@ -692,6 +692,31 @@ def test_synthetic_qdess_dicom_contains_t2_inputs(tmp_path):
     assert first.SeriesDescription == "qDESS_test"
 
 
+def test_single_mrd_qdess_te_is_shared_by_both_synthetic_echoes():
+    echo1 = make_series_image(1, 0, 0.0, "qDESS_test", echo_time=5.05)
+    echo2 = make_series_image(2, 0, 0.0, "qDESS_test")
+    metadata = types.SimpleNamespace(
+        sequenceParameters=types.SimpleNamespace(TE=[5.05]),
+    )
+
+    te_values, te_sources = openmsk._resolve_qdess_echo_times(
+        {
+            "parameters": {
+                "qdesste1ms": 8.0,
+                "qdesste2ms": 42.0,
+            }
+        },
+        metadata,
+        {1: [echo1], 2: [echo2]},
+    )
+
+    assert te_values == [5.05, 5.05]
+    assert te_sources == [
+        "mrd.sequenceParameters.TE[0]",
+        "mrd.sequenceParameters.TE[0] (shared qDESS TE)",
+    ]
+
+
 def test_nifti_to_mrd_reindexes_rotated_labels_to_source_grid(tmp_path, monkeypatch):
     source = make_image()
 

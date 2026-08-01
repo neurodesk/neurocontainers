@@ -1,4 +1,4 @@
-name: file_variants
+name: filevariants
 version: "1.0"
 architectures:
   - x86_64

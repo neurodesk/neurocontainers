@@ -52,10 +52,27 @@ def test_top_level_variables_support_container_patterns() -> None:
     variables = run_tests.collect_top_level_variables(config)
 
     assert variables == {
+        "name": "tool",
+        "version": "3.2.8",
         "tool_version": "3.2.8",
         "tool_dir": "/opt/tool-3.2.8",
     }
     assert (
         run_tests.substitute_variables(config["container"], variables)
         == "tool_3.2.8_*.simg"
+    )
+
+
+def test_container_variables_expand_literal_recipe_version() -> None:
+    config = {
+        "name": "deeplabcut",
+        "version": "2.3.11",
+        "container": "${name}_${version}_REFERENCE.simg",
+    }
+
+    variables = run_tests.collect_top_level_variables(config)
+
+    assert (
+        run_tests.substitute_variables(config["container"], variables)
+        == "deeplabcut_2.3.11_REFERENCE.simg"
     )

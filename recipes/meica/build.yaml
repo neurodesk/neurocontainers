@@ -20,6 +20,7 @@ build:
         - ca-certificates
         - coreutils
         - gzip
+        - patch
         - python3-pip
         - python3-venv
         - python-is-python3
@@ -36,6 +37,7 @@ build:
     - run:
         - mkdir -p /opt/meica/me-ica
         - tar -xzf {{ get_file("meica_source") }} -C /opt/meica/me-ica --strip-components=1
+        - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_skullstrip_patch") }}
         - tar -xzf {{ get_file("meica_afni_runtime") }} -C /opt/meica/me-ica
         - python3 -m venv /opt/meica/venv
         - /opt/meica/venv/bin/pip install --no-cache-dir --upgrade pip
@@ -56,6 +58,8 @@ build:
     - run:
         - cp {{ get_file("meica_launcher") }} /usr/local/bin/meica.py
         - chmod +x /usr/local/bin/meica.py
+        - cp {{ get_file("meica_skullstrip_fallback") }} /usr/local/bin/meica-skullstrip-fallback
+        - chmod +x /usr/local/bin/meica-skullstrip-fallback
         - cp {{ get_file("meica_openrecon") }} /opt/code/python-ismrmrd-server/meica.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
@@ -96,7 +100,8 @@ structured_readme:
     meica.py -d rest_e1.nii.gz rest_e2.nii.gz rest_e3.nii.gz -e 12 28 44
 
     # The OpenRecon adapter is selected with config=meica and requires
-    # at least three reconstructed magnitude echoes.
+    # at least three reconstructed magnitude echoes. It sends the original
+    # echo images by default, followed by the derived dR2* and T2* series.
   documentation: https://github.com/ME-ICA/me-ica
   citation: "Kundu P, Brenowitz ND, Voon V, Worbe Y, Vertes PE, Inati SJ, Saad ZS, Bandettini PA, Bullmore ET. Integrated strategy for improving functional connectivity mapping using multiecho fMRI. PNAS 110.40 (2013): 16187-16192. https://doi.org/10.1073/pnas.1301725110"
 
@@ -118,7 +123,11 @@ readme: |-
   OpenRecon expects at least three echoes. Echo times are read from the MRD
   sequence header, and ME-ICA runs with 24 CPU workers.
   OpenRecon always returns the denoised BOLD-like apparent dR2* series and the
-  T2* map (`dr2s_epi` and `t2s_epi`); there is no scanner output selector.
+  T2* map (`dr2s_epi` and `t2s_epi`); there is no scanner output selector. It
+  also returns the original echo images by default. Disable `sendoriginal` to
+  return only the derived ME-ICA series. Derived outputs use display-scaled
+  `uint16` pixels by default; enable `sendfloat32` to send the unscaled dR2*
+  and T2* values as `float32` pixels.
 
   Documentation: https://github.com/ME-ICA/me-ica
 
@@ -136,6 +145,10 @@ files:
     url: https://github.com/ME-ICA/meica-afni/releases/download/{{ context.version }}/meica-afni-runtime-linux-x86_64.tar.gz
   - name: meica_launcher
     filename: meica-launcher
+  - name: meica_skullstrip_fallback
+    filename: meica-skullstrip-fallback
+  - name: meica_skullstrip_patch
+    filename: meica-skullstrip-fallback.patch
   - name: meica_openrecon
     filename: meica.py
   - name: OpenReconLabel.json

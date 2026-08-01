@@ -82,3 +82,10 @@ def test_cmd_stage_can_download_declared_url_files(
 
     assert cli.cmd_stage(args) == 0
     assert calls == [{"recreate": True, "stage": True, "download": True}]
+
+
+def test_write_build_files_rejects_empty_readme(tmp_path: cli.Path) -> None:
+    compiled = SimpleNamespace(name="tool", readme=" \n")
+
+    with pytest.raises(ValueError, match="compiled README.*cannot be empty"):
+        cli.write_build_files(tmp_path, compiled, tmp_path / "build")

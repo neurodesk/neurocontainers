@@ -62,6 +62,11 @@ The workflow defaults to `debug=true` and `run-tests=false`, so full container t
 
 While not a runtime test, this workflow protects the builder tooling whenever builder code changes. It creates a Python virtual environment, installs `requirements.txt`, and runs `./workflows/test_all.sh`. The script validates every recipe (`builder/validation.py`) and performs check-only Dockerfile generation via `python -m builder generate …`. Failures here usually indicate malformed recipe metadata that would prevent the container tests from running downstream.
 
+The same script validates every `recipes/*/OpenReconLabel.json` against the
+vendored OpenRecon 1.1.0 schema before generating Dockerfiles. This catches
+scanner-UI schema errors, including the 14-parameter limit, in Neurocontainers
+before a recipe is synchronized into the OpenRecon packaging repository.
+
 ## Reproducing CI Runs Locally
 
 1. **Set up dependencies**: ensure Apptainer/Singularity (or Docker) is installed, create a virtual environment, and `pip install -r requirements.txt`.

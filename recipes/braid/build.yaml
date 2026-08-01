@@ -42,6 +42,7 @@ build:
           - /opt/convert3d-1.0.0/bin
         bins:
           - braid_one_sample_inference
+          - braid_io_dir_wrapper
     - install:
         - git
         - git-lfs
@@ -70,12 +71,20 @@ build:
         method: binaries
     - workdir: /opt
     - run:
-        - git clone https://github.com/MASILab/BRAID.git
-        - cd BRAID
-        - pip3 install .
+        - mkdir -p /opt/BRAID
+        - echo "090f9a99c8a256bc63645e751693ebc677fdabfab08d8cb5871834fbe8877200  {{ get_file("braid_tar_gz") }}" | sha256sum -c -
+        - tar xzf {{ get_file("braid_tar_gz") }} --strip-components=1 -C /opt/BRAID
+        - /usr/bin/python3 -m pip install --no-cache-dir setuptools==80.9.0 wheel==0.45.1
+        - /usr/bin/python3 -m pip install --no-cache-dir --no-build-isolation /opt/BRAID
+        - /usr/bin/python3 -c "import braid, monai, nibabel, torch"
+        - test -x /usr/local/bin/braid_one_sample_inference
+        - test -x /usr/local/bin/braid_io_dir_wrapper
     - run:
         - git lfs install
         - git clone https://huggingface.co/chenyugoal/braid-v1.0 /opt/braid-v1.0
+files:
+  - name: braid_tar_gz
+    url: https://github.com/MASILab/BRAID/archive/fb589591de78c3c82417d2c72470b640d4f7a1e5.tar.gz
 categories:
   - diffusion imaging
   - machine learning

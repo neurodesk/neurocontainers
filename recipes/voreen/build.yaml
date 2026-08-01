@@ -12,6 +12,8 @@ build:
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
+        PATH: /usr/share/voreen:$PATH
+        LD_LIBRARY_PATH: /usr/share/voreen
 
     - install:
         - build-essential
@@ -32,6 +34,8 @@ build:
         - cd /root/voreen-src-unix-nightly && mkdir build && cd build && cmake -DVRN_DEPLOYMENT=ON -DVRN_ADD_INSTALL_TARGET=ON -DCMAKE_INSTALL_PREFIX=/usr/share/voreen .. && make -j8 && make install && rm -rf /root/*
 
 deploy:
+  path:
+    - /usr/share/voreen
   bins:
     - voreenve
     - voreentool

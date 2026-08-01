@@ -1,0 +1,331 @@
+name: clinica
+version: 0.10.0
+container: clinica_${version}_REFERENCE.simg
+default_timeout: 60
+env_setup: |
+  assert_linked() {
+    local target payload output interpreter
+    local -a interpreter_args
+    target="$(readlink -f "$1")" || return 1
+    if output="$(ldd "$target" 2>&1)"; then
+      payload="$target"
+    else
+      IFS= read -r interpreter < "$target" || return 1
+      interpreter="${interpreter#\#!}"
+      read -r -a interpreter_args <<< "$interpreter"
+      if [ "${interpreter_args[0]}" = /usr/bin/env ]; then
+        payload="$(command -v "${interpreter_args[1]}")" || return 1
+      else
+        payload="${interpreter_args[0]}"
+      fi
+      payload="$(readlink -f "$payload")" || return 1
+      output="$(ldd "$payload" 2>&1)" || return 1
+    fi
+    ! grep -q "not found" <<< "$output"
+  }
+  assert_conda_libstdcpp() {
+    local output
+    output="$(ldd "$(readlink -f "$1")" 2>&1)" || return 1
+    awk '$1 == "libstdc++.so.6" { found=1; conda=($3 ~ "^/opt/miniconda/lib/") } END { exit !(found && conda) }' <<< "$output"
+  }
+tests:
+  - name: clinica resolves on PATH
+    command: command -v clinica
+    expected_exit_code: 0
+  - name: clinica is executable
+    command: test -x "$(command -v clinica)"
+    expected_exit_code: 0
+  - name: clinica reports its version
+    command: clinica --version
+    expected_exit_code: 0
+  - name: clinica package version
+    command: /opt/miniconda/bin/python -c 'from importlib.metadata import version; assert version("clinica") == "${version}"'
+    expected_exit_code: 0
+  - name: python resolves on PATH
+    command: command -v python
+    expected_exit_code: 0
+  - name: python is executable
+    command: test -x "$(command -v python)"
+    expected_exit_code: 0
+  - name: python has no missing shared libraries
+    command: assert_linked "$(command -v python)"
+    expected_exit_code: 0
+  - name: python target exists
+    command: test -e "$(readlink -f "$(command -v python)")"
+    expected_exit_code: 0
+  - name: conda resolves on PATH
+    command: command -v conda
+    expected_exit_code: 0
+  - name: conda is executable
+    command: test -x "$(command -v conda)"
+    expected_exit_code: 0
+  - name: conda has no missing shared libraries
+    command: assert_linked "$(command -v conda)"
+    expected_exit_code: 0
+  - name: conda target exists
+    command: test -e "$(readlink -f "$(command -v conda)")"
+    expected_exit_code: 0
+  - name: fslmaths resolves on PATH
+    command: command -v fslmaths
+    expected_exit_code: 0
+  - name: fslmaths is executable
+    command: test -x "$(command -v fslmaths)"
+    expected_exit_code: 0
+  - name: fslmaths has no missing shared libraries
+    command: assert_linked "$(command -v fslmaths)"
+    expected_exit_code: 0
+  - name: fslmaths target exists
+    command: test -e "$(readlink -f "$(command -v fslmaths)")"
+    expected_exit_code: 0
+  - name: bet resolves on PATH
+    command: command -v bet
+    expected_exit_code: 0
+  - name: bet is executable
+    command: test -x "$(command -v bet)"
+    expected_exit_code: 0
+  - name: bet has no missing shared libraries
+    command: assert_linked "$(command -v bet)"
+    expected_exit_code: 0
+  - name: bet target exists
+    command: test -e "$(readlink -f "$(command -v bet)")"
+    expected_exit_code: 0
+  - name: flirt resolves on PATH
+    command: command -v flirt
+    expected_exit_code: 0
+  - name: flirt is executable
+    command: test -x "$(command -v flirt)"
+    expected_exit_code: 0
+  - name: flirt has no missing shared libraries
+    command: assert_linked "$(command -v flirt)"
+    expected_exit_code: 0
+  - name: flirt target exists
+    command: test -e "$(readlink -f "$(command -v flirt)")"
+    expected_exit_code: 0
+  - name: fast resolves on PATH
+    command: command -v fast
+    expected_exit_code: 0
+  - name: fast is executable
+    command: test -x "$(command -v fast)"
+    expected_exit_code: 0
+  - name: fast has no missing shared libraries
+    command: assert_linked "$(command -v fast)"
+    expected_exit_code: 0
+  - name: fast target exists
+    command: test -e "$(readlink -f "$(command -v fast)")"
+    expected_exit_code: 0
+  - name: fnirt resolves on PATH
+    command: command -v fnirt
+    expected_exit_code: 0
+  - name: fnirt is executable
+    command: test -x "$(command -v fnirt)"
+    expected_exit_code: 0
+  - name: fnirt has no missing shared libraries
+    command: assert_linked "$(command -v fnirt)"
+    expected_exit_code: 0
+  - name: fnirt target exists
+    command: test -e "$(readlink -f "$(command -v fnirt)")"
+    expected_exit_code: 0
+  - name: applywarp resolves on PATH
+    command: command -v applywarp
+    expected_exit_code: 0
+  - name: applywarp is executable
+    command: test -x "$(command -v applywarp)"
+    expected_exit_code: 0
+  - name: applywarp has no missing shared libraries
+    command: assert_linked "$(command -v applywarp)"
+    expected_exit_code: 0
+  - name: applywarp target exists
+    command: test -e "$(readlink -f "$(command -v applywarp)")"
+    expected_exit_code: 0
+  - name: fslstats resolves on PATH
+    command: command -v fslstats
+    expected_exit_code: 0
+  - name: fslstats is executable
+    command: test -x "$(command -v fslstats)"
+    expected_exit_code: 0
+  - name: fslstats has no missing shared libraries
+    command: assert_linked "$(command -v fslstats)"
+    expected_exit_code: 0
+  - name: fslstats target exists
+    command: test -e "$(readlink -f "$(command -v fslstats)")"
+    expected_exit_code: 0
+  - name: fslroi resolves on PATH
+    command: command -v fslroi
+    expected_exit_code: 0
+  - name: fslroi is executable
+    command: test -x "$(command -v fslroi)"
+    expected_exit_code: 0
+  - name: fslroi has no missing shared libraries
+    command: assert_linked "$(command -v fslroi)"
+    expected_exit_code: 0
+  - name: fslroi target exists
+    command: test -e "$(readlink -f "$(command -v fslroi)")"
+    expected_exit_code: 0
+  - name: recon-all resolves on PATH
+    command: command -v recon-all
+    expected_exit_code: 0
+  - name: recon-all is executable
+    command: test -x "$(command -v recon-all)"
+    expected_exit_code: 0
+  - name: recon-all has no missing shared libraries
+    command: assert_linked "$(command -v recon-all)"
+    expected_exit_code: 0
+  - name: recon-all target exists
+    command: test -e "$(readlink -f "$(command -v recon-all)")"
+    expected_exit_code: 0
+  - name: mri_convert resolves on PATH
+    command: command -v mri_convert
+    expected_exit_code: 0
+  - name: mri_convert is executable
+    command: test -x "$(command -v mri_convert)"
+    expected_exit_code: 0
+  - name: mri_convert has no missing shared libraries
+    command: assert_linked "$(command -v mri_convert)"
+    expected_exit_code: 0
+  - name: mri_convert target exists
+    command: test -e "$(readlink -f "$(command -v mri_convert)")"
+    expected_exit_code: 0
+  - name: mri_info resolves on PATH
+    command: command -v mri_info
+    expected_exit_code: 0
+  - name: mri_info is executable
+    command: test -x "$(command -v mri_info)"
+    expected_exit_code: 0
+  - name: mri_info has no missing shared libraries
+    command: assert_linked "$(command -v mri_info)"
+    expected_exit_code: 0
+  - name: mri_info target exists
+    command: test -e "$(readlink -f "$(command -v mri_info)")"
+    expected_exit_code: 0
+  - name: mri_vol2vol resolves on PATH
+    command: command -v mri_vol2vol
+    expected_exit_code: 0
+  - name: mri_vol2vol is executable
+    command: test -x "$(command -v mri_vol2vol)"
+    expected_exit_code: 0
+  - name: mri_vol2vol has no missing shared libraries
+    command: assert_linked "$(command -v mri_vol2vol)"
+    expected_exit_code: 0
+  - name: mri_vol2vol target exists
+    command: test -e "$(readlink -f "$(command -v mri_vol2vol)")"
+    expected_exit_code: 0
+  - name: mris_convert resolves on PATH
+    command: command -v mris_convert
+    expected_exit_code: 0
+  - name: mris_convert is executable
+    command: test -x "$(command -v mris_convert)"
+    expected_exit_code: 0
+  - name: mris_convert has no missing shared libraries
+    command: assert_linked "$(command -v mris_convert)"
+    expected_exit_code: 0
+  - name: mris_convert target exists
+    command: test -e "$(readlink -f "$(command -v mris_convert)")"
+    expected_exit_code: 0
+  - name: antsRegistration resolves on PATH
+    command: command -v antsRegistration
+    expected_exit_code: 0
+  - name: antsRegistration is executable
+    command: test -x "$(command -v antsRegistration)"
+    expected_exit_code: 0
+  - name: antsRegistration has no missing shared libraries
+    command: assert_linked "$(command -v antsRegistration)"
+    expected_exit_code: 0
+  - name: antsRegistration target exists
+    command: test -e "$(readlink -f "$(command -v antsRegistration)")"
+    expected_exit_code: 0
+  - name: antsApplyTransforms resolves on PATH
+    command: command -v antsApplyTransforms
+    expected_exit_code: 0
+  - name: antsApplyTransforms is executable
+    command: test -x "$(command -v antsApplyTransforms)"
+    expected_exit_code: 0
+  - name: antsApplyTransforms has no missing shared libraries
+    command: assert_linked "$(command -v antsApplyTransforms)"
+    expected_exit_code: 0
+  - name: antsApplyTransforms target exists
+    command: test -e "$(readlink -f "$(command -v antsApplyTransforms)")"
+    expected_exit_code: 0
+  - name: N4BiasFieldCorrection resolves on PATH
+    command: command -v N4BiasFieldCorrection
+    expected_exit_code: 0
+  - name: N4BiasFieldCorrection is executable
+    command: test -x "$(command -v N4BiasFieldCorrection)"
+    expected_exit_code: 0
+  - name: N4BiasFieldCorrection has no missing shared libraries
+    command: assert_linked "$(command -v N4BiasFieldCorrection)"
+    expected_exit_code: 0
+  - name: N4BiasFieldCorrection target exists
+    command: test -e "$(readlink -f "$(command -v N4BiasFieldCorrection)")"
+    expected_exit_code: 0
+  - name: mrconvert resolves on PATH
+    command: command -v mrconvert
+    expected_exit_code: 0
+  - name: mrconvert is executable
+    command: test -x "$(command -v mrconvert)"
+    expected_exit_code: 0
+  - name: mrconvert has no missing shared libraries
+    command: assert_linked "$(command -v mrconvert)"
+    expected_exit_code: 0
+  - name: mrconvert uses Conda libstdc++
+    command: assert_conda_libstdcpp "$(command -v mrconvert)"
+    expected_exit_code: 0
+  - name: mrinfo resolves on PATH
+    command: command -v mrinfo
+    expected_exit_code: 0
+  - name: mrinfo is executable
+    command: test -x "$(command -v mrinfo)"
+    expected_exit_code: 0
+  - name: mrinfo has no missing shared libraries
+    command: assert_linked "$(command -v mrinfo)"
+    expected_exit_code: 0
+  - name: mrinfo uses Conda libstdc++
+    command: assert_conda_libstdcpp "$(command -v mrinfo)"
+    expected_exit_code: 0
+  - name: dwidenoise resolves on PATH
+    command: command -v dwidenoise
+    expected_exit_code: 0
+  - name: dwidenoise is executable
+    command: test -x "$(command -v dwidenoise)"
+    expected_exit_code: 0
+  - name: dwidenoise has no missing shared libraries
+    command: assert_linked "$(command -v dwidenoise)"
+    expected_exit_code: 0
+  - name: dwidenoise uses Conda libstdc++
+    command: assert_conda_libstdcpp "$(command -v dwidenoise)"
+    expected_exit_code: 0
+  - name: dwi2tensor resolves on PATH
+    command: command -v dwi2tensor
+    expected_exit_code: 0
+  - name: dwi2tensor is executable
+    command: test -x "$(command -v dwi2tensor)"
+    expected_exit_code: 0
+  - name: dwi2tensor has no missing shared libraries
+    command: assert_linked "$(command -v dwi2tensor)"
+    expected_exit_code: 0
+  - name: dwi2tensor uses Conda libstdc++
+    command: assert_conda_libstdcpp "$(command -v dwi2tensor)"
+    expected_exit_code: 0
+  - name: tckgen resolves on PATH
+    command: command -v tckgen
+    expected_exit_code: 0
+  - name: tckgen is executable
+    command: test -x "$(command -v tckgen)"
+    expected_exit_code: 0
+  - name: tckgen has no missing shared libraries
+    command: assert_linked "$(command -v tckgen)"
+    expected_exit_code: 0
+  - name: tckgen uses Conda libstdc++
+    command: assert_conda_libstdcpp "$(command -v tckgen)"
+    expected_exit_code: 0
+  - name: dcm2niix resolves on PATH
+    command: command -v dcm2niix
+    expected_exit_code: 0
+  - name: dcm2niix is executable
+    command: test -x "$(command -v dcm2niix)"
+    expected_exit_code: 0
+  - name: dcm2niix has no missing shared libraries
+    command: assert_linked "$(command -v dcm2niix)"
+    expected_exit_code: 0
+  - name: dcm2niix target exists
+    command: test -e "$(readlink -f "$(command -v dcm2niix)")"
+    expected_exit_code: 0

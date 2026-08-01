@@ -1,0 +1,112 @@
+name: flames
+version: 1.0.0
+container: flames_${version}_REFERENCE.simg
+default_timeout: 120
+
+tests:
+  - name: FLAMeS runtime entrypoints
+    description: Verify the user-facing wrapper and its two inference entrypoints are executable.
+    command: |
+      set -e
+      for entrypoint in flames nnUNetv2_predict hd-bet; do
+        path="$(command -v "$entrypoint")"
+        test -x "$path"
+        echo "$entrypoint=$path"
+      done
+    expected_output_contains:
+      - "flames=/opt/flames/bin/flames"
+      - "nnUNetv2_predict=/opt/miniforge3/envs/flames/bin/nnUNetv2_predict"
+      - "hd-bet=/opt/miniforge3/envs/flames/bin/hd-bet"
+
+  - name: FLAMeS command help
+    description: Verify the wrapper documents its required input, output, skull-stripping, and device options.
+    command: flames --help
+    expected_exit_code: 1
+    expected_output_contains:
+      - "Usage: flames -i FLAIR.nii.gz -o OUTPUT_DIR"
+      - "--skull-strip"
+      - "--device"
+
+  - name: Inference Python stack
+    description: Verify the primary inference and medical-image libraries import in the deployed environment.
+    command: |
+      python - <<'PY'
+      import SimpleITK
+      import nibabel
+      import nnunetv2
+      import numpy
+      import scipy
+      import torch
+
+      print("torch", torch.__version__)
+      print("nnunetv2", nnunetv2.__path__[0])
+      print("SimpleITK", SimpleITK.__version__)
+      PY
+    expected_output_contains:
+      - "torch"
+      - "nnunetv2"
+      - "SimpleITK"
+
+  - name: CPU tensor execution
+    description: Verify the CPU PyTorch runtime can perform a small inference-style tensor operation.
+    command: |
+      python - <<'PY'
+      import torch
+
+      tensor = torch.arange(8, dtype=torch.float32).reshape(1, 1, 2, 2, 2)
+      result = torch.nn.functional.avg_pool3d(tensor, kernel_size=2)
+      assert result.device.type == "cpu"
+      assert result.item() == 3.5
+      print("cpu-average", result.item())
+      PY
+    expected_output_contains: "cpu-average 3.5"
+
+  - name: NIfTI image round trip
+    description: Verify the image I/O stack can write and reload a small three-dimensional FLAIR-like image.
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+
+      path = Path("/tmp/flames-fulltest.nii.gz")
+      data = np.arange(64, dtype=np.float32).reshape(4, 4, 4)
+      nib.save(nib.Nifti1Image(data, np.eye(4)), path)
+      loaded = nib.load(path)
+      np.testing.assert_array_equal(loaded.get_fdata(), data)
+      print("nifti-shape", loaded.shape)
+      PY
+    expected_output_contains: "nifti-shape (4, 4, 4)"
+
+  - name: FLAMeS model assets
+    description: Verify the packaged nnU-Net model contains configuration, plans, and checkpoint data.
+    command: |
+      set -e
+      model=/opt/flames/model
+      test -d "$model"
+      find "$model" -type f | grep -E '/dataset\.json$'
+      find "$model" -type f | grep -E '/plans\.json$'
+      find "$model" -type f | grep -E '/checkpoint_final\.pth$'
+      echo "model-assets-ok"
+    expected_output_contains: "model-assets-ok"
+
+  - name: HD-BET parameter assets
+    description: Verify all five packaged skull-stripping parameter files are present and non-empty.
+    command: |
+      set -e
+      for index in 0 1 2 3 4; do
+        test -s "/opt/hd-bet_params/${index}.model"
+      done
+      test "$(find /opt/hd-bet_params -maxdepth 1 -name '*.model' | wc -l)" -eq 5
+      echo "hd-bet-parameters-ok"
+    expected_output_contains: "hd-bet-parameters-ok"
+
+  - name: Runtime paths avoid the home directory
+    description: Verify model and nnU-Net runtime state use container or temporary paths available at runtime.
+    command: |
+      test "$nnUNet_results" = "/opt/flames/model"
+      test "$nnUNet_raw" = "/tmp/nnunet_raw"
+      test "$nnUNet_preprocessed" = "/tmp/nnunet_preprocessed"
+      echo "runtime-paths-ok"
+    expected_output_contains: "runtime-paths-ok"

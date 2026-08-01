@@ -10,8 +10,10 @@ env:
 on:
   push:
     paths:
-      - builder/*
-      - workflows/*
+      - 'builder/**'
+      - 'workflows/**'
+      - 'recipes/**/OpenReconLabel.json'
+      - 'recipes/OpenReconSchema_1.1.0.json'
 
 jobs:
   test-builder:

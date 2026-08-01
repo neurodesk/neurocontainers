@@ -1,7 +1,7 @@
 {
   "apps": {
     "dhcpstructuralpipeline 1.1": {
-      "version": "20260716",
+      "version": "20260722",
       "exec": "",
       "apptainer_args": []
     }

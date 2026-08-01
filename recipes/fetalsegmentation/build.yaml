@@ -50,6 +50,10 @@ structured_readme:
   example: |-
     # BOUNTI automated fetal brain tissue segmentation (19 ROIs)
     auto-brain-bounti-segmentation-fetal.sh /data/svr_volumes /data/segmentations
+
+    # other tools:
+    mirtk
+    auto-body-reconstruction.sh
   documentation: https://hub.docker.com/r/fetalsvrtk/segmentation
   citation: >-
     Uus, A. U., Kyriakopoulou, V., Makropoulos, A., Fukami-Gartner, A.,

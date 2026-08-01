@@ -1,0 +1,94 @@
+name: panoptica
+version: 2.1.3
+container: panoptica_${version}_REFERENCE.simg
+default_timeout: 60
+
+tests:
+  - name: Panoptica package metadata
+    description: Verify the installed distribution matches the recipe version.
+    command: |
+      python - <<'PY'
+      from importlib.metadata import version
+
+      print(version("panoptica"))
+      PY
+    expected_output_contains: "2.1.3"
+
+  - name: Panoptica runtime imports
+    description: Verify Panoptica and the libraries used by its evaluation pipeline import together.
+    command: |
+      python - <<'PY'
+      import SimpleITK
+      import cc3d
+      import numpy
+      import pandas
+      import panoptica
+      import scipy
+      import skimage
+
+      print(panoptica.__file__)
+      print("SimpleITK", SimpleITK.__version__)
+      PY
+    expected_output_contains:
+      - "/site-packages/panoptica/__init__.py"
+      - "SimpleITK 2.5.5"
+
+  - name: Matched instance evaluation
+    description: Exercise a perfect instance match and verify the resulting detection and quality metrics.
+    command: |
+      python - <<'PY'
+      import numpy as np
+      from panoptica import InputType, Panoptica_Evaluator
+      from panoptica.metrics import Metric
+
+      reference = np.zeros((8, 8, 8), dtype=np.uint8)
+      prediction = np.zeros_like(reference)
+      reference[1:4, 1:4, 1:4] = 1
+      prediction[1:4, 1:4, 1:4] = 1
+
+      evaluator = Panoptica_Evaluator(
+          expected_input=InputType.MATCHED_INSTANCE,
+          decision_metric=Metric.IOU,
+          decision_threshold=0.5,
+      )
+      result = evaluator.evaluate(prediction, reference)["ungrouped"]
+
+      assert result.tp == 1
+      assert result.fp == 0
+      assert result.fn == 0
+      assert result.sq == 1.0
+      assert result.pq == 1.0
+      print("perfect-match", result.tp, result.sq, result.pq)
+      PY
+    expected_output_contains: "perfect-match 1 1.0 1.0"
+
+  - name: Semantic instance approximation
+    description: Exercise connected-component approximation, matching, and evaluation from semantic masks.
+    command: |
+      python - <<'PY'
+      import numpy as np
+      from panoptica import InputType, Panoptica_Evaluator
+      from panoptica.instance_approximator import ConnectedComponentsInstanceApproximator
+      from panoptica.instance_matcher import NaiveThresholdMatching
+
+      reference = np.zeros((12, 12, 12), dtype=np.uint8)
+      prediction = np.zeros_like(reference)
+      reference[1:4, 1:4, 1:4] = 1
+      reference[7:10, 7:10, 7:10] = 1
+      prediction[1:4, 1:4, 1:4] = 1
+      prediction[7:10, 7:10, 7:10] = 1
+
+      evaluator = Panoptica_Evaluator(
+          expected_input=InputType.SEMANTIC,
+          instance_approximator=ConnectedComponentsInstanceApproximator(),
+          instance_matcher=NaiveThresholdMatching(),
+      )
+      result = evaluator.evaluate(prediction, reference)["ungrouped"]
+
+      assert result.tp == 2
+      assert result.fp == 0
+      assert result.fn == 0
+      assert result.pq == 1.0
+      print("semantic-match", result.tp, result.pq)
+      PY
+    expected_output_contains: "semantic-match 2 1.0"

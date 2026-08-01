@@ -1,0 +1,136 @@
+# sodiumgridding container test suite
+# Focused verification for the OpenRecon runtime and gridding dependencies.
+
+name: sodiumgridding
+version: 0.1.6
+container: sodiumgridding_${version}_REFERENCE.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: OpenRecon server help
+    description: Verify the python-ismrmrd server entrypoint starts correctly
+    script: |
+      python /opt/code/python-ismrmrd-server/main.py -h 2>&1 | sed -n '1,20p' | grep 'Example server for MRD streaming format'
+
+  - name: Sodium trajectory and label assets
+    description: Verify the packaged trajectory and OpenRecon label are present and readable
+    script: |
+      python - <<'PY'
+      import json
+      from pathlib import Path
+      import h5py
+
+      trajectories = [
+          Path("/opt/sodiumgridding/23Na_n50_trajectory.h5"),
+          Path("/opt/sodiumgridding/23Na_n28_trajectory.h5"),
+      ]
+      label = Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json")
+      for trajectory in trajectories:
+          with h5py.File(trajectory, "r") as handle:
+              assert "k" in handle, list(handle.keys())
+              print("trajectory", trajectory.name, handle["k"].shape)
+      data = json.loads(label.read_text())
+      assert data
+      print(label)
+      PY
+
+  - name: Orientation choices match the three-stage geometry implementation
+    description: Verify the UI mappings feed the acquisition stage before canonicalization and stacking compensation
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import json
+      from pathlib import Path
+      import sodiumgridding
+
+      label = json.loads(
+          Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json").read_text()
+      )
+      parameters = {item["id"]: item for item in label["parameters"]}
+      offered = {value["id"] for value in parameters["orientation"]["values"]}
+      implemented = set(sodiumgridding.ORIENTATION_IN_PLANE_TRANSFORMS) | {
+          sodiumgridding.ORIENTATION_DEBUG_SELECTION
+      }
+      assert offered == implemented, offered ^ implemented
+      assert parameters["orientation"]["default"] == sodiumgridding.DEFAULT_ORIENTATION
+      assert "orientationflipslice" in parameters
+      assert len(label["parameters"]) <= 14
+      print("orientation choices:", sorted(offered))
+      PY
+
+  - name: Emitted geometry matches the native reconstruction display frame
+    description: Verify the shipped container reproduces the reference slice position
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import numpy as np
+      import sodiumgridding
+
+      # A right-handed target frame is what keeps the scanner drawing our
+      # volume from the same side as the native reconstruction.
+      slices, rows, columns = (
+          np.asarray(target, dtype=float)
+          for target in sodiumgridding.DISPLAY_FRAME_TARGETS
+      )
+      handedness = float(np.dot(np.cross(columns, rows), slices))
+      assert handedness > 0.0, handedness
+
+      # The native reference series holds 128 slices over 220 mm centred at
+      # isocenter and displays frame 48 at SP F28.4.
+      position = sodiumgridding._frame_position(
+          center_position=(0.0, 0.0, 0.0),
+          slice_dir=(0.0, 0.0, 1.0),
+          frame_index=47,
+          slice_count=128,
+          slice_spacing_mm=220.0 / 128.0,
+      )
+      label = sodiumgridding._slice_position_label(position)
+      assert label == "F28.4", label
+
+      # Stage 3 must reverse the frames alone. Reversing slice_dir with them
+      # would cancel, because ICE positions the frames from that vector.
+      volume = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+      compensated, content_dir, reversed_frames = (
+          sodiumgridding._compensate_ice_frame_stacking(
+              volume, np.array([0.0, 0.0, 1.0])
+          )
+      )
+      assert sodiumgridding.ICE_STACKS_FRAMES_AGAINST_SLICE_DIR is True
+      assert reversed_frames is True
+      np.testing.assert_array_equal(compensated, volume[::-1])
+      np.testing.assert_allclose(content_dir, [0.0, 0.0, -1.0])
+
+      # The reversal makes the emitted pixels disagree with the emitted
+      # slice_dir, so the container must ship the declaration that lets a
+      # header-driven consumer undo it, and mrd2nifti must honour it.
+      import importlib.util
+
+      spec = importlib.util.spec_from_file_location(
+          "mrd2nifti", "/opt/code/python-ismrmrd-server/mrd2nifti.py"
+      )
+      mrd2nifti = importlib.util.module_from_spec(spec)
+      spec.loader.exec_module(mrd2nifti)
+      assert (
+          mrd2nifti.FRAME_ORDER_REVERSED_ATTRIBUTE
+          == sodiumgridding.OUTPUT_FRAME_ORDER_REVERSED_ATTRIBUTE
+      ), mrd2nifti.FRAME_ORDER_REVERSED_ATTRIBUTE
+      print("display frame handedness:", handedness, "frame 48/128:", label)
+      PY
+
+  - name: Sodium gridding module imports
+    description: Verify the reconstruction module imports with its runtime dependencies
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import SimpleITK, h5py, ismrmrd, numba, pyfftw, scipy, sodiumgridding, twixtools; print(sodiumgridding.__file__)" | grep -x '/opt/code/python-ismrmrd-server/sodiumgridding.py'
+
+  - name: Helper scripts render help
+    description: Verify conversion helper scripts start and expose command line help
+    script: |
+      python /opt/code/python-ismrmrd-server/twix2mrd.py -h 2>&1 | grep 'usage:'
+      python /opt/code/python-ismrmrd-server/siemens_twix2mrd.py -h 2>&1 | grep 'usage:'
+      python /opt/code/python-ismrmrd-server/mrd2nifti.py -h 2>&1 | grep 'usage:'

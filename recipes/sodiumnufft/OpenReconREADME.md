@@ -18,8 +18,10 @@ The output is a derived magnitude series named
 `<protocol>_sodiumnufft`. If the protocol name is unavailable, the fallback
 series name is `sodiumnufft`. The NUFFT is computed on an isotropic grid, and
 the scanner-facing output preserves that reconstructed slice count. The output
-is emitted as one 2D image message per reconstructed slice so the scanner can
-store the stack as one derived series instead of splitting a packed volume.
+is emitted as one explicit 3D MRD image whose depth is the reconstructed matrix
+size. See the note under Runtime Notes on matching the protocol's Slices per
+Slab to the reconstruction matrix size to avoid the injector splitting the
+volume.
 
 ## Input Requirements
 
@@ -69,12 +71,21 @@ reconstruction field of view in cm before the adjoint NUFFT.
 - The reconstruction is implemented for raw k-space input. If image data is
   sent to this app, the images are returned unchanged.
 - The derived output is magnitude-only and is emitted as one explicit 3D MRD
-  image whose depth is the reconstructed matrix size. This prevents the Siemens
-  injector from grouping separate 2D messages using the source protocol's
-  Slices per Slab value and produces one 64-frame volume like the ICE recon.
-- Output pixels are flipped up-down and then left-right to match the ICE
-  reconstruction display orientation. The read direction is reversed with the
-  left-right pixel flip so scanner R/L markers remain correct.
+  image whose depth is the reconstructed matrix size. This alone does **not**
+  guarantee a single volume: with `UseIceFillingMiniHeader=true` in the FIRE
+  OpenRecon XML the Siemens injector numbers every frame from the acquisition
+  protocol's **Slices per Slab** (`NoImagesPerSlab`). That protocol value must
+  equal the reconstruction base resolution (`matrixsize`). If they differ (for
+  example `NoImagesPerSlab=32` with `matrixsize=64`) the DICOM writer flushes
+  two 32-frame volumes and the slice counter folds (1..32 then 32..1). To get
+  one 64-frame volume, set the protocol's Slices per Slab to the reconstruction
+  matrix size on the scanner.
+- To match the ICE reconstruction display orientation, only the read (L/R,
+  column) axis is reversed, with `read_dir` negated to keep the R/L marker
+  consistent. The phase (A/P, row) and slice (H/F) axes are left in natural
+  order: reversing the rows put anterior at the bottom (the v0.1.8 "AP flip"),
+  and negating `phase_dir` only relabelled A->P and flipped the through-plane
+  H/F marker without moving the pixels.
 - Each reconstruction logs the FIRE-visible CPU count, CPU affinity, cgroup
   limits, configured worker cap, and effective number of coil workers.
 - `maxcoils` is mainly useful for faster smoke tests and debugging.

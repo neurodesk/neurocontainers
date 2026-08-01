@@ -426,6 +426,97 @@ def test_openrecon_exposes_debug_threshold_segment_toggle():
     assert defaults["sctdebugthresholdsegment"] is False
 
 
+def test_process_returns_original_images_when_sct_analysis_fails():
+    helpers = _load_runtime_helpers_for_test(
+        ["_get_boolean_config_param", "process"],
+        assignments=["OPENRECON_DEFAULTS"],
+    )
+    image = helpers["FakeImage"](np.ones((1, 2, 2), dtype=np.int16))
+    image.image_type = helpers["ismrmrd"].IMTYPE_MAGNITUDE
+    image.getHead().image_series_index = 1
+    fallback_image = object()
+
+    class FakeConnection:
+        def __init__(self):
+            self.sent_images = []
+            self.logged_errors = []
+            self.closed = False
+
+        def __iter__(self):
+            return iter([image])
+
+        def send_logging(self, severity, message):
+            self.logged_errors.append((severity, message))
+
+        def send_close(self):
+            self.closed = True
+
+    class FakeAllocator:
+        def allocate(self, role):
+            assert role == "ORIGINAL"
+            return 2
+
+    class FakeLogging:
+        @staticmethod
+        def info(*args, **kwargs):
+            pass
+
+        @staticmethod
+        def warning(*args, **kwargs):
+            pass
+
+        @staticmethod
+        def error(*args, **kwargs):
+            pass
+
+    class FakeMrdHelper:
+        @staticmethod
+        def get_json_config_param(config, parameter_id, default, type=None):
+            return config.get(parameter_id, default)
+
+    helpers["ismrmrd"].Acquisition = type("FakeAcquisition", (), {})
+    helpers["ismrmrd"].Waveform = type("FakeWaveform", (), {})
+    helpers["logging"] = FakeLogging
+    helpers["mrdhelper"] = FakeMrdHelper
+    helpers["traceback"] = __import__("traceback")
+    helpers["constants"] = type("FakeConstants", (), {"MRD_LOGGING_ERROR": 2})
+    helpers["_get_image_series_index"] = lambda source_image: 1
+    helpers["_build_connection_series_allocator"] = (
+        lambda source_images: FakeAllocator()
+    )
+    helpers["_as_image_list"] = (
+        lambda value: list(value) if isinstance(value, list) else [value]
+    )
+
+    def fail_sct(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, ["sct_deepseg", "spine"])
+
+    helpers["process_image"] = fail_sct
+
+    def restamp_originals(images, role, series_index):
+        assert images == [image]
+        assert role == "ORIGINAL"
+        assert series_index == 2
+        return [fallback_image]
+
+    helpers["_restamp_passthrough_images"] = restamp_originals
+    helpers["_log_and_validate_output_series_contract"] = (
+        lambda *args, **kwargs: None
+    )
+    helpers["_send_images_by_series"] = (
+        lambda connection, images, label: connection.sent_images.extend(images)
+    )
+
+    connection = FakeConnection()
+    metadata = type("Metadata", (), {"encoding": []})()
+    helpers["process"](connection, {"sendoriginal": True}, metadata)
+
+    assert connection.sent_images == [fallback_image]
+    assert len(connection.logged_errors) == 1
+    assert "CalledProcessError" in connection.logged_errors[0][1]
+    assert connection.closed is True
+
+
 def test_repeated_slice_positions_are_split_into_sct_input_volumes():
     helpers = _load_runtime_helpers_for_test(
         [

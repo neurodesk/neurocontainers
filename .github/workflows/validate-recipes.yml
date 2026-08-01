@@ -5,7 +5,10 @@ on:
     paths:
       - 'recipes/**/*.yaml'
       - 'recipes/**/*.yml'
+      - 'recipes/**/OpenReconLabel.json'
+      - 'recipes/OpenReconSchema_1.1.0.json'
       - 'builder/validation.py'
+      - 'workflows/validate_openrecon_labels.py'
       - 'workflows/validate_all.sh'
 
 permissions:
@@ -32,7 +35,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install attrs>=23.0.0 pyyaml>=6.0.2 jinja2
+          python -m pip install 'attrs>=23.0.0' 'pyyaml>=6.0.2' jinja2 jsonschema==4.23.0
+
+      - name: Validate OpenRecon labels
+        run: python workflows/validate_openrecon_labels.py
 
       - name: Get changed files
         id: changed-files

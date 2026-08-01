@@ -1,8 +1,9 @@
 {
   "apps": {
     "mrtrix3src latest": {
-      "version": "latest",
-      "exec": ""
+      "version": "20260527",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [

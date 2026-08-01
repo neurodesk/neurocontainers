@@ -9,11 +9,6 @@ on:
     branches: [main]
     paths:
       - "releases/**/*.json"
-  pull_request:
-    types: [closed]
-    branches: [main]
-    paths:
-      - "releases/**/*.json"
   workflow_dispatch:
 
 # Serialize runs so quick release bursts force-push the branch in order; each
@@ -27,7 +22,6 @@ env:
 
 jobs:
   update-apps-json:
-    if: github.event_name != 'pull_request' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:

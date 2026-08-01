@@ -105,6 +105,15 @@ def validate_non_empty_string(instance, attribute, value):
         raise ValueError(f"{attribute.name} cannot be empty")
 
 
+def validate_recipe_name(instance, attribute, value):
+    """Validate the published recipe name."""
+    validate_non_empty_string(instance, attribute, value)
+    if "_" in value:
+        raise ValueError(
+            f"{attribute.name} cannot contain underscores (got '{value}')"
+        )
+
+
 def validate_url(instance, attribute, value):
     """Basic URL validation"""
     if value.startswith("{{"):
@@ -634,7 +643,7 @@ class NeuroDockerBuildRecipe:
 
 @attrs.define
 class ContainerRecipe:
-    name: str = attrs.field(validator=validate_non_empty_string)
+    name: str = attrs.field(validator=validate_recipe_name)
     version: str = attrs.field(validator=validate_non_empty_string)
     architectures: List[str] = attrs.field(validator=attrs.validators.min_len(1))
     build: NeuroDockerBuildRecipe = attrs.field()

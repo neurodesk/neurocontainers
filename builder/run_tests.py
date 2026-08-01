@@ -137,8 +137,6 @@ def substitute_variables(text: str, variables: dict[str, str]) -> str:
 def collect_top_level_variables(config: dict[str, Any]) -> dict[str, str]:
     """Extract top-level scalar values available for fulltest substitution."""
     reserved_keys = {
-        "name",
-        "version",
         "container",
         "test_data",
         "setup",
