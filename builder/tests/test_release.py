@@ -60,3 +60,25 @@ def test_arm64_release_shape_matches_current_contract() -> None:
     assert data["architecture"] == "aarch64"
     assert data["apps"]["tool 1.2.3 arm64"]["architecture"] == "aarch64"
     assert data["apps"]["tool 1.2.3 arm64"]["image"] == "tool_1.2.3_arm64"
+
+
+def test_named_arm64_variant_is_a_normal_container_release() -> None:
+    data = release_data(
+        "tool_arm64",
+        "1.2.3",
+        {"categories": ["workflows"], "apptainer_args": ["--cleanenv"]},
+        "20260102",
+        "aarch64",
+        "arm64",
+    )
+
+    assert release_version("1.2.3", "aarch64", "arm64") == "1.2.3"
+    assert data["variant"] == "arm64"
+    assert data["architecture"] == "aarch64"
+    assert data["apps"] == {
+        "tool_arm64 1.2.3": {
+            "version": "20260102",
+            "exec": "",
+            "apptainer_args": ["--cleanenv"],
+        }
+    }

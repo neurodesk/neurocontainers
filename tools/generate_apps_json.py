@@ -58,8 +58,10 @@ def load_release_file(file_path: str) -> Dict[str, Any]:
         return {"apps": {}, "categories": []}
 
 
-def is_arm64_release(release_data: Dict[str, Any]) -> bool:
-    """Return whether a release targets arm64/aarch64."""
+def is_legacy_arm64_release(release_data: Dict[str, Any]) -> bool:
+    """Return whether this uses the old version-suffixed arm64 contract."""
+    if release_data.get("variant"):
+        return False
     architecture = release_data.get('architecture')
     if architecture in {'aarch64', 'arm64'}:
         return True
@@ -91,8 +93,8 @@ def merge_container_releases(container_name: str, release_files: list) -> Dict[s
         print(f"  Processing {container_name} {version}")
         
         release_data = load_release_file(file_path)
-        if is_arm64_release(release_data):
-            print(f"    Skipping {container_name} {version}: arm64 releases are not included in apps.json yet")
+        if is_legacy_arm64_release(release_data):
+            print(f"    Skipping {container_name} {version}: legacy arm64 releases are not included in apps.json")
             continue
         
         # Merge apps
