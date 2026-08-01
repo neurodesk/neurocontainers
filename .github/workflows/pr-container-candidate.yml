@@ -85,6 +85,20 @@ jobs:
         uses: ./.github/actions/setup-apptainer
         with:
           apptainer-version: 1.4.3
+      - name: Prepare Apptainer scratch directories
+        run: |
+          set -euo pipefail
+          # Apptainer otherwise falls back to $HOME/.apptainer, which does not
+          # exist on the ARC runner pods and fails the build with
+          # "failed to create build parent dir".
+          BASE_PATH="${RUNNER_TEMP:-/tmp}"
+          mkdir -p "$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"
+          {
+            echo "APPTAINER_CACHEDIR=$BASE_PATH/apptainer/cache"
+            echo "APPTAINER_TMPDIR=$BASE_PATH/apptainer/tmp"
+            echo "SINGULARITY_CACHEDIR=$BASE_PATH/apptainer/cache"
+            echo "SINGULARITY_TMPDIR=$BASE_PATH/apptainer/tmp"
+          } >> "$GITHUB_ENV"
       - name: Inspect recipe
         id: info
         env:
