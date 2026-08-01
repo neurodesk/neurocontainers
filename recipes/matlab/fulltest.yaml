@@ -26,7 +26,7 @@
 #   - No bundled Boost libraries
 
 name: matlab
-version: R2022b
+version: 2022b
 
 test_data:
   matlab_root: /opt/matlab/R2022b

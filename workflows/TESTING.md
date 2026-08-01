@@ -25,10 +25,14 @@ Resolution order, highest precedence first:
 
 1. **`--container <path>`** — the artifact the caller already downloaded or built. Both CI entry points use this: `workflows/release_test_runner.py` passes the release SIF (or `--candidate-container`) it just fetched, and `.github/workflows/run-fulltest.yml` passes the file it downloaded or converted. CI therefore never depends on a filename lookup.
 2. **`container:` plus `pin_container: true`** — an explicit historical pin. The named file must exist; nothing is derived and nothing falls back.
-3. **Release metadata** — `releases/<recipe>/<version>.json`, falling back to the newest release for that recipe. The expected filename is `<image>_<build_date>.simg`, or `<recipe>_<version>_<build_date>.simg` when the metadata carries no `image` field.
+3. **Release metadata** — `releases/<recipe>/<version>.json`, keyed on the suite's `name:` and `version:` (top-level variables in `version:` are expanded first). The expected filename is `<image>_<build_date>.simg`, or `<recipe>_<version>_<build_date>.simg` when the metadata carries no `image` field. When the suite's version has no release file, the newest release for the recipe is used and the substitution is reported, so a recipe whose version has outrun its published releases is visible rather than silent.
 4. **Version-scoped lookup in `--containers-dir`** — used when the exact filename is absent, so a locally built `sifs/<recipe>_<version>.sif` still works. The search is scoped to `<recipe>_<version>`, so it can select a different build date of the same release but never a different version; a lookup that would have to choose between versions fails as ambiguous.
 
-A `container:` value that disagrees with release metadata is an error rather than something to silently override, and the message names both the declared and the expected artifact. Fix it by deleting the `container:` key, not by editing the filename — that hand-maintenance loop is what this contract exists to remove. `--releases-dir` points the resolver at a different metadata tree and `--no-release-metadata` disables it entirely for offline runs.
+Because resolution keys off them, `name:` must match the recipe directory and `version:` must be present and fully expanded. These are covered by contract tests in `builder/tests/test_release_artifact.py`.
+
+Failures are reported rather than worked around. A `container:` that disagrees with release metadata names both the declared and the expected artifact — fix it by deleting the `container:` key, not by editing the filename, since that hand-maintenance loop is what this contract exists to remove. An unexpanded `${var}` in `version:` and a release file carrying no usable build date are both errors, not a quiet fallback to some other container.
+
+`--releases-dir` points the resolver at a different metadata tree and `--no-release-metadata` disables it entirely for offline runs.
 
 ## GitHub Actions Entry Points
 

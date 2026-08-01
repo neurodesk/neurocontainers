@@ -10,7 +10,7 @@
 # help messages, and option parsing.
 
 name: topaz
-version: 0.2.5a
+version: 0.2.5
 
 tests:
   # ==========================================================================

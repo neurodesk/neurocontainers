@@ -11,7 +11,7 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 
 name: physio
-version: r2021a_20220220
+version: r2021a
 
 # Environment variables
 env:

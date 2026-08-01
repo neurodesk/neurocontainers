@@ -151,6 +151,10 @@ tests:
     expected_output_contains: "toolname"
 ```
 
+`name:` must match the recipe directory and `version:` must be present and name a
+release of that recipe, because those two fields are what the artifact is
+resolved from.
+
 Do not add a `container:` key. The artifact under test is resolved from
 `releases/<name>/<version>.json`, so a hardcoded SIF name only ever goes stale;
 the runner rejects one that disagrees with the release metadata. The single

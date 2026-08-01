@@ -642,7 +642,10 @@ def run_test_suite(
 
     resolution = resolve_suite_container(
         recipe=str(config.get("name", "") or yaml_path.parent.name),
-        version=str(config.get("version", "") or ""),
+        version=substitute_variables(
+            str(config.get("version", "") or ""),
+            top_level_variables,
+        ),
         declared=declared_container,
         pinned=bool(config.get("pin_container", False)),
         containers_dir=containers_dir,

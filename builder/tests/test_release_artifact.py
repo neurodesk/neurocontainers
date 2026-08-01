@@ -258,6 +258,93 @@ def test_ambiguous_undated_matches_are_reported_not_guessed(tmp_path: Path) -> N
     assert "tool_2.0.0.simg" in resolution.error
 
 
+def test_unexpanded_version_template_is_rejected(tmp_path: Path) -> None:
+    """A `${var}` that no top-level key defines must not resolve to some release."""
+    releases = tmp_path / "releases"
+    write_release(releases, "tool", "1.2.3", version="20250101", exec="")
+    containers = tmp_path / "containers"
+    touch(containers, "tool_1.2.3_20250101.simg")
+
+    resolution = resolve_suite_container(
+        recipe="tool",
+        version="${tool_version}",
+        declared=None,
+        pinned=False,
+        containers_dir=containers,
+        releases_dir=releases,
+    )
+
+    assert resolution.path is None
+    assert "unexpanded template" in resolution.error
+
+
+def test_fallback_to_newest_release_is_reported(tmp_path: Path) -> None:
+    releases = tmp_path / "releases"
+    write_release(releases, "tool", "1.2.3", version="20250101", exec="")
+    containers = tmp_path / "containers"
+    expected = touch(containers, "tool_1.2.3_20250101.simg")
+
+    resolution = resolve_suite_container(
+        recipe="tool",
+        version="9.9.9",
+        declared=None,
+        pinned=False,
+        containers_dir=containers,
+        releases_dir=releases,
+    )
+
+    assert resolution.error is None
+    assert resolution.path == expected
+    assert resolution.source == "release-metadata-latest"
+    assert any("falling back" in note for note in resolution.notes)
+
+
+def test_malformed_release_metadata_is_not_mistaken_for_an_unreleased_recipe(
+    tmp_path: Path,
+) -> None:
+    releases = tmp_path / "releases"
+    write_release(releases, "tool", "1.2.3", version="not-a-build-date", exec="")
+    containers = tmp_path / "containers"
+    touch(containers, "tool_1.2.3_20250101.simg")
+
+    resolution = resolve_suite_container(
+        recipe="tool",
+        version="9.9.9",
+        declared=None,
+        pinned=False,
+        containers_dir=containers,
+        releases_dir=releases,
+    )
+
+    assert resolution.path is None
+    assert "No usable build date" in resolution.error
+    assert "1.2.3.json" in resolution.error
+
+
+def test_repository_fulltests_declare_a_resolvable_name_and_version() -> None:
+    """Artifact resolution keys off these two fields, so both must be usable."""
+    offenders = []
+    for config_path in sorted((REPO_ROOT / "recipes").glob("*/fulltest.yaml")):
+        recipe = config_path.parent.name
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        name = str(config.get("name", "") or "")
+        version = str(config.get("version", "") or "")
+
+        # Mirror the top-level variable expansion run_tests.py applies.
+        for key, value in config.items():
+            if key != "version" and isinstance(value, (str, int, float)):
+                version = version.replace(f"${{{key}}}", str(value))
+
+        if name != recipe:
+            offenders.append(f"{recipe}: name is {name or '(missing)'}")
+        if not version:
+            offenders.append(f"{recipe}: version is missing")
+        elif "${" in version or version.startswith("$"):
+            offenders.append(f"{recipe}: version {version} is an unexpanded template")
+
+    assert not offenders, "\n".join(offenders)
+
+
 def test_repository_fulltests_do_not_hardcode_release_artifacts() -> None:
     """Artifact names come from releases/ metadata, not hand-maintained YAML."""
     offenders = []
