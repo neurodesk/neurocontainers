@@ -1,11 +1,17 @@
 name: Auto Update Recipes
 on:
   schedule:
-    - cron: "0 3 * * 1"   # every Monday 
+    - cron: "0 3 * * 1"   # every Monday
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report available updates without opening pull requests"
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   issues: write
 
 env:
@@ -16,12 +22,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # A PAT is used so the version-bump pull requests trigger the recipe CI
+          # workflows; pull requests pushed with GITHUB_TOKEN do not.
+          token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION || github.token }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install deps
         run: pip install --upgrade pip pyyaml requests packaging
+      - name: Configure git
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Run updater
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION || secrets.GITHUB_TOKEN }}
+          AUTO_UPDATE_DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
         run: python builder/check_version.py
