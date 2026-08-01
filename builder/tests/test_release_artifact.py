@@ -180,6 +180,32 @@ def test_override_wins_over_release_metadata(tmp_path: Path) -> None:
     assert resolution.source == "override"
 
 
+def test_override_is_resolved_to_an_absolute_path(tmp_path: Path, monkeypatch) -> None:
+    """run_tests.py runs the container runtime from the suite work dir.
+
+    A relative override is resolved against that directory rather than the
+    caller's, which hands the runtime a doubled path and fails every test in the
+    suite on the container health check.
+    """
+    candidate = touch(tmp_path / "candidates", "tool-candidate.simg")
+    monkeypatch.chdir(tmp_path)
+
+    resolution = resolve_suite_container(
+        recipe="tool",
+        version="1.2.3",
+        declared=None,
+        pinned=False,
+        containers_dir=tmp_path / "containers",
+        releases_dir=None,
+        override="candidates/tool-candidate.simg",
+    )
+
+    assert resolution.error is None
+    assert resolution.path is not None
+    assert resolution.path.is_absolute()
+    assert resolution.path == candidate.resolve()
+
+
 def test_locally_built_sif_satisfies_the_release_artifact(tmp_path: Path) -> None:
     """`sf-make` writes sifs/<name>_<version>.sif, which carries no build date."""
     releases = tmp_path / "releases"

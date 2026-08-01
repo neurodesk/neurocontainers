@@ -323,7 +323,11 @@ def resolve_suite_container(
     wins — CI resolves the release itself and passes the resulting file through.
     """
     if override:
-        override_path = Path(override)
+        # Absolute, because the caller's cwd and the test runner's cwd are not
+        # the same directory: run_tests.py invokes the container runtime with
+        # cwd set to the suite work dir, so a relative override resolves against
+        # that instead and the runtime is handed a doubled path.
+        override_path = Path(override).resolve()
         if not override_path.is_file():
             return ContainerResolution(
                 reference=str(override_path),
