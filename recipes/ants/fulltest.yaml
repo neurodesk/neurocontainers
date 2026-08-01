@@ -14,7 +14,6 @@
 
 name: ants
 version: 2.6.0
-container: ants_2.6.0_20250424.simg
 
 required_files:
   - dataset: ds000001

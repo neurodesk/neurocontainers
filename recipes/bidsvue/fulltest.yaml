@@ -3,7 +3,6 @@
 
 name: bidsvue
 version: 0.1.20260704
-container: bidsvue_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output/bidsvue

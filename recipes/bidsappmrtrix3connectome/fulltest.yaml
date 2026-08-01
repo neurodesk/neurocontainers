@@ -16,7 +16,6 @@
 
 name: bidsappmrtrix3connectome
 version: 0.5.3
-container: bidsappmrtrix3connectome_0.5.3_20230615.simg
 
 required_files:
   - dataset: ds000001

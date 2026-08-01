@@ -1,6 +1,5 @@
 name: functionnectome
 version: 2.5.0
-container: functionnectome_2.5.0_20260604.simg
 default_timeout: 120
 tests:
 - name: Test Functionnectome entry points

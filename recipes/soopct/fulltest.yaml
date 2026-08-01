@@ -1,6 +1,5 @@
 name: soopct
 version: 0.0.0
-container: soopct_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output/soopct

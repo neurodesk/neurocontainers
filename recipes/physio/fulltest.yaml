@@ -12,7 +12,6 @@
 
 name: physio
 version: r2021a_20220220
-container: physio_r2021a_20220220.simg
 
 # Environment variables
 env:

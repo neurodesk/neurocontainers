@@ -1,6 +1,5 @@
 name: fetalsegmentation
 version: "20241116"
-container: fetalsegmentation_20241116_REFERENCE.simg
 default_timeout: 120
 
 tests:

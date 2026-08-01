@@ -1,6 +1,5 @@
 name: flames
 version: 1.0.0
-container: flames_${version}_REFERENCE.simg
 default_timeout: 120
 
 tests:

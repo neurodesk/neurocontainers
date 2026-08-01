@@ -3,7 +3,6 @@
 
 name: fitlins
 version: 0.11.0
-container: fitlins_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output

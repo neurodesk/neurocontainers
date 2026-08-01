@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-import json
-import os
-import re
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
-BUILD_DATE_PATTERN = re.compile(r"^\d{8}$")
+from builder.release_artifact import (  # re-exported for existing callers
+    BUILD_DATE_PATTERN,
+    find_latest_release_file,
+)
+
+__all__ = [
+    "BUILD_DATE_PATTERN",
+    "discover_test_config",
+    "find_latest_release_file",
+    "resolve_path",
+]
 
 
 def resolve_path(candidate: str | Path, *, repo_root: Path, cwd: Path | None = None) -> Path:
@@ -24,60 +31,6 @@ def resolve_path(candidate: str | Path, *, repo_root: Path, cwd: Path | None = N
             return resolved
 
     return path.resolve()
-
-
-def find_latest_release_file(
-    release_dir: str | Path,
-) -> Tuple[Optional[Path], Optional[str], Optional[str]]:
-    """Select the most recent release metadata file for a recipe.
-
-    Returns the path, release version and build date (if available).
-    """
-
-    release_path = Path(release_dir)
-    if not release_path.is_dir():
-        return None, None, None
-
-    latest_path: Optional[Path] = None
-    latest_build_date = ""
-    latest_version = ""
-
-    for entry in sorted(release_path.iterdir()):
-        if entry.suffix != ".json":
-            continue
-
-        candidate_version = entry.stem
-        build_date = ""
-
-        try:
-            data = json.loads(entry.read_text(encoding="utf-8"))
-            apps = data.get("apps", {}) or {}
-            if apps:
-                first_value = next(iter(apps.values()))
-                build_date = str(first_value.get("version", "")).strip()
-        except Exception:
-            build_date = ""
-        if not BUILD_DATE_PATTERN.match(build_date):
-            continue
-
-        if latest_path is None:
-            latest_path = entry
-            latest_build_date = build_date
-            latest_version = candidate_version
-            continue
-
-        if build_date and (not latest_build_date or build_date > latest_build_date):
-            latest_path = entry
-            latest_build_date = build_date
-            latest_version = candidate_version
-        elif build_date == latest_build_date and candidate_version > latest_version:
-            latest_path = entry
-            latest_version = candidate_version
-
-    if latest_path is None:
-        return None, None, None
-
-    return latest_path, latest_version, latest_build_date or None
 
 
 def discover_test_config(recipe_dir: str | Path) -> Optional[Path]:

@@ -346,12 +346,9 @@ def test_run_fulltest_release_uses_release_image_basename(
             },
         }
     ]
-    assert (
-        "container: neurodesktop_20260428_arm64_20260519.simg"
-        in (output_dir / "fulltest-suite-neurodesktop.yaml").read_text(
-            encoding="utf-8"
-        )
-    )
+    assert "container:" not in (
+        output_dir / "fulltest-suite-neurodesktop.yaml"
+    ).read_text(encoding="utf-8")
     assert run_commands == [
         [
             "uv",
@@ -360,6 +357,12 @@ def test_run_fulltest_release_uses_release_image_basename(
             str(output_dir / "fulltest-suite-neurodesktop.yaml"),
             "-c",
             str(output_dir / "fulltest-containers"),
+            "--container",
+            str(
+                output_dir
+                / "fulltest-containers"
+                / "neurodesktop_20260428_arm64_20260519.simg"
+            ),
             "-o",
             str(output_dir / "fulltest-raw-neurodesktop.json"),
             "--log",

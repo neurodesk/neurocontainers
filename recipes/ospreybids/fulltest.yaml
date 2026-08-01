@@ -11,7 +11,6 @@
 
 name: ospreybids
 version: 4.2.1
-container: ospreybids_4.2.1_20250808.simg
 
 test_data:
   output_dir: test_output

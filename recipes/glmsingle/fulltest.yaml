@@ -13,7 +13,6 @@
 
 name: glmsingle
 version: "1.2"
-container: glmsingle_1.2_20240520.simg
 
 required_files:
   - dataset: ds000001

@@ -9,7 +9,6 @@
 
 name: hnncore
 version: "0.3"
-container: hnncore_0.3.simg
 
 test_data:
   output_dir: test_output

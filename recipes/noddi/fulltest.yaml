@@ -1,6 +1,5 @@
 name: noddi
 version: '1.0'
-container: noddi_1.0_20260520.simg
 default_timeout: 120
 tests:
 - name: NODDI wrapper usage

@@ -1,6 +1,5 @@
 name: lipsia
 version: 3.1.1
-container: lipsia_${version}_REFERENCE.simg
 default_timeout: 60
 tests:
 - name: vbcm resolves on PATH

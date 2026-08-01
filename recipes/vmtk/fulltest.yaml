@@ -10,7 +10,6 @@
 
 name: vmtk
 version: 1.5.0
-container: vmtk_1.5.0_20241004.simg
 
 test_data:
   output_dir: test_output

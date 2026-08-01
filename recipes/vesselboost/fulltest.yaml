@@ -21,7 +21,6 @@
 
 name: vesselboost
 version: 2.0.23
-container: vesselboost_2.0.23_20260415.simg
 
 required_files:
   - dataset: ds000001

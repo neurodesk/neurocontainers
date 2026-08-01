@@ -12,7 +12,6 @@
 name: spinalcordtoolbox
 version: "7.3.0"
 upstream_version: "7.3"
-container: spinalcordtoolbox_7.3.0_20260605.simg
 
 required_files:
   - dataset: ds000001

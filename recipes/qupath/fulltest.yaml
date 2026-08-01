@@ -12,7 +12,6 @@
 
 name: qupath
 version: 0.7.0
-container: qupath_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output

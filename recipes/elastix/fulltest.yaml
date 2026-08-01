@@ -16,7 +16,6 @@
 
 name: elastix
 version: 5.1.0
-container: elastix_5.1.0_20230407.simg
 
 required_files:
   - dataset: ds000001

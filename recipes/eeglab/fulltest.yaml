@@ -23,7 +23,6 @@
 
 name: eeglab
 version: "2020.0"
-container: eeglab_2020.0_20211026.simg
 
 required_files:
   - dataset: ds000001

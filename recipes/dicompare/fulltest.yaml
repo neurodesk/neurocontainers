@@ -12,7 +12,6 @@
 
 name: dicompare
 version: 0.5.4
-container: dicompare_0.5.4.simg
 
 required_files:
   - dataset: ds000001

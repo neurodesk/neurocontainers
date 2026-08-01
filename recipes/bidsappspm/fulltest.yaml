@@ -14,7 +14,6 @@
 
 name: bidsappspm
 version: 0.0.20
-container: bidsappspm_0.0.20_20230629.simg
 
 required_files:
   - dataset: ds000001

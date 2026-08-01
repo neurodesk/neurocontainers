@@ -27,7 +27,6 @@
 
 name: matlab
 version: R2022b
-container: matlab_2022b_20250124.simg
 
 test_data:
   matlab_root: /opt/matlab/R2022b

@@ -18,7 +18,6 @@
 
 name: tgvqsm
 version: 1.0.0
-container: tgvqsm_1.0.0_20260601.simg
 
 required_files:
   - dataset: ds000001

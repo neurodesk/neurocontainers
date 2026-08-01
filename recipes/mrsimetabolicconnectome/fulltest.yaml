@@ -1,6 +1,5 @@
 name: mrsimetabolicconnectome
 version: 1.0.0
-container: mrsimetabolicconnectome_${version}_REFERENCE.simg
 default_timeout: 180
 
 test_data:

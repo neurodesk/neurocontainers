@@ -17,7 +17,6 @@
 
 name: syncro
 version: 0.1.1
-container: syncro_0.1.1_20251216.simg
 
 required_files:
   - dataset: ds000001

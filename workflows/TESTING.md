@@ -6,6 +6,7 @@ This document describes how container tests are defined, executed locally, and a
 
 - **Test sources** live beside each recipe in `recipes/<name>/fulltest.yaml`. `test.yaml`, `test.sh`, and embedded `build.yaml` tests are no longer supported recipe test formats.
 - **`builder/run_tests.py`** is the fulltest executor. Release PR testing invokes it through `workflows/release_test_runner.py`, which also runs the builtin deploy bins/path check.
+- **`builder/release_artifact.py`** decides which SIF a fulltest runs against. See [Release Artifact Resolution](#release-artifact-resolution) below.
 - **`workflows/container_tester.py`** still provides runtime selection, release container downloads, Docker-to-SIF conversion, and the builtin deploy check. It is not the fulltest YAML executor. Key flags you will see in CI:
   - `--runtime apptainer` forces the Apptainer/Singularity backend.
   - `--location auto` searches CVMFS first, then local `./sifs`, then downloads via release metadata. Release downloads try Nectar Object Storage first and fall back to the AWS S3 mirror. Docker tags are only used as the final fallback when the selected runtime is Docker.
@@ -15,6 +16,19 @@ This document describes how container tests are defined, executed locally, and a
 - **`workflows/generate_test_report.py`** turns the JSON summary into a PR-friendly Markdown report. GitHub Actions uploads both the JSON and Markdown outputs as artifacts and uses the Markdown for inline comments.
 - **`workflows/format_test_results.py`** converts a single container’s JSON results into Markdown suitable for GitHub issue comments.
 - **`workflows/pr_test_runner.py`** provides a higher-level interface that scans git diff to find updated recipes. It is useful for local validation (`test-containers.sh test-pr`) but is not wired into the current Actions workflows.
+
+## Release Artifact Resolution
+
+`fulltest.yaml` does not name the SIF it runs against. `releases/<recipe>/<version>.json` already records the authoritative build date, so `builder/release_artifact.py` derives the artifact from it and the recipe files stay untouched when a container is rebuilt.
+
+Resolution order, highest precedence first:
+
+1. **`--container <path>`** — the artifact the caller already downloaded or built. Both CI entry points use this: `workflows/release_test_runner.py` passes the release SIF (or `--candidate-container`) it just fetched, and `.github/workflows/run-fulltest.yml` passes the file it downloaded or converted. CI therefore never depends on a filename lookup.
+2. **`container:` plus `pin_container: true`** — an explicit historical pin. The named file must exist; nothing is derived and nothing falls back.
+3. **Release metadata** — `releases/<recipe>/<version>.json`, falling back to the newest release for that recipe. The expected filename is `<image>_<build_date>.simg`, or `<recipe>_<version>_<build_date>.simg` when the metadata carries no `image` field.
+4. **Version-scoped lookup in `--containers-dir`** — used when the exact filename is absent, so a locally built `sifs/<recipe>_<version>.sif` still works. The search is scoped to `<recipe>_<version>`, so it can select a different build date of the same release but never a different version; a lookup that would have to choose between versions fails as ambiguous.
+
+A `container:` value that disagrees with release metadata is an error rather than something to silently override, and the message names both the declared and the expected artifact. Fix it by deleting the `container:` key, not by editing the filename — that hand-maintenance loop is what this contract exists to remove. `--releases-dir` points the resolver at a different metadata tree and `--no-release-metadata` disables it entirely for offline runs.
 
 ## GitHub Actions Entry Points
 

@@ -1,6 +1,5 @@
 name: blochsiegertb1mapping
 version: 1.0.0
-container: blochsiegertb1mapping_1.0.0.simg
 default_timeout: 120
 tests:
 - name: Bloch-Siegert OpenRecon workflow unit smoke test

@@ -22,7 +22,6 @@
 
 name: bidsappaa
 version: 0.2.0
-container: bidsappaa_0.2.0_20230613.simg
 
 required_files:
   - dataset: ds000001

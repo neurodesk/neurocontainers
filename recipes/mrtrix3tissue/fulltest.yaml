@@ -12,7 +12,6 @@
 
 name: mrtrix3tissue
 version: 5.2.8
-container: mrtrix3tissue_5.2.8_20201111.simg
 
 required_files:
   - dataset: ds000001

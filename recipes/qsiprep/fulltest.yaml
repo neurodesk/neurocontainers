@@ -17,7 +17,6 @@
 
 name: qsiprep
 version: 1.0.1
-container: qsiprep_1.0.1_20250407.simg
 
 required_files:
   - dataset: ds000001

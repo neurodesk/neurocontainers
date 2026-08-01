@@ -1,6 +1,5 @@
 name: hdbet
 version: 2.0.1
-container: hdbet_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output

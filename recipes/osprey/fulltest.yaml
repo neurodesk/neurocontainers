@@ -21,7 +21,6 @@
 
 name: osprey
 version: 2.9.0
-container: osprey_2.9.0_20250901.simg
 
 test_data:
   # Bundled MRS example data (MEGA-PRESS - Philips SDAT format)

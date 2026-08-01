@@ -5,7 +5,6 @@
 
 name: neurodesktop-lite
 version: "20260428"
-container: neurodesktop-lite_20260428_*.simg
 default_timeout: 120
 
 test_data:

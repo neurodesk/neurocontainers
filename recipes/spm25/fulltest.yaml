@@ -11,7 +11,6 @@
 
 name: spm25
 version: 25.01.02
-container: spm25_25.01.02_20251210.simg
 
 required_files:
   - dataset: ds000001

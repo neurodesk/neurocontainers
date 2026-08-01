@@ -3,7 +3,6 @@
 
 name: sodiumgridding
 version: 0.1.6
-container: sodiumgridding_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output

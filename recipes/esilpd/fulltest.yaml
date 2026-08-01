@@ -1,6 +1,5 @@
 name: esilpd
 version: 0.0.1
-container: esilpd_${version}_REFERENCE.simg
 default_timeout: 240
 
 python_bin: /opt/miniconda-py39_23.11.0-2/envs/esilpd-0.0.1/bin/python

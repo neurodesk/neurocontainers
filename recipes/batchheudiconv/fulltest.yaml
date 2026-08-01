@@ -20,7 +20,6 @@
 
 name: batchheudiconv
 version: 1.0.0
-container: batchheudiconv_1.0.0_20250628.simg
 
 required_files:
   - dataset: ds000001

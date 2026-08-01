@@ -17,7 +17,6 @@
 
 name: bidsapphcppipelines
 version: 4.3.0_20230524
-container: bidsapphcppipelines_4.3.0_20230524.simg
 
 required_files:
   - dataset: ds000001

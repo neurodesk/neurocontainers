@@ -6,7 +6,6 @@
 
 name: lqt
 version: 0.1.0
-container: lqt_0.1.0.simg
 
 setup:
   script: |

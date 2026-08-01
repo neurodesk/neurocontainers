@@ -1,6 +1,5 @@
 name: panoptica
 version: 2.1.3
-container: panoptica_${version}_REFERENCE.simg
 default_timeout: 60
 
 tests:

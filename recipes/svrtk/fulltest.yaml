@@ -1,6 +1,5 @@
 name: svrtk
 version: "20260626"
-container: svrtk_20260626_REFERENCE.simg
 default_timeout: 120
 
 tests:

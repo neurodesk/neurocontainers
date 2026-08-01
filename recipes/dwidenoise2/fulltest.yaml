@@ -1,6 +1,5 @@
 name: dwidenoise2
 version: 1.0.0
-container: dwidenoise2_${version}_REFERENCE.simg
 default_timeout: 120
 
 tests:

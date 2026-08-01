@@ -1,6 +1,5 @@
 name: nesvor
 version: 0.5.0
-container: nesvor_0.5.0_REFERENCE.simg
 default_timeout: 120
 
 tests:

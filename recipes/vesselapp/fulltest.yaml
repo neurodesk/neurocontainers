@@ -12,7 +12,6 @@
 
 name: vesselapp
 version: 0.3.1
-container: vesselapp_0.3.1_20211216.simg
 
 test_data:
   demo_img: /opt/vessel-app/demo_data/img_patch.nii.gz

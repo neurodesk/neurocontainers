@@ -8,7 +8,6 @@
 
 name: workshopdemo
 version: 1.0.0
-container: workshopdemo_1.0.0.simg
 
 setup:
   script: |

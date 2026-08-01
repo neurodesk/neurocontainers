@@ -1,6 +1,5 @@
 name: wftfi
 version: 1.0.0
-container: wftfi_${version}_REFERENCE.simg
 default_timeout: 180
 
 test_data:

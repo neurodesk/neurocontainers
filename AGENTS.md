@@ -143,13 +143,23 @@ Every new recipe should include `recipes/<name>/fulltest.yaml` for release/runti
 ```yaml
 name: toolname
 version: 1.0.0
-container: toolname_${version}_REFERENCE.simg
 
 tests:
   - name: tool launcher available
     description: Verify the main runtime entrypoint is installed.
     command: command -v toolname
     expected_output_contains: "toolname"
+```
+
+Do not add a `container:` key. The artifact under test is resolved from
+`releases/<name>/<version>.json`, so a hardcoded SIF name only ever goes stale;
+the runner rejects one that disagrees with the release metadata. The single
+exception is a test that genuinely needs a historical image, which pins it
+explicitly:
+
+```yaml
+container: toolname_1.0.0_20250101.simg
+pin_container: true
 ```
 
 ### Testing Guidance

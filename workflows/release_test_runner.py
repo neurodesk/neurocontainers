@@ -13,6 +13,7 @@ from typing import Any
 
 import yaml
 
+from builder.release_artifact import is_placeholder_reference
 from workflows.container_tester import ContainerTester
 from workflows.reporting import build_comment, build_report, determine_status, write_text
 from workflows.summarize_deploy_results import summarise_results_file
@@ -280,7 +281,19 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
     suite = yaml.safe_load(test_config.read_text(encoding="utf-8")) or {}
     suite["name"] = suite.get("name") or args.recipe
     suite["version"] = args.version
-    suite["container"] = Path(container_ref).name
+
+    # The artifact under test is whatever this runner just downloaded or built.
+    # A fulltest that also names an artifact can only agree or be stale, and a
+    # stale name is worth reporting rather than silently overriding.
+    declared = str(suite.pop("container", "") or "").strip()
+    suite.pop("pin_container", None)
+    resolved_name = Path(container_ref).name
+    if declared and not is_placeholder_reference(declared) and declared != resolved_name:
+        raise RuntimeError(
+            f"{test_config} declares container '{declared}' but the release artifact "
+            f"under test is '{resolved_name}'. Remove the 'container:' key so the "
+            "artifact is resolved from releases/ metadata."
+        )
     write_text(suite_path, yaml.safe_dump(suite, sort_keys=False))
 
     deploy_results = tester.run_test_suite(
@@ -296,6 +309,8 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
         str(suite_path),
         "-c",
         str(containers_dir),
+        "--container",
+        str(container_ref),
         "-o",
         str(raw_results_path),
         "--log",

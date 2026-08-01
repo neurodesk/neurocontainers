@@ -1,6 +1,5 @@
 name: hcpasl
 version: 0.2.0
-container: hcpasl_0.2.0_20260519.simg
 default_timeout: 120
 tests:
 - name: Test HCP-ASL entry points

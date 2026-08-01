@@ -15,7 +15,6 @@
 
 name: clearswi
 version: 1.0.0
-container: clearswi_1.0.0_20211018.simg
 
 test_data:
   # Built-in test data paths (inside container)

@@ -15,7 +15,6 @@
 
 name: rabies
 version: 0.5.3
-container: rabies_0.5.3_20251014.simg
 
 required_files:
   - dataset: ds000001

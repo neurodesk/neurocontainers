@@ -11,7 +11,6 @@
 
 name: halfpipe
 version: 1.2.3
-container: halfpipe_1.2.3_20250623.simg
 
 required_files:
   - dataset: ds000001
