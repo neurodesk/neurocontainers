@@ -41,7 +41,9 @@ def normalize_architecture(architecture: str | None) -> str:
     return ARCHITECTURE_ALIASES.get(architecture or "x86_64", architecture or "x86_64")
 
 
-def release_version(version: str, architecture: str | None) -> str:
+def release_version(version: str, architecture: str | None, variant: str | None = None) -> str:
+    if variant:
+        return version
     return f"{version}-arm64" if normalize_architecture(architecture) == "aarch64" else version
 
 
@@ -51,10 +53,12 @@ def release_data(
     recipe: dict[str, Any],
     build_date: str,
     architecture: str | None = None,
+    variant: str | None = None,
 ) -> dict[str, Any]:
     apptainer_args = recipe.get("apptainer_args", [])
     normalized_architecture = normalize_architecture(architecture)
-    is_arm64 = normalized_architecture == "aarch64"
+    is_named_variant = bool(variant)
+    is_arm64 = normalized_architecture == "aarch64" and not is_named_variant
     app_version = f"{version} arm64" if is_arm64 else version
     image_suffix = "_arm64" if is_arm64 else ""
     image = f"{name}_{version}{image_suffix}"
@@ -71,6 +75,9 @@ def release_data(
         },
         "categories": recipe.get("categories", ["other"]),
     }
+    if is_named_variant:
+        data["variant"] = variant
+        data["architecture"] = normalized_architecture
     for visibility_field in ("show_in_menu", "show_in_applist"):
         if recipe.get(visibility_field) is not None:
             data[visibility_field] = recipe[visibility_field]
