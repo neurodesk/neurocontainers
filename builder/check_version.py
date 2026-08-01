@@ -154,7 +154,9 @@ def resolve_tag_commit(repo, tag):
         return None
 
 
-VERSION_LINE = re.compile(r"^version:[ \t]*(?P<value>.*?)[ \t]*$", re.M)
+VERSION_LINE = re.compile(
+    r"^version:[ \t]*(?P<value>.*?)[ \t]*(?P<comment>#.*)?$", re.M
+)
 REVISION_LINE = re.compile(
     r"^(?P<indent>[ \t]*)revision:[ \t]*"
     r"(?P<quote>[\"']?)(?P<sha>[0-9a-fA-F]{7,40})(?P=quote)[ \t]*$",
@@ -163,24 +165,82 @@ REVISION_LINE = re.compile(
 
 
 def rewrite_version(text, new_version):
-    """Replace the top-level version field, preserving its original quoting."""
+    """Replace the top-level version field so it reads back as the same string.
+
+    Original quoting is preserved where it survives a round trip. It often does
+    not: `version: 1.9` is a float, and bumping it to an unquoted 1.10 would
+    reload as 1.1. Most recipes leave the version unquoted, so the fallback to
+    an explicitly quoted scalar is the common path for any two-part version.
+    """
     match = VERSION_LINE.search(text)
     if not match:
         return None
     raw = match.group("value")
     quote = raw[0] if raw[:1] in ("'", '"') else ""
-    return f"{text[:match.start()]}version: {quote}{new_version}{quote}{text[match.end():]}"
+    comment = match.group("comment")
+    trailer = f"  {comment}" if comment else ""
+
+    for candidate_quote in (quote, '"'):
+        updated = (
+            f"{text[:match.start()]}version: "
+            f"{candidate_quote}{new_version}{candidate_quote}{trailer}"
+            f"{text[match.end():]}"
+        )
+        try:
+            reloaded = yaml.safe_load(updated)
+        except Exception as e:
+            dbg("rewrite_version reload failed:", e)
+            continue
+        if isinstance(reloaded, dict) and str(reloaded.get("version")) == new_version:
+            return updated
+    return None
+
+
+def revisions_owned_by(text, repo):
+    """Return the pinned shas that sit in a mapping also naming the upstream repo.
+
+    Proximity in the raw text is not evidence of ownership: the auto_update.repo
+    line is itself usually within a few hundred characters of the revision, so a
+    character window matches almost anything. Ownership is a structural claim --
+    the sha and the repo URL have to be siblings in the same YAML mapping -- so
+    it is decided on the parsed document.
+    """
+    try:
+        with_repo = set()
+
+        def walk(node):
+            if isinstance(node, dict):
+                sha = node.get("revision")
+                if isinstance(sha, str) and re.fullmatch(r"[0-9a-fA-F]{7,40}", sha):
+                    siblings = " ".join(
+                        str(value)
+                        for key, value in node.items()
+                        if key != "revision" and not isinstance(value, (dict, list))
+                    )
+                    if repo.lower() in siblings.lower():
+                        with_repo.add(sha.lower())
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(yaml.safe_load(text))
+        return with_repo
+    except Exception as e:
+        dbg("revisions_owned_by parse failed:", e)
+        return set()
 
 
 def rewrite_revision(text, repo, new_sha):
     """Repoint pinned commit revisions that belong to the upstream repo."""
+    owned = revisions_owned_by(text, repo)
     changed = []
 
     def replace(match):
-        window = match.string[max(0, match.start() - 600) : match.end() + 600]
-        if repo.lower() not in window.lower():
-            return match.group(0)
         old_sha = match.group("sha")
+        if old_sha.lower() not in owned:
+            return match.group(0)
         if new_sha.lower().startswith(old_sha.lower()):
             return match.group(0)
         changed.append((old_sha, new_sha))
@@ -194,7 +254,9 @@ def issue_exists(fp):
     if not REPO:
         dbg("Skip issue_exists: REPO is not set.")
         return False
-    q = f'repo:{REPO} in:title "{fp}" state:open'
+    # The fingerprint is only ever written into the issue body, so searching
+    # in:title never matches and every recurring failure opens a fresh issue.
+    q = f'repo:{REPO} in:body "{fp}" state:open'
     dbg("Search issues query:", q)
     try:
         response = session.get(
@@ -214,9 +276,15 @@ def issue_exists(fp):
         return False
 
 
+DRY_RUN = False
+
+
 def open_issue(title, body, labels=None):
     if labels is None:
         labels = ["auto-update"]
+    if DRY_RUN:
+        print(f"=== dry run: would open issue === {title}")
+        return
     if not REPO:
         print("GITHUB_REPOSITORY not set; skip creating issue.")
         return
@@ -350,11 +418,14 @@ def prepare_bump(path, current_version, new_version, repo, tag):
 
     updated = rewrite_version(original, new_version)
     if updated is None:
-        return None, "no top-level version field to rewrite"
+        return None, "no top-level version field to rewrite as an equal string"
 
     changes = [f"`version`: `{current_version}` → `{new_version}`"]
 
-    if REVISION_LINE.search(updated):
+    # Only revisions pinned alongside the upstream repo need to move. A recipe
+    # may also pin a helper from some other repo, and that sha has nothing to do
+    # with this release.
+    if revisions_owned_by(updated, repo):
         commit = resolve_tag_commit(repo, tag)
         if not commit:
             return None, f"recipe pins a commit revision but tag {tag} could not be resolved"
@@ -375,9 +446,17 @@ def prepare_bump(path, current_version, new_version, repo, tag):
 def submit_bump(path, name, current_version, new_version, repo, tag, base_branch, dry_run):
     branch = f"auto-update/{name}-{new_version}"
 
-    if not dry_run and (pull_request_exists(branch) or remote_branch_exists(branch)):
-        print(f"branch/PR already exists for {branch}; skipping.")
-        return "exists"
+    orphan_branch = False
+    if not dry_run:
+        if pull_request_exists(branch):
+            print(f"a pull request already exists for {branch}; skipping.")
+            return "exists"
+        if remote_branch_exists(branch):
+            # Pushed, but the pull request call never succeeded. Skipping here
+            # would strand the recipe: the branch keeps the bump from being
+            # retried, and no pull request ever carries it.
+            print(f"branch {branch} exists with no pull request; opening one for it.")
+            orphan_branch = True
 
     updated, result = prepare_bump(path, current_version, new_version, repo, tag)
     if updated is None:
@@ -409,24 +488,21 @@ def submit_bump(path, name, current_version, new_version, repo, tag, base_branch
         body_lines += ["", *[f"Closes #{number}" for number in closes]]
     body = "\n".join(body_lines)
 
+    title = f"Bump {name} from {current_version} to {new_version}"
+
+    if orphan_branch:
+        # The commit is already on the remote; only the pull request is missing.
+        open_pull_request(branch, base_branch, title, body, labels=["auto-update"])
+        return "opened"
+
     git("checkout", "-B", branch, base_branch)
     try:
         with open(path, "w", encoding="utf-8") as f:
             f.write(updated)
         git("add", "--", path)
-        git(
-            "commit",
-            "-m",
-            f"Bump {name} from {current_version} to {new_version}",
-        )
+        git("commit", "-m", title)
         git("push", "origin", branch)
-        open_pull_request(
-            branch,
-            base_branch,
-            f"Bump {name} from {current_version} to {new_version}",
-            body,
-            labels=["auto-update"],
-        )
+        open_pull_request(branch, base_branch, title, body, labels=["auto-update"])
     finally:
         git("checkout", "--force", base_branch, check=False)
         git("clean", "-fd", "--", os.path.dirname(path) or ".", check=False)
@@ -474,13 +550,17 @@ def main():
         "through over several weekly runs rather than all at once.",
     )
     args = parser.parse_args()
-    dry_run = args.dry_run
+    global DRY_RUN
+    DRY_RUN = dry_run = args.dry_run
     opened = 0
     deferred = []
 
     base_branch = "main"
     if not dry_run:
-        base_branch = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "main"
+        head = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        # A detached checkout reports "HEAD", which is not a branch the pull
+        # request API will accept as a base.
+        base_branch = head if head and head != "HEAD" else "main"
     print(f"Base branch: {base_branch} (dry_run={dry_run})")
 
     files = glob.glob("recipes/**/*.y*ml", recursive=True)
