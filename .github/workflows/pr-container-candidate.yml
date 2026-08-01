@@ -181,7 +181,7 @@ jobs:
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
             -v "${PWD}/.github/.dive-ci.yml:/.dive-ci.yml:ro" \
-            wagoodman/dive:latest "${CANDIDATE_TAG}" --ci --config /.dive-ci.yml
+            wagoodman/dive:latest "${CANDIDATE_TAG}" --ci --ci-config /.dive-ci.yml
       - name: Generate manifest and release preview
         env:
           RECIPE: ${{ matrix.recipe }}
