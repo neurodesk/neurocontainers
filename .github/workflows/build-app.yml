@@ -13,6 +13,12 @@ on:
       application:
         required: true
         type: string
+      variant:
+        required: false
+        type: string
+      architecture:
+        required: true
+        type: string
       runner:
         required: true
         type: string
@@ -71,6 +77,9 @@ jobs:
       VERSION: ${{ steps.envars.outputs.VERSION }}
       ARCHITECTURE: ${{ steps.envars.outputs.ARCHITECTURE }}
       IMAGE_SUFFIX: ${{ steps.envars.outputs.IMAGE_SUFFIX }}
+      CONTAINER_NAME: ${{ steps.envars.outputs.CONTAINER_NAME }}
+      VARIANT: ${{ steps.envars.outputs.VARIANT }}
+      IMAGENAME: ${{ steps.envars.outputs.IMAGENAME }}
       RELEASE_VERSION: ${{ steps.envars.outputs.RELEASE_VERSION }}
       IMAGE_FINGERPRINT_CACHE: ${{ steps.getfingerprint.outputs.IMAGE_FINGERPRINT_CACHE }}
     steps:
@@ -135,20 +144,29 @@ jobs:
         id: envars
         run: |
           APPLICATION=${{ inputs.application }}
+          VARIANT=${{ inputs.variant }}
+          CONTAINER_NAME="$APPLICATION"
+          if [ -n "$VARIANT" ]; then
+            CONTAINER_NAME="${APPLICATION}_${VARIANT}"
+          fi
           SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
           VERSION=$(sed -n 's/^version:[[:space:]]*//p' "recipes/${APPLICATION}/build.yaml" | head -1 | sed 's/[[:space:]]#.*$//' | tr -d "\"'")
           if [ -z "$VERSION" ]; then
             echo "Recipe version not found for $APPLICATION"
             exit 1
           fi
-          ARCHITECTURE="x86_64"
+          ARCHITECTURE="${{ inputs.architecture }}"
           IMAGE_SUFFIX=""
           RELEASE_VERSION="$VERSION"
-          if [[ "${{ inputs.runner }}" == *"arm"* ]]; then
-            ARCHITECTURE="aarch64"
+          if [ "$ARCHITECTURE" = "aarch64" ]; then
             IMAGE_SUFFIX="_arm64"
             RELEASE_VERSION="${VERSION}-arm64"
           fi
+          if [ -n "$VARIANT" ]; then
+            IMAGE_SUFFIX=""
+            RELEASE_VERSION="$VERSION"
+          fi
+          IMAGENAME="${CONTAINER_NAME}_${VERSION}${IMAGE_SUFFIX}"
           # Get the commit date of the recipe's build.yaml file
           # This ensures consistent build dates based on when the recipe was last modified
           BUILDDATE=$(git log -1 --format=%ad --date=format:%Y%m%d -- recipes/${APPLICATION}/build.yaml)
@@ -157,6 +175,12 @@ jobs:
             BUILDDATE=`date +%Y%m%d`
           fi
           echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
+          echo "CONTAINER_NAME=$CONTAINER_NAME" >> $GITHUB_ENV
+          echo "CONTAINER_NAME=$CONTAINER_NAME" >> $GITHUB_OUTPUT
+          echo "VARIANT=$VARIANT" >> $GITHUB_ENV
+          echo "VARIANT=$VARIANT" >> $GITHUB_OUTPUT
+          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
+          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -187,22 +211,24 @@ jobs:
         id: generate
         run: |
           echo "APPLICATION: $APPLICATION"
-          python3 -m builder stage "$APPLICATION" --recreate --architecture "$ARCHITECTURE"
+          VARIANT_ARGS=()
+          if [ -n "$VARIANT" ]; then
+            VARIANT_ARGS=(--variant "$VARIANT")
+          fi
+          python3 -m builder stage "$APPLICATION" --recreate --architecture "$ARCHITECTURE" "${VARIANT_ARGS[@]}"
 
       - name: Set image variables
         id: imgvars
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          DOCKERFILE_PATH=$(find "./build/$APPLICATION/" -type f -iname "*.dockerfile" | head -1)
+          DOCKERFILE_PATH=$(find "./build/$CONTAINER_NAME/" -type f -iname "*.dockerfile" | head -1)
           # if the dockerfile is not found, exit with error
           if [ -z "$DOCKERFILE_PATH" ]; then
             echo "Dockerfile not found for $APPLICATION"
             exit 1
           fi
           DOCKERFILE=$(basename "$DOCKERFILE_PATH")
-          BASE_IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
-          IMAGENAME="${BASE_IMAGENAME}${IMAGE_SUFFIX}"
           echo "DOCKERFILE: $DOCKERFILE"
           echo "IMAGENAME: $IMAGENAME"
           echo "DOCKERFILE=$DOCKERFILE" >> "$GITHUB_ENV"
@@ -215,16 +241,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull latest image from registry and get fingerprint
+      - name: Read latest image fingerprint from registry
         id: getfingerprint
         if: inputs.skip_docker_build != 'true'
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          IMAGE_FINGERPRINT_CACHE=""
+          # Registry metadata only: the fingerprint needs the image config
+          # object, not the filesystem layers, so the layers stay in the
+          # registry. An unreadable or missing :latest degrades to an empty
+          # baseline, which takes the normal first-build path (IMGDIFFERS=true).
           IMAGE_REF="ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest"
-          if docker pull "$IMAGE_REF"; then
-            IMAGE_FINGERPRINT_CACHE=$(python3 builder/image_fingerprint.py "$IMAGE_REF")
+          if ! IMAGE_FINGERPRINT_CACHE=$(python3 builder/image_fingerprint.py \
+            --remote --allow-missing --architecture "$ARCHITECTURE" "$IMAGE_REF"); then
+            echo "::warning::Could not read the remote fingerprint for $IMAGE_REF; treating the image as changed."
+            IMAGE_FINGERPRINT_CACHE=""
           fi
           echo "IMAGE_FINGERPRINT_CACHE=$IMAGE_FINGERPRINT_CACHE" >> "$GITHUB_OUTPUT"
 
@@ -247,6 +279,10 @@ jobs:
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
       ARCHITECTURE: ${{ needs.config.outputs.ARCHITECTURE }}
       IMAGE_SUFFIX: ${{ needs.config.outputs.IMAGE_SUFFIX }}
+      CONTAINER_NAME: ${{ needs.config.outputs.CONTAINER_NAME }}
+      VERSION: ${{ needs.config.outputs.VERSION }}
+      VARIANT: ${{ needs.config.outputs.VARIANT }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
     steps:
       - name: Set runner base path
         run: |
@@ -336,22 +372,24 @@ jobs:
         id: generate
         run: |
           echo "APPLICATION: $APPLICATION"
-          python3 -m builder stage "$APPLICATION" --recreate --download --architecture "$ARCHITECTURE"
+          VARIANT_ARGS=()
+          if [ -n "$VARIANT" ]; then
+            VARIANT_ARGS=(--variant "$VARIANT")
+          fi
+          python3 -m builder stage "$APPLICATION" --recreate --download --architecture "$ARCHITECTURE" "${VARIANT_ARGS[@]}"
 
       - name: Set image variables
         id: imgvars
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          DOCKERFILE_PATH=$(find "./build/$APPLICATION/" -type f -iname "*.dockerfile" | head -1)
+          DOCKERFILE_PATH=$(find "./build/$CONTAINER_NAME/" -type f -iname "*.dockerfile" | head -1)
           # if the dockerfile is not found, exit with error
           if [ -z "$DOCKERFILE_PATH" ]; then
             echo "Dockerfile not found for $APPLICATION"
             exit 1
           fi
           DOCKERFILE=$(basename "$DOCKERFILE_PATH")
-          BASE_IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
-          IMAGENAME="${BASE_IMAGENAME}${IMAGE_SUFFIX}"
           echo "DOCKERFILE: $DOCKERFILE"
           echo "IMAGENAME: $IMAGENAME"
           echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
@@ -375,7 +413,7 @@ jobs:
         uses: useblacksmith/setup-docker-builder@v1
 
       - name: Debug Dockerfile
-        run: cat ./build/${APPLICATION}/${DOCKERFILE}
+        run: cat ./build/${CONTAINER_NAME}/${DOCKERFILE}
 
       - name: Debug storage
         run: |
@@ -389,8 +427,8 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
           IS_BLACKSMITH_RUNNER: ${{ contains(inputs.runner, 'blacksmith') }}
         run: |
-          cd "./build/${APPLICATION}"
-          CACHE_REF=ghcr.io/${GH_REGISTRY}/${APPLICATION}${IMAGE_SUFFIX}:buildcache
+          cd "./build/${CONTAINER_NAME}"
+          CACHE_REF=ghcr.io/${GH_REGISTRY}/${CONTAINER_NAME}:buildcache
           CACHE_FROM_ARGS=()
           CACHE_TO_ARGS=()
           if [ "${IS_BLACKSMITH_RUNNER}" = "true" ]; then
@@ -554,7 +592,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
 
     steps:
       - name: Configure GitHub-hosted runner
@@ -625,7 +663,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       NECTAR_REGISTRY: registry.rc.nectar.org.au
       NECTAR_REGISTRY_NAMESPACE: ssdsorg
 
@@ -682,7 +720,7 @@ jobs:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
 
     steps:
       - name: Set runner base path
@@ -835,7 +873,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
 
     steps:
       - name: Bootstrap build tooling
@@ -921,7 +959,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       AWSCLI_ARCH: x86_64
     steps:
       - name: Configure runner
@@ -968,11 +1006,11 @@ jobs:
     permissions:
       packages: write
     env:
-      APPLICATION: ${{ inputs.application }}
+      APPLICATION: ${{ needs.config.outputs.CONTAINER_NAME }}
       VERSION: ${{ needs.config.outputs.VERSION }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      LEGACY_IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
-      QUAY_REPO: quay.io/neurodesk/${{ inputs.application }}
+      LEGACY_IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
+      QUAY_REPO: quay.io/neurodesk/${{ needs.config.outputs.CONTAINER_NAME }}
       SIF_MEDIATYPE: application/vnd.sylabs.sif.layer.v1.sif
     steps:
       - name: Configure GitHub-hosted runner
@@ -1071,10 +1109,10 @@ jobs:
     permissions:
       packages: write
     env:
-      APPLICATION: ${{ inputs.application }}
+      APPLICATION: ${{ needs.config.outputs.CONTAINER_NAME }}
       VERSION: ${{ needs.config.outputs.VERSION }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      LEGACY_IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
+      LEGACY_IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       SIF_MEDIATYPE: application/vnd.sylabs.sif.layer.v1.sif
     steps:
       - name: Configure GitHub-hosted runner
@@ -1146,8 +1184,11 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       ARCHITECTURE: ${{ needs.config.outputs.ARCHITECTURE }}
+      VARIANT: ${{ needs.config.outputs.VARIANT }}
+      CONTAINER_NAME: ${{ needs.config.outputs.CONTAINER_NAME }}
+      VERSION: ${{ needs.config.outputs.VERSION }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
     steps:
     - uses: actions/checkout@v5
@@ -1160,7 +1201,11 @@ jobs:
       id: generate
       run: |
         echo "APPLICATION: $APPLICATION"
-        python3 -m builder release "$APPLICATION" --write --architecture "$ARCHITECTURE"
+        VARIANT_ARGS=()
+        if [ -n "$VARIANT" ]; then
+          VARIANT_ARGS=(--variant "$VARIANT")
+        fi
+        python3 -m builder release "$APPLICATION" --write --architecture "$ARCHITECTURE" "${VARIANT_ARGS[@]}"
 
     - name: Create Release File Pull Request
       if: steps.generate.outputs.container_name
@@ -1239,7 +1284,7 @@ jobs:
 
         To test this container on Neurodesk (either a local installation or https://play.neurodesk.org/):
         \`\`\`bash
-        bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } ${BUILDDATE}
+        bash /neurocommand/local/fetch_and_run.sh "${CONTAINER_NAME}" "${{ needs.config.outputs.VERSION }}" "${BUILDDATE}"
         \`\`\`
 
         Or, for testing directly with Apptainer/Singularity:
@@ -1276,7 +1321,7 @@ jobs:
         echo "✅ Pull request created for ${CONTAINER_NAME} ${CONTAINER_VERSION}: ${PR_URL}"
     - name: Detect OpenReconLabel.json
       id: detect_openrecon
-      if: steps.generate.outputs.container_name && env.ARCHITECTURE == 'x86_64'
+      if: steps.generate.outputs.container_name && env.ARCHITECTURE == 'x86_64' && env.VARIANT == ''
       env:
         CONTAINER_NAME: ${{ steps.generate.outputs.container_name }}
       run: |
@@ -1416,7 +1461,7 @@ jobs:
       run: |
         echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
-        echo "bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE" >> $GITHUB_STEP_SUMMARY
+        echo "bash /neurocommand/local/fetch_and_run.sh ${CONTAINER_NAME} $VERSION $BUILDDATE" >> $GITHUB_STEP_SUMMARY
 
   report-auto-build-failure:
     needs: [config, build-image, push-dockerhub, build-simg, upload-s3, create-pr]

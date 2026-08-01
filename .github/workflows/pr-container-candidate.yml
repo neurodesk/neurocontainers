@@ -1,10 +1,12 @@
 name: PR container candidate
 
 on:
+  # No paths filter: "Container release gate" is a required status check, so it
+  # has to report on every pull request. A path-filtered workflow never runs for
+  # non-recipe changes, and a required check that never reports blocks the merge
+  # forever. The gate short-circuits below when no recipes changed.
   pull_request:
     types: [opened, synchronize, reopened]
-    paths:
-      - "recipes/**"
 
 permissions:
   contents: read
@@ -21,6 +23,7 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       recipes: ${{ steps.detect.outputs.recipes }}
+      targets: ${{ steps.detect.outputs.targets }}
     steps:
       # Run detection from the trusted base revision. A fork cannot change the
       # policy script before it decides that the PR is recipe-only.
@@ -56,15 +59,17 @@ jobs:
             --base "${BASE_SHA}" --head "${HEAD_SHA}"
 
   candidate:
-    name: candidate (${{ matrix.recipe }})
+    name: candidate (${{ matrix.container }})
     needs: detect
+    if: ${{ needs.detect.outputs.recipes != '[]' }}
     # ARC pods are ephemeral; untrusted recipe build commands never run on a
-    # persistent self-hosted machine.
-    runs-on: neurodesk-syd-arcrunner-neurocontainers
+    # persistent self-hosted machine. The ARM64 pool must satisfy the same
+    # property: Blacksmith runners are ephemeral cloud VMs, not persistent hosts.
+    runs-on: ${{ matrix.architecture == 'aarch64' && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'neurodesk-syd-arcrunner-neurocontainers' }}
     strategy:
       fail-fast: false
       matrix:
-        recipe: ${{ fromJSON(needs.detect.outputs.recipes) }}
+        include: ${{ fromJSON(needs.detect.outputs.targets) }}
     steps:
       - name: Checkout candidate source
         uses: actions/checkout@v5
@@ -85,54 +90,74 @@ jobs:
         uses: ./.github/actions/setup-apptainer
         with:
           apptainer-version: 1.4.3
+      - name: Prepare Apptainer scratch directories
+        run: |
+          set -euo pipefail
+          # Apptainer otherwise falls back to $HOME/.apptainer, which does not
+          # exist on the ARC runner pods and fails the build with
+          # "failed to create build parent dir".
+          BASE_PATH="${RUNNER_TEMP:-/tmp}"
+          mkdir -p "$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"
+          {
+            echo "APPTAINER_CACHEDIR=$BASE_PATH/apptainer/cache"
+            echo "APPTAINER_TMPDIR=$BASE_PATH/apptainer/tmp"
+            echo "SINGULARITY_CACHEDIR=$BASE_PATH/apptainer/cache"
+            echo "SINGULARITY_TMPDIR=$BASE_PATH/apptainer/tmp"
+          } >> "$GITHUB_ENV"
       - name: Inspect recipe
         id: info
         env:
           RECIPE: ${{ matrix.recipe }}
+          VARIANT: ${{ matrix.variant }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           python tools/one_pr_release.py inspect \
-            --recipe "${RECIPE}" --head-sha "${HEAD_SHA}"
+            --recipe "${RECIPE}" --variant "${VARIANT}" --head-sha "${HEAD_SHA}"
       - name: Stage and build candidate
         env:
           RECIPE: ${{ matrix.recipe }}
+          VARIANT: ${{ matrix.variant }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+          CONTAINER: ${{ matrix.container }}
           CANDIDATE_TAG: ${{ steps.info.outputs.candidate_tag }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          python -m builder stage "${RECIPE}" --recreate --download --architecture x86_64
-          dockerfile="$(find "build/${RECIPE}" -maxdepth 1 -iname '*.Dockerfile' -print -quit)"
+          python -m builder stage "${RECIPE}" --recreate --download \
+            --architecture "${ARCHITECTURE}" --variant "${VARIANT}"
+          dockerfile="$(find "build/${CONTAINER}" -maxdepth 1 -iname '*.Dockerfile' -print -quit)"
           test -n "${dockerfile}"
-          docker buildx build "build/${RECIPE}" --load \
+          docker buildx build "build/${CONTAINER}" --load \
             --file "${dockerfile}" --tag "${CANDIDATE_TAG}" \
-            --build-context "neurocontainer-cache=build/${RECIPE}/cache" \
+            --build-context "neurocontainer-cache=build/${CONTAINER}/cache" \
             --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
             --label "GITHUB_SHA=${HEAD_SHA}"
       - name: Create immutable candidate files
         env:
-          RECIPE: ${{ matrix.recipe }}
+          CONTAINER: ${{ matrix.container }}
           CANDIDATE_TAG: ${{ steps.info.outputs.candidate_tag }}
           DOCKER_ARCHIVE: ${{ steps.info.outputs.docker_archive }}
           SIF: ${{ steps.info.outputs.sif }}
         run: |
-          mkdir -p "candidate/${RECIPE}"
-          docker save "${CANDIDATE_TAG}" --output "candidate/${RECIPE}/${DOCKER_ARCHIVE}"
-          apptainer build "candidate/${RECIPE}/${SIF}" "docker-archive://candidate/${RECIPE}/${DOCKER_ARCHIVE}"
+          mkdir -p "candidate/${CONTAINER}"
+          docker save "${CANDIDATE_TAG}" --output "candidate/${CONTAINER}/${DOCKER_ARCHIVE}"
+          apptainer build "candidate/${CONTAINER}/${SIF}" "docker-archive://candidate/${CONTAINER}/${DOCKER_ARCHIVE}"
       - name: Run deploy and fulltest checks
         id: fulltest
         continue-on-error: true
         env:
           RECIPE: ${{ matrix.recipe }}
+          CONTAINER: ${{ matrix.container }}
           VERSION: ${{ steps.info.outputs.version }}
           SIF: ${{ steps.info.outputs.sif }}
         run: |
           python -m workflows.release_test_runner \
             --recipe "${RECIPE}" \
             --version "${VERSION}" \
-            --release-file "candidate/${RECIPE}/${VERSION}.json" \
-            --candidate-container "candidate/${RECIPE}/${SIF}" \
+            --release-file "candidate/${CONTAINER}/${VERSION}.json" \
+            --candidate-container "candidate/${CONTAINER}/${SIF}" \
             --test-config "recipes/${RECIPE}/fulltest.yaml" \
-            --results-path "candidate/${RECIPE}/test-results.json" \
-            --output-dir "candidate/${RECIPE}/test-output" \
+            --results-path "candidate/${CONTAINER}/test-results.json" \
+            --output-dir "candidate/${CONTAINER}/test-output" \
             --repo-root . --verbose
       - name: Run Dive policy check
         id: dive
@@ -146,17 +171,19 @@ jobs:
       - name: Generate manifest and release preview
         env:
           RECIPE: ${{ matrix.recipe }}
+          VARIANT: ${{ matrix.variant }}
+          CONTAINER: ${{ matrix.container }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           python tools/one_pr_release.py manifest \
-            --recipe "${RECIPE}" --head-sha "${HEAD_SHA}" \
-            --pr-number "${PR_NUMBER}" --candidate-dir "candidate/${RECIPE}"
+            --recipe "${RECIPE}" --variant "${VARIANT}" --head-sha "${HEAD_SHA}" \
+            --pr-number "${PR_NUMBER}" --candidate-dir "candidate/${CONTAINER}"
       - name: Upload candidate bundle
         uses: actions/upload-artifact@v4
         with:
-          name: candidate-${{ matrix.recipe }}-${{ github.event.pull_request.head.sha }}
-          path: candidate/${{ matrix.recipe }}/
+          name: candidate-${{ matrix.container }}-${{ github.event.pull_request.head.sha }}
+          path: candidate/${{ matrix.container }}/
           compression-level: 0
           retention-days: 30
           if-no-files-found: error
@@ -178,6 +205,11 @@ jobs:
         env:
           DETECT_RESULT: ${{ needs.detect.result }}
           CANDIDATE_RESULT: ${{ needs.candidate.result }}
+          RECIPES: ${{ needs.detect.outputs.recipes }}
         run: |
           test "${DETECT_RESULT}" = success
+          if [ "${RECIPES}" = "[]" ]; then
+            echo "No recipe changes in this pull request; nothing to build."
+            exit 0
+          fi
           test "${CANDIDATE_RESULT}" = success

@@ -93,11 +93,11 @@ jobs:
           echo "${ARTIFACTS}" | jq -c '.[]' | while read -r artifact; do
             id="$(echo "${artifact}" | jq -r '.id')"
             name="$(echo "${artifact}" | jq -r '.name')"
-            recipe="${name#candidate-}"
-            recipe="${recipe%-${HEAD_SHA}}"
-            mkdir -p "promotion-bundle/${recipe}"
+            container="${name#candidate-}"
+            container="${container%-${HEAD_SHA}}"
+            mkdir -p "promotion-bundle/${container}"
             gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > artifact.zip
-            unzip -q artifact.zip -d "promotion-bundle/${recipe}"
+            unzip -q artifact.zip -d "promotion-bundle/${container}"
             rm artifact.zip
           done
       - name: Verify provenance, merged recipes, and checksums
@@ -142,21 +142,21 @@ jobs:
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
         run: |
           jq -c '.[]' verified-manifests.json | while read -r manifest; do
-            recipe="$(echo "${manifest}" | jq -r '.recipe')"
+            container="$(echo "${manifest}" | jq -r '.container')"
             version="$(echo "${manifest}" | jq -r '.version')"
             build_date="$(echo "${manifest}" | jq -r '.build_date')"
             archive="$(echo "${manifest}" | jq -r '.docker_archive')"
             source="$(echo "${manifest}" | jq -r '.candidate_tag')"
-            docker load --input "promotion-bundle/${recipe}/${archive}"
+            docker load --input "promotion-bundle/${container}/${archive}"
 
-            legacy="${recipe}_${version}"
+            legacy="${container}_${version}"
             legacy_ghcr="ghcr.io/${GH_REGISTRY}/${legacy}"
             docker tag "${source}" "${legacy_ghcr}:${build_date}"
             docker tag "${source}" "${legacy_ghcr}:latest"
             docker push "${legacy_ghcr}:${build_date}"
             docker push "${legacy_ghcr}:latest"
 
-            ghcr="ghcr.io/${GH_REGISTRY}/${recipe}"
+            ghcr="ghcr.io/${GH_REGISTRY}/${container}"
             for tag in "${version}_${build_date}" "${version}" latest; do
               docker tag "${source}" "${ghcr}:${tag}"
               docker push "${ghcr}:${tag}"
@@ -173,7 +173,7 @@ jobs:
               fi
             done
 
-            quay="quay.io/neurodesk/${recipe}"
+            quay="quay.io/neurodesk/${container}"
             for tag in "${version}_${build_date}" "${version}" latest; do
               docker tag "${source}" "${quay}:${tag}"
               docker push "${quay}:${tag}" || \
@@ -194,9 +194,9 @@ jobs:
           OS_IDENTITY_API_VERSION: "3"
         run: |
           jq -c '.[]' verified-manifests.json | while read -r manifest; do
-            recipe="$(echo "${manifest}" | jq -r '.recipe')"
+            container="$(echo "${manifest}" | jq -r '.container')"
             sif="$(echo "${manifest}" | jq -r '.sif')"
-            path="promotion-bundle/${recipe}/${sif}"
+            path="promotion-bundle/${container}/${sif}"
             aws s3 cp "${path}" "s3://neurocontainers/${sif}"
             aws s3api head-object --bucket neurocontainers --key "${sif}" >/dev/null
             swift upload neurodesk "${path}" --object-name "${sif}" \
@@ -216,19 +216,19 @@ jobs:
           sudo tar -xzf "${oras_archive}" -C /usr/local/bin oras
           rm "${oras_archive}"
           jq -c '.[]' verified-manifests.json | while read -r manifest; do
-            recipe="$(echo "${manifest}" | jq -r '.recipe')"
+            container="$(echo "${manifest}" | jq -r '.container')"
             version="$(echo "${manifest}" | jq -r '.version')"
             build_date="$(echo "${manifest}" | jq -r '.build_date')"
             sif="$(echo "${manifest}" | jq -r '.sif')"
-            cp "promotion-bundle/${recipe}/${sif}" "${RUNNER_TEMP}/${sif}"
+            cp "promotion-bundle/${container}/${sif}" "${RUNNER_TEMP}/${sif}"
             cd "${RUNNER_TEMP}"
             oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
-              "ghcr.io/${GH_REGISTRY}/${recipe}:${version}_${build_date}" \
+              "ghcr.io/${GH_REGISTRY}/${container}:${version}_${build_date}" \
               "${sif}:application/vnd.sylabs.sif.layer.v1.sif"
             oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
-              "quay.io/neurodesk/${recipe}:${version}_${build_date}" \
+              "quay.io/neurodesk/${container}:${version}_${build_date}" \
               "${sif}:application/vnd.sylabs.sif.layer.v1.sif" || \
-              echo "::warning::Optional Quay SIF attach failed for ${recipe}"
+              echo "::warning::Optional Quay SIF attach failed for ${container}"
             cd "${GITHUB_WORKSPACE}"
           done
       - name: Commit generated release metadata directly to main
