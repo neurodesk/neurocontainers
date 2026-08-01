@@ -1,0 +1,183 @@
+name: PR container candidate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "recipes/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-candidate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  detect:
+    runs-on: ubuntu-22.04
+    outputs:
+      recipes: ${{ steps.detect.outputs.recipes }}
+    steps:
+      # Run detection from the trusted base revision. A fork cannot change the
+      # policy script before it decides that the PR is recipe-only.
+      - name: Checkout trusted base
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          path: trusted
+          persist-credentials: false
+      - name: Checkout candidate source
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install pyyaml
+      - name: Detect recipe-only changes
+        id: detect
+        working-directory: source
+        env:
+          BASE_REPOSITORY: ${{ github.event.pull_request.base.repo.full_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch "https://github.com/${BASE_REPOSITORY}.git" "${BASE_SHA}"
+          python ../trusted/tools/one_pr_release.py --repo-root . detect \
+            --base "${BASE_SHA}" --head "${HEAD_SHA}"
+
+  candidate:
+    name: candidate (${{ matrix.recipe }})
+    needs: detect
+    # ARC pods are ephemeral; untrusted recipe build commands never run on a
+    # persistent self-hosted machine.
+    runs-on: neurodesk-syd-arcrunner-neurocontainers
+    strategy:
+      fail-fast: false
+      matrix:
+        recipe: ${{ fromJSON(needs.detect.outputs.recipes) }}
+    steps:
+      - name: Checkout candidate source
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Install Apptainer
+        uses: ./.github/actions/setup-apptainer
+        with:
+          apptainer-version: 1.4.3
+      - name: Inspect recipe
+        id: info
+        env:
+          RECIPE: ${{ matrix.recipe }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python tools/one_pr_release.py inspect \
+            --recipe "${RECIPE}" --head-sha "${HEAD_SHA}"
+      - name: Stage and build candidate
+        env:
+          RECIPE: ${{ matrix.recipe }}
+          CANDIDATE_TAG: ${{ steps.info.outputs.candidate_tag }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python -m builder stage "${RECIPE}" --recreate --download --architecture x86_64
+          dockerfile="$(find "build/${RECIPE}" -maxdepth 1 -iname '*.Dockerfile' -print -quit)"
+          test -n "${dockerfile}"
+          docker buildx build "build/${RECIPE}" --load \
+            --file "${dockerfile}" --tag "${CANDIDATE_TAG}" \
+            --build-context "neurocontainer-cache=build/${RECIPE}/cache" \
+            --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
+            --label "GITHUB_SHA=${HEAD_SHA}"
+      - name: Create immutable candidate files
+        env:
+          RECIPE: ${{ matrix.recipe }}
+          CANDIDATE_TAG: ${{ steps.info.outputs.candidate_tag }}
+          DOCKER_ARCHIVE: ${{ steps.info.outputs.docker_archive }}
+          SIF: ${{ steps.info.outputs.sif }}
+        run: |
+          mkdir -p "candidate/${RECIPE}"
+          docker save "${CANDIDATE_TAG}" --output "candidate/${RECIPE}/${DOCKER_ARCHIVE}"
+          apptainer build "candidate/${RECIPE}/${SIF}" "docker-archive://candidate/${RECIPE}/${DOCKER_ARCHIVE}"
+      - name: Run deploy and fulltest checks
+        id: fulltest
+        continue-on-error: true
+        env:
+          RECIPE: ${{ matrix.recipe }}
+          VERSION: ${{ steps.info.outputs.version }}
+          SIF: ${{ steps.info.outputs.sif }}
+        run: |
+          python -m workflows.release_test_runner \
+            --recipe "${RECIPE}" \
+            --version "${VERSION}" \
+            --release-file "candidate/${RECIPE}/${VERSION}.json" \
+            --candidate-container "candidate/${RECIPE}/${SIF}" \
+            --test-config "recipes/${RECIPE}/fulltest.yaml" \
+            --results-path "candidate/${RECIPE}/test-results.json" \
+            --output-dir "candidate/${RECIPE}/test-output" \
+            --repo-root . --verbose
+      - name: Run Dive policy check
+        id: dive
+        continue-on-error: true
+        env:
+          CANDIDATE_TAG: ${{ steps.info.outputs.candidate_tag }}
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${PWD}/.github/.dive-ci.yml:/.dive-ci.yml:ro" \
+            wagoodman/dive:latest "${CANDIDATE_TAG}" --ci --config /.dive-ci.yml
+      - name: Generate manifest and release preview
+        env:
+          RECIPE: ${{ matrix.recipe }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python tools/one_pr_release.py manifest \
+            --recipe "${RECIPE}" --head-sha "${HEAD_SHA}" \
+            --pr-number "${PR_NUMBER}" --candidate-dir "candidate/${RECIPE}"
+      - name: Upload candidate bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-${{ matrix.recipe }}-${{ github.event.pull_request.head.sha }}
+          path: candidate/${{ matrix.recipe }}/
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error
+      - name: Require candidate tests to pass
+        env:
+          FULLTEST_OUTCOME: ${{ steps.fulltest.outcome }}
+          DIVE_OUTCOME: ${{ steps.dive.outcome }}
+        run: |
+          test "${FULLTEST_OUTCOME}" = success
+          test "${DIVE_OUTCOME}" = success
+
+  gate:
+    name: Container release gate
+    needs: [detect, candidate]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Require all candidates to pass
+        env:
+          DETECT_RESULT: ${{ needs.detect.result }}
+          CANDIDATE_RESULT: ${{ needs.candidate.result }}
+        run: |
+          test "${DETECT_RESULT}" = success
+          test "${CANDIDATE_RESULT}" = success

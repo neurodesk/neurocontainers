@@ -1,0 +1,263 @@
+name: Promote merged container candidate
+
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - "recipes/**"
+
+permissions:
+  actions: read
+  contents: write
+  id-token: write
+  packages: write
+
+concurrency:
+  group: promote-container-and-metadata
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  promote:
+    if: github.event.pull_request.merged == true
+    runs-on: neurodesk-syd-arcrunner-neurocontainers
+    steps:
+      - name: Create narrowly scoped release token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.NEUROCONTAINERS_RELEASE_APP_ID }}
+          private-key: ${{ secrets.NEUROCONTAINERS_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Checkout trusted main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+          # Intentionally retained for the final ruleset-authorized metadata push.
+          persist-credentials: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install promotion dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt python-swiftclient python-keystoneclient
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gh jq unzip
+      - name: Locate the successful run for the exact PR head
+        id: candidate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const workflows = await github.rest.actions.listRepoWorkflows({
+              owner: context.repo.owner, repo: context.repo.repo,
+            });
+            const workflow = workflows.data.workflows.find(
+              item => item.path === '.github/workflows/pr-container-candidate.yml'
+            );
+            if (!workflow) throw new Error('Candidate workflow not found');
+            const response = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner, repo: context.repo.repo,
+              workflow_id: workflow.id, head_sha: pr.head.sha,
+              event: 'pull_request', status: 'completed', per_page: 50,
+            });
+            // Fork-originated runs can have an empty pull_requests array. The
+            // API query and this explicit comparison bind the run to the head;
+            // the downloaded manifest later binds it to the PR number.
+            const run = response.data.workflow_runs.find(item =>
+              item.conclusion === 'success' && item.head_sha === pr.head.sha
+            );
+            if (!run) throw new Error(`No successful candidate run for ${pr.head.sha}`);
+            const artifacts = await github.paginate(
+              github.rest.actions.listWorkflowRunArtifacts,
+              {owner: context.repo.owner, repo: context.repo.repo, run_id: run.id, per_page: 100}
+            );
+            const suffix = `-${pr.head.sha}`;
+            const candidates = artifacts.filter(item =>
+              !item.expired && item.name.startsWith('candidate-') && item.name.endsWith(suffix)
+            );
+            if (candidates.length === 0) throw new Error('No unexpired candidate artifacts found');
+            core.setOutput('artifacts', JSON.stringify(candidates.map(item => ({id: item.id, name: item.name}))));
+      - name: Download candidate bundles without executing them
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACTS: ${{ steps.candidate.outputs.artifacts }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mkdir -p promotion-bundle
+          echo "${ARTIFACTS}" | jq -c '.[]' | while read -r artifact; do
+            id="$(echo "${artifact}" | jq -r '.id')"
+            name="$(echo "${artifact}" | jq -r '.name')"
+            recipe="${name#candidate-}"
+            recipe="${recipe%-${HEAD_SHA}}"
+            mkdir -p "promotion-bundle/${recipe}"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > artifact.zip
+            unzip -q artifact.zip -d "promotion-bundle/${recipe}"
+            rm artifact.zip
+          done
+      - name: Verify provenance, merged recipes, and checksums
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git fetch origin "refs/pull/${PR_NUMBER}/head"
+          test "$(git rev-parse FETCH_HEAD)" = "${HEAD_SHA}"
+          python tools/one_pr_release.py verify --bundle promotion-bundle \
+            --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}" \
+            --output verified-manifests.json
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Log in to Docker Hub
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Log in to Nectar registry
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: registry.rc.nectar.org.au
+          username: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME }}
+          password: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
+      - name: Log in to Quay
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_ROBOT_TOKEN }}
+      - name: Publish the exact tested Docker archives
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+          DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
+        run: |
+          jq -c '.[]' verified-manifests.json | while read -r manifest; do
+            recipe="$(echo "${manifest}" | jq -r '.recipe')"
+            version="$(echo "${manifest}" | jq -r '.version')"
+            build_date="$(echo "${manifest}" | jq -r '.build_date')"
+            archive="$(echo "${manifest}" | jq -r '.docker_archive')"
+            source="$(echo "${manifest}" | jq -r '.candidate_tag')"
+            docker load --input "promotion-bundle/${recipe}/${archive}"
+
+            legacy="${recipe}_${version}"
+            legacy_ghcr="ghcr.io/${GH_REGISTRY}/${legacy}"
+            docker tag "${source}" "${legacy_ghcr}:${build_date}"
+            docker tag "${source}" "${legacy_ghcr}:latest"
+            docker push "${legacy_ghcr}:${build_date}"
+            docker push "${legacy_ghcr}:latest"
+
+            ghcr="ghcr.io/${GH_REGISTRY}/${recipe}"
+            for tag in "${version}_${build_date}" "${version}" latest; do
+              docker tag "${source}" "${ghcr}:${tag}"
+              docker push "${ghcr}:${tag}"
+            done
+
+            for destination in \
+              "${DOCKERHUB_ORG}/${legacy}" \
+              "registry.rc.nectar.org.au/ssdsorg/${legacy}"; do
+              docker tag "${source}" "${destination}:${build_date}"
+              docker tag "${source}" "${destination}:latest"
+              if ! docker push "${destination}:${build_date}" || \
+                 ! docker push "${destination}:latest"; then
+                echo "::warning::Optional registry publish failed for ${destination}"
+              fi
+            done
+
+            quay="quay.io/neurodesk/${recipe}"
+            for tag in "${version}_${build_date}" "${version}" latest; do
+              docker tag "${source}" "${quay}:${tag}"
+              docker push "${quay}:${tag}" || \
+                echo "::warning::Optional Quay publish failed for ${quay}:${tag}"
+            done
+          done
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+      - name: Publish tested SIFs to object storage
+        env:
+          OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
+          OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
+          OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
+          OS_AUTH_TYPE: v3applicationcredential
+          OS_IDENTITY_API_VERSION: "3"
+        run: |
+          jq -c '.[]' verified-manifests.json | while read -r manifest; do
+            recipe="$(echo "${manifest}" | jq -r '.recipe')"
+            sif="$(echo "${manifest}" | jq -r '.sif')"
+            path="promotion-bundle/${recipe}/${sif}"
+            aws s3 cp "${path}" "s3://neurocontainers/${sif}"
+            aws s3api head-object --bucket neurocontainers --key "${sif}" >/dev/null
+            swift upload neurodesk "${path}" --object-name "${sif}" \
+              --segment-size 1073741824 --segment-threads 10 || \
+              echo "::warning::Nectar object upload failed for ${sif}"
+          done
+      - name: Attach tested SIFs to OCI images
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          oras_archive="${RUNNER_TEMP}/oras_1.2.0_linux_amd64.tar.gz"
+          curl -fsSL \
+            https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz \
+            -o "${oras_archive}"
+          echo "5b3f1cbb86d869eee68120b9b45b9be983f3738442f87ee5f06b00edd0bab336  ${oras_archive}" \
+            | sha256sum -c -
+          sudo tar -xzf "${oras_archive}" -C /usr/local/bin oras
+          rm "${oras_archive}"
+          jq -c '.[]' verified-manifests.json | while read -r manifest; do
+            recipe="$(echo "${manifest}" | jq -r '.recipe')"
+            version="$(echo "${manifest}" | jq -r '.version')"
+            build_date="$(echo "${manifest}" | jq -r '.build_date')"
+            sif="$(echo "${manifest}" | jq -r '.sif')"
+            cp "promotion-bundle/${recipe}/${sif}" "${RUNNER_TEMP}/${sif}"
+            cd "${RUNNER_TEMP}"
+            oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
+              "ghcr.io/${GH_REGISTRY}/${recipe}:${version}_${build_date}" \
+              "${sif}:application/vnd.sylabs.sif.layer.v1.sif"
+            oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
+              "quay.io/neurodesk/${recipe}:${version}_${build_date}" \
+              "${sif}:application/vnd.sylabs.sif.layer.v1.sif" || \
+              echo "::warning::Optional Quay SIF attach failed for ${recipe}"
+            cd "${GITHUB_WORKSPACE}"
+          done
+      - name: Commit generated release metadata directly to main
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python tools/one_pr_release.py materialize --bundle promotion-bundle \
+            --manifests verified-manifests.json
+          git config user.name "neurocontainers-release[bot]"
+          git config user.email "neurocontainers-release[bot]@users.noreply.github.com"
+          git add releases/
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Publish tested container release metadata [skipci]"
+          for attempt in 1 2 3; do
+            if ! git pull --rebase origin main; then
+              git rebase --abort || true
+              sleep $((attempt * 5))
+              continue
+            fi
+            python tools/one_pr_release.py verify --bundle promotion-bundle \
+              --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}" \
+              --output verified-manifests.json
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::Release metadata push failed after three attempts; artifacts are already published."
+          exit 1
