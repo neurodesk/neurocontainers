@@ -58,6 +58,61 @@ tests:
       test -x "${MEICA_AFNI_RUNTIME}/bin/3dinfo"
       test -x "${MEICA_AFNI_RUNTIME}/utils/dcm2niix"
 
+  - name: Functional phantom skull stripping fallback
+    description: Fill the complete nonzero phantom envelope when functional 3dSkullStrip fails
+    script: |
+      set -euo pipefail
+      OUTPUT_DIR="${output_dir}" python - <<'PY'
+      import os
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+
+      data = np.zeros((12, 12, 12), dtype=np.float32)
+      data[2:10, 2:10, 2:10] = 10
+      data[4:8, 4:8, 4:8] = 0
+      data[3, 3, 3] = -5
+      nib.save(
+          nib.Nifti1Image(data, np.eye(4)),
+          Path(os.environ["OUTPUT_DIR"]) / "phantom-functional.nii.gz",
+      )
+      nib.save(
+          nib.Nifti1Image(np.zeros_like(data), np.eye(4)),
+          Path(os.environ["OUTPUT_DIR"]) / "empty-functional.nii.gz",
+      )
+      PY
+      PATH="${MEICA_AFNI_RUNTIME}/bin:${PATH}" \
+        MEICA_3DSKULLSTRIP=/usr/bin/false meica-skullstrip-fallback \
+        -no_avoid_eyes \
+        -prefix "${output_dir}/phantom-functional-mask.nii.gz" \
+        -overwrite \
+        -input "${output_dir}/phantom-functional.nii.gz"
+      OUTPUT_DIR="${output_dir}" python - <<'PY'
+      import os
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+
+      mask = nib.load(
+          Path(os.environ["OUTPUT_DIR"]) / "phantom-functional-mask.nii.gz"
+      ).get_fdata()
+      assert set(np.unique(mask)) == {0.0, 1.0}
+      assert np.count_nonzero(mask) == 8**3
+      assert np.all(mask[2:10, 2:10, 2:10] == 1)
+      assert np.all(mask[:2] == 0)
+      assert np.all(mask[10:] == 0)
+      print("segmented the complete phantom envelope")
+      PY
+      if PATH="${MEICA_AFNI_RUNTIME}/bin:${PATH}" \
+        MEICA_3DSKULLSTRIP=/usr/bin/false meica-skullstrip-fallback \
+        -prefix "${output_dir}/empty-functional-mask.nii.gz" \
+        -input "${output_dir}/empty-functional.nii.gz"; then
+        echo "empty phantom fallback input unexpectedly succeeded" >&2
+        exit 1
+      fi
+
   - name: OpenRecon metadata contract
     description: Verify the scanner label exposes the ME-ICA adapter and focused controls
     script: |
@@ -72,7 +127,19 @@ tests:
       assert data["reconstruction"]["emitter"] == "image"
       assert data["reconstruction"]["injector"] == "image"
       assert data["reconstruction"]["content_qualification_type"] == "RESEARCH"
-      assert {item["id"] for item in data["parameters"]} == {"config"}
+      assert {item["id"] for item in data["parameters"]} == {
+          "config", "sendoriginal", "sendfloat32"
+      }
+      send_original = next(
+          item for item in data["parameters"] if item["id"] == "sendoriginal"
+      )
+      assert send_original["type"] == "boolean"
+      assert send_original["default"] is True
+      send_float32 = next(
+          item for item in data["parameters"] if item["id"] == "sendfloat32"
+      )
+      assert send_float32["type"] == "boolean"
+      assert send_float32["default"] is False
       assert data["reconstruction"]["min_count_required_cpu_cores"] == 24
       print(path)
       PY
@@ -175,9 +242,19 @@ tests:
 
       assert connection.closed
       assert not connection.logs, connection.logs
-      assert len(connection.sent) == 2
+      assert len(connection.sent) == 3
+      originals = connection.sent[0]
+      assert len(originals) == len(images)
+      assert all(original is not source for original, source in zip(originals, images))
+      for original, source in zip(originals, images):
+          assert np.array_equal(original.data, source.data)
+          assert original.getHead() == source.getHead()
+          meta = ismrmrd.Meta.deserialize(original.attribute_string)
+          assert meta["Keep_image_geometry"] == "1"
+          assert meta["SequenceDescription"] == "multi_echo_epi"
+
       by_role = {}
-      for derived in connection.sent:
+      for derived in connection.sent[1:]:
           roles = {
               ismrmrd.Meta.deserialize(image.attribute_string)["ImageTypeValue4"]
               for image in derived
@@ -189,6 +266,8 @@ tests:
               meta = ismrmrd.Meta.deserialize(image.attribute_string)
               assert meta["Keep_image_geometry"] == "1"
               assert "IceMiniHead" not in meta
+              assert image.data.dtype == np.uint16
+              assert meta["MEICAOutputDataType"] == "uint16"
 
       assert set(by_role) == {"MEICA_DR2S", "MEICA_T2S"}
       assert len(by_role["MEICA_DR2S"]) == 4
@@ -197,5 +276,67 @@ tests:
       assert len(by_role["MEICA_T2S"]) == 2
       assert {int(image.getHead().repetition) for image in by_role["MEICA_T2S"]} == {0}
       assert {int(image.getHead().slice) for image in by_role["MEICA_T2S"]} == {0, 1}
-      print("returned apparent dR2* and T2* ME-ICA MRD series")
+
+      derived_only = Connection(images)
+      meica.process(
+          derived_only,
+          {
+              "parameters": {
+                  "meicabinary": os.environ["FAKE_MEICA"],
+                  "sendoriginal": False,
+              }
+          },
+          Metadata(),
+      )
+      assert derived_only.closed
+      assert not derived_only.logs, derived_only.logs
+      assert len(derived_only.sent) == 2
+      derived_only_roles = {
+          ismrmrd.Meta.deserialize(series[0].attribute_string)["ImageTypeValue4"]
+          for series in derived_only.sent
+      }
+      assert derived_only_roles == {"MEICA_DR2S", "MEICA_T2S"}
+
+      float32_connection = Connection(images)
+      meica.process(
+          float32_connection,
+          {
+              "parameters": {
+                  "meicabinary": os.environ["FAKE_MEICA"],
+                  "sendoriginal": False,
+                  "sendfloat32": True,
+              }
+          },
+          Metadata(),
+      )
+      assert float32_connection.closed
+      assert not float32_connection.logs, float32_connection.logs
+      assert len(float32_connection.sent) == 2
+      float32_by_role = {
+          ismrmrd.Meta.deserialize(series[0].attribute_string)[
+              "ImageTypeValue4"
+          ]: series
+          for series in float32_connection.sent
+      }
+      assert set(float32_by_role) == {"MEICA_DR2S", "MEICA_T2S"}
+      for role, series in float32_by_role.items():
+          assert all(image.data.dtype == np.float32 for image in series)
+          for image in series:
+              meta = ismrmrd.Meta.deserialize(image.attribute_string)
+              assert meta["MEICAOutputDataType"] == "float32"
+              assert meta["MEICAScale"] == "1"
+              assert meta["MEICAOffset"] == "0"
+              assert meta["MEICAInverseScaleFormula"] == "value = pixel"
+              assert float(meta["WindowWidth"]) > 0
+              if role == "MEICA_T2S":
+                  assert float(meta["WindowCenter"]) == 205.0
+      dr2s_values = np.concatenate(
+          [np.asarray(image.data).ravel() for image in float32_by_role["MEICA_DR2S"]]
+      )
+      t2s_values = np.concatenate(
+          [np.asarray(image.data).ravel() for image in float32_by_role["MEICA_T2S"]]
+      )
+      assert set(np.unique(dr2s_values)) == {200.0, 210.0}
+      assert set(np.unique(t2s_values)) == {205.0}
+      print("returned uint16 and optional float32 dR2* and T2* ME-ICA MRD series")
       PY

@@ -127,3 +127,14 @@ def test_unsafe_field_helper_rejects_image_type_value3_in_minihead():
         0,
     )
     assert errors == ["image 0 has unsafe scanner IceMiniHead ImageTypeValue3"]
+
+
+def test_inversion_defaults_on_and_can_be_explicitly_disabled():
+    helpers = _load_runtime_helpers_for_test(
+        ["_config_bool", "_config_bool_any", "_send_invert_enabled"],
+    )
+
+    send_invert_enabled = helpers["_send_invert_enabled"]
+    assert send_invert_enabled("openreconi2iexample") is True
+    assert send_invert_enabled({"parameters": {"invert": False}}) is False
+    assert send_invert_enabled({"parameters": {"invert": True}}) is True

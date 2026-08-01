@@ -1,49 +1,282 @@
 name: brainlesion
 version: 1.0.0
 container: brainlesion_${version}_REFERENCE.simg
+default_timeout: 120
 
-test_data:
-  output_dir: test_output/brainlesion
-
-setup:
-  script: |
-    set -e
-    mkdir -p ${output_dir}
+env:
+  PYTHONNOUSERSITE: "1"
+  MPLCONFIGDIR: /tmp/brainlesion-matplotlib
 
 tests:
-  - name: Python runtime available
-    description: Verify the BrainLesion Suite runtime uses the expected Python series
-    command: python --version
-    expected_output_contains: "Python 3.10."
+  - name: Python runtime is 3.10
+    description: Verify the suite runs on its supported Python series.
+    command: python -c 'import sys; assert sys.version_info[:2] == (3, 10)'
 
-  - name: BrainLesion packages installed
-    description: Verify the BrainLesion Suite packages are present in package metadata
-    command: python -m pip list | grep -Ei "^(brainles_aurora|brainles-preprocessing|brats|gliomoda|petu|panoptica)"
-    expected_output_contains:
-      - "brainles_aurora"
-      - "brainles-preprocessing"
-      - "brats"
-      - "gliomoda"
-      - "petu"
-      - "panoptica"
+  - name: Python does not load user packages
+    description: Ensure results come from the container rather than a bound user site.
+    command: python -c 'import site; assert site.ENABLE_USER_SITE is False'
 
-  - name: BrainLesion Python modules import
-    description: Verify the installed suite modules import without loading model weights
+  - name: brainles_aurora distribution is healthy
+    command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_aurora"); assert d.version == "0.2.7" and len(tuple(d.files or ())) > 5'
+
+  - name: brainles_preprocessing distribution is healthy
+    command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_preprocessing"); assert d.version == "0.6.10" and len(tuple(d.files or ())) > 20'
+
+  - name: brats distribution is healthy
+    command: python -c 'from importlib.metadata import distribution; d=distribution("brats"); assert d.version == "0.0.27" and len(tuple(d.files or ())) > 10'
+
+  - name: deep_quality_estimation distribution is healthy
+    command: python -c 'from importlib.metadata import distribution; d=distribution("deep_quality_estimation"); assert d.version == "0.0.3" and len(tuple(d.files or ())) > 5'
+
+  - name: gliomoda distribution is healthy
+    command: python -c 'from importlib.metadata import distribution; d=distribution("gliomoda"); assert d.version == "0.0.3" and len(tuple(d.files or ())) > 5'
+
+  - name: loguru distribution is pinned
+    command: python -c 'from importlib.metadata import version; assert version("loguru") == "0.7.3"'
+
+  - name: panoptica distribution is healthy
+    command: python -c 'from importlib.metadata import distribution; d=distribution("panoptica"); assert d.version == "1.5.1" and len(tuple(d.files or ())) > 20'
+
+  - name: petu distribution is healthy
+    command: python -c 'from importlib.metadata import distribution; d=distribution("petu"); assert d.version == "0.0.5" and len(tuple(d.files or ())) > 5'
+
+  - name: brainles_aurora imports
+    command: python -c 'import brainles_aurora'
+
+  - name: brainles_preprocessing imports
+    command: python -c 'import brainles_preprocessing'
+
+  - name: brats imports
+    command: python -c 'import brats'
+
+  - name: deep_quality_estimation imports
+    command: python -c 'import deep_quality_estimation'
+
+  - name: gliomoda imports
+    command: python -c 'import gliomoda'
+
+  - name: loguru imports
+    command: python -c 'import loguru'
+
+  - name: panoptica imports
+    command: python -c 'import panoptica'
+
+  - name: petu imports
+    command: python -c 'import petu'
+
+  - name: NumPy numerical runtime works
+    command: python -c 'import numpy as np; a=np.arange(8).reshape(2,2,2); assert a.sum() == 28'
+
+  - name: SciPy image runtime works
+    command: python -c 'import numpy as np; from scipy import ndimage; a=np.zeros((5,5)); a[2,2]=1; assert ndimage.binary_dilation(a).sum() == 5'
+
+  - name: NiBabel runtime works
+    command: python -c 'import nibabel as nib, numpy as np; img=nib.Nifti1Image(np.zeros((2,3,4)), np.eye(4)); assert img.shape == (2,3,4)'
+
+  - name: PyTorch CPU runtime works
+    command: python -c 'import torch; x=torch.tensor([1.,2.,3.]); assert torch.dot(x,x).item() == 14'
+
+  - name: MONAI transform runtime works
+    command: python -c 'import numpy as np; from monai.transforms import ScaleIntensity; out=ScaleIntensity()(np.array([0.,2.])); assert np.allclose(out, [0.,1.])'
+
+  - name: SimpleITK image runtime works
+    command: python -c 'import SimpleITK as sitk; img=sitk.Image([3,4,5], sitk.sitkFloat32); assert img.GetSize() == (3,4,5)'
+
+  - name: Aurora inferer modules import
+    command: python -c 'import brainles_aurora.inferer.config, brainles_aurora.inferer.constants, brainles_aurora.inferer.data, brainles_aurora.inferer.model'
+
+  - name: Aurora utility modules import
+    command: python -c 'import brainles_aurora.utils.console_decorators, brainles_aurora.utils.utils, brainles_aurora.utils.weights'
+
+  - name: Preprocessing normalizer modules import
+    command: python -c 'import brainles_preprocessing.normalization.percentile_normalizer, brainles_preprocessing.normalization.windowing_normalizer'
+
+  - name: Preprocessing registration modules import
+    command: python -c 'import brainles_preprocessing.registration.ANTs.ANTs, brainles_preprocessing.registration.niftyreg.niftyreg'
+
+  - name: BraTS core modules import
+    command: python -c 'import brats.core.brats_algorithm, brats.core.inpainting_algorithms, brats.core.missing_mri_algorithms, brats.core.segmentation_algorithms'
+
+  - name: BraTS utility modules import
+    command: python -c 'import brats.utils.algorithm_config, brats.utils.data_handling, brats.utils.exceptions, brats.utils.zenodo'
+
+  - name: DQE processing modules import
+    command: python -c 'import deep_quality_estimation.center_of_mass, deep_quality_estimation.enums, deep_quality_estimation.transforms'
+
+  - name: PETU processing modules import
+    command: python -c 'import petu.constants, petu.data_handler, petu.model_handler, petu.weights'
+
+  - name: Gliomoda processing modules import
+    command: python -c 'import gliomoda.constants, gliomoda.data_handler, gliomoda.model_handler, gliomoda.weights'
+
+  - name: Panoptica evaluator modules import
+    command: python -c 'import panoptica.instance_approximator, panoptica.instance_matcher, panoptica.panoptica_evaluator, panoptica.panoptica_result'
+
+  - name: Panoptica Dice is one for identical masks
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.array([[1,1],[0,0]]); assert Metric.DSC(a,a) == 1.0'
+
+  - name: Panoptica Dice handles partial overlap
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.array([1,1,0]); b=np.array([1,0,0]); assert np.isclose(Metric.DSC(a,b), 2/3)'
+
+  - name: Panoptica IoU is one for identical masks
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.array([[1,0],[0,1]]); assert Metric.IOU(a,a) == 1.0'
+
+  - name: Panoptica IoU handles partial overlap
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.array([1,1,0]); b=np.array([1,0,0]); assert np.isclose(Metric.IOU(a,b), 0.5)'
+
+  - name: Panoptica relative volume difference detects oversegmentation
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.array([1,1,0,0]); b=np.array([1,1,1,0]); assert np.isclose(Metric.RVD(a,b), 0.5)'
+
+  - name: Panoptica relative volume difference detects undersegmentation
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.array([1,1,0,0]); b=np.array([1,0,0,0]); assert np.isclose(Metric.RVD(a,b), -0.5)'
+
+  - name: Panoptica absolute volume error is unsigned
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.array([1,1,0,0]); b=np.array([1,0,0,0]); assert np.isclose(Metric.RVAE(a,b), 0.5)'
+
+  - name: Panoptica center distance detects one voxel shift
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.zeros((4,4)); b=a.copy(); a[1,1]=1; b[2,1]=1; assert Metric.CEDI(a,b) == 1.0'
+
+  - name: Panoptica Hausdorff distance detects one voxel shift
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.zeros((4,4)); b=a.copy(); a[1,1]=1; b[2,1]=1; assert Metric.HD(a,b) == 1.0'
+
+  - name: Panoptica Hausdorff 95 detects one voxel shift
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.zeros((4,4)); b=a.copy(); a[1,1]=1; b[2,1]=1; assert Metric.HD95(a,b) == 1.0'
+
+  - name: Panoptica ASSD is zero for identical masks
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.zeros((5,5)); a[1:4,1:4]=1; assert Metric.ASSD(a,a) == 0.0'
+
+  - name: Panoptica centerline Dice is one for identical lines
+    command: python -c 'import numpy as np; from panoptica import Metric; a=np.zeros((5,5)); a[2,:]=1; assert Metric.clDSC(a,a) == 1.0'
+
+  - name: Panoptica metric threshold accepts good Dice
+    command: python -c 'from panoptica import Metric; assert Metric.DSC.score_beats_threshold(0.9, 0.8)'
+
+  - name: Panoptica metric threshold rejects poor Dice
+    command: python -c 'from panoptica import Metric; assert not Metric.DSC.score_beats_threshold(0.7, 0.8)'
+
+  - name: Panoptica connected components find separate lesions
     command: |
       python - <<'PY'
-      import importlib
-      modules = [
-          "brainles_aurora",
-          "brainles_preprocessing",
-          "brats",
-          "deep_quality_estimation",
-          "gliomoda",
-          "loguru",
-          "panoptica",
-          "petu",
-      ]
-      for module in modules:
-          importlib.import_module(module)
-      print("brainlesion imports ok")
+      import numpy as np
+      from panoptica import CCABackend
+      from panoptica._functionals import _connected_components
+      mask = np.zeros((7, 7), dtype=np.uint8)
+      mask[1:3, 1:3] = 1
+      mask[5, 5] = 1
+      labels, count = _connected_components(mask, CCABackend.scipy)
+      assert count == 2
+      assert set(np.unique(labels)) == {0, 1, 2}
       PY
-    expected_output_contains: "brainlesion imports ok"
+
+  - name: Panoptica connected component approximator constructs
+    command: python -c 'from panoptica import ConnectedComponentsInstanceApproximator; assert ConnectedComponentsInstanceApproximator() is not None'
+
+  - name: Panoptica naive matcher constructs
+    command: python -c 'from panoptica import NaiveThresholdMatching, Metric; assert NaiveThresholdMatching(matching_metric=Metric.IOU, matching_threshold=0.5) is not None'
+
+  - name: Panoptica evaluator constructs
+    command: python -c 'from panoptica import Panoptica_Evaluator; assert Panoptica_Evaluator() is not None'
+
+  - name: Percentile normalizer maps endpoints
+    command: python -c 'import numpy as np; from brainles_preprocessing.normalization import PercentileNormalizer; out=PercentileNormalizer().normalize(np.array([0.,5.,10.])); assert np.allclose(out, [0.,0.5,1.])'
+
+  - name: Percentile normalizer clips outliers
+    command: python -c 'import numpy as np; from brainles_preprocessing.normalization import PercentileNormalizer; out=PercentileNormalizer(25,75).normalize(np.array([0.,1.,2.,3.,100.])); assert out.min() == 0 and out.max() == 1'
+
+  - name: Percentile normalizer supports custom output range
+    command: python -c 'import numpy as np; from brainles_preprocessing.normalization import PercentileNormalizer; out=PercentileNormalizer(lower_limit=-1,upper_limit=1).normalize(np.array([0.,1.,2.])); assert np.allclose(out, [-1.,0.,1.])'
+
+  - name: Windowing normalizer clips below its window
+    command: python -c 'import numpy as np; from brainles_preprocessing.normalization import WindowingNormalizer; out=WindowingNormalizer(50,100).normalize(np.array([-10.,25.,100.])); assert np.array_equal(out, [0.,25.,100.])'
+
+  - name: Windowing normalizer clips above its window
+    command: python -c 'import numpy as np; from brainles_preprocessing.normalization import WindowingNormalizer; out=WindowingNormalizer(0,20).normalize(np.array([-20.,0.,20.])); assert np.array_equal(out, [-10.,0.,10.])'
+
+  - name: DQE finds tumor-core center of mass
+    command: python -c 'import numpy as np; from deep_quality_estimation.center_of_mass import compute_center_of_mass; a=np.zeros((5,5,5)); a[2,3,4]=1; assert compute_center_of_mass(a) == [2,3,4]'
+
+  - name: DQE falls back to edema center of mass
+    command: python -c 'import numpy as np; from deep_quality_estimation.center_of_mass import compute_center_of_mass; a=np.zeros((5,5,5)); a[1,2,3]=2; assert compute_center_of_mass(a) == [1,2,3]'
+
+  - name: DQE extracts three orthogonal slices
+    command: python -c 'import numpy as np; from deep_quality_estimation.center_of_mass import get_center_of_mass_slices; from deep_quality_estimation.enums import View; out=get_center_of_mass_slices(np.zeros((3,4,5)),[1,2,3]); assert out[View.AXIAL].shape==(3,4) and out[View.CORONAL].shape==(3,5) and out[View.SAGITTAL].shape==(4,5)'
+
+  - name: DQE converts BraTS labels to three channels
+    command: python -c 'import numpy as np; from deep_quality_estimation.transforms import CustomConvertToMultiChannelBasedOnBratsClasses; out=CustomConvertToMultiChannelBasedOnBratsClasses()(np.array([[0,1,2,3]])); assert out.shape == (3,1,4)'
+
+  - name: DQE whole-tumor channel includes all lesion labels
+    command: python -c 'import numpy as np; from deep_quality_estimation.transforms import CustomConvertToMultiChannelBasedOnBratsClasses; out=CustomConvertToMultiChannelBasedOnBratsClasses()(np.array([[0,1,2,3]])); assert np.array_equal(out[1], [[False,True,True,True]])'
+
+  - name: DQE packaged model weights are nonempty
+    command: python -c 'from importlib.resources import files; p=files("deep_quality_estimation").joinpath("weights/dqe_weights.pth"); assert p.is_file() and p.stat().st_size > 1000000'
+
+  - name: BraTS metadata catalog loads
+    command: |
+      python - <<'PY'
+      from importlib.resources import files
+      from brats.utils.algorithm_config import load_algorithms
+      path = files("brats").joinpath("data/meta/adult_glioma_pre_treatment.yml")
+      algorithms = load_algorithms(path)
+      assert algorithms
+      assert all(item.meta.authors and item.run_args.docker_image for item in algorithms.values())
+      PY
+
+  - name: BraTS algorithm parameters are valid YAML
+    command: python -c 'from importlib.resources import files; import yaml; data=yaml.safe_load(files("brats").joinpath("data/parameters/brats24_adult_glioma_mist.yml").read_text()); assert isinstance(data, dict) and data'
+
+  - name: BraTS metadata includes multiple challenge families
+    command: python -c 'from importlib.resources import files; names={p.name for p in files("brats").joinpath("data/meta").iterdir() if p.suffix==".yml"}; assert {"africa.yml","inpainting.yml","meningioma.yml","pediatric.yml"}.issubset(names)'
+
+  - name: BraTS algorithm classes are exposed
+    command: python -c 'from brats import AdultGliomaPreTreatmentSegmenter, AfricaSegmenter, Inpainter, MissingMRI; assert all(callable(x) for x in (AdultGliomaPreTreatmentSegmenter,AfricaSegmenter,Inpainter,MissingMRI))'
+
+  - name: Aurora default configuration is safe for CPU discovery
+    command: python -c 'from brainles_aurora.inferer.config import AuroraInfererConfig; c=AuroraInfererConfig(); assert c.workers == 0 and c.sliding_window_batch_size == 1 and 0 < c.threshold < 1'
+
+  - name: Aurora modality enum is complete
+    command: python -c 'from brainles_aurora.inferer.constants import MODALITIES; assert set(MODALITIES) == {"t1","t2","t1c","fla"}'
+
+  - name: PETU modality mapping covers single and multimodal input
+    command: python -c 'from petu.constants import IMGS_TO_MODE_DICT; assert len(IMGS_TO_MODE_DICT) >= 12 and (True,True,True,True) in IMGS_TO_MODE_DICT'
+
+  - name: Gliomoda modality mapping covers single and multimodal input
+    command: python -c 'from gliomoda.constants import IMGS_TO_MODE_DICT; assert len(IMGS_TO_MODE_DICT) >= 12 and (True,True,True,True) in IMGS_TO_MODE_DICT'
+
+  - name: PETU configures all nnUNet runtime variables
+    command: python -c 'import os, petu; from petu.constants import NNUNET_ENV_VARS; assert len(NNUNET_ENV_VARS)==3 and all(name in os.environ for name in NNUNET_ENV_VARS)'
+
+  - name: Gliomoda configures all nnUNet runtime variables
+    command: python -c 'import os, gliomoda; from gliomoda.constants import NNUNET_ENV_VARS; assert len(NNUNET_ENV_VARS)==3 and all(name in os.environ for name in NNUNET_ENV_VARS)'
+
+  - name: Preprocessor CLI is installed
+    command: command -v preprocessor
+    expected_output_contains: preprocessor
+
+  - name: Preprocessor CLI renders help
+    command: preprocessor --help
+    expected_output_contains: Usage
+
+  - name: Loguru writes structured records
+    command: |
+      python -c 'from loguru import logger; out=[]; token=logger.add(lambda m: out.append(m.record["message"])); logger.info("brainlesion-ready"); logger.remove(token); assert out == ["brainlesion-ready"]'
+
+  - name: Loguru catches contextual fields
+    command: |
+      python -c 'from loguru import logger; out=[]; token=logger.add(lambda m: out.append(m.record["extra"]["case"])); logger.bind(case="smoke").info("ok"); logger.remove(token); assert out == ["smoke"]'
+
+  - name: NIfTI file round trip preserves data and affine
+    command: |
+      python - <<'PY'
+      import tempfile
+      from pathlib import Path
+      import nibabel as nib
+      import numpy as np
+      with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+          path = Path(tmp) / "image.nii.gz"
+          data = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+          affine = np.diag([2.0, 2.0, 3.0, 1.0])
+          nib.save(nib.Nifti1Image(data, affine), path)
+          loaded = nib.load(path)
+          assert np.array_equal(loaded.get_fdata(), data)
+          assert np.array_equal(loaded.affine, affine)
+      PY

@@ -132,6 +132,108 @@ jobs:
 
           echo "test-config=$TEST_CONFIG" >> $GITHUB_OUTPUT
 
+      - name: Analyze image layer waste with Dive
+        id: dive
+        working-directory: source
+        env:
+          RECIPE: ${{ matrix.release.name }}
+          VERSION: ${{ matrix.release.version }}
+          RELEASE_FILE: ${{ matrix.release.file }}
+          DIVE_IMAGE: wagoodman/dive:v0.13.1
+        run: |
+          set +e
+          mkdir -p builder
+
+          IMAGE_DETAILS="$(python - "${RELEASE_FILE}" "${RECIPE}" "${VERSION}" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          release_file, recipe, version = sys.argv[1:]
+          data = json.loads(Path(release_file).read_text(encoding="utf-8"))
+          apps = data.get("apps", {}) or {}
+          if not apps:
+              raise SystemExit(f"No apps metadata found in {release_file}")
+
+          first_app = next(iter(apps.values()))
+          build_date = str(first_app.get("version", "")).strip()
+          image_name = str(first_app.get("image", "")).strip()
+          if not image_name:
+              image_name = f"{recipe}_{version}"
+          if not build_date:
+              raise SystemExit(f"No build date found in {release_file}")
+
+          print(f"{image_name.lower()} {build_date}")
+          PY
+          )"
+          METADATA_STATUS=$?
+          RAW_REPORT="builder/dive-${RECIPE}.raw.txt"
+          REPORT="builder/dive-${RECIPE}.txt"
+          STATUS="error"
+          TOOL_STATUS="${METADATA_STATUS}"
+          IMAGE="unresolved"
+
+          if [ "${METADATA_STATUS}" -eq 0 ]; then
+            read -r IMAGE_NAME BUILD_DATE <<< "${IMAGE_DETAILS}"
+            IMAGE="ghcr.io/neurodesk/${IMAGE_NAME}:${BUILD_DATE}"
+            docker pull "${IMAGE}" > "${RAW_REPORT}" 2>&1
+            PULL_STATUS=$?
+
+            if [ "${PULL_STATUS}" -eq 0 ]; then
+              docker run --rm \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v "${PWD}/.github/.dive-ci.yml:/tmp/.dive-ci.yml:ro" \
+                "${DIVE_IMAGE}" \
+                --ci \
+                --ci-config /tmp/.dive-ci.yml \
+                "${IMAGE}" >> "${RAW_REPORT}" 2>&1
+              TOOL_STATUS=$?
+
+              if grep -q "Result:FAIL" "${RAW_REPORT}"; then
+                STATUS="failed"
+              elif [ "${TOOL_STATUS}" -eq 0 ]; then
+                STATUS="passed"
+              fi
+            else
+              TOOL_STATUS="${PULL_STATUS}"
+            fi
+          else
+            printf 'Unable to resolve the Docker image from %s.\n' "${RELEASE_FILE}" > "${RAW_REPORT}"
+          fi
+
+          sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g' "${RAW_REPORT}" > "${REPORT}" 2>/dev/null \
+            || cp "${RAW_REPORT}" "${REPORT}"
+          cat "${REPORT}"
+          printf '%s\n' "${STATUS}" > "builder/dive-status-${RECIPE}.txt"
+
+          {
+            echo "status=${STATUS}"
+            echo "image=${IMAGE}"
+            echo "exit_code=${TOOL_STATUS}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Dive image layer waste analysis"
+            echo ""
+            echo "- Status: \`${STATUS}\`"
+            echo "- Image: \`${IMAGE}\`"
+            echo "- Dive image: \`${DIVE_IMAGE}\`"
+            echo "- Exit code: \`${TOOL_STATUS}\`"
+            echo "- Config: \`.github/.dive-ci.yml\`"
+            echo ""
+            echo '```text'
+            head -c 50000 "${REPORT}"
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${STATUS}" = "failed" ]; then
+            echo "::warning::Dive detected image layer waste above the configured thresholds."
+          elif [ "${STATUS}" = "error" ]; then
+            echo "::warning::Dive could not complete the image layer waste analysis."
+          fi
+          exit 0
+
       - name: Run container tests
         id: test
         working-directory: source
@@ -185,6 +287,8 @@ jobs:
             source/builder/fulltest-${{ matrix.release.name }}.jsonl
             source/builder/fulltest-${{ matrix.release.name }}.log
             source/builder/fulltest-suite-${{ matrix.release.name }}.yaml
+            source/builder/dive-${{ matrix.release.name }}.txt
+            source/builder/dive-status-${{ matrix.release.name }}.txt
 
       - name: Comment test results on PR
         if: always()
@@ -198,6 +302,10 @@ jobs:
             const releaseName = '${{ matrix.release.name }}';
             const releaseVersion = '${{ matrix.release.version }}';
             const reportFile = `source/builder/test-report-${releaseName}.md`;
+            const diveReportFile = `source/builder/dive-${releaseName}.txt`;
+            const diveStatus = '${{ steps.dive.outputs.status }}' || 'error';
+            const diveImage = '${{ steps.dive.outputs.image }}' || 'unresolved';
+            const diveExitCode = '${{ steps.dive.outputs.exit_code }}' || 'unknown';
 
             let reportContent = `## Test Results for ${releaseName}:${releaseVersion}\n\n`;
 
@@ -210,6 +318,35 @@ jobs:
             } catch (error) {
               reportContent += `❌ Error reading test report: ${error.message}`;
             }
+
+            const diveIcons = {
+              passed: '✅',
+              failed: '⚠️',
+              error: '⚠️',
+            };
+            const diveLabels = {
+              passed: 'passed',
+              failed: 'wasted space detected',
+              error: 'analysis unavailable',
+            };
+            let diveOutput = 'Dive report not generated - check logs for errors.';
+            try {
+              if (fs.existsSync(diveReportFile)) {
+                diveOutput = fs.readFileSync(diveReportFile, 'utf8');
+                if (diveOutput.length > 12000) {
+                  diveOutput = `${diveOutput.slice(0, 12000)}\n... output truncated`;
+                }
+              }
+            } catch (error) {
+              diveOutput = `Error reading Dive report: ${error.message}`;
+            }
+
+            reportContent += `\n\n### Dive image layer waste analysis\n\n`;
+            reportContent += `${diveIcons[diveStatus] || '⚠️'} **Status:** ${diveLabels[diveStatus] || diveStatus}\n\n`;
+            reportContent += `- Image: \`${diveImage}\`\n`;
+            reportContent += `- Exit code: \`${diveExitCode}\`\n`;
+            reportContent += `- Config: \`.github/.dive-ci.yml\`\n\n`;
+            reportContent += `<details><summary>Dive output</summary>\n\n\`\`\`text\n${diveOutput}\n\`\`\`\n\n</details>`;
 
             // Find existing comment for this release
             const comments = await github.rest.issues.listComments({
@@ -263,6 +400,8 @@ jobs:
           TOTAL_RECIPES=0
           PASSED_RECIPES=0
           FAILED_RECIPES=0
+          WASTED_SPACE_RECIPES=0
+          DIVE_ERROR_RECIPES=0
 
           for file in test-results-*.json; do
             if [ -f "$file" ]; then
@@ -278,16 +417,32 @@ jobs:
             fi
           done
 
+          for file in dive-status-*.txt; do
+            if [ -f "$file" ]; then
+              DIVE_STATUS="$(tr -d '[:space:]' < "$file")"
+              if [ "$DIVE_STATUS" = "failed" ]; then
+                WASTED_SPACE_RECIPES=$((WASTED_SPACE_RECIPES + 1))
+              elif [ "$DIVE_STATUS" = "error" ]; then
+                DIVE_ERROR_RECIPES=$((DIVE_ERROR_RECIPES + 1))
+              fi
+            fi
+          done
+
           if [ "$TOTAL_RECIPES" -eq 0 ]; then
             FAILED_RECIPES=1
             echo "No test result artifacts were produced"
           fi
 
-          echo "total=$TOTAL_RECIPES" >> $GITHUB_OUTPUT
-          echo "passed=$PASSED_RECIPES" >> $GITHUB_OUTPUT
-          echo "failed=$FAILED_RECIPES" >> $GITHUB_OUTPUT
+          {
+            echo "total=$TOTAL_RECIPES"
+            echo "passed=$PASSED_RECIPES"
+            echo "failed=$FAILED_RECIPES"
+            echo "wasted_space=$WASTED_SPACE_RECIPES"
+            echo "dive_errors=$DIVE_ERROR_RECIPES"
+          } >> "$GITHUB_OUTPUT"
 
           echo "Test Summary: $PASSED_RECIPES/$TOTAL_RECIPES recipes passed"
+          echo "Dive Summary: $WASTED_SPACE_RECIPES wasted-space warning(s), $DIVE_ERROR_RECIPES analysis error(s)"
 
       - name: Set PR status
         uses: actions/github-script@v9
@@ -296,6 +451,8 @@ jobs:
             const total = parseInt('${{ steps.summary.outputs.total }}');
             const passed = parseInt('${{ steps.summary.outputs.passed }}');
             const failed = parseInt('${{ steps.summary.outputs.failed }}');
+            const wastedSpace = parseInt('${{ steps.summary.outputs.wasted_space }}');
+            const diveErrors = parseInt('${{ steps.summary.outputs.dive_errors }}');
 
             let summary = `## 🧪 Container Test Summary\n\n`;
             if (total === 0) {
@@ -311,6 +468,13 @@ jobs:
               } else {
                 summary += `✅ All modified containers passed testing!\n\n`;
               }
+            }
+
+            summary += `**Dive image layer analysis:** ${wastedSpace} wasted-space warning(s), ${diveErrors} analysis error(s)\n\n`;
+            if (wastedSpace > 0) {
+              summary += `⚠️ Review the Dive output in the per-container test comment before merging.\n\n`;
+            } else if (diveErrors > 0) {
+              summary += `⚠️ Dive could not analyze one or more images; check the workflow logs.\n\n`;
             }
 
             summary += `*This comment will be updated as tests complete.*`;

@@ -1,0 +1,14 @@
+diff --git a/meica.py b/meica.py
+--- a/meica.py
++++ b/meica.py
+@@ -687,9 +687,7 @@ sl.append(
+     % (sys.executable, "/".join([meica_src_dir, "libmeica", "t2smap.py"]), options.tes)
+ )
+ sl.append("3dUnifize -prefix ./ocv_uni+orig ocv.nii")
+-sl.append(
+-    "3dSkullStrip -no_avoid_eyes -prefix ./ocv_ss.nii.gz -overwrite -input ocv_uni+orig"
+-)
++sl.append("meica-skullstrip-fallback -no_avoid_eyes -prefix ./ocv_ss.nii.gz -overwrite -input ocv_uni+orig")
+ sl.append(
+     "3dcalc -overwrite -a t2svm.nii -b ocv_ss.nii.gz -expr 'a*ispositive(a)*step(b)' -prefix t2svm_ss.nii.gz"
+ )

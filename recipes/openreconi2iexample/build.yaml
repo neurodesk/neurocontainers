@@ -58,11 +58,14 @@ readme: |-
 
   Minimal OpenRecon image-to-image reference. Receives reconstructed MRD
   image messages and sends outputs according to the enabled output options. The
-  scanner label defaults enable original pass-through plus segmentation. Enable
+  scanner label defaults enable original pass-through, inversion, and
+  segmentation. Inversion is also the runtime default when no parameter payload
+  is provided. Enable
   `sendoriginal` to pass the original 2D image stream through on
   `image_series_index = 100`.
-  Enable `invert` to return inverted magnitude images as `<source>-inverted` on
-  `image_series_index = 99`. Enable `segment` to extract the brightest foreground
+  Inverted magnitude images are returned as `<source>-inverted` on
+  `image_series_index = 99`; disable `invert` to omit them. Enable `segment` to
+  extract the brightest foreground
   object and send `<source>-segment` outputs starting on
   `image_series_index = 101`. Segment output handling is controlled by
   `segmentheadergeometry`: `explicit_volume_derived_header` sends segmentation as
@@ -153,6 +156,12 @@ readme: |-
 
   Build and validate:
   ```bash
-  python -m builder test openreconi2iexample --recreate --build --architecture x86_64
+  env/bin/python -m builder login openreconi2iexample --recreate --architecture x86_64
+
+  python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+  sleep 2
+  python3 /opt/code/python-ismrmrd-server/client.py -G dataset -o /buildhostdirectory/openrecon_output.h5 /buildhostdirectory/input_data.h5 -c openreconi2iexample
   ```
+
+
   ----------------------------------

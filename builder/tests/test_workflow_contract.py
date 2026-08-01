@@ -64,6 +64,18 @@ def test_build_app_workflow_stages_without_hidden_docker_builds() -> None:
     assert "docker buildx build" in build_image_job
 
 
+def test_dive_waste_check_is_reported_on_release_pr_without_opening_an_issue() -> None:
+    build_workflow = Path(".github/workflows/build-app.yml").read_text()
+    release_test_workflow = Path(".github/workflows/test-release-pr.yml").read_text()
+
+    assert "Analyze image layer waste with Dive" not in build_workflow
+    assert "Open issue for Dive wasted space" not in build_workflow
+    assert "Analyze image layer waste with Dive" in release_test_workflow
+    assert "Dive image layer waste analysis" in release_test_workflow
+    assert "dive-status-${{ matrix.release.name }}.txt" in release_test_workflow
+    assert "gh issue create" not in release_test_workflow
+
+
 def test_nectar_mirrors_are_best_effort() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     push_nectar_job = workflow.split("  push-nectar-registry:", 1)[1].split("  build-simg:", 1)[0]
@@ -155,3 +167,14 @@ def test_update_apps_json_pushes_fixed_branch_without_per_release_pr() -> None:
     assert 'git push --force origin "$BRANCH_NAME"' in workflow
     assert "gh pr create" not in workflow
     assert "group: update-apps-json" in workflow
+
+
+def test_update_apps_json_runs_for_release_file_pushes() -> None:
+    # Release metadata can be removed directly from main as well as merged via
+    # a PR. A main-branch push trigger covers both paths and avoids leaving the
+    # fixed update branch with a stale release snapshot.
+    workflow = Path(".github/workflows/update-apps-json.yml").read_text()
+
+    assert "  push:\n    branches: [main]\n    paths:\n      - \"releases/**/*.json\"" in workflow
+    assert "pull_request:" not in workflow
+    assert "github.event.pull_request.merged" not in workflow

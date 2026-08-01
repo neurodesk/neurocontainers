@@ -141,6 +141,7 @@ def generate_apps_json(releases_dir: str, output_file: str):
     
     # Generate consolidated apps.json
     apps_json = {}
+    app_owners: Dict[str, str] = {}
     
     for container_name in sorted(containers.keys()):
         print(f"Processing container: {container_name}")
@@ -154,6 +155,15 @@ def generate_apps_json(releases_dir: str, output_file: str):
         
         # Merge all releases for this container
         container_data = merge_container_releases(container_name, release_files)
+        for app_name in container_data["apps"]:
+            existing_owner = app_owners.get(app_name)
+            if existing_owner is not None:
+                owners = ", ".join(sorted((existing_owner, container_name)))
+                raise ValueError(
+                    f"Duplicate app identity '{app_name}' found in release "
+                    f"containers: {owners}"
+                )
+            app_owners[app_name] = container_name
         apps_json[container_name] = container_data
     
     # Write the generated apps.json

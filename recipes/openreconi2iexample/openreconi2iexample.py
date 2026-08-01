@@ -200,7 +200,7 @@ def process(connection, config, metadata):
             return
 
         send_original = _config_bool(config, "sendoriginal", default=False)
-        send_invert = _config_bool_any(config, ("invert", "sendinvert"), default=False)
+        send_invert = _send_invert_enabled(config)
         send_upsampled = _config_bool_any(
             config,
             ("upsampled", "sendupsampled", "sendinterpolated"),
@@ -5797,6 +5797,10 @@ def _config_bool_any(config, keys, default=False):
         if value is not None:
             return value
     return default
+
+
+def _send_invert_enabled(config):
+    return _config_bool_any(config, ("invert", "sendinvert"), default=True)
 
 
 def _config_value_any(config, keys, default=None):

@@ -7,6 +7,9 @@ set -e
 echo "Running validation tests..."
 VALIDATION_FAILED=false
 
+echo "Checking OpenRecon labels..."
+python3 -m unittest builder.tests.test_openrecon_label_validation
+
 # loop through each subdirectory under recipes
 for dir in recipes/*/; do
     name=$(basename "$dir")

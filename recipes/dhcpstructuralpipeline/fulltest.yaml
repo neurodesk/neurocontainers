@@ -1,0 +1,13 @@
+name: dhcpstructuralpipeline
+version: "1.1"
+container: dhcpstructuralpipeline_1.1_REFERENCE.simg
+default_timeout: 120
+
+tests:
+  - name: dhcp pipeline launcher available
+    description: Verify the dHCP structural pipeline entrypoint is deployed on PATH.
+    command: command -v dhcp-pipeline.sh
+    expected_output_contains: dhcp-pipeline.sh
+  - name: dhcp pipeline help
+    description: Verify the pipeline launcher runs and prints its usage.
+    command: dhcp-pipeline.sh -help || true

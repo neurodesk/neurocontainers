@@ -1,0 +1,311 @@
+name: voreen
+version: 5.3.0
+container: voreen_${version}_REFERENCE.simg
+default_timeout: 60
+env_setup: |
+  assert_linked() {
+    local output
+    output="$(ldd "$1" 2>&1)" || return 1
+    ! grep -q "not found" <<< "$output"
+  }
+tests:
+  - name: voreenve resolves on PATH
+    command: command -v voreenve
+    expected_exit_code: 0
+  - name: voreenve is executable
+    command: test -x "$(command -v voreenve)"
+    expected_exit_code: 0
+  - name: voreenve target exists
+    command: test -e "$(readlink -f "$(command -v voreenve)")"
+    expected_exit_code: 0
+  - name: voreenve has no missing shared libraries
+    command: assert_linked "$(command -v voreenve)"
+    expected_exit_code: 0
+  - name: voreentool resolves on PATH
+    command: command -v voreentool
+    expected_exit_code: 0
+  - name: voreentool is executable
+    command: test -x "$(command -v voreentool)"
+    expected_exit_code: 0
+  - name: voreentool target exists
+    command: test -e "$(readlink -f "$(command -v voreentool)")"
+    expected_exit_code: 0
+  - name: voreentool has no missing shared libraries
+    command: assert_linked "$(command -v voreentool)"
+    expected_exit_code: 0
+  - name: libefsw.so exists
+    command: test -f /usr/share/voreen/libefsw.so
+    expected_exit_code: 0
+  - name: libefsw.so is readable
+    command: test -r /usr/share/voreen/libefsw.so
+    expected_exit_code: 0
+  - name: libefsw.so is an ELF library
+    command: readelf -h /usr/share/voreen/libefsw.so >/dev/null
+    expected_exit_code: 0
+  - name: libefsw.so dependencies resolve
+    command: assert_linked /usr/share/voreen/libefsw.so
+    expected_exit_code: 0
+  - name: libtgt.so exists
+    command: test -f /usr/share/voreen/libtgt.so
+    expected_exit_code: 0
+  - name: libtgt.so is readable
+    command: test -r /usr/share/voreen/libtgt.so
+    expected_exit_code: 0
+  - name: libtgt.so is an ELF library
+    command: readelf -h /usr/share/voreen/libtgt.so >/dev/null
+    expected_exit_code: 0
+  - name: libtgt.so dependencies resolve
+    command: assert_linked /usr/share/voreen/libtgt.so
+    expected_exit_code: 0
+  - name: libvoreen_core.so exists
+    command: test -f /usr/share/voreen/libvoreen_core.so
+    expected_exit_code: 0
+  - name: libvoreen_core.so is readable
+    command: test -r /usr/share/voreen/libvoreen_core.so
+    expected_exit_code: 0
+  - name: libvoreen_core.so is an ELF library
+    command: readelf -h /usr/share/voreen/libvoreen_core.so >/dev/null
+    expected_exit_code: 0
+  - name: libvoreen_core.so dependencies resolve
+    command: assert_linked /usr/share/voreen/libvoreen_core.so
+    expected_exit_code: 0
+  - name: libvoreen_qt.so exists
+    command: test -f /usr/share/voreen/libvoreen_qt.so
+    expected_exit_code: 0
+  - name: libvoreen_qt.so is readable
+    command: test -r /usr/share/voreen/libvoreen_qt.so
+    expected_exit_code: 0
+  - name: libvoreen_qt.so is an ELF library
+    command: readelf -h /usr/share/voreen/libvoreen_qt.so >/dev/null
+    expected_exit_code: 0
+  - name: libvoreen_qt.so dependencies resolve
+    command: assert_linked /usr/share/voreen/libvoreen_qt.so
+    expected_exit_code: 0
+  - name: data directory exists
+    command: test -d /usr/share/voreen/data
+    expected_exit_code: 0
+  - name: data directory is readable
+    command: test -r /usr/share/voreen/data
+    expected_exit_code: 0
+  - name: data directory is nonempty
+    command: find /usr/share/voreen/data -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: doc directory exists
+    command: test -d /usr/share/voreen/doc
+    expected_exit_code: 0
+  - name: doc directory is readable
+    command: test -r /usr/share/voreen/doc
+    expected_exit_code: 0
+  - name: doc directory is nonempty
+    command: find /usr/share/voreen/doc -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: ext directory exists
+    command: test -d /usr/share/voreen/ext
+    expected_exit_code: 0
+  - name: ext directory is readable
+    command: test -r /usr/share/voreen/ext
+    expected_exit_code: 0
+  - name: ext directory is nonempty
+    command: find /usr/share/voreen/ext -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: modules/base directory exists
+    command: test -d /usr/share/voreen/modules/base
+    expected_exit_code: 0
+  - name: modules/base directory is readable
+    command: test -r /usr/share/voreen/modules/base
+    expected_exit_code: 0
+  - name: modules/base directory is nonempty
+    command: find /usr/share/voreen/modules/base -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: modules/connexe directory exists
+    command: test -d /usr/share/voreen/modules/connexe
+    expected_exit_code: 0
+  - name: modules/connexe directory is readable
+    command: test -r /usr/share/voreen/modules/connexe
+    expected_exit_code: 0
+  - name: modules/connexe directory is nonempty
+    command: find /usr/share/voreen/modules/connexe -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: modules/core directory exists
+    command: test -d /usr/share/voreen/modules/core
+    expected_exit_code: 0
+  - name: modules/core directory is readable
+    command: test -r /usr/share/voreen/modules/core
+    expected_exit_code: 0
+  - name: modules/core directory is nonempty
+    command: find /usr/share/voreen/modules/core -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: modules/ensembleanalysis directory exists
+    command: test -d /usr/share/voreen/modules/ensembleanalysis
+    expected_exit_code: 0
+  - name: modules/ensembleanalysis directory is readable
+    command: test -r /usr/share/voreen/modules/ensembleanalysis
+    expected_exit_code: 0
+  - name: modules/ensembleanalysis directory is nonempty
+    command: find /usr/share/voreen/modules/ensembleanalysis -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: modules/flowanalysis directory exists
+    command: test -d /usr/share/voreen/modules/flowanalysis
+    expected_exit_code: 0
+  - name: modules/flowanalysis directory is readable
+    command: test -r /usr/share/voreen/modules/flowanalysis
+    expected_exit_code: 0
+  - name: modules/flowanalysis directory is nonempty
+    command: find /usr/share/voreen/modules/flowanalysis -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: modules/plotting directory exists
+    command: test -d /usr/share/voreen/modules/plotting
+    expected_exit_code: 0
+  - name: modules/plotting directory is readable
+    command: test -r /usr/share/voreen/modules/plotting
+    expected_exit_code: 0
+  - name: modules/plotting directory is nonempty
+    command: find /usr/share/voreen/modules/plotting -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: modules/pvm directory exists
+    command: test -d /usr/share/voreen/modules/pvm
+    expected_exit_code: 0
+  - name: modules/pvm directory is readable
+    command: test -r /usr/share/voreen/modules/pvm
+    expected_exit_code: 0
+  - name: modules/pvm directory is nonempty
+    command: find /usr/share/voreen/modules/pvm -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: modules/python directory exists
+    command: test -d /usr/share/voreen/modules/python
+    expected_exit_code: 0
+  - name: modules/python directory is readable
+    command: test -r /usr/share/voreen/modules/python
+    expected_exit_code: 0
+  - name: modules/python directory is nonempty
+    command: find /usr/share/voreen/modules/python -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: modules/randomwalker directory exists
+    command: test -d /usr/share/voreen/modules/randomwalker
+    expected_exit_code: 0
+  - name: modules/randomwalker directory is readable
+    command: test -r /usr/share/voreen/modules/randomwalker
+    expected_exit_code: 0
+  - name: modules/randomwalker directory is nonempty
+    command: find /usr/share/voreen/modules/randomwalker -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: resource/voreencore directory exists
+    command: test -d /usr/share/voreen/resource/voreencore
+    expected_exit_code: 0
+  - name: resource/voreencore directory is readable
+    command: test -r /usr/share/voreen/resource/voreencore
+    expected_exit_code: 0
+  - name: resource/voreencore directory is nonempty
+    command: find /usr/share/voreen/resource/voreencore -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: resource/voreenqt directory exists
+    command: test -d /usr/share/voreen/resource/voreenqt
+    expected_exit_code: 0
+  - name: resource/voreenqt directory is readable
+    command: test -r /usr/share/voreen/resource/voreenqt
+    expected_exit_code: 0
+  - name: resource/voreenqt directory is nonempty
+    command: find /usr/share/voreen/resource/voreenqt -mindepth 1 -print -quit | grep -q .
+    expected_exit_code: 0
+  - name: CREDITS.txt exists
+    command: test -f /usr/share/voreen/CREDITS.txt
+    expected_exit_code: 0
+  - name: CREDITS.txt is readable
+    command: test -r /usr/share/voreen/CREDITS.txt
+    expected_exit_code: 0
+  - name: CREDITS.txt is nonempty
+    command: test -s /usr/share/voreen/CREDITS.txt
+    expected_exit_code: 0
+  - name: Changelog.txt exists
+    command: test -f /usr/share/voreen/Changelog.txt
+    expected_exit_code: 0
+  - name: Changelog.txt is readable
+    command: test -r /usr/share/voreen/Changelog.txt
+    expected_exit_code: 0
+  - name: Changelog.txt is nonempty
+    command: test -s /usr/share/voreen/Changelog.txt
+    expected_exit_code: 0
+  - name: LICENSE.txt exists
+    command: test -f /usr/share/voreen/LICENSE.txt
+    expected_exit_code: 0
+  - name: LICENSE.txt is readable
+    command: test -r /usr/share/voreen/LICENSE.txt
+    expected_exit_code: 0
+  - name: LICENSE.txt is nonempty
+    command: test -s /usr/share/voreen/LICENSE.txt
+    expected_exit_code: 0
+  - name: data/voreenve.cfg.sample exists
+    command: test -f /usr/share/voreen/data/voreenve.cfg.sample
+    expected_exit_code: 0
+  - name: data/voreenve.cfg.sample is readable
+    command: test -r /usr/share/voreen/data/voreenve.cfg.sample
+    expected_exit_code: 0
+  - name: data/voreenve.cfg.sample is nonempty
+    command: test -s /usr/share/voreen/data/voreenve.cfg.sample
+    expected_exit_code: 0
+  - name: voreenve links libvoreen_qt.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libvoreen_qt.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libvoreen_core.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libvoreen_core.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libtgt.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libtgt.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libboost_program_options.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libboost_program_options.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libQt5Widgets.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libQt5Widgets.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libQt5Gui.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libQt5Gui.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libQt5Core.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libQt5Core.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libpython3.12.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libpython3.12.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libQt5Svg.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libQt5Svg.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libboost_thread.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libboost_thread.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libefsw.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libefsw.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libboost_iostreams.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libboost_iostreams.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libboost_random.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libboost_random.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libIL.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libIL.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libILU.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libILU.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libGL.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libGL.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libpng16.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libpng16.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libz.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libz.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libharfbuzz.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libharfbuzz.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libtiff.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libtiff.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libjpeg.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libjpeg.so <<< "$output"
+    expected_exit_code: 0
+  - name: voreenve links libX11.so
+    command: output="$(ldd /usr/share/voreen/voreenve 2>&1)" && grep -Fq libX11.so <<< "$output"
+    expected_exit_code: 0

@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "nesvor 0.5.0": {
+      "version": "20260722",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "fetal imaging",
+    "image reconstruction",
+    "structural imaging"
+  ]
+}

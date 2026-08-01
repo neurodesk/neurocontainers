@@ -3,7 +3,8 @@ channels:
   - conda-forge
 
 dependencies:
-  - python=3
+  - python=3.10
+  - setuptools<81
   - mne=1.1.0=ha770c72_0
   - jupyter
   - mne-bids

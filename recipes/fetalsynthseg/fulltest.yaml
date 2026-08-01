@@ -1,0 +1,13 @@
+name: fetalsynthseg
+version: 1.0.0
+container: fetalsynthseg_1.0.0_REFERENCE.simg
+default_timeout: 120
+
+tests:
+  - name: fetalsynthseg launcher available
+    description: Verify the fetalsynthseg inference launcher is deployed on PATH.
+    command: command -v fetalsynthseg
+    expected_output_contains: fetalsynthseg
+  - name: fetalsynthseg help
+    description: Verify the inference entrypoint runs and prints its usage.
+    command: fetalsynthseg --help

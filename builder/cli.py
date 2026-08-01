@@ -6,7 +6,13 @@ import shutil
 import sys
 from pathlib import Path
 
-from .adapters import BuildInputs, BuildKitAdapter, DockerAdapter, SifAdapter
+from .adapters import (
+    BuildInputs,
+    BuildKitAdapter,
+    DockerAdapter,
+    SifAdapter,
+    platform_for_architecture,
+)
 from .config import default_config, resolve_recipe
 from .dockerfile import render_dockerfile
 from .recipe import compile_recipe
@@ -28,6 +34,10 @@ def write_build_files(
     stage: bool = False,
     download: bool = False,
 ) -> tuple[Path, Path]:
+    readme = compiled.readme.rstrip()
+    if not readme:
+        raise ValueError(f"{compiled.name}: compiled README content cannot be empty")
+
     build_dir = output_root / compiled.name
     if build_dir.exists() and recreate:
         shutil.rmtree(build_dir)
@@ -35,7 +45,7 @@ def write_build_files(
 
     dockerfile_path = build_dir / dockerfile_name(compiled.name, compiled.version)
     dockerfile_path.write_text(render_dockerfile(compiled.definition))
-    (build_dir / "README.md").write_text(compiled.readme.rstrip() + "\n")
+    (build_dir / "README.md").write_text(readme + "\n")
     shutil.copy2(compiled.recipe_dir / "build.yaml", build_dir / "build.yaml")
 
     if stage:
@@ -305,10 +315,18 @@ def cmd_login(args: argparse.Namespace) -> int:
     if args.dry_run:
         return 0
     config, compiled = compile_from_args(args)
-    command = ["docker", "run", "--rm", "-it"]
+    command = [
+        "docker",
+        "run",
+        "--platform",
+        platform_for_architecture(compiled.architecture),
+        "--rm",
+        "-v",
+        f"{compiled.recipe_dir.resolve()}:/buildhostdirectory",
+    ]
     if args.offline_mode:
         command.extend(["--network", "none"])
-    command.append(compiled.tag)
+    command.extend(["-it", compiled.tag])
     print(" ".join(command))
     import subprocess
 

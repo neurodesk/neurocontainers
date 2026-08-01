@@ -1,0 +1,32 @@
+name: svrtk
+version: "20260626"
+container: svrtk_20260626_REFERENCE.simg
+default_timeout: 120
+
+tests:
+  - name: mirtk available
+    description: Verify the MIRTK/SVRTK command wrapper runs.
+    command: mirtk --help
+    expected_output_contains: "Usage:"
+  - name: auto brain reconstruction script available
+    description: Verify the automated brain reconstruction launcher is deployed.
+    command: command -v auto-brain-reconstruction.sh
+    expected_output_contains: auto-brain-reconstruction.sh
+  - name: BOUNTI segmentation script available
+    description: Verify the automated BOUNTI brain tissue segmentation launcher is deployed.
+    command: command -v auto-brain-bounti-segmentation-fetal.sh
+    expected_output_contains: auto-brain-bounti-segmentation-fetal.sh
+  - name: brain reference template avoids nested gzip
+    description: Verify the empty reference volume is unpacked to avoid CVMFS DPI false positives.
+    command: |
+      set -eu
+      template_dir=/opt/auto-proc-svrtk/templates/reo-brain-template-042026
+      scripts_dir=/opt/auto-proc-svrtk/scripts
+      test -f "${template_dir}/dl-ref-1mm.nii"
+      test "$(stat -c %s "${template_dir}/dl-ref-1mm.nii")" -eq 135797096
+      test ! -e "${template_dir}/dl-ref-1mm.nii.gz"
+      grep -q 'dl-ref-1mm\.nii' "${scripts_dir}/auto-brain-reconstruction-2026.sh"
+      grep -q 'dl-ref-1mm\.nii' "${scripts_dir}/auto-brain-055t-reconstruction-2026.sh"
+      ! grep -q 'dl-ref-1mm\.nii\.gz' "${scripts_dir}/auto-brain-reconstruction-2026.sh" "${scripts_dir}/auto-brain-055t-reconstruction-2026.sh"
+      echo "Brain reference template is CVMFS-safe"
+    expected_output_contains: Brain reference template is CVMFS-safe

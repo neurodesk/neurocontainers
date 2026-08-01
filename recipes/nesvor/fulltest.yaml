@@ -1,0 +1,10 @@
+name: nesvor
+version: 0.5.0
+container: nesvor_0.5.0_REFERENCE.simg
+default_timeout: 120
+
+tests:
+  - name: nesvor available
+    description: Verify the nesvor entrypoint is installed and reports its help.
+    command: nesvor --help
+    expected_output_contains: reconstruct

@@ -554,9 +554,18 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
     if volume.ndim != 3:
         raise ValueError(f"Reconstructed volume must be 3D, got shape {volume.shape}")
 
-    # The display data is flipped left-right below to match the native ICE
-    # reconstruction. Reverse the corresponding direction vector as well so
-    # the scanner's R/L marker describes the displayed pixels correctly.
+    # Match the native ICE reconstruction display orientation. The two in-plane
+    # axes are NOT symmetric:
+    #   * Read (L/R, columns): the NUFFT x-axis runs opposite to the scanner
+    #     read convention, so the column pixels are reversed below AND read_dir
+    #     is negated here so the R/L marker stays consistent (verified correct
+    #     on the scanner).
+    #   * Phase (A/P, rows): the NUFFT y-axis already matches the scanner phase
+    #     convention. Reversing the rows put anterior at the bottom (the v0.1.8
+    #     "AP flip"), and negating phase_dir instead only relabelled A->P and
+    #     flipped the through-plane H/F marker (read x phase handedness) without
+    #     moving the pixels. So keep the rows natural and phase_dir un-negated.
+    #   * Slice (H/F): keep slice_dir natural.
     read_dir = -np.asarray(reference_head.read_dir, dtype=float)
     phase_dir = np.asarray(reference_head.phase_dir, dtype=float)
     slice_dir = np.asarray(reference_head.slice_dir, dtype=float)
@@ -576,13 +585,22 @@ def _build_output_images(volume, reference_head, metadata, output_fov_mm):
     slice_count = int(display_volume.shape[2])
     image_comment = _scanner_display_comment(display_meta)
 
-    # Pack the complete matrix as one explicit 3D MRD image. Sending 64
-    # separate 2D messages lets ICE refill each mini-header from the source
-    # protocol's NoImagesPerSlab=32 and causes the DICOM writer to flush two
-    # 32-frame volumes. One [z, y, x] image gives the writer one 64-frame
-    # volume, matching the native ICE reconstruction contract.
+    # Pack the complete matrix as one explicit 3D MRD image [z, y, x].
+    # NOTE: on its own this does NOT produce a single 64-frame DICOM volume.
+    # With UseIceFillingMiniHeader=true (FIRE OpenRecon XML) the scanner numbers
+    # every frame from the acquisition protocol's Slices-per-Slab
+    # (NoImagesPerSlab), so that protocol value must equal the reconstruction
+    # base resolution (matrixsize). When they differ -- here NoImagesPerSlab=32
+    # vs matrixsize=64 -- the DICOM writer flushes two 32-frame volumes and the
+    # partition counter folds (1..32 then 32..1); confirmed in
+    # logfile_v0.1.8.log (two "flush data (32 frames) by series '36'" entries).
+    # The remedy is a scanner-side protocol change (set Slices-per-Slab equal to
+    # the reconstruction base resolution) and cannot be made from this recon
+    # container.
+    # Reverse only the read/column axis (x); keep the phase/row axis (y) and the
+    # slice axis (z) in natural order (see the read/phase/slice note above).
     packed_volume = np.ascontiguousarray(
-        display_volume[::-1, ::-1, :].transpose(2, 1, 0)
+        display_volume[::-1, :, :].transpose(2, 1, 0)
     )
     image = ismrmrd.Image.from_array(packed_volume, transpose=False)
 

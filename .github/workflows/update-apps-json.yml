@@ -5,8 +5,7 @@ permissions:
   pull-requests: write
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
     paths:
       - "releases/**/*.json"
@@ -23,7 +22,6 @@ env:
 
 jobs:
   update-apps-json:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:

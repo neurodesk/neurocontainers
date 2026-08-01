@@ -177,7 +177,6 @@ SCT_SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
 SCT_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
 SCT_SEGMENT_SOURCE_GEOMETRY_META_KEY = "SegmentSourceGeometry"
 SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY = "SegmentSourceImageHeader"
-
 SOURCE_PARENT_REFERENCE_META_KEYS = {
     "DicomEngineDimString",
     "MFInstanceNumber",
@@ -238,6 +237,18 @@ SCT_BATCH_PROCESSING_OPENRECON_CASES = (
         "source_command": 'sct_deepseg spinalcord -i dmri_moco_dwi_mean.nii.gz -qc "$SCT_BP_QC_FOLDER"',
     },
 )
+
+
+def _get_boolean_config_param(config, parameter_id, default=False):
+    option = mrdhelper.get_json_config_param(
+        config,
+        parameter_id,
+        default,
+        type="bool",
+    )
+    if isinstance(option, str):
+        return option.strip().lower() in ("1", "true", "yes", "on")
+    return bool(option)
 
 
 def process(connection, config, metadata):
@@ -342,13 +353,38 @@ def process(connection, config, metadata):
                 series_index,
                 len(imgGroup),
             )
-            image = process_image(
-                imgGroup,
-                connection,
-                config,
-                metadata,
-                derived_series_allocator=derived_series_allocator,
-            )
+            try:
+                image = process_image(
+                    imgGroup,
+                    connection,
+                    config,
+                    metadata,
+                    derived_series_allocator=derived_series_allocator,
+                )
+            except subprocess.CalledProcessError:
+                if not _get_boolean_config_param(
+                    config,
+                    "sendoriginal",
+                    default=OPENRECON_DEFAULTS["sendoriginal"],
+                ):
+                    raise
+
+                failure_traceback = traceback.format_exc()
+                logging.error(failure_traceback)
+                connection.send_logging(constants.MRD_LOGGING_ERROR, failure_traceback)
+                original_series_index = derived_series_allocator.allocate("ORIGINAL")
+                image = _restamp_passthrough_images(
+                    imgGroup,
+                    "ORIGINAL",
+                    original_series_index,
+                )
+                logging.warning(
+                    "SCT analysis failed for image_series_index=%d; returning %d "
+                    "original images as series_index=%d",
+                    series_index,
+                    len(image),
+                    original_series_index,
+                )
             output_images.extend(_as_image_list(image))
 
         if output_images:
@@ -4283,23 +4319,20 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
 
     os.makedirs(debugFolder, exist_ok=True)
 
-    def boolean_checker(id: str, default_val: bool = False):
-        option = mrdhelper.get_json_config_param(config, id, default_val, type="bool")
-        if isinstance(option, str):
-            return option.strip().lower() in ("1", "true", "yes", "on")
-        return bool(option)
-
-    send_original = boolean_checker(
+    send_original = _get_boolean_config_param(
+        config,
         "sendoriginal",
-        default_val=OPENRECON_DEFAULTS["sendoriginal"],
+        default=OPENRECON_DEFAULTS["sendoriginal"],
     )
-    segmentation_colormap = boolean_checker(
+    segmentation_colormap = _get_boolean_config_param(
+        config,
         "segmentationcolormap",
-        default_val=OPENRECON_DEFAULTS["segmentationcolormap"],
+        default=OPENRECON_DEFAULTS["segmentationcolormap"],
     )
-    debug_threshold_segment = boolean_checker(
+    debug_threshold_segment = _get_boolean_config_param(
+        config,
         "sctdebugthresholdsegment",
-        default_val=OPENRECON_DEFAULTS["sctdebugthresholdsegment"],
+        default=OPENRECON_DEFAULTS["sctdebugthresholdsegment"],
     )
     called_from_raw = traceback.extract_stack()[-2].name == "process_raw"
     original_images = []

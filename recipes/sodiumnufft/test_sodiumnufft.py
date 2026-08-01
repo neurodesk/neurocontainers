@@ -176,7 +176,7 @@ def test_output_volume_data_preserves_slice_order(monkeypatch):
     assert slice_values == [0, 1365, 2731, 4096]
 
 
-def test_output_volume_is_flipped_up_down_then_left_right(monkeypatch):
+def test_output_volume_is_flipped_left_right_only(monkeypatch):
     sodiumnufft = _import_sodiumnufft_with_runtime_stubs(monkeypatch)
     volume = np.arange(1, 7, dtype=np.float32).reshape(2, 3, 1)
 
@@ -187,9 +187,11 @@ def test_output_volume_is_flipped_up_down_then_left_right(monkeypatch):
         output_fov_mm=80.0,
     )
 
+    # Only the read/column axis (x) is reversed; the phase/row axis (y) stays
+    # natural so anterior is not flipped to the bottom (the v0.1.8 "AP flip").
     display_volume, _ = sodiumnufft._scale_volume_to_display_range(volume)
     packed_without_display_flips = display_volume[:, :, 0].T
-    expected = np.flip(packed_without_display_flips, axis=(0, 1))[np.newaxis, ...]
+    expected = np.flip(packed_without_display_flips, axis=1)[np.newaxis, ...]
 
     np.testing.assert_array_equal(np.asarray(images[0].data)[0], expected)
 

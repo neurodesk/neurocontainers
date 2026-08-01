@@ -13,3 +13,7 @@ build:
         name: miniconda
         version: py310_25.5.1-0
         pip_install: examplepkg==1.2.3
+deploy:
+  bins:
+    - python
+readme: Miniconda pip install rendering fixture.

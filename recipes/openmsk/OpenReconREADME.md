@@ -42,7 +42,9 @@ scanner. Runtime logs report where every qDESS value came from.
 - `qdesstrms`, `qdesste1ms`, `qdesste2ms`, `qdessflipangledeg`,
   `qdessglarea`, `qdesstgus`: fallback TR, TE1, TE2, flip angle, GL area, and
   TG values used to synthesize the qDESS DICOM input when MRD metadata is
-  incomplete.
+  incomplete. DOSMA's qDESS fit uses one sequence TE for the S1/S2 signal
+  ratio, so a single TE from the MRD sequence header is shared by both
+  synthesized volumes instead of inventing TE2 from the GUI.
 
 ## Build And Validate
 

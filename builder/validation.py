@@ -25,6 +25,7 @@ ARCHITECTURES = ["x86_64", "aarch64"]
 # Categories from the UI - this should match CATEGORIES in the UI
 CATEGORIES = [
     "functional imaging",
+    "fetal imaging",
     "image reconstruction",
     "spectroscopy",
     "image registration",
@@ -102,6 +103,15 @@ def validate_non_empty_string(instance, attribute, value):
     """Validate string is not empty"""
     if not value or (isinstance(value, str) and value.strip() == ""):
         raise ValueError(f"{attribute.name} cannot be empty")
+
+
+def validate_recipe_name(instance, attribute, value):
+    """Validate the published recipe name."""
+    validate_non_empty_string(instance, attribute, value)
+    if "_" in value:
+        raise ValueError(
+            f"{attribute.name} cannot contain underscores (got '{value}')"
+        )
 
 
 def validate_url(instance, attribute, value):
@@ -633,7 +643,7 @@ class NeuroDockerBuildRecipe:
 
 @attrs.define
 class ContainerRecipe:
-    name: str = attrs.field(validator=validate_non_empty_string)
+    name: str = attrs.field(validator=validate_recipe_name)
     version: str = attrs.field(validator=validate_non_empty_string)
     architectures: List[str] = attrs.field(validator=attrs.validators.min_len(1))
     build: NeuroDockerBuildRecipe = attrs.field()

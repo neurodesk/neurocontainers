@@ -1,0 +1,24 @@
+name: filevariants
+version: "1.0"
+architectures:
+  - x86_64
+categories:
+  - workflows
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - run:
+        - cat {{ get_file("inline.txt") }}
+        - cat {{ get_file("copied.txt") }}
+deploy:
+  bins:
+    - cat
+readme: file variants
+files:
+  - name: inline.txt
+    contents: hello inline
+  - name: copied.txt
+    filename: copied.txt

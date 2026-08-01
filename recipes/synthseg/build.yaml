@@ -1,0 +1,265 @@
+name: synthseg
+# The recipe version tracks the FreeSurfer release that publishes mri_synthseg
+# and its trained weights. That release ships SynthSeg 2.0 (plus SynthSeg 1.0,
+# SynthSeg-robust and Photo-SynthSeg 1.0).
+version: 8.2.0
+
+copyright:
+  - name: FreeSurfer Software License Agreement
+    url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
+  - license: Apache-2.0
+    url: https://github.com/BBillot/SynthSeg/blob/master/LICENSE.txt
+
+architectures:
+  - x86_64
+
+variables:
+  # mri_synthseg and the small label/name .npy files live in the FreeSurfer
+  # source tree.
+  freesurfer_raw_url: "https://raw.githubusercontent.com/freesurfer/freesurfer/v{{ context.version }}"
+  # The trained .h5 weights are git-annex objects in the FreeSurfer source tree.
+  # They are served over plain HTTP from the public annex remote documented at
+  # https://surfer.nmr.mgh.harvard.edu/fswiki/GitAnnex, which avoids pulling the
+  # ~9.5 GB FreeSurfer tarball just to extract ~0.6 GB of SynthSeg models.
+  freesurfer_annex_url: "https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/annex/objects"
+  synthseg_home: /opt/freesurfer-synthseg
+
+build:
+  kind: neurodocker
+  # CUDA 11.8 + cuDNN 8 match the TensorFlow 2.13 build installed below, so
+  # inference uses the scanner GPU when one is available and transparently
+  # falls back to CPU when it is not.
+  base-image: nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - bzip2
+        - ca-certificates
+        - curl
+        - git
+        - python3
+        - python3-dev
+        - python3-pip
+        - python-is-python3
+        - unzip
+
+    - include: macros/openrecon/neurodocker.yaml
+
+    # TensorFlow 2.13 is the last release whose bundled Keras still accepts the
+    # `fused=False` BatchNormalization argument that mri_synthseg 8.2.0 uses,
+    # and it caps numpy at 1.24.3 so the script's size-1-array-to-scalar
+    # assignments keep working. Do not bump either without re-testing
+    # mri_synthseg itself. scikit-image, matplotlib and h5py are re-pinned in
+    # the same resolve because the OpenRecon macro installs them unpinned
+    # against a newer numpy.
+    - run:
+        - python3 -m pip install --no-cache-dir "numpy==1.24.3" "tensorflow==2.13.1" "surfa==0.6.3" "nibabel==5.2.1" "scipy==1.10.1" "scikit-image==0.21.0" "matplotlib==3.7.5" "h5py==3.9.0"
+        - python3 -c "import tensorflow as tf; print('tensorflow', tf.__version__)"
+        - python3 -c "import numpy, scipy, nibabel, surfa, skimage; print('numpy', numpy.__version__)"
+        - python3 -c "import ismrmrd; print('ismrmrd ok')"
+
+    # mri_synthseg resolves every model and label file relative to
+    # FREESURFER_HOME, so lay out just that subtree instead of installing the
+    # whole FreeSurfer distribution.
+    - run:
+        - mkdir -p {{ context.synthseg_home }}/models
+        - install -m 0644 {{ get_file("FreeSurferColorLUT") }} {{ context.synthseg_home }}/FreeSurferColorLUT.txt
+        - install -m 0755 {{ get_file("mri_synthseg") }} /usr/local/bin/mri_synthseg
+
+    - run:
+        - install -m 0644 {{ get_file("synthseg_1.0.h5") }} {{ context.synthseg_home }}/models/synthseg_1.0.h5
+        - install -m 0644 {{ get_file("synthseg_2.0.h5") }} {{ context.synthseg_home }}/models/synthseg_2.0.h5
+        - install -m 0644 {{ get_file("synthseg_robust_2.0.h5") }} {{ context.synthseg_home }}/models/synthseg_robust_2.0.h5
+        - install -m 0644 {{ get_file("synthseg_parc_2.0.h5") }} {{ context.synthseg_home }}/models/synthseg_parc_2.0.h5
+        - install -m 0644 {{ get_file("synthseg_qc_2.0.h5") }} {{ context.synthseg_home }}/models/synthseg_qc_2.0.h5
+        - install -m 0644 {{ get_file("synthseg_photo_both_1.0.h5") }} {{ context.synthseg_home }}/models/synthseg_photo_both_1.0.h5
+        - install -m 0644 {{ get_file("synthseg_photo_single_1.0.h5") }} {{ context.synthseg_home }}/models/synthseg_photo_single_1.0.h5
+
+    - run:
+        - install -m 0644 {{ get_file("synthseg_segmentation_labels.npy") }} {{ context.synthseg_home }}/models/synthseg_segmentation_labels.npy
+        - install -m 0644 {{ get_file("synthseg_segmentation_labels_2.0.npy") }} {{ context.synthseg_home }}/models/synthseg_segmentation_labels_2.0.npy
+        - install -m 0644 {{ get_file("synthseg_segmentation_names.npy") }} {{ context.synthseg_home }}/models/synthseg_segmentation_names.npy
+        - install -m 0644 {{ get_file("synthseg_segmentation_names_2.0.npy") }} {{ context.synthseg_home }}/models/synthseg_segmentation_names_2.0.npy
+        - install -m 0644 {{ get_file("synthseg_denoiser_labels_2.0.npy") }} {{ context.synthseg_home }}/models/synthseg_denoiser_labels_2.0.npy
+        - install -m 0644 {{ get_file("synthseg_parcellation_labels.npy") }} {{ context.synthseg_home }}/models/synthseg_parcellation_labels.npy
+        - install -m 0644 {{ get_file("synthseg_parcellation_names.npy") }} {{ context.synthseg_home }}/models/synthseg_parcellation_names.npy
+        - install -m 0644 {{ get_file("synthseg_qc_labels.npy") }} {{ context.synthseg_home }}/models/synthseg_qc_labels.npy
+        - install -m 0644 {{ get_file("synthseg_qc_labels_2.0.npy") }} {{ context.synthseg_home }}/models/synthseg_qc_labels_2.0.npy
+        - install -m 0644 {{ get_file("synthseg_qc_names.npy") }} {{ context.synthseg_home }}/models/synthseg_qc_names.npy
+        - install -m 0644 {{ get_file("synthseg_qc_names_2.0.npy") }} {{ context.synthseg_home }}/models/synthseg_qc_names_2.0.npy
+        - install -m 0644 {{ get_file("synthseg_topological_classes.npy") }} {{ context.synthseg_home }}/models/synthseg_topological_classes.npy
+        - install -m 0644 {{ get_file("synthseg_topological_classes_2.0.npy") }} {{ context.synthseg_home }}/models/synthseg_topological_classes_2.0.npy
+        - install -m 0644 {{ get_file("synthseg_segmentation_labels_photo_both_1.0.npy") }} {{ context.synthseg_home }}/models/synthseg_segmentation_labels_photo_both_1.0.npy
+        - install -m 0644 {{ get_file("synthseg_segmentation_labels_photo_single_1.0.npy") }} {{ context.synthseg_home }}/models/synthseg_segmentation_labels_photo_single_1.0.npy
+        - install -m 0644 {{ get_file("synthseg_segmentation_names_photo_both_1.0.npy") }} {{ context.synthseg_home }}/models/synthseg_segmentation_names_photo_both_1.0.npy
+        - install -m 0644 {{ get_file("synthseg_segmentation_names_photo_single_1.0.npy") }} {{ context.synthseg_home }}/models/synthseg_segmentation_names_photo_single_1.0.npy
+        - install -m 0644 {{ get_file("synthseg_topological_classes_photo_both_1.0.npy") }} {{ context.synthseg_home }}/models/synthseg_topological_classes_photo_both_1.0.npy
+        - install -m 0644 {{ get_file("synthseg_topological_classes_photo_single_1.0.npy") }} {{ context.synthseg_home }}/models/synthseg_topological_classes_photo_single_1.0.npy
+
+    - environment:
+        FREESURFER_HOME: "{{ context.synthseg_home }}"
+        # mri_synthseg is chatty on stderr without this; keep the scanner log
+        # readable.
+        TF_CPP_MIN_LOG_LEVEL: "3"
+        # Point transparent-singularity module loads at the in-container path so
+        # `mri_synthseg` also works from the host without exec-ing in.
+        DEPLOY_ENV_FREESURFER_HOME: "BASEPATH{{ context.synthseg_home }}"
+
+    # OpenRecon runtime: the MRD server wrapper and the NIfTI<->MRD helper.
+    - run:
+        - cp {{ get_file("synthseg.py") }} /opt/code/python-ismrmrd-server/synthseg.py
+        - cp {{ get_file("nifti2mrd.py") }} /opt/code/python-ismrmrd-server/nifti2mrd.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - mkdir -p /tmp/share/debug
+        - chmod 1777 /tmp/share /tmp/share/debug
+
+    - workdir: /opt
+
+deploy:
+  bins:
+    - mri_synthseg
+
+categories:
+  - image segmentation
+  - structural imaging
+  - machine learning
+
+files:
+  - name: synthseg.py
+    filename: synthseg.py
+  - name: nifti2mrd.py
+    filename: nifti2mrd.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+
+  - name: mri_synthseg
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/mri_synthseg"
+  - name: FreeSurferColorLUT
+    url: "{{ context.freesurfer_raw_url }}/distribution/FreeSurferColorLUT.txt"
+
+  # Trained weights (git-annex objects; the path is md5(key)[0:3]/md5(key)[3:6]).
+  - name: synthseg_1.0.h5
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_1.0.h5"
+  - name: synthseg_2.0.h5
+    url: "{{ context.freesurfer_annex_url }}/bee/241/SHA256E-s53079152--f190bfd742f450ef3ca2c9df9ed4d2e0232b3a74471da5e51b7770bacdf80c3e.0.h5/SHA256E-s53079152--f190bfd742f450ef3ca2c9df9ed4d2e0232b3a74471da5e51b7770bacdf80c3e.0.h5"
+  - name: synthseg_robust_2.0.h5
+    url: "{{ context.freesurfer_annex_url }}/187/db4/SHA256E-s214606800--7bc30bf5c3d204f20c4a6cb5a283aedbcab6af1de927cda783f59b67d19cb01c.0.h5/SHA256E-s214606800--7bc30bf5c3d204f20c4a6cb5a283aedbcab6af1de927cda783f59b67d19cb01c.0.h5"
+  - name: synthseg_parc_2.0.h5
+    url: "{{ context.freesurfer_annex_url }}/c04/403/SHA256E-s53090840--83bb1de76fb6f173c6dacacd433f81209fc6abb1dbc179a930ec06ecabbeb684.0.h5/SHA256E-s53090840--83bb1de76fb6f173c6dacacd433f81209fc6abb1dbc179a930ec06ecabbeb684.0.h5"
+  - name: synthseg_qc_2.0.h5
+    url: "{{ context.freesurfer_annex_url }}/3ac/fe4/SHA256E-s49878004--fb92e37daa0842bdd8a03bc06a3b36b0d38810e31c714659cedd09119c0abfb7.0.h5/SHA256E-s49878004--fb92e37daa0842bdd8a03bc06a3b36b0d38810e31c714659cedd09119c0abfb7.0.h5"
+  - name: synthseg_photo_both_1.0.h5
+    url: "{{ context.freesurfer_annex_url }}/2f7/609/SHA256E-s159121352--851ee7536cd3132d5e821ad76390bcd0a969651d3f9840dab9a6a5643fd5153f.0.h5/SHA256E-s159121352--851ee7536cd3132d5e821ad76390bcd0a969651d3f9840dab9a6a5643fd5153f.0.h5"
+  - name: synthseg_photo_single_1.0.h5
+    url: "{{ context.freesurfer_annex_url }}/695/8ef/SHA256E-s159114824--b8da211a79638e5a6920ce3d15e82fd613a6c8479b8abb3e1b83b6452c601274.0.h5/SHA256E-s159114824--b8da211a79638e5a6920ce3d15e82fd613a6c8479b8abb3e1b83b6452c601274.0.h5"
+
+  # Label indices, structure names and topology classes.
+  - name: synthseg_segmentation_labels.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_segmentation_labels.npy"
+  - name: synthseg_segmentation_labels_2.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_segmentation_labels_2.0.npy"
+  - name: synthseg_segmentation_names.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_segmentation_names.npy"
+  - name: synthseg_segmentation_names_2.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_segmentation_names_2.0.npy"
+  - name: synthseg_denoiser_labels_2.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_denoiser_labels_2.0.npy"
+  - name: synthseg_parcellation_labels.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_parcellation_labels.npy"
+  - name: synthseg_parcellation_names.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_parcellation_names.npy"
+  - name: synthseg_qc_labels.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_qc_labels.npy"
+  - name: synthseg_qc_labels_2.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_qc_labels_2.0.npy"
+  - name: synthseg_qc_names.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_qc_names.npy"
+  - name: synthseg_qc_names_2.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_qc_names_2.0.npy"
+  - name: synthseg_topological_classes.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_topological_classes.npy"
+  - name: synthseg_topological_classes_2.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_topological_classes_2.0.npy"
+  - name: synthseg_segmentation_labels_photo_both_1.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_segmentation_labels_photo_both_1.0.npy"
+  - name: synthseg_segmentation_labels_photo_single_1.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_segmentation_labels_photo_single_1.0.npy"
+  - name: synthseg_segmentation_names_photo_both_1.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_segmentation_names_photo_both_1.0.npy"
+  - name: synthseg_segmentation_names_photo_single_1.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_segmentation_names_photo_single_1.0.npy"
+  - name: synthseg_topological_classes_photo_both_1.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_topological_classes_photo_both_1.0.npy"
+  - name: synthseg_topological_classes_photo_single_1.0.npy
+    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_topological_classes_photo_single_1.0.npy"
+
+readme: |-
+  ----------------------------------
+  ## synthseg/{{ context.version }} ##
+
+  SynthSeg is a contrast- and resolution-agnostic brain MRI segmentation tool.
+  It is trained on synthetic data generated with domain randomisation, so a
+  single network segments scans of any contrast and resolution without
+  retraining or preprocessing. This container packages `mri_synthseg` and the
+  trained weights from FreeSurfer {{ context.version }}: SynthSeg 2.0 (default),
+  SynthSeg 1.0 (`--v1`), SynthSeg-robust (`--robust`), the cortical
+  parcellation and QC networks, and Photo-SynthSeg 1.0 (`--photo`). Only that
+  subtree is installed, so this is much smaller than a full FreeSurfer image.
+
+  Segmentation runs at 1 mm isotropic regardless of the input resolution. Pass
+  `--keepgeom` to resample the label map back onto the input grid.
+
+  Example:
+  ```
+  mri_synthseg --i t1w.nii.gz --o t1w_synthseg.nii.gz --threads 8
+  mri_synthseg --i t1w.nii.gz --o seg.nii.gz --parc --vol volumes.csv --qc qc.csv
+  mri_synthseg --i t1w.nii.gz --o seg.nii.gz --robust --keepgeom
+  mri_synthseg --i indir/ --o outdir/ --fast --cpu --threads 16
+  ```
+
+  A CUDA GPU is used automatically when available; pass `--cpu` to force CPU
+  inference. Label indices in the output follow the FreeSurfer convention and
+  can be looked up in `$FREESURFER_HOME/FreeSurferColorLUT.txt`.
+
+  This container also ships an OpenRecon MRD wrapper so SynthSeg can run inline
+  on a Siemens scanner. See `recipes/synthseg/OpenReconREADME.md` for the
+  scanner parameters and output contract.
+
+  More documentation: https://surfer.nmr.mgh.harvard.edu/fswiki/SynthSeg
+
+  To run applications outside of this container: ml synthseg/{{ context.version }}
+
+  Citation:
+  ```{% raw %}
+  @article{Billot2023,
+    author = {Billot, Benjamin and Greve, Douglas N. and Puonti, Oula and Thielscher, Axel and Van Leemput, Koen and Fischl, Bruce and Dalca, Adrian V. and Iglesias, Juan Eugenio},
+    title = {{SynthSeg: Segmentation of brain MRI scans of any contrast and resolution without retraining}},
+    journal = {Medical Image Analysis},
+    volume = {86},
+    pages = {102789},
+    year = {2023},
+    doi = {10.1016/j.media.2023.102789}
+  }
+
+  @article{Billot2023pnas,
+    author = {Billot, Benjamin and Magdamo, Colin and Cheng, You and Arnold, Steven E. and Das, Sudeshna and Iglesias, Juan Eugenio},
+    title = {{Robust machine learning segmentation for large-scale analysis of heterogeneous clinical brain MRI datasets}},
+    journal = {Proceedings of the National Academy of Sciences},
+    volume = {120},
+    number = {9},
+    pages = {e2216399120},
+    year = {2023},
+    doi = {10.1073/pnas.2216399120}
+  }
+  {% endraw %}```
+
+  ----------------------------------
+
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiByeD0iNCIgZmlsbD0iIzExMTgyNyIvPjxwYXRoIGQ9Ik0xMiA0Yy0zLjYgMC02LjUgMi42LTYuNSA1LjkgMCAxLjEuMyAyLjEuOSAzLS42LjgtLjkgMS43LS45IDIuNyAwIDIuNSAyLjEgNC40IDQuNyA0LjRoMy42YzIuNiAwIDQuNy0yIDQuNy00LjQgMC0xLS4zLTEuOS0uOS0yLjcuNi0uOS45LTEuOS45LTMgMC0zLjMtMi45LTUuOS02LjUtNS45WiIgZmlsbD0iIzFlMjkzYiIgc3Ryb2tlPSIjOTRhM2I4IiBzdHJva2Utd2lkdGg9IjEiLz48cGF0aCBkPSJNMTIgNC4yVjIwIiBzdHJva2U9IiM5NGEzYjgiIHN0cm9rZS13aWR0aD0iMSIvPjxwYXRoIGQ9Ik04LjIgOC4zYzEuMS0uNyAyLjEtLjcgMy4xLS4xIiBmaWxsPSJub25lIiBzdHJva2U9IiMzOGJkZjgiIHN0cm9rZS13aWR0aD0iMS40IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMTIuNyA4LjJjMS0uNiAyLTEuNiAzLjEuMSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZjQ3MmI2IiBzdHJva2Utd2lkdGg9IjEuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTcuNiAxMi44YzEuMy0uOSAyLjYtLjkgMy44LS4xIiBmaWxsPSJub25lIiBzdHJva2U9IiMzNGQzOTkiIHN0cm9rZS13aWR0aD0iMS40IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMTIuNiAxMi43YzEuMi0uOCAyLjUtLjggMy44LjEiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZiYmYyNCIgc3Ryb2tlLXdpZHRoPSIxLjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik04LjggMTYuOGMxLS42IDEuOC0uNiAyLjYtLjEiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2E3OGJmYSIgc3Ryb2tlLXdpZHRoPSIxLjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik0xMi42IDE2LjdjLjgtLjUgMS42LS41IDIuNi4xIiBmaWxsPSJub25lIiBzdHJva2U9IiNmODcxNzEiIHN0cm9rZS13aWR0aD0iMS40IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48L3N2Zz4=

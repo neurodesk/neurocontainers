@@ -1,5 +1,5 @@
 name: dwidenoise2
-version: "20260603"
+version: "1.0.0"
 
 description: Updated implementation of MP-PCA denoising using the MRtrix3 API.
 
@@ -11,8 +11,8 @@ architectures:
   - x86_64
 
 variables:
-  upstream_commit: 2cd437203f737d680042053b11000421e42e38c9
-  mrtrix3_commit: fa6ee952913fbc1df79aeca745600852155f533f
+  upstream_commit: 52ebc4666d8ead597e291638895e833774960cbb
+  mrtrix3_commit: b98b54e9ae8168eeb9af23322a07011d4754456d
   dwidenoise2_source_dir: /src/dwidenoise2
   mrtrix3_source_dir: /src/mrtrix3
   install_path: /opt/mrtrix3
@@ -36,21 +36,22 @@ build:
 
     - run:
         - apt-get update -qq
-        - apt-get install -y --no-install-recommends build-essential cmake libfftw3-dev libpng-dev libtiff-dev ninja-build pkg-config zlib1g-dev
+        - apt-get install -y --no-install-recommends build-essential cmake git libfftw3-dev libpng-dev libtiff-dev ninja-build pkg-config zlib1g-dev
         - mkdir -p "{{ context.dwidenoise2_source_dir }}" "{{ context.mrtrix3_source_dir }}"
         - tar -xzf {{ get_file("dwidenoise2_source_tar_gz") }} -C "{{ context.dwidenoise2_source_dir }}" --strip-components=1
         - tar -xzf {{ get_file("mrtrix3_source_tar_gz") }} -C "{{ context.mrtrix3_source_dir }}" --strip-components=1
         - cp "{{ context.dwidenoise2_source_dir }}/cpp/cmd/dwidenoise2.cpp" "{{ context.mrtrix3_source_dir }}/cpp/cmd/dwidenoise2.cpp"
         - cp "{{ context.dwidenoise2_source_dir }}/cpp/cmd/dwi2noise.cpp" "{{ context.mrtrix3_source_dir }}/cpp/cmd/dwi2noise.cpp"
         - cp -a "{{ context.dwidenoise2_source_dir }}/cpp/core/denoise" "{{ context.mrtrix3_source_dir }}/cpp/core/denoise"
+        - cp -a "{{ context.dwidenoise2_source_dir }}/share/dwidenoise2/." "{{ context.mrtrix3_source_dir }}/share/mrtrix3/"
         - cd "{{ context.mrtrix3_source_dir }}"
-        - cmake -Bbuild -GNinja -DMRTRIX_BUILD_GUI=OFF -DCMAKE_COMPILE_WARNING_AS_ERROR=ON --preset=release
-        - cmake --build build --target dwidenoise2 dwi2noise mrcalc mrcat mrconvert
+        - cmake -Bbuild -GNinja -DMRTRIX_BUILD_GUI=OFF -DMRTRIX_ENABLE_GPU=OFF -DCMAKE_COMPILE_WARNING_AS_ERROR=ON --preset=release
+        - cmake --build build --target dwidenoise2 dwi2noise mrcalc mrcat mrconvert copy-share-data
         - mkdir -p "{{ context.install_path }}"
         - cp -a build/. "{{ context.install_path }}/"
         - chmod -R a+rX "{{ context.install_path }}"
         - rm -rf "{{ context.dwidenoise2_source_dir }}" "{{ context.mrtrix3_source_dir }}"
-        - apt-get purge -y --auto-remove build-essential cmake libfftw3-dev libpng-dev libtiff-dev ninja-build pkg-config zlib1g-dev
+        - apt-get purge -y --auto-remove build-essential cmake git libfftw3-dev libpng-dev libtiff-dev ninja-build pkg-config zlib1g-dev
         - rm -rf /var/lib/apt/lists/*
 
 deploy:
@@ -79,9 +80,9 @@ readme: |-
 
   This recipe follows the upstream Dockerfile build strategy by pinning
   dwidenoise2 to upstream commit {{ context.upstream_commit }}, pinning MRtrix3
-  to {{ context.mrtrix3_commit }}, copying the dwidenoise2 sources into the
-  MRtrix3 tree before CMake configuration, and installing the resulting build
-  tree under {{ context.install_path }}.
+  to {{ context.mrtrix3_commit }}, copying the dwidenoise2 sources and bundled
+  noise-estimation schedules into the MRtrix3 tree before CMake configuration,
+  and installing the resulting build tree under {{ context.install_path }}.
 
   Example:
   ```bash

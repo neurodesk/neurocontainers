@@ -812,6 +812,14 @@ def _resolve_qdess_echo_times(config, metadata, echo_groups):
     seq_te = _metadata_sequence_values_ms(metadata, "TE")
     if len(seq_te) >= 2:
         return seq_te[:2], ["mrd.sequenceParameters.TE[0]", "mrd.sequenceParameters.TE[1]"]
+    if len(seq_te) == 1:
+        # DOSMA's qDESS fit uses one sequence TE for the S1/S2 signal ratio.
+        # Scanner image exporters may expose the two qDESS volumes as separate
+        # series while carrying only that single TE in the MRD header.
+        return [seq_te[0], seq_te[0]], [
+            "mrd.sequenceParameters.TE[0]",
+            "mrd.sequenceParameters.TE[0] (shared qDESS TE)",
+        ]
 
     meta_te = _echo_group_meta_echo_times(echo_groups)
     config_te = [
