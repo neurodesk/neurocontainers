@@ -82,7 +82,7 @@ readme: |-
 
   Citation:
   ```
-  For stroke segmentaion and quantification: Liu CF, Hsu J, Xu X, Ramachandran S, Wang V, Miller MI, Hillis AE, Faria AV. Deep learning-based detection and segmentation of diffusion abnormalities in acute ischemic stroke. Commun Med 1, 61 (2021) https://doi.org/10.1038/s43856-021-00062-8
+  For stroke segmentation and quantification: Liu CF, Hsu J, Xu X, Ramachandran S, Wang V, Miller MI, Hillis AE, Faria AV. Deep learning-based detection and segmentation of diffusion abnormalities in acute ischemic stroke. Commun Med 1, 61 (2021) https://doi.org/10.1038/s43856-021-00062-8
 
   For ASPECTS calculation: Liu CF, Li J, Kim G, Miller MI, Hillis AE, Faria AV. Automatic comprehensive aspects reports in clinical acute stroke MRIs. Sci Rep 13, 3784 (2023). https://doi.org/10.1038/s41598-023-30242-6
 

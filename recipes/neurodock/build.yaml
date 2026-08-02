@@ -23,7 +23,7 @@ deploy:
 readme: |-
   ----------------------------------
   ## neurodock/{{ context.version }} ##
-  PyD is an installable Python package deisgned to perform pre- and post- processing of dMRI acquisitions.
+  PyD is an installable Python package designed to perform pre- and post- processing of dMRI acquisitions.
 
   Example:
   ```

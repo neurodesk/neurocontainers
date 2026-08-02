@@ -4,7 +4,7 @@ architectures:
   - x86_64
   - aarch64
 structured_readme:
-  description: This tool was commited for the workshop.
+  description: This tool was committed for the workshop.
   example: hello
   documentation: https://github.com/neurodesk/neurocontainers
   citation: Brainhack 2025
@@ -25,7 +25,7 @@ readme: >-
   ## workshopdemo/1.0.0 ##
 
 
-  This tool was commited for the workshop.
+  This tool was committed for the workshop.
 
 
   Example:

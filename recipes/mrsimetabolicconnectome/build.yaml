@@ -4,7 +4,7 @@ architectures:
   - x86_64
 structured_readme:
   description: |+
-    This repository provides tools and preprocessing utilites to construct a within-subject Metabolic Similarity Matrix (MeSiM) based on MRSI scans, as detailed in preprint and preparing files for a voxel-based analysis as detailed in preprint
+    This repository provides tools and preprocessing utilities to construct a within-subject Metabolic Similarity Matrix (MeSiM) based on MRSI scans, as detailed in preprint and preparing files for a voxel-based analysis as detailed in preprint
 
   example: |
     BIDSDATAPATH=<bids_data> python $DEVANALYSEPATH/experiments/Preprocessing/registration_mrsi_to_t1.py --group Dummy-Project --ref_met CrPCr --subject_id S001 --session V1 --nthreads 16
@@ -43,7 +43,7 @@ readme: |-
   ----------------------------------
   ## mrsimetabolicconnectome/1.0.0 ##
 
-  This repository provides tools and preprocessing utilites to construct a within-subject Metabolic Similarity Matrix (MeSiM) based on MRSI scans, as detailed in preprint and preparing files for a voxel-based analysis as detailed in preprint
+  This repository provides tools and preprocessing utilities to construct a within-subject Metabolic Similarity Matrix (MeSiM) based on MRSI scans, as detailed in preprint and preparing files for a voxel-based analysis as detailed in preprint
 
   Example:
   ```

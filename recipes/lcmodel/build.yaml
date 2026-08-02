@@ -70,9 +70,12 @@ build:
         - unzip '{{ get_file("basisset_lcmodel_zip") }}'
         - unzip '{{ get_file("raw_basis_4000_zip") }}'
         - unzip '{{ get_file("raw_basis_2500_zip") }}'
-    - copy:
-        - license
-        - /opt/lcmodel-{{ context.version }}/.lcmodel/license
+    # LCModel has been free since 2021 and only checks that .lcmodel/license
+    # exists - the file must stay EMPTY. The licence key that used to be shipped
+    # here was deliberately removed in 9fe69805; do not add content back.
+    - run:
+        - mkdir -p /opt/lcmodel-{{ context.version }}/.lcmodel
+        - touch /opt/lcmodel-{{ context.version }}/.lcmodel/license
     - workdir: /opt/datasets
     - run:
         - unrar x '{{ get_file("testdata_rar") }}'

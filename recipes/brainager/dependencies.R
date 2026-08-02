@@ -12,7 +12,7 @@ install.packages("https://cran.r-project.org/src/contrib/Archive/optparse/optpar
 # 3. Install 'stringr' (Version 1.3.1 is compatible with R 3.4.4)
 install.packages("https://cran.r-project.org/src/contrib/Archive/stringr/stringr_1.3.1.tar.gz", repos=NULL, type="source")
 
-# Install 'kernlab' for compatiblity reasons directly from URL
+# Install 'kernlab' for compatibility reasons directly from URL
 install.packages("http://cran.r-project.org/src/contrib/Archive/kernlab/kernlab_0.9-27.tar.gz", repos = NULL, type = "source")
 
 # Install 'caret' (Version 6.0-79 is compatible with R 3.4.4)

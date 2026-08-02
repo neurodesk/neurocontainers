@@ -122,7 +122,7 @@ def get_IceMiniHeader_Double_fromItem(item,param):
         
     This is a wrapper function to make the code more comprehendable.
     
-    Extracts the double paramater from the IceMiniHeader and returns the param as a float
+    Extracts the double parameter from the IceMiniHeader and returns the param as a float
     e.g.
         get_IceMiniHeader_Double_fromItem(item,'RescaleIntercept')
     
@@ -148,7 +148,7 @@ def get_IceMiniHeader_Long_fromItem(item,param):
     
     This is a wrapper function to make the code more comprehendable.
     
-    Extracts the long paramater from the IceMiniHeader and returns the param as a float
+    Extracts the long parameter from the IceMiniHeader and returns the param as a float
     e.g.
         get_IceMiniHeader_Long_fromItem(item,'BitsStored')
     
@@ -174,7 +174,7 @@ def get_IceMiniHeader_String_fromItem(item,param):
     
     This is a wrapper function to make the code more comprehendable.
     
-    Extracts the string paramater from the IceMiniHeader and returns the param as a string
+    Extracts the string parameter from the IceMiniHeader and returns the param as a string
     e.g.
         get_IceMiniHeader_String_fromItem(item, "SequenceDescription")
     
@@ -818,7 +818,7 @@ def process(connection, config, metadata):
 
 def process_image(images, connection, config, metadata):
     """
-    The standard process_image funciton provided from the sdk.
+    The standard process_image function provided from the sdk.
     """
     if len(images) == 0:
         return []
