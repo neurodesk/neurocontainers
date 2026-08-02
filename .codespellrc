@@ -1,5 +1,30 @@
 [codespell]
-skip = .git,*.pdf,*.svg
-ignore-regex = (Linke AC|Claus Zimmer|Zimmer, Claus)
-# ND TE - valid name abbrevs etc
-ignore-words-list = nd,te
+# Vendored/generated files and local build output are not ours to spell-check.
+skip = .git,*.pdf,*.svg,*.lock,*.log,*.LOG,*.json,go.sum,./build,./env,./httpcache,./sifs,./local,./dashboard/dist,./public
+# Ignore base64 payloads (icons, data URIs) - "typos" inside them are just
+# base64 noise, and rewriting them corrupts the image.
+ignore-regex = (Linke AC|Claus Zimmer|Zimmer, Claus|[A-Za-z0-9+/]{40,}={0,2})
+# Domain terms, journal abbreviations, author surnames, API and path names:
+#   te/nd    - echo time, dimension abbreviations
+#   delte    - delta TE (MRI)
+#   fwe      - family-wise error
+#   toi      - time of interest (FieldTrip)
+#   ttest    - statistical test / function name
+#   varian   - Varian, the scanner manufacturer
+#   gaus     - ROOT's gaus fit function
+#   desolve  - deSolve, an R package
+#   ist      - iterative soft thresholding (BART)
+#   readin   - a directory in the PhysIO toolbox
+#   ans      - MATLAB's default answer variable
+#   commun   - "Nat Commun" in citations
+#   mapp     - "Hum Brain Mapp" in citations
+#   reson    - "Magn Reson Med" in citations
+#   mede     - the MEDE tool
+#   nwo      - the Dutch Research Council
+#   espace   - encoding-space variable in the MRD converters
+#   requestor - the X11 XSelectionRequestEvent field name
+#   doubleclick - an Openbox rc.xml key
+#   fo       - a variable name in nipype example code
+#   caf      - the `tar caf` flag cluster
+#   mattern, sherif, hart - author surnames in citations
+ignore-words-list = nd,te,delte,fwe,toi,ttest,varian,gaus,desolve,ist,readin,ans,commun,mapp,reson,mede,nwo,espace,requestor,doubleclick,mattern,sherif,hart,fo,caf
