@@ -26,10 +26,11 @@ Requires Python 3.10+. Uses `uv` as an alternative (`uv run sf-build <name>`).
 ```bash
 sf-init <name> <version>                  # Create new recipe from template
 sf-generate <name>                        # Generate Dockerfile from recipe
-sf-build <name>                           # Generate + build Docker image + run tests
+sf-build <name>                           # Generate + build Docker image (does not run tests)
 sf-login <name>                           # Build and drop into interactive shell
-sf-test <name>                            # Run container tests
+sf-test <name>                            # Run container tests (add --build to build first)
 sf-make <recipe_dir>                      # Build SIF via BuildKit (no Docker daemon)
+sf-cache <name>                           # Inspect/clear the recipe download cache
 ```
 
 ### Build Options
@@ -52,9 +53,13 @@ python -m builder test <name> --recreate --build   # Build + run smoke test
 
 ```bash
 codespell .                                          # Spell check
-source env/bin/activate && ./workflows/test_all.sh   # Validate + check-only all recipes
+source env/bin/activate && pytest builder/tests      # Builder + workflow unit tests
+source env/bin/activate && ./workflows/test_all.sh   # Validate + generate every recipe
 python3 builder/validation.py recipes/<name>/build.yaml  # Validate single recipe
 ```
+
+Go tests live alongside their sources: `cd dashboard && go test ./...` and
+`cd builder && go test docker-save-to-simg.go docker-save-to-simg_test.go`.
 
 ## Recipe Format (build.yaml)
 
@@ -122,19 +127,38 @@ categories:                         # NeuroDesk UI categories
 readme: |                           # Inline documentation (supports Jinja2)
   ## toolname/{{ context.version }}
   Description here.
+
+icon: "data:image/png;base64,..."   # Required - base64 data URI
 ```
 
-### Test Format (test.yaml)
+### Supported directives
 
-```yaml
-tests:
-  - name: Test tool version
-    script: |
-      toolname --version
-  - name: Test basic functionality
-    script: |
-      toolname --help
-```
+`builder/recipe.py` accepts exactly these; anything else raises
+`unsupported directive`. The six shown above are the common ones:
+
+| Directive | Purpose |
+| --- | --- |
+| `environment` | Set env vars |
+| `install` | System packages via apt/rpm |
+| `run` | Shell commands, joined with `&&` into one layer |
+| `workdir` | Set working directory |
+| `copy` | Copy declared files into the image |
+| `template` | Apply a template from `builder/templates/` |
+| `user` | Switch the build/runtime user |
+| `entrypoint` | Set the image entrypoint |
+| `variables` | Define template variables mid-build |
+| `group` + `with` | Apply a shared option set to a nested directive list |
+| `include` | Splice in directives from a shared macro, e.g. `macros/openrecon/neurodocker.yaml` |
+| `file` | Declare a build-context file inline, alongside top-level `files:` |
+| `deploy` | Add `bins`/`path` entries from within the directive list |
+| `boutique` | Emit a Boutiques descriptor |
+| `test` | Attach a builtin test to the recipe |
+
+Every directive also accepts a `condition:` key for architecture- or
+variant-specific behaviour.
+
+`fulltest.yaml` is the only supported recipe test format. `test.yaml`, `test.sh`,
+and `tests:` blocks embedded in `build.yaml` are legacy and are read by nothing.
 
 ### Release Test Format (fulltest.yaml)
 
@@ -179,7 +203,7 @@ pin_container: true
 
 - Prefer tests that exercise shared builder behavior, workflow contracts, schema validation, or real container/runtime behavior.
 - Every new recipe must include a focused `recipes/<name>/fulltest.yaml` unless there is a documented reason it cannot be tested. The test should prove the user-visible runtime contract, such as the main launcher, version/package metadata, required assets, desktop entry, or a small real command.
-- For recipe-only fixes, usually validate the recipe and regenerate the Dockerfile; add or update `test.yaml` only when it checks behavior a user or CI actually relies on.
+- For recipe-only fixes, usually validate the recipe and regenerate the Dockerfile; add or update `fulltest.yaml` only when it checks behavior a user or CI actually relies on.
 - Do not add one-off regression tests that only match hardcoded strings already visible in git history or in the same recipe diff. These tests are brittle, duplicate version control, and create maintenance noise without proving behavior.
 - Avoid recipe-specific Python tests unless the recipe exposes a reusable bug class or the assertion is meaningfully stronger than `builder/validation.py` plus Dockerfile generation.
 
@@ -187,9 +211,14 @@ pin_container: true
 
 Recipe validation (`builder/validation.py`) enforces:
 - **Architectures**: Must be `x86_64` or `aarch64`
-- **Categories**: Must match predefined list (~35 categories including "image registration", "structural imaging", "diffusion imaging", "data organisation", etc.)
+- **Categories**: Must match the 26-entry `CATEGORIES` list in `builder/validation.py` (reproduced under "Does and Don't" above)
 - **Licenses**: Should use SPDX identifiers
-- **Required fields**: `name`, `version`, `build` (with `kind`, `base-image`, `pkg-manager`, `directives`), `deploy`
+- **Required fields**: `name`, `version`, `architectures`, `build` (with `kind`, `base-image`, `pkg-manager`, `directives`), `categories`, `icon`
+- **Optional**: `deploy` — omitting it is valid, though most recipes want it
+
+`icon` and `categories` are required and are the two most common validation
+failures on a new recipe: `sf-init` does not scaffold either, so add both before
+running validation.
 
 The validation schema matches the Zod schema from `neurocontainers-ui`.
 
@@ -218,10 +247,12 @@ The validation schema matches the Zod schema from `neurocontainers-ui`.
 
 ### Add a New Container Recipe
 1. `sf-init <toolname> <version>` to scaffold
-2. Edit `recipes/<toolname>/build.yaml` with build instructions
+2. Edit `recipes/<toolname>/build.yaml` with build instructions, and replace the
+   `TODO` placeholders. Add `categories:` and `icon:` — `sf-init` omits both and
+   validation fails without them.
 3. Create `recipes/<toolname>/fulltest.yaml` with focused runtime smoke tests
 4. Validate: `python -m builder generate <toolname> --recreate`
-5. Build and test: `sf-build <toolname>` or `sf-login <toolname>` for interactive debugging
+5. Build and test: `sf-build <toolname>` then `sf-test <toolname>`, or `sf-login <toolname>` for interactive debugging
 
 ### Update a Container Version
 1. Update `version` field in `build.yaml`
@@ -236,8 +267,8 @@ The validation schema matches the Zod schema from `neurocontainers-ui`.
 
 ### Validate All Recipes
 ```bash
-./workflows/test_all.sh              # Full validation + check-only build
-./workflows/validate_all.sh          # Schema validation only
+./workflows/test_all.sh              # Full validation + Dockerfile generation
+./workflows/validate_all.sh          # Schema validation only (subset of test_all.sh)
 ```
 
 ## Important Notes

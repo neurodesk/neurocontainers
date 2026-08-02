@@ -36,13 +36,6 @@ class StagingPlan:
         self.files[file.name] = file
 
 
-@dataclass(frozen=True)
-class StageResult:
-    build_dir: Path
-    dockerfile_path: Path
-    cache_dir: Path
-
-
 def disambiguated_cache_name(cache_dir: Path, preferred: str, source: Path) -> str:
     candidate = preferred
     target = cache_dir / candidate

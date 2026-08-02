@@ -56,15 +56,14 @@ sf-build <recipe-name> --ignore-architectures               # Skip architecture 
 ### Test Containers
 Use the comprehensive testing system:
 ```bash
-# Test using convenience wrapper
-./test-containers.sh help                    # Show all testing commands
-./test-containers.sh list                    # List containers in CVMFS
-./test-containers.sh test <container:version> # Test specific container
-./test-containers.sh test-recipe <recipe>    # Test using recipe config
-./test-containers.sh test-pr                 # Test containers in PR changes
+# Build the image, then run its fulltest
+sf-build <name>
+sf-test <name>
 
-# Direct testing (more control)
+# Test a published release container
 sf-test-remote <name> --version <version> --runtime docker --location local --cleanup
+
+# Run a fulltest against a local SIF directly
 uv run builder/run_tests.py recipes/<name>/fulltest.yaml -c sifs
 ```
 
@@ -109,16 +108,27 @@ recipes/              # Container recipes (YAML definitions)
 └── ...              # 100+ neuroscience applications
 
 builder/             # Python build system
-├── build.py         # Main build script
-├── container_tester.py  # Container testing tool
-├── pr_test_runner.py    # PR validation
-└── test_all.sh      # Recipe validation script
+├── cli.py           # CLI entry points (sf-build, sf-test, ...)
+├── recipe.py        # build.yaml -> intermediate representation
+├── dockerfile.py    # IR -> Dockerfile
+├── validation.py    # Recipe schema validation
+├── run_tests.py     # fulltest.yaml executor
+├── templates/       # Local NeuroDocker templates
+└── tests/           # Python unit tests (pytest)
+
+workflows/           # CI helper scripts and local runners
+├── container_tester.py   # Container testing library
+├── test_runner.py        # Shared test pipeline
+├── full_container_test.py # Local runner for the full matrix
+└── test_all.sh           # Recipe validation script
 
 .github/workflows/   # CI/CD automation
 ├── build-app.yml    # Main container build workflow
 ├── test-builder.yml # Builder testing
 └── ...
 
+macros/             # Shared directive fragments pulled in via `include:`
+dashboard/          # Go static-site generator for the status dashboard
 releases/           # Generated release files (JSON)
 build/              # Generated Dockerfiles and build contexts
 tools/              # Additional utilities
@@ -145,7 +155,7 @@ Each recipe contains:
 - Keep recipe files organized with clear sections: metadata, variables, build, deploy, files
 - Use descriptive names for variables and files
 - Add comments to explain complex build steps or workarounds
-- Validate YAML syntax before committing using `--check-only` flag
+- Validate recipes before committing with `python3 builder/validation.py recipes/<name>/build.yaml`
 
 ### Commit Messages
 - Use descriptive commit messages that explain what and why
@@ -367,11 +377,11 @@ sf-login <recipe>  # Drops into container shell after build
 # Full validation workflow
 source env/bin/activate
 ./workflows/test_all.sh                    # Validate all recipes (~5 seconds)
-codespell .                             # Check spelling (~1.5 seconds)  
-python workflows/pr_test_runner.py        # Test PR changes
+pytest builder/tests                       # Builder + workflow unit tests
+codespell .                             # Check spelling (~1.5 seconds)
 
 # Test specific container end-to-end
-./test-containers.sh test-recipe <recipe-name>
+sf-build <recipe-name> && sf-test <recipe-name>
 ```
 
 ### Manual Container Testing
@@ -434,7 +444,7 @@ deploy:
 1. **Network timeouts**: Some tools download large files - builds may take 45+ minutes
 2. **Architecture mismatches**: Use `--ignore-architectures` for cross-platform testing
 3. **Missing dependencies**: Check base image and ensure all required packages listed
-4. **Recipe syntax errors**: Use `--check-only` to validate YAML syntax
+4. **Recipe syntax errors**: Run `python3 builder/validation.py recipes/<name>/build.yaml` to validate the recipe
 
 ### Container Runtime Issues
 1. **Docker not found**: Ensure Docker is installed and service running
@@ -461,14 +471,15 @@ Always run before committing changes:
 ```bash
 source env/bin/activate
 ./workflows/test_all.sh         # Validate recipe syntax
+pytest builder/tests            # Builder + workflow unit tests
 codespell .                   # Check spelling
 ```
 
 ### Pull Request Testing
-For testing PR changes:
+PR container testing runs in CI via `.github/workflows/recipes-ci.yml`. To
+reproduce a leg locally, build the changed recipe and run its fulltest:
 ```bash
-python workflows/pr_test_runner.py --verbose --report markdown
-./test-containers.sh test-pr
+sf-build <recipe> && sf-test <recipe>
 ```
 
 ### Manual End-to-End Testing
@@ -489,7 +500,7 @@ The testing validation should exercise the main functionality the container was 
 
 ## Performance Tips
 
-- Use `--check-only` for rapid recipe validation during development
+- Use `python -m builder generate <name> --recreate` for rapid recipe validation during development
 - Leverage Docker layer caching - similar recipes build faster
 - Build simple containers first to validate environment setup
 - Use `--recreate` when recipe changes, skip for re-testing existing builds
@@ -513,7 +524,7 @@ Always test your changes with actual container functionality, not just successfu
 
 ### For All Changes
 1. **Start Clean**: Always bootstrap the environment before making changes
-2. **Validate Early**: Use `--check-only` to catch syntax errors immediately
+2. **Validate Early**: Run `builder/validation.py` on the recipe to catch schema errors immediately
 3. **Test Thoroughly**: Build and test containers, don't just generate Dockerfiles
 4. **Keep it Minimal**: Make the smallest changes necessary to achieve the goal
 5. **Document Changes**: Update READMEs and add comments for complex logic
@@ -538,7 +549,7 @@ Always test your changes with actual container functionality, not just successfu
 
 ### Time Management
 - Budget sufficient time for builds (30-60+ minutes for complex tools)
-- Use `--check-only` for rapid iteration during development
+- Use `python -m builder generate <name> --recreate` for rapid iteration during development
 - Don't cancel builds prematurely - they may be downloading or compiling
 - Plan for multiple test cycles when making significant changes
 
@@ -558,7 +569,7 @@ sf-build <name>                                                    # Build and t
 sf-login <name>                                                    # Interactive debugging
 
 # Testing
-./test-containers.sh test-recipe <name>                            # Test recipe
+sf-test <name>                                                     # Test recipe
 docker run --rm <container>:<version> <command> --version          # Verify functionality
 
 # Architecture-specific

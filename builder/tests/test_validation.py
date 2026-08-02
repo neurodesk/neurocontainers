@@ -15,7 +15,6 @@ from builder.validation import (
     CustomCopyrightInfo,
     SPDXCopyrightInfo,
     GUIApp,
-    DeployInfo,
     FileInfo
 )
 
@@ -524,29 +523,3 @@ def test_two_digit_version_yaml_parsing():
     finally:
         # Clean up
         shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-if __name__ == "__main__":
-    # Run basic tests
-    test_valid_minimal_recipe()
-    test_valid_complex_recipe()
-    test_invalid_recipe_missing_required_fields()
-    test_invalid_recipe_empty_name()
-    test_invalid_architecture()
-    test_invalid_recipe_missing_categories()
-    test_invalid_category()
-    test_legacy_category_rejected_in_strict_metadata()
-    test_legacy_metadata_mode_allows_existing_recipe_gaps()
-    test_invalid_recipe_missing_icon()
-    test_invalid_recipe_icon_url()
-    test_invalid_recipe_icon_base64()
-    test_validate_recipe_file()
-    test_validate_nonexistent_file()
-    test_directive_validation()
-    test_structured_readme_allows_missing_optional_fields()
-    test_file_info_accepts_refresh_flag()
-    test_invalid_jinja_template_in_file_url()
-    test_non_string_file_name_fails_validation()
-    test_two_digit_version_yaml_parsing()
-    
-    print("✅ All validation tests passed!")

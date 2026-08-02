@@ -4,6 +4,24 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+ARCHITECTURE_ALIASES = {
+    "x86_64": "x86_64",
+    "AMD64": "x86_64",
+    "amd64": "x86_64",
+    "aarch64": "aarch64",
+    "arm64": "aarch64",
+    "ARM64": "aarch64",
+}
+
+
+def canonical_architecture(value: str) -> str:
+    """Map an architecture alias onto its canonical name."""
+    try:
+        return ARCHITECTURE_ALIASES[value]
+    except KeyError as exc:
+        raise ValueError(f"unsupported architecture: {value}") from exc
+
+
 @dataclass(frozen=True)
 class BuildConfig:
     repo_root: Path

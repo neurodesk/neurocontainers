@@ -34,7 +34,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -46,10 +45,8 @@ import yaml
 from rich.console import Console
 from rich.progress import (
     BarColumn,
-    MofNCompleteColumn,
     Progress,
     SpinnerColumn,
-    TaskProgressColumn,
     TextColumn,
     TimeElapsedColumn,
 )

@@ -1221,10 +1221,6 @@ Examples:
 
 def run_tests(args, tester):
     """Run the actual tests - separated to work with context manager"""
-
-
-def run_tests(args, tester):
-    """Run the actual tests - separated to work with context manager"""
     # List containers if requested
     if args.list_containers:
         if tester.cvmfs.is_available():

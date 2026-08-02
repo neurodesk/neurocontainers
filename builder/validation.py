@@ -91,14 +91,6 @@ def validate_architecture(instance, attribute, value):
         )
 
 
-def validate_category(instance, attribute, value):
-    """Validate category is in allowed list"""
-    if value not in LEGACY_CATEGORIES:
-        raise ValueError(
-            f"Category '{value}' not supported. Must be one of: {LEGACY_CATEGORIES}"
-        )
-
-
 def validate_non_empty_string(instance, attribute, value):
     """Validate string is not empty"""
     if not value or (isinstance(value, str) and value.strip() == ""):
@@ -502,11 +494,6 @@ class AutoUpdate:
 # ============================================================================
 # Directive Base Classes
 # ============================================================================
-
-
-@attrs.define
-class BaseDirective:
-    condition: Optional[str] = attrs.field(default=None)
 
 
 @attrs.define

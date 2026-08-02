@@ -12,8 +12,16 @@ on:
     paths:
       - 'builder/**'
       - 'workflows/**'
+      - 'dashboard/**'
       - 'recipes/**/OpenReconLabel.json'
       - 'recipes/OpenReconSchema_1.1.0.json'
+      # A dependency change can break collection of the suites below, so it has
+      # to re-run them.
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      # Changing this workflow should re-run it.
+      - '.github/workflows/test-builder.yml'
 
 jobs:
   test-builder:
@@ -29,7 +37,32 @@ jobs:
           source venv/bin/activate
           pip install -r requirements.txt
 
+      - name: Run Unit Tests
+        run: |
+          source venv/bin/activate
+          pytest builder/tests
+
       - name: Run Tests
         run: |
           source venv/bin/activate
           ./workflows/test_all.sh
+
+  test-go:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.1'
+
+      - name: Test dashboard
+        working-directory: dashboard
+        run: go test ./...
+
+      - name: Test docker-save-to-simg
+        working-directory: builder
+        run: go test docker-save-to-simg.go docker-save-to-simg_test.go

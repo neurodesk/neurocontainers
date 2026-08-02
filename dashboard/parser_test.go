@@ -8,8 +8,8 @@ import (
 	"github.com/google/go-github/v61/github"
 )
 
-func TestParseIssue1504(t *testing.T) {
-	data, err := os.ReadFile("local/issue-1504-comments.json")
+func TestParseTestRunComments(t *testing.T) {
+	data, err := os.ReadFile("testdata/test-run-comments.json")
 	if err != nil {
 		t.Fatalf("read json: %v", err)
 	}

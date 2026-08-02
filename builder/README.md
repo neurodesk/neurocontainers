@@ -7,8 +7,12 @@ Either use [UV](https://docs.astral.sh/uv/) and `uv run` in front of the other c
 ```sh
 python3 -m venv env
 source env/bin/activate
+pip install -r requirements.txt
 pip install -e .
 ```
+
+`requirements.txt` pins the versions CI uses; `pip install -e .` alone is enough
+to run the `sf-*` commands but not the validation and test tooling.
 
 ## Introduction
 

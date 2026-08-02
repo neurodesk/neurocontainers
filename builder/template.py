@@ -2,20 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import jinja2
 
 
 class TemplateError(ValueError):
     pass
-
-
-@dataclass
-class TemplateMethods:
-    get_file: Callable[[str], str]
-    has_local: Callable[[str], bool]
-    get_local: Callable[[str], str]
 
 
 @dataclass
