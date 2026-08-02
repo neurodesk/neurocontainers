@@ -15,6 +15,11 @@ on:
       - 'dashboard/**'
       - 'recipes/**/OpenReconLabel.json'
       - 'recipes/OpenReconSchema_1.1.0.json'
+      # A dependency change can break collection of the suites below, so it has
+      # to re-run them.
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - 'uv.lock'
 
 jobs:
   test-builder:
