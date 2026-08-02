@@ -20,6 +20,8 @@ on:
       - 'requirements.txt'
       - 'pyproject.toml'
       - 'uv.lock'
+      # Changing this workflow should re-run it.
+      - '.github/workflows/test-builder.yml'
 
 jobs:
   test-builder:
