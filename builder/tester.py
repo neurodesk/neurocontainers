@@ -16,14 +16,6 @@ class TestRequest:
     offline_mode: bool = False
 
 
-def describe_test_request(request: TestRequest) -> dict[str, str | bool]:
-    return {
-        "tag": request.tag,
-        "architecture": request.architecture,
-        "offline_mode": request.offline_mode,
-    }
-
-
 class ContainerTesterAdapter:
     def command(self, request: TestRequest) -> list[str]:
         command = [

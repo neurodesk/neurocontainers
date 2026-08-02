@@ -68,10 +68,6 @@ def _install_command(pkg_manager: str, packages: tuple[str, ...], opts: str | No
     raise ValueError(f"unsupported package manager: {pkg_manager}")
 
 
-def _quote_copy(value: str) -> str:
-    return json.dumps(value)
-
-
 def _render_env(values: dict[str, str]) -> list[str]:
     if not values:
         return []

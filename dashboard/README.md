@@ -11,13 +11,14 @@ run harvested from GitHub issues.
    ```bash
    python tools/generate_apps_json.py --output dashboard/apps.json
    ```
-2. Render the static site (outputs to `dashboard/dist/` by default):
+2. Render the static site from inside `dashboard/` (outputs to `dashboard/dist/`
+   by default):
    ```bash
    go run . \
      --out dist \
      --releases-dir ../releases \
      --recipes-dir ../recipes \
-     --apps-json dashboard/apps.json
+     --apps-json apps.json
    ```
 
 The binary fetches GitHub data unless you pass `--skip-github`. When running in
@@ -32,8 +33,16 @@ Key flags:
   folders.
 - `--skip-github` – skip fetching the latest test run via the GitHub API.
 
-During development, `watch.sh` continuously regenerates the site into
-`dashboard/local/site` (requires `watchexec`).
+## Tests
+
+```bash
+cd dashboard && go test ./...
+```
+
+`parser_test.go` round-trips the Markdown that `workflows/reporting.py` posts to
+the test-run issue back through the dashboard's parser, using the committed
+fixture in `testdata/`. Regenerate that fixture from `reporting.build_comment`
+if the comment format changes.
 
 ## Publishing
 

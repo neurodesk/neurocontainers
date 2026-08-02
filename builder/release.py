@@ -7,15 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-
-ARCHITECTURE_ALIASES = {
-    "x86_64": "x86_64",
-    "AMD64": "x86_64",
-    "amd64": "x86_64",
-    "aarch64": "aarch64",
-    "arm64": "aarch64",
-    "ARM64": "aarch64",
-}
+from .config import canonical_architecture
 
 
 def build_date_for_recipe(repo_root: Path, recipe_dir: Path) -> str:
@@ -38,7 +30,9 @@ def build_date_for_recipe(repo_root: Path, recipe_dir: Path) -> str:
 
 
 def normalize_architecture(architecture: str | None) -> str:
-    return ARCHITECTURE_ALIASES.get(architecture or "x86_64", architecture or "x86_64")
+    # Releases without an explicit architecture have always meant x86_64; the
+    # host default used during recipe compilation deliberately does not apply here.
+    return canonical_architecture(architecture or "x86_64")
 
 
 def release_version(version: str, architecture: str | None, variant: str | None = None) -> str:

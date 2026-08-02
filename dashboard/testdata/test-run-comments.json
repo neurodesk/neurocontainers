@@ -1,0 +1,10 @@
+{
+  "comments": [
+    {
+      "body": "❌ **amico:2.1.0**\n\n- Container: `amico_2.1.0_20250101.simg`\n- Runtime: `apptainer`\n- Tests: 1/2 passed (failed 1, skipped 0)\n\n### Test Breakdown\n- ✅ **amico version** — passed\n  - stdout:\n    ```\n    AMICO 2.1.0\n    ```\n- ❌ **amico import** — failed\n  - Return code: `1`\n  - stderr:\n    ```\n    ModuleNotFoundError: No module named 'amico'\n    ```"
+    },
+    {
+      "body": "✅ **ants:2.6.0**\n\n- Container: `ants_2.6.0_20250101.simg`\n- Runtime: `apptainer`\n- Tests: 1/1 passed (failed 0, skipped 0)\n\n### Test Breakdown\n- ✅ **antsRegistration available** — passed\n  - stdout:\n    ```\n    antsRegistration\n    ```"
+    }
+  ]
+}

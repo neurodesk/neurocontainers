@@ -19,17 +19,9 @@ from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
 from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT, sha256_text
+from .config import ARCHITECTURE_ALIASES, canonical_architecture
 from .variants import concrete_variant_specs, forced_variant_spec, variant_specs
 
-
-ARCHITECTURE_ALIASES = {
-    "x86_64": "x86_64",
-    "AMD64": "x86_64",
-    "amd64": "x86_64",
-    "aarch64": "aarch64",
-    "arm64": "aarch64",
-    "ARM64": "aarch64",
-}
 
 GLOBAL_MOUNT_POINTS = [
     "/afm01",
@@ -207,11 +199,7 @@ def load_recipe_file(recipe_dir: Path) -> RecipeFile:
 
 
 def normalize_architecture(value: str | None) -> str:
-    arch = value or platform.machine()
-    try:
-        return ARCHITECTURE_ALIASES[arch]
-    except KeyError as exc:
-        raise ValueError(f"unsupported architecture: {arch}") from exc
+    return canonical_architecture(value or platform.machine())
 
 
 def _split_install(value: Any) -> list[str]:
@@ -228,19 +216,6 @@ def _copy_parts(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value]
     raise ValueError("copy directive must be a string or list")
-
-
-def _install_command(pkg_manager: str, packages: list[str]) -> str:
-    joined = " ".join(shlex.quote(package) for package in packages)
-    if pkg_manager == "apt":
-        return (
-            "apt-get update -qq && "
-            "DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends "
-            f"{joined} && rm -rf /var/lib/apt/lists/*"
-        )
-    if pkg_manager in {"yum", "rpm"}:
-        return f"yum install -y {joined}"
-    raise ValueError(f"unsupported package manager: {pkg_manager}")
 
 
 def _default_directives(definition: Definition, build: dict[str, Any], pkg_manager: str) -> None:

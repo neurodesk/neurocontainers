@@ -10,3 +10,6 @@ apps.json
 /data
 /local
 /public
+
+# compiled binary from `go build`
+/dashboard

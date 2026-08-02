@@ -13,9 +13,8 @@ This document describes how container tests are defined, executed locally, and a
   - `--docker-to-simg` bypasses the normal SIF lookup, pulls `ghcr.io/<registry>/<name>_<version>:<build_date>`, converts `docker save` output with `docker-save-to-simg`, and tests the generated `.simg` with Apptainer.
   - `--release-file …` injects build-date information so downloads come from the correct storage path.
   - `--cleanup` deletes any downloaded artifacts after tests finish; `--output` writes a JSON summary used for reporting.
-- **`workflows/generate_test_report.py`** turns the JSON summary into a PR-friendly Markdown report. GitHub Actions uploads both the JSON and Markdown outputs as artifacts and uses the Markdown for inline comments.
-- **`workflows/format_test_results.py`** converts a single container’s JSON results into Markdown suitable for GitHub issue comments.
-- **`workflows/pr_test_runner.py`** provides a higher-level interface that scans git diff to find updated recipes. It is useful for local validation (`test-containers.sh test-pr`) but is not wired into the current Actions workflows.
+- **`workflows/reporting.py`** turns JSON summaries into PR-friendly Markdown — `build_comment` for inline issue comments, `build_report` for the full report, and `build_aggregate_summary` for the matrix roll-up. It is the single source of report formatting; `test_runner.py`, `release_test_runner.py`, and `full_container_test.py` all call into it. GitHub Actions uploads both the JSON and Markdown outputs as artifacts.
+- **`workflows/summarize_deploy_results.py`** parses the builtin `test_deploy.sh` output into a bins/path tree used by the same reports.
 
 ## Release Artifact Resolution
 
@@ -51,7 +50,7 @@ This workflow runs automatically when a pull request targeting `master` or `main
    - Locates `recipes/<name>/fulltest.yaml`. Recipes without fulltests produce a skipped report instead of falling back to legacy test formats.
    - Runs Dive against the published Docker image using `.github/.dive-ci.yml`, then runs `workflows/release_test_runner.py`, which downloads or converts the release container, runs the deploy bins/path check, and executes `fulltest.yaml` through `builder/run_tests.py`. Dive findings and fulltest results are reported together on the release PR; wasted-space findings do not open separate issues.
    - The `continue-on-error` flag lets subsequent steps gather logs even when tests fail.
-   - Generates Markdown via `workflows/generate_test_report.py` and uploads both the JSON and Markdown artifacts as `test-results-<name>`.
+   - Generates Markdown in-process via `workflows/reporting.py` and uploads both the JSON and Markdown artifacts as `test-results-<name>`.
    - Uses `actions/github-script` to post (or update) a PR comment containing the Markdown report for that specific container.
 3. **`summarize-results` job** (Ubuntu runner) aggregates every `test-results-*.json` artifact, prints a count of passed/failed recipes, and updates a single “Container Test Summary” PR comment. If any container failed, this job calls `core.setFailed`, which fails the workflow and surfaces red status in the PR checks.
 
@@ -115,7 +114,7 @@ before a recipe is synchronized into the OpenRecon packaging repository.
    sf-test-remote <name> --version <version> --location local --runtime apptainer --cleanup
    ```
    Make sure the corresponding `sifs/<name>_<version>.sif` exists, e.g. by running `sf-make <name>` first.
-4. **Convenience wrapper**: `./test-containers.sh` offers shortcuts such as `./test-containers.sh test <name:version>` and `./test-containers.sh test-pr`, which chains through `workflows/pr_test_runner.py` to exercise every recipe touched by your local branch.
+4. **Full local matrix**: `python workflows/full_container_test.py --recipes <name>[,<name>...]` reproduces the `full-container-test.yml` job through the shared `ContainerTestRunner` pipeline.
 
 ## Outputs, Reporting, and Cleanup
 

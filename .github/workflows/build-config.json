@@ -1,22 +1,17 @@
 {
-    "default": {
-        "autoBuild": true,
-        "freeUpSpace": false
-    },
-    "template": {
-        "autoBuild": true,
-        "freeUpSpace": false
-    },
-    "datalad": {
-        "autoBuild": true,
-        "freeUpSpace": false
-    },
-    "root": {
-        "autoBuild": true,
-        "freeUpSpace": false
-    },
-    "qsmxt": {
-        "autoBuild": true,
-        "freeUpSpace": true
-    }
+  "default": {
+    "autoBuild": true
+  },
+  "template": {
+    "autoBuild": true
+  },
+  "datalad": {
+    "autoBuild": true
+  },
+  "root": {
+    "autoBuild": true
+  },
+  "qsmxt": {
+    "autoBuild": true
+  }
 }
