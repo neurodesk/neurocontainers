@@ -3,6 +3,12 @@ version: 1.0.0
 architectures:
   - x86_64
   - aarch64
+# Kept out of the Neurodesk menu and applist: this is the shared throwaway used
+# to exercise the build/release pipeline, not a tool anyone should install. It
+# has never had a release file, so it has never appeared in apps.json; without
+# these it would show up the first time it is promoted.
+show_in_menu: false
+show_in_applist: false
 structured_readme:
   description: This tool was committed for the workshop.
   example: hello
