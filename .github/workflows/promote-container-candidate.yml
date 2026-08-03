@@ -1,7 +1,28 @@
 name: Promote merged container candidate
 
 on:
-  pull_request:
+  # pull_request_target, not pull_request, for two reasons that both matter.
+  #
+  # Security: under `pull_request` the workflow file comes from the fork, so a
+  # fork PR can rewrite this file (including the `merged == true` guard below)
+  # and obtain a self-hosted runner. Under `pull_request_target` the definition
+  # always comes from the base repo, which removes that path structurally rather
+  # than relying on the fork-PR approval setting.
+  #
+  # Correctness: `pull_request` withholds secrets from fork PRs, so a merged
+  # community recipe PR reached the publish steps with empty credentials and
+  # could never promote.
+  #
+  # This is only safe because no step executes PR-authored *code*: the checkout
+  # pins `ref: main`, and the one place a PR ref is touched ("Verify provenance")
+  # fetches it to compare SHAs and never checks it out. Do not add a step that
+  # checks out or runs PR-authored content.
+  #
+  # Note the limit of that claim. The candidate bundle is still fork-produced
+  # *data*: it is unzipped, `docker load`ed, and published under official names.
+  # The manifest supplies both the artifact and its checksum, so that check
+  # proves transit integrity, not provenance.
+  pull_request_target:
     types: [closed]
     paths:
       - "recipes/**"
@@ -63,6 +84,9 @@ jobs:
             if (!workflow) throw new Error('Candidate workflow not found');
             const response = await github.rest.actions.listWorkflowRuns({
               owner: context.repo.owner, repo: context.repo.repo,
+              // Coupled to pr-container-candidate.yml's trigger. If that
+              // workflow ever moves to pull_request_target, this finds no runs
+              // and promotion fails silently rather than loudly.
               workflow_id: workflow.id, head_sha: pr.head.sha,
               event: 'pull_request', status: 'completed', per_page: 50,
             });
