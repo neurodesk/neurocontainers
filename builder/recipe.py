@@ -6,6 +6,7 @@ import platform
 import shlex
 import urllib.error
 import urllib.request
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -344,6 +345,34 @@ def compile_recipe(
         ]
     if requested_arch is not None:
         candidates = [spec for spec in candidates if spec["architecture"] == requested_arch]
+    if (
+        not candidates
+        and requested_arch is None
+        and not ignore_architecture
+        and selection_arch == "aarch64"
+        and platform.system() == "Darwin"
+    ):
+        variants = recipe.get("variants") or {}
+        candidates = [
+            spec
+            for spec in specs
+            if spec["architecture"] == "x86_64"
+            and (
+                (not requested_variant and not spec["recipe_variant"])
+                or (
+                    requested_variant in variants
+                    and spec["recipe_variant"] == requested_variant
+                )
+            )
+        ]
+        if candidates:
+            selection_arch = "x86_64"
+            warnings.warn(
+                f"{recipe['name']} does not support the host architecture aarch64 "
+                "on macOS; automatically selecting x86_64",
+                UserWarning,
+                stacklevel=2,
+            )
     if not candidates and ignore_architecture:
         forced_arch = requested_arch
         if forced_arch is None:

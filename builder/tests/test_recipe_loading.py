@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import pytest
@@ -237,6 +238,55 @@ deploy:
 categories: [workflows]
 """
     )
+
+
+def test_macos_arm_defaults_to_x86_64_with_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe_dir = tmp_path / "x86only"
+    write_single_architecture_recipe(recipe_dir)
+    monkeypatch.setattr("builder.recipe.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("builder.recipe.platform.machine", lambda: "arm64")
+
+    with pytest.warns(UserWarning, match="automatically selecting x86_64"):
+        compiled = compile_recipe(recipe_dir)
+
+    assert compiled.architecture == "x86_64"
+    assert compiled.name == "x86only"
+
+
+def test_linux_arm_does_not_default_to_x86_64(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe_dir = tmp_path / "x86only"
+    write_single_architecture_recipe(recipe_dir)
+    monkeypatch.setattr("builder.recipe.platform.system", lambda: "Linux")
+    monkeypatch.setattr("builder.recipe.platform.machine", lambda: "aarch64")
+
+    with pytest.raises(ValueError, match="unknown variant/architecture"):
+        compile_recipe(recipe_dir)
+
+
+def test_macos_arm_prefers_supported_native_architecture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recipe_dir = tmp_path / "native-arm"
+    write_minimal_recipe(
+        recipe_dir,
+        architectures=["x86_64", "aarch64"],
+        readme="native-arm {{ context.version }}",
+    )
+    monkeypatch.setattr("builder.recipe.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("builder.recipe.platform.machine", lambda: "arm64")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        compiled = compile_recipe(recipe_dir)
+
+    assert compiled.architecture == "aarch64"
 
 
 def test_ignore_architectures_still_builds_an_undeclared_architecture(tmp_path) -> None:
