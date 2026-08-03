@@ -73,6 +73,11 @@ build:
     # LCModel has been free since 2021 and only checks that .lcmodel/license
     # exists - the file must stay EMPTY. The licence key that used to be shipped
     # here was deliberately removed in 9fe69805; do not add content back.
+    #
+    # This replaced a `copy: license` directive in 0639afca, alongside deleting
+    # the now-unused recipes/lcmodel/license. That commit went straight to main,
+    # so it never passed through the candidate gate and was never built, tested
+    # or published: the recipe and the shipped container have disagreed since.
     - run:
         - mkdir -p /opt/lcmodel-{{ context.version }}/.lcmodel
         - touch /opt/lcmodel-{{ context.version }}/.lcmodel/license
