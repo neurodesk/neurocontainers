@@ -63,6 +63,7 @@ OPENRECON_DEFAULTS = {
     "orientationdebugseries": False,
 }
 OUTPUT_SERIES_DESCRIPTION = "sodiumgridding"
+OUTPUT_SERIES_PREFIX_PROTOCOL = True
 OUTPUT_IMAGE_COMMENT = "23Na Kaiser-Bessel Gridding"
 OUTPUT_IMAGE_SERIES_INDEX = 1
 
@@ -1030,7 +1031,7 @@ def _format_display_number(value):
     return f"{number:.6g}"
 
 
-def _scale_volume_to_display_range(volume):
+def _scale_volume_to_display_range(volume, input_min=None, input_max=None):
     values = np.asarray(volume, dtype=np.float32)
     finite = values[np.isfinite(values)]
     if finite.size == 0:
@@ -1044,8 +1045,8 @@ def _scale_volume_to_display_range(volume):
             "formula": "value = display",
         }
 
-    input_min = float(np.min(finite))
-    input_max = float(np.max(finite))
+    input_min = float(np.min(finite)) if input_min is None else float(input_min)
+    input_max = float(np.max(finite)) if input_max is None else float(input_max)
     input_range = input_max - input_min
     if input_range <= 0.0 or not np.isfinite(input_range):
         display = np.zeros(values.shape, dtype=np.uint16)
@@ -1558,6 +1559,14 @@ def _build_output_images(
     orientation=DEFAULT_ORIENTATION,
     flip_slice=False,
     emit_debug_series=False,
+    echo_index=0,
+    total_echoes=1,
+    repetition_index=0,
+    output_repetition_index=0,
+    total_repetitions=1,
+    echo_time_s=None,
+    display_input_min=None,
+    display_input_max=None,
 ):
     volume = np.asarray(volume, dtype=np.float32)
     if volume.ndim != 3:
@@ -1566,7 +1575,11 @@ def _build_output_images(
     _log_reference_geometry(reference_head, metadata)
     _log_volume_statistics("reconstructed volume (z, y, x)", volume)
 
-    display_volume, display_meta = _scale_volume_to_display_range(volume)
+    display_volume, display_meta = _scale_volume_to_display_range(
+        volume,
+        input_min=display_input_min,
+        input_max=display_input_max,
+    )
     logging.info(
         "Scanner display scaling: input_min=%.6g input_max=%.6g scale=%s formula='%s'",
         display_meta["input_min"],
@@ -1619,6 +1632,12 @@ def _build_output_images(
             flip_slice=slice_flip,
             series_index=OUTPUT_IMAGE_SERIES_INDEX + offset,
             label_series=emit_debug_series,
+            image_index=offset + 1,
+            echo_index=echo_index,
+            total_echoes=total_echoes,
+            repetition_index=repetition_index,
+            total_repetitions=total_repetitions,
+            echo_time_s=echo_time_s,
         )
         for offset, (orientation_key, slice_flip) in enumerate(sweep)
     ]
@@ -1634,6 +1653,12 @@ def _build_single_output_image(
     flip_slice,
     series_index,
     label_series,
+    image_index,
+    echo_index,
+    total_echoes,
+    repetition_index,
+    total_repetitions,
+    echo_time_s,
 ):
     # Stage 1 resolves the trajectory components against the acquisition axes.
     # Stage 2 transforms the acquisition vectors together with the pixels in
@@ -1651,7 +1676,10 @@ def _build_single_output_image(
 
     center_position = np.asarray(reference_head.position, dtype=float)
 
-    series_description = f"{_safe_protocol_name(metadata)}_{OUTPUT_SERIES_DESCRIPTION}"
+    if OUTPUT_SERIES_PREFIX_PROTOCOL:
+        series_description = f"{_safe_protocol_name(metadata)}_{OUTPUT_SERIES_DESCRIPTION}"
+    else:
+        series_description = OUTPUT_SERIES_DESCRIPTION
     if label_series:
         series_description = (
             f"{series_description}_ori_{orientation_key}_fz{int(bool(flip_slice))}"
@@ -1714,8 +1742,13 @@ def _build_single_output_image(
     new_header.data_type = image.data_type
     new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
     new_header.image_series_index = series_index
-    new_header.image_index = 1
+    new_header.image_index = int(image_index)
+    new_header.average = 0
     new_header.slice = 0
+    new_header.contrast = int(echo_index)
+    new_header.phase = 0
+    new_header.repetition = int(repetition_index)
+    new_header.set = 0
     new_header.matrix_size = tuple(int(value) for value in image.getHead().matrix_size)
     new_header.position = tuple(float(value) for value in center_position)
     new_header.read_dir = tuple(float(value) for value in read_dir)
@@ -1741,15 +1774,26 @@ def _build_single_output_image(
     meta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\SODIUMGRIDDING"
     meta["ImageTypeValue4"] = "SODIUMGRIDDING"
     meta["ComplexImageComponent"] = "MAGNITUDE"
-    meta["SequenceDescriptionAdditional"] = OUTPUT_IMAGE_COMMENT
+    echo_number = int(echo_index) + 1
+    echo_label = f"TE{echo_number}"
+    image_comment_with_echo = (
+        f"{series_description}; {image_comment}"
+        if int(total_echoes) > 1 or int(total_repetitions) > 1
+        else image_comment
+    )
+
+    meta["SequenceDescriptionAdditional"] = series_description
     meta["SeriesDescription"] = series_description
+    meta["ImageSeriesDescription"] = series_description
     meta["SequenceDescription"] = series_description
     meta["ProtocolName"] = series_description
+    meta["SeriesLabel"] = series_description
+    meta["LUTLabel"] = series_description
     meta["SeriesNumberRangeNameUID"] = series_grouping
     meta["SeriesInstanceUID"] = series_uid
     meta["SOPInstanceUID"] = _new_dicom_uid()
-    meta["ImageComment"] = image_comment
-    meta["ImageComments"] = image_comment
+    meta["ImageComment"] = image_comment_with_echo
+    meta["ImageComments"] = image_comment_with_echo
     # 1 tells ICE to keep the geometry described in this header instead of
     # rebuilding it and applying its own flip/shift. The vectors above describe
     # the canonicalized pixels, so geometry has exactly one owner.
@@ -1759,11 +1803,32 @@ def _build_single_output_image(
     meta["NumberOfSlices"] = slice_count
     meta["ImagesInAcquisition"] = slice_count
     meta["NumberInSeries"] = 1
+    meta["ImageIndex"] = int(image_index)
     meta["SliceNo"] = 0
     meta["IsmrmrdSliceNo"] = 0
     meta["AnatomicalSliceNo"] = 0
     meta["ChronSliceNo"] = 0
     meta["ProtocolSliceNumber"] = 0
+    meta["Average"] = 0
+    meta["Phase"] = 0
+    meta["Repetition"] = int(repetition_index)
+    meta["RepetitionNo"] = int(repetition_index)
+    meta["IsmrmrdRepetition"] = int(repetition_index)
+    meta["NumberOfRepetitions"] = int(total_repetitions)
+    meta["Set"] = 0
+    meta["Contrast"] = int(echo_index)
+    meta["ContrastNo"] = int(echo_index)
+    meta["IsmrmrdContrast"] = int(echo_index)
+    meta["ImageContrast"] = int(echo_index)
+    meta["EchoNo"] = echo_number
+    meta["EchoNumber"] = echo_number
+    meta["EchoNumbers"] = echo_number
+    meta["EchoLabel"] = echo_label
+    meta["NumberOfEchoes"] = int(total_echoes)
+    if echo_time_s is not None:
+        echo_time_ms = float(echo_time_s) * 1e3
+        meta["EchoTime"] = echo_time_ms
+        meta["EffectiveEchoTime"] = echo_time_ms
     meta["Actual3DImagePartNumber"] = 0
     meta["Actual3DImaPartNumber"] = 0
     meta["AnatomicalPartitionNo"] = 0

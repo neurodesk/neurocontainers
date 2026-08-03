@@ -1,5 +1,5 @@
 name: sodiumgridding_ptpi
-version: 0.1.0
+version: 0.1.9
 
 copyright:
   - license: MIT
@@ -80,10 +80,11 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAACXBI
 readme: |-
   ----------------------------------
   ## sodiumgridding_ptpi/{{ context.version }} ##
-  This container runs a dual-echo palindromic TPI Kaiser-Bessel gridding
+  This container runs a multi-echo palindromic TPI Kaiser-Bessel gridding
   reconstruction for OpenRecon. It includes variance-based coil compression,
   TE1/TE2 field-map estimation, low-rank phase correction, adaptive or
-  sum-of-squares coil combination, and optional N4 bias correction.
+  sum-of-squares coil combination, optional N4 bias correction, and temporal
+  SVD denoising of the final echo volumes.
 
   Build the recipe with:
   ```bash
