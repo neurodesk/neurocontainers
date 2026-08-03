@@ -25,7 +25,15 @@ on:
   pull_request_target:
     types: [closed]
     paths:
-      - "recipes/**"
+      # Must stay aligned with detect_recipes() in tools/one_pr_release.py, which
+      # only treats a PR as a candidate PR when a recipes/*/build.yaml changed.
+      # On "recipes/**" this fired for fulltest-, icon- and README-only PRs, which
+      # build no candidate: detect returns [], the candidate job is skipped, the
+      # gate short-circuits to success, and promote then threw "No unexpired
+      # candidate artifacts found" on a PR that was never supposed to publish.
+      # PR #2990 is the worked example. Every build.yaml sits at exactly this
+      # depth, and GitHub's `*` does not cross `/`, so this matches all of them.
+      - "recipes/*/build.yaml"
 
 permissions:
   actions: read
