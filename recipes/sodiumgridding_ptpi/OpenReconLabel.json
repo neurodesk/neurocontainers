@@ -169,14 +169,14 @@
         { "id": "zxy_fxy", "name": { "en": "zxy, reverse rows and columns" } },
         { "id": "debug", "name": { "en": "Debug sweep (all orientations)" } }
       ],
-      "default": "zyx",
+      "default": "zyx_fy",
       "information": { "en": "Map trajectory components into acquisition read/phase axes. Debug emits every mapping with slice kept/reversed." }
     },
     {
       "id": "orientationflipslice",
       "label": { "en": "Reverse slice axis" },
       "type": "boolean",
-      "default": false,
+      "default": true,
       "information": { "en": "Reverse trajectory component 2 before display-frame canonicalization." }
     }
   ]

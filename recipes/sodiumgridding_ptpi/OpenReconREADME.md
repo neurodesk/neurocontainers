@@ -91,8 +91,8 @@ header provides only one TE or no TE values, later echo times are inferred from
 | Delta TE s | `fieldmapdeltates` | string | `0.005` | Constant echo spacing used for B0 field-map estimation and later echo timing. |
 | Phase correction | `runphasecorrection` | boolean | `true` | Run low-rank phase correction for all echoes. |
 | N4 correction | `applyn4biascorrection` | boolean | `true` | Apply N4 bias correction to the final echoes. |
-| Orientation | `orientation` | choice | `zyx` | Shared sodiumgridding trajectory/display mapping. |
-| Reverse slice axis | `orientationflipslice` | boolean | `false` | Reverse trajectory component 2 before display canonicalization. |
+| Orientation | `orientation` | choice | `zyx_fy` | Shared sodiumgridding trajectory/display mapping. |
+| Reverse slice axis | `orientationflipslice` | boolean | `true` | Reverse trajectory component 2 before display canonicalization. |
 
 The scanner GUI is limited to 14 parameters. Advanced pTPI defaults remain
 fixed in the wrapper: coil compression is enabled, echo normalization is
