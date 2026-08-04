@@ -42,6 +42,9 @@ def test_candidate_workflow_builds_every_declared_variant() -> None:
 def test_candidate_artifacts_and_promotion_key_off_container_identity() -> None:
     candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
     promote_workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
+    publish_steps = promote_workflow.split(
+        "      - name: Publish the exact tested Docker archives", 1
+    )[1].split("      - name: Commit generated release metadata directly to main", 1)[0]
 
     assert (
         "name: candidate-${{ matrix.container }}-${{ github.event.pull_request.head.sha }}"
@@ -49,9 +52,38 @@ def test_candidate_artifacts_and_promotion_key_off_container_identity() -> None:
     )
     assert "path: candidate/${{ matrix.container }}/" in candidate_workflow
     # Two variants of one recipe publish to different registry repositories.
-    assert 'ghcr="ghcr.io/${GH_REGISTRY}/${container}"' in promote_workflow
-    assert 'quay="quay.io/neurodesk/${container}"' in promote_workflow
-    assert "${recipe}" not in promote_workflow
+    assert 'ghcr="ghcr.io/${GH_REGISTRY}/${container}"' in publish_steps
+    assert 'quay="quay.io/neurodesk/${container}"' in publish_steps
+    assert "${recipe}" not in publish_steps
+
+
+def test_candidate_promotion_syncs_openrecon_from_verified_manifests() -> None:
+    promote_workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    release_step = "      - name: Commit generated release metadata directly to main"
+    sync_step = "      - name: Sync OpenRecon metadata"
+
+    assert sync_step in promote_workflow
+    assert promote_workflow.index(sync_step) > promote_workflow.index(release_step)
+    sync_body = promote_workflow.split(sync_step, 1)[1]
+    assert "NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION" in sync_body
+    assert 'select(.architecture == "x86_64" and .variant == "")' in sync_body
+    assert 'recipe="$(echo "${manifest}" | jq -r \'.recipe\')"' in sync_body
+    assert 'version="$(echo "${manifest}" | jq -r \'.version\')"' in sync_body
+    assert 'python tools/sync_openrecon.py --recipe "${recipe}" --version "${version}"' in sync_body
+
+
+def test_manual_and_candidate_release_paths_share_openrecon_sync_helper() -> None:
+    build_workflow = Path(".github/workflows/build-app.yml").read_text()
+    promote_workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    helper = "python tools/sync_openrecon.py"
+    assert build_workflow.count(helper) == 1
+    assert promote_workflow.count(helper) == 1
 
 
 def test_build_app_workflow_strips_version_inline_comments() -> None:
