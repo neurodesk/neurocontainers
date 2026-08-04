@@ -91,6 +91,19 @@ def test_candidate_promotion_uses_trusted_main_oidc_identity() -> None:
     assert "PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}" in workflow
 
 
+def test_candidate_promotion_installs_aws_cli_before_s3_upload() -> None:
+    workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    install_step = workflow.split("      - name: Install promotion dependencies", 1)[1]
+    install_step = install_step.split(
+        "      - name: Locate the successful run for the exact PR head", 1
+    )[0]
+    assert "awscli-exe-linux-x86_64.zip" in install_step
+    assert "aws --version" in install_step
+
+
 def test_manual_and_candidate_release_paths_share_openrecon_sync_helper() -> None:
     build_workflow = Path(".github/workflows/build-app.yml").read_text()
     promote_workflow = Path(
