@@ -453,7 +453,7 @@ def test_one_pr_workflows_preserve_fork_reporting_contract() -> None:
         encoding="utf-8"
     )
 
-    assert "item.head_sha === pr.head.sha" in promotion
+    assert "item.head_sha === headSha" in promotion
     assert "item.pull_requests" not in promotion
     assert "refs/pull/" not in promotion
     assert "FETCH_HEAD" not in promotion

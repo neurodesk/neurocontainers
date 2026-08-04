@@ -1,29 +1,18 @@
 name: Promote merged container candidate
 
 on:
-  # pull_request_target, not pull_request, for two reasons that both matter.
-  #
-  # Security: under `pull_request` the workflow file comes from the fork, so a
-  # fork PR can rewrite this file (including the `merged == true` guard below)
-  # and obtain a self-hosted runner. Under `pull_request_target` the definition
-  # always comes from the base repo, which removes that path structurally rather
-  # than relying on the fork-PR approval setting.
-  #
-  # Correctness: `pull_request` withholds secrets from fork PRs, so a merged
-  # community recipe PR reached the publish steps with empty credentials and
-  # could never promote.
-  #
-  # This is only safe because no step checks out or executes PR-authored *code*:
-  # the checkout pins `ref: main`, candidate lookup binds artifacts to the event's
-  # exact head SHA, and verification compares them with the merged recipe. Do not
-  # add a step that fetches, checks out, or runs the pull request's head ref.
+  # Promotion starts from the trusted main-branch commit created by merging a
+  # recipe PR. Besides keeping secrets away from PR-authored workflow code, the
+  # push identity is required by the AWS OIDC role used for the blocking S3
+  # upload. The resolve job binds that merge commit back to its merged PR and
+  # exact candidate head SHA without fetching or executing the PR head.
   #
   # Note the limit of that claim. The candidate bundle is still fork-produced
   # *data*: it is unzipped, `docker load`ed, and published under official names.
   # The manifest supplies both the artifact and its checksum, so that check
   # proves transit integrity, not provenance.
-  pull_request_target:
-    types: [closed]
+  push:
+    branches: [main]
     paths:
       # Must stay aligned with detect_recipes() in tools/one_pr_release.py, which
       # only treats a PR as a candidate PR when a recipes/*/build.yaml changed.
@@ -34,12 +23,19 @@ on:
       # PR #2990 is the worked example. Every build.yaml sits at exactly this
       # depth, and GitHub's `*` does not cross `/`, so this matches all of them.
       - "recipes/*/build.yaml"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Merged recipe PR to recover or republish
+        required: true
+        type: number
 
 permissions:
   actions: read
   contents: write
   id-token: write
   packages: write
+  pull-requests: read
 
 concurrency:
   group: promote-container-and-metadata
@@ -49,8 +45,60 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      should_promote: ${{ steps.pr.outputs.should_promote }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+    steps:
+      - name: Resolve trusted main event to a merged recipe PR
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let pr;
+            if (context.eventName === 'workflow_dispatch') {
+              const prNumber = Number(context.payload.inputs.pr_number);
+              if (!Number.isSafeInteger(prNumber) || prNumber < 1) {
+                throw new Error(`Invalid PR number: ${context.payload.inputs.pr_number}`);
+              }
+              const response = await github.rest.pulls.get({
+                owner: context.repo.owner, repo: context.repo.repo,
+                pull_number: prNumber,
+              });
+              pr = response.data;
+            } else {
+              const response = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner: context.repo.owner, repo: context.repo.repo,
+                commit_sha: context.sha,
+              });
+              const merged = response.data.filter(item =>
+                item.merged_at && item.base.ref === 'main'
+              );
+              const exact = merged.filter(item => item.merge_commit_sha === context.sha);
+              if (exact.length === 1) {
+                pr = exact[0];
+              } else if (merged.length === 1) {
+                pr = merged[0];
+              } else if (merged.length === 0) {
+                core.notice(`No merged PR is associated with ${context.sha}; nothing to promote`);
+                core.setOutput('should_promote', 'false');
+                return;
+              } else {
+                throw new Error(`Could not uniquely resolve ${context.sha} to a merged PR`);
+              }
+            }
+            if (!pr.merged_at || pr.base.ref !== 'main') {
+              throw new Error(`PR #${pr.number} is not merged into main`);
+            }
+            core.setOutput('should_promote', 'true');
+            core.setOutput('pr_number', String(pr.number));
+            core.setOutput('head_sha', pr.head.sha);
+
   promote:
-    if: github.event.pull_request.merged == true
+    needs: resolve
+    if: needs.resolve.outputs.should_promote == 'true'
     runs-on: neurodesk-syd-arcrunner-neurocontainers
     steps:
       - name: Create narrowly scoped release token
@@ -80,9 +128,11 @@ jobs:
       - name: Locate the successful run for the exact PR head
         id: candidate
         uses: actions/github-script@v7
+        env:
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         with:
           script: |
-            const pr = context.payload.pull_request;
+            const headSha = process.env.HEAD_SHA;
             const workflows = await github.rest.actions.listRepoWorkflows({
               owner: context.repo.owner, repo: context.repo.repo,
             });
@@ -95,21 +145,21 @@ jobs:
               // Coupled to pr-container-candidate.yml's trigger. If that
               // workflow ever moves to pull_request_target, this finds no runs
               // and promotion fails silently rather than loudly.
-              workflow_id: workflow.id, head_sha: pr.head.sha,
+              workflow_id: workflow.id, head_sha: headSha,
               event: 'pull_request', status: 'completed', per_page: 50,
             });
             // Fork-originated runs can have an empty pull_requests array. The
             // API query and this explicit comparison bind the run to the head;
             // the downloaded manifest later binds it to the PR number.
             const run = response.data.workflow_runs.find(item =>
-              item.conclusion === 'success' && item.head_sha === pr.head.sha
+              item.conclusion === 'success' && item.head_sha === headSha
             );
-            if (!run) throw new Error(`No successful candidate run for ${pr.head.sha}`);
+            if (!run) throw new Error(`No successful candidate run for ${headSha}`);
             const artifacts = await github.paginate(
               github.rest.actions.listWorkflowRunArtifacts,
               {owner: context.repo.owner, repo: context.repo.repo, run_id: run.id, per_page: 100}
             );
-            const suffix = `-${pr.head.sha}`;
+            const suffix = `-${headSha}`;
             const candidates = artifacts.filter(item =>
               !item.expired && item.name.startsWith('candidate-') && item.name.endsWith(suffix)
             );
@@ -119,7 +169,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACTS: ${{ steps.candidate.outputs.artifacts }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
           mkdir -p promotion-bundle
           echo "${ARTIFACTS}" | jq -c '.[]' | while read -r artifact; do
@@ -134,8 +184,8 @@ jobs:
           done
       - name: Verify candidate against merged recipes and checksums
         env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         run: |
           python tools/one_pr_release.py verify --bundle promotion-bundle \
             --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}" \
@@ -263,8 +313,8 @@ jobs:
           done
       - name: Commit generated release metadata directly to main
         env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         run: |
           python tools/one_pr_release.py materialize --bundle promotion-bundle \
             --manifests verified-manifests.json
