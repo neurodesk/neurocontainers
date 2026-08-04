@@ -125,6 +125,16 @@ jobs:
           pip install -r requirements.txt python-swiftclient python-keystoneclient
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends gh jq unzip
+          if ! command -v aws >/dev/null 2>&1; then
+            aws_archive="${RUNNER_TEMP}/awscliv2.zip"
+            aws_install_dir="${RUNNER_TEMP}/aws-cli"
+            curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
+              -o "${aws_archive}"
+            unzip -q "${aws_archive}" -d "${aws_install_dir}"
+            sudo "${aws_install_dir}/aws/install"
+            rm -rf "${aws_archive}" "${aws_install_dir}"
+          fi
+          aws --version
       - name: Locate the successful run for the exact PR head
         id: candidate
         uses: actions/github-script@v7
