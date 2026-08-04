@@ -12,8 +12,7 @@ variables:
   basis_7t_url: https://www.s-provencher.com/pub/LCModel/7t.zip
   basis_9_4t_url: https://www.s-provencher.com/pub/LCModel/9.4t.zip
   basisset_lcmodel_url: https://www.ismrm.org/workshops/Spectroscopy16/mrs_fitting_challenge/basisset_LCModel.zip
-  raw_basis_4000_url: https://juchem.bme.columbia.edu/sites/default/files/2021-01/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048.zip
-  raw_basis_2500_url: https://juchem.bme.columbia.edu/sites/default/files/2021-01/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024.zip
+  mrs_basis_sets_commit: 646c6214f25e5d6758a9295bf9b41c3850264ae9
   testdata_url: https://zenodo.org/record/3904443/files/Spectra_hippocampus%28rat%29_TE02.rar?download=1
   manual_url: https://www.lcmodel.com/pub/LCModel/manual/manual.pdf
 
@@ -30,10 +29,8 @@ files:
     url: "{{ context.basis_9_4t_url }}"
   - name: basisset_lcmodel_zip
     url: "{{ context.basisset_lcmodel_url }}"
-  - name: raw_basis_4000_zip
-    url: "{{ context.raw_basis_4000_url }}"
-  - name: raw_basis_2500_zip
-    url: "{{ context.raw_basis_2500_url }}"
+  - name: mrs_basis_sets_zip
+    url: https://github.com/mr-science-lab/mrs-basis-sets/archive/{{ context.mrs_basis_sets_commit }}.zip
   - name: testdata_rar
     url: "{{ context.testdata_url }}"
   - name: manual_pdf
@@ -68,8 +65,10 @@ build:
         - unzip '{{ get_file("basis_7t_zip") }}'
         - unzip '{{ get_file("basis_9_4t_zip") }}'
         - unzip '{{ get_file("basisset_lcmodel_zip") }}'
-        - unzip '{{ get_file("raw_basis_4000_zip") }}'
-        - unzip '{{ get_file("raw_basis_2500_zip") }}'
+        - unzip -q '{{ get_file("mrs_basis_sets_zip") }}' 'mrs-basis-sets-{{ context.mrs_basis_sets_commit }}/slaser/lcmodel/siemens/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024/*' 'mrs-basis-sets-{{ context.mrs_basis_sets_commit }}/slaser/lcmodel/siemens/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048/*'
+        - mv mrs-basis-sets-{{ context.mrs_basis_sets_commit }}/slaser/lcmodel/siemens/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024 .
+        - mv mrs-basis-sets-{{ context.mrs_basis_sets_commit }}/slaser/lcmodel/siemens/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048 .
+        - rm -rf mrs-basis-sets-{{ context.mrs_basis_sets_commit }}
     # LCModel has been free since 2021 and only checks that .lcmodel/license
     # exists - the file must stay EMPTY. The licence key that used to be shipped
     # here was deliberately removed in 9fe69805; do not add content back.
