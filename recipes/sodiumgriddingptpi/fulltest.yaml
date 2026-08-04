@@ -2,7 +2,7 @@
 # Focused verification for the OpenRecon runtime, pTPI assets, and gridding dependencies.
 
 name: sodiumgriddingptpi
-version: 0.1.0
+version: 0.1.9
 
 test_data:
   output_dir: test_output
@@ -61,26 +61,12 @@ tests:
       )
       parameters = {item["id"]: item for item in label["parameters"]}
       offered = {value["id"] for value in parameters["orientation"]["values"]}
-      suffix = sodiumgridding_ptpi.ORIENTATION_FLIP_SLICE_SUFFIX
-      in_plane = set(sodiumgridding.ORIENTATION_IN_PLANE_TRANSFORMS)
-      implemented = (
-          in_plane
-          | {key + suffix for key in in_plane}
-          | {sodiumgridding.ORIENTATION_DEBUG_SELECTION}
-      )
+      implemented = set(sodiumgridding.ORIENTATION_IN_PLANE_TRANSFORMS) | {
+          sodiumgridding.ORIENTATION_DEBUG_SELECTION
+      }
       assert offered == implemented, offered ^ implemented
-      assert parameters["orientation"]["default"] == sodiumgridding.DEFAULT_ORIENTATION
-
-      # Slice reversal is folded into the orientation choice rather than spending
-      # one of the 14 parameter slots the OpenRecon schema allows.
-      assert "orientationflipslice" not in parameters
-      for selection in sorted(offered):
-          resolved, flip_slice, _ = sodiumgridding_ptpi._resolve_orientation_with_slice_flip(
-              {"parameters": {"orientation": selection}}
-          )
-          assert flip_slice == selection.endswith(suffix), selection
-          if selection != sodiumgridding.ORIENTATION_DEBUG_SELECTION:
-              assert resolved == selection.removesuffix(suffix), selection
+      assert parameters["orientation"]["default"] == sodiumgridding_ptpi.OPENRECON_DEFAULTS["orientation"]
+      assert parameters["orientationflipslice"]["default"] == sodiumgridding_ptpi.OPENRECON_DEFAULTS["orientationflipslice"]
       print("orientation choices:", sorted(offered))
       PY
 

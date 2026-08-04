@@ -3,7 +3,7 @@
     "name": { "en": "sodiumgridding_pTPI" },
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
-    "information": { "en": "Dual-echo palindromic TPI Kaiser-Bessel gridding with low-rank phase correction." },
+    "information": { "en": "Multi-echo palindromic TPI Kaiser-Bessel gridding with low-rank phase correction." },
     "id": "sodiumgriddingptpi",
     "regulatory_information": {
       "device_trade_name": "sodiumgridding_pTPI",
@@ -15,7 +15,7 @@
       "gtin": "00860000171212",
       "udi": "(01)00860000171212(21)1.3.0",
       "safety_advices": "",
-      "special_operating_instructions": "OpenRecon dual-echo pTPI reconstruction from raw k-space to TE1/TE2 magnitude image data",
+      "special_operating_instructions": "OpenRecon multi-echo pTPI reconstruction from raw k-space to echo-resolved magnitude image data",
       "additional_relevant_information": ""
     }
   },
@@ -24,7 +24,7 @@
       "protocol": "ISMRMRD",
       "version": "1.4.1"
     },
-    "port": 9003,
+    "port": 9002,
     "emitter": "raw",
     "injector": "compleximage",
     "can_process_adjustment_data": true,
@@ -66,7 +66,7 @@
         }
       ],
       "default": "/opt/sodiumgridding_ptpi/23Na_pTPI_n28_g50_p5traj.h5",
-      "information": { "en": "Dual-echo pTPI HDF5 trajectory. Uses k_echo1/k_echo2_forward_order and timing datasets when present." }
+      "information": { "en": "pTPI HDF5 trajectory. Odd echoes use k_echo1; even echoes use k_echo2_forward_order when present." }
     },
     {
       "id": "matrixsize",
@@ -94,11 +94,20 @@
       "information": { "en": "Number of iterative Kaiser-Bessel density compensation updates. Use 0 for uniform weights." }
     },
     {
-      "id": "coilcompression",
-      "label": { "en": "Coil compression" },
-      "type": "boolean",
-      "default": true,
-      "information": { "en": "Compress physical coils with the variance-retention PCA basis before splitting TE1/TE2." }
+      "id": "svdretainfraction",
+      "label": { "en": "SVD threshold fraction" },
+      "type": "string",
+      "default": "0.2",
+      "information": { "en": "Keep singular values at least this fraction of the largest singular value in each temporal SVD patch. Larger values denoise more strongly." }
+    },
+    {
+      "id": "phaselowrankrank",
+      "label": { "en": "Low-rank rank" },
+      "type": "int",
+      "minimum": 1,
+      "maximum": 32,
+      "default": 10,
+      "information": { "en": "Rank used for the low-rank phase table." }
     },
     {
       "id": "coilvarianceretention",
@@ -125,46 +134,25 @@
       "information": { "en": "Combine reconstructed virtual coils using sensitivity-weighted adaptive combination or sum of squares." }
     },
     {
-      "id": "echonormalizationmode",
-      "label": { "en": "Echo normalization" },
-      "type": "choice",
-      "values": [
-        { "id": "none", "name": { "en": "None" } },
-        { "id": "te1", "name": { "en": "TE1 shared" } },
-        { "id": "independent", "name": { "en": "Independent" } }
-      ],
-      "default": "none",
-      "information": { "en": "Controls TE1/TE2 centre-sample normalization before gridding." }
-    },
-    {
       "id": "fieldmapdeltates",
       "label": { "en": "Delta TE s" },
       "type": "string",
       "default": "0.005",
-      "information": { "en": "TE2-TE1 spacing in seconds for B0 field-map estimation." }
+      "information": { "en": "Constant echo spacing in seconds. Echoes 1/2 provide the B0 field map; later echoes use this spacing for phase correction." }
     },
     {
       "id": "runphasecorrection",
       "label": { "en": "Phase correction" },
       "type": "boolean",
       "default": true,
-      "information": { "en": "Run low-rank phase correction for both echoes using the estimated field map." }
-    },
-    {
-      "id": "phaselowrankrank",
-      "label": { "en": "Low-rank rank" },
-      "type": "int",
-      "minimum": 1,
-      "maximum": 32,
-      "default": 10,
-      "information": { "en": "Rank used for the low-rank phase table." }
+      "information": { "en": "Run low-rank phase correction for all echoes using the echo 1/2 field map." }
     },
     {
       "id": "applyn4biascorrection",
       "label": { "en": "N4 correction" },
       "type": "boolean",
       "default": true,
-      "information": { "en": "Estimate an N4 bias field and apply it to the selected echoes." }
+      "information": { "en": "Estimate an N4 bias field from echoes 1/2 and apply it to the selected echoes." }
     },
     {
       "id": "orientation",
@@ -179,18 +167,17 @@
         { "id": "zxy_fx", "name": { "en": "zxy, reverse columns" } },
         { "id": "zxy_fy", "name": { "en": "zxy, reverse rows" } },
         { "id": "zxy_fxy", "name": { "en": "zxy, reverse rows and columns" } },
-        { "id": "zyx_fz", "name": { "en": "zyx, reverse slices" } },
-        { "id": "zyx_fx_fz", "name": { "en": "zyx, reverse columns and slices" } },
-        { "id": "zyx_fy_fz", "name": { "en": "zyx, reverse rows and slices" } },
-        { "id": "zyx_fxy_fz", "name": { "en": "zyx, reverse rows, columns and slices" } },
-        { "id": "zxy_fz", "name": { "en": "zxy, reverse slices" } },
-        { "id": "zxy_fx_fz", "name": { "en": "zxy, reverse columns and slices" } },
-        { "id": "zxy_fy_fz", "name": { "en": "zxy, reverse rows and slices" } },
-        { "id": "zxy_fxy_fz", "name": { "en": "zxy, reverse rows, columns and slices" } },
         { "id": "debug", "name": { "en": "Debug sweep (all orientations)" } }
       ],
-      "default": "zyx",
-      "information": { "en": "Map trajectory components into acquisition read/phase axes. The _fz variants also reverse the slice axis. Debug emits every mapping with slice kept/reversed." }
+      "default": "zyx_fy",
+      "information": { "en": "Map trajectory components into acquisition read/phase axes. Debug emits every mapping with slice kept/reversed." }
+    },
+    {
+      "id": "orientationflipslice",
+      "label": { "en": "Reverse slice axis" },
+      "type": "boolean",
+      "default": true,
+      "information": { "en": "Reverse trajectory component 2 before display-frame canonicalization." }
     }
   ]
 }
