@@ -45,6 +45,7 @@ class DetectionResult:
 
 RELEASE_PATTERN = re.compile(r"^releases/([^/]+)/([^/]+)\.json$")
 TEST_CONFIG_PATTERN = re.compile(r"^recipes/([^/]+)/fulltest\.yaml$")
+BUILD_RECIPE_PATTERN = re.compile(r"^recipes/([^/]+)/build\.yaml$")
 BUILD_DATE_PATTERN = re.compile(r"^\d{8}$")
 
 
@@ -162,6 +163,11 @@ def detect_release_pr_changes(
         recipe, version = match.groups()
         entries[recipe] = ReleaseEntry(name=recipe, version=version, file=path)
 
+    candidate_recipes = {
+        match.group(1)
+        for path in paths
+        if (match := BUILD_RECIPE_PATTERN.match(path))
+    }
     skipped_new_recipe_tests: list[str] = []
     skipped_seen: set[str] = set()
     for path in paths:
@@ -171,6 +177,11 @@ def detect_release_pr_changes(
 
         recipe = match.group(1)
         if recipe in entries:
+            continue
+        # A build.yaml change is tested against the exact newly built candidate
+        # by PR container candidate. Retesting the previous published image here
+        # is both misleading and creates extra per-container PR comments.
+        if recipe in candidate_recipes:
             continue
 
         release_file, version = find_latest_release_file(

@@ -349,15 +349,86 @@ def test_detect_targets_expands_declared_architectures(tmp_path: Path, monkeypat
             "recipe": "demo",
             "variant": "",
             "architecture": "x86_64",
+            "version": "1.2.3",
             "container": "demo",
         },
         {
             "recipe": "demo",
             "variant": "arm64",
             "architecture": "aarch64",
+            "version": "1.2.3",
             "container": "demo_arm64",
         },
     ]
+
+
+def test_candidate_report_compacts_identity_and_test_results(tmp_path: Path) -> None:
+    """The PR reporter receives counts and names, not large untrusted logs."""
+    candidate_dir = tmp_path / "demo"
+    candidate_dir.mkdir()
+    manifest = {
+        "recipe": "demo",
+        "container": "demo",
+        "variant": "",
+        "architecture": "x86_64",
+        "version": "1.2.3",
+        "build_date": "20260721",
+        "image_name": "demo_1.2.3",
+        "candidate_tag": "nd-candidate-demo:abc123",
+        "docker_archive": "demo_1.2.3_20260721.docker.tar",
+        "docker_sha256": "0" * 64,
+        "sif": "demo_1.2.3_20260721.simg",
+        "sif_sha256": "0" * 64,
+        "release_json": "1.2.3.json",
+        "pr_number": 42,
+        "head_sha": "abc123",
+        "recipe_fingerprint": "1" * 64,
+    }
+    (candidate_dir / "manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    (candidate_dir / "test-results.json").write_text(
+        json.dumps(
+            {
+                "total_tests": 4,
+                "passed": 3,
+                "failed": 1,
+                "skipped": 0,
+                "test_results": [
+                    {"name": "launcher", "status": "passed", "stdout": "large"},
+                    {"name": "real command", "status": "failed", "stderr": "large"},
+                ],
+                "fulltest_summary": {
+                    "total_tests": 2,
+                    "tests_passed": 1,
+                    "tests_failed": 1,
+                    "total_suites": 1,
+                    "suites_passed": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = one_pr_release.build_candidate_report(candidate_dir)
+
+    assert report["schema_version"] == 1
+    assert report["recipe"] == "demo"
+    assert report["container"] == "demo"
+    assert report["tests"] == {
+        "total": 4,
+        "passed": 3,
+        "failed": 1,
+        "skipped": 0,
+        "fulltest_total": 2,
+        "fulltest_passed": 1,
+        "fulltest_failed": 1,
+        "suites_total": 1,
+        "suites_passed": 0,
+        "failed_tests": ["real command"],
+    }
+    assert "stdout" not in json.dumps(report)
+    assert "stderr" not in json.dumps(report)
 
 
 def test_materialize_rejects_unverified_release_path(

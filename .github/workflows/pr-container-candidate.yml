@@ -45,7 +45,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - run: pip install pyyaml
+      - name: Install detection and validation dependencies
+        run: pip install 'attrs>=23.0.0' 'pyyaml>=6.0.2' jinja2 jsonschema==4.23.0
       - name: Detect recipe-only changes
         id: detect
         working-directory: source
@@ -57,9 +58,28 @@ jobs:
           git fetch "https://github.com/${BASE_REPOSITORY}.git" "${BASE_SHA}"
           python ../trusted/tools/one_pr_release.py --repo-root . detect \
             --base "${BASE_SHA}" --head "${HEAD_SHA}"
+      - name: Validate changed recipes and OpenRecon metadata
+        if: steps.detect.outputs.recipes != '[]'
+        working-directory: source
+        env:
+          RECIPES: ${{ steps.detect.outputs.recipes }}
+        run: |
+          python workflows/validate_openrecon_labels.py
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          for recipe in json.loads(os.environ["RECIPES"]):
+              subprocess.run(
+                  [sys.executable, "builder/validation.py", f"recipes/{recipe}/build.yaml", "--verbose"],
+                  check=True,
+              )
+          PY
 
   candidate:
-    name: candidate (${{ matrix.container }})
+    name: candidate (${{ matrix.container }} | ${{ matrix.version }} | ${{ matrix.architecture }})
     needs: detect
     if: ${{ needs.detect.outputs.recipes != '[]' }}
     # ARC pods are ephemeral; untrusted recipe build commands never run on a
@@ -201,12 +221,28 @@ jobs:
           python tools/one_pr_release.py manifest \
             --recipe "${RECIPE}" --variant "${VARIANT}" --head-sha "${HEAD_SHA}" \
             --pr-number "${PR_NUMBER}" --candidate-dir "candidate/${CONTAINER}"
+      - name: Generate compact approval report
+        id: approval_report
+        continue-on-error: true
+        env:
+          CONTAINER: ${{ matrix.container }}
+        run: |
+          python tools/one_pr_release.py report \
+            --candidate-dir "candidate/${CONTAINER}"
       - name: Upload candidate bundle
         uses: actions/upload-artifact@v4
         with:
           name: candidate-${{ matrix.container }}-${{ github.event.pull_request.head.sha }}
           path: candidate/${{ matrix.container }}/
           compression-level: 0
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload compact approval report
+        if: steps.approval_report.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-report-${{ matrix.container }}-${{ github.event.pull_request.head.sha }}
+          path: candidate/${{ matrix.container }}/candidate-report.json
           retention-days: 30
           if-no-files-found: error
       - name: Require candidate tests to pass

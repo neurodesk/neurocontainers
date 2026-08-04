@@ -33,10 +33,32 @@ def test_candidate_workflow_builds_every_declared_variant() -> None:
     candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
 
     assert "include: ${{ fromJSON(needs.detect.outputs.targets) }}" in candidate_workflow
+    assert (
+        "matrix.container }} | ${{ matrix.version }} | ${{ matrix.architecture"
+        in candidate_workflow
+    )
     assert '--architecture "${ARCHITECTURE}" --variant "${VARIANT}"' in candidate_workflow
     # aarch64 candidates must not land on the x86 ARC pool.
     assert "matrix.architecture == 'aarch64'" in candidate_workflow
     assert "--architecture x86_64" not in candidate_workflow
+
+
+def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> None:
+    candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
+    reporter = Path(".github/workflows/report-container-candidate.yml").read_text()
+    validator = Path(".github/workflows/validate-recipes.yml").read_text()
+
+    assert "Validate changed recipes and OpenRecon metadata" in candidate_workflow
+    assert "candidate-report-${{ matrix.container }}" in candidate_workflow
+    assert "pattern: candidate-report-*" in reporter
+    assert "Container build approval" in reporter
+    assert "Deploy + fulltest" in reporter
+    assert "What happens after merge" in reporter
+    assert "No build.yaml changes; no container approval comment is needed" in reporter
+    assert reporter.count("github.rest.issues.createComment") == 1
+    assert "github.rest.issues.updateComment" in reporter
+    assert "createComment" not in validator
+    assert "pull-requests: write" not in validator
 
 
 def test_candidate_artifacts_and_promotion_key_off_container_identity() -> None:
@@ -102,6 +124,19 @@ def test_candidate_promotion_installs_aws_cli_before_s3_upload() -> None:
     )[0]
     assert "awscli-exe-linux-x86_64.zip" in install_step
     assert "aws --version" in install_step
+
+
+def test_candidate_promotion_preserves_optional_publish_behaviour() -> None:
+    workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    assert "for attempt in 1 2 3" in workflow
+    assert "Make Quay repositories public" in workflow
+    assert "QUAY_API_TOKEN" in workflow
+    assert "/changevisibility" in workflow
+    assert workflow.count('org.opencontainers.image.title=${container}') == 2
+    assert workflow.count('org.opencontainers.image.version=${version}_${build_date}') == 2
 
 
 def test_manual_and_candidate_release_paths_share_openrecon_sync_helper() -> None:

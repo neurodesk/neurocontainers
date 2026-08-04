@@ -257,8 +257,18 @@ jobs:
               "registry.rc.nectar.org.au/ssdsorg/${legacy}"; do
               docker tag "${source}" "${destination}:${build_date}"
               docker tag "${source}" "${destination}:latest"
-              if ! docker push "${destination}:${build_date}" || \
-                 ! docker push "${destination}:latest"; then
+              published=false
+              for attempt in 1 2 3; do
+                if docker push "${destination}:${build_date}" && \
+                   docker push "${destination}:latest"; then
+                  published=true
+                  break
+                fi
+                if [ "${attempt}" -lt 3 ]; then
+                  sleep $((attempt * 30))
+                fi
+              done
+              if [ "${published}" != true ]; then
                 echo "::warning::Optional registry publish failed for ${destination}"
               fi
             done
@@ -269,6 +279,31 @@ jobs:
               docker push "${quay}:${tag}" || \
                 echo "::warning::Optional Quay publish failed for ${quay}:${tag}"
             done
+          done
+      # New Quay repositories default to private. The robot credentials used
+      # for image pushes cannot change visibility, so retain the legacy
+      # best-effort API step with the separately scoped admin token.
+      - name: Make Quay repositories public
+        env:
+          QUAY_API_TOKEN: ${{ secrets.QUAY_API_TOKEN }}
+        run: |
+          jq -r '.[].container' verified-manifests.json | sort -u | while read -r container; do
+            if [ -z "${QUAY_API_TOKEN:-}" ]; then
+              echo "::warning::QUAY_API_TOKEN is not set; cannot confirm neurodesk/${container} is public"
+              continue
+            fi
+            response="${RUNNER_TEMP}/quay-visibility-${container}.json"
+            code="$(curl -sS -o "${response}" -w '%{http_code}' -X POST \
+              -H "Authorization: Bearer ${QUAY_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d '{"visibility":"public"}' \
+              "https://quay.io/api/v1/repository/neurodesk/${container}/changevisibility" || true)"
+            if [ "${code}" = 200 ]; then
+              echo "neurodesk/${container} is public"
+            else
+              echo "::warning::Could not set neurodesk/${container} public (HTTP ${code:-request-failed})"
+              cat "${response}" 2>/dev/null || true
+            fi
           done
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
@@ -313,9 +348,13 @@ jobs:
             cp "promotion-bundle/${container}/${sif}" "${RUNNER_TEMP}/${sif}"
             cd "${RUNNER_TEMP}"
             oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
+              --annotation "org.opencontainers.image.title=${container}" \
+              --annotation "org.opencontainers.image.version=${version}_${build_date}" \
               "ghcr.io/${GH_REGISTRY}/${container}:${version}_${build_date}" \
               "${sif}:application/vnd.sylabs.sif.layer.v1.sif"
             oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
+              --annotation "org.opencontainers.image.title=${container}" \
+              --annotation "org.opencontainers.image.version=${version}_${build_date}" \
               "quay.io/neurodesk/${container}:${version}_${build_date}" \
               "${sif}:application/vnd.sylabs.sif.layer.v1.sif" || \
               echo "::warning::Optional Quay SIF attach failed for ${container}"

@@ -13,8 +13,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -80,29 +78,3 @@ jobs:
         run: |
           echo "Running full validation on all recipes..."
           ./workflows/validate_all.sh
-
-      - name: Comment on PR
-        if: failure() && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
-        continue-on-error: true
-        uses: actions/github-script@v9
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '❌ **Recipe validation failed**\n\nSome YAML recipe files in this PR have validation errors. Please check the workflow logs for details and fix the issues.\n\nThe validation is based on the schema from [neurocontainers-ui](https://github.com/neurodesk/neurocontainers-ui/blob/main/lib/zodSchema.ts).'
-            })
-
-      - name: Comment on PR success
-        if: success() && steps.changed-files.outputs.any_changed == 'true' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
-        continue-on-error: true
-        uses: actions/github-script@v9
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '✅ **Recipe validation passed**\n\nAll YAML recipe files in this PR are valid according to the schema.'
-            })

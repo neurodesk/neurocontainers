@@ -7,6 +7,7 @@ on:
 
 permissions:
   actions: read
+  contents: read
   pull-requests: write
 
 jobs:
@@ -14,13 +15,26 @@ jobs:
     if: github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-22.04
     steps:
-      # This trusted workflow only lists artifact names. It never downloads or
-      # executes fork-controlled content.
-      - name: Post testing instructions
+      # Only the compact JSON summaries are downloaded. Candidate images and
+      # logs remain untrusted data artifacts and are never opened here.
+      - name: Download compact candidate reports
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: candidate-report-*
+          path: candidate-reports
+
+      - name: Post one container approval summary
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
+            const path = require('path');
             const run = context.payload.workflow_run;
+
             let prs = run.pull_requests || [];
             if (prs.length === 0) {
               const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
@@ -38,49 +52,250 @@ jobs:
               core.warning(`Expected one PR for candidate run ${run.id}, found ${prs.length}.`);
               return;
             }
+
+            const issue_number = prs[0].number;
+            const changedFiles = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: issue_number,
+              per_page: 100,
+            });
+            const changedRecipes = [...new Set(changedFiles
+              .map(file => file.filename.match(/^recipes\/([^/]+)\/build\.yaml$/))
+              .filter(Boolean)
+              .map(match => match[1]))].sort();
+
+            // The release gate runs on every PR because it is a required check.
+            // Ordinary non-recipe PRs should not receive a container-build email.
+            if (changedRecipes.length === 0) {
+              core.info('No build.yaml changes; no container approval comment is needed.');
+              return;
+            }
+
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: run.id,
+              per_page: 100,
+            });
             const artifacts = await github.paginate(
               github.rest.actions.listWorkflowRunArtifacts,
               {owner: context.repo.owner, repo: context.repo.repo, run_id: run.id, per_page: 100}
             );
-            const names = artifacts.filter(a => a.name.startsWith('candidate-')).map(a => a.name);
+            const candidateArtifacts = artifacts
+              .filter(artifact =>
+                artifact.name.startsWith('candidate-') &&
+                !artifact.name.startsWith('candidate-report-')
+              )
+              .map(artifact => artifact.name);
+
+            const reportFiles = [];
+            const walk = directory => {
+              if (!fs.existsSync(directory)) return;
+              for (const entry of fs.readdirSync(directory, {withFileTypes: true})) {
+                const item = path.join(directory, entry.name);
+                if (entry.isDirectory()) walk(item);
+                else if (entry.name === 'candidate-report.json') reportFiles.push(item);
+              }
+            };
+            walk('candidate-reports');
+
+            const safeIdentifier = (value, fallback = 'unknown') => {
+              const text = String(value ?? '');
+              return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(text) ? text : fallback;
+            };
+            const count = value => {
+              const number = Number(value);
+              return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+            };
+            const reports = new Map();
+            for (const file of reportFiles) {
+              try {
+                const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+                const container = safeIdentifier(data.container, '');
+                const recipe = safeIdentifier(data.recipe, '');
+                const version = safeIdentifier(data.version, '');
+                const architecture = String(data.architecture || '');
+                if (
+                  data.schema_version !== 1 || !container || !recipe || !version ||
+                  !['x86_64', 'aarch64'].includes(architecture) ||
+                  typeof data.tests !== 'object' || data.tests === null
+                ) {
+                  throw new Error('unsupported or invalid candidate report schema');
+                }
+                reports.set(container, {
+                  recipe,
+                  container,
+                  version,
+                  architecture,
+                  variant: safeIdentifier(data.variant, ''),
+                  buildDate: safeIdentifier(data.build_date),
+                  dockerArchive: safeIdentifier(data.docker_archive),
+                  sif: safeIdentifier(data.sif),
+                  tests: {
+                    total: count(data.tests.total),
+                    passed: count(data.tests.passed),
+                    failed: count(data.tests.failed),
+                    skipped: count(data.tests.skipped),
+                    fulltestTotal: count(data.tests.fulltest_total),
+                    fulltestPassed: count(data.tests.fulltest_passed),
+                    suitesTotal: count(data.tests.suites_total),
+                    suitesPassed: count(data.tests.suites_passed),
+                    failedTests: Array.isArray(data.tests.failed_tests)
+                      ? data.tests.failed_tests.slice(0, 20).map(name => String(name))
+                      : [],
+                  },
+                });
+              } catch (error) {
+                core.warning(`Ignoring invalid compact report ${file}: ${error.message}`);
+              }
+            }
+
+            const icon = conclusion => ({
+              success: '✅', failure: '❌', cancelled: '❌',
+              skipped: '⏭️', neutral: '⚠️', timed_out: '❌',
+            }[conclusion] || '⏳');
+            const stepConclusion = (job, stepName) =>
+              job?.steps?.find(step => step.name === stepName)?.conclusion || 'skipped';
+            const combinedConclusion = (job, stepNames) => {
+              const conclusions = stepNames.map(name => stepConclusion(job, name));
+              return conclusions.find(value => value !== 'success') || 'success';
+            };
+            const escapeCell = value => String(value ?? '')
+              .replaceAll('\\', '\\\\')
+              .replaceAll('|', '\\|')
+              .replaceAll('`', '\\`')
+              .replaceAll('<', '&lt;')
+              .replaceAll('>', '&gt;')
+              .replaceAll('\n', ' ');
+
+            const detectJob = jobs.find(job => job.name === 'detect');
+            const detection = stepConclusion(detectJob, 'Detect recipe-only changes');
+            const validation = stepConclusion(
+              detectJob, 'Validate changed recipes and OpenRecon metadata'
+            );
+            const candidateJobs = jobs.filter(job => job.name.startsWith('candidate ('));
+            const parsedJobs = new Map();
+            for (const job of candidateJobs) {
+              const match = job.name.match(
+                /^candidate \(([A-Za-z0-9][A-Za-z0-9._-]*) \| ([A-Za-z0-9][A-Za-z0-9._-]*) \| (x86_64|aarch64)\)$/
+              );
+              if (match) parsedJobs.set(match[1], {job, version: match[2], architecture: match[3]});
+            }
+
+            const containers = [...new Set([...reports.keys(), ...parsedJobs.keys()])].sort();
+            const rows = [];
+            const failures = [];
+            for (const container of containers) {
+              const report = reports.get(container);
+              const parsed = parsedJobs.get(container);
+              const job = parsed?.job;
+              const build = combinedConclusion(job, [
+                'Stage and build candidate',
+                'Create immutable candidate files',
+              ]);
+              const tests = stepConclusion(job, 'Run deploy and fulltest checks');
+              const dive = stepConclusion(job, 'Run Dive policy check');
+              const bundle = stepConclusion(job, 'Upload candidate bundle');
+              const testSummary = report
+                ? `${icon(tests)} ${report.tests.passed}/${report.tests.total} passed` +
+                  `; fulltest ${report.tests.fulltestPassed}/${report.tests.fulltestTotal}` +
+                  `; suites ${report.tests.suitesPassed}/${report.tests.suitesTotal}`
+                : `${icon(tests)} ${tests}`;
+              rows.push([
+                report?.recipe || container,
+                container,
+                report?.version || parsed?.version || 'unknown',
+                report?.architecture || parsed?.architecture || 'unknown',
+                `${icon(build)} ${build}`,
+                testSummary,
+                `${icon(dive)} ${dive}`,
+                `${icon(bundle)} ${bundle}`,
+              ]);
+              if (report?.tests.failedTests.length) {
+                failures.push(
+                  `- \`${escapeCell(container)}\`: ` +
+                  report.tests.failedTests.map(name => `\`${escapeCell(name)}\``).join(', ')
+                );
+              }
+            }
+
+            if (rows.length === 0) {
+              for (const recipe of changedRecipes) {
+                rows.push([recipe, 'not resolved', 'unknown', 'unknown', '❌ not run', '❌ not run', '❌ not run', '❌ not uploaded']);
+              }
+            }
+
+            const passed = run.conclusion === 'success';
             const marker = '<!-- one-pr-container-candidate -->';
-            const status = run.conclusion === 'success' ? '✅ passed' : `❌ ${run.conclusion}`;
-            const list = names.length ? names.map(name => `- \`${name}\``).join('\n') : '- None';
             const body = [
               marker,
-              '## Container candidate',
+              '## Container build approval',
               '',
-              `**Status:** ${status}`,
+              `**Overall:** ${passed ? '✅ Container checks passed — ready to merge' : `❌ Container checks ${run.conclusion}`}`,
               `**Workflow:** [run ${run.run_number}](${run.html_url})`,
+              `**Tested commit:** \`${run.head_sha}\``,
               '',
-              list,
+              passed
+                ? 'The exact artifacts below passed the pre-merge gate. Nothing is published until this PR merges; promotion reuses these tested artifacts without rebuilding them.'
+                : 'Do not merge yet. Fix the failed check shown below and push an update; this comment will be updated after the next run.',
               '',
-              'Download the tested Docker archive, SIF, results, and release JSON preview:',
+              '### Required checks',
               '',
-              `\`gh run download ${run.id} --repo ${context.repo.owner}/${context.repo.repo}\``,
+              `- ${icon(detection)} Recipe-only change policy: **${detection}**`,
+              `- ${icon(validation)} Recipe and OpenRecon metadata validation: **${validation}**`,
               '',
-              'Then test a candidate interactively with:',
+              '### Containers being built',
+              '',
+              '| Recipe | Container | Version | Architecture | Image + SIF build | Deploy + fulltest | Dive | Candidate bundle |',
+              '| --- | --- | --- | --- | --- | --- | --- | --- |',
+              ...rows.map(row => `| ${row.map(escapeCell).join(' | ')} |`),
+              ...(failures.length ? ['', '### Failed tests', '', ...failures] : []),
+              '',
+              '### What happens after merge',
+              '',
+              '- Docker images: GHCR legacy and versioned repositories, Quay, Docker Hub, and the Nectar registry.',
+              '- SIF images: AWS S3 and Nectar Object Storage, plus OCI attachments on GHCR and Quay.',
+              '- Metadata: the generated release JSON is committed to `main`, which triggers the apps/webapps updates; eligible default x86_64 recipes also sync to OpenRecon.',
+              '',
+              '<details><summary>Download or test the exact candidates</summary>',
+              '',
+              ...(candidateArtifacts.length
+                ? candidateArtifacts.map(name => `- \`${escapeCell(name)}\``)
+                : ['- No candidate bundle was produced.']),
+              '',
+              `\`gh run download ${run.id} --repo ${context.repo.owner}/${context.repo.repo} --pattern 'candidate-*'\``,
               '',
               '`apptainer shell candidate-*/*.simg`',
               '',
-              'Or load its exact Docker image with:',
-              '',
               '`docker load --input candidate-*/*.docker.tar`',
               '',
-              'Nothing is published until this PR merges.',
+              '</details>',
+              '',
+              '_This is the only automated build comment; it is updated in place when the PR changes._',
             ].join('\n');
-            const issue_number = prs[0].number;
+
             const comments = await github.paginate(github.rest.issues.listComments, {
-              owner: context.repo.owner, repo: context.repo.repo, issue_number, per_page: 100,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              per_page: 100,
             });
-            const existing = comments.find(c => c.user.type === 'Bot' && c.body.includes(marker));
+            const existing = comments.find(comment =>
+              comment.user.type === 'Bot' && comment.body.includes(marker)
+            );
             if (existing) {
               await github.rest.issues.updateComment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                comment_id: existing.id, body,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
               });
             } else {
               await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo, issue_number, body,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body,
               });
             }

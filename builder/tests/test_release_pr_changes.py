@@ -120,6 +120,24 @@ def test_release_metadata_can_be_paired_with_fulltest_yaml(tmp_path: Path) -> No
     ]
 
 
+def test_candidate_build_owns_fulltest_and_avoids_legacy_pr_comments(
+    tmp_path: Path,
+) -> None:
+    """A build PR tests its new image once in the candidate gate."""
+    write_release(tmp_path, "cat12", "26.0.rc3", build_date="20260521")
+
+    result = detect_release_pr_changes(
+        [
+            "recipes/cat12/build.yaml",
+            "recipes/cat12/fulltest.yaml",
+        ],
+        repo_root=tmp_path,
+    )
+
+    assert result.has_changes is False
+    assert result.matrix() == []
+
+
 def test_release_metadata_still_must_be_isolated_from_unrelated_files(tmp_path: Path) -> None:
     with pytest.raises(ReleaseChangeError) as exc_info:
         detect_release_pr_changes(

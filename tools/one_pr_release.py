@@ -46,6 +46,7 @@ CANDIDATE_MANIFEST_FIELDS = (
     "head_sha",
     "recipe_fingerprint",
 )
+CANDIDATE_REPORT_SCHEMA_VERSION = 1
 
 
 def run_git(*args: str) -> str:
@@ -231,12 +232,17 @@ def detect_targets(recipes: list[str]) -> list[dict[str, str]]:
     """Expand changed recipes into the concrete containers they now declare."""
     targets = []
     for recipe in recipes:
-        for spec in concrete_variant_specs(load_recipe(recipe)):
+        data = load_recipe(recipe)
+        version = str(data.get("version", ""))
+        if not VERSION_PATTERN.fullmatch(version):
+            raise RuntimeError(f"Recipe {recipe} has an invalid version {version!r}")
+        for spec in concrete_variant_specs(data):
             targets.append(
                 {
                     "recipe": recipe,
                     "variant": str(spec["variant"]),
                     "architecture": str(spec["architecture"]),
+                    "version": version,
                     # The identity becomes an artifact name and a build path, so
                     # it is checked here rather than only at promotion time.
                     "container": validate_recipe_identifier(str(spec["name"])),
@@ -292,6 +298,92 @@ def command_manifest(args: argparse.Namespace) -> None:
     }
     (candidate_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def _result_count(data: dict[str, Any], field: str) -> int:
+    """Read a non-negative integer count from test result JSON."""
+    value = data.get(field, 0)
+    if isinstance(value, bool):
+        raise RuntimeError(f"Invalid candidate test result {field}: {value!r}")
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(
+            f"Invalid candidate test result {field}: {value!r}"
+        ) from error
+    if result < 0:
+        raise RuntimeError(f"Invalid candidate test result {field}: {value!r}")
+    return result
+
+
+def build_candidate_report(candidate_dir: Path) -> dict[str, Any]:
+    """Build the compact, data-only report consumed by the trusted PR reporter."""
+    manifest = load_candidate_manifest(candidate_dir)
+    results_path = candidate_dir / "test-results.json"
+    try:
+        results = json.loads(results_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            f"Unable to read candidate test results {results_path}: {error}"
+        ) from error
+    if not isinstance(results, dict):
+        raise RuntimeError(f"Candidate test results must be a JSON object: {results_path}")
+
+    total = _result_count(results, "total_tests")
+    passed = _result_count(results, "passed")
+    failed = _result_count(results, "failed")
+    skipped = _result_count(results, "skipped")
+    if passed + failed + skipped != total:
+        raise RuntimeError(
+            "Candidate test result counts do not add up: "
+            f"passed {passed}, failed {failed}, skipped {skipped}, total {total}"
+        )
+
+    fulltest = results.get("fulltest_summary", {}) or {}
+    if not isinstance(fulltest, dict):
+        raise RuntimeError("Candidate fulltest_summary must be a JSON object")
+
+    failed_tests = []
+    test_results = results.get("test_results", []) or []
+    if not isinstance(test_results, list):
+        raise RuntimeError("Candidate test_results must be a JSON array")
+    for test in test_results:
+        if not isinstance(test, dict) or test.get("status") != "failed":
+            continue
+        failed_tests.append(str(test.get("name", "unnamed")))
+
+    return {
+        "schema_version": CANDIDATE_REPORT_SCHEMA_VERSION,
+        "recipe": manifest["recipe"],
+        "container": manifest["container"],
+        "variant": manifest["variant"],
+        "architecture": manifest["architecture"],
+        "version": manifest["version"],
+        "build_date": manifest["build_date"],
+        "docker_archive": manifest["docker_archive"],
+        "sif": manifest["sif"],
+        "tests": {
+            "total": total,
+            "passed": passed,
+            "failed": failed,
+            "skipped": skipped,
+            "fulltest_total": _result_count(fulltest, "total_tests"),
+            "fulltest_passed": _result_count(fulltest, "tests_passed"),
+            "fulltest_failed": _result_count(fulltest, "tests_failed"),
+            "suites_total": _result_count(fulltest, "total_suites"),
+            "suites_passed": _result_count(fulltest, "suites_passed"),
+            "failed_tests": failed_tests,
+        },
+    }
+
+
+def command_report(args: argparse.Namespace) -> None:
+    """Write a compact candidate report without copying test logs into a PR comment."""
+    candidate_dir = Path(args.candidate_dir)
+    report = build_candidate_report(candidate_dir)
+    (candidate_dir / "candidate-report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
     )
 
 
@@ -477,6 +569,10 @@ def parser() -> argparse.ArgumentParser:
     manifest.add_argument("--pr-number", required=True, type=int)
     manifest.add_argument("--candidate-dir", required=True)
     manifest.set_defaults(func=command_manifest)
+
+    report = subparsers.add_parser("report")
+    report.add_argument("--candidate-dir", required=True)
+    report.set_defaults(func=command_report)
 
     verify = subparsers.add_parser("verify")
     verify.add_argument("--bundle", required=True)
