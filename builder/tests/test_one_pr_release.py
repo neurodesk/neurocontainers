@@ -183,13 +183,11 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     recipe_dir = write_recipe(tmp_path)
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
 
-    def build_date_for_head(recipe: str, revision: str = "HEAD") -> str:
-        """Return the deterministic fixture date for the expected PR head."""
-        assert recipe == "demo"
-        assert revision == "abc123"
-        return "20260721"
+    def unexpected_build_date(*args: object, **kwargs: object) -> str:
+        """Promotion must not require a squash-merged PR head in local Git."""
+        raise AssertionError("promotion tried to inspect the missing PR commit")
 
-    monkeypatch.setattr(one_pr_release, "build_date", build_date_for_head)
+    monkeypatch.setattr(one_pr_release, "build_date", unexpected_build_date)
     candidate_dir = tmp_path / "bundle" / "demo"
     candidate_dir.mkdir(parents=True)
     docker_archive = candidate_dir / "demo_1.2.3_20260721.docker.tar"
@@ -247,6 +245,18 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
         raise AssertionError("tampered candidate tag was accepted")
     manifest["candidate_tag"] = "nd-candidate-demo:abc123"
 
+    manifest["build_date"] = "2026-07-21"
+    (candidate_dir / "manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    try:
+        one_pr_release.verify_candidate(candidate_dir, "abc123", 42)
+    except RuntimeError as error:
+        assert "Invalid build date" in str(error)
+    else:
+        raise AssertionError("unsafe candidate build date was accepted")
+    manifest["build_date"] = "20260721"
+
     manifest["docker_archive"] = "../outside.docker.tar"
     (candidate_dir / "manifest.json").write_text(
         json.dumps(manifest), encoding="utf-8"
@@ -296,9 +306,6 @@ def test_verify_candidate_rejects_a_variant_the_recipe_does_not_declare(
     """A candidate cannot invent a container identity to promote itself into."""
     write_recipe(tmp_path)
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(
-        one_pr_release, "build_date", lambda recipe, revision="HEAD": "20260721"
-    )
     candidate_dir = tmp_path / "bundle" / "demo_gpu"
     candidate_dir.mkdir(parents=True)
     manifest = {

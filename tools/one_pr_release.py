@@ -26,6 +26,7 @@ from builder.variants import concrete_variant_specs
 
 REPO_ROOT = SCRIPT_REPO_ROOT
 VERSION_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+BUILD_DATE_PATTERN = re.compile(r"^[0-9]{8}$")
 RECIPE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 CANDIDATE_MANIFEST_FIELDS = (
     "recipe",
@@ -174,7 +175,12 @@ def resolve_variant(recipe: str, variant: str) -> dict[str, Any]:
     )
 
 
-def inspect_recipe(recipe: str, head_sha: str, variant: str = "") -> dict[str, str]:
+def inspect_recipe(
+    recipe: str,
+    head_sha: str,
+    variant: str = "",
+    candidate_build_date: str | None = None,
+) -> dict[str, str]:
     """Derive safe candidate names and release identifiers for a recipe variant."""
     data = load_recipe(recipe)
     if "version" not in data:
@@ -187,7 +193,13 @@ def inspect_recipe(recipe: str, head_sha: str, variant: str = "") -> dict[str, s
         )
     spec = resolve_variant(recipe, variant)
     container = validate_recipe_identifier(str(spec["name"]))
-    date = build_date(recipe, head_sha)
+    date = (
+        candidate_build_date
+        if candidate_build_date is not None
+        else build_date(recipe, head_sha)
+    )
+    if not isinstance(date, str) or not BUILD_DATE_PATTERN.fullmatch(date):
+        raise RuntimeError(f"Invalid build date for {container}: {date!r}")
     image_name = f"{container}_{version}"
     return {
         "recipe": recipe,
@@ -333,7 +345,18 @@ def verify_candidate(
     # Resolving the selector against the merged recipe is what stops a candidate
     # from inventing a container identity and promoting itself into an
     # unrelated releases/ directory.
-    expected_info = inspect_recipe(recipe, expected_head_sha, variant)
+    # A squash merge deliberately leaves the PR head outside main's history.
+    # The candidate job derived this date from that exact head before packaging;
+    # promotion binds the manifest back to the event head, PR, merged recipe
+    # fingerprint, artifact names, release JSON, and artifact checksums below.
+    # Reusing the validated candidate date avoids fetching PR-authored Git
+    # objects into this privileged pull_request_target job.
+    expected_info = inspect_recipe(
+        recipe,
+        expected_head_sha,
+        variant,
+        manifest.get("build_date"),
+    )
     container = expected_info["container"]
     if candidate_dir.name != container:
         raise RuntimeError(f"Candidate directory does not match container {container}")
