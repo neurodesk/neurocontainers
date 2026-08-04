@@ -13,10 +13,10 @@ on:
   # community recipe PR reached the publish steps with empty credentials and
   # could never promote.
   #
-  # This is only safe because no step executes PR-authored *code*: the checkout
-  # pins `ref: main`, and the one place a PR ref is touched ("Verify provenance")
-  # fetches it to compare SHAs and never checks it out. Do not add a step that
-  # checks out or runs PR-authored content.
+  # This is only safe because no step checks out or executes PR-authored *code*:
+  # the checkout pins `ref: main`, candidate lookup binds artifacts to the event's
+  # exact head SHA, and verification compares them with the merged recipe. Do not
+  # add a step that fetches, checks out, or runs the pull request's head ref.
   #
   # Note the limit of that claim. The candidate bundle is still fork-produced
   # *data*: it is unzipped, `docker load`ed, and published under official names.
@@ -132,13 +132,11 @@ jobs:
             unzip -q artifact.zip -d "promotion-bundle/${container}"
             rm artifact.zip
           done
-      - name: Verify provenance, merged recipes, and checksums
+      - name: Verify candidate against merged recipes and checksums
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          git fetch origin "refs/pull/${PR_NUMBER}/head"
-          test "$(git rev-parse FETCH_HEAD)" = "${HEAD_SHA}"
           python tools/one_pr_release.py verify --bundle promotion-bundle \
             --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}" \
             --output verified-manifests.json
@@ -293,3 +291,15 @@ jobs:
           done
           echo "::error::Release metadata push failed after three attempts; artifacts are already published."
           exit 1
+      - name: Sync OpenRecon metadata
+        env:
+          GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          jq -c '.[] | select(.architecture == "x86_64" and .variant == "")' \
+            verified-manifests.json | while IFS= read -r manifest; do
+              recipe="$(echo "${manifest}" | jq -r '.recipe')"
+              version="$(echo "${manifest}" | jq -r '.version')"
+              python tools/sync_openrecon.py --recipe "${recipe}" --version "${version}"
+            done

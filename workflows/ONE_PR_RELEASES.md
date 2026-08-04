@@ -23,6 +23,8 @@ artifacts after merge. They no longer create a second release-metadata PR.
    candidate cannot promote itself into an identity the recipe never declared.
 6. The promoter commits the generated JSON to `releases/` on `main`. That push
    triggers the existing apps/webapps update workflows.
+7. For each default x86_64 candidate with an `OpenReconLabel.json`, the promoter
+   opens or reuses an OpenRecon metadata PR after the release metadata push.
 
 Manual builds remain available as a recovery path. The old push-to-main
 `auto-build` workflow is removed so recipe changes cannot start an untested

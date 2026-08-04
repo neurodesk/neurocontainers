@@ -448,6 +448,8 @@ def test_one_pr_workflows_preserve_fork_reporting_contract() -> None:
 
     assert "item.head_sha === pr.head.sha" in promotion
     assert "item.pull_requests" not in promotion
+    assert "refs/pull/" not in promotion
+    assert "FETCH_HEAD" not in promotion
     assert "listPullRequestsAssociatedWithCommit" in reporter
     assert "if (prs.length === 0) return" not in reporter
     assert "].join('\\n');" in reporter
