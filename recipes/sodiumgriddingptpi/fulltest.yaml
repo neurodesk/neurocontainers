@@ -2,7 +2,7 @@
 # Focused verification for the OpenRecon runtime, pTPI assets, and gridding dependencies.
 
 name: sodiumgriddingptpi
-version: 0.1.9
+version: 0.1.10
 
 test_data:
   output_dir: test_output
