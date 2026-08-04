@@ -75,6 +75,22 @@ def test_candidate_promotion_syncs_openrecon_from_verified_manifests() -> None:
     assert 'python tools/sync_openrecon.py --recipe "${recipe}" --version "${version}"' in sync_body
 
 
+def test_candidate_promotion_uses_trusted_main_oidc_identity() -> None:
+    """Promotion resolves a main push to the tested PR head before publishing."""
+    workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    assert "  push:\n    branches: [main]" in workflow
+    assert "  workflow_dispatch:" in workflow
+    assert "pull_request_target:" not in workflow
+    assert "listPullRequestsAssociatedWithCommit" in workflow
+    assert "item.merge_commit_sha === context.sha" in workflow
+    assert "if: needs.resolve.outputs.should_promote == 'true'" in workflow
+    assert "HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}" in workflow
+    assert "PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}" in workflow
+
+
 def test_manual_and_candidate_release_paths_share_openrecon_sync_helper() -> None:
     build_workflow = Path(".github/workflows/build-app.yml").read_text()
     promote_workflow = Path(
