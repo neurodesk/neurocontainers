@@ -70,5 +70,9 @@ readme: |-
   Build and validate:
   ```bash
   python -m builder test blochsiegertb1mapping --recreate --build --architecture x86_64
+  # or
+  sf-build blochsiegertb1mapping --architecture x86_64
+  sf-login blochsiegertb1mapping --architecture x86_64
+
   ```
   ----------------------------------
