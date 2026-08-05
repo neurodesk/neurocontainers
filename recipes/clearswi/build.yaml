@@ -13,6 +13,16 @@ variables:
   julia_series: "1.12"
   julia_root: /opt/julia-1.12.6
   tgv_version: 0.5.0
+  packagecompiler_version: 2.4.0
+  # Julia caches package loading, but not the specialisation of calculateSWI for
+  # concrete argument types, so every process paid ~40 s of JIT before doing ~1 s
+  # of work. The sysimage below bakes that compilation into the image once.
+  #
+  # The build machine is not the run machine: these containers ship to CVMFS and
+  # run on whatever CPU the site has. PackageCompiler defaults to a native target,
+  # which would produce an image that is illegal on older hardware, so pin the
+  # same multiversioned target Julia uses for its own x86_64 binaries.
+  sysimage_cpu_target: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1);x86-64-v4,-rdrnd,base(1)"
 
 build:
   kind: neurodocker
@@ -25,6 +35,8 @@ build:
 
     - install:
         - ca-certificates
+        # PackageCompiler links the sysimage with the system C toolchain.
+        - build-essential
 
     - workdir: /opt
 
@@ -45,6 +57,21 @@ build:
     - run:
         - julia /opt/install_packages.jl
 
+    - copy:
+        - precompile_workload.jl
+        - /opt/precompile_workload.jl
+
+    - copy:
+        - build_sysimage.jl
+        - /opt/build_sysimage.jl
+
+    # Kept in a script rather than julia -e because neurodocker backslash
+    # escapes parentheses when it records the run command into
+    # /.reproenv.json, which leaves invalid JSON behind in the image.
+    - run:
+        - julia --startup-file=no /opt/build_sysimage.jl
+        - rm -f /opt/build_sysimage.jl /opt/precompile_workload.jl
+
     # The Julia entry script is named "clearswi" (no extension) because ArgParse
     # derives the program name in its usage output from basename(PROGRAM_FILE);
     # naming it clearswi_main.jl makes the help text advertise the wrong command.
@@ -57,11 +84,11 @@ build:
         - /opt/clearswi/bin/clearswi
 
     # The home directory is not available at container runtime and the image is
-    # mounted read-only, so the depot has to be world-readable and fully
-    # precompiled at build time.
+    # mounted read-only, so the depot and the sysimage have to be world-readable
+    # and fully precompiled at build time.
     - run:
         - chmod a+rx /opt/clearswi/bin/clearswi
-        - chmod -R a+rX /opt/julia_depot /opt/clearswi
+        - chmod -R a+rX /opt/julia_depot /opt/clearswi {{ context.julia_root }}
 
 deploy:
   path:
@@ -84,10 +111,108 @@ files:
           PackageSpec(name="CLEARSWI", version="{{ context.version }}"),
           PackageSpec(name="ArgParse"),
           PackageSpec(name="QuantitativeSusceptibilityMappingTGV", version="{{ context.tgv_version }}"),
+          PackageSpec(name="PackageCompiler", version="{{ context.packagecompiler_version }}"),
       ])
       Pkg.precompile()
       # Warm the cache for the launcher's exact load sequence.
       using CLEARSWI, QuantitativeSusceptibilityMappingTGV, ArgParse
+
+  - name: build_sysimage.jl
+    contents: |
+      using PackageCompiler
+
+      # Overwriting the interpreter's own sysimage is what lets both the clearswi
+      # launcher and a bare `julia` invocation pick this up without a -J flag or
+      # a PATH shim. PackageCompiler 2.x dropped the replace_default option that
+      # used to do this, so stage the image and rename it into place.
+      #
+      # Renaming is safe from inside the running interpreter: rename(2) only
+      # swaps the directory entry, so this process keeps the inode it already has
+      # mapped and every later process gets the new file. Writing over the path
+      # directly would corrupt the interpreter doing the writing.
+      #
+      # Listing the packages alone would only capture their own precompile
+      # statements; the workload file is what gets calculateSWI and the command
+      # line path compiled in.
+      staged = "/opt/sys_clearswi.so"
+      default_sysimage = unsafe_string(Base.JLOptions().image_file)
+
+      # include_transitive_dependencies has to be false. With the default, every
+      # package in the dependency graph is baked in and its __init__ then runs on
+      # every Julia start. FFTW depends on MKL_jll, which nothing here ever loads
+      # because FFTW uses its own provider, and whose artifact is marked lazy and
+      # so is not in the depot. Baking it in made MKL_jll.__init__ demand a 539 MB
+      # download during jl_init, which aborts the interpreter on any machine
+      # without network access. Loading only the three named packages pulls in
+      # exactly what the runtime pulls in, so what is used is still included.
+      create_sysimage(
+          ["CLEARSWI", "QuantitativeSusceptibilityMappingTGV", "ArgParse"];
+          sysimage_path=staged,
+          precompile_execution_file="/opt/precompile_workload.jl",
+          cpu_target="{{ context.sysimage_cpu_target }}",
+          include_transitive_dependencies=false,
+      )
+
+      mv(staged, default_sysimage; force=true)
+
+  # Traced by PackageCompiler to decide what native code goes into the sysimage.
+  # Anything not exercised here still gets JIT compiled on first use at runtime,
+  # so this deliberately walks every option branch the container advertises.
+  - name: precompile_workload.jl
+    contents: |
+      using CLEARSWI, QuantitativeSusceptibilityMappingTGV, ArgParse
+
+      d = CLEARSWI.dir("test", "data", "small")
+      out = mktempdir()
+      mkpath(joinpath(out, "steps"))
+
+      mag = readmag(joinpath(d, "Mag.nii"))
+      phase = readphase(joinpath(d, "Phase.nii"))
+      data = Data(mag, phase, mag.header, [4, 8, 12])
+
+      for opt in (
+          Options(),
+          Options(mag_combine=:average),
+          Options(mag_combine=:last),
+          Options(mag_combine=(:echo => 2)),
+          Options(mag_combine=(:closest => 8)),
+          Options(mag_softplus=false),
+          Options(mag_sens=[1]),
+          Options(phase_unwrap=:romeo),
+          Options(phase_unwrap=:laplacianslice),
+          Options(phase_hp_sigma=[10, 10, 5]),
+          Options(phase_scaling_type=:positive),
+          Options(phase_scaling_type=:negative),
+          Options(phase_scaling_type=:triangular),
+          Options(phase_scaling_strength=2),
+          Options(writesteps=joinpath(out, "steps")),
+      )
+          swi = calculateSWI(data, opt)
+          createMIP(swi)
+          createMIP(swi, 5)
+          createIntensityProjection(swi, maximum)
+          savenii(swi, joinpath(out, "swi.nii"); header=mag.header)
+      end
+
+      # Single and dual echo dispatch to different specialisations than the
+      # three echo case above.
+      calculateSWI(Data(mag[:, :, :, 1], phase[:, :, :, 1], mag.header, [4]))
+      calculateSWI(Data(mag[:, :, :, 1:2], phase[:, :, :, 1:2], mag.header, [4, 8]))
+
+      # The command line path: argument parsing, and --qsm, which reaches TGV
+      # through the MriResearchTools package extension.
+      magfile = joinpath(d, "Mag.nii")
+      phasefile = joinpath(d, "Phase.nii")
+      clearswi_main(["-m", magfile, "-p", phasefile, "-t", "[4,8,12]",
+                     "-o", joinpath(out, "cli.nii")])
+      clearswi_main(["-m", magfile, "-p", phasefile, "-t", "[4,8,12]", "--qsm",
+                     "-o", joinpath(out, "qsm.nii")])
+
+      # Keep the help paths last. ArgParse exits the process after printing
+      # usage when it is not running interactively, which would truncate the
+      # trace for anything placed below.
+      clearswi_main(String[])
+      clearswi_main(["--help"])
 
   - name: clearswi_main
     contents: |
