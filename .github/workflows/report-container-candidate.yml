@@ -61,14 +61,14 @@ jobs:
               per_page: 100,
             });
             const changedRecipes = [...new Set(changedFiles
-              .map(file => file.filename.match(/^recipes\/([^/]+)\/build\.yaml$/))
+              .map(file => file.filename.match(/^recipes\/([^/]+)\//))
               .filter(Boolean)
               .map(match => match[1]))].sort();
 
             // The release gate runs on every PR because it is a required check.
             // Ordinary non-recipe PRs should not receive a container-build email.
             if (changedRecipes.length === 0) {
-              core.info('No build.yaml changes; no container approval comment is needed.');
+              core.info('No recipe build candidates; no container approval comment is needed.');
               return;
             }
 
@@ -88,6 +88,11 @@ jobs:
                 !artifact.name.startsWith('candidate-report-')
               )
               .map(artifact => artifact.name);
+            const candidateJobs = jobs.filter(job => job.name.startsWith('candidate ('));
+            if (candidateJobs.length === 0 && run.conclusion === 'success') {
+              core.info('The trusted release planner classified the recipe changes as source-only.');
+              return;
+            }
 
             const reportFiles = [];
             const walk = directory => {
@@ -174,7 +179,6 @@ jobs:
             const validation = stepConclusion(
               detectJob, 'Validate changed recipes and OpenRecon metadata'
             );
-            const candidateJobs = jobs.filter(job => job.name.startsWith('candidate ('));
             const parsedJobs = new Map();
             for (const job of candidateJobs) {
               const match = job.name.match(

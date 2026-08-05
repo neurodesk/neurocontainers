@@ -20,7 +20,9 @@ artifacts after merge. They no longer create a second release-metadata PR.
    only compact, schema-checked JSON summaries; it never opens candidate images
    or test logs.
 4. `Container release gate` is the stable required check for branch rules.
-5. After merge, `Promote merged container candidate` selects the successful run
+5. After merge, `Promote merged container candidate` runs the same trusted
+   release planner over the merge commit. It exits successfully when no
+   candidate was required; otherwise it selects the successful run
    for the exact PR head SHA. It verifies the PR number, recipe fingerprint,
    artifact hashes, and release metadata before publishing the tested files.
    The variant a candidate claims is re-resolved against the merged recipe, so a
@@ -49,6 +51,22 @@ second build.
   token to preserve anonymous pulls after the first push.
 - Keep ARC runners ephemeral. Fork approval remains the point where maintainers
   decide whether untrusted recipe build commands may run.
+
+## Release planning
+
+The planner reads the base and head `build.yaml` files as YAML data. It does not
+render Jinja or execute any code from the pull request. Changes that affect only
+`auto_update`, semantically unchanged YAML, or `fulltest.yaml` are currently
+classified as source-only: they are validated, but the existing container is
+preserved and no candidate is built or promoted. This is a behavioural release
+projection, not a claim that rebuilding would produce byte-identical images;
+the current image still embeds the raw `build.yaml` and README.
+
+Every other recipe definition change is deliberately fail-closed and requires
+a candidate. A changed recipe-local file such as `install.sh` also requires a
+candidate even when `build.yaml` itself is unchanged. The explicit top-level
+field policy is checked against the accepted recipe schema so adding a field
+cannot silently broaden the source-only tier.
 
 Registry and object-storage credentials are the same secrets used by the legacy
 build workflow. GHCR and S3 are release-critical; Docker Hub, Nectar, and Quay

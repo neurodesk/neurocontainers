@@ -24,6 +24,8 @@ jobs:
     outputs:
       recipes: ${{ steps.detect.outputs.recipes }}
       targets: ${{ steps.detect.outputs.targets }}
+      changed_recipes: ${{ steps.detect.outputs.changed_recipes }}
+      source_only_recipes: ${{ steps.detect.outputs.source_only_recipes }}
     steps:
       # Run detection from the trusted base revision. A fork cannot change the
       # policy script before it decides that the PR is recipe-only.
@@ -59,10 +61,15 @@ jobs:
           python ../trusted/tools/one_pr_release.py --repo-root . detect \
             --base "${BASE_SHA}" --head "${HEAD_SHA}"
       - name: Validate changed recipes and OpenRecon metadata
-        if: steps.detect.outputs.recipes != '[]'
+        # During the rollout PR, trusted base code does not emit the new output
+        # yet. Treat a missing output as no work so this workflow can land before
+        # later PRs start relying on the planner from main.
+        if: >-
+          steps.detect.outputs.changed_recipes != '' &&
+          steps.detect.outputs.changed_recipes != '[]'
         working-directory: source
         env:
-          RECIPES: ${{ steps.detect.outputs.recipes }}
+          RECIPES: ${{ steps.detect.outputs.changed_recipes }}
         run: |
           python workflows/validate_openrecon_labels.py
           python - <<'PY'
@@ -267,7 +274,7 @@ jobs:
         run: |
           test "${DETECT_RESULT}" = success
           if [ "${RECIPES}" = "[]" ]; then
-            echo "No recipe changes in this pull request; nothing to build."
+            echo "The release planner requires no candidate builds for this pull request."
             exit 0
           fi
           test "${CANDIDATE_RESULT}" = success
