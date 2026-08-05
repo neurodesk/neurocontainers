@@ -61,7 +61,12 @@ jobs:
           python ../trusted/tools/one_pr_release.py --repo-root . detect \
             --base "${BASE_SHA}" --head "${HEAD_SHA}"
       - name: Validate changed recipes and OpenRecon metadata
-        if: steps.detect.outputs.changed_recipes != '[]'
+        # During the rollout PR, trusted base code does not emit the new output
+        # yet. Treat a missing output as no work so this workflow can land before
+        # later PRs start relying on the planner from main.
+        if: >-
+          steps.detect.outputs.changed_recipes != '' &&
+          steps.detect.outputs.changed_recipes != '[]'
         working-directory: source
         env:
           RECIPES: ${{ steps.detect.outputs.changed_recipes }}

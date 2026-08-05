@@ -125,6 +125,7 @@ def test_pr_and_postmerge_workflows_share_the_release_planner() -> None:
     planner = "python tools/one_pr_release.py --repo-root . detect"
     assert "../trusted/tools/one_pr_release.py --repo-root . detect" in candidate
     assert planner in promotion
+    assert "steps.detect.outputs.changed_recipes != ''" in candidate
     assert 'steps.detect.outputs.changed_recipes != \'[]\'' in candidate
     assert 'RECIPES: ${{ steps.detect.outputs.changed_recipes }}' in candidate
     assert '- "recipes/**"' in promotion
