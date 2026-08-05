@@ -12,6 +12,7 @@ variables:
   julia_version: 1.12.6
   julia_series: "1.12"
   julia_root: /opt/julia-1.12.6
+  tgv_version: 0.5.0
 
 build:
   kind: neurodocker
@@ -75,19 +76,25 @@ files:
   - name: install_packages.jl
     contents: |
       using Pkg
-      # ArgParse is a dependency of CLEARSWI, but the launcher loads it by name,
-      # so it also has to be a direct dependency of this environment.
+      # ArgParse and QuantitativeSusceptibilityMappingTGV are loaded by name in
+      # the launcher, so both have to be direct dependencies of this environment.
+      # TGV backs the --qsm option: MriResearchTools dispatches to it through a
+      # package extension, which only activates once the package is loaded.
       Pkg.add([
           PackageSpec(name="CLEARSWI", version="{{ context.version }}"),
           PackageSpec(name="ArgParse"),
+          PackageSpec(name="QuantitativeSusceptibilityMappingTGV", version="{{ context.tgv_version }}"),
       ])
       Pkg.precompile()
       # Warm the cache for the launcher's exact load sequence.
-      using CLEARSWI, ArgParse
+      using CLEARSWI, QuantitativeSusceptibilityMappingTGV, ArgParse
 
   - name: clearswi_main
     contents: |
-      using CLEARSWI, ArgParse
+      # Same load sequence as upstream's clearswi.jl. Dropping the TGV import
+      # makes --qsm fail with "no method matching copy(::Nothing)", because
+      # MriResearchTools falls back to a stub when the extension is not active.
+      using CLEARSWI, QuantitativeSusceptibilityMappingTGV, ArgParse
       msg = clearswi_main(ARGS)
       if msg !== nothing
           println(msg)

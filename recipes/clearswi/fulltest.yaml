@@ -30,6 +30,13 @@ setup:
     mkdir -p ${output_dir}
     mkdir -p ${output_dir}/steps
     mkdir -p ${output_dir}/options
+    mkdir -p ${output_dir}/cli
+    # Resolve the packaged test data once. The depot path contains a package
+    # hash that changes on every rebuild, so it cannot be hardcoded, and asking
+    # Julia for it costs a full interpreter start that the CLI tests should not
+    # each pay for.
+    julia --startup-file=no -e 'using CLEARSWI; print(CLEARSWI.dir("test","data","small"))' \
+      > ${output_dir}/datadir
 
 tests:
   # ==========================================================================
@@ -40,8 +47,7 @@ tests:
     command: command -v clearswi
     expected_output_contains: "clearswi"
 
-  # CLEARSWI prints its usage when invoked with no arguments; it has no --help.
-  - name: clearswi command line help
+  - name: clearswi usage without arguments
     description: Verify the CLI entrypoint runs and reports its arguments
     command: clearswi
     expected_output_contains:
@@ -49,6 +55,23 @@ tests:
       - "--magnitude"
       - "--phase"
       - "--echo-times"
+
+  - name: clearswi help flags
+    description: Verify both -h and --help produce the usage text
+    command: |
+      clearswi -h
+      clearswi --help
+    expected_output_contains:
+      - "usage: clearswi"
+      - "--unwrapping-algorithm"
+      - "--phase-scaling-type"
+
+  # The CLI reports "Unspecified version" rather than the package version, so
+  # this asserts only that the flag is accepted and exits cleanly.
+  - name: clearswi version flag
+    description: Verify --version is accepted
+    command: clearswi --version && echo "version flag ok"
+    expected_output_contains: "version flag ok"
 
   - name: Julia version check
     description: Verify Julia is available and reports correct version
@@ -887,6 +910,225 @@ tests:
     command: |
       julia -e 'using CLEARSWI; try readmag("/nonexistent/file.nii"); catch e; println("Error caught: ", typeof(e)); end'
     expected_output_contains: "Error caught:"
+
+  # ==========================================================================
+  # COMMAND LINE INTERFACE
+  #
+  # The Julia API tests above cover the algorithms. This section covers the
+  # other way of running the container: the `clearswi` program exposed through
+  # deploy.path. Each case exercises one flag's parsing and argument plumbing
+  # and asserts that an output volume was actually written.
+  #
+  # Every test resolves the packaged data through ${output_dir}/datadir, which
+  # setup wrote once.
+  # ==========================================================================
+  - name: CLI basic run
+    description: Minimal multi-echo invocation with explicit echo times
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" -o ${output_dir}/cli/basic.nii
+    validate:
+      - output_exists: ${output_dir}/cli/basic.nii
+
+  - name: CLI echo times in range syntax
+    description: Echo times given as start:step:stop instead of an array
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "4:4:12" -o ${output_dir}/cli/range_te.nii
+    validate:
+      - output_exists: ${output_dir}/cli/range_te.nii
+
+  - name: CLI mip slices
+    description: -s controls the number of slices in the MIP
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" -s 5 -o ${output_dir}/cli/mip5.nii
+    validate:
+      - output_exists: ${output_dir}/cli/mip5.nii
+
+  # Echo selection needs array syntax. Space separated values such as -e 1 2 are
+  # parsed with Meta.parse on the joined string and fail upstream.
+  - name: CLI echo subset
+    description: -e loads only the requested echoes from disk
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" -e "[1,2]" -o ${output_dir}/cli/echoes.nii
+    validate:
+      - output_exists: ${output_dir}/cli/echoes.nii
+
+  - name: CLI single echo
+    description: Single echo input through the command line
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" -e "1" -o ${output_dir}/cli/single_echo.nii
+    validate:
+      - output_exists: ${output_dir}/cli/single_echo.nii
+
+  - name: CLI verbose
+    description: -v produces progress output and still writes the volume
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" -v -o ${output_dir}/cli/verbose.nii
+    validate:
+      - output_exists: ${output_dir}/cli/verbose.nii
+
+  - name: CLI no memory mapping
+    description: -N disables mmap, which matters on network storage
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" -N -o ${output_dir}/cli/no_mmap.nii
+    validate:
+      - output_exists: ${output_dir}/cli/no_mmap.nii
+
+  - name: CLI no phase rescale
+    description: --no-phase-rescale skips rescaling the input phase
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --no-phase-rescale -o ${output_dir}/cli/no_rescale.nii
+    validate:
+      - output_exists: ${output_dir}/cli/no_rescale.nii
+
+  - name: CLI fix GE phase
+    description: --fix-ge-phase corrects the slice jumps GE systems write
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --fix-ge-phase -o ${output_dir}/cli/ge_phase.nii
+    validate:
+      - output_exists: ${output_dir}/cli/ge_phase.nii
+
+  # --mag-combine takes four distinct forms, two of which are two tokens wide.
+  - name: CLI mag-combine SNR and average
+    description: Single token magnitude combination modes
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --mag-combine SNR -o ${output_dir}/cli/mc_snr.nii
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --mag-combine average -o ${output_dir}/cli/mc_avg.nii
+    validate:
+      - output_exists: ${output_dir}/cli/mc_snr.nii
+      - output_exists: ${output_dir}/cli/mc_avg.nii
+
+  - name: CLI mag-combine echo and SE
+    description: Two token magnitude combination modes, echo <n> and SE <te>
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --mag-combine echo 2 -o ${output_dir}/cli/mc_echo2.nii
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --mag-combine SE 8 -o ${output_dir}/cli/mc_se8.nii
+    validate:
+      - output_exists: ${output_dir}/cli/mc_echo2.nii
+      - output_exists: ${output_dir}/cli/mc_se8.nii
+
+  - name: CLI sensitivity correction on and off
+    description: --mag-sensitivity-correction toggles the CLEAR-SWI correction
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --mag-sensitivity-correction on -o ${output_dir}/cli/sens_on.nii
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --mag-sensitivity-correction off -o ${output_dir}/cli/sens_off.nii
+    validate:
+      - output_exists: ${output_dir}/cli/sens_on.nii
+      - output_exists: ${output_dir}/cli/sens_off.nii
+
+  - name: CLI softplus scaling on and off
+    description: --mag-softplus-scaling toggles softplus magnitude scaling
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --mag-softplus-scaling on -o ${output_dir}/cli/sp_on.nii
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --mag-softplus-scaling off -o ${output_dir}/cli/sp_off.nii
+    validate:
+      - output_exists: ${output_dir}/cli/sp_on.nii
+      - output_exists: ${output_dir}/cli/sp_off.nii
+
+  - name: CLI unwrapping algorithms
+    description: All three values of --unwrapping-algorithm
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      for a in laplacian romeo laplacianslice; do
+        clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --unwrapping-algorithm $a -o ${output_dir}/cli/unwrap_$a.nii
+      done
+    validate:
+      - output_exists: ${output_dir}/cli/unwrap_laplacian.nii
+      - output_exists: ${output_dir}/cli/unwrap_romeo.nii
+      - output_exists: ${output_dir}/cli/unwrap_laplacianslice.nii
+
+  # --filter-size needs array syntax. The help also advertises "<x> <y> <z>",
+  # but three separate tokens fail upstream in Meta.parse.
+  - name: CLI filter size
+    description: --filter-size sets the high-pass phase filter in voxels
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --filter-size "[10,10,5]" -o ${output_dir}/cli/filter3d.nii
+    validate:
+      - output_exists: ${output_dir}/cli/filter3d.nii
+
+  - name: CLI phase scaling types
+    description: All five values of --phase-scaling-type, including negativetanh
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      for s in tanh negativetanh positive negative triangular; do
+        clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --phase-scaling-type $s -o ${output_dir}/cli/scale_$s.nii
+      done
+    validate:
+      - output_exists: ${output_dir}/cli/scale_tanh.nii
+      - output_exists: ${output_dir}/cli/scale_negativetanh.nii
+      - output_exists: ${output_dir}/cli/scale_positive.nii
+      - output_exists: ${output_dir}/cli/scale_negative.nii
+      - output_exists: ${output_dir}/cli/scale_triangular.nii
+
+  - name: CLI phase scaling strength
+    description: --phase-scaling-strength across the useful range
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      for n in 2 4 6; do
+        clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --phase-scaling-strength $n -o ${output_dir}/cli/strength_$n.nii
+      done
+    validate:
+      - output_exists: ${output_dir}/cli/strength_2.nii
+      - output_exists: ${output_dir}/cli/strength_4.nii
+      - output_exists: ${output_dir}/cli/strength_6.nii
+
+  - name: CLI writesteps
+    description: --writesteps saves the intermediate volumes
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      mkdir -p ${output_dir}/cli/steps
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" \
+        --writesteps ${output_dir}/cli/steps -o ${output_dir}/cli/ws.nii
+    validate:
+      - output_exists: ${output_dir}/cli/ws.nii
+      - output_exists: ${output_dir}/cli/steps/combined_mag.nii
+      - output_exists: ${output_dir}/cli/steps/combinedphase.nii
+      - output_exists: ${output_dir}/cli/steps/filteredphase.nii
+      - output_exists: ${output_dir}/cli/steps/unwrappedphase.nii
+      - output_exists: ${output_dir}/cli/steps/sensitivity.nii
+      - output_exists: ${output_dir}/cli/steps/swimag.nii
+      - output_exists: ${output_dir}/cli/steps/swiphase.nii
+
+  # --qsm dispatches into QuantitativeSusceptibilityMappingTGV through a package
+  # extension. It only works because the launcher loads that package; without it
+  # the run dies with "no method matching copy(::Nothing)".
+  - name: CLI QSM phase weighting
+    description: --qsm runs TGV QSM and uses it for phase weighting
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --qsm -o ${output_dir}/cli/qsm.nii
+    validate:
+      - output_exists: ${output_dir}/cli/qsm.nii
+
+  - name: CLI QSM with custom mask
+    description: --qsm-mask accepts a caller supplied mask
+    command: |
+      D=$(cat ${output_dir}/datadir)
+      julia --startup-file=no -e '
+      using CLEARSWI
+      D = CLEARSWI.dir("test","data","small")
+      mag = readmag(joinpath(D,"Mag.nii"))
+      mask = mag[:,:,:,1] .> 0.1 * maximum(mag[:,:,:,1])
+      savenii(UInt8.(mask), "${output_dir}/cli/mask.nii"; header=mag.header)
+      '
+      clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --qsm \
+        --qsm-mask ${output_dir}/cli/mask.nii -o ${output_dir}/cli/qsm_masked.nii
+    validate:
+      - output_exists: ${output_dir}/cli/mask.nii
+      - output_exists: ${output_dir}/cli/qsm_masked.nii
 
 cleanup:
   script: |
