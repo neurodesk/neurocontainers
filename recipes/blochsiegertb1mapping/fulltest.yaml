@@ -1,5 +1,5 @@
 name: blochsiegertb1mapping
-version: 1.0.0
+version: 1.0.1
 default_timeout: 120
 tests:
 - name: Bloch-Siegert OpenRecon workflow unit smoke test
@@ -78,22 +78,38 @@ tests:
         ]
         return magnitude + phase
 
-    one_tx_phase = [0.1, 0.5, 0.2, 0.3, -0.7]
+    one_tx_phase = [0.1, 0.1, 0.1, 0.1, 0.2, 0.8, 0.4, 0.3, 0.3, 0.3]
     one_tx_images = make_dataset(one_tx_phase)
     settings = module._settings_from_config({"parameters": {}})
     one_tx = module.compute_bloch_siegert_maps(one_tx_images, settings)
-    assert one_tx["nframe"] == 5
+    assert one_tx["nframe"] == 10
     assert one_tx["ntx"] == 1
     assert one_tx["slice_count"] == 1
     assert one_tx["b1"].shape == (1, 1, 8, 8)
     assert one_tx["bsp"].shape == (1, 1, 8, 8)
     assert one_tx["phsc"].shape == (1, 1, 8, 8)
     assert one_tx["b0"].shape == (1, 8, 8)
-    assert np.allclose(one_tx["bsp"][0, 0], 0.3, atol=1e-5)
-    expected_b1 = math.sqrt(0.3 / (0.044 * 10.0 / 6.0))
-    assert np.allclose(one_tx["b1"][0, 0], expected_b1, atol=1e-5)
-    assert np.allclose(one_tx["phsc"][0, 0], -0.7, atol=1e-5)
-    assert np.allclose(one_tx["b0"][0], 0.2 * 1000.0 / (2.0 * math.pi), atol=1e-5)
+    assert np.allclose(one_tx["bsp"][0, 0, 3, 3], 0.3, atol=1e-5)
+    expected_b1 = math.sqrt(0.3 / (0.044 * 12.0 / 6.0))
+    assert np.allclose(one_tx["b1"][0, 0, 3, 3], expected_b1, atol=1e-5)
+    wider_pulse = module.compute_bloch_siegert_maps(
+        one_tx_images,
+        module._settings_from_config({"parameters": {"bspulsewidthms": 24.0}}),
+    )
+    assert np.allclose(
+        wider_pulse["b1"][0, 0, 3, 3],
+        expected_b1 / math.sqrt(2.0),
+        atol=1e-5,
+    )
+    assert np.allclose(one_tx["phsc"][0, 0, 3, 3], 0.8, atol=1e-5)
+    assert np.allclose(
+        one_tx["b0"][0, 3, 3],
+        0.2 * 1000.0 / (2.0 * math.pi),
+        atol=1e-5,
+    )
+    assert np.count_nonzero(one_tx["bsp"][0, 0, :2]) == 0
+    assert np.count_nonzero(one_tx["phsc"][0, 0, :2]) == 0
+    assert np.count_nonzero(one_tx["b0"][0, :2]) == 0
     assert int(one_tx["mask"][0, 3, 3]) == 1
     assert int(one_tx["mask"][0, 0, 0]) == 0
 
@@ -108,8 +124,8 @@ tests:
     fallback_magnitude, fallback_phase = module._split_magnitude_phase_images(
         converted_dicom_like_images
     )
-    assert len(fallback_magnitude) == 5
-    assert len(fallback_phase) == 5
+    assert len(fallback_magnitude) == 10
+    assert len(fallback_phase) == 10
     fallback_result = module.compute_bloch_siegert_maps(
         converted_dicom_like_images,
         settings,
@@ -144,6 +160,11 @@ tests:
     outputs = module.build_output_images(one_tx, settings, one_tx_images)
     assert [int(image.image_series_index) for image in outputs] == [101, 120, 140, 160]
     module._validate_output_images(outputs, one_tx_images)
+    b1_pixels = np.asarray(outputs[0].data)
+    assert b1_pixels.dtype == np.uint16
+    assert int(b1_pixels[0, 0, 3, 3]) == round(expected_b1 * 100.0)
+    assert int(np.min(b1_pixels)) == 0
+    assert int(np.max(b1_pixels)) <= 4095
     first_meta = ismrmrd.Meta.deserialize(outputs[0].attribute_string)
     assert first(first_meta.get("SeriesDescription")) == "bss_source-b1"
     assert first(first_meta.get("BlochSiegertOutput")) == "BlochSiegertB1Map"
@@ -152,22 +173,70 @@ tests:
     assert first(first_meta.get("SequenceDescriptionAdditional")) == "openrecon"
     assert first(first_meta.get("IceMiniHead")) is None
     assert first(first_meta.get("ImageTypeValue3")) is None
+    assert first(first_meta.get("BlochSiegertDisplayScale")) == "100"
+    assert first(first_meta.get("BlochSiegertDisplayFormula")) == "uT = display / 100"
+    assert first(first_meta.get("BlochSiegertDisplayMax")) == "4095"
+    assert first(first_meta.get("ImageComments")) == (
+        "bss_source-b1; scanner display uint16 0-4095; uT = display / 100"
+    )
+    assert first(first_meta.get("ImageComment")) == first(first_meta.get("ImageComments"))
 
-    eight_tx_phase = [0.1] * 26
+    clipped_result = dict(one_tx)
+    clipped_result["b1"] = one_tx["b1"].copy()
+    clipped_result["b1"][0, 0, 3, 3] = 50.0
+    clipped_b1 = module.build_output_images(
+        clipped_result,
+        {"sendb1": True, "sendbsp": False, "sendphsc": False, "sendb0": False},
+        one_tx_images,
+    )
+    assert int(np.asarray(clipped_b1[0].data)[0, 0, 3, 3]) == 4095
+    module._validate_output_images(clipped_b1, one_tx_images)
+    phase_meta = ismrmrd.Meta.deserialize(outputs[2].attribute_string)
+    assert first(phase_meta.get("BlochSiegertOutput")) == "BlochSiegertTransmitPhase"
+    assert first(phase_meta.get("BlochSiegertUnits")) == "degrees"
+    assert first(phase_meta.get("BlochSiegertDisplayScale")) == "10"
+    assert first(phase_meta.get("BlochSiegertDisplayFormula")) == "degrees = display / 10"
+    assert first(phase_meta.get("BlochSiegertDisplayConversion")) == "radians to degrees"
+    assert first(phase_meta.get("ImageComments")) == (
+        "bss_source-phsc; phase converted from radians to degrees and multiplied "
+        "by 10; degrees = display / 10"
+    )
+    assert first(phase_meta.get("ImageComment")) == first(phase_meta.get("ImageComments"))
+    assert np.allclose(
+        np.asarray(outputs[1].data)[0, 0, 3, 3],
+        math.degrees(0.3) * 10.0,
+        atol=1e-4,
+    )
+    assert np.allclose(
+        np.asarray(outputs[2].data)[0, 0, 3, 3],
+        math.degrees(0.8) * 10.0,
+        atol=1e-4,
+    )
+
+    eight_tx_phase = [0.1] * 38
     for tx_index in range(8):
-        eight_tx_phase[1 + 2 * tx_index] = 0.25 + 0.01 * tx_index
-        eight_tx_phase[2 + 2 * tx_index] = 0.05
-        eight_tx_phase[18 + tx_index] = -0.2 + 0.01 * tx_index
-    eight_tx_phase[17] = 0.3
+        eight_tx_phase[3 + 4 * tx_index] = 0.1
+        eight_tx_phase[4 + 4 * tx_index] = 0.2
+        eight_tx_phase[5 + 4 * tx_index] = 0.8 + 0.01 * tx_index
+        eight_tx_phase[6 + 4 * tx_index] = 0.4
+    eight_tx_phase[35:38] = [0.3, 0.3, 0.3]
     eight_tx_images = make_dataset(eight_tx_phase, series_name="bss_8tx")
     eight_tx = module.compute_bloch_siegert_maps(eight_tx_images, settings)
-    assert eight_tx["nframe"] == 26
+    assert eight_tx["nframe"] == 38
     assert eight_tx["ntx"] == 8
     assert eight_tx["b1"].shape == (8, 1, 8, 8)
     assert eight_tx["bsp"].shape == (8, 1, 8, 8)
     assert eight_tx["phsc"].shape == (8, 1, 8, 8)
-    assert np.allclose(eight_tx["bsp"][:, 0, 0, 0], [0.20 + 0.01 * i for i in range(8)], atol=1e-5)
-    assert np.allclose(eight_tx["phsc"][:, 0, 0, 0], [-0.2 + 0.01 * i for i in range(8)], atol=1e-5)
+    assert np.allclose(
+        eight_tx["bsp"][:, 0, 3, 3],
+        [0.30 + 0.01 * i for i in range(8)],
+        atol=1e-5,
+    )
+    assert np.allclose(
+        eight_tx["phsc"][:, 0, 3, 3],
+        [0.80 + 0.01 * i for i in range(8)],
+        atol=1e-5,
+    )
     b1_only = module.build_output_images(
         eight_tx,
         {"sendb1": True, "sendbsp": False, "sendphsc": False, "sendb0": False},
@@ -177,6 +246,45 @@ tests:
     assert [int(image.image_series_index) for image in b1_only] == list(range(101, 109))
     assert first(ismrmrd.Meta.deserialize(b1_only[-1].attribute_string).get("SeriesDescription")) == "bss_8tx-b1-tx08"
     module._validate_output_images(b1_only, eight_tx_images)
+
+    forty_slice_phase = eight_tx_phase + [0.1] * 8
+    forty_slice_magnitude = []
+    forty_slice_phase_images = []
+    for slice_index in range(40):
+        for frame_index, phase_radian in enumerate(forty_slice_phase):
+            forty_slice_magnitude.append(
+                make_image(
+                    frame_index,
+                    "magnitude",
+                    10.0 + frame_index,
+                    slice_index=slice_index,
+                    series_name="bss_8tx_40_slice",
+                )
+            )
+            forty_slice_phase_images.append(
+                make_image(
+                    frame_index,
+                    "phase",
+                    raw_phase(phase_radian),
+                    slice_index=slice_index,
+                    series_name="bss_8tx_40_slice",
+                )
+            )
+    forty_slice_images = forty_slice_magnitude + forty_slice_phase_images
+    forty_slice = module.compute_bloch_siegert_maps(forty_slice_images, settings)
+    assert forty_slice["slice_count"] == 40
+    assert forty_slice["nframe"] == 38
+    assert forty_slice["ntx"] == 8
+    assert forty_slice["b1"].shape == (8, 40, 8, 8)
+    forty_slice_b1 = module.build_output_images(
+        forty_slice,
+        {"sendb1": True, "sendbsp": False, "sendphsc": False, "sendb0": False},
+        forty_slice_images,
+    )
+    assert len(forty_slice_b1) == 8
+    assert all(np.asarray(image.data).shape == (1, 40, 8, 8) for image in forty_slice_b1)
+    assert all(list(image.getHead().matrix_size) == [8, 8, 40] for image in forty_slice_b1)
+    module._validate_output_images(forty_slice_b1, forty_slice_images)
 
     class FakeConnection:
         def __init__(self, items):

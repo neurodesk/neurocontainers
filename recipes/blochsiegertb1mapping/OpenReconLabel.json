@@ -13,7 +13,7 @@
       "manufacture_date": "2026/05/13",
       "material_number": "blochsiegertb1mapping_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
       "gtin": "00860000171212",
-      "udi": "(01)00860000171212(21)1.0.0",
+      "udi": "(01)00860000171212(21)VERSION_WILL_BE_REPLACED_BY_SCRIPT",
       "safety_advices": "",
       "special_operating_instructions": "OpenRecon Bloch-Siegert B1 mapping",
       "additional_relevant_information": ""
@@ -53,21 +53,21 @@
       "id": "sendb1",
       "label": { "en": "Send B1 map" },
       "type": "boolean",
-      "information": { "en": "Send measured Bloch-Siegert B1 map output in uT" },
+      "information": { "en": "Send measured B1 as scanner-display uint16 pixels scaled by 100; divide pixels by 100 for uT" },
       "default": true
     },
     {
       "id": "sendbsp",
       "label": { "en": "Send BS phase" },
       "type": "boolean",
-      "information": { "en": "Send Bloch-Siegert phase difference map output in radians" },
+      "information": { "en": "Send Bloch-Siegert phase converted to degrees and multiplied by 10" },
       "default": true
     },
     {
       "id": "sendphsc",
-      "label": { "en": "Send corrected phase" },
+      "label": { "en": "Send Tx phase" },
       "type": "boolean",
-      "information": { "en": "Send phase-corrected residual phase frames in radians" },
+      "information": { "en": "Send echo-A transmit phase converted to degrees and multiplied by 10" },
       "default": true
     },
     {
@@ -91,17 +91,8 @@
       "information": { "en": "Bloch-Siegert pulse width used for KBS = 0.044 * pulse_width / 6" },
       "minimum": 0.1,
       "maximum": 100.0,
-      "default": 10.0,
+      "default": 12.0,
       "unit": { "en": "ms" }
-    },
-    {
-      "id": "phasewrap",
-      "label": { "en": "Phase wrap" },
-      "type": "double",
-      "information": { "en": "Raw phase scaling denominator; 4096 matches the source MATLAB DICOM phase conversion. Set 0 only when incoming phase images are already radians." },
-      "minimum": 0.0,
-      "maximum": 65536.0,
-      "default": 4096.0
     }
   ]
 }

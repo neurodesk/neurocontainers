@@ -1,5 +1,5 @@
 name: blochsiegertb1mapping
-version: 1.0.0
+version: 1.0.2
 architectures:
   - x86_64
 
@@ -55,15 +55,18 @@ readme: |-
 
   OpenRecon Bloch-Siegert B1 mapping from reconstructed magnitude and phase
   image messages. The runtime implements the workflow from
-  `ProcessBSS7T_OpenRecon.m`: detects 1Tx versus 8Tx from the frame count,
-  builds the magnitude mask, converts phase counts to radians, computes BSp,
-  measured B1, corrected phase, and B0, then sends selected maps as explicit
-  MRD volume images.
+  `Read_7T_all_rev_openRecon.m`: detects 1Tx versus 8Tx from the frame count,
+  uses the revised four-echo phase calculation with pre/post reference frames,
+  builds and applies the magnitude mask, converts phase counts to radians,
+  computes BSp, measured B1, phase, and B0, then sends selected maps as
+  explicit MRD volume images.
 
-  Default outputs are B1, BSp, PHSc, and B0 maps. Enable `sendmask` to also
+  Default outputs are B1, BSp, Tx phase, and B0 maps. Enable `sendmask` to also
   return the computed QC mask. The default phase scaling is the MATLAB DICOM
-  conversion `phase * 2*pi/4096 - pi`; adjust `phasewrap` only if the incoming
-  phase images use a different scale.
+  conversion `phase * 2*pi/4096 - pi`. B1 scanner pixels are multiplied by 100,
+  clipped to `0..4095`, and carry `uT = display / 100` in the image comment.
+  BSp and Tx phase outputs are converted from radians to degrees, multiplied by
+  10, and carry `degrees = display / 10` in the image comment.
 
   OpenRecon runtime notes: `recipes/blochsiegertb1mapping/OpenReconREADME.md`.
 

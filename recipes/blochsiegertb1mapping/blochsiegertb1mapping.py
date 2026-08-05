@@ -19,9 +19,15 @@ except ImportError:
 
 
 RECIPE_NAME = "blochsiegertb1mapping"
-BSS_PULSE_WIDTH_MS = 10.0
 PHASE_WRAP = 4096.0
+BSS_PULSE_WIDTH_MS = 12.0
+PRE_DUMMY = 2
+POST_DUMMY = 2
+ECHOES_PER_TX = 4
 KBS_SCALE = 0.044 / 6.0
+B1_DISPLAY_SCALE = 100.0
+PHASE_DISPLAY_SCALE = 10.0
+SCANNER_DISPLAY_MAX = 4095
 
 B1_SERIES_INDEX_START = 101
 BSP_SERIES_INDEX_START = 120
@@ -186,7 +192,7 @@ def build_output_images(result, settings=None, input_images=None):
                     _map_series_name(source_name, "bsp", tx_index, result["ntx"]),
                     "BSSBSP",
                     "BlochSiegertPhase",
-                    "radians",
+                    "degrees",
                     tx_index,
                 )
             )
@@ -206,8 +212,8 @@ def build_output_images(result, settings=None, input_images=None):
                         result["phsc"].shape[0],
                     ),
                     "BSSPHSC",
-                    "BlochSiegertCorrectedPhase",
-                    "radians",
+                    "BlochSiegertTransmitPhase",
+                    "degrees",
                     phase_index,
                 )
             )
@@ -258,26 +264,44 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings):
 
     mask = _bloch_siegert_mask(magnitude_stack, ntx)
     complex_phase = np.exp(1j * phase_stack)
-    pair_start = complex_phase[1 : 2 * ntx + 1 : 2]
-    pair_end = complex_phase[2 : 2 * ntx + 2 : 2]
-    bsp = np.angle(pair_start * np.conj(pair_end)).astype(np.float32)
-    bsp[bsp < -math.pi / 2] += 2 * math.pi
+
+    # MATLAB uses 1-based frames 1:3 as the pre-reference, followed by
+    # B/C/A/D for each Tx channel, then three post-reference frames.
+    pre_reference = np.mean(complex_phase[: PRE_DUMMY + 1], axis=0)
+    tx_indices = np.arange(ntx) * ECHOES_PER_TX
+    phase_a = complex_phase[PRE_DUMMY + 3 + tx_indices]
+    phase_b = complex_phase[PRE_DUMMY + 1 + tx_indices]
+    phase_c = complex_phase[PRE_DUMMY + 2 + tx_indices]
+    phase_d = complex_phase[PRE_DUMMY + 4 + tx_indices]
+    bsp = np.angle(
+        phase_a
+        * np.conj(phase_b)
+        * pre_reference
+        * np.conj(phase_c)
+        * pre_reference
+        * np.conj(phase_d)
+    ).astype(np.float32)
+    bsp[bsp < math.radians(-25.0)] += 2 * math.pi
     bsp[bsp < 0] = 0
 
+    bsp *= mask[np.newaxis, ...]
     pulse_width = _setting_float(settings, "bspulsewidthms", default=BSS_PULSE_WIDTH_MS)
     kbs = KBS_SCALE * pulse_width
     if kbs <= 0:
         raise ValueError(f"bspulsewidthms must be positive, got {pulse_width}")
     b1 = np.sqrt(bsp / kbs)
+    phsc = np.angle(phase_a).astype(np.float32) * mask[np.newaxis, ...]
 
-    phsc = np.angle(complex_phase[2 * ntx + 2 :]).astype(np.float32)
-    if phsc.shape[0] == 0:
-        raise ValueError("Phase-corrected output frames are missing")
+    post_start = ECHOES_PER_TX * ntx + PRE_DUMMY + 1
+    post_reference = np.mean(
+        complex_phase[post_start : post_start + POST_DUMMY + 1],
+        axis=0,
+    )
     b0 = (
-        np.angle(complex_phase[2 * ntx + 1] * np.conj(complex_phase[0]))
+        np.angle(post_reference * np.conj(pre_reference))
         * 1000.0
         / (2.0 * math.pi)
-    ).astype(np.float32)
+    ).astype(np.float32) * mask
 
     return {
         "bsp": bsp,
@@ -289,7 +313,7 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings):
 
 
 def _bloch_siegert_mask(magnitude_stack, ntx):
-    mask_source = np.mean(magnitude_stack[: ntx + 1], axis=0)
+    mask_source = np.mean(magnitude_stack[: 2 * ntx + 2], axis=0)
     finite_values = mask_source[np.isfinite(mask_source)]
     if finite_values.size == 0:
         return np.zeros(mask_source.shape, dtype=bool)
@@ -299,7 +323,7 @@ def _bloch_siegert_mask(magnitude_stack, ntx):
     if low_values.size == 0:
         threshold = source_mean
     else:
-        threshold = float(np.mean(low_values) + 2.0 * np.std(low_values))
+        threshold = float(np.mean(low_values) + 0.5 * np.std(low_values))
 
     return _fill_holes_per_slice(mask_source > threshold)
 
@@ -350,7 +374,7 @@ def _fallback_split_magnitude_phase_series(images):
 
     series_groups = sorted(series_groups, key=_series_group_sort_key)
     frame_count = len(series_groups[0])
-    if frame_count < 5:
+    if frame_count < 10:
         return images, []
     return series_groups[0], series_groups[1]
 
@@ -422,7 +446,7 @@ def _group_frames_by_slice(images):
         ("slice", _slice_group_key),
     ):
         groups = _groups_from_key(indexed, key_func)
-        if groups and all(len(group) >= 5 for group in groups):
+        if groups and all(len(group) >= 10 for group in groups):
             candidates.append((name, groups))
 
     chunked = _chunked_frame_groups(indexed)
@@ -431,14 +455,26 @@ def _group_frames_by_slice(images):
 
     if not candidates:
         raise ValueError(
-            "Bloch-Siegert mapping requires at least 5 frames per slice "
-            "(1Tx) or 26 frames per slice (8Tx)"
+            "Bloch-Siegert mapping requires at least 10 frames per slice "
+            "(1Tx) or 38 frames per slice (8Tx)"
         )
 
     def score(candidate):
-        _name, groups = candidate
-        exact = sum(1 for group in groups if len(group) in (5, 26))
-        return (exact, len(groups), -max(len(group) for group in groups))
+        name, groups = candidate
+        group_sizes = {len(group) for group in groups}
+        informative_geometry = (
+            name != "chunk"
+            and len(groups) > 1
+            and len(group_sizes) == 1
+        )
+        exact = sum(1 for group in groups if len(group) in (10, 38))
+        return (
+            informative_geometry,
+            exact,
+            name != "chunk",
+            len(groups),
+            -max(group_sizes),
+        )
 
     selected_name, selected_groups = max(candidates, key=score)
     logging.info(
@@ -480,10 +516,10 @@ def _slice_group_key(image):
 
 def _chunked_frame_groups(indexed_images):
     total = len(indexed_images)
-    if total >= 26 and total % 26 == 0:
-        chunk_size = 26
-    elif total >= 5 and total % 5 == 0:
-        chunk_size = 5
+    if total >= 38 and total % 38 == 0:
+        chunk_size = 38
+    elif total >= 10 and total % 10 == 0:
+        chunk_size = 10
     else:
         return []
     return [
@@ -528,7 +564,7 @@ def _pair_slice_groups(magnitude_groups, phase_groups):
     for index, (magnitude_group, phase_group) in enumerate(
         zip(magnitude_groups, phase_groups)
     ):
-        if len(magnitude_group) < 5 or len(phase_group) < 5:
+        if len(magnitude_group) < 10 or len(phase_group) < 10:
             raise ValueError(
                 f"Slice {index} has too few frames: {len(magnitude_group)} "
                 f"magnitude, {len(phase_group)} phase"
@@ -539,12 +575,20 @@ def _pair_slice_groups(magnitude_groups, phase_groups):
 
 
 def _sequence_shape(frame_count):
+    ntx = 8 if frame_count > 25 else 1
+    required_frames = (
+        ECHOES_PER_TX * ntx
+        + (PRE_DUMMY + 1)
+        + (POST_DUMMY + 1)
+    )
+    if frame_count >= required_frames:
+        return required_frames, ntx
     if frame_count > 25:
-        return 26, 8
-    if frame_count >= 5:
-        return 5, 1
+        expected = "38 frames for 8Tx"
+    else:
+        expected = "10 frames for 1Tx"
     raise ValueError(
-        f"Bloch-Siegert mapping requires 5 or 26 frames, got {frame_count}"
+        f"Bloch-Siegert mapping requires {expected}, got {frame_count}"
     )
 
 
@@ -586,9 +630,36 @@ def _map_to_mrd_image(
     if volume.ndim != 3:
         raise ValueError(f"Output map volume must be 3D, got shape {volume.shape}")
 
-    output_data = volume.astype(np.float32, copy=False)
-    if image_type_token == "BSSMASK":
+    display_scale = None
+    display_formula = None
+    display_comment = None
+    if image_type_token == "BSSB1":
+        cleaned = np.nan_to_num(volume, nan=0.0, posinf=0.0, neginf=0.0)
+        output_data = np.clip(
+            np.rint(cleaned * B1_DISPLAY_SCALE),
+            0,
+            SCANNER_DISPLAY_MAX,
+        ).astype(np.uint16)
+        display_scale = B1_DISPLAY_SCALE
+        display_formula = f"{units} = display / {B1_DISPLAY_SCALE:g}"
+        display_comment = (
+            f"scanner display uint16 0-{SCANNER_DISPLAY_MAX}; {display_formula}"
+        )
+    elif image_type_token in {"BSSBSP", "BSSPHSC"}:
+        cleaned = np.nan_to_num(volume, nan=0.0, posinf=0.0, neginf=0.0)
+        output_data = (
+            np.degrees(cleaned) * PHASE_DISPLAY_SCALE
+        ).astype(np.float32)
+        display_scale = PHASE_DISPLAY_SCALE
+        display_formula = f"{units} = display / {PHASE_DISPLAY_SCALE:g}"
+        display_comment = (
+            "phase converted from radians to degrees and multiplied by "
+            f"{PHASE_DISPLAY_SCALE:g}; {display_formula}"
+        )
+    elif image_type_token == "BSSMASK":
         output_data = volume.astype(np.uint16, copy=False)
+    else:
+        output_data = volume.astype(np.float32, copy=False)
     output = ismrmrd.Image.from_array(output_data, transpose=False)
 
     header = anchor_image.getHead()
@@ -640,6 +711,9 @@ def _map_to_mrd_image(
         center,
         width,
         tx_index,
+        display_scale,
+        display_formula,
+        display_comment,
     ).serialize()
     return output
 
@@ -656,6 +730,9 @@ def _output_meta(
     window_center,
     window_width,
     tx_index=None,
+    display_scale=None,
+    display_formula=None,
+    display_comment=None,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -676,8 +753,18 @@ def _output_meta(
     meta["SeriesDescription"] = series_name
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
-    meta["ImageComments"] = series_name
-    meta["ImageComment"] = series_name
+    image_comment = series_name
+    if display_scale is not None:
+        scale_text = f"{float(display_scale):g}"
+        image_comment = f"{series_name}; {display_comment}"
+        meta["BlochSiegertDisplayScale"] = scale_text
+        meta["BlochSiegertDisplayFormula"] = display_formula
+        if image_type_token == "BSSB1":
+            meta["BlochSiegertDisplayMax"] = str(SCANNER_DISPLAY_MAX)
+        else:
+            meta["BlochSiegertDisplayConversion"] = "radians to degrees"
+    meta["ImageComments"] = image_comment
+    meta["ImageComment"] = image_comment
     meta["SeriesNumberRangeNameUID"] = _derived_series_grouping(
         series_name,
         series_index,
@@ -838,6 +925,7 @@ def _validate_output_images(output_images, input_images):
         series_uid = _meta_text(meta, "SeriesInstanceUID")
         sop_uid = _meta_text(meta, "SOPInstanceUID")
         keep_geometry = _meta_int(meta, "Keep_image_geometry")
+        image_type_token = _meta_text(meta, "ImageTypeValue4")
 
         if series_index in input_series_indices:
             errors.append(f"image {index} reuses input image_series_index {series_index}")
@@ -868,6 +956,26 @@ def _validate_output_images(output_images, input_images):
             errors.append(f"image {index} has image_index {header.image_index}, expected >= 1")
         if int(header.slice) != 0:
             errors.append(f"image {index} has slice {header.slice}, expected 0")
+        if image_type_token == "BSSB1":
+            data = np.asarray(image.data)
+            if data.dtype != np.uint16:
+                errors.append(f"image {index} B1 data is not uint16")
+            if data.size and int(np.max(data)) > SCANNER_DISPLAY_MAX:
+                errors.append(
+                    f"image {index} B1 data exceeds {SCANNER_DISPLAY_MAX}"
+                )
+            expected_formula = f"uT = display / {B1_DISPLAY_SCALE:g}"
+            if expected_formula not in _meta_text(meta, "ImageComments"):
+                errors.append(
+                    f"image {index} B1 ImageComments is missing {expected_formula!r}"
+                )
+        if image_type_token in {"BSSBSP", "BSSPHSC"}:
+            expected_formula = f"degrees = display / {PHASE_DISPLAY_SCALE:g}"
+            comments = _meta_text(meta, "ImageComments")
+            if expected_formula not in comments or "radians to degrees" not in comments:
+                errors.append(
+                    f"image {index} phase ImageComments is missing its conversion"
+                )
 
     if errors:
         raise ValueError(
