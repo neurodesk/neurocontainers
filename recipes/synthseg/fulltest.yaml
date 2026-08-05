@@ -48,6 +48,13 @@ tests:
     command: bash -lc 'test -n "$FREESURFER_HOME" && echo "FREESURFER_HOME=$FREESURFER_HOME"'
     expected_output_contains: "FREESURFER_HOME=/opt/freesurfer-synthseg"
 
+  - name: NVIDIA startup requirement check disabled
+    description: >-
+      Prevent inherited CUDA requirement metadata from blocking OpenRecon
+      startup before TensorFlow can perform its runtime compatibility check.
+    command: bash -lc 'test "$NVIDIA_DISABLE_REQUIRE" = "true" && echo "NVIDIA_DISABLE_REQUIRE=$NVIDIA_DISABLE_REQUIRE"'
+    expected_output_contains: "NVIDIA_DISABLE_REQUIRE=true"
+
   - name: FreeSurfer colour lookup table installed
     description: mri_synthseg reads FreeSurferColorLUT.txt unless --noaddctab is used
     command: bash -lc 'grep -c "Left-Hippocampus" "$FREESURFER_HOME/FreeSurferColorLUT.txt"'

@@ -35,6 +35,12 @@ build:
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
+        # The NVIDIA CUDA base image declares NVIDIA_REQUIRE_CUDA=cuda>=11.8,
+        # which makes the scanner's NVIDIA prestart hook reject the container.
+        # MuscleMap and VesselBoost use CUDA 11.8 successfully on the same GPU
+        # without that image-level gate. Keep the CUDA stack unchanged and let
+        # TensorFlow perform the real runtime compatibility check instead.
+        NVIDIA_DISABLE_REQUIRE: "true"
 
     - install:
         - bzip2
