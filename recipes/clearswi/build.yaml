@@ -40,9 +40,6 @@ build:
 
     - workdir: /opt
 
-    - run:
-        - tar -xzf {{ get_file("julia_linux_x86_64_tar_gz") }} -C /opt
-
     # Julia and the CLEARSWI launcher have to be on PATH inside the container:
     # Transparent Singularity resolves DEPLOY_BINS/DEPLOY_PATH entries through
     # the container PATH when it generates the module wrapper scripts.
@@ -54,9 +51,6 @@ build:
         - install_packages.jl
         - /opt/install_packages.jl
 
-    - run:
-        - julia /opt/install_packages.jl
-
     - copy:
         - precompile_workload.jl
         - /opt/precompile_workload.jl
@@ -65,10 +59,19 @@ build:
         - build_sysimage.jl
         - /opt/build_sysimage.jl
 
-    # Kept in a script rather than julia -e because neurodocker backslash
-    # escapes parentheses when it records the run command into
+    # Unpacking Julia, installing the packages and writing the sysimage all
+    # happen in one layer on purpose. build_sysimage.jl replaces the
+    # interpreter's own sys.so, so if the unpack lived in an earlier layer the
+    # image would carry both the stock 299 MB sysimage and the 732 MB
+    # replacement. Docker keeps the shadowed copy, and Dive counts that
+    # duplication against the efficiency gate.
+    #
+    # The build steps are scripts rather than julia -e because neurodocker
+    # backslash escapes parentheses when it records the run command into
     # /.reproenv.json, which leaves invalid JSON behind in the image.
     - run:
+        - tar -xzf {{ get_file("julia_linux_x86_64_tar_gz") }} -C /opt
+        - julia /opt/install_packages.jl
         - julia --startup-file=no /opt/build_sysimage.jl
         - rm -f /opt/build_sysimage.jl /opt/precompile_workload.jl
 
@@ -84,11 +87,12 @@ build:
         - /opt/clearswi/bin/clearswi
 
     # The home directory is not available at container runtime and the image is
-    # mounted read-only, so the depot and the sysimage have to be world-readable
-    # and fully precompiled at build time.
+    # mounted read-only, so the depot has to be world-readable and fully
+    # precompiled at build time. The sysimage is handled in the layer that
+    # creates it, so that this recursive chmod never touches the Julia tree.
     - run:
         - chmod a+rx /opt/clearswi/bin/clearswi
-        - chmod -R a+rX /opt/julia_depot /opt/clearswi {{ context.julia_root }}
+        - chmod -R a+rX /opt/julia_depot /opt/clearswi
 
 deploy:
   path:
@@ -154,6 +158,13 @@ files:
       )
 
       mv(staged, default_sysimage; force=true)
+
+      # Set the mode here rather than in a later chmod directive. A recursive
+      # chmod over the Julia tree issues a chmod syscall per file, and overlayfs
+      # copies a file up into the new layer whenever its metadata is touched,
+      # even if the mode does not actually change. Doing that to a 700 MB
+      # sysimage duplicates it into the image and fails the Dive efficiency gate.
+      chmod(default_sysimage, 0o755)
 
   # Traced by PackageCompiler to decide what native code goes into the sysimage.
   # Anything not exercised here still gets JIT compiled on first use at runtime,
