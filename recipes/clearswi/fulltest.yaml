@@ -1,5 +1,5 @@
 # CLEARSWI container test suite
-# Tests for CLEARSWI 1.0.0 - Susceptibility Weighted Imaging (CLEAR-SWI)
+# Tests for CLEARSWI 1.6.1 - Susceptibility Weighted Imaging (CLEAR-SWI)
 #
 # CLEARSWI is a Julia package for generating Susceptibility Weighted Images (SWI)
 # with improved vein and iron contrast. It provides multi-echo SWI, intensity
@@ -8,18 +8,19 @@
 # Reference: https://doi.org/10.1016/j.neuroimage.2021.118175
 # Source: https://github.com/korbinian90/CLEARSWI.jl
 #
-# The container uses Julia 1.6.3 with the CLEARSWI package and its dependencies.
-# Test data: Built-in test data at /opt/julia_depot/packages/CLEARSWI/oKb27/test/testData/small/
-#   - Mag.nii: 51x51x41x3 multi-echo magnitude (3 echoes)
-#   - Phase.nii: 51x51x41x3 multi-echo phase (3 echoes)
+# The container uses Julia 1.12.6 with the CLEARSWI package and its dependencies,
+# and exposes both the `clearswi` command line program and the `julia` interpreter.
+# Test data ships inside the package under test/data/small (it was test/testData
+# up to the version this container previously pinned) and is located via
+# CLEARSWI.dir(...) rather than a hardcoded depot path, because the package hash
+# changes on every rebuild:
+#   - Mag.nii: 40x40x20x3 multi-echo magnitude (3 echoes)
+#   - Phase.nii: 40x40x20x3 multi-echo phase (3 echoes)
 
 name: clearswi
-version: 1.0.0
+version: 1.6.1
 
 test_data:
-  # Built-in test data paths (inside container)
-  test_mag: /opt/julia_depot/packages/CLEARSWI/oKb27/test/testData/small/Mag.nii
-  test_phase: /opt/julia_depot/packages/CLEARSWI/oKb27/test/testData/small/Phase.nii
   output_dir: test_output
 
 setup:
@@ -34,10 +35,25 @@ tests:
   # ==========================================================================
   # BASIC FUNCTIONALITY
   # ==========================================================================
+  - name: clearswi launcher available
+    description: Verify the clearswi command line program is on PATH via DEPLOY_PATH
+    command: command -v clearswi
+    expected_output_contains: "clearswi"
+
+  # CLEARSWI prints its usage when invoked with no arguments; it has no --help.
+  - name: clearswi command line help
+    description: Verify the CLI entrypoint runs and reports its arguments
+    command: clearswi
+    expected_output_contains:
+      - "usage: clearswi"
+      - "--magnitude"
+      - "--phase"
+      - "--echo-times"
+
   - name: Julia version check
     description: Verify Julia is available and reports correct version
     command: julia --version
-    expected_output_contains: "julia version 1.6"
+    expected_output_contains: "julia version 1.12"
 
   - name: CLEARSWI package loads
     description: Verify CLEARSWI package can be loaded
@@ -58,7 +74,7 @@ tests:
 
   - name: Test data exists
     description: Verify built-in test data is accessible
-    command: julia -e 'using CLEARSWI; println(isfile(CLEARSWI.dir("test","testData","small","Mag.nii")))'
+    command: julia -e 'using CLEARSWI; println(isfile(CLEARSWI.dir("test","data","small","Mag.nii")))'
     expected_output_contains: "true"
 
   # ==========================================================================
@@ -69,31 +85,31 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      mag = readmag(CLEARSWI.dir("test","testData","small","Mag.nii"))
+      mag = readmag(CLEARSWI.dir("test","data","small","Mag.nii"))
       println("Shape: ", size(mag))
       println("Type: ", typeof(mag))
       '
     expected_output_contains:
-      - "Shape: (51, 51, 41, 3)"
+      - "Shape: (40, 40, 20, 3)"
 
   - name: Read phase image
     description: Test readphase function for loading NIfTI phase data
     command: |
       julia -e '
       using CLEARSWI
-      phase = readphase(CLEARSWI.dir("test","testData","small","Phase.nii"))
+      phase = readphase(CLEARSWI.dir("test","data","small","Phase.nii"))
       println("Shape: ", size(phase))
       println("Range: ", extrema(phase))
       '
     expected_output_contains:
-      - "Shape: (51, 51, 41, 3)"
+      - "Shape: (40, 40, 20, 3)"
 
   - name: Create Data struct
     description: Test Data struct creation with magnitude, phase, and TEs
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       TEs = [4,8,12]
@@ -113,7 +129,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -123,7 +139,7 @@ tests:
       println("SWI computed successfully")
       '
     expected_output_contains:
-      - "SWI shape: (51, 51, 41)"
+      - "SWI shape: (40, 40, 20)"
       - "SWI computed successfully"
 
   - name: Calculate and save SWI
@@ -131,7 +147,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -150,7 +166,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -161,7 +177,7 @@ tests:
       println("MIP saved successfully")
       '
     expected_output_contains:
-      - "MIP shape: (51, 51, 35)"
+      - "MIP shape: (40, 40, 14)"
     validate:
       - output_exists: ${output_dir}/mip_default.nii
 
@@ -170,7 +186,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -181,15 +197,15 @@ tests:
       println("MIP d=10 shape: ", size(mip_d10))
       '
     expected_output_contains:
-      - "MIP d=5 shape: (51, 51, 37)"
-      - "MIP d=10 shape: (51, 51, 32)"
+      - "MIP d=5 shape: (40, 40, 16)"
+      - "MIP d=10 shape: (40, 40, 11)"
 
   - name: Create maximum intensity projection
     description: Test createIntensityProjection with maximum function
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -200,7 +216,7 @@ tests:
       println("MaxIP saved successfully")
       '
     expected_output_contains:
-      - "MaxIP shape: (51, 51, 35)"
+      - "MaxIP shape: (40, 40, 14)"
     validate:
       - output_exists: ${output_dir}/maxip.nii
 
@@ -213,7 +229,7 @@ tests:
       julia -e '
       using CLEARSWI
       mkpath("${output_dir}/options")
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -231,7 +247,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -249,7 +265,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -267,7 +283,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -285,7 +301,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -306,7 +322,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -324,7 +340,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -345,7 +361,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -363,7 +379,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -381,7 +397,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -402,11 +418,11 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
-      options = Options(phase_hp_σ=[4,4,0])
+      options = Options(phase_hp_sigma=[4,4,0])
       swi = calculateSWI(data, options)
       mkpath("${output_dir}/options")
       savenii(swi, "${output_dir}/options/swi_hp_2d_default.nii"; header=mag.header)
@@ -420,11 +436,11 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
-      options = Options(phase_hp_σ=[10,10,5])
+      options = Options(phase_hp_sigma=[10,10,5])
       swi = calculateSWI(data, options)
       mkpath("${output_dir}/options")
       savenii(swi, "${output_dir}/options/swi_hp_3d.nii"; header=mag.header)
@@ -438,11 +454,11 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
-      options = Options(phase_hp_σ=[20,20,10])
+      options = Options(phase_hp_sigma=[20,20,10])
       swi = calculateSWI(data, options)
       mkpath("${output_dir}/options")
       savenii(swi, "${output_dir}/options/swi_hp_large.nii"; header=mag.header)
@@ -459,7 +475,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -477,7 +493,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -495,7 +511,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -513,7 +529,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -534,7 +550,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -552,7 +568,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -570,7 +586,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -591,7 +607,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -619,7 +635,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag_full = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase_full = readphase(joinpath(nifti_folder, "Phase.nii"))
 
@@ -636,7 +652,7 @@ tests:
       println("Single-echo SWI completed")
       '
     expected_output_contains:
-      - "Single-echo SWI shape: (51, 51, 41)"
+      - "Single-echo SWI shape: (40, 40, 20)"
     validate:
       - output_exists: ${output_dir}/swi_single_echo.nii
 
@@ -648,7 +664,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag_full = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase_full = readphase(joinpath(nifti_folder, "Phase.nii"))
 
@@ -665,7 +681,7 @@ tests:
       println("Dual-echo SWI completed")
       '
     expected_output_contains:
-      - "Dual-echo SWI shape: (51, 51, 41)"
+      - "Dual-echo SWI shape: (40, 40, 20)"
     validate:
       - output_exists: ${output_dir}/swi_dual_echo.nii
 
@@ -677,7 +693,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
 
@@ -701,7 +717,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -710,7 +726,7 @@ tests:
         mag_combine=:SNR,
         mag_softplus=true,
         phase_unwrap=:romeo,
-        phase_hp_σ=[10,10,5],
+        phase_hp_sigma=[10,10,5],
         phase_scaling_type=:tanh,
         phase_scaling_strength=4
       )
@@ -727,7 +743,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -752,7 +768,7 @@ tests:
     command: |
       julia -e '
       using CLEARSWI
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
       data = Data(mag, phase, mag.header, [4,8,12])
@@ -761,7 +777,7 @@ tests:
         mag_combine=:SNR,
         mag_softplus=true,
         phase_unwrap=:romeo,
-        phase_hp_σ=[20,20,10],
+        phase_hp_sigma=[20,20,10],
         phase_scaling_type=:tanh,
         phase_scaling_strength=6
       )
@@ -783,7 +799,7 @@ tests:
       using CLEARSWI
 
       # Load data
-      nifti_folder = CLEARSWI.dir("test","testData","small")
+      nifti_folder = CLEARSWI.dir("test","data","small")
       TEs = [4, 8, 12]
       mag = readmag(joinpath(nifti_folder, "Mag.nii"))
       phase = readphase(joinpath(nifti_folder, "Phase.nii"))
@@ -793,7 +809,7 @@ tests:
       mkpath("${output_dir}/full_pipeline")
       options = Options(
         phase_unwrap=:romeo,
-        phase_hp_σ=[10,10,5],
+        phase_hp_sigma=[10,10,5],
         writesteps="${output_dir}/full_pipeline"
       )
       swi = calculateSWI(data, options)
@@ -832,7 +848,7 @@ tests:
       println("mag_sens: ", opt.mag_sens)
       println("mag_softplus: ", opt.mag_softplus)
       println("phase_unwrap: ", opt.phase_unwrap)
-      println("phase_hp_σ: ", opt.phase_hp_σ)
+      println("phase_hp_sigma: ", opt.phase_hp_sigma)
       println("phase_scaling_type: ", opt.phase_scaling_type)
       println("phase_scaling_strength: ", opt.phase_scaling_strength)
       println("writesteps: ", opt.writesteps)
@@ -842,7 +858,7 @@ tests:
       - "mag_sens: nothing"
       - "mag_softplus: true"
       - "phase_unwrap: laplacian"
-      - "phase_hp_σ: [4, 4, 0]"
+      - "phase_hp_sigma: [4, 4, 0]"
       - "phase_scaling_type: tanh"
       - "phase_scaling_strength: 4"
       - "writesteps: nothing"
