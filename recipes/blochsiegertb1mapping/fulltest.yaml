@@ -1,5 +1,5 @@
 name: blochsiegertb1mapping
-version: 1.0.1
+version: 1.0.3
 default_timeout: 120
 tests:
 - name: Bloch-Siegert OpenRecon workflow unit smoke test
@@ -107,9 +107,14 @@ tests:
         0.2 * 1000.0 / (2.0 * math.pi),
         atol=1e-5,
     )
-    assert np.count_nonzero(one_tx["bsp"][0, 0, :2]) == 0
-    assert np.count_nonzero(one_tx["phsc"][0, 0, :2]) == 0
-    assert np.count_nonzero(one_tx["b0"][0, :2]) == 0
+    assert np.allclose(one_tx["bsp"][0, 0, 0, 0], 0.3, atol=1e-5)
+    assert np.allclose(one_tx["b1"][0, 0, 0, 0], expected_b1, atol=1e-5)
+    assert np.allclose(one_tx["phsc"][0, 0, 0, 0], 0.8, atol=1e-5)
+    assert np.allclose(
+        one_tx["b0"][0, 0, 0],
+        0.2 * 1000.0 / (2.0 * math.pi),
+        atol=1e-5,
+    )
     assert int(one_tx["mask"][0, 3, 3]) == 1
     assert int(one_tx["mask"][0, 0, 0]) == 0
 
@@ -163,7 +168,7 @@ tests:
     b1_pixels = np.asarray(outputs[0].data)
     assert b1_pixels.dtype == np.uint16
     assert int(b1_pixels[0, 0, 3, 3]) == round(expected_b1 * 100.0)
-    assert int(np.min(b1_pixels)) == 0
+    assert int(np.min(b1_pixels)) == round(expected_b1 * 100.0)
     assert int(np.max(b1_pixels)) <= 4095
     first_meta = ismrmrd.Meta.deserialize(outputs[0].attribute_string)
     assert first(first_meta.get("SeriesDescription")) == "bss_source-b1"

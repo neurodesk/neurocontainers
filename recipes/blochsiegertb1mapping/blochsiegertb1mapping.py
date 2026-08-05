@@ -284,13 +284,12 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings):
     bsp[bsp < math.radians(-25.0)] += 2 * math.pi
     bsp[bsp < 0] = 0
 
-    bsp *= mask[np.newaxis, ...]
     pulse_width = _setting_float(settings, "bspulsewidthms", default=BSS_PULSE_WIDTH_MS)
     kbs = KBS_SCALE * pulse_width
     if kbs <= 0:
         raise ValueError(f"bspulsewidthms must be positive, got {pulse_width}")
     b1 = np.sqrt(bsp / kbs)
-    phsc = np.angle(phase_a).astype(np.float32) * mask[np.newaxis, ...]
+    phsc = np.angle(phase_a).astype(np.float32)
 
     post_start = ECHOES_PER_TX * ntx + PRE_DUMMY + 1
     post_reference = np.mean(
@@ -301,7 +300,7 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings):
         np.angle(post_reference * np.conj(pre_reference))
         * 1000.0
         / (2.0 * math.pi)
-    ).astype(np.float32) * mask
+    ).astype(np.float32)
 
     return {
         "bsp": bsp,

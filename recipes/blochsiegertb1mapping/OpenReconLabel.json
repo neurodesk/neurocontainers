@@ -81,7 +81,7 @@
       "id": "sendmask",
       "label": { "en": "Send mask" },
       "type": "boolean",
-      "information": { "en": "Send the magnitude-threshold mask used by the MATLAB workflow for visual QC" },
+      "information": { "en": "Send the optional magnitude-threshold mask for visual QC; it is not applied to calculated maps" },
       "default": false
     },
     {

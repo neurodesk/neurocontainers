@@ -21,8 +21,10 @@ For each anatomical slice group, the OpenRecon path implements the MATLAB
 operations:
 
 - Replace NaNs in magnitude and phase frames with zero.
-- Build a magnitude mask from the mean of frames `1:(2*nTx+2)`, thresholded as
-  `mean(low_background) + 0.5 * std(low_background)`, then fill holes.
+- For optional visual QC output, build a magnitude mask from the mean of frames
+  `1:(2*nTx+2)`, thresholded as
+  `mean(low_background) + 0.5 * std(low_background)`, then fill holes. The mask
+  is not applied to any calculated map.
 - Convert phase frames to complex unit phasors with `exp(1i * phase)`.
 - Average frames 1-3 into the pre-reference phase, then compute each Tx
   Bloch-Siegert phase from its four-echo block as
@@ -33,7 +35,6 @@ operations:
 - Use echo `A` from each Tx block for the phase output.
 - Average the final three frames into the post-reference phase and compute
   `B0 = angle(post * conj(pre)) * 1000 / (2*pi)`.
-- Apply the filled magnitude mask to B1, BSp, phase, and B0.
 
 ## Outputs
 
@@ -89,9 +90,9 @@ Slice groups are detected from physical position when available, falling back to
 MRD slice counters or frame-count chunking. Each output volume is derived from
 sorted frame order within its slice group.
 
-The magnitude mask follows the MATLAB threshold and per-slice hole-filling
-steps and is applied to every returned map. It can also be returned as a
-separate QC series with `sendmask`.
+The optional magnitude mask follows the MATLAB threshold and per-slice
+hole-filling steps. It is not applied during map processing and is returned
+only as a separate QC series when `sendmask` is enabled.
 
 ## Open Source Development
 
