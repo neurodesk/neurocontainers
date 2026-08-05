@@ -14,15 +14,10 @@ on:
   push:
     branches: [main]
     paths:
-      # Must stay aligned with detect_recipes() in tools/one_pr_release.py, which
-      # only treats a PR as a candidate PR when a recipes/*/build.yaml changed.
-      # On "recipes/**" this fired for fulltest-, icon- and README-only PRs, which
-      # build no candidate: detect returns [], the candidate job is skipped, the
-      # gate short-circuits to success, and promote then threw "No unexpired
-      # candidate artifacts found" on a PR that was never supposed to publish.
-      # PR #2990 is the worked example. Every build.yaml sits at exactly this
-      # depth, and GitHub's `*` does not cross `/`, so this matches all of them.
-      - "recipes/*/build.yaml"
+      # The trusted resolve job runs the same release planner as the PR gate and
+      # schedules artifact promotion only when that plan contains candidates.
+      # This broad trigger also catches recipe-local build inputs such as scripts.
+      - "recipes/**"
   workflow_dispatch:
     inputs:
       pr_number:
@@ -30,12 +25,7 @@ on:
         required: true
         type: number
 
-permissions:
-  actions: read
-  contents: write
-  id-token: write
-  packages: write
-  pull-requests: read
+permissions: {}
 
 concurrency:
   group: promote-container-and-metadata
@@ -51,6 +41,12 @@ jobs:
       should_promote: ${{ steps.pr.outputs.should_promote }}
       pr_number: ${{ steps.pr.outputs.pr_number }}
       head_sha: ${{ steps.pr.outputs.head_sha }}
+      merge_sha: ${{ steps.pr.outputs.merge_sha }}
+      recipes: ${{ steps.plan.outputs.recipes }}
+      release_plan: ${{ steps.plan.outputs.release_plan }}
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Resolve trusted main event to a merged recipe PR
         id: pr
@@ -92,14 +88,49 @@ jobs:
             if (!pr.merged_at || pr.base.ref !== 'main') {
               throw new Error(`PR #${pr.number} is not merged into main`);
             }
+            const mergeSha = context.eventName === 'workflow_dispatch'
+              ? pr.merge_commit_sha
+              : context.sha;
+            if (!mergeSha) {
+              throw new Error(`PR #${pr.number} has no merge commit SHA`);
+            }
             core.setOutput('should_promote', 'true');
             core.setOutput('pr_number', String(pr.number));
             core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('merge_sha', mergeSha);
+      - name: Checkout trusted main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install release planner dependencies
+        run: pip install pyyaml
+      - name: Plan merged recipe changes
+        id: plan
+        if: steps.pr.outputs.should_promote == 'true'
+        env:
+          MERGE_SHA: ${{ steps.pr.outputs.merge_sha }}
+        run: |
+          base_sha="$(git rev-parse "${MERGE_SHA}^1")"
+          python tools/one_pr_release.py --repo-root . detect \
+            --base "${base_sha}" --head "${MERGE_SHA}"
 
   promote:
     needs: resolve
-    if: needs.resolve.outputs.should_promote == 'true'
+    if: >-
+      needs.resolve.outputs.should_promote == 'true' &&
+      needs.resolve.outputs.recipes != '[]'
     runs-on: neurodesk-syd-arcrunner-neurocontainers
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      packages: write
+      pull-requests: read
     steps:
       - name: Create narrowly scoped release token
         id: app-token

@@ -88,12 +88,21 @@ def test_load_recipe_wraps_read_and_yaml_errors(tmp_path: Path, monkeypatch) -> 
 
 def test_detect_recipes_accepts_recipe_only_change(tmp_path: Path, monkeypatch) -> None:
     """Recipe-only changes are eligible for candidate builds."""
-    write_recipe(tmp_path)
+    recipe_dir = write_recipe(tmp_path)
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(
         one_pr_release,
         "changed_files",
         lambda base, head: ["recipes/demo/build.yaml", "recipes/demo/fulltest.yaml"],
+    )
+    head_recipe = yaml.safe_load(
+        (recipe_dir / "build.yaml").read_text(encoding="utf-8")
+    )
+    base_recipe = {**head_recipe, "version": "1.2.2"}
+    monkeypatch.setattr(
+        one_pr_release,
+        "load_recipe_at",
+        lambda revision, recipe: base_recipe if revision == "base" else head_recipe,
     )
 
     assert one_pr_release.detect_recipes("base", "head") == ["demo"]
@@ -114,12 +123,21 @@ def test_detect_recipes_allows_pr_without_recipes(tmp_path: Path, monkeypatch) -
 
 def test_detect_recipes_rejects_mixed_pr(tmp_path: Path, monkeypatch) -> None:
     """Mixed automation and recipe changes cannot cross the trust boundary."""
-    write_recipe(tmp_path)
+    recipe_dir = write_recipe(tmp_path)
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(
         one_pr_release,
         "changed_files",
         lambda base, head: ["recipes/demo/build.yaml", ".github/workflows/unsafe.yml"],
+    )
+    head_recipe = yaml.safe_load(
+        (recipe_dir / "build.yaml").read_text(encoding="utf-8")
+    )
+    base_recipe = {**head_recipe, "version": "1.2.2"}
+    monkeypatch.setattr(
+        one_pr_release,
+        "load_recipe_at",
+        lambda revision, recipe: base_recipe if revision == "base" else head_recipe,
     )
 
     try:
@@ -140,6 +158,15 @@ def test_detect_recipes_requires_fulltest(tmp_path: Path, monkeypatch) -> None:
         "changed_files",
         lambda base, head: ["recipes/demo/build.yaml"],
     )
+    head_recipe = yaml.safe_load(
+        (recipe_dir / "build.yaml").read_text(encoding="utf-8")
+    )
+    base_recipe = {**head_recipe, "version": "1.2.2"}
+    monkeypatch.setattr(
+        one_pr_release,
+        "load_recipe_at",
+        lambda revision, recipe: base_recipe if revision == "base" else head_recipe,
+    )
 
     try:
         one_pr_release.detect_recipes("base", "head")
@@ -147,6 +174,24 @@ def test_detect_recipes_requires_fulltest(tmp_path: Path, monkeypatch) -> None:
         assert "fulltest.yaml is required" in str(error)
     else:
         raise AssertionError("recipe without fulltest was accepted")
+
+
+def test_detect_recipes_catches_recipe_helper_without_build_yaml(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A changed build input cannot silently bypass the candidate gate."""
+    recipe_dir = write_recipe(tmp_path)
+    (recipe_dir / "install.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(
+        one_pr_release,
+        "changed_files",
+        lambda base, head: ["recipes/demo/install.sh"],
+    )
+    data = yaml.safe_load((recipe_dir / "build.yaml").read_text(encoding="utf-8"))
+    monkeypatch.setattr(one_pr_release, "load_recipe_at", lambda revision, recipe: data)
+
+    assert one_pr_release.detect_recipes("base", "head") == ["demo"]
 
 
 def test_inspect_recipe_rejects_missing_or_unsafe_version(

@@ -54,7 +54,9 @@ def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> Non
     assert "Container build approval" in reporter
     assert "Deploy + fulltest" in reporter
     assert "What happens after merge" in reporter
-    assert "No build.yaml changes; no container approval comment is needed" in reporter
+    assert "No recipe build candidates; no container approval comment is needed" in reporter
+    assert "classified the recipe changes as source-only" in reporter
+    assert "file.filename.match(/^recipes\\/([^/]+)\\//)" in reporter
     assert reporter.count("github.rest.issues.createComment") == 1
     assert "github.rest.issues.updateComment" in reporter
     assert "createComment" not in validator
@@ -108,9 +110,26 @@ def test_candidate_promotion_uses_trusted_main_oidc_identity() -> None:
     assert "pull_request_target:" not in workflow
     assert "listPullRequestsAssociatedWithCommit" in workflow
     assert "item.merge_commit_sha === context.sha" in workflow
-    assert "if: needs.resolve.outputs.should_promote == 'true'" in workflow
+    assert "needs.resolve.outputs.should_promote == 'true' &&" in workflow
+    assert "needs.resolve.outputs.recipes != '[]'" in workflow
     assert "HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}" in workflow
     assert "PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}" in workflow
+
+
+def test_pr_and_postmerge_workflows_share_the_release_planner() -> None:
+    candidate = Path(".github/workflows/pr-container-candidate.yml").read_text()
+    promotion = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    planner = "python tools/one_pr_release.py --repo-root . detect"
+    assert "../trusted/tools/one_pr_release.py --repo-root . detect" in candidate
+    assert planner in promotion
+    assert 'steps.detect.outputs.changed_recipes != \'[]\'' in candidate
+    assert 'RECIPES: ${{ steps.detect.outputs.changed_recipes }}' in candidate
+    assert '- "recipes/**"' in promotion
+    assert 'needs.resolve.outputs.recipes != \'[]\'' in promotion
+    assert "permissions: {}" in promotion
 
 
 def test_candidate_promotion_installs_aws_cli_before_s3_upload() -> None:

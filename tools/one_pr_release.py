@@ -22,6 +22,11 @@ if str(SCRIPT_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPT_REPO_ROOT))
 
 from builder.release import release_data
+from builder.release_plan import (
+    ReleasePlan,
+    plan_recipe_changes,
+    recipe_names_from_paths,
+)
 from builder.variants import concrete_variant_specs
 
 REPO_ROOT = SCRIPT_REPO_ROOT
@@ -99,33 +104,51 @@ def changed_files(base: str, head: str) -> list[str]:
     return [line for line in output.splitlines() if line]
 
 
-def detect_recipes(base: str, head: str) -> list[str]:
-    """Return changed recipes after enforcing the recipe-only PR boundary."""
-    paths = changed_files(base, head)
-    recipes = {
-        parts[1]
-        for path in paths
-        if len(parts := Path(path).parts) >= 3
-        and parts[0] == "recipes"
-        and parts[2] == "build.yaml"
-    }
-    if not recipes:
-        # Not an error: the release gate is a required status check, so it also
-        # runs on pull requests that touch no recipe. An empty list tells the
-        # workflow there is nothing to build.
-        return []
+def load_recipe_at(revision: str, recipe: str) -> dict[str, Any] | None:
+    """Load build.yaml from a Git tree without rendering PR-authored templates."""
+    relative = f"recipes/{recipe}/build.yaml"
+    present = run_git("ls-tree", "--name-only", revision, "--", relative)
+    if present != relative:
+        return None
+    try:
+        data = yaml.safe_load(run_git("show", f"{revision}:{relative}"))
+    except yaml.YAMLError as error:
+        raise RuntimeError(
+            f"Unable to parse {relative} at {revision}: {error}"
+        ) from error
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Recipe {relative} at {revision} must be a YAML mapping")
+    return data
 
-    allowed = tuple(f"recipes/{recipe}/" for recipe in recipes)
+
+def release_plan(base: str, head: str) -> ReleasePlan:
+    """Plan recipe work from Git trees using trusted, non-rendering policy."""
+    paths = changed_files(base, head)
+    names = recipe_names_from_paths(paths)
+    plan = plan_recipe_changes(
+        paths,
+        {recipe: load_recipe_at(base, recipe) for recipe in names},
+        {recipe: load_recipe_at(head, recipe) for recipe in names},
+    )
+    if not plan.candidate_recipes:
+        return plan
+
+    allowed = tuple(f"recipes/{recipe}/" for recipe in plan.changed_recipes)
     unrelated = [path for path in paths if not path.startswith(allowed)]
     if unrelated:
         raise RuntimeError(
             "Automated releases require a recipe-only PR. Unrelated paths: "
             + ", ".join(unrelated)
         )
-    for recipe in recipes:
+    for recipe in plan.candidate_recipes:
         if not (REPO_ROOT / "recipes" / recipe / "fulltest.yaml").is_file():
             raise RuntimeError(f"recipes/{recipe}/fulltest.yaml is required")
-    return sorted(recipes)
+    return plan
+
+
+def detect_recipes(base: str, head: str) -> list[str]:
+    """Return only recipes whose planned change requires a candidate build."""
+    return release_plan(base, head).candidate_recipes
 
 
 def build_date(recipe: str, revision: str = "HEAD") -> str:
@@ -253,11 +276,15 @@ def detect_targets(recipes: list[str]) -> list[dict[str, str]]:
 
 def command_detect(args: argparse.Namespace) -> None:
     """Implement the detect CLI command."""
-    recipes = detect_recipes(args.base, args.head)
+    plan = release_plan(args.base, args.head)
+    recipes = plan.candidate_recipes
     write_output(
         {
             "recipes": json.dumps(recipes),
             "targets": json.dumps(detect_targets(recipes)),
+            "changed_recipes": json.dumps(plan.changed_recipes),
+            "source_only_recipes": json.dumps(plan.source_only_recipes),
+            "release_plan": json.dumps(plan.as_dict(), separators=(",", ":")),
         }
     )
 
