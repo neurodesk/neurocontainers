@@ -281,7 +281,7 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings):
         * pre_reference
         * np.conj(phase_d)
     ).astype(np.float32)
-    bsp[bsp < math.radians(-25.0)] += 2 * math.pi
+    bsp[bsp < math.radians(-25.0/180)] += 2 * math.pi
     bsp[bsp < 0] = 0
 
     pulse_width = _setting_float(settings, "bspulsewidthms", default=BSS_PULSE_WIDTH_MS)
