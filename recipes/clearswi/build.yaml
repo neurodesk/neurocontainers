@@ -1,84 +1,281 @@
 name: clearswi
-version: 1.0.0
+version: 1.6.1
+
+copyright:
+  - license: MIT
+    url: https://github.com/korbinian90/CLEARSWI.jl/blob/master/LICENSE
 
 architectures:
   - x86_64
 
+variables:
+  julia_version: 1.12.6
+  julia_series: "1.12"
+  julia_root: /opt/julia-1.12.6
+  tgv_version: 0.5.0
+  packagecompiler_version: 2.4.0
+  # Julia caches package loading, but not the specialisation of calculateSWI for
+  # concrete argument types, so every process paid ~40 s of JIT before doing ~1 s
+  # of work. The sysimage below bakes that compilation into the image once.
+  #
+  # The build machine is not the run machine: these containers ship to CVMFS and
+  # run on whatever CPU the site has. PackageCompiler defaults to a native target,
+  # which would produce an image that is illegal on older hardware, so pin the
+  # same multiversioned target Julia uses for its own x86_64 binaries.
+  sysimage_cpu_target: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1);x86-64-v4,-rdrnd,base(1)"
+
 build:
   kind: neurodocker
-  base-image: ubuntu:20.04
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
     - install:
-        - git
-        - wget
         - ca-certificates
-        - vim
+        # PackageCompiler links the sysimage with the system C toolchain.
+        - build-essential
 
     - workdir: /opt
 
-    - run:
-        - cp {{ get_file("julia_1_6_3_linux_x86_64_tar_gz") }} julia-1.6.3-linux-x86_64.tar.gz
-        - tar zxvf julia-1.6.3-linux-x86_64.tar.gz
-        - rm -rf julia-1.6.3-linux-x86_64.tar.gz
-
+    # Julia and the CLEARSWI launcher have to be on PATH inside the container:
+    # Transparent Singularity resolves DEPLOY_BINS/DEPLOY_PATH entries through
+    # the container PATH when it generates the module wrapper scripts.
     - environment:
-        PATH: $PATH:/opt/julia-1.6.3/bin
+        PATH: "{{ context.julia_root }}/bin:/opt/clearswi/bin:$PATH"
+        JULIA_DEPOT_PATH: /opt/julia_depot
 
     - copy:
         - install_packages.jl
         - /opt/install_packages.jl
 
-    - environment:
-        JULIA_DEPOT_PATH: /opt/julia_depot
+    - copy:
+        - precompile_workload.jl
+        - /opt/precompile_workload.jl
 
+    - copy:
+        - build_sysimage.jl
+        - /opt/build_sysimage.jl
+
+    # Unpacking Julia, installing the packages and writing the sysimage all
+    # happen in one layer on purpose. build_sysimage.jl replaces the
+    # interpreter's own sys.so, so if the unpack lived in an earlier layer the
+    # image would carry both the stock 299 MB sysimage and the 732 MB
+    # replacement. Docker keeps the shadowed copy, and Dive counts that
+    # duplication against the efficiency gate.
+    #
+    # The build steps are scripts rather than julia -e because neurodocker
+    # backslash escapes parentheses when it records the run command into
+    # /.reproenv.json, which leaves invalid JSON behind in the image.
     - run:
+        - tar -xzf {{ get_file("julia_linux_x86_64_tar_gz") }} -C /opt
         - julia /opt/install_packages.jl
-        - chmod a+rwx /opt/julia_depot/packages/CLEARSWI -R
+        - julia --startup-file=no /opt/build_sysimage.jl
+        - rm -f /opt/build_sysimage.jl /opt/precompile_workload.jl
+
+    # The Julia entry script is named "clearswi" (no extension) because ArgParse
+    # derives the program name in its usage output from basename(PROGRAM_FILE);
+    # naming it clearswi_main.jl makes the help text advertise the wrong command.
+    - copy:
+        - clearswi_main
+        - /opt/clearswi/libexec/clearswi
+
+    - copy:
+        - clearswi
+        - /opt/clearswi/bin/clearswi
+
+    # The home directory is not available at container runtime and the image is
+    # mounted read-only, so the depot has to be world-readable and fully
+    # precompiled at build time. The sysimage is handled in the layer that
+    # creates it, so that this recursive chmod never touches the Julia tree.
+    - run:
+        - chmod a+rx /opt/clearswi/bin/clearswi
+        - chmod -R a+rX /opt/julia_depot /opt/clearswi
 
 deploy:
+  path:
+    - /opt/clearswi/bin
   bins:
     - julia
 
 files:
-  - name: julia_1_6_3_linux_x86_64_tar_gz
-    url: https://julialang-s3.julialang.org/bin/linux/x64/1.6/julia-1.6.3-linux-x86_64.tar.gz
+  - name: julia_linux_x86_64_tar_gz
+    url: https://julialang-s3.julialang.org/bin/linux/x64/{{ context.julia_series }}/julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+
   - name: install_packages.jl
     contents: |
       using Pkg
-      Pkg.add(PackageSpec(url="https://github.com/korbinian90/CLEARSWI.jl"))
+      # ArgParse and QuantitativeSusceptibilityMappingTGV are loaded by name in
+      # the launcher, so both have to be direct dependencies of this environment.
+      # TGV backs the --qsm option: MriResearchTools dispatches to it through a
+      # package extension, which only activates once the package is loaded.
+      Pkg.add([
+          PackageSpec(name="CLEARSWI", version="{{ context.version }}"),
+          PackageSpec(name="ArgParse"),
+          PackageSpec(name="QuantitativeSusceptibilityMappingTGV", version="{{ context.tgv_version }}"),
+          PackageSpec(name="PackageCompiler", version="{{ context.packagecompiler_version }}"),
+      ])
+      Pkg.precompile()
+      # Warm the cache for the launcher's exact load sequence.
+      using CLEARSWI, QuantitativeSusceptibilityMappingTGV, ArgParse
+
+  - name: build_sysimage.jl
+    contents: |
+      using PackageCompiler
+
+      # Overwriting the interpreter's own sysimage is what lets both the clearswi
+      # launcher and a bare `julia` invocation pick this up without a -J flag or
+      # a PATH shim. PackageCompiler 2.x dropped the replace_default option that
+      # used to do this, so stage the image and rename it into place.
+      #
+      # Renaming is safe from inside the running interpreter: rename(2) only
+      # swaps the directory entry, so this process keeps the inode it already has
+      # mapped and every later process gets the new file. Writing over the path
+      # directly would corrupt the interpreter doing the writing.
+      #
+      # Listing the packages alone would only capture their own precompile
+      # statements; the workload file is what gets calculateSWI and the command
+      # line path compiled in.
+      staged = "/opt/sys_clearswi.so"
+      default_sysimage = unsafe_string(Base.JLOptions().image_file)
+
+      # include_transitive_dependencies has to be false. With the default, every
+      # package in the dependency graph is baked in and its __init__ then runs on
+      # every Julia start. FFTW depends on MKL_jll, which nothing here ever loads
+      # because FFTW uses its own provider, and whose artifact is marked lazy and
+      # so is not in the depot. Baking it in made MKL_jll.__init__ demand a 539 MB
+      # download during jl_init, which aborts the interpreter on any machine
+      # without network access. Loading only the three named packages pulls in
+      # exactly what the runtime pulls in, so what is used is still included.
+      create_sysimage(
+          ["CLEARSWI", "QuantitativeSusceptibilityMappingTGV", "ArgParse"];
+          sysimage_path=staged,
+          precompile_execution_file="/opt/precompile_workload.jl",
+          cpu_target="{{ context.sysimage_cpu_target }}",
+          include_transitive_dependencies=false,
+      )
+
+      mv(staged, default_sysimage; force=true)
+
+      # Set the mode here rather than in a later chmod directive. A recursive
+      # chmod over the Julia tree issues a chmod syscall per file, and overlayfs
+      # copies a file up into the new layer whenever its metadata is touched,
+      # even if the mode does not actually change. Doing that to a 700 MB
+      # sysimage duplicates it into the image and fails the Dive efficiency gate.
+      chmod(default_sysimage, 0o755)
+
+  # Traced by PackageCompiler to decide what native code goes into the sysimage.
+  # Anything not exercised here still gets JIT compiled on first use at runtime,
+  # so this deliberately walks every option branch the container advertises.
+  - name: precompile_workload.jl
+    contents: |
+      using CLEARSWI, QuantitativeSusceptibilityMappingTGV, ArgParse
+
+      d = CLEARSWI.dir("test", "data", "small")
+      out = mktempdir()
+      mkpath(joinpath(out, "steps"))
+
+      mag = readmag(joinpath(d, "Mag.nii"))
+      phase = readphase(joinpath(d, "Phase.nii"))
+      data = Data(mag, phase, mag.header, [4, 8, 12])
+
+      for opt in (
+          Options(),
+          Options(mag_combine=:average),
+          Options(mag_combine=:last),
+          Options(mag_combine=(:echo => 2)),
+          Options(mag_combine=(:closest => 8)),
+          Options(mag_softplus=false),
+          Options(mag_sens=[1]),
+          Options(phase_unwrap=:romeo),
+          Options(phase_unwrap=:laplacianslice),
+          Options(phase_hp_sigma=[10, 10, 5]),
+          Options(phase_scaling_type=:positive),
+          Options(phase_scaling_type=:negative),
+          Options(phase_scaling_type=:triangular),
+          Options(phase_scaling_strength=2),
+          Options(writesteps=joinpath(out, "steps")),
+      )
+          swi = calculateSWI(data, opt)
+          createMIP(swi)
+          createMIP(swi, 5)
+          createIntensityProjection(swi, maximum)
+          savenii(swi, joinpath(out, "swi.nii"); header=mag.header)
+      end
+
+      # Single and dual echo dispatch to different specialisations than the
+      # three echo case above.
+      calculateSWI(Data(mag[:, :, :, 1], phase[:, :, :, 1], mag.header, [4]))
+      calculateSWI(Data(mag[:, :, :, 1:2], phase[:, :, :, 1:2], mag.header, [4, 8]))
+
+      # The command line path: argument parsing, and --qsm, which reaches TGV
+      # through the MriResearchTools package extension.
+      magfile = joinpath(d, "Mag.nii")
+      phasefile = joinpath(d, "Phase.nii")
+      clearswi_main(["-m", magfile, "-p", phasefile, "-t", "[4,8,12]",
+                     "-o", joinpath(out, "cli.nii")])
+      clearswi_main(["-m", magfile, "-p", phasefile, "-t", "[4,8,12]", "--qsm",
+                     "-o", joinpath(out, "qsm.nii")])
+
+      # Keep the help paths last. ArgParse exits the process after printing
+      # usage when it is not running interactively, which would truncate the
+      # trace for anything placed below.
+      clearswi_main(String[])
+      clearswi_main(["--help"])
+
+  - name: clearswi_main
+    contents: |
+      # Same load sequence as upstream's clearswi.jl. Dropping the TGV import
+      # makes --qsm fail with "no method matching copy(::Nothing)", because
+      # MriResearchTools falls back to a stub when the extension is not active.
+      using CLEARSWI, QuantitativeSusceptibilityMappingTGV, ArgParse
+      msg = clearswi_main(ARGS)
+      if msg !== nothing
+          println(msg)
+      end
+
+  - name: clearswi
+    contents: |
+      #!/usr/bin/env bash
+      exec julia --startup-file=no /opt/clearswi/libexec/clearswi "$@"
 
 categories:
+  - phase processing
   - structural imaging
+
+structured_readme:
+  description: |-
+    Published as CLEAR-SWI. It provides magnetic resonance images with improved vein and iron contrast by weighting a combined magnitude image with a preprocessed phase image.
+
+    The container exposes both the `clearswi` command line program and the `julia` interpreter with the CLEARSWI package preinstalled.
+  example: |-
+    Command line:
+
+    clearswi -m Mag.nii -p Phase.nii -t [4,8,12] -o output_dir
+
+    Julia:
+
+    julia -e '
+    using CLEARSWI
+
+    TEs = [4,8,12]
+    nifti_folder = CLEARSWI.dir("test","testData","small")
+    magfile = joinpath(nifti_folder, "Mag.nii")
+    phasefile = joinpath(nifti_folder, "Phase.nii")
+
+    mag = readmag(magfile);
+    phase = readphase(phasefile);
+    data = Data(mag, phase, mag.header, TEs);
+
+    swi = calculateSWI(data);
+    mip = createMIP(swi);
+
+    savenii(swi, "<outputpath>/swi.nii"; header=mag.header)
+    savenii(mip, "<outputpath>/mip.nii"; header=mag.header)
+    '
+  documentation: https://github.com/korbinian90/CLEARSWI.jl
+  citation: "Eckstein, K., Bachrata, B., Hangel, G., Widhalm, G., Enzinger, C., Barth, M., Trattnig, S., Robinson, S.D., 2021. Improved susceptibility weighted imaging at ultra-high field using bipolar multi-echo acquisition and optimized image processing: CLEAR-SWI. NeuroImage 237, 118175. https://doi.org/10.1016/j.neuroimage.2021.118175"
+
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBIWXMAAC4jAAAuIwF4pT92AAAE9klEQVRoge1ZMUzyXhC/fvk2d3TGWEejLsbFpOBkXEzUV1fjVHR1KoOjSUc2mE1a4wzBmBADizEGHYwo3UuiU5n7H376fLwWhA+08Z/+Jjj6jvu9d3fv7qoEQUC/GX/iNmBcJATiRkIgbiQE4kZCIG4kBOJGBIFGo5HP5zOZjKIo8/Pzuq6XSqVut0tErusqipLJZPqpw6owKpVK+GFd1xVF0XU9UlU+n9d1nSvMZDK5XC6sRxGLOdd1Dw4Orq6u8JUx1ul08LXdbqfT6U6nMz09TUT9SkBFUYhI07RUKiXKDw8PV1dXRYnrurOzs/gM5ZGqGGNzc3NEVK/XYQlj7Ozs7PO54APNZhMS0zQ9zwsENJtNfPA8T1olAb9KyyNRLBaJyDAMIrJtexhVzWZTVVXp+XdTfN8P/xbGBAlomkZE2DXG2JCqbNuWnn83he/H4H+dFIF2u83tAJN2uz2MKiwUDXgP4tPTUyLa29uL9OyJ4/b2loi2traIaGNjg0u+hO/7RATOwB8i6nQ6rVaLiBYWFr7B2ghcXFwQ0fLyMhFls1ku+RKXl5ckbXQghO/gcx/ehTRNY73wfT/Sf8RVkhdByF3I9334uaZpojYKgqBer0+WAPKBCPEvEYhitrAsi0L5I1KVYRhSVPwlopmZGfzc7XanpqaGOcrBuL6+lu4BEfCWWq328PAAyfPzM+Tb29vSw+vr67u7u29vb9VqtdVqvb6+yupEujzfj3kCA7IQTyOREL0orMo0TQqlyvcshAvl/Px80MZOAsg2lmVJxGDA4Fx0fHxMRIVCwXXdT6m0MeVy+VtPgDFGUUddLpcpKrIlVeGb+9MUxBa2R0oIkyolsFxV1fBPSPDi2khVMNI0TS7pKeYqlcrR0RHuBFVVl5aW+hVz2EgRKNf6FXPZbHZ/f99xnJ2dHdM0T05Owh6Sy+UKhYJt2whlqPI8T1SFElBV1aenpx4XEnfCtm3DMHDbaZpmGIZt28iDA0IQvifekSKwZ3CAer0eeT7wIh6j/UoMyQl7TuA34v/Ykf0uJATiRkIgbiQE4kZCIG6MTKDb7TqOg6mgNHiEsNFoSEtyuZyiKKVSSZI7jsPlGCH2FPpDIrKu6gfP83i5xhjjn1H0orUtFovSKjyjaVpkWYbaTtQzEkYjgHLSsizepPu+z6tLDAekMRtGHujNxdaeNwAQ/gQB6S/DiGx30IKAudiIgS0vnv+ZwAgxwPupfpOLVCoFp7q/v+fCWq1GRJubm0R0c3PD5Y+Pj0S0trY2vAGRGIFAOp1WVbXVajmO0+8ZzAk/2yWiQqHAGFtcXCSiu7s7LseMDcO5sTDSeaFpIiLDMCJnMHiA96wIAIS1qqq8G+beyBfi67cHMUzk0zLGmNQfws14wkEAgCrCAC0iAkDszX+OQPDRN/McKg15IIcpMBpBL04UMeUURzg/SoCDe5Q4qMH8jGd3nmfgTth13ACiufEQCKJemYCVZVmwuGcI9eFdFLrXYiMQzv2QYBhDvXMRfvWGHe+fCYxbzL28vFDvnAu3QbVardVqqqqKrx/xLgNHtLKyMuZfv2N4rnjFIO5ou91GyEqjfYSBqqrSJBl7Hy4rxjmBEQjw9yB4AdMvCwV9gjsQ0n/4beJPEIBl4tTRNM3IOSEPjLBBcLbwy9x+g8QvkYwW40ZCIG4kBOJGQiBu/HoC/wFkWD/gxOxGxgAAAABJRU5ErkJggg==
-
-readme: |
-  ----------------------------------
-  ## clearswi/{{ context.version }} ##
-  Published as CLEAR-SWI. It provides magnetic resonance images with improved vein and iron contrast by weighting a combined magnitude image with a preprocessed phase image.
-
-  Example (run in julia):
-  ```
-  using CLEARSWI
-
-  TEs = [4,8,12]
-  nifti_folder = CLEARSWI.dir("test","testData","small")
-  magfile = joinpath(nifti_folder, "Mag.nii")
-  phasefile = joinpath(nifti_folder, "Phase.nii")
-
-  mag = readmag(magfile);
-  phase = readphase(phasefile);
-  data = Data(mag, phase, mag.header, TEs);
-
-  swi = calculateSWI(data);
-  mip = createMIP(swi);
-
-  savenii(swi, "<outputpath>/swi.nii"; header=mag.header)
-  savenii(mip, "<outputpath>/mip.nii"; header=mag.header)
-  ```
-
-  More documentation can be found here: https://github.com/korbinian90/CLEARSWI.jl
-
-  To run container outside of this environment: ml clearswi/{{ context.version }}
-  ----------------------------------
