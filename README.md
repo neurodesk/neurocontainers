@@ -9,7 +9,7 @@ _Information on **Neurocontainers** is available at [neurodesk.org/docs/neurocon
 ## Working in this repository
 
 ```bash
-python3 -m venv env && source env/bin/activate
+python3.13 -m venv env && source env/bin/activate
 pip install -r requirements.txt && pip install -e .
 
 sf-init <name> <version>    # Scaffold a new recipe in recipes/<name>/

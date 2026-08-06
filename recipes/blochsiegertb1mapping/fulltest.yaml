@@ -1,5 +1,5 @@
 name: blochsiegertb1mapping
-version: 1.0.3
+version: 1.0.5
 default_timeout: 120
 tests:
 - name: Bloch-Siegert OpenRecon workflow unit smoke test
@@ -181,6 +181,8 @@ tests:
     assert first(first_meta.get("BlochSiegertDisplayScale")) == "100"
     assert first(first_meta.get("BlochSiegertDisplayFormula")) == "uT = display / 100"
     assert first(first_meta.get("BlochSiegertDisplayMax")) == "4095"
+    assert first(first_meta.get("RescaleSlope")) == "0.01"
+    assert first(first_meta.get("RescaleIntercept")) == "0"
     assert first(first_meta.get("ImageComments")) == (
         "bss_source-b1; scanner display uint16 0-4095; uT = display / 100"
     )
