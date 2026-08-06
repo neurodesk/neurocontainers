@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import yaml
 
 from builder.release import release_data
@@ -407,8 +408,10 @@ def test_detect_targets_expands_declared_architectures(tmp_path: Path, monkeypat
     ]
 
 
-def test_candidate_report_compacts_identity_and_test_results(tmp_path: Path) -> None:
-    """The PR reporter receives counts and names, not large untrusted logs."""
+def test_candidate_report_compacts_identity_and_test_results(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The PR reporter receives compact provenance, tests, and Dive findings."""
     candidate_dir = tmp_path / "demo"
     candidate_dir.mkdir()
     manifest = {
@@ -426,7 +429,7 @@ def test_candidate_report_compacts_identity_and_test_results(tmp_path: Path) -> 
         "sif_sha256": "0" * 64,
         "release_json": "1.2.3.json",
         "pr_number": 42,
-        "head_sha": "abc123",
+        "head_sha": "a" * 40,
         "recipe_fingerprint": "1" * 64,
     }
     (candidate_dir / "manifest.json").write_text(
@@ -454,12 +457,37 @@ def test_candidate_report_compacts_identity_and_test_results(tmp_path: Path) -> 
         ),
         encoding="utf-8",
     )
+    (candidate_dir / "dive-report.txt").write_text(
+        """\
+  efficiency: 73.3106 %
+  wastedBytes: 1097161927 bytes (1.1 GB)
+  userWastedPercent: 38.7750 %
+Inefficient Files:
+Count  Wasted Space  File Path
+    2        1.1 GB  /opt/julia-1.12.6/lib/julia/sys.so
+    2         11 MB  /usr/lib/x86_64-linux-gnu/libcrypto.so.3
+Results:
+  FAIL: highestUserWastedPercent: too many bytes wasted, relative to the user bytes added (%-user-wasted-bytes=0.3877500666571043 > threshold=0.3)
+  PASS: highestWastedBytes
+  FAIL: lowestEfficiency: image efficiency is too low (efficiency=0.7331063546963662 < threshold=0.8)
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        one_pr_release,
+        "load_recipe",
+        lambda recipe: {"deploy": {"bins": ["demo-launcher"]}},
+    )
 
-    report = one_pr_release.build_candidate_report(candidate_dir)
+    report = one_pr_release.build_candidate_report(candidate_dir, dive_status="failure")
 
-    assert report["schema_version"] == 1
+    assert report["schema_version"] == 3
     assert report["recipe"] == "demo"
     assert report["container"] == "demo"
+    assert report["candidate_tag"] == "nd-candidate-demo:abc123"
+    assert report["launcher"] == "demo-launcher"
+    assert report["pr_number"] == 42
+    assert report["head_sha"] == "a" * 40
     assert report["tests"] == {
         "total": 4,
         "passed": 3,
@@ -470,10 +498,53 @@ def test_candidate_report_compacts_identity_and_test_results(tmp_path: Path) -> 
         "fulltest_failed": 1,
         "suites_total": 1,
         "suites_passed": 0,
+        "passed_tests": ["launcher"],
         "failed_tests": ["real command"],
+    }
+    assert report["dive"] == {
+        "status": "failure",
+        "efficiency_percent": 73.3106,
+        "wasted_bytes": 1097161927,
+        "wasted_bytes_display": "1.1 GB",
+        "user_wasted_percent": 38.775,
+        "failed_checks": [
+            {
+                "name": "highestUserWastedPercent",
+                "actual_percent": 38.775006665710436,
+                "threshold_percent": 30.0,
+            },
+            {
+                "name": "lowestEfficiency",
+                "actual_percent": 73.31063546963662,
+                "threshold_percent": 80.0,
+            },
+        ],
+        "inefficient_files": [
+            {
+                "count": 2,
+                "wasted_space": "1.1 GB",
+                "path": "/opt/julia-1.12.6/lib/julia/sys.so",
+            },
+            {
+                "count": 2,
+                "wasted_space": "11 MB",
+                "path": "/usr/lib/x86_64-linux-gnu/libcrypto.so.3",
+            },
+        ],
     }
     assert "stdout" not in json.dumps(report)
     assert "stderr" not in json.dumps(report)
+
+
+def test_candidate_report_rejects_invalid_dive_status(tmp_path: Path) -> None:
+    """Only GitHub step outcomes can enter the trusted compact report."""
+    candidate_dir = tmp_path / "demo"
+    candidate_dir.mkdir()
+
+    with pytest.raises(RuntimeError, match="Invalid Dive status"):
+        one_pr_release.build_candidate_report(
+            candidate_dir, dive_status="failure<script>"
+        )
 
 
 def test_materialize_rejects_unverified_release_path(

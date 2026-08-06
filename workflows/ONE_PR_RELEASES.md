@@ -13,24 +13,32 @@ artifacts after merge. They no longer create a second release-metadata PR.
 2. Each candidate builds a Docker archive and SIF, runs the deploy/fulltest and
    Dive checks, generates the release JSON preview, and stores everything for
    30 days under its own container identity.
-3. A trusted `workflow_run` posts one approval summary on recipe PRs. It shows
-   the exact recipe, container, version, architecture, build result,
-   deploy/fulltest counts, Dive result, candidate bundle, and post-merge publish
-   destinations. Later runs update that comment in place. The reporter downloads
-   only compact, schema-checked JSON summaries; it never opens candidate images
-   or test logs.
+3. A trusted `workflow_run` posts one action-first lifecycle summary on recipe
+   PRs. The heading names the exact container, version, and architecture and
+   tells the maintainer whether to merge, fix a candidate, wait for promotion,
+   or retry a failed promotion. The summary separates deploy and fulltest
+   counts, names the passed or failed checks, reports Dive findings, and gives
+   artifact-specific download and smoke-test commands with size and expiry.
+   Later candidate and promotion runs update that comment in place.
+   Fork PRs carry their PR number and head SHA in the compact report; the trusted
+   reporter fetches that PR and verifies its repository, branch, and SHA before
+   commenting. The reporter downloads only compact, schema-checked JSON summaries;
+   it never opens candidate images or test logs.
 4. `Container release gate` is the stable required check for branch rules.
 5. After merge, `Promote merged container candidate` runs the same trusted
    release planner over the merge commit. It exits successfully when no
-   candidate was required; otherwise it selects the successful run
-   for the exact PR head SHA. It verifies the PR number, recipe fingerprint,
-   artifact hashes, and release metadata before publishing the tested files.
+   candidate was required; otherwise a GitHub-hosted job waits for the candidate
+   run for the exact PR head SHA to finish before allocating the ARC publishing
+   runner. It verifies the PR number, recipe fingerprint, artifact hashes, and
+   release metadata before publishing the tested files.
    The variant a candidate claims is re-resolved against the merged recipe, so a
    candidate cannot promote itself into an identity the recipe never declared.
 6. The promoter commits the generated JSON to `releases/` on `main`. That push
    triggers the existing apps/webapps update workflows.
 7. For each default x86_64 candidate with an `OpenReconLabel.json`, the promoter
-   opens or reuses an OpenRecon metadata PR after the release metadata push.
+   opens or reuses an OpenRecon metadata PR after the release metadata push. If
+   the version, label, and README are unchanged, it dispatches the OpenRecon
+   build directly so same-version container rebuilds still propagate.
 
 Manual builds remain available as a recovery path. The old push-to-main
 `auto-build` workflow is removed so recipe changes cannot start an untested

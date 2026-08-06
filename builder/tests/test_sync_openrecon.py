@@ -116,3 +116,60 @@ def test_existing_pull_request_matches_exact_title(monkeypatch: pytest.MonkeyPat
     assert sync_openrecon.existing_pull_request(
         "neurodesk/openrecon", "Update demo OpenRecon metadata to 1.2.3"
     ) == "https://example.test/pr/1"
+
+
+def test_unchanged_metadata_dispatches_openrecon_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    write_source_recipe(source_root)
+    commands: list[list[str]] = []
+
+    def fake_run_command(
+        command: list[str],
+        *,
+        cwd: Path | None = None,
+        capture_output: bool = False,
+    ) -> str:
+        commands.append(command)
+        if command[:3] == ["gh", "pr", "list"]:
+            return "[]"
+        if command[:3] == ["gh", "repo", "clone"]:
+            openrecon_root = Path(command[-1])
+            target = openrecon_root / "recipes" / "demo"
+            target.mkdir(parents=True)
+            (target / "OpenReconLabel.json").write_text(
+                '{"general": {"id": "demo"}}\n', encoding="utf-8"
+            )
+            (target / "README.md").write_text("# Demo\n", encoding="utf-8")
+            (target / "params.sh").write_text(
+                "#!/bin/bash\nexport version=1.2.3\n", encoding="utf-8"
+            )
+            return ""
+        if command[:3] == ["git", "status", "--porcelain"]:
+            return ""
+        return ""
+
+    monkeypatch.setattr(sync_openrecon, "run_command", fake_run_command)
+
+    result = sync_openrecon.sync_recipe(
+        source_root=source_root,
+        recipe="demo",
+        version="1.2.3",
+        repository="neurodesk/openrecon",
+        dispatch_unchanged=True,
+    )
+
+    assert result is None
+    assert [
+        "gh",
+        "workflow",
+        "run",
+        "build-apps.yml",
+        "--repo",
+        "neurodesk/openrecon",
+        "--ref",
+        "main",
+        "-f",
+        'applications=["demo"]',
+    ] in commands

@@ -160,11 +160,34 @@ def existing_pull_request(repository: str, title: str) -> str | None:
     )
 
 
+def dispatch_openrecon_build(repository: str, recipe: str) -> None:
+    """Build an unchanged OpenRecon recipe against the newly published image."""
+    recipe = validate_recipe(recipe)
+    applications = json.dumps([recipe], separators=(",", ":"))
+    run_command(
+        [
+            "gh",
+            "workflow",
+            "run",
+            "build-apps.yml",
+            "--repo",
+            repository,
+            "--ref",
+            "main",
+            "-f",
+            f"applications={applications}",
+        ]
+    )
+    print(f"OpenRecon rebuild dispatched for unchanged {recipe} metadata.")
+
+
 def sync_recipe(
     source_root: Path,
     recipe: str,
     version: str,
     repository: str,
+    *,
+    dispatch_unchanged: bool = False,
 ) -> str | None:
     """Create or reuse the OpenRecon metadata PR for one released recipe."""
     recipe = validate_recipe(recipe)
@@ -203,7 +226,11 @@ def sync_recipe(
             capture_output=True,
         )
         if not status:
-            print(f"No OpenRecon changes detected for {recipe}; skipping OpenRecon PR.")
+            print(f"No OpenRecon metadata changes detected for {recipe}.")
+            if dispatch_unchanged:
+                dispatch_openrecon_build(repository, recipe)
+            else:
+                print("Skipping OpenRecon PR and rebuild dispatch.")
             return None
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -273,6 +300,14 @@ def parse_args() -> argparse.Namespace:
         default="neurodesk/openrecon",
         help="OpenRecon GitHub repository",
     )
+    parser.add_argument(
+        "--dispatch-unchanged",
+        action="store_true",
+        help=(
+            "Dispatch build-apps.yml when metadata is unchanged so a rebuilt "
+            "same-version container still propagates to OpenRecon"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -283,6 +318,7 @@ def main() -> int:
         recipe=args.recipe,
         version=args.version,
         repository=args.repository,
+        dispatch_unchanged=args.dispatch_unchanged,
     )
     return 0
 

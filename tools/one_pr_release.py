@@ -51,7 +51,27 @@ CANDIDATE_MANIFEST_FIELDS = (
     "head_sha",
     "recipe_fingerprint",
 )
-CANDIDATE_REPORT_SCHEMA_VERSION = 1
+CANDIDATE_REPORT_SCHEMA_VERSION = 3
+DIVE_STATUSES = {"success", "failure", "cancelled", "skipped", "unknown"}
+LAUNCHER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/+:-]*$")
+ANSI_ESCAPE_PATTERN = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+DIVE_EFFICIENCY_PATTERN = re.compile(
+    r"\befficiency:\s*([0-9]+(?:\.[0-9]+)?)\s*%"
+)
+DIVE_WASTED_BYTES_PATTERN = re.compile(
+    r"\bwastedBytes:\s*([0-9]+)\s+bytes\s+\(([^)]+)\)"
+)
+DIVE_USER_WASTED_PATTERN = re.compile(
+    r"\buserWastedPercent:\s*([0-9]+(?:\.[0-9]+)?)\s*%"
+)
+DIVE_PERCENT_FAILURE_PATTERN = re.compile(
+    r"FAIL:\s*(highestUserWastedPercent|lowestEfficiency):.*?"
+    r"\([^=]+=([0-9]+(?:\.[0-9]+)?)\s*[<>]\s*"
+    r"threshold=([0-9]+(?:\.[0-9]+)?)\)"
+)
+DIVE_INEFFICIENT_FILE_PATTERN = re.compile(
+    r"^\s*(\d+)\s+([0-9]+(?:\.[0-9]+)?\s+[kKMGT]?B)\s+(/\S.*)$"
+)
 
 
 def run_git(*args: str) -> str:
@@ -344,8 +364,70 @@ def _result_count(data: dict[str, Any], field: str) -> int:
     return result
 
 
-def build_candidate_report(candidate_dir: Path) -> dict[str, Any]:
+def build_dive_summary(report_path: Path, status: str) -> dict[str, Any]:
+    """Extract bounded, data-only Dive findings for the trusted PR reporter."""
+    if status not in DIVE_STATUSES:
+        raise RuntimeError(f"Invalid Dive status: {status!r}")
+
+    summary: dict[str, Any] = {
+        "status": status,
+        "failed_checks": [],
+        "inefficient_files": [],
+    }
+    if not report_path.is_file():
+        return summary
+
+    try:
+        text = report_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise RuntimeError(
+            f"Unable to read Dive report {report_path}: {error}"
+        ) from error
+    text = ANSI_ESCAPE_PATTERN.sub("", text)
+
+    if match := DIVE_EFFICIENCY_PATTERN.search(text):
+        summary["efficiency_percent"] = float(match.group(1))
+    if match := DIVE_WASTED_BYTES_PATTERN.search(text):
+        summary["wasted_bytes"] = int(match.group(1))
+        summary["wasted_bytes_display"] = match.group(2).strip()
+    if match := DIVE_USER_WASTED_PATTERN.search(text):
+        summary["user_wasted_percent"] = float(match.group(1))
+
+    for match in DIVE_PERCENT_FAILURE_PATTERN.finditer(text):
+        summary["failed_checks"].append(
+            {
+                "name": match.group(1),
+                "actual_percent": float(match.group(2)) * 100,
+                "threshold_percent": float(match.group(3)) * 100,
+            }
+        )
+
+    for line in text.splitlines():
+        match = DIVE_INEFFICIENT_FILE_PATTERN.match(line)
+        if not match:
+            continue
+        path = match.group(3).strip()
+        if len(path) > 512 or any(ord(character) < 32 for character in path):
+            continue
+        summary["inefficient_files"].append(
+            {
+                "count": int(match.group(1)),
+                "wasted_space": match.group(2),
+                "path": path,
+            }
+        )
+        if len(summary["inefficient_files"]) == 5:
+            break
+
+    return summary
+
+
+def build_candidate_report(
+    candidate_dir: Path, *, dive_status: str = "unknown"
+) -> dict[str, Any]:
     """Build the compact, data-only report consumed by the trusted PR reporter."""
+    if dive_status not in DIVE_STATUSES:
+        raise RuntimeError(f"Invalid Dive status: {dive_status!r}")
     manifest = load_candidate_manifest(candidate_dir)
     results_path = candidate_dir / "test-results.json"
     try:
@@ -372,13 +454,32 @@ def build_candidate_report(candidate_dir: Path) -> dict[str, Any]:
         raise RuntimeError("Candidate fulltest_summary must be a JSON object")
 
     failed_tests = []
+    passed_tests = []
     test_results = results.get("test_results", []) or []
     if not isinstance(test_results, list):
         raise RuntimeError("Candidate test_results must be a JSON array")
     for test in test_results:
-        if not isinstance(test, dict) or test.get("status") != "failed":
+        if not isinstance(test, dict):
             continue
-        failed_tests.append(str(test.get("name", "unnamed")))
+        name = str(test.get("name", "unnamed"))[:200]
+        if test.get("status") == "failed":
+            failed_tests.append(name)
+        elif test.get("status") == "passed":
+            passed_tests.append(name)
+
+    recipe = load_recipe(validate_recipe_identifier(manifest["recipe"]))
+    deploy = recipe.get("deploy") or {}
+    bins = deploy.get("bins") if isinstance(deploy, dict) else None
+    launcher = None
+    if isinstance(bins, list):
+        launcher = next(
+            (
+                item
+                for item in bins
+                if isinstance(item, str) and LAUNCHER_PATTERN.fullmatch(item)
+            ),
+            None,
+        )
 
     return {
         "schema_version": CANDIDATE_REPORT_SCHEMA_VERSION,
@@ -390,6 +491,10 @@ def build_candidate_report(candidate_dir: Path) -> dict[str, Any]:
         "build_date": manifest["build_date"],
         "docker_archive": manifest["docker_archive"],
         "sif": manifest["sif"],
+        "candidate_tag": manifest["candidate_tag"],
+        "launcher": launcher,
+        "pr_number": manifest["pr_number"],
+        "head_sha": manifest["head_sha"],
         "tests": {
             "total": total,
             "passed": passed,
@@ -400,15 +505,17 @@ def build_candidate_report(candidate_dir: Path) -> dict[str, Any]:
             "fulltest_failed": _result_count(fulltest, "tests_failed"),
             "suites_total": _result_count(fulltest, "total_suites"),
             "suites_passed": _result_count(fulltest, "suites_passed"),
+            "passed_tests": passed_tests[:20],
             "failed_tests": failed_tests,
         },
+        "dive": build_dive_summary(candidate_dir / "dive-report.txt", dive_status),
     }
 
 
 def command_report(args: argparse.Namespace) -> None:
     """Write a compact candidate report without copying test logs into a PR comment."""
     candidate_dir = Path(args.candidate_dir)
-    report = build_candidate_report(candidate_dir)
+    report = build_candidate_report(candidate_dir, dive_status=args.dive_status)
     (candidate_dir / "candidate-report.json").write_text(
         json.dumps(report, indent=2) + "\n", encoding="utf-8"
     )
@@ -599,6 +706,9 @@ def parser() -> argparse.ArgumentParser:
 
     report = subparsers.add_parser("report")
     report.add_argument("--candidate-dir", required=True)
+    report.add_argument(
+        "--dive-status", choices=sorted(DIVE_STATUSES), default="unknown"
+    )
     report.set_defaults(func=command_report)
 
     verify = subparsers.add_parser("verify")

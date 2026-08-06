@@ -35,25 +35,211 @@ jobs:
             const path = require('path');
             const run = context.payload.workflow_run;
 
+            const reportFiles = [];
+            const walk = directory => {
+              if (!fs.existsSync(directory)) return;
+              for (const entry of fs.readdirSync(directory, {withFileTypes: true})) {
+                const item = path.join(directory, entry.name);
+                if (entry.isDirectory()) walk(item);
+                else if (entry.name === 'candidate-report.json') reportFiles.push(item);
+              }
+            };
+            walk('candidate-reports');
+
+            const safeIdentifier = (value, fallback = 'unknown') => {
+              const text = String(value ?? '');
+              return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(text) ? text : fallback;
+            };
+            const count = value => {
+              const number = Number(value);
+              return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+            };
+            const optionalCount = value => {
+              const number = Number(value);
+              return Number.isSafeInteger(number) && number >= 0 ? number : null;
+            };
+            const percentage = value => {
+              const number = Number(value);
+              return Number.isFinite(number) && number >= 0 && number <= 10000
+                ? number
+                : null;
+            };
+            const safeDiveStatus = value =>
+              ['success', 'failure', 'cancelled', 'skipped', 'unknown'].includes(value)
+                ? value
+                : null;
+            const safeDiveSize = value => {
+              const text = String(value ?? '');
+              return /^[0-9]+(?:\.[0-9]+)?\s+[kKMGT]?B$/.test(text) ? text : null;
+            };
+            const safePath = value => {
+              const text = String(value ?? '');
+              return text.startsWith('/') && text.length <= 512 &&
+                !/[\x00-\x1f\x7f]/.test(text) ? text : null;
+            };
+            const safeLauncher = value => {
+              const text = String(value ?? '');
+              return /^[A-Za-z0-9][A-Za-z0-9._/+:-]*$/.test(text) ? text : null;
+            };
+            const safeCandidateTag = value => {
+              const text = String(value ?? '');
+              return /^nd-candidate-[A-Za-z0-9][A-Za-z0-9._-]*:[0-9a-f]{12}$/.test(text)
+                ? text
+                : null;
+            };
+            const reports = new Map();
+            for (const file of reportFiles) {
+              try {
+                const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+                const container = safeIdentifier(data.container, '');
+                const recipe = safeIdentifier(data.recipe, '');
+                const version = safeIdentifier(data.version, '');
+                const architecture = String(data.architecture || '');
+                if (
+                  ![1, 2, 3].includes(data.schema_version) || !container || !recipe || !version ||
+                  !['x86_64', 'aarch64'].includes(architecture) ||
+                  typeof data.tests !== 'object' || data.tests === null
+                ) {
+                  throw new Error('unsupported or invalid candidate report schema');
+                }
+                const prNumber = optionalCount(data.pr_number);
+                const headSha = typeof data.head_sha === 'string' &&
+                  /^[0-9a-f]{40}$/.test(data.head_sha) ? data.head_sha : null;
+                if (data.schema_version >= 2 && (!prNumber || !headSha)) {
+                  throw new Error('candidate report provenance is missing or invalid');
+                }
+                const candidateTag = safeCandidateTag(data.candidate_tag);
+                if (data.schema_version === 3 && (!prNumber || !headSha || !candidateTag)) {
+                  throw new Error('candidate report runtime identity is missing or invalid');
+                }
+                const diveData = data.dive && typeof data.dive === 'object'
+                  ? data.dive
+                  : {};
+                const diveStatus = safeDiveStatus(diveData.status);
+                if (data.schema_version >= 2 && !diveStatus) {
+                  throw new Error('candidate Dive summary is missing or invalid');
+                }
+                const failedChecks = Array.isArray(diveData.failed_checks)
+                  ? diveData.failed_checks.slice(0, 3).flatMap(check => {
+                    if (!check || typeof check !== 'object' ||
+                        !['highestUserWastedPercent', 'lowestEfficiency'].includes(check.name)) {
+                      return [];
+                    }
+                    const actualPercent = percentage(check.actual_percent);
+                    const thresholdPercent = percentage(check.threshold_percent);
+                    return actualPercent === null || thresholdPercent === null
+                      ? []
+                      : [{name: check.name, actualPercent, thresholdPercent}];
+                  })
+                  : [];
+                const inefficientFiles = Array.isArray(diveData.inefficient_files)
+                  ? diveData.inefficient_files.slice(0, 5).flatMap(entry => {
+                    if (!entry || typeof entry !== 'object') return [];
+                    const filePath = safePath(entry.path);
+                    const wastedSpace = safeDiveSize(entry.wasted_space);
+                    const copies = optionalCount(entry.count);
+                    return filePath && wastedSpace && copies !== null
+                      ? [{path: filePath, wastedSpace, copies}]
+                      : [];
+                  })
+                  : [];
+                reports.set(container, {
+                  recipe,
+                  container,
+                  version,
+                  architecture,
+                  variant: safeIdentifier(data.variant, ''),
+                  buildDate: safeIdentifier(data.build_date),
+                  dockerArchive: safeIdentifier(data.docker_archive),
+                  sif: safeIdentifier(data.sif),
+                  candidateTag,
+                  launcher: safeLauncher(data.launcher),
+                  prNumber,
+                  headSha,
+                  tests: {
+                    total: count(data.tests.total),
+                    passed: count(data.tests.passed),
+                    failed: count(data.tests.failed),
+                    skipped: count(data.tests.skipped),
+                    fulltestTotal: count(data.tests.fulltest_total),
+                    fulltestPassed: count(data.tests.fulltest_passed),
+                    fulltestFailed: count(data.tests.fulltest_failed),
+                    suitesTotal: count(data.tests.suites_total),
+                    suitesPassed: count(data.tests.suites_passed),
+                    passedTests: Array.isArray(data.tests.passed_tests)
+                      ? data.tests.passed_tests.slice(0, 20).map(name => String(name).slice(0, 200))
+                      : [],
+                    failedTests: Array.isArray(data.tests.failed_tests)
+                      ? data.tests.failed_tests.slice(0, 20).map(name => String(name).slice(0, 200))
+                      : [],
+                  },
+                  dive: {
+                    status: diveStatus || 'unknown',
+                    efficiencyPercent: percentage(diveData.efficiency_percent),
+                    wastedBytes: optionalCount(diveData.wasted_bytes),
+                    wastedBytesDisplay: safeDiveSize(diveData.wasted_bytes_display),
+                    userWastedPercent: percentage(diveData.user_wasted_percent),
+                    failedChecks,
+                    inefficientFiles,
+                  },
+                });
+              } catch (error) {
+                core.warning(`Ignoring invalid compact report ${file}: ${error.message}`);
+              }
+            }
+
+            const matchesRun = candidate =>
+              candidate.head.sha === run.head_sha &&
+              candidate.head.ref === run.head_branch &&
+              (!run.head_repository ||
+                candidate.head.repo?.full_name === run.head_repository.full_name);
             let prs = run.pull_requests || [];
+            if (prs.length === 0) {
+              const reportPrNumbers = [...new Set([...reports.values()]
+                .filter(report => report.headSha === run.head_sha)
+                .map(report => report.prNumber)
+                .filter(Boolean))];
+              if (reportPrNumbers.length === 1) {
+                const {data: candidate} = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: reportPrNumbers[0],
+                });
+                if (matchesRun(candidate)) prs = [candidate];
+              }
+            }
+            if (prs.length === 0) {
+              const forkOwner = run.head_repository?.owner?.login;
+              if (forkOwner && run.head_branch) {
+                const byHead = await github.paginate(github.rest.pulls.list, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  head: `${forkOwner}:${run.head_branch}`,
+                  state: 'all',
+                  per_page: 100,
+                });
+                prs = byHead.filter(matchesRun);
+              }
+            }
             if (prs.length === 0) {
               const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 commit_sha: run.head_sha,
               });
-              prs = associated.data.filter(pr =>
-                pr.head.sha === run.head_sha &&
-                pr.head.ref === run.head_branch &&
-                (!run.head_repository || pr.head.repo?.full_name === run.head_repository.full_name)
-              );
+              prs = associated.data.filter(matchesRun);
             }
             if (prs.length !== 1) {
-              core.warning(`Expected one PR for candidate run ${run.id}, found ${prs.length}.`);
+              core.setFailed(`Expected one PR for candidate run ${run.id}, found ${prs.length}.`);
               return;
             }
 
             const issue_number = prs[0].number;
+            const {data: pr} = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: issue_number,
+            });
             const changedFiles = await github.paginate(github.rest.pulls.listFiles, {
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -86,74 +272,11 @@ jobs:
               .filter(artifact =>
                 artifact.name.startsWith('candidate-') &&
                 !artifact.name.startsWith('candidate-report-')
-              )
-              .map(artifact => artifact.name);
+              );
             const candidateJobs = jobs.filter(job => job.name.startsWith('candidate ('));
             if (candidateJobs.length === 0 && run.conclusion === 'success') {
               core.info('The trusted release planner classified the recipe changes as source-only.');
               return;
-            }
-
-            const reportFiles = [];
-            const walk = directory => {
-              if (!fs.existsSync(directory)) return;
-              for (const entry of fs.readdirSync(directory, {withFileTypes: true})) {
-                const item = path.join(directory, entry.name);
-                if (entry.isDirectory()) walk(item);
-                else if (entry.name === 'candidate-report.json') reportFiles.push(item);
-              }
-            };
-            walk('candidate-reports');
-
-            const safeIdentifier = (value, fallback = 'unknown') => {
-              const text = String(value ?? '');
-              return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(text) ? text : fallback;
-            };
-            const count = value => {
-              const number = Number(value);
-              return Number.isSafeInteger(number) && number >= 0 ? number : 0;
-            };
-            const reports = new Map();
-            for (const file of reportFiles) {
-              try {
-                const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-                const container = safeIdentifier(data.container, '');
-                const recipe = safeIdentifier(data.recipe, '');
-                const version = safeIdentifier(data.version, '');
-                const architecture = String(data.architecture || '');
-                if (
-                  data.schema_version !== 1 || !container || !recipe || !version ||
-                  !['x86_64', 'aarch64'].includes(architecture) ||
-                  typeof data.tests !== 'object' || data.tests === null
-                ) {
-                  throw new Error('unsupported or invalid candidate report schema');
-                }
-                reports.set(container, {
-                  recipe,
-                  container,
-                  version,
-                  architecture,
-                  variant: safeIdentifier(data.variant, ''),
-                  buildDate: safeIdentifier(data.build_date),
-                  dockerArchive: safeIdentifier(data.docker_archive),
-                  sif: safeIdentifier(data.sif),
-                  tests: {
-                    total: count(data.tests.total),
-                    passed: count(data.tests.passed),
-                    failed: count(data.tests.failed),
-                    skipped: count(data.tests.skipped),
-                    fulltestTotal: count(data.tests.fulltest_total),
-                    fulltestPassed: count(data.tests.fulltest_passed),
-                    suitesTotal: count(data.tests.suites_total),
-                    suitesPassed: count(data.tests.suites_passed),
-                    failedTests: Array.isArray(data.tests.failed_tests)
-                      ? data.tests.failed_tests.slice(0, 20).map(name => String(name))
-                      : [],
-                  },
-                });
-              } catch (error) {
-                core.warning(`Ignoring invalid compact report ${file}: ${error.message}`);
-              }
             }
 
             const icon = conclusion => ({
@@ -173,6 +296,17 @@ jobs:
               .replaceAll('<', '&lt;')
               .replaceAll('>', '&gt;')
               .replaceAll('\n', ' ');
+            const escapeText = value => String(value ?? '')
+              .replaceAll('&', '&amp;')
+              .replaceAll('<', '&lt;')
+              .replaceAll('>', '&gt;')
+              .replaceAll('[', '&#91;')
+              .replaceAll(']', '&#93;')
+              .replaceAll('`', '&#96;')
+              .replaceAll('*', '&#42;')
+              .replaceAll('_', '&#95;')
+              .replaceAll('@', '&#64;')
+              .replaceAll('\n', ' ');
 
             const detectJob = jobs.find(job => job.name === 'detect');
             const detection = stepConclusion(detectJob, 'Detect recipe-only changes');
@@ -189,7 +323,24 @@ jobs:
 
             const containers = [...new Set([...reports.keys(), ...parsedJobs.keys()])].sort();
             const rows = [];
+            const candidateSummaries = [];
             const failures = [];
+            const diveFailures = [];
+            const formatPercent = value =>
+              `${Number(value).toFixed(2).replace(/\.?0+$/, '')}%`;
+            const formatBytes = value => {
+              const bytes = Number(value);
+              if (!Number.isFinite(bytes) || bytes < 0) return 'unknown size';
+              const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+              let amount = bytes;
+              let unit = 0;
+              while (amount >= 1024 && unit < units.length - 1) {
+                amount /= 1024;
+                unit += 1;
+              }
+              const digits = unit === 0 ? 0 : amount >= 10 ? 1 : 2;
+              return `${amount.toFixed(digits)} ${units[unit]}`;
+            };
             for (const container of containers) {
               const report = reports.get(container);
               const parsed = parsedJobs.get(container);
@@ -201,25 +352,86 @@ jobs:
               const tests = stepConclusion(job, 'Run deploy and fulltest checks');
               const dive = stepConclusion(job, 'Run Dive policy check');
               const bundle = stepConclusion(job, 'Upload candidate bundle');
+              const version = report?.version || parsed?.version || 'unknown';
+              const architecture = report?.architecture || parsed?.architecture || 'unknown';
+              const deployTotal = report
+                ? Math.max(0, report.tests.total - report.tests.fulltestTotal)
+                : 0;
+              const deployPassed = report
+                ? Math.max(0, report.tests.passed - report.tests.fulltestPassed)
+                : 0;
               const testSummary = report
-                ? `${icon(tests)} ${report.tests.passed}/${report.tests.total} passed` +
-                  `; fulltest ${report.tests.fulltestPassed}/${report.tests.fulltestTotal}` +
-                  `; suites ${report.tests.suitesPassed}/${report.tests.suitesTotal}`
+                ? `${icon(tests)} deploy ${deployPassed}/${deployTotal}; ` +
+                  `runtime ${report.tests.fulltestPassed}/${report.tests.fulltestTotal} ` +
+                  `in ${report.tests.suitesPassed}/${report.tests.suitesTotal} suite(s)`
                 : `${icon(tests)} ${tests}`;
               rows.push([
                 report?.recipe || container,
                 container,
-                report?.version || parsed?.version || 'unknown',
-                report?.architecture || parsed?.architecture || 'unknown',
+                version,
+                architecture,
                 `${icon(build)} ${build}`,
                 testSummary,
                 `${icon(dive)} ${dive}`,
                 `${icon(bundle)} ${bundle}`,
               ]);
+              const expectedArtifactName = `candidate-${container}-${run.head_sha}`;
+              const artifact = candidateArtifacts.find(
+                item => item.name === expectedArtifactName
+              );
+              candidateSummaries.push({
+                recipe: report?.recipe || container,
+                container,
+                version,
+                architecture,
+                build,
+                tests,
+                dive,
+                bundle,
+                deployTotal,
+                deployPassed,
+                report,
+                artifact,
+                artifactName: expectedArtifactName,
+              });
               if (report?.tests.failedTests.length) {
                 failures.push(
                   `- \`${escapeCell(container)}\`: ` +
                   report.tests.failedTests.map(name => `\`${escapeCell(name)}\``).join(', ')
+                );
+              }
+              if (dive === 'failure') {
+                const details = [];
+                if (report?.dive.status === 'failure') {
+                  for (const check of report.dive.failedChecks) {
+                    if (check.name === 'highestUserWastedPercent') {
+                      details.push(
+                        `user-wasted bytes ${formatPercent(check.actualPercent)} exceed ` +
+                        `the ${formatPercent(check.thresholdPercent)} maximum`
+                      );
+                    } else if (check.name === 'lowestEfficiency') {
+                      details.push(
+                        `image efficiency ${formatPercent(check.actualPercent)} is below ` +
+                        `the ${formatPercent(check.thresholdPercent)} minimum`
+                      );
+                    }
+                  }
+                  if (report.dive.wastedBytesDisplay) {
+                    details.push(`total wasted space ${report.dive.wastedBytesDisplay}`);
+                  }
+                  const largest = report.dive.inefficientFiles[0];
+                  if (largest) {
+                    details.push(
+                      `largest inefficient file \`${escapeCell(largest.path)}\` ` +
+                      `(${largest.wastedSpace})`
+                    );
+                  }
+                }
+                const jobUrl = job?.html_url || run.html_url;
+                diveFailures.push(
+                  `- \`${escapeCell(container)}\`: ` +
+                  (details.length ? details.join('; ') : 'detailed metrics were not captured') +
+                  `. [Open Dive job](${jobUrl})`
                 );
               }
             }
@@ -232,51 +444,191 @@ jobs:
 
             const passed = run.conclusion === 'success';
             const marker = '<!-- one-pr-container-candidate -->';
+            const lifecycleStart = '<!-- container-release-status:start -->';
+            const lifecycleEnd = '<!-- container-release-status:end -->';
+            const identities = candidateSummaries.map(candidate =>
+              `${candidate.container} ${candidate.version} (${candidate.architecture})`
+            );
+            const identityText = identities.length === 1
+              ? identities[0]
+              : identities.length > 1
+                ? `${identities.length} containers: ${identities.join(', ')}`
+                : changedRecipes.map(recipe => `${recipe} candidate`).join(', ');
+            const identityMarker = `<!-- container-release-identity: ${identityText} -->`;
+
+            let promotionRun = null;
+            if (pr.merged_at && pr.merge_commit_sha) {
+              const workflows = await github.rest.actions.listRepoWorkflows({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              const promotionWorkflow = workflows.data.workflows.find(
+                workflow => workflow.path === '.github/workflows/promote-container-candidate.yml'
+              );
+              if (promotionWorkflow) {
+                const response = await github.rest.actions.listWorkflowRuns({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: promotionWorkflow.id,
+                  head_sha: pr.merge_commit_sha,
+                  per_page: 20,
+                });
+                promotionRun = response.data.workflow_runs.find(
+                  item => item.head_sha === pr.merge_commit_sha
+                ) || null;
+              }
+            }
+
+            let statusHeading;
+            let actionLine;
+            let promotionLine = null;
+            if (!passed && pr.merged_at) {
+              statusHeading = `## ❌ ${identityText} candidate failed after PR #${issue_number} was merged`;
+              actionLine = '**Action required:** Inspect the failed candidate run and do not manually promote it. Revert the merge or open a corrective recipe PR so a new candidate can pass the gate.';
+            } else if (!passed) {
+              statusHeading = `## ❌ ${identityText} failed — do not merge PR #${issue_number}`;
+              actionLine = '**Action required:** Open the failed job below, fix the reported failure, and push an update. This summary will refresh automatically.';
+            } else if (pr.state === 'closed' && !pr.merged_at) {
+              statusHeading = `## ⏹️ ${identityText} passed, but PR #${issue_number} was closed without merging`;
+              actionLine = '**Action required:** None. Reopen the PR only if these tested candidates should still be reviewed and published.';
+            } else if (!pr.merged_at) {
+              statusHeading = `## ✅ ${identityText} passed — review and merge PR #${issue_number}`;
+              actionLine = '**Action required:** Review the changes and merge the PR. Publishing starts automatically and reuses these exact candidates without rebuilding them.';
+            } else if (promotionRun?.conclusion === 'success') {
+              statusHeading = `## ✅ ${identityText} published from the tested candidate`;
+              actionLine = '**Action required:** None. The PR is merged and automatic promotion completed successfully.';
+              promotionLine = `**Promotion:** [run ${promotionRun.run_number}](${promotionRun.html_url}) — success`;
+            } else if (promotionRun?.status === 'in_progress' || promotionRun?.status === 'queued') {
+              statusHeading = `## 🚀 ${identityText} passed — promotion is running`;
+              actionLine = '**Action required:** None. The PR is merged; monitor the promotion run below.';
+              promotionLine = `**Promotion:** [run ${promotionRun.run_number}](${promotionRun.html_url}) — ${promotionRun.status}`;
+            } else if (promotionRun) {
+              const promotionOutcome = promotionRun.conclusion === 'failure'
+                ? 'failed'
+                : promotionRun.conclusion || promotionRun.status;
+              statusHeading = `## ⚠️ ${identityText} candidate passed — promotion ${promotionOutcome}`;
+              actionLine = `**Action required:** Investigate the failed promotion, then rerun \`Promote merged container candidate\` with \`pr_number=${issue_number}\`. Do not rebuild the candidate.`;
+              promotionLine = `**Promotion:** [run ${promotionRun.run_number}](${promotionRun.html_url}) — ${promotionRun.conclusion || promotionRun.status}`;
+            } else {
+              statusHeading = `## ⏳ ${identityText} passed and PR #${issue_number} is merged — promotion pending`;
+              actionLine = '**Action required:** None yet. Automatic promotion should start from the merge commit and reuse these exact candidates.';
+            }
+
+            const proofLines = [];
+            for (const candidate of candidateSummaries) {
+              const report = candidate.report;
+              proofLines.push(
+                `#### \`${escapeCell(candidate.container)} ${escapeCell(candidate.version)} (${escapeCell(candidate.architecture)})\``,
+                '',
+                `- ${icon(candidate.build)} Docker image and SIF build: **${candidate.build}**`,
+                report
+                  ? `- ${icon(candidate.tests)} Deploy check: **${candidate.deployPassed}/${candidate.deployTotal} passed**`
+                  : `- ${icon(candidate.tests)} Deploy and runtime checks: **${candidate.tests}**`,
+                report
+                  ? `- ${icon(candidate.tests)} Runtime/fulltest: **${report.tests.fulltestPassed}/${report.tests.fulltestTotal} passed in ${report.tests.suitesPassed}/${report.tests.suitesTotal} suite(s)**`
+                  : '',
+                `- ${icon(candidate.dive)} Dive image-efficiency policy: **${candidate.dive}**`,
+                `- ${icon(candidate.bundle)} Immutable candidate bundle: **${candidate.bundle}**`,
+                '',
+              );
+              if (report?.tests.passedTests.length) {
+                proofLines.push(
+                  '<details><summary>Passed deploy and runtime checks</summary>',
+                  '',
+                  ...report.tests.passedTests.map(name => `- ${escapeText(name)}`),
+                  '',
+                  '</details>',
+                  '',
+                );
+              }
+            }
+
+            const testLines = [];
+            for (const candidate of candidateSummaries) {
+              const report = candidate.report;
+              const artifact = candidate.artifact;
+              if (!report || !artifact) continue;
+              const artifactUrl =
+                `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/` +
+                `${run.id}/artifacts/${artifact.id}`;
+              const candidateDir = `candidate-${candidate.container}`;
+              const candidateTag = report.candidateTag ||
+                `nd-candidate-${candidate.container}:${run.head_sha.slice(0, 12)}`;
+              testLines.push(
+                `#### Test \`${escapeCell(candidate.container)} ${escapeCell(candidate.version)}\``,
+                '',
+                `Artifact: [\`${escapeCell(candidate.artifactName)}\`](${artifactUrl}) · ` +
+                  `${formatBytes(artifact.size_in_bytes)} · expires \`${String(artifact.expires_at).slice(0, 10)}\``,
+                '',
+                '```bash',
+                `gh run download ${run.id} --repo ${context.repo.owner}/${context.repo.repo} --name ${candidate.artifactName} --dir ${candidateDir}`,
+                '',
+                `apptainer shell ${candidateDir}/${report.sif}`,
+                `docker load --input ${candidateDir}/${report.dockerArchive}`,
+                ...(report.launcher
+                  ? [
+                      '',
+                      `apptainer exec ${candidateDir}/${report.sif} sh -lc 'command -v ${report.launcher}'`,
+                      `docker run --rm ${candidateTag} sh -lc 'command -v ${report.launcher}'`,
+                    ]
+                  : []),
+                '```',
+                '',
+              );
+            }
+
+            const changedFileLines = changedFiles.slice(0, 50).map(file =>
+              `- \`${escapeCell(file.filename)}\` (+${count(file.additions)}/−${count(file.deletions)})`
+            );
             const body = [
               marker,
-              '## Container build approval',
+              identityMarker,
+              lifecycleStart,
+              statusHeading,
               '',
-              `**Overall:** ${passed ? '✅ Container checks passed — ready to merge' : `❌ Container checks ${run.conclusion}`}`,
-              `**Workflow:** [run ${run.run_number}](${run.html_url})`,
-              `**Tested commit:** \`${run.head_sha}\``,
+              actionLine,
+              ...(promotionLine ? ['', promotionLine] : []),
+              lifecycleEnd,
               '',
-              passed
-                ? 'The exact artifacts below passed the pre-merge gate. Nothing is published until this PR merges; promotion reuses these tested artifacts without rebuilding them.'
-                : 'Do not merge yet. Fix the failed check shown below and push an update; this comment will be updated after the next run.',
+              `**PR:** [#${issue_number} ${escapeText(pr.title)}](${pr.html_url}) by @${escapeCell(pr.user.login)}`,
+              `**Changes:** [${pr.changed_files} file(s)](${pr.html_url}/files) (+${pr.additions}/−${pr.deletions})`,
+              `**Candidate build:** [run ${run.run_number}](${run.html_url}) · tested commit \`${run.head_sha.slice(0, 12)}\``,
               '',
-              '### Required checks',
+              '### What was tested',
+              '',
+              ...proofLines,
+              ...(failures.length ? ['### Failed tests', '', ...failures, ''] : []),
+              ...(diveFailures.length ? ['### Dive failures', '', ...diveFailures, ''] : []),
+              '<details><summary>Policy checks and changed files</summary>',
               '',
               `- ${icon(detection)} Recipe-only change policy: **${detection}**`,
               `- ${icon(validation)} Recipe and OpenRecon metadata validation: **${validation}**`,
               '',
-              '### Containers being built',
-              '',
               '| Recipe | Container | Version | Architecture | Image + SIF build | Deploy + fulltest | Dive | Candidate bundle |',
               '| --- | --- | --- | --- | --- | --- | --- | --- |',
               ...rows.map(row => `| ${row.map(escapeCell).join(' | ')} |`),
-              ...(failures.length ? ['', '### Failed tests', '', ...failures] : []),
               '',
-              '### What happens after merge',
+              ...changedFileLines,
+              ...(changedFiles.length > 50 ? [`- …and ${changedFiles.length - 50} more files`] : []),
+              '',
+              '</details>',
+              '',
+              '<details><summary>Download or test the exact candidates</summary>',
+              '',
+              ...(testLines.length ? testLines : ['No candidate bundle was produced.']),
+              '</details>',
+              '',
+              '<details><summary>What automatic promotion publishes</summary>',
+              '',
+              'Merge starts `Promote merged container candidate`; it verifies and reuses these exact artifacts without rebuilding them.',
               '',
               '- Docker images: GHCR legacy and versioned repositories, Quay, Docker Hub, and the Nectar registry.',
               '- SIF images: AWS S3 and Nectar Object Storage, plus OCI attachments on GHCR and Quay.',
               '- Metadata: the generated release JSON is committed to `main`, which triggers the apps/webapps updates; eligible default x86_64 recipes also sync to OpenRecon.',
               '',
-              '<details><summary>Download or test the exact candidates</summary>',
-              '',
-              ...(candidateArtifacts.length
-                ? candidateArtifacts.map(name => `- \`${escapeCell(name)}\``)
-                : ['- No candidate bundle was produced.']),
-              '',
-              `\`gh run download ${run.id} --repo ${context.repo.owner}/${context.repo.repo} --pattern 'candidate-*'\``,
-              '',
-              '`apptainer shell candidate-*/*.simg`',
-              '',
-              '`docker load --input candidate-*/*.docker.tar`',
-              '',
               '</details>',
               '',
-              '_This is the only automated build comment; it is updated in place when the PR changes._',
+              '_This is the only automated container lifecycle comment. It is updated in place when the PR changes or promotion finishes._',
             ].join('\n');
 
             const comments = await github.paginate(github.rest.issues.listComments, {

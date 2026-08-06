@@ -213,10 +213,13 @@ jobs:
         continue-on-error: true
         env:
           CANDIDATE_TAG: ${{ steps.info.outputs.candidate_tag }}
+          CONTAINER: ${{ matrix.container }}
         run: |
+          set -o pipefail
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
             -v "${PWD}/.github/.dive-ci.yml:/.dive-ci.yml:ro" \
-            wagoodman/dive:latest "${CANDIDATE_TAG}" --ci --ci-config /.dive-ci.yml
+            wagoodman/dive:latest "${CANDIDATE_TAG}" --ci --ci-config /.dive-ci.yml \
+            2>&1 | tee "candidate/${CONTAINER}/dive-report.txt"
       - name: Generate manifest and release preview
         env:
           RECIPE: ${{ matrix.recipe }}
@@ -233,9 +236,11 @@ jobs:
         continue-on-error: true
         env:
           CONTAINER: ${{ matrix.container }}
+          DIVE_OUTCOME: ${{ steps.dive.outcome }}
         run: |
           python tools/one_pr_release.py report \
-            --candidate-dir "candidate/${CONTAINER}"
+            --candidate-dir "candidate/${CONTAINER}" \
+            --dive-status "${DIVE_OUTCOME}"
       - name: Upload candidate bundle
         uses: actions/upload-artifact@v4
         with:

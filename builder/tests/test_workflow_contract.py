@@ -50,10 +50,33 @@ def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> Non
 
     assert "Validate changed recipes and OpenRecon metadata" in candidate_workflow
     assert "candidate-report-${{ matrix.container }}" in candidate_workflow
+    assert 'tee "candidate/${CONTAINER}/dive-report.txt"' in candidate_workflow
+    assert '--dive-status "${DIVE_OUTCOME}"' in candidate_workflow
     assert "pattern: candidate-report-*" in reporter
-    assert "Container build approval" in reporter
-    assert "Deploy + fulltest" in reporter
-    assert "What happens after merge" in reporter
+    assert "passed — review and merge PR" in reporter
+    assert "candidate failed after PR" in reporter
+    assert "closed without merging" in reporter
+    assert "Action required:" in reporter
+    assert "### What was tested" in reporter
+    assert "Deploy check:" in reporter
+    assert "Runtime/fulltest:" in reporter
+    assert "github.rest.pulls.get" in reporter
+    assert "head: `${forkOwner}:${run.head_branch}`" in reporter
+    assert "reportPrNumbers" in reporter
+    assert "candidate.head.sha === run.head_sha" in reporter
+    assert "core.setFailed(`Expected one PR" in reporter
+    assert "### Dive failures" in reporter
+    assert "report.dive.failedChecks" in reporter
+    assert "What automatic promotion publishes" in reporter
+    assert "container-release-status:start" in reporter
+    assert "container-release-identity:" in reporter
+    assert "promote-container-candidate.yml" in reporter
+    assert "promotionRun?.conclusion === 'success'" in reporter
+    assert "--name ${candidate.artifactName} --dir ${candidateDir}" in reporter
+    assert "--pattern 'candidate-*'" not in reporter
+    assert "artifact.expires_at" in reporter
+    assert "artifact.size_in_bytes" in reporter
+    assert "report.tests.passedTests" in reporter
     assert "No recipe build candidates; no container approval comment is needed" in reporter
     assert "classified the recipe changes as source-only" in reporter
     assert "file.filename.match(/^recipes\\/([^/]+)\\//)" in reporter
@@ -61,6 +84,23 @@ def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> Non
     assert "github.rest.issues.updateComment" in reporter
     assert "createComment" not in validator
     assert "pull-requests: write" not in validator
+
+
+def test_promotion_updates_the_existing_candidate_comment_in_place() -> None:
+    workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    report_job = workflow.split("  report_promotion:", 1)[1]
+
+    assert "needs: [resolve, await_candidate, promote]" in report_job
+    assert "always()" in report_job
+    assert "pull-requests: write" in report_job
+    assert "container-release-status:start" in report_job
+    assert "container-release-identity:" in report_job
+    assert "github.rest.issues.updateComment" in report_job
+    assert "github.rest.issues.createComment" not in report_job
+    assert "candidate reporter will include this promotion state" in report_job
 
 
 def test_candidate_artifacts_and_promotion_key_off_container_identity() -> None:
@@ -97,6 +137,40 @@ def test_candidate_promotion_syncs_openrecon_from_verified_manifests() -> None:
     assert 'recipe="$(echo "${manifest}" | jq -r \'.recipe\')"' in sync_body
     assert 'version="$(echo "${manifest}" | jq -r \'.version\')"' in sync_body
     assert 'python tools/sync_openrecon.py --recipe "${recipe}" --version "${version}"' in sync_body
+
+
+def test_candidate_promotion_waits_for_exact_candidate_before_using_arc() -> None:
+    workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    wait_job = workflow.split("  await_candidate:", 1)[1].split("  promote:", 1)[0]
+    promote_job = workflow.split("  promote:", 1)[1]
+
+    assert "runs-on: ubuntu-latest" in wait_job
+    assert "timeout-minutes: 180" in wait_job
+    assert "actions: read" in wait_job
+    assert "while (Date.now() < deadline)" in wait_job
+    assert "await new Promise(resolve => setTimeout(resolve, 30_000))" in wait_job
+    assert "item.head_sha === headSha" in wait_job
+    assert "run.status === 'completed'" in wait_job
+    assert "No successful candidate run" not in promote_job
+    assert "needs: [resolve, await_candidate]" in promote_job
+    assert (
+        "ARTIFACTS: ${{ needs.await_candidate.outputs.artifacts }}"
+        in promote_job
+    )
+
+
+def test_release_paths_dispatch_unchanged_openrecon_recipes() -> None:
+    build_workflow = Path(".github/workflows/build-app.yml").read_text()
+    promote_workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    flag = "--dispatch-unchanged"
+    assert build_workflow.count(flag) == 1
+    assert promote_workflow.count(flag) == 1
 
 
 def test_candidate_promotion_uses_trusted_main_oidc_identity() -> None:
@@ -140,7 +214,7 @@ def test_candidate_promotion_installs_aws_cli_before_s3_upload() -> None:
 
     install_step = workflow.split("      - name: Install promotion dependencies", 1)[1]
     install_step = install_step.split(
-        "      - name: Locate the successful run for the exact PR head", 1
+        "      - name: Download candidate bundles without executing them", 1
     )[0]
     assert "awscli-exe-linux-x86_64.zip" in install_step
     assert "aws --version" in install_step

@@ -1344,7 +1344,8 @@ jobs:
         set -euo pipefail
         gh auth setup-git
         python tools/sync_openrecon.py \
-          --recipe "${CONTAINER_NAME}" --version "${CONTAINER_VERSION}"
+          --recipe "${CONTAINER_NAME}" --version "${CONTAINER_VERSION}" \
+          --dispatch-unchanged
     - name: Generate job output
       run: |
         echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
