@@ -281,7 +281,7 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings):
         * pre_reference
         * np.conj(phase_d)
     ).astype(np.float32)
-    bsp[bsp < math.radians(-25.0)] += 2 * math.pi
+    bsp[bsp < math.radians(-25.0/180)] += 2 * math.pi
     bsp[bsp < 0] = 0
 
     pulse_width = _setting_float(settings, "bspulsewidthms", default=BSS_PULSE_WIDTH_MS)
@@ -760,6 +760,11 @@ def _output_meta(
         meta["BlochSiegertDisplayFormula"] = display_formula
         if image_type_token == "BSSB1":
             meta["BlochSiegertDisplayMax"] = str(SCANNER_DISPLAY_MAX)
+            # The DICOM writer maps these MRD image attributes to
+            # (0028,1053) Rescale Slope and (0028,1052) Rescale Intercept.
+            # B1 pixels are stored as uT * 100, so this restores uT values.
+            meta["RescaleSlope"] = "0.01"
+            meta["RescaleIntercept"] = "0"
         else:
             meta["BlochSiegertDisplayConversion"] = "radians to degrees"
     meta["ImageComments"] = image_comment
