@@ -76,6 +76,11 @@ build:
         LMOD_CMD: /usr/share/lmod/lmod/libexec/lmod
         NEURODESKTOP_VERSION: "{{ context.version }}"
 
+    - condition: context.options.glass
+      environment:
+        NEURODESKTOP_GLASS: "1"
+        NEURODESKTOP_REMOTE_DESKTOP: "0"
+
     - install:
         - acl
         - apt-transport-https
