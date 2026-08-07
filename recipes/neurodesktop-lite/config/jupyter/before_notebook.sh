@@ -898,11 +898,13 @@ if [ "$CVMFS_STARTUP_MODE" = "lazy" ] || [ "$SLURM_STARTUP_MODE" = "lazy" ]; the
 fi
 
 # Ensure the VNC password file has the correct permissions
-_vnc_passwd_path="${HOME:-/home/${NB_USER}}/.vnc/passwd"
-if [ -f "${_vnc_passwd_path}" ] && [ "$(stat -c %a "${_vnc_passwd_path}")" != "600" ]; then
-    chmod 600 "${_vnc_passwd_path}"
+if [ "${NEURODESKTOP_REMOTE_DESKTOP:-1}" != "0" ]; then
+    _vnc_passwd_path="${HOME:-/home/${NB_USER}}/.vnc/passwd"
+    if [ -f "${_vnc_passwd_path}" ] && [ "$(stat -c %a "${_vnc_passwd_path}")" != "600" ]; then
+        chmod 600 "${_vnc_passwd_path}"
+    fi
+    unset _vnc_passwd_path
 fi
-unset _vnc_passwd_path
 
 apply_chown_if_needed() {
     local dir="$1"
@@ -937,8 +939,10 @@ apply_chown_if_needed() {
         fi
     fi
 }
-apply_chown_if_needed "/etc/guacamole"
-apply_chown_if_needed "/usr/local/tomcat"
+if [ "${NEURODESKTOP_REMOTE_DESKTOP:-1}" != "0" ]; then
+    apply_chown_if_needed "/etc/guacamole"
+    apply_chown_if_needed "/usr/local/tomcat"
+fi
 
 # Run user-level startup tasks once before Jupyter server initialization.
 if [ "$EUID" -eq 0 ]; then

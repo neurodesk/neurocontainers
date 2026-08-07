@@ -81,7 +81,6 @@ build:
         - dbus-x11
         - dirmngr
         - dnsutils
-        - freerdp2-dev
         - fuse3
         - g++
         - gcc
@@ -100,8 +99,6 @@ build:
         - iputils-ping
         - less
         - libcairo2-dev
-        - libfreerdp-client2-2t64
-        - libfreerdp2-2t64
         - libgfortran5
         - libgpgme-dev
         - libjpeg-turbo8-dev
@@ -112,10 +109,7 @@ build:
         - libssh2-1-dev
         - libssl-dev
         - libtool-bin
-        - libvncclient1
-        - libvncserver-dev
         - libwebp-dev
-        - libwinpr2-2t64
         - libreoffice-core
         - lmod
         - lua-bit32
@@ -153,9 +147,6 @@ build:
         - sshfs
         - tcllib
         - tcsh
-        - tigervnc-common
-        - tigervnc-standalone-server
-        - tigervnc-tools
         - tk
         - tmux
         - tree
@@ -165,13 +156,28 @@ build:
         - vim
         - wget
         - xdg-utils
-        - xorgxrdp
-        - xrdp
         - xz-utils
         - zip
 
-    - run:
+    - condition: not context.options.glass
+      install:
+        - freerdp2-dev
+        - libfreerdp-client2-2t64
+        - libfreerdp2-2t64
+        - libvncclient1
+        - libvncserver-dev
+        - libwinpr2-2t64
+        - tigervnc-common
+        - tigervnc-standalone-server
+        - tigervnc-tools
+        - xorgxrdp
+        - xrdp
+
+    - condition: not context.options.glass
+      run:
         - usermod -a -G ssl-cert xrdp
+
+    - run:
         - bash {{ get_file("nodesource_setup") }}
         - apt-get update --yes
         - apt-get install --yes --no-install-recommends nodejs yarn
@@ -187,6 +193,7 @@ build:
         - cd /tmp/guacamole-server-{{ context.guacamole_version }} && make install
         - ldconfig
         - rm -rf /tmp/guacamole-server-{{ context.guacamole_version }}
+      condition: not context.options.glass
 
     - run:
         - cp {{ get_file(context.code_server_file) }} /tmp/code-server.tar.gz
@@ -236,6 +243,7 @@ build:
         - unzip -q /usr/local/tomcat/webapps/ROOT.war -d /usr/local/tomcat/webapps/ROOT
         - rm /usr/local/tomcat/webapps/ROOT.war
         - sed -i '/<session-config>/,/<\/session-config>/c\    <session-config>\n        <session-timeout>30</session-timeout>\n        <cookie-config>\n            <max-age>86400</max-age>\n            <http-only>true</http-only>\n        </cookie-config>\n    </session-config>' /usr/local/tomcat/webapps/ROOT/WEB-INF/web.xml
+      condition: not context.options.glass
 
     - run:
         - mv /usr/bin/systemctl /usr/bin/systemctl.orig
@@ -339,9 +347,6 @@ build:
         - install -m 0755 /tmp/config/jupyter/jupyterlab_startup.sh /opt/neurodesktop/jupyterlab_startup.sh
         - install -m 0755 /tmp/config/jupyter/deferred_startup.sh /opt/neurodesktop/deferred_startup.sh
         - install -m 0755 /tmp/config/jupyter/nested_container_runtime.sh /opt/neurodesktop/nested_container_runtime.sh
-        - install -m 0755 /tmp/config/guacamole/guacamole.sh /opt/neurodesktop/guacamole.sh
-        - install -m 0755 /tmp/config/guacamole/init_secrets.sh /opt/neurodesktop/init_secrets.sh
-        - install -m 0755 /tmp/config/guacamole/ensure_rdp_backend.sh /opt/neurodesktop/ensure_rdp_backend.sh
         - install -m 0755 /tmp/config/jupyter/environment_variables.sh /opt/neurodesktop/environment_variables.sh
         - install -m 0755 /tmp/config/jupyter/kernel_wrapper.sh /opt/neurodesktop/kernel_wrapper.sh
         - install -m 0755 /tmp/config/jupyter/jupyterlmod_modulepath.py /opt/neurodesktop/jupyterlmod_modulepath.py
@@ -353,9 +358,16 @@ build:
         - install -m 0755 /tmp/config/jupyter/webapp_launcher.sh /opt/neurodesktop/webapp_launcher.sh
         - install -m 0644 /tmp/config/jupyter/jupyter_notebook_config.py.template /opt/neurodesktop/jupyter_notebook_config.py.template
         - cp {{ get_file("webapps_json") }} /opt/neurodesktop/webapps.json
-        - python3 /opt/neurodesktop/scripts/generate_jupyter_config.py /opt/neurodesktop/webapps.json /opt/neurodesktop/jupyter_notebook_config.py.template /etc/jupyter/jupyter_notebook_config.py
+        - python3 /opt/neurodesktop/scripts/generate_jupyter_config.py /opt/neurodesktop/webapps.json /opt/neurodesktop/jupyter_notebook_config.py.template /etc/jupyter/jupyter_notebook_config.py{% if context.options.glass %} --without-remote-desktop{% endif %}
         - chmod +rx /etc/jupyter/jupyter_notebook_config.py /opt/neurodesktop/webapp_wrapper/webapp_wrapper.py
         - chmod +r /opt/neurodesktop/webapp_wrapper/splash_template.html /opt/neurodesktop/webapps.json
+        - chown -R ${NB_UID}:${NB_GID} /tmp/neurodesk-launcher
+
+    - condition: not context.options.glass
+      run:
+        - install -m 0755 /tmp/config/guacamole/guacamole.sh /opt/neurodesktop/guacamole.sh
+        - install -m 0755 /tmp/config/guacamole/init_secrets.sh /opt/neurodesktop/init_secrets.sh
+        - install -m 0755 /tmp/config/guacamole/ensure_rdp_backend.sh /opt/neurodesktop/ensure_rdp_backend.sh
         - mkdir -p /etc/guacamole
         - "printf '%s\\n%s\\n%s\\n' 'user-mapping: /etc/guacamole/user-mapping.xml' 'guacd-hostname: 127.0.0.1' 'guacd-port: 4822' > /etc/guacamole/guacamole.properties"
         - printf '%s\n%s\n' '[server]' 'bind_host = 127.0.0.1' > /etc/guacamole/guacd.conf
@@ -364,7 +376,6 @@ build:
         - install -m 0644 -o ${NB_UID} -g ${NB_GID} /tmp/config/guacamole/user-mapping-vnc-rdp.xml /etc/guacamole/user-mapping-vnc-rdp.xml
         - ln -sf /etc/guacamole/user-mapping-vnc.xml /etc/guacamole/user-mapping.xml
         - chown -R ${NB_UID}:${NB_GID} /etc/guacamole /usr/local/tomcat
-        - chown -R ${NB_UID}:${NB_GID} /tmp/neurodesk-launcher
         - chmod -R a+rX /usr/local/tomcat /etc/guacamole
 
     - user: ${NB_USER}
@@ -383,10 +394,11 @@ build:
     - copy:
         - start-neurodesktop-guacamole
         - /usr/local/bin/start-neurodesktop-guacamole
+      condition: not context.options.glass
 
     - run:
-        - chmod +x /usr/local/bin/start-neurodesktop-jupyterlab /usr/local/bin/start-neurodesktop-guacamole
-        - DEBIAN_FRONTEND=noninteractive apt-get purge --yes --auto-remove libgpgme-dev libjpeg-turbo8-dev libossp-uuid-dev libpango1.0-dev libpng-dev libssh2-1-dev libssl-dev libtool-bin libvncserver-dev libwebp-dev build-essential
+        - chmod +x /usr/local/bin/start-neurodesktop-jupyterlab
+        - DEBIAN_FRONTEND=noninteractive apt-get purge --yes --auto-remove libgpgme-dev libjpeg-turbo8-dev libossp-uuid-dev libpango1.0-dev libpng-dev libssh2-1-dev libssl-dev libtool-bin libwebp-dev build-essential
         - apt-get clean
         - rm -rf /var/lib/apt/lists/*
         - printf '%s\n%s\n' 'password' 'password' | passwd ${NB_USER}
@@ -394,19 +406,34 @@ build:
         - sed -i 's/c.FileContentsManager.delete_to_trash = False/c.FileContentsManager.always_delete_dir = True/g' /etc/jupyter/jupyter_server_config.py
         - printf '\n# Detect dead WebSocket clients quickly (tab closed/network gone)\nc.ServerApp.websocket_ping_interval = 30\nc.ServerApp.websocket_ping_timeout = 60\n' >> /etc/jupyter/jupyter_server_config.py
 
+    - condition: not context.options.glass
+      run:
+        - chmod +x /usr/local/bin/start-neurodesktop-guacamole
+        - DEBIAN_FRONTEND=noninteractive apt-get purge --yes --auto-remove libvncserver-dev
+
+    - condition: not context.options.glass
+      deploy:
+        bins:
+          - start-neurodesktop-jupyterlab
+          - start-neurodesktop-guacamole
+
+    - condition: context.options.glass
+      deploy:
+        bins:
+          - start-neurodesktop-jupyterlab
+
     - run:
         - python3 /opt/neurodesktop/jupyterlmod_modulepath.py || true
         - python3 {{ get_file("wrap_kernels") }}
         - cat {{ get_file("bashrc_append") }} >> /etc/bash.bashrc
 
     - run:
-        - mkdir -p /opt/jovyan_defaults/.itksnap.org/ITK-SNAP /opt/jovyan_defaults/.config/lxpanel/LXDE/panels /opt/jovyan_defaults/.local/share/code-server/User /opt/jovyan_defaults/.config/libfm /opt/jovyan_defaults/.config/opencode /opt/jovyan_defaults/.local/bin /opt/jovyan_defaults/.vnc /opt/jovyan_defaults/.claude /opt/jovyan_defaults/.codex /opt/jovyan_defaults/.ssh /opt/jovyan_defaults/.jupyter/labconfig /opt/jovyan_defaults/.jupyter/nbi/rules
+        - mkdir -p /opt/jovyan_defaults/.itksnap.org/ITK-SNAP /opt/jovyan_defaults/.config/lxpanel/LXDE/panels /opt/jovyan_defaults/.local/share/code-server/User /opt/jovyan_defaults/.config/libfm /opt/jovyan_defaults/.config/opencode /opt/jovyan_defaults/.local/bin /opt/jovyan_defaults/.claude /opt/jovyan_defaults/.codex /opt/jovyan_defaults/.ssh /opt/jovyan_defaults/.jupyter/labconfig /opt/jovyan_defaults/.jupyter/nbi/rules
         - install -m 0644 /tmp/config/itksnap/UserPreferences.xml /opt/jovyan_defaults/.itksnap.org/ITK-SNAP/UserPreferences.xml
         - install -m 0644 /tmp/config/lxde/mimeapps.list /opt/jovyan_defaults/.config/mimeapps.list
         - install -m 0644 /tmp/config/lxde/panel /opt/jovyan_defaults/.config/lxpanel/LXDE/panels/panel
         - install -m 0644 /tmp/config/vscode/settings.json /opt/jovyan_defaults/.local/share/code-server/User/settings.json
         - install -m 0644 /tmp/config/lxde/libfm.conf /opt/jovyan_defaults/.config/libfm/libfm.conf
-        - install -m 0755 /tmp/config/lxde/xstartup /opt/jovyan_defaults/.vnc/xstartup
         - install -m 0644 /tmp/config/conda/conda-readme.md /opt/jovyan_defaults/conda-readme.md
         - install -m 0644 /tmp/config/agents/claude_settings.local.json /opt/jovyan_defaults/.claude/settings.local.json
         - install -m 0644 /tmp/config/agents/claude_mcp_config.json /opt/jovyan_defaults/.claude/mcp_config.json
@@ -419,9 +446,6 @@ build:
         - install -m 0644 /tmp/config/agents/nbi_mcp.json /opt/jovyan_defaults/.jupyter/nbi/mcp.json
         - install -m 0755 /tmp/config/agents/nbi_setup.sh /opt/neurodesktop/nbi_setup.sh
         - install -m 0644 /tmp/config/lxde/.bashrc /opt/jovyan_defaults/.bashrc_append
-        - printf '%s\n%s\n%s\n' 'password' 'password' 'n' | vncpasswd /opt/jovyan_defaults/.vnc/passwd
-        - chown root:users /opt/jovyan_defaults/.vnc/passwd
-        - chmod 640 /opt/jovyan_defaults/.vnc/passwd
         - install -m 0755 -o root -g users /tmp/config/jupyter/restore_home_defaults.sh /opt/neurodesktop/restore_home_defaults.sh
         - install -m 0755 -o root -g users /tmp/config/jupyter/update_page_config.py /opt/neurodesktop/update_page_config.py
         - install -D -m 0644 /tmp/config/agents/AGENTS.md /opt/AGENTS.md
@@ -435,6 +459,16 @@ build:
         - cp /tmp/config/cvmfs/neurodesk.ardc.edu.au.conf* /etc/cvmfs/config.d/
         - chmod 0644 /etc/cvmfs/config.d/neurodesk.ardc.edu.au.conf*
         - install -m 0644 /tmp/config/cvmfs/default.local /etc/cvmfs/default.local
+
+    - condition: not context.options.glass
+      run:
+        - mkdir -p /opt/jovyan_defaults/.vnc
+        - install -m 0755 /tmp/config/lxde/xstartup /opt/jovyan_defaults/.vnc/xstartup
+        - printf '%s\n%s\n%s\n' 'password' 'password' 'n' | vncpasswd /opt/jovyan_defaults/.vnc/passwd
+        - chown root:users /opt/jovyan_defaults/.vnc/passwd
+        - chmod 640 /opt/jovyan_defaults/.vnc/passwd
+
+    - run:
         - rm -rf /tmp/config /tmp/scripts /tmp/tests /tmp/neurodesk-launcher
 
     - run:
@@ -468,9 +502,16 @@ build:
         - cc -x c -O2 -Wall -Wextra -o /usr/local/bin/glass-resize {{ get_file("glass_resize_source") }}
         - install -m 0755 {{ get_file("glass_session") }} /usr/local/sbin/neurodesktop-glass-session
         - install -m 0755 {{ get_file("glass_cvmfs_mount") }} /usr/local/sbin/neurodesktop-glass-cvmfs
+        - install -m 0755 {{ get_file("glass_jupyter_launcher") }} /usr/local/bin/neurodesktop-start-jupyter
+        - install -m 0755 {{ get_file("glass_prepare") }} /usr/local/sbin/neurodesktop-glass-prepare
         - install -m 0644 {{ get_file("glass_service") }} /etc/systemd/system/neurodesktop-glass.service
+        - install -m 0644 {{ get_file("glass_jupyter_service") }} /etc/systemd/system/neurodesktop-jupyter.service
         - install -m 0644 {{ get_file("glass_target") }} /etc/systemd/system/glass.target
         - install -m 0644 {{ get_file("glass_xorg_config") }} /etc/X11/xorg.conf
+        - install -D -m 0755 -o root -g users {{ get_file("glass_jupyter_desktop") }} /opt/jovyan_defaults/Desktop/jupyterlab.desktop
+        - "printf '%s\\n' 'jovyan ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/neurodesktop-glass"
+        - chmod 0440 /etc/sudoers.d/neurodesktop-glass
+        - visudo -cf /etc/sudoers.d/neurodesktop-glass
         - if [ -x /usr/bin/systemctl.orig ]; then mv -f /usr/bin/systemctl.orig /usr/bin/systemctl; fi
         - mkdir -p /etc/systemd/system/glass.target.wants
         - ln -sf /etc/systemd/system/neurodesktop-glass.service /etc/systemd/system/glass.target.wants/neurodesktop-glass.service
@@ -484,11 +525,6 @@ build:
         - rm -rf /var/lib/apt/lists/*
 
     - workdir: /home/${NB_USER}
-
-deploy:
-  bins:
-    - start-neurodesktop-jupyterlab
-    - start-neurodesktop-guacamole
 
 categories:
   - programming
@@ -518,14 +554,17 @@ readme: |-
 files:
   - name: guacamole_server
     url: https://archive.apache.org/dist/guacamole/{{ context.guacamole_version }}/source/guacamole-server-{{ context.guacamole_version }}.tar.gz
+    condition: not context.options.glass
     retry: 5
 
   - name: guacamole_war
     url: https://archive.apache.org/dist/guacamole/{{ context.guacamole_version }}/binary/guacamole-{{ context.guacamole_version }}.war
+    condition: not context.options.glass
     retry: 5
 
   - name: tomcat
     url: https://archive.apache.org/dist/tomcat/tomcat-{{ context.tomcat_rel }}/v{{ context.tomcat_version }}/bin/apache-tomcat-{{ context.tomcat_version }}.tar.gz
+    condition: not context.options.glass
     retry: 5
 
   - name: code_server_amd64
@@ -683,6 +722,7 @@ files:
           --ServerApp.password="${JUPYTER_PASSWORD}"
 
   - name: start-neurodesktop-guacamole
+    condition: not context.options.glass
     contents: |
       #!/usr/bin/env bash
       set -euo pipefail
@@ -712,6 +752,7 @@ files:
 
       install -d -o 1000 -g 100 -m 0700 /run/user/1000
       install -d -m 0755 /run/dbus
+      /usr/local/sbin/neurodesktop-glass-prepare
       if [ -d /opt/jovyan_defaults ]; then
           setpriv --reuid=1000 --regid=100 --clear-groups \
               cp -a --update=none /opt/jovyan_defaults/. /home/jovyan/
@@ -819,3 +860,145 @@ files:
       DefaultDependencies=no
       Wants=neurodesktop-glass.service
       AllowIsolate=yes
+
+  - name: glass_jupyter_service
+    condition: context.options.glass
+    contents: |
+      [Unit]
+      Description=Neurodesktop JupyterLab
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=jovyan
+      WorkingDirectory=/home/jovyan
+      Environment=HOME=/home/jovyan
+      Environment=USER=jovyan
+      Environment=LOGNAME=jovyan
+      Environment=NEURODESKTOP_JUPYTER_PORT=8888
+      Environment=NEURODESKTOP_REMOTE_DESKTOP=0
+      Environment=JUPYTER_TOKEN=
+      Environment=JUPYTER_PASSWORD=
+      Environment=CVMFS_DISABLE=true
+      Environment=NEURODESKTOP_CVMFS_STARTUP_MODE=external
+      Environment=PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      ExecStartPre=/usr/bin/truncate --size 0 /home/jovyan/.local/state/Neurodesktop/jupyter.log
+      ExecStart=/usr/local/bin/start-neurodesktop-jupyterlab
+      StandardOutput=append:/home/jovyan/.local/state/Neurodesktop/jupyter.log
+      StandardError=inherit
+      Restart=on-failure
+      RestartSec=2
+      TimeoutStopSec=30
+
+      [Install]
+      # Static by design: the desktop launcher is the only activation path.
+
+  - name: glass_jupyter_launcher
+    condition: context.options.glass
+    executable: true
+    contents: |
+      #!/usr/bin/env bash
+      set -u
+
+      service_name=neurodesktop-jupyter.service
+      status_url=http://127.0.0.1:8888/api/status
+      log_file="$HOME/.local/state/Neurodesktop/jupyter.log"
+
+      printf '\033[2J\033[H'
+      printf 'Neurodesktop JupyterLab\n\n'
+
+      if curl --silent --show-error --fail --max-time 2 "$status_url" >/dev/null 2>&1; then
+          printf 'JupyterLab is already ready.\n'
+          sleep 1
+          exit 0
+      fi
+
+      printf 'Starting JupyterLab...\n\n'
+      tail -n 0 -F "$log_file" &
+      tail_pid=$!
+      cleanup() {
+          kill "$tail_pid" >/dev/null 2>&1 || true
+          wait "$tail_pid" 2>/dev/null || true
+      }
+      trap cleanup EXIT INT TERM
+
+      if ! sudo -n /usr/bin/systemctl start "$service_name"; then
+          cleanup
+          trap - EXIT INT TERM
+          printf '\nJupyterLab could not be started.\n'
+          /usr/bin/systemctl status --no-pager "$service_name" || true
+          printf '\nPress Enter to close this window.\n'
+          read -r _
+          exit 1
+      fi
+
+      while ! curl --silent --show-error --fail --max-time 2 "$status_url" >/dev/null 2>&1; do
+          state=$(/usr/bin/systemctl show "$service_name" --property=ActiveState --value 2>/dev/null || true)
+          if [ "$state" = failed ] || [ "$state" = inactive ]; then
+              cleanup
+              trap - EXIT INT TERM
+              printf '\nJupyterLab stopped before it became ready.\n'
+              /usr/bin/systemctl status --no-pager "$service_name" || true
+              printf '\nPress Enter to close this window.\n'
+              read -r _
+              exit 1
+          fi
+          sleep 0.5
+      done
+
+      cleanup
+      trap - EXIT INT TERM
+      printf '\nJupyterLab is ready. Opening it in your host web browser...\n'
+      sleep 1
+
+  - name: glass_jupyter_desktop
+    condition: context.options.glass
+    executable: true
+    contents: |
+      [Desktop Entry]
+      Type=Application
+      Name=JupyterLab
+      Comment=Start JupyterLab and open it in the host web browser
+      Exec=/usr/local/bin/neurodesktop-start-jupyter
+      Icon=/opt/neurodesk_brain_logo.svg
+      Terminal=true
+      Categories=Development;Science;
+      StartupNotify=true
+
+  - name: glass_prepare
+    condition: context.options.glass
+    executable: true
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      jovyan_group=$(id -gn jovyan)
+      state_dir=/home/jovyan/.local/state/Neurodesktop
+      migration_marker="$state_dir/glass-v1-ready"
+
+      install -d -m 0755 -o jovyan -g "$jovyan_group" "$state_dir"
+      touch "$state_dir/jupyter.log"
+      chown "jovyan:$jovyan_group" "$state_dir/jupyter.log"
+      chmod 0644 "$state_dir/jupyter.log"
+
+      if [ -e "$migration_marker" ]; then
+          exit 0
+      fi
+
+      for path in /home/jovyan/.vnc /home/jovyan/.neurodesk/guacamole; do
+          if [ -d "$path" ]; then
+              find "$path" -depth -delete
+          fi
+      done
+      for path in \
+          /home/jovyan/.neurodesk/secrets/guacamole_web_password \
+          /home/jovyan/.neurodesk/secrets/guacamole_web_user \
+          /home/jovyan/.neurodesk/secrets/vnc_password
+      do
+          if [ -e "$path" ]; then
+              find "$path" -delete
+          fi
+      done
+
+      touch "$migration_marker"
+      chown "jovyan:$jovyan_group" "$migration_marker"

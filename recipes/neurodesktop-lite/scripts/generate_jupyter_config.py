@@ -6,8 +6,8 @@ This script reads webapp configurations from webapps.json and generates
 the ServerProxy.servers entries for JupyterLab integration.
 """
 
+import argparse
 import json
-import sys
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -15,6 +15,46 @@ from typing import Dict, Any
 
 # Directory to store downloaded webapp icons
 ICONS_DIR = Path("/opt/neurodesk/icons")
+
+REMOTE_DESKTOP_CREDENTIALS = """import base64
+
+# Per-user Guacamole web credentials. guacamole.sh writes these files on
+# startup with mode 0600. The static fallback keeps direct Tomcat development
+# working before those files exist.
+_guac_user_file = os.path.join(home_dir, '.neurodesk', 'secrets', 'guacamole_web_user')
+_guac_pass_file = os.path.join(home_dir, '.neurodesk', 'secrets', 'guacamole_web_password')
+_guac_user = 'jovyan'
+_guac_pass = 'password'
+try:
+    if os.path.exists(_guac_user_file):
+        with open(_guac_user_file, 'r') as _f:
+            _guac_user = _f.read().strip() or _guac_user
+    if os.path.exists(_guac_pass_file):
+        with open(_guac_pass_file, 'r') as _f:
+            _guac_pass = _f.read().strip() or _guac_pass
+except OSError:
+    pass
+_guac_basic = base64.b64encode(f'{_guac_user}:{_guac_pass}'.encode()).decode()
+"""
+
+REMOTE_DESKTOP_SERVER = """  'neurodesktop': {
+    # Jupyter Server Proxy selects a free port and substitutes it here.
+    'command': [
+      '/bin/bash', '-lc',
+      'NEURODESKTOP_TOMCAT_PORT="{port}" exec /opt/neurodesktop/guacamole.sh',
+    ],
+    'timeout': 60,
+    'request_headers_override': {
+        'Authorization': f'Basic {_guac_basic}',
+    },
+    'launcher_entry': {
+      'path_info': 'neurodesktop',
+      'title': 'Neurodesktop',
+      'icon_path': '/opt/neurodesk_brain_logo.svg',
+      'category': 'Neurodesk'
+    }
+  },
+"""
 
 
 def download_icon(url: str, name: str) -> str:
@@ -109,7 +149,12 @@ def generate_server_proxy_entries(webapps: Dict[str, Any]) -> str:
     return ",\n".join(entries)
 
 
-def generate_config(webapps_json_path: Path, template_path: Path, output_path: Path):
+def generate_config(
+    webapps_json_path: Path,
+    template_path: Path,
+    output_path: Path,
+    include_remote_desktop: bool = True,
+):
     """
     Generate jupyter_notebook_config.py from template and webapps.json.
 
@@ -139,8 +184,14 @@ def generate_config(webapps_json_path: Path, template_path: Path, output_path: P
     else:
         replacement = ""
 
-    # Replace placeholder in template
-    output = template.replace("# {{WEBAPP_SERVERS}}", replacement)
+    # Replace placeholders in the template. Glass images already expose the
+    # LXDE desktop natively, so they omit the nested Guacamole proxy entirely.
+    credentials = REMOTE_DESKTOP_CREDENTIALS if include_remote_desktop else ""
+    remote_server = REMOTE_DESKTOP_SERVER if include_remote_desktop else ""
+    output = template.replace("# {{REMOTE_DESKTOP_CREDENTIALS}}", credentials)
+    output = output.replace("# {{REMOTE_DESKTOP_SERVER}}", remote_server)
+    output = output.replace("# {{WEBAPP_SERVERS}}", replacement)
+    compile(output, str(output_path), "exec")
 
     # Write output
     print(f"Writing config to: {output_path}")
@@ -154,28 +205,35 @@ def generate_config(webapps_json_path: Path, template_path: Path, output_path: P
 
 
 def main():
-    if len(sys.argv) != 4:
-        print("Usage: generate_jupyter_config.py <webapps.json> <template.py> <output.py>")
-        print()
-        print("Arguments:")
-        print("  webapps.json  Path to webapp configurations JSON file")
-        print("  template.py   Path to jupyter_notebook_config.py.template")
-        print("  output.py     Path to write generated jupyter_notebook_config.py")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("webapps_json", type=Path)
+    parser.add_argument("template", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument(
+        "--without-remote-desktop",
+        action="store_true",
+        help="omit the nested Guacamole desktop proxy",
+    )
+    args = parser.parse_args()
 
-    webapps_json_path = Path(sys.argv[1])
-    template_path = Path(sys.argv[2])
-    output_path = Path(sys.argv[3])
+    webapps_json_path = args.webapps_json
+    template_path = args.template
+    output_path = args.output
 
     if not webapps_json_path.exists():
         print(f"Error: webapps.json not found: {webapps_json_path}")
-        sys.exit(1)
+        parser.error(f"webapps.json not found: {webapps_json_path}")
 
     if not template_path.exists():
         print(f"Error: template not found: {template_path}")
-        sys.exit(1)
+        parser.error(f"template not found: {template_path}")
 
-    generate_config(webapps_json_path, template_path, output_path)
+    generate_config(
+        webapps_json_path,
+        template_path,
+        output_path,
+        include_remote_desktop=not args.without_remote_desktop,
+    )
 
 
 if __name__ == "__main__":
