@@ -131,6 +131,24 @@ def test_candidate_artifacts_and_promotion_key_off_container_identity() -> None:
     assert "${recipe}" not in publish_steps
 
 
+def test_candidate_promotion_retries_mandatory_ghcr_pushes() -> None:
+    workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+    publish_steps = workflow.split(
+        "      - name: Publish the exact tested Docker archives", 1
+    )[1].split("      - name: Make Quay repositories public", 1)[0]
+
+    assert "push_mandatory_ghcr()" in publish_steps
+    assert 'if docker push "${image}"; then' in publish_steps
+    assert "Mandatory GHCR publish failed after 3 attempts" in publish_steps
+    assert 'push_mandatory_ghcr "${legacy_ghcr}:${build_date}"' in publish_steps
+    assert 'push_mandatory_ghcr "${legacy_ghcr}:latest"' in publish_steps
+    assert 'push_mandatory_ghcr "${ghcr}:${tag}"' in publish_steps
+    assert 'docker push "${legacy_ghcr}:' not in publish_steps
+    assert 'docker push "${ghcr}:' not in publish_steps
+
+
 def test_candidate_promotion_syncs_openrecon_from_verified_manifests() -> None:
     promote_workflow = Path(
         ".github/workflows/promote-container-candidate.yml"

@@ -287,6 +287,24 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
         run: |
+          push_mandatory_ghcr() {
+            local image="$1"
+            local attempt
+            local delay
+            for attempt in 1 2 3; do
+              if docker push "${image}"; then
+                return 0
+              fi
+              if [ "${attempt}" -eq 3 ]; then
+                echo "::error::Mandatory GHCR publish failed after 3 attempts for ${image}"
+                return 1
+              fi
+              delay=$((attempt * 30))
+              echo "::warning::Mandatory GHCR publish attempt ${attempt} failed for ${image}; retrying in ${delay} seconds"
+              sleep "${delay}"
+            done
+          }
+
           jq -c '.[]' verified-manifests.json | while read -r manifest; do
             container="$(echo "${manifest}" | jq -r '.container')"
             version="$(echo "${manifest}" | jq -r '.version')"
@@ -299,13 +317,13 @@ jobs:
             legacy_ghcr="ghcr.io/${GH_REGISTRY}/${legacy}"
             docker tag "${source}" "${legacy_ghcr}:${build_date}"
             docker tag "${source}" "${legacy_ghcr}:latest"
-            docker push "${legacy_ghcr}:${build_date}"
-            docker push "${legacy_ghcr}:latest"
+            push_mandatory_ghcr "${legacy_ghcr}:${build_date}"
+            push_mandatory_ghcr "${legacy_ghcr}:latest"
 
             ghcr="ghcr.io/${GH_REGISTRY}/${container}"
             for tag in "${version}_${build_date}" "${version}" latest; do
               docker tag "${source}" "${ghcr}:${tag}"
-              docker push "${ghcr}:${tag}"
+              push_mandatory_ghcr "${ghcr}:${tag}"
             done
 
             for destination in \
