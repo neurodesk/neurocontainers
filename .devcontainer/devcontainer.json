@@ -1,7 +1,7 @@
 {
   "name": "Neurocontainers Build Environment",
-  "postCreateCommand": "python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt && python3 -m pip install -e .",
-  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "postCreateCommand": "python3.13 -m venv --clear env && env/bin/python -m pip install --upgrade pip && env/bin/python -m pip install -r requirements.txt && env/bin/python -m pip install -e .",
+  "image": "mcr.microsoft.com/devcontainers/python:3.13",
   "privileged": true,
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
@@ -15,6 +15,6 @@
   },
   "remoteEnv": {
     "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
-    "PATH": "${localEnv:PATH}:${localWorkspaceFolder}/builder"
+    "PATH": "${localWorkspaceFolder}/env/bin:${localEnv:PATH}:${localWorkspaceFolder}/builder"
   }
 }
