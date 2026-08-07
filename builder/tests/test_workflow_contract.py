@@ -233,6 +233,29 @@ def test_candidate_promotion_preserves_optional_publish_behaviour() -> None:
     assert workflow.count('org.opencontainers.image.version=${version}_${build_date}') == 2
 
 
+def test_candidate_promotion_refreshes_auth_after_long_publication() -> None:
+    workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    checkout = workflow.split("      - name: Checkout trusted main", 1)[1].split(
+        "      - uses: actions/setup-python@v6", 1
+    )[0]
+    token_step = "      - name: Create fresh release token for metadata push"
+    metadata_step = "      - name: Commit generated release metadata directly to main"
+
+    assert "persist-credentials: false" in checkout
+    assert workflow.index("      - name: Attach tested SIFs to OCI images") < workflow.index(
+        token_step
+    )
+    assert workflow.index(token_step) < workflow.index(metadata_step)
+    metadata = workflow.split(metadata_step, 1)[1].split(
+        "      - name: Sync OpenRecon metadata", 1
+    )[0]
+    assert "RELEASE_TOKEN: ${{ steps.metadata-token.outputs.token }}" in metadata
+    assert metadata.count('http.https://github.com/.extraheader="${git_auth_header}"') == 2
+
+
 def test_manual_and_candidate_release_paths_share_openrecon_sync_helper() -> None:
     build_workflow = Path(".github/workflows/build-app.yml").read_text()
     promote_workflow = Path(
