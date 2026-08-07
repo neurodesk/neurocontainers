@@ -16,6 +16,14 @@ options:
     description: "Boot the LXDE desktop directly on a cc Glass display"
     default: false
 
+variants:
+  glass:
+    architectures:
+      - x86_64
+      - aarch64
+    options:
+      glass: true
+
 show_in_menu: false
 show_in_applist: false
 
