@@ -16,47 +16,6 @@ from typing import Dict, Any
 # Directory to store downloaded webapp icons
 ICONS_DIR = Path("/opt/neurodesk/icons")
 
-REMOTE_DESKTOP_CREDENTIALS = """import base64
-
-# Per-user Guacamole web credentials. guacamole.sh writes these files on
-# startup with mode 0600. The static fallback keeps direct Tomcat development
-# working before those files exist.
-_guac_user_file = os.path.join(home_dir, '.neurodesk', 'secrets', 'guacamole_web_user')
-_guac_pass_file = os.path.join(home_dir, '.neurodesk', 'secrets', 'guacamole_web_password')
-_guac_user = 'jovyan'
-_guac_pass = 'password'
-try:
-    if os.path.exists(_guac_user_file):
-        with open(_guac_user_file, 'r') as _f:
-            _guac_user = _f.read().strip() or _guac_user
-    if os.path.exists(_guac_pass_file):
-        with open(_guac_pass_file, 'r') as _f:
-            _guac_pass = _f.read().strip() or _guac_pass
-except OSError:
-    pass
-_guac_basic = base64.b64encode(f'{_guac_user}:{_guac_pass}'.encode()).decode()
-"""
-
-REMOTE_DESKTOP_SERVER = """  'neurodesktop': {
-    # Jupyter Server Proxy selects a free port and substitutes it here.
-    'command': [
-      '/bin/bash', '-lc',
-      'NEURODESKTOP_TOMCAT_PORT="{port}" exec /opt/neurodesktop/guacamole.sh',
-    ],
-    'timeout': 60,
-    'request_headers_override': {
-        'Authorization': f'Basic {_guac_basic}',
-    },
-    'launcher_entry': {
-      'path_info': 'neurodesktop',
-      'title': 'Neurodesktop',
-      'icon_path': '/opt/neurodesk_brain_logo.svg',
-      'category': 'Neurodesk'
-    }
-  },
-"""
-
-
 def download_icon(url: str, name: str) -> str:
     """
     Download an icon from a URL and save it locally.
@@ -153,7 +112,6 @@ def generate_config(
     webapps_json_path: Path,
     template_path: Path,
     output_path: Path,
-    include_remote_desktop: bool = True,
 ):
     """
     Generate jupyter_notebook_config.py from template and webapps.json.
@@ -179,18 +137,12 @@ def generate_config(
     # Generate webapp entries
     if webapps:
         webapp_entries = generate_server_proxy_entries(webapps)
-        # Add comma before webapp entries since they follow the neurodesktop entry
+        # Add a comma before webapp entries since they follow the VS Code entry.
         replacement = ",\n" + webapp_entries
     else:
         replacement = ""
 
-    # Replace placeholders in the template. Glass images already expose the
-    # LXDE desktop natively, so they omit the nested Guacamole proxy entirely.
-    credentials = REMOTE_DESKTOP_CREDENTIALS if include_remote_desktop else ""
-    remote_server = REMOTE_DESKTOP_SERVER if include_remote_desktop else ""
-    output = template.replace("# {{REMOTE_DESKTOP_CREDENTIALS}}", credentials)
-    output = output.replace("# {{REMOTE_DESKTOP_SERVER}}", remote_server)
-    output = output.replace("# {{WEBAPP_SERVERS}}", replacement)
+    output = template.replace("# {{WEBAPP_SERVERS}}", replacement)
     compile(output, str(output_path), "exec")
 
     # Write output
@@ -209,11 +161,6 @@ def main():
     parser.add_argument("webapps_json", type=Path)
     parser.add_argument("template", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument(
-        "--without-remote-desktop",
-        action="store_true",
-        help="omit the nested Guacamole desktop proxy",
-    )
     args = parser.parse_args()
 
     webapps_json_path = args.webapps_json
@@ -232,7 +179,6 @@ def main():
         webapps_json_path,
         template_path,
         output_path,
-        include_remote_desktop=not args.without_remote_desktop,
     )
 
 

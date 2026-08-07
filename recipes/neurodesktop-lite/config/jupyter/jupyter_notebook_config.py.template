@@ -10,10 +10,7 @@ try:
 except Exception as _jupyterlmod_modulepath_error:
     print(f'[WARN] Failed to install jupyter-lmod MODULEPATH refresh: {_jupyterlmod_modulepath_error}')
 
-# {{REMOTE_DESKTOP_CREDENTIALS}}
-
 c.ServerProxy.servers = {
-# {{REMOTE_DESKTOP_SERVER}}
   'vscode': {
     'command': [
       '/usr/local/bin/code-server',

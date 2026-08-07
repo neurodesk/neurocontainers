@@ -203,10 +203,6 @@ restore_defaults() {
 
         # Calculate relative path and destination
         rel_path="${src_file#${DEFAULTS_DIR}/}"
-        if [ "${NEURODESKTOP_REMOTE_DESKTOP:-1}" = "0" ] \
-            && [[ "$rel_path" == .vnc/* ]]; then
-            continue
-        fi
         dest_file="${HOME_DIR}/${rel_path}"
 
         log_info "Processing: $rel_path"

@@ -11,26 +11,10 @@ architectures:
   - x86_64
   - aarch64
 
-options:
-  glass:
-    description: "Boot the LXDE desktop directly on a cc Glass display"
-    default: false
-
-variants:
-  glass:
-    architectures:
-      - x86_64
-      - aarch64
-    options:
-      glass: true
-
 show_in_menu: false
 show_in_applist: false
 
 variables:
-  guacamole_version: "1.6.0"
-  tomcat_rel: "9"
-  tomcat_version: "9.0.116"
   apptainer_version: "1.4.4"
   firefox_version: "150.0.1"
   code_server_version: "4.104.2"
@@ -75,11 +59,7 @@ build:
         DONT_PROMPT_WSL_INSTALL: "1"
         LMOD_CMD: /usr/share/lmod/lmod/libexec/lmod
         NEURODESKTOP_VERSION: "{{ context.version }}"
-
-    - condition: context.options.glass
-      environment:
         NEURODESKTOP_GLASS: "1"
-        NEURODESKTOP_REMOTE_DESKTOP: "0"
 
     - install:
         - acl
@@ -172,41 +152,12 @@ build:
         - xz-utils
         - zip
 
-    - condition: not context.options.glass
-      install:
-        - freerdp2-dev
-        - libfreerdp-client2-2t64
-        - libfreerdp2-2t64
-        - libvncclient1
-        - libvncserver-dev
-        - libwinpr2-2t64
-        - tigervnc-common
-        - tigervnc-standalone-server
-        - tigervnc-tools
-        - xorgxrdp
-        - xrdp
-
-    - condition: not context.options.glass
-      run:
-        - usermod -a -G ssl-cert xrdp
-
     - run:
         - bash {{ get_file("nodesource_setup") }}
         - apt-get update --yes
         - apt-get install --yes --no-install-recommends nodejs yarn
         - apt-get clean
         - rm -rf /var/lib/apt/lists/*
-
-    - run:
-        - cp {{ get_file("guacamole_server") }} /tmp/guacamole-server.tar.gz
-        - tar -xzf /tmp/guacamole-server.tar.gz -C /tmp
-        - rm /tmp/guacamole-server.tar.gz
-        - cd /tmp/guacamole-server-{{ context.guacamole_version }} && ./configure --with-init-dir=/etc/init.d
-        - cd /tmp/guacamole-server-{{ context.guacamole_version }} && make -j{{ parallel_jobs }}
-        - cd /tmp/guacamole-server-{{ context.guacamole_version }} && make install
-        - ldconfig
-        - rm -rf /tmp/guacamole-server-{{ context.guacamole_version }}
-      condition: not context.options.glass
 
     - run:
         - cp {{ get_file(context.code_server_file) }} /tmp/code-server.tar.gz
@@ -237,26 +188,6 @@ build:
         - apt-get clean
         - rm -rf /var/lib/apt/lists/* /root/.cache /home/${NB_USER}/.cache
       condition: arch=="aarch64"
-
-    - run:
-        - cp {{ get_file("tomcat") }} /tmp/apache-tomcat.tar.gz
-        - tar -xf /tmp/apache-tomcat.tar.gz -C /tmp
-        - rm -rf /tmp/apache-tomcat.tar.gz
-        - mv /tmp/apache-tomcat-{{ context.tomcat_version }} /usr/local/tomcat
-        - mv /usr/local/tomcat/webapps /usr/local/tomcat/webapps.dist
-        - mkdir /usr/local/tomcat/webapps
-        - sed -i '/<Connector port="8080" protocol="HTTP\/1\.1"/,/^[[:space:]]*\/>/ s|/>|maxHttpRequestHeaderSize="65536" />|' /usr/local/tomcat/conf/server.xml
-        - sed -i 's|<Connector port="8080"|<Connector port="${port.http}"|' /usr/local/tomcat/conf/server.xml
-        - echo "port.http=8080" >> /usr/local/tomcat/conf/catalina.properties
-        - sed -i 's|<Context>|<Context sessionCookiePath="/">|' /usr/local/tomcat/conf/context.xml
-        - sed -i '/<Context sessionCookiePath/a\    <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor" sameSiteCookies="Lax" />' /usr/local/tomcat/conf/context.xml
-        - sed -i '/<session-config>/,/<\/session-config>/c\    <session-config>\n        <session-timeout>30</session-timeout>\n        <cookie-config>\n            <max-age>86400</max-age>\n            <http-only>true</http-only>\n        </cookie-config>\n    </session-config>' /usr/local/tomcat/conf/web.xml
-        - chmod +x /usr/local/tomcat/bin/*.sh
-        - cp {{ get_file("guacamole_war") }} /usr/local/tomcat/webapps/ROOT.war
-        - unzip -q /usr/local/tomcat/webapps/ROOT.war -d /usr/local/tomcat/webapps/ROOT
-        - rm /usr/local/tomcat/webapps/ROOT.war
-        - sed -i '/<session-config>/,/<\/session-config>/c\    <session-config>\n        <session-timeout>30</session-timeout>\n        <cookie-config>\n            <max-age>86400</max-age>\n            <http-only>true</http-only>\n        </cookie-config>\n    </session-config>' /usr/local/tomcat/webapps/ROOT/WEB-INF/web.xml
-      condition: not context.options.glass
 
     - run:
         - mv /usr/bin/systemctl /usr/bin/systemctl.orig
@@ -363,7 +294,6 @@ build:
         - install -m 0755 /tmp/config/jupyter/environment_variables.sh /opt/neurodesktop/environment_variables.sh
         - install -m 0755 /tmp/config/jupyter/kernel_wrapper.sh /opt/neurodesktop/kernel_wrapper.sh
         - install -m 0755 /tmp/config/jupyter/jupyterlmod_modulepath.py /opt/neurodesktop/jupyterlmod_modulepath.py
-        - install -m 0755 /tmp/config/ssh/ensure_sftp_sshd.sh /opt/neurodesktop/ensure_sftp_sshd.sh
         - install -m 0755 /tmp/config/slurm/setup_and_start_slurm.sh /opt/neurodesktop/setup_and_start_slurm.sh
         - cp -a /tmp/tests /opt/tests
         - install -m 0755 /tmp/scripts/generate_jupyter_config.py /opt/neurodesktop/scripts/generate_jupyter_config.py
@@ -371,25 +301,10 @@ build:
         - install -m 0755 /tmp/config/jupyter/webapp_launcher.sh /opt/neurodesktop/webapp_launcher.sh
         - install -m 0644 /tmp/config/jupyter/jupyter_notebook_config.py.template /opt/neurodesktop/jupyter_notebook_config.py.template
         - cp {{ get_file("webapps_json") }} /opt/neurodesktop/webapps.json
-        - python3 /opt/neurodesktop/scripts/generate_jupyter_config.py /opt/neurodesktop/webapps.json /opt/neurodesktop/jupyter_notebook_config.py.template /etc/jupyter/jupyter_notebook_config.py{% if context.options.glass %} --without-remote-desktop{% endif %}
+        - python3 /opt/neurodesktop/scripts/generate_jupyter_config.py /opt/neurodesktop/webapps.json /opt/neurodesktop/jupyter_notebook_config.py.template /etc/jupyter/jupyter_notebook_config.py
         - chmod +rx /etc/jupyter/jupyter_notebook_config.py /opt/neurodesktop/webapp_wrapper/webapp_wrapper.py
         - chmod +r /opt/neurodesktop/webapp_wrapper/splash_template.html /opt/neurodesktop/webapps.json
         - chown -R ${NB_UID}:${NB_GID} /tmp/neurodesk-launcher
-
-    - condition: not context.options.glass
-      run:
-        - install -m 0755 /tmp/config/guacamole/guacamole.sh /opt/neurodesktop/guacamole.sh
-        - install -m 0755 /tmp/config/guacamole/init_secrets.sh /opt/neurodesktop/init_secrets.sh
-        - install -m 0755 /tmp/config/guacamole/ensure_rdp_backend.sh /opt/neurodesktop/ensure_rdp_backend.sh
-        - mkdir -p /etc/guacamole
-        - "printf '%s\\n%s\\n%s\\n' 'user-mapping: /etc/guacamole/user-mapping.xml' 'guacd-hostname: 127.0.0.1' 'guacd-port: 4822' > /etc/guacamole/guacamole.properties"
-        - printf '%s\n%s\n' '[server]' 'bind_host = 127.0.0.1' > /etc/guacamole/guacd.conf
-        - printf '%s\n' 'bind_port = 4822' >> /etc/guacamole/guacd.conf
-        - install -m 0644 -o ${NB_UID} -g ${NB_GID} /tmp/config/guacamole/user-mapping-vnc.xml /etc/guacamole/user-mapping-vnc.xml
-        - install -m 0644 -o ${NB_UID} -g ${NB_GID} /tmp/config/guacamole/user-mapping-vnc-rdp.xml /etc/guacamole/user-mapping-vnc-rdp.xml
-        - ln -sf /etc/guacamole/user-mapping-vnc.xml /etc/guacamole/user-mapping.xml
-        - chown -R ${NB_UID}:${NB_GID} /etc/guacamole /usr/local/tomcat
-        - chmod -R a+rX /usr/local/tomcat /etc/guacamole
 
     - user: ${NB_USER}
 
@@ -404,14 +319,9 @@ build:
         - start-neurodesktop-jupyterlab
         - /usr/local/bin/start-neurodesktop-jupyterlab
 
-    - copy:
-        - start-neurodesktop-guacamole
-        - /usr/local/bin/start-neurodesktop-guacamole
-      condition: not context.options.glass
-
     - run:
         - chmod +x /usr/local/bin/start-neurodesktop-jupyterlab
-        - DEBIAN_FRONTEND=noninteractive apt-get purge --yes --auto-remove libgpgme-dev libjpeg-turbo8-dev libossp-uuid-dev libpango1.0-dev libpng-dev libssh2-1-dev libssl-dev libtool-bin{% if not context.options.glass %} libvncserver-dev{% endif %} libwebp-dev build-essential
+        - DEBIAN_FRONTEND=noninteractive apt-get purge --yes --auto-remove libgpgme-dev libjpeg-turbo8-dev libossp-uuid-dev libpango1.0-dev libpng-dev libssh2-1-dev libssl-dev libtool-bin libwebp-dev build-essential
         - apt-get clean
         - rm -rf /var/lib/apt/lists/*
         - printf '%s\n%s\n' 'password' 'password' | passwd ${NB_USER}
@@ -419,18 +329,7 @@ build:
         - sed -i 's/c.FileContentsManager.delete_to_trash = False/c.FileContentsManager.always_delete_dir = True/g' /etc/jupyter/jupyter_server_config.py
         - printf '\n# Detect dead WebSocket clients quickly (tab closed/network gone)\nc.ServerApp.websocket_ping_interval = 30\nc.ServerApp.websocket_ping_timeout = 60\n' >> /etc/jupyter/jupyter_server_config.py
 
-    - condition: not context.options.glass
-      run:
-        - chmod +x /usr/local/bin/start-neurodesktop-guacamole
-
-    - condition: not context.options.glass
-      deploy:
-        bins:
-          - start-neurodesktop-jupyterlab
-          - start-neurodesktop-guacamole
-
-    - condition: context.options.glass
-      deploy:
+    - deploy:
         bins:
           - start-neurodesktop-jupyterlab
 
@@ -472,14 +371,6 @@ build:
         - chmod 0644 /etc/cvmfs/config.d/neurodesk.ardc.edu.au.conf*
         - install -m 0644 /tmp/config/cvmfs/default.local /etc/cvmfs/default.local
 
-    - condition: not context.options.glass
-      run:
-        - mkdir -p /opt/jovyan_defaults/.vnc
-        - install -m 0755 /tmp/config/lxde/xstartup /opt/jovyan_defaults/.vnc/xstartup
-        - printf '%s\n%s\n%s\n' 'password' 'password' 'n' | vncpasswd /opt/jovyan_defaults/.vnc/passwd
-        - chown root:users /opt/jovyan_defaults/.vnc/passwd
-        - chmod 640 /opt/jovyan_defaults/.vnc/passwd
-
     - run:
         - rm -rf /tmp/config /tmp/scripts /tmp/tests /tmp/neurodesk-launcher
 
@@ -495,8 +386,7 @@ build:
         - ln -s /neurodesktop-storage/containers /neurocommand/local/containers
         - rm -rf /root/.cache /home/${NB_USER}/.cache
 
-    - condition: context.options.glass
-      install:
+    - install:
         - build-essential
         - fonts-dejavu-core
         - libx11-6
@@ -508,8 +398,7 @@ build:
         - xserver-xorg-core
         - xserver-xorg-input-evdev
 
-    - condition: context.options.glass
-      run:
+    - run:
         - cc -x c -O2 -Wall -Wextra -o /usr/local/bin/glass-clipboard {{ get_file("glass_clipboard_source") }} -lX11
         - cc -x c -O2 -Wall -Wextra -o /usr/local/bin/glass-resize {{ get_file("glass_resize_source") }}
         - install -m 0755 {{ get_file("glass_session") }} /usr/local/sbin/neurodesktop-glass-session
@@ -547,15 +436,14 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAQb0lE
 readme: |-
   ----------------------------------
   ## neurodesktop-lite/{{ context.version }} ##
-  Neurodesktop provides a browser-based JupyterLab and LXDE desktop environment with Guacamole, VNC/RDP support, CVMFS-backed NeuroDesk tooling, and workflow utilities.
+  Neurodesktop provides a native LXDE desktop for cc Glass with on-demand JupyterLab, CVMFS-backed NeuroDesk tooling, and workflow utilities.
 
-  Launchers:
+  JupyterLab starts only when its desktop icon is clicked. The launcher shows startup progress and opens the forwarded port in the host browser once JupyterLab is ready. The command-line launcher is:
   ```
   start-neurodesktop-jupyterlab
-  start-neurodesktop-guacamole
   ```
 
-  The JupyterLab launcher uses `${NEURODESK_WEBAPP_PORT:-8888}`. The Guacamole launcher delegates to Neurodesktop's Guacamole startup script.
+  The JupyterLab launcher uses `${NEURODESK_WEBAPP_PORT:-8888}`. Guacamole, VNC, RDP, and the nested Neurodesktop proxy are intentionally not installed.
 
   When Neurodesktop is launched from Apptainer/Singularity and is expected to run Neurodesk app containers from inside the desktop, the outer runtime must allow nested container setup. If the outer container has `NoNewPrivs=1`, inner app launches can fail during user namespace setup. For setuid-capable deployments, bind a host Singularity runtime to `/opt/host-singularity-bin/singularity`; Neurodesktop will detect it automatically and put it first on `PATH` for app wrappers. Set `NEURODESKTOP_NESTED_CONTAINER_RUNTIME=host|image|auto` to force or disable this behavior.
 
@@ -564,21 +452,6 @@ readme: |-
   ----------------------------------
 
 files:
-  - name: guacamole_server
-    url: https://archive.apache.org/dist/guacamole/{{ context.guacamole_version }}/source/guacamole-server-{{ context.guacamole_version }}.tar.gz
-    condition: not context.options.glass
-    retry: 5
-
-  - name: guacamole_war
-    url: https://archive.apache.org/dist/guacamole/{{ context.guacamole_version }}/binary/guacamole-{{ context.guacamole_version }}.war
-    condition: not context.options.glass
-    retry: 5
-
-  - name: tomcat
-    url: https://archive.apache.org/dist/tomcat/tomcat-{{ context.tomcat_rel }}/v{{ context.tomcat_version }}/bin/apache-tomcat-{{ context.tomcat_version }}.tar.gz
-    condition: not context.options.glass
-    retry: 5
-
   - name: code_server_amd64
     url: https://github.com/coder/code-server/releases/download/v{{ context.code_server_version }}/code-server-{{ context.code_server_version }}-linux-amd64.tar.gz
     condition: arch=="x86_64"
@@ -733,30 +606,16 @@ files:
           --ServerApp.token="${JUPYTER_TOKEN}" \
           --ServerApp.password="${JUPYTER_PASSWORD}"
 
-  - name: start-neurodesktop-guacamole
-    condition: not context.options.glass
-    contents: |
-      #!/usr/bin/env bash
-      set -euo pipefail
-      if [ -n "${NEURODESK_WEBAPP_PORT:-}" ] && [ -z "${NEURODESKTOP_TOMCAT_PORT:-}" ]; then
-          export NEURODESKTOP_TOMCAT_PORT="${NEURODESK_WEBAPP_PORT}"
-      fi
-      exec /opt/neurodesktop/guacamole.sh
-
   - name: glass_clipboard_source
     filename: glass-clipboard.c
-    condition: context.options.glass
 
   - name: glass_resize_source
     filename: glass-resize.c
-    condition: context.options.glass
 
   - name: glass_xorg_config
     filename: xorg.conf
-    condition: context.options.glass
 
   - name: glass_session
-    condition: context.options.glass
     executable: true
     contents: |
       #!/bin/sh
@@ -816,7 +675,6 @@ files:
           '
 
   - name: glass_service
-    condition: context.options.glass
     contents: |
       [Unit]
       Description=Neurodesktop Glass LXDE session
@@ -836,7 +694,6 @@ files:
       WantedBy=glass.target
 
   - name: glass_cvmfs_mount
-    condition: context.options.glass
     executable: true
     contents: |
       #!/bin/sh
@@ -865,7 +722,6 @@ files:
       test -d "$mountpoint/neurodesk-modules"
 
   - name: glass_target
-    condition: context.options.glass
     contents: |
       [Unit]
       Description=Neurodesktop Glass desktop
@@ -874,7 +730,6 @@ files:
       AllowIsolate=yes
 
   - name: glass_jupyter_service
-    condition: context.options.glass
     contents: |
       [Unit]
       Description=Neurodesktop JupyterLab
@@ -888,7 +743,6 @@ files:
       Environment=USER=jovyan
       Environment=LOGNAME=jovyan
       Environment=NEURODESKTOP_JUPYTER_PORT=8888
-      Environment=NEURODESKTOP_REMOTE_DESKTOP=0
       Environment=JUPYTER_TOKEN=
       Environment=JUPYTER_PASSWORD=
       Environment=CVMFS_DISABLE=true
@@ -906,7 +760,6 @@ files:
       # Static by design: the desktop launcher is the only activation path.
 
   - name: glass_jupyter_launcher
-    condition: context.options.glass
     executable: true
     contents: |
       #!/usr/bin/env bash
@@ -964,7 +817,6 @@ files:
       sleep 1
 
   - name: glass_jupyter_desktop
-    condition: context.options.glass
     executable: true
     contents: |
       [Desktop Entry]
@@ -978,7 +830,6 @@ files:
       StartupNotify=true
 
   - name: glass_prepare
-    condition: context.options.glass
     executable: true
     contents: |
       #!/usr/bin/env bash
