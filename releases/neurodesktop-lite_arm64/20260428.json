@@ -1,6 +1,6 @@
 {
   "apps": {
-    "neurodesktop-lite 20260428": {
+    "neurodesktop-lite_arm64 20260428": {
       "version": "20260807",
       "exec": "",
       "apptainer_args": []
@@ -11,6 +11,8 @@
     "visualization",
     "data organisation"
   ],
+  "variant": "arm64",
+  "architecture": "aarch64",
   "show_in_menu": false,
   "show_in_applist": false
 }
