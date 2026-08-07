@@ -879,8 +879,6 @@ source /opt/neurodesktop/environment_variables.sh > /dev/null 2>&1
 
 _phase_end "critical-startup"
 
-# RDP backend is started on-demand by guacamole.sh when the desktop is opened.
-
 # Launch deferred startup worker for lazy CVMFS and/or Slurm.
 # Pass the original CVMFS_DISABLE so the worker ignores the auto-set value.
 # MODULEPATH in the Jupyter server's env will be local-only in lazy mode,
@@ -896,13 +894,6 @@ if [ "$CVMFS_STARTUP_MODE" = "lazy" ] || [ "$SLURM_STARTUP_MODE" = "lazy" ]; the
         echo "[WARN] /opt/neurodesktop/deferred_startup.sh not found. Deferred startup skipped."
     fi
 fi
-
-# Ensure the VNC password file has the correct permissions
-_vnc_passwd_path="${HOME:-/home/${NB_USER}}/.vnc/passwd"
-if [ -f "${_vnc_passwd_path}" ] && [ "$(stat -c %a "${_vnc_passwd_path}")" != "600" ]; then
-    chmod 600 "${_vnc_passwd_path}"
-fi
-unset _vnc_passwd_path
 
 apply_chown_if_needed() {
     local dir="$1"
@@ -937,9 +928,6 @@ apply_chown_if_needed() {
         fi
     fi
 }
-apply_chown_if_needed "/etc/guacamole"
-apply_chown_if_needed "/usr/local/tomcat"
-
 # Run user-level startup tasks once before Jupyter server initialization.
 if [ "$EUID" -eq 0 ]; then
     sudo -H -u "${NB_USER}" \

@@ -1,7 +1,6 @@
 # neurodesktop-lite container test suite
-# Tests for neurodesktop-lite 20260428 - browser-based JupyterLab and LXDE desktop
-# environment with Guacamole, CVMFS-backed NeuroDesk tooling, and workflow
-# utilities.
+# Tests for neurodesktop-lite 20260428 - native Glass LXDE desktop with
+# on-demand JupyterLab, CVMFS-backed NeuroDesk tooling, and workflow utilities.
 
 name: neurodesktop-lite
 version: "20260428"
@@ -32,31 +31,29 @@ tests:
       bash -lc '
         set -euo pipefail
         command -v start-neurodesktop-jupyterlab
-        command -v start-neurodesktop-guacamole
+        command -v neurodesktop-start-jupyter
+        test -f /etc/systemd/system/neurodesktop-jupyter.service
+        ! command -v start-neurodesktop-guacamole
+        echo neurodesktop-launchers-ok
       '
-    expected_output_contains:
-      - "start-neurodesktop-jupyterlab"
-      - "start-neurodesktop-guacamole"
+    expected_output_contains: "neurodesktop-launchers-ok"
 
   - name: Core runtime commands are available
-    description: Verify Jupyter, Guacamole, desktop, and service commands exist
+    description: Verify Jupyter and native desktop commands exist without remote-desktop servers
     command: |
       bash -lc '
         set -euo pipefail
         command -v jupyter
-        command -v guacd
-        command -v Xvnc
-        command -v vncserver
         command -v code-server
         command -v apptainer
+        test -x /usr/lib/xorg/Xorg
+        ! command -v guacd
+        ! command -v Xvnc
+        ! command -v vncserver
+        ! command -v xrdp
+        echo core-runtime-ok
       '
-    expected_output_contains:
-      - "jupyter"
-      - "guacd"
-      - "Xvnc"
-      - "vncserver"
-      - "code-server"
-      - "apptainer"
+    expected_output_contains: "core-runtime-ok"
 
   - name: Desktop terminals initialize Lmod
     description: Verify a non-login interactive Bash shell exposes module and ml
@@ -100,23 +97,22 @@ tests:
     command: |
       bash -lc '
         set -euo pipefail
-        for path in \
+        paths=( \
           /usr/local/bin/start-neurodesktop-jupyterlab \
-          /usr/local/bin/start-neurodesktop-guacamole \
+          /usr/local/bin/neurodesktop-start-jupyter \
+          /usr/local/sbin/neurodesktop-glass-prepare \
           /opt/neurodesktop/jupyterlab_startup.sh \
-          /opt/neurodesktop/guacamole.sh \
-          /opt/neurodesktop/init_secrets.sh \
           /opt/neurodesktop/deferred_startup.sh \
           /opt/neurodesktop/nested_container_runtime.sh \
           /opt/neurodesktop/environment_variables.sh
-        do
+        )
+        for path in "${paths[@]}"; do
           test -x "$path"
           echo "executable:$path"
         done
+        echo launcher-scripts-executable
       '
-    expected_output_contains:
-      - "executable:/usr/local/bin/start-neurodesktop-jupyterlab"
-      - "executable:/opt/neurodesktop/guacamole.sh"
+    expected_output_contains: "launcher-scripts-executable"
 
   # ==========================================================================
   # JUPYTERLAB AND WEBAPP CONFIGURATION
@@ -216,24 +212,22 @@ tests:
     expected_output_contains: "jupyter-launcher-ok"
 
   # ==========================================================================
-  # GUACAMOLE, DESKTOP, AND STORAGE CONFIGURATION
+  # DESKTOP AND STORAGE CONFIGURATION
   # ==========================================================================
-  - name: Guacamole and Tomcat files are installed
-    description: Verify Guacamole webapp, Tomcat config, and mapping templates
+  - name: Native desktop integration is installed
+    description: Verify Glass desktop integration and remote-desktop exclusions
     command: |
       bash -lc '
         set -euo pipefail
-        test -r /usr/local/tomcat/webapps/ROOT/WEB-INF/web.xml
-        test -x /usr/local/tomcat/bin/startup.sh
-        test -r /usr/local/tomcat/conf/server.xml
-        test -r /usr/local/tomcat/conf/context.xml
-        test -r /etc/guacamole/guacamole.properties
-        test -r /etc/guacamole/user-mapping.xml
-        grep -q "maxHttpRequestHeaderSize=\"65536\"" /usr/local/tomcat/conf/server.xml
-        grep -q "sessionCookiePath=\"/\"" /usr/local/tomcat/conf/context.xml
-        echo "guacamole-config-ok"
+        test -r /etc/systemd/system/neurodesktop-glass.service
+        test -r /etc/systemd/system/neurodesktop-jupyter.service
+        test -x /opt/jovyan_defaults/Desktop/jupyterlab.desktop
+        test ! -e /etc/guacamole
+        test ! -e /usr/local/tomcat
+        ! grep -q /opt/neurodesktop/guacamole.sh /etc/jupyter/jupyter_notebook_config.py
+        echo desktop-integration-ok
       '
-    expected_output_contains: "guacamole-config-ok"
+    expected_output_contains: "desktop-integration-ok"
 
   - name: Neurodesktop storage directory exists
     description: Verify the persistent storage mount point exists
@@ -245,25 +239,16 @@ tests:
       '
     expected_output_contains: "neurodesktop-storage-ok"
 
-  - name: Guacamole secrets rotate defaults
-    description: Verify generated Guacamole/VNC secrets are not the literal default
+  - name: Remote desktop credentials are absent
+    description: Verify obsolete Guacamole and VNC state is not installed
     command: |
       bash -lc '
         set -euo pipefail
-        tmp_home="$(mktemp -d)"
-        cleanup() { rm -rf "$tmp_home"; }
-        trap cleanup EXIT
-        HOME="$tmp_home" NB_USER=jovyan /opt/neurodesktop/init_secrets.sh
-        web_password="$(cat "$tmp_home/.neurodesk/secrets/guacamole_web_password")"
-        vnc_password="$(cat "$tmp_home/.neurodesk/secrets/vnc_password")"
-        test -n "$web_password"
-        test -n "$vnc_password"
-        test "$web_password" != password
-        test "$vnc_password" != password
-        ! grep -q "password=\"password\"" "$tmp_home/.neurodesk/guacamole/user-mapping.xml"
-        echo "guacamole-secrets-rotated"
+        test ! -e /opt/neurodesktop/init_secrets.sh
+        test ! -e /opt/jovyan_defaults/.vnc
+        echo desktop-credentials-ok
       '
-    expected_output_contains: "guacamole-secrets-rotated"
+    expected_output_contains: "desktop-credentials-ok"
 
   # ==========================================================================
   # CVMFS AND NEUROCOMMAND INTEGRATION
@@ -424,7 +409,8 @@ tests:
     command: |
       bash -lc '
         set -euo pipefail
-        if dpkg-query -W -f='"'"'${Status}'"'"' build-essential 2>/dev/null; then
+        status="$(dpkg-query -W -f='"'"'${db:Status-Abbrev}'"'"' build-essential 2>/dev/null || true)"
+        if [ "$status" = ii ]; then
           echo "build-essential should have been removed"
           exit 1
         fi

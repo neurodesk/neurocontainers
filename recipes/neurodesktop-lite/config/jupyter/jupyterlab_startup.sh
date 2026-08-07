@@ -24,17 +24,6 @@ trap cleanup_startup_lock EXIT
 # Each file is copied if missing, or migrated when image defaults are newer.
 source /opt/neurodesktop/restore_home_defaults.sh
 
-# Initialize per-user Guacamole config and random credentials BEFORE Jupyter
-# reads jupyter_notebook_config.py - the config's Basic-auth header for the
-# /neurodesktop proxy is derived from ${HOME}/.neurodesk/secrets files written
-# by this script. Skipping this step would cause Jupyter to send stale
-# jovyan/password credentials and result in a 401 from the rotated Guacamole.
-if [ -x /opt/neurodesktop/init_secrets.sh ]; then
-    # shellcheck disable=SC1091
-    source /opt/neurodesktop/init_secrets.sh || \
-        echo "[WARN] init_secrets.sh failed; Guacamole web auth may fall back to the static default."
-fi
-
 is_apptainer_runtime() {
     [ -n "${SINGULARITY_NAME:-}" ] || \
     [ -n "${APPTAINER_NAME:-}" ] || \
@@ -137,8 +126,7 @@ ensure_jupyterlab_page_config() {
 
 ensure_jupyterlab_page_config
 
-# SSH key generation, guacamole mapping injection, and SSH/SFTP daemon startup
-# are handled on-demand by guacamole.sh when the desktop is opened.
+# Maintain secure defaults for keys created by jupyter-sshd-proxy.
 mkdir -p "${HOME}/.ssh"
 chmod 700 "${HOME}/.ssh"
 
@@ -311,33 +299,5 @@ ensure_codeserver_extensions &
 
 # Conda shell hooks are already provided by the base image/defaults.
 # Avoid mutating shell config on each startup.
-
-# Setup VNC directory and ensure files exist (should be restored from defaults)
-echo "[INFO] Setting up VNC..."
-mkdir -p "${HOME}/.vnc"
-if sudo -n true 2>/dev/null; then
-    if ! is_apptainer_runtime; then
-        sudo -n chown "${NB_USER}" "${HOME}/.vnc" 2>/dev/null || true
-    fi
-fi
-
-# Generate VNC password if not existing (fallback if restore failed)
-if [ ! -f "${HOME}/.vnc/passwd" ]; then
-    echo "[INFO] Generating VNC password (not found in restored defaults)..."
-    /usr/bin/printf '%s\n%s\n%s\n' 'password' 'password' 'n' | vncpasswd
-fi
-
-# Create xstartup if not existing (fallback if restore failed)
-if [ ! -f "${HOME}/.vnc/xstartup" ]; then
-    echo "[INFO] Creating VNC xstartup (not found in restored defaults)..."
-    printf '%s\n' '#!/bin/sh' 'eval "$(dbus-launch --sh-syntax)"' 'export DBUS_SESSION_BUS_ADDRESS' '/usr/bin/startlxde' 'vncconfig -nowin -noiconic &' > "${HOME}/.vnc/xstartup"
-fi
-
-# Ensure correct permissions
-chmod 600 "${HOME}/.vnc/passwd" 2>/dev/null || true
-chmod +x "${HOME}/.vnc/xstartup"
-
-# echo "[INFO] VNC setup complete. Contents of ${HOME}/.vnc:"
-# ls -la "${HOME}/.vnc/"
 
 touch "$STARTUP_DONE_FILE"
