@@ -64,6 +64,7 @@ def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> Non
     assert "head: `${forkOwner}:${run.head_branch}`" in reporter
     assert "reportPrNumbers" in reporter
     assert "candidate.head.sha === run.head_sha" in reporter
+    assert "pr.head.sha !== run.head_sha" in reporter
     assert "core.setFailed(`Expected one PR" in reporter
     assert "### Dive failures" in reporter
     assert "report.dive.failedChecks" in reporter
@@ -80,8 +81,17 @@ def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> Non
     assert "No recipe build candidates; no container approval comment is needed" in reporter
     assert "classified the recipe changes as source-only" in reporter
     assert "file.filename.match(/^recipes\\/([^/]+)\\//)" in reporter
-    assert reporter.count("github.rest.issues.createComment") == 1
+    assert "container-release-outcome: ${outcome}" in reporter
+    assert "container-release-transition: ${previousOutcome}-to-${outcome}" in reporter
+    assert "previousOutcome && previousOutcome !== outcome" in reporter
+    assert "alreadyNotified" in reporter
+    assert "The previous failing candidate result no longer applies" in reporter
+    assert "View the full lifecycle summary" in reporter
+    assert reporter.count("github.rest.issues.createComment") == 2
     assert "github.rest.issues.updateComment" in reporter
+    assert reporter.index("body: transitionBody") < reporter.index(
+        "github.rest.issues.updateComment"
+    )
     assert "createComment" not in validator
     assert "pull-requests: write" not in validator
 

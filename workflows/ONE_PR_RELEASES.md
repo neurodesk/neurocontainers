@@ -19,7 +19,12 @@ artifacts after merge. They no longer create a second release-metadata PR.
    or retry a failed promotion. The summary separates deploy and fulltest
    counts, names the passed or failed checks, reports Dive findings, and gives
    artifact-specific download and smoke-test commands with size and expiry.
-   Later candidate and promotion runs update that comment in place.
+   Later candidate and promotion runs update that comment in place. When the
+   candidate outcome materially changes from failed to passed or passed to
+   failed, the reporter also posts a short, commit-linked PR notification. This
+   makes GitHub notify subscribers without duplicating the detailed report on
+   every push. Reruns of the same outcome do not create another notification,
+   and completed runs for superseded PR heads are ignored.
    Fork PRs carry their PR number and head SHA in the compact report; the trusted
    reporter fetches that PR and verifies its repository, branch, and SHA before
    commenting. The reporter downloads only compact, schema-checked JSON summaries;

@@ -240,6 +240,13 @@ jobs:
               repo: context.repo.repo,
               pull_number: issue_number,
             });
+            if (pr.head.sha !== run.head_sha) {
+              core.info(
+                `Ignoring superseded candidate run ${run.id} for ${run.head_sha}; ` +
+                `PR #${issue_number} is now at ${pr.head.sha}.`
+              );
+              return;
+            }
             const changedFiles = await github.paginate(github.rest.pulls.listFiles, {
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -443,7 +450,9 @@ jobs:
             }
 
             const passed = run.conclusion === 'success';
+            const outcome = passed ? 'passed' : 'failed';
             const marker = '<!-- one-pr-container-candidate -->';
+            const outcomeMarker = `<!-- container-release-outcome: ${outcome} -->`;
             const lifecycleStart = '<!-- container-release-status:start -->';
             const lifecycleEnd = '<!-- container-release-status:end -->';
             const identities = candidateSummaries.map(candidate =>
@@ -583,6 +592,7 @@ jobs:
             const body = [
               marker,
               identityMarker,
+              outcomeMarker,
               lifecycleStart,
               statusHeading,
               '',
@@ -628,7 +638,7 @@ jobs:
               '',
               '</details>',
               '',
-              '_This is the only automated container lifecycle comment. It is updated in place when the PR changes or promotion finishes._',
+              '_This canonical lifecycle summary is updated in place when the PR changes or promotion finishes. Material candidate outcome changes also receive a short PR notification._',
             ].join('\n');
 
             const comments = await github.paginate(github.rest.issues.listComments, {
@@ -640,6 +650,63 @@ jobs:
             const existing = comments.find(comment =>
               comment.user.type === 'Bot' && comment.body.includes(marker)
             );
+            const previousOutcome = (() => {
+              if (!existing) return null;
+              const marked = existing.body.match(
+                /<!-- container-release-outcome: (passed|failed) -->/
+              );
+              if (marked) return marked[1];
+              // Infer the outcome from lifecycle comments created before the
+              // explicit marker was introduced, so the first deployed update
+              // can still notify a contributor about a failure-to-pass change.
+              if (/^## ❌ .*failed/m.test(existing.body)) return 'failed';
+              if (/^## (?:✅|⏹️|🚀|⚠️|⏳) .*passed/m.test(existing.body)) return 'passed';
+              return null;
+            })();
+            if (previousOutcome && previousOutcome !== outcome) {
+              const transitionMarker =
+                `<!-- container-release-transition: ${previousOutcome}-to-${outcome} ` +
+                `head=${run.head_sha} -->`;
+              const alreadyNotified = comments.some(comment =>
+                comment.user.type === 'Bot' && comment.body.includes(transitionMarker)
+              );
+              if (!alreadyNotified) {
+                const shortSha = run.head_sha.slice(0, 12);
+                const commitUrl =
+                  `https://github.com/${context.repo.owner}/${context.repo.repo}/commit/` +
+                  run.head_sha;
+                const nextAction = outcome === 'passed'
+                  ? pr.merged_at
+                    ? 'The merged PR can continue with automatic promotion of this exact candidate.'
+                    : pr.state === 'open'
+                      ? `PR #${issue_number} is ready for review and merge.`
+                      : 'No action is required while the PR remains closed.'
+                  : pr.merged_at
+                    ? 'Do not manually promote this candidate; open a corrective recipe PR or revert the merge.'
+                    : `Do not merge PR #${issue_number}; fix the failure and push an update.`;
+                const transitionBody = [
+                  transitionMarker,
+                  outcome === 'passed'
+                    ? `## ✅ Container candidate passed for [\`${shortSha}\`](${commitUrl})`
+                    : `## ❌ Container candidate failed for [\`${shortSha}\`](${commitUrl})`,
+                  '',
+                  outcome === 'passed'
+                    ? 'The previous failing candidate result no longer applies.'
+                    : 'The previous passing candidate result no longer applies to the current commit.',
+                  `[Candidate run ${run.run_number}](${run.html_url}) tested ${identityText}.`,
+                  '',
+                  `**Next:** ${nextAction}`,
+                  '',
+                  `[View the full lifecycle summary](${existing.html_url})`,
+                ].join('\n');
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number,
+                  body: transitionBody,
+                });
+              }
+            }
             if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
