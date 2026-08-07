@@ -11,6 +11,7 @@ from builder.release_artifact import (
     resolve_release_artifact,
     resolve_suite_container,
 )
+from builder.validation import resolve_fulltest_version
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -365,15 +366,6 @@ def test_malformed_release_metadata_is_reported(tmp_path: Path) -> None:
     assert "Build date missing" in resolution.error or "not-a-build-date" in resolution.error
 
 
-def fulltest_version(config: dict) -> str:
-    """Mirror the top-level variable expansion run_tests.py applies to version:."""
-    version = str(config.get("version", "") or "")
-    for key, value in config.items():
-        if key != "version" and isinstance(value, (str, int, float)):
-            version = version.replace(f"${{{key}}}", str(value))
-    return version
-
-
 def recipe_version(build_yaml: Path) -> str:
     match = re.search(r"^version:\s*(.+)$", build_yaml.read_text(encoding="utf-8"), re.M)
     if not match:
@@ -388,7 +380,7 @@ def test_repository_fulltests_declare_a_resolvable_name_and_version() -> None:
         recipe = config_path.parent.name
         config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         name = str(config.get("name", "") or "")
-        version = fulltest_version(config)
+        version = resolve_fulltest_version(config)
 
         if name != recipe:
             offenders.append(f"{recipe}: name is {name or '(missing)'}")
@@ -408,7 +400,7 @@ def test_repository_fulltests_target_the_version_their_recipe_builds() -> None:
         if not build_yaml.is_file():
             continue
         config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        declared = fulltest_version(config)
+        declared = resolve_fulltest_version(config)
         built = recipe_version(build_yaml)
         if built and declared != built:
             offenders.append(

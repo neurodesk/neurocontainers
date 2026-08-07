@@ -96,6 +96,14 @@ def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> Non
     assert "pull-requests: write" not in validator
 
 
+def test_recipe_pr_validation_checks_fulltest_only_changes() -> None:
+    workflow = Path(".github/workflows/validate-recipes.yml").read_text()
+
+    assert 'elif [[ "$file" == *"/fulltest.yaml" ]]' in workflow
+    assert 'recipe_file="${file%/fulltest.yaml}/build.yaml"' in workflow
+    assert 'python builder/validation.py "$recipe_file" --verbose' in workflow
+
+
 def test_promotion_updates_the_existing_candidate_comment_in_place() -> None:
     workflow = Path(
         ".github/workflows/promote-container-candidate.yml"

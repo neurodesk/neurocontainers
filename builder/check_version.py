@@ -154,14 +154,41 @@ def resolve_tag_commit(repo, tag):
         return None
 
 
-VERSION_LINE = re.compile(
-    r"^version:[ \t]*(?P<value>.*?)[ \t]*(?P<comment>#.*)?$", re.M
-)
 REVISION_LINE = re.compile(
     r"^(?P<indent>[ \t]*)revision:[ \t]*"
     r"(?P<quote>[\"']?)(?P<sha>[0-9a-fA-F]{7,40})(?P=quote)[ \t]*$",
     re.M,
 )
+
+
+def rewrite_top_level_string(text, key, new_value):
+    """Replace a top-level YAML scalar so it reloads as the requested string."""
+    line = re.compile(
+        rf"^{re.escape(key)}:[ \t]*(?P<value>.*?)[ \t]*(?P<comment>#.*)?$",
+        re.M,
+    )
+    match = line.search(text)
+    if not match:
+        return None
+    raw = match.group("value")
+    quote = raw[0] if raw[:1] in ("'", '"') else ""
+    comment = match.group("comment")
+    trailer = f"  {comment}" if comment else ""
+
+    for candidate_quote in (quote, '"'):
+        updated = (
+            f"{text[:match.start()]}{key}: "
+            f"{candidate_quote}{new_value}{candidate_quote}{trailer}"
+            f"{text[match.end():]}"
+        )
+        try:
+            reloaded = yaml.safe_load(updated)
+        except Exception as e:
+            dbg("rewrite_top_level_string reload failed:", e)
+            continue
+        if isinstance(reloaded, dict) and str(reloaded.get(key)) == new_value:
+            return updated
+    return None
 
 
 def rewrite_version(text, new_version):
@@ -172,28 +199,47 @@ def rewrite_version(text, new_version):
     reload as 1.1. Most recipes leave the version unquoted, so the fallback to
     an explicitly quoted scalar is the common path for any two-part version.
     """
-    match = VERSION_LINE.search(text)
-    if not match:
-        return None
-    raw = match.group("value")
-    quote = raw[0] if raw[:1] in ("'", '"') else ""
-    comment = match.group("comment")
-    trailer = f"  {comment}" if comment else ""
+    return rewrite_top_level_string(text, "version", new_version)
 
-    for candidate_quote in (quote, '"'):
-        updated = (
-            f"{text[:match.start()]}version: "
-            f"{candidate_quote}{new_version}{candidate_quote}{trailer}"
-            f"{text[match.end():]}"
-        )
-        try:
-            reloaded = yaml.safe_load(updated)
-        except Exception as e:
-            dbg("rewrite_version reload failed:", e)
-            continue
-        if isinstance(reloaded, dict) and str(reloaded.get("version")) == new_version:
-            return updated
-    return None
+
+def rewrite_fulltest_version(text, new_version):
+    """Update a fulltest version while preserving a simple variable indirection."""
+    try:
+        config = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(config, dict):
+        return None
+
+    raw_version = str(config.get("version", "") or "")
+    variable = re.fullmatch(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", raw_version)
+    if variable and variable.group(1) in config:
+        return rewrite_top_level_string(text, variable.group(1), new_version)
+    return rewrite_version(text, new_version)
+
+
+def prepare_fulltest_bump(recipe_path, new_version):
+    """Prepare a sibling fulltest update for an automated recipe version bump."""
+    fulltest_path = os.path.join(os.path.dirname(recipe_path), "fulltest.yaml")
+    if not os.path.isfile(fulltest_path):
+        return None
+
+    with open(fulltest_path, encoding="utf-8") as f:
+        original = f.read()
+    try:
+        config = yaml.safe_load(original)
+    except yaml.YAMLError as e:
+        raise ValueError(f"invalid YAML in {fulltest_path}: {e}") from e
+    if not isinstance(config, dict):
+        raise ValueError(f"{fulltest_path} must contain a YAML mapping")
+
+    old_version = str(config.get("version", "") or "")
+    updated = rewrite_fulltest_version(original, new_version)
+    if updated is None:
+        raise ValueError(f"cannot rewrite the version in {fulltest_path}")
+    if updated == original:
+        return None
+    return fulltest_path, updated, old_version
 
 
 def revisions_owned_by(text, repo):
@@ -464,6 +510,17 @@ def submit_bump(path, name, current_version, new_version, repo, tag, base_branch
         return None
     changes = result
 
+    try:
+        fulltest_bump = prepare_fulltest_bump(path, new_version)
+    except ValueError as e:
+        print(f"cannot auto-bump {path}: {e}")
+        return None
+    if fulltest_bump:
+        fulltest_path, fulltest_updated, old_fulltest_version = fulltest_bump
+        changes.append(
+            f"`fulltest.yaml` version: `{old_fulltest_version}` → `{new_version}`"
+        )
+
     if dry_run:
         print(f"=== dry run: would open {branch} ===")
         for change in changes:
@@ -499,7 +556,12 @@ def submit_bump(path, name, current_version, new_version, repo, tag, base_branch
     try:
         with open(path, "w", encoding="utf-8") as f:
             f.write(updated)
-        git("add", "--", path)
+        changed_paths = [path]
+        if fulltest_bump:
+            with open(fulltest_path, "w", encoding="utf-8") as f:
+                f.write(fulltest_updated)
+            changed_paths.append(fulltest_path)
+        git("add", "--", *changed_paths)
         git("commit", "-m", title)
         git("push", "origin", branch)
         open_pull_request(branch, base_branch, title, body, labels=["auto-update"])

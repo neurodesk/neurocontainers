@@ -9,6 +9,7 @@ The schema matches the Zod schema from https://github.com/neurodesk/neurocontain
 import base64
 import binascii
 import re
+from pathlib import Path
 from typing import List, Dict, Union, Optional, Any, Literal
 
 import attrs
@@ -164,6 +165,58 @@ def validate_recipe_metadata(recipe_dict: Dict[str, Any]) -> None:
             raise ValueError(
                 f"Category '{category}' not supported. Must be one of: {CATEGORIES}"
             )
+
+
+def resolve_fulltest_version(config: Dict[str, Any]) -> str:
+    """Resolve the top-level fulltest version using runner-style variables."""
+    version = str(config.get("version", "") or "")
+    variables = {
+        key: str(value)
+        for key, value in config.items()
+        if key != "version" and isinstance(value, (str, int, float))
+    }
+    for _ in range(10):
+        previous = version
+        for key, value in variables.items():
+            version = version.replace(f"${{{key}}}", value)
+            version = version.replace(f"${key}", value)
+        if version == previous:
+            break
+    return version
+
+
+def validate_fulltest_contract(
+    fulltest_path: Union[str, Path], *, recipe_name: str, recipe_version: str
+) -> None:
+    """Validate metadata used to resolve the artifact a fulltest executes."""
+    path = Path(fulltest_path)
+    try:
+        config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid fulltest YAML syntax in {path}: {e}") from e
+
+    if not isinstance(config, dict):
+        raise ValueError(f"{path} must contain a YAML mapping")
+
+    declared_name = str(config.get("name", "") or "")
+    if declared_name != recipe_name:
+        raise ValueError(
+            f"{path} name '{declared_name or '(missing)'}' does not match "
+            f"build.yaml name '{recipe_name}'"
+        )
+
+    declared_version = resolve_fulltest_version(config)
+    if not declared_version:
+        raise ValueError(f"{path} version is missing")
+    if "${" in declared_version or declared_version.startswith("$"):
+        raise ValueError(
+            f"{path} version '{declared_version}' contains an unexpanded variable"
+        )
+    if declared_version != str(recipe_version):
+        raise ValueError(
+            f"{path} version '{declared_version}' does not match build.yaml "
+            f"version '{recipe_version}'; update both files in the same change"
+        )
 
 
 def validate_template_syntax(template: str, path: str):
@@ -1006,7 +1059,19 @@ def validate_recipe_file(
         if not recipe_dict:
             raise ValueError("Recipe file is empty or invalid YAML")
 
-        return validate_recipe_dict(recipe_dict, strict_metadata=strict_metadata)
+        recipe = validate_recipe_dict(recipe_dict, strict_metadata=strict_metadata)
+
+        recipe_path = Path(file_path)
+        if recipe_path.name in {"build.yaml", "build.yml"}:
+            fulltest_path = recipe_path.with_name("fulltest.yaml")
+            if fulltest_path.is_file():
+                validate_fulltest_contract(
+                    fulltest_path,
+                    recipe_name=recipe.name,
+                    recipe_version=recipe.version,
+                )
+
+        return recipe
 
     except yaml.YAMLError as e:
         raise ValueError(f"Invalid YAML syntax: {str(e)}")

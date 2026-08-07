@@ -6,7 +6,10 @@ Tests for the validation module.
 import os
 import shutil
 import tempfile
+
+import pytest
 import yaml
+
 from builder.validation import (
     validate_recipe_dict,
     validate_recipe_file,
@@ -342,6 +345,65 @@ def test_validate_recipe_file():
         assert result.name == "file-test-app"
     finally:
         os.unlink(temp_file)
+
+
+def write_recipe_with_fulltest(tmp_path, fulltest: dict) -> str:
+    recipe = {
+        "name": "file-test-app",
+        "version": "1.2.3",
+        "architectures": ["x86_64"],
+        "categories": ["programming"],
+        "icon": VALID_ICON,
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": [],
+        },
+    }
+    build_yaml = tmp_path / "build.yaml"
+    build_yaml.write_text(yaml.safe_dump(recipe), encoding="utf-8")
+    (tmp_path / "fulltest.yaml").write_text(
+        yaml.safe_dump(fulltest), encoding="utf-8"
+    )
+    return str(build_yaml)
+
+
+def test_validate_recipe_file_accepts_matching_fulltest_version(tmp_path):
+    build_yaml = write_recipe_with_fulltest(
+        tmp_path,
+        {"name": "file-test-app", "version": "1.2.3", "tests": []},
+    )
+
+    result = validate_recipe_file(build_yaml)
+
+    assert result.version == "1.2.3"
+
+
+def test_validate_recipe_file_resolves_fulltest_version_variable(tmp_path):
+    build_yaml = write_recipe_with_fulltest(
+        tmp_path,
+        {
+            "name": "file-test-app",
+            "tool_version": "1.2.3",
+            "version": "${tool_version}",
+            "tests": [],
+        },
+    )
+
+    result = validate_recipe_file(build_yaml)
+
+    assert result.version == "1.2.3"
+
+
+def test_validate_recipe_file_rejects_stale_fulltest_version(tmp_path):
+    build_yaml = write_recipe_with_fulltest(
+        tmp_path,
+        {"name": "file-test-app", "version": "1.2.2", "tests": []},
+    )
+
+    with pytest.raises(ValueError, match="update both files in the same change"):
+        validate_recipe_file(build_yaml)
 
 
 def test_validate_nonexistent_file():

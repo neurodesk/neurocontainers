@@ -54,12 +54,19 @@ jobs:
           validation_failed=false
           
           for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            recipe_file=""
             if [[ "$file" == *"/build.yaml" ]] || [[ "$file" == *"/build.yml" ]]; then
-              echo "::group::Validating $file"
-              if python builder/validation.py "$file" --verbose; then
-                echo "✅ $file is valid"
+              recipe_file="$file"
+            elif [[ "$file" == *"/fulltest.yaml" ]]; then
+              recipe_file="${file%/fulltest.yaml}/build.yaml"
+            fi
+
+            if [[ -n "$recipe_file" ]] && [[ -f "$recipe_file" ]]; then
+              echo "::group::Validating $recipe_file"
+              if python builder/validation.py "$recipe_file" --verbose; then
+                echo "✅ $recipe_file and its fulltest contract are valid"
               else
-                echo "❌ $file failed validation"
+                echo "❌ $recipe_file failed validation"
                 validation_failed=true
               fi
               echo "::endgroup::"
