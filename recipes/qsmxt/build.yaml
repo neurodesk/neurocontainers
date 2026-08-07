@@ -7,7 +7,6 @@ copyright:
     url: https://github.com/rordenlab/dcm2niix/blob/master/license.txt
 architectures:
   - x86_64
-  - aarch64
 
 variables:
   qsmxt_source_version: 9.11.0
