@@ -206,21 +206,12 @@ jobs:
       packages: write
       pull-requests: read
     steps:
-      - name: Create narrowly scoped release token
-        id: app-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.NEUROCONTAINERS_RELEASE_APP_ID }}
-          private-key: ${{ secrets.NEUROCONTAINERS_RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
       - name: Checkout trusted main
         uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
-          # Intentionally retained for the final ruleset-authorized metadata push.
-          persist-credentials: true
+          persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -425,10 +416,21 @@ jobs:
               echo "::warning::Optional Quay SIF attach failed for ${container}"
             cd "${GITHUB_WORKSPACE}"
           done
+      # Candidate downloads and multi-registry publication can take longer than
+      # a GitHub App installation token's one-hour lifetime. Mint the
+      # ruleset-authorized token only when the metadata is ready to be pushed.
+      - name: Create fresh release token for metadata push
+        id: metadata-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.NEUROCONTAINERS_RELEASE_APP_ID }}
+          private-key: ${{ secrets.NEUROCONTAINERS_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
       - name: Commit generated release metadata directly to main
         env:
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+          RELEASE_TOKEN: ${{ steps.metadata-token.outputs.token }}
         run: |
           python tools/one_pr_release.py materialize --bundle promotion-bundle \
             --manifests verified-manifests.json
@@ -439,8 +441,12 @@ jobs:
             exit 0
           fi
           git commit -m "Publish tested container release metadata [skipci]"
+          basic_auth="$(printf 'x-access-token:%s' "${RELEASE_TOKEN}" | base64 | tr -d '\n')"
+          git_auth_header="AUTHORIZATION: basic ${basic_auth}"
+          unset basic_auth
           for attempt in 1 2 3; do
-            if ! git pull --rebase origin main; then
+            if ! git -c http.https://github.com/.extraheader="${git_auth_header}" \
+                pull --rebase origin main; then
               git rebase --abort || true
               sleep $((attempt * 5))
               continue
@@ -448,7 +454,8 @@ jobs:
             python tools/one_pr_release.py verify --bundle promotion-bundle \
               --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}" \
               --output verified-manifests.json
-            if git push origin HEAD:main; then
+            if git -c http.https://github.com/.extraheader="${git_auth_header}" \
+                push origin HEAD:main; then
               exit 0
             fi
             sleep $((attempt * 5))
