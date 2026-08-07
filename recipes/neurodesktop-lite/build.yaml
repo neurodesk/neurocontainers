@@ -411,7 +411,7 @@ build:
 
     - run:
         - chmod +x /usr/local/bin/start-neurodesktop-jupyterlab
-        - DEBIAN_FRONTEND=noninteractive apt-get purge --yes --auto-remove libgpgme-dev libjpeg-turbo8-dev libossp-uuid-dev libpango1.0-dev libpng-dev libssh2-1-dev libssl-dev libtool-bin libwebp-dev build-essential
+        - DEBIAN_FRONTEND=noninteractive apt-get purge --yes --auto-remove libgpgme-dev libjpeg-turbo8-dev libossp-uuid-dev libpango1.0-dev libpng-dev libssh2-1-dev libssl-dev libtool-bin{% if not context.options.glass %} libvncserver-dev{% endif %} libwebp-dev build-essential
         - apt-get clean
         - rm -rf /var/lib/apt/lists/*
         - printf '%s\n%s\n' 'password' 'password' | passwd ${NB_USER}
@@ -422,7 +422,6 @@ build:
     - condition: not context.options.glass
       run:
         - chmod +x /usr/local/bin/start-neurodesktop-guacamole
-        - DEBIAN_FRONTEND=noninteractive apt-get purge --yes --auto-remove libvncserver-dev
 
     - condition: not context.options.glass
       deploy:
