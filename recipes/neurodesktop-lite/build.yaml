@@ -769,12 +769,28 @@ files:
       status_url=http://127.0.0.1:8888/api/status
       log_file="$HOME/.local/state/Neurodesktop/jupyter.log"
 
+      notify_host() {
+          ready_url=$(/usr/bin/systemctl show-environment 2>/dev/null |
+              sed -n 's/^VMSH_DESKTOP_WEBAPP_READY_URL=//p' | head -n 1)
+          [ -n "$ready_url" ] || return 1
+          curl --silent --show-error --fail --max-time 5 \
+              --request POST "$ready_url" >/dev/null
+      }
+
+      report_ready() {
+          if notify_host; then
+              printf '\nJupyterLab is ready. Opening it in your host web browser...\n'
+          else
+              printf '\nJupyterLab is ready, but the host browser could not be opened automatically.\n'
+          fi
+          sleep 1
+      }
+
       printf '\033[2J\033[H'
       printf 'Neurodesktop JupyterLab\n\n'
 
       if curl --silent --show-error --fail --max-time 2 "$status_url" >/dev/null 2>&1; then
-          printf 'JupyterLab is already ready.\n'
-          sleep 1
+          report_ready
           exit 0
       fi
 
@@ -813,8 +829,7 @@ files:
 
       cleanup
       trap - EXIT INT TERM
-      printf '\nJupyterLab is ready. Opening it in your host web browser...\n'
-      sleep 1
+      report_ready
 
   - name: glass_jupyter_desktop
     executable: true
