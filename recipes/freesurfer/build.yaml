@@ -1,30 +1,30 @@
-name: freesurfer
+name: freesurfer53
 version: "5.3.0"
- 
+
 copyright:
   - license: LicenseRef-FreeSurfer
     url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
- 
+
 architectures:
   - x86_64
- 
+
 build:
   kind: neurodocker
   base-image: ubuntu:14.04
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false
- 
+
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
- 
+
     # trusty is EOL: its Release files are long past Valid-Until, so apt refuses
     # them without this override. The archives themselves are still served from
     # archive.ubuntu.com (old-releases.ubuntu.com does NOT carry trusty).
     - run:
         - echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until
- 
+
     - install:
         - bc
         - binutils
@@ -48,16 +48,16 @@ build:
         - tcsh
         - unzip
         - xterm
- 
+
     - run:
         - mkdir -p /opt
         - tar -xzf {{ get_file("freesurfer_tar") }} -C /opt
         - mv /opt/freesurfer /opt/freesurfer-{{ context.version }}
- 
+
     - copy:
         - license.txt
         - /opt/freesurfer-{{ context.version }}/license.txt
- 
+
     - environment:
         FMRI_ANALYSIS_DIR: /opt/freesurfer-{{ context.version }}/fsfast
         FREESURFER_HOME: /opt/freesurfer-{{ context.version }}
@@ -70,13 +70,16 @@ build:
         MINC_LIB_DIR: /opt/freesurfer-{{ context.version }}/mni/lib
         MNI_DATAPATH: /opt/freesurfer-{{ context.version }}/mni/data
         MNI_DIR: /opt/freesurfer-{{ context.version }}/mni
-        MNI_PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/share/perl5
+        # The MNI perl modules ship under mni/lib/perl5/5.8.5, NOT mni/share/perl5.
+        # Pointing at share/ makes nu_correct die with "Can't locate MNI/Startup.pm",
+        # which breaks mri_nu_correct.mni and therefore recon-all -nuintensitycor.
+        MNI_PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/lib/perl5/5.8.5
         OS: Linux
         PATH: $PATH:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/tktools:/opt/freesurfer-{{ context.version }}/mni/bin
-        PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/share/perl5
+        PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/lib/perl5/5.8.5
         SUBJECTS_DIR: /opt/freesurfer-{{ context.version }}/subjects
         TERM: xterm
- 
+
     # Actually invoke the binaries: `test -x` passes even when a shared library
     # is missing, which is the failure mode these old CentOS 6 builds hit.
     - run:
@@ -85,7 +88,10 @@ build:
         - mris_convert --version
         - recon-all --version
         - freeview --help > /dev/null
- 
+        # recon-all -nuintensitycor calls nu_correct, which needs the MNI perl
+        # modules resolvable via PERL5LIB.
+        - perl -e 'use MNI::Startup;'
+
 deploy:
   path:
     - /opt/freesurfer-{{ context.version }}/bin/
@@ -95,14 +101,14 @@ deploy:
     - mri_convert
     - mris_convert
     - recon-all
- 
+
 readme: |-
   ----------------------------------
   ## freesurfer53/{{ context.version }} ##
- 
+
   FreeSurfer 5.3.0 using the official CentOS 6 x86_64 distribution
   in an Ubuntu 14.04 container.
- 
+
   Example:
   ```
   mkdir -p ~/freesurfer_output
@@ -110,27 +116,27 @@ readme: |-
   export SINGULARITYENV_SUBJECTS_DIR=$SUBJECTS_DIR
   recon-all -subject subjectname -i invol1.nii.gz -all
   ```
- 
+
   Documentation:
   https://surfer.nmr.mgh.harvard.edu/fswiki/recon-all
- 
+
   License:
   https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
   ----------------------------------
- 
+
 files:
   - name: freesurfer_tar
     url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer-Linux-centos6_x86_64-stable-pub-v{{ context.version }}.tar.gz
- 
+
   - name: license.txt
     contents: |-
       s.bollmann@uq.edu.au
       53024
        *CgH0liqb0e9g
        FSVt2Z862iDJk
- 
+
 categories:
   - image segmentation
   - structural imaging
- 
+
 icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0Ij48cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHJ4PSIxMiIgZmlsbD0iIzhjMTUxNSIvPjxwYXRoIGQ9Ik0zMiAxMWMtNS4yIDAtOS4xIDIuNi0xMC42IDYuMy00LjYuNS03LjkgMy45LTcuOSA4LjIgMCAxLjguNiAzLjUgMS43IDQuOS0xLjUgMS42LTIuMyAzLjYtMi4zIDUuOCAwIDQuMSAyLjkgNy42IDcgOC42LjkgNC40IDUuMiA3LjcgMTAuNCA3LjcgMS40IDAgMi42LS4yIDMuOC0uN1YxMS4zYy0uNy0uMi0xLjQtLjMtMi4xLS4zeiIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjk1Ii8+PHBhdGggZD0iTTMyIDExYzUuMiAwIDkuMSAyLjYgMTAuNiA2LjMgNC42LjUgNy45IDMuOSA3LjkgOC4yIDAgMS44LS42IDMuNS0xLjcgNC45IDEuNSAxLjYgMi4zIDMuNiAyLjMgNS44IDAgNC4xLTIuOSA3LjYtNyA4LjYtLjkgNC40LTUuMiA3LjctMTAuNCA3LjctMS40IDAtMi42LS4yLTMuOC0uN1YxMS4zYy43LS4yIDEuNC0uMyAyLjEtLjN6IiBmaWxsPSIjZmZmIiBvcGFjaXR5PSIuNzUiLz48cGF0aCBkPSJNMzIgMTV2MzRNMjQgMjJjMyAxIDUgMyA2IDZNNDAgMjJjLTMgMS01IDMtNiA2TTIyIDMzYzQgMCA3IDIgOSA1TTQyIDMzYy00IDAtNyAyLTkgNSIgc3Ryb2tlPSIjOGMxNTE1IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgZmlsbD0ibm9uZSIvPjwvc3ZnPgo=
