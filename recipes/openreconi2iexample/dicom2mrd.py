@@ -1,11 +1,12 @@
-import pydicom
 import argparse
+import base64
+import ctypes
+import os
+import re
+
 import ismrmrd
 import numpy as np
-import os
-import ctypes
-import re
-import base64
+import pydicom
 
 # Defaults for input arguments
 defaults = {
@@ -223,6 +224,13 @@ def GetDicomFiles(directory):
             yield from GetDicomFiles(entry.path)
 
 
+def _create_output_dataset(output_path, output_group):
+    """Create a fresh MRD dataset, replacing any earlier conversion."""
+    if os.path.lexists(output_path):
+        os.remove(output_path)
+    return ismrmrd.Dataset(output_path, output_group)
+
+
 def main(args):
     dsetsAll = []
     for entryPath in GetDicomFiles(args.folder):
@@ -352,7 +360,7 @@ def main(args):
 
     # Create an MRD file
     print("Creating MRD file %s with group %s" % (args.outFile, args.outGroup))
-    mrdDset = ismrmrd.Dataset(args.outFile, args.outGroup)
+    mrdDset = _create_output_dataset(args.outFile, args.outGroup)
     mrdDset._file.require_group(args.outGroup)
 
     # Write MRD Header
