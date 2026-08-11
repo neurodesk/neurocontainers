@@ -11,7 +11,8 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "h5web.vscode-h5web"
+        "h5web.vscode-h5web",
+        "KorbinianEckstein.niivue"
       ]
     }
   },
