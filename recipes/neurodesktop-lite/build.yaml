@@ -729,7 +729,7 @@ files:
       SupplementaryGroups=render
       ExecStartPre=/usr/bin/rm -f /tmp/.virgl_test /tmp/.neurodesktop-virgl
       ExecStartPre=/usr/bin/ln -s /tmp/.virgl_test /tmp/.neurodesktop-virgl
-      ExecStart=/usr/bin/virgl_test_server --use-egl-surfaceless --rendernode /dev/dri/renderD128 --socket-path /tmp/.virgl_test
+      ExecStart=/usr/bin/virgl_test_server --multi-clients --use-egl-surfaceless --rendernode /dev/dri/renderD128 --socket-path /tmp/.virgl_test
       Restart=on-failure
       RestartSec=1s
 
