@@ -74,6 +74,37 @@ else
         export SINGULARITY_BINDPATH="${SINGULARITY_BINDPATH:-${APPTAINER_BINDPATH}}"
 fi
 
+# NeurodeskAppX exposes its opt-in VirGL bridge through a Unix socket shared
+# with app containers. Mesa 22.3 and older ignore VTEST_SOCKET_NAME and always
+# connect to /tmp/.virgl_test, so retain that historical endpoint as an alias.
+neurodesktop_vtest_socket="${NEURODESKTOP_VTEST_SOCKET:-/tmp/.virgl_test}"
+neurodesktop_vtest_private_socket="${NEURODESKTOP_VTEST_PRIVATE_SOCKET:-/tmp/.neurodesktop-virgl}"
+if [ -S "${neurodesktop_vtest_private_socket}" ] \
+        && [ ! -e "${neurodesktop_vtest_socket}" ] \
+        && [ ! -L "${neurodesktop_vtest_socket}" ]; then
+        ln -s "${neurodesktop_vtest_private_socket}" "${neurodesktop_vtest_socket}" 2>/dev/null || true
+fi
+
+if [ -S "${neurodesktop_vtest_socket}" ]; then
+        export APPTAINERENV_LIBGL_DRI3_DISABLE="${APPTAINERENV_LIBGL_DRI3_DISABLE:-true}"
+        export APPTAINERENV_LIBGL_ALWAYS_SOFTWARE="${APPTAINERENV_LIBGL_ALWAYS_SOFTWARE:-true}"
+        export APPTAINERENV_GALLIUM_DRIVER="${APPTAINERENV_GALLIUM_DRIVER:-virpipe}"
+        export APPTAINERENV_VTEST_SOCKET_NAME="${APPTAINERENV_VTEST_SOCKET_NAME:-${neurodesktop_vtest_socket}}"
+        export SINGULARITYENV_LIBGL_DRI3_DISABLE="${SINGULARITYENV_LIBGL_DRI3_DISABLE:-true}"
+        export SINGULARITYENV_LIBGL_ALWAYS_SOFTWARE="${SINGULARITYENV_LIBGL_ALWAYS_SOFTWARE:-true}"
+        export SINGULARITYENV_GALLIUM_DRIVER="${SINGULARITYENV_GALLIUM_DRIVER:-virpipe}"
+        export SINGULARITYENV_VTEST_SOCKET_NAME="${SINGULARITYENV_VTEST_SOCKET_NAME:-${neurodesktop_vtest_socket}}"
+fi
+unset neurodesktop_vtest_private_socket neurodesktop_vtest_socket
+
+# Keep MATLAB Runtime extraction caches in the persistent home rather than in
+# /tmp. This turns multi-minute cold starts into a one-time cost for large apps.
+export MCR_CACHE_ROOT="${MCR_CACHE_ROOT:-${HOME}/.cache/neurodesktop-mcr}"
+if install -d -m 0700 "${MCR_CACHE_ROOT}" 2>/dev/null; then
+        export APPTAINERENV_MCR_CACHE_ROOT="${APPTAINERENV_MCR_CACHE_ROOT:-${MCR_CACHE_ROOT}}"
+        export SINGULARITYENV_MCR_CACHE_ROOT="${SINGULARITYENV_MCR_CACHE_ROOT:-${MCR_CACHE_ROOT}}"
+fi
+
 export APPTAINERENV_SUBJECTS_DIR=${HOME}/freesurfer-subjects-dir
 export MPLCONFIGDIR=${HOME}/.config/matplotlib-mpldir
 
@@ -304,6 +335,27 @@ else
         echo "[WARN] Could not create writable Apptainer overlay at ${NEURODESKTOP_APPTAINER_OVERLAY}." >&2
         export neurodesk_singularity_opts=""
 fi
+
+# A nested Apptainer session mounts its own procfs, so the outer bind mount is
+# not sufficient by itself. Bind the corrected file into each app container as
+# well when the ARM compatibility helper produced one.
+neurodesktop_cpuinfo_compat_file="${NEURODESKTOP_CPUINFO_COMPAT_FILE:-}"
+if [ -z "${neurodesktop_cpuinfo_compat_file}" ]; then
+        for neurodesktop_cpuinfo_candidate in \
+                /run/neurodesktop/cpuinfo \
+                "${HOME}/.local/cpuinfo_with_MHz_fix"
+        do
+                if [ -r "${neurodesktop_cpuinfo_candidate}" ]; then
+                        neurodesktop_cpuinfo_compat_file="${neurodesktop_cpuinfo_candidate}"
+                        break
+                fi
+        done
+fi
+if [ -r "${neurodesktop_cpuinfo_compat_file}" ] \
+        && grep -Eiq '^[[:space:]]*cpu[[:space:]]+mhz[[:space:]]*:' "${neurodesktop_cpuinfo_compat_file}"; then
+        export neurodesk_singularity_opts="${neurodesk_singularity_opts} --bind ${neurodesktop_cpuinfo_compat_file}:/proc/cpuinfo:ro "
+fi
+unset neurodesktop_cpuinfo_candidate neurodesktop_cpuinfo_compat_file
 # export neurodesk_singularity_opts=" -w " THIS DOES NOT WORK FOR SIMG FILES IN OFFLINE MODE
 # There is a small delay in using --overlay in comparison to -w - maybe it would be faster to use a fixed size overlay file instead?
 
