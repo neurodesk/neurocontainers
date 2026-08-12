@@ -115,6 +115,21 @@ tests:
       '
     expected_output_contains: "launcher-scripts-executable"
 
+  - name: Glass session home preparation
+    description: Verify the desktop can seed defaults after dropping to the unprivileged user
+    command: |
+      bash -lc '
+        set -euo pipefail
+        rm -rf /home/jovyan/.local
+        /usr/local/sbin/neurodesktop-glass-prepare
+        setpriv --reuid=1000 --regid=100 --clear-groups \
+          cp -a --update=none /opt/jovyan_defaults/. /home/jovyan/
+        test -d /home/jovyan/.local/share
+        test "$(stat -c %u:%g /home/jovyan/.local)" = 1000:100
+        echo glass-home-ready
+      '
+    expected_output_contains: "glass-home-ready"
+
   # ==========================================================================
   # JUPYTERLAB AND WEBAPP CONFIGURATION
   # ==========================================================================

@@ -855,7 +855,10 @@ files:
       state_dir=/home/jovyan/.local/state/Neurodesktop
       migration_marker="$state_dir/glass-v1-ready"
 
-      install -d -m 0755 -o jovyan -g "$jovyan_group" "$state_dir"
+      install -d -m 0755 -o jovyan -g "$jovyan_group" \
+          /home/jovyan/.local \
+          /home/jovyan/.local/state \
+          "$state_dir"
       touch "$state_dir/jupyter.log"
       chown "jovyan:$jovyan_group" "$state_dir/jupyter.log"
       chmod 0644 "$state_dir/jupyter.log"
