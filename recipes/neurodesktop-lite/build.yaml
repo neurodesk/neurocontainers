@@ -293,6 +293,7 @@ build:
         - install -m 0755 /tmp/config/jupyter/deferred_startup.sh /opt/neurodesktop/deferred_startup.sh
         - install -m 0755 /tmp/config/jupyter/nested_container_runtime.sh /opt/neurodesktop/nested_container_runtime.sh
         - install -m 0755 /tmp/config/jupyter/environment_variables.sh /opt/neurodesktop/environment_variables.sh
+        - install -m 0755 /tmp/config/jupyter/cpuinfo_compat.sh /usr/local/sbin/neurodesktop-cpuinfo-compat
         - install -m 0755 /tmp/config/jupyter/kernel_wrapper.sh /opt/neurodesktop/kernel_wrapper.sh
         - install -m 0755 /tmp/config/jupyter/jupyterlmod_modulepath.py /opt/neurodesktop/jupyterlmod_modulepath.py
         - install -m 0755 /tmp/config/slurm/setup_and_start_slurm.sh /opt/neurodesktop/setup_and_start_slurm.sh
@@ -407,6 +408,7 @@ build:
         - install -m 0755 {{ get_file("glass_jupyter_launcher") }} /usr/local/bin/neurodesktop-start-jupyter
         - install -m 0755 {{ get_file("glass_prepare") }} /usr/local/sbin/neurodesktop-glass-prepare
         - install -m 0644 {{ get_file("glass_service") }} /etc/systemd/system/neurodesktop-glass.service
+        - install -m 0644 {{ get_file("glass_virgl_service") }} /etc/systemd/system/neurodesktop-virgl.service
         - install -m 0644 {{ get_file("glass_jupyter_service") }} /etc/systemd/system/neurodesktop-jupyter.service
         - install -m 0644 {{ get_file("glass_target") }} /etc/systemd/system/glass.target
         - install -m 0644 {{ get_file("glass_xorg_config") }} /etc/X11/xorg.conf
@@ -417,6 +419,7 @@ build:
         - if [ -x /usr/bin/systemctl.orig ]; then mv -f /usr/bin/systemctl.orig /usr/bin/systemctl; fi
         - mkdir -p /etc/systemd/system/glass.target.wants
         - ln -sf /etc/systemd/system/neurodesktop-glass.service /etc/systemd/system/glass.target.wants/neurodesktop-glass.service
+        - ln -sf /etc/systemd/system/neurodesktop-virgl.service /etc/systemd/system/glass.target.wants/neurodesktop-virgl.service
         - ln -sf /etc/systemd/system/glass.target /etc/systemd/system/default.target
         - sed -i 's#^CVMFS_CACHE_BASE=.*#CVMFS_CACHE_BASE=/home/jovyan/.cvmfs_cache#' /etc/cvmfs/default.local
         - printf '\nCVMFS_USER=jovyan\n' >> /etc/cvmfs/default.local
@@ -625,6 +628,21 @@ files:
       install -d -o 1000 -g 100 -m 0700 /run/user/1000
       install -d -m 0755 /run/dbus
       /usr/local/sbin/neurodesktop-glass-prepare
+      if [ -e /dev/dri/renderD128 ]; then
+          attempt=0
+          while [ ! -S /tmp/.virgl_test ]; do
+              attempt=$((attempt + 1))
+              if [ "$attempt" -ge 100 ]; then
+                  echo "neurodesktop-glass: VirGL bridge did not create /tmp/.virgl_test" >&2
+                  break
+              fi
+              sleep 0.05
+          done
+      fi
+      if ! NEURODESKTOP_CPUINFO_OUTPUT=/run/neurodesktop/cpuinfo \
+          /usr/local/sbin/neurodesktop-cpuinfo-compat; then
+          echo "neurodesktop-glass: unable to install the MATLAB CPU-frequency workaround" >&2
+      fi
       if [ -d /opt/jovyan_defaults ]; then
           setpriv --reuid=1000 --regid=100 --clear-groups \
               cp -a --update=none /opt/jovyan_defaults/. /home/jovyan/
@@ -669,7 +687,8 @@ files:
           USER=jovyan \
           LOGNAME=jovyan \
           XDG_RUNTIME_DIR=/run/user/1000 \
-          dbus-run-session -- sh -lc '
+          dbus-run-session -- bash -lc '
+              source /opt/neurodesktop/environment_variables.sh
               /usr/local/bin/glass-clipboard &
               /usr/local/bin/glass-resize &
               exec startlxde
@@ -690,6 +709,29 @@ files:
       RestartSec=1s
       StandardOutput=append:/run/neurodesktop-glass.log
       StandardError=inherit
+
+      [Install]
+      WantedBy=glass.target
+
+  - name: glass_virgl_service
+    contents: |
+      [Unit]
+      Description=Neurodesktop VirGL bridge for nested app containers
+      DefaultDependencies=no
+      After=ccx3-stage2.service
+      Before=neurodesktop-glass.service
+      ConditionPathExists=/dev/dri/renderD128
+
+      [Service]
+      Type=simple
+      User=jovyan
+      Group=users
+      SupplementaryGroups=render
+      ExecStartPre=/usr/bin/rm -f /tmp/.virgl_test /tmp/.neurodesktop-virgl
+      ExecStartPre=/usr/bin/ln -s /tmp/.virgl_test /tmp/.neurodesktop-virgl
+      ExecStart=/usr/bin/virgl_test_server --use-egl-surfaceless --rendernode /dev/dri/renderD128 --socket-path /tmp/.virgl_test
+      Restart=on-failure
+      RestartSec=1s
 
       [Install]
       WantedBy=glass.target
@@ -855,7 +897,26 @@ files:
       state_dir=/home/jovyan/.local/state/Neurodesktop
       migration_marker="$state_dir/glass-v1-ready"
 
-      install -d -m 0755 -o jovyan -g "$jovyan_group" "$state_dir"
+      install -d -m 0755 -o jovyan -g "$jovyan_group" \
+          /home/jovyan/.local \
+          /home/jovyan/.local/state \
+          "$state_dir" \
+          /home/jovyan/.cache \
+          /home/jovyan/.cache/neurodesktop-mcr \
+          /home/jovyan/.config \
+          /home/jovyan/.config/openbox \
+          /home/jovyan/.matlab
+      install -d -m 0755 /run/neurodesktop
+      install -d -m 0700 -o jovyan -g "$jovyan_group" /run/user/1000
+
+      # A zero-byte per-user Openbox file overrides the valid system default
+      # and leaves the persistent desktop without a usable window-manager
+      # configuration. It contains no user settings, so remove it for the
+      # normal defaults restoration/fallback path.
+      openbox_rc=/home/jovyan/.config/openbox/lxde-rc.xml
+      if [ -e "$openbox_rc" ] && [ ! -s "$openbox_rc" ]; then
+          rm -f "$openbox_rc"
+      fi
       touch "$state_dir/jupyter.log"
       chown "jovyan:$jovyan_group" "$state_dir/jupyter.log"
       chmod 0644 "$state_dir/jupyter.log"

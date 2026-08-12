@@ -48,6 +48,11 @@ tests:
         command -v apptainer
         command -v virgl_test_server
         test -x /usr/lib/xorg/Xorg
+        test -f /etc/systemd/system/neurodesktop-virgl.service
+        grep -Fq "ConditionPathExists=/dev/dri/renderD128" /etc/systemd/system/neurodesktop-virgl.service
+        grep -Fq -- "--socket-path /tmp/.virgl_test" /etc/systemd/system/neurodesktop-virgl.service
+        test -L /etc/systemd/system/glass.target.wants/neurodesktop-virgl.service
+        grep -Fq "while [ ! -S /tmp/.virgl_test ]" /usr/local/sbin/neurodesktop-glass-session
         ! command -v guacd
         ! command -v Xvnc
         ! command -v vncserver
@@ -77,16 +82,75 @@ tests:
         runtime="$(mktemp -d)"
         trap '"'"'rm -rf "$runtime"'"'"' EXIT
         XDG_RUNTIME_DIR="$runtime"
+        printf "processor : 0\ncpu MHz : 2400.000\n" > "$runtime/cpuinfo"
+        NEURODESKTOP_CPUINFO_COMPAT_FILE="$runtime/cpuinfo"
         source /opt/neurodesktop/environment_variables.sh
         test -d "$NEURODESKTOP_APPTAINER_OVERLAY"
         test "$(stat -c %a "$NEURODESKTOP_APPTAINER_OVERLAY")" = 700
+        test -d "$MCR_CACHE_ROOT"
+        test "$APPTAINERENV_MCR_CACHE_ROOT" = "$MCR_CACHE_ROOT"
+        test "$SINGULARITYENV_MCR_CACHE_ROOT" = "$MCR_CACHE_ROOT"
         case "$neurodesk_singularity_opts" in
           *"$NEURODESKTOP_APPTAINER_OVERLAY"*) ;;
+          *) exit 1 ;;
+        esac
+        case "$neurodesk_singularity_opts" in
+          *"$runtime/cpuinfo:/proc/cpuinfo:ro"*) ;;
           *) exit 1 ;;
         esac
         echo app-overlay-ready
       '
     expected_output_contains: "app-overlay-ready"
+
+  - name: Legacy VirGL clients reach the opt-in bridge
+    description: Verify old and current Mesa app containers share one vtest endpoint
+    command: |
+      bash -c '
+        set -eo pipefail
+        runtime="$(mktemp -d)"
+        server_pid=""
+        cleanup() {
+          if [ -n "$server_pid" ]; then kill "$server_pid" 2>/dev/null || true; fi
+          rm -rf "$runtime"
+        }
+        trap cleanup EXIT
+        private_socket="$runtime/private-vtest"
+        legacy_socket="$runtime/legacy-vtest"
+        python3 -c "import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(30)" "$private_socket" &
+        server_pid=$!
+        for _ in $(seq 1 100); do
+          [ -S "$private_socket" ] && break
+          sleep 0.01
+        done
+        export XDG_RUNTIME_DIR="$runtime"
+        export NEURODESKTOP_VTEST_PRIVATE_SOCKET="$private_socket"
+        export NEURODESKTOP_VTEST_SOCKET="$legacy_socket"
+        source /opt/neurodesktop/environment_variables.sh
+        test -S "$legacy_socket"
+        test "$APPTAINERENV_GALLIUM_DRIVER" = virpipe
+        test "$APPTAINERENV_VTEST_SOCKET_NAME" = "$legacy_socket"
+        test "$SINGULARITYENV_VTEST_SOCKET_NAME" = "$legacy_socket"
+        echo legacy-vtest-ready
+      '
+    expected_output_contains: "legacy-vtest-ready"
+
+  - name: MATLAB CPU information compatibility
+    description: Verify ARM processor records gain the frequency field required by amd64 MATLAB Runtime
+    command: |
+      bash -lc '
+        set -euo pipefail
+        runtime="$(mktemp -d)"
+        trap '"'"'rm -rf "$runtime"'"'"' EXIT
+        printf "processor : 0\nmodel name : Apple M\n\nprocessor : 1\nmodel name : Apple M\n" > "$runtime/source"
+        NEURODESKTOP_CPUINFO_SOURCE="$runtime/source" \
+        NEURODESKTOP_CPUINFO_OUTPUT="$runtime/output" \
+        NEURODESKTOP_CPUINFO_SKIP_MOUNT=1 \
+          /usr/local/sbin/neurodesktop-cpuinfo-compat
+        test "$(grep -Ec '"'"'^cpu MHz[[:space:]]*:'"'"' "$runtime/output")" = 2
+        test "$(grep -Ec '"'"'^processor[[:space:]]*:'"'"' "$runtime/output")" = 2
+        echo matlab-cpuinfo-ready
+      '
+    expected_output_contains: "matlab-cpuinfo-ready"
 
   - name: Neurodesktop version environment
     description: Verify the image exposes the recipe version
@@ -102,6 +166,7 @@ tests:
           /usr/local/bin/start-neurodesktop-jupyterlab \
           /usr/local/bin/neurodesktop-start-jupyter \
           /usr/local/sbin/neurodesktop-glass-prepare \
+          /usr/local/sbin/neurodesktop-cpuinfo-compat \
           /opt/neurodesktop/jupyterlab_startup.sh \
           /opt/neurodesktop/deferred_startup.sh \
           /opt/neurodesktop/nested_container_runtime.sh \
