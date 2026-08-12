@@ -147,6 +147,7 @@ build:
         - unzip
         - uuid-dev
         - vim
+        - virgl-server
         - wget
         - xdg-utils
         - xz-utils
