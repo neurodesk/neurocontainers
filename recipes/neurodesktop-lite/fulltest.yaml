@@ -46,6 +46,7 @@ tests:
         command -v jupyter
         command -v code-server
         command -v apptainer
+        command -v virgl_test_server
         test -x /usr/lib/xorg/Xorg
         ! command -v guacd
         ! command -v Xvnc
