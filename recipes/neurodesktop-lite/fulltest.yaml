@@ -50,7 +50,7 @@ tests:
         test -x /usr/lib/xorg/Xorg
         test -f /etc/systemd/system/neurodesktop-virgl.service
         grep -Fq "ConditionPathExists=/dev/dri/renderD128" /etc/systemd/system/neurodesktop-virgl.service
-        grep -Fq -- "virgl_test_server --no-fork" /etc/systemd/system/neurodesktop-virgl.service
+        grep -Fq -- "virgl_test_server --multi-clients" /etc/systemd/system/neurodesktop-virgl.service
         grep -Fq -- "--socket-path /tmp/.virgl_test" /etc/systemd/system/neurodesktop-virgl.service
         test -L /etc/systemd/system/glass.target.wants/neurodesktop-virgl.service
         grep -Fq "while [ ! -S /tmp/.virgl_test ]" /usr/local/sbin/neurodesktop-glass-session
