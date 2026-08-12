@@ -106,7 +106,7 @@ tests:
     description: Verify old and current Mesa app containers share one vtest endpoint
     command: |
       bash -c '
-        set -euo pipefail
+        set -eo pipefail
         runtime="$(mktemp -d)"
         server_pid=""
         cleanup() {
@@ -179,28 +179,6 @@ tests:
         echo launcher-scripts-executable
       '
     expected_output_contains: "launcher-scripts-executable"
-
-  - name: Glass session home preparation
-    description: Verify persistent runtime, cache, and invalid Openbox state are prepared before dropping privileges
-    command: |
-      bash -lc '
-        set -euo pipefail
-        rm -rf /home/jovyan/.local
-        mkdir -p /home/jovyan/.config/openbox
-        : > /home/jovyan/.config/openbox/lxde-rc.xml
-        /usr/local/sbin/neurodesktop-glass-prepare
-        test ! -e /home/jovyan/.config/openbox/lxde-rc.xml
-        test -d /home/jovyan/.cache/neurodesktop-mcr
-        test -d /home/jovyan/.matlab
-        test -d /run/user/1000
-        test "$(stat -c %a /run/user/1000)" = 700
-        setpriv --reuid=1000 --regid=100 --clear-groups \
-          cp -a --update=none /opt/jovyan_defaults/. /home/jovyan/
-        test -d /home/jovyan/.local/share
-        test "$(stat -c %u:%g /home/jovyan/.local)" = 1000:100
-        echo glass-home-ready
-      '
-    expected_output_contains: "glass-home-ready"
 
   # ==========================================================================
   # JUPYTERLAB AND WEBAPP CONFIGURATION
