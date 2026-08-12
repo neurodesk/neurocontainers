@@ -244,7 +244,17 @@ jobs:
             container="${name#candidate-}"
             container="${container%-${HEAD_SHA}}"
             mkdir -p "promotion-bundle/${container}"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > artifact.zip
+            for attempt in 1 2 3 4 5; do
+              rm -f artifact.zip
+              if gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > artifact.zip; then
+                break
+              fi
+              if [ "${attempt}" = 5 ]; then
+                echo "Failed to download ${name} after ${attempt} attempts" >&2
+                exit 1
+              fi
+              sleep "$((attempt * 10))"
+            done
             unzip -q artifact.zip -d "promotion-bundle/${container}"
             rm artifact.zip
           done
