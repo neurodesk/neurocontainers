@@ -50,6 +50,7 @@ tests:
         test -x /usr/lib/xorg/Xorg
         test -f /etc/systemd/system/neurodesktop-virgl.service
         grep -Fq "ConditionPathExists=/dev/dri/renderD128" /etc/systemd/system/neurodesktop-virgl.service
+        grep -Fq -- "virgl_test_server --no-fork" /etc/systemd/system/neurodesktop-virgl.service
         grep -Fq -- "--socket-path /tmp/.virgl_test" /etc/systemd/system/neurodesktop-virgl.service
         test -L /etc/systemd/system/glass.target.wants/neurodesktop-virgl.service
         grep -Fq "while [ ! -S /tmp/.virgl_test ]" /usr/local/sbin/neurodesktop-glass-session
@@ -129,7 +130,11 @@ tests:
         test -S "$legacy_socket"
         test "$APPTAINERENV_GALLIUM_DRIVER" = virpipe
         test "$APPTAINERENV_VTEST_SOCKET_NAME" = "$legacy_socket"
+        test "$APPTAINERENV_MESA_GL_VERSION_OVERRIDE" = 4.1
+        test "$APPTAINERENV_MESA_GLSL_VERSION_OVERRIDE" = 410
         test "$SINGULARITYENV_VTEST_SOCKET_NAME" = "$legacy_socket"
+        test "$SINGULARITYENV_MESA_GL_VERSION_OVERRIDE" = 4.1
+        test "$SINGULARITYENV_MESA_GLSL_VERSION_OVERRIDE" = 410
         echo legacy-vtest-ready
       '
     expected_output_contains: "legacy-vtest-ready"
