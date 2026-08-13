@@ -74,33 +74,6 @@ else
         export SINGULARITY_BINDPATH="${SINGULARITY_BINDPATH:-${APPTAINER_BINDPATH}}"
 fi
 
-# NeurodeskAppX exposes its opt-in VirGL bridge through a Unix socket shared
-# with app containers. Mesa 22.3 and older ignore VTEST_SOCKET_NAME and always
-# connect to /tmp/.virgl_test, so retain that historical endpoint as an alias.
-neurodesktop_vtest_socket="${NEURODESKTOP_VTEST_SOCKET:-/tmp/.virgl_test}"
-neurodesktop_vtest_private_socket="${NEURODESKTOP_VTEST_PRIVATE_SOCKET:-/tmp/.neurodesktop-virgl}"
-if [ -S "${neurodesktop_vtest_private_socket}" ] \
-        && [ ! -e "${neurodesktop_vtest_socket}" ] \
-        && [ ! -L "${neurodesktop_vtest_socket}" ]; then
-        ln -s "${neurodesktop_vtest_private_socket}" "${neurodesktop_vtest_socket}" 2>/dev/null || true
-fi
-
-if [ -S "${neurodesktop_vtest_socket}" ]; then
-        export APPTAINERENV_LIBGL_DRI3_DISABLE="${APPTAINERENV_LIBGL_DRI3_DISABLE:-true}"
-        export APPTAINERENV_LIBGL_ALWAYS_SOFTWARE="${APPTAINERENV_LIBGL_ALWAYS_SOFTWARE:-true}"
-        export APPTAINERENV_GALLIUM_DRIVER="${APPTAINERENV_GALLIUM_DRIVER:-virpipe}"
-        export APPTAINERENV_VTEST_SOCKET_NAME="${APPTAINERENV_VTEST_SOCKET_NAME:-${neurodesktop_vtest_socket}}"
-        export APPTAINERENV_MESA_GL_VERSION_OVERRIDE="${APPTAINERENV_MESA_GL_VERSION_OVERRIDE:-4.1}"
-        export APPTAINERENV_MESA_GLSL_VERSION_OVERRIDE="${APPTAINERENV_MESA_GLSL_VERSION_OVERRIDE:-410}"
-        export SINGULARITYENV_LIBGL_DRI3_DISABLE="${SINGULARITYENV_LIBGL_DRI3_DISABLE:-true}"
-        export SINGULARITYENV_LIBGL_ALWAYS_SOFTWARE="${SINGULARITYENV_LIBGL_ALWAYS_SOFTWARE:-true}"
-        export SINGULARITYENV_GALLIUM_DRIVER="${SINGULARITYENV_GALLIUM_DRIVER:-virpipe}"
-        export SINGULARITYENV_VTEST_SOCKET_NAME="${SINGULARITYENV_VTEST_SOCKET_NAME:-${neurodesktop_vtest_socket}}"
-        export SINGULARITYENV_MESA_GL_VERSION_OVERRIDE="${SINGULARITYENV_MESA_GL_VERSION_OVERRIDE:-4.1}"
-        export SINGULARITYENV_MESA_GLSL_VERSION_OVERRIDE="${SINGULARITYENV_MESA_GLSL_VERSION_OVERRIDE:-410}"
-fi
-unset neurodesktop_vtest_private_socket neurodesktop_vtest_socket
-
 # Keep MATLAB Runtime extraction caches in the persistent home rather than in
 # /tmp. This turns multi-minute cold starts into a one-time cost for large apps.
 export MCR_CACHE_ROOT="${MCR_CACHE_ROOT:-${HOME}/.cache/neurodesktop-mcr}"
