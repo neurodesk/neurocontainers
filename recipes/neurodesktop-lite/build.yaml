@@ -286,7 +286,7 @@ build:
         - sed -i 's/#user_allow_other/user_allow_other/g' /etc/fuse.conf
         - rm -f /usr/bin/lxpolkit
         - if [ -e /usr/bin/fusermount3 ]; then chmod +x /usr/bin/fusermount3; elif [ -e /usr/bin/fusermount ]; then chmod +x /usr/bin/fusermount; fi
-        - mkdir -p /usr/local/bin/start-notebook.d /usr/local/bin/before-notebook.d /opt/neurodesktop/scripts /opt/neurodesktop/webapp_wrapper
+        - mkdir -p /usr/local/bin/start-notebook.d /usr/local/bin/before-notebook.d /usr/local/libexec /opt/neurodesktop/scripts /opt/neurodesktop/webapp_wrapper
         - install -m 0755 /tmp/config/jupyter/start_notebook.sh /usr/local/bin/start-notebook.d/start_notebook.sh
         - install -m 0755 /tmp/config/jupyter/before_notebook.sh /usr/local/bin/before-notebook.d/before_notebook.sh
         - install -m 0755 /tmp/config/jupyter/jupyterlab_startup.sh /opt/neurodesktop/jupyterlab_startup.sh
