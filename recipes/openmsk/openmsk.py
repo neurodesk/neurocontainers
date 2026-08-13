@@ -32,6 +32,45 @@ NNUNET_NUMPY_COMPAT_PATH = os.environ.get("OPENMSK_NNUNET_NUMPY_COMPAT_PATH", "/
 OPENMSK_PIPELINE_TIMEOUT = int(os.environ.get("OPENMSK_PIPELINE_TIMEOUT", "5400"))
 DEFAULT_SEG_MODEL = "acl_qdess_bone_july_2024"
 
+# Public OpenRecon segmentations use the same DOSMA-native labels as the
+# upstream OpenMSK monolith. The modular KneePipeline post-processing steps use
+# a different canonical scheme internally, so conversion happens only after the
+# public segmentation has been sent and is reversed for public subregion output.
+UPSTREAM_LABELS = {
+    0: "background",
+    1: "patellar_cartilage",
+    2: "femoral_cartilage",
+    3: "medial_tibial_cartilage",
+    4: "lateral_tibial_cartilage",
+    5: "medial_meniscus",
+    6: "lateral_meniscus",
+    7: "femur",
+    8: "tibia",
+    9: "patella",
+}
+# Extends KneePipeline's own DOSMA remap (which has no meniscus entries and
+# would zero labels 5/6) by parking the menisci at canonical 8/9. That is only
+# safe while the pinned KneePipeline steps hard-code canonical labels 1-7 and
+# subregions 11-15, leaving 8/9 unused; re-verify when bumping
+# kneepipeline_commit in build.yaml.
+UPSTREAM_TO_CANONICAL_LABELS = {
+    1: 7,
+    2: 4,
+    3: 5,
+    4: 6,
+    5: 8,
+    6: 9,
+    7: 1,
+    8: 2,
+    9: 3,
+}
+CANONICAL_TO_UPSTREAM_LABELS = {
+    canonical: upstream
+    for upstream, canonical in UPSTREAM_TO_CANONICAL_LABELS.items()
+}
+OPENMSK_LABEL_SCHEME_META_KEY = "OpenMSKLabelScheme"
+UPSTREAM_LABEL_SCHEME = "upstream_dosma_native_v1"
+
 ORIGINAL_SERIES_INDEX = 100
 SEGMENT_SERIES_INDEX = 101
 T2MAP_SERIES_INDEX = 102
@@ -222,9 +261,10 @@ def process(connection, config, metadata):
                 SEGMENT_IMAGE_TYPE,
                 data_role="Segmentation",
                 dtype=np.int16,
-                comment="OpenMSK segmentation",
+                comment="OpenMSK segmentation (upstream DOSMA labels)",
                 source_geometry_segment=True,
                 reference_nifti_path=echo1_nifti_path,
+                extra_meta={OPENMSK_LABEL_SCHEME_META_KEY: UPSTREAM_LABEL_SCHEME},
             )
             _send_images(connection, segment_images, "openmsk_segmentation")
             sent_images.extend(segment_images)
@@ -269,7 +309,11 @@ def process(connection, config, metadata):
                     comment=_join_comments("OpenMSK subregion segmentation", metrics_comment),
                     source_geometry_segment=True,
                     reference_nifti_path=echo1_nifti_path,
-                    extra_meta=_metrics_extra_meta(metrics_comment),
+                    label_map=CANONICAL_TO_UPSTREAM_LABELS,
+                    extra_meta={
+                        OPENMSK_LABEL_SCHEME_META_KEY: UPSTREAM_LABEL_SCHEME,
+                        **_metrics_extra_meta(metrics_comment),
+                    },
                 )
                 _send_images(connection, subregion_images, "openmsk_subregions")
                 sent_images.extend(subregion_images)
@@ -1265,9 +1309,7 @@ sys.path.insert(0, str(pipeline_dir))
 import os
 import subprocess as _sp
 
-from run_pipeline import _get_remap_table
-from steps._common import STEP_RESULT_FILENAME, load_config
-from steps.label_remap import run as label_remap
+from steps._common import STEP_RESULT_FILENAME
 
 # KneePipeline's own _run_step_subprocess hardcodes a 600s timeout, too short
 # for CPU-only / emulated hosts where DOSMA qDESS inference can take much
@@ -1307,7 +1349,6 @@ working_dir = Path(sys.argv[2])
 seg_model = sys.argv[3]
 config_path = Path(sys.argv[4])
 
-config = load_config(str(config_path))
 working_dir.mkdir(parents=True, exist_ok=True)
 link_path = working_dir / input_path.name
 if not link_path.exists():
@@ -1318,6 +1359,7 @@ if not link_path.exists():
 
 summary = {
     "segmodel": seg_model,
+    "output_label_scheme": "upstream_dosma_native_v1",
     "errors": {},
 }
 
@@ -1328,11 +1370,7 @@ seg_result = _run_step(
     config_path=str(config_path),
 )
 summary["segmentation"] = seg_result
-
-remap_table = _get_remap_table(seg_result["model_name"], config)
-if remap_table:
-    label_remap(working_dir, options={"remap_table": remap_table}, config=config)
-summary["label_remap"] = bool(remap_table)
+summary["label_remap"] = False
 
 summary_path = working_dir / "_openmsk_segmentation_summary.json"
 summary_path.write_text(json.dumps(summary, default=str, indent=2))
@@ -1373,39 +1411,58 @@ pipeline_dir = Path("/opt/KneePipeline")
 sys.path.insert(0, str(pipeline_dir))
 
 from steps._common import load_config
+from steps.label_remap import run as label_remap
 
 working_dir = Path(sys.argv[1])
 config_path = Path(sys.argv[2])
 compute_thickness = json.loads(sys.argv[3])
 compute_t2 = json.loads(sys.argv[4])
+upstream_to_canonical_labels = json.loads(sys.argv[5])
 
 config = load_config(str(config_path))
 summary = {
     "compute_thickness": compute_thickness,
     "compute_t2": compute_t2,
+    "input_label_scheme": "upstream_dosma_native_v1",
+    "processing_label_scheme": "kneepipeline_canonical_v1",
     "errors": {},
 }
 
 try:
-    from steps.generate_meshes import run as generate_meshes
-    summary["generate_meshes"] = generate_meshes(
+    summary["label_remap"] = label_remap(
         working_dir,
-        options={"compute_thickness": compute_thickness},
+        options={"remap_table": upstream_to_canonical_labels},
         config=config,
     )
 except Exception:
-    summary["errors"]["generate_meshes"] = traceback.format_exc()
+    summary["errors"]["label_remap"] = traceback.format_exc()
 
-if compute_t2:
+if "label_remap" not in summary["errors"]:
+    try:
+        from steps.generate_meshes import run as generate_meshes
+        summary["generate_meshes"] = generate_meshes(
+            working_dir,
+            options={"compute_thickness": compute_thickness},
+            config=config,
+        )
+    except Exception:
+        summary["errors"]["generate_meshes"] = traceback.format_exc()
+
+if compute_t2 and "label_remap" not in summary["errors"]:
     try:
         from steps.t2_mapping import run as t2_mapping
         summary["t2_mapping"] = t2_mapping(working_dir, config=config)
     except Exception:
         summary["errors"]["t2_mapping"] = traceback.format_exc()
-else:
+elif not compute_t2:
     summary["t2_mapping"] = {
         "skipped": True,
         "reason": "KneePipeline segmentation did not identify the input as qDESS",
+    }
+else:
+    summary["t2_mapping"] = {
+        "skipped": True,
+        "reason": "Upstream-to-canonical label conversion failed",
     }
 
 summary_path = working_dir / "_openmsk_postprocessing_summary.json"
@@ -1422,6 +1479,7 @@ if summary["errors"]:
         str(config_path),
         json.dumps(bool(compute_thickness)),
         json.dumps(bool(compute_t2)),
+        json.dumps(UPSTREAM_TO_CANONICAL_LABELS),
     ]
     result = subprocess.run(
         cmd,
@@ -1518,6 +1576,7 @@ def _nifti_to_mrd_images(
     comment,
     source_geometry_segment,
     reference_nifti_path=None,
+    label_map=None,
     extra_meta=None,
 ):
     img = nib.load(str(nifti_path))
@@ -1548,7 +1607,11 @@ def _nifti_to_mrd_images(
         info = np.iinfo(dtype)
         rounded = np.clip(rounded, info.min, info.max)
         data_yxz = rounded.astype(dtype, copy=False)
+        if label_map:
+            data_yxz = _remap_integer_labels(data_yxz, label_map)
     else:
+        if label_map:
+            raise ValueError("label_map can only be applied to integer NIfTI output")
         data_yxz = data_yxz.astype(dtype, copy=False)
 
     max_value = float(np.nanmax(data_yxz)) if data_yxz.size else 1.0
@@ -1599,6 +1662,15 @@ def _nifti_to_mrd_images(
         ).serialize()
         outputs.append(output)
     return outputs
+
+
+def _remap_integer_labels(data, label_map):
+    """Remap known labels without discarding background or subregion labels."""
+    source = np.asarray(data)
+    remapped = np.array(source, copy=True)
+    for source_label, target_label in label_map.items():
+        remapped[source == int(source_label)] = int(target_label)
+    return remapped
 
 
 def _nifti_on_reference_grid(img, reference_nifti_path, *, order):

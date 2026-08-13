@@ -2,7 +2,7 @@
 # Focused verification for OpenRecon runtime packaging and lightweight entrypoints.
 
 name: openmsk
-version: 0.1.9
+version: 0.1.10
 
 test_data:
   output_dir: test_output
@@ -43,7 +43,28 @@ tests:
   - name: OpenMSK module imports
     description: Verify the OpenRecon module imports with its runtime dependencies
     script: |
-      test "$(PYTHONPATH=/opt/code/python-ismrmrd-server python3 -c "import openmsk, ismrmrd, nibabel, numpy; print(openmsk.OPENMSK_VERSION)")" = "${OPENMSK_VERSION}"
+      PYTHONPATH=/opt/code/python-ismrmrd-server python3 - <<'PY'
+      import os
+
+      import openmsk
+      import ismrmrd
+      import nibabel
+      import numpy
+
+      assert openmsk.OPENMSK_VERSION == os.environ["OPENMSK_VERSION"]
+      assert openmsk.UPSTREAM_LABELS == {
+          0: "background",
+          1: "patellar_cartilage",
+          2: "femoral_cartilage",
+          3: "medial_tibial_cartilage",
+          4: "lateral_tibial_cartilage",
+          5: "medial_meniscus",
+          6: "lateral_meniscus",
+          7: "femur",
+          8: "tibia",
+          9: "patella",
+      }
+      PY
 
   - name: Helper scripts render help
     description: Verify conversion helper scripts start and expose command line help

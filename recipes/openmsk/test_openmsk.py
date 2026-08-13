@@ -498,6 +498,7 @@ def test_process_can_skip_originals_when_requested(monkeypatch):
 
 def test_process_sends_subregions_and_metrics_report_when_outputs_exist(monkeypatch):
     events = []
+    label_maps = {}
     source = make_image()
     source.attribute_string = ismrmrd.Meta().serialize()
 
@@ -524,7 +525,12 @@ def test_process_sends_subregions_and_metrics_report_when_outputs_exist(monkeypa
     monkeypatch.setattr(openmsk, "_write_run_config", fake_write_run_config)
     monkeypatch.setattr(openmsk, "_run_kneepipeline_segmentation", fake_segmentation)
     monkeypatch.setattr(openmsk, "_run_kneepipeline_postprocessing", fake_postprocessing)
-    monkeypatch.setattr(openmsk, "_nifti_to_mrd_images", lambda *_args, **_kwargs: [make_image()])
+
+    def fake_nifti_to_mrd(_path, _sources, series_index, *_args, **kwargs):
+        label_maps[series_index] = kwargs.get("label_map")
+        return [make_image()]
+
+    monkeypatch.setattr(openmsk, "_nifti_to_mrd_images", fake_nifti_to_mrd)
     monkeypatch.setattr(openmsk, "_build_metrics_report_images", lambda *_args, **_kwargs: [make_image()])
     monkeypatch.setattr(openmsk, "_send_images", lambda _connection, _images, context: events.append(context))
 
@@ -541,6 +547,8 @@ def test_process_sends_subregions_and_metrics_report_when_outputs_exist(monkeypa
         "openmsk_subregions",
         "openmsk_metrics_report",
     ]
+    assert label_maps[openmsk.SEGMENT_SERIES_INDEX] is None
+    assert label_maps[openmsk.SUBREGION_SERIES_INDEX] == openmsk.CANONICAL_TO_UPSTREAM_LABELS
     assert connection.closed
     assert connection.logs == []
 
@@ -614,7 +622,10 @@ def test_run_kneepipeline_segmentation_returns_step_summary(tmp_path, monkeypatc
     input_path.write_text("image")
     config_path.write_text("{}")
 
+    invoked_scripts = []
+
     def fake_run(cmd, **_kwargs):
+        invoked_scripts.append(cmd[2])
         summary_path = Path(cmd[4]) / openmsk.OPENMSK_SEGMENTATION_SUMMARY
         summary_path.write_text(
             json.dumps(
@@ -642,6 +653,82 @@ def test_run_kneepipeline_segmentation_returns_step_summary(tmp_path, monkeypatc
     assert result["returncode"] == 0
     assert openmsk._segmentation_is_qdess(result)
     assert not openmsk._segmentation_skips_step(result, "t2_mapping")
+    assert "steps.label_remap" not in invoked_scripts[0]
+    assert "_get_remap_table" not in invoked_scripts[0]
+
+
+def test_postprocessing_converts_complete_upstream_contract_to_canonical(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    config_path.write_text("{}")
+    invoked_commands = []
+
+    def fake_run(cmd, **_kwargs):
+        invoked_commands.append(cmd)
+        summary_path = output_dir / openmsk.OPENMSK_POSTPROCESSING_SUMMARY
+        summary_path.write_text(json.dumps({"label_remap": {"remapped": True}}))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(openmsk.subprocess, "run", fake_run)
+
+    result = openmsk._run_kneepipeline_postprocessing(
+        output_dir,
+        config_path,
+        compute_thickness=True,
+        compute_t2=True,
+    )
+
+    command = invoked_commands[0]
+    assert json.loads(command[-1]) == {
+        str(source): target
+        for source, target in openmsk.UPSTREAM_TO_CANONICAL_LABELS.items()
+    }
+    assert command[2].index("summary[\"label_remap\"] = label_remap") < command[2].index(
+        "summary[\"generate_meshes\"] = generate_meshes"
+    )
+    assert result["ok"] is True
+
+
+def test_upstream_label_contract_includes_all_model_tissues():
+    assert openmsk.UPSTREAM_LABELS == {
+        0: "background",
+        1: "patellar_cartilage",
+        2: "femoral_cartilage",
+        3: "medial_tibial_cartilage",
+        4: "lateral_tibial_cartilage",
+        5: "medial_meniscus",
+        6: "lateral_meniscus",
+        7: "femur",
+        8: "tibia",
+        9: "patella",
+    }
+    assert openmsk.UPSTREAM_TO_CANONICAL_LABELS == {
+        1: 7,
+        2: 4,
+        3: 5,
+        4: 6,
+        5: 8,
+        6: 9,
+        7: 1,
+        8: 2,
+        9: 3,
+    }
+    assert openmsk.CANONICAL_TO_UPSTREAM_LABELS == {
+        canonical: upstream
+        for upstream, canonical in openmsk.UPSTREAM_TO_CANONICAL_LABELS.items()
+    }
+
+
+def test_label_remap_preserves_unlisted_subregion_labels():
+    canonical = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15])
+
+    upstream = openmsk._remap_integer_labels(
+        canonical,
+        openmsk.CANONICAL_TO_UPSTREAM_LABELS,
+    )
+
+    assert upstream.tolist() == [0, 7, 8, 9, 2, 3, 4, 1, 5, 6, 11, 12, 13, 14, 15]
 
 
 def test_synthetic_qdess_dicom_contains_t2_inputs(tmp_path):
@@ -769,6 +856,45 @@ def test_nifti_to_mrd_reindexes_rotated_labels_to_source_grid(tmp_path, monkeypa
 
     expected_yx = reference_xyz[:, :, 0].T
     np.testing.assert_array_equal(np.squeeze(outputs[0].data), expected_yx)
+
+
+def test_nifti_to_mrd_returns_upstream_labels_for_canonical_subregions(tmp_path):
+    source = make_image()
+    canonical_xyz = np.array(
+        [
+            [0, 1, 2, 3],
+            [4, 5, 6, 7],
+            [8, 9, 11, 12],
+            [13, 14, 15, 0],
+        ],
+        dtype=np.int16,
+    )[:, :, None]
+    label_path = tmp_path / "source_subregions-labels.nii.gz"
+    nib.save(nib.Nifti1Image(canonical_xyz, np.eye(4)), label_path)
+
+    outputs = openmsk._nifti_to_mrd_images(
+        label_path,
+        [source],
+        openmsk.SUBREGION_SERIES_INDEX,
+        openmsk.SUBREGION_SERIES_NAME,
+        openmsk.SUBREGION_IMAGE_TYPE,
+        data_role="Segmentation",
+        dtype=np.int16,
+        comment="OpenMSK subregion segmentation",
+        source_geometry_segment=True,
+        label_map=openmsk.CANONICAL_TO_UPSTREAM_LABELS,
+    )
+
+    expected_xyz = np.array(
+        [
+            [0, 7, 8, 9],
+            [2, 3, 4, 1],
+            [5, 6, 11, 12],
+            [13, 14, 15, 0],
+        ],
+        dtype=np.int16,
+    )[:, :, None]
+    np.testing.assert_array_equal(np.squeeze(outputs[0].data), expected_xyz[:, :, 0].T)
 
 
 def test_metrics_report_images_include_metrics_metadata(tmp_path):

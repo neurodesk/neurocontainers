@@ -1,9 +1,13 @@
 name: openmsk
-version: 0.1.9
+version: 0.1.10
 architectures:
   - x86_64
 
 variables:
+  # When bumping this commit, re-check the label contract in openmsk.py:
+  # steps/generate_meshes.py and steps/t2_mapping.py must still hard-code
+  # canonical labels 1-7 (+ subregions 11-15) and leave canonical 8/9 unused,
+  # because openmsk.py parks the menisci there during post-processing.
   kneepipeline_commit: "61144f23d9001950a70f77cb70d628e1883da86d"
   dosma_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/Goyal_Bone_Cart_July_2024_best_model.h5"
   dosma_sagittal_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/sagittal_best_model.h5"
@@ -68,44 +72,6 @@ files:
         "nnunet": {
           "type": "fullres",
           "model_name": "Dataset500_KneeMRI"
-        },
-        "regions": {
-          "cart": {
-            "1": "pat_cart",
-            "2": "fem_cart",
-            "3": "med_tib_cart",
-            "4": "lat_tib_cart",
-            "11": "ant_fem_cart",
-            "12": "med_wb_fem_cart",
-            "13": "lat_wb_fem_cart",
-            "14": "med_post_fem_cart",
-            "15": "lat_post_fem_cart"
-          },
-          "bone": {
-            "7": "femur",
-            "8": "tibia",
-            "9": "patella"
-          }
-        },
-        "bones": {
-          "patella": {
-            "tissue_idx": 9,
-            "list_cart_labels": [1],
-            "n_points": 10000,
-            "crop_percent": null
-          },
-          "femur": {
-            "tissue_idx": 7,
-            "list_cart_labels": [2],
-            "n_points": 20000,
-            "crop_percent": 0.8
-          },
-          "tibia": {
-            "tissue_idx": 8,
-            "list_cart_labels": [3, 4],
-            "n_points": 20000,
-            "crop_percent": 0.8
-          }
         }
       }
 
@@ -246,8 +212,8 @@ readme: |-
   OpenMSK packages the KneePipeline knee MRI toolbox as a Siemens OpenRecon
   image-to-image module for qDESS knee MRI. The OpenRecon path receives MRD
   images from the scanner, reconstructs an echo-1 NIfTI, runs KneePipeline, and
-  returns bone/cartilage segmentation with geometry copied from the source
-  images. The wrapper preserves both qDESS echo groups and synthesizes a
+  returns bone/cartilage/meniscus segmentation with geometry copied from the
+  source images. The wrapper preserves both qDESS echo groups and synthesizes a
   minimal two-echo DICOM series with TR/TE/flip and GL/TG values so
   KneePipeline's qDESS loader can run its analytical T2 step from OpenRecon
   MRD input. It mirrors KneePipeline's split steps: it runs mesh
@@ -261,6 +227,13 @@ readme: |-
   after segmentation when the `computethickness` OpenRecon option is enabled.
   The `nnunet_knee` path is packaged with single preprocessing/export worker
   defaults for scanner-side memory stability.
+  Returned segmentation and subregion series use the upstream DOSMA/OpenMSK
+  labels: 1 patellar cartilage, 2 femoral cartilage, 3 medial tibial
+  cartilage, 4 lateral tibial cartilage, 5 medial meniscus, 6 lateral
+  meniscus, 7 femur, 8 tibia, and 9 patella. Canonical labels used by the
+  modular mesh, thickness, T2, and NSM steps remain internal and are never
+  exposed in the returned segmentation series. Femoral-cartilage subregion
+  labels 11 through 15 retain their upstream values.
   Legacy `runnsm` and `runbscore` protocol parameters are accepted for scanner
   conversion compatibility but ignored because gated ShapeMedKnee assets are not
   packaged.

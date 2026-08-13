@@ -6,7 +6,8 @@ images arriving as MRD image messages from the scanner.
 
 ## Outputs
 
-- Bone and cartilage segmentation as source-geometry derived MRD images.
+- Bone, cartilage, and meniscus segmentation as source-geometry derived MRD
+  images using the upstream DOSMA/OpenMSK label values.
 - Subregion segmentation as a separate derived MRD segmentation series when
   KneePipeline writes `*_subregions-labels.nii.gz`.
 - Optional cartilage mesh and thickness outputs in the KneePipeline working
@@ -15,6 +16,42 @@ images arriving as MRD image messages from the scanner.
   report image series when KneePipeline writes metrics JSON/CSV files.
 - qDESS T2 map MRD images and per-region T2 metrics when KneePipeline's
   `steps.t2_mapping` writes `*_t2map.nii.gz` and `*_t2_results.json`.
+
+## Segmentation Labels
+
+Returned segmentation and subregion series use the same public labels as the
+upstream GitHub monolith:
+
+| Label | Tissue |
+| ---: | --- |
+| 0 | Background |
+| 1 | Patellar cartilage |
+| 2 | Femoral cartilage |
+| 3 | Medial tibial cartilage |
+| 4 | Lateral tibial cartilage |
+| 5 | Medial meniscus |
+| 6 | Lateral meniscus |
+| 7 | Femur |
+| 8 | Tibia |
+| 9 | Patella |
+
+Femoral-cartilage subregion output retains the upstream labels 11 anterior,
+12 medial weight-bearing, 13 lateral weight-bearing, 14 medial posterior, and
+15 lateral posterior.
+
+KneePipeline's modular mesh, thickness, T2, and NSM steps use a canonical
+label scheme internally. OpenRecon converts to that scheme only after sending
+the public segmentation and converts subregion output back before returning it.
+
+## Output Geometry
+
+Derived series are returned as per-slice MRD images resampled onto the source
+image grid, and the scanner's DICOM writer defines the stored dimensions,
+spacing, origin, and direction. An offline KneePipeline run on exported DICOMs
+works on the DICOM-derived grid instead, so the two outputs are not
+voxel-for-voxel identical: comparing them (for example computing DSC or ASSD
+against an offline run) requires resampling one result onto the other's grid
+first. This is inherent to OpenRecon, not a defect in either output.
 
 ## qDESS And T2 Caveat
 
