@@ -1,0 +1,213 @@
+name: napari
+version: 0.8.0
+description: Multi-dimensional image viewing and 3D medical image segmentation with VoxTell and nnInteractive.
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/napari/napari/blob/v{{ context.version }}/LICENSE
+  - license: Apache-2.0
+    url: https://github.com/MIC-DKFZ/napari-voxtell/blob/main/LICENSE
+  - license: Apache-2.0
+    url: https://github.com/MIC-DKFZ/VoxTell/blob/v{{ context.voxtell_version }}/LICENSE
+  - license: Apache-2.0
+    url: https://github.com/MIC-DKFZ/napari-nninteractive/blob/v{{ context.napari_nninteractive_version }}/LICENSE
+  - license: Apache-2.0
+    url: https://github.com/MIC-DKFZ/nnInteractive/blob/v{{ context.nninteractive_version }}/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  install_path: /opt/napari-{{ context.version }}
+  venv_path: /opt/napari-{{ context.version }}/venv
+  pip_version: 26.1.1
+  setuptools_version: 82.0.1
+  wheel_version: 0.47.0
+  torch_version: 2.8.0
+  torchvision_version: 0.23.0
+  pytorch_wheel_channel: cu126
+  napari_voxtell_version: 0.1.0
+  voxtell_version: 0.1.0
+  napari_nninteractive_version: 2.5.3
+  nninteractive_version: 2.5.1
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PYTHONNOUSERSITE: "1"
+        PATH: /usr/local/bin:{{ context.venv_path }}/bin:$PATH
+
+    - install:
+        - ca-certificates
+        - libdbus-1-3
+        - libegl1
+        - libfontconfig1
+        - libfreetype6
+        - libgl1
+        - libglib2.0-0
+        - libice6
+        - libopengl0
+        - libsm6
+        - libx11-6
+        - libx11-xcb1
+        - libxcb-cursor0
+        - libxcb-glx0
+        - libxcb-icccm4
+        - libxcb-image0
+        - libxcb-keysyms1
+        - libxcb-randr0
+        - libxcb-render-util0
+        - libxcb-render0
+        - libxcb-shape0
+        - libxcb-shm0
+        - libxcb-sync1
+        - libxcb-util1
+        - libxcb-xfixes0
+        - libxcb-xinerama0
+        - libxcb-xkb1
+        - libxcb1
+        - libxext6
+        - libxi6
+        - libxkbcommon-x11-0
+        - libxkbcommon0
+        - libxrandr2
+        - libxrender1
+        - libxtst6
+        - python3
+        - python3-venv
+
+    - run:
+        - python3 -m venv "{{ context.venv_path }}"
+        - . "{{ context.venv_path }}/bin/activate"
+        - python -m pip install --no-cache-dir --upgrade pip=={{ context.pip_version }} setuptools=={{ context.setuptools_version }} wheel=={{ context.wheel_version }}
+        - python -m pip install --no-cache-dir torch=={{ context.torch_version }} torchvision=={{ context.torchvision_version }} --index-url https://download.pytorch.org/whl/{{ context.pytorch_wheel_channel }}
+        - python -m pip install --no-cache-dir "napari[all]=={{ context.version }}" "napari-voxtell=={{ context.napari_voxtell_version }}" "voxtell=={{ context.voxtell_version }}" "napari-nninteractive[local]=={{ context.napari_nninteractive_version }}" "nnInteractive=={{ context.nninteractive_version }}"
+
+    - copy:
+        - napari-wrapper
+        - /usr/local/bin/napari
+
+    - run:
+        - chmod 0755 /usr/local/bin/napari
+        - ln -s napari /usr/local/bin/napari-voxtell
+        - ln -s napari /usr/local/bin/napari-nninteractive
+        - ln -s napari /usr/local/bin/nninteractive-available-models
+        - ln -s napari /usr/local/bin/nninteractive-download-model
+        - ln -s napari /usr/local/bin/nninteractive-server
+
+deploy:
+  bins:
+    - napari
+    - napari-voxtell
+    - napari-nninteractive
+    - nninteractive-available-models
+    - nninteractive-download-model
+    - nninteractive-server
+
+gui_apps:
+  - name: napari
+    exec: napari
+  - name: VoxTell
+    exec: napari-voxtell
+  - name: nnInteractive
+    exec: napari-nninteractive
+
+categories:
+  - visualization
+  - image segmentation
+  - machine learning
+
+files:
+  - name: napari-wrapper
+    executable: true
+    contents: |-
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      cache_root="${NAPARI_CACHE_DIR:-${TMPDIR:-/tmp}/napari-$(id -u)}"
+      export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${cache_root}/cache}"
+      export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${cache_root}/config}"
+      export XDG_DATA_HOME="${XDG_DATA_HOME:-${cache_root}/data}"
+      export HF_HOME="${HF_HOME:-${cache_root}/huggingface}"
+      export TORCH_HOME="${TORCH_HOME:-${cache_root}/torch}"
+      export MPLCONFIGDIR="${MPLCONFIGDIR:-${cache_root}/matplotlib}"
+      export NUMBA_CACHE_DIR="${NUMBA_CACHE_DIR:-${cache_root}/numba}"
+      export NNINTERACTIVE_MODEL_DIR="${NNINTERACTIVE_MODEL_DIR:-${cache_root}/nninteractive}"
+
+      mkdir -p \
+        "${XDG_CACHE_HOME}" \
+        "${XDG_CONFIG_HOME}" \
+        "${XDG_DATA_HOME}" \
+        "${HF_HOME}" \
+        "${TORCH_HOME}" \
+        "${MPLCONFIGDIR}" \
+        "${NUMBA_CACHE_DIR}" \
+        "${NNINTERACTIVE_MODEL_DIR}"
+
+      launcher="$(basename "$0")"
+      case "${launcher}" in
+        napari-voxtell)
+          exec "{{ context.venv_path }}/bin/napari" -w napari-voxtell "$@"
+          ;;
+        napari-nninteractive)
+          exec "{{ context.venv_path }}/bin/napari" -w napari-nninteractive "$@"
+          ;;
+        nninteractive-available-models|nninteractive-download-model|nninteractive-server)
+          exec "{{ context.venv_path }}/bin/${launcher}" "$@"
+          ;;
+        *)
+          exec "{{ context.venv_path }}/bin/napari" "$@"
+          ;;
+      esac
+
+structured_readme:
+  description: napari is an interactive multi-dimensional image viewer. This container adds the VoxTell free-text 3D medical segmentation plugin and the nnInteractive prompt-based 3D segmentation plugin, including nnInteractive local and remote inference support.
+  example: |-
+    napari
+    napari-voxtell
+    napari-nninteractive
+  documentation: https://napari.org/; https://github.com/MIC-DKFZ/napari-voxtell; https://github.com/MIC-DKFZ/napari-nninteractive
+  citation: |-
+    napari contributors (2019). napari: a multi-dimensional image viewer for Python. doi:10.5281/zenodo.3555620
+    Isensee et al. (2025). nnInteractive: Redefining 3D Promptable Segmentation. arXiv:2503.08373.
+    Rokuss et al. (2025). VoxTell: Free-Text Promptable Universal 3D Medical Image Segmentation. arXiv:2511.11450.
+
+readme: |-
+  ----------------------------------
+  ## napari/{{ context.version }} ##
+
+  napari is an interactive multi-dimensional image viewer. This container includes:
+  - napari-VoxTell {{ context.napari_voxtell_version }} for free-text-prompted 3D medical image segmentation
+  - napari-nnInteractive {{ context.napari_nninteractive_version }} for point, scribble, box, and lasso-prompted 3D segmentation
+  - CUDA {{ context.pytorch_wheel_channel }} PyTorch {{ context.torch_version }} and the nnInteractive {{ context.nninteractive_version }} local backend
+  - napari-nifti for NIfTI image loading
+
+  Launch napari or open either plugin directly:
+  ```
+  napari
+  napari-voxtell
+  napari-nninteractive
+  ```
+
+  Local inference is intended for an NVIDIA GPU. nnInteractive can also connect to a remote `nninteractive-server`. VoxTell and nnInteractive download model weights on first initialization. By default, writable runtime state and downloaded models are stored under `${TMPDIR:-/tmp}/napari-$(id -u)`, because a home directory is not available at runtime. To retain models in another writable location, set:
+  ```
+  export NAPARI_CACHE_DIR=/path/to/persistent/napari-cache
+  ```
+
+  Model checkpoints are not bundled in this image. The official VoxTell and nnInteractive checkpoints downloaded at runtime are licensed CC-BY-NC-SA-4.0 and are not intended for clinical use. Review each model card before use:
+  - https://huggingface.co/mrokuss/VoxTell
+  - https://huggingface.co/MIC-DKFZ/nnInteractive
+
+  Documentation:
+  - https://napari.org/
+  - https://github.com/MIC-DKFZ/napari-voxtell
+  - https://github.com/MIC-DKFZ/napari-nninteractive
+
+  To run the container outside this environment: `ml napari/{{ context.version }}`
+  ----------------------------------
+
+icon: data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0nMS4wJyBlbmNvZGluZz0nVVRGLTgnPz4KPHN2ZyB4bWxuczppbmtzY2FwZT0iaHR0cDovL3d3dy5pbmtzY2FwZS5vcmcvbmFtZXNwYWNlcy9pbmtzY2FwZSIgeG1sbnM6c29kaXBvZGk9Imh0dHA6Ly9zb2RpcG9kaS5zb3VyY2Vmb3JnZS5uZXQvRFREL3NvZGlwb2RpLTAuZHRkIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnN2Zz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnJkZj0iaHR0cDovL3d3dy53My5vcmcvMTk5OS8wMi8yMi1yZGYtc3ludGF4LW5zIyIgeG1sbnM6Y2M9Imh0dHA6Ly9jcmVhdGl2ZWNvbW1vbnMub3JnL25zIyIgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIiB3aWR0aD0iMTAyNCIgaGVpZ2h0PSIxMDI0IiB2aWV3Qm94PSItMTAwIC0xMDAgMTAyNCAxMDI0IiB2ZXJzaW9uPSIxLjEiIGlkPSJzdmcyMiIgc29kaXBvZGk6ZG9jbmFtZT0icGFkZGVkLnN2ZyIgaW5rc2NhcGU6dmVyc2lvbj0iMS40LjIgKGViZjBlOTQwZDAsIDIwMjUtMDUtMDgpIiBpbmtzY2FwZTpleHBvcnQtZmlsZW5hbWU9ImxvZ28ucG5nIiBpbmtzY2FwZTpleHBvcnQteGRwaT0iOTYiIGlua3NjYXBlOmV4cG9ydC15ZHBpPSI5NiI+CiAgPHNvZGlwb2RpOm5hbWVkdmlldyBpZD0ibmFtZWR2aWV3MjIiIHBhZ2Vjb2xvcj0iI2ZmZmZmZiIgYm9yZGVyY29sb3I9IiMwMDAwMDAiIGJvcmRlcm9wYWNpdHk9IjAuMjUiIGlua3NjYXBlOnNob3dwYWdlc2hhZG93PSIyIiBpbmtzY2FwZTpwYWdlb3BhY2l0eT0iMC4wIiBpbmtzY2FwZTpwYWdlY2hlY2tlcmJvYXJkPSJmYWxzZSIgaW5rc2NhcGU6ZGVza2NvbG9yPSIjZDFkMWQxIiBzaG93Z3VpZGVzPSJ0cnVlIiBpbmtzY2FwZTp6b29tPSIwLjIyNjI3NDE3IiBpbmtzY2FwZTpjeD0iNjQwLjgxNTUyIiBpbmtzY2FwZTpjeT0iOTMwLjI4NzM2IiBpbmtzY2FwZTp3aW5kb3ctd2lkdGg9IjEyNzgiIGlua3NjYXBlOndpbmRvdy1oZWlnaHQ9IjE0MDgiIGlua3NjYXBlOndpbmRvdy14PSIwIiBpbmtzY2FwZTp3aW5kb3cteT0iMCIgaW5rc2NhcGU6d2luZG93LW1heGltaXplZD0iMCIgaW5rc2NhcGU6Y3VycmVudC1sYXllcj0iZzIyIi8+CiAgPGRlZnMgaWQ9ImRlZnMxOSIvPgogIDx0aXRsZSBpZD0idGl0bGUxOSI+QXJ0Ym9hcmQgMTwvdGl0bGU+CiAgPG1ldGFkYXRhIGlkPSJtZXRhZGF0YTEzIj4KICAgIDxyZGY6UkRGPgogICAgICA8Y2M6V29yayByZGY6YWJvdXQ9IiI+CiAgICAgICAgPGRjOnRpdGxlPkFydGJvYXJkIDE8L2RjOnRpdGxlPgogICAgICA8L2NjOldvcms+CiAgICA8L3JkZjpSREY+CiAgPC9tZXRhZGF0YT4KICA8ZyBpZD0iZzIyLTMiIGlua3NjYXBlOmxhYmVsPSJsb2dvIj4KICAgIDxyZWN0IGNsYXNzPSJiIiB4PSIwIiB5PSIwIiB3aWR0aD0iODI0IiBoZWlnaHQ9IjgyNCIgcng9IjE4Ny4zMzYxNCIgaWQ9InJlY3QyMC04LTciIHN0eWxlPSJmaWxsOiNjY2I5OGY7ZmlsbC1vcGFjaXR5OjE7c3Ryb2tlLXdpZHRoOjQuMjcyMzEiIGlua3NjYXBlOmxhYmVsPSJvdXRlci1ib3JkZXIiLz4KICAgIDxyZWN0IGNsYXNzPSJiIiB4PSIyOC4zMjg2OTciIHk9IjI4LjMyODcyOCIgd2lkdGg9Ijc2Ny4zODIzMiIgaGVpZ2h0PSI3NjcuMzgyMzIiIHJ4PSIxNTkuMzgwMiIgaWQ9InJlY3QyMC01IiBzdHlsZT0iZmlsbDojNWU1NDczO2ZpbGwtb3BhY2l0eToxO3N0cm9rZS13aWR0aDozLjk3ODc1IiBpbmtzY2FwZTpsYWJlbD0iYmFja2dyb3VuZCIvPgogICAgPGcgaWQ9ImczMi0zIiB0cmFuc2Zvcm09Im1hdHJpeCgzLjk3ODc1NDIsMCwwLDMuOTc4NzU0MiwtMTUuODAxNDU1LC0yZS02KSIgc3R5bGU9InN0cm9rZS13aWR0aDoxLjAwMDA2O3N0cm9rZS1kYXNoYXJyYXk6bm9uZSIgaW5rc2NhcGU6bGFiZWw9ImNvbnRlbnQiPgogICAgICA8cGF0aCBjbGFzcz0iYSIgZD0iTSAxMTMuMywxODguMzkgQyAxMDUuMTMzODUsMTg3Ljg3OTA0IDk3LjI5NDQ3NCwxODUuMTA2NSA5MC4wNiwxNzkuNDMgODMuODAyNTcsMTc0LjYzNDIgNzguNTc4MTM1LDE2OC42MjQwNSA3NC43LDE2MS43NiA2OS44NjM5MzgsMTUzLjIzNDg5IDY1Ljg4MzQ0NywxMzUuMDA5MTkgNTguMzksMTIzLjg3IDUzLjk1NjcyMywxMTcuMzQ3NSA0Ny40NjY2MTgsMTEyLjg1ODE1IDQxLjYxLDEwNy43NiAzNi4zNDEyNzYsMTAzLjEzMDUgMjkuNDA4MzE2LDk2Ljk3NTYzNSAyNS41MSw4Ni43NSAyMC4wNzA4OTksNzIuMjk2OCAyNS4zNjQ2MjksNTYuNjc5OTM4IDMwLjcsNDYuMiAzOS41ODEyMzUsMjcuNDU5OTI4IDYwLjAxMTYxMiwxNC4yMzQyNyA4MC4xOSwxOS43OCBjIDYuNjIzMjkzLDEuNjIzNzcyIDEyLjU0MjE4Niw1LjM0OTgzMiAxNi44NywxMC42MiA0LjU2LDUuNjQgNi40LDEyLjczIDcuODksMjIuMzQgMS4zMjg2OCw3LjU0MDA5IDEuMTAyMjksMTUuNjQxMDg3IDQuMjIsMjIuNzMgMiw0LjIgNS44Miw2LjY1IDguMzMsOC4yNyA2LjU0NjI3LDQuMjUwODI0IDE2LjE2Mjk0LDUuODQwNzMgMjguOTMsNC45IDYuOTQxMTMsLTAuODA0ODQxIDEzLjgxMjQ3LC0xLjY0MjIwMSAyMC42OCwwLjE1IDE0LjMzNjQ4LDMuNzcxOTEgMTkuNDc2OTcsMTIuMDM3MzMgMjIuNTksMjUuNjcgMS4wNzI0OSw0LjY1MTk5IDMuODUwMzQsMTkuMjI2MTcgMC4wOSwzMi4xIC01LjkwMDI4LDE5LjI2Nzk5IC0yMi4wMDUyNywyOS44NzEzOSAtMzAuMTEsMzMuOTMgLTE5LjY0MzQsOS42MzI2OSAtNDEuNjIyMSw4LjMyMzM3IC00Ni4zOCw3LjkgeiIgaWQ9InBhdGgyMC01IiBzb2RpcG9kaTpub2RldHlwZXM9ImNjY2NjY2NjY2NjY2NjY2NjYyIgc3R5bGU9ImZpbGw6IzFmMGIyNjtmaWxsLW9wYWNpdHk6MTtzdHJva2Utd2lkdGg6MS4wMDAwNjtzdHJva2UtZGFzaGFycmF5Om5vbmUiLz4KICAgICAgPHBhdGggY2xhc3M9ImMiIGQ9Im0gMTEzLjk4LDE4MC43NyBjIC03LjEyNDI4LC0wLjI4MzY1IC0xMy43MTgyNiwtMy4xNjYyNCAtMTkuMzUsLTcuNDQgQyA4OS4yMTg4MTEsMTY5LjE2MzYyIDg0LjcwMjMxOCwxNjMuOTQ5OTMgODEuMzUsMTU4IDc3LjAwMDkyLDE1MC4zMDI4MiA3Mi44NzA2NDUsMTMxLjY4MTU2IDY0LjY1LDExOS41MSA1OS45MjEzODEsMTEyLjQyMjgzIDUyLjk0NTg5MywxMDcuNTYwODggNDYuNjMsMTAyLjA2IDQxLjY4NTU5OCw5Ny43Mjg3MDQgMzUuOTAyOTA0LDkyLjU3NjU1MyAzMi42NSw4NC4xMiAyNy44NjU3NSw3MS45MTY5OCAzMy42MDk0MjEsNTcuMzgyNDAxIDM3LjUsNDkuNzQgNDQuNTUzMTEzLDM0LjcxODAxMSA2MS4wODAwOTUsMjIuNDkyNiA3OC4xOSwyNy4xOCBjIDUuMDYyMTA4LDEuMTgzODExIDkuNTk2ODE5LDMuOTkzODU3IDEyLjkxLDggMywzLjc3IDQuNzUsOC44NCA2LjI4LDE4LjcgMS4zMzE5ODgsOC4zMjQ0NTIgMS40MjEzMjgsMTcuMDk0Nzk3IDQuODksMjQuODkgMyw2LjEzIDgsOS40MSAxMS4wNywxMS4zNiA4LjA3MzUxLDUuMjE1NDQ0IDE5LjI2MzE2LDcuMjA2OTAyIDMzLjY2LDYuMTEgNi4wNDc4NSwtMC41OTI5NjIgMTIuMDYxOSwtMS42NzU2MzggMTguMDUsLTAuMDkgMTEuNjg2MTgsMy4xMTEzODggMTQuNjU4OTUsOS4wODYxNCAxNy4xNSwyMCAwLjgxMjQsMy41MTkyMSAzLjUwMzI5LDE2Ljk1Mzc3IDAuMiwyOC4yNSAtNS40MTM1MywxNy41MzkxNCAtMjAuODEyNzksMjYuNTM4MDQgLTI2LjIzLDI5LjIzIC0xOC4wMzAyMyw4Ljg1NDExIC0zOC44MzE0OCw3LjQzOTU5IC00Mi4xOSw3LjE0IHoiIGlkPSJwYXRoMjEtNiIgc29kaXBvZGk6bm9kZXR5cGVzPSJjY2NjY2NjY2NjY2NjY2NjY2MiIHN0eWxlPSJmaWxsOiNjY2I5OGY7ZmlsbC1vcGFjaXR5OjE7c3Ryb2tlLXdpZHRoOjEuMDAwMDY7c3Ryb2tlLWRhc2hhcnJheTpub25lIi8+CiAgICAgIDxwYXRoIGNsYXNzPSJkIiBkPSJtIDc2LjU5LDMzLjE5IGMgMy44MDEyOTUsMC44NzQ3NDcgNy4yMDU0NTUsMi45ODQ3NjQgOS42OCw2IDIuMjMsMi43NSAzLjYyLDcgNSwxNS43MyAxLjM2NTcwNyw4Ljk1MTQ0OCAxLjY3NzgzOSwxOC4yODE3NjUgNS40MywyNi42NSAzLjczLDcuNyAxMCwxMS43NyAxMy4yOSwxMy44OCAxMS4xNjMyOCw3LjA3MzMyIDI0LjYxNjE5LDcuOTQ0NDkgMzcuNDcsNy4wOSA3LjY3LC0wLjU3IDEwLjcxLC0xLjcyIDE1Ljk1LC0wLjI5IDkuMDA4MjcsMi4yMTE0NCAxMC44MjYxMSw3LjA4MDM4IDEyLjcsMTUuMzMgMC41ODI2NSwyLjUxMjI4IDMuMjIzOTgsMTUuMDgyMzYgMC4zLDI1LjExIC00LjU2NTg0LDE0LjY2NjA4IC0xNy41NDY1NCwyMi42ODM1NCAtMjMuMDQsMjUuNCAtMTIuMDAzOCw1Ljg0OTUgLTI3LjcyNjU2LDcuNDA3ODggLTM4Ljg3LDYuNDcgLTUuOTQxMTgsLTAuMjE0NTIgLTExLjQyNjM0LC0yLjYwNDY3IC0xNi4xLC02LjIgLTQuNzUzNzEsLTMuNjQ3MzUgLTguNzIwMDA2LC04LjIxOTE0IC0xMS42NiwtMTMuNDQgLTQuMTE0MDQ0LC03LjQwNTI4IC04LjIyNTk2MSwtMjYuMTc0MTMgLTE2Ljk3LC0zOSAtNC45NDk1ODMsLTcuNTUyNDkgLTEyLjI4ODY4NiwtMTIuNzk0NzIgLTE5LC0xOC42MSBDIDQ1LjkwMzM1NSw5My4wNDE3MTMgNDEuMTg4OTU0LDg4Ljc5MjUwNyAzOC41MSw4MS44OCAzNC43MTI2ODEsNzEuNjkxNjEzIDM5LjY3NDMzNCw1OS4yNDE4MTQgNDMuMDksNTIuNTQgNDMuNjI4NTE0LDUxLjM4OTMyOCA1NC42OTAwNTYsMjguMzk3MjQ0IDc2LjU5LDMzLjE5IFoiIGlkPSJwYXRoMjItMiIgc3R5bGU9ImZpbGw6IzY5OThhYjtmaWxsLW9wYWNpdHk6MTtzdHJva2Utd2lkdGg6MS4wMDAwNjtzdHJva2UtZGFzaGFycmF5Om5vbmUiIHNvZGlwb2RpOm5vZGV0eXBlcz0iY2NjY2NjY2NjY2NjY2NjY2NjIi8+CiAgICA8L2c+CiAgPC9nPgo8L3N2Zz4K
