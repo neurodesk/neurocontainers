@@ -52,8 +52,11 @@ tests:
         grep -Fq "ConditionPathExists=/dev/dri/renderD128" /etc/systemd/system/neurodesktop-virgl.service
         grep -Fq -- "virgl_test_server --multi-clients" /etc/systemd/system/neurodesktop-virgl.service
         grep -Fq -- "--socket-path /tmp/.virgl_test" /etc/systemd/system/neurodesktop-virgl.service
-        test -L /etc/systemd/system/glass.target.wants/neurodesktop-virgl.service
-        grep -Fq "while [ ! -S /tmp/.virgl_test ]" /usr/local/sbin/neurodesktop-glass-session
+        test ! -e /etc/systemd/system/glass.target.wants/neurodesktop-virgl.service
+        test -x /usr/local/sbin/neurodesktop-start-virgl
+        test -x /usr/local/libexec/neurodesktop-container-runtime
+        test -L /usr/local/bin/apptainer
+        test -L /usr/local/bin/singularity
         ! command -v guacd
         ! command -v Xvnc
         ! command -v vncserver
@@ -103,41 +106,52 @@ tests:
       '
     expected_output_contains: "app-overlay-ready"
 
-  - name: Legacy VirGL clients reach the opt-in bridge
-    description: Verify old and current Mesa app containers share one vtest endpoint
+  - name: GPU acceleration is scoped by the image manifest
+    description: Verify the master switch and exact container allowlist control VirGL injection
     command: |
       bash -c '
         set -eo pipefail
         runtime="$(mktemp -d)"
-        server_pid=""
-        cleanup() {
-          if [ -n "$server_pid" ]; then kill "$server_pid" 2>/dev/null || true; fi
-          rm -rf "$runtime"
-        }
-        trap cleanup EXIT
-        private_socket="$runtime/private-vtest"
-        legacy_socket="$runtime/legacy-vtest"
-        python3 -c "import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(30)" "$private_socket" &
-        server_pid=$!
-        for _ in $(seq 1 100); do
-          [ -S "$private_socket" ] && break
-          sleep 0.01
-        done
-        export XDG_RUNTIME_DIR="$runtime"
-        export NEURODESKTOP_VTEST_PRIVATE_SOCKET="$private_socket"
-        export NEURODESKTOP_VTEST_SOCKET="$legacy_socket"
-        source /opt/neurodesktop/environment_variables.sh
-        test -S "$legacy_socket"
-        test "$APPTAINERENV_GALLIUM_DRIVER" = virpipe
-        test "$APPTAINERENV_VTEST_SOCKET_NAME" = "$legacy_socket"
-        test "$APPTAINERENV_MESA_GL_VERSION_OVERRIDE" = 4.1
-        test "$APPTAINERENV_MESA_GLSL_VERSION_OVERRIDE" = 410
-        test "$SINGULARITYENV_VTEST_SOCKET_NAME" = "$legacy_socket"
-        test "$SINGULARITYENV_MESA_GL_VERSION_OVERRIDE" = 4.1
-        test "$SINGULARITYENV_MESA_GLSL_VERSION_OVERRIDE" = 410
-        echo legacy-vtest-ready
+        trap '"'"'rm -rf "$runtime"'"'"' EXIT
+        manifest="$runtime/manifest.tsv"
+        printf "mrtrix3\t3.0.8\n" > "$manifest"
+        real_runtime="$runtime/real-runtime"
+        cat > "$real_runtime" <<'"'"'EOF'"'"'
+      #!/bin/sh
+      printf "driver=%s\n" "${APPTAINERENV_GALLIUM_DRIVER:-}"
+      printf "socket=%s\n" "${APPTAINERENV_VTEST_SOCKET_NAME:-}"
+      printf "gl=%s\n" "${APPTAINERENV_MESA_GL_VERSION_OVERRIDE:-}"
+      printf "glsl=%s\n" "${APPTAINERENV_MESA_GLSL_VERSION_OVERRIDE:-}"
+      EOF
+        chmod +x "$real_runtime"
+        starter="$runtime/start-virgl"
+        cat > "$starter" <<'"'"'EOF'"'"'
+      #!/bin/sh
+      python3 -c '"'"'import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.close()'"'"' "$NEURODESKTOP_VTEST_SOCKET"
+      EOF
+        chmod +x "$starter"
+        wrapper=/usr/local/bin/apptainer
+        common="NEURODESKTOP_APPTAINER_REAL=$real_runtime NEURODESKTOP_GPU_MANIFEST=$manifest NEURODESKTOP_VIRGL_STARTER=$starter NEURODESKTOP_VTEST_SOCKET=$runtime/vtest"
+
+        disabled="$(env $common "$wrapper" exec mrtrix3_3.0.8_20260107.simg true)"
+        ! printf "%s\n" "$disabled" | grep -q "driver=virpipe"
+        test ! -e "$runtime/vtest"
+
+        unlisted="$(env $common NEURODESKTOP_GPU_ACCELERATION=1 "$wrapper" exec blender_5.0.1_20260701.simg true)"
+        ! printf "%s\n" "$unlisted" | grep -q "driver=virpipe"
+        test ! -e "$runtime/vtest"
+
+        accelerated="$(env $common NEURODESKTOP_GPU_ACCELERATION=1 "$wrapper" exec mrtrix3_3.0.8_20260107.simg true)"
+        printf "%s\n" "$accelerated" | grep -Fq "driver=virpipe"
+        printf "%s\n" "$accelerated" | grep -Fq "socket=$runtime/vtest"
+        printf "%s\n" "$accelerated" | grep -Fq "gl=4.1"
+        printf "%s\n" "$accelerated" | grep -Fq "glsl=410"
+
+        mismatch="$(env $common NEURODESKTOP_GPU_ACCELERATION=1 "$wrapper" exec mrtrix3_3.0.80_20260107.simg true)"
+        ! printf "%s\n" "$mismatch" | grep -q "driver=virpipe"
+        echo gpu-manifest-ready
       '
-    expected_output_contains: "legacy-vtest-ready"
+    expected_output_contains: "gpu-manifest-ready"
 
   - name: MATLAB CPU information compatibility
     description: Verify ARM processor records gain the frequency field required by amd64 MATLAB Runtime

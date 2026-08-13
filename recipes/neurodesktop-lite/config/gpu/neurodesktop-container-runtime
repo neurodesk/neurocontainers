@@ -1,0 +1,92 @@
+#!/bin/sh
+set -eu
+
+runtime=$(basename "$0")
+case "$runtime" in
+    apptainer)
+        real_runtime=${NEURODESKTOP_APPTAINER_REAL:-/usr/bin/apptainer}
+        ;;
+    singularity)
+        real_runtime=${NEURODESKTOP_SINGULARITY_REAL:-/usr/bin/singularity}
+        ;;
+    *)
+        echo "neurodesktop: container runtime wrapper must be invoked as apptainer or singularity" >&2
+        exit 2
+        ;;
+esac
+
+gpu_enabled=false
+case "${NEURODESKTOP_GPU_ACCELERATION:-}" in
+    1|true|yes|on) gpu_enabled=true ;;
+esac
+if [ -e "${NEURODESKTOP_GPU_MARKER:-/run/neurodesktop/gpu-enabled}" ]; then
+    gpu_enabled=true
+fi
+
+container=
+for argument in "$@"; do
+    case "$argument" in
+        *.sif|*.simg)
+            container=$(basename "$argument")
+            break
+            ;;
+    esac
+done
+
+manifest=${NEURODESKTOP_GPU_MANIFEST:-/etc/neurodesktop/gpu-containers.tsv}
+allowlisted=false
+if [ "$gpu_enabled" = true ] && [ -n "$container" ] && [ -r "$manifest" ]; then
+    container_stem=${container%.sif}
+    container_stem=${container_stem%.simg}
+    while read -r name version remainder; do
+        case "$name" in ''|'#'*) continue ;; esac
+        [ -n "$version" ] || continue
+        case "$container_stem" in
+            "${name}_${version}"|"${name}_${version}_"*)
+                allowlisted=true
+                break
+                ;;
+        esac
+    done < "$manifest"
+fi
+
+# These variables must belong to this one launch. In particular, do not let a
+# previous shell or an older desktop-wide setup accelerate an unlisted image.
+unset APPTAINERENV_LIBGL_DRI3_DISABLE
+unset APPTAINERENV_LIBGL_ALWAYS_SOFTWARE
+unset APPTAINERENV_GALLIUM_DRIVER
+unset APPTAINERENV_VTEST_SOCKET_NAME
+unset APPTAINERENV_MESA_GL_VERSION_OVERRIDE
+unset APPTAINERENV_MESA_GLSL_VERSION_OVERRIDE
+unset SINGULARITYENV_LIBGL_DRI3_DISABLE
+unset SINGULARITYENV_LIBGL_ALWAYS_SOFTWARE
+unset SINGULARITYENV_GALLIUM_DRIVER
+unset SINGULARITYENV_VTEST_SOCKET_NAME
+unset SINGULARITYENV_MESA_GL_VERSION_OVERRIDE
+unset SINGULARITYENV_MESA_GLSL_VERSION_OVERRIDE
+
+if [ "$allowlisted" = true ]; then
+    socket=${NEURODESKTOP_VTEST_SOCKET:-/tmp/.virgl_test}
+    starter=${NEURODESKTOP_VIRGL_STARTER:-/usr/local/sbin/neurodesktop-start-virgl}
+    if [ ! -S "$socket" ]; then
+        "$starter" || true
+    fi
+    if [ -S "$socket" ]; then
+        export APPTAINERENV_LIBGL_DRI3_DISABLE=true
+        export APPTAINERENV_LIBGL_ALWAYS_SOFTWARE=true
+        export APPTAINERENV_GALLIUM_DRIVER=virpipe
+        export APPTAINERENV_VTEST_SOCKET_NAME="$socket"
+        export APPTAINERENV_MESA_GL_VERSION_OVERRIDE=4.1
+        export APPTAINERENV_MESA_GLSL_VERSION_OVERRIDE=410
+        export SINGULARITYENV_LIBGL_DRI3_DISABLE=true
+        export SINGULARITYENV_LIBGL_ALWAYS_SOFTWARE=true
+        export SINGULARITYENV_GALLIUM_DRIVER=virpipe
+        export SINGULARITYENV_VTEST_SOCKET_NAME="$socket"
+        export SINGULARITYENV_MESA_GL_VERSION_OVERRIDE=4.1
+        export SINGULARITYENV_MESA_GLSL_VERSION_OVERRIDE=410
+    else
+        echo "neurodesktop: VirGL is unavailable; launching $container without acceleration" >&2
+    fi
+fi
+
+exec "$real_runtime" "$@"

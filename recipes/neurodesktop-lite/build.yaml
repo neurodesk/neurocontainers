@@ -286,13 +286,18 @@ build:
         - sed -i 's/#user_allow_other/user_allow_other/g' /etc/fuse.conf
         - rm -f /usr/bin/lxpolkit
         - if [ -e /usr/bin/fusermount3 ]; then chmod +x /usr/bin/fusermount3; elif [ -e /usr/bin/fusermount ]; then chmod +x /usr/bin/fusermount; fi
-        - mkdir -p /usr/local/bin/start-notebook.d /usr/local/bin/before-notebook.d /opt/neurodesktop/scripts /opt/neurodesktop/webapp_wrapper
+        - mkdir -p /usr/local/bin/start-notebook.d /usr/local/bin/before-notebook.d /usr/local/libexec /opt/neurodesktop/scripts /opt/neurodesktop/webapp_wrapper
         - install -m 0755 /tmp/config/jupyter/start_notebook.sh /usr/local/bin/start-notebook.d/start_notebook.sh
         - install -m 0755 /tmp/config/jupyter/before_notebook.sh /usr/local/bin/before-notebook.d/before_notebook.sh
         - install -m 0755 /tmp/config/jupyter/jupyterlab_startup.sh /opt/neurodesktop/jupyterlab_startup.sh
         - install -m 0755 /tmp/config/jupyter/deferred_startup.sh /opt/neurodesktop/deferred_startup.sh
         - install -m 0755 /tmp/config/jupyter/nested_container_runtime.sh /opt/neurodesktop/nested_container_runtime.sh
         - install -m 0755 /tmp/config/jupyter/environment_variables.sh /opt/neurodesktop/environment_variables.sh
+        - install -D -m 0644 /tmp/config/gpu/gpu-containers.tsv /etc/neurodesktop/gpu-containers.tsv
+        - install -m 0755 /tmp/config/gpu/neurodesktop-container-runtime /usr/local/libexec/neurodesktop-container-runtime
+        - install -m 0755 /tmp/config/gpu/neurodesktop-start-virgl /usr/local/sbin/neurodesktop-start-virgl
+        - ln -sf /usr/local/libexec/neurodesktop-container-runtime /usr/local/bin/apptainer
+        - ln -sf /usr/local/libexec/neurodesktop-container-runtime /usr/local/bin/singularity
         - install -m 0755 /tmp/config/jupyter/cpuinfo_compat.sh /usr/local/sbin/neurodesktop-cpuinfo-compat
         - install -m 0755 /tmp/config/jupyter/kernel_wrapper.sh /opt/neurodesktop/kernel_wrapper.sh
         - install -m 0755 /tmp/config/jupyter/jupyterlmod_modulepath.py /opt/neurodesktop/jupyterlmod_modulepath.py
@@ -419,7 +424,6 @@ build:
         - if [ -x /usr/bin/systemctl.orig ]; then mv -f /usr/bin/systemctl.orig /usr/bin/systemctl; fi
         - mkdir -p /etc/systemd/system/glass.target.wants
         - ln -sf /etc/systemd/system/neurodesktop-glass.service /etc/systemd/system/glass.target.wants/neurodesktop-glass.service
-        - ln -sf /etc/systemd/system/neurodesktop-virgl.service /etc/systemd/system/glass.target.wants/neurodesktop-virgl.service
         - ln -sf /etc/systemd/system/glass.target /etc/systemd/system/default.target
         - sed -i 's#^CVMFS_CACHE_BASE=.*#CVMFS_CACHE_BASE=/home/jovyan/.cvmfs_cache#' /etc/cvmfs/default.local
         - printf '\nCVMFS_USER=jovyan\n' >> /etc/cvmfs/default.local
@@ -628,17 +632,6 @@ files:
       install -d -o 1000 -g 100 -m 0700 /run/user/1000
       install -d -m 0755 /run/dbus
       /usr/local/sbin/neurodesktop-glass-prepare
-      if [ -e /dev/dri/renderD128 ]; then
-          attempt=0
-          while [ ! -S /tmp/.virgl_test ]; do
-              attempt=$((attempt + 1))
-              if [ "$attempt" -ge 100 ]; then
-                  echo "neurodesktop-glass: VirGL bridge did not create /tmp/.virgl_test" >&2
-                  break
-              fi
-              sleep 0.05
-          done
-      fi
       if ! NEURODESKTOP_CPUINFO_OUTPUT=/run/neurodesktop/cpuinfo \
           /usr/local/sbin/neurodesktop-cpuinfo-compat; then
           echo "neurodesktop-glass: unable to install the MATLAB CPU-frequency workaround" >&2
@@ -719,7 +712,6 @@ files:
       Description=Neurodesktop VirGL bridge for nested app containers
       DefaultDependencies=no
       After=ccx3-stage2.service
-      Before=neurodesktop-glass.service
       ConditionPathExists=/dev/dri/renderD128
 
       [Service]
