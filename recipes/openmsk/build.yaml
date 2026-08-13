@@ -1,5 +1,5 @@
 name: openmsk
-version: 0.1.10
+version: 0.1.11
 architectures:
   - x86_64
 
@@ -17,6 +17,9 @@ variables:
   nnunet_fullres_model_config_url: "https://huggingface.co/aagatti/nnunet_knee/resolve/main/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/model_config.json"
   nnunet_fullres_plans_url: "https://huggingface.co/aagatti/nnunet_knee/resolve/main/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/plans.json"
   nnunet_fullres_checkpoint_best_url: "https://huggingface.co/aagatti/nnunet_knee/resolve/main/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/fold_1/checkpoint_best.pth"
+  pymskt_commit: "88b947e3075d270f345bf7f8b545ead7daefd125"
+  pymskt_right_knee_reference_url: "https://raw.githubusercontent.com/gattia/pymskt/{{ context.pymskt_commit }}/data/right_knee_example.nrrd"
+  pymskt_right_knee_reference_sha256: "90af3273cf9323f2e5212f917f60b60725dde90838569c3607990d16309fc2aa"
 
 files:
   - name: openmsk.py
@@ -51,6 +54,8 @@ files:
     url: "{{ context.nnunet_fullres_plans_url }}"
   - name: nnunet_fullres_checkpoint_best
     url: "{{ context.nnunet_fullres_checkpoint_best_url }}"
+  - name: pymskt_right_knee_reference
+    url: "{{ context.pymskt_right_knee_reference_url }}"
   - name: openmsk
     contents: |-
       #!/usr/bin/env bash
@@ -145,7 +150,9 @@ build:
         - pip install --no-cache-dir '.[ai]'
         # pymeshfix pinned to 0.16.2: pymskt's fix_mesh() calls
         # MeshFix.repair(verbose=...), a kwarg removed in pymeshfix >=0.17.
-        - pip install --no-cache-dir mskt nnunetv2==2.4.2 SimpleITK==2.3.1 pandas==2.0.3 Pillow==10.4.0 pymeshfix==0.16.2
+        - pip install --no-cache-dir mskt==0.1.20 nnunetv2==2.4.2 SimpleITK==2.3.1 pandas==2.0.3 Pillow==10.4.0 pymeshfix==0.16.2
+        - echo "{{ context.pymskt_right_knee_reference_sha256 }}  {{ get_file("pymskt_right_knee_reference") }}" | sha256sum -c -
+        - install -D -m 0644 {{ get_file("pymskt_right_knee_reference") }} "$(python -c 'from pathlib import Path; import pymskt; print(Path(pymskt.__file__).resolve().parent / "data" / "right_knee_example.nrrd")')"
         # KneePipeline's TF 2.11 / nnU-Net numpy compromise (resolved last).
         - pip install --no-cache-dir "numpy==1.24.3"
         - install -D -m 0644 {{ get_file("nnunet_numpy_compat.py") }} /opt/openmsk_compat/sitecustomize.py
@@ -211,12 +218,24 @@ readme: |-
 
   OpenMSK packages the KneePipeline knee MRI toolbox as a Siemens OpenRecon
   image-to-image module for qDESS knee MRI. The OpenRecon path receives MRD
-  images from the scanner, reconstructs an echo-1 NIfTI, runs KneePipeline, and
+  images from the scanner, reconstructs a both-echo RSS NIfTI, runs KneePipeline, and
   returns bone/cartilage/meniscus segmentation with geometry copied from the
   source images. The wrapper preserves both qDESS echo groups and synthesizes a
   minimal two-echo DICOM series with TR/TE/flip and GL/TG values so
   KneePipeline's qDESS loader can run its analytical T2 step from OpenRecon
-  MRD input. It mirrors KneePipeline's split steps: it runs mesh
+  MRD input. For `sequenceName`, `sequenceName_fid`, and `sequenceName_SE`,
+  segmentation uses the voxelwise root-sum-of-squares of `_fid` and `_SE`,
+  fitting uses the echoes separately, and the corrected second echo time is
+  computed as `TE2 = 2 * TR - TE1`. Equal-sized `set=0`
+  and `set=1` groups within one series are handled as an unnamed two-echo
+  fallback, with the detected grouping, routing, counts, and timing reported to
+  LogViewer. Source volumes returned by `sendoriginal` retain separate scanner
+  series and source names. The pyMSKT right-knee registration reference is
+  packaged at build time, so subregion and T2-statistics post-processing does
+  not require runtime GitHub access. If subregion generation still fails while
+  thickness is disabled, global cartilage-compartment T2 statistics are
+  computed from the remapped all-label segmentation. It mirrors
+  KneePipeline's split steps: it runs mesh
   generation/cartilage thickness when requested, runs qDESS T2 mapping when
   KneePipeline identifies qDESS input, and returns subregion segmentation,
   T2 maps, and a burned-in metrics report image series whenever those artifacts
@@ -258,3 +277,5 @@ copyright:
     url: https://github.com/gattia/DOSMA
   - license: NOASSERTION
     url: https://github.com/gattia/nsm
+  - license: NOASSERTION
+    url: https://github.com/gattia/pymskt

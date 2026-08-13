@@ -58,16 +58,37 @@ first. This is inherent to OpenRecon, not a defect in either output.
 OpenRecon receives MRD images, not the original DICOM. To preserve the qDESS
 T2 path, the wrapper keeps both echo groups and writes a minimal two-echo MR
 DICOM series with `EchoNumbers`, TR/TE/flip angle, and DOSMA's qDESS private
-GL/TG tags. TR/TE/flip are read from the MRD header or image metadata when
-available. GL/TG and any missing timing values can be supplied through the
-OpenRecon qDESS fallback fields.
+GL/TG tags. For a three-volume `sequenceName`, `sequenceName_fid`, and
+`sequenceName_SE` input, the unsuffixed volume is excluded, segmentation uses
+the voxelwise root-sum-of-squares of `_fid` and `_SE`, and fitting uses the two
+echoes separately. Because the scanner labels both echoes with TE1, the wrapper
+writes the second echo with
+`TE2 = 2 * TR - TE1`. TR/TE1/flip are read from the MRD header or image
+metadata when available. GL/TG and missing TR/TE1 values can be supplied
+through the OpenRecon qDESS fallback fields.
+
+Some scanner exports instead interleave the two echoes in one named series as
+equal-sized MRD `set=0` and `set=1` groups. OpenMSK keeps those sets together,
+segments their root-sum-of-squares, and uses both sets separately for fitting.
+LogViewer reports the detected series/set counts, grouping method, segmentation
+and fitting routing, received TE labels, and the corrected TE values.
 
 The fallback values are only as good as the protocol values entered on the
 scanner. Runtime logs report where every qDESS value came from.
 
+The `pymskt` right-knee reference used for cartilage subregion registration is
+packaged into the container at build time. Subregion and T2-statistics
+post-processing therefore does not require GitHub access at scanner runtime.
+If subregion generation nevertheless fails and thickness was not requested,
+OpenMSK computes global T2 statistics from the remapped femoral, medial tibial,
+lateral tibial, and patellar cartilage labels and does not report that recovery
+as a failed post-processing run.
+
 ## Parameters
 
-- `sendoriginal`: return original images before derived outputs.
+- `sendoriginal`: return original images before derived outputs. Distinct source
+  volumes are returned as separately labeled scanner series rather than being
+  combined into one series.
 - `segmodel`: KneePipeline model name (`acl_qdess_bone_july_2024` by default;
   `goyal_sagittal`, `goyal_coronal`, `goyal_axial`, and `nnunet_knee` are
   also packaged). The packaged `nnunet_knee` path runs nnU-Net with
@@ -76,12 +97,12 @@ scanner. Runtime logs report where every qDESS value came from.
   has been sent.
 - `runnsm`, `runbscore`: accepted for legacy scanner protocol compatibility
   only; ignored because the gated ShapeMedKnee assets are not packaged.
-- `qdesstrms`, `qdesste1ms`, `qdesste2ms`, `qdessflipangledeg`,
-  `qdessglarea`, `qdesstgus`: fallback TR, TE1, TE2, flip angle, GL area, and
-  TG values used to synthesize the qDESS DICOM input when MRD metadata is
-  incomplete. DOSMA's qDESS fit uses one sequence TE for the S1/S2 signal
-  ratio, so a single TE from the MRD sequence header is shared by both
-  synthesized volumes instead of inventing TE2 from the GUI.
+- `qdesstrms`, `qdesste1ms`, `qdessflipangledeg`, `qdessglarea`, `qdesstgus`:
+  fallback TR, TE1, flip angle, GL area, and TG values used to synthesize the
+  qDESS DICOM input when MRD metadata is incomplete. TE2 is always computed as
+  `2 * TR - TE1`.
+- `qdesste2ms`: accepted for scanner protocol compatibility but ignored because
+  TE2 is computed from TR and TE1.
 
 ## Build And Validate
 

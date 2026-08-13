@@ -2,7 +2,7 @@
 # Focused verification for OpenRecon runtime packaging and lightweight entrypoints.
 
 name: openmsk
-version: 0.1.10
+version: 0.1.11
 
 test_data:
   output_dir: test_output
@@ -64,6 +64,28 @@ tests:
           8: "tibia",
           9: "patella",
       }
+      PY
+
+  - name: offline pymskt reference image
+    description: Verify cartilage subregion generation can load its packaged reference without network access
+    script: |
+      python - <<'PY'
+      from pathlib import Path
+      import inspect
+
+      import pymskt
+      import SimpleITK as sitk
+      from pymskt.image.cartilage_processing import get_aligned_cartilage_subregions
+
+      reference = Path(pymskt.__file__).resolve().parent / "data" / "right_knee_example.nrrd"
+      assert reference.is_file(), reference
+      default_reference = inspect.signature(
+          get_aligned_cartilage_subregions
+      ).parameters["reference_image_input"].default
+      assert Path(default_reference).resolve() == reference.resolve()
+      image = sitk.ReadImage(str(reference))
+      assert image.GetSize() == (384, 384, 160)
+      print(reference)
       PY
 
   - name: Helper scripts render help
