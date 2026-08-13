@@ -1,5 +1,5 @@
 # workshopdemo container test suite
-# Tests for workshopdemo v1.0.0 - Minimal hello-world workshop example
+# Tests for workshopdemo v1.0.1 - Minimal hello-world workshop example
 #
 # This container includes:
 #   - hello: GNU hello example program
@@ -7,7 +7,7 @@
 # Tests focus on the packaged runtime and documented example command.
 
 name: workshopdemo
-version: 1.0.0
+version: 1.0.1
 
 setup:
   script: |

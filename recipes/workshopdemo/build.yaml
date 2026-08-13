@@ -1,5 +1,5 @@
 name: workshopdemo
-version: 1.0.0
+version: 1.0.1
 architectures:
   - x86_64
   - aarch64
@@ -19,6 +19,9 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    # Deliberately minimal: workshopdemo exists to exercise the build and
+    # release pipeline end to end, so it installs one tiny package and nothing
+    # else. Changes here should keep it that way.
     - install: hello
 categories:
   - functional imaging
@@ -28,7 +31,7 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAACXBI
 readme: >-
   ----------------------------------
 
-  ## workshopdemo/1.0.0 ##
+  ## workshopdemo/{{ context.version }} ##
 
 
   This tool was committed for the workshop.
@@ -56,7 +59,7 @@ readme: >-
   ```
 
 
-  To run container outside of this environment: ml workshopdemo/1.0.0
+  To run container outside of this environment: ml workshopdemo/{{ context.version }}
 
 
   ----------------------------------
