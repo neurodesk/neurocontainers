@@ -3,7 +3,7 @@
     "name": { "en": "openmsk" },
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
-    "information": { "en": "OpenMSK KneePipeline qDESS knee MRI analysis" },
+    "information": { "en": "OpenMSK KneePipeline DESS knee MRI analysis" },
     "id": "openmsk",
     "regulatory_information": {
       "device_trade_name": "openmsk",
@@ -38,16 +38,16 @@
   "parameters": [
     {
       "id": "config",
-      "label": { "en": "config" },
+      "label": { "en": "Analysis" },
       "type": "choice",
       "values": [
         {
           "id": "openmsk",
-          "name": { "en": "openmsk" }
+          "name": { "en": "DESS" }
         }
       ],
       "default": "openmsk",
-      "information": { "en": "Define the config to be executed by MRD server" }
+      "information": { "en": "Run OpenMSK DESS knee analysis" }
     },
     {
       "id": "sendoriginal",
@@ -63,7 +63,7 @@
       "values": [
         {
           "id": "acl_qdess_bone_july_2024",
-          "name": { "en": "DOSMA qDESS bone/cartilage July 2024" }
+          "name": { "en": "DOSMA DESS bone/cartilage July 2024" }
         },
         {
           "id": "goyal_sagittal",
@@ -91,79 +91,6 @@
       "type": "boolean",
       "information": { "en": "Run slower mesh/thickness analysis after sending the segmentation" },
       "default": false
-    },
-    {
-      "id": "runnsm",
-      "label": { "en": "Legacy NSM flag" },
-      "type": "boolean",
-      "information": { "en": "Accepted for older scanner protocols only; ignored because ShapeMedKnee assets are not packaged" },
-      "default": false
-    },
-    {
-      "id": "runbscore",
-      "label": { "en": "Legacy BScore flag" },
-      "type": "boolean",
-      "information": { "en": "Accepted for older scanner protocols only; ignored because ShapeMedKnee assets are not packaged" },
-      "default": false
-    },
-    {
-      "id": "qdesstrms",
-      "label": { "en": "qDESS TR" },
-      "type": "double",
-      "information": { "en": "Fallback repetition time for synthetic qDESS DICOM when MRD sequence parameters are absent" },
-      "minimum": 1.0,
-      "maximum": 200.0,
-      "default": 25.0,
-      "unit": { "en": "ms" }
-    },
-    {
-      "id": "qdesste1ms",
-      "label": { "en": "qDESS TE1" },
-      "type": "double",
-      "information": { "en": "Fallback echo-1 time for synthetic qDESS DICOM when MRD sequence parameters are absent" },
-      "minimum": 0.1,
-      "maximum": 200.0,
-      "default": 8.0,
-      "unit": { "en": "ms" }
-    },
-    {
-      "id": "qdesste2ms",
-      "label": { "en": "Legacy qDESS TE2" },
-      "type": "double",
-      "information": { "en": "Accepted for protocol compatibility but ignored; TE2 is computed as 2 * TR - TE1" },
-      "minimum": 0.1,
-      "maximum": 300.0,
-      "default": 42.0,
-      "unit": { "en": "ms" }
-    },
-    {
-      "id": "qdessflipangledeg",
-      "label": { "en": "qDESS flip angle" },
-      "type": "double",
-      "information": { "en": "Fallback flip angle for synthetic qDESS DICOM when MRD sequence parameters are absent" },
-      "minimum": 1.0,
-      "maximum": 180.0,
-      "default": 30.0,
-      "unit": { "en": "deg" }
-    },
-    {
-      "id": "qdessglarea",
-      "label": { "en": "qDESS GL area" },
-      "type": "double",
-      "information": { "en": "Fallback qDESS spoiler gradient area written to DICOM private tag (0019,10B6)" },
-      "minimum": 0.0,
-      "maximum": 100000.0,
-      "default": 3132.0
-    },
-    {
-      "id": "qdesstgus",
-      "label": { "en": "qDESS TG" },
-      "type": "double",
-      "information": { "en": "Fallback qDESS spoiler duration written to DICOM private tag (0019,10B7)" },
-      "minimum": 0.0,
-      "maximum": 100000.0,
-      "default": 1560.0,
-      "unit": { "en": "us" }
     }
   ]
 }

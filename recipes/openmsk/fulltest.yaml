@@ -35,7 +35,9 @@ tests:
       readme = Path("/opt/code/python-ismrmrd-server/OpenReconREADME.md")
       data = json.loads(label.read_text())
       parameters = {parameter["id"] for parameter in data["parameters"]}
-      assert {"sendoriginal", "segmodel", "computethickness"} <= parameters
+      assert parameters == {"config", "sendoriginal", "segmodel", "computethickness"}
+      assert data["parameters"][0]["values"][0]["name"]["en"] == "DESS"
+      assert "qDESS" not in label.read_text()
       assert "OpenMSK" in readme.read_text()
       print(label)
       PY

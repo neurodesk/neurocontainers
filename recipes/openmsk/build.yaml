@@ -226,27 +226,30 @@ readme: |-
   ## openmsk/{{ context.version }} ##
 
   OpenMSK packages the KneePipeline knee MRI toolbox as a Siemens OpenRecon
-  image-to-image module for qDESS knee MRI. The OpenRecon path receives MRD
+  image-to-image module for DESS knee MRI. The OpenRecon path receives MRD
   images from the scanner, reconstructs a both-echo RSS NIfTI, runs KneePipeline, and
   returns bone/cartilage/meniscus segmentation with geometry copied from the
-  source images. The wrapper preserves both qDESS echo groups and synthesizes a
+  source images. The wrapper preserves both DESS echo groups and synthesizes a
   minimal two-echo DICOM series with TR/TE/flip and GL/TG values so
-  KneePipeline's qDESS loader can run its analytical T2 step from OpenRecon
+  KneePipeline's DESS loader can run its analytical T2 step from OpenRecon
   MRD input. For `sequenceName`, `sequenceName_fid`, and `sequenceName_SE`,
   segmentation uses the voxelwise root-sum-of-squares of `_fid` and `_SE`,
   fitting uses the echoes separately, and the corrected second echo time is
   computed as `TE2 = 2 * TR - TE1`. Equal-sized `set=0`
   and `set=1` groups within one series are handled as an unnamed two-echo
   fallback, with the detected grouping, routing, counts, and timing reported to
-  LogViewer. Source volumes returned by `sendoriginal` retain separate scanner
-  series and source names. The pyMSKT right-knee registration reference is
+  LogViewer. TR, TE1, and flip angle come from MRD sequence parameters when
+  available, TE2 is computed, and GL/TG use built-in defaults when absent from
+  metadata and legacy saved-protocol settings. Source volumes returned by
+  `sendoriginal` retain separate scanner series and source names. The pyMSKT
+  right-knee registration reference is
   packaged at build time, so subregion and T2-statistics post-processing does
   not require runtime GitHub access. If subregion generation still fails while
   thickness is disabled, global cartilage-compartment T2 statistics are
   computed from the remapped all-label segmentation. It mirrors
   KneePipeline's split steps: it runs mesh
-  generation/cartilage thickness when requested, runs qDESS T2 mapping when
-  KneePipeline identifies qDESS input, and returns subregion segmentation,
+  generation/cartilage thickness when requested, runs DESS T2 mapping when
+  KneePipeline identifies DESS input, and returns subregion segmentation,
   T2 maps, and a burned-in metrics report image series whenever those artifacts
   are written. The same metrics are copied into output metadata comments.
   The packaged segmentation models are
@@ -264,14 +267,15 @@ readme: |-
   labels 11 through 15 retain their upstream values.
   Legacy `runnsm` and `runbscore` protocol parameters are accepted for scanner
   conversion compatibility but ignored because gated ShapeMedKnee assets are not
-  packaged.
+  packaged. Legacy DESS acquisition fallback parameters are also accepted but
+  hidden from the OpenRecon GUI.
 
-  Direct DICOM usage keeps the qDESS GL/TG private tags and can produce the
+  Direct DICOM usage keeps the DESS GL/TG private tags and can produce the
   full output set including T2:
 
   ```bash
   ml openmsk/{{ context.version }}
-  python /opt/KneePipeline/run_pipeline.py /path/to/qDESS/dicom_dir /path/to/out --config /opt/KneePipeline/config.json
+  python /opt/KneePipeline/run_pipeline.py /path/to/DESS/dicom_dir /path/to/out --config /opt/KneePipeline/config.json
   ```
 
   ----------------------------------

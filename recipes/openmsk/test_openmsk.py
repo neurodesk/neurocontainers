@@ -659,6 +659,9 @@ def test_process_routes_named_fid_and_se_to_rss_and_logs_detection(monkeypatch):
         and "TR=25.0 ms" in message
         and "TE1(FID)=5.05 ms" in message
         and "TE2(SE)=44.95 ms (computed as 2 * TR - TE1)" in message
+        and "flip=30.0 deg (mrd.sequenceParameters.flipAngle_deg)" in message
+        and "GL area=3132.0 (default.qdess_gl_area)" in message
+        and "TG=1560.0 us (default.qdess_tg_us)" in message
         for message in messages
     )
     assert connection.closed
@@ -958,10 +961,18 @@ def test_write_run_config_preserves_requested_segmentation_model(tmp_path, monke
     assert run_config["default_seg_model"] == "goyal_sagittal"
 
 
-def test_openrecon_label_keeps_packaged_model_choices():
+def test_openrecon_label_has_minimal_dess_controls_and_packaged_model_choices():
     label = json.loads(Path("OpenReconLabel.json").read_text())
     params = {param["id"]: param for param in label["parameters"]}
 
+    assert set(params) == {
+        "config",
+        "sendoriginal",
+        "segmodel",
+        "computethickness",
+    }
+    assert params["config"]["label"]["en"] == "Analysis"
+    assert params["config"]["values"][0]["name"]["en"] == "DESS"
     assert params["sendoriginal"]["default"] is True
     assert [value["id"] for value in params["segmodel"]["values"]] == [
         "acl_qdess_bone_july_2024",
@@ -970,21 +981,15 @@ def test_openrecon_label_keeps_packaged_model_choices():
         "goyal_axial",
         "nnunet_knee",
     ]
-    model_names = {value["id"]: value["name"]["en"] for value in params["segmodel"]["values"]}
-    assert model_names["acl_qdess_bone_july_2024"] == "DOSMA qDESS bone/cartilage July 2024"
-    assert params["runnsm"]["type"] == "boolean"
-    assert params["runnsm"]["default"] is False
-    assert params["runbscore"]["type"] == "boolean"
-    assert params["runbscore"]["default"] is False
-    for key in (
-        "qdesstrms",
-        "qdesste1ms",
-        "qdesste2ms",
-        "qdessflipangledeg",
-        "qdessglarea",
-        "qdesstgus",
-    ):
-        assert params[key]["type"] == "double"
+    model_names = {
+        value["id"]: value["name"]["en"]
+        for value in params["segmodel"]["values"]
+    }
+    assert (
+        model_names["acl_qdess_bone_july_2024"]
+        == "DOSMA DESS bone/cartilage July 2024"
+    )
+    assert "qDESS" not in json.dumps(label)
 
 
 def test_kneepipeline_subprocess_env_prepends_numpy_compat_path(monkeypatch):
@@ -1229,7 +1234,7 @@ def test_write_source_nifti_uses_geometry_aligned_rss_of_both_echoes(tmp_path):
     assert [int(image.slice) for image in ordered_sources] == [0, 1]
     np.testing.assert_allclose(rss_data[:, :, 0], 5.0)
     np.testing.assert_allclose(rss_data[:, :, 1], 13.0)
-    assert "RSS of both qDESS echoes" in rss.header["descrip"].tobytes().decode(
+    assert "RSS of both DESS echoes" in rss.header["descrip"].tobytes().decode(
         errors="ignore"
     )
 

@@ -1,4 +1,4 @@
-"""OpenRecon module for OpenMSK/KneePipeline qDESS knee MRI analysis."""
+"""OpenRecon module for OpenMSK/KneePipeline DESS knee MRI analysis."""
 
 from __future__ import annotations
 
@@ -195,7 +195,7 @@ def process(connection, config, metadata):
         source_selection = _select_primary_source(magnitude_images)
         source_group = source_selection.get("primary") if source_selection else []
         if not source_group:
-            logging.warning("No processable qDESS source group selected")
+            logging.warning("No processable DESS source group selected")
             return
         _log_qdess_input_detection(connection, magnitude_images, source_selection)
 
@@ -306,7 +306,7 @@ def process(connection, config, metadata):
             elif _segmentation_skips_step(segmentation_result, "t2_mapping"):
                 logging.info(
                     "Skipping OpenMSK T2 mapping because KneePipeline identified "
-                    "the OpenRecon input as non-qDESS"
+                    "the OpenRecon input as non-DESS"
                 )
             else:
                 logging.info("Skipping OpenMSK mesh/thickness post-processing")
@@ -409,7 +409,7 @@ def process(connection, config, metadata):
                 sent_images.extend(t2_images)
             else:
                 logging.info(
-                    "No T2 map was written; check the qDESS echo grouping, synthesized "
+                    "No T2 map was written; check the DESS echo grouping, synthesized "
                     "DICOM parameter logs, and KneePipeline t2_mapping status."
                 )
 
@@ -703,7 +703,7 @@ def _log_qdess_input_detection(connection, images, source_selection):
     )
     _send_logviewer_info(
         connection,
-        "OpenMSK qDESS routing: "
+        "OpenMSK DESS routing: "
         f"grouping={grouping_method}; "
         f"segmentation=RSS({rss_echoes}); "
         f"fitting echoes=[{fitting_echoes}]",
@@ -723,11 +723,16 @@ def _log_qdess_timing(connection, qdess_params, source_selection):
     te_sources = sources.get("te_ms", ["", ""])
     te_values = qdess_params.get("te_ms", [None, None])
     message = (
-        "OpenMSK qDESS fitting times: "
+        "OpenMSK DESS fitting parameters: "
         f"received TE labels={qdess_params.get('received_te_ms', [])} ms; "
         f"TR={qdess_params.get('tr_ms')} ms ({sources.get('tr_ms', '')}); "
         f"TE1({first_echo_label})={te_values[0]} ms ({te_sources[0]}); "
-        f"TE2({second_echo_label})={te_values[1]} ms ({te_sources[1]})"
+        f"TE2({second_echo_label})={te_values[1]} ms ({te_sources[1]}); "
+        f"flip={qdess_params.get('flip_angle_deg')} deg "
+        f"({sources.get('flip_angle_deg', '')}); "
+        f"GL area={qdess_params.get('gl_area')} "
+        f"({sources.get('gl_area', '')}); "
+        f"TG={qdess_params.get('tg_us')} us ({sources.get('tg_us', '')})"
     )
     _send_logviewer_info(connection, message)
 
@@ -931,7 +936,7 @@ def _write_source_nifti(echo_groups_or_images, output_path, metadata):
         echo_images = [echo_images[index] for index in echo_sort_indices]
         if len(echo_images) != len(ordered_images):
             raise ValueError(
-                "Cannot compute qDESS RSS from unequal echo groups: "
+                "Cannot compute DESS RSS from unequal echo groups: "
                 f"{echo_keys[0]}={len(ordered_images)} {echo_key}={len(echo_images)}"
             )
         for slice_index, (reference_image, echo_image) in enumerate(
@@ -952,7 +957,7 @@ def _write_source_nifti(echo_groups_or_images, output_path, metadata):
             np.float32,
             copy=False,
         )
-        description = "OpenMSK RSS of both qDESS echoes"
+        description = "OpenMSK RSS of both DESS echoes"
         logging.info(
             "Computed OpenMSK segmentation RSS from echo groups %s and %s "
             "with %d slice(s); intensity range=[%s, %s]",
@@ -1031,7 +1036,7 @@ def _validate_rss_slice_geometry(reference_header, echo_header, echo_key, slice_
     )
     if not geometry_matches:
         raise ValueError(
-            "Cannot compute qDESS RSS from geometrically mismatched echoes: "
+            "Cannot compute DESS RSS from geometrically mismatched echoes: "
             f"echo={echo_key} sorted_slice={slice_index}"
         )
 
@@ -1107,7 +1112,7 @@ def _resolve_qdess_parameters(config, metadata, echo_groups):
     params["tg_us"] = tg_us
     params["sources"]["tg_us"] = source
 
-    logging.info("Resolved qDESS synthesis parameters: %s", params)
+    logging.info("Resolved DESS synthesis parameters: %s", params)
     return params
 
 
@@ -1233,21 +1238,21 @@ def _metadata_protocol_name(metadata):
 def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config, qdess_params):
     ordered_groups = _ordered_echo_groups(echo_groups)
     if len(ordered_groups) < 2:
-        logging.info("Cannot synthesize qDESS DICOM: only %d echo group(s) available", len(ordered_groups))
+        logging.info("Cannot synthesize DESS DICOM: only %d echo group(s) available", len(ordered_groups))
         return None
 
     echo_pairs = ordered_groups[:2]
     slice_count = len(echo_pairs[0][1])
     if slice_count == 0 or any(len(images) != slice_count for _key, images in echo_pairs):
         logging.warning(
-            "Cannot synthesize qDESS DICOM: echo group slice counts differ: %s",
+            "Cannot synthesize DESS DICOM: echo group slice counts differ: %s",
             [len(images) for _key, images in echo_pairs],
         )
         return None
 
     missing = [key for key in ("tr_ms", "te_ms", "flip_angle_deg", "gl_area", "tg_us") if qdess_params.get(key) is None]
     if missing:
-        logging.warning("Cannot synthesize qDESS DICOM: missing qDESS parameter(s) %s", missing)
+        logging.warning("Cannot synthesize DESS DICOM: missing DESS parameter(s) %s", missing)
         return None
 
     try:
@@ -1255,7 +1260,7 @@ def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config
         from pydicom.dataset import FileDataset, FileMetaDataset
         from pydicom.uid import ExplicitVRLittleEndian, MRImageStorage, generate_uid
     except Exception:
-        logging.warning("Cannot synthesize qDESS DICOM because pydicom import failed:\n%s", traceback.format_exc())
+        logging.warning("Cannot synthesize DESS DICOM because pydicom import failed:\n%s", traceback.format_exc())
         return None
 
     output_dir = Path(output_dir)
@@ -1273,7 +1278,7 @@ def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config
     pixel_scale = _dicom_pixel_scale(all_pixels)
 
     logging.info(
-        "Synthesizing qDESS DICOM series: out=%s slices=%d echo_keys=%s TR=%sms TE=%s flip=%sdeg "
+        "Synthesizing DESS DICOM series: out=%s slices=%d echo_keys=%s TR=%sms TE=%s flip=%sdeg "
         "GL_AREA=%s TG=%sus sources=%s",
         output_dir,
         slice_count,
@@ -1358,7 +1363,7 @@ def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config
                 ds.save_as(str(path), write_like_original=False)
             written.append(path)
 
-    logging.info("Wrote %d synthetic qDESS DICOM file(s) to %s", len(written), output_dir)
+    logging.info("Wrote %d synthetic DESS DICOM file(s) to %s", len(written), output_dir)
     return output_dir
 
 
@@ -1372,7 +1377,7 @@ def _stage_qdess_fit_input(qdess_dicom_dir, working_dir):
         shutil.copytree(source, target)
         method = "copied"
     logging.info(
-        "Staged both qDESS echoes for fitting: %s %s -> %s",
+        "Staged both DESS echoes for fitting: %s %s -> %s",
         method,
         source,
         target,
@@ -1753,7 +1758,7 @@ if compute_t2 and "label_remap" not in summary["errors"]:
         ] if fit_dicom_dir.is_dir() else []
         if not dicom_files:
             raise FileNotFoundError(
-                f"No synthetic qDESS DICOM files found in {fit_dicom_dir}"
+                f"No synthetic DESS DICOM files found in {fit_dicom_dir}"
             )
 
         from steps import t2_mapping as t2_mapping_step
@@ -1768,7 +1773,7 @@ if compute_t2 and "label_remap" not in summary["errors"]:
 elif not compute_t2:
     summary["t2_mapping"] = {
         "skipped": True,
-        "reason": "KneePipeline segmentation did not identify the input as qDESS",
+        "reason": "KneePipeline segmentation did not identify the input as DESS",
     }
 else:
     summary["t2_mapping"] = {
