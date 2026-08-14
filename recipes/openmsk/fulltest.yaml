@@ -75,6 +75,7 @@ tests:
       from importlib.metadata import PackageNotFoundError, version
       from pathlib import Path
       import subprocess
+      import sys
 
       import torch
       import torchvision
@@ -115,11 +116,10 @@ tests:
       scores = torch.tensor([0.9, 0.8])
       assert nms(boxes, scores, 0.5).tolist() == [0, 1]
 
+      sys.path.insert(0, "/opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference")
       from scripts.inference import KneeSegmentationInference
       print(KneeSegmentationInference.__name__)
       PY
-    environment:
-      PYTHONPATH: /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference
 
   - name: offline pymskt reference image
     description: Verify the minimal pyMSKT install performs offline subregion generation

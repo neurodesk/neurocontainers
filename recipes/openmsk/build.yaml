@@ -161,7 +161,9 @@ build:
         # duplicate CUDA wheels from torch's package metadata.
         - pip install --no-cache-dir --no-deps acvl-utils==0.2.6 dynamic-network-architectures==0.3.1 nnunetv2==2.4.2 mskt==0.1.20
         - echo "{{ context.pymskt_right_knee_reference_sha256 }}  {{ get_file("pymskt_right_knee_reference") }}" | sha256sum -c -
-        - install -D -m 0644 {{ get_file("pymskt_right_knee_reference") }} "$(python -c 'from pathlib import Path; import pymskt; print(Path(pymskt.__file__).resolve().parent / "data" / "right_knee_example.nrrd")')"
+        # Locate pyMSKT without importing it: its optional-dependency warning is
+        # printed to stdout and would corrupt a command-substitution path.
+        - pymskt_reference_path="$(python -c 'from importlib.util import find_spec; from pathlib import Path; print(Path(next(iter(find_spec("pymskt").submodule_search_locations))) / "data" / "right_knee_example.nrrd")')" && install -D -m 0644 {{ get_file("pymskt_right_knee_reference") }} "${pymskt_reference_path}" && echo "{{ context.pymskt_right_knee_reference_sha256 }}  ${pymskt_reference_path}" | sha256sum -c -
         # KneePipeline's TF 2.11 / nnU-Net numpy compromise (resolved last).
         - pip install --no-cache-dir "numpy==1.24.3"
         - install -D -m 0644 {{ get_file("nnunet_numpy_compat.py") }} /opt/openmsk_compat/sitecustomize.py

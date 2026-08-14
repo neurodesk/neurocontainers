@@ -320,6 +320,14 @@ def test_recipe_uses_system_cuda_and_minimal_pymskt_dependencies():
         and "right_knee_example.nrrd" in command
         for command in run_commands
     )
+    reference_install = next(
+        command
+        for command in run_commands
+        if "pymskt_reference_path=" in command
+    )
+    assert 'find_spec("pymskt")' in reference_install
+    assert "import pymskt" not in reference_install
+    assert "sha256sum -c -" in reference_install
     torch_install = next(
         command for command in run_commands if "torch==2.2.2+cu118" in command
     )
