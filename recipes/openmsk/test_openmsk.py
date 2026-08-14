@@ -301,7 +301,7 @@ def test_original_passthrough_splits_three_source_volumes_into_labeled_subseries
     ]
 
 
-def test_recipe_packages_pymskt_reference_image_for_offline_runtime():
+def test_recipe_uses_system_cuda_and_minimal_pymskt_dependencies():
     recipe = yaml.safe_load(Path("build.yaml").read_text())
     files = {entry["name"]: entry for entry in recipe["files"]}
     reference = files["pymskt_right_knee_reference"]
@@ -320,7 +320,56 @@ def test_recipe_packages_pymskt_reference_image_for_offline_runtime():
         and "right_knee_example.nrrd" in command
         for command in run_commands
     )
-    assert any("mskt==0.1.20" in command for command in run_commands)
+    reference_install = next(
+        command
+        for command in run_commands
+        if "pymskt_reference_path=" in command
+    )
+    assert 'find_spec("pymskt")' in reference_install
+    assert "import pymskt" not in reference_install
+    assert "sha256sum -c -" in reference_install
+    torch_install = next(
+        command for command in run_commands if "torch==2.2.2+cu118" in command
+    )
+    assert "--no-deps" in torch_install
+    assert "nvidia-nccl-cu11==2.19.3" in "\n".join(run_commands)
+    assert not any("import torch, torchvision" in command for command in run_commands)
+
+    nsm_requirement_filter = next(
+        command
+        for command in run_commands
+        if "requirements.txt" in command and "sed -i" in command
+    )
+    assert "mskt" in nsm_requirement_filter
+
+    mskt_install = next(
+        command for command in run_commands if "mskt==0.1.20" in command
+    )
+    assert "--no-deps" in mskt_install
+    assert "nnunetv2==2.4.2" in mskt_install
+    assert "acvl-utils==0.2.6" in mskt_install
+    assert "dynamic-network-architectures==0.3.1" in mskt_install
+    dependency_commands = "\n".join(run_commands)
+    for dependency in (
+        "point-cloud-utils==0.34.0",
+        "pyacvd==0.4.0",
+        "pyvista==0.48.4",
+        "vtk==9.6.2",
+        "param==2.4.1",
+        "cycpd==0.28",
+        "batchgenerators==0.25.3",
+        "connected-components-3d==4.0.0",
+    ):
+        assert dependency in dependency_commands
+    for omitted_dependency in (
+        "itkwidgets",
+        "itk-core",
+        "jupyter",
+        "notebook",
+        "traittypes",
+        "pyfocusr",
+    ):
+        assert omitted_dependency not in dependency_commands
 
 
 class FakeConnection:
@@ -618,6 +667,9 @@ def test_process_routes_named_fid_and_se_to_rss_and_logs_detection(monkeypatch):
         and "TR=25.0 ms" in message
         and "TE1(FID)=5.05 ms" in message
         and "TE2(SE)=44.95 ms (computed as 2 * TR - TE1)" in message
+        and "flip=30.0 deg (mrd.sequenceParameters.flipAngle_deg)" in message
+        and "GL area=3132.0 (default.qdess_gl_area)" in message
+        and "TG=1560.0 us (default.qdess_tg_us)" in message
         for message in messages
     )
     assert connection.closed
@@ -917,10 +969,18 @@ def test_write_run_config_preserves_requested_segmentation_model(tmp_path, monke
     assert run_config["default_seg_model"] == "goyal_sagittal"
 
 
-def test_openrecon_label_keeps_packaged_model_choices():
+def test_openrecon_label_has_minimal_dess_controls_and_packaged_model_choices():
     label = json.loads(Path("OpenReconLabel.json").read_text())
     params = {param["id"]: param for param in label["parameters"]}
 
+    assert set(params) == {
+        "config",
+        "sendoriginal",
+        "segmodel",
+        "computethickness",
+    }
+    assert params["config"]["label"]["en"] == "Analysis"
+    assert params["config"]["values"][0]["name"]["en"] == "DESS"
     assert params["sendoriginal"]["default"] is True
     assert [value["id"] for value in params["segmodel"]["values"]] == [
         "acl_qdess_bone_july_2024",
@@ -929,21 +989,15 @@ def test_openrecon_label_keeps_packaged_model_choices():
         "goyal_axial",
         "nnunet_knee",
     ]
-    model_names = {value["id"]: value["name"]["en"] for value in params["segmodel"]["values"]}
-    assert model_names["acl_qdess_bone_july_2024"] == "DOSMA qDESS bone/cartilage July 2024"
-    assert params["runnsm"]["type"] == "boolean"
-    assert params["runnsm"]["default"] is False
-    assert params["runbscore"]["type"] == "boolean"
-    assert params["runbscore"]["default"] is False
-    for key in (
-        "qdesstrms",
-        "qdesste1ms",
-        "qdesste2ms",
-        "qdessflipangledeg",
-        "qdessglarea",
-        "qdesstgus",
-    ):
-        assert params[key]["type"] == "double"
+    model_names = {
+        value["id"]: value["name"]["en"]
+        for value in params["segmodel"]["values"]
+    }
+    assert (
+        model_names["acl_qdess_bone_july_2024"]
+        == "DOSMA DESS bone/cartilage July 2024"
+    )
+    assert "qDESS" not in json.dumps(label)
 
 
 def test_kneepipeline_subprocess_env_prepends_numpy_compat_path(monkeypatch):
@@ -1188,7 +1242,7 @@ def test_write_source_nifti_uses_geometry_aligned_rss_of_both_echoes(tmp_path):
     assert [int(image.slice) for image in ordered_sources] == [0, 1]
     np.testing.assert_allclose(rss_data[:, :, 0], 5.0)
     np.testing.assert_allclose(rss_data[:, :, 1], 13.0)
-    assert "RSS of both qDESS echoes" in rss.header["descrip"].tobytes().decode(
+    assert "RSS of both DESS echoes" in rss.header["descrip"].tobytes().decode(
         errors="ignore"
     )
 
@@ -1359,7 +1413,10 @@ def test_nifti_to_mrd_returns_upstream_labels_for_canonical_subregions(tmp_path)
     np.testing.assert_array_equal(np.squeeze(outputs[0].data), expected_xyz[:, :, 0].T)
 
 
-def test_metrics_report_images_include_metrics_metadata(tmp_path):
+def test_metrics_report_images_match_musclemap_explicit_volume_contract(
+    tmp_path,
+    monkeypatch,
+):
     source = make_source_image_with_minihead()
     metrics_json = tmp_path / "openmsk_echo1_thickness_results.json"
     metrics_json.write_text(json.dumps({"fem_cart_mm_mean": 1.2345}))
@@ -1372,6 +1429,15 @@ def test_metrics_report_images_include_metrics_metadata(tmp_path):
             "rows": [],
         }
     ]
+    report_pages = [
+        np.arange(20, dtype=np.uint16).reshape(4, 5),
+        np.arange(20, 40, dtype=np.uint16).reshape(4, 5),
+    ]
+    monkeypatch.setattr(
+        openmsk,
+        "_render_metrics_report_pages",
+        lambda *_args, **_kwargs: report_pages,
+    )
 
     images = openmsk._build_metrics_report_images(
         metrics_outputs,
@@ -1385,12 +1451,51 @@ def test_metrics_report_images_include_metrics_metadata(tmp_path):
     meta = ismrmrd.Meta.deserialize(image.attribute_string)
 
     assert int(header.image_series_index) == openmsk.METRICS_REPORT_SERIES_INDEX
+    assert int(header.image_index) == 1
+    assert int(header.slice) == 0
+    assert list(header.matrix_size) == [5, 4, 2]
+    assert list(header.field_of_view) == [5.0, 4.0, 2.0]
+    assert list(header.position) == [0.0, 0.0, 0.0]
+    assert list(header.read_dir) == [1.0, 0.0, 0.0]
+    assert list(header.phase_dir) == [0.0, 1.0, 0.0]
+    assert list(header.slice_dir) == [0.0, 0.0, 1.0]
     assert first(meta, "SeriesDescription") == openmsk.METRICS_REPORT_SERIES_NAME
-    assert first(meta, "DataRole") == "Image"
+    assert first(meta, "DataRole") == "Segmentation"
     assert first(meta, "Keep_image_geometry") == "0"
     assert first(meta, "OpenMSKMetricsRows") == "1"
+    assert first(meta, "slice_count") == "2"
+    assert first(meta, "NumberOfSlices") == "2"
+    assert first(meta, "ImagesInAcquisition") == "2"
+    assert meta["ImageRowDir"] == [
+        "1.000000000000000000",
+        "0.000000000000000000",
+        "0.000000000000000000",
+    ]
+    assert meta["ImageColumnDir"] == [
+        "0.000000000000000000",
+        "1.000000000000000000",
+        "0.000000000000000000",
+    ]
+    assert meta["ImageSliceNormDir"] == [
+        "0.000000000000000000",
+        "0.000000000000000000",
+        "1.000000000000000000",
+    ]
+    assert meta["SlicePosLightMarker"] == [
+        "0.000000000000000000",
+        "0.000000000000000000",
+        "0.000000000000000000",
+    ]
+    assert "IceMiniHead" not in meta
     assert "fem_cart_mm_mean" in first(meta, "ImageComments")
-    assert np.asarray(image.data).max() > 0
+    np.testing.assert_array_equal(np.asarray(image.data)[0], np.stack(report_pages))
+
+    orientation_probe = np.zeros((4, 5), dtype=np.uint16)
+    orientation_probe[0, 0] = 1
+    orientation_probe[1, 4] = 2
+    oriented_probe = openmsk._orient_metrics_report_page(orientation_probe)
+    assert oriented_probe[-1, -1] == 1
+    assert oriented_probe[-2, 0] == 2
 
 
 def test_collect_metrics_outputs_reads_csv_when_json_absent(tmp_path):

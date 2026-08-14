@@ -1,4 +1,4 @@
-"""OpenRecon module for OpenMSK/KneePipeline qDESS knee MRI analysis."""
+"""OpenRecon module for OpenMSK/KneePipeline DESS knee MRI analysis."""
 
 from __future__ import annotations
 
@@ -195,7 +195,7 @@ def process(connection, config, metadata):
         source_selection = _select_primary_source(magnitude_images)
         source_group = source_selection.get("primary") if source_selection else []
         if not source_group:
-            logging.warning("No processable qDESS source group selected")
+            logging.warning("No processable DESS source group selected")
             return
         _log_qdess_input_detection(connection, magnitude_images, source_selection)
 
@@ -306,7 +306,7 @@ def process(connection, config, metadata):
             elif _segmentation_skips_step(segmentation_result, "t2_mapping"):
                 logging.info(
                     "Skipping OpenMSK T2 mapping because KneePipeline identified "
-                    "the OpenRecon input as non-qDESS"
+                    "the OpenRecon input as non-DESS"
                 )
             else:
                 logging.info("Skipping OpenMSK mesh/thickness post-processing")
@@ -409,7 +409,7 @@ def process(connection, config, metadata):
                 sent_images.extend(t2_images)
             else:
                 logging.info(
-                    "No T2 map was written; check the qDESS echo grouping, synthesized "
+                    "No T2 map was written; check the DESS echo grouping, synthesized "
                     "DICOM parameter logs, and KneePipeline t2_mapping status."
                 )
 
@@ -703,7 +703,7 @@ def _log_qdess_input_detection(connection, images, source_selection):
     )
     _send_logviewer_info(
         connection,
-        "OpenMSK qDESS routing: "
+        "OpenMSK DESS routing: "
         f"grouping={grouping_method}; "
         f"segmentation=RSS({rss_echoes}); "
         f"fitting echoes=[{fitting_echoes}]",
@@ -723,11 +723,16 @@ def _log_qdess_timing(connection, qdess_params, source_selection):
     te_sources = sources.get("te_ms", ["", ""])
     te_values = qdess_params.get("te_ms", [None, None])
     message = (
-        "OpenMSK qDESS fitting times: "
+        "OpenMSK DESS fitting parameters: "
         f"received TE labels={qdess_params.get('received_te_ms', [])} ms; "
         f"TR={qdess_params.get('tr_ms')} ms ({sources.get('tr_ms', '')}); "
         f"TE1({first_echo_label})={te_values[0]} ms ({te_sources[0]}); "
-        f"TE2({second_echo_label})={te_values[1]} ms ({te_sources[1]})"
+        f"TE2({second_echo_label})={te_values[1]} ms ({te_sources[1]}); "
+        f"flip={qdess_params.get('flip_angle_deg')} deg "
+        f"({sources.get('flip_angle_deg', '')}); "
+        f"GL area={qdess_params.get('gl_area')} "
+        f"({sources.get('gl_area', '')}); "
+        f"TG={qdess_params.get('tg_us')} us ({sources.get('tg_us', '')})"
     )
     _send_logviewer_info(connection, message)
 
@@ -931,7 +936,7 @@ def _write_source_nifti(echo_groups_or_images, output_path, metadata):
         echo_images = [echo_images[index] for index in echo_sort_indices]
         if len(echo_images) != len(ordered_images):
             raise ValueError(
-                "Cannot compute qDESS RSS from unequal echo groups: "
+                "Cannot compute DESS RSS from unequal echo groups: "
                 f"{echo_keys[0]}={len(ordered_images)} {echo_key}={len(echo_images)}"
             )
         for slice_index, (reference_image, echo_image) in enumerate(
@@ -952,7 +957,7 @@ def _write_source_nifti(echo_groups_or_images, output_path, metadata):
             np.float32,
             copy=False,
         )
-        description = "OpenMSK RSS of both qDESS echoes"
+        description = "OpenMSK RSS of both DESS echoes"
         logging.info(
             "Computed OpenMSK segmentation RSS from echo groups %s and %s "
             "with %d slice(s); intensity range=[%s, %s]",
@@ -1031,7 +1036,7 @@ def _validate_rss_slice_geometry(reference_header, echo_header, echo_key, slice_
     )
     if not geometry_matches:
         raise ValueError(
-            "Cannot compute qDESS RSS from geometrically mismatched echoes: "
+            "Cannot compute DESS RSS from geometrically mismatched echoes: "
             f"echo={echo_key} sorted_slice={slice_index}"
         )
 
@@ -1107,7 +1112,7 @@ def _resolve_qdess_parameters(config, metadata, echo_groups):
     params["tg_us"] = tg_us
     params["sources"]["tg_us"] = source
 
-    logging.info("Resolved qDESS synthesis parameters: %s", params)
+    logging.info("Resolved DESS synthesis parameters: %s", params)
     return params
 
 
@@ -1233,21 +1238,21 @@ def _metadata_protocol_name(metadata):
 def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config, qdess_params):
     ordered_groups = _ordered_echo_groups(echo_groups)
     if len(ordered_groups) < 2:
-        logging.info("Cannot synthesize qDESS DICOM: only %d echo group(s) available", len(ordered_groups))
+        logging.info("Cannot synthesize DESS DICOM: only %d echo group(s) available", len(ordered_groups))
         return None
 
     echo_pairs = ordered_groups[:2]
     slice_count = len(echo_pairs[0][1])
     if slice_count == 0 or any(len(images) != slice_count for _key, images in echo_pairs):
         logging.warning(
-            "Cannot synthesize qDESS DICOM: echo group slice counts differ: %s",
+            "Cannot synthesize DESS DICOM: echo group slice counts differ: %s",
             [len(images) for _key, images in echo_pairs],
         )
         return None
 
     missing = [key for key in ("tr_ms", "te_ms", "flip_angle_deg", "gl_area", "tg_us") if qdess_params.get(key) is None]
     if missing:
-        logging.warning("Cannot synthesize qDESS DICOM: missing qDESS parameter(s) %s", missing)
+        logging.warning("Cannot synthesize DESS DICOM: missing DESS parameter(s) %s", missing)
         return None
 
     try:
@@ -1255,7 +1260,7 @@ def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config
         from pydicom.dataset import FileDataset, FileMetaDataset
         from pydicom.uid import ExplicitVRLittleEndian, MRImageStorage, generate_uid
     except Exception:
-        logging.warning("Cannot synthesize qDESS DICOM because pydicom import failed:\n%s", traceback.format_exc())
+        logging.warning("Cannot synthesize DESS DICOM because pydicom import failed:\n%s", traceback.format_exc())
         return None
 
     output_dir = Path(output_dir)
@@ -1273,7 +1278,7 @@ def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config
     pixel_scale = _dicom_pixel_scale(all_pixels)
 
     logging.info(
-        "Synthesizing qDESS DICOM series: out=%s slices=%d echo_keys=%s TR=%sms TE=%s flip=%sdeg "
+        "Synthesizing DESS DICOM series: out=%s slices=%d echo_keys=%s TR=%sms TE=%s flip=%sdeg "
         "GL_AREA=%s TG=%sus sources=%s",
         output_dir,
         slice_count,
@@ -1358,7 +1363,7 @@ def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config
                 ds.save_as(str(path), write_like_original=False)
             written.append(path)
 
-    logging.info("Wrote %d synthetic qDESS DICOM file(s) to %s", len(written), output_dir)
+    logging.info("Wrote %d synthetic DESS DICOM file(s) to %s", len(written), output_dir)
     return output_dir
 
 
@@ -1372,7 +1377,7 @@ def _stage_qdess_fit_input(qdess_dicom_dir, working_dir):
         shutil.copytree(source, target)
         method = "copied"
     logging.info(
-        "Staged both qDESS echoes for fitting: %s %s -> %s",
+        "Staged both DESS echoes for fitting: %s %s -> %s",
         method,
         source,
         target,
@@ -1753,7 +1758,7 @@ if compute_t2 and "label_remap" not in summary["errors"]:
         ] if fit_dicom_dir.is_dir() else []
         if not dicom_files:
             raise FileNotFoundError(
-                f"No synthetic qDESS DICOM files found in {fit_dicom_dir}"
+                f"No synthetic DESS DICOM files found in {fit_dicom_dir}"
             )
 
         from steps import t2_mapping as t2_mapping_step
@@ -1768,7 +1773,7 @@ if compute_t2 and "label_remap" not in summary["errors"]:
 elif not compute_t2:
     summary["t2_mapping"] = {
         "skipped": True,
-        "reason": "KneePipeline segmentation did not identify the input as qDESS",
+        "reason": "KneePipeline segmentation did not identify the input as DESS",
     }
 else:
     summary["t2_mapping"] = {
@@ -2703,6 +2708,23 @@ def _set_header_sequence_field(image_header, field_name, values):
         setattr(image_header, field_name, tuple(values))
 
 
+def _explicit_header_geometry_meta(header):
+    return {
+        "ImageRowDir": [
+            f"{value:.18f}" for value in _header_vector(header, "read_dir")
+        ],
+        "ImageColumnDir": [
+            f"{value:.18f}" for value in _header_vector(header, "phase_dir")
+        ],
+        "ImageSliceNormDir": [
+            f"{value:.18f}" for value in _header_vector(header, "slice_dir")
+        ],
+        "SlicePosLightMarker": [
+            f"{value:.18f}" for value in _header_vector(header, "position")
+        ],
+    }
+
+
 def _derived_uid(*parts):
     source = ".".join(str(part) for part in parts if part is not None)
     return "2.25." + str(uuid.uuid5(uuid.NAMESPACE_URL, source).int)
@@ -2990,53 +3012,85 @@ def _build_metrics_report_images(metrics_outputs, source_images, metrics_comment
     if not pages:
         return []
 
-    series_uid = _derived_uid(METRICS_REPORT_SERIES_NAME, METRICS_REPORT_SERIES_INDEX)
-    outputs = []
+    # Match MuscleMap's scanner-tested report contract: pages are slices of one
+    # canonical explicit volume, not separate source-derived 2D images.
+    page_arrays = [np.asarray(page, dtype=np.uint16) for page in pages]
+    first_page_shape = tuple(page_arrays[0].shape)
+    if any(tuple(page.shape) != first_page_shape for page in page_arrays):
+        logging.warning(
+            "Failed to build OpenMSK metrics report image because page shapes "
+            "differ: %s",
+            [tuple(page.shape) for page in page_arrays],
+        )
+        return []
+
     page_count = len(pages)
-    for index, page in enumerate(pages):
-        page = np.ascontiguousarray(page.astype(np.uint16, copy=False))
-        output = ismrmrd.Image.from_array(page, transpose=False)
-        header = copy.deepcopy(base_header)
-        header.data_type = output.data_type
-        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-        header.image_series_index = METRICS_REPORT_SERIES_INDEX
-        header.image_index = index + 1
-        header.slice = index
-        _set_header_sequence_field(header, "matrix_size", [page.shape[1], page.shape[0], 1])
-        _set_header_sequence_field(header, "field_of_view", [float(page.shape[1]), float(page.shape[0]), float(page_count)])
-        _set_header_sequence_field(header, "position", [0.0, 0.0, float(index)])
-        _set_header_sequence_field(header, "read_dir", [1.0, 0.0, 0.0])
-        _set_header_sequence_field(header, "phase_dir", [0.0, 1.0, 0.0])
-        _set_header_sequence_field(header, "slice_dir", [0.0, 0.0, 1.0])
-        output.setHead(header)
-        output.image_series_index = METRICS_REPORT_SERIES_INDEX
-        output.image_index = index + 1
-        output.attribute_string = _derived_meta(
-            source_images[0],
-            METRICS_REPORT_SERIES_NAME,
-            series_uid,
-            METRICS_REPORT_SERIES_INDEX,
-            index,
-            METRICS_REPORT_IMAGE_TYPE,
-            "Image",
-            metrics_comment or "OpenMSK metrics report",
-            float(np.nanmax(page)) if page.size else 4095.0,
-            source_geometry_segment=False,
-            slice_count=page_count,
-            extra_meta={
-                "Keep_image_geometry": "0",
-                "OpenMSKMetricsRows": str(len(rows)),
-                **_metrics_extra_meta(metrics_comment),
-            },
-        ).serialize()
-        outputs.append(output)
+    page_height, page_width = first_page_shape
+    report_volume = np.stack(page_arrays, axis=0)
+    output = ismrmrd.Image.from_array(
+        np.ascontiguousarray(report_volume),
+        transpose=False,
+    )
+    header = copy.deepcopy(base_header)
+    header.data_type = output.data_type
+    header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    header.image_series_index = METRICS_REPORT_SERIES_INDEX
+    header.image_index = 1
+    header.slice = 0
+    header.contrast = 0
+    _set_header_sequence_field(
+        header,
+        "matrix_size",
+        [page_width, page_height, page_count],
+    )
+    _set_header_sequence_field(
+        header,
+        "field_of_view",
+        [float(page_width), float(page_height), float(page_count)],
+    )
+    _set_header_sequence_field(header, "position", [0.0, 0.0, 0.0])
+    _set_header_sequence_field(header, "read_dir", [1.0, 0.0, 0.0])
+    _set_header_sequence_field(header, "phase_dir", [0.0, 1.0, 0.0])
+    _set_header_sequence_field(header, "slice_dir", [0.0, 0.0, 1.0])
+    output.setHead(header)
+    output.image_series_index = METRICS_REPORT_SERIES_INDEX
+    output.image_index = 1
+
+    series_uid = _derived_uid(
+        METRICS_REPORT_SERIES_NAME,
+        METRICS_REPORT_SERIES_INDEX,
+    )
+    report_meta = _derived_meta(
+        source_images[0],
+        METRICS_REPORT_SERIES_NAME,
+        series_uid,
+        METRICS_REPORT_SERIES_INDEX,
+        0,
+        METRICS_REPORT_IMAGE_TYPE,
+        "Segmentation",
+        metrics_comment or "OpenMSK metrics report",
+        float(np.nanmax(report_volume)) if report_volume.size else 4095.0,
+        source_geometry_segment=False,
+        slice_count=page_count,
+        extra_meta={
+            "Keep_image_geometry": "0",
+            "OpenMSKMetricsRows": str(len(rows)),
+            **_metrics_extra_meta(metrics_comment),
+        },
+    )
+    if "IceMiniHead" in report_meta:
+        del report_meta["IceMiniHead"]
+    for key, value in _explicit_header_geometry_meta(header).items():
+        report_meta[key] = value
+    output.attribute_string = report_meta.serialize()
 
     logging.info(
-        "Created OpenMSK metrics report image series with %d page(s) in image_series_index=%d",
+        "Created OpenMSK metrics explicit-volume report image with %d page(s) "
+        "in image_series_index=%d",
         page_count,
         METRICS_REPORT_SERIES_INDEX,
     )
-    return outputs
+    return [output]
 
 
 def _send_images(connection, images, context):

@@ -126,21 +126,23 @@ build:
 
     - include: macros/openrecon/neurodocker.yaml
 
-    # Add the CUDA 11.8 PyTorch stack used by optional NSM / nnU-Net paths, then
-    # pin both deep-learning stacks so later dependency installs cannot replace
-    # the TensorFlow base or the matching PyTorch wheels.
+    # Install the CUDA-enabled PyTorch code without its duplicate NVIDIA wheel
+    # stack. The TensorFlow GPU base already provides CUDA 11.8/cuDNN; only
+    # NCCL is absent from the base and must remain as a Python wheel.
     - run:
-        - pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu118 torch==2.2.2+cu118 torchvision==0.17.2+cu118
-        - python -c "import torch, torchvision, pathlib; path = pathlib.Path('/opt/pip-constraints.txt'); path.write_text(path.read_text() + 'torch==%s\ntorchvision==%s\n' % (torch.__version__, torchvision.__version__))"
+        - pip install --no-cache-dir --no-deps --extra-index-url https://download.pytorch.org/whl/cu118 torch==2.2.2+cu118 torchvision==0.17.2+cu118
+        - pip install --no-cache-dir nvidia-nccl-cu11==2.19.3
+        - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH python -c "from importlib.metadata import version; import torch; assert torch.version.cuda == '11.8'; print('PyTorch using system CUDA', torch.__version__, version('torchvision'))"
+        - python -c "from importlib.metadata import version; import pathlib; path = pathlib.Path('/opt/pip-constraints.txt'); path.write_text(path.read_text() + 'torch==%s\ntorchvision==%s\n' % (version('torch'), version('torchvision')))"
         - cat /opt/pip-constraints.txt
 
     - workdir: /opt
     - run:
         - pip install --no-cache-dir huggingface-hub==0.24.7
-        # NSM: drop the unpinned torch* lines and install against baseline torch.
+        # NSM: install against the baseline torch and the minimal pyMSKT set below.
         - git clone https://github.com/gattia/nsm /opt/nsm
         - cd /opt/nsm
-        - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio)[[:space:]]*$/d' requirements.txt
+        - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio|mskt)[[:space:]]*$/d' requirements.txt
         - pip install --no-cache-dir -r requirements.txt
         - pip install --no-cache-dir --no-deps .
         # DOSMA bone_seg branch (qDESS bone/cartilage segmentation).
@@ -148,11 +150,20 @@ build:
         - cd /opt/DOSMA
         - git checkout bone_seg
         - pip install --no-cache-dir '.[ai]'
-        # pymeshfix pinned to 0.16.2: pymskt's fix_mesh() calls
-        # MeshFix.repair(verbose=...), a kwarg removed in pymeshfix >=0.17.
-        - pip install --no-cache-dir mskt==0.1.20 nnunetv2==2.4.2 SimpleITK==2.3.1 pandas==2.0.3 Pillow==10.4.0 pymeshfix==0.16.2
+        # Install only the pyMSKT dependencies used by KneePipeline's subregion,
+        # mesh, and thickness paths. Omit ITK widgets, Jupyter/Notebook,
+        # traittypes, and optional non-rigid registration dependencies.
+        # pymeshfix is pinned because pyMSKT passes repair(verbose=...), which
+        # was removed in pymeshfix >=0.17.
+        - pip install --no-cache-dir point-cloud-utils==0.34.0 pyacvd==0.4.0 pyvista==0.48.4 vtk==9.6.2 param==2.4.1 cycpd==0.28 SimpleITK==2.3.1 pandas==2.0.3 Pillow==10.4.0 pymeshfix==0.16.2 batchgenerators==0.25.3 dicom2nifti==2.6.2 graphviz==0.21 imagecodecs==2026.1.14 yacs==0.1.8 connected-components-3d==4.0.0 blosc2==3.0.0b4 jinja2==3.1.6 sympy==1.14.0
+        # These packages declare torch dependencies. Resolve their runtime
+        # dependencies above, then install without allowing pip to backfill the
+        # duplicate CUDA wheels from torch's package metadata.
+        - pip install --no-cache-dir --no-deps acvl-utils==0.2.6 dynamic-network-architectures==0.3.1 nnunetv2==2.4.2 mskt==0.1.20
         - echo "{{ context.pymskt_right_knee_reference_sha256 }}  {{ get_file("pymskt_right_knee_reference") }}" | sha256sum -c -
-        - install -D -m 0644 {{ get_file("pymskt_right_knee_reference") }} "$(python -c 'from pathlib import Path; import pymskt; print(Path(pymskt.__file__).resolve().parent / "data" / "right_knee_example.nrrd")')"
+        # Locate pyMSKT without importing it: its optional-dependency warning is
+        # printed to stdout and would corrupt a command-substitution path.
+        - pymskt_reference_path="$(python -c 'from importlib.util import find_spec; from pathlib import Path; print(Path(next(iter(find_spec("pymskt").submodule_search_locations))) / "data" / "right_knee_example.nrrd")')" && install -D -m 0644 {{ get_file("pymskt_right_knee_reference") }} "${pymskt_reference_path}" && echo "{{ context.pymskt_right_knee_reference_sha256 }}  ${pymskt_reference_path}" | sha256sum -c -
         # KneePipeline's TF 2.11 / nnU-Net numpy compromise (resolved last).
         - pip install --no-cache-dir "numpy==1.24.3"
         - install -D -m 0644 {{ get_file("nnunet_numpy_compat.py") }} /opt/openmsk_compat/sitecustomize.py
@@ -217,27 +228,30 @@ readme: |-
   ## openmsk/{{ context.version }} ##
 
   OpenMSK packages the KneePipeline knee MRI toolbox as a Siemens OpenRecon
-  image-to-image module for qDESS knee MRI. The OpenRecon path receives MRD
+  image-to-image module for DESS knee MRI. The OpenRecon path receives MRD
   images from the scanner, reconstructs a both-echo RSS NIfTI, runs KneePipeline, and
   returns bone/cartilage/meniscus segmentation with geometry copied from the
-  source images. The wrapper preserves both qDESS echo groups and synthesizes a
+  source images. The wrapper preserves both DESS echo groups and synthesizes a
   minimal two-echo DICOM series with TR/TE/flip and GL/TG values so
-  KneePipeline's qDESS loader can run its analytical T2 step from OpenRecon
+  KneePipeline's DESS loader can run its analytical T2 step from OpenRecon
   MRD input. For `sequenceName`, `sequenceName_fid`, and `sequenceName_SE`,
   segmentation uses the voxelwise root-sum-of-squares of `_fid` and `_SE`,
   fitting uses the echoes separately, and the corrected second echo time is
   computed as `TE2 = 2 * TR - TE1`. Equal-sized `set=0`
   and `set=1` groups within one series are handled as an unnamed two-echo
   fallback, with the detected grouping, routing, counts, and timing reported to
-  LogViewer. Source volumes returned by `sendoriginal` retain separate scanner
-  series and source names. The pyMSKT right-knee registration reference is
+  LogViewer. TR, TE1, and flip angle come from MRD sequence parameters when
+  available, TE2 is computed, and GL/TG use built-in defaults when absent from
+  metadata and legacy saved-protocol settings. Source volumes returned by
+  `sendoriginal` retain separate scanner series and source names. The pyMSKT
+  right-knee registration reference is
   packaged at build time, so subregion and T2-statistics post-processing does
   not require runtime GitHub access. If subregion generation still fails while
   thickness is disabled, global cartilage-compartment T2 statistics are
   computed from the remapped all-label segmentation. It mirrors
   KneePipeline's split steps: it runs mesh
-  generation/cartilage thickness when requested, runs qDESS T2 mapping when
-  KneePipeline identifies qDESS input, and returns subregion segmentation,
+  generation/cartilage thickness when requested, runs DESS T2 mapping when
+  KneePipeline identifies DESS input, and returns subregion segmentation,
   T2 maps, and a burned-in metrics report image series whenever those artifacts
   are written. The same metrics are copied into output metadata comments.
   The packaged segmentation models are
@@ -255,14 +269,15 @@ readme: |-
   labels 11 through 15 retain their upstream values.
   Legacy `runnsm` and `runbscore` protocol parameters are accepted for scanner
   conversion compatibility but ignored because gated ShapeMedKnee assets are not
-  packaged.
+  packaged. Legacy DESS acquisition fallback parameters are also accepted but
+  hidden from the OpenRecon GUI.
 
-  Direct DICOM usage keeps the qDESS GL/TG private tags and can produce the
+  Direct DICOM usage keeps the DESS GL/TG private tags and can produce the
   full output set including T2:
 
   ```bash
   ml openmsk/{{ context.version }}
-  python /opt/KneePipeline/run_pipeline.py /path/to/qDESS/dicom_dir /path/to/out --config /opt/KneePipeline/config.json
+  python /opt/KneePipeline/run_pipeline.py /path/to/DESS/dicom_dir /path/to/out --config /opt/KneePipeline/config.json
   ```
 
   ----------------------------------
