@@ -66,16 +66,75 @@ tests:
       }
       PY
 
-  - name: offline pymskt reference image
-    description: Verify cartilage subregion generation can load its packaged reference without network access
+  - name: shared CUDA runtime
+    description: Verify PyTorch uses the base CUDA stack without duplicate NVIDIA wheels
     script: |
       python - <<'PY'
+      from importlib.metadata import PackageNotFoundError, version
+      from pathlib import Path
+      import subprocess
+
+      import torch
+      import torchvision
+      from torchvision.ops import nms
+
+      assert torch.__version__ == "2.2.2+cu118"
+      assert torchvision.__version__ == "0.17.2+cu118"
+      assert torch.version.cuda == "11.8"
+      assert version("nvidia-nccl-cu11") == "2.19.3"
+      for package in (
+          "nvidia-cublas-cu11",
+          "nvidia-cuda-cupti-cu11",
+          "nvidia-cuda-nvrtc-cu11",
+          "nvidia-cuda-runtime-cu11",
+          "nvidia-cudnn-cu11",
+          "nvidia-cufft-cu11",
+          "nvidia-curand-cu11",
+          "nvidia-cusolver-cu11",
+          "nvidia-cusparse-cu11",
+          "nvidia-nvtx-cu11",
+          "triton",
+      ):
+          try:
+              version(package)
+          except PackageNotFoundError:
+              continue
+          raise AssertionError(f"duplicate CUDA dependency is installed: {package}")
+
+      torch_cuda = Path(torch.__file__).resolve().parent / "lib" / "libtorch_cuda.so"
+      linked = subprocess.run(
+          ["ldd", str(torch_cuda)],
+          check=True,
+          capture_output=True,
+          text=True,
+      ).stdout
+      assert "not found" not in linked, linked
+      boxes = torch.tensor([[0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 2.0, 2.0]])
+      scores = torch.tensor([0.9, 0.8])
+      assert nms(boxes, scores, 0.5).tolist() == [0, 1]
+
+      from scripts.inference import KneeSegmentationInference
+      print(KneeSegmentationInference.__name__)
+      PY
+    environment:
+      PYTHONPATH: /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference
+
+  - name: offline pymskt reference image
+    description: Verify the minimal pyMSKT install performs offline subregion generation
+    script: |
+      python - <<'PY'
+      from importlib.metadata import PackageNotFoundError, version
       from pathlib import Path
       import inspect
 
+      import numpy as np
       import pymskt
       import SimpleITK as sitk
-      from pymskt.image.cartilage_processing import get_aligned_cartilage_subregions
+      from pymskt.image.cartilage_processing import (
+          get_aligned_cartilage_subregions,
+          get_knee_segmentation_with_femur_subregions,
+      )
+      from pymskt.mesh import BoneMesh
 
       reference = Path(pymskt.__file__).resolve().parent / "data" / "right_knee_example.nrrd"
       assert reference.is_file(), reference
@@ -85,7 +144,44 @@ tests:
       assert Path(default_reference).resolve() == reference.resolve()
       image = sitk.ReadImage(str(reference))
       assert image.GetSize() == (384, 384, 160)
-      print(reference)
+      for package in ("itk-core", "itk-filtering", "itkwidgets", "pyfocusr"):
+          try:
+              version(package)
+          except PackageNotFoundError:
+              continue
+          raise AssertionError(f"unused pyMSKT dependency is installed: {package}")
+      assert version("cycpd") == "0.28"
+
+      source = sitk.GetArrayFromImage(image)
+      canonical = np.zeros_like(source)
+      for source_label, canonical_label in {
+          5: 1,
+          6: 2,
+          1: 4,
+          2: 5,
+          3: 6,
+      }.items():
+          canonical[source == source_label] = canonical_label
+      segmentation = sitk.GetImageFromArray(canonical)
+      segmentation.CopyInformation(image)
+      subregions = get_knee_segmentation_with_femur_subregions(
+          segmentation,
+          fem_cart_label_idx=4,
+          femur_label=1,
+          med_tibia_label=5,
+          lat_tibia_label=6,
+          tibia_label=2,
+          ref_image_reg_percent_sampling=0.01,
+      )
+      subregion_labels = set(np.unique(sitk.GetArrayFromImage(subregions)))
+      assert {11, 12, 13, 14, 15} <= subregion_labels
+      mesh = BoneMesh(
+          seg_image=segmentation,
+          label_idx=1,
+          list_cartilage_labels=[4],
+          bone="femur",
+      )
+      print(reference, type(mesh).__name__, sorted(subregion_labels))
       PY
 
   - name: Helper scripts render help

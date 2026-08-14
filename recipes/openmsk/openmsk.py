@@ -2703,6 +2703,23 @@ def _set_header_sequence_field(image_header, field_name, values):
         setattr(image_header, field_name, tuple(values))
 
 
+def _explicit_header_geometry_meta(header):
+    return {
+        "ImageRowDir": [
+            f"{value:.18f}" for value in _header_vector(header, "read_dir")
+        ],
+        "ImageColumnDir": [
+            f"{value:.18f}" for value in _header_vector(header, "phase_dir")
+        ],
+        "ImageSliceNormDir": [
+            f"{value:.18f}" for value in _header_vector(header, "slice_dir")
+        ],
+        "SlicePosLightMarker": [
+            f"{value:.18f}" for value in _header_vector(header, "position")
+        ],
+    }
+
+
 def _derived_uid(*parts):
     source = ".".join(str(part) for part in parts if part is not None)
     return "2.25." + str(uuid.uuid5(uuid.NAMESPACE_URL, source).int)
@@ -2990,53 +3007,85 @@ def _build_metrics_report_images(metrics_outputs, source_images, metrics_comment
     if not pages:
         return []
 
-    series_uid = _derived_uid(METRICS_REPORT_SERIES_NAME, METRICS_REPORT_SERIES_INDEX)
-    outputs = []
+    # Match MuscleMap's scanner-tested report contract: pages are slices of one
+    # canonical explicit volume, not separate source-derived 2D images.
+    page_arrays = [np.asarray(page, dtype=np.uint16) for page in pages]
+    first_page_shape = tuple(page_arrays[0].shape)
+    if any(tuple(page.shape) != first_page_shape for page in page_arrays):
+        logging.warning(
+            "Failed to build OpenMSK metrics report image because page shapes "
+            "differ: %s",
+            [tuple(page.shape) for page in page_arrays],
+        )
+        return []
+
     page_count = len(pages)
-    for index, page in enumerate(pages):
-        page = np.ascontiguousarray(page.astype(np.uint16, copy=False))
-        output = ismrmrd.Image.from_array(page, transpose=False)
-        header = copy.deepcopy(base_header)
-        header.data_type = output.data_type
-        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-        header.image_series_index = METRICS_REPORT_SERIES_INDEX
-        header.image_index = index + 1
-        header.slice = index
-        _set_header_sequence_field(header, "matrix_size", [page.shape[1], page.shape[0], 1])
-        _set_header_sequence_field(header, "field_of_view", [float(page.shape[1]), float(page.shape[0]), float(page_count)])
-        _set_header_sequence_field(header, "position", [0.0, 0.0, float(index)])
-        _set_header_sequence_field(header, "read_dir", [1.0, 0.0, 0.0])
-        _set_header_sequence_field(header, "phase_dir", [0.0, 1.0, 0.0])
-        _set_header_sequence_field(header, "slice_dir", [0.0, 0.0, 1.0])
-        output.setHead(header)
-        output.image_series_index = METRICS_REPORT_SERIES_INDEX
-        output.image_index = index + 1
-        output.attribute_string = _derived_meta(
-            source_images[0],
-            METRICS_REPORT_SERIES_NAME,
-            series_uid,
-            METRICS_REPORT_SERIES_INDEX,
-            index,
-            METRICS_REPORT_IMAGE_TYPE,
-            "Image",
-            metrics_comment or "OpenMSK metrics report",
-            float(np.nanmax(page)) if page.size else 4095.0,
-            source_geometry_segment=False,
-            slice_count=page_count,
-            extra_meta={
-                "Keep_image_geometry": "0",
-                "OpenMSKMetricsRows": str(len(rows)),
-                **_metrics_extra_meta(metrics_comment),
-            },
-        ).serialize()
-        outputs.append(output)
+    page_height, page_width = first_page_shape
+    report_volume = np.stack(page_arrays, axis=0)
+    output = ismrmrd.Image.from_array(
+        np.ascontiguousarray(report_volume),
+        transpose=False,
+    )
+    header = copy.deepcopy(base_header)
+    header.data_type = output.data_type
+    header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    header.image_series_index = METRICS_REPORT_SERIES_INDEX
+    header.image_index = 1
+    header.slice = 0
+    header.contrast = 0
+    _set_header_sequence_field(
+        header,
+        "matrix_size",
+        [page_width, page_height, page_count],
+    )
+    _set_header_sequence_field(
+        header,
+        "field_of_view",
+        [float(page_width), float(page_height), float(page_count)],
+    )
+    _set_header_sequence_field(header, "position", [0.0, 0.0, 0.0])
+    _set_header_sequence_field(header, "read_dir", [1.0, 0.0, 0.0])
+    _set_header_sequence_field(header, "phase_dir", [0.0, 1.0, 0.0])
+    _set_header_sequence_field(header, "slice_dir", [0.0, 0.0, 1.0])
+    output.setHead(header)
+    output.image_series_index = METRICS_REPORT_SERIES_INDEX
+    output.image_index = 1
+
+    series_uid = _derived_uid(
+        METRICS_REPORT_SERIES_NAME,
+        METRICS_REPORT_SERIES_INDEX,
+    )
+    report_meta = _derived_meta(
+        source_images[0],
+        METRICS_REPORT_SERIES_NAME,
+        series_uid,
+        METRICS_REPORT_SERIES_INDEX,
+        0,
+        METRICS_REPORT_IMAGE_TYPE,
+        "Segmentation",
+        metrics_comment or "OpenMSK metrics report",
+        float(np.nanmax(report_volume)) if report_volume.size else 4095.0,
+        source_geometry_segment=False,
+        slice_count=page_count,
+        extra_meta={
+            "Keep_image_geometry": "0",
+            "OpenMSKMetricsRows": str(len(rows)),
+            **_metrics_extra_meta(metrics_comment),
+        },
+    )
+    if "IceMiniHead" in report_meta:
+        del report_meta["IceMiniHead"]
+    for key, value in _explicit_header_geometry_meta(header).items():
+        report_meta[key] = value
+    output.attribute_string = report_meta.serialize()
 
     logging.info(
-        "Created OpenMSK metrics report image series with %d page(s) in image_series_index=%d",
+        "Created OpenMSK metrics explicit-volume report image with %d page(s) "
+        "in image_series_index=%d",
         page_count,
         METRICS_REPORT_SERIES_INDEX,
     )
-    return outputs
+    return [output]
 
 
 def _send_images(connection, images, context):
