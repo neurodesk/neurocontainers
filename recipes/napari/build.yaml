@@ -109,7 +109,7 @@ deploy:
     - nninteractive-server
 
 gui_apps:
-  - name: napari
+  - name: napari GUI
     exec: napari
   - name: VoxTell
     exec: napari-voxtell
