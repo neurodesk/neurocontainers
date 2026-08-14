@@ -9,9 +9,11 @@ derived Bloch-Siegert map volumes back to the scanner.
 
 - Reconstructed MRD magnitude and phase `ismrmrd.Image` messages from the same
   Bloch-Siegert acquisition.
-- The workflow requires 10 frames per anatomical slice for the 1Tx case or 38
+- The workflow requires 11 frames per anatomical slice for the 1Tx case or 46
   frames per anatomical slice for the 8Tx case. As in the MATLAB code, more
   than 25 available frames selects 8 Tx channels; otherwise it selects 1 Tx.
+  The dedicated Tx-phase block follows the four B/C/A/D echoes per channel and
+  precedes the final three post-reference frames.
 - Phase images are expected in the same raw range used by the MATLAB code:
   `phase_radians = raw_phase * 2*pi / 4096 - pi`.
 
@@ -27,12 +29,16 @@ operations:
   is not applied to any calculated map.
 - Convert phase frames to complex unit phasors with `exp(1i * phase)`.
 - Average frames 1-3 into the pre-reference phase, then compute each Tx
-  Bloch-Siegert phase from its four-echo block as
-  `angle(A * conj(B) * pre * conj(C) * pre * conj(D))`.
-- Add `2*pi` where `BSp < -25 degrees`, clamp remaining negative values to
-  zero, and compute `Meas_B1 = sqrt(BSp / KBS)` with
+  Bloch-Siegert phase from its four-echo block. Correct the scanner DICOM phase
+  polarity before unwrapping as
+  `-angle(A * conj(B) * pre * conj(C) * pre * conj(D))`. This BSp-only
+  correction does not change the dedicated Tx phase or B0 phase difference.
+- Add `2*pi` where `BSp < -25 degrees` and retain the remaining small negative
+  values in the BSp output. Clamp only a separate B1-calculation copy to zero,
+  then compute `Meas_B1 = sqrt(BSp_for_B1 / KBS)` with
   `KBS = 0.044 * bspulsewidthms / 6`.
-- Use echo `A` from each Tx block for the phase output.
+- Use the dedicated contiguous transmit-phase block after the B/C/A/D echoes
+  for the Tx phase output.
 - Average the final three frames into the post-reference phase and compute
   `B0 = angle(post * conj(pre)) * 1000 / (2*pi)`.
 
@@ -40,33 +46,41 @@ operations:
 
 All derived outputs are sent as explicit-volume MRD images with fresh returned
 series identities, `Keep_image_geometry = 0`, no source `IceMiniHead`, and
-`SequenceDescriptionAdditional = openrecon`.
+`SequenceDescriptionAdditional = openrecon`. Every complete, nonconstant 3D
+output volume is linearly encoded into the full scanner display range
+`0..4095`. DICOM `RescaleSlope` and `RescaleIntercept` restore its physical
+units, and window center/width are recorded in those physical units. A constant
+volume uses zero-valued pixels and stores its physical value in the intercept.
 
-- `<source>-b1` or `<source>-b1-txNN`: measured B1 maps encoded as scanner
-  display `uint16` pixels in the `0..4095` range. Values are multiplied by
-  `100`; divide stored pixels by `100` to recover uT. The scaling formula is
-  recorded in `ImageComments` and `ImageComment`. Preferred series indices
-  start at `101`.
+- `<source>-b1` or `<source>-b1-txNN`: measured B1 maps in uT. Preferred series
+  indices start at `101`.
 - `<source>-bsp` or `<source>-bsp-txNN`: Bloch-Siegert phase maps converted
-  from radians to degrees and multiplied by `10`. Preferred series indices
-  start at `120`.
-- `<source>-phsc` or `<source>-phsc-txNN`: echo-A transmit phase maps converted
-  from radians to degrees and multiplied by `10`.
-  Preferred series indices start at `140`.
+  from radians to degrees. Preferred series indices start at `120`.
+- `<source>-phsc` or `<source>-phsc-txNN`: dedicated transmit phase maps
+  converted from radians to degrees. Preferred series indices start at `140`.
 - `<source>-b0`: B0 phase-difference map in Hz on preferred series index `160`.
 - `<source>-mask`: optional binary mask on preferred series index `161`.
 
 The preferred series indices are shifted only if the incoming image stream
 already uses one of them.
 
-Both phase outputs record `degrees = display / 10` and the radians-to-degrees
-conversion in `ImageComments` and `ImageComment`.
+The finite physical bounds, inverse scaling formula, and radians-to-degrees
+conversion where applicable are recorded in `ImageComments`, `ImageComment`,
+and `BlochSiegertDisplay*` metadata for every output.
+
+Runtime logs report the source phase range, source rescale metadata, inferred
+input domain, and the one-based frame layout. Mask-restricted quantiles cover
+the pre-reference phase/coherence, every B/C/A/D phase term, and the raw and
+corrected BSp phase. Per-Tx wrap counts, retained-negative counts inside and
+outside the QC mask, true-zero counts, B1 clamp counts and ranges are also
+reported, together with the physical bounds, rescale parameters, and window
+for every output series.
 
 ## Parameters
 
 - `sendb1` default `true`: send measured B1 maps.
 - `sendbsp` default `true`: send Bloch-Siegert phase maps.
-- `sendphsc` default `true`: send echo-A transmit phase maps.
+- `sendphsc` default `true`: send dedicated transmit phase maps.
 - `sendb0` default `true`: send the B0 map.
 - `sendmask` default `false`: send the magnitude-derived QC mask.
 - `bspulsewidthms` default `12.0`: BS pulse width in milliseconds used in the
