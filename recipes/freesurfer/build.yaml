@@ -47,12 +47,14 @@ build:
         - apt-get update -qq
         - apt-get install -y -q --no-install-recommends apt-utils bzip2 ca-certificates curl locales unzip tzdata
         - rm -rf /var/lib/apt/lists/*
-        # The trusty image ships no /etc/locale.gen at all, so the default
-        # template's `sed -i` on it fails. Append instead - `>>` creates the
-        # file - and call locale-gen directly.
-        - echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
-        - locale-gen
-        - update-locale LANG="en_US.UTF-8"
+        # Trusty's locales package reads /var/lib/locales/supported.d/, not
+        # /etc/locale.gen - Ubuntu only moved to locale.gen in xenial. That is
+        # why the image ships no locale.gen and why appending to it generated
+        # nothing. Write both layouts so locale-gen finds the locale either way.
+        # Tolerated on failure: LANG is already set in the environment above and
+        # nothing in FreeSurfer depends on the generated locale, so a hiccup
+        # here must not throw away a 4 GB build.
+        - 'mkdir -p /var/lib/locales/supported.d && echo "en_US.UTF-8 UTF-8" > /var/lib/locales/supported.d/local && echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen && update-locale LANG=en_US.UTF-8 || echo "WARNING - locale setup incomplete, continuing"'
         - ln -snf /usr/share/zoneinfo/UTC /etc/localtime
         - echo UTC > /etc/timezone
         - chmod 777 /opt && chmod a+s /opt
