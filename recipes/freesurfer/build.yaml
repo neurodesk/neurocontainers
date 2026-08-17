@@ -77,6 +77,11 @@ build:
         # unpacked. `a+rX` adds read everywhere and execute only where an
         # execute bit is already set (plus all directories).
         - chmod -R a+rX /opt/freesurfer-{{ context.version }}
+        # 5.3 ships experimental CUDA builds that need a GPU, the CUDA 5.0
+        # runtime and boost 1.5x - none of which exist here or in any CPU
+        # deployment. They are unusable and every one of them reports missing
+        # libraries, so drop them rather than ship binaries that cannot run.
+        - rm -f /opt/freesurfer-{{ context.version }}/bin/*cuda*
 
     # 5.3 keeps the MNI perl modules under mni/lib/perl5/<perlver>, whereas 6.x
     # and newer use mni/share/perl5. Locate MNI/Startup.pm rather than assuming
@@ -89,6 +94,18 @@ build:
         - 'test -d "$MNI_PERL_ROOT/MNI"'
         - 'if [ "$MNI_PERL_ROOT" != "$FS/mni/share/perl5" ]; then mkdir -p "$FS/mni/share" && rm -rf "$FS/mni/share/perl5" && ln -s "$MNI_PERL_ROOT" "$FS/mni/share/perl5"; fi'
         - 'perl -I "$FS/mni/share/perl5" -e "use MNI::Startup; print qq(MNI perl modules load from $FS/mni/share/perl5\n)"'
+
+    # The MNI N3 scripts date from 2010 and use defined(@array) / defined(%hash),
+    # which perl deprecated in 5.16 and made a hard error in 5.22 - the perl
+    # xenial ships. nu_correct therefore dies immediately with
+    #   Can't use 'defined(@array)' ... at mni/bin/nu_estimate_np_and_em line 165
+    # Rewrite those to plain boolean context, which is what the construct always
+    # meant, then syntax-check every MNI perl script so any remaining
+    # incompatibility fails the build here rather than at test time.
+    - run:
+        - FS=/opt/freesurfer-{{ context.version }}
+        - 'for f in $(grep -rIlE "defined[[:space:]]*\(?[[:space:]]*[@%]" "$FS/mni" "$FS/bin" 2>/dev/null); do case "$f" in *.pm) ;; *) case "$(head -1 "$f" 2>/dev/null)" in *perl*) ;; *) continue;; esac;; esac; sed -i -E "s/defined[[:space:]]*\(([[:space:]]*[@%][A-Za-z_][A-Za-z0-9_]*[[:space:]]*)\)/(\1)/g; s/defined[[:space:]]+([@%][A-Za-z_][A-Za-z0-9_]*)/\1/g" "$f"; echo "perl 5.22 patched $f"; done'
+        - 'for f in "$FS"/mni/bin/*; do case "$(head -1 "$f" 2>/dev/null)" in *perl*) perl -I "$FS/mni/share/perl5" -c "$f" || exit 1;; esac; done'
 
     - copy:
         - license.txt
@@ -135,27 +152,24 @@ build:
         - 'for b in mri_info mri_convert mris_convert mri_watershed mri_normalize mri_segment mri_binarize mri_vol2vol freeview; do "$FS/bin/$b" --version > /dev/null 2>&1; rc=$?; if [ "$rc" -eq 126 ] || [ "$rc" -eq 127 ]; then echo "FATAL - $b cannot be executed (exit $rc)"; ldd "$FS/bin/$b" | grep ''not found'' || true; exit 1; fi; done'
         - test -x "$FS/bin/recon-all"
 
-    # TEMPORARY: mri_nu_correct.mni exits 1 within ~2s under the release test
-    # runner, which captures but never prints command output. Echo the real
-    # failure into the build log, where it is visible. Non-fatal so the
-    # candidate image is still produced. Remove once the fulltest is green.
+    # Run one real nu_correct iteration at build time. The release test runner
+    # captures command output but only ever reports the exit code, so a broken
+    # MNI toolchain is invisible there; failing here puts the actual error in
+    # the build log. This also covers the whole mri_convert -> MINC -> N3 chain.
     - run:
         - FS=/opt/freesurfer-{{ context.version }}
-        - 'echo "=== which nu_correct ==="; which nu_correct || echo "nu_correct NOT on PATH"'
-        - 'echo "=== nu_correct perl deps ==="; perl -c "$FS/mni/bin/nu_correct" 2>&1 | tail -20 || true'
-        - 'echo "=== mri_nu_correct.mni smoke ==="; cd /tmp && mri_nu_correct.mni --i "$FS/subjects/fsaverage/mri/orig.mgz" --o /tmp/nu_smoke.mgz --n 1 2>&1 | tail -60 || true'
-        - 'echo "=== end nu_correct diagnostics ==="'
+        - cd /tmp
+        - mri_nu_correct.mni --i "$FS/subjects/fsaverage/mri/orig.mgz" --o /tmp/nu_smoke.mgz --n 1
+        - test -s /tmp/nu_smoke.mgz
+        - rm -rf /tmp/nu_smoke.mgz /tmp/tmp.mri_nu_correct.mni.*
 
-    # TEMPORARY: workflows/test_deploy.sh fails every deployed executable that
-    # is not o+rx or whose ldd reports a missing library, but container_tester
-    # only prints "Status: failed". Replicate both checks over DEPLOY_PATH so
-    # the offending files appear in the build log. Non-fatal. Remove once green.
+    # workflows/test_deploy.sh fails any deployed executable whose ldd reports a
+    # missing library, and container_tester only surfaces "Status: failed".
+    # Apply the same check here so the offending binaries are named in the build
+    # log instead of having to be inferred from an opaque test failure.
     - run:
         - FS=/opt/freesurfer-{{ context.version }}
-        - 'echo "=== deploy dir permissions ==="; for d in "$FS/bin" "$FS/fsfast/bin"; do find "$d" -maxdepth 0 -perm -0001 -print -quit | grep -q . || echo "DIR NOT TRAVERSABLE - $d"; done'
-        - 'echo "=== deploy file permissions (o+rx) ==="; find "$FS/bin" "$FS/fsfast/bin" -maxdepth 1 -type f -perm -u+x ! -perm -0005 -print | head -40 || true'
-        - 'echo "=== deploy ldd missing libraries ==="; for f in $(find "$FS/bin" "$FS/fsfast/bin" -maxdepth 1 -type f -perm -u+x | sort); do m=$(ldd "$f" 2>/dev/null | grep "not found" || true); if [ -n "$m" ]; then echo "--- $f"; echo "$m"; fi; done | head -80 || true'
-        - 'echo "=== end deploy diagnostics ==="'
+        - 'MISSING=$(for f in $(find "$FS/bin" "$FS/fsfast/bin" -maxdepth 1 -type f -perm -u+x | sort); do if ldd "$f" 2>/dev/null | grep -q "not found"; then echo "--- $f"; ldd "$f" | grep "not found"; fi; done); if [ -n "$MISSING" ]; then echo "FATAL - deployed binaries with unresolved libraries:"; echo "$MISSING"; exit 1; fi'
 
 deploy:
   path:
