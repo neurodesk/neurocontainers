@@ -23,12 +23,14 @@ build:
   base-image: ubuntu:14.04
   pkg-manager: apt
 
-  # Trusty is EOL: its archive Release files are long past Valid-Until, so apt
-  # refuses them without an override, and the builder's default template runs
-  # `apt-get update` before any recipe directive - too early to inject it.
-  # The preamble below is therefore hand-rolled from that template, with the
-  # apt config written first. The archives themselves are still on
-  # archive.ubuntu.com; old-releases.ubuntu.com does not carry trusty.
+  # Trusty is EOL and its archive Release files may be past Valid-Until, which
+  # apt refuses without an override. That override has to be written before the
+  # first `apt-get update`, and the builder's default template runs one ahead of
+  # every recipe directive - too early to inject it. So the preamble below is
+  # hand-rolled from that template with the apt config first. (Whether trusty
+  # strictly needs the override today is untested, since it is always in place
+  # by the time apt runs; it is cheap insurance either way.) The archives are
+  # still on archive.ubuntu.com; old-releases.ubuntu.com does not carry trusty.
   add-default-template: false
   add-tzdata: false
 
@@ -45,8 +47,11 @@ build:
         - apt-get update -qq
         - apt-get install -y -q --no-install-recommends apt-utils bzip2 ca-certificates curl locales unzip tzdata
         - rm -rf /var/lib/apt/lists/*
-        - sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
-        - dpkg-reconfigure --frontend=noninteractive locales
+        # The trusty image ships no /etc/locale.gen at all, so the default
+        # template's `sed -i` on it fails. Append instead - `>>` creates the
+        # file - and call locale-gen directly.
+        - echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+        - locale-gen
         - update-locale LANG="en_US.UTF-8"
         - ln -snf /usr/share/zoneinfo/UTC /etc/localtime
         - echo UTC > /etc/timezone
