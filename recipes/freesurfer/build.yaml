@@ -104,8 +104,12 @@ build:
     # incompatibility fails the build here rather than at test time.
     - run:
         - FS=/opt/freesurfer-{{ context.version }}
-        - 'for f in $(grep -rIlE "defined[[:space:]]*\(?[[:space:]]*[@%]" "$FS/mni" "$FS/bin" 2>/dev/null); do case "$f" in *.pm) ;; *) case "$(head -1 "$f" 2>/dev/null)" in *perl*) ;; *) continue;; esac;; esac; sed -i -E "s/defined[[:space:]]*\(([[:space:]]*[@%][A-Za-z_][A-Za-z0-9_]*[[:space:]]*)\)/(\1)/g; s/defined[[:space:]]+([@%][A-Za-z_][A-Za-z0-9_]*)/\1/g" "$f"; echo "perl 5.22 patched $f"; done'
-        - 'for f in "$FS"/mni/bin/*; do case "$(head -1 "$f" 2>/dev/null)" in *perl*) perl -I "$FS/mni/share/perl5" -c "$f" || exit 1;; esac; done'
+        - 'PATCHED=""; for f in $(grep -rIlE "defined[[:space:]]*\(?[[:space:]]*[@%]" "$FS/mni" "$FS/bin" 2>/dev/null); do case "$f" in *.pm) ;; *) case "$(head -1 "$f" 2>/dev/null)" in *perl*) ;; *) continue;; esac;; esac; sed -i -E "s/defined[[:space:]]*\(([[:space:]]*[@%][A-Za-z_][A-Za-z0-9_]*[[:space:]]*)\)/(\1)/g; s/defined[[:space:]]+([@%][A-Za-z_][A-Za-z0-9_]*)/\1/g" "$f"; echo "perl 5.22 patched $f"; PATCHED="$PATCHED $f"; done; for f in $PATCHED; do perl -I "$FS/mni/share/perl5" -c "$f" || exit 1; done'
+        # Gate the N3 entry point itself. Deliberately not a sweep over all of
+        # mni/bin: minchistory and friends want CPAN modules (Text::Format) that
+        # 5.3 never shipped, which is pre-existing upstream breakage in optional
+        # MINC utilities and nothing recon-all touches.
+        - 'perl -I "$FS/mni/share/perl5" -c "$FS/mni/bin/nu_correct"'
 
     - copy:
         - license.txt
