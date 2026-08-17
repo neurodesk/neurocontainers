@@ -146,6 +146,17 @@ build:
         - 'echo "=== mri_nu_correct.mni smoke ==="; cd /tmp && mri_nu_correct.mni --i "$FS/subjects/fsaverage/mri/orig.mgz" --o /tmp/nu_smoke.mgz --n 1 2>&1 | tail -60 || true'
         - 'echo "=== end nu_correct diagnostics ==="'
 
+    # TEMPORARY: workflows/test_deploy.sh fails every deployed executable that
+    # is not o+rx or whose ldd reports a missing library, but container_tester
+    # only prints "Status: failed". Replicate both checks over DEPLOY_PATH so
+    # the offending files appear in the build log. Non-fatal. Remove once green.
+    - run:
+        - FS=/opt/freesurfer-{{ context.version }}
+        - 'echo "=== deploy dir permissions ==="; for d in "$FS/bin" "$FS/fsfast/bin"; do find "$d" -maxdepth 0 -perm -0001 -print -quit | grep -q . || echo "DIR NOT TRAVERSABLE - $d"; done'
+        - 'echo "=== deploy file permissions (o+rx) ==="; find "$FS/bin" "$FS/fsfast/bin" -maxdepth 1 -type f -perm -u+x ! -perm -0005 -print | head -40 || true'
+        - 'echo "=== deploy ldd missing libraries ==="; for f in $(find "$FS/bin" "$FS/fsfast/bin" -maxdepth 1 -type f -perm -u+x | sort); do m=$(ldd "$f" 2>/dev/null | grep "not found" || true); if [ -n "$m" ]; then echo "--- $f"; echo "$m"; fi; done | head -80 || true'
+        - 'echo "=== end deploy diagnostics ==="'
+
 deploy:
   path:
     - /opt/freesurfer-{{ context.version }}/bin/
