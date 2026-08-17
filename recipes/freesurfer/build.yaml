@@ -13,17 +13,53 @@ architectures:
 build:
   kind: neurodocker
 
-  # FreeSurfer 5.3.0 (2013) only ships CentOS 4/6 x86_64 binaries. Ubuntu 16.04
-  # is the newest Ubuntu that still carries the legacy runtime libraries those
-  # binaries link against - most importantly libpng12-0, which was dropped
-  # after xenial. Newer releases (18.04+) cannot satisfy the tkmedit/tksurfer
-  # and MNI tool dependencies without hand-installing obsolete .debs.
-  base-image: ubuntu:16.04
+  # FreeSurfer 5.3.0 is 2013 software shipping CentOS 4/6 x86_64 binaries, and
+  # it wants an OS of the same era. 16.04 was tried first and works for the
+  # binaries, but its perl 5.22 turns constructs the bundled MNI N3 perl
+  # scripts rely on (defined(@array) and the rest of that removal wave) into
+  # hard errors, so nu_correct dies. Trusty's perl 5.18 still accepts them.
+  # It also has libpng12-0 and the rest of the legacy X/GL stack these
+  # binaries link against.
+  base-image: ubuntu:14.04
   pkg-manager: apt
+
+  # Trusty is EOL: its archive Release files are long past Valid-Until, so apt
+  # refuses them without an override, and the builder's default template runs
+  # `apt-get update` before any recipe directive - too early to inject it.
+  # The preamble below is therefore hand-rolled from that template, with the
+  # apt config written first. The archives themselves are still on
+  # archive.ubuntu.com; old-releases.ubuntu.com does not carry trusty.
+  add-default-template: false
+  add-tzdata: false
 
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
+        TZ: UTC
+        LANG: en_US.UTF-8
+        LC_ALL: en_US.UTF-8
+        ND_ENTRYPOINT: /neurodocker/startup.sh
+
+    - run:
+        - echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until
+        - apt-get update -qq
+        - apt-get install -y -q --no-install-recommends apt-utils bzip2 ca-certificates curl locales unzip tzdata
+        - rm -rf /var/lib/apt/lists/*
+        - sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+        - dpkg-reconfigure --frontend=noninteractive locales
+        - update-locale LANG="en_US.UTF-8"
+        - ln -snf /usr/share/zoneinfo/UTC /etc/localtime
+        - echo UTC > /etc/timezone
+        - chmod 777 /opt && chmod a+s /opt
+
+    - copy:
+        - startup.sh
+        - /neurodocker/startup.sh
+
+    - run:
+        - chmod -R 777 /neurodocker && chmod a+s /neurodocker
+
+    - entrypoint: /neurodocker/startup.sh
 
     - install:
         - bc
@@ -95,13 +131,11 @@ build:
         - 'if [ "$MNI_PERL_ROOT" != "$FS/mni/share/perl5" ]; then mkdir -p "$FS/mni/share" && rm -rf "$FS/mni/share/perl5" && ln -s "$MNI_PERL_ROOT" "$FS/mni/share/perl5"; fi'
         - 'perl -I "$FS/mni/share/perl5" -e "use MNI::Startup; print qq(MNI perl modules load from $FS/mni/share/perl5\n)"'
 
-    # The MNI N3 scripts date from 2010 and use defined(@array) / defined(%hash),
-    # which perl deprecated in 5.16 and made a hard error in 5.22 - the perl
-    # xenial ships. nu_correct therefore dies immediately with
-    #   Can't use 'defined(@array)' ... at mni/bin/nu_estimate_np_and_em line 165
-    # Rewrite those to plain boolean context, which is what the construct always
-    # meant, then syntax-check every MNI perl script so any remaining
-    # incompatibility fails the build here rather than at test time.
+    # The MNI N3 scripts date from 2010 and use defined(@array) / defined(%hash).
+    # Trusty's perl 5.18 only warns about these, so this is no longer load
+    # bearing, but the rewrite to plain boolean context is what the construct
+    # always meant and it keeps the deprecation noise out of nu_correct's
+    # output. Syntax-check whatever gets rewritten so a bad edit fails here.
     - run:
         - FS=/opt/freesurfer-{{ context.version }}
         - 'PATCHED=""; for f in $(grep -rIlE "defined[[:space:]]*\(?[[:space:]]*[@%]" "$FS/mni" "$FS/bin" 2>/dev/null); do case "$f" in *.pm) ;; *) case "$(head -1 "$f" 2>/dev/null)" in *perl*) ;; *) continue;; esac;; esac; sed -i -E "s/defined[[:space:]]*\(([[:space:]]*[@%][A-Za-z_][A-Za-z0-9_]*[[:space:]]*)\)/(\1)/g; s/defined[[:space:]]+([@%][A-Za-z_][A-Za-z0-9_]*)/\1/g" "$f"; echo "perl 5.22 patched $f"; PATCHED="$PATCHED $f"; done; for f in $PATCHED; do perl -I "$FS/mni/share/perl5" -c "$f" || exit 1; done'
@@ -215,6 +249,15 @@ readme: |-
 files:
   - name: freesurfer_tar
     url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer-Linux-centos6_x86_64-stable-pub-v{{ context.version }}.tar.gz
+
+  # Reproduces the entrypoint the builder's default template would have written,
+  # which is skipped here because add-default-template is false.
+  - name: startup.sh
+    contents: |-
+      #!/usr/bin/env bash
+      set -e
+      export USER="${USER:=`whoami`}"
+      if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi
 
   - name: license.txt
     contents: |-
