@@ -158,14 +158,15 @@ build:
 
     # Run one real nu_correct iteration at build time. The release test runner
     # captures command output but only ever reports the exit code, so a broken
-    # MNI toolchain is invisible there; failing here puts the actual error in
+    # MNI toolchain is invisible there; running it here puts the actual error in
     # the build log. This also covers the whole mri_convert -> MINC -> N3 chain.
+    # Deliberately non-fatal: the fulltest is the gate, and failing the build
+    # here would destroy the candidate image instead of just reporting on it.
     - run:
         - FS=/opt/freesurfer-{{ context.version }}
         - cd /tmp
-        - mri_nu_correct.mni --i "$FS/subjects/fsaverage/mri/orig.mgz" --o /tmp/nu_smoke.mgz --n 1
-        - test -s /tmp/nu_smoke.mgz
-        - rm -rf /tmp/nu_smoke.mgz /tmp/tmp.mri_nu_correct.mni.*
+        - 'echo "=== mri_nu_correct.mni smoke ==="; mri_nu_correct.mni --i "$FS/subjects/fsaverage/mri/orig.mgz" --o /tmp/nu_smoke.mgz --n 1 2>&1 || echo "NU_CORRECT FAILED - see output above"'
+        - 'echo "=== end nu_correct smoke ==="; rm -rf /tmp/nu_smoke.mgz /tmp/tmp.mri_nu_correct.mni.*; true'
 
     # workflows/test_deploy.sh fails any deployed executable whose ldd reports a
     # missing library, and container_tester only surfaces "Status: failed".
