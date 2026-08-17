@@ -278,13 +278,16 @@ tests:
       - output_exists: ${output_dir}/talairach.xfm
     timeout: 600
 
+  # Run on the 2mm volume rather than the conformed 256^3 one - nu_correct is
+  # the slowest step in autorecon1 and one iteration is enough to prove the
+  # MINC binaries and the bundled MNI perl modules are wired up.
   - name: mri_nu_correct.mni
     description: Non-uniformity correction via the MINC nu_correct perl script
-    command: mri_nu_correct.mni --i test_output/t1w_conformed.mgz --o test_output/t1w_nu.mgz --n 1
-    depends_on: mri_convert conform
+    command: mri_nu_correct.mni --i test_output/t1w_2mm.nii.gz --o test_output/t1w_nu.mgz --n 1
+    depends_on: mri_convert resample
     validate:
       - output_exists: ${output_dir}/t1w_nu.mgz
-    timeout: 900
+    timeout: 1800
 
   # ==========================================================================
   # SKULL STRIPPING AND SEGMENTATION

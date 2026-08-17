@@ -78,12 +78,17 @@ build:
         # execute bit is already set (plus all directories).
         - chmod -R a+rX /opt/freesurfer-{{ context.version }}
 
-    # 5.3 keeps the MNI perl modules under mni/lib/perl5/5.8.5, whereas 6.x and
-    # newer use mni/share/perl5. Provide both spellings so nu_correct and the
-    # other MNI perl scripts resolve regardless of which path is on PERL5LIB.
+    # 5.3 keeps the MNI perl modules under mni/lib/perl5/<perlver>, whereas 6.x
+    # and newer use mni/share/perl5. Locate MNI/Startup.pm rather than assuming
+    # a version directory, and expose the real root at the mni/share/perl5 path
+    # that PERL5LIB points at. Fails the build if the layout is not what
+    # nu_correct and the other MNI perl scripts need.
     - run:
         - FS=/opt/freesurfer-{{ context.version }}
-        - if [ -d "$FS/mni/lib/perl5/5.8.5" ] && [ ! -e "$FS/mni/share/perl5" ]; then mkdir -p "$FS/mni/share" && ln -s ../lib/perl5/5.8.5 "$FS/mni/share/perl5"; fi
+        - 'MNI_PERL_ROOT=$(dirname "$(dirname "$(find "$FS/mni" -name Startup.pm -path "*/MNI/*" 2>/dev/null | head -1)")")'
+        - 'test -d "$MNI_PERL_ROOT/MNI"'
+        - 'if [ "$MNI_PERL_ROOT" != "$FS/mni/share/perl5" ]; then mkdir -p "$FS/mni/share" && rm -rf "$FS/mni/share/perl5" && ln -s "$MNI_PERL_ROOT" "$FS/mni/share/perl5"; fi'
+        - 'perl -I "$FS/mni/share/perl5" -e "use MNI::Startup; print qq(MNI perl modules load from $FS/mni/share/perl5\n)"'
 
     - copy:
         - license.txt
@@ -110,9 +115,9 @@ build:
         MINC_LIB_DIR: /opt/freesurfer-{{ context.version }}/mni/lib
         MNI_DATAPATH: /opt/freesurfer-{{ context.version }}/mni/data
         MNI_DIR: /opt/freesurfer-{{ context.version }}/mni
-        MNI_PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/lib/perl5/5.8.5
+        MNI_PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/share/perl5
         OS: Linux
-        PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/lib/perl5/5.8.5:/opt/freesurfer-{{ context.version }}/mni/share/perl5
+        PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/share/perl5
         SHLVL: "1"
         SUBJECTS_DIR: ~/freesurfer-subjects-dir
         TERM: xterm
@@ -129,6 +134,17 @@ build:
         - test -s "$FS/SetUpFreeSurfer.sh"
         - 'for b in mri_info mri_convert mris_convert mri_watershed mri_normalize mri_segment mri_binarize mri_vol2vol freeview; do "$FS/bin/$b" --version > /dev/null 2>&1; rc=$?; if [ "$rc" -eq 126 ] || [ "$rc" -eq 127 ]; then echo "FATAL - $b cannot be executed (exit $rc)"; ldd "$FS/bin/$b" | grep ''not found'' || true; exit 1; fi; done'
         - test -x "$FS/bin/recon-all"
+
+    # TEMPORARY: mri_nu_correct.mni exits 1 within ~2s under the release test
+    # runner, which captures but never prints command output. Echo the real
+    # failure into the build log, where it is visible. Non-fatal so the
+    # candidate image is still produced. Remove once the fulltest is green.
+    - run:
+        - FS=/opt/freesurfer-{{ context.version }}
+        - 'echo "=== which nu_correct ==="; which nu_correct || echo "nu_correct NOT on PATH"'
+        - 'echo "=== nu_correct perl deps ==="; perl -c "$FS/mni/bin/nu_correct" 2>&1 | tail -20 || true'
+        - 'echo "=== mri_nu_correct.mni smoke ==="; cd /tmp && mri_nu_correct.mni --i "$FS/subjects/fsaverage/mri/orig.mgz" --o /tmp/nu_smoke.mgz --n 1 2>&1 | tail -60 || true'
+        - 'echo "=== end nu_correct diagnostics ==="'
 
 deploy:
   path:
