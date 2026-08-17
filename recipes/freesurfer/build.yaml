@@ -74,6 +74,9 @@ build:
         - csh
         - tcsh
         - perl
+        # Some 5.3 scripts are python 2, which is what trusty's `python` is.
+        # Without it their shebang resolves to nothing.
+        - python
         - file
         - gawk
         - tar
@@ -215,6 +218,16 @@ build:
     - run:
         - FS=/opt/freesurfer-{{ context.version }}
         - 'for d in "$FS/bin" "$FS/fsfast/bin"; do find "$d" -maxdepth 1 -xtype l -print -delete; done'
+
+    # For a non-ELF file test_deploy.sh reads the shebang and requires the
+    # interpreter to exist; normalise_path() returns an absolute interpreter
+    # unchanged without checking it, so MGH's build-host paths (/usr/pubsw/...)
+    # fail on existence. Those scripts are equally broken for anyone running
+    # them, so repoint each unresolvable shebang at the interpreter of the same
+    # name that is actually installed, preserving any interpreter flags.
+    - run:
+        - FS=/opt/freesurfer-{{ context.version }}
+        - 'for f in $(find "$FS/bin" "$FS/fsfast/bin" -maxdepth 1 \( -type f -o \( -type l -a ! -xtype d \) \) -perm -111 -print 2>/dev/null | sort); do r=$(readlink -f "$f"); [ -f "$r" ] || continue; L=$(head -1 "$r" 2>/dev/null); case "$L" in "#!"*) ;; *) continue;; esac; I=$(printf "%s" "$L" | sed -e "s/^#![[:space:]]*//" -e "s/[[:space:]].*$//"); [ -n "$I" ] || continue; case "$I" in /*) [ -x "$I" ] && continue;; *) command -v "$I" >/dev/null 2>&1 && continue;; esac; N=$(command -v "$(basename "$I")" 2>/dev/null); if [ -n "$N" ]; then sed -i "1s|^#![[:space:]]*[^[:space:]]*|#!$N|" "$r"; echo "SHEBANG FIXED $r ($I -> $N)"; else echo "SHEBANG UNRESOLVED $r ($I)"; fi; done; echo "=== end shebang repair ==="'
 
     # Mirror workflows/test_deploy.sh: same enumeration (which includes symlinks
     # and requires -perm -111), same assertions, each applied to the readlink -f
