@@ -209,13 +209,21 @@ build:
         - 'echo "=== mri_nu_correct.mni smoke ==="; mri_nu_correct.mni --i "$FS/subjects/fsaverage/mri/orig.mgz" --o /tmp/nu_smoke.mgz --n 1 2>&1 || echo "NU_CORRECT FAILED - see output above"'
         - 'echo "=== end nu_correct smoke ==="; rm -rf /tmp/nu_smoke.mgz /tmp/tmp.mri_nu_correct.mni.*; true'
 
-    # workflows/test_deploy.sh fails any deployed executable whose ldd reports a
-    # missing library, and container_tester only surfaces "Status: failed".
-    # Apply the same check here so the offending binaries are named in the build
-    # log instead of having to be inferred from an opaque test failure.
+    # A dangling symlink in a deploy directory fails test_deploy.sh's existence
+    # check, and it is broken for users regardless, so drop them. 5.3 ships a
+    # few, and removing the unusable CUDA binaries above can orphan more.
     - run:
         - FS=/opt/freesurfer-{{ context.version }}
-        - 'MISSING=$(for f in $(find "$FS/bin" "$FS/fsfast/bin" -maxdepth 1 -type f -perm -u+x | sort); do if ldd "$f" 2>/dev/null | grep -q "not found"; then echo "--- $f"; ldd "$f" | grep "not found"; fi; done); if [ -n "$MISSING" ]; then echo "FATAL - deployed binaries with unresolved libraries:"; echo "$MISSING"; exit 1; fi'
+        - 'for d in "$FS/bin" "$FS/fsfast/bin"; do find "$d" -maxdepth 1 -xtype l -print -delete; done'
+
+    # Mirror workflows/test_deploy.sh: same enumeration (which includes symlinks
+    # and requires -perm -111), same assertions, each applied to the readlink -f
+    # target rather than the entry itself. container_tester only surfaces
+    # "Status: failed", so this is the only place the offending files get named.
+    # Non-fatal - the deploy test is the gate, this is just the readout.
+    - run:
+        - FS=/opt/freesurfer-{{ context.version }}
+        - 'PROBLEMS=""; for f in $(find "$FS/bin" "$FS/fsfast/bin" -maxdepth 1 \( -type f -o \( -type l -a ! -xtype d \) \) -perm -111 -print 2>/dev/null | sort); do r=$(readlink -f "$f"); if [ ! -f "$r" ]; then PROBLEMS="$PROBLEMS\nMISSING  $f -> $r"; continue; fi; if [ ! -x "$r" ]; then PROBLEMS="$PROBLEMS\nNOTEXEC  $f -> $r"; fi; if ! find "$r" -maxdepth 0 -perm -0005 -print -quit 2>/dev/null | grep -q .; then PROBLEMS="$PROBLEMS\nNOTO+RX  $f -> $r"; fi; if ldd "$r" 2>/dev/null | grep -q "not found"; then PROBLEMS="$PROBLEMS\nLDD      $f -> $r"; fi; done; if [ -n "$PROBLEMS" ]; then echo "=== deploy check problems ==="; printf "%b\n" "$PROBLEMS" | head -60; else echo "=== deploy check clean ==="; fi'
 
 deploy:
   path:
