@@ -1,11 +1,11 @@
 name: freesurfer
-version: 8.2.0
-# https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/
+version: 5.3.0
+# https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/5.3.0/
 
 
 copyright:
   - name: freesurfer license
-    url: https://github.com/freesurfer/freesurfer/blob/dev/LICENSE.txt
+    url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
 
 architectures:
   - x86_64
@@ -13,141 +13,167 @@ architectures:
 build:
   kind: neurodocker
 
-  base-image: ubuntu:22.04
+  # FreeSurfer 5.3.0 is 2013 software shipping CentOS 4/6 x86_64 binaries, and
+  # it wants an OS of the same era. 16.04 was tried first and works for the
+  # binaries, but its perl 5.22 turns constructs the bundled MNI N3 perl
+  # scripts rely on (defined(@array) and the rest of that removal wave) into
+  # hard errors, so nu_correct dies. Trusty's perl 5.18 still accepts them.
+  # It also has libpng12-0 and the rest of the legacy X/GL stack these
+  # binaries link against.
+  base-image: ubuntu:14.04
   pkg-manager: apt
+
+  # Trusty is EOL and its archive Release files may be past Valid-Until, which
+  # apt refuses without an override. That override has to be written before the
+  # first `apt-get update`, and the builder's default template runs one ahead of
+  # every recipe directive - too early to inject it. So the preamble below is
+  # hand-rolled from that template with the apt config first. (Whether trusty
+  # strictly needs the override today is untested, since it is always in place
+  # by the time apt runs; it is cheap insurance either way.) The archives are
+  # still on archive.ubuntu.com; old-releases.ubuntu.com does not carry trusty.
+  add-default-template: false
+  add-tzdata: false
 
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
+        TZ: UTC
+        LANG: en_US.UTF-8
+        LC_ALL: en_US.UTF-8
+        ND_ENTRYPOINT: /neurodocker/startup.sh
+
+    - run:
+        - echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid-until
+        - apt-get update -qq
+        - apt-get install -y -q --no-install-recommends apt-utils bzip2 ca-certificates curl locales unzip tzdata
+        - rm -rf /var/lib/apt/lists/*
+        # Trusty's locales package reads /var/lib/locales/supported.d/, not
+        # /etc/locale.gen - Ubuntu only moved to locale.gen in xenial. That is
+        # why the image ships no locale.gen and why appending to it generated
+        # nothing. Write both layouts so locale-gen finds the locale either way.
+        # Tolerated on failure: LANG is already set in the environment above and
+        # nothing in FreeSurfer depends on the generated locale, so a hiccup
+        # here must not throw away a 4 GB build.
+        - 'mkdir -p /var/lib/locales/supported.d && echo "en_US.UTF-8 UTF-8" > /var/lib/locales/supported.d/local && echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen && update-locale LANG=en_US.UTF-8 || echo "WARNING - locale setup incomplete, continuing"'
+        - ln -snf /usr/share/zoneinfo/UTC /etc/localtime
+        - echo UTC > /etc/timezone
+        - chmod 777 /opt && chmod a+s /opt
+
+    - copy:
+        - startup.sh
+        - /neurodocker/startup.sh
+
+    - run:
+        - chmod -R 777 /neurodocker && chmod a+s /neurodocker
+
+    - entrypoint: /neurodocker/startup.sh
 
     - install:
-        - octave
-        - wget
-        - language-pack-en
+        - bc
         - binutils
-        - libx11-dev
-        - gettext
-        - xterm
-        - x11-apps
-        - perl
-        - make
         - csh
         - tcsh
-        - tcl
+        - perl
+        # Some 5.3 scripts are python 2, which is what trusty's `python` is.
+        # Without it their shebang resolves to nothing.
+        - python
         - file
-        - bc
-        - python-is-python3
-        - xorg
-        - xorg-dev
-        - xserver-xorg-video-intel
-        - libncurses5
-        - libbsd0
-        - libegl1
-        - libexpat1
-        - libfontconfig1
-        - libfreetype6
-        - libgl1
-        - libglib2.0-0
+        - gawk
+        - tar
+        - unzip
+        - wget
+        - psmisc
+        - language-pack-en
+        - libgl1-mesa-glx
+        - libgl1-mesa-dri
         - libglu1-mesa
-        - libglvnd0
-        - libglx0
+        - libglib2.0-0
         - libgomp1
         - libice6
-        - libicu70
-        - libjpeg62
-        - libmd0
-        - libopengl0
-        - libpcre2-16-0
-        - libpng16-16
-        - libquadmath0
         - libsm6
         - libx11-6
-        - libx11-xcb1
-        - libxau6
-        - libxcb-icccm4
-        - libxcb-image0
-        - libxcb-keysyms1
-        - libxcb-randr0
-        - libxcb-render-util0
-        - libxcb-render0
-        - libxcb-shape0
-        - libxcb-shm0
-        - libxcb-sync1
-        - libxcb-util1
-        - libxcb-xfixes0
-        - libxcb-xinerama0
-        - libxcb-xinput0
-        - libxcb-xkb1
-        - libxcb1
-        - libxdmcp6
         - libxext6
         - libxft2
         - libxi6
-        - libxkbcommon-x11-0
-        - libxkbcommon0
-        - libqt5core5a
-        - libqt5dbus5
-        - libqt5gui5
-        - libqt5network5
-        - libqt5widgets5
-        - libqt5xml5
-        - libqt5x11extras5
         - libxmu6
         - libxrender1
         - libxss1
         - libxt6
-        - mesa-utils
-        - unzip
+        - libfontconfig1
+        - libfreetype6
+        - libjpeg62
+        - libpng12-0
         - libncurses5
-        - libgomp1
-        - default-jdk
+        - libquadmath0
+        - mesa-utils
+        - xterm
+        - x11-apps
         - xvfb
         - xauth
 
-    - run:
-        - apt-get update -qq
-        - apt-get install -y -q --no-install-recommends {{ get_file("freesurfer_deb") }}
-        - rm -rf /var/lib/apt/lists/*
+    - workdir: /opt
 
-    - workdir: /opt/freesurfer-{{ context.version }}
+    # Official CentOS 6 x86_64 distribution (~4 GB compressed). get_file() is
+    # used instead of wget so the builder cache handles the large download.
+    - run:
+        - tar -xzf {{ get_file("freesurfer_tar") }} -C /opt
+        - mv /opt/freesurfer /opt/freesurfer-{{ context.version }}
+        # The 2013 tarball carries its original owner-only permissions, so the
+        # tree is unreadable to arbitrary runtime users once the container is
+        # unpacked. `a+rX` adds read everywhere and execute only where an
+        # execute bit is already set (plus all directories).
+        - chmod -R a+rX /opt/freesurfer-{{ context.version }}
+        # 5.3 ships experimental CUDA builds that need a GPU, the CUDA 5.0
+        # runtime and boost 1.5x - none of which exist here or in any CPU
+        # deployment. They are unusable and every one of them reports missing
+        # libraries, so drop them rather than ship binaries that cannot run.
+        - rm -f /opt/freesurfer-{{ context.version }}/bin/*cuda*
+
+    # 5.3 keeps the MNI perl modules under mni/lib/perl5/<perlver>, whereas 6.x
+    # and newer use mni/share/perl5. Locate MNI/Startup.pm rather than assuming
+    # a version directory, and expose the real root at the mni/share/perl5 path
+    # that PERL5LIB points at. Fails the build if the layout is not what
+    # nu_correct and the other MNI perl scripts need.
+    - run:
+        - FS=/opt/freesurfer-{{ context.version }}
+        - 'MNI_PERL_ROOT=$(dirname "$(dirname "$(find "$FS/mni" -name Startup.pm -path "*/MNI/*" 2>/dev/null | head -1)")")'
+        - 'test -d "$MNI_PERL_ROOT/MNI"'
+        - 'if [ "$MNI_PERL_ROOT" != "$FS/mni/share/perl5" ]; then mkdir -p "$FS/mni/share" && rm -rf "$FS/mni/share/perl5" && ln -s "$MNI_PERL_ROOT" "$FS/mni/share/perl5"; fi'
+        - 'perl -I "$FS/mni/share/perl5" -e "use MNI::Startup; print qq(MNI perl modules load from $FS/mni/share/perl5\n)"'
+
+    # The MNI N3 scripts date from 2010 and use defined(@array) / defined(%hash).
+    # Trusty's perl 5.18 only warns about these, so this is no longer load
+    # bearing, but the rewrite to plain boolean context is what the construct
+    # always meant and it keeps the deprecation noise out of nu_correct's
+    # output. Syntax-check whatever gets rewritten so a bad edit fails here.
+    - run:
+        - FS=/opt/freesurfer-{{ context.version }}
+        - 'PATCHED=""; for f in $(grep -rIlE "defined[[:space:]]*\(?[[:space:]]*[@%]" "$FS/mni" "$FS/bin" 2>/dev/null); do case "$f" in *.pm) ;; *) case "$(head -1 "$f" 2>/dev/null)" in *perl*) ;; *) continue;; esac;; esac; sed -i -E "s/defined[[:space:]]*\(([[:space:]]*[@%][A-Za-z_][A-Za-z0-9_]*[[:space:]]*)\)/(\1)/g; s/defined[[:space:]]+([@%][A-Za-z_][A-Za-z0-9_]*)/\1/g" "$f"; echo "perl 5.22 patched $f"; PATCHED="$PATCHED $f"; done; for f in $PATCHED; do perl -I "$FS/mni/share/perl5" -c "$f" || exit 1; done'
+        # Gate the N3 entry point itself. Deliberately not a sweep over all of
+        # mni/bin: minchistory and friends want CPAN modules (Text::Format) that
+        # 5.3 never shipped, which is pre-existing upstream breakage in optional
+        # MINC utilities and nothing recon-all touches.
+        - 'perl -I "$FS/mni/share/perl5" -c "$FS/mni/bin/nu_correct"'
+
+    - copy:
+        - license.txt
+        - /opt/freesurfer-{{ context.version }}/license.txt
 
     - environment:
-        LD_LIBRARY_PATH: ""
-
-    - template:
-        name: matlabmcr
-        install_path: /opt/MCR2014a
-        version: 2014a
-
-    - run:
-        - ln -s /opt/MCR2014a/v83/ /opt/freesurfer-{{ context.version }}/MCRv83
-
-    - template:
-        name: matlabmcr
-        install_path: /opt/MCR2019b
-        version: 2019b
-
-    - run:
-        - ln -s /opt/MCR2019b/v97/ /opt/freesurfer-{{ context.version }}/MCRv97
-
-    # Remove MCR's bundled Qt5 libraries that conflict with the system Qt5
-    # needed by freeview_bin_real. Without this, any LD_LIBRARY_PATH that
-    # includes MCRv97/bin/glnxa64 (e.g. for MATLAB-compiled tools) will
-    # cause freeview to pick up the wrong, version-less Qt5 and crash.
-    - run:
-        - rm -f /opt/MCR2019b/v97/bin/glnxa64/libQt5*.so*
-
-    - environment:
+        DEPLOY_TEST_MAX_PATH_FILES: "60"
+        # Set FREESURFER_HOME on `module load` to the host-visible path inside
+        # the unpacked container so host-side assets (luts, fsaverage,
+        # SetUpFreeSurfer.sh) resolve without exec-ing into the container.
+        # BASEPATH is substituted by transparent-singularity.
+        DEPLOY_ENV_FREESURFER_HOME: "BASEPATH/opt/freesurfer-{{ context.version }}"
         FIX_VERTEX_AREA: ""
         FMRI_ANALYSIS_DIR: /opt/freesurfer-{{ context.version }}/fsfast
+        FREESURFER: /opt/freesurfer-{{ context.version }}
         FREESURFER_HOME: /opt/freesurfer-{{ context.version }}
         FSFAST_HOME: /opt/freesurfer-{{ context.version }}/fsfast
         FSF_OUTPUT_FORMAT: nii.gz
-        FS_MCRROOT: /opt/MCR2019b/v97/
-        FS_OCTAVE_BIN: /usr/bin/octave
-        FS_OCTAVE_LIB: /usr/lib/x86_64-linux-gnu/octave/6.4.0
+        FS_LICENSE: /opt/freesurfer-{{ context.version }}/license.txt
         FS_OVERRIDE: "0"
-        FS_USE_OCTAVE: "1"
         FUNCTIONALS_DIR: /opt/freesurfer-{{ context.version }}/sessions
         LOCAL_DIR: /opt/freesurfer-{{ context.version }}/local
         MINC_BIN_DIR: /opt/freesurfer-{{ context.version }}/mni/bin
@@ -160,76 +186,57 @@ build:
         SHLVL: "1"
         SUBJECTS_DIR: ~/freesurfer-subjects-dir
         TERM: xterm
+        PATH: $PATH:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/tktools:/opt/freesurfer-{{ context.version }}/mni/bin
 
-    - workdir: /opt/workbench/
-
+    # Fail the build if a core binary cannot be loaded at all. `test -x` passes
+    # even when a shared library is missing, which is the failure mode these
+    # CentOS 6 builds hit on modern bases. Exit codes 126/127 mean "could not
+    # execute"; any other exit code is a normal usage/version response and is
+    # accepted, since 5.3 binaries are inconsistent about --version.
     - run:
-        - unzip {{ get_file("workbench_zip") }}
+        - FS=/opt/freesurfer-{{ context.version }}
+        - test -s "$FS/license.txt"
+        - test -s "$FS/SetUpFreeSurfer.sh"
+        - 'for b in mri_info mri_convert mris_convert mri_watershed mri_normalize mri_segment mri_binarize mri_vol2vol freeview; do "$FS/bin/$b" --version > /dev/null 2>&1; rc=$?; if [ "$rc" -eq 126 ] || [ "$rc" -eq 127 ]; then echo "FATAL - $b cannot be executed (exit $rc)"; ldd "$FS/bin/$b" | grep ''not found'' || true; exit 1; fi; done'
+        - test -x "$FS/bin/recon-all"
 
-    - environment:
-        DEPLOY_TEST_MAX_PATH_FILES: "60"
-        # Set FREESURFER_HOME on `module load` to the host-visible path inside the
-        # unpacked container, so host-side tools (MATLAB toolbox, luts, fsaverage,
-        # SetUpFreeSurfer.sh) resolve without exec-ing into the container. BASEPATH
-        # is substituted by transparent-singularity to the container's .simg dir.
-        # This adds, in LUA:
-        # setenv("FREESURFER_HOME", "/cvmfs/neurodesk.ardc.edu.au/containers/freesurfer_8.2.0_20260331/freesurfer_8.2.0_20260331.simg/opt/freesurfer-8.2.0")
-        DEPLOY_ENV_FREESURFER_HOME: "BASEPATH/opt/freesurfer-{{ context.version }}"
-        FREESURFER: /opt/freesurfer-{{ context.version }}
-        LD_LIBRARY_PATH: /usr/local/freesurfer/{{ context.version }}/lib/qt/lib:/usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib:/usr/local/freesurfer/lib/qt/lib:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv83/runtime/glnxa64
-        PATH: $PATH:/opt/workbench/:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/tktools:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/mni/bin
-
+    # Run one real nu_correct iteration at build time. The release test runner
+    # captures command output but only ever reports the exit code, so a broken
+    # MNI toolchain is invisible there; running it here puts the actual error in
+    # the build log. This also covers the whole mri_convert -> MINC -> N3 chain.
+    # Deliberately non-fatal: the fulltest is the gate, and failing the build
+    # here would destroy the candidate image instead of just reporting on it.
     - run:
-        - ln -s /usr/local/freesurfer/{{ context.version }}/* /usr/local/freesurfer/
-        - ln -s /usr/local/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
+        - FS=/opt/freesurfer-{{ context.version }}
+        - cd /tmp
+        - 'echo "=== mri_nu_correct.mni smoke ==="; mri_nu_correct.mni --i "$FS/subjects/fsaverage/mri/orig.mgz" --o /tmp/nu_smoke.mgz --n 1 2>&1 || echo "NU_CORRECT FAILED - see output above"'
+        - 'echo "=== end nu_correct smoke ==="; rm -rf /tmp/nu_smoke.mgz /tmp/tmp.mri_nu_correct.mni.*; true'
 
+    # A dangling symlink in a deploy directory fails test_deploy.sh's existence
+    # check, and it is broken for users regardless, so drop them. 5.3 ships a
+    # few, and removing the unusable CUDA binaries above can orphan more.
     - run:
-        - echo "/usr/local/freesurfer/{{ context.version }}/lib/qt/lib" > /etc/ld.so.conf.d/freesurfer-qt.conf
-        - ldconfig
+        - FS=/opt/freesurfer-{{ context.version }}
+        - 'for d in "$FS/bin" "$FS/fsfast/bin"; do find "$d" -maxdepth 1 -xtype l -print -delete; done'
 
-    # Fix libQt5Core.so.5 for runtime compatibility across host stacks:
-    # 1) glibc 2.37+ rejects dlopen on shared objects that carry PT_INTERP.
-    # 2) Older host kernels (for example 3.10) reject binaries that advertise
-    #    .note.ABI-tag Linux 3.17.0, surfacing as "cannot open shared object file".
-    # We patch PT_INTERP/.interp in the ELF binary and strip .note.ABI-tag.
-    # NEEDED ld-linux is left intact (harmless). We do NOT use patchelf
-    # --remove-needed as it can corrupt the binary.
+    # For a non-ELF file test_deploy.sh reads the shebang and requires the
+    # interpreter to exist; normalise_path() returns an absolute interpreter
+    # unchanged without checking it, so MGH's build-host paths (/usr/pubsw/...)
+    # fail on existence. Those scripts are equally broken for anyone running
+    # them, so repoint each unresolvable shebang at the interpreter of the same
+    # name that is actually installed, preserving any interpreter flags.
     - run:
-        - QT5CORE_LIB=/usr/local/freesurfer/{{ context.version }}/lib/qt/lib/libQt5Core.so.5.12.11
-        - python3 {{ get_file("fix_qt5core_pie") }} "$QT5CORE_LIB"
-        - if readelf -n "$QT5CORE_LIB" | grep -q '\.note.ABI-tag'; then strip --remove-section=.note.ABI-tag "$QT5CORE_LIB"; fi
-        - ldconfig
+        - FS=/opt/freesurfer-{{ context.version }}
+        - 'for f in $(find "$FS/bin" "$FS/fsfast/bin" -maxdepth 1 \( -type f -o \( -type l -a ! -xtype d \) \) -perm -111 -print 2>/dev/null | sort); do r=$(readlink -f "$f"); [ -f "$r" ] || continue; L=$(head -1 "$r" 2>/dev/null); case "$L" in "#!"*) ;; *) continue;; esac; I=$(printf "%s" "$L" | sed -e "s/^#![[:space:]]*//" -e "s/[[:space:]].*$//"); [ -n "$I" ] || continue; case "$I" in /*) [ -x "$I" ] && continue;; *) command -v "$I" >/dev/null 2>&1 && continue;; esac; N=$(command -v "$(basename "$I")" 2>/dev/null); if [ -n "$N" ]; then sed -i "1s|^#![[:space:]]*[^[:space:]]*|#!$N|" "$r"; echo "SHEBANG FIXED $r ($I -> $N)"; else echo "SHEBANG UNRESOLVED $r ($I)"; fi; done; echo "=== end shebang repair ==="'
 
+    # Mirror workflows/test_deploy.sh: same enumeration (which includes symlinks
+    # and requires -perm -111), same assertions, each applied to the readlink -f
+    # target rather than the entry itself. container_tester only surfaces
+    # "Status: failed", so this is the only place the offending files get named.
+    # Non-fatal - the deploy test is the gate, this is just the readout.
     - run:
-        - mv /opt/freesurfer-{{ context.version }}/bin/freeview /opt/freesurfer-{{ context.version }}/bin/freeview_bin_real
-
-    - copy:
-        - freeview
-        - /opt/freesurfer-{{ context.version }}/bin/freeview
-
-    - copy:
-        - freeview_bin
-        - /opt/freesurfer-{{ context.version }}/bin/freeview_bin
-
-    - run:
-        - chmod a+rwx /opt/freesurfer-{{ context.version }}/bin/freeview /opt/freesurfer-{{ context.version }}/bin/freeview_bin
-
-    - workdir: /opt/freesurfer-{{ context.version }}/bin/
-
-    - run:
-        - cp {{ get_file("segmentNuclei_1") }} segmentNuclei_mcr97
-        - chmod a+rwx segmentNuclei_mcr97
-
-    - copy:
-        - segmentNuclei
-        - /opt/freesurfer-{{ context.version }}/bin/segmentNuclei
-
-    - run:
-        - chmod a+rwx /opt/freesurfer-{{ context.version }}/bin/segmentNuclei
-
-    - copy:
-        - license.txt
-        - /opt/freesurfer-{{ context.version }}/license.txt
+        - FS=/opt/freesurfer-{{ context.version }}
+        - 'PROBLEMS=""; for f in $(find "$FS/bin" "$FS/fsfast/bin" -maxdepth 1 \( -type f -o \( -type l -a ! -xtype d \) \) -perm -111 -print 2>/dev/null | sort); do r=$(readlink -f "$f"); if [ ! -f "$r" ]; then PROBLEMS="$PROBLEMS\nMISSING  $f -> $r"; continue; fi; if [ ! -x "$r" ]; then PROBLEMS="$PROBLEMS\nNOTEXEC  $f -> $r"; fi; if ! find "$r" -maxdepth 0 -perm -0005 -print -quit 2>/dev/null | grep -q .; then PROBLEMS="$PROBLEMS\nNOTO+RX  $f -> $r"; fi; if ldd "$r" 2>/dev/null | grep -q "not found"; then PROBLEMS="$PROBLEMS\nLDD      $f -> $r"; fi; done; if [ -n "$PROBLEMS" ]; then echo "=== deploy check problems ==="; printf "%b\n" "$PROBLEMS" | head -60; else echo "=== deploy check clean ==="; fi'
 
 deploy:
   path:
@@ -243,6 +250,10 @@ readme: |-
   ----------------------------------
   ## freesurfer/{{ context.version }} ##
   FreeSurfer contains a set of programs with a common focus of analyzing magnetic resonance imaging scans of brain tissue. It is an important tool in functional brain mapping and contains tools to conduct both volume based and surface based analysis.
+
+  This is the legacy 5.3.0 release (2013), built from the official CentOS 6
+  x86_64 distribution on Ubuntu 16.04. It is provided for reproducing older
+  analyses - use the newest freesurfer module for new work.
 
   Example:
   ```
@@ -264,176 +275,17 @@ readme: |-
   ----------------------------------
 
 files:
-  - name: fix_qt5core_pie
-    contents: |-
-      #!/usr/bin/env python3
-      """Strip PT_INTERP from libQt5Core so glibc 2.37+ will dlopen it.
+  - name: freesurfer_tar
+    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer-Linux-centos6_x86_64-stable-pub-v{{ context.version }}.tar.gz
 
-      Qt builds libQt5Core as both a shared library and an executable, adding a
-      PT_INTERP program header and .interp section. glibc 2.37+ refuses to
-      dlopen shared objects that carry PT_INTERP. This script patches:
-        1. PT_INTERP program header -> PT_NULL
-        2. .interp section header type -> SHT_NULL
-        3. .interp section data -> zeroed
-      The NEEDED ld-linux-x86-64.so.2 entry is left intact (harmless).
-      """
-      import struct, sys
-
-      path = sys.argv[1]
-      with open(path, 'r+b') as f:
-          f.seek(0)
-          assert f.read(4) == b'\x7fELF', f'{path}: not an ELF file'
-          assert f.read(1) == b'\x02', f'{path}: not 64-bit ELF'
-
-          f.seek(32)
-          e_phoff = struct.unpack('<Q', f.read(8))[0]
-          f.seek(40)
-          e_shoff = struct.unpack('<Q', f.read(8))[0]
-          f.seek(54)
-          e_phentsize = struct.unpack('<H', f.read(2))[0]
-          e_phnum = struct.unpack('<H', f.read(2))[0]
-          f.seek(58)
-          e_shentsize = struct.unpack('<H', f.read(2))[0]
-          e_shnum = struct.unpack('<H', f.read(2))[0]
-          e_shstrndx = struct.unpack('<H', f.read(2))[0]
-
-          # 1. PT_INTERP -> PT_NULL and zero .interp data
-          for i in range(e_phnum):
-              off = e_phoff + i * e_phentsize
-              f.seek(off)
-              p_type = struct.unpack('<I', f.read(4))[0]
-              if p_type == 3:  # PT_INTERP
-                  f.seek(off + 8)
-                  p_offset = struct.unpack('<Q', f.read(8))[0]
-                  f.seek(off + 32)
-                  p_filesz = struct.unpack('<Q', f.read(8))[0]
-                  f.seek(p_offset)
-                  f.write(b'\x00' * p_filesz)
-                  f.seek(off)
-                  f.write(struct.pack('<I', 0))  # PT_NULL
-                  print(f'Cleared PT_INTERP phdr[{i}], zeroed {p_filesz}B at offset {p_offset}')
-                  break
-          else:
-              print(f'No PT_INTERP in {path}')
-
-          # 2. .interp section header -> SHT_NULL
-          sh_strtab_off = e_shoff + e_shstrndx * e_shentsize + 24
-          f.seek(sh_strtab_off)
-          strtab_offset = struct.unpack('<Q', f.read(8))[0]
-          strtab_size = struct.unpack('<Q', f.read(8))[0]
-          f.seek(strtab_offset)
-          strtab = f.read(strtab_size)
-          for i in range(e_shnum):
-              sh_off = e_shoff + i * e_shentsize
-              f.seek(sh_off)
-              nm_idx = struct.unpack('<I', f.read(4))[0]
-              nm_end = strtab.index(b'\x00', nm_idx)
-              if strtab[nm_idx:nm_end] == b'.interp':
-                  f.seek(sh_off + 4)
-                  f.write(struct.pack('<I', 0))  # SHT_NULL
-                  print(f'Changed .interp shdr[{i}] to SHT_NULL')
-                  break
-
-      print(f'Done: {path}')
-
-  - name: segmentNuclei_1
-    url: https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
-  - name: freesurfer_deb
-    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer_ubuntu22-{{ context.version }}_amd64.deb
-
-  - name: workbench_zip
-    url: https://humanconnectome.org/storage/app/media/workbench/workbench-linux64-v2.0.1.zip
-
-  - name: segmentNuclei
-    contents: |-
-      #!/usr/bin/env bash
-      LD_LIBRARY_PATH=/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64 segmentNuclei_mcr97 "$@"
-
-  - name: freeview
+  # Reproduces the entrypoint the builder's default template would have written,
+  # which is skipped here because add-default-template is false.
+  - name: startup.sh
     contents: |-
       #!/usr/bin/env bash
       set -e
-
-      FREEVIEW_BIN=""
-      for candidate in \
-        "/opt/freesurfer-{{ context.version }}/bin/freeview_bin" \
-        "/usr/local/freesurfer/{{ context.version }}/bin/freeview_bin" \
-        "/usr/local/freesurfer/{{ context.version }}-1/bin/freeview_bin" \
-        "/usr/local/freesurfer/bin/freeview_bin"; do
-        if [ -x "$candidate" ]; then
-          FREEVIEW_BIN="$candidate"
-          break
-        fi
-      done
-
-      if [ -z "$FREEVIEW_BIN" ]; then
-        echo "freeview wrapper: unable to locate freeview_bin executable." >&2
-        exit 127
-      fi
-
-      exec "$FREEVIEW_BIN" "$@"
-
-  - name: freeview_bin
-    contents: |-
-      #!/usr/bin/env bash
-      set -e
-
-      FREEVIEW_BIN_REAL=""
-      for candidate in \
-        "/opt/freesurfer-{{ context.version }}/bin/freeview_bin_real" \
-        "/usr/local/freesurfer/{{ context.version }}/bin/freeview_bin_real" \
-        "/usr/local/freesurfer/{{ context.version }}-1/bin/freeview_bin_real" \
-        "/usr/local/freesurfer/bin/freeview_bin_real"; do
-        if [ -x "$candidate" ]; then
-          FREEVIEW_BIN_REAL="$candidate"
-          break
-        fi
-      done
-
-      if [ -z "$FREEVIEW_BIN_REAL" ]; then
-        echo "freeview_bin wrapper: unable to locate freeview_bin_real executable." >&2
-        exit 127
-      fi
-
-      RESOLVED_LD=""
-      for libdir in \
-        "/usr/local/freesurfer/{{ context.version }}/lib/qt/lib" \
-        "/usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib" \
-        "/usr/local/freesurfer/lib/qt/lib" \
-        "/opt/freesurfer-{{ context.version }}/lib/qt/lib" \
-        "/usr/lib/x86_64-linux-gnu" \
-        "/lib/x86_64-linux-gnu"; do
-        if [ -d "$libdir" ]; then
-          if [ -z "$RESOLVED_LD" ]; then
-            RESOLVED_LD="$libdir"
-          else
-            RESOLVED_LD="${RESOLVED_LD}:$libdir"
-          fi
-        fi
-      done
-
-      if [ -n "${LD_LIBRARY_PATH:-}" ]; then
-        OLD_IFS="$IFS"
-        IFS=':'
-        for libdir in $LD_LIBRARY_PATH; do
-          if [ -z "$libdir" ]; then
-            continue
-          fi
-          case "$libdir" in
-            *"/MCRv83/"*|*"/MCRv97/"*)
-              continue
-              ;;
-          esac
-          if [ -z "$RESOLVED_LD" ]; then
-            RESOLVED_LD="$libdir"
-          else
-            RESOLVED_LD="${RESOLVED_LD}:$libdir"
-          fi
-        done
-        IFS="$OLD_IFS"
-      fi
-
-      LD_LIBRARY_PATH="$RESOLVED_LD" exec "$FREEVIEW_BIN_REAL" "$@"
+      export USER="${USER:=`whoami`}"
+      if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi
 
   - name: license.txt
     contents: |-
