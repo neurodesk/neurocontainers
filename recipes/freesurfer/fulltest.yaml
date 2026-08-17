@@ -39,10 +39,17 @@ tests:
   # ==========================================================================
   # INSTALLATION AND VERSION CHECKS
   # ==========================================================================
-  - name: recon-all version check
-    description: Verify recon-all reports the packaged FreeSurfer version
-    command: recon-all --version 2>&1 | head -1
+  # 5.3's `recon-all --version` reports the script's CVS revision, not the
+  # FreeSurfer release, so the release is asserted against build-stamp.txt.
+  - name: build stamp reports the packaged version
+    description: Verify the installed distribution is the expected release
+    command: cat $FREESURFER_HOME/build-stamp.txt
     expected_output_contains: "${version}"
+
+  - name: recon-all available
+    description: Verify the recon-all pipeline driver is on PATH
+    command: command -v recon-all
+    expected_output_contains: "recon-all"
 
   - name: FreeSurfer home is populated
     description: Verify FREESURFER_HOME points at the unpacked distribution
@@ -77,10 +84,12 @@ tests:
     command: mri_info --dim ${t1w}
     expected_output_contains: "160 192 192"
 
-  - name: mri_info resolution
-    description: Print voxel resolution
-    command: mri_info --res ${t1w}
-    expected_output_contains: "1.000000"
+  # 5.3 formats --res differently from 7.x/8.x, so the voxel size is read off
+  # the main mri_info report instead.
+  - name: mri_info voxel sizes
+    description: Report voxel resolution for the T1w image
+    command: mri_info ${t1w} 2>&1 | grep -i "voxel sizes"
+    expected_output_contains: "1.3"
 
   - name: mri_info orientation
     description: Print volume orientation

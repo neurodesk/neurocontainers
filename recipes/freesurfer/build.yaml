@@ -72,6 +72,11 @@ build:
     - run:
         - tar -xzf {{ get_file("freesurfer_tar") }} -C /opt
         - mv /opt/freesurfer /opt/freesurfer-{{ context.version }}
+        # The 2013 tarball carries its original owner-only permissions, so the
+        # tree is unreadable to arbitrary runtime users once the container is
+        # unpacked. `a+rX` adds read everywhere and execute only where an
+        # execute bit is already set (plus all directories).
+        - chmod -R a+rX /opt/freesurfer-{{ context.version }}
 
     # 5.3 keeps the MNI perl modules under mni/lib/perl5/5.8.5, whereas 6.x and
     # newer use mni/share/perl5. Provide both spellings so nu_correct and the
