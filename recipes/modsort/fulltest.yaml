@@ -1,0 +1,36 @@
+name: modsort
+version: 0.0.2
+
+tests:
+  - name: modsort launcher is on PATH
+    command: command -v modsort
+    expected_output_contains: "modsort"
+
+  - name: the unpacked application is present
+    description: The AppImage is extracted at build time, so AppRun must exist and be executable.
+    command: test -x /opt/modsort/AppRun && echo apprun-ok
+    expected_output_contains: "apprun-ok"
+
+  - name: every Electron shared library resolves
+    description: >-
+      A GUI app missing a library fails at launch with no display to report it,
+      so check the dynamic linker can satisfy the binary instead.
+    command: |
+      bash -c 'n=$(ldd /opt/modsort/modsort 2>/dev/null | grep -c "not found" || true); echo "missing-libs=$n"'
+    expected_output_contains: "missing-libs=0"
+
+  - name: the launcher passes --no-sandbox
+    description: >-
+      Without it Chromium's setuid sandbox fails to initialise in an
+      unprivileged container and no window appears.
+    command: grep -c -- "--no-sandbox" /usr/local/bin/modsort
+    expected_output_contains: "1"
+
+  - name: electron starts far enough to look for a display
+    description: >-
+      Runs the real binary headlessly. It cannot open a window without a
+      display, so this asserts it reaches Chromium's own display error rather
+      than dying earlier on a missing library or loader failure.
+    command: |
+      bash -c 'out=$(env -u DISPLAY -u WAYLAND_DISPLAY /opt/modsort/AppRun --no-sandbox 2>&1 | head -20); if echo "$out" | grep -qiE "display|x11|xcb"; then echo reached-display-check; else echo "UNEXPECTED: $out"; fi'
+    expected_output_contains: "reached-display-check"
