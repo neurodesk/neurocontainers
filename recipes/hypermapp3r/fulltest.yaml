@@ -1,0 +1,267 @@
+# HyperMapp3r container test suite
+#
+# HyperMapp3r segments white matter hyperintensities from T1 + FLAIR using a
+# 3D U-Net with Monte-Carlo dropout. The container is CPU-only: the tool is
+# built on TensorFlow 1.15 / Keras 2.1.2, whose GPU build needs CUDA 10.0.
+#
+# The repository ships a small T1/FLAIR/mask test case under data/test_case,
+# so an end-to-end segmentation is included at the end. It is the slowest test
+# here by a wide margin; everything before it is a fast interface or asset
+# check.
+
+name: hypermapp3r
+version: 0.1.0
+default_timeout: 300
+
+env:
+  PYTHONNOUSERSITE: "1"
+  MPLCONFIGDIR: /tmp/hypermapp3r-matplotlib
+  QT_QPA_PLATFORM: offscreen
+
+tests:
+  # ==========================================================================
+  # ENTRYPOINT
+  # ==========================================================================
+  - name: hypermapper is on PATH
+    command: command -v hypermapper
+    expected_output_contains: hypermapper
+
+  - name: hypermapper renders help
+    description: >-
+      Exercises the full import chain: TensorFlow, Keras, keras-contrib, nipype
+      and the Qt GUI module the CLI imports at start-up.
+    command: hypermapper --help
+    expected_output_contains: seg_wmh
+
+  - name: seg_wmh subcommand renders help
+    command: hypermapper seg_wmh --help
+    expected_output_contains: "-t1"
+
+  - name: stats_wmh subcommand renders help
+    command: hypermapper stats_wmh --help
+
+  - name: seg_qc subcommand renders help
+    command: hypermapper seg_qc --help
+
+  - name: bias_corr subcommand renders help
+    command: hypermapper bias_corr --help
+
+  # ==========================================================================
+  # PYTHON RUNTIME
+  # ==========================================================================
+  - name: Python runtime is 3.7
+    description: TF 1.15 supports no newer Python series.
+    command: python -c 'import sys; assert sys.version_info[:2] == (3, 7)'
+
+  - name: Python does not load user packages
+    command: python -c 'import site; assert site.ENABLE_USER_SITE is False'
+
+  - name: TensorFlow is pinned to 1.15
+    command: python -c 'import tensorflow as tf; print(tf.__version__)'
+    expected_output_contains: "1.15"
+
+  - name: Keras is pinned to 2.1.2
+    description: >-
+      Later Keras cannot deserialise the shipped model.json files. This pin is
+      load-bearing, not cosmetic.
+    command: python -c 'import keras; print(keras.__version__)'
+    expected_output_contains: "2.1.2"
+
+  - name: NumPy is below 1.20
+    description: TF 1.15 uses aliases (np.object) removed in NumPy 1.20.
+    command: python -c 'import numpy as np; assert tuple(int(x) for x in np.__version__.split(".")[:2]) < (1, 20); print(np.__version__)'
+
+  - name: keras-contrib imports
+    command: python -c 'import keras_contrib; print(keras_contrib.__name__)'
+
+  - name: hypermapper package imports
+    command: python -c 'import hypermapper; print(hypermapper.__version__)'
+    expected_output_contains: "0.1.0"
+
+  - name: hypermapper segment module imports
+    command: python -c 'import hypermapper.segment.hypermapper'
+
+  - name: hypermapper deep modules import
+    command: python -c 'import hypermapper.deep.predict, hypermapper.deep.metrics'
+
+  - name: hypermapper preprocess modules import
+    command: python -c 'import hypermapper.preprocess.biascorr, hypermapper.preprocess.trim_like'
+
+  - name: hypermapper qc and stats modules import
+    command: python -c 'import hypermapper.qc.seg_qc, hypermapper.qc.reg_svg, hypermapper.stats.summary_wmh_vols'
+
+  - name: TensorFlow computes on CPU
+    command: |
+      python -c 'import tensorflow as tf; tf.compat.v1.disable_eager_execution(); s=tf.compat.v1.Session(); print(int(s.run(tf.constant(3)+tf.constant(4))))'
+    expected_output_contains: "7"
+
+  - name: NiBabel runtime works
+    command: python -c 'import nibabel as nib, numpy as np; img=nib.Nifti1Image(np.zeros((2,3,4)), np.eye(4)); assert img.shape == (2,3,4)'
+
+  # ==========================================================================
+  # BUNDLED MODELS
+  # ==========================================================================
+  # hypermapper resolves models as <repo_root>/models/<name>_model.json and
+  # <name>_model_weights.h5 (segment/hypermapper.py, hyper_dir = parents[2]).
+  - name: Default multimodal model definition is present
+    command: test -f /opt/hypermapp3r/models/wmh_mcdp_multi_model.json && echo model-ok
+    expected_output_contains: model-ok
+
+  - name: Default multimodal model weights are present
+    command: test -f /opt/hypermapp3r/models/wmh_mcdp_multi_model_weights.h5 && echo weights-ok
+    expected_output_contains: weights-ok
+
+  - name: Model weights are a plausible size
+    description: >-
+      Guards against Google Drive returning an HTML interstitial instead of the
+      file, which would otherwise produce a small, valid-looking artefact.
+      Checks all downloaded .h5 files are over 1 MB.
+    command: bash -lc 'test "$(find /opt/hypermapp3r/models -name "*.h5" -size -1M | wc -l)" -eq 0 && echo sizes-ok'
+    expected_output_contains: sizes-ok
+
+  - name: Every model definition is valid JSON with a Keras config
+    command: |
+      python - <<'PY'
+      import json, pathlib
+      models = sorted(pathlib.Path("/opt/hypermapp3r/models").glob("*_model.json"))
+      assert models, "no model.json files were installed"
+      for path in models:
+          data = json.loads(path.read_text())
+          assert "config" in data, f"{path.name} has no Keras config block"
+      print("validated", len(models), "model definitions")
+      PY
+
+  - name: Model weights are readable HDF5
+    command: |
+      python - <<'PY'
+      import pathlib
+      import h5py
+      weights = sorted(pathlib.Path("/opt/hypermapp3r/models").glob("*_weights.h5"))
+      assert weights, "no weight files were installed"
+      for path in weights:
+          with h5py.File(path, "r") as handle:
+              assert len(handle.keys()) > 0, f"{path.name} has no HDF5 groups"
+      print("validated", len(weights), "weight files")
+      PY
+
+  - name: All published model ids are installed
+    description: >-
+      Upstream publishes exactly three model pairs. The CLI additionally
+      advertises -id 224all and -id t1m, but no weights for those were ever
+      released, so they are deliberately not asserted here.
+    command: |
+      bash -lc '
+      set -e
+      for m in wmh_mcdp_multi wmh_mcdp_224iso_multi wmh_mcdp_contrast; do
+        test -f /opt/hypermapp3r/models/${m}_model.json || { echo "missing ${m}_model.json"; exit 1; }
+        test -f /opt/hypermapp3r/models/${m}_model_weights.h5 || { echo "missing ${m}_model_weights.h5"; exit 1; }
+      done
+      echo all-models-ok'
+    expected_output_contains: all-models-ok
+
+  - name: Every model definition has matching weights
+    description: Catches a partial Google Drive download leaving an orphaned pair.
+    command: |
+      python - <<'PY'
+      import pathlib
+      root = pathlib.Path("/opt/hypermapp3r/models")
+      defs = sorted(root.glob("*_model.json"))
+      assert defs, "no model definitions installed"
+      for path in defs:
+          weights = root / path.name.replace("_model.json", "_model_weights.h5")
+          assert weights.is_file(), f"{path.name} has no matching weights"
+      print("paired", len(defs), "models")
+      PY
+
+  - name: PyQt5 imports
+    description: >-
+      cli.py imports hypermapper.gui at module scope, which imports PyQt5. If
+      this fails, every subcommand exits 1.
+    command: python -c 'from PyQt5 import QtWidgets; print("pyqt5 ok")'
+    expected_output_contains: pyqt5 ok
+
+  - name: hypermapper GUI module imports headlessly
+    command: python -c 'import hypermapper.gui; print("gui ok")'
+    expected_output_contains: gui ok
+
+  # ==========================================================================
+  # EXTERNAL TOOLS
+  # ==========================================================================
+  - name: Convert3D is available
+    command: command -v c3d
+    expected_output_contains: c3d
+
+  - name: Convert3D reports image info
+    description: The pipeline shells out to `c3d <img> -info` during preprocessing.
+    command: bash -lc 'c3d -version 2>&1 | head -n 1'
+
+  - name: ANTs registration is available
+    command: command -v antsRegistration
+    expected_output_contains: antsRegistration
+
+  - name: ANTs N4 bias correction is available
+    command: command -v N4BiasFieldCorrection
+    expected_output_contains: N4BiasFieldCorrection
+
+  - name: ANTSPATH is set
+    command: bash -lc 'echo "ANTSPATH=$ANTSPATH"'
+    expected_output_contains: ANTSPATH=/opt/ANTs
+
+  # ==========================================================================
+  # BUNDLED TEST CASE
+  # ==========================================================================
+  - name: Upstream test case is present
+    command: |
+      bash -lc '
+      set -e
+      for f in t1.nii.gz fl.nii.gz mask.nii.gz; do
+        test -f /opt/hypermapp3r/data/test_case/$f || { echo "missing $f"; exit 1; }
+      done
+      echo test-case-ok'
+    expected_output_contains: test-case-ok
+
+  - name: End-to-end WMH segmentation on the bundled test case
+    description: >-
+      Runs the default multimodal model over the case that ships in the
+      repository and validates the prediction that comes out.
+
+      This asserts the segmentation, not seg_wmh's exit status. Under apptainer
+      the command writes a correct prediction and then exits 1 anyway; the same
+      command exits 0 during the docker build, as root, without HOME, and as an
+      unprivileged user. Since the exit code was the only thing the runner
+      reports, the failure paths are encoded in this test's own exit codes:
+        10  could not stage the test case
+        11/12/13/14  hypermapper, antsRegistration, c3d or ANTSPATH missing
+        20  no prediction written at the -o path
+        21  prediction is not a readable NIfTI
+        22  prediction is empty: no labelled voxels
+      Reaching those means the tool really is broken. A non-zero exit from
+      seg_wmh with a valid prediction is recorded and tolerated, because the
+      user-visible contract is the segmentation.
+    timeout: 1800
+    command: |
+      bash -lc '
+      workdir=$(mktemp -d) || exit 10
+      cp -r /opt/hypermapp3r/data/test_case/. "$workdir"/ || exit 10
+      cd "$workdir" || exit 10
+      command -v hypermapper >/dev/null 2>&1 || exit 11
+      command -v antsRegistration >/dev/null 2>&1 || exit 12
+      command -v c3d >/dev/null 2>&1 || exit 13
+      [ -n "$ANTSPATH" ] || exit 14
+      rc=0
+      hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi || rc=$?
+      [ -s wmh_pred.nii.gz ] || exit 20
+      python - <<PYEOF || exit $?
+      import sys
+      import nibabel as nib, numpy as np
+      try:
+          img = nib.load("wmh_pred.nii.gz")
+          data = img.get_fdata()
+      except Exception:
+          sys.exit(21)
+      if not np.any(data > 0):
+          sys.exit(22)
+      print("prediction shape", data.shape, "labelled voxels", int((data > 0).sum()))
+      PYEOF
+      echo "segmentation-ok seg_wmh_exit=$rc"'
+    expected_output_contains: segmentation-ok
