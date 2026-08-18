@@ -83,7 +83,7 @@ build:
         - WMOD="$(. "${VENV}/bin/activate" && python -c "import petu,pathlib; print(pathlib.Path(petu.__file__).parent/'weights.py')")"
         - test -f "${WMOD}"
         - cat {{ get_file("pin_weights.py") }} >> "${WMOD}"
-        - . "${VENV}/bin/activate" && python -c "from petu.weights import _get_zenodo_metadata_and_archive_url as f; assert f() is None, 'weight pin did not take'; print('zenodo lookup pinned off')"
+        - . "${VENV}/bin/activate" && python -c "from petu.weights import _get_zenodo_metadata_and_archive_url as f; m,_u=f(); assert m['version']=='{{ context.weights_version }}', m; print('zenodo lookup pinned to', m['version'])"
         # Prove the pinned lookup still resolves the baked weights.
         - . "${VENV}/bin/activate" && python -c "from petu.weights import check_weights_path; p=str(check_weights_path()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
         # Upstream ships no console_scripts, so the container provides one: a thin
@@ -169,7 +169,13 @@ files:
       # at run time. This image ships weights_v1.0.0; to move to newer weights,
       # bump weights_version in build.yaml and rebuild the container.
       def _get_zenodo_metadata_and_archive_url():
-          return None
+          # Returning None would be upstream's "Zenodo unreachable" path, but
+          # check_weights_path only binds zenodo_metadata inside "if zenodo_data:"
+          # and then reads it unconditionally, so None raises UnboundLocalError.
+          # Returning metadata whose version matches the baked weights takes the
+          # "latest weights are already present" branch instead: no network, no
+          # download, and the local weights are returned.
+          return ({"version": "1.0.0"}, "")
 
 deploy:
   bins:

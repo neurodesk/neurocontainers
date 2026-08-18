@@ -38,7 +38,7 @@ tests:
     description: >-
       The Zenodo lookup is disabled at build time so the image cannot swap its
       weights underneath a user; this fails if that patch is ever lost.
-    command: python -c "from petu.weights import _get_zenodo_metadata_and_archive_url as f; print('pinned' if f() is None else 'NOT-PINNED')"
+    command: python -c "from petu.weights import _get_zenodo_metadata_and_archive_url as f; m,_u=f(); print('pinned' if m['version']=='1.0.0' else 'NOT-PINNED')"
     expected_output_contains: "pinned"
 
   - name: petu CLI is on PATH and renders help
