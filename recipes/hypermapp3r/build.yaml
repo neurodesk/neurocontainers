@@ -238,6 +238,13 @@ build:
 
     - environment:
         TF_CPP_MIN_LOG_LEVEL: "3"
+        # $HOME does not exist at container runtime (see AGENTS.md), but it does
+        # during the docker build, which is why the segmentation passes as a
+        # build step and fails in the SIF. Point everything that defaults under
+        # $HOME at /tmp, which is writable in both.
+        MPLCONFIGDIR: /tmp/matplotlib-hypermapp3r
+        KERAS_HOME: /tmp/keras-hypermapp3r
+        XDG_CACHE_HOME: /tmp/cache-hypermapp3r
         # Headless: the CLI imports the Qt GUI module at start-up.
         QT_QPA_PLATFORM: offscreen
 
@@ -266,6 +273,16 @@ build:
         - test -s /tmp/e2e/wmh_pred.nii.gz
         - echo "end-to-end segmentation ok"
         - rm -rf /tmp/e2e
+        # Repeat with $HOME pointing nowhere, which is how the container runs
+        # under apptainer. The build has a writable /root, so without this the
+        # build would keep passing while the fulltest keeps failing -- which is
+        # exactly what happened for three rounds.
+        - cp -r {{ context.hypermapper_dir }}/data/test_case /tmp/e2e_nohome
+        - cd /tmp/e2e_nohome
+        - env HOME=/nonexistent hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi
+        - test -s /tmp/e2e_nohome/wmh_pred.nii.gz
+        - echo "end-to-end segmentation ok without HOME"
+        - rm -rf /tmp/e2e_nohome
 
     - workdir: /opt
 
