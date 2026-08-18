@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "gliomoda 0.0.4": {
+      "version": "20260818",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging",
+    "machine learning"
+  ]
+}
