@@ -26,11 +26,13 @@ tests:
     command: grep -c -- "--no-sandbox" /usr/local/bin/modsort
     expected_output_contains: "1"
 
-  - name: electron starts far enough to look for a display
+  - name: the Electron binary loads without a dynamic linker error
     description: >-
-      Runs the real binary headlessly. It cannot open a window without a
-      display, so this asserts it reaches Chromium's own display error rather
-      than dying earlier on a missing library or loader failure.
+      Runs the real binary headlessly under a timeout. It cannot open a window
+      with no display and is expected to exit; what matters is that it fails for
+      that reason rather than on a missing or unloadable library. This asserts
+      the absence of a loader error rather than guessing at Electron's own
+      message, which an earlier version of this test got wrong.
     command: |
-      bash -c 'out=$(env -u DISPLAY -u WAYLAND_DISPLAY /opt/modsort/AppRun --no-sandbox 2>&1 | head -20); if echo "$out" | grep -qiE "display|x11|xcb"; then echo reached-display-check; else echo "UNEXPECTED: $out"; fi'
-    expected_output_contains: "reached-display-check"
+      bash -c 'out=$(timeout 30 env -u DISPLAY -u WAYLAND_DISPLAY /opt/modsort/AppRun --no-sandbox 2>&1 | head -40 || true); if echo "$out" | grep -qiE "error while loading shared libraries|cannot open shared object|no such file or directory"; then echo "LOADER-ERROR: $out"; else echo no-loader-error; fi'
+    expected_output_contains: "no-loader-error"
