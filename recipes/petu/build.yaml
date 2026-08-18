@@ -1,0 +1,90 @@
+name: petu
+version: 0.0.7
+
+description: PeTu segments paediatric brain tumours into T2-hyperintense, enhancing and cystic components from multi-parametric MRI.
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BrainLesion/PeTu/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  venv: /opt/petu-0.0.7
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        VENV: "{{ context.venv }}"
+        # These default under $HOME, which does not exist at container runtime.
+        MPLCONFIGDIR: /tmp/mpl-petu
+        XDG_CACHE_HOME: /tmp/cache-petu
+        PYTHONNOUSERSITE: "1"
+        PATH: "{{ context.venv }}/bin:$PATH"
+
+    - install:
+        - ca-certificates
+        - fonts-dejavu-core
+        - libgl1
+        - libglib2.0-0t64
+        - libgomp1
+        - python3
+        - python3-pip
+        - python3-venv
+
+    - run:
+        - python3 -m venv "${VENV}"
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        # CUDA wheels: these are GPU inference tools and the default index
+        # already resolves to CUDA builds, so pin the index explicitly rather
+        # than letting the resolver choose a different one on a rebuild.
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir
+          --extra-index-url https://download.pytorch.org/whl/cu124 torch
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "petu==0.0.7"
+        # Import at build time so a broken resolve fails here rather than on
+        # first use; read the version from distribution metadata because these
+        # packages do not all define __version__.
+        - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import petu; print('petu', md.version('petu'))"
+        - chmod -R a+rX "${VENV}"
+        - rm -rf /root/.cache/pip /tmp/mpl-petu /tmp/cache-petu
+
+    - workdir: /opt
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+deploy:
+  path:
+    - "{{ context.venv }}/bin"
+
+categories:
+  - image segmentation
+  - structural imaging
+  - machine learning
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAxElEQVR42u2YOw6AIBAFOZ5nsPIwltbeynuYmNhZa2wJn0VgWdY3ydbOBMSIMQAAAAAAcpmG+e5KljrdiosKyRFvHlJSnj2ihjxbRExg2Q6S6LmObSJ80r5xidvDFpAqb0e45NkiQlumRkDxiNyAkDzLKnyVp0aIXwEVAdRTqHhA7NxPCaB8B0RFiPkqUx+aK908IDTXvvYZ8IrbgwCuCJc8JULUv4AYeRUBOe8DZe/jn/g3txIq7oXU3MypuRsFAADQHQ+axiwVn7MiLAAAAABJRU5ErkJggg==
+
+readme: |-
+  ----------------------------------
+  ## petu/{{ context.version }} ##
+
+  PeTu segments paediatric brain tumours into T2-hyperintense, enhancing and cystic components from multi-parametric MRI.
+
+  Example:
+  ```
+  python -c 'from petu import Inferer'
+  ```
+
+  Notes:
+  Upstream ships no console_scripts; the interface is the Python API
+  (`from petu import Inferer`). nnU-Net v2 is pinned by upstream to 2.5.2.
+  Model weights are fetched on first inference.
+
+  More documentation can be found here: https://github.com/BrainLesion
