@@ -11,6 +11,10 @@ architectures:
   - x86_64
 
 variables:
+  # Version of the model weights baked into the image. Bumping this is a
+  # deliberate act: the build asserts the archive Zenodo serves matches, so new
+  # upstream weights fail the build here instead of silently changing results.
+  weights_version: "1.0.2"
   venv: /opt/gliomoda-0.0.4
 
 build:
@@ -59,6 +63,17 @@ build:
         - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import check_weights_path; print('weights at', check_weights_path())"
         # Fail the build rather than ship an image that silently re-downloads.
         - . "${VENV}/bin/activate" && python -c "import pathlib,gliomoda as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; assert dirs, 'no weights baked into the image'; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()); print('baked', dirs[0].name, round(n/1e6), 'MB'); assert n > 2000*1e6, 'weights look truncated'"
+        # The baked weights must be the version this recipe declares.
+        - . "${VENV}/bin/activate" && python -c "import pathlib,gliomoda as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x.name for x in root.rglob('weights_v*') if x.is_dir()]; want='weights_v{{ context.weights_version }}'; assert want in dirs, 'expected '+want+', found '+str(dirs)+' -- upstream published new weights, bump weights_version'"
+        # Pin: stop the package querying Zenodo at run time so the image cannot
+        # swap its weights underneath a user. Upstream already handles an
+        # unreachable Zenodo by falling back to the local copy, so this reuses
+        # that supported path rather than adding new behaviour. Newer weights now
+        # require a rebuild with weights_version bumped.
+        - cat {{ get_file("pin_weights.py") }} >> "$(. "${VENV}/bin/activate" && python -c "import gliomoda.weights as m; print(m.__file__)")"
+        - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import _get_zenodo_metadata_and_archive_url as f; assert f() is None, 'weight pin did not take'; print('zenodo lookup pinned off')"
+        # Prove the pinned lookup still resolves the baked weights.
+        - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import check_weights_path; p=str(check_weights_path()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
         - chmod -R a+rX "${VENV}"
         - rm -rf /root/.cache/pip /tmp/mpl-gliomoda /tmp/cache-gliomoda
 
@@ -67,6 +82,17 @@ build:
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
+
+files:
+  - name: pin_weights.py
+    contents: |
+      # Appended to upstream's weights module by the neurocontainers recipe.
+      # Redefining the lookup shadows the original, so the package takes its own
+      # "Zenodo unreachable -> use the local weights" branch and never downloads
+      # at run time. This image ships weights_v1.0.2; to move to newer weights,
+      # bump weights_version in build.yaml and rebuild the container.
+      def _get_zenodo_metadata_and_archive_url():
+          return None
 
 deploy:
   path:
