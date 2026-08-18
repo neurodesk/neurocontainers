@@ -56,11 +56,32 @@ build:
         # packages do not all define __version__.
         - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import brainles_aurora; print('brainles-aurora', md.version('brainles-aurora'))"
         # Bake the model weights into the image so inference runs offline and every
-        # run uses the same weights. Upstream's own downloader is called rather
-        # than fetching the Zenodo archive by hand: it resolves the record and
-        # unpacks into the exact version-stamped directory the package later looks
-        # for, so it cannot drift from what the code expects. Adds ~345 MB to the image.
-        - . "${VENV}/bin/activate" && python -c "from brainles_aurora.utils.weights import check_model_weights; print('weights at', check_model_weights())"
+        # run uses the same weights. Adds ~345 MB to the image.
+        #
+        # Upstream's own downloader cannot be used: it fetches Zenodo's
+        # files-archive endpoint, which now returns HTTP 400, so it creates the
+        # version directory and then bails, leaving it empty. The 15 model
+        # archives are fetched individually from the pinned record instead, which
+        # also gets the builder's download cache. AURORA loads them by filename
+        # ("{inference_mode}_{model_selection}.tar") straight out of this
+        # directory, so they are copied in as-is rather than unpacked.
+        - WDIR="$(. "${VENV}/bin/activate" && python -c "import brainles_aurora,pathlib; print(pathlib.Path(brainles_aurora.__file__).parent/'weights_v{{ context.weights_version }}')")"
+        - mkdir -p "${WDIR}"
+        - cp {{ get_file("fla-o_best.tar") }} "${WDIR}/fla-o_best.tar"
+        - cp {{ get_file("fla-o_last.tar") }} "${WDIR}/fla-o_last.tar"
+        - cp {{ get_file("t1-o_best.tar") }} "${WDIR}/t1-o_best.tar"
+        - cp {{ get_file("t1-o_last.tar") }} "${WDIR}/t1-o_last.tar"
+        - cp {{ get_file("t1-t1c-fla_best.tar") }} "${WDIR}/t1-t1c-fla_best.tar"
+        - cp {{ get_file("t1-t1c-fla_last.tar") }} "${WDIR}/t1-t1c-fla_last.tar"
+        - cp {{ get_file("t1-t1c-t2-fla_best.tar") }} "${WDIR}/t1-t1c-t2-fla_best.tar"
+        - cp {{ get_file("t1-t1c-t2-fla_last.tar") }} "${WDIR}/t1-t1c-t2-fla_last.tar"
+        - cp {{ get_file("t1-t1c-t2-fla_vanilla.tar") }} "${WDIR}/t1-t1c-t2-fla_vanilla.tar"
+        - cp {{ get_file("t1-t1c_best.tar") }} "${WDIR}/t1-t1c_best.tar"
+        - cp {{ get_file("t1-t1c_last.tar") }} "${WDIR}/t1-t1c_last.tar"
+        - cp {{ get_file("t1c-fla_best.tar") }} "${WDIR}/t1c-fla_best.tar"
+        - cp {{ get_file("t1c-fla_last.tar") }} "${WDIR}/t1c-fla_last.tar"
+        - cp {{ get_file("t1c-o_best.tar") }} "${WDIR}/t1c-o_best.tar"
+        - cp {{ get_file("t1c-o_last.tar") }} "${WDIR}/t1c-o_last.tar"
         # Fail the build rather than ship an image that silently re-downloads.
         - . "${VENV}/bin/activate" && python -c "import pathlib,brainles_aurora as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; assert dirs, 'no weights baked into the image'; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()); print('baked', dirs[0].name, round(n/1e6), 'MB'); assert n > 300*1e6, 'weights look truncated'"
         # The baked weights must be the version this recipe declares.
@@ -71,9 +92,9 @@ build:
         # that supported path rather than adding new behaviour. Newer weights now
         # require a rebuild with weights_version bumped.
         - cat {{ get_file("pin_weights.py") }} >> "$(. "${VENV}/bin/activate" && python -c "import brainles_aurora.utils.weights as m; print(m.__file__)")"
-        - . "${VENV}/bin/activate" && python -c "from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; assert f()==(None,None), 'weight pin did not take'; print('zenodo lookup pinned off')"
+        - . "${VENV}/bin/activate" && python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; assert f()==(None,None), 'weight pin did not take'; print('zenodo lookup pinned off')"
         # Prove the pinned lookup still resolves the baked weights.
-        - . "${VENV}/bin/activate" && python -c "from brainles_aurora.utils.weights import check_model_weights; p=str(check_model_weights()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
+        - . "${VENV}/bin/activate" && python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import check_model_weights; p=str(check_model_weights()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
         # Upstream ships no console_scripts, so the container provides one: a thin
         # argparse front-end over the documented Python API. It adds no logic of
         # its own beyond argument validation.
@@ -89,6 +110,36 @@ build:
         builtin: test_deploy.sh
 
 files:
+  - name: fla-o_best.tar
+    url: https://zenodo.org/api/records/10557069/files/fla-o_best.tar/content
+  - name: fla-o_last.tar
+    url: https://zenodo.org/api/records/10557069/files/fla-o_last.tar/content
+  - name: t1-o_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-o_best.tar/content
+  - name: t1-o_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-o_last.tar/content
+  - name: t1-t1c-fla_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c-fla_best.tar/content
+  - name: t1-t1c-fla_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c-fla_last.tar/content
+  - name: t1-t1c-t2-fla_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c-t2-fla_best.tar/content
+  - name: t1-t1c-t2-fla_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c-t2-fla_last.tar/content
+  - name: t1-t1c-t2-fla_vanilla.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c-t2-fla_vanilla.tar/content
+  - name: t1-t1c_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c_best.tar/content
+  - name: t1-t1c_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c_last.tar/content
+  - name: t1c-fla_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1c-fla_best.tar/content
+  - name: t1c-fla_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1c-fla_last.tar/content
+  - name: t1c-o_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1c-o_best.tar/content
+  - name: t1c-o_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1c-o_last.tar/content
   - name: aurora
     contents: |
       #!{{ context.venv }}/bin/python3
