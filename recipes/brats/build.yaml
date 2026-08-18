@@ -31,10 +31,10 @@ build:
         XDG_CACHE_HOME: /tmp/cache-brats
         PYTHONNOUSERSITE: "1"
         PATH: "{{ context.venv }}/bin:$PATH"
-        # brats caches algorithm sandboxes under tempfile.gettempdir(). Each one
-        # is multiple GB and /tmp is ephemeral, so point it somewhere a user can
-        # mount persistent storage over. Without this every session re-pulls.
-        BRATS_TMPDIR: /tmp/brats
+        # brats caches algorithm sandboxes under tempfile.gettempdir(), which
+        # honours TMPDIR. It is deliberately NOT pinned here: a user must point
+        # TMPDIR at persistent storage, because each algorithm is multiple GB and
+        # anything under /tmp is lost with the session.
 
     - install:
         - ca-certificates
@@ -74,6 +74,14 @@ build:
         # so a partial install would only surface when a user tried to run.
         - . "${VENV}/bin/activate" && python -c "from brats.constants import Backends; from brats.core.singularity import run_container; print('singularity backend ok', Backends.SINGULARITY.value)"
         - mkdir -p /tmp/brats
+        # Upstream ships no console_scripts. These add a task-oriented CLI plus
+        # the two discovery/pull helpers the readme points at.
+        - install -m 0755 {{ get_file("brats") }} /usr/local/bin/brats
+        - install -m 0755 {{ get_file("brats-algorithms") }} /usr/local/bin/brats-algorithms
+        - install -m 0755 {{ get_file("brats-pull") }} /usr/local/bin/brats-pull
+        - . "${VENV}/bin/activate" && brats --help > /dev/null && brats-algorithms --help > /dev/null && brats-pull --help > /dev/null
+        # The lister reads the packaged metadata, so prove it parses it here.
+        - . "${VENV}/bin/activate" && test "$(brats-algorithms --images-only | wc -l)" -gt 50
         - chmod -R a+rX "${VENV}"
         - rm -rf /root/.cache/pip /tmp/mpl-brats /tmp/cache-brats
 
@@ -83,7 +91,205 @@ build:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
 
+files:
+  - name: brats
+    contents: |
+      #!{{ context.venv }}/bin/python3
+      """Command line front-end for the BraTS orchestrator.
+
+      Upstream ships no console_scripts; this wraps the segmenter classes, which all
+      expose infer_single(). It always selects the singularity backend, because docker
+      is not available inside this container.
+      """
+      import argparse
+      import sys
+
+      TASKS = {
+          "adult-glioma-pre":      ("AdultGliomaPreTreatmentSegmenter",        ["t1c", "t1n", "t2f", "t2w"]),
+          "adult-glioma-pre-post": ("AdultGliomaPreAndPostTreatmentSegmenter", ["t1c", "t1n", "t2f", "t2w"]),
+          "meningioma":            ("MeningiomaSegmenter",                     ["t1c", "t1n", "t2f", "t2w"]),
+          "meningioma-rt":         ("MeningiomaRTSegmenter",                   ["t1c"]),
+          "pediatric":             ("PediatricSegmenter",                      ["t1c", "t1n", "t2f", "t2w"]),
+          "africa":                ("AfricaSegmenter",                         ["t1c", "t1n", "t2f", "t2w"]),
+          "metastases":            ("MetastasesSegmenter",                     ["t1c", "t1n", "t2f", "t2w"]),
+          "goat":                  ("GoATSegmenter",                           ["t1c", "t1n", "t2f", "t2w"]),
+      }
+
+
+      def main(argv=None):
+          p = argparse.ArgumentParser(
+              prog="brats",
+              description="Segment with a BraTS challenge algorithm.",
+              epilog="Algorithms are not bundled. List them with brats-algorithms and "
+                     "fetch one with brats-pull before running.",
+          )
+          p.add_argument("-t", "--task", required=True, choices=sorted(TASKS),
+                         help="Which BraTS task to run")
+          for m in ("t1c", "t1n", "t2f", "t2w"):
+              p.add_argument(f"--{m}", help=f"{m.upper()} image (NIfTI)")
+          p.add_argument("-o", "--output", required=True, help="Output segmentation (NIfTI)")
+          p.add_argument("-a", "--algorithm",
+                         help="Algorithm key, e.g. BraTS23_1. Defaults to upstream's choice.")
+          p.add_argument("--log-file", help="Optional log file")
+          a = p.parse_args(argv)
+
+          cls_name, required = TASKS[a.task]
+          missing = [m for m in required if not getattr(a, m)]
+          if missing:
+              p.error(f"task {a.task} requires: {', '.join('--' + m for m in missing)}")
+
+          import brats
+          from brats.constants import Backends
+
+          cls = getattr(brats, cls_name)
+          kwargs = {"backend": Backends.SINGULARITY}
+          if a.algorithm:
+              import brats.constants as C
+              enum_name = cls_name.replace("Segmenter", "Algorithms")
+              enum = getattr(C, enum_name, None)
+              if enum is None or not hasattr(enum, a.algorithm):
+                  p.error(f"unknown algorithm {a.algorithm!r} for {a.task}; "
+                          f"see: brats-algorithms --task {a.task}")
+              kwargs["algorithm"] = getattr(enum, a.algorithm)
+
+          inputs = {m: getattr(a, m) for m in required}
+          cls(**kwargs).infer_single(output_file=a.output, log_file=a.log_file, **inputs)
+          print(f"wrote {a.output}")
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
+
+  - name: brats-algorithms
+    contents: |
+      #!{{ context.venv }}/bin/python3
+      """List every BraTS algorithm and print the command that pre-pulls it.
+
+      Reads the metadata shipped inside the installed brats package, so the list
+      always matches this container's version rather than a copy that goes stale.
+      """
+      import argparse
+      import os
+      import sys
+      import tempfile
+      from pathlib import Path
+
+      import yaml
+
+
+      def meta_dir() -> Path:
+          import brats
+          return Path(brats.__file__).parent / "data" / "meta"
+
+
+      def sandbox_path(image: str) -> Path:
+          """Where brats looks for a prepared sandbox (brats/core/singularity.py)."""
+          return Path(tempfile.gettempdir()) / "brats_singularity_images" / image.replace(":", "_")
+
+
+      def main(argv=None):
+          p = argparse.ArgumentParser(
+              prog="brats-algorithms",
+              description="List BraTS algorithms and how to pre-pull them.",
+              epilog="Nothing is bundled: each algorithm is a separate multi-GB "
+                     "container, so pull the ones you need with brats-pull.",
+          )
+          p.add_argument("-t", "--task", help="Only show this task, e.g. meningioma")
+          p.add_argument("--images-only", action="store_true",
+                         help="Print just the docker image references, one per line")
+          a = p.parse_args(argv)
+
+          tmp = tempfile.gettempdir()
+          files = sorted(meta_dir().glob("*.yml"))
+          if a.task:
+              files = [f for f in files if a.task.replace("-", "_") in f.stem]
+              if not files:
+                  p.error(f"no task matching {a.task!r}")
+
+          if not a.images_only:
+              print(f"Algorithm cache: {tmp}/brats_singularity_images")
+              print("Set TMPDIR to persistent storage before pulling or running,")
+              print("otherwise every session re-downloads. For example:")
+              print("  export TMPDIR=/neurodesktop-storage/brats-cache\n")
+
+          for f in files:
+              data = yaml.safe_load(f.read_text()) or {}
+              algos = data.get("algorithms", {}) or {}
+              if not a.images_only:
+                  print(f"=== {f.stem} ({len(algos)} algorithms) ===")
+              for key, spec in algos.items():
+                  image = (spec.get("run_args") or {}).get("docker_image")
+                  if not image:
+                      continue
+                  if a.images_only:
+                      print(image)
+                      continue
+                  meta = spec.get("meta") or {}
+                  rank = meta.get("rank", "?")
+                  year = meta.get("year", "?")
+                  ready = sandbox_path(image).exists()
+                  mark = "[cached]" if ready else "[not pulled]"
+                  print(f"  {key:12} {rank:>4} {year}  {image}")
+                  print(f"               {mark}  brats-pull {image}")
+              if not a.images_only:
+                  print()
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
+
+  - name: brats-pull
+    contents: |
+      #!/usr/bin/env bash
+      # Pre-pull a BraTS algorithm into the cache brats reads.
+      #
+      # Nothing is bundled in this container: each algorithm is a separate container
+      # published by its authors, from ~4 GB to over 30 GB. This builds one into the
+      # exact path brats expects, so inference then runs without downloading.
+      set -euo pipefail
+
+      if [ $# -lt 1 ] || [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+        cat <<'USAGE'
+      Usage: brats-pull <docker-image> [more images...]
+
+        brats-pull brainles/brats23_faking_it:latest
+
+      List every available algorithm and its image with:
+        brats-algorithms
+        brats-algorithms --task meningioma
+
+      Set TMPDIR to persistent storage FIRST, or the pull is lost with the session:
+        export TMPDIR=/neurodesktop-storage/brats-cache
+      USAGE
+        exit 0
+      fi
+
+      CACHE="${TMPDIR:-/tmp}/brats_singularity_images"
+      if [ "${TMPDIR:-/tmp}" = "/tmp" ]; then
+        echo "WARNING: TMPDIR is unset, so the cache lives in /tmp and will not" >&2
+        echo "         survive the session. Set TMPDIR to persistent storage." >&2
+      fi
+
+      for image in "$@"; do
+        dest="${CACHE}/${image//:/_}"
+        if [ -d "$dest" ]; then
+          echo "already present: $dest"
+          continue
+        fi
+        echo "building sandbox for ${image}"
+        echo "  -> ${dest}"
+        mkdir -p "$(dirname "$dest")"
+        singularity build --sandbox --fakeroot "$dest" "docker://${image}"
+        echo "done: ${dest}"
+      done
+
 deploy:
+  bins:
+    - brats
+    - brats-algorithms
+    - brats-pull
   path:
     - "{{ context.venv }}/bin"
 
@@ -98,39 +304,74 @@ readme: |-
   ----------------------------------
   ## brats/{{ context.version }} ##
 
-  BraTS gives a single Python API over the winning algorithms from the BraTS
-  challenges: adult and paediatric glioma, meningioma and brain metastasis
-  segmentation, plus inpainting and missing-MRI synthesis.
+  BraTS gives a single interface over the winning algorithms from the BraTS
+  challenges: adult and paediatric glioma, meningioma, brain metastasis and
+  sub-Saharan Africa segmentation, plus inpainting and missing-MRI synthesis.
 
-  Example:
+  ### Read this first: no algorithms are bundled
+
+  This container is an orchestrator. It contains no model and no weights. Each
+  of the 67 algorithms is a separate container published by its authors,
+  between roughly 4 GB and over 30 GB each, so bundling even one would make this
+  image unusable. You pull the ones you want, once.
+
+  **Step 1 — point TMPDIR at persistent storage.** The cache lives under
+  `$TMPDIR`; anything in `/tmp` is lost when the session ends.
+  ```
+  export TMPDIR=/neurodesktop-storage/brats-cache
+  mkdir -p "$TMPDIR"
+  ```
+
+  **Step 2 — find the algorithm you want.** This lists every algorithm for every
+  task, with its rank, year, image, whether it is already cached, and the exact
+  command to fetch it:
+  ```
+  brats-algorithms
+  brats-algorithms --task meningioma
+  ```
+
+  **Step 3 — pull it.** Once per algorithm, per machine:
+  ```
+  brats-pull brainles/brats23_faking_it:latest
+  ```
+  Pull several at once by listing them, or pull every algorithm for a task:
+  ```
+  brats-pull $(brats-algorithms --task metastases --images-only)
+  ```
+  To fetch everything, which is many hundreds of GB, use
+  `brats-pull $(brats-algorithms --images-only)`.
+
+  **Step 4 — run it.**
+  ```
+  brats --task adult-glioma-pre \
+        --t1c t1c.nii.gz --t1n t1n.nii.gz \
+        --t2f t2f.nii.gz --t2w t2w.nii.gz \
+        -o segmentation.nii.gz
+  ```
+  Each task has a default algorithm; choose another with `-a`, for example
+  `-a BraTS23_2`. `brats-algorithms --task <task>` lists the valid keys.
+
+  The Python API works too, and must select the singularity backend because
+  docker is not available here:
   ```
   python -c "
-  from brats import AdultGliomaPreTreatmentSegmenter
+  from brats import MetastasesSegmenter
   from brats.constants import Backends
-  seg = AdultGliomaPreTreatmentSegmenter(backend=Backends.SINGULARITY)
-  seg.infer_single(t1c='t1c.nii.gz', t1n='t1n.nii.gz',
-                   t2f='t2f.nii.gz', t2w='t2w.nii.gz',
-                   output_file='segmentation.nii.gz')
+  MetastasesSegmenter(backend=Backends.SINGULARITY).infer_single(
+      t1c='t1c.nii.gz', t1n='t1n.nii.gz', t2f='t2f.nii.gz', t2w='t2w.nii.gz',
+      output_file='seg.nii.gz')
   "
   ```
 
-  Notes:
-  This container is an orchestrator, not a self-contained tool. It does not
-  implement any algorithm: it downloads and runs each BraTS algorithm in its own
-  container. Two consequences are worth knowing before use.
+  ### Requirements
 
-  Pass `backend=Backends.SINGULARITY`. The upstream default is Docker, which is
-  not available here; apptainer is installed instead and exposed as
-  `singularity`, which is the name brats invokes.
-
-  Running a container from inside a container needs the host to permit
-  unprivileged user namespaces, because the singularity backend builds each
-  algorithm as a `--fakeroot` sandbox. Check with:
+  Running an algorithm means running a container from inside this one, so the
+  host must permit unprivileged user namespaces. Check with:
   ```
   unshare --user --map-root-user true && echo "nested userns ok"
   ```
-  Algorithm sandboxes are multiple GB each and are cached under `$BRATS_TMPDIR`
-  (default `/tmp/brats`), which is ephemeral. Point it at mounted storage to
-  avoid re-downloading every session.
+  Apptainer is installed here and exposed as `singularity`, the name brats
+  invokes. The upstream default backend is docker, which is unavailable; the
+  `brats` command always selects singularity for you.
 
   More documentation can be found here: https://github.com/BrainLesion/BraTS

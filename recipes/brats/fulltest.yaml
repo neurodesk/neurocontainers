@@ -36,3 +36,24 @@ tests:
     description: $HOME does not exist at container runtime.
     command: env HOME=/nonexistent python -c "import brats; print('no-home ok')"
     expected_output_contains: "no-home ok"
+
+  - name: brats CLI is on PATH and renders help
+    command: brats --help
+    expected_output_contains: "usage: brats"
+
+  - name: the algorithm lister enumerates every packaged algorithm
+    description: >-
+      Nothing is bundled, so discovery is the entry point. This reads the
+      metadata inside the installed package, and fails if that layout changes.
+    command: |
+      bash -c 'n=$(brats-algorithms --images-only | wc -l); echo "algorithms=$n"; test "$n" -gt 50'
+    expected_output_contains: "algorithms=6"
+
+  - name: the lister prints the pull command for a task
+    command: brats-algorithms --task meningioma
+    expected_output_contains: "brats-pull"
+
+  - name: brats-pull explains itself without arguments
+    description: The pull step is mandatory before any inference, so its help must work.
+    command: brats-pull --help
+    expected_output_contains: "TMPDIR"
