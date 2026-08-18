@@ -21,3 +21,10 @@ tests:
     description: A CUDA-built torch must still work where no GPU is present.
     command: python -c "import torch; print('torch', torch.__version__, (torch.ones(2)+1).sum().item())"
     expected_output_contains: "4.0"
+
+  - name: model weights are bundled in the image
+    description: >-
+      The point of baking the weights in is that inference works offline; this
+      fails if a rebuild ever silently drops them.
+    command: python -c "import pathlib,brainles_aurora as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()) if dirs else 0; print('weights-mb', round(n/1e6))"
+    expected_output_contains: "weights-mb"
