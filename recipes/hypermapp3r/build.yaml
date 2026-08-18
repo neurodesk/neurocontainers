@@ -1,0 +1,347 @@
+name: hypermapp3r
+version: 0.1.0
+
+copyright:
+  - license: GPL-3.0
+    url: https://github.com/AICONSlab/HyperMapp3r/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  # Upstream has no tags or releases; pin the commit so rebuilds are
+  # reproducible. Update this together with the recipe version.
+  hypermapper_commit: 00c0b7693c2be27b9aaf6ff43f8547beee313b96
+  hypermapper_dir: /opt/hypermapp3r
+  # The authors distribute the trained models through a Google Drive folder
+  # (docs/install.md). Their own Dockerfile fetches individual file IDs with a
+  # wget/cookie hack that Google broke; gdown handles the confirm token.
+  #
+  # WARNING: this is the weak point of the recipe. Drive has no checksums, no
+  # versioning and rate-limits bulk downloads, so builds can fail for reasons
+  # unrelated to the recipe. Ask upstream to mirror these on Zenodo or
+  # HuggingFace (they already host other lab artefacts at
+  # huggingface.co/AICONSlab) and replace this with a stable URL.
+  models_gdrive_folder: 1QS3t01jMSJq6zAfjMDu1AzufplGjLODR
+  # TF 1.15 is the newest TensorFlow that runs this Keras 2.1.2 model code, and
+  # it caps Python at 3.7. CPU wheels only -- the GPU build of TF 1.15 needs
+  # CUDA 10.0, which no current NVIDIA base image ships.
+  python_version: "3.7"
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - bc
+        - ca-certificates
+        - curl
+        - git
+        - tar
+        - unzip
+        - wget
+        # Qt runtime libraries. hypermapper/cli.py imports hypermapper.gui at
+        # module scope, and gui.py imports PyQt5 at module scope, so PyQt5 must
+        # load before ANY subcommand will run -- including seg_wmh --help.
+        - libdbus-1-3
+        - libegl1
+        - libfontconfig1
+        - libgl1
+        - libglib2.0-0
+        - libsm6
+        - libxext6
+        - libxkbcommon-x11-0
+        - libxrender1
+        - libxcb-icccm4
+        - libxcb-image0
+        - libxcb-keysyms1
+        - libxcb-randr0
+        - libxcb-render-util0
+        - libxcb-shape0
+        - libxcb-xinerama0
+        - libxcb-xkb1
+
+    # Convert3D: used for resampling and image arithmetic in the pipeline.
+    - file:
+        name: c3d_targz
+        url: https://downloads.sourceforge.net/project/c3d/c3d/1.0.0/c3d-1.0.0-Linux-x86_64.tar.gz
+
+    - run:
+        - mkdir -p /opt/c3d
+        - tar -xzf {{ get_file("c3d_targz") }} -C /opt/c3d --strip-components 1
+        - test -x /opt/c3d/bin/c3d
+
+    - environment:
+        PATH: /opt/c3d/bin:${PATH}
+
+    # ANTs 2.2.0 -- the version the authors pin. Their install_depends.sh points
+    # at a Dropbox link; this is the same tarball from the lab's HuggingFace
+    # mirror, which is the more durable of the two.
+    - file:
+        name: ants_targz
+        url: https://huggingface.co/datasets/AICONSlab/icvmapper/resolve/dev/software/ANTs/ANTs-Linux-centos5_x86_64-v2.2.0-0740f91.tar.gz
+
+    - run:
+        - mkdir -p /opt/ANTs
+        - tar -xzf {{ get_file("ants_targz") }} -C /opt/ANTs --strip-components 1
+        - test -x /opt/ANTs/antsRegistration
+
+    - environment:
+        ANTSPATH: /opt/ANTs
+        PATH: /opt/ANTs:${PATH}
+
+    # NOTE: FSL is deliberately NOT installed. segment/hypermapper.py has a
+    # top-level `from nipype.interfaces.fsl import maths`, but nothing in the
+    # package ever calls it -- the import succeeds without FSL present, and no
+    # FSL binary is invoked anywhere in the pipeline. Pulling in the FSL
+    # neurodocker template would add several GB and a licence obligation for
+    # code that never runs. Verified by grepping the package for FSL binary
+    # calls; re-check if upstream changes segment/hypermapper.py.
+
+    # Python 3.7 environment for the TF 1.15 stack. The system Python on
+    # 22.04 is 3.10, which TF 1.15 does not support.
+    - template:
+        name: miniconda
+        version: py311_24.9.2-0
+        install_path: /opt/miniconda
+        mamba: true
+
+    - run:
+        - /opt/miniconda/bin/conda create -y -n hypermapper python={{ context.python_version }}
+        - /opt/miniconda/envs/hypermapper/bin/python -m pip install --no-cache-dir --upgrade "pip<24" "setuptools<58" wheel
+
+    - environment:
+        PATH: /opt/miniconda/envs/hypermapper/bin:${PATH}
+
+    # Pinned to the combination the model files were serialised with. Keras 2.1.2
+    # is required: later Keras cannot deserialise these model.json files.
+    # numpy is held below 1.20 because TF 1.15 uses removed aliases (np.object).
+    - run:
+        - python -m pip install --no-cache-dir
+          "numpy==1.18.5"
+          "h5py==2.10.0"
+          "tensorflow==1.15.5"
+          "keras==2.1.2"
+          "protobuf==3.20.3"
+        - python -c "import tensorflow as tf; print('tensorflow', tf.__version__)"
+
+    # Only packages the code actually imports, plus what nilearn pulls in.
+    # scipy/scikit-learn/joblib are pinned to the versions pip resolves for
+    # Python 3.7 under the nilearn 0.9.2 constraint (scipy>=1.5) -- an earlier
+    # scipy==1.4.1 pin here was unsatisfiable, and the TensorFlow layer above
+    # already installs scipy 1.7.3 anyway.
+    # tables, plotly, SimpleITK and a standalone scikit-learn pin were dropped:
+    # nothing in hypermapper imports them.
+    - run:
+        - python -m pip install --no-cache-dir
+          "scipy==1.7.3"
+          "scikit-learn==1.0.2"
+          "joblib==1.3.2"
+          "nibabel==3.2.2"
+          "nilearn==0.9.2"
+          "nipype==1.7.0"
+          "pandas==1.1.5"
+          "matplotlib==3.3.4"
+          "termcolor==1.1.0"
+          "argcomplete==1.12.3"
+          "svgwrite==1.4.3"
+        - python -c "import nilearn, nipype, pandas, svgwrite, argcomplete, termcolor; print('deps ok')"
+
+    # keras-contrib has no PyPI release; upstream installs it from git at a
+    # pinned commit (see requirements.txt).
+    - run:
+        - python -m pip install --no-cache-dir --no-deps
+          "git+https://github.com/keras-team/keras-contrib.git@3fc5ef709e061416f4bc8a92ca3750c824b5d2b0"
+
+    # PyQt5 is NOT optional despite only the GUI using it: cli.py does
+    # "from hypermapper import gui" at import time, so without PyQt5 every
+    # subcommand exits 1 on ImportError. 5.15.9 ships a cp37-abi3 wheel.
+    #
+    # PyQt5-sip must be pinned too. PyQt5 5.15.9 only requires
+    # "PyQt5-sip<13,>=12.11", and pip resolves that to 12.13.0, which dropped
+    # cp37 wheels -- pip then tries to compile the C extension and the build
+    # fails for want of a compiler. 12.12.2 is the newest release in range that
+    # still publishes a cp37 wheel.
+    #
+    # --only-binary for these three makes the failure mode explicit: if a wheel
+    # ever stops being available, the build fails on the missing wheel rather
+    # than silently attempting a source build.
+    # Block scalar: "--only-binary=:all:" ends the line with a colon, which YAML
+    # would otherwise read as a mapping key.
+    - run:
+        - >-
+          python -m pip install --no-cache-dir --only-binary=:all: "PyQt5==5.15.9" "PyQt5-sip==12.12.2" "PyQt5-Qt5==5.15.2"
+        - python -c "from PyQt5 import QtWidgets; print('PyQt5 ok')"
+
+    - run:
+        - git clone https://github.com/AICONSlab/HyperMapp3r {{ context.hypermapper_dir }}
+        - cd {{ context.hypermapper_dir }}
+        - git checkout {{ context.hypermapper_commit }}
+        # --no-deps: setup.py re-pins keras, which would undo the resolve above.
+        # PyQt5 is installed explicitly in the step before this one.
+        - python -m pip install --no-cache-dir --no-deps -e .
+
+    # hypermapper resolves models as <repo_root>/models/<name>_model.json and
+    # <name>_model_weights.h5 (segment/hypermapper.py, hyper_dir = parents[2]).
+    #
+    # gdown runs from the miniconda BASE env (python 3.11), not the hypermapper
+    # env: gdown 5.x requires python >= 3.8, and the PATH set above puts the
+    # python 3.7 runtime env first. Installing it there failed the build with
+    # "No matching distribution found for gdown==5.2.0" -- the newest release
+    # that still supports 3.7 is 4.7.3. gdown is a build-time downloader that
+    # nothing imports at run time, so pin the modern version and keep it out of
+    # the runtime env rather than holding it back to match TF 1.15's python.
+    #
+    # gdown is pinned: --remaining-ok was removed in gdown 6.x, and the flag is
+    # unnecessary here anyway (it only matters for folders over 50 files; this
+    # one has 6).
+    - run:
+        - /opt/miniconda/bin/python -m pip install --no-cache-dir "gdown==5.2.0"
+        - mkdir -p {{ context.hypermapper_dir }}/models
+        - /opt/miniconda/bin/gdown --folder {{ context.models_gdrive_folder }}
+          -O {{ context.hypermapper_dir }}/models
+        # Fail the build loudly rather than shipping an image that only errors
+        # at run time with "please download and rerun script". The folder is
+        # known to contain exactly these three model pairs.
+        #
+        # MUST stay on one physical line. Neurodocker joins the entries of a
+        # run: list with "&&", so a multi-line block scalar gets "&&" spliced
+        # between the lines of the loop body, yielding invalid shell.
+        - >-
+          for m in wmh_mcdp_multi wmh_mcdp_224iso_multi wmh_mcdp_contrast; do test -f {{ context.hypermapper_dir }}/models/${m}_model.json || exit 1; test -f {{ context.hypermapper_dir }}/models/${m}_model_weights.h5 || exit 1; done
+
+    - environment:
+        TF_CPP_MIN_LOG_LEVEL: "3"
+        # Headless: the CLI imports the Qt GUI module at start-up.
+        QT_QPA_PLATFORM: offscreen
+
+    # Prove the CLI actually starts. Without this the image builds happily and
+    # then fails every invocation at runtime, which is how the missing PyQt5
+    # dependency slipped through the first build.
+    - run:
+        - python -c "import hypermapper.gui; print('gui import ok')"
+        - hypermapper --help
+        - hypermapper seg_wmh --help
+
+    - workdir: /opt
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+    - test:
+        name: Test HyperMapp3r CLI and models
+        script: |
+          #!/bin/bash
+          set -e
+          hypermapper --help
+          hypermapper seg_wmh --help
+          python -c "import tensorflow, keras; print(tensorflow.__version__, keras.__version__)"
+          for m in wmh_mcdp_multi wmh_mcdp_224iso_multi wmh_mcdp_contrast; do
+            test -f {{ context.hypermapper_dir }}/models/${m}_model.json \
+              || { echo "ERROR: missing ${m}_model.json"; exit 1; }
+          done
+          command -v antsRegistration
+          command -v c3d
+
+    - test:
+        name: Test HyperMapp3r end-to-end on bundled test case
+        script: |
+          #!/bin/bash
+          set -e
+          # The repository ships a small T1/FLAIR/mask test case.
+          workdir=$(mktemp -d)
+          cp {{ context.hypermapper_dir }}/data/test_case/*.nii.gz "$workdir"/
+          cd "$workdir"
+          hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -id multi
+          ls -la "$workdir"
+          test -n "$(find "$workdir" -name '*wmh*.nii.gz' -newer t1.nii.gz)" \
+            || { echo "ERROR: no WMH segmentation produced"; exit 1; }
+
+deploy:
+  bins:
+    - hypermapper
+
+categories:
+  - image segmentation
+  - structural imaging
+  - machine learning
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAFeklEQVR42n2WW4xdVRnHf9+31z777HPOXDtzOtPpQG07zhSKiNaosdjgBQNNCEFQgg/G+FCNbwYSTIyXQKIJIZqQvlnTqFgftEQDEqFAGlrQqUPFkoEUBjt22jqd+5kz57b3WsuH0zkzp15Wsnb2Wtn7u/y/b/3/SwB6t48MuVSfADko+A6aQ1gfIohuLAG89+B821bzIavgn1PjHlmcefeSbBke3eYSTooGu72zbUYQARV8LWlO61r7GhkkzjTDaHeEaIB39j0NOWBswpOquts7mwBh6ysVfCPFVRpEO/uJ991IZlc/iJDOlqieuUBt8krTWSGCdeeAdzYR1d02cU9Kz9bRKkLUBkmguHINU+yk/+E7yX1oGDu9hL28CipoIYMZK5LMlZj76QkqZy4Q9OTanAAeTz2IO/oev964XamSu+0Gdhz5GjK1zPJPTlL+xZkmRArLP36Z+p+nCTSg/ztfwDVSKq9PofkIfAsuQTDmWnFkHRa3Vie+ZYihH93PzBMvsPqnt+np70ULEcFAB2aoE+3KQsNR+vUEa+PTFB8/iE8ty8fGCXrymzPx2ha984gJGHzsXuafHueucxEP334PGMU5D6nDJw5xUPeWsNhJdLHMpe/+geK3PkM0NoCvNprNsV7v1ts1aHof2MfalRX2nixx5J5DfH/vvXx95ydZTWoYVQTBeseWKMcvP/oQJ+57hJvnIhZ/+zf6Dx3AVRPY1NItB946gs6Yrvtuo/a7cyy5GrOVFXxaY7o0j0vtNRSFcqPKaNzH/m03c0PHEAdHP8Lc8QkKNw0T37odX2m0cDEt7Mt1ch/bAcYQnF/g3bTB/ad+RreJefH9v5OtWRJrUTxB3fLi1Js8teV5dnUP8POL4xRKjsaFRfK3j1A9exGTy+CtazoQEXxiicYGsFMLpCtV8j05psrzrFWqxGpIXUKaJJjUkqYpiOHRiWfIFfJkjMFoQO3sDJkPFiHQ/4QI5zHbunGLVXAehycbhOSDENdkAbzzeN+cgQj5IKQzjAnF4FVwc2VMfwEJtUklbQ6aBNPCTkUQZFNbtw9/7fPUOzweQZr/+nVWuj4DEVyphsQhosJa2mC5USEVj64fk0BRVUQEPKTSzMR5T+osmo9wa/U2btJ1ZpRQqU1eJjPSTzWEu4p7OPKJrzLWO0iqntAYMmEGEwREUUTiLTu6i/zx09/k8L4vgXWEtwzSmJrDJ7YZRKuLvEeyIfXJK0g+hB3dfLl4K3ff9Dn+Ov8+b65colNzlH2C+jrZOId0BnRlc4x1bAUg0xFj9hSpPDuBRKZVgyAu9P0AQMOA9GoJM9xDbu92Jn7/Ku/VL3N8+g2MBlSwfKO4jwf9Ll7451tkw4jZSonnrk7y9LlTNPYPYbZ3MX/4lTZO2jhozqOFLItHT9PxqZ1c3BNzePx51iQlQEnFM0IXH056UBNgnSWbiZicm2HW1NlyaD8LR0+Dc5vJB23V3Hs0MqT/KnH1qRNsffROisODyFING0A+Vb4XneWL214nLdfRTIhdq5G1ysAP76Z06jzlV95BO+PNRW4nO28d2p1j5ZmzzP3qND1HHiD72RF8uQ6LVTTxzUyXa9ilCuGuPvqOPkRlbpnZx54l6Iqv1wT5H4IjuOUqhTvG6P/255EU6qf+gVtYQ+IQnziyB3aigx0sHvsLS0dfQ3OZjXOwSXCke2D0mKo+6J1rk0wJFFuqovmIwh2j5D7+AcLBbvBgV6tU35im/NI7NGaWCLpyTcsbxhNRDZ1zv/n/oq8C1uPKNbzzSMY0o2xYvPdoPkIjs3EZ+C+iH1RLC6u57t7jzjIIcqNApiV5vtkGGmfQOIOEARIGrTUqbQVdv7Z4746rcV9ZnDl/+d/y/4HO+HprKgAAAABJRU5ErkJggg==
+
+readme: |-
+  ----------------------------------
+  ## hypermapp3r/{{ context.version }} ##
+
+  HyperMapp3r is a CNN-based white matter hyperintensity (WMH) segmentation
+  tool from AICONS Lab (Sunnybrook Research Institute). It segments WMH from
+  T1-weighted and FLAIR images using a 3D U-Net with Monte-Carlo dropout,
+  designed to be robust in patients with large lesion burden and brain atrophy.
+
+  Example:
+  ```
+  ml hypermapp3r/{{ context.version }}
+
+  # Multimodal (T1 + FLAIR), with a brain mask
+  hypermapper seg_wmh -t1 T1.nii.gz -fl FLAIR.nii.gz -m brainmask.nii.gz -id multi
+
+  # 224 isotropic multimodal model
+  hypermapper seg_wmh -t1 T1.nii.gz -fl FLAIR.nii.gz -m brainmask.nii.gz -id 224multi
+
+  # Lesion volume summary and QC
+  hypermapper stats_wmh -s subject_dir
+  hypermapper seg_qc   -s subject_dir
+  ```
+
+  Available models via `-id`: `multi` (default, T1+FLAIR), `224multi`
+  (224 isotropic T1+FLAIR) and `con`.
+
+  Note: the CLI also accepts `-id 224all` and `-id t1m`, but the authors have
+  never published weights for those two, so they will fail at runtime. Only the
+  three models above exist in the upstream model release.
+
+  Note: this container runs on CPU. HyperMapp3r is built on TensorFlow 1.15 /
+  Keras 2.1.2, whose GPU build requires CUDA 10.0 and cannot be paired with a
+  current NVIDIA base image. For GPU-accelerated WMH segmentation consider the
+  `deepwmh` or `segcsvd` containers instead.
+
+  More documentation can be found here: https://hypermapp3r.readthedocs.io
+
+  To run applications outside of this container: ml hypermapp3r/{{ context.version }}
+
+  Citation:
+  ```
+  Mojiri Forooshani P, Biparva M, Ntiri EE, Ramirez J, Boone L, Holmes MF,
+  Adamo S, Gao F, Ozzoude M, Scott CJM, Dowlatshahi D, Lawrence-Dewar JM,
+  Kwan D, Lang AE, Marcotte K, Leonard C, Rochon E, Heyn C, Bartha R,
+  Strother S, Tardif JC, Symons S, Masellis M, Swartz RH, Moody A, Black SE,
+  Goubran M. (2022) Deep Bayesian networks for uncertainty estimation and
+  adversarial resistance of white matter hyperintensity segmentation.
+  Human Brain Mapping 43(7):2089-2108. doi:10.1002/hbm.25784
+  ```
+
+  ----------------------------------
+
+structured_readme:
+  description: |-
+    HyperMapp3r is a CNN-based white matter hyperintensity (WMH) segmentation
+    tool from AICONS Lab. It segments WMH from T1-weighted and FLAIR images
+    using a 3D U-Net with Monte-Carlo dropout, designed to be robust in patients
+    with large lesion burden and brain atrophy. Runs on CPU.
+  example: |-
+    ml hypermapp3r/{{ context.version }}
+    hypermapper seg_wmh -t1 T1.nii.gz -fl FLAIR.nii.gz -m brainmask.nii.gz -id multi
+  documentation: https://hypermapp3r.readthedocs.io
+  citation: |-
+    Mojiri Forooshani P, Biparva M, Ntiri EE, Ramirez J, Boone L, Holmes MF,
+    Adamo S, Gao F, Ozzoude M, Scott CJM, Dowlatshahi D, Lawrence-Dewar JM,
+    Kwan D, Lang AE, Marcotte K, Leonard C, Rochon E, Heyn C, Bartha R,
+    Strother S, Tardif JC, Symons S, Masellis M, Swartz RH, Moody A, Black SE,
+    Goubran M. (2022) Deep Bayesian networks for uncertainty estimation and
+    adversarial resistance of white matter hyperintensity segmentation.
+    Human Brain Mapping 43(7):2089-2108. doi:10.1002/hbm.25784
