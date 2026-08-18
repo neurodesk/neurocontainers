@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "deep-quality-estimation 0.0.3": {
+      "version": "20260818",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "quality control",
+    "image segmentation",
+    "machine learning"
+  ]
+}
