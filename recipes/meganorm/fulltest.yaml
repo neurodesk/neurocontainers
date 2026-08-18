@@ -1,0 +1,28 @@
+name: meganorm
+version: 0.2.0
+
+tests:
+  - name: meganorm launcher is on PATH
+    description: The deployed bin must resolve, since upstream ships no console_scripts of its own.
+    command: command -v meganorm
+    expected_output_contains: "meganorm"
+
+  - name: meganorm CLI runs and shows its arguments
+    description: Exercises the argparse entrypoint in meganorm.src.mainParallel through the wrapper.
+    command: meganorm --help
+    expected_output_contains: "--surfaces_dir"
+
+  - name: package reports the packaged version
+    description: Guards against the venv resolving a different meganorm than the recipe pins.
+    command: python -c "import importlib.metadata as md; print(md.version('meganorm'))"
+    expected_output_contains: "${version}"
+
+  - name: dependency stack imports
+    description: onnxruntime and pcntoolkit are imported lazily at run time, so check them explicitly.
+    command: python -c "import mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('stack ok')"
+    expected_output_contains: "stack ok"
+
+  - name: matplotlib writes its cache outside HOME
+    description: $HOME does not exist at container runtime; MPLCONFIGDIR must point somewhere writable.
+    command: python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt; print('mpl ok')"
+    expected_output_contains: "mpl ok"
