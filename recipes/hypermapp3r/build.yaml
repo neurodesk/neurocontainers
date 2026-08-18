@@ -273,16 +273,20 @@ build:
         - test -s /tmp/e2e/wmh_pred.nii.gz
         - echo "end-to-end segmentation ok"
         - rm -rf /tmp/e2e
-        # Repeat with $HOME pointing nowhere, which is how the container runs
-        # under apptainer. The build has a writable /root, so without this the
-        # build would keep passing while the fulltest keeps failing -- which is
-        # exactly what happened for three rounds.
-        - cp -r {{ context.hypermapper_dir }}/data/test_case /tmp/e2e_nohome
-        - cd /tmp/e2e_nohome
-        - env HOME=/nonexistent hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi
-        - test -s /tmp/e2e_nohome/wmh_pred.nii.gz
-        - echo "end-to-end segmentation ok without HOME"
-        - rm -rf /tmp/e2e_nohome
+        # Repeat as an unprivileged user with no $HOME, which is how the
+        # container actually runs under apptainer. The build otherwise runs as
+        # root with a writable filesystem, so it kept passing while the fulltest
+        # kept failing. HOME alone was already ruled out by a previous run, so
+        # this varies the user as well: anything hypermapper tries to write
+        # inside /opt succeeds for root here and cannot succeed in a read-only
+        # SIF.
+        - useradd -m tester
+        - cp -r {{ context.hypermapper_dir }}/data/test_case /tmp/e2e_user
+        - chown -R tester /tmp/e2e_user
+        - runuser -u tester -- env PATH="$PATH" HOME=/nonexistent sh -c 'cd /tmp/e2e_user && hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi'
+        - test -s /tmp/e2e_user/wmh_pred.nii.gz
+        - echo "end-to-end segmentation ok as unprivileged user"
+        - rm -rf /tmp/e2e_user
 
     - workdir: /opt
 
