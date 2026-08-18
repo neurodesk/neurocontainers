@@ -132,16 +132,19 @@ build:
 
     # Thin convenience wrapper: DeepWMH_predict with the bundled model
     # pre-selected. Users who want a different model still call DeepWMH_predict.
+    # NOTE: written with printf, not a heredoc. Neurodocker joins the entries of
+    # a run: list with "&& \", which splices continuations into the middle of a
+    # heredoc body and produces "unterminated heredoc" at build time.
+    # Single quotes keep $@ and ${DEEPWMH_MODEL_DIR} for the wrapper's runtime
+    # shell instead of expanding them during the image build.
+    # Each entry is a YAML block scalar: an unquoted "#" after a space would
+    # otherwise start a YAML comment and silently truncate the command.
     - run:
-        - |
-          cat > /usr/local/bin/deepwmh <<'EOF'
-          #!/bin/bash
-          # Convenience wrapper around DeepWMH_predict using the bundled model.
-          # Usage: deepwmh -i <flair.nii.gz> -n <subject> -o <outdir> [-g <gpu>]
-          set -e
-          exec DeepWMH_predict -m "${DEEPWMH_MODEL_DIR:-/opt/deepwmh-model}" "$@"
-          EOF
+        - >-
+          printf '%s\n' '#!/bin/bash' 'set -e' 'exec DeepWMH_predict -m "${DEEPWMH_MODEL_DIR:-/opt/deepwmh-model}" "$@"' > /usr/local/bin/deepwmh
         - chmod +x /usr/local/bin/deepwmh
+        - bash -n /usr/local/bin/deepwmh
+        - deepwmh -h
 
     - workdir: /opt
 
