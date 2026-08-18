@@ -1,0 +1,185 @@
+# DeepWMH container test suite
+#
+# DeepWMH segments white matter hyperintensities from a single T2-FLAIR image
+# without requiring manual annotations for training. The container bundles the
+# authors' pre-trained model, their nnU-Net fork, ROBEX and ANTs.
+#
+# Note: a full DeepWMH_predict run performs skull stripping, N4 bias correction
+# and 3D nnU-Net inference, which is far too slow for CPU-only test runners.
+# The checks below verify the interfaces, the installed model tree and the
+# external tools, rather than running an end-to-end segmentation.
+
+name: deepwmh
+version: 1.0.1
+default_timeout: 300
+
+env:
+  PYTHONNOUSERSITE: "1"
+  MPLCONFIGDIR: /tmp/deepwmh-matplotlib
+
+tests:
+  # ==========================================================================
+  # ENTRYPOINTS
+  # ==========================================================================
+  - name: deepwmh wrapper is on PATH
+    description: The convenience wrapper that preselects the bundled model.
+    command: command -v deepwmh
+    expected_output_contains: deepwmh
+
+  - name: DeepWMH_predict is on PATH
+    command: command -v DeepWMH_predict
+    expected_output_contains: DeepWMH_predict
+
+  - name: DeepWMH_predict renders help
+    description: Exercises the full import chain, including the nnU-Net fork.
+    command: DeepWMH_predict -h
+    expected_output_contains: "--skip-bfc"
+
+  - name: DeepWMH_install renders help
+    command: DeepWMH_install -h
+    expected_output_contains: "-m"
+
+  - name: DeepWMH_train is installed
+    command: command -v DeepWMH_train
+    expected_output_contains: DeepWMH_train
+
+  - name: antsGroupRegistration is installed
+    command: command -v antsGroupRegistration
+    expected_output_contains: antsGroupRegistration
+
+  # ==========================================================================
+  # PYTHON RUNTIME
+  # ==========================================================================
+  - name: Python runtime is 3.9
+    description: >-
+      DeepWMH's pinned dependencies only publish wheels up to cp39; a newer
+      interpreter silently reintroduces source builds.
+    command: python -c 'import sys; assert sys.version_info[:2] == (3, 9)'
+
+  - name: Python does not load user packages
+    description: Ensure results come from the container, not a bound user site.
+    command: python -c 'import site; assert site.ENABLE_USER_SITE is False'
+
+  - name: deepwmh package imports
+    command: python -c 'import deepwmh; print(deepwmh.__name__)'
+
+  - name: deepwmh reports its version
+    command: python -c 'import deepwmh.pkginfo as p; print(p.__version__)'
+    expected_output_contains: "1.0"
+
+  - name: DeepWMH prediction module imports
+    command: python -c 'import deepwmh.main.predict, deepwmh.main.install_model'
+
+  - name: DeepWMH pipeline module imports
+    command: python -c 'import deepwmh.pipeline.DCNN_multistage'
+
+  - name: DeepWMH analysis modules import
+    command: python -c 'import deepwmh.analysis.lesion_analysis, deepwmh.analysis.metrics, deepwmh.analysis.image_ops'
+
+  - name: nnU-Net fork is the installed one
+    description: >-
+      DeepWMH requires lchdl/nnUNet_for_DeepWMH, not upstream MIC-DKFZ/nnUNet.
+      The fork is installed editable from /opt/nnunet_for_deepwmh.
+    command: python -c 'import nnunet, os; print(os.path.realpath(os.path.dirname(nnunet.__file__)))'
+    expected_output_contains: /opt/nnunet_for_deepwmh
+
+  - name: PyTorch CPU runtime works
+    command: python -c 'import torch; x=torch.tensor([1.,2.,3.]); assert torch.dot(x,x).item() == 14'
+
+  - name: PyTorch is the cu118 build
+    command: python -c 'import torch; print(torch.__version__)'
+    expected_output_contains: "2.5.0"
+
+  - name: NiBabel runtime works
+    command: python -c 'import nibabel as nib, numpy as np; img=nib.Nifti1Image(np.zeros((2,3,4)), np.eye(4)); assert img.shape == (2,3,4)'
+
+  - name: SimpleITK image runtime works
+    command: python -c 'import SimpleITK as sitk; img=sitk.Image([3,4,5], sitk.sitkFloat32); assert img.GetSize() == (3,4,5)'
+
+  # ==========================================================================
+  # BUNDLED PRE-TRAINED MODEL
+  # ==========================================================================
+  - name: Model directory environment variable is set
+    command: bash -lc 'test -n "$DEEPWMH_MODEL_DIR" && echo "DEEPWMH_MODEL_DIR=$DEEPWMH_MODEL_DIR"'
+    expected_output_contains: DEEPWMH_MODEL_DIR=/opt/deepwmh-model
+
+  - name: Installed model tree contains network weights
+    description: >-
+      DeepWMH_install lays out an nnU-Net fold containing model_best.model.
+      Without this the container builds but every prediction fails at runtime.
+    command: bash -lc 'find "$DEEPWMH_MODEL_DIR" -name "model_best.model" | head -n 1'
+    expected_output_contains: model_best.model
+
+  - name: Model weights are a plausible size
+    command: bash -lc 'test "$(find "$DEEPWMH_MODEL_DIR" -name "model_best.model" -size +10M | wc -l)" -ge 1'
+
+  - name: Installed model tree contains nnU-Net plans
+    command: bash -lc 'find "$DEEPWMH_MODEL_DIR" -name "plans.pkl" | head -n 1'
+    expected_output_contains: plans.pkl
+
+  - name: nnU-Net plans deserialise
+    command: |
+      python - <<'PY'
+      import os, pickle, pathlib
+      root = pathlib.Path(os.environ["DEEPWMH_MODEL_DIR"])
+      plans = next(root.rglob("plans.pkl"))
+      with plans.open("rb") as handle:
+          data = pickle.load(handle)
+      assert isinstance(data, dict) and data, "plans.pkl did not load as a dict"
+      print("plans keys:", len(data))
+      PY
+
+  # ==========================================================================
+  # EXTERNAL TOOLS
+  # ==========================================================================
+  - name: ROBEX_DIR is set
+    command: bash -lc 'test -n "$ROBEX_DIR" && echo "ROBEX_DIR=$ROBEX_DIR"'
+    expected_output_contains: ROBEX_DIR=/opt/robex
+
+  - name: ROBEX launcher is executable
+    description: Skull stripping step of the DeepWMH pipeline.
+    command: bash -lc 'test -x "$ROBEX_DIR/runROBEX.sh" && echo robex-ok'
+    expected_output_contains: robex-ok
+
+  - name: ROBEX binary is present
+    command: bash -lc 'test -x "$ROBEX_DIR/ROBEX" && echo robex-bin-ok'
+    expected_output_contains: robex-bin-ok
+
+  - name: ANTs N4 bias correction is available
+    description: Without ANTs, users must pass --skip-bfc and accuracy degrades.
+    command: command -v N4BiasFieldCorrection
+    expected_output_contains: N4BiasFieldCorrection
+
+  - name: ANTs registration is available
+    command: command -v antsRegistration
+    expected_output_contains: antsRegistration
+
+  - name: ANTs random seed is pinned
+    description: The pipeline is only reproducible when ANTs is seeded.
+    command: bash -lc 'echo "ANTS_RANDOM_SEED=$ANTS_RANDOM_SEED"'
+    expected_output_contains: ANTS_RANDOM_SEED=0
+
+  # ==========================================================================
+  # SANITY
+  # ==========================================================================
+  - name: NIfTI file round trip preserves data and affine
+    command: |
+      python - <<'PY'
+      import tempfile
+      from pathlib import Path
+      import nibabel as nib
+      import numpy as np
+      with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+          path = Path(tmp) / "flair.nii.gz"
+          data = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+          affine = np.diag([1.0, 1.0, 1.0, 1.0])
+          nib.save(nib.Nifti1Image(data, affine), path)
+          loaded = nib.load(path)
+          assert np.array_equal(loaded.get_fdata(), data)
+          assert np.array_equal(loaded.affine, affine)
+      PY
+
+  - name: DeepWMH_predict rejects a missing input image
+    description: Confirms argument handling fails cleanly rather than hanging.
+    command: bash -lc 'DeepWMH_predict -i /tmp/does-not-exist.nii.gz -n s1 -o /tmp/out -g -1 >/dev/null 2>&1; test $? -ne 0 && echo rejected'
+    expected_output_contains: rejected

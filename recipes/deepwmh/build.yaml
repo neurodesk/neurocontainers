@@ -1,0 +1,301 @@
+name: deepwmh
+# Upstream's latest release branch is v1.0.1_release. Note that
+# deepwmh/pkginfo.py on that same commit still reports __version__ = '1.0.0';
+# the recipe follows the release branch label.
+version: 1.0.1
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/lchdl/DeepWMH/blob/develop/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  # DeepWMH requires the author's fork of nnU-Net, NOT upstream MIC-DKFZ/nnUNet.
+  # The fork changes the trainer/plans loading that DeepWMH's released model
+  # depends on. Pinned to a commit so rebuilds are reproducible; note the fork
+  # has no main branch, develop is the only one.
+  nnunet_fork_commit: 3509d4e02f68919925a5403f5586fcf6e6a19ea5
+  # DeepWMH itself, pinned to the tip of the v1.0.1_release branch.
+  deepwmh_commit: f278b8eab09ef3f963242a5ccb818c9e43df9c32
+  # Pre-trained model (~200 MB), distributed by the authors via a Google Drive
+  # folder. See the note in the readme: if this download starts failing, the
+  # model must be mirrored (ideally on Zenodo) and this ID replaced.
+  model_gdrive_folder: 1CDJkY5F95sW638UGjohWDqXvPtBTI1w3
+  model_dir: /opt/deepwmh-model
+  # DeepWMH's setup.py pins nibabel==3.2.1, scikit-image==0.18.1,
+  # matplotlib==3.4.2, psutil==5.8.0 and friends. None of those publish cp310
+  # wheels, so on the base image's system Python 3.10 pip falls back to
+  # compiling them from source and the build dies for want of a compiler (and
+  # would then fail again against NumPy 2.x). Every one of those pins has a
+  # cp39 wheel, which is why upstream's own Dockerfile uses python:3.9-slim.
+  python_version: "3.9"
+  conda_env: /opt/miniconda/envs/deepwmh
+
+build:
+  kind: neurodocker
+  # cu118 wheels are what the authors' own Dockerfile installs. The image runs
+  # on CPU too (DeepWMH_predict -g -1), just far more slowly.
+  base-image: nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        # The CUDA base image gates on cuda>=11.8 via the NVIDIA prestart hook,
+        # which rejects the container on hosts reporting an older runtime. Let
+        # PyTorch do the real compatibility check instead (same approach as the
+        # synthseg recipe).
+        NVIDIA_DISABLE_REQUIRE: "true"
+
+    # build-essential is required, not optional. Several packages in the
+    # dependency tree publish no wheels at all and must compile: medpy (C++
+    # graphcut extension) and svglib among them. The first build attempt failed
+    # with "command 'gcc' failed: No such file or directory".
+    - install:
+        - bc
+        - build-essential
+        - ca-certificates
+        - curl
+        - git
+        - libgomp1
+        - unzip
+        - wget
+
+    - template:
+        name: miniconda
+        version: py311_24.9.2-0
+        install_path: /opt/miniconda
+        mamba: true
+
+    # The second entry must be quoted: a YAML scalar starting with "{" is
+    # otherwise parsed as a flow mapping.
+    - run:
+        - /opt/miniconda/bin/conda create -y -n deepwmh python={{ context.python_version }}
+        - "{{ context.conda_env }}/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel"
+        - "{{ context.conda_env }}/bin/python --version"
+
+    - environment:
+        PATH: "{{ context.conda_env }}/bin:${PATH}"
+
+    # A pip constraints file applied to every install below. Both DeepWMH and
+    # the nnU-Net fork leave most dependencies unpinned, so a bare install
+    # resolves to whatever is newest today -- on the last attempt that was
+    # NumPy 2.0.2, which DeepWMH's own scikit-image==0.18.1 pin cannot work
+    # with, and dicom2nifti 2.6.x, which drags in python-gdcm (a CMake/C++
+    # build with no cp39 wheel). Constraining both keeps the resolve stable
+    # over time instead of drifting with each PyPI release.
+    - run:
+        - >-
+          printf '%s\n' 'numpy>=1.20.3,<1.23' 'dicom2nifti==2.3.0' > /opt/pip-constraints.txt
+        - cat /opt/pip-constraints.txt
+
+    - environment:
+        PIP_CONSTRAINT: /opt/pip-constraints.txt
+
+    # Install NumPy first so neither torch nor the packages after it can pull a
+    # 2.x that the constraints would then have to unwind.
+    - run:
+        - python -m pip install --no-cache-dir "numpy==1.22.4"
+        - python -c "import numpy; print('numpy', numpy.__version__)"
+
+    # ANTs is used for N4 bias field correction. The authors mark it optional
+    # (--skip-bfc) but warn that accuracy degrades badly on bias-corrupted
+    # images, so it is installed here rather than left to the user.
+    - file:
+        name: ants_zip
+        url: https://github.com/ANTsX/ANTs/releases/download/v2.5.4/ants-2.5.4-ubuntu-22.04-X64-gcc.zip
+
+    - run:
+        - cp {{ get_file("ants_zip") }} /tmp/ants.zip
+        - unzip -q /tmp/ants.zip -d /opt
+        - rm /tmp/ants.zip
+
+    - environment:
+        PATH: /opt/ants-2.5.4/bin:${PATH}
+        # DeepWMH's pipeline is deterministic only if ANTs is seeded.
+        ANTS_RANDOM_SEED: "0"
+
+    # ROBEX performs skull stripping. NITRC serves the tarball directly once
+    # the i_agree parameter is set.
+    - file:
+        name: robex_targz
+        url: https://www.nitrc.org/frs/download.php/5994/ROBEXv12.linux64.tar.gz?i_agree=1&download_now=1
+
+    - run:
+        - mkdir -p /opt/robex
+        - tar -xzf {{ get_file("robex_targz") }} -C /opt/robex --strip-components 1
+        - test -f /opt/robex/runROBEX.sh
+        - chmod +x /opt/robex/runROBEX.sh /opt/robex/ROBEX
+
+    - environment:
+        ROBEX_DIR: /opt/robex
+
+    - run:
+        - python -m pip install --no-cache-dir torch==2.5.0 torchvision==0.20.0
+          --index-url https://download.pytorch.org/whl/cu118
+        - python -c "import torch; print('torch', torch.__version__)"
+
+    # nnU-Net fork first; DeepWMH's own pins are applied on top afterwards.
+    # Note the fork leaves its dependencies unpinned, which is exactly why the
+    # constraints file above exists.
+    - run:
+        - git clone https://github.com/lchdl/nnUNet_for_DeepWMH /opt/nnunet_for_deepwmh
+        - cd /opt/nnunet_for_deepwmh
+        - git checkout {{ context.nnunet_fork_commit }}
+        - python -m pip install --no-cache-dir -e .
+
+    - run:
+        - git clone https://github.com/lchdl/DeepWMH /opt/deepwmh
+        - cd /opt/deepwmh
+        - git checkout {{ context.deepwmh_commit }}
+        - python -m pip install --no-cache-dir -e .
+        - python -c "import numpy; print('numpy after install', numpy.__version__)"
+        - python -c "import skimage, nibabel, scipy; print('sci stack ok')"
+        - DeepWMH_predict -h
+
+    # Fetch and install the pre-trained model into the image so the container
+    # works offline. gdown handles the Drive confirm-token dance that the
+    # authors' hand-rolled wget/cookie script no longer survives.
+    - run:
+        - python -m pip install --no-cache-dir "gdown==5.2.0"
+        - mkdir -p /tmp/dlmodel
+        - gdown --folder {{ context.model_gdrive_folder }} -O /tmp/dlmodel
+        - MODEL_TARGZ=$(find /tmp/dlmodel -name '*.tar.gz' | head -n 1)
+        - test -n "$MODEL_TARGZ"
+        - mkdir -p {{ context.model_dir }}
+        - DeepWMH_install -m "$MODEL_TARGZ" -o {{ context.model_dir }} -f
+        - rm -rf /tmp/dlmodel
+
+    - environment:
+        # Consumed by the wrapper below so users need not pass -m every time.
+        DEEPWMH_MODEL_DIR: "{{ context.model_dir }}"
+        DEPLOY_ENV_DEEPWMH_MODEL_DIR: "BASEPATH{{ context.model_dir }}"
+        nnUNet_raw_data_base: /tmp/nnUNet_raw
+        nnUNet_preprocessed: /tmp/nnUNet_preprocessed
+        RESULTS_FOLDER: "{{ context.model_dir }}"
+
+    # Thin convenience wrapper: DeepWMH_predict with the bundled model
+    # pre-selected. Users who want a different model still call DeepWMH_predict.
+    # NOTE: written with printf, not a heredoc. Neurodocker joins the entries of
+    # a run: list with "&& \", which splices continuations into the middle of a
+    # heredoc body and produces "unterminated heredoc" at build time.
+    # Single quotes keep $@ and ${DEEPWMH_MODEL_DIR} for the wrapper's runtime
+    # shell instead of expanding them during the image build.
+    # Each entry is a YAML block scalar: an unquoted "#" after a space would
+    # otherwise start a YAML comment and silently truncate the command.
+    - run:
+        - >-
+          printf '%s\n' '#!/bin/bash' 'set -e' 'exec DeepWMH_predict -m "${DEEPWMH_MODEL_DIR:-/opt/deepwmh-model}" "$@"' > /usr/local/bin/deepwmh
+        - chmod +x /usr/local/bin/deepwmh
+        - bash -n /usr/local/bin/deepwmh
+        - deepwmh -h
+
+    - workdir: /opt
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+    - test:
+        name: Test DeepWMH help and model presence
+        script: |
+          #!/bin/bash
+          set -e
+          DeepWMH_predict -h
+          DeepWMH_install -h
+          # The installed model tree must contain an nnU-Net fold with weights.
+          find "$DEEPWMH_MODEL_DIR" -name 'model_best.model' | grep -q . \
+            || { echo "ERROR: no model weights found under $DEEPWMH_MODEL_DIR"; exit 1; }
+          command -v runROBEX.sh >/dev/null || test -x "$ROBEX_DIR/runROBEX.sh"
+          command -v N4BiasFieldCorrection
+          python -c "import torch; print('cuda available:', torch.cuda.is_available())"
+
+deploy:
+  path:
+    - /opt/robex
+    - /opt/miniconda/envs/deepwmh/bin
+  bins:
+    - deepwmh
+    - DeepWMH_predict
+    - DeepWMH_train
+    - DeepWMH_install
+    - antsGroupRegistration
+
+categories:
+  - image segmentation
+  - structural imaging
+  - machine learning
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAFa0lEQVR42oWWbYycVRXHf+c8L/PyzMwu22V3qK2ttXVbFSoQUGisMWl4EY34hWAsNRo1MUpEDYIQ6AeUxlY+aGKTglVCQkCLoBItfLC2kUKalsIWX6JbTd22bre73e7O+8zz3Hv9MDO7M2mj58PzJPfl/M/9n3v+5wrA0Ip177KJ7gK5Q3B52iZ0TQQRBekOOZx14Cw95tofKYP7nfr2/rkzE2dl2cqx5TbmkKi31llDn3Uc21Yd26iD6cyrImEaTWfaoNb2b1MPZ81JDfiYb2KeUNW1zpoYCHoX2VYDU6+Revc6stfcTHrVGIgjnp2iNv4G9ZMnAPCiPM4sBeesiUV1rYntE3LF6FgdIdVHiedjqwsEw8sZ/cp2og3XkZz5N3bmNKICmQLBez9A68IU03sfp3ridfyBoT6QNo80vUx++Hu9zsXzMaU5ch/8CGt27sNO/pW5vTsovbibSlOpmZDSngdpvv0n1FOKX3sM20qoHj+IZvO9eREE38vkhrcvAqiHrZXJjl1L8YEn+c9TP2Dml08RSkLdH+De28vc86FTvPpWCjExzXfeoHL8NUa/+DDWOWonXkMzuV4Qp33UWIMGIaP3/Yj0oZ+y57qfsfMbEeIHGCusy02zMfcvVAWHkBSKeOcmOL3zmxS3fYf0mqtx9SqILqWyn5qLDH/qHhbOznC3eZI7PjvElz99gU0bYly9yqNv386dR+/HVUs0TMC9t1zk4F7Dpugtpl9+nuLWb2GbtZ7rDIsAziR4+UEGb92KOfAMvx/Pc3bC48ibGd6cgJQ20CBAwhTiYur1JmuKhpXLGyxfWWD+lV8QvW8jmQ034BrVRRC/e69ttUx24ybQEJ0c53hzkC0PO+otx8xsmaBZwRqD4qiUa7jQ47vPRDx9MMs7kymi1jSNyX+Su3EL9b8cwc/kcCZpn0BEcEmL9NpriCf/TlJeIMoIlabQaMSEvsUYSxwnJIkhSRJ8XyiVWxw/GeKpA6D5t6OkV60HzwfneilqV2M4sgI7PwvWYJ3ge4CzWNctIItzDtfZLFhymc6kepgL5/CHRhAvWFyjfZXh3CJ30mauN1+XmAg0k/ZfpDPgXFeWegHajm1lAUllEVWMhbmSElsflW6QHqraptRBMwkYihytWEgSh2Zz2FqlrU2dyLQbufgB9YlxwvesxwZZopThq58s8/5VQmJ9/MAnCHzUU9LpkHpL+cIthj/+cJrvf66MTQzp9dfTPP0PXNJCegFwDklnaUyM40URjeEx7rrhIo8/Msf2u8p46QKFgRwgOOfIRFmigQG2fbzJsmLC1o+WGR7NIauvpjZ+GAlTuE41+10ADVLE5yaZP/wqI7d9hj/85gjXvzTIS4cCUqFC7PWyTypUHn0uz4OexwsvN6is20K4ME352AE0W1iUcO2RWDRXYOaF3QzcuJkzV27m84849p/Ik0nZPsm3FtK+49ipDHc+lOPZY0WK2+7j/L6fgDWXVLJbPEWYJjl/hqmf7+Cqrz/GstVF0o1ZHAqe11YWEVAP53mkkjJR0GD1A7tYOHqA8uv70fxgG+RyYudMgg4sY/6VZzn/4h5GdvyK9E234WoVzPwsrlHBNeuY0gVs6SL+yjGKu35NbfY8Uz/+Nl7hiqWu173Jl2046mFKcxRu/gSjX3oINYb6sUOY+RkklYWkRebDW9Arr2Lut08zu283mol66mCp4chgcew5Vb3bWXtJy0wq83jZAvmbbiW6djPhyApwBlNZoPrnI5QP76c1dQqvMNRmesl5LKqBtfb5/9n0RT2cSTC1MliDBCkQwcUtcBbN5tEgxWX3dZq+/P9niyCqIB0pcW1xRNra1EfJZZ4t/wUAUo4n+5rDqQAAAABJRU5ErkJggg==
+
+readme: |-
+  ----------------------------------
+  ## deepwmh/{{ context.version }} ##
+
+  DeepWMH is an annotation-free white matter hyperintensity (WMH) segmentation
+  tool. It segments WMH lesions from a single T2-FLAIR image and requires no
+  manually labelled training data, using multi-atlas registration and a
+  negative log-likelihood formulation to bootstrap an nnU-Net.
+
+  This container bundles the authors' pre-trained model, their nnU-Net fork,
+  ROBEX (skull stripping) and ANTs (N4 bias correction), so inference works
+  offline.
+
+  Example:
+  ```
+  ml deepwmh/{{ context.version }}
+
+  # Single subject, GPU 0
+  deepwmh -i /data/FLAIR.nii.gz -n subject01 -o /data/out -g 0
+
+  # Several subjects at once
+  deepwmh -i /data/s1_FLAIR.nii.gz /data/s2_FLAIR.nii.gz \
+          -n s1 s2 \
+          -o /data/out -g 0
+
+  # CPU only (slow), and skipping bias field correction
+  deepwmh -i /data/FLAIR.nii.gz -n subject01 -o /data/out -g -1 --skip-bfc
+  ```
+
+  `deepwmh` is a wrapper that calls `DeepWMH_predict` with the bundled model
+  directory already set. Call `DeepWMH_predict` directly to use your own model.
+
+  Note: input must be T2-FLAIR. Skipping bias correction (`--skip-bfc`)
+  noticeably degrades accuracy on scans with strong field inhomogeneity.
+
+  More documentation can be found here: https://github.com/lchdl/DeepWMH
+
+  To run applications outside of this container: ml deepwmh/{{ context.version }}
+
+  Citation:
+  ```
+  Liu C, Zhuo Z, Qu L, Jin Y, Hua T, Xu J, Tan G, Li Y, Duan Y, Wang T, Zhang Z,
+  Zhang Y, Chen R, Yu P, Zhang P, Shi Y, Zhang J, Tian D, Li R, Zhang X, Shi F,
+  Wang Y, Jiang J, Carass A, Liu Y, Ye C. (2024) DeepWMH: a deep learning tool
+  for accurate white matter hyperintensity segmentation without requiring manual
+  annotations for training. Science Bulletin 69(7):872-875.
+  doi:10.1016/j.scib.2024.01.034
+  ```
+
+  ----------------------------------
+
+structured_readme:
+  description: |-
+    DeepWMH is an annotation-free white matter hyperintensity (WMH) segmentation
+    tool. It segments WMH lesions from a single T2-FLAIR image without requiring
+    manually labelled training data, using multi-atlas registration and a
+    negative log-likelihood formulation to bootstrap an nnU-Net. The container
+    bundles the authors' pre-trained model, ROBEX and ANTs.
+  example: |-
+    ml deepwmh/{{ context.version }}
+    deepwmh -i /data/FLAIR.nii.gz -n subject01 -o /data/out -g 0
+  documentation: https://github.com/lchdl/DeepWMH
+  citation: |-
+    Liu C, Zhuo Z, Qu L, Jin Y, Hua T, Xu J, Tan G, Li Y, Duan Y, Wang T, Zhang Z,
+    Zhang Y, Chen R, Yu P, Zhang P, Shi Y, Zhang J, Tian D, Li R, Zhang X, Shi F,
+    Wang Y, Jiang J, Carass A, Liu Y, Ye C. (2024) DeepWMH: a deep learning tool
+    for accurate white matter hyperintensity segmentation without requiring manual
+    annotations for training. Science Bulletin 69(7):872-875.
+    doi:10.1016/j.scib.2024.01.034
