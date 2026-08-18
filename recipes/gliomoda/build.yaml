@@ -119,6 +119,9 @@ readme: |-
   Notes:
   Upstream ships no console_scripts; the interface is the Python API
   (`from gliomoda import Inferer`). nnU-Net v2 is pinned by upstream to 2.5.2.
-  Model weights are fetched on first inference.
+  Model weights **v1.0.2** are bundled in the image. The Zenodo lookup is
+  disabled, so the container never downloads weights at run time: it works
+  offline, and every run uses the same weights. Picking up newer upstream
+  weights requires a rebuild of this container.
 
   More documentation can be found here: https://github.com/BrainLesion
