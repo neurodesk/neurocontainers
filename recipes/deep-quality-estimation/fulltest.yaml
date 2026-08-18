@@ -21,3 +21,10 @@ tests:
     description: A CUDA-built torch must still work where no GPU is present.
     command: python -c "import torch; print('torch', torch.__version__, (torch.ones(2)+1).sum().item())"
     expected_output_contains: "4.0"
+
+  - name: bundled weights are present
+    description: >-
+      Upstream ships dqe_weights.pth inside the wheel, which is why this
+      container needs no download; this fails if a future release moves them out.
+    command: python -c "import pathlib, deep_quality_estimation as m; w=pathlib.Path(m.__file__).parent/'weights/dqe_weights.pth'; print('weights-mb', round(w.stat().st_size/1e6)) if w.is_file() else print('MISSING')"
+    expected_output_contains: "weights-mb"

@@ -87,4 +87,8 @@ readme: |-
   (`from deep_quality_estimation import DQE`). DQE defaults to device="cuda";
   pass device="cpu" on machines without a GPU.
 
+  The trained weights ship inside the wheel at
+  deep_quality_estimation/weights/dqe_weights.pth, so nothing is downloaded and
+  inference works offline.
+
   More documentation can be found here: https://github.com/BrainLesion
