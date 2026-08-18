@@ -1,0 +1,259 @@
+name: brainles-aurora
+version: 0.2.7
+
+description: AURORA segments brain metastases from multi-modal MR images using pretrained deep learning models.
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BrainLesion/AURORA/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  # Version of the model weights baked into the image. Bumping this is a
+  # deliberate act: the build asserts the archive Zenodo serves matches, so new
+  # upstream weights fail the build here instead of silently changing results.
+  weights_version: "1.0.0"
+  venv: /opt/brainles-aurora-0.2.7
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        VENV: "{{ context.venv }}"
+        # These default under $HOME, which does not exist at container runtime.
+        MPLCONFIGDIR: /tmp/mpl-brainles-aurora
+        XDG_CACHE_HOME: /tmp/cache-brainles-aurora
+        PYTHONNOUSERSITE: "1"
+        PATH: "{{ context.venv }}/bin:$PATH"
+
+    - install:
+        - ca-certificates
+        - fonts-dejavu-core
+        - libgl1
+        - libglib2.0-0t64
+        - libgomp1
+        - python3
+        - python3-pip
+        - python3-venv
+
+    - run:
+        - python3 -m venv "${VENV}"
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        # CUDA wheels: these are GPU inference tools and the default index
+        # already resolves to CUDA builds, so pin the index explicitly rather
+        # than letting the resolver choose a different one on a rebuild.
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir
+          --extra-index-url https://download.pytorch.org/whl/cu124 torch
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "brainles_aurora==0.2.7"
+        # Import at build time so a broken resolve fails here rather than on
+        # first use; read the version from distribution metadata because these
+        # packages do not all define __version__.
+        - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import brainles_aurora; print('brainles-aurora', md.version('brainles-aurora'))"
+        # Bake the model weights into the image so inference runs offline and every
+        # run uses the same weights. Adds ~345 MB to the image.
+        #
+        # Upstream's own downloader cannot be used: it fetches Zenodo's
+        # files-archive endpoint, which now returns HTTP 400, so it creates the
+        # version directory and then bails, leaving it empty. The 15 model
+        # archives are fetched individually from the pinned record instead, which
+        # also gets the builder's download cache. AURORA loads them by filename
+        # ("{inference_mode}_{model_selection}.tar") straight out of this
+        # directory, so they are copied in as-is rather than unpacked.
+        - WDIR="$(. "${VENV}/bin/activate" && python -c "import brainles_aurora,pathlib; print(pathlib.Path(brainles_aurora.__file__).parent/'weights_v{{ context.weights_version }}')")"
+        - mkdir -p "${WDIR}"
+        - cp {{ get_file("fla-o_best.tar") }} "${WDIR}/fla-o_best.tar"
+        - cp {{ get_file("fla-o_last.tar") }} "${WDIR}/fla-o_last.tar"
+        - cp {{ get_file("t1-o_best.tar") }} "${WDIR}/t1-o_best.tar"
+        - cp {{ get_file("t1-o_last.tar") }} "${WDIR}/t1-o_last.tar"
+        - cp {{ get_file("t1-t1c-fla_best.tar") }} "${WDIR}/t1-t1c-fla_best.tar"
+        - cp {{ get_file("t1-t1c-fla_last.tar") }} "${WDIR}/t1-t1c-fla_last.tar"
+        - cp {{ get_file("t1-t1c-t2-fla_best.tar") }} "${WDIR}/t1-t1c-t2-fla_best.tar"
+        - cp {{ get_file("t1-t1c-t2-fla_last.tar") }} "${WDIR}/t1-t1c-t2-fla_last.tar"
+        - cp {{ get_file("t1-t1c-t2-fla_vanilla.tar") }} "${WDIR}/t1-t1c-t2-fla_vanilla.tar"
+        - cp {{ get_file("t1-t1c_best.tar") }} "${WDIR}/t1-t1c_best.tar"
+        - cp {{ get_file("t1-t1c_last.tar") }} "${WDIR}/t1-t1c_last.tar"
+        - cp {{ get_file("t1c-fla_best.tar") }} "${WDIR}/t1c-fla_best.tar"
+        - cp {{ get_file("t1c-fla_last.tar") }} "${WDIR}/t1c-fla_last.tar"
+        - cp {{ get_file("t1c-o_best.tar") }} "${WDIR}/t1c-o_best.tar"
+        - cp {{ get_file("t1c-o_last.tar") }} "${WDIR}/t1c-o_last.tar"
+        # Fail the build rather than ship an image that silently re-downloads.
+        - . "${VENV}/bin/activate" && python -c "import pathlib,brainles_aurora as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; assert dirs, 'no weights baked into the image'; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()); print('baked', dirs[0].name, round(n/1e6), 'MB'); assert n > 300*1e6, 'weights look truncated'"
+        # The baked weights must be the version this recipe declares.
+        - . "${VENV}/bin/activate" && python -c "import pathlib,brainles_aurora as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x.name for x in root.rglob('weights_v*') if x.is_dir()]; want='weights_v{{ context.weights_version }}'; assert want in dirs, 'expected '+want+', found '+str(dirs)+' -- upstream published new weights, bump weights_version'"
+        # Pin: stop the package querying Zenodo at run time so the image cannot
+        # swap its weights underneath a user. Upstream already handles an
+        # unreachable Zenodo by falling back to the local copy, so this reuses
+        # that supported path rather than adding new behaviour. Newer weights now
+        # require a rebuild with weights_version bumped.
+        # Locate the module by path rather than importing it: importing
+        # brainles_aurora's weights module can fail, and a failed command substitution
+        # would silently expand to "" and cat into nothing.
+        - WMOD="$(. "${VENV}/bin/activate" && python -c "import brainles_aurora,pathlib; print(pathlib.Path(brainles_aurora.__file__).parent/'utils/weights.py')")"
+        - test -f "${WMOD}"
+        - cat {{ get_file("pin_weights.py") }} >> "${WMOD}"
+        - . "${VENV}/bin/activate" && python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; assert f()==(None,None), 'weight pin did not take'; print('zenodo lookup pinned off')"
+        # Prove the pinned lookup still resolves the baked weights.
+        - . "${VENV}/bin/activate" && python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import check_model_weights; p=str(check_model_weights()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
+        # Upstream ships no console_scripts, so the container provides one: a thin
+        # argparse front-end over the documented Python API. It adds no logic of
+        # its own beyond argument validation.
+        - install -m 0755 {{ get_file("aurora") }} /usr/local/bin/aurora
+        - . "${VENV}/bin/activate" && aurora --help > /dev/null && echo "aurora CLI ok"
+        - chmod -R a+rX "${VENV}"
+        - rm -rf /root/.cache/pip /tmp/mpl-brainles-aurora /tmp/cache-brainles-aurora
+
+    - workdir: /opt
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+files:
+  - name: fla-o_best.tar
+    url: https://zenodo.org/api/records/10557069/files/fla-o_best.tar/content
+  - name: fla-o_last.tar
+    url: https://zenodo.org/api/records/10557069/files/fla-o_last.tar/content
+  - name: t1-o_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-o_best.tar/content
+  - name: t1-o_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-o_last.tar/content
+  - name: t1-t1c-fla_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c-fla_best.tar/content
+  - name: t1-t1c-fla_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c-fla_last.tar/content
+  - name: t1-t1c-t2-fla_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c-t2-fla_best.tar/content
+  - name: t1-t1c-t2-fla_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c-t2-fla_last.tar/content
+  - name: t1-t1c-t2-fla_vanilla.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c-t2-fla_vanilla.tar/content
+  - name: t1-t1c_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c_best.tar/content
+  - name: t1-t1c_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1-t1c_last.tar/content
+  - name: t1c-fla_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1c-fla_best.tar/content
+  - name: t1c-fla_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1c-fla_last.tar/content
+  - name: t1c-o_best.tar
+    url: https://zenodo.org/api/records/10557069/files/t1c-o_best.tar/content
+  - name: t1c-o_last.tar
+    url: https://zenodo.org/api/records/10557069/files/t1c-o_last.tar/content
+  - name: aurora
+    contents: |
+      #!{{ context.venv }}/bin/python3
+      """Command line front-end for AURORA.
+
+      Upstream ships no console_scripts; this wraps
+      brainles_aurora.inferer.AuroraInferer.infer. The modality arguments are all
+      optional -- AURORA selects a model for whichever combination is supplied.
+      """
+      import argparse
+      import sys
+
+
+      def main(argv=None):
+          p = argparse.ArgumentParser(
+              prog="aurora",
+              description="Segment brain metastases from multi-modal MR images.",
+              epilog="Supply any subset of modalities; at least one is required.",
+          )
+          p.add_argument("-t1", "--t1", help="T1 image (NIfTI)")
+          p.add_argument("-t1c", "--t1c", help="T1 contrast-enhanced image (NIfTI)")
+          p.add_argument("-t2", "--t2", help="T2 image (NIfTI)")
+          p.add_argument("-fla", "--fla", help="FLAIR image (NIfTI)")
+          p.add_argument("-o", "--output", required=True,
+                         help="Output segmentation file (NIfTI)")
+          p.add_argument("--whole-tumor-floats",
+                         help="Optional output: unbinarized whole-tumor probabilities")
+          p.add_argument("--metastasis-floats",
+                         help="Optional output: unbinarized metastasis probabilities")
+          p.add_argument("--log-file", help="Optional log file path")
+          p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
+                         help="Device to run on (default: auto)")
+          p.add_argument("--cuda-devices", default="0",
+                         help='Visible CUDA devices, e.g. "0" or "0,1" (default: 0)')
+          p.add_argument("--threshold", type=float, default=0.5,
+                         help="Binarization threshold (default: 0.5)")
+          p.add_argument("--no-tta", action="store_true",
+                         help="Disable test-time augmentation (faster, less accurate)")
+          a = p.parse_args(argv)
+
+          if not any([a.t1, a.t1c, a.t2, a.fla]):
+              p.error("at least one of -t1/-t1c/-t2/-fla is required")
+
+          from brainles_aurora.inferer import AuroraInferer, AuroraInfererConfig
+          from brainles_aurora.inferer.constants import Device
+
+          config = AuroraInfererConfig(
+              device=Device(a.device),
+              cuda_devices=a.cuda_devices,
+              threshold=a.threshold,
+              tta=not a.no_tta,
+          )
+          AuroraInferer(config=config).infer(
+              t1=a.t1, t1c=a.t1c, t2=a.t2, fla=a.fla,
+              segmentation_file=a.output,
+              whole_tumor_unbinarized_floats_file=a.whole_tumor_floats,
+              metastasis_unbinarized_floats_file=a.metastasis_floats,
+              log_file=a.log_file,
+          )
+          print(f"wrote {a.output}")
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
+
+  - name: pin_weights.py
+    contents: |
+      # Appended to upstream's weights module by the neurocontainers recipe.
+      # Redefining the lookup shadows the original, so the package takes its own
+      # "Zenodo unreachable -> use the local weights" branch and never downloads
+      # at run time. This image ships weights_v1.0.0; to move to newer weights,
+      # bump weights_version in build.yaml and rebuild the container.
+      def _get_zenodo_metadata_and_archive_url():
+          return (None, None)
+
+deploy:
+  bins:
+    - aurora
+  path:
+    - "{{ context.venv }}/bin"
+
+categories:
+  - image segmentation
+  - structural imaging
+  - machine learning
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAwUlEQVR42u2YyxGAIAxEqcsKLIkm7cBe9O5Bkc3mw+yb8eZhnyQgaU0IIYQQC7Ht/fp6SoZOKYMEDxdBwvbziJVAgj8fdwnL8O4SaNmMClAkZmp6JLyLBFLTsytgKlFawDLQ3/AmEui2ONMz6QVcT2nGF00nwJZMER4tsTCJkT6hbqXMFXA5kZk9kFZgpNbd/k6ZDev2U2fZsCEXHPaW+fZuyGXG6mROPYUIm1KUDu8hUXKoVXK4tcyIUdNpIYQQCDfG5/UPGanvjgAAAABJRU5ErkJggg==
+
+readme: |-
+  ----------------------------------
+  ## brainles-aurora/{{ context.version }} ##
+
+  AURORA segments brain metastases from multi-modal MR images using pretrained deep learning models.
+
+  Example:
+  ```
+  aurora -t1c t1c.nii.gz -fla flair.nii.gz -o seg.nii.gz
+
+  # or from python:
+  python -c 'from brainles_aurora.inferer import AuroraInferer'
+  ```
+
+  Notes:
+  Upstream ships no console_scripts, so this container adds a thin `aurora` CLI
+  over the documented Python API
+  (`from brainles_aurora.inferer import AuroraInferer`). Model weights **v1.0.0** are bundled in the image.
+  The Zenodo lookup is disabled, so the container never downloads weights at
+  run time: it works offline, and every run uses the same weights.
+  Picking up newer upstream weights requires a rebuild of this container.
+
+  More documentation can be found here: https://github.com/BrainLesion
