@@ -49,8 +49,13 @@ build:
         # synthseg recipe).
         NVIDIA_DISABLE_REQUIRE: "true"
 
+    # build-essential is required, not optional. Several packages in the
+    # dependency tree publish no wheels at all and must compile: medpy (C++
+    # graphcut extension) and svglib among them. The first build attempt failed
+    # with "command 'gcc' failed: No such file or directory".
     - install:
         - bc
+        - build-essential
         - ca-certificates
         - curl
         - git
@@ -73,6 +78,27 @@ build:
 
     - environment:
         PATH: "{{ context.conda_env }}/bin:${PATH}"
+
+    # A pip constraints file applied to every install below. Both DeepWMH and
+    # the nnU-Net fork leave most dependencies unpinned, so a bare install
+    # resolves to whatever is newest today -- on the last attempt that was
+    # NumPy 2.0.2, which DeepWMH's own scikit-image==0.18.1 pin cannot work
+    # with, and dicom2nifti 2.6.x, which drags in python-gdcm (a CMake/C++
+    # build with no cp39 wheel). Constraining both keeps the resolve stable
+    # over time instead of drifting with each PyPI release.
+    - run:
+        - >-
+          printf '%s\n' 'numpy>=1.20.3,<1.23' 'dicom2nifti==2.3.0' > /opt/pip-constraints.txt
+        - cat /opt/pip-constraints.txt
+
+    - environment:
+        PIP_CONSTRAINT: /opt/pip-constraints.txt
+
+    # Install NumPy first so neither torch nor the packages after it can pull a
+    # 2.x that the constraints would then have to unwind.
+    - run:
+        - python -m pip install --no-cache-dir "numpy==1.22.4"
+        - python -c "import numpy; print('numpy', numpy.__version__)"
 
     # ANTs is used for N4 bias field correction. The authors mark it optional
     # (--skip-bfc) but warn that accuracy degrades badly on bias-corrupted
@@ -111,8 +137,9 @@ build:
           --index-url https://download.pytorch.org/whl/cu118
         - python -c "import torch; print('torch', torch.__version__)"
 
-    # nnU-Net fork first: it pins several of the scientific-Python packages that
-    # DeepWMH then reuses. Installing in the other order re-resolves them.
+    # nnU-Net fork first; DeepWMH's own pins are applied on top afterwards.
+    # Note the fork leaves its dependencies unpinned, which is exactly why the
+    # constraints file above exists.
     - run:
         - git clone https://github.com/lchdl/nnUNet_for_DeepWMH /opt/nnunet_for_deepwmh
         - cd /opt/nnunet_for_deepwmh
@@ -124,6 +151,8 @@ build:
         - cd /opt/deepwmh
         - git checkout {{ context.deepwmh_commit }}
         - python -m pip install --no-cache-dir -e .
+        - python -c "import numpy; print('numpy after install', numpy.__version__)"
+        - python -c "import skimage, nibabel, scipy; print('sci stack ok')"
         - DeepWMH_predict -h
 
     # Fetch and install the pre-trained model into the image so the container

@@ -161,8 +161,21 @@ build:
     # PyQt5 is NOT optional despite only the GUI using it: cli.py does
     # "from hypermapper import gui" at import time, so without PyQt5 every
     # subcommand exits 1 on ImportError. 5.15.9 ships a cp37-abi3 wheel.
+    #
+    # PyQt5-sip must be pinned too. PyQt5 5.15.9 only requires
+    # "PyQt5-sip<13,>=12.11", and pip resolves that to 12.13.0, which dropped
+    # cp37 wheels -- pip then tries to compile the C extension and the build
+    # fails for want of a compiler. 12.12.2 is the newest release in range that
+    # still publishes a cp37 wheel.
+    #
+    # --only-binary for these three makes the failure mode explicit: if a wheel
+    # ever stops being available, the build fails on the missing wheel rather
+    # than silently attempting a source build.
+    # Block scalar: "--only-binary=:all:" ends the line with a colon, which YAML
+    # would otherwise read as a mapping key.
     - run:
-        - python -m pip install --no-cache-dir "PyQt5==5.15.9"
+        - >-
+          python -m pip install --no-cache-dir --only-binary=:all: "PyQt5==5.15.9" "PyQt5-sip==12.12.2" "PyQt5-Qt5==5.15.2"
         - python -c "from PyQt5 import QtWidgets; print('PyQt5 ok')"
 
     - run:
