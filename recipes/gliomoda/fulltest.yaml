@@ -1,0 +1,23 @@
+name: gliomoda
+version: 0.0.4
+
+tests:
+  - name: package imports
+    description: Guards the whole dependency resolve, which is the fragile part of this recipe.
+    command: python -c "import gliomoda; print('import ok')"
+    expected_output_contains: "import ok"
+
+  - name: reports the packaged version
+    description: Guards against the venv resolving a different release than the recipe pins.
+    command: python -c "import importlib.metadata as md; print(md.version('gliomoda'))"
+    expected_output_contains: "${version}"
+
+  - name: runs outside HOME
+    description: $HOME does not exist at container runtime; caches must point somewhere writable.
+    command: env HOME=/nonexistent python -c "import gliomoda; print('no-home ok')"
+    expected_output_contains: "no-home ok"
+
+  - name: torch imports and computes on CPU
+    description: A CUDA-built torch must still work where no GPU is present.
+    command: python -c "import torch; print('torch', torch.__version__, (torch.ones(2)+1).sum().item())"
+    expected_output_contains: "4.0"
