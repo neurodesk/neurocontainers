@@ -199,11 +199,12 @@ build:
         # Fail the build loudly rather than shipping an image that only errors
         # at run time with "please download and rerun script". The folder is
         # known to contain exactly these three model pairs.
-        - |
-          for m in wmh_mcdp_multi wmh_mcdp_224iso_multi wmh_mcdp_contrast; do
-            test -f {{ context.hypermapper_dir }}/models/${m}_model.json || exit 1
-            test -f {{ context.hypermapper_dir }}/models/${m}_model_weights.h5 || exit 1
-          done
+        #
+        # MUST stay on one physical line. Neurodocker joins the entries of a
+        # run: list with "&&", so a multi-line block scalar gets "&&" spliced
+        # between the lines of the loop body, yielding invalid shell.
+        - >-
+          for m in wmh_mcdp_multi wmh_mcdp_224iso_multi wmh_mcdp_contrast; do test -f {{ context.hypermapper_dir }}/models/${m}_model.json || exit 1; test -f {{ context.hypermapper_dir }}/models/${m}_model_weights.h5 || exit 1; done
 
     - environment:
         TF_CPP_MIN_LOG_LEVEL: "3"
