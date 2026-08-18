@@ -78,7 +78,11 @@ build:
         # unreachable Zenodo by falling back to the local copy, so this reuses
         # that supported path rather than adding new behaviour. Newer weights now
         # require a rebuild with weights_version bumped.
-        - cat {{ get_file("pin_weights.py") }} >> "$(. "${VENV}/bin/activate" && python -c "import gliomoda.weights as m; print(m.__file__)")"
+        # Locate the module by path rather than importing it: a failed command
+        # substitution would silently expand to "" and cat into nothing.
+        - WMOD="$(. "${VENV}/bin/activate" && python -c "import gliomoda,pathlib; print(pathlib.Path(gliomoda.__file__).parent/'weights.py')")"
+        - test -f "${WMOD}"
+        - cat {{ get_file("pin_weights.py") }} >> "${WMOD}"
         - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import _get_zenodo_metadata_and_archive_url as f; assert f() is None, 'weight pin did not take'; print('zenodo lookup pinned off')"
         # Prove the pinned lookup still resolves the baked weights.
         - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import check_weights_path; p=str(check_weights_path()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
