@@ -225,6 +225,11 @@ tests:
       Slowest test in this suite. Runs the default multimodal model over the
       small T1/FLAIR/mask case that ships in the repository and asserts a new
       NIfTI is written.
+
+      -o is mandatory in the file-based form documented in upstream
+      docs/wmh_seg.md. Omitting it ran the full inference and only then failed,
+      which cost ~230s per attempt and reported nothing but an exit code, so
+      the command's output is echoed here rather than left in the SIF artifact.
     timeout: 1800
     command: |
       bash -lc '
@@ -235,8 +240,14 @@ tests:
       cp /opt/hypermapp3r/data/test_case/mask.nii.gz "$workdir"/
       cd "$workdir"
       touch .start
-      hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -id multi
+      rc=0
+      hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi > seg.log 2>&1 || rc=$?
+      echo "--- seg_wmh output (exit $rc) ---"
+      tail -60 seg.log || true
+      echo "--- end seg_wmh output ---"
+      test "$rc" -eq 0 || { echo "seg_wmh exited $rc"; ls -la "$workdir"; exit 1; }
       produced=$(find "$workdir" -name "*.nii.gz" -newer .start | wc -l)
       test "$produced" -ge 1 || { echo "no output produced"; ls -la "$workdir"; exit 1; }
+      test -s wmh_pred.nii.gz || { echo "no prediction at the requested -o path"; ls -la "$workdir"; exit 1; }
       echo "segmentation-ok produced=$produced"'
     expected_output_contains: segmentation-ok
