@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "hypermapp3r 0.1.0": {
+      "version": "20260818",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging",
+    "machine learning"
+  ]
+}
