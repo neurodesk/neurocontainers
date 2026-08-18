@@ -30,9 +30,13 @@ tests:
     description: >-
       Runs the real binary headlessly under a timeout. It cannot open a window
       with no display and is expected to exit; what matters is that it fails for
-      that reason rather than on a missing or unloadable library. This asserts
-      the absence of a loader error rather than guessing at Electron's own
-      message, which an earlier version of this test got wrong.
+      that reason rather than on an unloadable library.
+
+      The match is deliberately narrow. ld.so reports exactly one message when a
+      library cannot be loaded, "error while loading shared libraries". An
+      earlier version of this test also matched "no such file or directory",
+      which Electron prints routinely for benign missing paths such as /dev/dri,
+      so it failed on healthy output.
     command: |
-      bash -c 'out=$(timeout 30 env -u DISPLAY -u WAYLAND_DISPLAY /opt/modsort/AppRun --no-sandbox 2>&1 | head -40 || true); if echo "$out" | grep -qiE "error while loading shared libraries|cannot open shared object|no such file or directory"; then echo "LOADER-ERROR: $out"; else echo no-loader-error; fi'
+      bash -c 'out=$(timeout 30 env -u DISPLAY -u WAYLAND_DISPLAY /opt/modsort/AppRun --no-sandbox 2>&1 | head -40 || true); if echo "$out" | grep -qi "error while loading shared libraries"; then echo "LOADER-ERROR"; else echo no-loader-error; fi'
     expected_output_contains: "no-loader-error"
