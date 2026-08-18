@@ -74,6 +74,11 @@ build:
         - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import _get_zenodo_metadata_and_archive_url as f; assert f() is None, 'weight pin did not take'; print('zenodo lookup pinned off')"
         # Prove the pinned lookup still resolves the baked weights.
         - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import check_weights_path; p=str(check_weights_path()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
+        # Upstream ships no console_scripts, so the container provides one: a thin
+        # argparse front-end over the documented Python API. It adds no logic of
+        # its own beyond argument validation.
+        - install -m 0755 {{ get_file("gliomoda") }} /usr/local/bin/gliomoda
+        - . "${VENV}/bin/activate" && gliomoda --help > /dev/null && echo "gliomoda CLI ok"
         - chmod -R a+rX "${VENV}"
         - rm -rf /root/.cache/pip /tmp/mpl-gliomoda /tmp/cache-gliomoda
 
@@ -84,6 +89,53 @@ build:
         builtin: test_deploy.sh
 
 files:
+  - name: gliomoda
+    contents: |
+      #!{{ context.venv }}/bin/python3
+      """Command line front-end for GlioMODA.
+
+      Upstream ships no console_scripts; this wraps gliomoda.Inferer.infer, whose
+      modality arguments (t1c/t2f/t1n/t2w) are all optional -- the model adapts to
+      whichever combination is supplied.
+      """
+      import argparse
+      import sys
+
+
+      def main(argv=None):
+          p = argparse.ArgumentParser(
+              prog="gliomoda",
+              description="Segment glioma from multi-modal brain MRI (BraTS labels).",
+              epilog="Supply any subset of modalities; at least one is required.",
+          )
+          p.add_argument("-t1c", "--t1c", help="T1 contrast-enhanced image (NIfTI)")
+          p.add_argument("-t2f", "--t2f", help="T2 FLAIR image (NIfTI)")
+          p.add_argument("-t1n", "--t1n", help="T1 native image (NIfTI)")
+          p.add_argument("-t2w", "--t2w", help="T2 weighted image (NIfTI)")
+          p.add_argument("-o", "--output", required=True,
+                         help="Output segmentation file (NIfTI)")
+          p.add_argument("--use-res-enc-l", action="store_true",
+                         help="Use the ResEncL model (requires all four modalities)")
+          a = p.parse_args(argv)
+
+          if not any([a.t1c, a.t2f, a.t1n, a.t2w]):
+              p.error("at least one of -t1c/-t2f/-t1n/-t2w is required")
+          if a.use_res_enc_l and not all([a.t1c, a.t2f, a.t1n, a.t2w]):
+              p.error("--use-res-enc-l requires all four modalities")
+
+          from gliomoda import Inferer
+
+          Inferer().infer(
+              t1c=a.t1c, t2f=a.t2f, t1n=a.t1n, t2w=a.t2w,
+              segmentation_file=a.output, use_ResEncL=a.use_res_enc_l,
+          )
+          print(f"wrote {a.output}")
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
+
   - name: pin_weights.py
     contents: |
       # Appended to upstream's weights module by the neurocontainers recipe.
@@ -95,6 +147,8 @@ files:
           return None
 
 deploy:
+  bins:
+    - gliomoda
   path:
     - "{{ context.venv }}/bin"
 
@@ -113,11 +167,15 @@ readme: |-
 
   Example:
   ```
+  gliomoda -t1c t1c.nii.gz -t2f flair.nii.gz -o seg.nii.gz
+
+  # or from python:
   python -c 'from gliomoda import Inferer'
   ```
 
   Notes:
-  Upstream ships no console_scripts; the interface is the Python API
+  Upstream ships no console_scripts, so this container adds a thin `gliomoda` CLI
+  over the documented Python API
   (`from gliomoda import Inferer`). nnU-Net v2 is pinned by upstream to 2.5.2.
   Model weights **v1.0.2** are bundled in the image. The Zenodo lookup is
   disabled, so the container never downloads weights at run time: it works
