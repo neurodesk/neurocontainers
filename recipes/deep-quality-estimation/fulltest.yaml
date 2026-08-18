@@ -28,3 +28,10 @@ tests:
       container needs no download; this fails if a future release moves them out.
     command: python -c "import pathlib, deep_quality_estimation as m; w=pathlib.Path(m.__file__).parent/'weights/dqe_weights.pth'; print('weights-mb', round(w.stat().st_size/1e6)) if w.is_file() else print('MISSING')"
     expected_output_contains: "weights-mb"
+
+  - name: deep-quality-estimation CLI is on PATH and renders help
+    description: >-
+      The CLI is added by this recipe rather than upstream, so nothing else
+      would catch it going missing or failing to import its dependencies.
+    command: deep-quality-estimation --help
+    expected_output_contains: "usage: deep-quality-estimation"
