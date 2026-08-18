@@ -11,6 +11,10 @@ architectures:
   - x86_64
 
 variables:
+  # Version of the model weights baked into the image. Bumping this is a
+  # deliberate act: the build asserts the archive Zenodo serves matches, so new
+  # upstream weights fail the build here instead of silently changing results.
+  weights_version: "1.0.0"
   venv: /opt/brainles-aurora-0.2.7
 
 build:
@@ -59,6 +63,17 @@ build:
         - . "${VENV}/bin/activate" && python -c "from brainles_aurora.utils.weights import check_model_weights; print('weights at', check_model_weights())"
         # Fail the build rather than ship an image that silently re-downloads.
         - . "${VENV}/bin/activate" && python -c "import pathlib,brainles_aurora as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; assert dirs, 'no weights baked into the image'; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()); print('baked', dirs[0].name, round(n/1e6), 'MB'); assert n > 300*1e6, 'weights look truncated'"
+        # The baked weights must be the version this recipe declares.
+        - . "${VENV}/bin/activate" && python -c "import pathlib,brainles_aurora as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x.name for x in root.rglob('weights_v*') if x.is_dir()]; want='weights_v{{ context.weights_version }}'; assert want in dirs, 'expected '+want+', found '+str(dirs)+' -- upstream published new weights, bump weights_version'"
+        # Pin: stop the package querying Zenodo at run time so the image cannot
+        # swap its weights underneath a user. Upstream already handles an
+        # unreachable Zenodo by falling back to the local copy, so this reuses
+        # that supported path rather than adding new behaviour. Newer weights now
+        # require a rebuild with weights_version bumped.
+        - cat {{ get_file("pin_weights.py") }} >> "$(. "${VENV}/bin/activate" && python -c "import brainles_aurora.utils.weights as m; print(m.__file__)")"
+        - . "${VENV}/bin/activate" && python -c "from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; assert f()==(None,None), 'weight pin did not take'; print('zenodo lookup pinned off')"
+        # Prove the pinned lookup still resolves the baked weights.
+        - . "${VENV}/bin/activate" && python -c "from brainles_aurora.utils.weights import check_model_weights; p=str(check_model_weights()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
         - chmod -R a+rX "${VENV}"
         - rm -rf /root/.cache/pip /tmp/mpl-brainles-aurora /tmp/cache-brainles-aurora
 
@@ -67,6 +82,17 @@ build:
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
+
+files:
+  - name: pin_weights.py
+    contents: |
+      # Appended to upstream's weights module by the neurocontainers recipe.
+      # Redefining the lookup shadows the original, so the package takes its own
+      # "Zenodo unreachable -> use the local weights" branch and never downloads
+      # at run time. This image ships weights_v1.0.0; to move to newer weights,
+      # bump weights_version in build.yaml and rebuild the container.
+      def _get_zenodo_metadata_and_archive_url():
+          return (None, None)
 
 deploy:
   path:
@@ -92,8 +118,9 @@ readme: |-
 
   Notes:
   Upstream ships no console_scripts; the interface is the Python API
-  (`from brainles_aurora.inferer import AuroraInferer`). Model weights are bundled in the image, so
-  inference works offline. Upstream still checks Zenodo for a newer release at
-  run time and will fetch it if one exists and the network is reachable.
+  (`from brainles_aurora.inferer import AuroraInferer`). Model weights **v1.0.0** are bundled in the image.
+  The Zenodo lookup is disabled, so the container never downloads weights at
+  run time: it works offline, and every run uses the same weights.
+  Picking up newer upstream weights requires a rebuild of this container.
 
   More documentation can be found here: https://github.com/BrainLesion

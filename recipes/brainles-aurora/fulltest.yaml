@@ -28,3 +28,15 @@ tests:
       fails if a rebuild ever silently drops them.
     command: python -c "import pathlib,brainles_aurora as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()) if dirs else 0; print('weights-mb', round(n/1e6))"
     expected_output_contains: "weights-mb"
+
+  - name: bundled weights are the declared version
+    description: Guards against a rebuild shipping different weights than the readme states.
+    command: python -c "import pathlib,brainles_aurora as _m; root=pathlib.Path(_m.__file__).parent; print([x.name for x in root.rglob('weights_v*') if x.is_dir()])"
+    expected_output_contains: "weights_v1.0.0"
+
+  - name: weights are pinned, not fetched at run time
+    description: >-
+      The Zenodo lookup is disabled at build time so the image cannot swap its
+      weights underneath a user; this fails if that patch is ever lost.
+    command: python -c "from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; print('pinned' if f()==(None,None) else 'NOT-PINNED')"
+    expected_output_contains: "pinned"
