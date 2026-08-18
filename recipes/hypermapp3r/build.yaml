@@ -135,11 +135,20 @@ build:
     # Python 3.7 under the nilearn 0.9.2 constraint (scipy>=1.5) -- an earlier
     # scipy==1.4.1 pin here was unsatisfiable, and the TensorFlow layer above
     # already installs scipy 1.7.3 anyway.
-    # tables, plotly, SimpleITK and a standalone scikit-learn pin were dropped:
-    # nothing in hypermapper imports them.
+    # tables and SimpleITK were dropped: nothing in hypermapper imports them and
+    # neither is declared in upstream's setup.py.
+    #
+    # plotly IS required even though no module imports it. The generated
+    # `hypermapper` console script sets __requires__ = 'HyperMapp3r', so
+    # pkg_resources resolves every dependency setup.py declares before running
+    # anything. Dropping plotly built a working image whose CLI died on
+    # "DistributionNotFound: The 'plotly' distribution was not found and is
+    # required by HyperMapp3r" -- declared metadata is enforced regardless of
+    # imports. 5.18.0 is the last release that still supports python 3.7.
     - run:
         - python -m pip install --no-cache-dir
           "scipy==1.7.3"
+          "plotly==5.18.0"
           "scikit-learn==1.0.2"
           "joblib==1.3.2"
           "nibabel==3.2.2"
@@ -185,6 +194,11 @@ build:
         # --no-deps: setup.py re-pins keras, which would undo the resolve above.
         # PyQt5 is installed explicitly in the step before this one.
         - python -m pip install --no-cache-dir --no-deps -e .
+        # Mirror what the generated console script does at start-up
+        # (__requires__ = 'HyperMapp3r'), so a dependency that setup.py declares
+        # but this recipe does not install fails here, at the layer that can fix
+        # it, rather than in the CLI smoke test further down.
+        - python -c "import pkg_resources; pkg_resources.require('HyperMapp3r'); print('requirements resolve')"
 
     # hypermapper resolves models as <repo_root>/models/<name>_model.json and
     # <name>_model_weights.h5 (segment/hypermapper.py, hyper_dir = parents[2]).
