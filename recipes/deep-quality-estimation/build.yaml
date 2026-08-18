@@ -1,0 +1,90 @@
+name: deep-quality-estimation
+version: 0.0.3
+
+description: Deep Quality Estimation rates BraTS glioma segmentation quality on a one to six star scale.
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BrainLesion/deep_quality_estimation/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  venv: /opt/deep-quality-estimation-0.0.3
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        VENV: "{{ context.venv }}"
+        # These default under $HOME, which does not exist at container runtime.
+        MPLCONFIGDIR: /tmp/mpl-deep-quality-estimation
+        XDG_CACHE_HOME: /tmp/cache-deep-quality-estimation
+        PYTHONNOUSERSITE: "1"
+        PATH: "{{ context.venv }}/bin:$PATH"
+
+    - install:
+        - ca-certificates
+        - fonts-dejavu-core
+        - libgl1
+        - libglib2.0-0t64
+        - libgomp1
+        - python3
+        - python3-pip
+        - python3-venv
+
+    - run:
+        - python3 -m venv "${VENV}"
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        # CUDA wheels: these are GPU inference tools and the default index
+        # already resolves to CUDA builds, so pin the index explicitly rather
+        # than letting the resolver choose a different one on a rebuild.
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir
+          --extra-index-url https://download.pytorch.org/whl/cu124 torch
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "deep_quality_estimation==0.0.3"
+        # Import at build time so a broken resolve fails here rather than on
+        # first use; read the version from distribution metadata because these
+        # packages do not all define __version__.
+        - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import deep_quality_estimation; print('deep-quality-estimation', md.version('deep-quality-estimation'))"
+        - chmod -R a+rX "${VENV}"
+        - rm -rf /root/.cache/pip /tmp/mpl-deep-quality-estimation /tmp/cache-deep-quality-estimation
+
+    - workdir: /opt
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+deploy:
+  path:
+    - "{{ context.venv }}/bin"
+
+categories:
+  - quality control
+  - image segmentation
+  - machine learning
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAeklEQVR42u3Xyw1AQBQFUHWpQAXKUI6lpTIUpQFWk0wmISEYxjnJXb2Ed+MXVQUAQLnmqVlCcsz7YVxCDi+9dYK75/HChwvEB0zzxDxeOM2p2yZH9kpcciVeX6LY5T/3DHzyLVTEdwAAPzC5UrfdbhRQQIHSCwAA/MgKWY2zKnhE7AQAAAAASUVORK5CYII=
+
+readme: |-
+  ----------------------------------
+  ## deep-quality-estimation/{{ context.version }} ##
+
+  Deep Quality Estimation rates BraTS glioma segmentation quality on a one to six star scale.
+
+  Example:
+  ```
+  python -c 'from deep_quality_estimation import DQE'
+  ```
+
+  Notes:
+  Upstream ships no console_scripts; the interface is the Python API
+  (`from deep_quality_estimation import DQE`). DQE defaults to device="cuda";
+  pass device="cpu" on machines without a GPU.
+
+  More documentation can be found here: https://github.com/BrainLesion
