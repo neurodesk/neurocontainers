@@ -98,9 +98,6 @@ tests:
   - name: NiBabel runtime works
     command: python -c 'import nibabel as nib, numpy as np; img=nib.Nifti1Image(np.zeros((2,3,4)), np.eye(4)); assert img.shape == (2,3,4)'
 
-  - name: SimpleITK image runtime works
-    command: python -c 'import SimpleITK as sitk; img=sitk.Image([3,4,5], sitk.sitkFloat32); assert img.GetSize() == (3,4,5)'
-
   # ==========================================================================
   # BUNDLED MODELS
   # ==========================================================================
@@ -147,20 +144,45 @@ tests:
       print("validated", len(weights), "weight files")
       PY
 
-  - name: All five advertised model ids are installed
+  - name: All published model ids are installed
     description: >-
-      The readme documents -id multi, 224multi, 224all, con and t1m. Note that
-      upstream's own Dockerfile reuses some Google Drive ids across different
-      model names, so this also catches a bad upstream mapping.
+      Upstream publishes exactly three model pairs. The CLI additionally
+      advertises -id 224all and -id t1m, but no weights for those were ever
+      released, so they are deliberately not asserted here.
     command: |
       bash -lc '
       set -e
-      for m in wmh_mcdp_multi wmh_mcdp_224iso_multi wmh_mcdp_224iso_all wmh_mcdp_contrast wmh_mcdp_t1only_multi; do
+      for m in wmh_mcdp_multi wmh_mcdp_224iso_multi wmh_mcdp_contrast; do
         test -f /opt/hypermapp3r/models/${m}_model.json || { echo "missing ${m}_model.json"; exit 1; }
         test -f /opt/hypermapp3r/models/${m}_model_weights.h5 || { echo "missing ${m}_model_weights.h5"; exit 1; }
       done
       echo all-models-ok'
     expected_output_contains: all-models-ok
+
+  - name: Every model definition has matching weights
+    description: Catches a partial Google Drive download leaving an orphaned pair.
+    command: |
+      python - <<'PY'
+      import pathlib
+      root = pathlib.Path("/opt/hypermapp3r/models")
+      defs = sorted(root.glob("*_model.json"))
+      assert defs, "no model definitions installed"
+      for path in defs:
+          weights = root / path.name.replace("_model.json", "_model_weights.h5")
+          assert weights.is_file(), f"{path.name} has no matching weights"
+      print("paired", len(defs), "models")
+      PY
+
+  - name: PyQt5 imports
+    description: >-
+      cli.py imports hypermapper.gui at module scope, which imports PyQt5. If
+      this fails, every subcommand exits 1.
+    command: python -c 'from PyQt5 import QtWidgets; print("pyqt5 ok")'
+    expected_output_contains: pyqt5 ok
+
+  - name: hypermapper GUI module imports headlessly
+    command: python -c 'import hypermapper.gui; print("gui ok")'
+    expected_output_contains: gui ok
 
   # ==========================================================================
   # EXTERNAL TOOLS

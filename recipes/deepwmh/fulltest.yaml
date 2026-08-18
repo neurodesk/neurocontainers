@@ -50,45 +50,51 @@ tests:
   # ==========================================================================
   # PYTHON RUNTIME
   # ==========================================================================
+  - name: Python runtime is 3.9
+    description: >-
+      DeepWMH's pinned dependencies only publish wheels up to cp39; a newer
+      interpreter silently reintroduces source builds.
+    command: python -c 'import sys; assert sys.version_info[:2] == (3, 9)'
+
   - name: Python does not load user packages
     description: Ensure results come from the container, not a bound user site.
-    command: python3 -c 'import site; assert site.ENABLE_USER_SITE is False'
+    command: python -c 'import site; assert site.ENABLE_USER_SITE is False'
 
   - name: deepwmh package imports
-    command: python3 -c 'import deepwmh; print(deepwmh.__name__)'
+    command: python -c 'import deepwmh; print(deepwmh.__name__)'
 
   - name: deepwmh reports its version
-    command: python3 -c 'import deepwmh.pkginfo as p; print(p.__version__)'
+    command: python -c 'import deepwmh.pkginfo as p; print(p.__version__)'
     expected_output_contains: "1.0"
 
   - name: DeepWMH prediction module imports
-    command: python3 -c 'import deepwmh.main.predict, deepwmh.main.install_model'
+    command: python -c 'import deepwmh.main.predict, deepwmh.main.install_model'
 
   - name: DeepWMH pipeline module imports
-    command: python3 -c 'import deepwmh.pipeline.DCNN_multistage'
+    command: python -c 'import deepwmh.pipeline.DCNN_multistage'
 
   - name: DeepWMH analysis modules import
-    command: python3 -c 'import deepwmh.analysis.lesion_analysis, deepwmh.analysis.metrics, deepwmh.analysis.image_ops'
+    command: python -c 'import deepwmh.analysis.lesion_analysis, deepwmh.analysis.metrics, deepwmh.analysis.image_ops'
 
   - name: nnU-Net fork is the installed one
     description: >-
       DeepWMH requires lchdl/nnUNet_for_DeepWMH, not upstream MIC-DKFZ/nnUNet.
       The fork is installed editable from /opt/nnunet_for_deepwmh.
-    command: python3 -c 'import nnunet, os; print(os.path.realpath(os.path.dirname(nnunet.__file__)))'
+    command: python -c 'import nnunet, os; print(os.path.realpath(os.path.dirname(nnunet.__file__)))'
     expected_output_contains: /opt/nnunet_for_deepwmh
 
   - name: PyTorch CPU runtime works
-    command: python3 -c 'import torch; x=torch.tensor([1.,2.,3.]); assert torch.dot(x,x).item() == 14'
+    command: python -c 'import torch; x=torch.tensor([1.,2.,3.]); assert torch.dot(x,x).item() == 14'
 
   - name: PyTorch is the cu118 build
-    command: python3 -c 'import torch; print(torch.__version__)'
+    command: python -c 'import torch; print(torch.__version__)'
     expected_output_contains: "2.5.0"
 
   - name: NiBabel runtime works
-    command: python3 -c 'import nibabel as nib, numpy as np; img=nib.Nifti1Image(np.zeros((2,3,4)), np.eye(4)); assert img.shape == (2,3,4)'
+    command: python -c 'import nibabel as nib, numpy as np; img=nib.Nifti1Image(np.zeros((2,3,4)), np.eye(4)); assert img.shape == (2,3,4)'
 
   - name: SimpleITK image runtime works
-    command: python3 -c 'import SimpleITK as sitk; img=sitk.Image([3,4,5], sitk.sitkFloat32); assert img.GetSize() == (3,4,5)'
+    command: python -c 'import SimpleITK as sitk; img=sitk.Image([3,4,5], sitk.sitkFloat32); assert img.GetSize() == (3,4,5)'
 
   # ==========================================================================
   # BUNDLED PRE-TRAINED MODEL
@@ -113,7 +119,7 @@ tests:
 
   - name: nnU-Net plans deserialise
     command: |
-      python3 - <<'PY'
+      python - <<'PY'
       import os, pickle, pathlib
       root = pathlib.Path(os.environ["DEEPWMH_MODEL_DIR"])
       plans = next(root.rglob("plans.pkl"))
@@ -158,7 +164,7 @@ tests:
   # ==========================================================================
   - name: NIfTI file round trip preserves data and affine
     command: |
-      python3 - <<'PY'
+      python - <<'PY'
       import tempfile
       from pathlib import Path
       import nibabel as nib
