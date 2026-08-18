@@ -227,15 +227,21 @@ tests:
 
       The runner reports only the exit code to anywhere readable: stdout is
       dropped, and the stderr report is written inside the multi-GB candidate
-      artifact. So each failure path exits with a distinct code, and the
-      reported "got N" identifies which one:
+      artifact. So each failure path exits with a distinct code:
         10  could not stage the test case
-        11  hypermapper is not on PATH inside this shell
-        2x  seg_wmh itself exited x (e.g. 21 means exit 1)
+        11  hypermapper is not on PATH in this shell
+        12  antsRegistration is not on PATH in this shell
+        13  c3d is not on PATH in this shell
+        14  ANTSPATH is unset or empty
+        40  seg_wmh failed but did write the prediction
+        41  seg_wmh failed having written some NIfTI, but not at -o
+        2x  seg_wmh failed writing nothing, exiting x
         30  seg_wmh succeeded but produced no new NIfTI
         31  seg_wmh succeeded but wrote nothing at the -o path
-      The same run passes at build time as root, without HOME, and as an
-      unprivileged user, so the cause is specific to the apptainer runtime.
+      The previous run returned 21, so seg_wmh itself fails. It takes as long as
+      the build-time run that succeeds (~230s vs ~220s), so it completes the
+      pipeline and fails near the end; 40/41 separate "failed after producing
+      output" from "failed producing nothing".
     timeout: 1800
     command: |
       bash -lc '
@@ -243,10 +249,15 @@ tests:
       cp -r /opt/hypermapp3r/data/test_case/. "$workdir"/ || exit 10
       cd "$workdir" || exit 10
       command -v hypermapper >/dev/null 2>&1 || exit 11
+      command -v antsRegistration >/dev/null 2>&1 || exit 12
+      command -v c3d >/dev/null 2>&1 || exit 13
+      [ -n "$ANTSPATH" ] || exit 14
       touch .start
       rc=0
       hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi || rc=$?
       if [ "$rc" -ne 0 ]; then
+        [ -s wmh_pred.nii.gz ] && exit 40
+        [ -n "$(find "$workdir" -name "*.nii.gz" -newer .start)" ] && exit 41
         if [ "$rc" -gt 9 ]; then rc=9; fi
         exit $((20 + rc))
       fi
