@@ -1,0 +1,59 @@
+name: brats
+version: 0.1.8
+
+tests:
+  - name: package imports
+    description: Guards the dependency resolve.
+    command: python -c "import brats; print('import ok')"
+    expected_output_contains: "import ok"
+
+  - name: reports the packaged version
+    command: python -c "import importlib.metadata as md; print(md.version('brats'))"
+    expected_output_contains: "${version}"
+
+  - name: singularity backend imports
+    description: >-
+      brats/core/singularity.py imports docker as well as spython, so a partial
+      install would otherwise only surface when a user tried to run an algorithm.
+    command: python -c "from brats.core.singularity import run_container; print('backend ok')"
+    expected_output_contains: "backend ok"
+
+  - name: singularity binary is present under the name brats invokes
+    description: >-
+      brats shells out to "singularity"; apptainer does not provide that name,
+      so the recipe symlinks it. This fails if that link is ever dropped.
+    command: singularity --version
+    expected_output_contains: "apptainer"
+
+  - name: apptainer can run a container from inside this one
+    description: >-
+      The orchestrator is useless if nested execution is blocked, so this proves
+      apptainer works here rather than only that it is installed.
+    command: apptainer exec docker://busybox:latest echo nested-exec-ok
+    expected_output_contains: "nested-exec-ok"
+
+  - name: runs outside HOME
+    description: $HOME does not exist at container runtime.
+    command: env HOME=/nonexistent python -c "import brats; print('no-home ok')"
+    expected_output_contains: "no-home ok"
+
+  - name: brats CLI is on PATH and renders help
+    command: brats --help
+    expected_output_contains: "usage: brats"
+
+  - name: the algorithm lister enumerates every packaged algorithm
+    description: >-
+      Nothing is bundled, so discovery is the entry point. This reads the
+      metadata inside the installed package, and fails if that layout changes.
+    command: |
+      bash -c 'n=$(brats-algorithms --images-only | wc -l); echo "algorithms=$n"; test "$n" -gt 50'
+    expected_output_contains: "algorithms=6"
+
+  - name: the lister prints the pull command for a task
+    command: brats-algorithms --task meningioma
+    expected_output_contains: "brats-pull"
+
+  - name: brats-pull explains itself without arguments
+    description: The pull step is mandatory before any inference, so its help must work.
+    command: brats-pull --help
+    expected_output_contains: "TMPDIR"
