@@ -4,6 +4,10 @@
 # ANTs is a state-of-the-art medical image registration and segmentation toolkit.
 # It provides tools for image registration, bias correction, segmentation, and more.
 #
+# Wall clock: 19 min end to end (run 32099604861, 2026-08-18). Dominated by the
+# datalad fetch of ds000001 and the registration/denoising steps - the image
+# itself is only 0.31 GiB.
+#
 # Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
 #   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)

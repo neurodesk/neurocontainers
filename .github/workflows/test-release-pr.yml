@@ -42,9 +42,22 @@ jobs:
   test-containers:
     needs: detect-changes
     if: needs.detect-changes.outputs.has-changes == 'true'
-    runs-on: self-hosted
+    runs-on: neurodesk-arcrunner-release-test
+    # The pool runs on syd3 with maxRunners 2. Serialise to one leg anyway while the
+    # migration is being proven, so a red result is unambiguous: extra legs then queue
+    # visibly here rather than looking like a stuck runner. Raise it once the first
+    # runs are green. Note this serialises within a run only; separate PRs still
+    # contend for the pool.
+    #
+    # 110 rather than 120: the pod's activeDeadlineSeconds is 7200s, and its clock
+    # starts at pod start while this one starts only once the runner has booted,
+    # registered and been assigned. At 120 the kubelet reap always wins that race by
+    # 30-60s, so the job reports "lost communication with the server" instead of the
+    # clean timeout this exists to give. Per-leg, not cumulative; ants measures 19 min.
+    timeout-minutes: 110
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         release: ${{ fromJson(needs.detect-changes.outputs.modified-releases) }}
 
@@ -79,8 +92,10 @@ jobs:
       - name: Install dependencies
         working-directory: source
         run: |
-          # Matrix jobs can share the same self-hosted machine and system Python.
-          # Serialize dependency installation to avoid pip/apt/git-annex races.
+          # On the VMs matrix legs shared a machine and system Python, so this lock
+          # avoided pip/apt/git-annex races. On ephemeral runners each leg is its own
+          # pod: the lock is a no-op and every leg reinstalls from scratch. Kept so the
+          # job stays correct on either runner.
           (
             flock 9
             python -m pip install --upgrade pip
@@ -97,6 +112,37 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # release_test_runner downloads the .simg into its cache dir and then copies it
+      # into <output-dir>/fulltest-containers, but skips that copy when the two resolve
+      # to the same path (release_test_runner.py:275-278). Point the cache straight at
+      # the containers directory so a large artifact is stored once, not twice: at two
+      # copies the largest release (mrsiproc 0.2.0, 24.75 GiB) would peak at 49.5 GiB of
+      # a 60 GiB volume, which is a margin the next big recipe eats.
+      #
+      # This also keeps the download off $HOME. The work volume mounts at
+      # /home/runner/_work, NOT at $HOME, so $HOME/.cache is the container writable layer
+      # and counts against the pod's ephemeral-storage limit (8Gi). Exceeding that gets
+      # the pod evicted by the kubelet mid-job, which would hit every release container
+      # over roughly 8 GiB rather than only the largest few.
+      - name: Stage the SIF cache on the work volume
+        run: |
+          set -euo pipefail
+          WS="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE unset - refusing to cache a multi-GB SIF on $HOME}"
+          CONTAINERS_DIR="$WS/source/builder/fulltest-containers"
+          mkdir -p "$CONTAINERS_DIR" "$HOME/.cache"
+          # builder/recipe.py and builder/template.py use this same path for the
+          # get_file cache. On a runner pod $HOME is per-job, so it is always absent
+          # here; on the persistent VMs it is shared and holds a multi-GB cache that
+          # manual-build.yml also uses. Refuse rather than delete, so reverting this
+          # workflow to runs-on: self-hosted cannot destroy it.
+          CACHE_LINK="$HOME/.cache/neurocontainers"
+          if [ -e "$CACHE_LINK" ] && [ ! -L "$CACHE_LINK" ]; then
+            echo "::error::${CACHE_LINK} exists and is not a symlink. This step expects a per-job HOME (runner pods); on a shared HOME that path is the get_file cache and must not be replaced. Refusing rather than deleting it."
+            exit 1
+          fi
+          ln -sfn "$CONTAINERS_DIR" "$CACHE_LINK"
+          echo "SIF cache -> $(readlink -f "$CACHE_LINK")"
 
       # Apptainer is not in the stock GitHub/ARC runner image. The standalone VMs
       # only have it because it was pre-installed there, so install it when it is
