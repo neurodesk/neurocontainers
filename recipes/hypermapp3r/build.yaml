@@ -249,6 +249,24 @@ build:
         - hypermapper --help
         - hypermapper seg_wmh --help
 
+    # Run the bundled test case during the build.
+    #
+    # The fulltest runner reports only an exit code to the CI log and keeps the
+    # command's stdout/stderr inside the 5.5GB SIF artifact, so an end-to-end
+    # failure there is undiagnosable remotely. A build step prints straight to
+    # the build log, so if this breaks the reason is visible. It costs ~4 minutes
+    # per build, which is worth paying while the segmentation is unproven.
+    - run:
+        - cp -r {{ context.hypermapper_dir }}/data/test_case /tmp/e2e
+        - cd /tmp/e2e
+        - ls -la /tmp/e2e
+        - hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi
+        - echo "--- files after seg_wmh ---"
+        - ls -la /tmp/e2e
+        - test -s /tmp/e2e/wmh_pred.nii.gz
+        - echo "end-to-end segmentation ok"
+        - rm -rf /tmp/e2e
+
     - workdir: /opt
 
     - test:
