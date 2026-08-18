@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "brainles-aurora 0.2.7": {
+      "version": "20260818",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging",
+    "machine learning"
+  ]
+}
