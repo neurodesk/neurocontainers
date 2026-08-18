@@ -252,8 +252,30 @@ readme: |-
   FreeSurfer contains a set of programs with a common focus of analyzing magnetic resonance imaging scans of brain tissue. It is an important tool in functional brain mapping and contains tools to conduct both volume based and surface based analysis.
 
   This is the legacy 5.3.0 release (2013), built from the official CentOS 6
-  x86_64 distribution on Ubuntu 16.04. It is provided for reproducing older
+  x86_64 distribution on Ubuntu 14.04. It is provided for reproducing older
   analyses - use the newest freesurfer module for new work.
+
+  ### Apple Silicon / ARM
+
+  This release ships x86_64 binaries only, and they cannot run under Rosetta.
+  Rosetta caps the size of a translated binary's .bss segment and FreeSurfer's
+  binaries exceed it, so tools are killed before they start:
+
+      rosetta error: bss_size overflow
+      Trace/BPT trap
+
+  recon-all fails immediately, at the mri_convert step that imports the input
+  volume. Emulating with QEMU instead avoids this - it has no such limit. A
+  Neurodesk container already registers both handlers, so disabling Rosetta
+  lets x86_64 binaries fall through to QEMU:
+
+      sudo sh -c 'echo 0 > /proc/sys/fs/binfmt_misc/rosetta; echo 0 > /proc/sys/fs/binfmt_misc/rosetta-wrapper'
+
+  Two caveats. This is not persistent: binfmt registrations reset when the
+  container restarts, and the bss_size error returning is the symptom. And it
+  costs roughly a 10x slowdown, which puts a full recon-all at days per
+  subject - so use it to validate a pipeline, and run real analyses on x86_64
+  hardware.
 
   Example:
   ```
