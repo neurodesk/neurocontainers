@@ -1,0 +1,158 @@
+name: deep-quality-estimation
+version: 0.0.3
+
+description: Deep Quality Estimation rates BraTS glioma segmentation quality on a one to six star scale.
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BrainLesion/deep_quality_estimation/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  venv: /opt/deep-quality-estimation-0.0.3
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        VENV: "{{ context.venv }}"
+        # These default under $HOME, which does not exist at container runtime.
+        MPLCONFIGDIR: /tmp/mpl-deep-quality-estimation
+        XDG_CACHE_HOME: /tmp/cache-deep-quality-estimation
+        PYTHONNOUSERSITE: "1"
+        PATH: "{{ context.venv }}/bin:$PATH"
+
+    - install:
+        - ca-certificates
+        - fonts-dejavu-core
+        - libgl1
+        - libglib2.0-0t64
+        - libgomp1
+        - python3
+        - python3-pip
+        - python3-venv
+
+    - run:
+        - python3 -m venv "${VENV}"
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        # CUDA wheels: these are GPU inference tools and the default index
+        # already resolves to CUDA builds, so pin the index explicitly rather
+        # than letting the resolver choose a different one on a rebuild.
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir
+          --extra-index-url https://download.pytorch.org/whl/cu124 torch
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "deep_quality_estimation==0.0.3"
+        # Import at build time so a broken resolve fails here rather than on
+        # first use; read the version from distribution metadata because these
+        # packages do not all define __version__.
+        - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import deep_quality_estimation; print('deep-quality-estimation', md.version('deep-quality-estimation'))"
+        # Upstream ships no console_scripts, so the container provides one: a thin
+        # argparse front-end over the documented Python API. It adds no logic of
+        # its own beyond argument validation.
+        - install -m 0755 {{ get_file("deep-quality-estimation") }} /usr/local/bin/deep-quality-estimation
+        - . "${VENV}/bin/activate" && deep-quality-estimation --help > /dev/null && echo "deep-quality-estimation CLI ok"
+        - chmod -R a+rX "${VENV}"
+        - rm -rf /root/.cache/pip /tmp/mpl-deep-quality-estimation /tmp/cache-deep-quality-estimation
+
+    - workdir: /opt
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+files:
+  - name: deep-quality-estimation
+    contents: |
+      #!{{ context.venv }}/bin/python3
+      """Command line front-end for Deep Quality Estimation.
+
+      Upstream ships no console_scripts; this wraps deep_quality_estimation.DQE.predict,
+      which returns a mean score plus one score per anatomical view.
+      """
+      import argparse
+      import json
+      import sys
+
+
+      def main(argv=None):
+          p = argparse.ArgumentParser(
+              prog="deep-quality-estimation",
+              description="Rate a BraTS glioma segmentation from 1 to 6 stars.",
+          )
+          p.add_argument("-t1c", "--t1c", required=True, help="T1 contrast-enhanced image (NIfTI)")
+          p.add_argument("-t1", "--t1", required=True, help="T1 image (NIfTI)")
+          p.add_argument("-t2", "--t2", required=True, help="T2 image (NIfTI)")
+          p.add_argument("-fla", "--flair", required=True, help="FLAIR image (NIfTI)")
+          p.add_argument("-s", "--segmentation", required=True,
+                         help="Segmentation to rate, in BraTS label style (NIfTI)")
+          p.add_argument("--device", default=None,
+                         help='Torch device, e.g. "cuda" or "cpu" (default: upstream default)')
+          p.add_argument("--cuda-devices", default="0",
+                         help='Visible CUDA devices, e.g. "0" or "0,1" (default: 0)')
+          p.add_argument("--json", action="store_true",
+                         help="Emit the scores as JSON instead of plain text")
+          a = p.parse_args(argv)
+
+          from deep_quality_estimation import DQE
+
+          dqe = DQE(device=a.device, cuda_devices=a.cuda_devices)
+          mean_score, view_scores = dqe.predict(
+              t1c=a.t1c, t1=a.t1, t2=a.t2, flair=a.flair, segmentation=a.segmentation,
+          )
+          views = {getattr(k, "name", str(k)): v for k, v in view_scores.items()}
+          if a.json:
+              print(json.dumps({"mean_score": mean_score, "view_scores": views}, indent=2))
+          else:
+              print(f"mean score: {mean_score}")
+              for name, score in views.items():
+                  print(f"  {name}: {score}")
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
+
+
+deploy:
+  bins:
+    - deep-quality-estimation
+  path:
+    - "{{ context.venv }}/bin"
+
+categories:
+  - quality control
+  - image segmentation
+  - machine learning
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAeklEQVR42u3Xyw1AQBQFUHWpQAXKUI6lpTIUpQFWk0wmISEYxjnJXb2Ed+MXVQUAQLnmqVlCcsz7YVxCDi+9dYK75/HChwvEB0zzxDxeOM2p2yZH9kpcciVeX6LY5T/3DHzyLVTEdwAAPzC5UrfdbhRQQIHSCwAA/MgKWY2zKnhE7AQAAAAASUVORK5CYII=
+
+readme: |-
+  ----------------------------------
+  ## deep-quality-estimation/{{ context.version }} ##
+
+  Deep Quality Estimation rates BraTS glioma segmentation quality on a one to six star scale.
+
+  Example:
+  ```
+  deep-quality-estimation -t1c t1c.nii.gz -t1 t1.nii.gz -t2 t2.nii.gz -fla flair.nii.gz -s seg.nii.gz
+
+  # or from python:
+  python -c 'from deep_quality_estimation import DQE'
+  ```
+
+  Notes:
+  Upstream ships no console_scripts, so this container adds a thin `deep-quality-estimation` CLI
+  over the documented Python API
+  (`from deep_quality_estimation import DQE`). DQE defaults to device="cuda";
+  pass device="cpu" on machines without a GPU.
+
+  The trained weights ship inside the wheel at
+  deep_quality_estimation/weights/dqe_weights.pth, so nothing is downloaded and
+  inference works offline.
+
+  More documentation can be found here: https://github.com/BrainLesion

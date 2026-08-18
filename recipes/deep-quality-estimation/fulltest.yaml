@@ -1,0 +1,37 @@
+name: deep-quality-estimation
+version: 0.0.3
+
+tests:
+  - name: package imports
+    description: Guards the whole dependency resolve, which is the fragile part of this recipe.
+    command: python -c "import deep_quality_estimation; print('import ok')"
+    expected_output_contains: "import ok"
+
+  - name: reports the packaged version
+    description: Guards against the venv resolving a different release than the recipe pins.
+    command: python -c "import importlib.metadata as md; print(md.version('deep-quality-estimation'))"
+    expected_output_contains: "${version}"
+
+  - name: runs outside HOME
+    description: $HOME does not exist at container runtime; caches must point somewhere writable.
+    command: env HOME=/nonexistent python -c "import deep_quality_estimation; print('no-home ok')"
+    expected_output_contains: "no-home ok"
+
+  - name: torch imports and computes on CPU
+    description: A CUDA-built torch must still work where no GPU is present.
+    command: python -c "import torch; print('torch', torch.__version__, (torch.ones(2)+1).sum().item())"
+    expected_output_contains: "4.0"
+
+  - name: bundled weights are present
+    description: >-
+      Upstream ships dqe_weights.pth inside the wheel, which is why this
+      container needs no download; this fails if a future release moves them out.
+    command: python -c "import pathlib, deep_quality_estimation as m; w=pathlib.Path(m.__file__).parent/'weights/dqe_weights.pth'; print('weights-mb', round(w.stat().st_size/1e6)) if w.is_file() else print('MISSING')"
+    expected_output_contains: "weights-mb"
+
+  - name: deep-quality-estimation CLI is on PATH and renders help
+    description: >-
+      The CLI is added by this recipe rather than upstream, so nothing else
+      would catch it going missing or failing to import its dependencies.
+    command: deep-quality-estimation --help
+    expected_output_contains: "usage: deep-quality-estimation"
