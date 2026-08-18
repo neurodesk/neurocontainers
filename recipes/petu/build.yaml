@@ -74,6 +74,11 @@ build:
         - . "${VENV}/bin/activate" && python -c "from petu.weights import _get_zenodo_metadata_and_archive_url as f; assert f() is None, 'weight pin did not take'; print('zenodo lookup pinned off')"
         # Prove the pinned lookup still resolves the baked weights.
         - . "${VENV}/bin/activate" && python -c "from petu.weights import check_weights_path; p=str(check_weights_path()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
+        # Upstream ships no console_scripts, so the container provides one: a thin
+        # argparse front-end over the documented Python API. It adds no logic of
+        # its own beyond argument validation.
+        - install -m 0755 {{ get_file("petu") }} /usr/local/bin/petu
+        - . "${VENV}/bin/activate" && petu --help > /dev/null && echo "petu CLI ok"
         - chmod -R a+rX "${VENV}"
         - rm -rf /root/.cache/pip /tmp/mpl-petu /tmp/cache-petu
 
@@ -84,6 +89,64 @@ build:
         builtin: test_deploy.sh
 
 files:
+  - name: petu
+    contents: |
+      #!{{ context.venv }}/bin/python3
+      """Command line front-end for PeTu.
+
+      Upstream ships no console_scripts; this wraps petu.Inferer.infer, which returns
+      three components and writes each to its own file.
+      """
+      import argparse
+      import sys
+
+
+      def main(argv=None):
+          p = argparse.ArgumentParser(
+              prog="petu",
+              description="Segment paediatric brain tumours into enhancing tumour, "
+                          "cystic component and T2-hyperintense regions.",
+          )
+          p.add_argument("-t1c", "--t1c", help="T1 contrast-enhanced image (NIfTI)")
+          p.add_argument("-fla", "--fla", help="FLAIR image (NIfTI)")
+          p.add_argument("-t1", "--t1", help="T1 image (NIfTI)")
+          p.add_argument("-t2", "--t2", help="T2 image (NIfTI)")
+          p.add_argument("--et", help="Output file for the enhancing tumour component")
+          p.add_argument("--cc", help="Output file for the cystic component")
+          p.add_argument("--t2h", help="Output file for the T2-hyperintense component")
+          p.add_argument("--et-dust-threshold", type=int, default=0,
+                         help="Drop enhancing-tumour components below this size")
+          p.add_argument("--cc-dust-threshold", type=int, default=0,
+                         help="Drop cystic components below this size")
+          p.add_argument("--t2h-dust-threshold", type=int, default=0,
+                         help="Drop T2-hyperintense components below this size")
+          a = p.parse_args(argv)
+
+          if not any([a.t1c, a.fla, a.t1, a.t2]):
+              p.error("at least one of -t1c/-fla/-t1/-t2 is required")
+          if not any([a.et, a.cc, a.t2h]):
+              p.error("at least one output of --et/--cc/--t2h is required")
+
+          from petu import Inferer
+
+          Inferer().infer(
+              t1c=a.t1c, fla=a.fla, t1=a.t1, t2=a.t2,
+              ET_segmentation_file=a.et,
+              CC_segmentation_file=a.cc,
+              T2H_segmentation_file=a.t2h,
+              et_dust_threshold=a.et_dust_threshold,
+              cc_dust_threshold=a.cc_dust_threshold,
+              t2h_dust_threshold=a.t2h_dust_threshold,
+          )
+          for f in (a.et, a.cc, a.t2h):
+              if f:
+                  print(f"wrote {f}")
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
+
   - name: pin_weights.py
     contents: |
       # Appended to upstream's weights module by the neurocontainers recipe.
@@ -95,6 +158,8 @@ files:
           return None
 
 deploy:
+  bins:
+    - petu
   path:
     - "{{ context.venv }}/bin"
 
@@ -113,11 +178,15 @@ readme: |-
 
   Example:
   ```
+  petu -t1c t1c.nii.gz -fla flair.nii.gz --et et.nii.gz --cc cc.nii.gz --t2h t2h.nii.gz
+
+  # or from python:
   python -c 'from petu import Inferer'
   ```
 
   Notes:
-  Upstream ships no console_scripts; the interface is the Python API
+  Upstream ships no console_scripts, so this container adds a thin `petu` CLI
+  over the documented Python API
   (`from petu import Inferer`). nnU-Net v2 is pinned by upstream to 2.5.2.
   Model weights **v1.0.0** are bundled in the image. The Zenodo lookup is
   disabled, so the container never downloads weights at run time: it works
