@@ -1,0 +1,136 @@
+name: modsort
+version: 0.0.2
+
+description: modsort is a drag-and-drop desktop app for sorting, identifying and tagging MR sequences, copying and renaming files into a chosen structure.
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BrainLesion/modsort/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  install_dir: /opt/modsort
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        # Electron writes its caches under $HOME, which does not exist at
+        # container runtime.
+        XDG_CACHE_HOME: /tmp/cache-modsort
+        XDG_CONFIG_HOME: /tmp/config-modsort
+
+    - install:
+        # Chromium runtime libraries. Ubuntu 24.04 renamed several of these with
+        # a t64 suffix during the time_t transition.
+        - ca-certificates
+        - libasound2t64
+        - libatk-bridge2.0-0t64
+        - libatk1.0-0t64
+        - libatspi2.0-0t64
+        - libcairo2
+        - libcups2t64
+        - libdrm2
+        - libgbm1
+        - libglib2.0-0t64
+        - libgtk-3-0t64
+        - libnspr4
+        - libnss3
+        - libpango-1.0-0
+        - libx11-6
+        - libxcomposite1
+        - libxdamage1
+        - libxext6
+        - libxfixes3
+        - libxkbcommon0
+        - libxrandr2
+        - xdg-utils
+        - zlib1g
+
+    # Upstream publishes a prebuilt Linux AppImage per release, so the container
+    # needs no node/npm toolchain to build the app from source.
+    - file:
+        name: modsort.AppImage
+        url: "https://github.com/BrainLesion/modsort/releases/download/v{{ context.version }}/modsort-Linux-x86_64-{{ context.version }}.AppImage"
+
+    - run:
+        # Extract rather than execute the AppImage: running one mounts a
+        # squashfs through FUSE, which is not available inside the container.
+        # --appimage-extract unpacks it with no FUSE involved.
+        - mkdir -p /tmp/modsort-extract
+        - cp {{ get_file("modsort.AppImage") }} /tmp/modsort-extract/modsort.AppImage
+        - chmod +x /tmp/modsort-extract/modsort.AppImage
+        - cd /tmp/modsort-extract
+        - ./modsort.AppImage --appimage-extract
+        - mkdir -p {{ context.install_dir }}
+        - cp -a /tmp/modsort-extract/squashfs-root/. {{ context.install_dir }}/
+        - rm -rf /tmp/modsort-extract
+        - test -x {{ context.install_dir }}/AppRun
+
+    - run:
+        # Every shared library the Electron binary needs must resolve now, so a
+        # missing package fails the build with a name rather than leaving a GUI
+        # that dies at launch with no display attached to report why.
+        - >-
+          ldd {{ context.install_dir }}/modsort 2>/dev/null | grep 'not found' && exit 1 || echo "electron libraries resolve"
+
+    - run:
+        # --no-sandbox: Chromium's setuid sandbox cannot initialise inside an
+        # unprivileged container, and without it no window ever appears.
+        - >-
+          printf '%s\n' '#!/bin/bash' 'set -e' 'exec {{ context.install_dir }}/AppRun --no-sandbox "$@"' > /usr/local/bin/modsort
+        - chmod +x /usr/local/bin/modsort
+        - bash -n /usr/local/bin/modsort
+
+    - workdir: /opt
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+deploy:
+  bins:
+    - modsort
+
+gui_apps:
+  - name: "modsort"
+    exec: "modsort"
+
+categories:
+  - data organisation
+
+icon: data:image/png;base64,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
+
+readme: |-
+  ----------------------------------
+  ## modsort/{{ context.version }} ##
+
+  modsort sorts, identifies and tags MR sequences through a drag-and-drop
+  desktop interface, then copies and renames the files into the structure you
+  choose. It is a graphical tool: there is no batch or command line mode.
+
+  Example:
+  ```
+  ml modsort/{{ context.version }}
+  modsort
+  ```
+
+  In NeuroDesk it also appears in the applications menu.
+
+  Notes:
+  This container unpacks the AppImage that upstream publishes rather than
+  building from source, so no node toolchain is present.
+
+  It needs a display. Inside a NeuroDesk desktop session that is already the
+  case; over SSH you need X forwarding. Headless use is not meaningful here.
+
+  Electron runs with --no-sandbox because Chromium's setuid sandbox cannot
+  initialise in an unprivileged container.
+
+  More documentation can be found here: https://github.com/BrainLesion/modsort
