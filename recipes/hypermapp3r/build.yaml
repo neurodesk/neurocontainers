@@ -149,6 +149,7 @@ build:
         - python -m pip install --no-cache-dir
           "scipy==1.7.3"
           "plotly==5.18.0"
+          "argparse==1.4.0"
           "scikit-learn==1.0.2"
           "joblib==1.3.2"
           "nibabel==3.2.2"
@@ -160,6 +161,12 @@ build:
           "argcomplete==1.12.3"
           "svgwrite==1.4.3"
         - python -c "import nilearn, nipype, pandas, svgwrite, argcomplete, termcolor; print('deps ok')"
+        # argparse has been stdlib since 3.2; the PyPI distribution is a python 2
+        # era backport that upstream still declares, so pkg_resources demands it.
+        # Installing it is inert at import time because stdlib precedes
+        # site-packages on sys.path -- assert that rather than assume it, since
+        # silently importing a 3.2-era argparse would be a miserable bug.
+        - python -c "import argparse; assert 'site-packages' not in argparse.__file__, argparse.__file__; print('argparse from stdlib:', argparse.__file__)"
 
     # keras-contrib has no PyPI release; upstream installs it from git at a
     # pinned commit (see requirements.txt).
