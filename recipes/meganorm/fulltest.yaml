@@ -14,7 +14,7 @@ tests:
 
   - name: package reports the packaged version
     description: Guards against the venv resolving a different meganorm than the recipe pins.
-    command: python -c "import meganorm; print(meganorm.__version__)"
+    command: python -c "import importlib.metadata as md; print(md.version('meganorm'))"
     expected_output_contains: "${version}"
 
   - name: dependency stack imports

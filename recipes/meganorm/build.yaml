@@ -34,6 +34,10 @@ build:
 
     - install:
         - ca-certificates
+        # PyTensor compiles its graphs with a C++ compiler; pcntoolkit's PyMC
+        # sampling runs severely degraded in pure-python mode without one. The
+        # first build warned "g++ not detected!".
+        - g++
         # matplotlib/seaborn and MNE's plotting paths need these at import time.
         - fonts-dejavu-core
         - libgl1
@@ -54,7 +58,9 @@ build:
         # Fail the build here rather than shipping an image that only breaks on
         # first use: the heavy optional stack (onnxruntime, pcntoolkit) is what
         # tends to go missing, and it is imported lazily at run time.
-        - . "${MEGANORM_VENV}/bin/activate" && python -c "import meganorm, mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('meganorm', meganorm.__version__)"
+        # Read the version from installed distribution metadata: meganorm's
+        # __init__.py re-exports its submodules and defines no __version__.
+        - . "${MEGANORM_VENV}/bin/activate" && python -c "import importlib.metadata as md; import meganorm, mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('meganorm', md.version('meganorm'))"
 
     - copy:
         - meganorm
