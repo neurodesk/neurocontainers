@@ -1,0 +1,205 @@
+name: gliomoda
+version: 0.0.4
+
+description: GlioMODA segments gliomas from multi-modal brain MRI across arbitrary sequence combinations.
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BrainLesion/GlioMODA/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  # Version of the model weights baked into the image. Bumping this is a
+  # deliberate act: the build asserts the archive Zenodo serves matches, so new
+  # upstream weights fail the build here instead of silently changing results.
+  weights_version: "1.0.2"
+  venv: /opt/gliomoda-0.0.4
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        VENV: "{{ context.venv }}"
+        # These default under $HOME, which does not exist at container runtime.
+        MPLCONFIGDIR: /tmp/mpl-gliomoda
+        XDG_CACHE_HOME: /tmp/cache-gliomoda
+        PYTHONNOUSERSITE: "1"
+        PATH: "{{ context.venv }}/bin:$PATH"
+
+    - install:
+        - ca-certificates
+        - fonts-dejavu-core
+        - libgl1
+        - libglib2.0-0t64
+        - libgomp1
+        - python3
+        - unzip
+        - python3-pip
+        - python3-venv
+
+    - run:
+        - python3 -m venv "${VENV}"
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        # CUDA wheels: these are GPU inference tools and the default index
+        # already resolves to CUDA builds, so pin the index explicitly rather
+        # than letting the resolver choose a different one on a rebuild.
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir
+          --extra-index-url https://download.pytorch.org/whl/cu124 torch
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "gliomoda==0.0.4"
+        # Import at build time so a broken resolve fails here rather than on
+        # first use; read the version from distribution metadata because these
+        # packages do not all define __version__.
+        - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import gliomoda; print('gliomoda', md.version('gliomoda'))"
+        # Bake the model weights into the image so inference runs offline and every
+        # run uses the same weights. Adds ~3.3GB to the image.
+        #
+        # Upstream's own downloader cannot be used: it fetches Zenodo's
+        # files-archive endpoint, which now returns HTTP 400, so it creates the
+        # version directory and then bails, leaving it empty. The archive is
+        # fetched directly from the pinned record instead, which also gets the
+        # builder's download cache.
+        - WDIR="$(. "${VENV}/bin/activate" && python -c "import gliomoda,pathlib; print(pathlib.Path(gliomoda.__file__).parent/'weights'/'weights_v{{ context.weights_version }}')")"
+        - mkdir -p "${WDIR}"
+        - unzip -q {{ get_file("weights.zip") }} -d "${WDIR}"
+        # Upstream unpacks a nested zip if the archive contains one; do the same.
+        - find "${WDIR}" -maxdepth 1 -name '*.zip' -exec sh -c 'unzip -q "$1" -d "$(dirname "$1")" && rm -f "$1"' _ {} \;
+        # Fail the build rather than ship an image that silently re-downloads.
+        - . "${VENV}/bin/activate" && python -c "import pathlib,gliomoda as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; assert dirs, 'no weights baked into the image'; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()); print('baked', dirs[0].name, round(n/1e6), 'MB'); assert n > 2000*1e6, 'weights look truncated'"
+        # The baked weights must be the version this recipe declares.
+        - . "${VENV}/bin/activate" && python -c "import pathlib,gliomoda as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x.name for x in root.rglob('weights_v*') if x.is_dir()]; want='weights_v{{ context.weights_version }}'; assert want in dirs, 'expected '+want+', found '+str(dirs)+' -- upstream published new weights, bump weights_version'"
+        # Pin: stop the package querying Zenodo at run time so the image cannot
+        # swap its weights underneath a user. Upstream already handles an
+        # unreachable Zenodo by falling back to the local copy, so this reuses
+        # that supported path rather than adding new behaviour. Newer weights now
+        # require a rebuild with weights_version bumped.
+        # Locate the module by path rather than importing it: a failed command
+        # substitution would silently expand to "" and cat into nothing.
+        - WMOD="$(. "${VENV}/bin/activate" && python -c "import gliomoda,pathlib; print(pathlib.Path(gliomoda.__file__).parent/'weights.py')")"
+        - test -f "${WMOD}"
+        - cat {{ get_file("pin_weights.py") }} >> "${WMOD}"
+        - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import _get_zenodo_metadata_and_archive_url as f; m,_u=f(); assert m['version']=='{{ context.weights_version }}', m; print('zenodo lookup pinned to', m['version'])"
+        # Prove the pinned lookup still resolves the baked weights.
+        - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import check_weights_path; p=str(check_weights_path()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
+        # Upstream ships no console_scripts, so the container provides one: a thin
+        # argparse front-end over the documented Python API. It adds no logic of
+        # its own beyond argument validation.
+        - install -m 0755 {{ get_file("gliomoda") }} /usr/local/bin/gliomoda
+        - . "${VENV}/bin/activate" && gliomoda --help > /dev/null && echo "gliomoda CLI ok"
+        - chmod -R a+rX "${VENV}"
+        - rm -rf /root/.cache/pip /tmp/mpl-gliomoda /tmp/cache-gliomoda
+
+    - workdir: /opt
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+files:
+  - name: weights.zip
+    url: https://zenodo.org/api/records/15625233/files/weights.zip/content
+  - name: gliomoda
+    contents: |
+      #!{{ context.venv }}/bin/python3
+      """Command line front-end for GlioMODA.
+
+      Upstream ships no console_scripts; this wraps gliomoda.Inferer.infer, whose
+      modality arguments (t1c/t2f/t1n/t2w) are all optional -- the model adapts to
+      whichever combination is supplied.
+      """
+      import argparse
+      import sys
+
+
+      def main(argv=None):
+          p = argparse.ArgumentParser(
+              prog="gliomoda",
+              description="Segment glioma from multi-modal brain MRI (BraTS labels).",
+              epilog="Supply any subset of modalities; at least one is required.",
+          )
+          p.add_argument("-t1c", "--t1c", help="T1 contrast-enhanced image (NIfTI)")
+          p.add_argument("-t2f", "--t2f", help="T2 FLAIR image (NIfTI)")
+          p.add_argument("-t1n", "--t1n", help="T1 native image (NIfTI)")
+          p.add_argument("-t2w", "--t2w", help="T2 weighted image (NIfTI)")
+          p.add_argument("-o", "--output", required=True,
+                         help="Output segmentation file (NIfTI)")
+          p.add_argument("--use-res-enc-l", action="store_true",
+                         help="Use the ResEncL model (requires all four modalities)")
+          a = p.parse_args(argv)
+
+          if not any([a.t1c, a.t2f, a.t1n, a.t2w]):
+              p.error("at least one of -t1c/-t2f/-t1n/-t2w is required")
+          if a.use_res_enc_l and not all([a.t1c, a.t2f, a.t1n, a.t2w]):
+              p.error("--use-res-enc-l requires all four modalities")
+
+          from gliomoda import Inferer
+
+          Inferer().infer(
+              t1c=a.t1c, t2f=a.t2f, t1n=a.t1n, t2w=a.t2w,
+              segmentation_file=a.output, use_ResEncL=a.use_res_enc_l,
+          )
+          print(f"wrote {a.output}")
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
+
+  - name: pin_weights.py
+    contents: |
+      # Appended to upstream's weights module by the neurocontainers recipe.
+      # Redefining the lookup shadows the original, so the package takes its own
+      # "Zenodo unreachable -> use the local weights" branch and never downloads
+      # at run time. This image ships weights_v1.0.2; to move to newer weights,
+      # bump weights_version in build.yaml and rebuild the container.
+      def _get_zenodo_metadata_and_archive_url():
+          # Returning None would be upstream's "Zenodo unreachable" path, but
+          # check_weights_path only binds zenodo_metadata inside "if zenodo_data:"
+          # and then reads it unconditionally, so None raises UnboundLocalError.
+          # Returning metadata whose version matches the baked weights takes the
+          # "latest weights are already present" branch instead: no network, no
+          # download, and the local weights are returned.
+          return ({"version": "1.0.2"}, "")
+
+deploy:
+  bins:
+    - gliomoda
+  path:
+    - "{{ context.venv }}/bin"
+
+categories:
+  - image segmentation
+  - structural imaging
+  - machine learning
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAtUlEQVR42u2Yuw2AMAxEMxSjMAAlFTWTMgATsAGIAaIkii/+5E5y/x7Iiu2UGIZhGIYJlGXf3lK5hDYp0wOuLiIJP1wCAT9MAgkPl5ACfK5jvIQEdK7gEijwGhFVgRzofa7VEma+/g+dK+hfQMPXSFBgOoFW+JKE6QaGNzJ7wKuA+3dA6iVWFZCYhdTHiZ5pVH2Y69kHTI3UZjYz1/AhduIQV4kQd6EQl7kQt9Ew12mGYZh58wGjEyf/sYHLfwAAAABJRU5ErkJggg==
+
+readme: |-
+  ----------------------------------
+  ## gliomoda/{{ context.version }} ##
+
+  GlioMODA segments gliomas from multi-modal brain MRI across arbitrary sequence combinations.
+
+  Example:
+  ```
+  gliomoda -t1c t1c.nii.gz -t2f flair.nii.gz -o seg.nii.gz
+
+  # or from python:
+  python -c 'from gliomoda import Inferer'
+  ```
+
+  Notes:
+  Upstream ships no console_scripts, so this container adds a thin `gliomoda` CLI
+  over the documented Python API
+  (`from gliomoda import Inferer`). nnU-Net v2 is pinned by upstream to 2.5.2.
+  Model weights **v1.0.2** are bundled in the image. The Zenodo lookup is
+  disabled, so the container never downloads weights at run time: it works
+  offline, and every run uses the same weights. Picking up newer upstream
+  weights requires a rebuild of this container.
+
+  More documentation can be found here: https://github.com/BrainLesion

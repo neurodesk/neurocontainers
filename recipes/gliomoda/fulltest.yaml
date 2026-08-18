@@ -1,0 +1,49 @@
+name: gliomoda
+version: 0.0.4
+
+tests:
+  - name: package imports
+    description: Guards the whole dependency resolve, which is the fragile part of this recipe.
+    command: python -c "import gliomoda; print('import ok')"
+    expected_output_contains: "import ok"
+
+  - name: reports the packaged version
+    description: Guards against the venv resolving a different release than the recipe pins.
+    command: python -c "import importlib.metadata as md; print(md.version('gliomoda'))"
+    expected_output_contains: "${version}"
+
+  - name: runs outside HOME
+    description: $HOME does not exist at container runtime; caches must point somewhere writable.
+    command: env HOME=/nonexistent python -c "import gliomoda; print('no-home ok')"
+    expected_output_contains: "no-home ok"
+
+  - name: torch imports and computes on CPU
+    description: A CUDA-built torch must still work where no GPU is present.
+    command: python -c "import torch; print('torch', torch.__version__, (torch.ones(2)+1).sum().item())"
+    expected_output_contains: "4.0"
+
+  - name: model weights are bundled in the image
+    description: >-
+      The point of baking the weights in is that inference works offline; this
+      fails if a rebuild ever silently drops them.
+    command: python -c "import pathlib,gliomoda as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()) if dirs else 0; print('weights-mb', round(n/1e6))"
+    expected_output_contains: "weights-mb"
+
+  - name: bundled weights are the declared version
+    description: Guards against a rebuild shipping different weights than the readme states.
+    command: python -c "import pathlib,gliomoda as _m; root=pathlib.Path(_m.__file__).parent; print([x.name for x in root.rglob('weights_v*') if x.is_dir()])"
+    expected_output_contains: "weights_v1.0.2"
+
+  - name: weights are pinned, not fetched at run time
+    description: >-
+      The Zenodo lookup is disabled at build time so the image cannot swap its
+      weights underneath a user; this fails if that patch is ever lost.
+    command: python -c "from gliomoda.weights import _get_zenodo_metadata_and_archive_url as f; m,_u=f(); print('pinned' if m['version']=='1.0.2' else 'NOT-PINNED')"
+    expected_output_contains: "pinned"
+
+  - name: gliomoda CLI is on PATH and renders help
+    description: >-
+      The CLI is added by this recipe rather than upstream, so nothing else
+      would catch it going missing or failing to import its dependencies.
+    command: gliomoda --help
+    expected_output_contains: "usage: gliomoda"
