@@ -183,3 +183,27 @@ tests:
     description: Confirms argument handling fails cleanly rather than hanging.
     command: bash -lc 'DeepWMH_predict -i /tmp/does-not-exist.nii.gz -n s1 -o /tmp/out -g -1 >/dev/null 2>&1; test $? -ne 0 && echo rejected'
     expected_output_contains: rejected
+
+  - name: nnU-Net tolerates a read-only model directory
+    description: >-
+      The fork opens a training log in the model folder even during inference,
+      and that path comes from the model pickle, so it points into the read-only
+      image. Unpatched, prediction dies after N4 with Errno 30. This asserts the
+      patch is present in the shipped image.
+    command: >-
+      grep -c "neurocontainers. fall back to a writable log dir"
+      /opt/nnunet_for_deepwmh/nnunet/training/network_training/network_trainer.py
+    expected_output_contains: "1"
+
+  - name: the log fallback resolves to a writable directory
+    description: Exercises the fallback against the real read-only model directory.
+    command: |
+      python -c "
+      import os
+      d = os.environ.get('DEEPWMH_MODEL_DIR', '/opt/deepwmh-model')
+      ok = os.access(d, os.W_OK)
+      fb = os.path.join(os.environ.get('TMPDIR', '/tmp'), 'deepwmh-nnunet-logs')
+      os.makedirs(fb, exist_ok=True)
+      print('model-dir-writable', ok, 'fallback-writable', os.access(fb, os.W_OK))
+      "
+    expected_output_contains: "fallback-writable True"

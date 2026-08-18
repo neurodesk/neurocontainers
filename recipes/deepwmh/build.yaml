@@ -145,6 +145,21 @@ build:
         - cd /opt/nnunet_for_deepwmh
         - git checkout {{ context.nnunet_fork_commit }}
         - python -m pip install --no-cache-dir -e .
+        # The fork opens a training log inside self.output_folder even when only
+        # doing inference, and output_folder is restored from the model pickle,
+        # so it points at the baked-in /opt/deepwmh-model. That path is inside
+        # the read-only squashfs at run time, so prediction died after N4 with
+        # "OSError: [Errno 30] Read-only file system". Passing --trained-model
+        # does not help: the path comes from the pickle, not the supplied root.
+        - python {{ get_file("patch_nnunet_logdir.py") }} /opt/nnunet_for_deepwmh
+        # Fail the build if the patch stops applying to a future fork revision.
+        # Matched with a wildcard for the colon: an unquoted ": " inside a
+        # YAML list entry turns the whole command into a mapping, which is
+        # valid YAML and silently rendered {"grep -q ...": "..."} into the
+        # Dockerfile, failing with "not found" at build time.
+        - >-
+          grep -q 'neurocontainers. fall back to a writable log dir'
+          /opt/nnunet_for_deepwmh/nnunet/training/network_training/network_trainer.py
 
     - run:
         - git clone https://github.com/lchdl/DeepWMH /opt/deepwmh
@@ -211,6 +226,54 @@ build:
           command -v runROBEX.sh >/dev/null || test -x "$ROBEX_DIR/runROBEX.sh"
           command -v N4BiasFieldCorrection
           python -c "import torch; print('cuda available:', torch.cuda.is_available())"
+
+files:
+  - name: patch_nnunet_logdir.py
+    contents: |
+      """Make the nnU-Net fork tolerate a read-only model directory.
+
+      network_trainer.print_to_log_file() creates training_log_<stamp>.txt in
+      self.output_folder. During inference that folder comes from the restored
+      model pickle and points into the image, which is read-only under
+      apptainer. Training still logs where it always did; only the unwritable
+      case falls back, so this does not change behaviour on a writable tree.
+      """
+      import pathlib
+      import sys
+
+      root = pathlib.Path(sys.argv[1])
+      target = root / "nnunet/training/network_training/network_trainer.py"
+      src = target.read_text()
+
+      old = (
+          "        if self.log_file is None:\n"
+          "            maybe_mkdir_p(self.output_folder)\n"
+          "            timestamp = datetime.now()\n"
+          "            self.log_file = join(self.output_folder, "
+      )
+      new = (
+          "        if self.log_file is None:\n"
+          "            # neurocontainers: fall back to a writable log dir\n"
+          "            import os as _os\n"
+          "            _log_dir = self.output_folder\n"
+          "            try:\n"
+          "                maybe_mkdir_p(_log_dir)\n"
+          "                _ok = _os.access(_log_dir, _os.W_OK)\n"
+          "            except OSError:\n"
+          "                _ok = False\n"
+          "            if not _ok:\n"
+          "                _log_dir = _os.path.join(\n"
+          "                    _os.environ.get('TMPDIR', '/tmp'), 'deepwmh-nnunet-logs')\n"
+          "                maybe_mkdir_p(_log_dir)\n"
+          "            timestamp = datetime.now()\n"
+          "            self.log_file = join(_log_dir, "
+      )
+      if src.count(old) != 1:
+          raise SystemExit(
+              f"expected exactly one log-file block in {target}, found {src.count(old)}; "
+              "the fork changed and this patch needs revisiting")
+      target.write_text(src.replace(old, new, 1))
+      print(f"patched {target}")
 
 deploy:
   path:
