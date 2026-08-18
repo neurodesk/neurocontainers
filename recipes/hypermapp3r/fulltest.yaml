@@ -223,38 +223,35 @@ tests:
   - name: End-to-end WMH segmentation on the bundled test case
     description: >-
       Slowest test in this suite. Runs the default multimodal model over the
-      small T1/FLAIR/mask case that ships in the repository and asserts a new
-      NIfTI is written.
+      case that ships in the repository and asserts a prediction is written.
 
-      -o is mandatory in the file-based form documented in upstream
-      docs/wmh_seg.md. Omitting it ran the full inference and only then failed,
-      which cost ~230s per attempt and reported nothing but an exit code, so
-      the command's output is echoed here rather than left in the SIF artifact.
+      The runner reports only the exit code to anywhere readable: stdout is
+      dropped, and the stderr report is written inside the multi-GB candidate
+      artifact. So each failure path exits with a distinct code, and the
+      reported "got N" identifies which one:
+        10  could not stage the test case
+        11  hypermapper is not on PATH inside this shell
+        2x  seg_wmh itself exited x (e.g. 21 means exit 1)
+        30  seg_wmh succeeded but produced no new NIfTI
+        31  seg_wmh succeeded but wrote nothing at the -o path
+      The same run passes at build time as root, without HOME, and as an
+      unprivileged user, so the cause is specific to the apptainer runtime.
     timeout: 1800
     command: |
       bash -lc '
-      set -e
-      workdir=$(mktemp -d)
-      # Copy the whole case, exactly as the build-time run does. Copying only
-      # three files was a difference between the two, and the build passes.
-      cp -r /opt/hypermapp3r/data/test_case/. "$workdir"/
-      cd "$workdir"
+      workdir=$(mktemp -d) || exit 10
+      cp -r /opt/hypermapp3r/data/test_case/. "$workdir"/ || exit 10
+      cd "$workdir" || exit 10
+      command -v hypermapper >/dev/null 2>&1 || exit 11
       touch .start
       rc=0
-      hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi > seg.log 2>&1 || rc=$?
-      # To stderr, not stdout: workflows/reporting.py renders a failed test's
-      # stderr into the PR comment and ignores stdout, so diagnostics written to
-      # stdout are invisible outside the 5GB artifact. That is why three rounds
-      # of this test reported nothing but an exit code.
-      {
-        echo "--- seg_wmh exit $rc ---"
-        tail -80 seg.log
-        echo "--- workdir ---"
-        ls -la "$workdir"
-      } >&2
-      test "$rc" -eq 0 || { echo "seg_wmh exited $rc" >&2; exit 1; }
+      hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        if [ "$rc" -gt 9 ]; then rc=9; fi
+        exit $((20 + rc))
+      fi
       produced=$(find "$workdir" -name "*.nii.gz" -newer .start | wc -l)
-      test "$produced" -ge 1 || { echo "no output produced" >&2; exit 1; }
-      test -s wmh_pred.nii.gz || { echo "no prediction at the requested -o path" >&2; exit 1; }
+      [ "$produced" -ge 1 ] || exit 30
+      [ -s wmh_pred.nii.gz ] || exit 31
       echo "segmentation-ok produced=$produced"'
     expected_output_contains: segmentation-ok
