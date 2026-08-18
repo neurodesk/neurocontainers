@@ -39,6 +39,7 @@ build:
         - libglib2.0-0t64
         - libgomp1
         - python3
+        - unzip
         - python3-pip
         - python3-venv
 
@@ -56,11 +57,18 @@ build:
         # packages do not all define __version__.
         - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import gliomoda; print('gliomoda', md.version('gliomoda'))"
         # Bake the model weights into the image so inference runs offline and every
-        # run uses the same weights. Upstream's own downloader is called rather
-        # than fetching the Zenodo archive by hand: it resolves the record and
-        # unpacks into the exact version-stamped directory the package later looks
-        # for, so it cannot drift from what the code expects. Adds ~3.3GB to the image.
-        - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import check_weights_path; print('weights at', check_weights_path())"
+        # run uses the same weights. Adds ~3.3GB to the image.
+        #
+        # Upstream's own downloader cannot be used: it fetches Zenodo's
+        # files-archive endpoint, which now returns HTTP 400, so it creates the
+        # version directory and then bails, leaving it empty. The archive is
+        # fetched directly from the pinned record instead, which also gets the
+        # builder's download cache.
+        - WDIR="$(. "${VENV}/bin/activate" && python -c "import gliomoda,pathlib; print(pathlib.Path(gliomoda.__file__).parent/'weights'/'weights_v{{ context.weights_version }}')")"
+        - mkdir -p "${WDIR}"
+        - unzip -q {{ get_file("weights.zip") }} -d "${WDIR}"
+        # Upstream unpacks a nested zip if the archive contains one; do the same.
+        - find "${WDIR}" -maxdepth 1 -name '*.zip' -exec sh -c 'unzip -q "$1" -d "$(dirname "$1")" && rm -f "$1"' _ {} \;
         # Fail the build rather than ship an image that silently re-downloads.
         - . "${VENV}/bin/activate" && python -c "import pathlib,gliomoda as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; assert dirs, 'no weights baked into the image'; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()); print('baked', dirs[0].name, round(n/1e6), 'MB'); assert n > 2000*1e6, 'weights look truncated'"
         # The baked weights must be the version this recipe declares.
@@ -89,6 +97,8 @@ build:
         builtin: test_deploy.sh
 
 files:
+  - name: weights.zip
+    url: https://zenodo.org/api/records/15625233/files/weights.zip/content
   - name: gliomoda
     contents: |
       #!{{ context.venv }}/bin/python3
