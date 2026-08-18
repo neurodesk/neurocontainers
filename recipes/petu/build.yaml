@@ -51,6 +51,14 @@ build:
         # first use; read the version from distribution metadata because these
         # packages do not all define __version__.
         - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import petu; print('petu', md.version('petu'))"
+        # Bake the model weights into the image so inference runs offline and every
+        # run uses the same weights. Upstream's own downloader is called rather
+        # than fetching the Zenodo archive by hand: it resolves the record and
+        # unpacks into the exact version-stamped directory the package later looks
+        # for, so it cannot drift from what the code expects. Adds ~2.8GB to the image.
+        - . "${VENV}/bin/activate" && python -c "from petu.weights import check_weights_path; print('weights at', check_weights_path())"
+        # Fail the build rather than ship an image that silently re-downloads.
+        - . "${VENV}/bin/activate" && python -c "import pathlib,petu as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; assert dirs, 'no weights baked into the image'; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()); print('baked', dirs[0].name, round(n/1e6), 'MB'); assert n > 2000*1e6, 'weights look truncated'"
         - chmod -R a+rX "${VENV}"
         - rm -rf /root/.cache/pip /tmp/mpl-petu /tmp/cache-petu
 
