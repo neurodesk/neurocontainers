@@ -1,0 +1,140 @@
+name: meganorm
+version: 0.2.0
+
+description: MEGaNorm extracts EEG/MEG-derived phenotypes with MNE-Python and fits normative models over them with PCNToolkit.
+
+copyright:
+  - license: GPL-3.0-only
+    url: https://github.com/ML4PNP/MEGaNorm/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  meganorm_venv: /opt/meganorm-{{ context.version }}
+  # Upstream requires python >= 3.12 (setup.py). Ubuntu 24.04 ships 3.12 as its
+  # system python, so no conda/deadsnakes layer is needed here.
+  python_package: python3.12
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MEGANORM_VENV: "{{ context.meganorm_venv }}"
+        # These default under $HOME, which does not exist at container runtime.
+        MPLCONFIGDIR: /tmp/matplotlib-meganorm
+        XDG_CACHE_HOME: /tmp/cache-meganorm
+        NUMBA_CACHE_DIR: /tmp/numba-meganorm
+        PYTHONNOUSERSITE: "1"
+        PATH: "{{ context.meganorm_venv }}/bin:$PATH"
+
+    - install:
+        - ca-certificates
+        # matplotlib/seaborn and MNE's plotting paths need these at import time.
+        - fonts-dejavu-core
+        - libgl1
+        - libglib2.0-0t64
+        # onnxruntime (via mne-icalabel) links against libgomp.
+        - libgomp1
+        - libsm6
+        - libxext6
+        - libxrender1
+        - python3
+        - python3-pip
+        - python3-venv
+
+    - run:
+        - python3 -m venv "${MEGANORM_VENV}"
+        - . "${MEGANORM_VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        - . "${MEGANORM_VENV}/bin/activate" && python -m pip install --no-cache-dir "meganorm=={{ context.version }}"
+        # Fail the build here rather than shipping an image that only breaks on
+        # first use: the heavy optional stack (onnxruntime, pcntoolkit) is what
+        # tends to go missing, and it is imported lazily at run time.
+        - . "${MEGANORM_VENV}/bin/activate" && python -c "import meganorm, mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('meganorm', meganorm.__version__)"
+
+    - copy:
+        - meganorm
+        - /usr/local/bin/meganorm
+
+    - run:
+        - chmod 755 /usr/local/bin/meganorm
+        - chmod -R a+rX "${MEGANORM_VENV}"
+        - rm -rf /root/.cache/pip /tmp/matplotlib-meganorm /tmp/cache-meganorm /tmp/numba-meganorm
+
+    - workdir: /opt
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+    - test:
+        name: Test MEGaNorm CLI and imports
+        script: |
+          #!/bin/bash
+          set -e
+          meganorm --help
+          python -c "import meganorm; print(meganorm.__version__)"
+          python -c "import mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('stack ok')"
+
+files:
+  # Upstream declares no console_scripts (setup.py has no entry_points), but
+  # meganorm/src/mainParallel.py carries the argparse CLI for the per-subject
+  # pipeline and guards on __main__. Expose that as the module's entrypoint so
+  # the container has something to deploy as a bin.
+  - name: meganorm
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      exec {{ context.meganorm_venv }}/bin/python -m meganorm.src.mainParallel "$@"
+
+deploy:
+  bins:
+    - meganorm
+  path:
+    - "{{ context.meganorm_venv }}/bin"
+
+categories:
+  - electrophysiology
+  - statistics
+  - machine learning
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAtklEQVR42mNgGAWjYBRAgXh27X9qmPOyy+Y/DI86YEAcMOBpgK4OAOmhmsNJMQhm8aSLV8GYKg4hxQCYxeiYLg5A9jk6pigUiNGMz3KKHUGMRkKWUxQVhBxAjO8pCgVCmoi1nOxQwOcAbL6HZT30LEl2KODSgG44rjyPzSEkOQKXoaQaSLYjsCkk1zfojiDLATBDyC1mkaOEKP0wReiJixp1DFHmUdtifOYP3vYAPfFoN2AUwAAAFfnlBv0nVEQAAAAASUVORK5CYII=
+
+readme: |-
+  ----------------------------------
+  ## meganorm/{{ context.version }} ##
+
+  MEGaNorm derives functional imaging-derived phenotypes from large-scale EEG
+  and MEG datasets and fits normative models over them, so an individual
+  recording can be placed against a population reference range. It wraps
+  MNE-Python for preprocessing and feature extraction, and PCNToolkit for the
+  normative modelling.
+
+  Example:
+  ```
+  meganorm --help
+  meganorm <bids_dir> <save_dir> <subject> <configs>
+  ```
+
+  The container also exposes the installed environment on PATH, so `python`,
+  `mne` and the other console scripts from the dependency stack are available
+  directly.
+
+  MEGaNorm is a library first: most workflows import it rather than shelling
+  out. Start an interactive session with `python` and `import meganorm`.
+
+  Source localization expects FreeSurfer surface reconstructions, passed via
+  `--surfaces_dir`. FreeSurfer is not bundled in this container -- run it
+  separately (see the `freesurfer` container) and mount the results.
+
+  More documentation can be found here: https://github.com/ML4PNP/MEGaNorm
+
+  Citation:
+  ```
+  MEGaNorm: normative modeling on large-scale EEG and MEG data.
+  https://doi.org/10.5281/zenodo.15441320
+  ```
