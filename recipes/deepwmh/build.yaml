@@ -153,7 +153,13 @@ build:
         # does not help: the path comes from the pickle, not the supplied root.
         - python {{ get_file("patch_nnunet_logdir.py") }} /opt/nnunet_for_deepwmh
         # Fail the build if the patch stops applying to a future fork revision.
-        - grep -q 'neurocontainers: fall back to a writable log dir' /opt/nnunet_for_deepwmh/nnunet/training/network_training/network_trainer.py
+        # Matched with a wildcard for the colon: an unquoted ": " inside a
+        # YAML list entry turns the whole command into a mapping, which is
+        # valid YAML and silently rendered {"grep -q ...": "..."} into the
+        # Dockerfile, failing with "not found" at build time.
+        - >-
+          grep -q 'neurocontainers. fall back to a writable log dir'
+          /opt/nnunet_for_deepwmh/nnunet/training/network_training/network_trainer.py
 
     - run:
         - git clone https://github.com/lchdl/DeepWMH /opt/deepwmh
