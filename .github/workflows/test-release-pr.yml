@@ -98,10 +98,56 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      # Apptainer is not in the stock GitHub/ARC runner image. The standalone VMs
+      # only have it because it was pre-installed there, so install it when it is
+      # missing. Skipping when present keeps this genuinely inert on the VMs: no
+      # apt-get (which would race the dpkg lock against sibling matrix legs sharing
+      # the machine) and no risk of changing the Apptainer version under tests that
+      # currently pass.
+      - name: Check for Apptainer
+        id: apptainer-check
+        run: |
+          if command -v apptainer >/dev/null 2>&1 || command -v singularity >/dev/null 2>&1; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # NOTE: this job checks out with `path: source`, so a local action must be
+      # referenced through that path - `./.github/actions/...` resolves against
+      # GITHUB_WORKSPACE, which is empty here.
+      - name: Install Apptainer
+        if: steps.apptainer-check.outputs.present != 'true'
+        uses: ./source/.github/actions/setup-apptainer
+        with:
+          apptainer-version: 1.4.3
+
+      # Defensive, and currently unused: this job only exec's a downloaded .simg, so
+      # Apptainer needs no build cache. Kept so a runner without a writable $HOME
+      # has somewhere to go if that changes.
+      - name: Prepare Apptainer scratch directories
+        if: steps.apptainer-check.outputs.present != 'true'
+        run: |
+          set -euo pipefail
+          # Refuse to fall back to /tmp: on an ARC pod that is the container
+          # writable layer on the NODE'S root disk (~28GB, shared with production
+          # containerd). Staging a multi-GB SIF there can trigger DiskPressure and
+          # evict a neighbouring production runner - a failure that hits someone
+          # else, not this job. RUNNER_TEMP is always set by the runner.
+          BASE_PATH="${RUNNER_TEMP:?RUNNER_TEMP unset - refusing to stage a multi-GB SIF on /tmp}"
+          mkdir -p "$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"
+          {
+            echo "APPTAINER_CACHEDIR=$BASE_PATH/apptainer/cache"
+            echo "APPTAINER_TMPDIR=$BASE_PATH/apptainer/tmp"
+            echo "SINGULARITY_CACHEDIR=$BASE_PATH/apptainer/cache"
+            echo "SINGULARITY_TMPDIR=$BASE_PATH/apptainer/tmp"
+          } >> "$GITHUB_ENV"
+
       - name: Verify container runtimes
         run: |
-          # Verify that container runtimes are available on self-hosted runner
-          docker --version
+          # Docker is not required: the release test downloads a .simg over HTTPS
+          # and exec's it. Report it if present, but do not fail a runner without it.
+          docker --version || echo "docker not present (not required by this job)"
           apptainer --version || singularity --version
 
       - name: Debug matrix values
