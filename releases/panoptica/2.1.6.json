@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "panoptica 2.1.6": {
+      "version": "20260819",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "quality control",
+    "image segmentation"
+  ]
+}
