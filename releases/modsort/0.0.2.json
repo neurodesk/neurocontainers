@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "modsort 0.0.2": {
+      "version": "20260819",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "modsort-modsort 0.0.2": {
+      "version": "20260819",
+      "exec": "modsort",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
