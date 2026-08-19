@@ -1,5 +1,5 @@
 name: panoptica
-version: 2.1.3
+version: 2.1.6
 default_timeout: 60
 
 tests:
@@ -91,3 +91,46 @@ tests:
       print("semantic-match", result.tp, result.pq)
       PY
     expected_output_contains: "semantic-match 2 1.0"
+
+  - name: instance relabelling survives more than 255 labels
+    description: >-
+      Upstream builds its label lookup with the connected-components dtype, so
+      cc3d returning uint8 for <=255 components made ordinary multi-lesion
+      evaluations fail with OverflowError or IndexError once reference plus
+      unmatched predicted instances exceeded 255. Still unfixed in 2.1.6, so the
+      image carries a patch; this fails if it is ever lost.
+    command: |
+      panoptica-python -c "
+      import numpy as np
+      from panoptica._functionals import _map_labels
+      a = np.zeros((4, 4), dtype=np.uint8); a[0, 0] = 3
+      print('relabel-max', int(_map_labels(a, {3: 256}).max()))
+      "
+    expected_output_contains: "relabel-max 256"
+
+  - name: kaleido is present so figure export works
+    description: >-
+      get_summary_figure returns a plotly figure; exporting it needs kaleido,
+      and the error tells users to pip install it, which a read-only image
+      cannot do.
+    command: panoptica-python -c "import kaleido; print('kaleido ok')"
+    expected_output_contains: "kaleido ok"
+
+  - name: panopticacli is on PATH
+    command: command -v panopticacli
+    expected_output_contains: "panopticacli"
+
+  - name: bundled configs can be copied out
+    description: >-
+      -c/--config is required and the configs ship inside the image, so without
+      a way to read one out the CLI cannot be used.
+    command: |
+      bash -c 'panoptica-config --list | head -3; panoptica-config BRATS | head -1'
+    expected_output_contains: "panoptica_evaluator_BRATS"
+
+  - name: the container does not export a python interpreter
+    description: >-
+      Exporting the environment bin put python, python3, tclsh, bz* and 30 more
+      on the user's PATH, replacing their interpreter for the rest of the shell.
+    command: bash -c 'echo "deploy-bins=$DEPLOY_BINS"'
+    expected_output_contains: "deploy-bins=panopticacli"
