@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Run python from inside this container.
+#
+# panoptica is installed in the container's environment, not on the host, so
+# "import panoptica" only works with this interpreter. The container does not
+# put python on your PATH, because doing so silently replaced the host
+# interpreter for the rest of the shell.
+exec /opt/miniconda-latest/envs/panoptica/bin/python "$@"
