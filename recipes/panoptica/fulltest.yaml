@@ -11,7 +11,7 @@ tests:
 
       print(version("panoptica"))
       PY
-    expected_output_contains: "2.1.3"
+    expected_output_contains: "${version}"
 
   - name: Panoptica runtime imports
     description: Verify Panoptica and the libraries used by its evaluation pipeline import together.
