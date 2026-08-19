@@ -62,3 +62,24 @@ tests:
     description: $HOME does not exist at container runtime.
     command: env HOME=/nonexistent python -c "import brainles_preprocessing; print('no-home ok')"
     expected_output_contains: "no-home ok"
+
+  - name: HD-BET weights are bundled
+    description: >-
+      HDBetExtractor is the only brain extractor this package has, and
+      brainles_hd_bet writes its weights into its own package directory, which
+      is read-only at run time. Without them the brain-extraction stage fails
+      and the container cannot produce the skull-stripped input its atlas
+      registration exists to consume.
+    command: |
+      python -c "
+      import pathlib
+      from brainles_hd_bet.utils import folder_with_parameter_files as d
+      folds = sorted(p.name for p in pathlib.Path(d).glob('*.model'))
+      print('hd-bet-folds', len(folds), folds)
+      "
+    expected_output_contains: "hd-bet-folds 5"
+
+  - name: the brain extractor imports
+    description: Guards the path from brainles_preprocessing through to brainles_hd_bet.
+    command: python -c "from brainles_preprocessing.brain_extraction import HDBetExtractor; print('hdbet extractor ok')"
+    expected_output_contains: "hdbet extractor ok"

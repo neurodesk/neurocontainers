@@ -46,6 +46,19 @@ build:
         # for these records, and the per-file API is what actually works. Adds
         # about 120 MB.
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("bake_atlases.py") }}
+        # HD-BET weights too. HDBetExtractor is the only brain extractor this
+        # package has, and brainles_hd_bet writes its weights into its own
+        # package directory, so without this the brain-extraction stage fails
+        # the same way -- which would leave the container unable to produce the
+        # skull-stripped input its atlas registration is for.
+        #
+        # Upstream's own downloader is used here: unlike the atlas fetch it
+        # pulls per-fold files from direct URLs, which work. run_hd_bet loads
+        # fold 0 alone by default and all five otherwise, so all five are baked.
+        - >-
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_hd_bet.utils import maybe_download_parameters; [maybe_download_parameters(f) for f in range(5)]; print('hd-bet weights baked')"
+        - >-
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import pathlib; from brainles_hd_bet.utils import folder_with_parameter_files as d; f=sorted(pathlib.Path(d).glob('*.model')); assert len(f)==5, [x.name for x in f]; print('hd-bet folds:', [x.name for x in f])"
         # Fail the build rather than ship an image that cannot register.
         # Assert through upstream's own resolver, not by looking for files: the
         # files must sit in the version-stamped folder ZenodoRecord globs for,
