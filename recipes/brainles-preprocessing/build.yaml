@@ -30,8 +30,80 @@ build:
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.version }}
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')"
 
+    - run:
+        # Bake the atlases and SynthStrip weights into the image.
+        #
+        # Without this the container cannot do the one job it exists for. Both
+        # are fetched on demand into directories inside the installed package
+        # (registration/atlases and brain_extraction/weights), which are on the
+        # read-only squashfs at run time, so the first atlas registration fails.
+        # There is also no other source: no container in the stack ships an
+        # SRI24 template, so a user asked to produce atlas-space input for petu
+        # or gliomoda had no supported route to one.
+        #
+        # Fetched per file rather than through upstream's fetch_atlases(), which
+        # requests Zenodo's files-archive endpoint. That endpoint is unreliable
+        # for these records, and the per-file API is what actually works. Adds
+        # about 120 MB.
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("bake_atlases.py") }}
+        # Fail the build rather than ship an image that cannot register.
+        - >-
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import pathlib, brainles_preprocessing as m; root=pathlib.Path(m.__file__).parent; a=root/'registration'/'atlases'; want='brats_sri24.nii'; assert (a/want).is_file(), sorted(p.name for p in a.glob('*')) if a.is_dir() else 'atlases dir missing'; print('atlases baked:', sorted(p.name for p in a.glob('*.nii*')))"
+        - >-
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import pathlib, brainles_preprocessing as m; root=pathlib.Path(m.__file__).parent; w=root/'brain_extraction'/'weights'; assert w.is_dir() and any(w.iterdir()), 'synthstrip weights missing'; print('synthstrip weights baked')"
+
     - environment:
         PATH: /opt/miniconda-py311_24.9.2-0/envs/brainles/bin:$PATH
+
+files:
+  - name: bake_atlases.py
+    contents: |
+      """Download the atlases and SynthStrip weights into the installed package.
+
+      brainles_preprocessing resolves both to directories inside its own package
+      (utils/zenodo.py: ATLASES_FOLDER and SYNTHSTRIP_FOLDER) and downloads them
+      on first use. Those paths are read-only once the image is built, so the
+      download must happen here or registration fails at run time.
+
+      Upstream requests Zenodo's files-archive endpoint, which is unreliable for
+      these records; each file is fetched from the per-file API instead.
+      """
+      import pathlib
+      import shutil
+      import sys
+      import zipfile
+      from urllib.request import urlopen
+
+      import json
+
+      from brainles_preprocessing.utils import zenodo as z
+
+
+      def fetch(record_id, dest, label):
+          dest = pathlib.Path(dest)
+          dest.mkdir(parents=True, exist_ok=True)
+          with urlopen(f"https://zenodo.org/api/records/{record_id}") as r:
+              record = json.loads(r.read().decode())
+          files = record.get("files", [])
+          if not files:
+              raise SystemExit(f"{label}: record {record_id} lists no files")
+          for entry in files:
+              name = entry["key"]
+              out = dest / name
+              if out.exists():
+                  continue
+              print(f"{label}: downloading {name}", flush=True)
+              with urlopen(entry["links"]["self"]) as resp, open(out, "wb") as fh:
+                  shutil.copyfileobj(resp, fh)
+              if name.endswith(".zip"):
+                  with zipfile.ZipFile(out) as zf:
+                      zf.extractall(dest)
+                  out.unlink()
+          print(f"{label}: ready at {dest}", flush=True)
+
+
+      fetch(z.ATLASES_RECORD_ID, z.ATLASES_FOLDER, "atlases")
+      fetch(z.SYNTHSTRIP_RECORD_ID, z.SYNTHSTRIP_FOLDER, "synthstrip")
 
 deploy:
   path:
