@@ -24,20 +24,62 @@ build:
         - python -m pip install --no-cache-dir --no-deps brainles-aurora==0.2.7 brainles-preprocessing==0.6.10
         - python {{ get_file("fix_aurora_import") }}
         - python {{ get_file("fix_preprocessor_cli") }}
+        # Every DL component resolves its weights cache inside its own installed
+        # package, which is read-only at run time, so inference died with
+        # "OSError: [Errno 30] Read-only file system" before doing anything.
+        # gliomoda, petu and aurora also download via Zenodo's files-archive
+        # endpoint, which now returns HTTP 400, so a writable path alone is not
+        # enough. This redirects the cache to $BLS_WEIGHTS_DIR and fetches from
+        # the per-file endpoints that still work. Weights are downloaded on
+        # first use rather than baked in: together they are several GB and most
+        # users need one component.
+        - python {{ get_file("bls_writable_weights") }}
+    - environment:
+        # Where the components cache their weights. Point this at persistent
+        # storage so the download happens once rather than every session.
+        BLS_WEIGHTS_DIR: /tmp/brainlesion-weights
+
     - deploy:
+        # Deploying only `python` left `python3` resolving to the host
+        # interpreter, where these components are absent, so any script with a
+        # /usr/bin/env python3 shebang failed with ModuleNotFoundError while
+        # appearing to have loaded.
+        #
+        # These are named individually rather than putting /opt/miniconda/bin on
+        # the deploy path: that directory holds several hundred executables
+        # (conda, pip, and every console script of every dependency), and the
+        # deploy test then exercises up to 200 of them, which fails on tools
+        # that are incidental to this container.
         bins:
           - python
+          - python3
     - test:
-        name: testScript
+        name: Components import and resolve a writable weights path
         script: |-
           #!/bin/bash
+          set -e
           python --version
-          exit 1
+          # Import every bundled component. The previous test ran only
+          # `python --version` and then `exit 1`, so it could never pass and
+          # never checked that any of this works.
+          python -c "import panoptica, deep_quality_estimation, gliomoda, petu, brats; print('components import')"
+          python -c "import brainles_aurora.inferer, brainles_preprocessing, brainles_hd_bet; print('aurora/preprocessing/hd-bet import')"
+          # Weights must resolve somewhere writable. This is the check that
+          # would have caught the read-only failure at build time.
+          python -c "
+          import os, pathlib
+          base = pathlib.Path(os.environ.get('BLS_WEIGHTS_DIR', '/tmp/brainlesion-weights'))
+          base.mkdir(parents=True, exist_ok=True)
+          assert os.access(base, os.W_OK), base
+          print('weights dir writable:', base)
+          "
 files:
   - name: fix_aurora_import
     filename: fix_aurora_import.py
   - name: fix_preprocessor_cli
     filename: fix_preprocessor_cli.py
+  - name: bls_writable_weights
+    filename: bls_writable_weights.py
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA4hJREFUSEvtlV1MW2UYx3+npYcOus51UMYcH6NlfpAZiSFFTYWwjWEzEnWhFAaYsU0YJXOZnQkxXphseMFmAtFCjGZtsl3Mqy3DLJELNQtW0UTC3A2ouAxBFmI/oF0K/TA9kyb9AOut8SQnOTnv/zy/5/k/z/seoWy8I0qGV65cicd/lsVgKMMvQPgf8E9e/YcsigTW8F69i9sxlVC1qN+Oqr6M7KfzEGZXmL80nuKKsGcvsmeqEKrrkD31LIjZcU3conXAYJ2N9vb2hCA+n4/W1la+ic5gKdmP3W5PWA+FQkxPT1PbYMJ9zIas6iWQyyWNcOpHU1SQ7+J7t4KfL48ztP8cZrOZ8vJyZDIZer2e0dFR/H4/j1fpOXbIIgGqq6tZXl6WgphMJgYGBhgbG+PlD528eLSByvxsOgPXEc7/oJU2WtbqDm45gpwwvkdTUxNKpTKe5eTkJDqdDo1uJyeOdEgAjUaD2+2Oa7xeLwsLC5w+XofdvEbh1sCjCtYBwUCU284Ax2tHJDscDgeCIEgVGI1GKejZi+/Q2dAiPRsMBjwej5SIxWKhr6+PwcFBvvvMRr9ZRKsWNga0tbWxtLQkCXJycqTb5XJxoOUwr5uaU3oQ0wWDQbRaLf2vBml5IQul4lFxaStItqi7u5vh4WEqKiqoqamJ9yBmiyiKdHV10dPTw9DQEH9+fQ7rQQW5fw9SRoDS0lJmZ2fp7e0lEonEe/B8iY/8rQLO2yFpCCYmJrh2vp53X1HwWO4mFjU3N9PY2CiVWFlZic1mk5qqVqulEY71oGhXHiNH/ZTkCbx1dRXnF3PMz8/T323gglmkaMcGgM6a4ZR9EBtHq9XKzdEJWix1EqCwoIBPOnyU75TRd22V96/cJVZpcUEOl08qMD4pRyak6cFXn/rTnl/btukoKm7gpzsfSeuiqOLjMwbqi118cGuNi5+vSe/z1QLOruxUQHgtyh8zYfyeSBywJWs7K65LeLxbUKv3EAx68K/8DkQRBDnagr3YDx7mt/uL/PogQjgCchk8UShjtybJonRph6YucP9b86Yn8r6SXzhZaNxQE5+iZEVk5k3ufdm7afD1xdf2XaE29+202rQA1cMD3Lsxgs+X2e9aqRQ4/dwpdoevp0BSAKJchf/mFHNz4YyyXxfFrHqj7AjRhw8SvksBZOL7RuR0ViUAVItnuHPD+q8yTxYnQ/4CysSosaI6GD0AAAAASUVORK5CYII=
 categories:
   - structural imaging

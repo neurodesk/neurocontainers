@@ -279,3 +279,55 @@ tests:
           assert np.array_equal(loaded.get_fdata(), data)
           assert np.array_equal(loaded.affine, affine)
       PY
+  - name: all bundled components import
+    description: >-
+      The shipped build test ran only "python --version" then "exit 1", so no
+      component was ever imported at build time.
+    command: python -c "import panoptica, deep_quality_estimation, gliomoda, petu, brats, brainles_preprocessing, brainles_hd_bet; print('components ok')"
+    expected_output_contains: "components ok"
+
+  - name: aurora imports
+    description: Imported separately because its package graph needs the inferer first.
+    command: python -c "import brainles_aurora.inferer; print('aurora ok')"
+    expected_output_contains: "aurora ok"
+
+  - name: python3 resolves inside the container
+    description: >-
+      Deploying only "python" left python3 falling through to the host
+      interpreter, where the components are absent, so any script with a
+      /usr/bin/env python3 shebang failed with ModuleNotFoundError.
+    command: python3 -c "import gliomoda; print('python3 ok')"
+    expected_output_contains: "python3 ok"
+
+  - name: the weights directory is writable
+    description: >-
+      Every component previously resolved its weights inside the read-only
+      image and died with Errno 30 before doing any work.
+    command: |
+      bash -c 'd="${BLS_WEIGHTS_DIR:-/tmp/brainlesion-weights}"; mkdir -p "$d" && test -w "$d" && echo "weights-writable $d"'
+    expected_output_contains: "weights-writable"
+
+  - name: weight resolvers point outside the image
+    description: >-
+      Asserts the redirect took, rather than that a directory happens to exist:
+      a resolver still pointing into site-packages would fail at run time.
+    command: |
+      python -c "
+      import os, pathlib, gliomoda, petu, brainles_hd_bet.utils as h
+      base = pathlib.Path(os.environ.get('BLS_WEIGHTS_DIR', '/tmp/brainlesion-weights')).resolve()
+      hb = pathlib.Path(h.folder_with_parameter_files).resolve()
+      assert base in hb.parents or hb.is_relative_to(base), hb
+      for mod in (gliomoda, petu):
+          pkg = pathlib.Path(mod.__file__).parent.resolve()
+          assert not str(hb).startswith(str(pkg)), hb
+      print('resolvers-redirected')
+      "
+    expected_output_contains: "resolvers-redirected"
+
+  - name: the broken Zenodo archive endpoint is not used
+    description: >-
+      gliomoda, petu and aurora request Zenodo's files-archive endpoint, which
+      returns HTTP 400, so the patched resolvers must use the per-file API.
+    command: |
+      bash -c 'grep -l "_bls_fetch_record" $(python -c "import gliomoda,petu,pathlib; print(pathlib.Path(gliomoda.__file__).parent/\"weights.py\", pathlib.Path(petu.__file__).parent/\"weights.py\")") | wc -l'
+    expected_output_contains: "2"
