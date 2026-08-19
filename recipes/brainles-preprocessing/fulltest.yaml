@@ -28,7 +28,9 @@ tests:
       python -c "
       import pathlib, brainles_preprocessing as m
       d = pathlib.Path(m.__file__).parent / 'registration' / 'atlases'
-      names = sorted(p.name for p in d.glob('*.nii*')) if d.is_dir() else []
+      # rglob: the files live in a version-stamped subfolder, which is
+      # what upstream's resolver globs for
+      names = sorted(p.name for p in d.rglob('*.nii*')) if d.is_dir() else []
       print('atlases', names)
       "
     expected_output_contains: "brats_sri24.nii"
@@ -52,7 +54,7 @@ tests:
       python -c "
       import pathlib, brainles_preprocessing as m
       d = pathlib.Path(m.__file__).parent / 'brain_extraction' / 'weights'
-      print('synthstrip-files', len(list(d.iterdir())) if d.is_dir() else 0)
+      print('synthstrip-files', len(list(d.rglob('*'))) if d.is_dir() else 0)
       "
     expected_output_contains: "synthstrip-files"
 
