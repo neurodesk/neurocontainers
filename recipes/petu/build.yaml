@@ -112,6 +112,7 @@ files:
       three components and writes each to its own file.
       """
       import argparse
+      import os
       import sys
 
 
@@ -129,11 +130,20 @@ files:
           p.add_argument("--cc", help="Output file for the cystic component")
           p.add_argument("--t2h", help="Output file for the T2-hyperintense component")
           p.add_argument("--et-dust-threshold", type=int, default=0,
-                         help="Drop enhancing-tumour components below this size")
+                         help="Drop enhancing-tumour components smaller than this, "
+                              "in voxels (26-connectivity)")
           p.add_argument("--cc-dust-threshold", type=int, default=0,
-                         help="Drop cystic components below this size")
+                         help="Drop cystic components smaller than this, "
+                              "in voxels (26-connectivity)")
           p.add_argument("--t2h-dust-threshold", type=int, default=0,
-                         help="Drop T2-hyperintense components below this size")
+                         help="Drop T2-hyperintense components smaller than this, "
+                              "in voxels (26-connectivity)")
+          p.add_argument("--device", default=None,
+                         help="torch device. Defaults to cuda when a GPU is present, "
+                              "otherwise cpu.")
+          p.add_argument("--threads", type=int, default=None,
+                         help="CPU threads. Defaults to $SLURM_CPUS_PER_TASK, then "
+                              "$OMP_NUM_THREADS, then every core on the machine.")
           a = p.parse_args(argv)
 
           if not any([a.t1c, a.fla, a.t1, a.t2]):
@@ -141,9 +151,33 @@ files:
           if not any([a.et, a.cc, a.t2h]):
               p.error("at least one output of --et/--cc/--t2h is required")
 
+          import torch
+
+          # Upstream defaults to device="cuda" and never falls back:
+          # _configure_device builds torch.device(requested) and only consults
+          # torch.cuda.is_available() to decide whether to call empty_cache().
+          # On a node with no NVIDIA driver inference dies inside nnU-Net with
+          # "Found no NVIDIA driver on your system", after the model has loaded.
+          # Most NeuroDesk nodes have no GPU, so detect rather than assume.
+          device = a.device or ("cuda" if torch.cuda.is_available() else "cpu")
+
+          # torch and nnU-Net otherwise use every core on the machine rather than
+          # the cores this job was allocated, which oversubscribes shared nodes.
+          threads = a.threads
+          if threads is None:
+              for _var in ("SLURM_CPUS_PER_TASK", "OMP_NUM_THREADS"):
+                  _value = os.environ.get(_var, "")
+                  if _value.isdigit():
+                      threads = int(_value)
+                      break
+          if threads:
+              os.environ["OMP_NUM_THREADS"] = str(threads)
+              torch.set_num_threads(threads)
+
           from petu import Inferer
 
-          Inferer().infer(
+          print(f"running on {device} with {torch.get_num_threads()} thread(s)", flush=True)
+          Inferer(device=device).infer(
               t1c=a.t1c, fla=a.fla, t1=a.t1, t2=a.t2,
               ET_segmentation_file=a.et,
               CC_segmentation_file=a.cc,
@@ -178,10 +212,12 @@ files:
           return ({"version": "1.0.0"}, "")
 
 deploy:
+  # Only the tool is exported. Putting the venv bin on the deploy path also
+  # exported python, python3 and python3.12, which then shadowed the user's own
+  # interpreter for the rest of the shell: unrelated analysis code in the same
+  # script silently ran against this container's python 3.12 instead.
   bins:
     - petu
-  path:
-    - "{{ context.venv }}/bin"
 
 categories:
   - image segmentation
@@ -194,23 +230,65 @@ readme: |-
   ----------------------------------
   ## petu/{{ context.version }} ##
 
-  PeTu segments paediatric brain tumours into T2-hyperintense, enhancing and cystic components from multi-parametric MRI.
+  PeTu segments paediatric brain tumours into enhancing tumour (ET), cystic
+  component (CC) and T2-hyperintense (T2H) regions from multi-parametric MRI.
 
-  Example:
+  ### Input requirements
+
+  Inputs must already be skull-stripped, co-registered and resampled to the
+  BraTS/SRI24 atlas grid: **exactly 240x240x155 at 1 mm**. PeTu asserts this and
+  rejects anything else with "Invalid shape for input data". Ordinary
+  preprocessed images, including MNI152 1 mm at 182x218x182, are refused. Use
+  brainles-preprocessing to produce conforming images.
+
+  ### Example
+
   ```
-  petu -t1c t1c.nii.gz -fla flair.nii.gz --et et.nii.gz --cc cc.nii.gz --t2h t2h.nii.gz
+  ml petu/{{ context.version }}
 
-  # or from python:
-  python -c 'from petu import Inferer'
+  petu -t1c t1c.nii.gz -fla flair.nii.gz -t1 t1.nii.gz -t2 t2.nii.gz \
+       --et et.nii.gz --cc cc.nii.gz --t2h t2h.nii.gz
   ```
 
-  Notes:
+  Fewer sequences are supported and select a different bundled model (t1c alone,
+  t1c+t1, flair+t1+t2 and others); all four is recommended. Outputs are three
+  separate binary masks, each on the same grid and affine as the input.
+
+  ### GPU and CPU
+
+  A GPU is used when present. On a CPU-only node the tool selects CPU
+  automatically; expect roughly 9 minutes per case on 4 cores, within 12 GB.
+
+  On a shared or HPC node the thread count defaults to $SLURM_CPUS_PER_TASK,
+  then $OMP_NUM_THREADS, so the job stays inside its allocation. Override with
+  `--threads`. Force a device with `--device cpu` or `--device cuda`.
+
+  ### From Python
+
+  ```
+  from petu import Inferer
+  Inferer(device="cpu").infer(
+      t1c="t1c.nii.gz", fla="flair.nii.gz",
+      ET_segmentation_file="et.nii.gz",
+      CC_segmentation_file="cc.nii.gz",
+      T2H_segmentation_file="t2h.nii.gz",
+  )
+  ```
+
+  Note that Inferer defaults to device="cuda" and does not fall back, so pass
+  device explicitly when scripting against the API on a CPU node. The `petu`
+  command does this for you.
+
+  ### Notes
+
   Upstream ships no console_scripts, so this container adds a thin `petu` CLI
-  over the documented Python API
-  (`from petu import Inferer`). nnU-Net v2 is pinned by upstream to 2.5.2.
+  over the documented Python API. nnU-Net v2 is pinned by upstream to 2.5.2.
+
   Model weights **v1.0.0** are bundled in the image. The Zenodo lookup is
   disabled, so the container never downloads weights at run time: it works
   offline, and every run uses the same weights. Picking up newer upstream
   weights requires a rebuild of this container.
 
-  More documentation can be found here: https://github.com/BrainLesion
+  The dust-threshold options are in voxels, with 26-connectivity.
+
+  More documentation can be found here: https://github.com/BrainLesion/PeTu
