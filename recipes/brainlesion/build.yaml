@@ -7,7 +7,18 @@ structured_readme:
     BrainLesion Suite (BLS) is a modular and open-source framework for brain lesion image analysis in Python. Developed by an international consortium of researchers, BLS enables efficient, reproducible, and customizable pipelines for processing and analyzing multi-modal brain image data.
 
     Whether you're a radiologist, researcher, data scientist, or clinician, BLS empowers you to build robust workflows from raw data organization to segmentation, synthesis, and evaluation.
-  example: ''
+  example: |-
+    ml brainlesion/1.0.0
+
+    # There is no `brainlesion` module: import the components directly.
+    # Pass device="cpu" on nodes without a GPU, which these tools do not check.
+    python - <<'EOF'
+    from gliomoda import Inferer
+    Inferer(device="cpu").infer(
+        t1c="t1c.nii.gz", t2f="flair.nii.gz",
+        segmentation_file="seg.nii.gz",
+    )
+    EOF
   documentation: https://github.com/BrainLesion/
   citation: 'Kofler, F., Rosier, M., Astaraki, M., Möller, H., Mekki, I. I., Buchner, J. A., Schmick, A., Pfiffer, A., Oswald, E., Zimmer, L., Rosa, E. de la, Pati, S., Canisius, J., Piffer, A., Baid, U., Valizadeh, M., Linardos, A., Peeken, J. C., Shit, S., … Menze, B. (2025). BrainLesion Suite: A Flexible and User-Friendly Framework for Modular Brain Lesion Image Analysis arXiv preprint arXiv:2507.09036'
 build:
@@ -19,7 +30,7 @@ build:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
-        pip_install: loguru==0.7.3 panoptica==1.5.1 deep_quality_estimation==0.0.3 petu==0.0.5 gliomoda==0.0.3 brats==0.0.27 antspyx==0.6.3 auxiliary==0.3.1 brainles_hd_bet==0.0.11 ttictoc==0.5.6 typer==0.15.4 tqdm==4.67.1
+        pip_install: loguru==0.7.3 panoptica==2.1.6 deep_quality_estimation==0.0.3 petu==0.0.7 gliomoda==0.0.4 brats==0.0.27 antspyx==0.6.3 auxiliary==0.3.1 brainles_hd_bet==0.0.11 ttictoc==0.5.6 typer==0.15.4 tqdm==4.67.1
     - run:
         - python -m pip install --no-cache-dir --no-deps brainles-aurora==0.2.7 brainles-preprocessing==0.6.10
         - python {{ get_file("fix_aurora_import") }}
@@ -34,6 +45,17 @@ build:
         # first use rather than baked in: together they are several GB and most
         # users need one component.
         - python {{ get_file("bls_writable_weights") }}
+        # panoptica 2.x builds its instance-label lookup with the dtype of the
+        # connected-components array, so multi-lesion evaluations fail once
+        # reference plus unmatched predicted instances exceed 255. Fixed on
+        # upstream main but not in 2.1.6, and carried by the standalone
+        # panoptica container for the same reason.
+        - python {{ get_file("fix_map_labels_dtype") }}
+        - >-
+          python -c "import numpy as np; from panoptica._functionals import _map_labels; a=np.zeros((4,4),dtype=np.uint8); a[0,0]=3; assert int(_map_labels(a,{3:256}).max())==256; print('instance relabelling handles >255 labels')"
+        # finding 4: both exist at /opt/miniconda/bin but were never exposed
+        - test -x /opt/miniconda/bin/preprocessor
+        - test -x /opt/miniconda/bin/hd-bet
     - environment:
         # Where the components cache their weights. Point this at persistent
         # storage so the download happens once rather than every session.
@@ -53,6 +75,11 @@ build:
         bins:
           - python
           - python3
+          # Both are installed at /opt/miniconda/bin but were never exposed, so
+          # the only supported route into this container was a hand-written
+          # python script.
+          - preprocessor
+          - hd-bet
     - test:
         name: Components import and resolve a writable weights path
         script: |-
@@ -80,6 +107,8 @@ files:
     filename: fix_preprocessor_cli.py
   - name: bls_writable_weights
     filename: bls_writable_weights.py
+  - name: fix_map_labels_dtype
+    filename: fix_map_labels_dtype.py
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA4hJREFUSEvtlV1MW2UYx3+npYcOus51UMYcH6NlfpAZiSFFTYWwjWEzEnWhFAaYsU0YJXOZnQkxXphseMFmAtFCjGZtsl3Mqy3DLJELNQtW0UTC3A2ouAxBFmI/oF0K/TA9kyb9AOut8SQnOTnv/zy/5/k/z/seoWy8I0qGV65cicd/lsVgKMMvQPgf8E9e/YcsigTW8F69i9sxlVC1qN+Oqr6M7KfzEGZXmL80nuKKsGcvsmeqEKrrkD31LIjZcU3conXAYJ2N9vb2hCA+n4/W1la+ic5gKdmP3W5PWA+FQkxPT1PbYMJ9zIas6iWQyyWNcOpHU1SQ7+J7t4KfL48ztP8cZrOZ8vJyZDIZer2e0dFR/H4/j1fpOXbIIgGqq6tZXl6WgphMJgYGBhgbG+PlD528eLSByvxsOgPXEc7/oJU2WtbqDm45gpwwvkdTUxNKpTKe5eTkJDqdDo1uJyeOdEgAjUaD2+2Oa7xeLwsLC5w+XofdvEbh1sCjCtYBwUCU284Ax2tHJDscDgeCIEgVGI1GKejZi+/Q2dAiPRsMBjwej5SIxWKhr6+PwcFBvvvMRr9ZRKsWNga0tbWxtLQkCXJycqTb5XJxoOUwr5uaU3oQ0wWDQbRaLf2vBml5IQul4lFxaStItqi7u5vh4WEqKiqoqamJ9yBmiyiKdHV10dPTw9DQEH9+fQ7rQQW5fw9SRoDS0lJmZ2fp7e0lEonEe/B8iY/8rQLO2yFpCCYmJrh2vp53X1HwWO4mFjU3N9PY2CiVWFlZic1mk5qqVqulEY71oGhXHiNH/ZTkCbx1dRXnF3PMz8/T323gglmkaMcGgM6a4ZR9EBtHq9XKzdEJWix1EqCwoIBPOnyU75TRd22V96/cJVZpcUEOl08qMD4pRyak6cFXn/rTnl/btukoKm7gpzsfSeuiqOLjMwbqi118cGuNi5+vSe/z1QLOruxUQHgtyh8zYfyeSBywJWs7K65LeLxbUKv3EAx68K/8DkQRBDnagr3YDx7mt/uL/PogQjgCchk8UShjtybJonRph6YucP9b86Yn8r6SXzhZaNxQE5+iZEVk5k3ufdm7afD1xdf2XaE29+202rQA1cMD3Lsxgs+X2e9aqRQ4/dwpdoevp0BSAKJchf/mFHNz4YyyXxfFrHqj7AjRhw8SvksBZOL7RuR0ViUAVItnuHPD+q8yTxYnQ/4CysSosaI6GD0AAAAASUVORK5CYII=
 categories:
   - structural imaging
@@ -91,25 +120,84 @@ readme: |-
   ----------------------------------
   ## brainlesion/1.0.0 ##
 
-  BrainLesion Suite (BLS) is a modular and open-source framework for brain lesion image analysis in Python. Developed by an international consortium of researchers, BLS enables efficient, reproducible, and customizable pipelines for processing and analyzing multi-modal brain image data.
+  BrainLesion Suite (BLS) is a modular framework for brain lesion image
+  analysis. This container bundles its components in one environment so they can
+  be used together.
 
-  Whether you're a radiologist, researcher, data scientist, or clinician, BLS empowers you to build robust workflows from raw data organization to segmentation, synthesis, and evaluation.
+  ### There is no `brainlesion` module
 
-  Example:
+  The container is named after the suite, but no package of that name exists and
+  `import brainlesion` fails. Import the components directly:
+
+  ```
+  panoptica                 evaluation metrics
+  gliomoda                  glioma segmentation
+  petu                      paediatric tumour segmentation
+  brainles_aurora           metastasis segmentation
+  deep_quality_estimation   segmentation quality rating
+  brainles_preprocessing    co-registration, atlas alignment, skull stripping
+  brainles_hd_bet           brain extraction
   ```
 
+  Bundled versions: panoptica 2.1.6, gliomoda 0.0.4, petu 0.0.7,
+  deep_quality_estimation 0.0.3, brainles-aurora 0.2.7,
+  brainles-preprocessing 0.6.10, brainles_hd_bet 0.0.11. Each is also available
+  as its own container, which adds a command line interface these do not have.
+
+  ### Example
+
   ```
+  ml brainlesion/1.0.0
+
+  python - <<'EOF'
+  from gliomoda import Inferer
+  Inferer(device="cpu").infer(
+      t1c="t1c.nii.gz", t2f="flair.nii.gz",
+      segmentation_file="seg.nii.gz",
+  )
+  EOF
+  ```
+
+  `preprocessor` and `hd-bet` are available as commands. Everything else is used
+  from Python, through this container's `python` or `python3`.
+
+  ### GPU and CPU
+
+  These tools default to a GPU and do not check whether one exists.
+  `Inferer(device="cuda")` constructs the device regardless and inference then
+  dies inside nnU-Net after the model has loaded; `AtlasCentricPreprocessor`
+  defaults to `use_gpu=True`. On a node without a GPU pass `device="cpu"` and
+  `use_gpu=False` explicitly.
+
+  ### Model weights
+
+  Weights are downloaded on first use into `$BLS_WEIGHTS_DIR`, which defaults to
+  `/tmp/brainlesion-weights`. Point it at persistent storage so this happens
+  once:
+
+  ```
+  export BLS_WEIGHTS_DIR=/neurodesktop-storage/bls-weights
+  ```
+
+  The components otherwise resolve their weights cache inside their own
+  installed package, which is read-only here, so this redirection is what lets
+  them run at all.
+
+  ### Known limitations
+
+  `brats` is installed but cannot work in this container. It orchestrates other
+  containers through a Docker daemon, which is not available here, and prints a
+  connection error on import. Use the standalone `brats` container, which runs
+  algorithms through apptainer.
+
+  brainles-preprocessing is installed without its optional registration
+  backends, so `ANTsRegistrator` is the only one available; itk-elastix and
+  picsl_greedy are absent.
+
+  This image carries a patch to panoptica's instance relabelling, which
+  otherwise overflows once an evaluation involves more than 255 instance labels.
 
   More documentation can be found here: https://github.com/BrainLesion/
-
-  Citation:
-  ```
-  Kofler, F., Rosier, M., Astaraki, M., Möller, H., Mekki, I. I., Buchner, J. A., Schmick, A., Pfiffer, A., Oswald, E., Zimmer, L., Rosa, E. de la, Pati, S., Canisius, J., Piffer, A., Baid, U., Valizadeh, M., Linardos, A., Peeken, J. C., Shit, S., … Menze, B. (2025). BrainLesion Suite: A Flexible and User-Friendly Framework for Modular Brain Lesion Image Analysis arXiv preprint arXiv:2507.09036
-  ```
-
-  To run container outside of this environment: ml brainlesion/1.0.0
-
-  ----------------------------------
 copyright:
   - license: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
