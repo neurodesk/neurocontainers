@@ -312,6 +312,11 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings, slice_ind
         _meta_text(phase_source_meta, "RescaleIntercept") or "missing",
     )
 
+
+    myPRE_DUMMY = _setting_float(settings, "predummy", default=PRE_DUMMY)
+    myPOST_DUMMY = _setting_float(settings, "postdummy", default=POST_DUMMY)
+
+
     phase_stack = np.nan_to_num(phase_stack.astype(np.float32), copy=False)
     phase_stack = _phase_to_radians(phase_stack, phase_wrap)
 
@@ -320,12 +325,12 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings, slice_ind
     # MATLAB uses 1-based frames 1:3 as the pre-reference, followed by
     # B/C/A/D for each Tx channel, one dedicated phase frame per Tx channel,
     # then three post-reference frames.
-    pre_reference = np.mean(complex_phase[: PRE_DUMMY + 1], axis=0)
+    pre_reference = np.mean(complex_phase[: myPRE_DUMMY], axis=0) #MMK removed +1 to match MATLAB indexing, which is 1-based
     tx_indices = np.arange(ntx) * ECHOES_PER_TX
-    phase_a_indices = PRE_DUMMY + 3 + tx_indices
-    phase_b_indices = PRE_DUMMY + 1 + tx_indices
-    phase_c_indices = PRE_DUMMY + 2 + tx_indices
-    phase_d_indices = PRE_DUMMY + 4 + tx_indices
+    phase_a_indices = myPRE_DUMMY + 3 + tx_indices
+    phase_b_indices = myPRE_DUMMY + 1 + tx_indices
+    phase_c_indices = myPRE_DUMMY + 2 + tx_indices
+    phase_d_indices = myPRE_DUMMY + 4 + tx_indices
     phase_a = complex_phase[phase_a_indices]
     phase_b = complex_phase[phase_b_indices]
     phase_c = complex_phase[phase_c_indices]
@@ -353,22 +358,22 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings, slice_ind
     bsp_for_b1 = np.maximum(bsp, 0.0)
     b1 = np.sqrt(bsp_for_b1 / kbs)
 
-    tx_phase_start = ECHOES_PER_TX * ntx + PRE_DUMMY + 1
+    tx_phase_start = ECHOES_PER_TX * ntx + myPRE_DUMMY # + 1 MMK removed +1 to match MATLAB indexing, which is 1-based
     tx_phase_stop = tx_phase_start + ntx
-    post_start = tx_phase_stop
+    post_start = tx_phase_stop + 1 #MMK added +1 because post_start should be the index of the first post-reference frame, which is after the last tx phase frame
     if slice_index == 0:
         logging.info(
-            "Bloch-Siegert frame layout (1-based): pre=1-%d B=%s C=%s A=%s "
+            "Bloch-Siegert frame layout (1-based): pre=0-%d B=%s C=%s A=%s "
             "D=%s tx_phase=%d-%d post=%d-%d",
-            PRE_DUMMY + 1,
+            myPRE_DUMMY,
             _format_frame_indices(phase_b_indices),
             _format_frame_indices(phase_c_indices),
             _format_frame_indices(phase_a_indices),
             _format_frame_indices(phase_d_indices),
-            tx_phase_start + 1,
+            tx_phase_start,
             tx_phase_stop,
-            post_start + 1,
-            post_start + POST_DUMMY + 1,
+            post_start,
+            post_start + myPOST_DUMMY + 1,
         )
 
     logging.info(
@@ -460,7 +465,7 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings, slice_ind
     phsc = np.angle(complex_phase[tx_phase_start:tx_phase_stop]).astype(np.float32)
 
     post_reference = np.mean(
-        complex_phase[post_start : post_start + POST_DUMMY + 1],
+        complex_phase[post_start : post_start + myPOST_DUMMY + 1],
         axis=0,
     )
     b0 = (
@@ -745,8 +750,8 @@ def _sequence_shape(frame_count):
     required_frames = (
         ECHOES_PER_TX * ntx
         + ntx
-        + (PRE_DUMMY + 1)
-        + (POST_DUMMY + 1)
+        + (myPRE_DUMMY + 1)
+        + (myPOST_DUMMY + 1)
     )
     if frame_count >= required_frames:
         return required_frames, ntx
@@ -1281,6 +1286,16 @@ def _settings_from_config(config):
             config,
             "bspulsewidthms",
             default=BSS_PULSE_WIDTH_MS,
+        ),
+        "predummy": _config_float(
+            config,
+            "predummy",
+            default=PRE_DUMMY,
+        ),
+        "postdummy": _config_float(
+            config,
+            "postdummy",
+            default=POST_DUMMY,
         ),
         "phasewrap": _config_float(config, "phasewrap", default=PHASE_WRAP),
     }
