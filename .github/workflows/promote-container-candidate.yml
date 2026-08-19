@@ -30,6 +30,12 @@ permissions: {}
 concurrency:
   group: promote-container-and-metadata
   cancel-in-progress: false
+  # Without this, GitHub keeps at most one run pending per group and a newer
+  # run evicts the one already waiting. Promote takes longer than the gap
+  # between merges, so pending runs were being discarded and their containers
+  # never published. `queue: max` keeps the same strict serialization and only
+  # stops the queue dropping work.
+  queue: max
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
