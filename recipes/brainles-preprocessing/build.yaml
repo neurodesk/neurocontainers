@@ -30,8 +30,105 @@ build:
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.version }}
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')"
 
+    - run:
+        # Bake the atlases and SynthStrip weights into the image.
+        #
+        # Without this the container cannot do the one job it exists for. Both
+        # are fetched on demand into directories inside the installed package
+        # (registration/atlases and brain_extraction/weights), which are on the
+        # read-only squashfs at run time, so the first atlas registration fails.
+        # There is also no other source: no container in the stack ships an
+        # SRI24 template, so a user asked to produce atlas-space input for petu
+        # or gliomoda had no supported route to one.
+        #
+        # Fetched per file rather than through upstream's fetch_atlases(), which
+        # requests Zenodo's files-archive endpoint. That endpoint is unreliable
+        # for these records, and the per-file API is what actually works. Adds
+        # about 120 MB.
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("bake_atlases.py") }}
+        # HD-BET weights too. HDBetExtractor is the only brain extractor this
+        # package has, and brainles_hd_bet writes its weights into its own
+        # package directory, so without this the brain-extraction stage fails
+        # the same way -- which would leave the container unable to produce the
+        # skull-stripped input its atlas registration is for.
+        #
+        # Upstream's own downloader is used here: unlike the atlas fetch it
+        # pulls per-fold files from direct URLs, which work. run_hd_bet loads
+        # fold 0 alone by default and all five otherwise, so all five are baked.
+        - >-
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_hd_bet.utils import maybe_download_parameters; [maybe_download_parameters(f) for f in range(5)]; print('hd-bet weights baked')"
+        - >-
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import pathlib; from brainles_hd_bet.utils import folder_with_parameter_files as d; f=sorted(pathlib.Path(d).glob('*.model')); assert len(f)==5, [x.name for x in f]; print('hd-bet folds:', [x.name for x in f])"
+        # Fail the build rather than ship an image that cannot register.
+        # Assert through upstream's own resolver, not by looking for files: the
+        # files must sit in the version-stamped folder ZenodoRecord globs for,
+        # or fetch_atlases() ignores them and tries to download at run time.
+        - >-
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.utils.zenodo import fetch_atlases; from brainles_preprocessing.constants import Atlas; p=fetch_atlases()/Atlas.BRATS_SRI24.value; assert p.is_file(), p; print('atlases resolve to', p)"
+        - >-
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.utils.zenodo import fetch_synthstrip; p=fetch_synthstrip(); assert p.is_dir() and any(p.iterdir()), p; print('synthstrip resolves to', p)"
+
     - environment:
         PATH: /opt/miniconda-py311_24.9.2-0/envs/brainles/bin:$PATH
+
+files:
+  - name: bake_atlases.py
+    contents: |
+      """Download the atlases and SynthStrip weights into the installed package.
+
+      brainles_preprocessing resolves both to directories inside its own package
+      (utils/zenodo.py: ATLASES_FOLDER and SYNTHSTRIP_FOLDER) and downloads them
+      on first use. Those paths are read-only once the image is built, so the
+      download must happen here or registration fails at run time.
+
+      The layout matters as much as the files. ZenodoRecord globs for
+      "<record_id>_v*.*.*" inside the target directory and treats a bare
+      directory of files as "nothing downloaded yet", so the files go into
+      <target>/<record_id>_v<version>/ exactly as _build_folder_path would.
+
+      Files are fetched individually rather than through upstream's fetch, which
+      requests Zenodo's files-archive endpoint: that endpoint is unreliable for
+      these records, while the per-file API works.
+      """
+      import json
+      import pathlib
+      import shutil
+      import zipfile
+      from urllib.request import urlopen
+
+      from brainles_preprocessing.utils import zenodo as z
+
+
+      def bake(record_id, target_dir, label):
+          target_dir = pathlib.Path(target_dir)
+          with urlopen(f"https://zenodo.org/api/records/{record_id}") as r:
+              record = json.loads(r.read().decode())
+          version = record["metadata"]["version"]
+          # Same name ZenodoRecord._build_folder_path() would produce, so
+          # fetch_atlases() finds this copy instead of trying to download.
+          folder = target_dir / f"{record_id}_v{version}"
+          folder.mkdir(parents=True, exist_ok=True)
+
+          files = record.get("files", [])
+          if not files:
+              raise SystemExit(f"{label}: record {record_id} lists no files")
+          for entry in files:
+              name = entry["key"]
+              out = folder / name
+              if out.exists():
+                  continue
+              print(f"{label}: downloading {name}", flush=True)
+              with urlopen(entry["links"]["self"]) as resp, open(out, "wb") as fh:
+                  shutil.copyfileobj(resp, fh)
+              if name.endswith(".zip"):
+                  with zipfile.ZipFile(out) as zf:
+                      zf.extractall(folder)
+                  out.unlink()
+          print(f"{label}: ready at {folder}", flush=True)
+
+
+      bake(z.ATLASES_RECORD_ID, z.ATLASES_FOLDER, "atlases")
+      bake(z.SYNTHSTRIP_RECORD_ID, z.SYNTHSTRIP_FOLDER, "synthstrip")
 
 deploy:
   path:

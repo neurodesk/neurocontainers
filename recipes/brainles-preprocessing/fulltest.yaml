@@ -1,0 +1,85 @@
+name: brainles-preprocessing
+version: 0.6.10
+
+tests:
+  - name: package imports
+    command: python -c "import brainles_preprocessing; print('import ok')"
+    expected_output_contains: "import ok"
+
+  - name: reports the packaged version
+    command: python -c "import importlib.metadata as md; print(md.version('brainles-preprocessing'))"
+    expected_output_contains: "${version}"
+
+  - name: the preprocessor entry points import
+    command: python -c "from brainles_preprocessing.preprocessor import Preprocessor, AtlasCentricPreprocessor; print('preprocessors ok')"
+    expected_output_contains: "preprocessors ok"
+
+  - name: the preprocessor console script is on PATH
+    command: command -v preprocessor
+    expected_output_contains: "preprocessor"
+
+  - name: the SRI24 atlas is bundled
+    description: >-
+      Atlases are fetched into a directory inside the installed package, which
+      is read-only at run time, so without baking them the first atlas
+      registration fails with Errno 30. This is also the only SRI24 template in
+      the stack, and petu and gliomoda reject anything not on that grid.
+    command: |
+      python -c "
+      import pathlib, brainles_preprocessing as m
+      d = pathlib.Path(m.__file__).parent / 'registration' / 'atlases'
+      # rglob: the files live in a version-stamped subfolder, which is
+      # what upstream's resolver globs for
+      names = sorted(p.name for p in d.rglob('*.nii*')) if d.is_dir() else []
+      print('atlases', names)
+      "
+    expected_output_contains: "brats_sri24.nii"
+
+  - name: the atlas resolves without touching the network
+    description: >-
+      Proves the baked copy is actually the one upstream finds, rather than a
+      file that happens to sit nearby.
+    command: |
+      python -c "
+      from brainles_preprocessing.utils.zenodo import fetch_atlases
+      from brainles_preprocessing.constants import Atlas
+      p = fetch_atlases() / Atlas.BRATS_SRI24.value
+      print('resolved', p.is_file(), p.name)
+      "
+    expected_output_contains: "resolved True brats_sri24.nii"
+
+  - name: the SynthStrip weights are bundled
+    description: Same read-only problem as the atlases; SynthStrip is one of the brain extractors.
+    command: |
+      python -c "
+      import pathlib, brainles_preprocessing as m
+      d = pathlib.Path(m.__file__).parent / 'brain_extraction' / 'weights'
+      print('synthstrip-files', len(list(d.rglob('*'))) if d.is_dir() else 0)
+      "
+    expected_output_contains: "synthstrip-files"
+
+  - name: runs outside HOME
+    description: $HOME does not exist at container runtime.
+    command: env HOME=/nonexistent python -c "import brainles_preprocessing; print('no-home ok')"
+    expected_output_contains: "no-home ok"
+
+  - name: HD-BET weights are bundled
+    description: >-
+      HDBetExtractor is the only brain extractor this package has, and
+      brainles_hd_bet writes its weights into its own package directory, which
+      is read-only at run time. Without them the brain-extraction stage fails
+      and the container cannot produce the skull-stripped input its atlas
+      registration exists to consume.
+    command: |
+      python -c "
+      import pathlib
+      from brainles_hd_bet.utils import folder_with_parameter_files as d
+      folds = sorted(p.name for p in pathlib.Path(d).glob('*.model'))
+      print('hd-bet-folds', len(folds), folds)
+      "
+    expected_output_contains: "hd-bet-folds 5"
+
+  - name: the brain extractor imports
+    description: Guards the path from brainles_preprocessing through to brainles_hd_bet.
+    command: python -c "from brainles_preprocessing.brain_extraction import HDBetExtractor; print('hdbet extractor ok')"
+    expected_output_contains: "hdbet extractor ok"
