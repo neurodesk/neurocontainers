@@ -8,6 +8,7 @@ import constants
 import nibabel as nib
 import subprocess
 import matplotlib.pyplot as plt
+import copy
 
 from skimage.segmentation import find_boundaries
 import SimpleITK as sitk
@@ -144,15 +145,7 @@ def process_image(images, connection, config, metadata):
     colormap = mrdhelper.get_json_config_param(config, 'colormap', default='none')
     do_rgb = colormap != 'none'
 
-    # Create folder, if necessary
-    # if not os.path.exists(debugFolder):
-    #     os.makedirs(debugFolder)
-    #     logging.debug("Created folder " + debugFolder + " for debug output files")
-
-    # logging.debug("Processing data with %d images of type %s", len(images), ismrmrd.get_dtype_from_data_type(images[0].data_type))
-
     # Note: The MRD Image class stores data as [cha z y x]
-
     # Extract image data into a 5D array of size [img cha z y x]
     data = np.stack([img.data                              for img in images])
     head = [img.getHead()                                  for img in images]
@@ -187,14 +180,15 @@ def process_image(images, connection, config, metadata):
     # New data with the correct 4D dimensions
     new_data = np.zeros((data.shape[0], data.shape[1], n_slices, n_repetitions))
     
-    # Determine order for stacking when returning images
-    slices = [img.slice for img in images]
-    repetitions = [img.repetition for img in images]
-    slice_diff = np.nansum(np.diff(slices)[:5])
-    rep_diff = np.nansum(np.diff(repetitions)[:5])
+    # Determine order for stacking when returning images. Check only
+    # the first few images - no need to check them all
+    slices = [img.slice for img in images[:10]]
+    repetitions = [img.repetition for img in images[:10]]
+    slice_diff = np.nansum(np.diff(slices))
+    rep_diff = np.nansum(np.diff(repetitions))
     # If the sum of the first few differences in slice indices is 0,
     # then we can assume that slices are stacked within repetitions
-    logging.debug(f'Slices: {slices[:10]} (sum: {slice_diff}); Repetitions: {repetitions[:10]} (sum: {rep_diff})')
+    logging.debug(f'Slices: {slices} (sum: {slice_diff}); Repetitions: {repetitions} (sum: {rep_diff})')
     if slice_diff > 0 and rep_diff == 0:
         logging.info("Detected repetition-major ordering of images (stack all slices of repetition 0, then all slices of repetition 1, etc)")
         orderinfo = 'slices'
@@ -209,8 +203,8 @@ def process_image(images, connection, config, metadata):
         orderinfo = 'slices'
 
     for img in images:
-        # Assuming that slices of repetitions are stacked (all slices
-        # of rep 0, then all slices of rep 1, etc)
+        # Using slice and repetition indices from metadata so ordering
+        # is not important here
         new_data[:, :, img.slice, img.repetition] = img.data[0, 0, :, :]
     data = new_data
 
@@ -246,33 +240,29 @@ def process_image(images, connection, config, metadata):
 
     logging.info('Running image transformation for showing stats')
     stat_labels, stat_img = show_stats('output_afni/output_image.nii', 'output_afni/stats.nii')
+    stat_data = stat_img.get_fdata()
 
     logging.info("Config: \n%s", config)
 
     logging.info('Processing done')
 
-    logging.info('Loading Output image')
-    # data_img = nib.load('output_image.nii')
-    # data = data_img.get_fdata()
-    stat_data = stat_img.get_fdata()
-    n_stats = stat_data.shape[-1]
-
     if not send_originals:
         logging.debug('`sendOriginal` is false')
     else:
         logging.debug('`sendOriginal` is true')
-    data = np.concatenate([stat_data, data], axis=-1)
+    data = stat_data
     logging.info("Output image data shape before transposing: %s", data.shape)
 
     # The output is 4D image with the 4th dimension being different
-    # stats maps and repetitions. Transpose it to [cha x y rep slice]
-    # for easier reslicing into 2D images. Follow the pattern the
-    # images came in - all slices of one rep/stat then all slices of
-    # the next rep/stat, etc.
+    # stats maps. Transpose it to [cha x y stat_map slice] for easier
+    # reslicing into 2D images. Follow the pattern the images came
+    # in - all slices of one rep/stat then all slices of the next
+    # rep/stat, etc.
     data = data[:, :, :, :, None]
     data = data.transpose((4, 0, 1, 3, 2))
     n_slices = data.shape[-1]
-    n_reps  = data.shape[-2]  # includes number of stats maps as well
+    # Stat maps take the place of repetitions in the output
+    n_stats = data.shape[-2]  # includes number of stats maps as well
     logging.info("Output image data shape: %s", data.shape)
 
     # Determine max value (12 or 16 bit)
@@ -281,17 +271,13 @@ def process_image(images, connection, config, metadata):
     #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
     maxVal = 2**BitsStored - 1
 
-    # Normalize Data and convert to int16
+    # Normalize data
     data = data.astype(np.float64)
     data *= maxVal/data.max()
     data = np.around(data)
-    # data = data.astype(np.int16)
 
     if do_rgb:
         logging.info(f'Converting data into RGB using colormap "{colormap}"')
-        # if data.shape[3] != 1:
-        #     logging.error("Multi-channel data is not supported")
-        #     return []
 
         # Normalize to (0.0, 1.0) as expected by get_cmap()
         data = data.astype(np.float64)
@@ -308,73 +294,87 @@ def process_image(images, connection, config, metadata):
         # shape when creating the ISMRMRD Image with `cha` below).
         rgb = rgb[...,0:-1]
         rgb = rgb.transpose((5, 0, 1, 2, 3, 4))
-        rgb = rgb.squeeze(5)
+        # rgb = rgb.squeeze()
 
         # MRD RGB images must be uint16 in range (0, 255)
         rgb *= 255
         data = rgb.astype(np.uint16)
         # np.save(debugFolder + "/" + "imgRGB.npy", data)
+    else:
+        data = data.astype(np.int16)
 
     currentSeries = 0
 
     # Precompute indices based on orderinfo
     if orderinfo == 'slices':
         # Stack all slices of repetition 0, then all slices of repetition 1, etc
-        outer_range = range(n_reps)
+        outer_range = range(n_stats)
         inner_range = range(n_slices)
         get_idx = lambda i, j: j + i * n_slices
         get_data = lambda data, i, j: data[..., i, j]
         get_rep = lambda i, j: i
+        get_slice = lambda i, j: j
         # For stats images use the first repetition's headers/metas.
         # This makes sure that the headers for stats images contain the
         # correct orientation and position values. This is needed for
         # `dcm2niix` to work correctly, for example.
-        get_header_idx = lambda i, j: j if (i - n_stats) < 0 else j + ((i - n_stats) * n_slices)
+        # Return `inner_range` index which is slice index.
+        get_header_idx = lambda i, j: j
     else:
         # Stack all repetitions of slice 0, then all repetitions of slice 1, etc
         outer_range = range(n_slices)
-        inner_range = range(n_reps)
-        get_idx = lambda i, j: j + i * n_reps
+        inner_range = range(n_stats)
+        get_idx = lambda i, j: j + i * n_stats
         get_data = lambda data, i, j: data[..., j, i]
         get_rep = lambda i, j: j
+        get_slice = lambda i, j: i
         # For stats images use the first repetition's headers/metas.
         # This makes sure that the headers for stats images contain the
         # correct orientation and position values. This is needed for
         # `dcm2niix` to work correctly, for example.
-        get_header_idx = lambda i, j: i if (j - n_stats) < 0 else (j - n_stats) + i * n_reps
+        # Return `outer_range` index which is slice index offset by the
+        # original number of repetitions.
+        get_header_idx = lambda i, j: i * n_repetitions
 
     # Re-slice image data back into 2D images.
     # Preallocate outputs for speed and efficiency.
-    imagesOut = [None] * (n_reps * n_slices)
+    imagesOut = [None] * (n_stats * n_slices)
     image_details = {
-        'slice': [None] * (n_reps * n_slices),
-        'repetition': [None] * (n_reps * n_slices),
-        'x': [None] * (n_reps * n_slices),
-        'y': [None] * (n_reps * n_slices)
+        'slice': [None] * (n_stats * n_slices),
+        'repetition': [None] * (n_stats * n_slices),
+        'x': [None] * (n_stats * n_slices),
+        'y': [None] * (n_stats * n_slices)
     }
     for i in outer_range:
         for j in inner_range:
             img_idx = get_idx(i, j)
+            
             # Make sure that index that gets headers and meta stays in
-            # range. Use the first repetition's headers/metas for stats images
+            # range. Use the first repetition's headers/metas for stats
+            # images
             head_meta_idx = get_header_idx(i, j)
+
             # Create new MRD instance for the final image
             # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
             # from_array() should be called with 'transpose=False' to avoid warnings, and when called
             # with this option, can take input as: [cha z y x], [z y x], or [y x]
             # imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
             # imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
-            imagesOut[img_idx] = ismrmrd.Image.from_array(get_data(data, i, j), transpose=False)
+            img_data = get_data(data, i, j)
+            if do_rgb:
+                # Make sure RGB takes place of 'cha'.
+                img_data = np.expand_dims(img_data, axis=1)
+            imagesOut[img_idx] = ismrmrd.Image.from_array(img_data, transpose=False)
             # outputOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
 
             # Create a copy of the original fixed header and update the data_type
             # (we changed it to int16 from all other types)
             # logging.debug("Head index for img %d is %d (out of %d headers)", img_idx, head_meta_idx, len(head))
-            oldHeader = head[head_meta_idx]
-            oldHeader.data_type = imagesOut[img_idx].data_type
-
-            # Unused example, as images are grouped by series before being passed into this function now
-            # oldHeader.image_series_index = currentSeries+1
+            try:
+                oldHeader = copy.deepcopy(head[head_meta_idx])
+            except IndexError as err:
+                logging.debug(f'Error with index: i={i}; j={j}; idx={head_meta_idx}; max={len(head)}')
+                logging.debug(f'{len(outer_range)}; {len(inner_range)}')
 
             # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
             if mrdhelper.get_meta_value(meta[head_meta_idx], 'IceMiniHead') is not None:
@@ -382,10 +382,24 @@ def process_image(images, connection, config, metadata):
                     currentSeries += 1
 
             rep_no = get_rep(i, j)
+            slice_no = get_slice(i, j)
+
+            oldHeader.data_type = imagesOut[img_idx].data_type
+            oldHeader.slice = slice_no
+            oldHeader.repetition = rep_no
+            oldHeader.image_index = img_idx + 1
+            if do_rgb:
+                # Set RGB parameters
+                # To be defined as ismrmrd.IMTYPE_RGB
+                oldHeader.image_type = 6
+                # RGB "channels".  This is set by from_array, but need to
+                # be explicit as we're copying the old header instead.
+                # Otherwise the data itself gets amended.
+                oldHeader.channels = 3  
+            imagesOut[img_idx].setHead(oldHeader)
+
             # Stat maps are first in the output
             img_comment = stat_labels[rep_no] if rep_no <= len(stat_labels)-1 else 'fMRI'
-
-            imagesOut[img_idx].setHead(oldHeader)
             # Create a copy of the original ISMRMRD Meta attributes and update
             tmpMeta = meta[head_meta_idx]
             tmpMeta['DataRole']                       = 'Image'
@@ -396,9 +410,19 @@ def process_image(images, connection, config, metadata):
             tmpMeta['Keep_image_geometry']            = 1
             tmpMeta['ImageComments']                  = img_comment
 
-            #     # Example for setting colormap
-            #     if config['parameters']['options'] == 'colormap':
-            #         tmpMeta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
+            # Example for setting RGB
+            if do_rgb:
+                tmpMeta['SequenceDescriptionAdditional']  = 'FIRE_RGB'
+                tmpMeta['ImageProcessingHistory'].append('RGB')
+
+                # RGB images have no windowing
+                del tmpMeta['WindowCenter']
+                del tmpMeta['WindowWidth']
+
+                # RGB images shouldn't undergo further processing, e.g. orientation or distortion correction
+                tmpMeta['InternalSend'] = 1
+
+                tmpMeta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
 
             # Add image orientation directions to MetaAttributes if not already present
             if tmpMeta.get('ImageRowDir') is None:
@@ -413,32 +437,32 @@ def process_image(images, connection, config, metadata):
 
             imagesOut[img_idx].attribute_string = metaXml
             # For debugging and troubleshooting.
-            image_details['slice'][img_idx] = i
-            image_details['repetition'][img_idx] = j
-            image_details['x'][img_idx] = imagesOut[img_idx].data.shape[0]
-            image_details['y'][img_idx] = imagesOut[img_idx].data.shape[1]
+            image_details['slice'][img_idx] = slice_no + 1  # indices start with 0 but slice numbers should start with 1
+            image_details['repetition'][img_idx] = rep_no + 1  # indices start with 0 but repetition numbers should start with 1
+            image_details['x'][img_idx] = imagesOut[img_idx].data.shape[-2]
+            image_details['y'][img_idx] = imagesOut[img_idx].data.shape[-1]
 
-    # # Send a copy of original (unmodified) images back too
-    # if send_originals:
-    #     stack = traceback.extract_stack()
-    #     if stack[-2].name == 'process_raw':
-    #         logging.warning('sendOriginal is true, but input was raw data, so no original images to return!')
-    #     else:
-    #         logging.info('Sending a copy of original unmodified images due to sendOriginal set to True')
-    #         # In reverse order so that they'll be in correct order as we insert them to the front of the list
-    #         for image in reversed(images):
-    #             # Create a copy to not modify the original inputs
-    #             tmpImg = image
+    # Send a copy of original (unmodified) images back too
+    if send_originals:
+        stack = traceback.extract_stack()
+        if stack[-2].name == 'process_raw':
+            logging.warning('sendOriginal is true, but input was raw data, so no original images to return!')
+        else:
+            logging.info('Sending a copy of original unmodified images due to sendOriginal set to True')
+            # In reverse order so that they'll be in correct order as we insert them to the front of the list
+            for image in reversed(images):
+                # Create a copy to not modify the original inputs
+                tmpImg = image
 
-    #             # Change the series_index to have a different series
-    #             tmpImg.image_series_index = 99
+                # Change the series_index to have a different series
+                tmpImg.image_series_index = 99
 
-    #             # Ensure Keep_image_geometry is set to not reverse image orientation
-    #             tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
-    #             tmpMeta['Keep_image_geometry'] = 1
-    #             tmpImg.attribute_string = tmpMeta.serialize()
+                # Ensure Keep_image_geometry is set to not reverse image orientation
+                tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
+                tmpMeta['Keep_image_geometry'] = 1
+                tmpImg.attribute_string = tmpMeta.serialize()
 
-    #             imagesOut.insert(0, tmpImg)
+                imagesOut.insert(0, tmpImg)
 
     n_out_imgs = len(imagesOut)
     x_not_same = np.any(np.diff(image_details['x']) != 0)
@@ -449,6 +473,15 @@ def process_image(images, connection, config, metadata):
         logging.warning('Output images have different x dimensions!')
     if y_not_same:
         logging.warning('Output images have different y dimensions!')
+
+    logging.debug('Example header:')
+    for field_name, field_type in oldHeader._fields_:
+        var = getattr(oldHeader, field_name)
+        if hasattr(var, '_length_'):
+            retstr = '  %s: (%s), ' % (field_name, ', '.join((str(v) for v in var)))
+        else:
+            retstr = '  %s: %s, ' % (field_name, var)
+        logging.debug(retstr)
 
     return imagesOut
 

@@ -364,7 +364,7 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                 
                 # Create XML header with proper metadata
                 print(f"📋 Creating ISMRMRD XML header...")
-                mrdHead = ismrmrd.xsd.ismrmrdHeader()
+                mrdHead = ismrmrd.xsd.ismrmrdHeader(experimentalConditions=ismrmrd.xsd.experimentalConditionsType(H1resonanceFrequency_Hz=1))
                 
                 # Study Information
                 mrdHead.studyInformation = ismrmrd.xsd.studyInformationType()
@@ -381,40 +381,44 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                 mrdHead.acquisitionSystemInformation.systemModel = 'Virtual'
                 mrdHead.acquisitionSystemInformation.institutionName = 'Test'
                 
-                # Encoding information
-                encoding = ismrmrd.xsd.encodingType()
-                encoding.trajectory = ismrmrd.xsd.trajectoryType.CARTESIAN
-                
                 # Get voxel size and FOV from metadata
                 voxel_size = orientation_info['voxel_size']
-                
+
                 # Encoded space (acquisition space)
-                encoding.encodedSpace = ismrmrd.xsd.encodingSpaceType()
-                encoding.encodedSpace.matrixSize = ismrmrd.xsd.matrixSizeType()
-                encoding.encodedSpace.matrixSize.x = int(ismrmrd_data.shape[0])
-                encoding.encodedSpace.matrixSize.y = int(ismrmrd_data.shape[1])
-                encoding.encodedSpace.matrixSize.z = int(ismrmrd_data.shape[2])
-                
-                encoding.encodedSpace.fieldOfView_mm = ismrmrd.xsd.fieldOfViewMm()
-                encoding.encodedSpace.fieldOfView_mm.x = float(ismrmrd_data.shape[0] * voxel_size[0])
-                encoding.encodedSpace.fieldOfView_mm.y = float(ismrmrd_data.shape[1] * voxel_size[1])
-                encoding.encodedSpace.fieldOfView_mm.z = float(ismrmrd_data.shape[2] * voxel_size[2])
+                encodedSpace = ismrmrd.xsd.encodingSpaceType(
+                    matrixSize=ismrmrd.xsd.matrixSizeType(
+                        x=int(ismrmrd_data.shape[0]),
+                        y=int(ismrmrd_data.shape[1]),
+                        z=1
+                    ),
+                    fieldOfView_mm=ismrmrd.xsd.fieldOfViewMm(
+                        x=float(ismrmrd_data.shape[0] * voxel_size[0]),
+                        y=float(ismrmrd_data.shape[1] * voxel_size[1]),
+                        z=float(voxel_size[2])
+                    )
+                )
                 
                 # Recon space (same as encoded for NIfTI conversion)
-                encoding.reconSpace = ismrmrd.xsd.encodingSpaceType()
-                encoding.reconSpace.matrixSize = ismrmrd.xsd.matrixSizeType()
-                encoding.reconSpace.matrixSize.x = int(ismrmrd_data.shape[0])
-                encoding.reconSpace.matrixSize.y = int(ismrmrd_data.shape[1])
-                encoding.reconSpace.matrixSize.z = int(ismrmrd_data.shape[2])
-                
-                encoding.reconSpace.fieldOfView_mm = ismrmrd.xsd.fieldOfViewMm()
-                encoding.reconSpace.fieldOfView_mm.x = float(ismrmrd_data.shape[0] * voxel_size[0])
-                encoding.reconSpace.fieldOfView_mm.y = float(ismrmrd_data.shape[1] * voxel_size[1])
-                encoding.reconSpace.fieldOfView_mm.z = float(ismrmrd_data.shape[2] * voxel_size[2])
-                
-                # Encoding limits
-                encoding.encodingLimits = ismrmrd.xsd.encodingLimitsType()
-                
+                reconSpace = ismrmrd.xsd.encodingSpaceType(
+                    matrixSize=ismrmrd.xsd.matrixSizeType(
+                        x=int(ismrmrd_data.shape[0]),
+                        y=int(ismrmrd_data.shape[1]),
+                        z=1
+                    ),
+                    fieldOfView_mm=ismrmrd.xsd.fieldOfViewMm(
+                        x=float(ismrmrd_data.shape[0] * voxel_size[0]),
+                        y=float(ismrmrd_data.shape[1] * voxel_size[1]),
+                        z=float(voxel_size[2])
+                    )
+                )
+
+                # Encoding information
+                encoding = ismrmrd.xsd.encodingType(
+                    encodedSpace=encodedSpace,
+                    reconSpace=reconSpace,
+                    trajectory=ismrmrd.xsd.trajectoryType.CARTESIAN,
+                    encodingLimits=ismrmrd.xsd.encodingLimitsType()
+                )
                 mrdHead.encoding.append(encoding)
                 
                 # Sequence parameters
