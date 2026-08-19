@@ -261,6 +261,21 @@ files:
 
       if __name__ == "__main__":
           sys.exit(main())
+  - name: pin_weights.py
+    contents: |
+      # Appended to upstream's weights module by the neurocontainers recipe.
+      # Redefining the lookup shadows the original, so the package takes its own
+      # "Zenodo unreachable -> use the local weights" branch and never downloads
+      # at run time. This image ships weights_v1.0.2; to move to newer weights,
+      # bump weights_version in build.yaml and rebuild the container.
+      def _get_zenodo_metadata_and_archive_url():
+          # Returning None would be upstream's "Zenodo unreachable" path, but
+          # check_weights_path only binds zenodo_metadata inside "if zenodo_data:"
+          # and then reads it unconditionally, so None raises UnboundLocalError.
+          # Returning metadata whose version matches the baked weights takes the
+          # "latest weights are already present" branch instead: no network, no
+          # download, and the local weights are returned.
+          return ({"version": "1.0.2"}, "")
 
 deploy:
   # Only the tool. Putting the venv bin on the deploy path also exported python,
