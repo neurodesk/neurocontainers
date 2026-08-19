@@ -28,16 +28,16 @@ tests:
     command: python -c 'from importlib.metadata import distribution; d=distribution("deep_quality_estimation"); assert d.version == "0.0.3" and len(tuple(d.files or ())) > 5'
 
   - name: gliomoda distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("gliomoda"); assert d.version == "0.0.3" and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("gliomoda"); assert d.version == "0.0.4" and len(tuple(d.files or ())) > 5'
 
   - name: loguru distribution is pinned
     command: python -c 'from importlib.metadata import version; assert version("loguru") == "0.7.3"'
 
   - name: panoptica distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("panoptica"); assert d.version == "1.5.1" and len(tuple(d.files or ())) > 20'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("panoptica"); assert d.version == "2.1.6" and len(tuple(d.files or ())) > 20'
 
   - name: petu distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("petu"); assert d.version == "0.0.5" and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("petu"); assert d.version == "0.0.7" and len(tuple(d.files or ())) > 5'
 
   - name: brainles_aurora imports
     command: python -c 'import brainles_aurora'
@@ -331,3 +331,37 @@ tests:
     command: |
       bash -c 'grep -l "_bls_fetch_record" $(python -c "import gliomoda,petu,pathlib; print(pathlib.Path(gliomoda.__file__).parent/\"weights.py\", pathlib.Path(petu.__file__).parent/\"weights.py\")") | wc -l'
     expected_output_contains: "2"
+
+  - name: bundled versions match the standalone modules
+    description: >-
+      The bundle previously pinned panoptica 1.5.1, gliomoda 0.0.3 and petu
+      0.0.5, so the same analysis gave different results depending on which
+      module a user loaded, with nothing warning about the divergence.
+    command: |
+      python -c "
+      import importlib.metadata as md
+      for pkg in ('panoptica', 'gliomoda', 'petu'):
+          print(pkg, md.version(pkg))
+      "
+    expected_output_contains: "panoptica 2.1.6"
+
+  - name: panoptica instance relabelling survives >255 labels
+    description: >-
+      2.1.6 still builds its label lookup with the connected-components dtype,
+      so multi-lesion evaluations overflow. The image carries the upstream-main
+      fix; this fails if it is lost.
+    command: |
+      python -c "
+      import numpy as np
+      from panoptica._functionals import _map_labels
+      a = np.zeros((4, 4), dtype=np.uint8); a[0, 0] = 3
+      print('relabel-max', int(_map_labels(a, {3: 256}).max()))
+      "
+    expected_output_contains: "relabel-max 256"
+
+  - name: the preprocessor and hd-bet commands are deployed
+    description: >-
+      Both were installed but never exposed, leaving a hand-written python
+      script as the only supported way into this container.
+    command: bash -c 'command -v preprocessor && command -v hd-bet && echo "clis ok"'
+    expected_output_contains: "clis ok"
