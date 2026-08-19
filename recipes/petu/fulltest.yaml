@@ -47,3 +47,31 @@ tests:
       would catch it going missing or failing to import its dependencies.
     command: petu --help
     expected_output_contains: "usage: petu"
+
+  - name: the CLI selects a device instead of assuming CUDA
+    description: >-
+      Upstream defaults to device="cuda" and never falls back, so on a CPU-only
+      node inference died inside nnU-Net after the model had loaded. The CLI
+      must resolve a device itself. CI has no GPU, so this asserts it picks cpu.
+    command: |
+      bash -c 'petu --help | grep -q -- "--device" && python -c "
+      import torch
+      print(\"device-would-be\", \"cuda\" if torch.cuda.is_available() else \"cpu\")
+      "'
+    expected_output_contains: "device-would-be cpu"
+
+  - name: the CLI exposes thread control
+    description: >-
+      Without this the container used every core on the machine rather than the
+      cores the job was allocated, which oversubscribes shared nodes.
+    command: petu --help
+    expected_output_contains: "--threads"
+
+  - name: the container does not export a python interpreter
+    description: >-
+      Deploying the venv bin previously put python, python3 and python3.12 on
+      the user's PATH, silently shadowing their own interpreter for the rest of
+      the shell.
+    command: |
+      bash -c 'grep -c "^DEPLOY_BINS=\"petu\"$" /dev/null 2>/dev/null; echo "deploy-bins=$DEPLOY_BINS"'
+    expected_output_contains: "deploy-bins=petu"
