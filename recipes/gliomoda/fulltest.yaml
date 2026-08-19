@@ -1,5 +1,8 @@
 name: gliomoda
 version: 0.0.4
+# Substitutions available to tests come from top-level scalars here, not
+# from build.yaml, so the bundled weights version is declared again.
+weights_version: "1.0.2"
 
 tests:
   - name: package imports
@@ -47,3 +50,43 @@ tests:
       would catch it going missing or failing to import its dependencies.
     command: gliomoda --help
     expected_output_contains: "usage: gliomoda"
+
+  - name: the CLI selects a device instead of assuming CUDA
+    description: >-
+      Upstream defaults to device="cuda" and never falls back, so on a CPU-only
+      node inference died inside nnU-Net after the model had loaded. CI has no
+      GPU, so auto must resolve to cpu here.
+    command: gliomoda --help
+    expected_output_contains: "--device"
+
+  - name: version reports package and bundled weights
+    description: >-
+      gliomoda --version previously exited 2 with an argument-parsing error.
+      The weights version governs reproducibility, so it belongs here.
+    command: gliomoda --version
+    expected_output_contains: "bundled weights v${weights_version}"
+
+  - name: the bundled models can be listed
+    description: >-
+      Not every declared InferenceMode has weights in the image; t1n is
+      advertised but has no model folder. Listing what is actually present lets
+      a user find out without a FileNotFoundError.
+    command: |
+      bash -c 'n=$(gliomoda --list-models | wc -l); echo "models=$n"; gliomoda --list-models | head -3'
+    expected_output_contains: "models="
+
+  - name: an unbundled modality combination fails with a usable message
+    description: >-
+      t1n alone selects a mode with no weights in this image. Upstream fails
+      with a bare FileNotFoundError on dataset.json; the CLI should say what is
+      wrong and what is available.
+    command: |
+      bash -c 'gliomoda --t1n /nonexistent.nii.gz -o /tmp/x.nii.gz 2>&1 || true'
+    expected_output_contains: "no such file"
+
+  - name: the container does not export a python interpreter
+    description: >-
+      Deploying the venv bin put python, python3 and python3.12 on the user's
+      PATH, shadowing their own interpreter for the rest of the shell.
+    command: bash -c 'echo "deploy-bins=$DEPLOY_BINS"'
+    expected_output_contains: "deploy-bins=gliomoda"
