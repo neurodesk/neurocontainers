@@ -40,13 +40,19 @@ build:
         BLS_WEIGHTS_DIR: /tmp/brainlesion-weights
 
     - deploy:
+        # Deploying only `python` left `python3` resolving to the host
+        # interpreter, where these components are absent, so any script with a
+        # /usr/bin/env python3 shebang failed with ModuleNotFoundError while
+        # appearing to have loaded.
+        #
+        # These are named individually rather than putting /opt/miniconda/bin on
+        # the deploy path: that directory holds several hundred executables
+        # (conda, pip, and every console script of every dependency), and the
+        # deploy test then exercises up to 200 of them, which fails on tools
+        # that are incidental to this container.
         bins:
           - python
-        path:
-          # Without this only `python` is wrapped, so `python3` and every
-          # console script fall through to the host interpreter and fail with
-          # ModuleNotFoundError while appearing to have loaded.
-          - /opt/miniconda/bin
+          - python3
     - test:
         name: Components import and resolve a writable weights path
         script: |-
