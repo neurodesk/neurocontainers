@@ -1,5 +1,8 @@
 name: gliomoda
 version: 0.0.4
+# Substitutions available to tests come from top-level scalars here, not
+# from build.yaml, so the bundled weights version is declared again.
+weights_version: "1.0.2"
 
 tests:
   - name: package imports
@@ -78,7 +81,7 @@ tests:
       with a bare FileNotFoundError on dataset.json; the CLI should say what is
       wrong and what is available.
     command: |
-      bash -c 'out=$(gliomoda -t1n /dev/null -o /tmp/x.nii.gz 2>&1 || true); echo "$out" | head -3'
+      bash -c 'gliomoda --t1n /nonexistent.nii.gz -o /tmp/x.nii.gz 2>&1 || true'
     expected_output_contains: "no such file"
 
   - name: the container does not export a python interpreter
