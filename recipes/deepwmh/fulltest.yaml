@@ -305,6 +305,11 @@ tests:
       phantom and checks the declared final mask exists and is labelled 0/1.
       This is the check that would have caught the read-only model directory,
       which made every inference fail, and the unreadable previews.
+
+      The runner reports only a test's exit code, never its output, so the
+      failure stage is encoded in the code: 30 read-only filesystem, 31 ROBEX
+      skull stripping, 32 nnU-Net or torch, 33 out of memory, 34 another
+      non-zero exit, 20 no final mask written, 21 unexpected label values.
     timeout: 3600
     command: |
       cd "$(mktemp -d)"
@@ -318,19 +323,28 @@ tests:
       brain = r <= 1.0
       vol = np.zeros(shape, 'float32')
       vol[brain] = 100 + rng.normal(0, 4, brain.sum())
-      # a few periventricular-looking hyperintensities
       for off in (-6, 0, 6):
           vol[30:34, 30+off:34+off, 22:26] = 220
       nib.save(nib.Nifti1Image(vol, np.eye(4)), 'flair.nii.gz')
       "
-      deepwmh -i flair.nii.gz -n phantom -o out -g -1 --skip-bfc
+      deepwmh -i flair.nii.gz -n phantom -o out -g -1 --skip-bfc > run.log 2>&1 || rc=$?
+      if [ -n "${rc:-}" ]; then
+          tail -40 run.log
+          grep -qi 'read-only file system\|Errno 30' run.log && exit 30
+          grep -qi 'robex' run.log && exit 31
+          grep -qi 'nnunet\|torch' run.log && exit 32
+          grep -qi 'memoryerror\|out of memory\|killed' run.log && exit 33
+          exit 34
+      fi
       python -c "
-      import glob, numpy as np, nibabel as nib
+      import glob, sys, numpy as np, nibabel as nib
       hits = glob.glob('out/002_Segmentations/003_postproc_fov/*.nii*')
-      assert hits, 'no final mask under 003_postproc_fov: ' + str(glob.glob('out/**', recursive=True))[:400]
+      if not hits:
+          print('tree:', sorted(glob.glob('out/**', recursive=True))[:40]); sys.exit(20)
       dat = nib.load(hits[0]).get_fdata()
       vals = set(np.unique(dat).tolist())
-      assert vals <= {0.0, 1.0}, vals
+      if not vals <= {0.0, 1.0}:
+          print('labels', sorted(vals)); sys.exit(21)
       print('segmentation-ok labels', sorted(vals))
       "
     expected_output_contains: "segmentation-ok"
