@@ -97,7 +97,7 @@ build:
         - WMOD="$(. "${VENV}/bin/activate" && python -c "import brainles_aurora,pathlib; print(pathlib.Path(brainles_aurora.__file__).parent/'utils/weights.py')")"
         - test -f "${WMOD}"
         - cat {{ get_file("pin_weights.py") }} >> "${WMOD}"
-        - . "${VENV}/bin/activate" && python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; assert f()==(None,None), 'weight pin did not take'; print('zenodo lookup pinned off')"
+        - . "${VENV}/bin/activate" && python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; m,u=f(); assert m=={'version':'{{ context.weights_version }}'} and u=='', ('weight pin did not take', m, u); print('zenodo lookup pinned off')"
         # Prove the pinned lookup still resolves the baked weights.
         - . "${VENV}/bin/activate" && python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import check_model_weights; p=str(check_model_weights()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
         # Upstream ships no console_scripts, so the container provides one: a thin
@@ -105,6 +105,15 @@ build:
         # its own beyond argument validation.
         - install -m 0755 {{ get_file("aurora") }} /usr/local/bin/aurora
         - . "${VENV}/bin/activate" && aurora --help > /dev/null && echo "aurora CLI ok"
+        # python itself is deliberately not exported (see deploy), so give the
+        # library a named interpreter rather than no route in at all.
+        - install -m 0755 {{ get_file("aurora_python_helper") }} /usr/local/bin/aurora-python
+        - aurora-python -c "import brainles_aurora; print('aurora-python ok')"
+        # An unsupported modality combination must be rejected by the wrapper
+        # before it imports torch, so the user finds out immediately instead of
+        # after the weights have loaded. Exit status 2 is argparse's usage error.
+        - . "${VENV}/bin/activate" && ! aurora -t1 a.nii.gz -t2 b.nii.gz -o seg.nii.gz 2>/dev/null
+        - . "${VENV}/bin/activate" && aurora --help | grep -q 't1-t1c-t2-fla' && echo "combination help ok"
         - chmod -R a+rX "${VENV}"
         - rm -rf /root/.cache/pip /tmp/mpl-brainles-aurora /tmp/cache-brainles-aurora
 
@@ -151,42 +160,97 @@ files:
       """Command line front-end for AURORA.
 
       Upstream ships no console_scripts; this wraps
-      brainles_aurora.inferer.AuroraInferer.infer. The modality arguments are all
-      optional -- AURORA selects a model for whichever combination is supplied.
+      brainles_aurora.inferer.AuroraInferer.infer.
       """
       import argparse
+      import os
       import sys
+
+      # (t1, t1c, t2, fla) -> model name, mirroring IMGS_TO_MODE_DICT in
+      # brainles_aurora.inferer.constants. Duplicated here so an unsupported
+      # combination is rejected immediately: upstream raises NotImplementedError
+      # only after torch, monai and the 330 MB weight directory have loaded.
+      SUPPORTED_COMBINATIONS = {
+          (True, True, True, True): "t1-t1c-t2-fla",
+          (True, True, False, True): "t1-t1c-fla",
+          (True, True, False, False): "t1-t1c",
+          (False, True, False, True): "t1c-fla",
+          (False, True, False, False): "t1c-o",
+          (False, False, False, True): "fla-o",
+          (True, False, False, False): "t1-o",
+      }
+
+      COMBINATION_HELP = """\
+      A model exists for 7 of the 15 possible modality combinations:
+
+        -t1c                    -t1 -t1c                -t1 -t1c -fla
+        -fla                    -t1c -fla               -t1 -t1c -t2 -fla
+        -t1
+
+      T2 is only usable together with all three other modalities.
+      """
 
 
       def main(argv=None):
           p = argparse.ArgumentParser(
               prog="aurora",
               description="Segment brain metastases from multi-modal MR images.",
-              epilog="Supply any subset of modalities; at least one is required.",
+              epilog=COMBINATION_HELP,
+              formatter_class=argparse.RawDescriptionHelpFormatter,
           )
           p.add_argument("-t1", "--t1", help="T1 image (NIfTI)")
           p.add_argument("-t1c", "--t1c", help="T1 contrast-enhanced image (NIfTI)")
           p.add_argument("-t2", "--t2", help="T2 image (NIfTI)")
           p.add_argument("-fla", "--fla", help="FLAIR image (NIfTI)")
           p.add_argument("-o", "--output", required=True,
-                         help="Output segmentation file (NIfTI)")
-          p.add_argument("--whole-tumor-floats",
-                         help="Optional output: unbinarized whole-tumor probabilities")
-          p.add_argument("--metastasis-floats",
-                         help="Optional output: unbinarized metastasis probabilities")
+                         help="Output segmentation file (NIfTI); labels 0, 1, 2")
+          # Named --*-mask, not --*-floats: _post_process thresholds both network
+          # channels at --threshold and casts to uint8, so these files contain
+          # {0, 1} and never probabilities. The upstream API parameters are still
+          # called *_unbinarized_floats_file. The old flag names stay as aliases.
+          p.add_argument("--whole-tumor-mask", "--whole-tumor-floats",
+                         dest="whole_tumor_mask",
+                         help="Optional output: binary whole-tumor mask from the "
+                              "network's whole channel, thresholded at --threshold "
+                              "(alias: --whole-tumor-floats)")
+          p.add_argument("--metastasis-mask", "--metastasis-floats",
+                         dest="metastasis_mask",
+                         help="Optional output: binary enhancing-metastasis mask, "
+                              "thresholded at --threshold "
+                              "(alias: --metastasis-floats)")
           p.add_argument("--log-file", help="Optional log file path")
           p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
                          help="Device to run on (default: auto)")
           p.add_argument("--cuda-devices", default="0",
                          help='Visible CUDA devices, e.g. "0" or "0,1" (default: 0)')
           p.add_argument("--threshold", type=float, default=0.5,
-                         help="Binarization threshold (default: 0.5)")
+                         help="Threshold applied to the sigmoid output of both "
+                              "network channels when binarizing (default: 0.5)")
           p.add_argument("--no-tta", action="store_true",
-                         help="Disable test-time augmentation (faster, less accurate)")
+                         help="Disable test-time augmentation: roughly 12x faster, "
+                              "slightly less accurate")
           a = p.parse_args(argv)
 
-          if not any([a.t1, a.t1c, a.t2, a.fla]):
-              p.error("at least one of -t1/-t1c/-t2/-fla is required")
+          combination = (bool(a.t1), bool(a.t1c), bool(a.t2), bool(a.fla))
+          if combination not in SUPPORTED_COMBINATIONS:
+              supplied = " ".join(
+                  name for name, value in (
+                      ("-t1", a.t1), ("-t1c", a.t1c), ("-t2", a.t2), ("-fla", a.fla)
+                  ) if value
+              )
+              p.error(
+                  "no model exists for %s.\n\n%s"
+                  % (supplied or "an empty set of modalities", COMBINATION_HELP)
+              )
+
+          # Absolute paths. Upstream's save_as_nifti calls
+          # os.makedirs(os.path.dirname(output_file)) with no guard for a bare
+          # filename, and os.makedirs("") raises FileNotFoundError -- after
+          # inference has finished, throwing away the entire run. Its
+          # _set_log_file already guards this case, so only the NIfTI outputs
+          # strictly need it, but normalising all of them is clearer.
+          def _abs(path):
+              return os.path.abspath(path) if path else None
 
           from brainles_aurora.inferer import AuroraInferer, AuroraInfererConfig
           from brainles_aurora.inferer.constants import Device
@@ -199,33 +263,58 @@ files:
           )
           AuroraInferer(config=config).infer(
               t1=a.t1, t1c=a.t1c, t2=a.t2, fla=a.fla,
-              segmentation_file=a.output,
-              whole_tumor_unbinarized_floats_file=a.whole_tumor_floats,
-              metastasis_unbinarized_floats_file=a.metastasis_floats,
-              log_file=a.log_file,
+              segmentation_file=_abs(a.output),
+              whole_tumor_unbinarized_floats_file=_abs(a.whole_tumor_mask),
+              metastasis_unbinarized_floats_file=_abs(a.metastasis_mask),
+              log_file=_abs(a.log_file),
           )
-          print(f"wrote {a.output}")
+          print("wrote %s" % _abs(a.output))
           return 0
 
 
       if __name__ == "__main__":
           sys.exit(main())
 
+  - name: aurora_python_helper
+    contents: |
+      #!/usr/bin/env bash
+      # Run python from inside this container.
+      #
+      # brainles_aurora is installed in the container's environment, not on the
+      # host, so "import brainles_aurora" only works with this interpreter. The
+      # container does not put python on your PATH, because doing so silently
+      # replaced the host interpreter for the rest of the shell.
+      exec {{ context.venv }}/bin/python3 "$@"
+
   - name: pin_weights.py
     contents: |
       # Appended to upstream's weights module by the neurocontainers recipe.
-      # Redefining the lookup shadows the original, so the package takes its own
-      # "Zenodo unreachable -> use the local weights" branch and never downloads
-      # at run time. This image ships weights_v1.0.0; to move to newer weights,
-      # bump weights_version in build.yaml and rebuild the container.
+      # Redefining the lookup shadows the original, so the package never queries
+      # Zenodo at run time and the image cannot swap its weights underneath a
+      # user. To move to newer weights, bump weights_version in build.yaml and
+      # rebuild the container.
+      #
+      # Returns metadata naming the baked version rather than (None, None).
+      # Both stop the download, but (None, None) makes check_model_weights take
+      # its "Zenodo server could not be reached" branch, which logs a warning
+      # describing a network failure that has not happened and sends users
+      # chasing an imaginary proxy problem. Reporting the version that is
+      # actually present takes the "already present" branch instead, which is
+      # what is true. The archive URL is never used on that path.
       def _get_zenodo_metadata_and_archive_url():
-          return (None, None)
+          logger.info(
+              "Zenodo lookup is disabled in this container; "
+              "using the baked weights_v{{ context.weights_version }}."
+          )
+          return ({"version": "{{ context.weights_version }}"}, "")
 
 deploy:
+  # Named individually rather than exporting the venv bin directory, which also
+  # put python, python3, python3.12, pip and torchrun on the user's PATH and so
+  # silently replaced the host interpreter for the rest of the shell.
   bins:
     - aurora
-  path:
-    - "{{ context.venv }}/bin"
+    - aurora-python
 
 categories:
   - image segmentation
@@ -238,22 +327,80 @@ readme: |-
   ----------------------------------
   ## brainles-aurora/{{ context.version }} ##
 
-  AURORA segments brain metastases from multi-modal MR images using pretrained deep learning models.
+  AURORA segments brain metastases from multi-modal MR images using pretrained
+  deep learning models.
 
-  Example:
+  ### Example
+
   ```
   aurora -t1c t1c.nii.gz -fla flair.nii.gz -o seg.nii.gz
 
-  # or from python:
-  python -c 'from brainles_aurora.inferer import AuroraInferer'
+  # from python, using this container's interpreter:
+  aurora-python -c 'from brainles_aurora.inferer import AuroraInferer'
   ```
 
-  Notes:
+  `python` is deliberately not exported: putting this environment's bin
+  directory on your PATH replaced the host interpreter for the rest of the
+  shell. Use `aurora-python`.
+
+  ### Input requirements
+
+  AURORA is trained on BraTS-style preprocessed data. Inputs must be
+  skull-stripped, co-registered with each other and on the atlas grid
+  (240x240x155 at 1 mm). A raw T1c produces a plausible-looking but wrong mask
+  with no warning. The `brainles-preprocessing` module in this stack produces
+  exactly this input and ships the SRI24 template it needs.
+
+  ### Modality combinations
+
+  A model exists for 7 of the 15 possible combinations:
+
+  ```
+  -t1c                 -t1 -t1c              -t1 -t1c -fla
+  -fla                 -t1c -fla             -t1 -t1c -t2 -fla
+  -t1
+  ```
+
+  T2 is only usable together with all three other modalities. Anything else is
+  rejected immediately, with this list, before the model is loaded.
+
+  ### Outputs
+
+  `-o` writes the segmentation with labels 0 (background), 1 (whole metastasis)
+  and 2 (enhancing). `--whole-tumor-mask` and `--metastasis-mask` write the two
+  network channels separately.
+
+  All three are **binary masks**, not probabilities: `--threshold` (default 0.5)
+  is applied to the sigmoid output of both channels and the result is cast to
+  uint8. The current upstream API exposes no probability maps. The older
+  `--whole-tumor-floats` and `--metastasis-floats` names still work as aliases.
+
+  ### CPU, runtime and threads
+
+  Most Neurodesk nodes have no GPU. AURORA runs on CPU, and `--device auto`
+  (the default) falls back to it. Measured on 8 CPUs at 240x240x155:
+
+  ```
+  4 modalities, default TTA     ~26 min per subject
+  t1c + fla, --no-tta           ~2 min per subject
+  ```
+
+  Test-time augmentation adds 12 sliding-window passes, so `--no-tta` is the
+  difference between a 2-minute and a 26-minute turnaround.
+
+  Set `SINGULARITYENV_OMP_NUM_THREADS` to your core budget. The module wrapper
+  runs the container with `--cleanenv`, so a plain `OMP_NUM_THREADS` -- and
+  `SLURM_CPUS_PER_TASK` -- never reaches the tool, and the run otherwise uses
+  every core on the node regardless of what the job asked for.
+
+  ### Model weights
+
   Upstream ships no console_scripts, so this container adds a thin `aurora` CLI
   over the documented Python API
-  (`from brainles_aurora.inferer import AuroraInferer`). Model weights **v1.0.0** are bundled in the image.
-  The Zenodo lookup is disabled, so the container never downloads weights at
-  run time: it works offline, and every run uses the same weights.
-  Picking up newer upstream weights requires a rebuild of this container.
+  (`from brainles_aurora.inferer import AuroraInferer`). Model weights **v1.0.0**
+  are bundled in the image. The Zenodo lookup is disabled, so the container
+  never downloads weights at run time: it works offline, and every run uses the
+  same weights. Picking up newer upstream weights requires a rebuild of this
+  container.
 
-  More documentation can be found here: https://github.com/BrainLesion
+  More documentation can be found here: https://github.com/BrainLesion/AURORA
