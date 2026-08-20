@@ -14,9 +14,29 @@ tests:
     command: python -c "from brainles_preprocessing.preprocessor import Preprocessor, AtlasCentricPreprocessor; print('preprocessors ok')"
     expected_output_contains: "preprocessors ok"
 
-  - name: the preprocessor console script is on PATH
-    command: command -v preprocessor
-    expected_output_contains: "preprocessor"
+  - name: the preprocessor console script runs
+    description: >-
+      As shipped, cli.py annotates output_dir as `str | Path`. Typer cannot
+      build a parameter from a union type and raises at import, so every
+      invocation failed -- including --help. The recipe patches the annotation.
+      The previous test only ran `command -v preprocessor`, which passes on a
+      script that cannot start, so the broken CLI shipped and was exported.
+    command: env NO_COLOR=1 TERM=dumb COLUMNS=200 preprocessor --help
+    expected_output_contains: "output_dir"
+
+  - name: the preprocessor atlas default is not a label
+    description: >-
+      input_atlas defaulted to the string "SRI24 BraTS atlas", which is a name,
+      not a path, and the body only guards with `if input_atlas is not None` --
+      so the default was passed through as atlas_image_path and registration
+      failed on a missing file. None lets it fall through to the bundled atlas.
+    command: |
+      python -c "
+      import inspect
+      from brainles_preprocessing import cli
+      print('input_atlas default:', repr(inspect.signature(cli.main).parameters['input_atlas'].default))
+      "
+    expected_output_contains: "input_atlas default: None"
 
   - name: the SRI24 atlas is bundled
     description: >-
@@ -54,9 +74,19 @@ tests:
       python -c "
       import pathlib, brainles_preprocessing as m
       d = pathlib.Path(m.__file__).parent / 'brain_extraction' / 'weights'
-      print('synthstrip-files', len(list(d.rglob('*'))) if d.is_dir() else 0)
+      n = len(list(d.rglob('*.pt'))) if d.is_dir() else 0
+      print('synthstrip-weights', 'ok' if n else 'MISSING', n)
       "
-    expected_output_contains: "synthstrip-files"
+    expected_output_contains: "synthstrip-weights ok"
+
+  - name: the SynthStrip extractor imports
+    description: >-
+      The weights were baked but brain_extraction/synthstrip.py imports
+      nipreps.synthstrip, which lives behind the package's `synthstrip` extra
+      and was not installed -- so the extractor could not be constructed and
+      the baked weights were dead payload. The recipe installs the extra.
+    command: python -c "from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor; print('synthstrip extractor ok')"
+    expected_output_contains: "synthstrip extractor ok"
 
   - name: runs outside HOME
     description: $HOME does not exist at container runtime.
