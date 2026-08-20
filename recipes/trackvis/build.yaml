@@ -20,6 +20,7 @@ build:
         - fontconfig
         - libXext
         - mesa-libGLU
+        - mesa-dri-drivers
 
     - workdir: /opt/trackvis-{{ context.version }}
 
