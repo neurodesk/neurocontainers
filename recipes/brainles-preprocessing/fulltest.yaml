@@ -85,7 +85,7 @@ tests:
       nipreps.synthstrip, which lives behind the package's `synthstrip` extra
       and was not installed -- so the extractor could not be constructed and
       the baked weights were dead payload. The recipe installs the extra.
-    command: python -c "from brainles_preprocessing.brain_extraction import SynthStripExtractor; print('synthstrip extractor ok')"
+    command: python -c "from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor; print('synthstrip extractor ok')"
     expected_output_contains: "synthstrip extractor ok"
 
   - name: runs outside HOME

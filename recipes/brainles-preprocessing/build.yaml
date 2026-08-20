@@ -42,7 +42,7 @@ build:
         # numpy<2.0, so an unpinned resolve either backtracks a long way or
         # lands on an unsatisfiable pair. 24.1.x accepts numpy>=1.21.
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir "nitransforms>=24.1,<25" "nipreps-synthstrip>=0.0.1,<0.0.2"
-        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction import SynthStripExtractor; print('synthstrip extractor ok')"
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor; print('synthstrip extractor ok')"
 
     - run:
         # The `preprocessor` console script fails on every invocation as
@@ -218,9 +218,13 @@ readme: |
   image, so nothing is downloaded at run time:
 
   ```
-  HDBetExtractor      default; brainles_hd_bet with all five folds
-  SynthStripExtractor via the nipreps-synthstrip extra
+  from brainles_preprocessing.brain_extraction import HDBetExtractor
+  from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor
   ```
+
+  `HDBetExtractor` is the default. `SynthStripExtractor` is imported from its
+  own submodule rather than the package: upstream does not re-export it,
+  because it depends on the optional nipreps-synthstrip extra.
 
   ### CPU
 
