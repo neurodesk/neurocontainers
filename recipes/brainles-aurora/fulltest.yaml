@@ -1,5 +1,6 @@
 name: brainles-aurora
 version: 0.2.7
+weights_version: "1.0.0"
 
 tests:
   - name: package imports
@@ -37,9 +38,32 @@ tests:
   - name: weights are pinned, not fetched at run time
     description: >-
       The Zenodo lookup is disabled at build time so the image cannot swap its
-      weights underneath a user; this fails if that patch is ever lost.
-    command: python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; print('pinned' if f()==(None,None) else 'NOT-PINNED')"
+      weights underneath a user; this fails if that patch is ever lost. The pin
+      reports the baked version rather than (None, None) so that
+      check_model_weights takes its "already present" branch: returning None
+      made it log "Zenodo server could not be reached", describing a network
+      failure that never happened.
+    command: python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; m,u=f(); print('pinned' if m=={'version':'${weights_version}'} and u=='' else 'NOT-PINNED')"
     expected_output_contains: "pinned"
+
+  - name: resolving the weights logs no network failure
+    description: >-
+      The user-visible symptom of the old pin: every run warned about an
+      unreachable Zenodo server, sending people after a proxy problem that does
+      not exist.
+    command: |
+      python -c "
+      import logging, io
+      buf = io.StringIO()
+      logging.basicConfig(stream=buf, level=logging.DEBUG, force=True)
+      import brainles_aurora.inferer
+      from brainles_aurora.utils.weights import check_model_weights
+      p = check_model_weights()
+      out = buf.getvalue()
+      print('resolved', str(p).endswith('weights_v${weights_version}'))
+      print('NETWORK-WARNING' if 'could not be reached' in out else 'no-network-warning')
+      "
+    expected_output_contains: "no-network-warning"
 
   - name: aurora CLI is on PATH and renders help
     description: >-
@@ -47,3 +71,42 @@ tests:
       would catch it going missing or failing to import its dependencies.
     command: aurora --help
     expected_output_contains: "usage: aurora"
+
+  - name: an unsupported modality combination fails immediately
+    description: >-
+      Only 7 of the 15 combinations have a model. Upstream raises
+      NotImplementedError, but only after torch, monai and the 330 MB weight
+      directory have loaded. The wrapper rejects it up front and names the
+      combinations that do work.
+    command: |
+      out="$(aurora -t1 a.nii.gz -t2 b.nii.gz -o seg.nii.gz 2>&1)" && rc=0 || rc=$?
+      echo "$out" | grep -q 'T2 is only usable' && echo "lists-valid-combinations"
+      echo "exit=$rc"
+    expected_output_contains: "lists-valid-combinations"
+
+  - name: inference runs and accepts a bare relative output path
+    description: >-
+      The form printed in this container's own README. Upstream's save_as_nifti
+      calls os.makedirs(os.path.dirname(output_file)) with no guard, and
+      os.makedirs("") raises -- after inference has completed, so a user lost
+      the whole run and got no output. The wrapper now makes output paths
+      absolute. This also covers the critical path end to end: weights resolve,
+      model loads, inference runs, NIfTI is written.
+    timeout: 900
+    command: |
+      cd "$(mktemp -d)"
+      python -c "
+      import nibabel as nib, numpy as np
+      nib.save(nib.Nifti1Image(np.random.rand(128,128,32).astype('float32'), np.eye(4)), 't1c.nii.gz')
+      "
+      aurora -t1c t1c.nii.gz -o seg.nii.gz --whole-tumor-mask whole.nii.gz --no-tta --device cpu
+      python -c "
+      import nibabel as nib, numpy as np
+      seg = np.unique(nib.load('seg.nii.gz').get_fdata())
+      whole = np.unique(nib.load('whole.nii.gz').get_fdata())
+      assert set(seg.tolist()) <= {0.0, 1.0, 2.0}, seg
+      # the channel outputs are thresholded masks, never probabilities
+      assert set(whole.tolist()) <= {0.0, 1.0}, whole
+      print('inference-ok')
+      "
+    expected_output_contains: "inference-ok"
