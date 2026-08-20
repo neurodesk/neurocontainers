@@ -4,11 +4,16 @@
 # without requiring manual annotations for training. The container bundles the
 # authors' pre-trained model, their nnU-Net fork, ROBEX and ANTs.
 #
-# The suite verifies the interfaces, the installed model tree and the external
-# tools, and then runs one real segmentation on a small synthetic phantom.
-# That last test is slow, but every earlier suite stopped at --help and a file
-# listing, which is why a container that could not run a single inference at
-# all -- and one that wrote unreadable previews -- both shipped.
+# The suite verifies the interfaces, the installed model tree, the external
+# tools, and the two output defects that used to be silent.
+#
+# It does NOT run a full segmentation. That was tried: DeepWMH skull-strips
+# with ROBEX before inference, and ROBEX fits a trained shape model, so it
+# rejects a synthetic phantom outright (measured: it fails in under 3s). A real
+# end-to-end run needs a real T2-FLAIR brain, and no image in this stack ships
+# one, so it cannot be done offline in CI. Instead, the nnU-Net model restore
+# below exercises the exact call chain that used to fail -- which is where a
+# container that could not run a single inference would still be caught.
 
 name: deepwmh
 version: 1.0.1
@@ -299,62 +304,32 @@ tests:
   # ==========================================================================
   # END-TO-END
   # ==========================================================================
-  - name: segments a synthetic phantom end to end
+  - name: the nnU-Net model restores from the read-only image
     description: >-
-      The test the suite never had: it stopped at --help and file listings,
-      which is why a container that could not run a single inference shipped.
-      Runs the documented invocation on a small phantom and checks the declared
-      final mask exists and is labelled 0/1.
+      This is the call chain that made every inference fail: nnUNet_predict ->
+      load_model_and_checkpoint_files -> restore_model instantiates
+      nnUNetTrainerV2, whose __init__ calls print_to_log_file, which opens
+      training_log_<stamp>.txt in self.output_folder. That folder is restored
+      from the model pickle and points at /opt/deepwmh-model, inside the
+      read-only squashfs, so it died with "OSError: [Errno 30] Read-only file
+      system" after loading the model.
 
-      The runner reports only a test's exit code, never its output, so the
-      failure stage is encoded in the code. 41/42 mean ROBEX cannot skull-strip
-      the synthetic phantom, which is a limit of the phantom rather than the
-      container: ROBEX fits a trained shape model and a geometric blob is not a
-      brain. 30 read-only filesystem, 32 nnU-Net or torch, 33 out of memory, 34
-      unclassified, 20 no final mask, 21 unexpected labels. Classification reads
-      only the tail of the log, because every stage name also appears in the
-      normal progress output -- grepping the whole log cannot tell a stage that
-      failed from one that merely ran.
-    timeout: 3600
+      Loading the real weights through upstream's own entry point is a stronger
+      check than grepping for the patch: it fails if the fallback stops working
+      for any reason, not only if the patch text goes missing. A full
+      segmentation cannot be tested here -- ROBEX rejects a synthetic phantom,
+      and no real T2-FLAIR brain ships in this stack.
+    timeout: 900
     command: |
-      cd "$(mktemp -d)"
       python -c "
-      import numpy as np, nibabel as nib
-      rng = np.random.default_rng(0)
-      shape = (64, 64, 48)
-      zz, yy, xx = np.mgrid[0:shape[0], 0:shape[1], 0:shape[2]]
-      c = (shape[0]/2, shape[1]/2, shape[2]/2)
-      r = ((zz-c[0])/26.0)**2 + ((yy-c[1])/26.0)**2 + ((xx-c[2])/20.0)**2
-      brain = r <= 1.0
-      vol = np.zeros(shape, 'float32')
-      vol[brain] = 100 + rng.normal(0, 4, brain.sum())
-      for off in (-6, 0, 6):
-          vol[30:34, 30+off:34+off, 22:26] = 220
-      nib.save(nib.Nifti1Image(vol, np.eye(4)), 'flair.nii.gz')
+      import os, pathlib
+      from nnunet.training.model_restore import load_model_and_checkpoint_files
+      root = pathlib.Path(os.environ['DEEPWMH_MODEL_DIR'])
+      best = next(root.rglob('model_best.model'))
+      folder = best.parent.parent
+      print('restoring from', folder)
+      trainer, params = load_model_and_checkpoint_files(
+          str(folder), folds='all', checkpoint_name='model_best')
+      print('model-restored params', len(params))
       "
-      # ROBEX on its own first, so a phantom it cannot strip is distinguishable
-      # from a genuine failure further down the pipeline.
-      "$ROBEX_DIR/runROBEX.sh" flair.nii.gz stripped.nii.gz mask.nii.gz > robex.log 2>&1 || exit 41
-      test -s stripped.nii.gz || exit 42
-
-      deepwmh -i flair.nii.gz -n phantom -o out -g -1 --skip-bfc > run.log 2>&1 || rc=$?
-      if [ -n "${rc:-}" ]; then
-          tail -40 run.log
-          tail -25 run.log > tail.log
-          grep -qi 'read-only file system\|Errno 30' tail.log && exit 30
-          grep -qi 'nnunet\|torch\|cuda' tail.log && exit 32
-          grep -qi 'memoryerror\|out of memory\|killed' tail.log && exit 33
-          exit 34
-      fi
-      python -c "
-      import glob, sys, numpy as np, nibabel as nib
-      hits = glob.glob('out/002_Segmentations/003_postproc_fov/*.nii*')
-      if not hits:
-          print('tree:', sorted(glob.glob('out/**', recursive=True))[:40]); sys.exit(20)
-      dat = nib.load(hits[0]).get_fdata()
-      vals = set(np.unique(dat).tolist())
-      if not vals <= {0.0, 1.0}:
-          print('labels', sorted(vals)); sys.exit(21)
-      print('segmentation-ok labels', sorted(vals))
-      "
-    expected_output_contains: "segmentation-ok"
+    expected_output_contains: "model-restored params"
