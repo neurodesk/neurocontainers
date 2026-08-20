@@ -142,8 +142,10 @@ files:
                          help="torch device. Defaults to cuda when a GPU is present, "
                               "otherwise cpu.")
           p.add_argument("--threads", type=int, default=None,
-                         help="CPU threads. Defaults to $SLURM_CPUS_PER_TASK, then "
-                              "$OMP_NUM_THREADS, then every core on the machine.")
+                         help="CPU threads. Defaults to every core on the machine. "
+                              "Under Slurm pass --threads $SLURM_CPUS_PER_TASK: the "
+                              "module wrapper runs the container with --cleanenv, "
+                              "so the scheduler's variables do not reach this CLI.")
           a = p.parse_args(argv)
 
           if not any([a.t1c, a.fla, a.t1, a.t2]):
@@ -163,6 +165,10 @@ files:
 
           # torch and nnU-Net otherwise use every core on the machine rather than
           # the cores this job was allocated, which oversubscribes shared nodes.
+          # This env fallback only fires when the variables actually reach the
+          # process: the Neurodesk module wrapper execs the container with
+          # --cleanenv, which strips them, so under Slurm --threads must be
+          # passed explicitly.
           threads = a.threads
           if threads is None:
               for _var in ("SLURM_CPUS_PER_TASK", "OMP_NUM_THREADS"):
@@ -259,9 +265,11 @@ readme: |-
   A GPU is used when present. On a CPU-only node the tool selects CPU
   automatically; expect roughly 9 minutes per case on 4 cores, within 12 GB.
 
-  On a shared or HPC node the thread count defaults to $SLURM_CPUS_PER_TASK,
-  then $OMP_NUM_THREADS, so the job stays inside its allocation. Override with
-  `--threads`. Force a device with `--device cpu` or `--device cuda`.
+  The thread count defaults to every core on the machine. Under Slurm pass
+  `--threads $SLURM_CPUS_PER_TASK` to stay inside your allocation: the module
+  wrapper runs the container with `--cleanenv`, so $SLURM_CPUS_PER_TASK and
+  $OMP_NUM_THREADS never reach the tool and a 4-CPU job would otherwise use
+  every core on the node. Force a device with `--device cpu` or `--device cuda`.
 
   ### From Python
 
