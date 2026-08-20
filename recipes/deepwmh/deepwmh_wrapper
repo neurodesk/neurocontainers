@@ -1,0 +1,39 @@
+#!/bin/bash
+# Thin wrapper: DeepWMH_predict with the bundled model pre-selected.
+#
+# -h/--help is intercepted because DeepWMH_predict's own usage calls the
+# program DeepWMH_predict and lists "-m TRAINED_MODEL" as required, which
+# contradicts every example in this container's readme -- none of which pass
+# -m, because this wrapper supplies it.
+set -e
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    printf '%s\n' \
+        'usage: deepwmh -i FLAIR [FLAIR ...] -n NAME [NAME ...] -o OUTPUT_FOLDER' \
+        '               [-g GPU] [--skip-bfc]' \
+        '' \
+        'Segment white matter hyperintensities from a single T2-FLAIR image.' \
+        '' \
+        'required arguments:' \
+        '  -i, --input-images    one or more T2-FLAIR images (NIfTI). The input is' \
+        '                        not checked: a T1w produces plausible nonsense' \
+        '  -n, --case-names      one name per input image. Alphanumerics, ".", "_"' \
+        '                        and "-" only, and never the substring "_to_"' \
+        '  -o, --output-folder   output directory' \
+        '' \
+        'optional arguments:' \
+        '  -g, --gpu             GPU id (default 0). With no GPU present the tool' \
+        '                        warns and runs on CPU; -g -1 forces CPU' \
+        '      --skip-bfc        skip ANTs N4 bias field correction. Faster, but the' \
+        '                        authors warn accuracy degrades on bias-corrupted' \
+        '                        images, and it measurably over-segments' \
+        '' \
+        'The bundled model is already selected, so -m is not needed. To use your own' \
+        'model, call DeepWMH_predict directly with -m /path/to/model.' \
+        '' \
+        'The final mask is <output-folder>/002_Segmentations/003_postproc_fov/.' \
+        'Run "DeepWMH_predict --help" for the underlying tool'"'"'s full option list.'
+    exit 0
+fi
+
+exec DeepWMH_predict -m "${DEEPWMH_MODEL_DIR:-/opt/deepwmh-model}" "$@"
