@@ -31,6 +31,35 @@ build:
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')"
 
     - run:
+        # SynthStrip is one of the two brain extractors this package exposes and
+        # its weights are baked in below, but it lives behind an optional extra:
+        # brain_extraction/synthstrip.py imports nipreps.synthstrip, so without
+        # this SynthStripExtractor could not be imported and the baked weights
+        # were dead payload.
+        #
+        # nitransforms is pinned because it is what forces the version choice:
+        # 25.x requires numpy>=2.0 while brainles-preprocessing requires
+        # numpy<2.0, so an unpinned resolve either backtracks a long way or
+        # lands on an unsatisfiable pair. 24.1.x accepts numpy>=1.21.
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir "nitransforms>=24.1,<25" "nipreps-synthstrip>=0.0.1,<0.0.2"
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction import SynthStripExtractor; print('synthstrip extractor ok')"
+
+    - run:
+        # The `preprocessor` console script fails on every invocation as
+        # shipped, including --help. See the patch for the two annotations.
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_preprocessor_cli") }}
+        # Fail the build rather than ship a command that cannot start. This is
+        # the check that was missing: the recipe exported the script and the
+        # test only looked for it on PATH, which passes on a broken script.
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/preprocessor --help > /dev/null && echo "preprocessor --help ok"
+
+    - run:
+        # python itself is deliberately not exported (see deploy), so give the
+        # library a named interpreter rather than no route in at all.
+        - install -m 0755 {{ get_file("preprocessing_python_helper") }} /usr/local/bin/brainles-preprocessing-python
+        - brainles-preprocessing-python -c "import brainles_preprocessing; print('wrapper ok')"
+
+    - run:
         # Bake the atlases and SynthStrip weights into the image.
         #
         # Without this the container cannot do the one job it exists for. Both
@@ -72,6 +101,10 @@ build:
         PATH: /opt/miniconda-py311_24.9.2-0/envs/brainles/bin:$PATH
 
 files:
+  - name: fix_preprocessor_cli
+    filename: fix_preprocessor_cli.py
+  - name: preprocessing_python_helper
+    filename: brainles-preprocessing-python
   - name: bake_atlases.py
     contents: |
       """Download the atlases and SynthStrip weights into the installed package.
@@ -131,8 +164,15 @@ files:
       bake(z.SYNTHSTRIP_RECORD_ID, z.SYNTHSTRIP_FOLDER, "synthstrip")
 
 deploy:
-  path:
-    - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin
+  # Named individually rather than exporting the environment's bin directory.
+  # That directory holds ~56 executables -- python, python3, python3.11, pip,
+  # conda, tclsh, wish and every dependency's console script -- so loading this
+  # module silently replaced the host interpreter for the rest of the shell
+  # while pip still resolved to the host.
+  bins:
+    - preprocessor
+    - hd-bet
+    - brainles-preprocessing-python
 
 tests:
   - name: "import brainles_preprocessing"
@@ -150,19 +190,53 @@ readme: |
   for brain MRI: co-registration, atlas alignment, skull-stripping, defacing
   and intensity normalization.
 
-  This is a Python library (no command-line tool). It is configured in code via
-  Modality / Preprocessor classes:
+  ### Commands
+
+  ```
+  preprocessor                     one-shot preprocessing of a single subject
+  hd-bet                           brain extraction on its own
+  brainles-preprocessing-python    this container's interpreter
+  ```
+
+  `python` is deliberately not exported: putting this environment's bin
+  directory on your PATH replaced the host interpreter for the rest of the
+  shell. Use `brainles-preprocessing-python` to import the library.
 
   ```
   ml brainles-preprocessing/{{ context.version }}
-  python -c "from brainles_preprocessing.preprocessor import Preprocessor; print('ok')"
+  preprocessor --help
+  brainles-preprocessing-python -c "from brainles_preprocessing.preprocessor import Preprocessor; print('ok')"
   ```
 
-  Registration uses the bundled antspyx backend (CPU) out of the box.
-  Brain extraction backends (HD-BET, SynthStrip) and extra registration
-  backends (greedy, elastix) are optional extras and are NOT installed here to
-  keep the image lean. HD-BET is available as its own Neurodesk module
-  (`ml hdbet`) and can be used alongside this one.
+  ### Backends
+
+  Registration uses the bundled antspyx backend (CPU) out of the box. The extra
+  registration backends (greedy, elastix) are optional extras and are not
+  installed here.
+
+  Both brain extractors are installed and their weights are baked into the
+  image, so nothing is downloaded at run time:
+
+  ```
+  HDBetExtractor      default; brainles_hd_bet with all five folds
+  SynthStripExtractor via the nipreps-synthstrip extra
+  ```
+
+  ### CPU
+
+  HD-BET's defaults assume a GPU: `device=0`, `mode="accurate"` and
+  `do_tta=True` (test-time augmentation over all mirror axes). On a CPU-only
+  node that combination takes hours per volume. Pass all three:
+
+  ```
+  HDBetExtractor().extract(
+      input_image_path=..., masked_image_path=..., brain_mask_path=...,
+      device="cpu", mode="fast", do_tta=False,
+  )
+  ```
+
+  The atlases are bundled too, including the SRI24 BraTS template that petu and
+  gliomoda expect their input to be registered to.
 
   Docs: https://github.com/BrainLesion/preprocessing
 
