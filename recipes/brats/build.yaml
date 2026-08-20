@@ -264,7 +264,17 @@ files:
               # also return meningioma_rt (11 images instead of 5) and
               # --task adult-glioma-pre also return pre-post, so the readme's
               # "pull every image for a task" pipeline silently over-pulled.
+              #
+              # The two adult-glioma task names do not equal their metadata
+              # stems, so they are mapped explicitly. Without this,
+              # adult-glioma-pre kept falling back to the substring match, and
+              # adult-glioma-pre-post -- whose "pre_post" is a substring of
+              # nothing -- had always errored with "no task matching".
               want = a.task.replace("-", "_")
+              want = {
+                  "adult_glioma_pre": "adult_glioma_pre_treatment",
+                  "adult_glioma_pre_post": "adult_glioma_pre_and_post_treatment",
+              }.get(want, want)
               exact = [f for f in files if f.stem == want]
               files = exact or [f for f in files if want in f.stem]
               if not files:

@@ -144,7 +144,9 @@ tests:
       mkdir -p /tmp/brats-wd-test
       env TMPDIR=/tmp/brats-wd-test python -c "
       import os, pathlib
-      sandbox = pathlib.Path('/tmp/brats-wd-test/brats_singularity_images/example_image_latest')
+      # only the colon is replaced in sandbox names, so the registry
+      # namespace ('example/') stays a nested directory
+      sandbox = pathlib.Path('/tmp/brats-wd-test/brats_singularity_images/example/image_latest')
       sandbox.mkdir(parents=True, exist_ok=True)
       (sandbox / '.brats_docker_workdir').write_text('/mlcube_project\n')
       from brats.core.singularity import _get_docker_working_dir
@@ -173,8 +175,9 @@ tests:
     command: |
       m=$(brats-algorithms --task meningioma --images-only | wc -l)
       g=$(brats-algorithms --task adult-glioma-pre --images-only | wc -l)
-      echo "meningioma=$m adult-glioma-pre=$g"
-    expected_output_contains: "meningioma=5 adult-glioma-pre=3"
+      pp=$(brats-algorithms --task adult-glioma-pre-post --images-only | wc -l)
+      echo "meningioma=$m adult-glioma-pre=$g adult-glioma-pre-post=$pp"
+    expected_output_contains: "meningioma=5 adult-glioma-pre=3 adult-glioma-pre-post=7"
 
   - name: brats-pull builds atomically
     description: >-
