@@ -21,9 +21,6 @@ tests:
   - name: brainles_preprocessing distribution is healthy
     command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_preprocessing"); assert d.version == "0.6.10" and len(tuple(d.files or ())) > 20'
 
-  - name: brats distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("brats"); assert d.version == "0.0.27" and len(tuple(d.files or ())) > 10'
-
   - name: deep_quality_estimation distribution is healthy
     command: python -c 'from importlib.metadata import distribution; d=distribution("deep_quality_estimation"); assert d.version == "0.0.3" and len(tuple(d.files or ())) > 5'
 
@@ -44,9 +41,6 @@ tests:
 
   - name: brainles_preprocessing imports
     command: python -c 'import brainles_preprocessing'
-
-  - name: brats imports
-    command: python -c 'import brats'
 
   - name: deep_quality_estimation imports
     command: python -c 'import deep_quality_estimation'
@@ -92,12 +86,6 @@ tests:
 
   - name: Preprocessing registration modules import
     command: python -c 'import brainles_preprocessing.registration.ANTs.ANTs, brainles_preprocessing.registration.niftyreg.niftyreg'
-
-  - name: BraTS core modules import
-    command: python -c 'import brats.core.brats_algorithm, brats.core.inpainting_algorithms, brats.core.missing_mri_algorithms, brats.core.segmentation_algorithms'
-
-  - name: BraTS utility modules import
-    command: python -c 'import brats.utils.algorithm_config, brats.utils.data_handling, brats.utils.exceptions, brats.utils.zenodo'
 
   - name: DQE processing modules import
     command: python -c 'import deep_quality_estimation.center_of_mass, deep_quality_estimation.enums, deep_quality_estimation.transforms'
@@ -209,26 +197,6 @@ tests:
   - name: DQE packaged model weights are nonempty
     command: python -c 'from importlib.resources import files; p=files("deep_quality_estimation").joinpath("weights/dqe_weights.pth"); assert p.is_file() and p.stat().st_size > 1000000'
 
-  - name: BraTS metadata catalog loads
-    command: |
-      python - <<'PY'
-      from importlib.resources import files
-      from brats.utils.algorithm_config import load_algorithms
-      path = files("brats").joinpath("data/meta/adult_glioma_pre_treatment.yml")
-      algorithms = load_algorithms(path)
-      assert algorithms
-      assert all(item.meta.authors and item.run_args.docker_image for item in algorithms.values())
-      PY
-
-  - name: BraTS algorithm parameters are valid YAML
-    command: python -c 'from importlib.resources import files; import yaml; data=yaml.safe_load(files("brats").joinpath("data/parameters/brats24_adult_glioma_mist.yml").read_text()); assert isinstance(data, dict) and data'
-
-  - name: BraTS metadata includes multiple challenge families
-    command: python -c 'from importlib.resources import files; names={p.name for p in files("brats").joinpath("data/meta").iterdir() if p.suffix==".yml"}; assert {"africa.yml","inpainting.yml","meningioma.yml","pediatric.yml"}.issubset(names)'
-
-  - name: BraTS algorithm classes are exposed
-    command: python -c 'from brats import AdultGliomaPreTreatmentSegmenter, AfricaSegmenter, Inpainter, MissingMRI; assert all(callable(x) for x in (AdultGliomaPreTreatmentSegmenter,AfricaSegmenter,Inpainter,MissingMRI))'
-
   - name: Aurora default configuration is safe for CPU discovery
     command: python -c 'from brainles_aurora.inferer.config import AuroraInfererConfig; c=AuroraInfererConfig(); assert c.workers == 0 and c.sliding_window_batch_size == 1 and 0 < c.threshold < 1'
 
@@ -283,7 +251,7 @@ tests:
     description: >-
       The shipped build test ran only "python --version" then "exit 1", so no
       component was ever imported at build time.
-    command: python -c "import panoptica, deep_quality_estimation, gliomoda, petu, brats, brainles_preprocessing, brainles_hd_bet; print('components ok')"
+    command: python -c "import panoptica, deep_quality_estimation, gliomoda, petu, brainles_preprocessing, brainles_hd_bet; print('components ok')"
     expected_output_contains: "components ok"
 
   - name: aurora imports
