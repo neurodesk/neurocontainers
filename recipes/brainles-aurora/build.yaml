@@ -112,8 +112,9 @@ build:
         # An unsupported modality combination must be rejected by the wrapper
         # before it imports torch, so the user finds out immediately instead of
         # after the weights have loaded. Exit status 2 is argparse's usage error.
-        - . "${VENV}/bin/activate" && ! aurora -t1 a.nii.gz -t2 b.nii.gz -o seg.nii.gz 2>/dev/null
-        - . "${VENV}/bin/activate" && aurora --help | grep -q 't1-t1c-t2-fla' && echo "combination help ok"
+        - . "${VENV}/bin/activate" && ! aurora -t1 a.nii.gz -t2 b.nii.gz -o seg.nii.gz > /tmp/combination.txt 2>&1 && grep -q 'no model exists' /tmp/combination.txt && echo "combination rejected early"
+        - . "${VENV}/bin/activate" && aurora --help | grep -q 'T2 is only usable' && echo "combination help ok"
+        - rm -f /tmp/combination.txt
         - chmod -R a+rX "${VENV}"
         - rm -rf /root/.cache/pip /tmp/mpl-brainles-aurora /tmp/cache-brainles-aurora
 

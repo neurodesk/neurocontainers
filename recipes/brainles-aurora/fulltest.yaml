@@ -80,7 +80,7 @@ tests:
       combinations that do work.
     command: |
       out="$(aurora -t1 a.nii.gz -t2 b.nii.gz -o seg.nii.gz 2>&1)" && rc=0 || rc=$?
-      echo "$out" | grep -q 't1-t1c-t2-fla' && echo "lists-valid-combinations"
+      echo "$out" | grep -q 'T2 is only usable' && echo "lists-valid-combinations"
       echo "exit=$rc"
     expected_output_contains: "lists-valid-combinations"
 
