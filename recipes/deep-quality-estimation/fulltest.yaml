@@ -35,3 +35,73 @@ tests:
       would catch it going missing or failing to import its dependencies.
     command: deep-quality-estimation --help
     expected_output_contains: "usage: deep-quality-estimation"
+
+  - name: help carries the atlas-space requirement and label table
+    description: >-
+      Upstream marks the atlas-space requirement IMPORTANT and the
+      overestimation bias CAUTION. Neither reached the container, and §3.4 of
+      the container test showed a misaligned segmentation is scored silently --
+      so a user supplying native-space images gets a plausible number and no
+      warning anywhere.
+    command: env NO_COLOR=1 COLUMNS=200 deep-quality-estimation --help
+    expected_output_contains: "atlas space"
+
+  - name: help documents the overestimation bias
+    command: env NO_COLOR=1 COLUMNS=200 deep-quality-estimation --help
+    expected_output_contains: "overestimate segmentation quality"
+
+  - name: inputs are validated before the model is loaded
+    description: >-
+      Each of these previously failed either opaquely or not at all. A 4D input
+      raised "RuntimeError: applying transform <SpatialPadd object at 0x...>",
+      naming neither the file nor the problem, when the fix is a one-line
+      squeeze; an all-zero segmentation raised "cannot convert float NaN to
+      integer"; a shape mismatch surfaced as a ConcatItemsd failure.
+    timeout: 300
+    command: |
+      cd "$(mktemp -d)"
+      python -c "
+      import nibabel as nib, numpy as np
+      aff = np.eye(4)
+      img = np.random.rand(32,32,24).astype('float32')
+      seg = np.zeros((32,32,24),'float32'); seg[12:18,12:18,8:12] = 1
+      for n in ('t1c','t1','t2','fla'): nib.save(nib.Nifti1Image(img,aff), n+'.nii.gz')
+      nib.save(nib.Nifti1Image(seg,aff), 'seg.nii.gz')
+      nib.save(nib.Nifti1Image(np.zeros((32,32,24),'float32'),aff), 'empty.nii.gz')
+      nib.save(nib.Nifti1Image(seg[...,None],aff), 'seg4d.nii.gz')
+      nib.save(nib.Nifti1Image(np.random.rand(40,40,24).astype('float32'),aff), 'big.nii.gz')
+      "
+      base="-t1 t1.nii.gz -t2 t2.nii.gz -fla fla.nii.gz"
+      deep-quality-estimation -t1c missing.nii.gz $base -s seg.nii.gz 2>&1 | grep -q 'input file not found' && echo "missing-file-ok"
+      deep-quality-estimation -t1c t1c.nii.gz $base -s empty.nii.gz 2>&1 | grep -q 'no labelled voxels' && echo "empty-seg-ok"
+      deep-quality-estimation -t1c t1c.nii.gz $base -s seg4d.nii.gz 2>&1 | grep -q 'expected a 3D volume' && echo "4d-ok"
+      deep-quality-estimation -t1c big.nii.gz $base -s seg.nii.gz 2>&1 | grep -q 'same grid' && echo "shape-mismatch-ok"
+      echo "validation-done"
+    expected_output_contains: "validation-done"
+
+  - name: rates a segmentation with no --device flag
+    description: >-
+      The README claimed DQE defaults to cuda and that --device cpu is required
+      without a GPU. _set_device already auto-detects, so no flag is needed.
+      This also covers the critical path end to end and the new -o/--json.
+    timeout: 900
+    command: |
+      cd "$(mktemp -d)"
+      python -c "
+      import nibabel as nib, numpy as np
+      aff = np.eye(4)
+      img = np.random.rand(64,64,32).astype('float32')
+      seg = np.zeros((64,64,32),'float32'); seg[26:38,26:38,12:20] = 1; seg[30:34,30:34,14:18] = 3
+      for n in ('t1c','t1','t2','fla'): nib.save(nib.Nifti1Image(img,aff), n+'.nii.gz')
+      nib.save(nib.Nifti1Image(seg,aff), 'seg.nii.gz')
+      "
+      deep-quality-estimation -t1c t1c.nii.gz -t1 t1.nii.gz -t2 t2.nii.gz \
+          -fla fla.nii.gz -s seg.nii.gz --json -o score.json
+      python -c "
+      import json
+      d = json.load(open('score.json'))
+      assert isinstance(d['mean_score'], float), d
+      assert len(d['view_scores']) == 3, d
+      print('rated-ok', round(d['mean_score'], 2))
+      "
+    expected_output_contains: "rated-ok"
