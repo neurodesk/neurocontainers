@@ -82,6 +82,10 @@ build:
         # The additional-files folder must never resolve into site-packages,
         # which is read-only at run time: every one of the 66 algorithms
         # touches it and died there with Errno 30.
+        # The directory must exist first: tempfile.gettempdir() validates its
+        # candidates and silently falls back to /tmp when TMPDIR names a
+        # directory that does not exist.
+        - mkdir -p /tmp/brats-afcheck
         - >-
           . "${VENV}/bin/activate" && env TMPDIR=/tmp/brats-afcheck python -c "import brats.constants as c, pathlib; p=pathlib.Path(c.ADDITIONAL_FILES_FOLDER); assert 'site-packages' not in str(p), p; assert str(p).startswith('/tmp/brats-afcheck'), p; p.mkdir(parents=True, exist_ok=True); print('additional files land in', p)"
         - rm -rf /tmp/brats-afcheck
@@ -106,7 +110,8 @@ build:
         - rm -f /tmp/brats-cli-check.log /tmp/o.nii.gz
         # The docker-absent probe must not shout ERROR at every command (docker
         # can never exist here, and the message told users to install it).
-        - . "${VENV}/bin/activate" && brats-algorithms --images-only 2>/tmp/brats-stderr.log >/dev/null; test ! -s /tmp/brats-stderr.log || { echo '--- stderr not clean ---'; cat /tmp/brats-stderr.log; exit 1; }
+        - . "${VENV}/bin/activate" && brats-algorithms --images-only 2>/tmp/brats-stderr.log >/dev/null
+        - bash -c "test ! -s /tmp/brats-stderr.log || { echo '--- stderr not clean ---'; cat /tmp/brats-stderr.log; exit 1; }"
         - rm -f /tmp/brats-stderr.log
         # The lister reads the packaged metadata, so prove it parses it here.
         - . "${VENV}/bin/activate" && test "$(brats-algorithms --images-only | wc -l)" -gt 50

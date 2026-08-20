@@ -89,6 +89,8 @@ tests:
       the other 50 mkdir a dummy), and site-packages is read-only at run time,
       so all 66 algorithms died with Errno 30 before doing anything.
     command: |
+      # gettempdir() silently ignores a TMPDIR that does not exist
+      mkdir -p /tmp/brats-af-test
       env TMPDIR=/tmp/brats-af-test python -c "
       import pathlib
       import brats.constants as c
@@ -139,6 +141,7 @@ tests:
       WorkingDir during sandbox conversion, so brats-pull records it at pull
       time and the backend reads that record. This simulates a recorded pull.
     command: |
+      mkdir -p /tmp/brats-wd-test
       env TMPDIR=/tmp/brats-wd-test python -c "
       import os, pathlib
       sandbox = pathlib.Path('/tmp/brats-wd-test/brats_singularity_images/example_image_latest')
