@@ -301,15 +301,20 @@ tests:
   # ==========================================================================
   - name: segments a synthetic phantom end to end
     description: >-
-      The test the suite never had. Runs the documented invocation on a small
-      phantom and checks the declared final mask exists and is labelled 0/1.
-      This is the check that would have caught the read-only model directory,
-      which made every inference fail, and the unreadable previews.
+      The test the suite never had: it stopped at --help and file listings,
+      which is why a container that could not run a single inference shipped.
+      Runs the documented invocation on a small phantom and checks the declared
+      final mask exists and is labelled 0/1.
 
       The runner reports only a test's exit code, never its output, so the
-      failure stage is encoded in the code: 30 read-only filesystem, 31 ROBEX
-      skull stripping, 32 nnU-Net or torch, 33 out of memory, 34 another
-      non-zero exit, 20 no final mask written, 21 unexpected label values.
+      failure stage is encoded in the code. 41/42 mean ROBEX cannot skull-strip
+      the synthetic phantom, which is a limit of the phantom rather than the
+      container: ROBEX fits a trained shape model and a geometric blob is not a
+      brain. 30 read-only filesystem, 32 nnU-Net or torch, 33 out of memory, 34
+      unclassified, 20 no final mask, 21 unexpected labels. Classification reads
+      only the tail of the log, because every stage name also appears in the
+      normal progress output -- grepping the whole log cannot tell a stage that
+      failed from one that merely ran.
     timeout: 3600
     command: |
       cd "$(mktemp -d)"
@@ -327,13 +332,18 @@ tests:
           vol[30:34, 30+off:34+off, 22:26] = 220
       nib.save(nib.Nifti1Image(vol, np.eye(4)), 'flair.nii.gz')
       "
+      # ROBEX on its own first, so a phantom it cannot strip is distinguishable
+      # from a genuine failure further down the pipeline.
+      "$ROBEX_DIR/runROBEX.sh" flair.nii.gz stripped.nii.gz mask.nii.gz > robex.log 2>&1 || exit 41
+      test -s stripped.nii.gz || exit 42
+
       deepwmh -i flair.nii.gz -n phantom -o out -g -1 --skip-bfc > run.log 2>&1 || rc=$?
       if [ -n "${rc:-}" ]; then
           tail -40 run.log
-          grep -qi 'read-only file system\|Errno 30' run.log && exit 30
-          grep -qi 'robex' run.log && exit 31
-          grep -qi 'nnunet\|torch' run.log && exit 32
-          grep -qi 'memoryerror\|out of memory\|killed' run.log && exit 33
+          tail -25 run.log > tail.log
+          grep -qi 'read-only file system\|Errno 30' tail.log && exit 30
+          grep -qi 'nnunet\|torch\|cuda' tail.log && exit 32
+          grep -qi 'memoryerror\|out of memory\|killed' tail.log && exit 33
           exit 34
       fi
       python -c "
