@@ -30,7 +30,7 @@ build:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
-        pip_install: loguru==0.7.3 panoptica==2.1.6 deep_quality_estimation==0.0.3 petu==0.0.7 gliomoda==0.0.4 brats==0.0.27 antspyx==0.6.3 auxiliary==0.3.1 brainles_hd_bet==0.0.11 ttictoc==0.5.6 typer==0.15.4 tqdm==4.67.1
+        pip_install: loguru==0.7.3 panoptica==2.1.6 deep_quality_estimation==0.0.3 petu==0.0.7 gliomoda==0.0.4 antspyx==0.6.3 auxiliary==0.3.1 brainles_hd_bet==0.0.11 ttictoc==0.5.6 typer==0.15.4 tqdm==4.67.1
     - run:
         - python -m pip install --no-cache-dir --no-deps brainles-aurora==0.2.7 brainles-preprocessing==0.6.10
         - python {{ get_file("fix_aurora_import") }}
@@ -89,7 +89,7 @@ build:
           # Import every bundled component. The previous test ran only
           # `python --version` and then `exit 1`, so it could never pass and
           # never checked that any of this works.
-          python -c "import panoptica, deep_quality_estimation, gliomoda, petu, brats; print('components import')"
+          python -c "import panoptica, deep_quality_estimation, gliomoda, petu; print('components import')"
           python -c "import brainles_aurora.inferer, brainles_preprocessing, brainles_hd_bet; print('aurora/preprocessing/hd-bet import')"
           # Weights must resolve somewhere writable. This is the check that
           # would have caught the read-only failure at build time.
@@ -172,12 +172,22 @@ readme: |-
   ### Model weights
 
   Weights are downloaded on first use into `$BLS_WEIGHTS_DIR`, which defaults to
-  `/tmp/brainlesion-weights`. Point it at persistent storage so this happens
-  once:
+  `/tmp/brainlesion-weights`. That default is per-session: every new session
+  re-downloads roughly 3.5 GB. Point it at persistent storage so this happens
+  once.
+
+  It must be set with a `SINGULARITYENV_` prefix. The module wrapper runs the
+  container with `--cleanenv`, so a plain `export BLS_WEIGHTS_DIR=...` is
+  stripped before the tools see it and the download silently happens again:
 
   ```
-  export BLS_WEIGHTS_DIR=/neurodesktop-storage/bls-weights
+  export SINGULARITYENV_BLS_WEIGHTS_DIR=/neurodesktop-storage/bls-weights
+  ml brainlesion/1.0.0
   ```
+
+  Apptainer accepts `APPTAINERENV_BLS_WEIGHTS_DIR` for the same purpose. When
+  running the image directly rather than through the module, set
+  `BLS_WEIGHTS_DIR` as normal.
 
   The components otherwise resolve their weights cache inside their own
   installed package, which is read-only here, so this redirection is what lets
@@ -185,10 +195,11 @@ readme: |-
 
   ### Known limitations
 
-  `brats` is installed but cannot work in this container. It orchestrates other
-  containers through a Docker daemon, which is not available here, and prints a
-  connection error on import. Use the standalone `brats` container, which runs
-  algorithms through apptainer.
+  `brats` is deliberately not installed. It does not run algorithms itself: it
+  orchestrates other containers through a Docker daemon, which is not available
+  here, so it could never do any work in this bundle and printed a connection
+  error on import. Use the standalone `brats` container, which ships apptainer
+  and runs the algorithms for real.
 
   brainles-preprocessing is installed without its optional registration
   backends, so `ANTsRegistrator` is the only one available; itk-elastix and
