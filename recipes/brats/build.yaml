@@ -30,6 +30,10 @@ build:
         MPLCONFIGDIR: /tmp/mpl-brats
         XDG_CACHE_HOME: /tmp/cache-brats
         PYTHONNOUSERSITE: "1"
+        # loguru's default sink shows DEBUG and above, so even after demoting
+        # the docker-daemon probe from ERROR to debug it would still print on
+        # every command. INFO keeps the inference progress logs.
+        LOGURU_LEVEL: INFO
         PATH: "{{ context.venv }}/bin:$PATH"
         # brats caches algorithm sandboxes under tempfile.gettempdir(), which
         # honours TMPDIR. It is deliberately NOT pinned here: a user must point
@@ -73,13 +77,37 @@ build:
         # The singularity backend must be importable: it imports docker as well,
         # so a partial install would only surface when a user tried to run.
         - . "${VENV}/bin/activate" && python -c "from brats.constants import Backends; from brats.core.singularity import run_container; print('singularity backend ok', Backends.SINGULARITY.value)"
+        # Four run-time blockers in the singularity backend; see the patch.
+        - . "${VENV}/bin/activate" && python {{ get_file("fix_brats_singularity") }} "${VENV}/lib/python3.12/site-packages"
+        # The additional-files folder must never resolve into site-packages,
+        # which is read-only at run time: every one of the 66 algorithms
+        # touches it and died there with Errno 30.
+        - >-
+          . "${VENV}/bin/activate" && env TMPDIR=/tmp/brats-afcheck python -c "import brats.constants as c, pathlib; p=pathlib.Path(c.ADDITIONAL_FILES_FOLDER); assert 'site-packages' not in str(p), p; assert str(p).startswith('/tmp/brats-afcheck'), p; p.mkdir(parents=True, exist_ok=True); print('additional files land in', p)"
+        - rm -rf /tmp/brats-afcheck
+        # The stderr drain: without stream_type='both' an algorithm that fills
+        # its stderr pipe deadlocks against brats until walltime.
+        - . "${VENV}/bin/activate" && grep -q "stream_type=\"both\"" "${VENV}/lib/python3.12/site-packages/brats/core/singularity.py"
+        - . "${VENV}/bin/activate" && python -c "import brats.core.singularity as m, inspect; src=inspect.getsource(m.run_container); assert src.index('_handle_device_requests') < src.index('_ensure_image(image='), 'CPU check must precede the pull'; print('device check precedes the image pull')"
         - mkdir -p /tmp/brats
         # Upstream ships no console_scripts. These add a task-oriented CLI plus
         # the two discovery/pull helpers the readme points at.
         - install -m 0755 {{ get_file("brats") }} /usr/local/bin/brats
         - install -m 0755 {{ get_file("brats-algorithms") }} /usr/local/bin/brats-algorithms
         - install -m 0755 {{ get_file("brats-pull") }} /usr/local/bin/brats-pull
-        - . "${VENV}/bin/activate" && brats --help > /dev/null && brats-algorithms --help > /dev/null && brats-pull --help > /dev/null
+        - install -m 0755 {{ get_file("brats-workdir") }} /usr/local/bin/brats-workdir
+        - . "${VENV}/bin/activate" && brats --help > /dev/null && brats-algorithms --help > /dev/null && brats-pull --help > /dev/null && brats-workdir --help > /dev/null
+        # D1 regression: with valid arguments the old CLI raised TypeError
+        # about an unexpected 'backend' kwarg before even checking the input
+        # files, so no documented command had ever run. The nonexistent input
+        # must now be what fails, not the constructor call.
+        - "! brats --task meningioma-rt --t1c /nonexistent.nii.gz -o /tmp/o.nii.gz > /tmp/brats-cli-check.log 2>&1"
+        - "! grep -q 'unexpected keyword argument' /tmp/brats-cli-check.log"
+        - rm -f /tmp/brats-cli-check.log /tmp/o.nii.gz
+        # The docker-absent probe must not shout ERROR at every command (docker
+        # can never exist here, and the message told users to install it).
+        - . "${VENV}/bin/activate" && brats-algorithms --images-only 2>/tmp/brats-stderr.log >/dev/null; test ! -s /tmp/brats-stderr.log || { echo '--- stderr not clean ---'; cat /tmp/brats-stderr.log; exit 1; }
+        - rm -f /tmp/brats-stderr.log
         # The lister reads the packaged metadata, so prove it parses it here.
         - . "${VENV}/bin/activate" && test "$(brats-algorithms --images-only | wc -l)" -gt 50
         - chmod -R a+rX "${VENV}"
@@ -92,6 +120,10 @@ build:
         builtin: test_deploy.sh
 
 files:
+  - name: fix_brats_singularity
+    filename: fix_brats_singularity.py
+  - name: brats-workdir
+    filename: brats-workdir
   - name: brats
     contents: |
       #!{{ context.venv }}/bin/python3
@@ -131,6 +163,12 @@ files:
           p.add_argument("-a", "--algorithm",
                          help="Algorithm key, e.g. BraTS23_1. Defaults to upstream's choice.")
           p.add_argument("--log-file", help="Optional log file")
+          p.add_argument("--force-cpu", action="store_true",
+                         help="Run on CPU even when a GPU is present. Only 16 of "
+                              "the 66 algorithms are CPU-compatible; see "
+                              "brats-algorithms.")
+          p.add_argument("--cuda-devices", default="0",
+                         help='Visible CUDA devices, e.g. "0" or "0,1" (default: 0)')
           a = p.parse_args(argv)
 
           cls_name, required = TASKS[a.task]
@@ -142,7 +180,11 @@ files:
           from brats.constants import Backends
 
           cls = getattr(brats, cls_name)
-          kwargs = {"backend": Backends.SINGULARITY}
+          # backend is an infer_single() parameter, not a constructor one.
+          # Passing it to the constructor raised TypeError on every valid
+          # invocation, before input files were even checked, so the documented
+          # command had never run a single segmentation.
+          kwargs = {"force_cpu": a.force_cpu, "cuda_devices": a.cuda_devices}
           if a.algorithm:
               import brats.constants as C
               enum_name = cls_name.replace("Segmenter", "Algorithms")
@@ -153,7 +195,10 @@ files:
               kwargs["algorithm"] = getattr(enum, a.algorithm)
 
           inputs = {m: getattr(a, m) for m in required}
-          cls(**kwargs).infer_single(output_file=a.output, log_file=a.log_file, **inputs)
+          cls(**kwargs).infer_single(
+              output_file=a.output, log_file=a.log_file,
+              backend=Backends.SINGULARITY, **inputs,
+          )
           print(f"wrote {a.output}")
           return 0
 
@@ -188,6 +233,13 @@ files:
           return Path(tempfile.gettempdir()) / "brats_singularity_images" / image.replace(":", "_")
 
 
+      def sandbox_complete(image: str) -> bool:
+          """A finished apptainer build always writes .singularity.d/runscript;
+          a directory without it is a partial left by an interrupted pull, which
+          used to be reported as [cached]."""
+          return (sandbox_path(image) / ".singularity.d" / "runscript").exists()
+
+
       def main(argv=None):
           p = argparse.ArgumentParser(
               prog="brats-algorithms",
@@ -203,15 +255,23 @@ files:
           tmp = tempfile.gettempdir()
           files = sorted(meta_dir().glob("*.yml"))
           if a.task:
-              files = [f for f in files if a.task.replace("-", "_") in f.stem]
+              # Exact stem first: a plain substring match made --task meningioma
+              # also return meningioma_rt (11 images instead of 5) and
+              # --task adult-glioma-pre also return pre-post, so the readme's
+              # "pull every image for a task" pipeline silently over-pulled.
+              want = a.task.replace("-", "_")
+              exact = [f for f in files if f.stem == want]
+              files = exact or [f for f in files if want in f.stem]
               if not files:
                   p.error(f"no task matching {a.task!r}")
 
           if not a.images_only:
               print(f"Algorithm cache: {tmp}/brats_singularity_images")
-              print("Set TMPDIR to persistent storage before pulling or running,")
-              print("otherwise every session re-downloads. For example:")
-              print("  export TMPDIR=/neurodesktop-storage/brats-cache\n")
+              print("Point the cache at persistent storage before pulling or running,")
+              print("otherwise every session re-downloads. The module wrapper runs")
+              print("this container with --cleanenv, which strips a plain TMPDIR")
+              print("export; use the prefixed form, which survives it:")
+              print("  export APPTAINERENV_TMPDIR=/neurodesktop-storage/brats-cache\n")
 
           for f in files:
               data = yaml.safe_load(f.read_text()) or {}
@@ -228,7 +288,7 @@ files:
                   meta = spec.get("meta") or {}
                   rank = meta.get("rank", "?")
                   year = meta.get("year", "?")
-                  ready = sandbox_path(image).exists()
+                  ready = sandbox_complete(image)
                   mark = "[cached]" if ready else "[not pulled]"
                   print(f"  {key:12} {rank:>4} {year}  {image}")
                   print(f"               {mark}  brats-pull {image}")
@@ -260,28 +320,66 @@ files:
         brats-algorithms
         brats-algorithms --task meningioma
 
-      Set TMPDIR to persistent storage FIRST, or the pull is lost with the session:
-        export TMPDIR=/neurodesktop-storage/brats-cache
+      Point the cache at persistent storage FIRST, or the pull is lost with the
+      session. The module wrapper runs this container with --cleanenv, which
+      strips a plain TMPDIR export, so use the prefixed form:
+        export APPTAINERENV_TMPDIR=/neurodesktop-storage/brats-cache
       USAGE
         exit 0
       fi
 
       CACHE="${TMPDIR:-/tmp}/brats_singularity_images"
       if [ "${TMPDIR:-/tmp}" = "/tmp" ]; then
-        echo "WARNING: TMPDIR is unset, so the cache lives in /tmp and will not" >&2
-        echo "         survive the session. Set TMPDIR to persistent storage." >&2
+        echo "WARNING: the cache lives in /tmp and will not survive the session." >&2
+        echo "         Set APPTAINERENV_TMPDIR to persistent storage first; a plain" >&2
+        echo "         TMPDIR export is stripped by the module wrapper's --cleanenv." >&2
       fi
 
       for image in "$@"; do
         dest="${CACHE}/${image//:/_}"
         if [ -d "$dest" ]; then
-          echo "already present: $dest"
-          continue
+          # A previous non-atomic version of this script built straight into
+          # $dest, so an interrupted pull left a partial directory that was
+          # then skipped as "already present". A finished apptainer build
+          # always writes .singularity.d/runscript, so a directory without it
+          # is a partial from an interrupted pull and is rebuilt. One with it
+          # is kept -- destroying a legacy multi-GB pull would be worse -- and
+          # is upgraded in place with the workdir record it predates.
+          if [ -f "$dest/.singularity.d/runscript" ]; then
+            if [ ! -f "$dest/.brats_docker_workdir" ]; then
+              if wd="$(brats-workdir "$image")"; then
+                printf '%s\n' "$wd" > "$dest/.brats_docker_workdir"
+                echo "recorded working directory for existing sandbox: ${wd:-<none>}"
+              fi
+            fi
+            echo "already present: $dest"
+            continue
+          fi
+          echo "removing partial sandbox from an interrupted pull: $dest"
+          rm -rf "$dest"
         fi
         echo "building sandbox for ${image}"
         echo "  -> ${dest}"
         mkdir -p "$(dirname "$dest")"
-        singularity build --sandbox --fakeroot "$dest" "docker://${image}"
+        # Build into a temporary path and move into place on success, so an
+        # interrupted build can never masquerade as a cached algorithm.
+        partial="${dest}.partial.$$"
+        trap 'rm -rf "$partial"' EXIT
+        singularity build --sandbox --fakeroot "$partial" "docker://${image}"
+        # Record the image's OCI WorkingDir while the registry is reachable.
+        # Apptainer discards it during sandbox conversion and there is no
+        # docker daemon at run time, so without this record algorithms whose
+        # entrypoint is a relative path (e.g. "python3 mlcube.py") start in
+        # the wrong directory and exit immediately.
+        if wd="$(brats-workdir "$image")"; then
+          printf '%s\n' "$wd" > "$partial/.brats_docker_workdir"
+          echo "recorded working directory: ${wd:-<none>}"
+        else
+          echo "WARNING: could not record the image working directory;" >&2
+          echo "         algorithms with a relative entrypoint may not start." >&2
+        fi
+        mv "$partial" "$dest"
+        trap - EXIT
         echo "done: ${dest}"
       done
 
@@ -311,28 +409,45 @@ readme: |-
   ### Read this first: no algorithms are bundled
 
   This container is an orchestrator. It contains no model and no weights. Each
-  of the 67 algorithms is a separate container published by its authors,
-  between roughly 4 GB and over 30 GB each, so bundling even one would make this
-  image unusable. You pull the ones you want, once.
+  of the 66 algorithms is a separate container published by its authors,
+  between roughly 4 GB and over 30 GB compressed -- and the cached sandbox is
+  larger still: a 4 GB pull unpacks to about 8 GB on disk, a 9 GB pull to about
+  14 GB. You pull the ones you want, once.
 
-  **Step 1 — point TMPDIR at persistent storage.** The cache lives under
-  `$TMPDIR`; anything in `/tmp` is lost when the session ends.
-  ```
-  export TMPDIR=/neurodesktop-storage/brats-cache
-  mkdir -p "$TMPDIR"
-  ```
+  ### GPU or CPU?
 
-  **Step 2 — find the algorithm you want.** This lists every algorithm for every
-  task, with its rank, year, image, whether it is already cached, and the exact
-  command to fetch it:
+  Most algorithms need a GPU: only 16 of the 66 are CPU-compatible, and 7 of
+  the 8 task defaults are GPU-only, so on a CPU node `brats -t <task>` without
+  `-a` fails for every task except `africa`. The `adult-glioma-pre`,
+  `pediatric` and `goat` tasks have no CPU-compatible algorithm at all.
+  `brats-algorithms` lists the keys; pick a CPU-capable one with `-a`.
+  Incompatibility is now detected before anything is downloaded.
+
+  Expect roughly 20 minutes per subject for CPU inference on 8 cores; size
+  Slurm walltimes accordingly.
+
+  **Step 1 -- point the cache at persistent storage.** The cache lives under
+  `$TMPDIR` inside the container; anything in `/tmp` is lost with the session.
+  The module wrapper runs this container with `--cleanenv`, which strips a
+  plain `TMPDIR` export, so use the prefixed form, which survives it:
+  ```
+  export APPTAINERENV_TMPDIR=/neurodesktop-storage/brats-cache
+  mkdir -p /neurodesktop-storage/brats-cache
+  ```
+  (`SINGULARITYENV_TMPDIR` works identically. When running the image directly
+  rather than through the module, plain `TMPDIR` is fine.)
+
+  **Step 2 -- find the algorithm you want.** This lists every algorithm for
+  every task, with its rank, year, image, whether it is already cached, and the
+  exact command to fetch it:
   ```
   brats-algorithms
-  brats-algorithms --task meningioma
+  brats-algorithms --task africa
   ```
 
-  **Step 3 — pull it.** Once per algorithm, per machine:
+  **Step 3 -- pull it.** Once per algorithm, per machine:
   ```
-  brats-pull brainles/brats23_faking_it:latest
+  brats-pull brainles/brats23_africa_blackbean:latest
   ```
   Pull several at once by listing them, or pull every algorithm for a task:
   ```
@@ -341,27 +456,36 @@ readme: |-
   To fetch everything, which is many hundreds of GB, use
   `brats-pull $(brats-algorithms --images-only)`.
 
-  **Step 4 — run it.**
+  **Step 4 -- run it.** This example is CPU-compatible end to end:
   ```
-  brats --task adult-glioma-pre \
+  brats --task africa -a BraTS23_3 \
         --t1c t1c.nii.gz --t1n t1n.nii.gz \
         --t2f t2f.nii.gz --t2w t2w.nii.gz \
         -o segmentation.nii.gz
   ```
-  Each task has a default algorithm; choose another with `-a`, for example
-  `-a BraTS23_2`. `brats-algorithms --task <task>` lists the valid keys.
+  Each task has a default algorithm; choose another with `-a`. On a machine
+  with a GPU, `--force-cpu` forces CPU execution and `--cuda-devices` selects
+  GPUs.
 
-  The Python API works too, and must select the singularity backend because
-  docker is not available here:
+  The Python API works too. The backend goes on `infer_single()` -- docker is
+  upstream's default and is not available here:
   ```
   python -c "
-  from brats import MetastasesSegmenter
-  from brats.constants import Backends
-  MetastasesSegmenter(backend=Backends.SINGULARITY).infer_single(
+  from brats import AfricaSegmenter
+  from brats.constants import AfricaAlgorithms, Backends
+  AfricaSegmenter(algorithm=AfricaAlgorithms.BraTS23_3, force_cpu=True).infer_single(
       t1c='t1c.nii.gz', t1n='t1n.nii.gz', t2f='t2f.nii.gz', t2w='t2w.nii.gz',
-      output_file='seg.nii.gz')
+      output_file='seg.nii.gz', backend=Backends.SINGULARITY)
   "
   ```
+
+  ### Input requirements
+
+  BraTS algorithms expect skull-stripped, co-registered images on the
+  240x240x155 at 1 mm SRI24 atlas grid, one file per modality (T1c, T1n, T2f,
+  T2w). Nothing validates this: raw scanner images produce plausible-looking
+  nonsense with no warning. The `brainles-preprocessing` module in this stack
+  produces exactly this input.
 
   ### Requirements
 
