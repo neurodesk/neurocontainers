@@ -24,6 +24,19 @@ tests:
     command: env NO_COLOR=1 TERM=dumb COLUMNS=200 preprocessor --help
     expected_output_contains: "output_dir"
 
+  - name: the hd-bet console script runs
+    description: >-
+      As shipped, brainles_hd_bet 0.0.11's hd_bet.py imports maybe_mkdir_p
+      from brainles_hd_bet.utils, which does not define it, so every
+      invocation of the exported hd-bet command failed on ImportError --
+      --help included. The recipe appends the missing one-line helper. Same
+      lesson as the preprocessor script: `command -v` passes on a script that
+      cannot start. The -mode/-device/-tta flags asserted here are also the
+      only supported CPU brain-extraction route, since `preprocessor` cannot
+      configure its extractor.
+    command: env NO_COLOR=1 TERM=dumb COLUMNS=200 hd-bet --help
+    expected_output_contains: "-mode"
+
   - name: the preprocessor atlas default is not a label
     description: >-
       input_atlas defaulted to the string "SRI24 BraTS atlas", which is a name,
