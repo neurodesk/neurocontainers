@@ -8,6 +8,12 @@
 # so an end-to-end segmentation is included at the end. It is the slowest test
 # here by a wide margin; everything before it is a fast interface or asset
 # check.
+#
+# The recipe patches three upstream defects (see neurodesk-fixes.patch next to
+# build.yaml): a KeyError that made every successful seg_wmh exit 1 under
+# apptainer, an IndexError that made stats_wmh unconditionally unusable, and a
+# uchar cast that silently quantised the published probability map. The
+# "PATCHED DEFECTS" section regression-tests each one from the runtime side.
 
 name: hypermapp3r
 version: 0.1.0
@@ -185,6 +191,63 @@ tests:
     expected_output_contains: gui ok
 
   # ==========================================================================
+  # PATCHED DEFECTS
+  # ==========================================================================
+  - name: endstatement survives an empty GECOS with no USER in the environment
+    description: >-
+      Regression test for the exit-code defect: apptainer's --cleanenv strips
+      USER and the runtime user's passwd GECOS field is empty, so unpatched
+      endstatement.py raised KeyError AFTER a successful segmentation, turning
+      every good run into exit status 1. The mock reproduces both conditions
+      independently of whoever runs this test.
+    command: |
+      bash -lc '
+      env -u USER python -c "import unittest.mock as m, pwd; m.patch(\"pwd.getpwuid\", return_value=pwd.struct_passwd((\"jovyan\", \"x\", 1000, 1000, \"\", \"/home/jovyan\", \"/bin/bash\"))).start(); from hypermapper.utils import endstatement; endstatement.main(\"endstatement check\", \"0:00:01\")" && echo endstatement-ok'
+    expected_output_contains: endstatement-ok
+
+  - name: stats_wmh produces a volume csv
+    description: >-
+      Regression test for the IndexError that made stats_wmh crash on every
+      input (a two-element column list copy-pasted from the hippocampus
+      module). Builds a minimal subject tree with one synthetic prediction and
+      requires a csv with the WMH_Volume column to come out.
+    command: |
+      bash -lc '
+      set -e
+      workdir=$(mktemp -d)
+      mkdir -p "$workdir/subj01"
+      python -c "import nibabel as nib, numpy as np; import sys; nib.save(nib.Nifti1Image(np.ones((4, 4, 4), dtype=np.uint8), np.eye(4)), sys.argv[1])" "$workdir/subj01/subj01_wmh_pred.nii.gz"
+      hypermapper stats_wmh -i "$workdir" -o "$workdir/vols.csv"
+      grep WMH_Volume "$workdir/vols.csv"
+      rm -rf "$workdir"'
+    expected_output_contains: WMH_Volume
+
+  - name: copy_orient can publish a float image intact
+    description: >-
+      Regression test for the probability-map quantisation: copy_orient()
+      hardcoded a uchar cast, so on any non-RPI/LPI input the published
+      MC-dropout uncertainty map collapsed to the two values {0,1} with no
+      warning. The patched function takes a dtype argument; verify a float
+      image round-trips with more than two distinct values.
+    command: |
+      bash -lc '
+      set -e
+      workdir=$(mktemp -d)
+      cd "$workdir"
+      python -c "
+      import numpy as np, nibabel as nib
+      nib.save(nib.Nifti1Image(np.random.RandomState(0).rand(8, 8, 8).astype(\"float32\"), np.eye(4)), \"pc_in.nii.gz\")
+      nib.save(nib.Nifti1Image(np.zeros((8, 8, 8), dtype=\"uint8\"), np.eye(4)), \"pc_ref.nii.gz\")
+      from hypermapper.segment.hypermapper import copy_orient
+      copy_orient(\"pc_in.nii.gz\", \"pc_ref.nii.gz\", \"pc_out.nii.gz\", dtype=\"float\")
+      values = len(np.unique(np.asarray(nib.load(\"pc_out.nii.gz\").dataobj)))
+      assert values > 2, \"quantised: %d distinct values\" % values
+      print(\"float-roundtrip-ok\", values, \"distinct values\")
+      "
+      rm -rf "$workdir"'
+    expected_output_contains: float-roundtrip-ok
+
+  # ==========================================================================
   # EXTERNAL TOOLS
   # ==========================================================================
   - name: Convert3D is available
@@ -225,19 +288,17 @@ tests:
       Runs the default multimodal model over the case that ships in the
       repository and validates the prediction that comes out.
 
-      This asserts the segmentation, not seg_wmh's exit status. Under apptainer
-      the command writes a correct prediction and then exits 1 anyway; the same
-      command exits 0 during the docker build, as root, without HOME, and as an
-      unprivileged user. Since the exit code was the only thing the runner
-      reports, the failure paths are encoded in this test's own exit codes:
+      seg_wmh must now exit 0 on success: the endstatement patch removed the
+      KeyError that previously turned every successful apptainer run into exit
+      status 1, so a non-zero exit is a real failure again. The failure paths
+      are encoded in this test's own exit codes:
         10  could not stage the test case
         11/12/13/14  hypermapper, antsRegistration, c3d or ANTSPATH missing
         20  no prediction written at the -o path
         21  prediction is not a readable NIfTI
         22  prediction is empty: no labelled voxels
-      Reaching those means the tool really is broken. A non-zero exit from
-      seg_wmh with a valid prediction is recorded and tolerated, because the
-      user-visible contract is the segmentation.
+        23  probability map missing or quantised (fewer than 3 distinct values)
+        30  seg_wmh exited non-zero
     timeout: 1800
     command: |
       bash -lc '
@@ -248,10 +309,10 @@ tests:
       command -v antsRegistration >/dev/null 2>&1 || exit 12
       command -v c3d >/dev/null 2>&1 || exit 13
       [ -n "$ANTSPATH" ] || exit 14
-      rc=0
-      hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi || rc=$?
+      hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi || exit 30
       [ -s wmh_pred.nii.gz ] || exit 20
-      python - <<PYEOF || exit $?
+      subj=$(basename "$workdir")
+      python - "$subj" <<PYEOF || exit $?
       import sys
       import nibabel as nib, numpy as np
       try:
@@ -261,7 +322,14 @@ tests:
           sys.exit(21)
       if not np.any(data > 0):
           sys.exit(22)
-      print("prediction shape", data.shape, "labelled voxels", int((data > 0).sum()))
+      try:
+          prob = nib.load("%s_wmh_prob.nii.gz" % sys.argv[1]).get_fdata()
+      except Exception:
+          sys.exit(23)
+      if len(np.unique(prob)) < 3:
+          sys.exit(23)
+      print("prediction shape", data.shape, "labelled voxels", int((data > 0).sum()),
+            "prob values", len(np.unique(prob)))
       PYEOF
-      echo "segmentation-ok seg_wmh_exit=$rc"'
+      echo "segmentation-ok"'
     expected_output_contains: segmentation-ok
