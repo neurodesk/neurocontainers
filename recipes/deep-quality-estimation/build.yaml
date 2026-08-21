@@ -188,19 +188,29 @@ files:
                               "device actually used (upstream disables it)")
           a = p.parse_args(argv)
 
+          if a.output:
+              # Checked up front like the inputs: a bad output path otherwise
+              # costs a full inference before failing with a raw traceback.
+              parent = os.path.dirname(os.path.abspath(a.output))
+              if not os.path.isdir(parent):
+                  _fail("output directory does not exist: %s" % parent)
+              if not os.access(parent, os.W_OK):
+                  _fail("output directory is not writable: %s" % parent)
+
           _validate({
               "t1c": a.t1c, "t1": a.t1, "t2": a.t2,
               "flair": a.flair, "segmentation": a.segmentation,
           })
 
+          from deep_quality_estimation import DQE
+
           if a.verbose:
               # Upstream's __init__ calls logger.disable("deep_quality_estimation")
-              # so it stays quiet as a library. A successful run therefore prints
-              # nothing about which device it used.
+              # at import time, so this enable must come after the import above --
+              # the other way round, the import's disable undoes it and the flag
+              # is a silent no-op.
               from loguru import logger
               logger.enable("deep_quality_estimation")
-
-          from deep_quality_estimation import DQE
 
           dqe = DQE(device=a.device, cuda_devices=a.cuda_devices)
           mean_score, view_scores = dqe.predict(
