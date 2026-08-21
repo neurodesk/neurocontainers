@@ -8,19 +8,45 @@ build:
   kind: neurodocker
   base-image: centos:7
   pkg-manager: yum
+  # The default template adds a second yum layer, which duplicates the RPM
+  # database across layers and fails the dive image-efficiency gate. Do all
+  # package installs and the locale/entrypoint setup in a single layer instead.
+  add-default-template: false
 
   directives:
-    - install:
-        - curl
-        - ca-certificates
-        - libXt
-        - libjpeg-turbo
-        - libpng12
-        - libXrender
-        - fontconfig
-        - libXext
-        - mesa-libGLU
-        - mesa-dri-drivers
+    - environment:
+        LANG: en_US.UTF-8
+        LC_ALL: en_US.UTF-8
+        ND_ENTRYPOINT: /neurodocker/startup.sh
+
+    - run:
+        - sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+        - sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+        # curl and ca-certificates ship with the centos:7 base image; upgrading
+        # them here would only duplicate their files across layers.
+        - >-
+          yum install -y -q
+          bzip2
+          fontconfig
+          glibc-langpack-en
+          glibc-locale-source
+          libXext
+          libXrender
+          libXt
+          libjpeg-turbo
+          libpng12
+          mesa-dri-drivers
+          mesa-libGLU
+          unzip
+        - yum clean all
+        - rm -rf /var/cache/yum/*
+        - localedef -i en_US -f UTF-8 en_US.UTF-8
+        - chmod 777 /opt
+        - chmod a+s /opt
+        - mkdir -p /neurodocker
+        - printf '#!/usr/bin/env bash\nset -e\nexport USER="${USER:=`whoami`}"\nif [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi\n' > /neurodocker/startup.sh
+        - chmod -R 777 /neurodocker
+        - chmod a+s /neurodocker
 
     - workdir: /opt/trackvis-{{ context.version }}
 
@@ -29,6 +55,8 @@ build:
 
     - environment:
         PATH: $PATH:/opt/trackvis-{{ context.version }}
+
+    - entrypoint: /neurodocker/startup.sh
 
 deploy:
   path:
