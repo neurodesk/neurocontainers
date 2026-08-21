@@ -194,10 +194,27 @@ build:
           python -m pip install --no-cache-dir --only-binary=:all: "PyQt5==5.15.9" "PyQt5-sip==12.12.2" "PyQt5-Qt5==5.15.2"
         - python -c "from PyQt5 import QtWidgets; print('PyQt5 ok')"
 
+    # Three small fixes to the pinned source, kept as a git patch so the build
+    # fails loudly if the pinned commit ever changes underneath them. See the
+    # prologue inside the patch file for the full story; in short:
+    #   1. endstatement.py: seg_wmh exited 1 on every successful run under
+    #      apptainer (empty GECOS + `--cleanenv` stripping USER -> KeyError
+    #      after the outputs were already written).
+    #   2. summary_wmh_vols.py: stats_wmh crashed unconditionally with an
+    #      IndexError copy-pasted from the hippocampus module.
+    #   3. hypermapper.py copy_orient(): the published *_wmh_prob.nii.gz
+    #      probability map was silently quantised to uint8 {0,1} whenever the
+    #      input was not already RPI/LPI.
+    # Each fix is exercised by a build step further down.
+    - file:
+        name: neurodesk_fixes_patch
+        filename: neurodesk-fixes.patch
+
     - run:
         - git clone https://github.com/AICONSlab/HyperMapp3r {{ context.hypermapper_dir }}
         - cd {{ context.hypermapper_dir }}
         - git checkout {{ context.hypermapper_commit }}
+        - git apply --verbose {{ get_file("neurodesk_fixes_patch") }}
         # --no-deps: setup.py re-pins keras, which would undo the resolve above.
         # PyQt5 is installed explicitly in the step before this one.
         - python -m pip install --no-cache-dir --no-deps -e .
@@ -256,6 +273,27 @@ build:
         - hypermapper --help
         - hypermapper seg_wmh --help
 
+    # Prove each of the three patched defects is actually fixed, at the layer
+    # that applied the patch. All three checks fail on the unpatched source.
+    - run:
+        # 1. endstatement must survive the apptainer runtime conditions: an
+        #    empty GECOS field AND no USER in the environment. Unpatched code
+        #    dies here with KeyError: 'USER'.
+        - env -u USER python -c "import unittest.mock as m, pwd; m.patch('pwd.getpwuid', return_value=pwd.struct_passwd(('jovyan', 'x', 1000, 1000, '', '/home/jovyan', '/bin/bash'))).start(); from hypermapper.utils import endstatement; endstatement.main('endstatement patch check', '0:00:01')"
+        # 2. stats_wmh must complete on a minimal subject tree. Unpatched code
+        #    dies unconditionally with IndexError before writing the csv.
+        - mkdir -p /tmp/statscheck/subj01
+        - python -c "import nibabel as nib, numpy as np; nib.save(nib.Nifti1Image(np.ones((4, 4, 4), dtype=np.uint8), np.eye(4)), '/tmp/statscheck/subj01/subj01_wmh_pred.nii.gz')"
+        - hypermapper stats_wmh -i /tmp/statscheck -o /tmp/statscheck/vols.csv
+        - grep -q WMH_Volume /tmp/statscheck/vols.csv
+        - rm -rf /tmp/statscheck
+        # 3. copy_orient must be able to publish a float image intact. The
+        #    unpatched signature has no dtype argument (TypeError), and the
+        #    hardcoded uchar cast would leave <= 2 distinct values.
+        - cd /tmp
+        - python -c "import numpy as np, nibabel as nib; nib.save(nib.Nifti1Image(np.random.RandomState(0).rand(8, 8, 8).astype('float32'), np.eye(4)), '/tmp/pc_in.nii.gz'); nib.save(nib.Nifti1Image(np.zeros((8, 8, 8), dtype='uint8'), np.eye(4)), '/tmp/pc_ref.nii.gz'); from hypermapper.segment.hypermapper import copy_orient; copy_orient('/tmp/pc_in.nii.gz', '/tmp/pc_ref.nii.gz', '/tmp/pc_out.nii.gz', dtype='float'); assert len(np.unique(np.asarray(nib.load('/tmp/pc_out.nii.gz').dataobj))) > 2, 'probability map still quantised'; print('copy_orient float ok')"
+        - rm -f /tmp/pc_in.nii.gz /tmp/pc_ref.nii.gz /tmp/pc_out.nii.gz
+
     # Run the bundled test case during the build.
     #
     # The fulltest runner reports only an exit code to the CI log and keeps the
@@ -279,11 +317,15 @@ build:
         # kept failing. HOME alone was already ruled out by a previous run, so
         # this varies the user as well: anything hypermapper tries to write
         # inside /opt succeeds for root here and cannot succeed in a read-only
-        # SIF.
+        # SIF. `env -u USER` reproduces `singularity exec --cleanenv`, which
+        # strips USER: combined with the tester user's empty GECOS field this
+        # is exactly the condition that made unpatched seg_wmh exit 1 after
+        # every successful segmentation, so this step now regression-tests the
+        # endstatement patch through the whole pipeline.
         - useradd -m tester
         - cp -r {{ context.hypermapper_dir }}/data/test_case /tmp/e2e_user
         - chown -R tester /tmp/e2e_user
-        - runuser -u tester -- env PATH="$PATH" HOME=/nonexistent sh -c 'cd /tmp/e2e_user && hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi'
+        - runuser -u tester -- env -u USER PATH="$PATH" HOME=/nonexistent sh -c 'cd /tmp/e2e_user && hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -o wmh_pred.nii.gz -id multi'
         - test -s /tmp/e2e_user/wmh_pred.nii.gz
         - echo "end-to-end segmentation ok as unprivileged user"
         - rm -rf /tmp/e2e_user
@@ -347,19 +389,41 @@ readme: |-
   ```
   ml hypermapp3r/{{ context.version }}
 
-  # Multimodal (T1 + FLAIR), with a brain mask
+  # A brain mask is REQUIRED and this container does not ship a skull
+  # stripper; make one first with another module, e.g.:
+  #   ml freesurfer
+  #   mri_synthstrip -i T1.nii.gz -o T1_brain.nii.gz -m brainmask.nii.gz
+
+  # Default model: 224 isotropic multimodal (T1 + FLAIR)
+  hypermapper seg_wmh -t1 T1.nii.gz -fl FLAIR.nii.gz -m brainmask.nii.gz
+
+  # Original multimodal model
   hypermapper seg_wmh -t1 T1.nii.gz -fl FLAIR.nii.gz -m brainmask.nii.gz -id multi
 
-  # 224 isotropic multimodal model
-  hypermapper seg_wmh -t1 T1.nii.gz -fl FLAIR.nii.gz -m brainmask.nii.gz -id 224multi
+  # QC mosaic for one segmentation
+  hypermapper seg_qc -i FLAIR.nii.gz -s subj_wmh_pred.nii.gz
 
-  # Lesion volume summary and QC
-  hypermapper stats_wmh -s subject_dir
-  hypermapper seg_qc   -s subject_dir
+  # Lesion volume summary over a directory of subject directories
+  hypermapper stats_wmh -i /path/to/subjects_dir -o wmh_volumes.csv
   ```
 
-  Available models via `-id`: `multi` (default, T1+FLAIR), `224multi`
-  (224 isotropic T1+FLAIR) and `con`.
+  Available models via `-id`: `224multi` (the default; 224 isotropic
+  T1+FLAIR), `multi` (T1+FLAIR) and `con`.
+
+  Important usage notes:
+  - T1 and FLAIR must already be coregistered. Preprocessing only reslices
+    onto a common grid (`c3d -reslice-identity`); it does not register.
+    Misaligned inputs produce a wrong segmentation, not an error.
+  - `seg_wmh` writes its intermediates (`pred_process*/`, `qc/`, `logs/`,
+    `*_std_orient.nii.gz`) into the directory containing the input T1; `-o`
+    only names the final prediction. Copy inputs to a writable scratch
+    directory first — a read-only input directory will fail.
+  - `<subj>_wmh_prob.nii.gz` is the Monte-Carlo-dropout probability
+    (uncertainty) map, published at floating-point precision.
+  - The `-t2` flag is accepted but ignored: the shipped models use T1+FLAIR
+    only.
+  - Runtime scales with the MC sample count `-n` (default 20): roughly 10
+    minutes on 8 CPU cores at the default, ~1.5 minutes with `-n 2`.
 
   Note: the CLI also accepts `-id 224all` and `-id t1m`, but the authors have
   never published weights for those two, so they will fail at runtime. Only the
@@ -395,7 +459,8 @@ structured_readme:
     with large lesion burden and brain atrophy. Runs on CPU.
   example: |-
     ml hypermapp3r/{{ context.version }}
-    hypermapper seg_wmh -t1 T1.nii.gz -fl FLAIR.nii.gz -m brainmask.nii.gz -id multi
+    # T1 and FLAIR must be coregistered; the brain mask is required
+    hypermapper seg_wmh -t1 T1.nii.gz -fl FLAIR.nii.gz -m brainmask.nii.gz
   documentation: https://hypermapp3r.readthedocs.io
   citation: |-
     Mojiri Forooshani P, Biparva M, Ntiri EE, Ramirez J, Boone L, Holmes MF,
