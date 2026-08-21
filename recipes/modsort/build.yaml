@@ -38,6 +38,7 @@ build:
         - libcups2t64
         - libdrm2
         - libgbm1
+        - libgl1
         - libglib2.0-0t64
         - libgtk-3-0t64
         - libnspr4
@@ -51,6 +52,7 @@ build:
         - libxkbcommon0
         - libxrandr2
         - xdg-utils
+        - xvfb
         - zlib1g
 
     # Upstream publishes a prebuilt Linux AppImage per release, so the container
@@ -70,8 +72,19 @@ build:
         - ./modsort.AppImage --appimage-extract
         - mkdir -p {{ context.install_dir }}
         - cp -a /tmp/modsort-extract/squashfs-root/. {{ context.install_dir }}/
+        # --appimage-extract produces a 0700 squashfs-root with 0700
+        # subdirectories, and cp -a faithfully preserves that. Every build step
+        # runs as root, for whom 0700 is fully accessible, but apptainer runs as
+        # the invoking user: without this the shipped container failed with
+        # "Permission denied" (exit 126) for every non-root user, and could not
+        # even list the directory.
+        - chmod -R a+rX {{ context.install_dir }}
         - rm -rf /tmp/modsort-extract
         - test -x {{ context.install_dir }}/AppRun
+        # Verify as a non-root user, which is the case the build is blind to.
+        - su -s /bin/bash -c "test -x {{ context.install_dir }}/AppRun && test -r {{ context.install_dir }}/resources/app.asar" nobody
+        - "! find {{ context.install_dir }} -type d ! -perm -o+rx | grep -q ."
+
 
     - run:
         # Every shared library the Electron binary needs must resolve now, so a
@@ -81,12 +94,42 @@ build:
           ldd {{ context.install_dir }}/modsort 2>/dev/null | grep 'not found' && exit 1 || echo "electron libraries resolve"
 
     - run:
-        # --no-sandbox: Chromium's setuid sandbox cannot initialise inside an
-        # unprivileged container, and without it no window ever appears.
+        # APPDIR must be exported. Upstream's AppRun resolves it by walking up
+        # from its own location looking for "$path/$1" -- the first command-line
+        # argument, not $0. Inside a real AppImage the runtime pre-sets APPDIR
+        # and that block never runs, but this recipe extracts the AppImage, so
+        # it does: handed "--no-sandbox", which is not a path, the loop strips
+        # /opt/modsort to /opt to "", leaving BIN as "/modsort" and the exec
+        # failing with "No such file or directory" (exit 127). Setting APPDIR
+        # skips the search entirely and keeps "modsort <path>" working, which
+        # dropping the flag would not.
+        #
+        # --no-sandbox is kept: Chromium's setuid sandbox cannot initialise in
+        # an unprivileged container without user namespaces. It is no longer
+        # load-bearing for the AppDir search.
+        #
+        # XDG paths are per-user: fixed /tmp/cache-modsort and
+        # /tmp/config-modsort belong to whoever launches first on a shared node.
         - >-
-          printf '%s\n' '#!/bin/bash' 'set -e' 'exec {{ context.install_dir }}/AppRun --no-sandbox "$@"' > /usr/local/bin/modsort
+          printf '%s\n'
+          '#!/bin/bash'
+          'set -e'
+          'export APPDIR={{ context.install_dir }}'
+          'export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/modsort-cache-$(id -u)}"'
+          'export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/tmp/modsort-config-$(id -u)}"'
+          'mkdir -p "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME"'
+          'exec {{ context.install_dir }}/AppRun --no-sandbox "$@"'
+          > /usr/local/bin/modsort
         - chmod +x /usr/local/bin/modsort
         - bash -n /usr/local/bin/modsort
+        - grep -q 'export APPDIR=' /usr/local/bin/modsort
+        # Launch it for real under a virtual display, as a non-root user. The
+        # previous suite only checked for the absence of one error string, and
+        # both blocking defects shipped past it.
+        - >-
+          su -s /bin/bash -c 'timeout 90 xvfb-run -a modsort > /tmp/launch.log 2>&1 & pid=$!; sleep 30; kill -0 $pid 2>/dev/null && echo ALIVE || echo DEAD; kill $pid 2>/dev/null; true' nobody | tee /tmp/launch_state.txt
+        - "grep -q ALIVE /tmp/launch_state.txt || { echo '--- launch log ---'; cat /tmp/launch.log; exit 1; }"
+        - rm -f /tmp/launch.log /tmp/launch_state.txt
 
     - workdir: /opt
 
@@ -115,7 +158,20 @@ readme: |-
   desktop interface, then copies and renames the files into the structure you
   choose. It is a graphical tool: there is no batch or command line mode.
 
-  Example:
+  ### Input format
+
+  modsort is **NIfTI only**. Its drop targets are BraTS-style modality tags --
+  `_t1.nii.gz`, `_t1c.nii.gz`, `_t2.nii.gz`, `_fla.nii.gz`, plus `swi`, `dwi`,
+  `adc` and `rcbv`. It does not sort DICOM; convert first with `dcm2niix` if
+  that is what you have.
+
+  ### It writes to your filesystem
+
+  Sorting means copying and renaming real files into a destination you pick.
+  Point it at a copy before running it over data you cannot regenerate.
+
+  ### Example
+
   ```
   ml modsort/{{ context.version }}
   modsort
@@ -123,14 +179,19 @@ readme: |-
 
   In NeuroDesk it also appears in the applications menu.
 
-  Notes:
+  ### Notes
+
   This container unpacks the AppImage that upstream publishes rather than
   building from source, so no node toolchain is present.
 
   It needs a display. Inside a NeuroDesk desktop session that is already the
-  case; over SSH you need X forwarding. Headless use is not meaningful here.
+  case; over SSH you need X forwarding. A virtual display works too, so
+  `xvfb-run -a modsort` is fine for a smoke test, though a tool you drag files
+  onto is not much use without a screen.
 
-  Electron runs with --no-sandbox because Chromium's setuid sandbox cannot
-  initialise in an unprivileged container.
+  Electron runs with `--no-sandbox`, because Chromium's setuid sandbox cannot
+  initialise in an unprivileged container without user namespaces. Where user
+  namespaces are available the sandbox does start, so treat this as a safeguard
+  rather than an absolute requirement.
 
   More documentation can be found here: https://github.com/BrainLesion/modsort
