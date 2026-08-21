@@ -206,7 +206,10 @@ def detect_release_pr_changes(
 
 def get_changed_files(base_ref: str, head_ref: str, *, repo_root: str | Path = ".") -> list[str]:
     proc = subprocess.run(
-        ["git", "diff", "--name-only", f"{base_ref}...{head_ref}"],
+        # --diff-filter=d drops deletions. A retired release (its JSON removed)
+        # has no container left to download, so queueing a test for it would
+        # fail on the missing metadata file the matrix leg tries to read.
+        ["git", "diff", "--name-only", "--diff-filter=d", f"{base_ref}...{head_ref}"],
         cwd=repo_root,
         check=False,
         capture_output=True,

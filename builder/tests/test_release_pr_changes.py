@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ import pytest
 from workflows.release_pr_changes import (
     ReleaseChangeError,
     detect_release_pr_changes,
+    get_changed_files,
 )
 
 
@@ -152,3 +154,32 @@ def test_release_metadata_still_must_be_isolated_from_unrelated_files(tmp_path: 
     assert "Release metadata changes must be isolated from unrelated files." in message
     assert "Release files: releases/cat12/26.0.rc3.json" in message
     assert "Unrelated files: recipes/cat12/build.yaml" in message
+
+
+def test_retiring_a_release_does_not_queue_a_test_for_the_removed_version(
+    tmp_path: Path,
+) -> None:
+    """Deleting releases/<recipe>/<version>.json retires that version.
+
+    The matrix leg reads the release JSON to resolve the image, so a deleted
+    file has nothing to test and must not reach detection at all.
+    """
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    write_release(tmp_path, "panoptica", "2.1.3", build_date="20260728")
+    write_release(tmp_path, "panoptica", "2.1.6", build_date="20260819")
+    git("add", "-A")
+    git("commit", "-m", "releases")
+
+    git("checkout", "-b", "retire")
+    (tmp_path / "releases" / "panoptica" / "2.1.3.json").unlink()
+    git("commit", "-am", "retire panoptica 2.1.3")
+
+    changed = get_changed_files("main", "retire", repo_root=tmp_path)
+
+    assert changed == []
+    assert detect_release_pr_changes(changed, repo_root=tmp_path).matrix() == []
