@@ -1,12 +1,12 @@
 {
   "apps": {
     "modsort 0.0.2": {
-      "version": "20260819",
+      "version": "20260820",
       "exec": "",
       "apptainer_args": []
     },
     "modsort-modsort 0.0.2": {
-      "version": "20260819",
+      "version": "20260820",
       "exec": "modsort",
       "apptainer_args": []
     }
