@@ -54,6 +54,148 @@ tests:
     expected_output_contains: "brats-pull"
 
   - name: brats-pull explains itself without arguments
-    description: The pull step is mandatory before any inference, so its help must work.
+    description: >-
+      The pull step is mandatory before any inference, so its help must work --
+      and it must name the prefixed variable that actually survives the module
+      wrapper's --cleanenv. The readme's old "export TMPDIR" advice did nothing:
+      every session re-downloaded 4-30 GB, brats-pull warned even when the user
+      had followed the readme, and pulled images were listed as [not pulled].
     command: brats-pull --help
-    expected_output_contains: "TMPDIR"
+    expected_output_contains: "APPTAINERENV_TMPDIR"
+
+  - name: valid arguments reach the input check, not a TypeError
+    description: >-
+      The CLI passed backend= to the segmenter constructor, which only accepts
+      it on infer_single(), so every invocation with valid arguments raised
+      "TypeError: ... unexpected keyword argument 'backend'" before input files
+      were even checked. The documented Step 4 command had never run a single
+      segmentation. With the fix, the nonexistent input is what fails.
+    command: |
+      brats --task meningioma-rt --t1c /nonexistent.nii.gz -o /tmp/o.nii.gz > cli.log 2>&1 || true
+      grep -q "unexpected keyword argument" cli.log && { echo "CONSTRUCTOR-TYPEERROR"; cat cli.log; } || echo "constructor-ok"
+    expected_output_contains: "constructor-ok"
+
+  - name: the CLI exposes CPU control
+    description: >-
+      Upstream accepts force_cpu and cuda_devices on the constructor, but the
+      CLI exposed neither, so on a GPU node there was no way to ask for CPU.
+    command: brats --help
+    expected_output_contains: "--force-cpu"
+
+  - name: additional files resolve outside site-packages
+    description: >-
+      brats resolved ADDITIONAL_FILES_FOLDER inside its own installed package;
+      run_container touches it for every algorithm (16 download weights there,
+      the other 50 mkdir a dummy), and site-packages is read-only at run time,
+      so all 66 algorithms died with Errno 30 before doing anything.
+    command: |
+      # gettempdir() silently ignores a TMPDIR that does not exist
+      mkdir -p /tmp/brats-af-test
+      env TMPDIR=/tmp/brats-af-test python -c "
+      import pathlib
+      import brats.constants as c
+      p = pathlib.Path(c.ADDITIONAL_FILES_FOLDER)
+      assert 'site-packages' not in str(p), p
+      assert str(p).startswith('/tmp/brats-af-test'), p
+      p.mkdir(parents=True, exist_ok=True)
+      (p / 'probe').write_text('x')
+      print('additional-files-writable', p)
+      "
+    expected_output_contains: "additional-files-writable"
+
+  - name: the algorithm stream drains stderr
+    description: >-
+      spython with stream=True and no stream_type drains only stdout: an
+      algorithm that filled its stderr pipe (3.7 MB observed) blocked writing
+      while brats blocked reading, and the job sat idle until walltime with the
+      real error stuck in the pipe -- no error, no output, no CPU use.
+    command: |
+      python -c "
+      import brats.core.singularity as m
+      n = open(m.__file__).read().count('stream_type=\"both\"')
+      print('stream-type-both', n)
+      "
+    expected_output_contains: "stream-type-both 1"
+
+  - name: CPU compatibility is checked before the download
+    description: >-
+      run_container pulled the multi-GB image and only then raised
+      AlgorithmNotCPUCompatibleException, so a CPU-only user paid for the whole
+      download before learning it could never run.
+    command: |
+      python -c "
+      import inspect
+      import brats.core.singularity as m
+      src = inspect.getsource(m.run_container)
+      assert src.index('_handle_device_requests') < src.index('_ensure_image(image='), 'device check does not precede the pull'
+      print('device-check-first')
+      "
+    expected_output_contains: "device-check-first"
+
+  - name: the working directory survives without a docker daemon
+    description: >-
+      _get_docker_working_dir asked the docker daemon and returned None when
+      there is none -- always, here -- so algorithms whose ENTRYPOINT is a
+      relative path (brats23_africa_blackbean: "python3 mlcube.py") launched
+      without --cwd and exited immediately. Apptainer discards the OCI
+      WorkingDir during sandbox conversion, so brats-pull records it at pull
+      time and the backend reads that record. This simulates a recorded pull.
+    command: |
+      mkdir -p /tmp/brats-wd-test
+      env TMPDIR=/tmp/brats-wd-test python -c "
+      import os, pathlib
+      # only the colon is replaced in sandbox names, so the registry
+      # namespace ('example/') stays a nested directory
+      sandbox = pathlib.Path('/tmp/brats-wd-test/brats_singularity_images/example/image_latest')
+      sandbox.mkdir(parents=True, exist_ok=True)
+      (sandbox / '.brats_docker_workdir').write_text('/mlcube_project\n')
+      from brats.core.singularity import _get_docker_working_dir
+      wd = _get_docker_working_dir('example/image:latest')
+      assert str(wd) == '/mlcube_project', wd
+      print('workdir-from-record', wd)
+      "
+    expected_output_contains: "workdir-from-record /mlcube_project"
+
+  - name: no docker ERROR on a routine command
+    description: >-
+      Every invocation printed "ERROR ... Please make sure docker is installed
+      and running" -- on a platform where docker will never exist. The probe now
+      logs at debug and the image sets LOGURU_LEVEL=INFO.
+    command: |
+      brats-algorithms --images-only 2>stderr.log >/dev/null
+      if [ -s stderr.log ]; then echo "STDERR-NOT-CLEAN"; cat stderr.log; else echo "stderr-clean"; fi
+    expected_output_contains: "stderr-clean"
+
+  - name: task filtering matches exactly
+    description: >-
+      A substring filter made --task meningioma also return meningioma_rt (11
+      images instead of 5) and --task adult-glioma-pre also return pre-post
+      (10 instead of 3), so the readme's "pull every image for a task" pipeline
+      silently over-pulled.
+    command: |
+      m=$(brats-algorithms --task meningioma --images-only | wc -l)
+      g=$(brats-algorithms --task adult-glioma-pre --images-only | wc -l)
+      pp=$(brats-algorithms --task adult-glioma-pre-post --images-only | wc -l)
+      echo "meningioma=$m adult-glioma-pre=$g adult-glioma-pre-post=$pp"
+    expected_output_contains: "meningioma=5 adult-glioma-pre=3 adult-glioma-pre-post=7"
+
+  - name: brats-pull builds atomically
+    description: >-
+      It built straight into the final cache path, so a failed or interrupted
+      build left a partial directory that later runs skipped as "already
+      present" and the lister reported as [cached]. Now it builds into a
+      .partial path moved into place on success, cleans up on failure, and
+      treats a directory without .singularity.d/runscript as an interrupted
+      pull to be rebuilt.
+    command: |
+      grep -q 'partial="${dest}.partial' /usr/local/bin/brats-pull && echo "atomic-build"
+      grep -q "trap 'rm -rf" /usr/local/bin/brats-pull && echo "cleanup-trap"
+      grep -q '.singularity.d/runscript' /usr/local/bin/brats-pull && echo "partial-detection"
+    expected_output_contains: "partial-detection"
+
+  - name: brats-workdir renders help
+    description: >-
+      Records each image's OCI WorkingDir at pull time; without the record,
+      relative-entrypoint algorithms cannot start (see the workdir test above).
+    command: brats-workdir --help
+    expected_output_contains: "usage: brats-workdir"
