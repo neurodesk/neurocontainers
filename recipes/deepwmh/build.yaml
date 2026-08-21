@@ -165,6 +165,9 @@ build:
         - >-
           grep -q 'neurocontainers. fall back to a writable log dir'
           /opt/nnunet_for_deepwmh/nnunet/training/network_training/network_trainer.py
+        - >-
+          grep -q 'except OSError'
+          /opt/nnunet_for_deepwmh/nnunet/training/network_training/nnUNetTrainerV2.py
 
     - run:
         - git clone https://github.com/lchdl/DeepWMH /opt/deepwmh
@@ -310,6 +313,37 @@ files:
               "the fork changed and this patch needs revisiting")
       target.write_text(src.replace(old, new, 1))
       print(f"patched {target}")
+
+      # Second write site, exposed once the log fallback let inference proceed
+      # past "model file is valid.": model_restore hardcodes
+      # trainer.update_fold(0), so initialize() calls maybe_mkdir_p on
+      # <model>/fold_0 -- a directory that does not exist, inside the read-only
+      # image (this model's weights live in all/). Inference writes nothing
+      # there, so tolerating the failure is correct, not a workaround. Patched
+      # in the V2 trainer (the one this model restores) and the base trainer,
+      # whose own docstring says initialize(training=False) runs for
+      # prediction.
+      for rel, indent in (
+          ("nnunet/training/network_training/nnUNetTrainerV2.py", " " * 12),
+          ("nnunet/training/network_training/nnUNetTrainer.py", " " * 8),
+      ):
+          target = root / rel
+          src = target.read_text()
+          old_mkdir = indent + "maybe_mkdir_p(self.output_folder)\n"
+          new_mkdir = (
+              indent + "# neurocontainers: the model directory is read-only at\n"
+              + indent + "# run time and inference writes nothing here.\n"
+              + indent + "try:\n"
+              + indent + "    maybe_mkdir_p(self.output_folder)\n"
+              + indent + "except OSError:\n"
+              + indent + "    pass\n"
+          )
+          if src.count(old_mkdir) != 1:
+              raise SystemExit(
+                  f"expected exactly one initialize mkdir in {target}, found "
+                  f"{src.count(old_mkdir)}; the fork changed, revisit this patch")
+          target.write_text(src.replace(old_mkdir, new_mkdir, 1))
+          print(f"patched {target}")
 
 deploy:
   # Named individually rather than by path. /opt/robex was exported as a

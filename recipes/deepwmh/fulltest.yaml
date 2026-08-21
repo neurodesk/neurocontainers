@@ -323,6 +323,13 @@ tests:
     command: |
       python -c "
       import os, pathlib
+      # The PR pipeline runs this suite in Docker as root, for whom the model
+      # tree is writable -- which masked the fold_0 mkdir failure entirely: CI
+      # passed 40/40 while the same restore died with Errno 30 on the real
+      # read-only apptainer image. Drop to nobody so an unwritable model tree
+      # is unwritable in every environment this test runs in.
+      if os.geteuid() == 0:
+          os.setuid(65534)
       from nnunet.training.model_restore import load_model_and_checkpoint_files
       root = pathlib.Path(os.environ['DEEPWMH_MODEL_DIR'])
       best = next(root.rglob('model_best.model'))
