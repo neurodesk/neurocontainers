@@ -76,6 +76,7 @@ tests:
       deep-quality-estimation -t1c t1c.nii.gz $base -s empty.nii.gz 2>&1 | grep -q 'no labelled voxels' && echo "empty-seg-ok"
       deep-quality-estimation -t1c t1c.nii.gz $base -s seg4d.nii.gz 2>&1 | grep -q 'expected a 3D volume' && echo "4d-ok"
       deep-quality-estimation -t1c big.nii.gz $base -s seg.nii.gz 2>&1 | grep -q 'same grid' && echo "shape-mismatch-ok"
+      deep-quality-estimation -t1c t1c.nii.gz $base -s seg.nii.gz -o /nonexistent-dir/out.json 2>&1 | grep -q 'output directory does not exist' && echo "bad-output-ok"
       echo "validation-done"
     expected_output_contains: "validation-done"
 
@@ -84,6 +85,9 @@ tests:
       The README claimed DQE defaults to cuda and that --device cpu is required
       without a GPU. _set_device already auto-detects, so no flag is needed.
       This also covers the critical path end to end and the new -o/--json.
+      --verbose must surface the library's "Using device" line: upstream
+      disables its logger at import time, so an enable placed before the
+      import is silently undone and the flag becomes a no-op.
     timeout: 900
     command: |
       cd "$(mktemp -d)"
@@ -96,7 +100,8 @@ tests:
       nib.save(nib.Nifti1Image(seg,aff), 'seg.nii.gz')
       "
       deep-quality-estimation -t1c t1c.nii.gz -t1 t1.nii.gz -t2 t2.nii.gz \
-          -fla fla.nii.gz -s seg.nii.gz --json -o score.json
+          -fla fla.nii.gz -s seg.nii.gz --json -o score.json --verbose 2>verbose.log
+      grep -q 'Using device' verbose.log && echo "verbose-ok"
       python -c "
       import json
       d = json.load(open('score.json'))
