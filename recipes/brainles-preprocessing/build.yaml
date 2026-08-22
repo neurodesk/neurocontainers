@@ -195,9 +195,11 @@ categories:
 readme: |
   ----------------------------------
   ## brainles-preprocessing/{{ context.version }} ##
-  brainles-preprocessing (BrainLesion Suite) provides a preprocessing pipeline
+  brainles-preprocessing provides a preprocessing pipeline
   for brain MRI: co-registration, atlas alignment, skull-stripping, defacing
   and intensity normalization.
+
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
 
   ### Commands
 
