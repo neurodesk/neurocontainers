@@ -158,6 +158,8 @@ readme: |-
   desktop interface, then copies and renames the files into the structure you
   choose. It is a graphical tool: there is no batch or command line mode.
 
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
+
   ### Input format
 
   modsort is **NIfTI only**. Its drop targets are BraTS-style modality tags --
