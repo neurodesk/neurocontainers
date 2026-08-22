@@ -4,10 +4,16 @@
 # without requiring manual annotations for training. The container bundles the
 # authors' pre-trained model, their nnU-Net fork, ROBEX and ANTs.
 #
-# Note: a full DeepWMH_predict run performs skull stripping, N4 bias correction
-# and 3D nnU-Net inference, which is far too slow for CPU-only test runners.
-# The checks below verify the interfaces, the installed model tree and the
-# external tools, rather than running an end-to-end segmentation.
+# The suite verifies the interfaces, the installed model tree, the external
+# tools, and the two output defects that used to be silent.
+#
+# It does NOT run a full segmentation. That was tried: DeepWMH skull-strips
+# with ROBEX before inference, and ROBEX fits a trained shape model, so it
+# rejects a synthetic phantom outright (measured: it fails in under 3s). A real
+# end-to-end run needs a real T2-FLAIR brain, and no image in this stack ships
+# one, so it cannot be done offline in CI. Instead, the nnU-Net model restore
+# below exercises the exact call chain that used to fail -- which is where a
+# container that could not run a single inference would still be caught.
 
 name: deepwmh
 version: 1.0.1
@@ -39,7 +45,13 @@ tests:
     command: DeepWMH_install -h
     expected_output_contains: "-m"
 
-  - name: DeepWMH_train is installed
+  - name: DeepWMH_train exists but is not exported
+    description: >-
+      The entry point is installed by upstream's setup.py, but it is left out
+      of deploy.bins: its first action is check_system_integrity with every
+      check enabled, including FSL and FreeSurfer, neither of which is in this
+      image, so the module would advertise a command that can only ever fail.
+      Upstream needs them for training only; this container does inference.
     command: command -v DeepWMH_train
     expected_output_contains: DeepWMH_train
 
@@ -207,3 +219,124 @@ tests:
       print('model-dir-writable', ok, 'fallback-writable', os.access(fb, os.W_OK))
       "
     expected_output_contains: "fallback-writable True"
+
+  # ==========================================================================
+  # OUTPUT CORRECTNESS
+  # ==========================================================================
+  - name: masks are written as 0/1, not 0/255
+    description: >-
+      save_nifti casts data to float32 but reused the caller's header, which
+      for the segmentation stages declares uint8. nibabel then stored 255 and
+      set scl_slope=1/255, so the declared final mask read back as
+      {0, 1.00000006} and `mask == 1` silently selected nothing, while code
+      reading raw integers saw 255 -- and 001_raw in the same run wrote a true
+      {0, 1}, so the encoding was not even self-consistent. Nothing errored and
+      the mask looked correct in a viewer.
+    command: |
+      python -c "
+      import numpy as np, nibabel as nib, tempfile, os
+      from deepwmh.utilities.data_io import save_nifti
+      d = tempfile.mkdtemp(); q = os.path.join(d, 'm.nii.gz')
+      base = nib.Nifti1Image(np.zeros((8,8,4), np.uint8), np.eye(4))
+      base.header.set_data_dtype(np.uint8)
+      m = np.zeros((8,8,4), 'float32'); m[2:5,2:5,1:3] = 1
+      save_nifti(m, base.header, q)
+      img = nib.load(q); dat = img.get_fdata()
+      print('dtype', img.get_data_dtype(), 'slope', img.dataobj.slope)
+      print('equals-one', int((dat == 1).sum()), 'greater-zero', int((dat > 0).sum()))
+      "
+    expected_output_contains: "equals-one 18 greater-zero 18"
+
+  - name: a generated GIF preview can be read back
+    description: >-
+      003_Previews/*.gif is the only built-in QC artifact. Written through the
+      pinned imageio 2.13.2 they came out unreadable for several geometries --
+      by every decoder tried, including imageio's own reader inside this same
+      image -- while deepwmh still exited 0, so the failure was silent. The
+      frames are now written with Pillow.
+    timeout: 600
+    command: |
+      python -c "
+      import numpy as np, nibabel as nib, tempfile, os
+      from deepwmh.utilities.nii_preview import nii_as_gif
+      from deepwmh.utilities.data_io import try_load_gif
+      d = tempfile.mkdtemp()
+      v = os.path.join(d, 'v.nii.gz'); g = os.path.join(d, 'v.gif')
+      nib.save(nib.Nifti1Image(np.random.rand(32,32,8).astype('float32'), np.eye(4)), v)
+      nii_as_gif(v, g)
+      print('gif-readable', try_load_gif(g), os.path.getsize(g) > 0)
+      "
+    expected_output_contains: "gif-readable True True"
+
+  # ==========================================================================
+  # CLI SURFACE
+  # ==========================================================================
+  - name: deepwmh --help describes deepwmh, not DeepWMH_predict
+    description: >-
+      The wrapper exec'd DeepWMH_predict, so --help printed that tool's usage:
+      the wrong program name, and "-m TRAINED_MODEL" listed as required, which
+      contradicts every example in the readme -- none of which pass -m, because
+      the wrapper supplies it.
+    command: deepwmh --help
+    expected_output_contains: "usage: deepwmh"
+
+  - name: deepwmh --help does not demand -m
+    command: |
+      deepwmh --help | grep -q 'TRAINED_MODEL' && echo "STILL-DEMANDS-M" || echo "no-m-required"
+    expected_output_contains: "no-m-required"
+
+  - name: deepwmh --help names the final output directory
+    description: >-
+      Nothing documented which of the three segmentation directories is the
+      result; a user taking 001_raw gets an unmasked, un-postprocessed mask.
+    command: deepwmh --help
+    expected_output_contains: "003_postproc_fov"
+
+  - name: ROBEX resolves through PATH
+    description: >-
+      ROBEX is exported as a command and transparent-singularity resolves its
+      wrappers through the container's PATH. /opt/robex was on deploy.path but
+      not on PATH, so `ROBEX` and `runROBEX.sh` were both advertised by the
+      module and both failed with "executable file not found in $PATH".
+    command: bash -lc 'command -v ROBEX && command -v runROBEX.sh'
+    expected_output_contains: /opt/robex/ROBEX
+
+  # ==========================================================================
+  # END-TO-END
+  # ==========================================================================
+  - name: the nnU-Net model restores from the read-only image
+    description: >-
+      This is the call chain that made every inference fail: nnUNet_predict ->
+      load_model_and_checkpoint_files -> restore_model instantiates
+      nnUNetTrainerV2, whose __init__ calls print_to_log_file, which opens
+      training_log_<stamp>.txt in self.output_folder. That folder is restored
+      from the model pickle and points at /opt/deepwmh-model, inside the
+      read-only squashfs, so it died with "OSError: [Errno 30] Read-only file
+      system" after loading the model.
+
+      Loading the real weights through upstream's own entry point is a stronger
+      check than grepping for the patch: it fails if the fallback stops working
+      for any reason, not only if the patch text goes missing. A full
+      segmentation cannot be tested here -- ROBEX rejects a synthetic phantom,
+      and no real T2-FLAIR brain ships in this stack.
+    timeout: 900
+    command: |
+      python -c "
+      import os, pathlib
+      # The PR pipeline runs this suite in Docker as root, for whom the model
+      # tree is writable -- which masked the fold_0 mkdir failure entirely: CI
+      # passed 40/40 while the same restore died with Errno 30 on the real
+      # read-only apptainer image. Drop to nobody so an unwritable model tree
+      # is unwritable in every environment this test runs in.
+      if os.geteuid() == 0:
+          os.setuid(65534)
+      from nnunet.training.model_restore import load_model_and_checkpoint_files
+      root = pathlib.Path(os.environ['DEEPWMH_MODEL_DIR'])
+      best = next(root.rglob('model_best.model'))
+      folder = best.parent.parent
+      print('restoring from', folder)
+      trainer, params = load_model_and_checkpoint_files(
+          str(folder), folds='all', checkpoint_name='model_best')
+      print('model-restored params', len(params))
+      "
+    expected_output_contains: "model-restored params"

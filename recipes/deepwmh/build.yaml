@@ -131,6 +131,11 @@ build:
 
     - environment:
         ROBEX_DIR: /opt/robex
+        # ROBEX is exported as a command, and transparent-singularity's wrappers
+        # resolve their target through the container's own PATH. Without this,
+        # `ROBEX` and `runROBEX.sh` were advertised by the module and both failed
+        # with "executable file not found in $PATH".
+        PATH: /opt/robex:${PATH}
 
     - run:
         - python -m pip install --no-cache-dir torch==2.5.0 torchvision==0.20.0
@@ -160,6 +165,9 @@ build:
         - >-
           grep -q 'neurocontainers. fall back to a writable log dir'
           /opt/nnunet_for_deepwmh/nnunet/training/network_training/network_trainer.py
+        - >-
+          grep -q 'except OSError'
+          /opt/nnunet_for_deepwmh/nnunet/training/network_training/nnUNetTrainerV2.py
 
     - run:
         - git clone https://github.com/lchdl/DeepWMH /opt/deepwmh
@@ -169,6 +177,32 @@ build:
         - python -c "import numpy; print('numpy after install', numpy.__version__)"
         - python -c "import skimage, nibabel, scipy; print('sci stack ok')"
         - DeepWMH_predict -h
+        # Two silent output defects in DeepWMH itself; see the patch for detail.
+        - python {{ get_file("patch_deepwmh_outputs") }} /opt/deepwmh
+        # The declared final mask stored 0/255 with scl_slope=1/255, so any
+        # downstream `mask == 1` silently selected nothing. Fail the build if
+        # that ever comes back.
+        - >-
+          python -c "import numpy as np, nibabel as nib, tempfile, os;
+          from deepwmh.utilities.data_io import save_nifti;
+          d=tempfile.mkdtemp(); q=os.path.join(d,'m.nii.gz');
+          b=nib.Nifti1Image(np.zeros((8,8,4),np.uint8), np.eye(4)); b.header.set_data_dtype(np.uint8);
+          m=np.zeros((8,8,4),'float32'); m[2:5,2:5,1:3]=1;
+          save_nifti(m, b.header, q); dat=nib.load(q).get_fdata();
+          assert (dat==1).sum()==18, (sorted(np.unique(dat)), (dat==1).sum());
+          print('mask labels are exactly 0/1')"
+        # Previews were written by imageio 2.13.2 and came out unreadable for
+        # several geometries -- by any decoder, including this image's own --
+        # while deepwmh still exited 0. Round-trip one here.
+        - >-
+          python -c "import numpy as np, nibabel as nib, tempfile, os;
+          from deepwmh.utilities.nii_preview import nii_as_gif;
+          from deepwmh.utilities.data_io import try_load_gif;
+          d=tempfile.mkdtemp(); v=os.path.join(d,'v.nii.gz'); g=os.path.join(d,'v.gif');
+          nib.save(nib.Nifti1Image(np.random.rand(32,32,8).astype('float32'), np.eye(4)), v);
+          nii_as_gif(v, g);
+          assert try_load_gif(g), 'the generated GIF preview cannot be read back';
+          print('gif round-trip ok')"
 
     # Fetch and install the pre-trained model into the image so the container
     # works offline. gdown handles the Drive confirm-token dance that the
@@ -186,26 +220,27 @@ build:
     - environment:
         # Consumed by the wrapper below so users need not pass -m every time.
         DEEPWMH_MODEL_DIR: "{{ context.model_dir }}"
-        DEPLOY_ENV_DEEPWMH_MODEL_DIR: "BASEPATH{{ context.model_dir }}"
+        # Not BASEPATH-prefixed: BASEPATH substitutes the image file path, so
+        # the module exported a "directory" inside the .simg that cannot exist
+        # on the host. Anyone following the readme's advice to call
+        # DeepWMH_predict directly with -m "$DEEPWMH_MODEL_DIR" got
+        # "RuntimeError: Directory not exist". The in-container path is the only
+        # value that is ever usable, since the model lives inside the image.
+        DEPLOY_ENV_DEEPWMH_MODEL_DIR: "{{ context.model_dir }}"
         nnUNet_raw_data_base: /tmp/nnUNet_raw
         nnUNet_preprocessed: /tmp/nnUNet_preprocessed
         RESULTS_FOLDER: "{{ context.model_dir }}"
 
     # Thin convenience wrapper: DeepWMH_predict with the bundled model
-    # pre-selected. Users who want a different model still call DeepWMH_predict.
-    # NOTE: written with printf, not a heredoc. Neurodocker joins the entries of
-    # a run: list with "&& \", which splices continuations into the middle of a
-    # heredoc body and produces "unterminated heredoc" at build time.
-    # Single quotes keep $@ and ${DEEPWMH_MODEL_DIR} for the wrapper's runtime
-    # shell instead of expanding them during the image build.
-    # Each entry is a YAML block scalar: an unquoted "#" after a space would
-    # otherwise start a YAML comment and silently truncate the command.
+    # pre-selected, and a --help that describes deepwmh rather than reprinting
+    # DeepWMH_predict's usage (which names the wrong program and lists -m as
+    # required, contradicting every example in the readme).
     - run:
-        - >-
-          printf '%s\n' '#!/bin/bash' 'set -e' 'exec DeepWMH_predict -m "${DEEPWMH_MODEL_DIR:-/opt/deepwmh-model}" "$@"' > /usr/local/bin/deepwmh
-        - chmod +x /usr/local/bin/deepwmh
+        - install -m 0755 {{ get_file("deepwmh_wrapper") }} /usr/local/bin/deepwmh
         - bash -n /usr/local/bin/deepwmh
-        - deepwmh -h
+        - "deepwmh --help | grep -q 'usage: deepwmh'"
+        - deepwmh --help | grep -q '003_postproc_fov'
+        - "! deepwmh --help | grep -q 'TRAINED_MODEL'"
 
     - workdir: /opt
 
@@ -228,6 +263,10 @@ build:
           python -c "import torch; print('cuda available:', torch.cuda.is_available())"
 
 files:
+  - name: patch_deepwmh_outputs
+    filename: patch_deepwmh_outputs.py
+  - name: deepwmh_wrapper
+    filename: deepwmh_wrapper
   - name: patch_nnunet_logdir.py
     contents: |
       """Make the nnU-Net fork tolerate a read-only model directory.
@@ -275,16 +314,55 @@ files:
       target.write_text(src.replace(old, new, 1))
       print(f"patched {target}")
 
+      # Second write site, exposed once the log fallback let inference proceed
+      # past "model file is valid.": model_restore hardcodes
+      # trainer.update_fold(0), so initialize() calls maybe_mkdir_p on
+      # <model>/fold_0 -- a directory that does not exist, inside the read-only
+      # image (this model's weights live in all/). Inference writes nothing
+      # there, so tolerating the failure is correct, not a workaround. Patched
+      # in the V2 trainer (the one this model restores) and the base trainer,
+      # whose own docstring says initialize(training=False) runs for
+      # prediction.
+      for rel, indent in (
+          ("nnunet/training/network_training/nnUNetTrainerV2.py", " " * 12),
+          ("nnunet/training/network_training/nnUNetTrainer.py", " " * 8),
+      ):
+          target = root / rel
+          src = target.read_text()
+          old_mkdir = indent + "maybe_mkdir_p(self.output_folder)\n"
+          new_mkdir = (
+              indent + "# neurocontainers: the model directory is read-only at\n"
+              + indent + "# run time and inference writes nothing here.\n"
+              + indent + "try:\n"
+              + indent + "    maybe_mkdir_p(self.output_folder)\n"
+              + indent + "except OSError:\n"
+              + indent + "    pass\n"
+          )
+          if src.count(old_mkdir) != 1:
+              raise SystemExit(
+                  f"expected exactly one initialize mkdir in {target}, found "
+                  f"{src.count(old_mkdir)}; the fork changed, revisit this patch")
+          target.write_text(src.replace(old_mkdir, new_mkdir, 1))
+          print(f"patched {target}")
+
 deploy:
-  path:
-    - /opt/robex
-    - /opt/miniconda/envs/deepwmh/bin
+  # Named individually rather than by path. /opt/robex was exported as a
+  # directory, which also turned its license.txt and readme.txt into
+  # "commands" the module advertised, and the conda env bin put python,
+  # python3 and pip on the user's PATH, replacing the host interpreter for the
+  # rest of the shell.
+  #
+  # DeepWMH_train is deliberately absent: its first action is
+  # check_system_integrity with every check enabled, including FSL and
+  # FreeSurfer, neither of which is in this image, so it could only ever fail.
+  # Upstream requires them for training only.
   bins:
     - deepwmh
     - DeepWMH_predict
-    - DeepWMH_train
     - DeepWMH_install
     - antsGroupRegistration
+    - ROBEX
+    - runROBEX.sh
 
 categories:
   - image segmentation
@@ -310,23 +388,67 @@ readme: |-
   ```
   ml deepwmh/{{ context.version }}
 
-  # Single subject, GPU 0
-  deepwmh -i /data/FLAIR.nii.gz -n subject01 -o /data/out -g 0
+  # Single subject. -g defaults to 0; on a node with no GPU the tool warns and
+  # falls back to CPU, so this works either way.
+  deepwmh -i FLAIR.nii.gz -n subject01 -o out
+
+  # Force CPU
+  deepwmh -i FLAIR.nii.gz -n subject01 -o out -g -1
 
   # Several subjects at once
-  deepwmh -i /data/s1_FLAIR.nii.gz /data/s2_FLAIR.nii.gz \
-          -n s1 s2 \
-          -o /data/out -g 0
+  deepwmh -i s1_FLAIR.nii.gz s2_FLAIR.nii.gz -n s1 s2 -o out
 
-  # CPU only (slow), and skipping bias field correction
-  deepwmh -i /data/FLAIR.nii.gz -n subject01 -o /data/out -g -1 --skip-bfc
+  # Skip ANTs N4 bias correction: faster, but see the warning below
+  deepwmh -i FLAIR.nii.gz -n subject01 -o out --skip-bfc
   ```
 
-  `deepwmh` is a wrapper that calls `DeepWMH_predict` with the bundled model
-  directory already set. Call `DeepWMH_predict` directly to use your own model.
+  ### Output
 
-  Note: input must be T2-FLAIR. Skipping bias correction (`--skip-bfc`)
-  noticeably degrades accuracy on scans with strong field inhomogeneity.
+  The final result is `out/002_Segmentations/003_postproc_fov/`. The other
+  directories are intermediate: `001_raw` is the unmasked, un-postprocessed
+  network output, and taking it by mistake gives a worse mask with no
+  indication anything is wrong.
+
+  ```
+  001_Preprocessed_Images/                 N4-corrected input
+  002_Segmentations/001_raw/               raw network output
+  002_Segmentations/002_postproc_3mm/      after 3 mm spark removal
+  002_Segmentations/003_postproc_fov/      final result, after ROBEX FOV masking
+  003_Previews/*.gif                       QC animations
+  ```
+
+  Masks are written as 0/1. Earlier builds stored them as 0/255 with a NIfTI
+  scale factor, so `mask == 1` silently returned an empty mask; if you have
+  outputs from a build before 2026-08-20, threshold with `> 0`.
+
+  ### Runtime
+
+  On CPU, roughly **30 minutes per subject** on 4 CPUs in a multi-subject
+  batch, and about **60 minutes** for a single high-resolution 3D FLAIR. Two
+  things make this slower than it needs to be and neither is reachable from
+  this CLI: test-time augmentation is always on (8-fold mirroring), and mixed
+  precision disables itself when CUDA is absent, so everything runs fp32.
+  Size Slurm jobs accordingly.
+
+  ### Notes
+
+  `deepwmh` is a wrapper that calls `DeepWMH_predict` with the bundled model
+  directory already set, so `-m` is not needed. To use your own model, call
+  `DeepWMH_predict` directly and pass `-m /path/to/model`.
+
+  Input must be T2-FLAIR. This is **not checked**: a T1w image produces a
+  plausible-looking but meaningless mask.
+
+  Case names (`-n`) may contain only alphanumerics, `.`, `_` and `-`, and must
+  not contain the substring `_to_`. This is enforced with a hard error.
+
+  `--skip-bfc` skips N4 bias field correction. It is not required for CPU use.
+  The authors warn that accuracy degrades on scans with strong field
+  inhomogeneity, and testing measured Dice 0.79 against the corrected run with
+  53% more lesion volume, i.e. visible over-segmentation.
+
+  Only inference is supported. `DeepWMH_train` is not exposed, because training
+  additionally requires FSL and FreeSurfer, which are not in this image.
 
   More documentation can be found here: https://github.com/lchdl/DeepWMH
 
