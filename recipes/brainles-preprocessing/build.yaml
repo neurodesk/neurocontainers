@@ -48,10 +48,17 @@ build:
         # The `preprocessor` console script fails on every invocation as
         # shipped, including --help. See the patch for the two annotations.
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_preprocessor_cli") }}
+        # `hd-bet` has the same disease: hd_bet.py imports maybe_mkdir_p from
+        # brainles_hd_bet.utils, which never defines it, so the script dies on
+        # ImportError before parsing an argument. See the patch.
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_hdbet_cli") }}
         # Fail the build rather than ship a command that cannot start. This is
         # the check that was missing: the recipe exported the script and the
         # test only looked for it on PATH, which passes on a broken script.
+        # Gate EVERY deployed console script, not just the one that was
+        # reported broken first.
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/preprocessor --help > /dev/null && echo "preprocessor --help ok"
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/hd-bet --help > /dev/null && echo "hd-bet --help ok"
 
     - run:
         # python itself is deliberately not exported (see deploy), so give the
@@ -103,6 +110,8 @@ build:
 files:
   - name: fix_preprocessor_cli
     filename: fix_preprocessor_cli.py
+  - name: fix_hdbet_cli
+    filename: fix_hdbet_cli.py
   - name: preprocessing_python_helper
     filename: brainles-preprocessing-python
   - name: bake_atlases.py
@@ -186,17 +195,31 @@ categories:
 readme: |
   ----------------------------------
   ## brainles-preprocessing/{{ context.version }} ##
-  brainles-preprocessing (BrainLesion Suite) provides a preprocessing pipeline
+  brainles-preprocessing provides a preprocessing pipeline
   for brain MRI: co-registration, atlas alignment, skull-stripping, defacing
   and intensity normalization.
+
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
 
   ### Commands
 
   ```
-  preprocessor                     one-shot preprocessing of a single subject
+  preprocessor                     one-shot preprocessing of a single subject (GPU-oriented)
   hd-bet                           brain extraction on its own
   brainles-preprocessing-python    this container's interpreter
   ```
+
+  `preprocessor` is GPU-oriented: it constructs the brain extractor with its
+  defaults (`mode="accurate"`, test-time augmentation) and exposes no flag to
+  change them, so on a CPU-only node the brain-extraction stage alone takes
+  hours per volume. On CPU, run brain extraction through `hd-bet` with the
+  flags its help recommends:
+
+  ```
+  hd-bet -i t1c.nii.gz -o t1c_bet.nii.gz -mode fast -device cpu -tta 0
+  ```
+
+  or drive the full pipeline through the library route (see CPU below).
 
   `python` is deliberately not exported: putting this environment's bin
   directory on your PATH replaced the host interpreter for the rest of the
