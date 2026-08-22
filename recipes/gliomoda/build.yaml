@@ -356,6 +356,8 @@ readme: |-
   GlioMODA segments gliomas from multi-modal brain MRI across several sequence
   combinations.
 
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
+
   ### Input requirements
 
   Inputs must be skull-stripped, co-registered and resampled to the BraTS/SRI24
