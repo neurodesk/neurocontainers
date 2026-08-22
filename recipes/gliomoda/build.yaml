@@ -141,19 +141,75 @@ files:
           return sorted(d.name.replace("_", "-") for d in w.iterdir() if d.is_dir())
 
 
+      def cgroup_cpu_quota():
+          """CPU quota imposed on this container, or None if unlimited."""
+          # cgroup v2: "max 100000" or "<quota_us> <period_us>"
+          try:
+              parts = Path("/sys/fs/cgroup/cpu.max").read_text().split()
+              if parts and parts[0] != "max":
+                  return max(1, int(parts[0]) // int(parts[1]))
+          except (OSError, ValueError, IndexError, ZeroDivisionError):
+              pass
+          # cgroup v1
+          try:
+              quota = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read_text())
+              period = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read_text())
+              if quota > 0 and period > 0:
+                  return max(1, quota // period)
+          except (OSError, ValueError):
+              pass
+          return None
+
+
+      def default_threads():
+          """Threads for this job when --threads is not given.
+
+          The env vars come first, but the Neurodesk launcher runs singularity
+          with --cleanenv, which strips them before this wrapper can read them.
+          Without the kernel fallbacks torch would then use every logical core
+          on the machine rather than the cores the job was allocated, which
+          oversubscribes shared nodes.
+          """
+          for var in ("SLURM_CPUS_PER_TASK", "OMP_NUM_THREADS"):
+              value = os.environ.get(var, "")
+              if value.isdigit():
+                  return int(value)
+          limits = []
+          try:
+              limits.append(len(os.sched_getaffinity(0)))
+          except (AttributeError, OSError):
+              pass
+          quota = cgroup_cpu_quota()
+          if quota:
+              limits.append(quota)
+          return min(limits) if limits else None
+
+
       def check_grid(paths):
-          """Reject inputs that are not on the atlas grid, naming the offender."""
+          """Reject inputs that are not on the atlas grid, naming the offender.
+
+          The comparison must be exact: upstream reloads each file and asserts
+          shape == (240, 240, 155), so squeezing singleton axes here would only
+          admit a file that fails minutes later with a bare AssertionError. The
+          canonical BraTS atlas ships as (240, 240, 155, 1), so that case gets
+          its own message.
+          """
           import nibabel as nib
           for flag, path in paths.items():
               shape = tuple(int(x) for x in nib.load(path).shape)
-              squeezed = tuple(x for x in shape if x != 1)
-              if squeezed != ATLAS_SHAPE:
-                  sys.exit(
-                      f"error: {path} (--{flag}) has shape {shape}; GlioMODA requires "
-                      f"{ATLAS_SHAPE} BraTS/SRI24 atlas space.\n"
-                      "Inputs must be skull-stripped, co-registered and resampled onto "
-                      "that grid. Use brainles-preprocessing to get there."
-                  )
+              if shape == ATLAS_SHAPE:
+                  continue
+              msg = (f"error: {path} (--{flag}) has shape {shape}; GlioMODA "
+                     f"requires exactly {ATLAS_SHAPE} BraTS/SRI24 atlas space.\n")
+              if tuple(x for x in shape if x != 1) == ATLAS_SHAPE:
+                  msg += ("The grid matches apart from a singleton axis; drop it "
+                          "first, e.g. with nibabel's squeeze_image or "
+                          "fslroi.")
+              else:
+                  msg += ("Inputs must be skull-stripped, co-registered and "
+                          "resampled onto that grid. Use brainles-preprocessing "
+                          "to get there.")
+              sys.exit(msg)
 
 
       def main(argv=None):
@@ -175,7 +231,8 @@ files:
                               "(default: auto)")
           p.add_argument("--threads", type=int, default=None,
                          help="CPU threads. Defaults to $SLURM_CPUS_PER_TASK, then "
-                              "$OMP_NUM_THREADS, then every core on the machine.")
+                              "$OMP_NUM_THREADS, then the CPUs the kernel grants "
+                              "this container (affinity mask / cgroup quota).")
           p.add_argument("--list-models", action="store_true",
                          help="List the model folders bundled in this image and exit")
           p.add_argument("--version", action="store_true",
@@ -232,16 +289,16 @@ files:
           device = a.device
           if device == "auto":
               device = "cuda" if torch.cuda.is_available() else "cpu"
+          elif device == "cuda" and not torch.cuda.is_available():
+              # Without this, forcing CUDA on a GPU-less node loads the model and
+              # dies ~50 s later inside nnU-Net with a raw RuntimeError, about
+              # twenty frames below the user's command.
+              sys.exit("error: --device cuda requested but no CUDA device is "
+                       "available (torch.cuda.is_available() is False).\n"
+                       "Use --device cpu, or omit --device to select "
+                       "automatically.")
 
-          # torch and nnU-Net otherwise use every core on the machine rather than the
-          # cores this job was allocated, which oversubscribes shared nodes.
-          threads = a.threads
-          if threads is None:
-              for var in ("SLURM_CPUS_PER_TASK", "OMP_NUM_THREADS"):
-                  value = os.environ.get(var, "")
-                  if value.isdigit():
-                      threads = int(value)
-                      break
+          threads = a.threads if a.threads else default_threads()
           if threads:
               os.environ["OMP_NUM_THREADS"] = str(threads)
               torch.set_num_threads(threads)
@@ -299,6 +356,8 @@ readme: |-
   GlioMODA segments gliomas from multi-modal brain MRI across several sequence
   combinations.
 
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
+
   ### Input requirements
 
   Inputs must be skull-stripped, co-registered and resampled to the BraTS/SRI24
@@ -337,20 +396,30 @@ readme: |-
   automatically. Expect roughly 5-12 minutes per case on 4 cores. Force a device
   with `--device cpu` or `--device cuda`.
 
-  Threads default to $SLURM_CPUS_PER_TASK, then $OMP_NUM_THREADS, so the job
-  stays inside its allocation on a shared node. Override with `--threads`.
-
-  ### From Python
+  Threads default to $SLURM_CPUS_PER_TASK, then $OMP_NUM_THREADS, then the
+  CPUs the kernel grants the container (affinity mask or cgroup quota) rather
+  than every core on the machine. On a shared node the safest option is still
+  to set them explicitly:
 
   ```
-  from gliomoda import Inferer
-  Inferer(device="cpu").infer(t1c="t1c.nii.gz", t2f="flair.nii.gz",
-                              segmentation_file="seg.nii.gz")
+  gliomoda -t1c t1c.nii.gz -t2f flair.nii.gz -o seg.nii.gz \
+           --threads "${SLURM_CPUS_PER_TASK:-4}"
+  ```
+
+  ### Scripting
+
+  This module exposes the `gliomoda` command only; no container Python is on
+  PATH, so `from gliomoda import Inferer` in the module environment imports
+  nothing. Use the CLI. If you genuinely need the upstream Python API, enter
+  the image directly:
+
+  ```
+  singularity exec <image>.simg {{ context.venv }}/bin/python3 \
+    -c 'from gliomoda import Inferer; Inferer(device="cpu").infer(...)'
   ```
 
   Inferer defaults to device="cuda" and does not fall back, so pass device
-  explicitly when scripting against the API on a CPU node. The `gliomoda`
-  command does this for you.
+  explicitly when scripting against the API on a CPU node.
 
   ### Notes
 
