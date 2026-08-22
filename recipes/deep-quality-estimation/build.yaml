@@ -269,6 +269,8 @@ readme: |-
   Deep Quality Estimation rates BraTS glioma segmentation quality on a one to
   six star scale.
 
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
+
   ### Example
 
   ```

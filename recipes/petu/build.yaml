@@ -239,6 +239,8 @@ readme: |-
   PeTu segments paediatric brain tumours into enhancing tumour (ET), cystic
   component (CC) and T2-hyperintense (T2H) regions from multi-parametric MRI.
 
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
+
   ### Input requirements
 
   Inputs must already be skull-stripped, co-registered and resampled to the

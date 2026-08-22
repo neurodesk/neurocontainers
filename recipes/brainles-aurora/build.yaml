@@ -331,6 +331,8 @@ readme: |-
   AURORA segments brain metastases from multi-modal MR images using pretrained
   deep learning models.
 
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
+
   ### Example
 
   ```
