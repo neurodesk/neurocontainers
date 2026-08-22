@@ -82,8 +82,9 @@ readme: |
   ----------------------------------
   ## panoptica/{{ context.version }} ##
   panoptica is a Python framework for instance-wise evaluation of 3D
-  segmentation maps (instance matching, panoptic quality, Dice, IoU, ASSD),
-  from the BrainLesion Suite.
+  segmentation maps (instance matching, panoptic quality, Dice, IoU, ASSD).
+
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
 
   This container provides both a command line tool and the Python library.
 
