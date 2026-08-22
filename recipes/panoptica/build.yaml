@@ -1,5 +1,5 @@
 name: panoptica
-version: 2.1.6
+version: 2.1.7
 
 architectures:
   - x86_64
@@ -31,12 +31,11 @@ build:
         # sanity import at build time so a broken solve fails the build, not the user
         - /opt/miniconda-latest/envs/panoptica/bin/python -c "from importlib.metadata import version; import nibabel, SimpleITK, panoptica; print('panoptica', version('panoptica'))"
         - /opt/miniconda-latest/envs/panoptica/bin/python -c "import kaleido; print('kaleido', kaleido.__version__)"
-        # Instance relabelling overflows the connected-components dtype, so
-        # ordinary multi-lesion evaluations fail once reference plus unmatched
-        # predicted instances exceed 255. Still unfixed in 2.1.6.
-        - /opt/miniconda-latest/envs/panoptica/bin/python {{ get_file("fix_map_labels_dtype") }}
-        # Prove the fix works rather than that the file changed: this map needs
-        # label 256, which the unpatched code cannot represent in uint8.
+        # 2.1.6 and earlier overflowed the connected-components dtype during
+        # instance relabelling, so this image carried a patch. 2.1.7 ships the
+        # fix upstream (BrainLesion/panoptica#298); this proves it is really in
+        # the installed wheel: the map needs label 256, which the broken code
+        # cannot represent in uint8.
         - >-
           /opt/miniconda-latest/envs/panoptica/bin/python -c "import numpy as np; from panoptica._functionals import _map_labels; a=np.zeros((4,4),dtype=np.uint8); a[0,0]=3; out=_map_labels(a,{3:256}); assert int(out.max())==256, out.max(); print('instance relabelling handles >255 labels')"
 
@@ -65,8 +64,6 @@ deploy:
     - panoptica-python
 
 files:
-  - name: fix_map_labels_dtype
-    filename: fix_map_labels_dtype.py
   - name: panoptica_config_helper
     filename: panoptica-config
   - name: panoptica_python_helper
@@ -85,8 +82,9 @@ readme: |
   ----------------------------------
   ## panoptica/{{ context.version }} ##
   panoptica is a Python framework for instance-wise evaluation of 3D
-  segmentation maps (instance matching, panoptic quality, Dice, IoU, ASSD),
-  from the BrainLesion Suite.
+  segmentation maps (instance matching, panoptic quality, Dice, IoU, ASSD).
+
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
 
   This container provides both a command line tool and the Python library.
 
@@ -128,14 +126,6 @@ readme: |
   Inputs may be a file path, numpy array, nibabel image or SimpleITK image.
   Voxel spacing is read from the NIfTI header; numpy arrays default to 1 mm
   unless you pass voxelspacing=.
-
-  ### Notes
-
-  This image carries a patch to panoptica._functionals._map_labels. Upstream
-  builds its label lookup with the dtype of the connected-components array,
-  which overflows once reference plus unmatched predicted instances exceed 255,
-  so ordinary multi-lesion evaluations fail with OverflowError or IndexError.
-  The fix is on upstream main but not in 2.1.6.
 
   Docs: https://github.com/BrainLesion/panoptica
   Citation: https://doi.org/10.1101/2024.10.03.24314745
