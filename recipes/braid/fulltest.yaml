@@ -1,3 +1,5 @@
+# Artifact: braid_1.0.0_20260722.simg, 14.49 GiB - the largest container covered by
+# these suites. Download dominates the run time.
 name: braid
 version: 1.0.0
 default_timeout: 60
