@@ -421,6 +421,8 @@ readme: |-
   challenges: adult and paediatric glioma, meningioma, brain metastasis and
   sub-Saharan Africa segmentation, plus inpainting and missing-MRI synthesis.
 
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
+
   ### Read this first: no algorithms are bundled
 
   This container is an orchestrator. It contains no model and no weights. Each
