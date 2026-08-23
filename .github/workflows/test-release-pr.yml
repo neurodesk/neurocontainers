@@ -42,9 +42,18 @@ jobs:
   test-containers:
     needs: detect-changes
     if: needs.detect-changes.outputs.has-changes == 'true'
-    runs-on: self-hosted
+    runs-on: neurodesk-arcrunner-release-test
+    # Do not raise max-parallel. maxRunners 2 is insurance against ARC #4307, not spare
+    # throughput, and keeping this at 1 is what leaves the second slot free. Revisit
+    # only when #4307 lands or syd1 retires.
+    #
+    # 110 not 120: 120 ties the pod's activeDeadlineSeconds, whose clock starts earlier,
+    # so the kubelet reap wins and the job reports "lost communication with the server"
+    # instead of a clean timeout.
+    timeout-minutes: 110
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         release: ${{ fromJson(needs.detect-changes.outputs.modified-releases) }}
 
@@ -79,8 +88,8 @@ jobs:
       - name: Install dependencies
         working-directory: source
         run: |
-          # Matrix jobs can share the same self-hosted machine and system Python.
-          # Serialize dependency installation to avoid pip/apt/git-annex races.
+          # Serialises dependency installation: on the VMs legs shared a machine. A no-op
+          # on ephemeral runners; kept so the job stays correct on either.
           (
             flock 9
             python -m pip install --upgrade pip
@@ -98,12 +107,30 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      # Apptainer is not in the stock GitHub/ARC runner image. The standalone VMs
-      # only have it because it was pre-installed there, so install it when it is
-      # missing. Skipping when present keeps this genuinely inert on the VMs: no
-      # apt-get (which would race the dpkg lock against sibling matrix legs sharing
-      # the machine) and no risk of changing the Apptainer version under tests that
-      # currently pass.
+      # Point the cache at the containers dir so release_test_runner skips its copy (one
+      # artifact on disk, not two), and so the download stays off $HOME, which counts
+      # against the pod's 8Gi ephemeral-storage limit and would evict the pod mid-job for
+      # any container over ~8 GiB.
+      - name: Stage the SIF cache on the work volume
+        run: |
+          set -euo pipefail
+          WS="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE unset - refusing to cache a multi-GB SIF on $HOME}"
+          CONTAINERS_DIR="$WS/source/builder/fulltest-containers"
+          mkdir -p "$CONTAINERS_DIR" "$HOME/.cache"
+          # builder/recipe.py and builder/template.py use this path for the get_file
+          # cache, which is shared on the VMs. Refuse rather than delete so reverting
+          # runs-on to self-hosted cannot destroy it.
+          CACHE_LINK="$HOME/.cache/neurocontainers"
+          if [ -e "$CACHE_LINK" ] && [ ! -L "$CACHE_LINK" ]; then
+            echo "::error::${CACHE_LINK} exists and is not a symlink. This step expects a per-job HOME (runner pods); on a shared HOME that path is the get_file cache and must not be replaced. Refusing rather than deleting it."
+            exit 1
+          fi
+          ln -sfn "$CONTAINERS_DIR" "$CACHE_LINK"
+          echo "SIF cache -> $(readlink -f "$CACHE_LINK")"
+
+      # Apptainer is absent from the stock runner image; the VMs only have it because
+      # it was preinstalled. Skipping when present keeps this inert there: no apt-get
+      # racing the dpkg lock, no version change under passing tests.
       - name: Check for Apptainer
         id: apptainer-check
         run: |
@@ -113,18 +140,14 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # NOTE: this job checks out with `path: source`, so a local action must be
-      # referenced through that path - `./.github/actions/...` resolves against
-      # GITHUB_WORKSPACE, which is empty here.
+      # `path: source` checkout, so the local action needs that prefix.
       - name: Install Apptainer
         if: steps.apptainer-check.outputs.present != 'true'
         uses: ./source/.github/actions/setup-apptainer
         with:
           apptainer-version: 1.4.3
 
-      # Defensive, and currently unused: this job only exec's a downloaded .simg, so
-      # Apptainer needs no build cache. Kept so a runner without a writable $HOME
-      # has somewhere to go if that changes.
+      # Defensive: unused today (this job only exec's a downloaded .simg).
       - name: Prepare Apptainer scratch directories
         if: steps.apptainer-check.outputs.present != 'true'
         run: |
