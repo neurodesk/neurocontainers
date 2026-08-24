@@ -27,20 +27,33 @@ tests:
     command: meganorm-python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt; print('mpl ok')"
     expected_output_contains: "mpl ok"
 
-  - name: only the tool's own commands are on PATH
+  - name: only the tool's own commands are exported to the session
     description: >-
       Loading the module used to export 25 commands, python, python3,
       python3.12 and pip3.12 among them, which shadowed the host interpreter
       for the rest of the session: a later pip install or DataLad call silently
-      ran this container's python. The named commands are exported instead.
+      ran this container's python. Transparent Singularity writes one wrapper
+      per name in DEPLOY_BINS, so that list -- not the container's own PATH --
+      is what reaches the user's shell. The venv is on PATH in here by design,
+      so python3.12 is reachable inside the container and asking whether it
+      resolves proves nothing; what matters is that it is never exported, and
+      that every name that is exported resolves to something.
     command: |
-      command -v meganorm-python normative mne > /dev/null && echo "own-commands-present"
-      if command -v python3.12 > /dev/null && python3.12 -c "import meganorm" 2>/dev/null; then
-        echo "HOST-PYTHON-SHADOWED"
-      else
-        echo "host-python-untouched"
-      fi
-    expected_output_contains: "host-python-untouched"
+      for want in meganorm meganorm-python; do
+        echo "${DEPLOY_BINS}" | tr ':' '\n' | grep -qx -- "${want}" || {
+          echo "NOT EXPORTED: ${want}"; exit 1; }
+      done
+      for bin in $(echo "${DEPLOY_BINS}" | tr ':' ' '); do
+        case "${bin}" in
+          python|python3|python3.*|pip|pip3|pip3.*)
+            echo "INTERPRETER EXPORTED: ${bin}"; exit 1 ;;
+        esac
+        command -v "${bin}" > /dev/null || {
+          echo "EXPORTED BUT MISSING: ${bin}"; exit 1; }
+      done
+      echo "exported: ${DEPLOY_BINS}"
+      echo "own-commands-only"
+    expected_output_contains: "own-commands-only"
 
   - name: an example configuration ships and loads
     description: >-
