@@ -191,6 +191,10 @@ build:
           save_nifti(m, b.header, q); dat=nib.load(q).get_fdata();
           assert (dat==1).sum()==18, (sorted(np.unique(dat)), (dat==1).sum());
           print('mask labels are exactly 0/1')"
+        # imageio's pinned 2.13.2 cannot read back a GIF whose palette has
+        # fewer than 256 entries, which real FLAIR previews routinely produce.
+        # See the patch for why that is not merely cosmetic.
+        - python {{ get_file("patch_imageio_palette") }}
         # Previews were written by imageio 2.13.2 and came out unreadable for
         # several geometries -- by any decoder, including this image's own --
         # while deepwmh still exited 0. Round-trip one here.
@@ -203,6 +207,21 @@ build:
           nii_as_gif(v, g);
           assert try_load_gif(g), 'the generated GIF preview cannot be read back';
           print('gif round-trip ok')"
+        # The round-trip above cannot catch the palette bug on its own: random
+        # noise quantises to a full 256-colour palette, which is the one case
+        # that already worked. Write a deliberately small palette instead.
+        - >-
+          python -c "import numpy as np, tempfile, os;
+          from PIL import Image;
+          from deepwmh.utilities.data_io import try_load_gif;
+          d=tempfile.mkdtemp(); g=os.path.join(d,'p.gif');
+          band=lambda i: ((np.indices((16,16))[1] // 4) * 60 + 10*i).astype('uint8');
+          fr=[Image.fromarray(band(i)).convert('P', palette=Image.ADAPTIVE, colors=4) for i in range(3)];
+          fr[0].save(g, save_all=True, append_images=fr[1:], duration=100, loop=0);
+          n=len(Image.open(g).getpalette())//3;
+          assert n < 256, 'this check is only meaningful with a sub-256-colour palette, got %d' % n;
+          assert try_load_gif(g), 'a %d-colour GIF cannot be read back' % n;
+          print('sub-256-colour gif (%d entries) reads back ok' % n)"
 
     # Fetch and install the pre-trained model into the image so the container
     # works offline. gdown handles the Drive confirm-token dance that the
@@ -265,6 +284,8 @@ build:
 files:
   - name: patch_deepwmh_outputs
     filename: patch_deepwmh_outputs.py
+  - name: patch_imageio_palette
+    filename: patch_imageio_palette.py
   - name: deepwmh_wrapper
     filename: deepwmh_wrapper
   - name: patch_nnunet_logdir.py

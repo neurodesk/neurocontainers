@@ -268,6 +268,46 @@ tests:
       "
     expected_output_contains: "gif-readable True True"
 
+  - name: a preview with a sub-256-colour palette can be read back
+    description: >-
+      The round-trip above passes on a full 256-colour palette, which is the
+      one case that already worked, so it could not catch this. imageio 2.13.2
+      reshapes PIL's getpalette() to (256, 3); Pillow 9.2 changed getpalette()
+      to return only the colours in use, so reading a smaller palette raises
+      ValueError. Real FLAIR previews quantise to 8-128 colours: on three
+      clinical subjects, two of three previews were valid GIFs that ImageMagick
+      and a current Pillow decoded fine but this image could not open. That
+      matters beyond QC, because predict.py and DCNN_multistage.py both skip
+      preview generation only when try_load_gif() succeeds, so the failing
+      previews were regenerated on every rerun.
+    command: |
+      python -c "
+      import numpy as np, tempfile, os
+      from PIL import Image
+      from deepwmh.utilities.data_io import try_load_gif
+      d = tempfile.mkdtemp(); g = os.path.join(d, 'p.gif')
+      band = lambda i: ((np.indices((16,16))[1] // 4) * 60 + 10*i).astype('uint8')
+      fr = [Image.fromarray(band(i)).convert('P', palette=Image.ADAPTIVE, colors=4) for i in range(3)]
+      fr[0].save(g, save_all=True, append_images=fr[1:], duration=100, loop=0)
+      n = len(Image.open(g).getpalette()) // 3
+      print('palette-entries', n, 'sub256', n < 256, 'readable', try_load_gif(g))
+      "
+    expected_output_contains: "sub256 True readable True"
+
+  - name: imageio no longer assumes a 256-entry palette
+    description: >-
+      Asserts the patched line is the one that ships, so a rebuild that drops
+      the patch fails here rather than silently regressing previews.
+    command: |
+      python -c "
+      import pathlib, imageio.plugins
+      root = pathlib.Path(imageio.plugins.__file__).parent
+      bad = [str(p) for p in root.glob('*.py')
+             if 'getpalette()).reshape((256, 3))' in p.read_text()]
+      print('unpatched-files', bad)
+      "
+    expected_output_contains: "unpatched-files []"
+
   # ==========================================================================
   # CLI SURFACE
   # ==========================================================================
