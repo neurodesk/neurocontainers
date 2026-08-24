@@ -30,6 +30,15 @@ build:
         XDG_CACHE_HOME: /tmp/cache-meganorm
         NUMBA_CACHE_DIR: /tmp/numba-meganorm
         PYTHONNOUSERSITE: "1"
+        # The module wrapper runs this container with --cleanenv, so the
+        # host's OMP_NUM_THREADS never arrives and OpenBLAS would otherwise
+        # start one thread per node core regardless of the job's allocation.
+        # Default to single-threaded BLAS -- the pipeline parallelises with
+        # joblib worker processes, not BLAS threads -- and let callers raise
+        # it with SINGULARITYENV_OMP_NUM_THREADS / APPTAINERENV_OMP_NUM_THREADS,
+        # which override these values.
+        OMP_NUM_THREADS: "1"
+        OPENBLAS_NUM_THREADS: "1"
         PATH: "{{ context.meganorm_venv }}/bin:$PATH"
 
     - install:
@@ -54,24 +63,28 @@ build:
     - run:
         - python3 -m venv "${MEGANORM_VENV}"
         - . "${MEGANORM_VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
-        - . "${MEGANORM_VENV}/bin/activate" && python -m pip install --no-cache-dir "meganorm=={{ context.version }}"
+        # python-picard is not in meganorm's dependency list, but "picard" is
+        # one of the three documented ica_method values and MNE needs the
+        # package to run it; without it the option dies on an ImportError.
+        - . "${MEGANORM_VENV}/bin/activate" && python -m pip install --no-cache-dir "meganorm=={{ context.version }}" python-picard
         # Fail the build here rather than shipping an image that only breaks on
         # first use: the heavy optional stack (onnxruntime, pcntoolkit) is what
         # tends to go missing, and it is imported lazily at run time.
-        # Read the version from installed distribution metadata: meganorm's
-        # __init__.py re-exports its submodules and defines no __version__.
-        - . "${MEGANORM_VENV}/bin/activate" && python -c "import importlib.metadata as md; import meganorm, mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('meganorm', md.version('meganorm'))"
-        # Every one of the shipped defaults that stops a run is corrected here:
-        # GEDAI's signature mismatch, the identical EEG reject/flat thresholds,
-        # the ICA method its own fit_params contradict, the parametrisation
-        # that discards every channel, the missing Delta band, the unreachable
-        # "no re-referencing" option, and a run that reported success after
-        # extracting nothing.
+        - . "${MEGANORM_VENV}/bin/activate" && python -c "import importlib.metadata as md; import meganorm, mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime, picard; print('meganorm', md.version('meganorm'))"
+        # Every shipped default that stops a run is corrected here, and the
+        # defects behind them are repaired where a repair exists: GEDAI's
+        # signature mismatch, the identical EEG reject/flat thresholds, the
+        # fastica/fit_params contradiction, the parametrisation that discards
+        # every channel, the missing Delta band and the parametrisation floor
+        # above it, the unreachable "no re-referencing" option, the absent
+        # __version__, and a run that reported success after extracting
+        # nothing.
         - . "${MEGANORM_VENV}/bin/activate" && python {{ get_file("fix_working_defaults") }}
-        # Assert on the model itself, not on the patch having run: these are the
-        # properties a run depends on.
+        # Assert on the model itself, not on the patch having run: these are
+        # the properties a run depends on. The end-to-end proof that they hold
+        # in practice is the selftest below.
         - >-
-          . "${MEGANORM_VENV}/bin/activate" && python -c "from meganorm.utils.IO import Config; c=Config(); assert c.apply_gedai is False, 'gedai default still on'; assert c.ica_method=='infomax', c.ica_method; assert c.parametrization_method=='fooof', c.parametrization_method; assert c.eeg_flat_threshold < c.eeg_var_threshold/100, (c.eeg_flat_threshold, c.eeg_var_threshold); bands=set(c.freq_bands); missing=[r for r in c.power_band_ratios_list if r.numerator not in bands or r.denominator not in bands]; assert not missing, missing; print('defaults can complete a run')"
+          . "${MEGANORM_VENV}/bin/activate" && python -c "import meganorm; from meganorm.utils.IO import Config; c=Config(); assert c.apply_gedai is False, 'gedai default still on'; assert c.ica_method=='infomax', c.ica_method; assert c.parametrization_method=='fooof', c.parametrization_method; assert c.eeg_flat_threshold < c.eeg_var_threshold/100, (c.eeg_flat_threshold, c.eeg_var_threshold); bands=set(c.freq_bands); missing=[r for r in c.power_band_ratios_list if r.numerator not in bands or r.denominator not in bands]; assert not missing, missing; assert c.fooof_freq_range_low <= min(lo for lo, hi in c.freq_bands.values()), 'a band lies below the parametrisation floor'; assert bands <= set(c.individualized_band_ranges) | {'Broadband'}, 'individualized_band_ranges misses a band'; assert Config(rereference_method=None).rereference_method is None, 'JSON null rereference rejected'; assert meganorm.__version__ == '{{ context.version }}', meganorm.__version__; print('defaults can complete a run')"
         # The config file is a required argument with no example anywhere in the
         # package, so the documented invocation could not be followed.
         - . "${MEGANORM_VENV}/bin/activate" && python {{ get_file("write_example_configs") }} /opt/meganorm/configs
@@ -85,8 +98,15 @@ build:
         - meganorm_python_helper
         - /usr/local/bin/meganorm-python
 
+    # Baked into the image so CI's release tests and any user can rerun the
+    # end-to-end check against the exact artifact they are holding.
+    - copy:
+        - selftest
+        - /opt/meganorm/selftest.py
+
     - run:
         - chmod 755 /usr/local/bin/meganorm /usr/local/bin/meganorm-python
+        - chmod 644 /opt/meganorm/selftest.py
         - meganorm-python -c "import meganorm; print('meganorm-python ok')"
         - chmod -R a+rX "${MEGANORM_VENV}"
         - rm -rf /root/.cache/pip /tmp/matplotlib-meganorm /tmp/cache-meganorm /tmp/numba-meganorm
@@ -103,9 +123,7 @@ build:
           #!/bin/bash
           set -e
           meganorm --help
-          # meganorm.__version__ does not exist: __init__.py re-exports the
-          # submodules and never the version. The metadata is what to read.
-          meganorm-python -c "import importlib.metadata as md; import meganorm; print(md.version('meganorm'))"
+          meganorm-python -c "import importlib.metadata as md; import meganorm; assert meganorm.__version__ == md.version('meganorm'); print(md.version('meganorm'))"
           meganorm-python -c "import mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('stack ok')"
           # The config argument is mandatory, so an example has to exist and
           # has to load back into the model.
@@ -116,7 +134,8 @@ build:
               print(name, 'config loads')
           "
           # The defaults must be able to complete a run: every one of these
-          # aborted the pipeline or silently emptied its output.
+          # aborted the pipeline or silently emptied its output, and a band
+          # below the parametrisation floor put -inf into the feature table.
           meganorm-python -c "
           from meganorm.utils.IO import Config
           c = Config()
@@ -126,14 +145,580 @@ build:
           assert c.eeg_flat_threshold < c.eeg_var_threshold / 100
           bands = set(c.freq_bands)
           assert all(r.numerator in bands and r.denominator in bands for r in c.power_band_ratios_list)
+          assert c.fooof_freq_range_low <= min(lo for lo, hi in c.freq_bands.values())
+          assert bands <= set(c.individualized_band_ranges) | {'Broadband'}
+          assert Config(rereference_method=None).rereference_method is None
           print('defaults ok')
           "
 
+    - test:
+        name: Shipped EEG config completes a run with finite features
+        script: |
+          #!/bin/bash
+          set -e
+          # Field-level assertions pass on builds whose output is unusable;
+          # only a run catches that. This synthesizes a short EEG recording,
+          # runs the real CLI on the shipped eeg.json, and requires every
+          # promised feature to be present and finite -- then repeats the run
+          # with an impossible min_r_squared and requires a loud failure
+          # instead of an empty CSV and exit 0.
+          meganorm-python /opt/meganorm/selftest.py
+
 files:
   - name: fix_working_defaults
-    filename: fix_working_defaults.py
+    contents: |
+      """Make MEGaNorm's shipped configuration able to complete a run.
+
+      The container test drove seven configurations through the pipeline and every
+      one of them failed, producing no features at all. None of the failures needed
+      unusual settings: each is a default in `meganorm.utils.IO.Config` that cannot
+      work as shipped. This patches the defaults in the installed package so the
+      documented invocation reaches the end, and leaves every one of them
+      overridable in the user's own config.
+
+      1. `apply_gedai=True` aborts every run after ~33 s.
+
+             TypeError: Gedai.__init__() got an unexpected keyword argument
+             'epoch_size_in_cycles'
+
+         `preprocess.py` calls `Gedai(...)` with `epoch_size_in_cycles`,
+         `signal_type`, `highpass_cutoff` and
+         `preliminary_broadband_noise_multiplier`. No published gedai accepts them:
+         0.1.0 takes three wavelet arguments, 0.2.0 and 0.3.0 take none at all, and
+         MEGaNorm's requirement is an unpinned `gedai>=0.1.0`. There is no version to
+         pin that makes this call work, so GEDAI is off by default. Turning it back
+         on is one line in a config, for whenever upstream's two halves agree again.
+
+      2. `eeg_flat_threshold` equals `eeg_var_threshold` (both 40e-6), and they are
+         passed straight to `mne.Epochs` as `reject` (drop above) and `flat` (drop
+         below). Every epoch is on one side or the other of 40 µV, so every epoch is
+         dropped:
+
+             Exception: All epochs were rejected. ... Retained: 0 (0.0%)
+
+         This is arithmetic, not a property of any particular recording. The MEG
+         pairs are separated by a factor of 500; the EEG flat value looks like a copy
+         of the reject value and is set three orders of magnitude below it here.
+
+      3. `ica_method="fastica"` cannot run, because `preprocess.py` hardcodes
+         `fit_params=dict(extended=True)` -- accepted by infomax, rejected by
+         scikit-learn's FastICA:
+
+             TypeError: FastICA.__init__() got an unexpected keyword argument
+             'extended'
+
+         The code's own comment ("bc icalabel is trained with this") says infomax was
+         what it meant, and the infomax path completes and produces a full feature
+         table. So infomax is the default.
+
+      4. `parametrization_method="irasa"` produces nothing usable. Every channel's
+         fit came back with a negative R-squared (-2.9 to -40.4, i.e. worse than a
+         horizontal line) and was discarded by the `min_r_squared=0.9` gate, leaving
+         a (1, 0) feature table. FOOOF on the identical preprocessed data produced
+         the full 42 features, so the default is FOOOF until the IRASA branch is
+         fixed upstream.
+
+      5. A run that discards every channel reports success. With all channels gone
+         the pipeline still writes an 11-byte CSV, logs "feature extraction ...
+         complete" and exits 0 -- so a whole cohort can produce empty files and clean
+         exit statuses from every job, and nothing short of opening them reveals it.
+         The all-epochs-rejected path already raises; this makes the all-channels
+         path do the same.
+
+      6. Four of the ten default band ratios use Delta, which the default
+         `freq_bands` does not define, and `feature_extract` silently skips a ratio
+         whose bands are missing. Users asking for the shipped defaults got six ratio
+         features instead of ten, Delta/Theta -- a standard dementia EEG marker --
+         among the missing. Delta is defined as 1-3 Hz, contiguous with the Theta
+         band that follows it.
+
+      7. `rereference_method` cannot be set to "no re-referencing". The docstring
+         offers `None`, the annotation is `Literal["average", "REST", "None"]` -- the
+         *string* -- so `null` fails pydantic validation, and `"None"` passes the
+         truthiness guard and reaches `mne.set_eeg_reference("None")`, which fails
+         with `TypeError: can only concatenate str (not "list") to str`. The guard
+         now treats the string as the absent value it was meant to be, and the
+         annotation now also accepts a JSON `null`, so the documented spelling works
+         as well as the string one.
+
+      8. Adding Delta in (6) exposed the next inconsistency: `fooof_freq_range_low`
+         is 3, and the whole PSD grid is computed over
+         [fooof_freq_range_low, fooof_freq_range_high], so a 1-3 Hz Delta band lay
+         entirely below the spectrum. Band power summed zero bins, `log10(0)`
+         returned `-inf`, and ten of the forty-two default EEG features -- every one
+         naming Delta -- came out non-finite, values that propagate silently into
+         any downstream normative model. Three coordinated changes close it:
+
+           - the parametrisation floor moves to 1 Hz, so the PSD grid covers every
+             default band;
+           - `individualized_band_ranges` gains the Delta entry it was missing for
+             the same reason (offsets span the band's 2 Hz width, following the
+             pattern of the four existing entries);
+           - zero-or-negative band power yields `nan` -- the pipeline's established
+             missing-value marker, matching what the zero-denominator path in
+             `band_power_ratio` already did -- instead of `-inf`, so no future
+             band/floor inconsistency can put infinities into a feature table.
+
+      9. `ica_method="fastica"` is also repaired at the cause rather than only
+         routed around: `fit_params=dict(extended=True)` is now passed to every
+         method except FastICA, the only one of the three that rejects it (MNE's
+         infomax and picard both take `extended`). All three documented values of
+         the option now run; infomax stays the default because ICLabel is trained
+         with it.
+
+      10. `import meganorm; meganorm.__version__` raised AttributeError even though
+          the wheel ships `_version.py` with the value in it -- `__init__.py` simply
+          never imports it. It does now.
+
+      11. With `apply_gedai: true` the run died ~30 s in on a `TypeError` from
+          `Gedai.__init__`, which reads like a bug in the user's config. The real
+          situation is that no released gedai matches the calls `preprocess.py`
+          makes: 0.1.0 takes three different wavelet arguments, 0.3.0's constructor
+          takes none at all, and 0.3.0's `transform_raw` no longer accepts the
+          `duration` the code passes it. The option cannot work in any build of this
+          container, so the GEDAI entry point now raises immediately with an error
+          that says exactly that and names the one-line fix.
+
+      Each anchor is asserted to exist first, so an upstream fix or rename fails the
+      build here rather than silently leaving the defect in place.
+      """
+
+      from importlib.util import find_spec
+      from pathlib import Path
+
+      package_spec = find_spec("meganorm")
+      if package_spec is None or package_spec.submodule_search_locations is None:
+          raise RuntimeError("meganorm is not installed")
+
+      package_dir = Path(next(iter(package_spec.submodule_search_locations)))
+
+      EDITS = {
+          "utils/IO.py": [
+              # --- the four defaults that cannot complete a run -------------------
+              (
+                  '    ica_method: Literal["fastica", "infomax", "picard"] = "fastica"\n',
+                  # fit_params=dict(extended=True) is hardcoded in preprocess.py and
+                  # only infomax accepts it.
+                  '    ica_method: Literal["fastica", "infomax", "picard"] = "infomax"\n',
+              ),
+              (
+                  "    apply_gedai: bool = True\n",
+                  # No published gedai accepts the keywords preprocess.py passes.
+                  "    apply_gedai: bool = False\n",
+              ),
+              (
+                  "    eeg_flat_threshold: float = 40e-6\n",
+                  # Was equal to eeg_var_threshold, so every epoch matched one of the
+                  # two rejection conditions and none survived.
+                  "    eeg_flat_threshold: float = 1e-7\n",
+              ),
+              (
+                  '    parametrization_method: Literal["fooof", "irasa"] = "irasa"\n',
+                  # IRASA returned negative R-squared on every channel, so the
+                  # min_r_squared gate discarded all of them.
+                  '    parametrization_method: Literal["fooof", "irasa"] = "fooof"\n',
+              ),
+              # --- the band four of the default ratios refer to -------------------
+              (
+                  '    freq_bands: Dict[str, Tuple[int, int]] = {\n        "Theta": (3, 8),\n',
+                  '    freq_bands: Dict[str, Tuple[int, int]] = {\n'
+                  '        # Delta is referenced by four of the default band ratios,\n'
+                  '        # including Delta/Theta; without it they were skipped in\n'
+                  '        # silence and the shipped defaults yielded six ratios of ten.\n'
+                  '        "Delta": (1, 3),\n        "Theta": (3, 8),\n',
+              ),
+              # --- and the spectrum has to reach down to it ------------------------
+              (
+                  "    fooof_freq_range_low: PositiveInt = 3\n",
+                  # The PSD grid is computed over [low, high], so with the floor at 3
+                  # a 1-3 Hz Delta band summed zero bins and log10(0) put -inf into
+                  # ten of the forty-two default EEG features.
+                  "    fooof_freq_range_low: PositiveInt = 1\n",
+              ),
+              (
+                  '    individualized_band_ranges: Dict[str, Tuple[int, int]] = {\n'
+                  '        "Theta": (-2, 3),\n',
+                  '    individualized_band_ranges: Dict[str, Tuple[int, int]] = {\n'
+                  '        # Offsets span the 2 Hz band width around the dominant\n'
+                  '        # peak, following the pattern of the entries below; the\n'
+                  '        # dict lacked Delta just as freq_bands did.\n'
+                  '        "Delta": (-1, 1),\n'
+                  '        "Theta": (-2, 3),\n',
+              ),
+              # --- the documented null spelling of "no re-referencing" -------------
+              (
+                  '    rereference_method: Literal["average", "REST", "None"] = "average"\n',
+                  # The docstring offers None, but the annotation only admitted the
+                  # string "None", so a JSON null failed validation.
+                  '    rereference_method: Optional[Literal["average", "REST", "None"]] = (\n'
+                  '        "average"\n'
+                  '    )\n',
+              ),
+              # --- and the docstrings that describe them --------------------------
+              (
+                  '    ica_method : {"fastica", "infomax", "picard"}, default="fastica"\n',
+                  '    ica_method : {"fastica", "infomax", "picard"}, default="infomax"\n',
+              ),
+              (
+                  "    apply_gedai : bool, default=True\n",
+                  "    apply_gedai : bool, default=False\n",
+              ),
+              (
+                  '    parametrization_method : {"fooof", "irasa"}, default="irasa"\n',
+                  '    parametrization_method : {"fooof", "irasa"}, default="fooof"\n',
+              ),
+              (
+                  "        Canonical frequency band definitions (Theta, Alpha, Beta, Gamma).\n",
+                  "        Canonical frequency band definitions (Delta, Theta, Alpha, Beta,\n"
+                  "        Gamma).\n",
+              ),
+              (
+                  "    fooof_freq_range_low, fooof_freq_range_high : PositiveInt, default=3, 40\n",
+                  "    fooof_freq_range_low, fooof_freq_range_high : PositiveInt, default=1, 40\n",
+              ),
+          ],
+          "src/preprocess.py": [
+              (
+                  '    if which_sensor["eeg"] and rereference_method:\n',
+                  # rereference_method is annotated as the *string* "None", which is
+                  # truthy, so the documented "no re-referencing" option was passed
+                  # to mne.set_eeg_reference() and failed there.
+                  '    if which_sensor["eeg"] and rereference_method not in (None, "None"):\n',
+              ),
+              (
+                  "        fit_params=dict(extended=True),\n"
+                  "        verbose=False,\n"
+                  "    )  # fit_params=dict(extended=True) bc icalabel is trained with this\n",
+                  # extended is an infomax/picard parameter; scikit-learn's FastICA
+                  # rejects it, so the hardcoded dict made ica_method="fastica" --
+                  # a documented Config value -- fail unconditionally.
+                  '        fit_params=None if IcaMethod == "fastica" else dict(extended=True),\n'
+                  "        verbose=False,\n"
+                  "    )  # extended=True bc icalabel is trained with it; fastica rejects it\n",
+              ),
+              (
+                  "    gedai = Gedai(\n",
+                  # No released gedai accepts this call: 0.1.0 wants three different
+                  # wavelet arguments, 0.3.0's constructor takes none, and 0.3.0's
+                  # transform_raw no longer accepts the duration passed below. Fail
+                  # at the entry point with the actual situation and the fix, not
+                  # thirty seconds in with a TypeError that reads like a config bug.
+                  "    raise RuntimeError(\n"
+                  '        "apply_gedai: true cannot work in meganorm 0.2.0: preprocess.py "\n'
+                  '        "constructs Gedai() with keyword arguments no released gedai "\n'
+                  '        "accepts (0.1.0 expects different wavelet arguments; 0.3.0\'s "\n'
+                  '        "constructor takes none, and its transform_raw() has dropped "\n'
+                  '        "duration). Set apply_gedai to false in your config until a "\n'
+                  '        "meganorm release matches a gedai release."\n'
+                  "    )\n"
+                  "    gedai = Gedai(\n",
+              ),
+          ],
+          "src/featureExtraction.py": [
+              (
+                  '    logger.info(f"The shape of the extracted features: {final_df.shape}")\n',
+                  '    if final_df.shape[1] == 0:\n'
+                  '        # Every channel was discarded, usually by the min_r_squared\n'
+                  '        # gate. Upstream wrote an empty CSV, logged completion and\n'
+                  '        # exited 0, so a whole cohort could produce empty files and\n'
+                  '        # clean exit statuses. The all-epochs-rejected path raises;\n'
+                  '        # this does the same rather than reporting a success.\n'
+                  '        raise Exception(\n'
+                  '            "No features were extracted: every channel was discarded, "\n'
+                  '            "most likely by the min_r_squared threshold during PSD "\n'
+                  '            "parametrization. Lower min_r_squared or change "\n'
+                  '            "parametrization_method."\n'
+                  '        )\n\n'
+                  '    logger.info(f"The shape of the extracted features: {final_df.shape}")\n',
+              ),
+              # log10 of a zero or negative band integral produced -inf (or nan with
+              # a warning) inside the feature table. nan is what the pipeline already
+              # emits for a missing value -- band_power_ratio's zero-denominator path
+              # below returns it -- so an empty band now matches that convention
+              # instead of shipping infinities to the normative model.
+              (
+                  "    band_indices = np.logical_and(freqs >= fmin, freqs <= fmax)\n"
+                  "    band_power = np.trapezoid(psd[band_indices], freqs[band_indices])\n"
+                  "\n"
+                  "    return np.log10(band_power)\n",
+                  "    band_indices = np.logical_and(freqs >= fmin, freqs <= fmax)\n"
+                  "    band_power = np.trapezoid(psd[band_indices], freqs[band_indices])\n"
+                  "\n"
+                  "    if band_power <= 0:\n"
+                  "        # The band holds no bins of the PSD grid, or only negative\n"
+                  "        # flattened-PSD values: there is no power to report.\n"
+                  "        return np.nan\n"
+                  "\n"
+                  "    return np.log10(band_power)\n",
+              ),
+              (
+                  "    band_power = np.trapezoid(psd[peak_range_indices], freqs[peak_range_indices])\n"
+                  "    return np.log10(band_power)\n",
+                  "    band_power = np.trapezoid(psd[peak_range_indices], freqs[peak_range_indices])\n"
+                  "    if band_power <= 0:\n"
+                  "        return np.nan\n"
+                  "    return np.log10(band_power)\n",
+              ),
+              (
+                  "    if power_den == 0:\n"
+                  "        return np.nan\n"
+                  "\n"
+                  "    return np.log10(power_num / power_den)\n",
+                  "    if power_num <= 0 or power_den <= 0:\n"
+                  "        return np.nan\n"
+                  "\n"
+                  "    return np.log10(power_num / power_den)\n",
+              ),
+          ],
+          "__init__.py": [
+              (
+                  '__all__ = ["featureExtraction", "mainParallel", "preprocess", "psdParameterize"]\n',
+                  # _version.py ships in the wheel but __init__.py never imports it,
+                  # so meganorm.__version__ raised AttributeError.
+                  '__all__ = ["featureExtraction", "mainParallel", "preprocess", "psdParameterize"]\n'
+                  "\n"
+                  "from ._version import __version__\n",
+              ),
+          ],
+      }
+
+      for relative_path, replacements in EDITS.items():
+          path = package_dir / relative_path
+          source = path.read_text()
+          for old, new in replacements:
+              if old not in source:
+                  raise RuntimeError(
+                      f"meganorm {relative_path} changed; review this patch:\n{old!r}"
+                  )
+              source = source.replace(old, new, 1)
+          path.write_text(source)
+          print(f"patched {relative_path}")
   - name: write_example_configs
-    filename: write_example_configs.py
+    contents: |
+      """Bake example configuration files into the image.
+
+      `meganorm` takes four positional arguments and the fourth, `configs`, is a path
+      to a JSON file that is parsed into a 106-field pydantic model with
+      `extra: forbid`. It is mandatory, upstream ships no example, and the README
+      mentions it once in the synopsis and never again -- not its format, not that it
+      is JSON, not where to get one. A user following the documentation could not
+      produce a working run without reading `meganorm/utils/IO.py` and reconstructing
+      a config from the model's defaults. Upstream carries a TODO to make the
+      argument optional (`mainParallel.py:88`).
+
+      Two files are written, both straight from the model so they cannot drift from
+      it:
+
+        default.json  every field at its default, i.e. the MEG-oriented pipeline.
+        eeg.json      the same, with the MEG-only stages turned off: oversampled
+                      temporal projection, head-movement correction and
+                      environmental-noise correction have nothing to act on in an
+                      EEG recording.
+
+      The path is deliberately outside $HOME, which does not exist at container
+      runtime.
+      """
+
+      import sys
+      from pathlib import Path
+
+      from meganorm.utils.IO import Config
+
+      out_dir = Path(sys.argv[1])
+      out_dir.mkdir(parents=True, exist_ok=True)
+
+      Config().save(str(out_dir / "default.json"), overwrite=True)
+
+      Config(
+          which_sensor="eeg",
+          apply_oversampled_temporal_projection=False,
+          apply_Head_movement_correction=False,
+          apply_environmental_noise_correction=False,
+      ).save(str(out_dir / "eeg.json"), overwrite=True)
+
+      # Round-trip both, so a file that cannot be loaded back fails the build rather
+      # than a user's first run.
+      for path in sorted(out_dir.glob("*.json")):
+          Config.load(str(path))
+          print(f"wrote {path}")
+  - name: selftest
+    contents: |
+      """Run the shipped EEG configuration end to end and require finite features.
+
+      The candidate-container test found that assertions on Config fields pass on
+      builds whose actual output is unusable: the 20260824 candidate satisfied every
+      field-level check while writing ten `-inf` values into its forty-two default
+      EEG features, because the Delta band lay below the parametrisation floor. No
+      static check catches that class of defect; only running the pipeline does.
+
+      This script synthesizes a short 19-channel 10-20 EEG recording (1/f background
+      plus an alpha rhythm, amplitudes inside the epoch rejection thresholds), runs
+      the real CLI on it with the shipped `eeg.json`, and then holds the output to
+      the contract the config states: one feature row, every band and every ratio
+      the config promises present, and every value finite or absent -- never
+      infinite. It then repeats the run with a min_r_squared no fit can reach and
+      requires the pipeline to fail loudly instead of writing an empty CSV and
+      exiting 0 -- the other defect class a field-level assertion cannot see. It
+      runs with this interpreter's installed meganorm, so it exercises exactly what
+      ships.
+
+      Usage: python selftest.py [config.json] [work_dir]
+      Defaults: /opt/meganorm/configs/eeg.json and a fresh temp directory.
+      """
+
+      import subprocess
+      import sys
+      import tempfile
+      from pathlib import Path
+
+      import numpy as np
+
+      CONFIG = sys.argv[1] if len(sys.argv) > 1 else "/opt/meganorm/configs/eeg.json"
+      WORK = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(tempfile.mkdtemp())
+
+      SFREQ = 250.0
+      DURATION_S = 180
+      CHANNELS = [
+          "Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T7", "C3", "Cz",
+          "C4", "T8", "P7", "P3", "Pz", "P4", "P8", "O1", "O2",
+      ]
+
+
+      def synthesize_raw(path: Path) -> None:
+          import mne
+
+          rng = np.random.default_rng(42)
+          n_samples = int(SFREQ * DURATION_S)
+          freqs = np.fft.rfftfreq(n_samples, d=1.0 / SFREQ)
+
+          data = np.empty((len(CHANNELS), n_samples))
+          times = np.arange(n_samples) / SFREQ
+          for idx in range(len(CHANNELS)):
+              # 1/f background: shape white noise in the frequency domain.
+              spectrum = np.fft.rfft(rng.standard_normal(n_samples))
+              with np.errstate(divide="ignore"):
+                  spectrum[1:] /= np.sqrt(freqs[1:])
+              spectrum[0] = 0.0
+              pink = np.fft.irfft(spectrum, n=n_samples)
+              pink /= pink.std()
+              # Alpha rhythm so the spectral model has a peak to fit.
+              alpha = np.sin(2 * np.pi * 10.0 * times + rng.uniform(0, 2 * np.pi))
+              # 3 uV of background + 1.5 uV of alpha: comfortably above the 0.1 uV
+              # flat threshold and, at ~20-25 uV peak-to-peak per epoch, comfortably
+              # under the 40 uV rejection threshold.
+              data[idx] = 3e-6 * pink + 1.5e-6 * alpha
+
+          info = mne.create_info(CHANNELS, SFREQ, ch_types="eeg")
+          raw = mne.io.RawArray(data, info, verbose="error")
+          raw.set_montage("standard_1020")
+          raw.save(path, overwrite=True, verbose="error")
+
+
+      def main() -> None:
+          import json
+
+          import pandas as pd
+
+          raw_path = WORK / "sub-000_raw.fif"
+          out_dir = WORK / "out"
+          out_dir.mkdir(parents=True, exist_ok=True)
+          synthesize_raw(raw_path)
+
+          cmd = [
+              sys.executable, "-m", "meganorm.src.mainParallel",
+              str(raw_path), str(out_dir), "sub-000", CONFIG, "--line_freq", "50",
+          ]
+          print("running:", " ".join(cmd), flush=True)
+          proc = subprocess.run(cmd)
+          log = WORK / "Saved_outputs" / "log_summary" / "subject_sub-000_report.log"
+          if proc.returncode != 0:
+              if log.exists():
+                  print(log.read_text()[-4000:], file=sys.stderr)
+              raise SystemExit(f"pipeline exited {proc.returncode}")
+
+          csv_path = out_dir / "sub-000.csv"
+          if not csv_path.exists():
+              raise SystemExit(f"pipeline exited 0 but wrote no {csv_path}")
+
+          table = pd.read_csv(csv_path, index_col=0)
+          if table.empty or table.shape[1] == 0:
+              raise SystemExit(f"feature table is empty: shape {table.shape}")
+
+          values = table.to_numpy(dtype=float)
+          n_finite = int(np.isfinite(values).sum())
+          n_inf = int(np.isinf(values).sum())
+          print(f"features: {table.shape[1]}, finite values: {n_finite}, inf: {n_inf}")
+
+          # Infinities are the defect this test exists for: they propagate silently
+          # into downstream normative models. nan is allowed -- it is the pipeline's
+          # marker for a feature that could not be computed (e.g. no peak found).
+          if n_inf:
+              bad = sorted(
+                  {c.split("__")[0] for c in table.columns if np.isinf(table[c]).any()}
+              )
+              raise SystemExit(f"{n_inf} infinite feature values, e.g. in: {bad[:10]}")
+          if n_finite == 0:
+              raise SystemExit("no finite feature values at all")
+
+          # Every band and every ratio the config promises must appear, and the
+          # canonical band powers -- the features the -inf defect hit -- must all be
+          # finite, Delta included. Columns carry a parcel suffix ("__all" with the
+          # default which_layout), so match on the feature name as a prefix.
+          config = json.loads(Path(CONFIG).read_text())
+          missing: list[str] = []
+          not_finite: list[str] = []
+
+          def check(name: str) -> None:
+              matches = [c for c in table.columns if c.startswith(name + "__")]
+              if not matches:
+                  missing.append(name)
+              elif not all(np.isfinite(table[c]).all() for c in matches):
+                  not_finite.append(name)
+
+          for band in config["freq_bands"]:
+              for prefix in ("Adjusted", "OriginalPSD"):
+                  if band == "Broadband" and prefix == "Adjusted":
+                      continue
+                  check(f"{prefix}_Canonical_Absolute_Power__{band}")
+          for ratio in config["power_band_ratios_list"]:
+              num, den = ratio["numerator"], ratio["denominator"]
+              for prefix in ("Adjusted", "OriginalPSD"):
+                  check(f"{prefix}_Band_Ratio__{num}_over_{den}")
+          if missing:
+              raise SystemExit(f"features promised by the config are absent: {missing}")
+          if not_finite:
+              raise SystemExit(f"band features with non-finite values: {not_finite}")
+          print("positive run ok", flush=True)
+
+          # Phase two: a run whose every channel is discarded must fail loudly.
+          # Upstream wrote an 11-byte CSV, logged completion and exited 0, so a
+          # whole cohort could produce empty files with clean exit statuses.
+          strict = config | {"min_r_squared": 0.999999}
+          strict_path = WORK / "strict.json"
+          strict_path.write_text(json.dumps(strict))
+          strict_out = WORK / "out_strict"
+          strict_out.mkdir(parents=True, exist_ok=True)
+          cmd = [
+              sys.executable, "-m", "meganorm.src.mainParallel",
+              str(raw_path), str(strict_out), "sub-001", str(strict_path),
+              "--line_freq", "50",
+          ]
+          print("running:", " ".join(cmd), flush=True)
+          proc = subprocess.run(cmd, capture_output=True, text=True)
+          if proc.returncode == 0:
+              raise SystemExit("all-channels-discarded run exited 0")
+          if (strict_out / "sub-001.csv").exists():
+              raise SystemExit("all-channels-discarded run still wrote a CSV")
+          if "No features were extracted" not in proc.stderr:
+              print(proc.stderr[-2000:], file=sys.stderr)
+              raise SystemExit("failure was not the loud empty-table error")
+          print("empty-table run fails loudly")
+
+          print("SELFTEST PASS")
+
+
+      if __name__ == "__main__":
+          main()
   # Upstream declares no console_scripts (setup.py has no entry_points), but
   # meganorm/src/mainParallel.py carries the argparse CLI for the per-subject
   # pipeline and guards on __main__. Expose that as the module's entrypoint so
@@ -230,11 +815,14 @@ readme: |-
 
   ### Threads
 
-  Set `SINGULARITYENV_OMP_NUM_THREADS` to your core budget. The module wrapper
-  runs the container with `--cleanenv`, so a plain `OMP_NUM_THREADS` -- and
-  `SLURM_CPUS_PER_TASK` -- never reaches the tool, and OpenBLAS otherwise
-  starts one thread per core on the node regardless of what the job asked for.
-  Apptainer accepts `APPTAINERENV_OMP_NUM_THREADS` for the same purpose.
+  The image defaults `OMP_NUM_THREADS` and `OPENBLAS_NUM_THREADS` to 1: the
+  module wrapper runs the container with `--cleanenv`, so a plain
+  `OMP_NUM_THREADS` -- and `SLURM_CPUS_PER_TASK` -- never reaches the tool,
+  and OpenBLAS otherwise started one thread per node core regardless of what
+  the job asked for. The pipeline parallelises with joblib worker processes,
+  which this default deliberately leaves single-threaded inside. To raise the
+  BLAS budget, set `SINGULARITYENV_OMP_NUM_THREADS` (Apptainer also accepts
+  `APPTAINERENV_OMP_NUM_THREADS`); those override the baked defaults.
 
   Source localization expects FreeSurfer surface reconstructions, passed via
   `--surfaces_dir`. FreeSurfer is not bundled in this container -- run it
@@ -248,20 +836,43 @@ readme: |-
   config:
 
   ```
-  apply_gedai              True  -> False   no released gedai accepts the
-                                            keywords preprocess.py passes it
-  ica_method            fastica  -> infomax fit_params=dict(extended=True) is
-                                            hardcoded; only infomax takes it
+  apply_gedai              True  -> False   no released gedai matches the
+                                            calls preprocess.py makes; turning
+                                            it on fails immediately with an
+                                            error saying exactly that
+  ica_method            fastica  -> infomax ICLabel is trained with infomax;
+                                            fastica's fit_params clash is also
+                                            repaired and python-picard is
+                                            installed, so all three documented
+                                            methods now run
   eeg_flat_threshold      40e-6  -> 1e-7    was equal to eeg_var_threshold, so
                                             every epoch was rejected
   parametrization_method  irasa  -> fooof   IRASA returned negative R^2 on
                                             every channel, so all were dropped
   freq_bands                     +  Delta   four default band ratios use it
+  fooof_freq_range_low        3  -> 1       the PSD grid starts here; with the
+                                            floor at 3 a 1-3 Hz Delta band had
+                                            no bins and its ten features came
+                                            out -inf
+  individualized_band_ranges     +  Delta   the same omission as freq_bands
   ```
 
-  A run that discards every channel now raises instead of writing an empty
-  feature table and exiting 0, and `rereference_method: "None"` reaches the
-  pipeline as "no re-referencing" rather than failing inside MNE.
+  A run that discards every channel raises instead of writing an empty feature
+  table and exiting 0; a band holding no power yields `nan` -- the pipeline's
+  missing-value marker -- never `-inf`; `rereference_method` accepts a JSON
+  `null` as well as the string `"None"` for "no re-referencing"; and
+  `meganorm.__version__` exists and matches the installed package.
+
+  Every build of this container synthesizes a short EEG recording, runs the
+  pipeline end to end on the shipped `eeg.json`, and fails if any feature the
+  config promises is missing or non-finite -- and then repeats the run with an
+  impossible `min_r_squared` and fails unless the pipeline errors loudly. The
+  same check is baked into the image, so you can run it against the copy you
+  are holding:
+
+  ```
+  meganorm-python /opt/meganorm/selftest.py
+  ```
 
   More documentation can be found here: https://github.com/ML4PNP/MEGaNorm
 

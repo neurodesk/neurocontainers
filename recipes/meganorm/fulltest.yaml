@@ -13,8 +13,18 @@ tests:
     expected_output_contains: "--surfaces_dir"
 
   - name: package reports the packaged version
-    description: Guards against the venv resolving a different meganorm than the recipe pins.
-    command: meganorm-python -c "import importlib.metadata as md; print(md.version('meganorm'))"
+    description: >-
+      Guards against the venv resolving a different meganorm than the recipe
+      pins, and against meganorm.__version__ regressing to the AttributeError
+      it raised upstream -- __init__.py never imported the _version module the
+      wheel ships.
+    command: |
+      meganorm-python -c "
+      import importlib.metadata as md
+      import meganorm
+      assert meganorm.__version__ == md.version('meganorm'), meganorm.__version__
+      print(meganorm.__version__)
+      "
     expected_output_contains: "${version}"
 
   - name: dependency stack imports
@@ -69,69 +79,59 @@ tests:
       "
     expected_output_contains: "configs-load"
 
-  - name: the shipped defaults can complete a run
+  - name: the shipped defaults are self-consistent
     description: >-
-      Seven configurations were tried on real EEG and all seven produced no
-      features: GEDAI is called with a keyword no released gedai accepts, the
-      EEG reject and flat thresholds were identical so every epoch was dropped,
-      the default ICA method rejects the fit_params the code hardcodes, and the
-      default parametrisation discarded every channel.
+      Field-level invariants a run depends on. Each was violated in a released
+      or candidate build: GEDAI on by default with no gedai able to take the
+      call, identical EEG reject/flat thresholds rejecting every epoch, an ICA
+      default whose hardcoded fit_params it rejected, a parametrisation that
+      discarded every channel, band ratios naming a band freq_bands lacked,
+      and -- in the 20260824 candidate -- a Delta band lying entirely below
+      the parametrisation floor, which put -inf into ten of forty-two
+      features. The proof these hold in practice is the end-to-end run below.
     command: |
       meganorm-python -c "
       from meganorm.utils.IO import Config
       c = Config()
-      ok = (
-          c.apply_gedai is False
-          and c.ica_method == 'infomax'
-          and c.parametrization_method == 'fooof'
-          and c.eeg_flat_threshold < c.eeg_var_threshold / 100
-      )
-      print('defaults-runnable' if ok else 'DEFAULTS-BROKEN')
-      "
-    expected_output_contains: "defaults-runnable"
-
-  - name: every default band ratio has a band to compute from
-    description: >-
-      Four of the ten default ratios use Delta, which the default freq_bands
-      never defined, and feature_extract skips a ratio whose bands are missing
-      without warning. Users got six ratio features where the config said ten,
-      Delta/Theta among the missing.
-    command: |
-      meganorm-python -c "
-      from meganorm.utils.IO import Config
-      c = Config()
+      assert c.apply_gedai is False, 'gedai default on'
+      assert c.ica_method == 'infomax', c.ica_method
+      assert c.parametrization_method == 'fooof', c.parametrization_method
+      assert c.eeg_flat_threshold < c.eeg_var_threshold / 100
       bands = set(c.freq_bands)
-      missing = [(r.numerator, r.denominator) for r in c.power_band_ratios_list
-                 if r.numerator not in bands or r.denominator not in bands]
-      print('all-ratios-computable' if not missing else 'MISSING %s' % missing)
+      assert all(r.numerator in bands and r.denominator in bands
+                 for r in c.power_band_ratios_list), 'ratio names missing band'
+      assert c.fooof_freq_range_low <= min(lo for lo, hi in c.freq_bands.values()), \
+          'a band lies below the parametrisation floor'
+      assert bands <= set(c.individualized_band_ranges) | {'Broadband'}, \
+          'individualized_band_ranges misses a band'
+      print('defaults-consistent')
       "
-    expected_output_contains: "all-ratios-computable"
+    expected_output_contains: "defaults-consistent"
 
-  - name: an empty feature table is an error, not a success
-    description: >-
-      When min_r_squared discarded every channel the pipeline wrote an 11-byte
-      CSV, logged completion and exited 0, so a whole cohort could produce
-      empty files and clean exit statuses from every job.
-    command: |
-      meganorm-python -c "
-      import inspect
-      from meganorm.src import featureExtraction
-      src = inspect.getsource(featureExtraction)
-      print('raises-on-empty' if 'No features were extracted' in src else 'SILENT-EMPTY')
-      "
-    expected_output_contains: "raises-on-empty"
-
-  - name: no re-referencing is reachable
+  - name: no re-referencing is reachable by both documented spellings
     description: >-
       The documented {"average", "REST", None} third option was unreachable in
-      both directions: null failed pydantic validation, and the string "None"
-      passed the truthiness guard and reached mne.set_eeg_reference("None"),
-      which raises. The guard now treats it as the absent value it names.
+      both directions upstream: a JSON null failed pydantic validation, and the
+      string "None" passed the truthiness guard into mne.set_eeg_reference,
+      which raises. Both spellings must now validate; the runtime skip is
+      exercised by the container's build-time run matrix.
     command: |
       meganorm-python -c "
-      import inspect
-      from meganorm.src import preprocess
-      src = inspect.getsource(preprocess)
-      print('none-reachable' if 'rereference_method not in (None, \"None\")' in src else 'NONE-UNREACHABLE')
+      from meganorm.utils.IO import Config
+      assert Config(rereference_method=None).rereference_method is None
+      assert Config(rereference_method='None').rereference_method == 'None'
+      print('none-accepted')
       "
-    expected_output_contains: "none-reachable"
+    expected_output_contains: "none-accepted"
+
+  - name: the shipped EEG config completes a run with finite features
+    description: >-
+      The candidate-container report showed why field assertions are not
+      enough; its build satisfied every static check while writing -inf into
+      ten of forty-two features. This synthesizes a short 10-20 EEG recording,
+      runs the real CLI on the shipped eeg.json, and requires every feature
+      the config promises to be present and finite; it then reruns with an
+      impossible min_r_squared and requires the loud empty-table failure
+      instead of an empty CSV with exit 0. Takes a few minutes.
+    command: meganorm-python /opt/meganorm/selftest.py
+    expected_output_contains: "SELFTEST PASS"
