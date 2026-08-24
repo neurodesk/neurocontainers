@@ -283,11 +283,204 @@ build:
 
 files:
   - name: patch_deepwmh_outputs
-    filename: patch_deepwmh_outputs.py
+    contents: |
+      """Fix two silent output defects in DeepWMH itself.
+
+      1. save_nifti() casts data to float32 but reuses the caller's header, which
+         for the segmentation stages declares an on-disk dtype of uint8. nibabel
+         then stores 255 and sets scl_slope=1/255, so the declared final mask
+         (002_Segmentations/003_postproc_fov) reads back as {0, 1.00000006} and
+         `mask == 1` silently selects nothing, while code reading raw integers sees
+         255. The raw stage of the same run writes a true {0, 1}, so the encoding is
+         not even self-consistent. Nothing errors and the mask looks correct in a
+         viewer, which makes this the most likely defect to quietly corrupt an
+         analysis.
+
+      2. nii_as_gif() writes previews through imageio 2.13.2, pinned by DeepWMH's
+         setup.py. For several input geometries the result could not be read by any
+         decoder tried -- including imageio's own reader inside this same image --
+         while deepwmh still exited 0. The frames themselves are fine, so they are
+         collected and written with Pillow, which is already installed as an imageio
+         dependency. The imageio pin is left alone: later releases changed the GIF
+         duration unit, which would silently alter the animation speed.
+      """
+
+      import pathlib
+      import sys
+
+      root = pathlib.Path(sys.argv[1])
+
+      # -- 1. save_nifti ---------------------------------------------------------
+      data_io = root / "deepwmh/utilities/data_io.py"
+      source = data_io.read_text()
+      old_save = (
+          "def save_nifti(data, header, path):\n"
+          "    nib.save(nib.nifti1.Nifti1Image(data.astype('float32'), None, header=header),path)\n"
+      )
+      new_save = (
+          "def save_nifti(data, header, path):\n"
+          "    # neurocontainers: keep the header's dtype in step with the data.\n"
+          "    # Reusing a uint8 header for float32 data makes nibabel rescale, storing\n"
+          "    # 255 with scl_slope=1/255, so `mask == 1` finds nothing downstream.\n"
+          "    data = data.astype('float32')\n"
+          "    header = header.copy()\n"
+          "    header.set_data_dtype(data.dtype)\n"
+          "    nib.save(nib.nifti1.Nifti1Image(data, None, header=header), path)\n"
+      )
+      if source.count(old_save) != 1:
+          raise SystemExit(
+              "expected exactly one save_nifti definition in %s, found %d; upstream "
+              "changed and this patch needs revisiting" % (data_io, source.count(old_save))
+          )
+      data_io.write_text(source.replace(old_save, new_save, 1))
+      print("patched %s" % data_io)
+
+      # -- 2. GIF writer ---------------------------------------------------------
+      preview = root / "deepwmh/utilities/nii_preview.py"
+      source = preview.read_text()
+      old_writer = "    with imageio.get_writer(outpath, mode='I', duration=dt) as writer:\n"
+      new_writer = "    with _neurocontainers_gif_writer(outpath, dt) as writer:\n"
+      if source.count(old_writer) != 1:
+          raise SystemExit(
+              "expected exactly one imageio.get_writer call in %s, found %d; upstream "
+              "changed and this patch needs revisiting" % (preview, source.count(old_writer))
+          )
+      source = source.replace(old_writer, new_writer, 1)
+
+      shim = '''
+
+      class _neurocontainers_gif_writer(object):
+          """Collect frames and write the GIF with Pillow.
+
+          Same interface as the imageio writer it replaces: a context manager with
+          append_data(). See the patch_deepwmh_outputs file in build.yaml for why.
+          """
+
+          def __init__(self, path, duration):
+              self.path = path
+              self.duration = duration
+              self.frames = []
+
+          def append_data(self, frame):
+              self.frames.append(np.asarray(frame, dtype='uint8'))
+
+          def __enter__(self):
+              return self
+
+          def __exit__(self, exc_type, exc_value, traceback):
+              if exc_type is not None or not self.frames:
+                  return False
+              from PIL import Image
+              images = [Image.fromarray(frame) for frame in self.frames]
+              images[0].save(
+                  self.path, save_all=True, append_images=images[1:],
+                  duration=max(int(round(self.duration * 1000)), 20), loop=0)
+              return False
+      '''
+      preview.write_text(source + shim)
+      print("patched %s" % preview)
   - name: patch_imageio_palette
-    filename: patch_imageio_palette.py
+    contents: |
+      """Let imageio read GIFs whose palette holds fewer than 256 colours.
+
+      imageio's Pillow plugin decides whether a palettised image is grayscale with
+
+          palette = np.asarray(pil_image.getpalette()).reshape((256, 3))
+
+      which was safe while Pillow padded getpalette() out to 256 entries. Pillow 9.2
+      changed it to return only the colours actually used, so reading any GIF with a
+      smaller palette raises
+
+          ValueError: cannot reshape array of size 24 into shape (256,3)
+
+      imageio 2.13.2 (Feb 2022) predates that change, and DeepWMH's setup.py pins it.
+
+      This is not cosmetic. Real FLAIR previews routinely quantise to 8-128 colours,
+      and testing on three clinical T2-FLAIR subjects found two of the three previews
+      unreadable this way -- valid GIFs that ImageMagick and a current Pillow decode
+      without complaint, which the container's own reader could not open. DeepWMH's
+      try_load_gif() therefore returned False for them, and both predict.py and
+      DCNN_multistage.py gate preview generation on `try_load_gif(out_gif) == False`,
+      so every rerun regenerated exactly the previews that fail.
+
+      Upstream imageio fixed this by reshaping to (-1, 3). Only that line is
+      corrected rather than bumping the pin, because later imageio releases also
+      changed the GIF duration unit, which would silently alter the animation speed.
+      """
+
+      import pathlib
+
+      import imageio.plugins
+
+      OLD = "np.asarray(pil_image.getpalette()).reshape((256, 3))"
+      NEW = "np.asarray(pil_image.getpalette()).reshape((-1, 3))"
+
+      # Located through the interpreter that will actually import it, rather than a
+      # hardcoded site-packages path that goes stale with the Python or env version.
+      plugins = pathlib.Path(imageio.plugins.__file__).parent
+
+      patched = 0
+      for target in sorted(plugins.glob("*.py")):
+          source = target.read_text()
+          count = source.count(OLD)
+          if count == 0:
+              continue
+          if count != 1:
+              raise SystemExit(
+                  "expected at most one 256-entry palette reshape in %s, found %d; "
+                  "imageio changed and this patch needs revisiting" % (target, count)
+              )
+          target.write_text(source.replace(OLD, NEW, 1))
+          print("patched %s" % target)
+          patched += 1
+
+      if patched == 0:
+          raise SystemExit(
+              "no 256-entry palette reshape found under %s; either imageio fixed this "
+              "upstream and the patch can be dropped, or the code moved. Either way "
+              "this needs revisiting rather than silently doing nothing." % plugins
+          )
   - name: deepwmh_wrapper
-    filename: deepwmh_wrapper
+    contents: |
+      #!/bin/bash
+      # Thin wrapper: DeepWMH_predict with the bundled model pre-selected.
+      #
+      # -h/--help is intercepted because DeepWMH_predict's own usage calls the
+      # program DeepWMH_predict and lists "-m TRAINED_MODEL" as required, which
+      # contradicts every example in this container's readme -- none of which pass
+      # -m, because this wrapper supplies it.
+      set -e
+
+      if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+          printf '%s\n' \
+              'usage: deepwmh -i FLAIR [FLAIR ...] -n NAME [NAME ...] -o OUTPUT_FOLDER' \
+              '               [-g GPU] [--skip-bfc]' \
+              '' \
+              'Segment white matter hyperintensities from a single T2-FLAIR image.' \
+              '' \
+              'required arguments:' \
+              '  -i, --input-images    one or more T2-FLAIR images (NIfTI). The input is' \
+              '                        not checked: a T1w produces plausible nonsense' \
+              '  -n, --case-names      one name per input image. Alphanumerics, ".", "_"' \
+              '                        and "-" only, and never the substring "_to_"' \
+              '  -o, --output-folder   output directory' \
+              '' \
+              'optional arguments:' \
+              '  -g, --gpu             GPU id (default 0). With no GPU present the tool' \
+              '                        warns and runs on CPU; -g -1 forces CPU' \
+              '      --skip-bfc        skip ANTs N4 bias field correction. Faster, but the' \
+              '                        authors warn accuracy degrades on bias-corrupted' \
+              '                        images, and it measurably over-segments' \
+              '' \
+              'The bundled model is already selected, so -m is not needed. To use your own' \
+              'model, call DeepWMH_predict directly with -m /path/to/model.' \
+              '' \
+              'The final mask is <output-folder>/002_Segmentations/003_postproc_fov/.' \
+              'Run "DeepWMH_predict --help" for the underlying tool'"'"'s full option list.'
+          exit 0
+      fi
+
+      exec DeepWMH_predict -m "${DEEPWMH_MODEL_DIR:-/opt/deepwmh-model}" "$@"
   - name: patch_nnunet_logdir.py
     contents: |
       """Make the nnU-Net fork tolerate a read-only model directory.
