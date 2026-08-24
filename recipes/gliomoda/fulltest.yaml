@@ -104,6 +104,50 @@ tests:
       bash -c 'python -c "import numpy,nibabel,sys; nibabel.Nifti1Image(numpy.zeros((240,240,155),dtype=numpy.uint8), numpy.eye(4)).to_filename(sys.argv[1])" /tmp/gliomoda-3d.nii.gz && gliomoda --device cuda -t1c /tmp/gliomoda-3d.nii.gz -o /tmp/gliomoda-3d-seg.nii.gz 2>&1 || true'
     expected_output_contains: "no CUDA device is available"
 
+  - name: the thread default reports where its number came from
+    description: >-
+      The default cannot be the Slurm allocation: the module launcher runs
+      singularity with --cleanenv, which strips $SLURM_CPUS_PER_TASK and
+      $OMP_NUM_THREADS, and the kernel fallback then reads the Neurodesk
+      session's cgroup quota instead. Measured on an 8-CPU session, a 2-CPU
+      and a 4-CPU job both defaulted to 8 threads. The run now names the
+      source so an oversubscribed default is visible in the log rather than
+      silent, and this checks the precedence behind that label: a variable
+      wins when it survives, a kernel limit is the floor when it does not.
+    command: |
+      /opt/gliomoda-${version}/bin/python3 - <<'PY'
+      import os
+
+      # The wrapper is a plain script, not an importable module, and it holds
+      # no heavy imports at module level.
+      cli = {"__name__": "gliomoda_cli"}
+      with open("/usr/local/bin/gliomoda") as handle:
+          exec(compile(handle.read(), "gliomoda", "exec"), cli)
+      default_threads = cli["default_threads"]
+
+      os.environ["SLURM_CPUS_PER_TASK"] = "2"
+      assert default_threads() == (2, "$SLURM_CPUS_PER_TASK"), default_threads()
+      del os.environ["SLURM_CPUS_PER_TASK"]
+
+      os.environ["OMP_NUM_THREADS"] = "3"
+      assert default_threads() == (3, "$OMP_NUM_THREADS"), default_threads()
+      del os.environ["OMP_NUM_THREADS"]
+
+      # A non-numeric value must fall through rather than crash the run.
+      os.environ["SLURM_CPUS_PER_TASK"] = "2,4"
+      count, source = default_threads()
+      assert source != "$SLURM_CPUS_PER_TASK", (count, source)
+      del os.environ["SLURM_CPUS_PER_TASK"]
+
+      # What --cleanenv actually leaves behind: no variables, so a kernel
+      # limit and a label naming which one.
+      count, source = default_threads()
+      assert isinstance(count, int) and count > 0, (count, source)
+      assert source in ("affinity mask", "cgroup quota"), source
+      print("thread-source", source, count)
+      PY
+    expected_output_contains: "thread-source"
+
   - name: the container does not export a python interpreter
     description: >-
       Deploying the venv bin put python, python3 and python3.12 on the user's
