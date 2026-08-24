@@ -61,13 +61,33 @@ build:
         # Read the version from installed distribution metadata: meganorm's
         # __init__.py re-exports its submodules and defines no __version__.
         - . "${MEGANORM_VENV}/bin/activate" && python -c "import importlib.metadata as md; import meganorm, mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('meganorm', md.version('meganorm'))"
+        # Every one of the shipped defaults that stops a run is corrected here:
+        # GEDAI's signature mismatch, the identical EEG reject/flat thresholds,
+        # the ICA method its own fit_params contradict, the parametrisation
+        # that discards every channel, the missing Delta band, the unreachable
+        # "no re-referencing" option, and a run that reported success after
+        # extracting nothing.
+        - . "${MEGANORM_VENV}/bin/activate" && python {{ get_file("fix_working_defaults") }}
+        # Assert on the model itself, not on the patch having run: these are the
+        # properties a run depends on.
+        - >-
+          . "${MEGANORM_VENV}/bin/activate" && python -c "from meganorm.utils.IO import Config; c=Config(); assert c.apply_gedai is False, 'gedai default still on'; assert c.ica_method=='infomax', c.ica_method; assert c.parametrization_method=='fooof', c.parametrization_method; assert c.eeg_flat_threshold < c.eeg_var_threshold/100, (c.eeg_flat_threshold, c.eeg_var_threshold); bands=set(c.freq_bands); missing=[r for r in c.power_band_ratios_list if r.numerator not in bands or r.denominator not in bands]; assert not missing, missing; print('defaults can complete a run')"
+        # The config file is a required argument with no example anywhere in the
+        # package, so the documented invocation could not be followed.
+        - . "${MEGANORM_VENV}/bin/activate" && python {{ get_file("write_example_configs") }} /opt/meganorm/configs
+        - chmod -R a+rX /opt/meganorm/configs
 
     - copy:
         - meganorm
         - /usr/local/bin/meganorm
 
+    - copy:
+        - meganorm_python_helper
+        - /usr/local/bin/meganorm-python
+
     - run:
-        - chmod 755 /usr/local/bin/meganorm
+        - chmod 755 /usr/local/bin/meganorm /usr/local/bin/meganorm-python
+        - meganorm-python -c "import meganorm; print('meganorm-python ok')"
         - chmod -R a+rX "${MEGANORM_VENV}"
         - rm -rf /root/.cache/pip /tmp/matplotlib-meganorm /tmp/cache-meganorm /tmp/numba-meganorm
 
@@ -83,10 +103,37 @@ build:
           #!/bin/bash
           set -e
           meganorm --help
-          python -c "import meganorm; print(meganorm.__version__)"
-          python -c "import mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('stack ok')"
+          # meganorm.__version__ does not exist: __init__.py re-exports the
+          # submodules and never the version. The metadata is what to read.
+          meganorm-python -c "import importlib.metadata as md; import meganorm; print(md.version('meganorm'))"
+          meganorm-python -c "import mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('stack ok')"
+          # The config argument is mandatory, so an example has to exist and
+          # has to load back into the model.
+          meganorm-python -c "
+          from meganorm.utils.IO import Config
+          for name in ('default', 'eeg'):
+              cfg = Config.load('/opt/meganorm/configs/%s.json' % name)
+              print(name, 'config loads')
+          "
+          # The defaults must be able to complete a run: every one of these
+          # aborted the pipeline or silently emptied its output.
+          meganorm-python -c "
+          from meganorm.utils.IO import Config
+          c = Config()
+          assert c.apply_gedai is False
+          assert c.ica_method == 'infomax'
+          assert c.parametrization_method == 'fooof'
+          assert c.eeg_flat_threshold < c.eeg_var_threshold / 100
+          bands = set(c.freq_bands)
+          assert all(r.numerator in bands and r.denominator in bands for r in c.power_band_ratios_list)
+          print('defaults ok')
+          "
 
 files:
+  - name: fix_working_defaults
+    filename: fix_working_defaults.py
+  - name: write_example_configs
+    filename: write_example_configs.py
   # Upstream declares no console_scripts (setup.py has no entry_points), but
   # meganorm/src/mainParallel.py carries the argparse CLI for the per-subject
   # pipeline and guards on __main__. Expose that as the module's entrypoint so
@@ -96,12 +143,32 @@ files:
       #!/usr/bin/env bash
       set -euo pipefail
       exec {{ context.meganorm_venv }}/bin/python -m meganorm.src.mainParallel "$@"
+  - name: meganorm_python_helper
+    contents: |
+      #!/usr/bin/env bash
+      # Run python from inside this container.
+      #
+      # meganorm and its stack are installed in the container's environment,
+      # not on the host, so "import meganorm" only works with this interpreter.
+      # The container does not put python on your PATH, because doing so
+      # replaced the host interpreter for the rest of the shell.
+      exec {{ context.meganorm_venv }}/bin/python "$@"
 
 deploy:
+  # Named individually rather than exporting the venv bin directory. That
+  # exported 25 commands, among them python, python3, python3.12 and pip3.12,
+  # which shadowed /opt/conda/bin/python for the rest of the session: a later
+  # pip install, DataLad call or another module's tooling silently ran this
+  # container's interpreter. The rest were transitive-dependency console
+  # scripts (idna, markdown-it, undill, get_gprof, plotly_get_chrome) that have
+  # nothing to do with this tool.
   bins:
     - meganorm
-  path:
-    - "{{ context.meganorm_venv }}/bin"
+    - meganorm-python
+    - normative
+    - mne
+    - mne_bids
+    - gedai
 
 categories:
   - electrophysiology
@@ -120,22 +187,81 @@ readme: |-
   MNE-Python for preprocessing and feature extraction, and PCNToolkit for the
   normative modelling.
 
-  Example:
+  ### Example
+
   ```
-  meganorm --help
-  meganorm <bids_dir> <save_dir> <subject> <configs>
+  meganorm sub-037_task-eyesclosed_eeg.set out/ sub-037 \
+      /opt/meganorm/configs/eeg.json --line_freq 50
   ```
 
-  The container also exposes the installed environment on PATH, so `python`,
-  `mne` and the other console scripts from the dependency stack are available
-  directly.
+  The first argument is **one recording file**, not a BIDS root: it is handed
+  straight to `mne.io.read_raw()`, and nothing in the pipeline does BIDS
+  discovery, despite the argument being named `dir`. Pointing it at a dataset
+  directory fails with `ValueError: Unsupported file type ()`.
+
+  ### The config argument
+
+  `configs` is required, and it is a path to a JSON file holding a 106-field
+  model that rejects unknown keys. Two ready-made ones ship in the image:
+
+  ```
+  /opt/meganorm/configs/default.json   every field at its default
+  /opt/meganorm/configs/eeg.json       the same with the MEG-only stages off
+  ```
+
+  Copy one and edit it. `eeg.json` is the place to start for EEG: the defaults
+  are MEG-oriented, and it turns off oversampled temporal projection,
+  head-movement correction and environmental-noise correction, which have
+  nothing to act on in an EEG recording.
+
+  ### Python
 
   MEGaNorm is a library first: most workflows import it rather than shelling
-  out. Start an interactive session with `python` and `import meganorm`.
+  out. Use `meganorm-python`, this container's interpreter:
+
+  ```
+  meganorm-python -c 'from meganorm.utils.IO import Config; print(Config())'
+  ```
+
+  `python` is deliberately not exported. The environment's bin directory put
+  `python`, `python3`, `python3.12` and `pip3.12` on your PATH and shadowed the
+  host interpreter for the rest of the session. `normative`, `mne`, `mne_bids`
+  and `gedai` are exported as commands.
+
+  ### Threads
+
+  Set `SINGULARITYENV_OMP_NUM_THREADS` to your core budget. The module wrapper
+  runs the container with `--cleanenv`, so a plain `OMP_NUM_THREADS` -- and
+  `SLURM_CPUS_PER_TASK` -- never reaches the tool, and OpenBLAS otherwise
+  starts one thread per core on the node regardless of what the job asked for.
+  Apptainer accepts `APPTAINERENV_OMP_NUM_THREADS` for the same purpose.
 
   Source localization expects FreeSurfer surface reconstructions, passed via
   `--surfaces_dir`. FreeSurfer is not bundled in this container -- run it
   separately (see the `freesurfer` container) and mount the results.
+
+  ### Defaults changed in this container
+
+  As published, none of MEGaNorm 0.2.0's configurations completes a run: seven
+  variants were tried and all seven produced no features. These defaults are
+  corrected in the image, and every one of them can be set back in your own
+  config:
+
+  ```
+  apply_gedai              True  -> False   no released gedai accepts the
+                                            keywords preprocess.py passes it
+  ica_method            fastica  -> infomax fit_params=dict(extended=True) is
+                                            hardcoded; only infomax takes it
+  eeg_flat_threshold      40e-6  -> 1e-7    was equal to eeg_var_threshold, so
+                                            every epoch was rejected
+  parametrization_method  irasa  -> fooof   IRASA returned negative R^2 on
+                                            every channel, so all were dropped
+  freq_bands                     +  Delta   four default band ratios use it
+  ```
+
+  A run that discards every channel now raises instead of writing an empty
+  feature table and exiting 0, and `rereference_method: "None"` reaches the
+  pipeline as "no re-referencing" rather than failing inside MNE.
 
   More documentation can be found here: https://github.com/ML4PNP/MEGaNorm
 

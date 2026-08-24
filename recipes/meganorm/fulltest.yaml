@@ -14,15 +14,111 @@ tests:
 
   - name: package reports the packaged version
     description: Guards against the venv resolving a different meganorm than the recipe pins.
-    command: python -c "import importlib.metadata as md; print(md.version('meganorm'))"
+    command: meganorm-python -c "import importlib.metadata as md; print(md.version('meganorm'))"
     expected_output_contains: "${version}"
 
   - name: dependency stack imports
     description: onnxruntime and pcntoolkit are imported lazily at run time, so check them explicitly.
-    command: python -c "import mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('stack ok')"
+    command: meganorm-python -c "import mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime; print('stack ok')"
     expected_output_contains: "stack ok"
 
   - name: matplotlib writes its cache outside HOME
     description: $HOME does not exist at container runtime; MPLCONFIGDIR must point somewhere writable.
-    command: python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt; print('mpl ok')"
+    command: meganorm-python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt; print('mpl ok')"
     expected_output_contains: "mpl ok"
+
+  - name: only the tool's own commands are on PATH
+    description: >-
+      Loading the module used to export 25 commands, python, python3,
+      python3.12 and pip3.12 among them, which shadowed the host interpreter
+      for the rest of the session: a later pip install or DataLad call silently
+      ran this container's python. The named commands are exported instead.
+    command: |
+      command -v meganorm-python normative mne > /dev/null && echo "own-commands-present"
+      if command -v python3.12 > /dev/null && python3.12 -c "import meganorm" 2>/dev/null; then
+        echo "HOST-PYTHON-SHADOWED"
+      else
+        echo "host-python-untouched"
+      fi
+    expected_output_contains: "host-python-untouched"
+
+  - name: an example configuration ships and loads
+    description: >-
+      The fourth positional argument is a required path to a 106-field JSON
+      config, upstream ships no example, and the README never mentions the
+      format. Without one, the documented invocation cannot be run at all.
+    command: |
+      meganorm-python -c "
+      from meganorm.utils.IO import Config
+      for name in ('default', 'eeg'):
+          Config.load('/opt/meganorm/configs/%s.json' % name)
+      print('configs-load')
+      "
+    expected_output_contains: "configs-load"
+
+  - name: the shipped defaults can complete a run
+    description: >-
+      Seven configurations were tried on real EEG and all seven produced no
+      features: GEDAI is called with a keyword no released gedai accepts, the
+      EEG reject and flat thresholds were identical so every epoch was dropped,
+      the default ICA method rejects the fit_params the code hardcodes, and the
+      default parametrisation discarded every channel.
+    command: |
+      meganorm-python -c "
+      from meganorm.utils.IO import Config
+      c = Config()
+      ok = (
+          c.apply_gedai is False
+          and c.ica_method == 'infomax'
+          and c.parametrization_method == 'fooof'
+          and c.eeg_flat_threshold < c.eeg_var_threshold / 100
+      )
+      print('defaults-runnable' if ok else 'DEFAULTS-BROKEN')
+      "
+    expected_output_contains: "defaults-runnable"
+
+  - name: every default band ratio has a band to compute from
+    description: >-
+      Four of the ten default ratios use Delta, which the default freq_bands
+      never defined, and feature_extract skips a ratio whose bands are missing
+      without warning. Users got six ratio features where the config said ten,
+      Delta/Theta among the missing.
+    command: |
+      meganorm-python -c "
+      from meganorm.utils.IO import Config
+      c = Config()
+      bands = set(c.freq_bands)
+      missing = [(r.numerator, r.denominator) for r in c.power_band_ratios_list
+                 if r.numerator not in bands or r.denominator not in bands]
+      print('all-ratios-computable' if not missing else 'MISSING %s' % missing)
+      "
+    expected_output_contains: "all-ratios-computable"
+
+  - name: an empty feature table is an error, not a success
+    description: >-
+      When min_r_squared discarded every channel the pipeline wrote an 11-byte
+      CSV, logged completion and exited 0, so a whole cohort could produce
+      empty files and clean exit statuses from every job.
+    command: |
+      meganorm-python -c "
+      import inspect
+      from meganorm.src import featureExtraction
+      src = inspect.getsource(featureExtraction)
+      print('raises-on-empty' if 'No features were extracted' in src else 'SILENT-EMPTY')
+      "
+    expected_output_contains: "raises-on-empty"
+
+  - name: no re-referencing is reachable
+    description: >-
+      The documented {"average", "REST", None} third option was unreachable in
+      both directions: null failed pydantic validation, and the string "None"
+      passed the truthiness guard and reached mne.set_eeg_reference("None"),
+      which raises. The guard now treats it as the absent value it names.
+    command: |
+      meganorm-python -c "
+      import inspect
+      from meganorm.src import preprocess
+      src = inspect.getsource(preprocess)
+      print('none-reachable' if 'rereference_method not in (None, \"None\")' in src else 'NONE-UNREACHABLE')
+      "
+    expected_output_contains: "none-reachable"
