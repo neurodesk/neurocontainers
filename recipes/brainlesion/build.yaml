@@ -73,7 +73,12 @@ build:
         # first thing a user saw was a traceback from `hd-bet --help`. One
         # invocation per deployed command is what catches that.
         - /opt/miniconda/bin/preprocessor --help > /dev/null && echo "preprocessor CLI ok"
-        - /opt/miniconda/bin/preprocessor --help | grep -q -- '--bet-mode' && echo "bet profile selectable"
+        # Ask click what the command registered rather than grepping rendered
+        # help: the negative half of a boolean flag lands in secondary_opts and
+        # its appearance in --help depends on how rich lays the table out at
+        # whatever width it guesses.
+        - >-
+          python -c "import typer; from brainles_preprocessing import cli; c=typer.main.get_command(cli.app); n=set(); [n.update(p.opts+p.secondary_opts) for p in c.params]; need={'--bet-mode','--bet-tta','--no-bet-tta'}; assert need <= n, 'missing '+str(sorted(need-n)); print('bet profile selectable')"
         - /opt/miniconda/bin/hd-bet --help > /dev/null && echo "hd-bet CLI ok"
         # A failed extraction must not look like a success. Upstream printed a
         # message and returned normally, so a pipeline checking the exit code

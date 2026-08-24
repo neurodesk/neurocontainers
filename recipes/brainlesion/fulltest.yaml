@@ -380,8 +380,32 @@ tests:
       HD-BET's default is a five-fold ensemble with test-time mirroring, hours
       per volume on CPU, and the CLI exposed no way to ask for anything
       cheaper: a measured run got through registration and then hit a
-      90-minute timeout in brain extraction.
+      90-minute timeout in brain extraction. Asked of click's parsed option
+      set rather than of the rendered help. Typer lays --help out as a rich
+      table, and rich truncates the option column with an ellipsis once the
+      width it guessed is narrow enough, so grepping the help for the flag
+      names asserts on the width the container happened to render at. The
+      profile also has to reach HD-BET, so the forwarding is exercised as
+      well: a flag that parses and changes nothing is what the 90-minute
+      timeout was.
     command: |
-      preprocessor --help | grep -q -- '--bet-mode' && \
-      preprocessor --help | grep -q -- '--no-bet-tta' && echo "bet-flags-present"
-    expected_output_contains: "bet-flags-present"
+      python -c "
+      import typer.main
+      from brainles_preprocessing.brain_extraction.brain_extractor import HDBetExtractor
+      from brainles_preprocessing.cli import app, _ProfiledHDBetExtractor
+
+      cmd = typer.main.get_command(app)
+      opts = {o for p in cmd.params for o in p.opts + p.secondary_opts}
+      missing = [f for f in ('--bet-mode', '--bet-tta', '--no-bet-tta') if f not in opts]
+      assert not missing, 'missing %s, have %s' % (missing, sorted(opts))
+
+      seen = {}
+      HDBetExtractor.extract = lambda self, *a, **k: seen.update(k)
+      _ProfiledHDBetExtractor(mode='fast', do_tta=False).extract()
+      assert seen == {'mode': 'fast', 'do_tta': False}, seen
+      seen.clear()
+      _ProfiledHDBetExtractor().extract()
+      assert seen == {'mode': 'accurate', 'do_tta': True}, seen
+      print('bet-profile-selectable')
+      "
+    expected_output_contains: "bet-profile-selectable"
