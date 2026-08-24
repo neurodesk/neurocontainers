@@ -35,6 +35,11 @@ build:
         - python -m pip install --no-cache-dir --no-deps brainles-aurora==0.2.7 brainles-preprocessing==0.6.10
         - python {{ get_file("fix_aurora_import") }}
         - python {{ get_file("fix_preprocessor_cli") }}
+        # The `hd-bet` command imports a helper its own package never defines,
+        # so it died on import before parsing an argument -- and the library
+        # both it and the preprocessor use returned 0 after an extraction that
+        # produced nothing.
+        - python {{ get_file("fix_hd_bet_cli") }}
         # Every DL component resolves its weights cache inside its own installed
         # package, which is read-only at run time, so inference died with
         # "OSError: [Errno 30] Read-only file system" before doing anything.
@@ -45,6 +50,14 @@ build:
         # first use rather than baked in: together they are several GB and most
         # users need one component.
         - python {{ get_file("bls_writable_weights") }}
+        # The atlases are the one weight-like asset that redirect does not
+        # cover: AtlasCentricPreprocessor defaults to Atlas.BRATS_SRI24 and
+        # fetches it into the installed package, which is read-only at run
+        # time, so `preprocessor` failed within seconds using nothing but its
+        # own defaults. ~92 MB, and it makes the command work offline.
+        - python {{ get_file("bake_atlases.py") }}
+        - >-
+          python -c "from brainles_preprocessing.utils.zenodo import fetch_atlases; from brainles_preprocessing.constants import Atlas; p=fetch_atlases()/Atlas.BRATS_SRI24.value; assert p.is_file(), p; print('atlases resolve to', p)"
         # panoptica 2.x builds its instance-label lookup with the dtype of the
         # connected-components array, so multi-lesion evaluations fail once
         # reference plus unmatched predicted instances exceed 255. Fixed on
@@ -53,9 +66,23 @@ build:
         - python {{ get_file("fix_map_labels_dtype") }}
         - >-
           python -c "import numpy as np; from panoptica._functionals import _map_labels; a=np.zeros((4,4),dtype=np.uint8); a[0,0]=3; assert int(_map_labels(a,{3:256}).max())==256; print('instance relabelling handles >255 labels')"
-        # finding 4: both exist at /opt/miniconda/bin but were never exposed
-        - test -x /opt/miniconda/bin/preprocessor
-        - test -x /opt/miniconda/bin/hd-bet
+        # finding 4: both exist at /opt/miniconda/bin but were never exposed.
+        #
+        # Run them rather than testing the executable bit. `test -x` passed on
+        # an `hd-bet` that could not start at all: it dies on import, so the
+        # first thing a user saw was a traceback from `hd-bet --help`. One
+        # invocation per deployed command is what catches that.
+        - /opt/miniconda/bin/preprocessor --help > /dev/null && echo "preprocessor CLI ok"
+        - /opt/miniconda/bin/preprocessor --help | grep -q -- '--bet-mode' && echo "bet profile selectable"
+        - /opt/miniconda/bin/hd-bet --help > /dev/null && echo "hd-bet CLI ok"
+        # A failed extraction must not look like a success. Upstream printed a
+        # message and returned normally, so a pipeline checking the exit code
+        # carried on with a mask that was never written. Asserted on the
+        # installed source rather than by running an extraction, which would
+        # pull the five fold weight files this image deliberately does not
+        # bake in.
+        - >-
+          python -c "import inspect; from brainles_hd_bet import run as r; s=inspect.getsource(r.run_hd_bet); assert 'hd-bet could not read' in s and 'hd-bet rejected' in s, 'silent-failure patch is not in place'; print('failed extraction raises')"
     - environment:
         # Where the components cache their weights. Point this at persistent
         # storage so the download happens once rather than every session.
@@ -100,6 +127,20 @@ build:
           assert os.access(base, os.W_OK), base
           print('weights dir writable:', base)
           "
+          # Every deployed command must start. Checking the executable bit
+          # passed on an hd-bet that died on import.
+          preprocessor --help > /dev/null && echo "preprocessor runs"
+          hd-bet --help > /dev/null && echo "hd-bet runs"
+          # The atlas the preprocessor defaults to must resolve inside the
+          # image: fetching it at run time is what made the default settings
+          # fail on the read-only filesystem.
+          python -c "
+          from brainles_preprocessing.constants import Atlas
+          from brainles_preprocessing.utils.zenodo import fetch_atlases
+          atlas = fetch_atlases() / Atlas.BRATS_SRI24.value
+          assert atlas.is_file(), atlas
+          print('default atlas bundled:', atlas)
+          "
 files:
   - name: fix_aurora_import
     filename: fix_aurora_import.py
@@ -109,6 +150,10 @@ files:
     filename: bls_writable_weights.py
   - name: fix_map_labels_dtype
     filename: fix_map_labels_dtype.py
+  - name: fix_hd_bet_cli
+    filename: fix_hd_bet_cli.py
+  - name: bake_atlases.py
+    filename: bake_atlases.py
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA4hJREFUSEvtlV1MW2UYx3+npYcOus51UMYcH6NlfpAZiSFFTYWwjWEzEnWhFAaYsU0YJXOZnQkxXphseMFmAtFCjGZtsl3Mqy3DLJELNQtW0UTC3A2ouAxBFmI/oF0K/TA9kyb9AOut8SQnOTnv/zy/5/k/z/seoWy8I0qGV65cicd/lsVgKMMvQPgf8E9e/YcsigTW8F69i9sxlVC1qN+Oqr6M7KfzEGZXmL80nuKKsGcvsmeqEKrrkD31LIjZcU3conXAYJ2N9vb2hCA+n4/W1la+ic5gKdmP3W5PWA+FQkxPT1PbYMJ9zIas6iWQyyWNcOpHU1SQ7+J7t4KfL48ztP8cZrOZ8vJyZDIZer2e0dFR/H4/j1fpOXbIIgGqq6tZXl6WgphMJgYGBhgbG+PlD528eLSByvxsOgPXEc7/oJU2WtbqDm45gpwwvkdTUxNKpTKe5eTkJDqdDo1uJyeOdEgAjUaD2+2Oa7xeLwsLC5w+XofdvEbh1sCjCtYBwUCU284Ax2tHJDscDgeCIEgVGI1GKejZi+/Q2dAiPRsMBjwej5SIxWKhr6+PwcFBvvvMRr9ZRKsWNga0tbWxtLQkCXJycqTb5XJxoOUwr5uaU3oQ0wWDQbRaLf2vBml5IQul4lFxaStItqi7u5vh4WEqKiqoqamJ9yBmiyiKdHV10dPTw9DQEH9+fQ7rQQW5fw9SRoDS0lJmZ2fp7e0lEonEe/B8iY/8rQLO2yFpCCYmJrh2vp53X1HwWO4mFjU3N9PY2CiVWFlZic1mk5qqVqulEY71oGhXHiNH/ZTkCbx1dRXnF3PMz8/T323gglmkaMcGgM6a4ZR9EBtHq9XKzdEJWix1EqCwoIBPOnyU75TRd22V96/cJVZpcUEOl08qMD4pRyak6cFXn/rTnl/btukoKm7gpzsfSeuiqOLjMwbqi118cGuNi5+vSe/z1QLOruxUQHgtyh8zYfyeSBywJWs7K65LeLxbUKv3EAx68K/8DkQRBDnagr3YDx7mt/uL/PogQjgCchk8UShjtybJonRph6YucP9b86Yn8r6SXzhZaNxQE5+iZEVk5k3ufdm7afD1xdf2XaE29+202rQA1cMD3Lsxgs+X2e9aqRQ4/dwpdoevp0BSAKJchf/mFHNz4YyyXxfFrHqj7AjRhw8SvksBZOL7RuR0ViUAVItnuHPD+q8yTxYnQ/4CysSosaI6GD0AAAAASUVORK5CYII=
 categories:
   - structural imaging
@@ -161,20 +206,44 @@ readme: |-
   `preprocessor` and `hd-bet` are available as commands. Everything else is used
   from Python, through this container's `python` or `python3`.
 
+  ### Preprocessing on a node without a GPU
+
+  `preprocessor` runs the BraTS pipeline: co-registration, atlas registration,
+  atlas correction, normalisation and brain extraction. The atlases it needs
+  are bundled, so it works offline with its own defaults.
+
+  Brain extraction is the slow half. HD-BET defaults to a five-fold ensemble
+  with test-time mirroring, which is hours per volume on CPU, so on a GPU-less
+  node ask for the single-fold profile:
+
+  ```
+  preprocessor -t1c t1c.nii.gz -t1 t1.nii.gz -t2 t2.nii.gz -fl flair.nii.gz \
+      -o out/ --bet-mode fast --no-bet-tta
+  ```
+
+  Left alone, both settings keep upstream's values, so a run that says nothing
+  about brain extraction produces what the standalone module produces.
+
   ### GPU and CPU
 
-  These tools default to a GPU and do not check whether one exists.
-  `Inferer(device="cuda")` constructs the device regardless and inference then
-  dies inside nnU-Net after the model has loaded; `AtlasCentricPreprocessor`
-  defaults to `use_gpu=True`. On a node without a GPU pass `device="cpu"` and
-  `use_gpu=False` explicitly.
+  `gliomoda`, `petu` and `AtlasCentricPreprocessor` default to a GPU and do not
+  check whether one exists. `Inferer(device="cuda")` constructs the device
+  regardless and inference then dies inside nnU-Net after the model has loaded;
+  `AtlasCentricPreprocessor` defaults to `use_gpu=True`. On a node without a
+  GPU pass `device="cpu"` and `use_gpu=False` explicitly.
+
+  HD-BET is the exception: `run_hd_bet()` falls back to CPU on its own when no
+  CUDA device is present.
 
   ### Model weights
 
   Weights are downloaded on first use into `$BLS_WEIGHTS_DIR`, which defaults to
-  `/tmp/brainlesion-weights`. That default is per-session: every new session
-  re-downloads roughly 3.5 GB. Point it at persistent storage so this happens
-  once.
+  `/tmp/brainlesion-weights`. That default is per-session, and the cost scales
+  with how much of the bundle you touch: gliomoda alone is 3.4 GB, petu another
+  2.8 GB. Point it at persistent storage so this happens once.
+
+  The registration atlases and `deep_quality_estimation`'s checkpoint are baked
+  into the image instead, so neither needs the network or this variable.
 
   It must be set with a `SINGULARITYENV_` prefix. The module wrapper runs the
   container with `--cleanenv`, so a plain `export BLS_WEIGHTS_DIR=...` is

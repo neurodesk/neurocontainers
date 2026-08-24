@@ -333,3 +333,55 @@ tests:
       script as the only supported way into this container.
     command: bash -c 'command -v preprocessor && command -v hd-bet && echo "clis ok"'
     expected_output_contains: "clis ok"
+
+  - name: the hd-bet command starts
+    description: >-
+      hd_bet.py imports maybe_mkdir_p from brainles_hd_bet.utils, which never
+      defined it, so every invocation -- including --help -- died on import
+      before parsing an argument. `test -x` passed on it; running it is what
+      catches this. The helper is restored at build time.
+    command: hd-bet --help
+    expected_output_contains: "--input"
+
+  - name: a failed brain extraction is not reported as success
+    description: >-
+      run_hd_bet caught its loader's errors, printed a message and continued,
+      so an extraction that produced nothing returned normally and exited 0.
+      Any pipeline checking the exit code carried on with a mask that was never
+      written. Asserted on the installed source rather than by running an
+      extraction, which would pull the five fold weight files this image does
+      not bake in.
+    command: |
+      python -c "
+      import inspect
+      from brainles_hd_bet import run
+      src = inspect.getsource(run.run_hd_bet)
+      print('raises-on-failure' if 'hd-bet could not read' in src and 'hd-bet rejected' in src else 'SILENT-FAILURE')
+      "
+    expected_output_contains: "raises-on-failure"
+
+  - name: the default atlas resolves inside the image
+    description: >-
+      AtlasCentricPreprocessor defaults to Atlas.BRATS_SRI24 and fetched it
+      into its own installed package, which is read-only at run time, so
+      `preprocessor` failed within seconds using nothing but its own defaults.
+      The atlases are baked in, as the standalone container already does.
+    command: |
+      python -c "
+      from brainles_preprocessing.constants import Atlas
+      from brainles_preprocessing.utils.zenodo import fetch_atlases
+      atlas = fetch_atlases() / Atlas.BRATS_SRI24.value
+      print('atlas-bundled' if atlas.is_file() else 'ATLAS-MISSING')
+      "
+    expected_output_contains: "atlas-bundled"
+
+  - name: the brain-extraction profile is selectable
+    description: >-
+      HD-BET's default is a five-fold ensemble with test-time mirroring, hours
+      per volume on CPU, and the CLI exposed no way to ask for anything
+      cheaper: a measured run got through registration and then hit a
+      90-minute timeout in brain extraction.
+    command: |
+      preprocessor --help | grep -q -- '--bet-mode' && \
+      preprocessor --help | grep -q -- '--no-bet-tta' && echo "bet-flags-present"
+    expected_output_contains: "bet-flags-present"
