@@ -122,6 +122,57 @@ tests:
       "
     expected_output_contains: "hd-bet-folds 5"
 
+  - name: brain extraction is configurable from the CLI
+    description: >-
+      As shipped, the CLI passed no brain_extractor, so the preprocessor
+      substituted HDBetExtractor's own defaults -- mode="accurate", device=0,
+      do_tta=True, which is 40 forward passes. On a CPU-only node a measured
+      run reached brain extraction in 157 s and produced no mask in the
+      following 1643 s, while hd-bet at mode=fast/device=cpu/no-tta did the
+      same extraction in 934 s: the advertised one-shot command could not ask
+      for what the image's other command does in 15 minutes. Checked against
+      click's parsed option set rather than the rendered help, which typer
+      lays out as a rich table and truncates at whatever width it guessed, and
+      the forwarding is exercised because a flag that parses and changes
+      nothing is the defect this replaced.
+    command: |
+      python -c "
+      import typer, typer.main
+      from brainles_preprocessing.brain_extraction.brain_extractor import HDBetExtractor
+      from brainles_preprocessing.cli import app, _ProfiledHDBetExtractor as E
+
+      cmd = typer.main.get_command(app)
+      opts = {o for p in cmd.params for o in p.opts + p.secondary_opts}
+      wanted = ('--bet-mode', '--bet-device', '--bet-tta', '--no-bet-tta')
+      missing = [f for f in wanted if f not in opts]
+      assert not missing, 'missing %s, have %s' % (missing, sorted(opts))
+
+      seen = {}
+      HDBetExtractor.extract = lambda self, *a, **k: seen.update(k)
+
+      # The CPU profile has to arrive at HD-BET intact.
+      E(mode='fast', device='cpu', do_tta=False).extract()
+      assert seen == {'mode': 'fast', 'device': 'cpu', 'do_tta': False}, seen
+
+      # And upstream's GPU defaults must be untouched, so a GPU run behaves as
+      # it did before. device is an int because net.cuda('0') raises.
+      seen.clear()
+      E().extract()
+      assert seen == {'mode': 'accurate', 'device': 0, 'do_tta': True}, seen
+
+      # A bad value is a usage error up front, not an exception 157 s into the
+      # run, which is where upstream checks the mode and never checks device.
+      for bad in ({'mode': 'fst'}, {'device': 'cuda'}):
+          try:
+              E(**bad)
+          except typer.BadParameter:
+              pass
+          else:
+              raise AssertionError('accepted %r' % bad)
+      print('bet-profile-configurable')
+      "
+    expected_output_contains: "bet-profile-configurable"
+
   - name: the brain extractor imports
     description: Guards the path from brainles_preprocessing through to brainles_hd_bet.
     command: python -c "from brainles_preprocessing.brain_extraction import HDBetExtractor; print('hdbet extractor ok')"

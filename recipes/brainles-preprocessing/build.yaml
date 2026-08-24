@@ -59,6 +59,15 @@ build:
         # reported broken first.
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/preprocessor --help > /dev/null && echo "preprocessor --help ok"
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/hd-bet --help > /dev/null && echo "hd-bet --help ok"
+        # The brain-extraction flags have to reach HD-BET, not merely parse: a
+        # flag that parses and changes nothing is the hours-per-volume default
+        # it was added to escape. Asked of click's parsed option set rather
+        # than of --help, which typer renders as a rich table and truncates at
+        # whatever width it guesses.
+        - >-
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import typer; from brainles_preprocessing import cli; c=typer.main.get_command(cli.app); n=set(); [n.update(p.opts+p.secondary_opts) for p in c.params]; need={'--bet-mode','--bet-device','--bet-tta','--no-bet-tta'}; assert need <= n, 'missing '+str(sorted(need-n)); print('bet profile selectable')"
+        - >-
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.brain_extractor import HDBetExtractor; from brainles_preprocessing.cli import _ProfiledHDBetExtractor as E; seen={}; HDBetExtractor.extract=lambda self,*a,**k: seen.update(k); E(mode='fast',device='cpu',do_tta=False).extract(); assert seen=={'mode':'fast','device':'cpu','do_tta':False}, seen; seen.clear(); E().extract(); assert seen=={'mode':'accurate','device':0,'do_tta':True}, seen; print('bet profile reaches hd-bet')"
 
     - run:
         # python itself is deliberately not exported (see deploy), so give the
@@ -209,17 +218,26 @@ readme: |
   brainles-preprocessing-python    this container's interpreter
   ```
 
-  `preprocessor` is GPU-oriented: it constructs the brain extractor with its
-  defaults (`mode="accurate"`, test-time augmentation) and exposes no flag to
-  change them, so on a CPU-only node the brain-extraction stage alone takes
-  hours per volume. On CPU, run brain extraction through `hd-bet` with the
-  flags its help recommends:
+  `preprocessor` keeps HD-BET's upstream defaults, which assume a GPU:
+  `--bet-mode accurate --bet-device 0 --bet-tta`, a five-fold ensemble with
+  test-time mirroring over all axes. That is 40 forward passes. On a CPU-only
+  node it does not finish: a measured run reached brain extraction in 157 s and
+  had produced no mask 27 minutes later. **On CPU, ask for the cheap profile**,
+  which is one forward pass and completed the same extraction in 934 s:
+
+  ```
+  preprocessor -t1c t1c.nii.gz -t1 t1.nii.gz -t2 t2.nii.gz -fl flair.nii.gz \
+      -o out/ --bet-mode fast --bet-device cpu --no-bet-tta
+  ```
+
+  Those three flags only affect brain extraction; registration runs on CPU
+  either way. Brain extraction on its own, when that is all you need:
 
   ```
   hd-bet -i t1c.nii.gz -o t1c_bet.nii.gz -mode fast -device cpu -tta 0
   ```
 
-  or drive the full pipeline through the library route (see CPU below).
+  The library route (see CPU below) takes the same three settings.
 
   `python` is deliberately not exported: putting this environment's bin
   directory on your PATH replaced the host interpreter for the rest of the
@@ -261,6 +279,19 @@ readme: |
       device="cpu", mode="fast", do_tta=False,
   )
   ```
+
+  From the CLI the same three are `--bet-mode fast --bet-device cpu
+  --no-bet-tta`.
+
+  ### Threads
+
+  Set `SINGULARITYENV_OMP_NUM_THREADS` to your core budget. The module wrapper
+  runs the container with `--cleanenv`, so a plain `OMP_NUM_THREADS` -- and
+  `SLURM_CPUS_PER_TASK` -- never reaches the tool, and torch otherwise starts
+  one thread per core on the node regardless of what the job asked for.
+  Apptainer accepts `APPTAINERENV_OMP_NUM_THREADS` for the same purpose. Note
+  that apptainer refuses to override `HOME` this way, so a script needing a
+  writable HOME must set it inside the container.
 
   The atlases are bundled too, including the SRI24 BraTS template that petu and
   gliomoda expect their input to be registered to.
