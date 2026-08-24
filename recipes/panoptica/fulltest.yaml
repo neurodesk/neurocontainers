@@ -1,5 +1,5 @@
 name: panoptica
-version: 2.1.6
+version: 2.1.7
 default_timeout: 60
 
 tests:
@@ -94,11 +94,11 @@ tests:
 
   - name: instance relabelling survives more than 255 labels
     description: >-
-      Upstream builds its label lookup with the connected-components dtype, so
-      cc3d returning uint8 for <=255 components made ordinary multi-lesion
-      evaluations fail with OverflowError or IndexError once reference plus
-      unmatched predicted instances exceeded 255. Still unfixed in 2.1.6, so the
-      image carries a patch; this fails if it is ever lost.
+      Through 2.1.6 the label lookup used the connected-components dtype, so
+      ordinary multi-lesion evaluations failed with OverflowError or IndexError
+      once reference plus unmatched predicted instances exceeded 255, and the
+      image carried a patch. 2.1.7 ships the fix upstream
+      (BrainLesion/panoptica#298); this fails if it ever regresses.
     command: |
       panoptica-python -c "
       import numpy as np
