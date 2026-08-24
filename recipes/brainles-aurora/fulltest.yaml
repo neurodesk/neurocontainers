@@ -65,6 +65,65 @@ tests:
       "
     expected_output_contains: "no-network-warning"
 
+  - name: the weights helper imports in any order
+    description: >-
+      brainles_aurora.utils and brainles_aurora.inferer import each other
+      upstream, so three of the six plausible import orders died with a
+      circular ImportError that reads like a broken installation. One constant
+      is inlined at build time to break the cycle; each order runs in its own
+      interpreter so the result cannot depend on a previous import.
+    command: |
+      python -c "from brainles_aurora.utils import check_model_weights"
+      python -c "from brainles_aurora.utils.weights import check_model_weights"
+      python -c "import brainles_aurora; from brainles_aurora.utils import check_model_weights"
+      python -c "from brainles_aurora.inferer import AuroraInferer"
+      echo "import-orders-ok"
+    expected_output_contains: "import-orders-ok"
+
+  - name: seeding reaches the test-time augmentation
+    description: >-
+      monai.utils.set_determinism does not seed Randomizable.R, which is where
+      RandGaussianNoised -- upstream's TTA noise -- draws from, so the wrapper
+      replaces R as well. If that stops working the --seed flag goes silently
+      inert and default runs become irreproducible again.
+    command: |
+      python -c "
+      import numpy as np, torch
+      from monai.transforms import RandGaussianNoised, Randomizable
+      from monai.utils import set_determinism
+      def draw(seed):
+          set_determinism(seed=seed)
+          Randomizable.R = np.random.RandomState(seed)
+          d = {'images': torch.zeros(1, 4, 4)}
+          return RandGaussianNoised(keys='images', prob=1.0, std=0.001)(d)['images'].numpy()
+      print('seeded-reproducible' if np.array_equal(draw(0), draw(0)) and not np.array_equal(draw(0), draw(1)) else 'SEEDING-INERT')
+      "
+    expected_output_contains: "seeded-reproducible"
+
+  - name: two default runs of the same input agree
+    description: >-
+      The default configuration uses test-time augmentation, which upstream
+      leaves unseeded: two runs of the same subject differed by 11 voxels,
+      which matters for a tool whose reported output is a lesion volume. The
+      wrapper seeds it, so a repeat must reproduce the first run exactly.
+    timeout: 2400
+    command: |
+      cd "$(mktemp -d)"
+      python -c "
+      import nibabel as nib, numpy as np
+      rng = np.random.default_rng(0)
+      nib.save(nib.Nifti1Image(rng.random((128, 128, 32)).astype('float32'), np.eye(4)), 't1c.nii.gz')
+      "
+      aurora -t1c t1c.nii.gz -o seg_a.nii.gz --device cpu
+      aurora -t1c t1c.nii.gz -o seg_b.nii.gz --device cpu
+      python -c "
+      import nibabel as nib, numpy as np
+      a = nib.load('seg_a.nii.gz').get_fdata()
+      b = nib.load('seg_b.nii.gz').get_fdata()
+      print('repeats-identical' if np.array_equal(a, b) else 'REPEATS-DIFFER %d voxels' % int((a != b).sum()))
+      "
+    expected_output_contains: "repeats-identical"
+
   - name: aurora CLI is on PATH and renders help
     description: >-
       The CLI is added by this recipe rather than upstream, so nothing else

@@ -55,6 +55,16 @@ build:
         # first use; read the version from distribution metadata because these
         # packages do not all define __version__.
         - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import brainles_aurora; print('brainles-aurora', md.version('brainles-aurora'))"
+        # brainles_aurora.utils and brainles_aurora.inferer import each other,
+        # so half the ways of reaching the weights helper fail with a circular
+        # ImportError that looks like a broken install. One constant is inlined
+        # to break the cycle.
+        - . "${VENV}/bin/activate" && python {{ get_file("fix_weights_import") }}
+        # Every import order must work now, each in its own interpreter so the
+        # result does not depend on what a previous check imported.
+        - . "${VENV}/bin/activate" && python -c "from brainles_aurora.utils import check_model_weights"
+        - . "${VENV}/bin/activate" && python -c "from brainles_aurora.utils.weights import check_model_weights"
+        - . "${VENV}/bin/activate" && python -c "from brainles_aurora.inferer import AuroraInferer" && echo "import orders ok"
         # Bake the model weights into the image so inference runs offline and every
         # run uses the same weights. Adds ~345 MB to the image.
         #
@@ -97,9 +107,9 @@ build:
         - WMOD="$(. "${VENV}/bin/activate" && python -c "import brainles_aurora,pathlib; print(pathlib.Path(brainles_aurora.__file__).parent/'utils/weights.py')")"
         - test -f "${WMOD}"
         - cat {{ get_file("pin_weights.py") }} >> "${WMOD}"
-        - . "${VENV}/bin/activate" && python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; m,u=f(); assert m=={'version':'{{ context.weights_version }}'} and u=='', ('weight pin did not take', m, u); print('zenodo lookup pinned off')"
+        - . "${VENV}/bin/activate" && python -c "from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; m,u=f(); assert m=={'version':'{{ context.weights_version }}'} and u=='', ('weight pin did not take', m, u); print('zenodo lookup pinned off')"
         # Prove the pinned lookup still resolves the baked weights.
-        - . "${VENV}/bin/activate" && python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import check_model_weights; p=str(check_model_weights()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
+        - . "${VENV}/bin/activate" && python -c "from brainles_aurora.utils.weights import check_model_weights; p=str(check_model_weights()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
         # Upstream ships no console_scripts, so the container provides one: a thin
         # argparse front-end over the documented Python API. It adds no logic of
         # its own beyond argument validation.
@@ -115,6 +125,11 @@ build:
         - . "${VENV}/bin/activate" && ! aurora -t1 a.nii.gz -t2 b.nii.gz -o seg.nii.gz > /tmp/combination.txt 2>&1 && grep -q 'no model exists' /tmp/combination.txt && echo "combination rejected early"
         - . "${VENV}/bin/activate" && aurora --help | grep -q 'T2 is only usable' && echo "combination help ok"
         - rm -f /tmp/combination.txt
+        # The wrapper seeds the run so repeated inference is reproducible. This
+        # asserts the seeding reaches the transform upstream draws its
+        # test-time-augmentation noise from; it takes seconds and needs no
+        # weights, so it belongs at build time rather than in a test suite.
+        - . "${VENV}/bin/activate" && python {{ get_file("check_seeding.py") }}
         - chmod -R a+rX "${VENV}"
         - rm -rf /root/.cache/pip /tmp/mpl-brainles-aurora /tmp/cache-brainles-aurora
 
@@ -155,6 +170,10 @@ files:
     url: https://zenodo.org/api/records/10557069/files/t1c-o_best.tar/content
   - name: t1c-o_last.tar
     url: https://zenodo.org/api/records/10557069/files/t1c-o_last.tar/content
+  - name: fix_weights_import
+    filename: fix_weights_import.py
+  - name: check_seeding.py
+    filename: check_seeding.py
   - name: aurora
     contents: |
       #!{{ context.venv }}/bin/python3
@@ -230,6 +249,18 @@ files:
           p.add_argument("--no-tta", action="store_true",
                          help="Disable test-time augmentation: roughly 12x faster, "
                               "slightly less accurate")
+          # Test-time augmentation is unseeded upstream, so the default
+          # configuration returns a slightly different lesion volume on every
+          # run. Seeding by default makes a run reproducible; --no-seed
+          # restores upstream's behaviour for anyone who wants to sample the
+          # spread across repeats.
+          p.add_argument("--seed", type=int, default=0,
+                         help="Random seed for test-time augmentation "
+                              "(default: 0). Without it, repeated runs of the "
+                              "same input differ slightly")
+          p.add_argument("--no-seed", action="store_true",
+                         help="Do not seed: reproduces upstream's unseeded, "
+                              "run-to-run-variable behaviour")
           a = p.parse_args(argv)
 
           combination = (bool(a.t1), bool(a.t1c), bool(a.t2), bool(a.fla))
@@ -255,6 +286,26 @@ files:
 
           from brainles_aurora.inferer import AuroraInferer, AuroraInfererConfig
           from brainles_aurora.inferer.constants import Device
+
+          # Make the run reproducible. Upstream's _apply_test_time_augmentations
+          # draws fresh RandGaussianNoised noise in each of its four rounds and
+          # seeds none of it, so two identical runs disagree -- measured at 11
+          # voxels on a 240x240x155 subject, on a tool whose output is usually
+          # reported as a lesion volume.
+          #
+          # set_determinism is not enough on its own: it seeds torch, random and
+          # np.random, and its own docstring notes it does not affect
+          # Randomizable objects, which draw from the class-level
+          # Randomizable.R. RandGaussianNoised never calls set_random_state, so
+          # R is replaced directly. Both are needed: set_determinism covers
+          # torch, the R assignment covers the transforms.
+          if not a.no_seed:
+              import numpy as np
+              from monai.transforms import Randomizable
+              from monai.utils import set_determinism
+
+              set_determinism(seed=a.seed)
+              Randomizable.R = np.random.RandomState(a.seed)
 
           config = AuroraInfererConfig(
               device=Device(a.device),
@@ -377,6 +428,15 @@ readme: |-
   is applied to the sigmoid output of both channels and the result is cast to
   uint8. The current upstream API exposes no probability maps. The older
   `--whole-tumor-floats` and `--metastasis-floats` names still work as aliases.
+
+  ### Reproducibility
+
+  Test-time augmentation adds Gaussian noise, and upstream seeds none of it, so
+  the same input run twice returns slightly different lesion volumes. This
+  container seeds the run (`--seed`, default 0), so a repeat of the same
+  command reproduces its own output exactly. Pass `--no-seed` for upstream's
+  unseeded behaviour, for example to sample the spread across repeats.
+  `--no-tta` is deterministic either way.
 
   ### CPU, runtime and threads
 
