@@ -113,6 +113,24 @@ build:
         - >-
           /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.utils.zenodo import fetch_synthstrip; p=fetch_synthstrip(); assert p.is_dir() and any(p.iterdir()), p; print('synthstrip resolves to', p)"
 
+    - run:
+        # The --help gates prove the console scripts start; N2 was a command
+        # that starts and cannot finish. This is the next rung: one synthetic
+        # volume through the exported hd-bet command at the CPU profile the
+        # README recommends, loading the baked fold-0 weights and producing a
+        # real mask. Runs after the bake directive because it needs them.
+        #
+        # The cost was measured before this was added, because HD-BET pads
+        # every input to its 128^3 training patch (config.py: val_min_size =
+        # INPUT_PATCH_SIZE), so no input is cheaper than one full-size forward
+        # pass: ~40 s of CPU and ~5.6 GB peak RSS for the whole command. Both
+        # fit the x86_64 build runner, which already builds this multi-GB
+        # image. See the script's docstring for the reproducibility argument.
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("hdbet_gate.py") }} make /tmp/hdbet_gate.nii.gz
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/hd-bet -i /tmp/hdbet_gate.nii.gz -o /tmp/hdbet_gate_bet.nii.gz -mode fast -device cpu -tta 0
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("hdbet_gate.py") }} check /tmp/hdbet_gate_bet_mask.nii.gz
+        - rm -f /tmp/hdbet_gate*.nii.gz
+
     - environment:
         PATH: /opt/miniconda-py311_24.9.2-0/envs/brainles/bin:$PATH
 
@@ -123,6 +141,48 @@ files:
     filename: fix_hdbet_cli.py
   - name: preprocessing_python_helper
     filename: brainles-preprocessing-python
+  - name: hdbet_gate.py
+    contents: |
+      """One synthetic volume through the exported hd-bet command, end to end.
+
+      Run as `hdbet_gate.py make <path>` to write the input volume and
+      `hdbet_gate.py check <mask path>` to verify what hd-bet produced from
+      it; the hd-bet invocation between the two lives in build.yaml so the
+      command under test is the exported console script, invoked exactly as
+      the README tells a CPU user to invoke it.
+
+      The volume is a noisy sphere, 64 voxels cubed at exactly HD-BET's
+      1.5 mm target spacing, so nothing is resampled and the only cost left
+      is the padded forward pass itself. The volume is seeded and CPU
+      inference is deterministic for fixed versions, so the result is
+      reproducible -- fold 0 segments 8675 voxels of the sphere on torch
+      2.13.0. The check only requires a non-empty binary mask, not that
+      count, so a torch or weights refresh that shifts the boundary a little
+      does not fail the build; a command that dies or segments nothing does.
+      """
+      import sys
+
+      import numpy as np
+      import SimpleITK as sitk
+
+      mode, path = sys.argv[1], sys.argv[2]
+      if mode == "make":
+          rng = np.random.RandomState(0)
+          vol = rng.normal(0, 10, (64, 64, 64)).astype(np.float32)
+          zz, yy, xx = np.mgrid[:64, :64, :64]
+          sphere = ((zz - 32) ** 2 + (yy - 32) ** 2 + (xx - 32) ** 2) <= 20**2
+          vol[sphere] += 100
+          img = sitk.GetImageFromArray(vol)
+          img.SetSpacing((1.5, 1.5, 1.5))
+          sitk.WriteImage(img, path)
+          print("gate volume written:", path)
+      elif mode == "check":
+          m = sitk.GetArrayFromImage(sitk.ReadImage(path))
+          values = set(np.unique(m).tolist())
+          assert values <= {0, 1} and m.sum() > 0, (sorted(values), int(m.sum()))
+          print("hd-bet completed a CPU extraction:", int(m.sum()), "mask voxels")
+      else:
+          raise SystemExit("unknown mode %r" % mode)
   - name: bake_atlases.py
     contents: |
       """Download the atlases and SynthStrip weights into the installed package.
