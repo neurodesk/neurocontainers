@@ -1,7 +1,7 @@
 {
   "apps": {
     "petu 0.0.7": {
-      "version": "20260820",
+      "version": "20260822",
       "exec": "",
       "apptainer_args": []
     }

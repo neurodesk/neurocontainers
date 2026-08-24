@@ -1,7 +1,7 @@
 {
   "apps": {
     "brats 0.1.8": {
-      "version": "20260821",
+      "version": "20260822",
       "exec": "",
       "apptainer_args": []
     }
