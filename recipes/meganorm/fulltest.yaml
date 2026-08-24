@@ -132,6 +132,9 @@ tests:
       runs the real CLI on the shipped eeg.json, and requires every feature
       the config promises to be present and finite; it then reruns with an
       impossible min_r_squared and requires the loud empty-table failure
-      instead of an empty CSV with exit 0. Takes a few minutes.
+      instead of an empty CSV with exit 0. The two pipeline runs take a few
+      minutes -- about four on the build runner -- so this cannot live under
+      the runner's default 120 s budget.
     command: meganorm-python /opt/meganorm/selftest.py
     expected_output_contains: "SELFTEST PASS"
+    timeout: 900
