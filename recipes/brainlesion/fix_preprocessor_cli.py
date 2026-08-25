@@ -81,6 +81,9 @@ class _ProfiledHDBetExtractor(HDBetExtractor):
     \"\"\"
 
     def __init__(self, mode="accurate", do_tta=True):
+        # HDBetExtractor sets no instance state today, so this is a no-op --
+        # and it stays correct if upstream ever gives it some.
+        super().__init__()
         self._bet_mode = mode
         self._bet_do_tta = do_tta
 

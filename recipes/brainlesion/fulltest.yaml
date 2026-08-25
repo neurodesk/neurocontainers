@@ -349,15 +349,51 @@ tests:
       so an extraction that produced nothing returned normally and exited 0.
       Any pipeline checking the exit code carried on with a mask that was never
       written. Asserted on the installed source rather than by running an
-      extraction, which would pull the five fold weight files this image does
-      not bake in.
+      extraction, which produced nothing.
+
+      Run rather than grepped: reading the installed source proves the patch
+      is present, not that it is reached, and the handler it replaces is the
+      one that swallowed the error. run_hd_bet loads its fold weights before
+      it ever opens the input -- so the weight plumbing is stubbed out, which
+      is what keeps this off the network in an image that deliberately does
+      not bake the five folds. Everything after that is the real code path: a
+      genuinely missing file, upstream's real loader, and the patched handler.
     command: |
-      python -c "
-      import inspect
-      from brainles_hd_bet import run
-      src = inspect.getsource(run.run_hd_bet)
-      print('raises-on-failure' if 'hd-bet could not read' in src and 'hd-bet rejected' in src else 'SILENT-FAILURE')
-      "
+      python - <<'PY'
+      import pathlib, tempfile
+      import brainles_hd_bet.run as run
+
+      work = pathlib.Path(tempfile.mkdtemp())
+      stub = work / "fold.model"
+      stub.write_bytes(b"")
+
+      # The only two things standing between here and the loader: fetching
+      # ~350 MB of folds, and torch.load-ing them. Neither is under test.
+      run.maybe_download_parameters = lambda index: None
+      run.get_params_fname = lambda index: str(stub)
+      run.torch.load = lambda *args, **kwargs: {}
+
+      missing = str(work / "not-a-real-scan.nii.gz")
+      try:
+          run.run_hd_bet(
+              mri_fnames=[missing],
+              output_fnames=[str(work / "out.nii.gz")],
+              mode="fast",
+              device="cpu",
+              do_tta=False,
+          )
+      except RuntimeError as exc:
+          # Either patched handler is a pass: SimpleITK reports a missing file
+          # as RuntimeError, but which of the two fires is upstream's business.
+          assert "hd-bet could not read" in str(exc) or "hd-bet rejected" in str(exc), exc
+          assert exc.__cause__ is not None, "the original error was not chained"
+          print("raises-on-failure")
+      else:
+          raise SystemExit(
+              "SILENT FAILURE: a missing input returned normally, so a caller "
+              "checking the exit code would carry on without a mask"
+          )
+      PY
     expected_output_contains: "raises-on-failure"
 
   - name: the default atlas resolves inside the image
@@ -375,6 +411,51 @@ tests:
       "
     expected_output_contains: "atlas-bundled"
 
+  - name: the baked atlas survives an upstream version bump
+    description: >-
+      Baking the atlases fixes the first run, not the version check on every
+      run after it. fetch() asks Zenodo before it looks at the disk, and
+      ATLASES_RECORD_ID is a Zenodo concept DOI, which always resolves to the
+      newest release -- so on a version mismatch it rmtree'd the local copy and
+      re-downloaded into the read-only image. The day upstream published, this
+      container would have started failing on its own defaults, on every node,
+      without changing at all. A copy already on disk is now authoritative and
+      Zenodo is not consulted, so this asserts both halves: the baked files are
+      returned untouched, and no lookup happened.
+    command: |
+      python - <<'PY'
+      import pathlib
+      import requests
+      from brainles_preprocessing.utils import zenodo
+
+      baked = sorted(
+          pathlib.Path(zenodo.ATLASES_FOLDER).glob(zenodo.ATLASES_RECORD_ID + "_v*")
+      )
+      assert len(baked) == 1, baked
+      before = {p.name for p in baked[0].iterdir()}
+      assert before, "the baked atlas folder is empty"
+
+      # Zenodo advertising something newer is the case that crashed.
+      asked = []
+      def bumped(self):
+          asked.append(1)
+          return ({"version": "99.0.0"}, "https://example.invalid/archive.zip")
+      zenodo.ZenodoRecord._get_metadata_and_archive_url = bumped
+
+      got = zenodo.fetch_atlases()
+      assert got == baked[0], (got, baked[0])
+      assert not asked, "Zenodo was queried at run time"
+      assert {p.name for p in got.iterdir()} == before, "the baked files changed"
+
+      # And the pre-existing offline behaviour must not regress.
+      zenodo.requests.get = lambda *a, **k: (_ for _ in ()).throw(
+          requests.exceptions.ConnectionError("no network")
+      )
+      assert zenodo.fetch_atlases() == baked[0]
+      print("atlas-survives-version-bump")
+      PY
+    expected_output_contains: "atlas-survives-version-bump"
+
   - name: the brain-extraction profile is selectable
     description: >-
       HD-BET's default is a five-fold ensemble with test-time mirroring, hours
@@ -390,6 +471,7 @@ tests:
       timeout was.
     command: |
       python -c "
+      import inspect
       import typer.main
       from brainles_preprocessing.brain_extraction.brain_extractor import HDBetExtractor
       from brainles_preprocessing.cli import app, _ProfiledHDBetExtractor
@@ -399,13 +481,41 @@ tests:
       missing = [f for f in ('--bet-mode', '--bet-tta', '--no-bet-tta') if f not in opts]
       assert not missing, 'missing %s, have %s' % (missing, sorted(opts))
 
+      # The names have to exist on the real extractor, and be settable by
+      # keyword. A recorder with a permissive *args/**kwargs signature would
+      # swallow a rename or a positional call that fails for real at run time,
+      # so record through the genuine signature instead and let bind() reject
+      # anything it would not accept.
+      real = inspect.signature(HDBetExtractor.extract)
+      for name in ('mode', 'do_tta'):
+          kind = real.parameters[name].kind
+          assert kind is not inspect.Parameter.POSITIONAL_ONLY, (name, kind)
+
       seen = {}
-      HDBetExtractor.extract = lambda self, *a, **k: seen.update(k)
-      _ProfiledHDBetExtractor(mode='fast', do_tta=False).extract()
-      assert seen == {'mode': 'fast', 'do_tta': False}, seen
+      def recorder(self, *args, **kwargs):
+          bound = real.bind(self, *args, **kwargs)
+          bound.apply_defaults()
+          seen.update(bound.arguments)
+      HDBetExtractor.extract = recorder
+
+      required = dict(
+          input_image_path='in.nii.gz',
+          masked_image_path='out.nii.gz',
+          brain_mask_path='mask.nii.gz',
+      )
+
+      _ProfiledHDBetExtractor(mode='fast', do_tta=False).extract(**required)
+      assert (seen['mode'], seen['do_tta']) == ('fast', False), seen
+
       seen.clear()
-      _ProfiledHDBetExtractor().extract()
-      assert seen == {'mode': 'accurate', 'do_tta': True}, seen
+      _ProfiledHDBetExtractor().extract(**required)
+      assert (seen['mode'], seen['do_tta']) == ('accurate', True), seen
+
+      # An explicit call must still win over the profile, or the preprocessor
+      # passing its own value would be silently overridden.
+      seen.clear()
+      _ProfiledHDBetExtractor(mode='fast').extract(mode='accurate', **required)
+      assert seen['mode'] == 'accurate', seen
       print('bet-profile-selectable')
       "
     expected_output_contains: "bet-profile-selectable"

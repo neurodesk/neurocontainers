@@ -21,6 +21,14 @@ structured_readme:
     EOF
   documentation: https://github.com/BrainLesion/
   citation: 'Kofler, F., Rosier, M., Astaraki, M., Möller, H., Mekki, I. I., Buchner, J. A., Schmick, A., Pfiffer, A., Oswald, E., Zimmer, L., Rosa, E. de la, Pati, S., Canisius, J., Piffer, A., Baid, U., Valizadeh, M., Linardos, A., Peeken, J. C., Shit, S., … Menze, B. (2025). BrainLesion Suite: A Flexible and User-Friendly Framework for Modular Brain Lesion Image Analysis arXiv preprint arXiv:2507.09036'
+variables:
+  # Version of the registration atlases baked into the image. The record id is
+  # a Zenodo concept DOI, which always resolves to the newest release, so
+  # without this the build silently takes whatever is current that day. Bumping
+  # it is a deliberate act; see pin_atlases.py for why a rebuild is the only
+  # way a container gets newer atlases.
+  atlas_version: "2.0.0"
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -56,8 +64,22 @@ build:
         # time, so `preprocessor` failed within seconds using nothing but its
         # own defaults. ~92 MB, and it makes the command work offline.
         - python {{ get_file("bake_atlases.py") }}
+        # What was baked has to be the release this recipe declares. The record
+        # id is a concept DOI, so without this the image quietly takes whatever
+        # Zenodo served that day and nothing ever says so.
+        - >-
+          python -c "import pathlib; from brainles_preprocessing.utils import zenodo as z; found=sorted(p.name for p in pathlib.Path(z.ATLASES_FOLDER).glob(z.ATLASES_RECORD_ID+'_v*')); want=z.ATLASES_RECORD_ID+'_v{{ context.atlas_version }}'; assert found==[want], 'expected '+want+', found '+str(found)+' -- upstream published new atlases, bump atlas_version'; print('atlases pinned at', want)"
+        # Baking alone only fixes the first run. fetch() asks Zenodo before it
+        # looks at the disk, and deletes the local copy when the versions
+        # differ -- inside a read-only image. See pin_atlases.py.
+        - python {{ get_file("pin_atlases") }}
         - >-
           python -c "from brainles_preprocessing.utils.zenodo import fetch_atlases; from brainles_preprocessing.constants import Atlas; p=fetch_atlases()/Atlas.BRATS_SRI24.value; assert p.is_file(), p; print('atlases resolve to', p)"
+        # The pin has to survive Zenodo advertising something newer, which is
+        # the only case that ever crashed. Asserted here as well as in the
+        # fulltest because it is the whole point of the previous step.
+        - >-
+          python -c "from brainles_preprocessing.utils import zenodo as z; asked=[]; z.ZenodoRecord._get_metadata_and_archive_url=lambda self: (asked.append(1), ({'version':'99.0.0'},''))[1]; p=z.fetch_atlases(); assert p.name.endswith('_v{{ context.atlas_version }}'), p; assert not asked, 'zenodo queried at run time'; print('atlas pin survives an upstream version bump')"
         # panoptica 2.x builds its instance-label lookup with the dtype of the
         # connected-components array, so multi-lesion evaluations fail once
         # reference plus unmatched predicted instances exceed 255. Fixed on
@@ -159,6 +181,8 @@ files:
     filename: fix_hd_bet_cli.py
   - name: bake_atlases.py
     filename: bake_atlases.py
+  - name: pin_atlases
+    filename: pin_atlases.py
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA4hJREFUSEvtlV1MW2UYx3+npYcOus51UMYcH6NlfpAZiSFFTYWwjWEzEnWhFAaYsU0YJXOZnQkxXphseMFmAtFCjGZtsl3Mqy3DLJELNQtW0UTC3A2ouAxBFmI/oF0K/TA9kyb9AOut8SQnOTnv/zy/5/k/z/seoWy8I0qGV65cicd/lsVgKMMvQPgf8E9e/YcsigTW8F69i9sxlVC1qN+Oqr6M7KfzEGZXmL80nuKKsGcvsmeqEKrrkD31LIjZcU3conXAYJ2N9vb2hCA+n4/W1la+ic5gKdmP3W5PWA+FQkxPT1PbYMJ9zIas6iWQyyWNcOpHU1SQ7+J7t4KfL48ztP8cZrOZ8vJyZDIZer2e0dFR/H4/j1fpOXbIIgGqq6tZXl6WgphMJgYGBhgbG+PlD528eLSByvxsOgPXEc7/oJU2WtbqDm45gpwwvkdTUxNKpTKe5eTkJDqdDo1uJyeOdEgAjUaD2+2Oa7xeLwsLC5w+XofdvEbh1sCjCtYBwUCU284Ax2tHJDscDgeCIEgVGI1GKejZi+/Q2dAiPRsMBjwej5SIxWKhr6+PwcFBvvvMRr9ZRKsWNga0tbWxtLQkCXJycqTb5XJxoOUwr5uaU3oQ0wWDQbRaLf2vBml5IQul4lFxaStItqi7u5vh4WEqKiqoqamJ9yBmiyiKdHV10dPTw9DQEH9+fQ7rQQW5fw9SRoDS0lJmZ2fp7e0lEonEe/B8iY/8rQLO2yFpCCYmJrh2vp53X1HwWO4mFjU3N9PY2CiVWFlZic1mk5qqVqulEY71oGhXHiNH/ZTkCbx1dRXnF3PMz8/T323gglmkaMcGgM6a4ZR9EBtHq9XKzdEJWix1EqCwoIBPOnyU75TRd22V96/cJVZpcUEOl08qMD4pRyak6cFXn/rTnl/btukoKm7gpzsfSeuiqOLjMwbqi118cGuNi5+vSe/z1QLOruxUQHgtyh8zYfyeSBywJWs7K65LeLxbUKv3EAx68K/8DkQRBDnagr3YDx7mt/uL/PogQjgCchk8UShjtybJonRph6YucP9b86Yn8r6SXzhZaNxQE5+iZEVk5k3ufdm7afD1xdf2XaE29+202rQA1cMD3Lsxgs+X2e9aqRQ4/dwpdoevp0BSAKJchf/mFHNz4YyyXxfFrHqj7AjRhw8SvksBZOL7RuR0ViUAVItnuHPD+q8yTxYnQ/4CysSosaI6GD0AAAAASUVORK5CYII=
 categories:
   - structural imaging
@@ -229,6 +253,42 @@ readme: |-
   Left alone, both settings keep upstream's values, so a run that says nothing
   about brain extraction produces what the standalone module produces.
 
+  #### `preprocessor` output is not bit-reproducible
+
+  Two runs of this image over the same four inputs, with the same flags and the
+  same thread count, produce slightly different BraTS-space output. Measured
+  across twelve artefacts, none of which matched bit for bit:
+
+  ```
+  atlas-space t1c_skull_raw     support Dice 0.9952   -5 802 voxels (-0.106%)
+  atlas-space fla_skull_raw     support Dice 0.9909  -12 017 voxels (-0.227%)
+  deface t1c_defacing_mask      support Dice 0.9968   +9 360 voxels (+0.125%)
+  brain-extraction t1c_bet_mask support Dice 0.9938     -201 voxels (-0.013%)
+  ```
+
+  The divergence starts at co-registration and propagates; the segmentation
+  models are not the cause. gliomoda, petu and HD-BET each reproduce to the
+  voxel in the same test, so nnU-Net here is deterministic. This is ANTs
+  behaviour, not something this container introduced: `ANTsRegistrator` sets no
+  seed, and antspyx 0.6.3's `ants.registration` takes no seed argument.
+
+  The practical consequence: preprocess-then-segment does not reproduce
+  exactly. Re-running preprocessing gives a marginally different atlas-space
+  volume and therefore a marginally different segmentation. Preprocess once and
+  keep the outputs if you need a fixed reference; do not expect to regenerate
+  them byte-for-byte later.
+
+  Two notes for anyone who tries to fix this. `ANTS_RANDOM_SEED` does nothing
+  here -- the string does not occur anywhere in antspyx 0.6.3, so setting it in
+  the environment has no effect. The lever that does exist is
+  `ants.config.set_ants_deterministic(on=True, seed_value=N)`, which appends
+  `--random-seed N` to the antsRegistration arguments and pins
+  `ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS` to 1. This container does not enable
+  it: single-threaded ITK has an unmeasured cost on a pipeline that already
+  takes ~11 minutes, and whether it actually makes this pipeline bit-identical
+  has not been measured either. Both statements above about antspyx come from
+  reading the installed package, not from running it.
+
   ### GPU and CPU
 
   `gliomoda`, `petu` and `AtlasCentricPreprocessor` default to a GPU and do not
@@ -281,6 +341,16 @@ readme: |-
 
   This image carries a patch to panoptica's instance relabelling, which
   otherwise overflows once an evaluation involves more than 255 instance labels.
+
+  The registration atlases are baked in and pinned. Upstream re-checks Zenodo
+  on every run and replaces the local copy when a newer release appears, which
+  cannot work inside a read-only image, so the lookup is disabled here: what
+  ships in the image is what runs, and picking up newer atlases needs a rebuild
+  of this container. This is also what makes the offline claim above true.
+
+  `preprocessor` output is not bit-reproducible between runs. See
+  "Preprocessing on a node without a GPU" above for the measured magnitude and
+  what it means for a preprocess-then-segment workflow.
 
   More documentation can be found here: https://github.com/BrainLesion/
 copyright:
