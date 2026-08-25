@@ -1,7 +1,7 @@
 {
   "apps": {
     "brainles-aurora 0.2.7": {
-      "version": "20260822",
+      "version": "20260825",
       "exec": "",
       "apptainer_args": []
     }
