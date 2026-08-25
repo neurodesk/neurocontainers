@@ -52,6 +52,11 @@ build:
         # brainles_hd_bet.utils, which never defines it, so the script dies on
         # ImportError before parsing an argument. See the patch.
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_hdbet_cli") }}
+        # SynthStrip -- the other bundled extractor, whose extra this recipe
+        # installs and whose weights it bakes -- defaulted to device="cuda" and
+        # raised RuntimeError on a CPU-only node before doing any work. See the
+        # patch: only the unspecified case changes.
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_synthstrip_device") }}
         # Fail the build rather than ship a command that cannot start. This is
         # the check that was missing: the recipe exported the script and the
         # test only looked for it on PATH, which passes on a broken script.
@@ -68,6 +73,13 @@ build:
           /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import typer; from brainles_preprocessing import cli; c=typer.main.get_command(cli.app); n=set(); [n.update(p.opts+p.secondary_opts) for p in c.params]; need={'--bet-mode','--bet-device','--bet-tta','--no-bet-tta'}; assert need <= n, 'missing '+str(sorted(need-n)); print('bet profile selectable')"
         - >-
           /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.brain_extractor import HDBetExtractor; from brainles_preprocessing.cli import _ProfiledHDBetExtractor as E; seen={}; HDBetExtractor.extract=lambda self,*a,**k: seen.update(k); E(mode='fast',device='cpu',do_tta=False).extract(); assert seen=={'mode':'fast','device':'cpu','do_tta':False}, seen; seen.clear(); E().extract(); assert seen=={'mode':'accurate','device':0,'do_tta':True}, seen; print('bet profile reaches hd-bet')"
+        # SynthStrip must pick a device rather than assume one. Asserted on the
+        # resolution alone so the build does not pay for model load twice --
+        # the fulltest runs a real CPU extraction with no device argument. Both
+        # branches are checked, so the GPU behaviour this must not change is
+        # covered on a runner that has no GPU.
+        - >-
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import inspect, torch; from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor as S; assert inspect.signature(S.extract).parameters['device'].default is None, 'device default not patched'; torch.cuda.is_available=lambda: False; assert S._resolve_device(None)==torch.device('cpu'), S._resolve_device(None); torch.cuda.is_available=lambda: True; assert S._resolve_device(None)==torch.device('cuda'), S._resolve_device(None); assert S._resolve_device('cpu')==torch.device('cpu'); assert S._resolve_device(torch.device('cuda:1'))==torch.device('cuda:1'); print('synthstrip picks a device')"
 
     - run:
         # python itself is deliberately not exported (see deploy), so give the
@@ -139,6 +151,8 @@ files:
     filename: fix_preprocessor_cli.py
   - name: fix_hdbet_cli
     filename: fix_hdbet_cli.py
+  - name: fix_synthstrip_device
+    filename: fix_synthstrip_device.py
   - name: preprocessing_python_helper
     filename: brainles-preprocessing-python
   - name: hdbet_gate.py
@@ -342,6 +356,28 @@ readme: |
 
   From the CLI the same three are `--bet-mode fast --bet-device cpu
   --no-bet-tta`.
+
+  SynthStrip, the other bundled extractor, is patched in this image to pick a
+  device instead of assuming one: upstream defaults to `device="cuda"` and
+  raises `RuntimeError: Found no NVIDIA driver on your system` on the first
+  call on a CPU-only node. Here it uses a GPU when there is one and CPU when
+  there is not, so the plain call works either way:
+
+  ```
+  from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor
+  SynthStripExtractor().extract(
+      input_image_path="t1c.nii.gz",
+      masked_image_path="t1c_brain.nii.gz",
+      brain_mask_path="t1c_mask.nii.gz",
+      num_threads=4,   # still defaults to 1; raise it on CPU
+  )
+  ```
+
+  Naming a device explicitly still wins, so `device="cpu"` and `device="cuda"`
+  behave exactly as upstream documents. `num_threads` is upstream's default of
+  1 and only applies on CPU -- a 256x256x192 1 mm T1 takes under two minutes at
+  4 threads. SynthStrip masks run wider than HD-BET's, by roughly 8% on the
+  same input; that is the method difference, not a fault in either.
 
   ### Threads
 

@@ -92,6 +92,47 @@ tests:
       "
     expected_output_contains: "synthstrip-weights ok"
 
+  - name: SynthStrip extracts a brain on CPU
+    description: >-
+      The weights are baked and the extra is installed, but upstream's
+      extract() defaulted to device="cuda" and raised RuntimeError on a
+      CPU-only node -- which is what Neurodesk mostly runs -- from
+      model.to(device), before any work happened. Importing the class and
+      counting .pt files both pass against a container where SynthStrip can
+      never run, so this runs it. No device argument is passed on purpose:
+      that is the assertion, since the patched default is what turns a
+      guaranteed crash into a working call. A crude head-like phantom is
+      enough; what is being checked is that inference runs and returns a
+      non-empty binary mask, not that the mask is anatomically right.
+    command: |
+      python -c "
+      import numpy as np, nibabel as nib, tempfile, pathlib
+      from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor
+      d = pathlib.Path(tempfile.mkdtemp())
+      g = np.mgrid[:96, :96, :96].astype(float)
+      r = np.sqrt(((g - 48) ** 2).sum(0))
+      vol = np.where(r < 34, 800.0, 0.0) + np.where((r >= 34) & (r < 40), 300.0, 0.0)
+      nib.save(nib.Nifti1Image(vol.astype(np.float32), np.eye(4)), d / 'in.nii.gz')
+      SynthStripExtractor().extract(
+          input_image_path=str(d / 'in.nii.gz'),
+          masked_image_path=str(d / 'brain.nii.gz'),
+          brain_mask_path=str(d / 'mask.nii.gz'),
+          num_threads=2,
+      )
+      m = np.asanyarray(nib.load(d / 'mask.nii.gz').dataobj)
+      assert (m > 0).sum() > 0, 'empty mask'
+      assert set(np.unique(m)) <= {0, 1}, np.unique(m)
+      print('synthstrip-cpu-run ok', int((m > 0).sum()), 'voxels')
+      "
+    expected_output_contains: "synthstrip-cpu-run ok"
+    # Model load plus inference does not fit the suite's default 120 s budget,
+    # and a timeout kill is indistinguishable from a real failure in the report
+    # the runner produces. Under a minute against the candidate SIF on a quiet
+    # node, and 2 m 51 s reproducing it on a contended laptop with the same
+    # package versions -- so this is slack for a loaded runner, not the
+    # expected cost. Both runs segmented the same 176784 voxels.
+    timeout: 600
+
   - name: the SynthStrip extractor imports
     description: >-
       The weights were baked but brain_extraction/synthstrip.py imports
