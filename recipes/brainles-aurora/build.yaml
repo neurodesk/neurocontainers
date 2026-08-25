@@ -135,6 +135,12 @@ build:
 
     - workdir: /opt
 
+    # The runtime tests are not here. recipes/brainles-aurora/fulltest.yaml
+    # carries them -- 14 cases, including a real synthetic-volume inference and
+    # a repeat-run check that guards the seeding above -- and the release
+    # harness runs that file against the built container. Noted because
+    # build.yaml having only the deploy check below reads as though functional
+    # testing was skipped.
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
@@ -393,9 +399,18 @@ readme: |-
   aurora-python -c 'from brainles_aurora.inferer import AuroraInferer'
   ```
 
+  The Python route is not seeded, unlike the `aurora` command -- see
+  Reproducibility below before using it for anything you intend to publish.
+
   `python` is deliberately not exported: putting this environment's bin
   directory on your PATH replaced the host interpreter for the rest of the
   shell. Use `aurora-python`.
+
+  This is a change from earlier builds of this module, which did export
+  `python`, `python3` and `python3.12`. If a script of yours ran `python` after
+  `ml brainles-aurora` and now gets `command not found`, or reaches your own
+  interpreter and fails with `ModuleNotFoundError: No module named
+  'brainles_aurora'`, that is why: point it at `aurora-python`.
 
   ### Input requirements
 
@@ -432,11 +447,35 @@ readme: |-
   ### Reproducibility
 
   Test-time augmentation adds Gaussian noise, and upstream seeds none of it, so
-  the same input run twice returns slightly different lesion volumes. This
-  container seeds the run (`--seed`, default 0), so a repeat of the same
-  command reproduces its own output exactly. Pass `--no-seed` for upstream's
-  unseeded behaviour, for example to sample the spread across repeats.
+  the same input run twice returns slightly different lesion volumes.
+
+  The **`aurora` command** seeds the run (`--seed`, default 0), so a repeat of
+  the same command reproduces its own output exactly: measured at 0 differing
+  voxels between repeats, and byte-identical across 1, 2 and 4 threads, so the
+  result does not move with `--cpus-per-task`. Pass `--no-seed` for upstream's
+  unseeded behaviour, for example to sample the spread across repeats -- two
+  `--no-seed` repeats of a 240x240x155 subject differed by 15 voxels.
   `--no-tta` is deterministic either way.
+
+  **The Python API is not seeded.** The seeding above is applied by the
+  `aurora` wrapper just before it constructs the inferer, so it never reaches
+  anyone calling `AuroraInferer` directly, and two identical library calls do
+  disagree. To make a Python run reproducible, do what the wrapper does, before
+  constructing the inferer:
+
+  ```
+  import numpy as np
+  from monai.transforms import Randomizable
+  from monai.utils import set_determinism
+
+  set_determinism(seed=0)
+  Randomizable.R = np.random.RandomState(0)
+  ```
+
+  Both lines are needed. `set_determinism` alone is not sufficient: its own
+  docstring notes it does not affect `monai.transforms.Randomizable` objects,
+  and upstream's augmentation noise (`RandGaussianNoised`) draws from the
+  class-level `Randomizable.R` and never calls `set_random_state`.
 
   ### CPU, runtime and threads
 
