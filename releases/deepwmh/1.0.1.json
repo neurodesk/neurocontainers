@@ -1,7 +1,7 @@
 {
   "apps": {
     "deepwmh 1.0.1": {
-      "version": "20260819",
+      "version": "20260826",
       "exec": "",
       "apptainer_args": []
     }
