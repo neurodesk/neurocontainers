@@ -48,6 +48,14 @@ build:
         # PyTorch do the real compatibility check instead (same approach as the
         # synthseg recipe).
         NVIDIA_DISABLE_REQUIRE: "true"
+        # Without this, a bound home directory puts the user's
+        # ~/.local/lib/python3.9/site-packages on the container's import path,
+        # where it can shadow the container's torch, numpy or SimpleITK and
+        # silently change inference results. Same concern as deploy: naming
+        # commands individually so the env's python does not replace the host's,
+        # approached from the other side: the container's Python must answer
+        # only to the container.
+        PYTHONNOUSERSITE: "1"
 
     # build-essential is required, not optional. Several packages in the
     # dependency tree publish no wheels at all and must compile: medpy (C++

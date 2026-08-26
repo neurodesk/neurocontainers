@@ -69,8 +69,23 @@ tests:
     command: python -c 'import sys; assert sys.version_info[:2] == (3, 9)'
 
   - name: Python does not load user packages
-    description: Ensure results come from the container, not a bound user site.
-    command: python -c 'import site; assert site.ENABLE_USER_SITE is False'
+    description: >-
+      Ensure results come from the container, not a bound user site: a bound
+      home puts ~/.local/lib/python3.9/site-packages on the import path, where
+      it can shadow torch or numpy and silently change inference results. The
+      assertion names the mechanism (PYTHONNOUSERSITE baked into the image) as
+      well as the effect, because ENABLE_USER_SITE alone is answerable by the
+      caller's environment: an earlier build shipped without the variable and
+      this test still passed in CI, whose runner supplied it, while failing on
+      a plain apptainer exec on the platform the container ships to.
+    command: |
+      python -c "
+      import os, site
+      assert os.environ.get('PYTHONNOUSERSITE'), 'PYTHONNOUSERSITE not set in the image'
+      assert site.ENABLE_USER_SITE is False, site.ENABLE_USER_SITE
+      print('user-site-disabled')
+      "
+    expected_output_contains: "user-site-disabled"
 
   - name: deepwmh package imports
     command: python -c 'import deepwmh; print(deepwmh.__name__)'
