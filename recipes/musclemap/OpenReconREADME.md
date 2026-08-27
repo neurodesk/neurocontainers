@@ -1,6 +1,11 @@
 # musclemap VERSION_WILL_BE_REPLACED_BY_SCRIPT
 
-This OpenRecon tool is based on the MuscleMap Toolbox (https://github.com/MuscleMap/MuscleMap) - A free and open-source software toolbox for whole-body muscle segmentation and analysis.
+This OpenRecon tool packages [MuscleMap](https://github.com/MuscleMap/MuscleMap),
+a free and open-source toolbox for muscle segmentation and analysis. The image
+contains MuscleMap software 2.0 at the audited model-v1.4 commit, whole-body
+model v1.4, regional model v0.0, and the abdomen registration template. These
+assets are baked into the read-only container, so scanner-side runs do not need
+to download data or write into `/opt`.
 
 It runs on the selected image type from a Dixon sequence and generates muscle segmentations. Opposed Phase is selected by default.
 
@@ -30,10 +35,10 @@ https://doi.org/10.3390/jimaging10110262
 | `segmentinphase` | Segment Inphase | boolean | `false` | Run MuscleMap segmentation on the Dixon in-phase image |
 | `segmentopposedphase` | Segment Opposed Phase | boolean | `true` | Run MuscleMap segmentation on the Dixon opposed-phase image |
 | `segmentfat` | Segment Fat | boolean | `false` | Run MuscleMap segmentation on the Dixon fat image |
-| `labeltransform` | Scale labels to lower integer range for DICOM 12BIT | boolean | `true` | Applying label transformation: 3 * (label_in // 10) + (label_in % 10) |
+| `labeltransform` | Scale whole-body labels into the DICOM int12 range | boolean | `true` | Apply `3 * (label_in // 10) + (label_in % 10)` to whole-body labels. Regional labels remain unchanged |
 | `metricsoutput` | Metrics output | choice | `all` | Select where MuscleMap average metrics are returned |
-| `bodyregion` | Body Region | choice | `wholebody, abdomen, pelvis, thigh, leg` | Select the body region for segmentation |
-| `chunksize` | Chunk Size | string | `100` | Chunk size between 5 and 200 - change for memory optimization on GPU |
+| `bodyregion` | Body Region | choice | `wholebody` | Select wholebody, abdomen, forearm, pelvis, thigh, or leg for segmentation and metrics |
+| `chunksize` | Chunk Size | string | `auto` | Use automatic memory-aware chunk sizing, or set a positive integer |
 | `spatialoverlap` | Spatial Overlap | int | `50` | Spatial overlap percentage |
 
 # Scanner output handling
@@ -97,9 +102,9 @@ Caveats:
   the composer has no matching channel to combine them (a warning is logged).
 - **Only one segmentation contrast** is composed. The Fat-Fraction compose
   container is statically pre-sized to a single contrast's slot count, so if more
-  than one segmentation contrast is selected (e.g. Water and Fat) compose mode
+  than one segmentation contrast is selected, such as Water and Fat, compose mode
   restricts segmentation to the first one (display order Water, In-Phase,
-  Opposed-Phase, Fat) — emitting two `FAT_FRAC` series would overfill the channel
+  Opposed-Phase, Fat). Emitting two `FAT_FRAC` series would overfill the channel
   and switch composing off for the whole measurement.
 
 ### How the routing works (ICE composing model)
@@ -110,7 +115,7 @@ compose functor listens for a fixed `ComposingGroup` (the configurator-owned
 and is pre-sized to `m_iNumberTotal` slots. The only image-controllable lever is
 the `ImageType` / `ImageTypeValue4` filter, which selects the `ComposeType`
 channel. `ComposingGroup` is **not** present in the MRD/IceMiniHead data and
-cannot be set from the OpenRecon module — it is assigned on the ICE side. Within
+cannot be set from the OpenRecon module. ICE assigns it on the scanner side. Within
 one Dixon acquisition the Water, Fat and Fat-Fraction channels all share the same
 `ComposingGroup` and differ only by `ComposeType`. MuscleMap reuses the genuine
 Fat-Fraction images as return carriers so the scanner assigns the labels to the
@@ -119,6 +124,13 @@ same Fat-Fraction compose container.
 # Labels
 
 Label values are model-specific and depend on the selected `bodyregion`.
+The [whole-body v1.4 record](https://zenodo.org/records/21929873) and the
+regional records for [abdomen](https://zenodo.org/records/19631081),
+[forearm](https://zenodo.org/records/19633115),
+[leg](https://zenodo.org/records/19633057),
+[pelvis](https://zenodo.org/records/19632902), and
+[thigh](https://zenodo.org/records/19633000) are the immutable sources for the
+tables below.
 
 ## `wholebody`
 
@@ -128,7 +140,7 @@ For running this in Open Recon we need a reversible int12-safe mapping:
 
 `original = 10 * (mapped // 3) + (mapped % 3)`
 
-This transform is valid for labels ending in `0`, `1`, or `2`
+This transform is valid for labels ending in `0`, `1`, or `2`.
 
 Metrics extraction uses the original unscaled labels so MuscleMap can map label
 IDs to anatomy names, even when the returned segmentation overlay is scaled for
@@ -168,16 +180,16 @@ DICOM.
 | abdomen | psoas major | right | 5122 | 1538 |
 | abdomen | quadratus lumborum | left | 5131 | 1540 |
 | abdomen | quadratus lumborum | right | 5132 | 1541 |
-| abdomen | lattisimus dorsi | left | 5141 | 1543 |
-| abdomen | lattisimus dorsi | right | 5142 | 1544 |
+| abdomen | latissimus dorsi | left | 5141 | 1543 |
+| abdomen | latissimus dorsi | right | 5142 | 1544 |
 | pelvis | gluteus minimus | left | 6101 | 1831 |
 | pelvis | gluteus minimus | right | 6102 | 1832 |
 | pelvis | gluteus medius | left | 6111 | 1834 |
 | pelvis | gluteus medius | right | 6112 | 1835 |
 | pelvis | gluteus maximus | left | 6121 | 1837 |
 | pelvis | gluteus maximus | right | 6122 | 1838 |
-| pelvis | tensor fascia latae | left | 6131 | 1840 |
-| pelvis | tensor fascia latae | right | 6132 | 1841 |
+| pelvis | tensor fasciae latae | left | 6131 | 1840 |
+| pelvis | tensor fasciae latae | right | 6132 | 1841 |
 | pelvis | iliacus | left | 6141 | 1843 |
 | pelvis | iliacus | right | 6142 | 1844 |
 | pelvis | ilium | left | 6151 | 1846 |
@@ -221,20 +233,34 @@ DICOM.
 | thigh | adductor longus | right | 7212 | 2165 |
 | thigh | adductor brevis | left | 7221 | 2167 |
 | thigh | adductor brevis | right | 7222 | 2168 |
-| leg | anterior compartment | left | 8101 | 2431 |
-| leg | anterior compartment | right | 8102 | 2432 |
-| leg | deep posterior compartment | left | 8111 | 2434 |
-| leg | deep posterior compartment | right | 8112 | 2435 |
-| leg | lateral compartment | left | 8121 | 2437 |
-| leg | lateral compartment | right | 8122 | 2438 |
+| thigh | patella | left | 7231 | 2170 |
+| thigh | patella | right | 7232 | 2171 |
+| leg | tibialis anterior | left | 8101 | 2431 |
+| leg | tibialis anterior | right | 8102 | 2432 |
+| leg | tibialis posterior | left | 8111 | 2434 |
+| leg | tibialis posterior | right | 8112 | 2435 |
+| leg | peroneus longus | left | 8121 | 2437 |
+| leg | peroneus longus | right | 8122 | 2438 |
 | leg | soleus | left | 8131 | 2440 |
 | leg | soleus | right | 8132 | 2441 |
-| leg | gastrocnemius | left | 8141 | 2443 |
-| leg | gastrocnemius | right | 8142 | 2444 |
-| leg | tibia | left | 8151 | 2446 |
-| leg | tibia | right | 8152 | 2447 |
-| leg | fibula | left | 8161 | 2449 |
-| leg | fibula | right | 8162 | 2450 |
+| leg | medial gastrocnemius | left | 8141 | 2443 |
+| leg | medial gastrocnemius | right | 8142 | 2444 |
+| leg | lateral gastrocnemius | left | 8151 | 2446 |
+| leg | lateral gastrocnemius | right | 8152 | 2447 |
+| leg | tibia | left | 8161 | 2449 |
+| leg | tibia | right | 8162 | 2450 |
+| leg | fibula | left | 8171 | 2452 |
+| leg | fibula | right | 8172 | 2453 |
+| leg | flexor hallucis longus | left | 8181 | 2455 |
+| leg | flexor hallucis longus | right | 8182 | 2456 |
+| leg | extensor digitorum / hallucis longus | left | 8191 | 2458 |
+| leg | extensor digitorum / hallucis longus | right | 8192 | 2459 |
+| leg | flexor digitorum longus | left | 8201 | 2461 |
+| leg | flexor digitorum longus | right | 8202 | 2462 |
+| leg | popliteus | left | 8211 | 2464 |
+| leg | popliteus | right | 8212 | 2465 |
+| leg | plantaris | left | 8221 | 2467 |
+| leg | plantaris | right | 8222 | 2468 |
 
 ## `abdomen`
 
@@ -249,15 +275,18 @@ DICOM.
 | abdomen | quadratus lumborum | right | 7 |
 | abdomen | quadratus lumborum | left | 8 |
 
-## `forarm`
+Regional models use dense class IDs. The `labeltransform` setting does not
+change these values.
+
+## `forearm`
 
 | Region | Anatomy | Side | Value |
 | :--- | :--- | :--- | ---: |
-| leg | other muscles | no side | 1 |
-| leg | radius | no side | 2 |
-| leg | ulna | no side | 3 |
-| leg | extensor compartment | no side | 4 |
-| leg | flexor compartment | no side | 5 |
+| forearm | other muscles | no side | 1 |
+| forearm | radius | no side | 2 |
+| forearm | ulna | no side | 3 |
+| forearm | extensor compartment | no side | 4 |
+| forearm | flexor compartment | no side | 5 |
 
 ## `leg`
 
