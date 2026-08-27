@@ -73,11 +73,33 @@
       "default": false
     },
     {
+      "id": "pipelinepreset",
+      "label": { "en": "Pipeline preset" },
+      "type": "choice",
+      "values": [
+        { "id": "custom", "name": { "en": "Custom algorithm controls" } },
+        { "id": "romeo-resharp-rts", "name": { "en": "1. ROMEO + RESHARP + RTS" } },
+        { "id": "romeo-ismv-hdqsm", "name": { "en": "2. ROMEO + iSMV + HD-QSM" } },
+        { "id": "romeo-resharp-tikhonov", "name": { "en": "3. ROMEO + RESHARP + Tikhonov" } },
+        { "id": "romeo-resharp-tv", "name": { "en": "4. ROMEO + RESHARP + TV (ADMM)" } },
+        { "id": "romeo-resharp-hdqsm", "name": { "en": "5. ROMEO + RESHARP + HD-QSM" } },
+        { "id": "romeo-ismv-rts", "name": { "en": "6. ROMEO + iSMV + RTS" } },
+        { "id": "romeo-ismv-whqsm", "name": { "en": "7. ROMEO + iSMV + WH-QSM" } },
+        { "id": "romeo-sharp-whqsm", "name": { "en": "8. ROMEO + SHARP + WH-QSM" } },
+        { "id": "romeo-resharp-whqsm", "name": { "en": "9. ROMEO + RESHARP + WH-QSM" } },
+        { "id": "romeo-sharp-tikhonov", "name": { "en": "10. ROMEO + SHARP + Tikhonov" } }
+      ],
+      "default": "custom",
+      "information": { "en": "Select a tested pipeline combination. A preset overrides QSM algorithm, Unwrap, and Background. Select Custom to use those controls." }
+    },
+    {
       "id": "qsmalgorithm",
       "label": { "en": "QSM algorithm" },
       "type": "choice",
       "values": [
         { "id": "default", "name": { "en": "Default" } },
+        { "id": "whqsm", "name": { "en": "WH-QSM" } },
+        { "id": "hdqsm", "name": { "en": "HD-QSM" } },
         { "id": "rts", "name": { "en": "RTS" } },
         { "id": "tv", "name": { "en": "TV" } },
         { "id": "tkd", "name": { "en": "TKD" } },
@@ -89,8 +111,8 @@
         { "id": "ilsqr", "name": { "en": "iLSQR" } },
         { "id": "qsmart", "name": { "en": "QSMART" } }
       ],
-      "default": "rts",
-      "information": { "en": "QSMxT inversion algorithm. RTS is the recommended default for robust inline QSM." }
+      "default": "whqsm",
+      "information": { "en": "QSMxT inversion algorithm for the Custom pipeline preset. WH-QSM is the OpenRecon default for its balance of accuracy, reproducibility, and resource use." }
     },
     {
       "id": "unwrappingalgorithm",
@@ -110,14 +132,15 @@
       "type": "choice",
       "values": [
         { "id": "default", "name": { "en": "Default" } },
-        { "id": "vsharp", "name": { "en": "VSHARP" } },
+        { "id": "vsharp", "name": { "en": "V-SHARP" } },
         { "id": "pdf", "name": { "en": "PDF" } },
         { "id": "lbv", "name": { "en": "LBV" } },
         { "id": "ismv", "name": { "en": "iSMV" } },
-        { "id": "sharp", "name": { "en": "SHARP" } }
+        { "id": "sharp", "name": { "en": "SHARP" } },
+        { "id": "resharp", "name": { "en": "RESHARP" } }
       ],
-      "default": "pdf",
-      "information": { "en": "QSMxT background field removal algorithm. PDF is the recommended default for inline QSM." }
+      "default": "vsharp",
+      "information": { "en": "QSMxT background-field removal algorithm for the Custom pipeline preset. V-SHARP is the OpenRecon default." }
     },
     {
       "id": "maskpreset",
