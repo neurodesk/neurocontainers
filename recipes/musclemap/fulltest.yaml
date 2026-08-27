@@ -71,7 +71,7 @@ tests:
       readme = Path("/opt/code/python-ismrmrd-server/OpenReconREADME.md")
       data = json.loads(label.read_text())
       parameters = {parameter["id"]: parameter for parameter in data["parameters"]}
-      assert {"sendoriginal", "segmentopposedphase", "metricsoutput"} <= parameters
+      assert {"sendoriginal", "segmentopposedphase", "metricsoutput"} <= parameters.keys()
       assert "metricsregion" not in parameters
       assert "forearm" in {value["id"] for value in parameters["bodyregion"]["values"]}
       readme_text = readme.read_text()
