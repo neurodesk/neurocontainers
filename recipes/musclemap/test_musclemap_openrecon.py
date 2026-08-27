@@ -176,6 +176,20 @@ def test_openrecon_label_exposes_dixon_segmentation_checkboxes_with_opposed_defa
         assert parameters[parameter_id]["type"] == "boolean"
         assert parameters[parameter_id]["default"] is default
 
+    assert "metricsregion" not in parameters
+    assert [value["id"] for value in parameters["bodyregion"]["values"]] == [
+        "wholebody",
+        "abdomen",
+        "forearm",
+        "pelvis",
+        "thigh",
+        "leg",
+    ]
+    assert (
+        label["general"]["regulatory_information"]["udi"]
+        == "(01)00860000171212(21)VERSION_WILL_BE_REPLACED_BY_SCRIPT"
+    )
+
 
 def test_openrecon_label_collapses_metrics_outputs_into_one_choice():
     label = json.loads(OPENRECON_LABEL_PATH.read_text())
@@ -301,6 +315,64 @@ def test_metrics_label_transform_restores_original_ids_for_anatomy_lookup():
     )
     assert helpers["_metrics_label_scale_name"](True) == "original"
     assert helpers["_metrics_label_scale_name"](False) == "native"
+
+
+def test_model_version_selection_uses_baked_wholebody_and_regional_versions(monkeypatch):
+    helpers = _load_runtime_helpers_for_test(
+        ["_resolve_musclemap_model_version"],
+        assignments=[
+            "muscleMapRegionalModelVersionEnv",
+            "muscleMapWholebodyModelVersionEnv",
+        ],
+    )
+    monkeypatch.setenv("MUSCLEMAP_WHOLEBODY_MODEL_VERSION", "1.4")
+    monkeypatch.setenv("MUSCLEMAP_REGIONAL_MODEL_VERSION", "0.0")
+
+    assert helpers["_resolve_musclemap_model_version"]("wholebody") == "1.4"
+    assert helpers["_resolve_musclemap_model_version"]("abdomen") == "0.0"
+    assert helpers["_resolve_musclemap_model_version"]("leg") == "0.0"
+
+
+def test_musclemap_commands_pass_an_explicit_baked_model_version(monkeypatch):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_mm_extract_metrics_command",
+            "_build_mm_segment_command",
+            "_resolve_musclemap_model_version",
+        ],
+        assignments=[
+            "mmSegmentInputPath",
+            "muscleMapRegionalModelVersionEnv",
+            "muscleMapWholebodyModelVersionEnv",
+        ],
+    )
+    monkeypatch.setenv("MUSCLEMAP_WHOLEBODY_MODEL_VERSION", "1.4")
+    monkeypatch.setenv("MUSCLEMAP_REGIONAL_MODEL_VERSION", "0.0")
+    helpers["_mm_segment_supports_option"] = lambda *names: True
+
+    segment_command = helpers["_build_mm_segment_command"]("wholebody", "auto", 50)
+    assert segment_command[segment_command.index("--model_version") + 1] == "1.4"
+
+    metrics_command = helpers["_build_mm_extract_metrics_command"](
+        method="average",
+        region="abdomen",
+        components=None,
+        segmentation_path="/opt/input_dseg.nii.gz",
+        input_image_path="/opt/input.nii.gz",
+        output_dir="/tmp/musclemap_metrics",
+    )
+    assert metrics_command[metrics_command.index("--model_version") + 1] == "0.0"
+
+
+def test_label_transform_is_limited_to_wholebody_model_labels():
+    helpers = _load_runtime_helpers_for_test(
+        ["_resolve_label_transform"],
+    )
+
+    assert helpers["_resolve_label_transform"]("wholebody", True) is True
+    assert helpers["_resolve_label_transform"]("wholebody", False) is False
+    assert helpers["_resolve_label_transform"]("abdomen", True) is False
+    assert helpers["_resolve_label_transform"]("leg", True) is False
 
 
 def test_dixon_segmentation_selection_defaults_to_opposed_phase_and_supports_multi_select():

@@ -1,0 +1,22 @@
+diff --git a/scripts/mm_util.py b/scripts/mm_util.py
+index 839f812..7491f53 100644
+--- a/scripts/mm_util.py
++++ b/scripts/mm_util.py
+@@ -68,0 +69,15 @@
++_CONTAINER_MODEL_VERSION_ENV = {
++    "wholebody": "MUSCLEMAP_WHOLEBODY_MODEL_VERSION",
++}
++
++
++def _resolve_container_model_version(region: str, version: str) -> str:
++    """Resolve ``latest`` to the immutable model baked into a container."""
++    if version != "latest":
++        return version
++    environment_name = _CONTAINER_MODEL_VERSION_ENV.get(
++        region, "MUSCLEMAP_REGIONAL_MODEL_VERSION"
++    )
++    return os.environ.get(environment_name, version)
++
++
+@@ -172,0 +188 @@
++    version = _resolve_container_model_version(region, version)

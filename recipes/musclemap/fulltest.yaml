@@ -2,7 +2,7 @@
 # Focused verification for runtime packaging and lightweight entrypoints.
 
 name: musclemap
-version: "1.3.45"
+version: "1.4.0"
 
 test_data:
   output_dir: test_output
@@ -15,17 +15,45 @@ setup:
 
 tests:
   - name: MuscleMap command line tools
-    description: Verify deployed MuscleMap and SCT command line tools start
+    description: Verify deployed MuscleMap and SCT command line tools start.
     script: |
-      mm_segment -h 2>&1 | grep -E 'usage:|Usage:'
+      mm_segment -h 2>&1 | tee ${output_dir}/mm_segment_help.txt | grep -E 'usage:|Usage:'
+      grep -- '--model_version' ${output_dir}/mm_segment_help.txt
+      grep -E -- '-c|--chunk_size' ${output_dir}/mm_segment_help.txt
       mm_register_to_template -h 2>&1 | grep -E 'usage:|Usage:'
-      mm_extract_metrics -h 2>&1 | grep -E 'usage:|Usage:'
+      mm_extract_metrics -h 2>&1 | tee ${output_dir}/mm_extract_metrics_help.txt | grep -E 'usage:|Usage:'
+      grep -- '--model_version' ${output_dir}/mm_extract_metrics_help.txt
       sct_check_dependencies -short
 
-  - name: CUDA runtime pin
-    description: Verify the image keeps a CUDA 11 runtime for scanner compatibility
+  - name: Upstream software and dependencies
+    description: Verify the audited MuscleMap software and exact upstream dependency pins.
     script: |
-      python -c "import torch; print(torch.version.cuda)" | grep '^11\.'
+      python - <<'PY'
+      import importlib.metadata
+      import os
+      from pathlib import Path
+
+      assert Path("/opt/MuscleMap/version.txt").read_text().strip() == os.environ["MUSCLEMAP_SOFTWARE_VERSION"]
+      expected = {
+          "customtkinter": "5.2.2",
+          "monai": "1.3.2",
+          "Pillow": "11.3.0",
+          "torch": "2.4.1",
+      }
+      actual = {name: importlib.metadata.version(name).split("+")[0] for name in expected}
+      assert actual == expected, (actual, expected)
+      print(actual)
+      PY
+
+  - name: CUDA runtime pin
+    description: Verify the image keeps the CUDA 11.8 runtime used by the scanner deployment.
+    script: |
+      python -c "import torch; print(torch.version.cuda)" | grep '^11\.8$'
+
+  - name: Immutable models and templates
+    description: Verify all baked checksums, metadata, defaults, and whole-body state-dict compatibility.
+    script: |
+      python /opt/code/verify_musclemap_install.py --load-wholebody-model
 
   - name: OpenRecon server help
     description: Verify the python-ismrmrd server entrypoint starts correctly
@@ -33,7 +61,7 @@ tests:
       python /opt/code/python-ismrmrd-server/main.py -h 2>&1 | sed -n '1,20p' | grep 'Example server for MRD streaming format'
 
   - name: OpenRecon assets
-    description: Verify packaged OpenRecon label and README assets are present and readable
+    description: Verify packaged OpenRecon label and README assets are present and current.
     script: |
       python - <<'PY'
       import json
@@ -41,24 +69,20 @@ tests:
 
       label = Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json")
       readme = Path("/opt/code/python-ismrmrd-server/OpenReconREADME.md")
-      if not label.exists() or not readme.exists():
-          print("OpenRecon label assets are not present in this release image")
-          raise SystemExit(0)
-
       data = json.loads(label.read_text())
-      parameters = {parameter["id"] for parameter in data["parameters"]}
+      parameters = {parameter["id"]: parameter for parameter in data["parameters"]}
       assert {"sendoriginal", "segmentopposedphase", "metricsoutput"} <= parameters
-      assert "MuscleMap" in readme.read_text()
+      assert "metricsregion" not in parameters
+      assert "forearm" in {value["id"] for value in parameters["bodyregion"]["values"]}
+      readme_text = readme.read_text()
+      assert "whole-body v1.4 record" in readme_text
+      assert "plantaris" in readme_text
       print(label)
       PY
 
   - name: MuscleMap OpenRecon module imports
-    description: Verify the OpenRecon module imports with its runtime dependencies
+    description: Verify the OpenRecon module imports with its runtime dependencies.
     script: |
-      if [ ! -f /opt/code/python-ismrmrd-server/OpenReconLabel.json ]; then
-        echo "OpenRecon label assets are not present in this release image"
-        exit 0
-      fi
       PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import musclemap, ismrmrd, nibabel, numpy; print(musclemap.muscleMapDisplayLabel)" | grep -x 'Musclemap'
 
   - name: Helper scripts render help
