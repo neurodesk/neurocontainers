@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.11.0
+version: 9.14.0
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
@@ -9,7 +9,7 @@ architectures:
   - x86_64
 
 variables:
-  qsmxt_source_version: 9.11.0
+  qsmxt_source_version: 9.14.0
   qsmxt_tarball:
     try:
       - value: qsmxt_x86_64_tar_gz

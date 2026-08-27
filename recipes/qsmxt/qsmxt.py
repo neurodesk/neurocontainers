@@ -12,13 +12,12 @@ import copy
 import json
 import logging
 import os
-from pathlib import Path
 import re
-import shutil
 import subprocess
 import tempfile
 import traceback
 import uuid
+from pathlib import Path
 
 import ismrmrd
 import nibabel as nib
@@ -34,17 +33,74 @@ except ImportError:
 RECIPE_NAME = "qsmxt"
 DEFAULT_QSMXT_BINARY = "/opt/qsmxt/qsmxt"
 OPENRECON_WORK_ROOT = Path("/tmp/share/qsmxt_openrecon")
-QSMXT_DERIVATIVE_ROOT = Path("derivatives/qsmxt.rs")
+QSMXT_DERIVATIVE_ROOT = Path("derivatives/qsmxt")
 DEFAULT_ECHO_TIME_MS = 20.0
 DEFAULT_ECHO_SPACING_MS = 5.0
 DEFAULT_FIELD_STRENGTH_T = 3.0
 DEFAULT_B0_DIR = (0.0, 0.0, 1.0)
+DEFAULT_QSM_ALGORITHM = "whqsm"
+DEFAULT_UNWRAPPING_ALGORITHM = "romeo"
+DEFAULT_BF_ALGORITHM = "vsharp"
+ALGORITHM_PIPELINE_PRESETS = {
+    "romeo-resharp-rts": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "resharp",
+        "qsm_algorithm": "rts",
+    },
+    "romeo-ismv-hdqsm": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "ismv",
+        "qsm_algorithm": "hdqsm",
+    },
+    "romeo-resharp-tikhonov": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "resharp",
+        "qsm_algorithm": "tikhonov",
+    },
+    "romeo-resharp-tv": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "resharp",
+        "qsm_algorithm": "tv",
+    },
+    "romeo-resharp-hdqsm": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "resharp",
+        "qsm_algorithm": "hdqsm",
+    },
+    "romeo-ismv-rts": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "ismv",
+        "qsm_algorithm": "rts",
+    },
+    "romeo-ismv-whqsm": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "ismv",
+        "qsm_algorithm": "whqsm",
+    },
+    "romeo-sharp-whqsm": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "sharp",
+        "qsm_algorithm": "whqsm",
+    },
+    "romeo-resharp-whqsm": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "resharp",
+        "qsm_algorithm": "whqsm",
+    },
+    "romeo-sharp-tikhonov": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "sharp",
+        "qsm_algorithm": "tikhonov",
+    },
+}
 ORIGINAL_SERIES_START = 100
 OUTPUT_SERIES_START = 180
 SCANNER_PARTITION_INDEX = 0
 SCANNER_DISPLAY_MIN = 0
 SCANNER_DISPLAY_MAX = 4095
 SCANNER_DISPLAY_CENTER = 2048
+SCANNER_DISPLAY_PADDING_VALUE = 0
+SCANNER_DISPLAY_DATA_MIN = 1
 T2STAR_SCALE_PERCENTILE = 99.9
 T2STAR_SCALE_MIN_POSITIVE_VOXELS = 100
 SCANNER_DISPLAY_SCALE_FACTORS = (
@@ -101,6 +157,13 @@ QSMXT_OUTPUTS = {
 
 SCANNER_WRITE_UNSAFE_META_KEYS = {
     "ImageTypeValue3",
+}
+SOURCE_SCALING_META_KEYS = {
+    "PixelPaddingRangeLimit",
+    "PixelPaddingValue",
+    "RescaleIntercept",
+    "RescaleSlope",
+    "RescaleType",
 }
 ORIGINAL_STORAGE_FIELDS = (
     "Actual3DImagePartNumber",
@@ -846,7 +909,6 @@ def _nifti_to_mrd_images(
         display_meta["display_max"],
         display_meta["clipped_voxels"],
     )
-    display_data_xyz = np.transpose(display_data_zyx, (2, 1, 0))
     slice_count = int(data_zyx.shape[0])
     slice_fov = _nifti_slice_field_of_view(nifti, data_xyz.shape)
     source_geometry_images = _source_geometry_images_for_output(
@@ -921,7 +983,7 @@ def _nifti_to_mrd_images(
             image_type_token,
             output_id,
             units,
-            display_data_xyz,
+            data_xyz,
             nifti_path,
             slice_index,
             slice_count,
@@ -1270,6 +1332,8 @@ def _settings_from_config(config, metadata=None):
     else:
         b0_dir_source = "nifti_affine"
 
+    pipeline_preset, algorithm_settings = _algorithm_settings(params)
+
     return {
         "send_original": _config_bool(params, "sendoriginal", False),
         "send_outputs": str(params.get("sendoutputs", "qsm") or "qsm"),
@@ -1283,9 +1347,8 @@ def _settings_from_config(config, metadata=None):
         "b0_dir_source": b0_dir_source,
         "phase_wrap": _config_float(params, "phasewrap", 4096.0),
         "qsmxt_binary": _config_text(params, "qsmxtbinary", ""),
-        "qsm_algorithm": _optional_choice(params, "qsmalgorithm"),
-        "unwrapping_algorithm": _optional_choice(params, "unwrappingalgorithm"),
-        "bf_algorithm": _optional_choice(params, "bfalgorithm"),
+        "pipeline_preset": pipeline_preset,
+        **algorithm_settings,
         "mask_preset": _optional_choice(params, "maskpreset"),
         "qsm_reference": _optional_choice(params, "qsmreference"),
         "no_qsm": _config_bool(params, "noqsm", False),
@@ -1294,6 +1357,35 @@ def _settings_from_config(config, metadata=None):
         "do_r2starmap": _config_bool(params, "dor2starmap", False),
         "inhomogeneity_correction": _config_bool(params, "inhomogeneitycorrection", True),
     }
+
+
+def _algorithm_settings(params):
+    pipeline_preset = _config_text(params, "pipelinepreset", "custom").lower()
+    if pipeline_preset in {"", "default", "none"}:
+        pipeline_preset = "custom"
+
+    if pipeline_preset == "custom":
+        return pipeline_preset, {
+            "qsm_algorithm": (
+                _optional_choice(params, "qsmalgorithm") or DEFAULT_QSM_ALGORITHM
+            ),
+            "unwrapping_algorithm": (
+                _optional_choice(params, "unwrappingalgorithm")
+                or DEFAULT_UNWRAPPING_ALGORITHM
+            ),
+            "bf_algorithm": (
+                _optional_choice(params, "bfalgorithm") or DEFAULT_BF_ALGORITHM
+            ),
+        }
+
+    try:
+        preset = ALGORITHM_PIPELINE_PRESETS[pipeline_preset]
+    except KeyError as error:
+        choices = ", ".join(ALGORITHM_PIPELINE_PRESETS)
+        raise ValueError(
+            f"unknown pipelinepreset {pipeline_preset!r}; expected custom or {choices}"
+        ) from error
+    return pipeline_preset, dict(preset)
 
 
 def _group_images_by_series(images):
@@ -1550,7 +1642,7 @@ def _output_meta(
     image_type_token,
     output_id,
     units,
-    output_data,
+    physical_data,
     nifti_path,
     slice_index,
     slice_count,
@@ -1562,6 +1654,9 @@ def _output_meta(
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
     _strip_scanner_write_unsafe_meta(meta)
+    for key in SOURCE_SCALING_META_KEYS:
+        if key in meta:
+            del meta[key]
     if "IceMiniHead" in meta:
         del meta["IceMiniHead"]
 
@@ -1574,13 +1669,13 @@ def _output_meta(
         slice_index,
     )
     image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
-    center, width = _window_center_width(output_data)
+    center, width = _window_center_width(physical_data)
     if slice_number is None:
         slice_number = slice_index
     slice_number = str(int(slice_number))
     image_comment = _scanner_display_comment(series_name, display_meta)
 
-    meta["DataRole"] = "Image"
+    meta["DataRole"] = ["Image", "Quantitative"]
     meta["ImageProcessingHistory"] = ["PYTHON", "QSMXT"]
     meta["ImageType"] = image_type
     meta["DicomImageType"] = image_type
@@ -1627,6 +1722,15 @@ def _output_meta(
     meta["QSMxTDisplayMin"] = str(int(display_meta["display_min"]))
     meta["QSMxTDisplayMax"] = str(int(display_meta["display_max"]))
     meta["QSMxTDisplayClippedVoxels"] = str(int(display_meta["clipped_voxels"]))
+    meta["RescaleSlope"] = _format_display_number(
+        display_meta["rescale_slope"]
+    )
+    meta["RescaleIntercept"] = _format_display_number(
+        display_meta["rescale_intercept"]
+    )
+    meta["RescaleType"] = "US"
+    if display_meta["padding_value"] is not None:
+        meta["PixelPaddingValue"] = str(int(display_meta["padding_value"]))
     meta["WindowCenter"] = f"{float(center):.6g}"
     meta["WindowWidth"] = f"{float(width):.6g}"
     meta.update(_header_geometry_meta(header))
@@ -1666,23 +1770,70 @@ def _validate_output_images(output_images, input_images):
             errors.append(f"image {index} is missing SOPInstanceUID")
         if np.asarray(image.data).dtype != np.uint16:
             errors.append(f"image {index} data is not uint16")
+        data = np.asarray(image.data)
         if image.data.size:
-            data_min = int(np.min(image.data))
-            data_max = int(np.max(image.data))
+            data_min = int(np.min(data))
+            data_max = int(np.max(data))
             if data_min < SCANNER_DISPLAY_MIN or data_max > SCANNER_DISPLAY_MAX:
                 errors.append(
                     f"image {index} data range {data_min}..{data_max} is outside "
                     f"{SCANNER_DISPLAY_MIN}..{SCANNER_DISPLAY_MAX}"
                 )
+        data_roles = meta.get("DataRole") or []
+        if not isinstance(data_roles, (list, tuple)):
+            data_roles = [data_roles]
+        if "Quantitative" not in {str(value) for value in data_roles}:
+            errors.append(f"image {index} DataRole is not Quantitative")
         for key in (
             "QSMxTDisplayScale",
             "QSMxTDisplayOffset",
             "QSMxTDisplayFormula",
             "QSMxTDisplayScaleInputMin",
             "QSMxTDisplayScaleInputMax",
+            "RescaleSlope",
+            "RescaleIntercept",
+            "RescaleType",
         ):
             if not _meta_text(meta, key):
                 errors.append(f"image {index} is missing {key}")
+
+        display_scale = _meta_float(meta, "QSMxTDisplayScale")
+        display_offset = _meta_float(meta, "QSMxTDisplayOffset")
+        rescale_slope = _meta_float(meta, "RescaleSlope")
+        rescale_intercept = _meta_float(meta, "RescaleIntercept")
+        if display_scale is not None and display_scale > 0.0:
+            expected_slope = 1.0 / display_scale
+            expected_intercept = -(display_offset or 0.0) / display_scale
+            if rescale_slope is None or not np.isclose(
+                rescale_slope,
+                expected_slope,
+                rtol=1e-6,
+            ):
+                errors.append(
+                    f"image {index} RescaleSlope does not match display scale"
+                )
+            if rescale_intercept is None or not np.isclose(
+                rescale_intercept,
+                expected_intercept,
+                rtol=1e-6,
+                atol=1e-12,
+            ):
+                errors.append(
+                    f"image {index} RescaleIntercept does not match display offset"
+                )
+        if _meta_text(meta, "RescaleType") != "US":
+            errors.append(f"image {index} RescaleType is not US")
+
+        padding_value = _meta_int(meta, "PixelPaddingValue")
+        if display_offset:
+            if padding_value != SCANNER_DISPLAY_PADDING_VALUE:
+                errors.append(
+                    f"image {index} is missing stored-zero padding metadata"
+                )
+            elif np.any(data == padding_value):
+                errors.append(f"image {index} uses its padding value as native data")
+        elif padding_value is not None:
+            errors.append(f"image {index} keeps an inapplicable PixelPaddingValue")
 
         slice_index = _meta_int(meta, "SliceNo")
         if slice_index is None:
@@ -2051,7 +2202,7 @@ def _window_center_width(data):
     data_max = float(np.max(finite))
     width = data_max - data_min
     if width <= 0:
-        width = 1.0
+        return data_min, 1.0
     return data_min + width / 2.0, width
 
 
@@ -2065,6 +2216,9 @@ def _scanner_display_volume(data, output_id, units):
         return display, {
             "scale": float(SCANNER_DISPLAY_MAX),
             "offset": 0.0,
+            "rescale_slope": 1.0 / float(SCANNER_DISPLAY_MAX),
+            "rescale_intercept": 0.0,
+            "padding_value": None,
             "units": units,
             "formula": f"{units} = display / {SCANNER_DISPLAY_MAX}",
             "clipped_voxels": 0,
@@ -2084,11 +2238,20 @@ def _scanner_display_volume(data, output_id, units):
         input_min,
         input_max,
     )
-    offset = float(SCANNER_DISPLAY_CENTER) if _scanner_display_needs_offset(
+    needs_offset = _scanner_display_needs_offset(
         output_id,
         scale_input_min,
-    ) else 0.0
-    scale = _scanner_display_scale(scale_input_min, scale_input_max, offset)
+    )
+    offset = float(SCANNER_DISPLAY_CENTER) if needs_offset else 0.0
+    display_data_min = (
+        SCANNER_DISPLAY_DATA_MIN if needs_offset else SCANNER_DISPLAY_MIN
+    )
+    scale = _scanner_display_scale(
+        scale_input_min,
+        scale_input_max,
+        offset,
+        display_data_min,
+    )
     if output_id == "t2star":
         cleaned = np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
     else:
@@ -2096,16 +2259,19 @@ def _scanner_display_volume(data, output_id, units):
     scaled = cleaned * scale + offset
     clipped_voxels = int(
         np.count_nonzero(
-            (scaled < SCANNER_DISPLAY_MIN) | (scaled > SCANNER_DISPLAY_MAX)
+            (scaled < display_data_min) | (scaled > SCANNER_DISPLAY_MAX)
         )
     )
-    display = np.clip(np.rint(scaled), SCANNER_DISPLAY_MIN, SCANNER_DISPLAY_MAX)
+    display = np.clip(np.rint(scaled), display_data_min, SCANNER_DISPLAY_MAX)
     display = display.astype(np.uint16, copy=False)
     formula = _scanner_display_formula(units, offset, scale)
 
     return display, {
         "scale": float(scale),
         "offset": float(offset),
+        "rescale_slope": 1.0 / float(scale),
+        "rescale_intercept": -float(offset) / float(scale),
+        "padding_value": SCANNER_DISPLAY_PADDING_VALUE if needs_offset else None,
         "units": units,
         "formula": formula,
         "clipped_voxels": clipped_voxels,
@@ -2138,12 +2304,12 @@ def _scanner_display_needs_offset(output_id, input_min):
     return output_id == "qsm" or input_min < 0.0
 
 
-def _scanner_display_scale(input_min, input_max, offset):
+def _scanner_display_scale(input_min, input_max, offset, display_min):
     limits = []
     if input_max > 0.0:
         limits.append((SCANNER_DISPLAY_MAX - offset) / input_max)
     if input_min < 0.0:
-        limits.append((SCANNER_DISPLAY_MIN - offset) / input_min)
+        limits.append((display_min - offset) / input_min)
     max_scale = min(limits) if limits else SCANNER_DISPLAY_SCALE_FACTORS[0]
     if max_scale <= 0.0 or not np.isfinite(max_scale):
         max_scale = SCANNER_DISPLAY_SCALE_FACTORS[-1]
@@ -2164,10 +2330,15 @@ def _scanner_display_formula(units, offset, scale):
 
 
 def _scanner_display_comment(series_name, display_meta):
-    return (
+    comment = (
         f"{series_name}; scanner display uint16 0-{SCANNER_DISPLAY_MAX}; "
         f"{display_meta['formula']}"
     )
+    if display_meta["padding_value"] is not None:
+        comment += (
+            f"; stored {int(display_meta['padding_value'])} is DICOM pixel padding"
+        )
+    return comment
 
 
 def _format_display_number(value):
