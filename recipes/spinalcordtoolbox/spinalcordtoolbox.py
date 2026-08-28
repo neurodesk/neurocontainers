@@ -169,6 +169,13 @@ OPENRECON_DEFAULTS = {
 }
 
 OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
+MRD_VOLUME_DIMENSION_FIELDS = (
+    "repetition",
+    "contrast",
+    "phase",
+    "set",
+    "average",
+)
 RESERVED_SCANNER_SERIES_INDICES = {99}
 # Returned originals stay 2D. SCT segmentations are returned as source-geometry
 # 2D slices after originals, without detached/explicit-volume output.
@@ -311,7 +318,7 @@ def process(connection, config, metadata):
                 input_images_for_series_registry.append(item)
 
                 # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
-                if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
+                if (item.image_type == ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
                     image_groups.setdefault(_get_image_series_index(item), []).append(item)
                 else:
                     passthrough_images.append(item)
@@ -337,15 +344,23 @@ def process(connection, config, metadata):
             sum(len(group) for group in image_groups.values()),
         )
 
-        if passthrough_images:
+        passthrough_groups = _group_passthrough_images_by_source_series(
+            passthrough_images
+        )
+        for passthrough_key, passthrough_group in sorted(passthrough_groups.items()):
+            source_series_index = passthrough_key[0]
             passthrough_series_index = derived_series_allocator.allocate("PASSTHROUGH")
-            output_images.extend(
-                _restamp_passthrough_images(
-                    passthrough_images,
-                    "PASSTHROUGH",
-                    passthrough_series_index,
-                )
+            staged_passthrough = _restamp_passthrough_images(
+                passthrough_group,
+                "PASSTHROUGH",
+                passthrough_series_index,
             )
+            _log_and_validate_output_series_contract(
+                staged_passthrough,
+                passthrough_group,
+                context=f"passthrough_source_series_{source_series_index}",
+            )
+            output_images.extend(staged_passthrough)
 
         for series_index, imgGroup in sorted(image_groups.items()):
             logging.info(
@@ -354,14 +369,21 @@ def process(connection, config, metadata):
                 len(imgGroup),
             )
             try:
-                image = process_image(
-                    imgGroup,
-                    connection,
-                    config,
-                    metadata,
-                    derived_series_allocator=derived_series_allocator,
+                image = _as_image_list(
+                    process_image(
+                        imgGroup,
+                        connection,
+                        config,
+                        metadata,
+                        derived_series_allocator=derived_series_allocator,
+                    )
                 )
-            except subprocess.CalledProcessError:
+                _log_and_validate_output_series_contract(
+                    image,
+                    imgGroup,
+                    context=f"processed_source_series_{series_index}",
+                )
+            except Exception:
                 if not _get_boolean_config_param(
                     config,
                     "sendoriginal",
@@ -378,6 +400,11 @@ def process(connection, config, metadata):
                     "ORIGINAL",
                     original_series_index,
                 )
+                _log_and_validate_output_series_contract(
+                    image,
+                    imgGroup,
+                    context=f"fallback_source_series_{series_index}",
+                )
                 logging.warning(
                     "SCT analysis failed for image_series_index=%d; returning %d "
                     "original images as series_index=%d",
@@ -385,7 +412,7 @@ def process(connection, config, metadata):
                     len(image),
                     original_series_index,
                 )
-            output_images.extend(_as_image_list(image))
+            output_images.extend(image)
 
         if output_images:
             _log_and_validate_output_series_contract(
@@ -657,6 +684,105 @@ def _slice_slot_key(record, use_projected_position=True):
     return (int(record["slice"]),)
 
 
+def _mrd_volume_dimension_key(image_header):
+    values = []
+    for field_name in MRD_VOLUME_DIMENSION_FIELDS:
+        try:
+            values.append(int(getattr(image_header, field_name, 0)))
+        except (TypeError, ValueError):
+            values.append(0)
+    return tuple(values)
+
+
+def _validate_volume_groups(image_headers, groups, slice_axis, method):
+    image_headers = list(image_headers)
+    flattened_indices = [input_index for group in groups for input_index in group]
+    if sorted(flattened_indices) != list(range(len(image_headers))):
+        raise ValueError(
+            f"Invalid {method} volume grouping: groups do not partition all source images"
+        )
+
+    _, records = _build_slice_geometry_records(
+        image_headers,
+        input_indices=list(range(len(image_headers))),
+        slice_axis=slice_axis,
+    )
+    projected_slot_keys = [
+        _slice_slot_key(record, use_projected_position=True)
+        for record in records
+    ]
+    use_projected_position = len(set(projected_slot_keys)) > 1
+    slot_keys = (
+        projected_slot_keys
+        if use_projected_position
+        else [
+            _slice_slot_key(record, use_projected_position=False)
+            for record in records
+        ]
+    )
+
+    reference_signature = None
+    for volume_index, group in enumerate(groups, start=1):
+        group_slot_keys = [slot_keys[input_index] for input_index in group]
+        if len(set(group_slot_keys)) != len(group_slot_keys):
+            raise ValueError(
+                f"Invalid {method} volume grouping: volume {volume_index} "
+                "contains duplicate spatial slice slots"
+            )
+        signature = tuple(sorted(group_slot_keys))
+        if reference_signature is None:
+            reference_signature = signature
+        elif signature != reference_signature:
+            raise ValueError(
+                f"Invalid {method} volume grouping: inferred volumes do not "
+                "contain the same spatial slice slots"
+            )
+
+    if not image_headers:
+        return
+
+    reference_header = image_headers[0]
+    reference_matrix = tuple(int(value) for value in reference_header.matrix_size[:])
+    reference_fov = np.asarray(reference_header.field_of_view[:], dtype=float)
+    reference_directions = tuple(
+        _header_vector(reference_header, field_name)
+        for field_name in ("read_dir", "phase_dir", "slice_dir")
+    )
+    for input_index, image_header in enumerate(image_headers[1:], start=1):
+        matrix = tuple(int(value) for value in image_header.matrix_size[:])
+        fov = np.asarray(image_header.field_of_view[:], dtype=float)
+        directions = tuple(
+            _header_vector(image_header, field_name)
+            for field_name in ("read_dir", "phase_dir", "slice_dir")
+        )
+        if matrix != reference_matrix or not np.allclose(
+            fov,
+            reference_fov,
+            rtol=1e-5,
+            atol=1e-4,
+        ):
+            raise ValueError(
+                f"Invalid {method} volume grouping: source image {input_index} "
+                "has incompatible matrix size or field of view"
+            )
+        if any(
+            not np.allclose(
+                direction,
+                reference_direction,
+                rtol=1e-5,
+                atol=1e-4,
+            )
+            for direction, reference_direction in zip(
+                directions,
+                reference_directions,
+            )
+        ):
+            raise ValueError(
+                f"Invalid {method} volume grouping: source image {input_index} "
+                "has incompatible orientation"
+            )
+
+
 def _split_source_images_by_volume(image_headers, slice_axis=None):
     image_headers = list(image_headers)
     if len(image_headers) <= 1:
@@ -664,6 +790,28 @@ def _split_source_images_by_volume(image_headers, slice_axis=None):
 
     if slice_axis is None:
         slice_axis = _infer_slice_axis(image_headers)
+
+    explicit_groups = {}
+    for input_index, image_header in enumerate(image_headers):
+        dimension_key = _mrd_volume_dimension_key(image_header)
+        explicit_groups.setdefault(dimension_key, []).append(input_index)
+    if len(explicit_groups) > 1:
+        groups = [
+            explicit_groups[key]
+            for key in sorted(explicit_groups)
+        ]
+        _validate_volume_groups(
+            image_headers,
+            groups,
+            slice_axis,
+            "explicit MRD dimensions",
+        )
+        logging.info(
+            "Grouped SCT input into %d volume(s) using explicit MRD dimensions %s",
+            len(groups),
+            ",".join(MRD_VOLUME_DIMENSION_FIELDS),
+        )
+        return groups
 
     _, records = _build_slice_geometry_records(
         image_headers,
@@ -683,7 +831,14 @@ def _split_source_images_by_volume(image_headers, slice_axis=None):
             for record in records
         ]
     if len(set(slot_keys)) == len(slot_keys):
-        return [list(range(len(image_headers)))]
+        groups = [list(range(len(image_headers)))]
+        _validate_volume_groups(
+            image_headers,
+            groups,
+            slice_axis,
+            "spatial fallback",
+        )
+        return groups
 
     volumes = []
     volume_slot_keys = []
@@ -702,6 +857,16 @@ def _split_source_images_by_volume(image_headers, slice_axis=None):
         volumes[target_volume_index].append(input_index)
         volume_slot_keys[target_volume_index].add(slot_key)
 
+    _validate_volume_groups(
+        image_headers,
+        volumes,
+        slice_axis,
+        "spatial fallback",
+    )
+    logging.info(
+        "Grouped SCT input into %d volume(s) using validated spatial fallback",
+        len(volumes),
+    )
     return volumes
 
 
@@ -888,6 +1053,43 @@ def _get_image_series_index(image):
             exc_info=True,
         )
         return 0
+
+
+def _group_passthrough_images_by_source_series(images):
+    groups = {}
+    series_instance_uids = {}
+    for image in _as_image_list(images):
+        series_index = _get_image_series_index(image)
+        source_meta = _meta_from_image(image)
+        source_minihead = _decode_ice_minihead(source_meta)
+        series_instance_uid = _first_non_empty_text(
+            _get_meta_text(source_meta, "SeriesInstanceUID"),
+            _extract_minihead_string_value(
+                source_minihead,
+                "SeriesInstanceUID",
+            ),
+        )
+        if series_instance_uid:
+            previous_uid = series_instance_uids.setdefault(
+                series_index,
+                series_instance_uid,
+            )
+            if previous_uid != series_instance_uid:
+                raise ValueError(
+                    "Passthrough source image_series_index "
+                    f"{series_index} has conflicting SeriesInstanceUID values: "
+                    f"{previous_uid} != {series_instance_uid}"
+                )
+
+        _, complex_component = _source_image_component(image, source_meta)
+        try:
+            image_type = int(getattr(image.getHead(), "image_type", 0))
+        except Exception:
+            image_type = 0
+        group_key = (series_index, image_type, complex_component)
+        groups.setdefault(group_key, []).append(image)
+
+    return groups
 
 
 def _send_images_by_series(connection, images, context):
@@ -2250,7 +2452,8 @@ def _patch_ice_minihead(
     target_display_token=None,
     output_index=0,
     output_image_index=None,
-    preserve_image_type_value3=False,
+    image_type_value3=None,
+    complex_image_component="MAGNITUDE",
     is_last_in_series=False,
 ):
     if not minihead_text:
@@ -2259,12 +2462,18 @@ def _patch_ice_minihead(
     changed = False
     current_text = minihead_text
     target_display_token = target_display_token or target_type_token
+    image_type_token = image_type_value3 or "M"
 
-    if preserve_image_type_value3:
+    if image_type_value3:
+        current_text, did_change = _remove_minihead_array_param(
+            current_text,
+            "ImageTypeValue3",
+        )
+        changed = changed or did_change
         current_text, did_change = _replace_or_append_minihead_string_param(
             current_text,
             "ImageTypeValue3",
-            "M",
+            image_type_value3,
         )
         changed = changed or did_change
     else:
@@ -2283,8 +2492,11 @@ def _patch_ice_minihead(
         ("SeriesNumberRangeNameUID", series_grouping),
         ("SeriesInstanceUID", series_instance_uid),
         ("SOPInstanceUID", sop_instance_uid),
-        ("ImageType", f"DERIVED\\PRIMARY\\M\\{target_type_token}"),
-        ("ComplexImageComponent", "MAGNITUDE"),
+        (
+            "ImageType",
+            f"DERIVED\\PRIMARY\\{image_type_token}\\{target_type_token}",
+        ),
+        ("ComplexImageComponent", complex_image_component),
     ):
         current_text, did_change = _replace_or_append_minihead_string_param(
             current_text,
@@ -2524,6 +2736,53 @@ def _build_passthrough_output_identity(
     }
 
 
+def _source_image_component(image, source_meta):
+    image_type_components = {
+        1: ("M", "MAGNITUDE"),
+        2: ("P", "PHASE"),
+        3: ("R", "REAL"),
+        4: ("I", "IMAGINARY"),
+        5: ("C", "COMPLEX"),
+    }
+    try:
+        header_image_type = int(getattr(image.getHead(), "image_type", 0))
+    except Exception:
+        header_image_type = 0
+    if header_image_type in image_type_components:
+        return image_type_components[header_image_type]
+
+    source_minihead = _decode_ice_minihead(source_meta)
+    image_type_token = _first_non_empty_text(
+        _get_meta_text(source_meta, "ImageTypeValue3"),
+        _extract_minihead_string_value(source_minihead, "ImageTypeValue3"),
+        _get_meta_text(source_meta, "ImageTypeValue4"),
+        _extract_minihead_array_tokens(source_minihead, "ImageTypeValue4"),
+    ).upper()
+    complex_component = _first_non_empty_text(
+        _get_meta_text(source_meta, "ComplexImageComponent"),
+        _extract_minihead_string_value(
+            source_minihead,
+            "ComplexImageComponent",
+        ),
+    ).upper()
+    component_tokens = {
+        "MAGNITUDE": "M",
+        "PHASE": "P",
+        "REAL": "R",
+        "IMAGINARY": "I",
+        "COMPLEX": "C",
+    }
+    token_components = {
+        token: component
+        for component, token in component_tokens.items()
+    }
+    if not image_type_token:
+        image_type_token = component_tokens.get(complex_component, "U")
+    if not complex_component:
+        complex_component = token_components.get(image_type_token, "UNKNOWN")
+    return image_type_token, complex_component
+
+
 def _restamp_passthrough_images(
     images,
     role,
@@ -2546,11 +2805,15 @@ def _restamp_passthrough_images(
         oldHeader.image_series_index = output_series_index
         oldHeader.image_index = output_header_image_index
         oldHeader.slice = output_header_slice
-        oldHeader.contrast = 0
-        oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
+        if role_is_original:
+            oldHeader.contrast = 0
         output_image.setHead(oldHeader)
 
         source_meta = _copy_meta(ismrmrd.Meta.deserialize(image.attribute_string))
+        image_type_value3, complex_image_component = _source_image_component(
+            image,
+            source_meta,
+        )
         tmpMeta = _copy_meta(source_meta)
         _strip_source_parent_refs(tmpMeta)
         output_identity = _build_passthrough_output_identity(
@@ -2577,12 +2840,15 @@ def _restamp_passthrough_images(
         tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
         tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
         tmpMeta["SOPInstanceUID"] = sop_instance_uid
-        tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
-        if is_original_output:
-            tmpMeta["ImageTypeValue3"] = "M"
+        output_image_type = (
+            f"DERIVED\\PRIMARY\\{image_type_value3}\\"
+            f"{output_identity['type_token']}"
+        )
+        tmpMeta["ImageType"] = output_image_type
+        tmpMeta["ImageTypeValue3"] = image_type_value3
         tmpMeta["ImageTypeValue4"] = output_identity["display_token"]
-        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
-        tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
+        tmpMeta["DicomImageType"] = output_image_type
+        tmpMeta["ComplexImageComponent"] = complex_image_component
         tmpMeta["ImageComments"] = output_identity["image_comment"]
         tmpMeta["ImageComment"] = output_identity["image_comment"]
         tmpMeta["SequenceDescriptionAdditional"] = "or"
@@ -2615,7 +2881,8 @@ def _restamp_passthrough_images(
                 target_display_token=output_identity["display_token"],
                 output_index=output_header_slice,
                 output_image_index=output_header_image_index,
-                preserve_image_type_value3=is_original_output,
+                image_type_value3=image_type_value3,
+                complex_image_component=complex_image_component,
                 is_last_in_series=(iImg == output_count - 1),
             )
             if minihead_changed:
@@ -3981,6 +4248,47 @@ def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
     raise ValueError(f"Unsupported SCT analysis kind: {analysis_config['kind']}")
 
 
+def _require_matching_nifti_grid(output_image, source_image):
+    output_shape = tuple(int(value) for value in output_image.shape)
+    source_shape = tuple(int(value) for value in source_image.shape)
+    if len(output_shape) == 2:
+        output_shape = output_shape + (1,)
+    if len(source_shape) == 2:
+        source_shape = source_shape + (1,)
+    if len(output_shape) != 3 or len(source_shape) != 3:
+        raise ValueError(
+            "SCT output and source NIfTI grids must be 3D after normalization: "
+            f"output_shape={output_shape} source_shape={source_shape}"
+        )
+    if output_shape != source_shape:
+        raise ValueError(
+            "SCT output NIfTI shape does not match the source grid: "
+            f"output_shape={output_shape} source_shape={source_shape}"
+        )
+
+    output_affine = np.asarray(output_image.affine, dtype=float)
+    source_affine = np.asarray(source_image.affine, dtype=float)
+    if not np.all(np.isfinite(output_affine)) or not np.all(
+        np.isfinite(source_affine)
+    ):
+        raise ValueError("SCT output and source NIfTI affines must contain finite values")
+    if abs(float(np.linalg.det(output_affine[:3, :3]))) < 1e-8 or abs(
+        float(np.linalg.det(source_affine[:3, :3]))
+    ) < 1e-8:
+        raise ValueError("SCT output and source NIfTI affines must be invertible")
+    if not np.allclose(
+        output_affine,
+        source_affine,
+        rtol=1e-5,
+        atol=1e-4,
+    ):
+        max_delta = float(np.max(np.abs(output_affine - source_affine)))
+        raise ValueError(
+            "SCT output NIfTI affine does not match the source grid: "
+            f"max_abs_delta={max_delta:.6g}"
+        )
+
+
 def _sct_output_to_mrd_images(
     output_path,
     analysis,
@@ -3992,8 +4300,14 @@ def _sct_output_to_mrd_images(
     series_suffix=None,
     dicom_metrics=None,
     series_label_suffix=None,
+    source_nifti=None,
 ):
     img = nib.load(str(output_path))
+    if source_nifti is None:
+        raise ValueError(
+            "source_nifti is required to validate the SCT output grid"
+        )
+    _require_matching_nifti_grid(img, source_nifti)
     data = img.get_fdata(dtype=np.float32)
     logging.info("Loaded SCT output %s with shape=%s", output_path, data.shape)
 
@@ -4530,6 +4844,7 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
                         series_suffix=output_spec["series_suffix"],
                         dicom_metrics=output_spec.get("dicom_metrics"),
                         series_label_suffix=volume_label_suffix,
+                        source_nifti=new_img,
                     )
                 )
                 if output_spec.get("dicom_metrics"):

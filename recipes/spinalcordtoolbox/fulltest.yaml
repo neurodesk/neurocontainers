@@ -10,7 +10,7 @@
 # These tests use brain MRI data for basic functionality verification.
 
 name: spinalcordtoolbox
-version: "7.3.2"
+version: "7.3.3"
 upstream_version: "7.3"
 
 required_files:
@@ -54,10 +54,10 @@ tests:
     command: sct_version
     expected_output_contains: "${upstream_version}"
 
-  - name: Check dependencies (short)
-    description: Run minimal dependency check
-    command: sct_check_dependencies -short
-    expected_output_contains: "SCT"
+  - name: CUDA-enabled PyTorch build
+    description: Verify SCT's isolated Python environment contains a CUDA-enabled PyTorch build
+    command: /opt/spinalcordtoolbox-${version}/python/envs/venv_sct/bin/python -c 'import os, torch; assert torch.version.cuda; assert os.environ.get("SCT_USE_GPU") == "1"; print(f"cuda={torch.version.cuda}")'
+    expected_output_contains: "cuda="
 
   # ==========================================================================
   # IMAGE CONVERSION (sct_convert)
