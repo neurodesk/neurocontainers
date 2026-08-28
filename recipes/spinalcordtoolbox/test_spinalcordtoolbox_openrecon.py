@@ -164,6 +164,31 @@ EXPECTED_ANALYSIS_OUTPUTS = {
 }
 
 
+HELPER_DEPENDENCIES = {
+    "_patch_ice_minihead": {
+        "_complex_component_from_value3",
+    },
+    "_restamp_passthrough_images": {
+        "_complex_component_from_value3",
+        "_image_header_type_value3",
+        "_source_image_type_identity",
+        "_value3_from_complex_component",
+    },
+    "_sct_output_to_mrd_images": {
+        "_validate_sct_output_grid",
+    },
+    "_source_image_type_identity": {
+        "_complex_component_from_value3",
+        "_value3_from_complex_component",
+    },
+    "_split_source_images_by_volume": {
+        "_mrd_header_int",
+        "_mrd_volume_dimension_key",
+        "_split_indices_by_explicit_mrd_dimensions",
+    },
+}
+
+
 def _module_assignment(name):
     tree = ast.parse(WRAPPER_PATH.read_text())
     for node in tree.body:
@@ -280,6 +305,11 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
     tree = ast.parse(WRAPPER_PATH.read_text())
     helper_nodes = []
     wanted = set(function_names)
+    previous_size = -1
+    while previous_size != len(wanted):
+        previous_size = len(wanted)
+        for helper_name in tuple(wanted):
+            wanted.update(HELPER_DEPENDENCIES.get(helper_name, set()))
     wanted_assignments = set(assignments)
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -426,6 +456,16 @@ def test_openrecon_exposes_debug_threshold_segment_toggle():
     assert defaults["sctdebugthresholdsegment"] is False
 
 
+def test_recipe_installs_sct_with_gpu_support():
+    recipe_text = (RECIPE_DIR / "build.yaml").read_text()
+
+    assert 'version: "7.3.3"' in recipe_text
+    assert "yes | ./install_sct -i -g" in recipe_text
+    assert 'SCT_USE_GPU: "1"' in recipe_text
+    assert "upstream_version: \"7.3\"" in recipe_text
+    assert '{{ context.version }}' in recipe_text
+
+
 def test_process_returns_original_images_when_sct_analysis_fails():
     helpers = _load_runtime_helpers_for_test(
         ["_get_boolean_config_param", "process"],
@@ -517,6 +557,180 @@ def test_process_returns_original_images_when_sct_analysis_fails():
     assert connection.closed is True
 
 
+def test_process_returns_originals_when_sct_conversion_fails():
+    helpers = _load_runtime_helpers_for_test(
+        ["_get_boolean_config_param", "process"],
+        assignments=["OPENRECON_DEFAULTS"],
+    )
+    image = helpers["FakeImage"](np.ones((1, 2, 2), dtype=np.int16))
+    image.image_type = helpers["ismrmrd"].IMTYPE_MAGNITUDE
+    image.getHead().image_series_index = 1
+    fallback_image = object()
+
+    class FakeConnection:
+        def __init__(self):
+            self.sent_images = []
+            self.logged_errors = []
+            self.closed = False
+
+        def __iter__(self):
+            return iter([image])
+
+        def send_logging(self, severity, message):
+            self.logged_errors.append((severity, message))
+
+        def send_close(self):
+            self.closed = True
+
+    class FakeAllocator:
+        def allocate(self, role):
+            assert role == "ORIGINAL"
+            return 2
+
+    class FakeLogging:
+        @staticmethod
+        def info(*args, **kwargs):
+            pass
+
+        @staticmethod
+        def warning(*args, **kwargs):
+            pass
+
+        @staticmethod
+        def error(*args, **kwargs):
+            pass
+
+    class FakeMrdHelper:
+        @staticmethod
+        def get_json_config_param(config, parameter_id, default, type=None):
+            return config.get(parameter_id, default)
+
+    helpers["ismrmrd"].Acquisition = type("FakeAcquisition", (), {})
+    helpers["ismrmrd"].Waveform = type("FakeWaveform", (), {})
+    helpers["logging"] = FakeLogging
+    helpers["mrdhelper"] = FakeMrdHelper
+    helpers["traceback"] = __import__("traceback")
+    helpers["constants"] = type("FakeConstants", (), {"MRD_LOGGING_ERROR": 2})
+    helpers["_get_image_series_index"] = lambda source_image: 1
+    helpers["_build_connection_series_allocator"] = (
+        lambda source_images: FakeAllocator()
+    )
+    helpers["_as_image_list"] = (
+        lambda value: list(value) if isinstance(value, list) else [value]
+    )
+    helpers["process_image"] = lambda *args, **kwargs: (_ for _ in ()).throw(
+        ValueError("bad SCT output grid")
+    )
+
+    def restamp_originals(images, role, series_index):
+        assert images == [image]
+        assert role == "ORIGINAL"
+        assert series_index == 2
+        return [fallback_image]
+
+    helpers["_restamp_passthrough_images"] = restamp_originals
+    helpers["_log_and_validate_output_series_contract"] = (
+        lambda *args, **kwargs: None
+    )
+    helpers["_send_images_by_series"] = (
+        lambda connection, images, label: connection.sent_images.extend(images)
+    )
+
+    connection = FakeConnection()
+    metadata = type("Metadata", (), {"encoding": []})()
+    helpers["process"](connection, {"sendoriginal": True}, metadata)
+
+    assert connection.sent_images == [fallback_image]
+    assert len(connection.logged_errors) == 1
+    assert "bad SCT output grid" in connection.logged_errors[0][1]
+    assert connection.closed is True
+
+
+def test_process_groups_passthrough_images_by_source_series():
+    helpers = _load_runtime_helpers_for_test(
+        ["_get_boolean_config_param", "process"],
+        assignments=["OPENRECON_DEFAULTS"],
+    )
+    first = helpers["FakeImage"](np.ones((1, 2, 2), dtype=np.int16))
+    second = helpers["FakeImage"](np.ones((1, 2, 2), dtype=np.int16))
+    first.image_type = 2
+    second.image_type = 2
+    first.getHead().image_series_index = 1
+    second.getHead().image_series_index = 5
+
+    class FakeConnection:
+        def __init__(self):
+            self.sent_images = []
+            self.closed = False
+
+        def __iter__(self):
+            return iter([first, second])
+
+        def send_logging(self, severity, message):
+            raise AssertionError(message)
+
+        def send_close(self):
+            self.closed = True
+
+    class FakeAllocator:
+        def __init__(self):
+            self.allocations = []
+
+        def allocate(self, role):
+            self.allocations.append(role)
+            return len(self.allocations) + 10
+
+    allocator = FakeAllocator()
+    restamp_calls = []
+
+    class FakeLogging:
+        @staticmethod
+        def info(*args, **kwargs):
+            pass
+
+        @staticmethod
+        def warning(*args, **kwargs):
+            pass
+
+        @staticmethod
+        def error(*args, **kwargs):
+            pass
+
+    helpers["ismrmrd"].Acquisition = type("FakeAcquisition", (), {})
+    helpers["ismrmrd"].Waveform = type("FakeWaveform", (), {})
+    helpers["logging"] = FakeLogging
+    helpers["mrdhelper"] = type("FakeMrdHelper", (), {})
+    helpers["_get_image_series_index"] = lambda source_image: source_image.getHead().image_series_index
+    helpers["_build_connection_series_allocator"] = lambda source_images: allocator
+    helpers["_as_image_list"] = (
+        lambda value: list(value) if isinstance(value, list) else [value]
+    )
+    helpers["_restamp_passthrough_images"] = (
+        lambda images, role, series_index: restamp_calls.append(
+            (list(images), role, series_index)
+        ) or [f"series-{series_index}"]
+    )
+    helpers["process_image"] = lambda *args, **kwargs: []
+    helpers["_log_and_validate_output_series_contract"] = (
+        lambda *args, **kwargs: None
+    )
+    helpers["_send_images_by_series"] = (
+        lambda connection, images, label: connection.sent_images.extend(images)
+    )
+
+    connection = FakeConnection()
+    metadata = type("Metadata", (), {"encoding": []})()
+    helpers["process"](connection, {}, metadata)
+
+    assert allocator.allocations == ["PASSTHROUGH_1", "PASSTHROUGH_5"]
+    assert restamp_calls == [
+        ([first], "PASSTHROUGH", 11),
+        ([second], "PASSTHROUGH", 12),
+    ]
+    assert connection.sent_images == ["series-11", "series-12"]
+    assert connection.closed is True
+
+
 def test_repeated_slice_positions_are_split_into_sct_input_volumes():
     helpers = _load_runtime_helpers_for_test(
         [
@@ -584,6 +798,35 @@ def test_repeated_positions_split_volumes_even_with_global_slice_numbers():
             headers.append(header)
 
     assert helpers["_split_source_images_by_volume"](headers) == [[0, 1, 2], [3, 4, 5]]
+
+
+def test_explicit_mrd_dimensions_split_volumes_before_spatial_fallback():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_slice_geometry_records",
+            "_header_vector",
+            "_infer_slice_axis",
+            "_normalize_vector",
+            "_slice_slot_key",
+            "_split_source_images_by_volume",
+        ],
+    )
+    headers = []
+    for slice_index in range(3):
+        for repetition in range(2):
+            header = helpers["FakeHead"]()
+            header.slice = slice_index
+            header.image_index = len(headers) + 1
+            header.repetition = repetition
+            header.contrast = 0
+            header.phase = 0
+            header.set = 0
+            header.average = 0
+            header.position = [0.0, 0.0, slice_index * 3.0]
+            header.slice_dir = [0.0, 0.0, 1.0]
+            headers.append(header)
+
+    assert helpers["_split_source_images_by_volume"](headers) == [[0, 2, 4], [1, 3, 5]]
 
 
 def test_compute_nifti_affine_matches_phase_read_slice_data_axes():
@@ -830,9 +1073,11 @@ def test_passthrough_non_original_role_skips_explicit_geometry():
         ],
     )
     image = helpers["FakeImage"](np.zeros((1, 2, 2), dtype=np.int16))
+    helpers["ismrmrd"].IMTYPE_PHASE = 2
     image.getHead().image_series_index = 1
     image.getHead().image_index = 3
     image.getHead().slice = 2
+    image.getHead().image_type = helpers["ismrmrd"].IMTYPE_PHASE
     image.getHead().read_dir = [1.0, 0.0, 0.0]
     image.getHead().phase_dir = [0.0, 1.0, 0.0]
     image.getHead().slice_dir = [0.0, 0.0, 1.0]
@@ -842,7 +1087,9 @@ def test_passthrough_non_original_role_skips_explicit_geometry():
         "SeriesInstanceUID": "1.2.3",
         "SOPInstanceUID": "1.2.3.4.5",
         "SeriesNumberRangeNameUID": "source_group",
+        "ImageTypeValue3": "P",
         "ImageTypeValue4": "P",
+        "ComplexImageComponent": "PHASE",
     }).serialize()
 
     restamped = helpers["_restamp_passthrough_images"]([image], "PASSTHROUGH", 2)
@@ -851,6 +1098,10 @@ def test_passthrough_non_original_role_skips_explicit_geometry():
     output_meta = helpers["FakeMeta"].deserialize(restamped[0].attribute_string)
     assert restamped[0].getHead().image_series_index == 2
     assert output_meta["ImageTypeValue4"] == "PASSTHROUGH"
+    assert output_meta["ImageTypeValue3"] == "P"
+    assert output_meta["ImageType"] == "DERIVED\\PRIMARY\\P\\PASSTHROUGH"
+    assert output_meta["DicomImageType"] == "DERIVED\\PRIMARY\\P\\PASSTHROUGH"
+    assert output_meta["ComplexImageComponent"] == "PHASE"
     # No explicit per-slice geometry tags on the non-original passthrough path.
     assert "ImageRowDir" not in output_meta
     assert "ImageColumnDir" not in output_meta
@@ -994,6 +1245,66 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
         ]
         assert helpers["_extract_minihead_string_value"](minihead, "ImageTypeValue3") == ""
         assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue3") == []
+
+
+def test_sct_output_to_mrd_rejects_shape_that_does_not_match_source_grid(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_sct_output_to_mrd_images",
+        ],
+    )
+    output_path = tmp_path / "output.nii.gz"
+    nib.save(
+        nib.Nifti1Image(np.zeros((2, 2, 2), dtype=np.float32), np.eye(4)),
+        output_path,
+    )
+
+    try:
+        helpers["_sct_output_to_mrd_images"](
+            output_path,
+            "sct_deepseg_spinalcord",
+            [helpers["FakeHead"]()],
+            [],
+            2,
+            source_images=[helpers["FakeImage"](np.zeros((1, 2, 2), dtype=np.int16))],
+            expected_source_shape=(2, 2, 1),
+            expected_source_affine=np.eye(4),
+        )
+    except ValueError as exc:
+        assert "SCT output grid does not match MRD source grid" in str(exc)
+    else:
+        raise AssertionError("Expected mismatched SCT output shape to fail")
+
+
+def test_sct_output_to_mrd_rejects_affine_that_does_not_match_source_grid(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_sct_output_to_mrd_images",
+        ],
+    )
+    output_path = tmp_path / "output.nii.gz"
+    output_affine = np.eye(4)
+    output_affine[0, 3] = 10.0
+    nib.save(
+        nib.Nifti1Image(np.zeros((2, 2, 1), dtype=np.float32), output_affine),
+        output_path,
+    )
+
+    try:
+        helpers["_sct_output_to_mrd_images"](
+            output_path,
+            "sct_deepseg_spinalcord",
+            [helpers["FakeHead"]()],
+            [],
+            2,
+            source_images=[helpers["FakeImage"](np.zeros((1, 2, 2), dtype=np.int16))],
+            expected_source_shape=(2, 2, 1),
+            expected_source_affine=np.eye(4),
+        )
+    except ValueError as exc:
+        assert "SCT output affine does not match MRD source affine" in str(exc)
+    else:
+        raise AssertionError("Expected mismatched SCT output affine to fail")
 
 
 def test_sci_lesion_mask_is_embedded_as_segmentation_dicom_series():

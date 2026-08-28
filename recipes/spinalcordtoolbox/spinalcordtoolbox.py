@@ -279,7 +279,7 @@ def process(connection, config, metadata):
     # Continuously parse incoming data parsed from MRD messages
     acqGroup = []
     image_groups = {}
-    passthrough_images = []
+    passthrough_image_groups = {}
     input_images_for_series_registry = []
     waveformGroup = []
     try:
@@ -311,10 +311,10 @@ def process(connection, config, metadata):
                 input_images_for_series_registry.append(item)
 
                 # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
-                if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
+                if (item.image_type == ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
                     image_groups.setdefault(_get_image_series_index(item), []).append(item)
                 else:
-                    passthrough_images.append(item)
+                    passthrough_image_groups.setdefault(_get_image_series_index(item), []).append(item)
 
             # ----------------------------------------------------------
             # Waveform data messages
@@ -331,14 +331,17 @@ def process(connection, config, metadata):
         derived_series_allocator = _build_connection_series_allocator(input_images_for_series_registry)
         output_images = []
         logging.info(
-            "Input stream drained before SCT processing: passthrough_images=%d processable_series=%d processable_images=%d",
-            len(passthrough_images),
+            "Input stream drained before SCT processing: passthrough_series=%d passthrough_images=%d processable_series=%d processable_images=%d",
+            len(passthrough_image_groups),
+            sum(len(group) for group in passthrough_image_groups.values()),
             len(image_groups),
             sum(len(group) for group in image_groups.values()),
         )
 
-        if passthrough_images:
-            passthrough_series_index = derived_series_allocator.allocate("PASSTHROUGH")
+        for source_series_index, passthrough_images in sorted(passthrough_image_groups.items()):
+            passthrough_series_index = derived_series_allocator.allocate(
+                f"PASSTHROUGH_{source_series_index}"
+            )
             output_images.extend(
                 _restamp_passthrough_images(
                     passthrough_images,
@@ -361,7 +364,7 @@ def process(connection, config, metadata):
                     metadata,
                     derived_series_allocator=derived_series_allocator,
                 )
-            except subprocess.CalledProcessError:
+            except Exception:
                 if not _get_boolean_config_param(
                     config,
                     "sendoriginal",
@@ -657,10 +660,57 @@ def _slice_slot_key(record, use_projected_position=True):
     return (int(record["slice"]),)
 
 
+def _mrd_header_int(image_header, field_name):
+    try:
+        return int(getattr(image_header, field_name))
+    except Exception:
+        return 0
+
+
+def _mrd_volume_dimension_key(image_header):
+    return tuple(
+        _mrd_header_int(image_header, field_name)
+        for field_name in ("repetition", "contrast", "phase", "set", "average")
+    )
+
+
+def _split_indices_by_explicit_mrd_dimensions(image_headers):
+    groups_by_key = {}
+    key_order = []
+    for input_index, image_header in enumerate(image_headers):
+        key = _mrd_volume_dimension_key(image_header)
+        if key not in groups_by_key:
+            groups_by_key[key] = []
+            key_order.append(key)
+        groups_by_key[key].append(input_index)
+
+    if len(key_order) <= 1:
+        return []
+    return [groups_by_key[key] for key in key_order]
+
+
 def _split_source_images_by_volume(image_headers, slice_axis=None):
     image_headers = list(image_headers)
     if len(image_headers) <= 1:
         return [list(range(len(image_headers)))]
+
+    explicit_groups = _split_indices_by_explicit_mrd_dimensions(image_headers)
+    if explicit_groups:
+        split_groups = []
+        for explicit_group in explicit_groups:
+            if len(explicit_group) <= 1:
+                split_groups.append(explicit_group)
+                continue
+            group_headers = [image_headers[index] for index in explicit_group]
+            local_groups = _split_source_images_by_volume(
+                group_headers,
+                slice_axis=slice_axis,
+            )
+            for local_group in local_groups:
+                split_groups.append(
+                    [explicit_group[local_index] for local_index in local_group]
+                )
+        return split_groups
 
     if slice_axis is None:
         slice_axis = _infer_slice_axis(image_headers)
@@ -1518,7 +1568,9 @@ def _validate_storage_fields(
     header_matrix_z = int(header.matrix_size[2])
     keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
     image_type_value4_values = _get_meta_values(meta, "ImageTypeValue4")
-    is_original_output = _series_contract_role(meta, minihead) == "ORIGINAL"
+    output_role = _series_contract_role(meta, minihead)
+    is_original_output = output_role == "ORIGINAL"
+    is_passthrough_output = output_role == "PASSTHROUGH"
     is_source_image_header_output = (
         _meta_int(meta, SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY) == 1
     )
@@ -1625,16 +1677,16 @@ def _validate_storage_fields(
             f"image {index} has IceMiniHead ImageTypeValue4 "
             f"{minihead_image_type_value4}, expected {image_type_value4_values}"
         )
-    if is_original_output or is_source_image_header_output:
-        value3_context = "original" if is_original_output else "source-image-header"
+    if is_original_output or is_passthrough_output or is_source_image_header_output:
+        value3_context = "source-typed output"
         for source, value in (
             ("Meta", _get_meta_text(meta, "ImageTypeValue3")),
             ("IceMiniHead", _extract_minihead_string_value(minihead, "ImageTypeValue3")),
         ):
-            if value and value != "M":
+            if value and value not in {"M", "P", "R", "I", "C"}:
                 errors.append(
                     f"image {index} has {value3_context} {source} "
-                    f"ImageTypeValue3={value}, expected M"
+                    f"ImageTypeValue3={value}, expected one of M, P, R, I, C"
                 )
     else:
         meta_image_type_value3 = _get_meta_text(meta, "ImageTypeValue3")
@@ -1800,6 +1852,74 @@ def _get_meta_values(meta_obj, key):
         if text and text.upper() != "N/A":
             values.append(text)
     return values
+
+
+def _image_header_type_value3(image):
+    try:
+        image_type = int(image.getHead().image_type)
+    except Exception:
+        image_type = 0
+
+    for constant_name, value3 in (
+        ("IMTYPE_MAGNITUDE", "M"),
+        ("IMTYPE_PHASE", "P"),
+        ("IMTYPE_REAL", "R"),
+        ("IMTYPE_IMAG", "I"),
+        ("IMTYPE_COMPLEX", "C"),
+    ):
+        constant_value = getattr(ismrmrd, constant_name, None)
+        if constant_value is not None and image_type == int(constant_value):
+            return value3
+    return ""
+
+
+def _complex_component_from_value3(value3):
+    value3 = _first_non_empty_text(value3).upper()
+    return {
+        "M": "MAGNITUDE",
+        "P": "PHASE",
+        "R": "REAL",
+        "I": "IMAGINARY",
+        "C": "COMPLEX",
+    }.get(value3, "")
+
+
+def _value3_from_complex_component(complex_component):
+    component = _first_non_empty_text(complex_component).upper()
+    return {
+        "MAGNITUDE": "M",
+        "PHASE": "P",
+        "REAL": "R",
+        "IMAGINARY": "I",
+        "COMPLEX": "C",
+    }.get(component, "")
+
+
+def _source_image_type_identity(image, source_meta):
+    source_minihead = _decode_ice_minihead(source_meta)
+    value3 = _first_non_empty_text(
+        _image_header_type_value3(image),
+        _get_meta_text(source_meta, "ImageTypeValue3"),
+        _extract_minihead_string_value(source_minihead, "ImageTypeValue3"),
+        _extract_minihead_array_tokens(source_minihead, "ImageTypeValue3"),
+        _value3_from_complex_component(_get_meta_text(source_meta, "ComplexImageComponent")),
+        _value3_from_complex_component(
+            _extract_minihead_string_value(source_minihead, "ComplexImageComponent")
+        ),
+    ).upper()
+    complex_component = _first_non_empty_text(
+        _get_meta_text(source_meta, "ComplexImageComponent"),
+        _extract_minihead_string_value(source_minihead, "ComplexImageComponent"),
+        _complex_component_from_value3(value3),
+    ).upper()
+    if not value3:
+        value3 = _value3_from_complex_component(complex_component)
+    if not complex_component:
+        complex_component = _complex_component_from_value3(value3)
+    return {
+        "value3": value3,
+        "complex_component": complex_component,
+    }
 
 
 def _decode_ice_minihead(meta_obj):
@@ -2251,6 +2371,8 @@ def _patch_ice_minihead(
     output_index=0,
     output_image_index=None,
     preserve_image_type_value3=False,
+    target_image_type_value3=None,
+    target_complex_component=None,
     is_last_in_series=False,
 ):
     if not minihead_text:
@@ -2259,12 +2381,21 @@ def _patch_ice_minihead(
     changed = False
     current_text = minihead_text
     target_display_token = target_display_token or target_type_token
+    target_image_type_value3 = _first_non_empty_text(
+        target_image_type_value3,
+        "M" if preserve_image_type_value3 else "",
+    ).upper()
+    target_complex_component = _first_non_empty_text(
+        target_complex_component,
+        _complex_component_from_value3(target_image_type_value3),
+        "MAGNITUDE",
+    ).upper()
 
-    if preserve_image_type_value3:
+    if target_image_type_value3:
         current_text, did_change = _replace_or_append_minihead_string_param(
             current_text,
             "ImageTypeValue3",
-            "M",
+            target_image_type_value3,
         )
         changed = changed or did_change
     else:
@@ -2272,6 +2403,7 @@ def _patch_ice_minihead(
             current_text, did_change = remover(current_text, "ImageTypeValue3")
             changed = changed or did_change
 
+    image_type_value3 = target_image_type_value3 or "M"
     for param_name, param_value in (
         # SeriesDescription must be re-stamped here too (matches vesselboost):
         # the derived identity already lands in the Meta, but the scanner can use
@@ -2283,8 +2415,8 @@ def _patch_ice_minihead(
         ("SeriesNumberRangeNameUID", series_grouping),
         ("SeriesInstanceUID", series_instance_uid),
         ("SOPInstanceUID", sop_instance_uid),
-        ("ImageType", f"DERIVED\\PRIMARY\\M\\{target_type_token}"),
-        ("ComplexImageComponent", "MAGNITUDE"),
+        ("ImageType", f"DERIVED\\PRIMARY\\{image_type_value3}\\{target_type_token}"),
+        ("ComplexImageComponent", target_complex_component),
     ):
         current_text, did_change = _replace_or_append_minihead_string_param(
             current_text,
@@ -2547,10 +2679,12 @@ def _restamp_passthrough_images(
         oldHeader.image_index = output_header_image_index
         oldHeader.slice = output_header_slice
         oldHeader.contrast = 0
-        oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
         output_image.setHead(oldHeader)
 
         source_meta = _copy_meta(ismrmrd.Meta.deserialize(image.attribute_string))
+        source_image_type = _source_image_type_identity(image, source_meta)
+        image_type_value3 = source_image_type["value3"] or "M"
+        complex_component = source_image_type["complex_component"] or "MAGNITUDE"
         tmpMeta = _copy_meta(source_meta)
         _strip_source_parent_refs(tmpMeta)
         output_identity = _build_passthrough_output_identity(
@@ -2577,12 +2711,15 @@ def _restamp_passthrough_images(
         tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
         tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
         tmpMeta["SOPInstanceUID"] = sop_instance_uid
-        tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
-        if is_original_output:
-            tmpMeta["ImageTypeValue3"] = "M"
+        tmpMeta["ImageType"] = (
+            f"DERIVED\\PRIMARY\\{image_type_value3}\\{output_identity['type_token']}"
+        )
+        tmpMeta["ImageTypeValue3"] = image_type_value3
         tmpMeta["ImageTypeValue4"] = output_identity["display_token"]
-        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
-        tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
+        tmpMeta["DicomImageType"] = (
+            f"DERIVED\\PRIMARY\\{image_type_value3}\\{output_identity['type_token']}"
+        )
+        tmpMeta["ComplexImageComponent"] = complex_component
         tmpMeta["ImageComments"] = output_identity["image_comment"]
         tmpMeta["ImageComment"] = output_identity["image_comment"]
         tmpMeta["SequenceDescriptionAdditional"] = "or"
@@ -2616,6 +2753,8 @@ def _restamp_passthrough_images(
                 output_index=output_header_slice,
                 output_image_index=output_header_image_index,
                 preserve_image_type_value3=is_original_output,
+                target_image_type_value3=image_type_value3,
+                target_complex_component=complex_component,
                 is_last_in_series=(iImg == output_count - 1),
             )
             if minihead_changed:
@@ -3981,6 +4120,31 @@ def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
     raise ValueError(f"Unsupported SCT analysis kind: {analysis_config['kind']}")
 
 
+def _validate_sct_output_grid(output_img, output_data, expected_shape, expected_affine):
+    expected_shape = tuple(int(value) for value in expected_shape)
+    output_shape = tuple(int(value) for value in output_data.shape)
+    if output_shape != expected_shape:
+        raise ValueError(
+            "SCT output grid does not match MRD source grid: "
+            f"output_shape={output_shape} expected_shape={expected_shape}"
+        )
+
+    output_affine = np.asarray(output_img.affine, dtype=float)
+    expected_affine = np.asarray(expected_affine, dtype=float)
+    if output_affine.shape != (4, 4) or expected_affine.shape != (4, 4):
+        raise ValueError(
+            "SCT output grid affine is incomplete: "
+            f"output_affine_shape={output_affine.shape} "
+            f"expected_affine_shape={expected_affine.shape}"
+        )
+    if not np.allclose(output_affine, expected_affine, rtol=1e-4, atol=1e-3):
+        raise ValueError(
+            "SCT output affine does not match MRD source affine: "
+            f"output_affine={output_affine.tolist()} "
+            f"expected_affine={expected_affine.tolist()}"
+        )
+
+
 def _sct_output_to_mrd_images(
     output_path,
     analysis,
@@ -3992,6 +4156,8 @@ def _sct_output_to_mrd_images(
     series_suffix=None,
     dicom_metrics=None,
     series_label_suffix=None,
+    expected_source_shape=None,
+    expected_source_affine=None,
 ):
     img = nib.load(str(output_path))
     data = img.get_fdata(dtype=np.float32)
@@ -4001,6 +4167,13 @@ def _sct_output_to_mrd_images(
         data = data[:, :, None]
     if data.ndim != 3:
         raise ValueError(f"SCT output must be 3D after squeezing, got shape {data.shape}")
+    if expected_source_shape is not None and expected_source_affine is not None:
+        _validate_sct_output_grid(
+            img,
+            data,
+            expected_source_shape,
+            expected_source_affine,
+        )
     if data.shape[-1] != len(head):
         raise ValueError(
             "SCT output slice count does not match MRD input: "
@@ -4530,6 +4703,8 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
                         series_suffix=output_spec["series_suffix"],
                         dicom_metrics=output_spec.get("dicom_metrics"),
                         series_label_suffix=volume_label_suffix,
+                        expected_source_shape=data_nifti.shape,
+                        expected_source_affine=affine,
                     )
                 )
                 if output_spec.get("dicom_metrics"):

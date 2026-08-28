@@ -1,5 +1,5 @@
 name: spinalcordtoolbox
-version: "7.3.2"
+version: "7.3.3"
 copyright:
   - license: LGPL-3.0
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
@@ -33,10 +33,11 @@ build:
         - chmod a+rwx /opt/spinalcordtoolbox-{{ context.version }}/ -R
     - user: spinalcordtoolbox
     - run:
-        - yes | ./install_sct -i
+        - yes | ./install_sct -i -g
     - environment:
         PATH: /opt/spinalcordtoolbox-{{ context.version }}/bin/:$PATH
         SCT_DIR: /opt/spinalcordtoolbox-{{ context.version }}
+        SCT_USE_GPU: "1"
     - run:
         - sct_deepseg spinalcord -install
         - sct_deepseg sc_epi -install
