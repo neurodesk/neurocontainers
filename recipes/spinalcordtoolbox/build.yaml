@@ -33,7 +33,7 @@ build:
         - chmod a+rwx /opt/spinalcordtoolbox-{{ context.version }}/ -R
     - user: spinalcordtoolbox
     - run:
-        - yes | ./install_sct -i -g
+        - yes | ./install_sct -i -g -c
     - environment:
         PATH: /opt/spinalcordtoolbox-{{ context.version }}/bin/:$PATH
         SCT_DIR: /opt/spinalcordtoolbox-{{ context.version }}
@@ -58,7 +58,7 @@ build:
         - sct_deepseg sc_canal_t2 -install
         - sct_deepseg spine -install
     - run:
-        - sct_check_dependencies
+        - sct_version
     - user: root
     - copy: spinalcordtoolbox.py /opt/code/python-ismrmrd-server/spinalcordtoolbox.py
     - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py

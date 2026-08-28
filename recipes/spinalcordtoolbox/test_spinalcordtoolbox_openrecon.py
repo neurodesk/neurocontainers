@@ -460,8 +460,10 @@ def test_recipe_installs_sct_with_gpu_support():
     recipe_text = (RECIPE_DIR / "build.yaml").read_text()
 
     assert 'version: "7.3.3"' in recipe_text
-    assert "yes | ./install_sct -i -g" in recipe_text
+    assert "yes | ./install_sct -i -g -c" in recipe_text
     assert 'SCT_USE_GPU: "1"' in recipe_text
+    assert "sct_version" in recipe_text
+    assert "sct_check_dependencies" not in recipe_text
     assert "upstream_version: \"7.3\"" in recipe_text
     assert '{{ context.version }}' in recipe_text
 
