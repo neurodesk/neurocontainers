@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.11.0
+version: 9.14.0
 
 test_data:
   output_dir: test_output
@@ -26,6 +26,17 @@ setup:
         raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
     if nprocs_index + 1 >= len(sys.argv) or sys.argv[nprocs_index + 1] != "24":
         raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
+    for flag, expected in (
+        ("--qsm-algorithm", "whqsm"),
+        ("--unwrapping-algorithm", "romeo"),
+        ("--bf-algorithm", "vsharp"),
+    ):
+        try:
+            flag_index = sys.argv.index(flag)
+        except ValueError:
+            raise SystemExit(f"qsmxt OpenRecon should pass {flag} {expected}")
+        if flag_index + 1 >= len(sys.argv) or sys.argv[flag_index + 1] != expected:
+            raise SystemExit(f"qsmxt OpenRecon should pass {flag} {expected}")
 
     bids = Path(sys.argv[2])
     output = Path(sys.argv[3])
@@ -33,7 +44,7 @@ setup:
     image = nib.load(str(phase))
     data = np.zeros(image.shape, dtype=np.float32) + 1.5
     name = phase.name.replace("_echo-1_part-phase_MEGRE.nii.gz", "_Chimap.nii")
-    destination = output / "derivatives" / "qsmxt.rs" / "sub-01" / "anat" / name
+    destination = output / "derivatives" / "qsmxt" / "sub-01" / "anat" / name
     destination.parent.mkdir(parents=True, exist_ok=True)
     nib.save(nib.Nifti1Image(data, image.affine), str(destination))
     print(destination)
@@ -81,12 +92,24 @@ tests:
           "config",
           "sendoutputs",
           "sendoriginal",
+          "pipelinepreset",
           "qsmalgorithm",
           "unwrappingalgorithm",
           "bfalgorithm",
           "maskpreset",
       }
       assert expected <= parameter_ids
+      parameters = {parameter["id"]: parameter for parameter in data["parameters"]}
+      pipeline_preset = parameters["pipelinepreset"]
+      assert pipeline_preset["type"] == "choice"
+      assert pipeline_preset["default"] == "custom"
+      assert len(pipeline_preset["values"]) == 11
+      assert parameters["qsmalgorithm"]["default"] == "whqsm"
+      assert "whqsm" in {
+          value["id"] for value in parameters["qsmalgorithm"]["values"]
+      }
+      assert parameters["unwrappingalgorithm"]["default"] == "romeo"
+      assert parameters["bfalgorithm"]["default"] == "vsharp"
       send_original = next(parameter for parameter in data["parameters"] if parameter["id"] == "sendoriginal")
       assert send_original["default"] is False
       assert "minip" not in parameter_ids
@@ -115,6 +138,9 @@ tests:
       assert display.tolist() == [[[1048, 2048, 3048]]]
       assert meta["scale"] == 100000.0
       assert meta["offset"] == 2048.0
+      assert meta["rescale_slope"] == 0.00001
+      assert meta["rescale_intercept"] == -0.02048
+      assert meta["padding_value"] == 0
       assert meta["formula"] == "ppm = (display - 2048) / 100000"
       assert qsmxt.DEFAULT_QSMXT_BINARY == "/opt/qsmxt/qsmxt"
       print(qsmxt.__file__)
@@ -231,6 +257,13 @@ tests:
       assert first_meta["QSMxTOutput"] == "qsm"
       assert first_meta["ImageType"] == "DERIVED\\PRIMARY\\M\\QSMXT_CHIMAP"
       assert first_meta["QSMxTDisplayFormula"] == "ppm = (display - 2048) / 1000"
+      assert first_meta["DataRole"] == ["Image", "Quantitative"]
+      assert float(first_meta["RescaleSlope"]) == 0.001
+      assert float(first_meta["RescaleIntercept"]) == -2.048
+      assert first_meta["RescaleType"] == "US"
+      assert first_meta["PixelPaddingValue"] == "0"
+      assert float(first_meta["WindowCenter"]) == 1.5
+      assert float(first_meta["WindowWidth"]) == 1.0
       assert first_meta["slice_count"] == "2"
       assert first_meta["NumberOfSlices"] == "2"
       assert first_meta["ImagesInAcquisition"] == "2"

@@ -34,16 +34,64 @@ percentile of positive finite fits so isolated extreme fits are clipped instead
 of quantizing the useful map to zero. The original range, scaling range, scale,
 inverse formula, and clipped-voxel count are included in the returned metadata.
 
+Derived maps set the MRD `RescaleSlope` and `RescaleIntercept` attributes. The
+OpenRecon DICOM writer maps these attributes to the standard DICOM fields.
+Window center and width use the rescaled physical units.
+
+Maps with a non-zero stored-value offset, including QSM, reserve stored code `0`.
+The bridge sends `PixelPaddingValue=0`, and native map values use codes
+`1..4095`. Scanner testing must confirm that the DICOM writer preserves this
+attribute through distortion correction. If preserved, outside-FOV pixels are
+padding rather than susceptibility measurements.
+
+QSM images remain magnitude-type derived images. Their MRD `DataRole` contains
+`Quantitative` so the scanner does not normalize the parametric pixel values.
+
 QSMxT needs unfiltered phase data. SWI sequences that already apply SWI-specific
 phase processing or filtering are not suitable inputs for this OpenRecon
 adapter; for example, `t2_swi_tra_wave4_2mm` does not provide the required
 unfiltered phase data and should not be used for QSMxT. Start from a plain GRE
 sequence instead, and enable both phase and magnitude reconstruction.
 
-The scanner UI defaults are set for a robust inline QSM run: only the QSM map is
-returned, QSM inversion uses RTS, unwrapping uses ROMEO, background-field removal
-uses PDF, and masking uses the robust-threshold preset. Enable `sendoriginal`
-only when the original magnitude and phase series are needed for debugging.
+QSM processing selects WH-QSM:
+
+```text
+qsmxt run <bids_dir> --qsm-algorithm whqsm
+```
+
+The OpenRecon wrapper also supplies the output directory, resource settings,
+and algorithm defaults to the command. The default pipeline uses ROMEO for
+phase unwrapping, V-SHARP for background-field removal, and WH-QSM for QSM
+inversion. This combination provides the best balance of accuracy,
+reproducibility, and resource use for inline OpenRecon processing. Only the QSM
+map is returned by default, and masking uses the robust-threshold preset. Enable
+`sendoriginal` only when the original magnitude and phase series are needed for
+debugging.
+
+### Pipeline presets
+
+The **Pipeline preset** selection box contains the ten supplied scanner-tested
+algorithm combinations. A pipeline preset overrides **QSM algorithm**,
+**Unwrap**, and **Background**. Select **Custom algorithm controls** to use those
+three selection boxes. The custom default remains ROMEO, V-SHARP, and WH-QSM.
+
+Lower inter-scanner error and runtime are better. Higher xSIM is better.
+
+| # | Pipeline preset | Preset id | Inter-scanner error | xSIM | Runtime |
+| --- | --- | --- | ---: | ---: | ---: |
+| 1 | ROMEO + RESHARP + RTS | `romeo-resharp-rts` | 3.7% | 0.293 | 59 s |
+| 2 | ROMEO + iSMV + HD-QSM | `romeo-ismv-hdqsm` | 4.6% | 0.361 | 78 s |
+| 3 | ROMEO + RESHARP + Tikhonov | `romeo-resharp-tikhonov` | 3.8% | 0.283 | 51 s |
+| 4 | ROMEO + RESHARP + TV (ADMM) | `romeo-resharp-tv` | 4.2% | 0.308 | 72 s |
+| 5 | ROMEO + RESHARP + HD-QSM | `romeo-resharp-hdqsm` | 6.5% | 0.360 | 84 s |
+| 6 | ROMEO + iSMV + RTS | `romeo-ismv-rts` | 7.5% | 0.303 | 50 s |
+| 7 | ROMEO + iSMV + WH-QSM | `romeo-ismv-whqsm` | 3.0% | 0.388 | 221 s |
+| 8 | ROMEO + SHARP + WH-QSM | `romeo-sharp-whqsm` | 2.1% | 0.372 | 226 s |
+| 9 | ROMEO + RESHARP + WH-QSM | `romeo-resharp-whqsm` | 3.4% | 0.384 | 224 s |
+| 10 | ROMEO + SHARP + Tikhonov | `romeo-sharp-tikhonov` | 7.6% | 0.271 | 30 s |
+
+Each preset passes the corresponding `--unwrapping-algorithm`,
+`--bf-algorithm`, and `--qsm-algorithm` values to `qsmxt run`.
 
 ## Input Data
 
@@ -57,9 +105,10 @@ Do not use filtered SWI phase images as QSMxT input.
 | config | `config` | choice | `qsmxt` | Selects the MRD server configuration. |
 | Output maps | `sendoutputs` | choice | `qsm` | Selects which QSMxT derivatives are sent back. |
 | Send original | `sendoriginal` | boolean | `false` | Sends original magnitude and phase image series before derived outputs. |
-| QSM algorithm | `qsmalgorithm` | choice | `rts` | QSMxT inversion algorithm. |
+| Pipeline preset | `pipelinepreset` | choice | `custom` | Selects a three-stage algorithm preset or the custom algorithm controls. |
+| QSM algorithm | `qsmalgorithm` | choice | `whqsm` | QSMxT inversion algorithm. |
 | Unwrap | `unwrappingalgorithm` | choice | `romeo` | QSMxT phase-unwrapping algorithm. |
-| Background | `bfalgorithm` | choice | `pdf` | QSMxT background-field removal algorithm. |
+| Background | `bfalgorithm` | choice | `vsharp` | QSMxT background-field removal algorithm. |
 | Mask preset | `maskpreset` | choice | `robust-threshold` | QSMxT masking preset. |
 
 ## Open Source Development
