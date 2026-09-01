@@ -41,7 +41,7 @@ build:
         XAPPLRESDIR: /opt/mcr/R2023b/x11/app-defaults
 
     - run:
-        - cp {{ get_file("standalone_hMRItoolboxv0_6_1_zip") }} /opt/standalone-hMRItoolboxv1.0.0.zip
+        - cp {{ get_file("standalone_hMRItoolboxv1_0_0_zip") }} /opt/standalone-hMRItoolboxv1.0.0.zip
         - unzip -q /opt/standalone-hMRItoolboxv1.0.0.zip -d /opt
         - rm -f /opt/standalone-hMRItoolboxv1.0.0.zip
         - /opt/standalone-hMRItoolboxv1.0.0/spm12 function exit
@@ -77,5 +77,5 @@ gui_apps:
     exec: "bash run_spm12.sh /opt/mcr/R2023b fmri"
 
 files:
-  - name: standalone_hMRItoolboxv0_6_1_zip
+  - name: standalone_hMRItoolboxv1_0_0_zip
     url: https://github.com/hMRI-group/hMRI-toolbox/releases/download/v1.0.0/standalone-hMRItoolboxv1.0.0.zip
