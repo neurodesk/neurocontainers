@@ -1,5 +1,5 @@
 name: hmri
-version: 0.6.1
+version: 1.0.0
 
 copyright:
   - license: GPL-2.0
@@ -34,18 +34,18 @@ build:
         MCR_INHIBIT_CTF_LOCK: "1"
         MCR_UPDATE: "9"
         MCR_VERSION: R2023a
-        PATH: $PATH:/opt/standalone-hMRItoolboxv0.6.1
+        PATH: $PATH:/opt/standalone-hMRItoolboxv1.0.0
         SPM_HTML_BROWSER: "0"
         SPM_REVISION: r7771
         SPM_VERSION: "12"
         XAPPLRESDIR: /opt/mcr/R2023a/x11/app-defaults
 
     - run:
-        - cp {{ get_file("standalone_hMRItoolboxv0_6_1_zip") }} /opt/standalone-hMRItoolboxv0.6.1.zip
-        - unzip -q /opt/standalone-hMRItoolboxv0.6.1.zip -d /opt
-        - rm -f /opt/standalone-hMRItoolboxv0.6.1.zip
-        - /opt/standalone-hMRItoolboxv0.6.1/spm12 function exit
-        - chmod a+rx /opt/standalone-hMRItoolboxv0.6.1/ -R
+        - cp {{ get_file("standalone_hMRItoolboxv0_6_1_zip") }} /opt/standalone-hMRItoolboxv1.0.0.zip
+        - unzip -q /opt/standalone-hMRItoolboxv1.0.0.zip -d /opt
+        - rm -f /opt/standalone-hMRItoolboxv1.0.0.zip
+        - /opt/standalone-hMRItoolboxv1.0.0/spm12 function exit
+        - chmod a+rx /opt/standalone-hMRItoolboxv1.0.0/ -R
 
 deploy:
   bins:
@@ -78,4 +78,4 @@ gui_apps:
 
 files:
   - name: standalone_hMRItoolboxv0_6_1_zip
-    url: https://github.com/hMRI-group/hMRI-toolbox/releases/download/v0.6.1/standalone-hMRItoolboxv0.6.1.zip
+    url: https://github.com/hMRI-group/hMRI-toolbox/releases/download/v1.0.0/standalone-hMRItoolboxv1.0.0.zip
