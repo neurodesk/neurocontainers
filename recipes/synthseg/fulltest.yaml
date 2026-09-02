@@ -137,8 +137,8 @@ tests:
       assert label[\"general\"][\"id\"] == \"synthseg\"
       parameters = {parameter[\"id\"]: parameter for parameter in label[\"parameters\"]}
       assert parameters[\"ssusegpu\"][\"default\"] is False
-      assert parameters[\"ssautocrop\"][\"default\"] is True
       assert parameters[\"sscrop\"][\"default\"] == 0
+      assert len(label[\"parameters\"]) <= 14
       assert Path(\"/opt/code/python-ismrmrd-server/OpenReconREADME.md\").stat().st_size > 0
       print(\"openrecon assets ok, parameters:\", len(label[\"parameters\"]))
       "'

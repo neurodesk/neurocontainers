@@ -100,7 +100,6 @@ OPENRECON_DEFAULTS = {
     "ssparc": False,
     "ssfast": True,
     "ssusegpu": False,
-    "ssautocrop": True,
     "sscrop": 0,
     "ssthreads": 8,
     "ssvolumes": False,
@@ -561,16 +560,21 @@ def _resolve_synthseg_models(model: str, parcellation: bool, qc: bool) -> list[P
 
 
 def _resolve_synthseg_crop_options(
-    autocrop: bool,
     crop_size: int,
 ) -> tuple[bool, int]:
-    """Return a valid, mutually exclusive SynthSeg crop configuration."""
-    if crop_size < 0:
+    """Resolve the OpenRecon crop value to SynthSeg CLI options."""
+    if crop_size < -1:
         logging.warning(
-            "Invalid SynthSeg crop size %s requested. Disabling manual crop.",
+            "Invalid SynthSeg crop value %s requested. Disabling cropping.",
             crop_size,
         )
-        crop_size = 0
+        crop_size = -1
+
+    if crop_size == -1:
+        return False, 0
+
+    if crop_size == 0:
+        return True, 0
 
     if crop_size > 0 and crop_size % SYNTHSEG_CROP_MULTIPLE:
         requested_crop_size = crop_size
@@ -586,14 +590,7 @@ def _resolve_synthseg_crop_options(
             crop_size,
         )
 
-    if crop_size > 0 and autocrop:
-        logging.info(
-            "Manual SynthSeg crop size %s overrides automatic cropping.",
-            crop_size,
-        )
-        autocrop = False
-
-    return autocrop, crop_size
+    return False, crop_size
 
 
 def _build_synthseg_command(
@@ -3716,10 +3713,6 @@ def process_image(images, connection, config, metadata):
         fast = True
 
     use_gpu = boolean_checker("ssusegpu", default_val=OPENRECON_DEFAULTS["ssusegpu"])
-    autocrop = boolean_checker(
-        "ssautocrop",
-        default_val=OPENRECON_DEFAULTS["ssautocrop"],
-    )
     crop_size = int(
         mrdhelper.get_json_config_param(
             config,
@@ -3728,7 +3721,7 @@ def process_image(images, connection, config, metadata):
             type='int',
         )
     )
-    autocrop, crop_size = _resolve_synthseg_crop_options(autocrop, crop_size)
+    autocrop, crop_size = _resolve_synthseg_crop_options(crop_size)
     threads = int(
         mrdhelper.get_json_config_param(
             config,

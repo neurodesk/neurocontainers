@@ -311,11 +311,11 @@ def test_synthseg_crop_options_are_mutually_exclusive_and_aligned():
     helpers = _synthseg_command_helpers()
     resolve = helpers["_resolve_synthseg_crop_options"]
 
-    assert resolve(True, 0) == (True, 0)
-    assert resolve(False, 0) == (False, 0)
-    assert resolve(True, 192) == (False, 192)
-    assert resolve(True, 193) == (False, 224)
-    assert resolve(True, -1) == (True, 0)
+    assert resolve(-1) == (False, 0)
+    assert resolve(0) == (True, 0)
+    assert resolve(192) == (False, 192)
+    assert resolve(193) == (False, 224)
+    assert resolve(-2) == (False, 0)
 
 
 def test_synthseg_command_uses_autocrop_or_manual_crop():
