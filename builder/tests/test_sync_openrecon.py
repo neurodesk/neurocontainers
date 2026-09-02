@@ -76,6 +76,33 @@ def test_prepare_recipe_bootstraps_missing_target(tmp_path: Path) -> None:
     assert prepared.notes[0].startswith("- Create `recipes/demo`")
 
 
+def test_prepare_recipe_separates_two_part_container_and_openrecon_versions(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    (target / "params.sh").write_text(
+        "#!/bin/bash\n"
+        "export toolName=demo\n"
+        "export version=0.1\n"
+        "export baseDockerImage=vnmd/${toolName}_${version}\n",
+        encoding="utf-8",
+    )
+
+    prepared = sync_openrecon.prepare_recipe(
+        source_root, openrecon_root, "demo", "0.2"
+    )
+
+    assert prepared is not None
+    params = (target / "params.sh").read_text(encoding="utf-8")
+    assert "export version=0.2\n" in params
+    assert "export openrecon_version=0.2.0\n" in params
+    assert "export baseDockerImage=vnmd/${toolName}_${version}\n" in params
+
+
 def test_prepare_recipe_skips_recipes_without_openrecon_label(tmp_path: Path) -> None:
     source_root = tmp_path / "neurocontainers"
     (source_root / "recipes" / "demo").mkdir(parents=True)
