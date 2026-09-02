@@ -6,11 +6,11 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from jsonschema import Draft7Validator, ValidationError
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RECIPES_DIR = REPO_ROOT / "recipes"
@@ -56,6 +56,31 @@ def format_validation_error(error: ValidationError) -> str:
     return f"{path}: {error.message}"
 
 
+def validate_packaging_metadata(label: dict[str, Any]) -> list[str]:
+    """Validate metadata required by the downstream OpenRecon packager."""
+    parameters = label.get("parameters", [])
+    config_parameters = [
+        parameter for parameter in parameters if parameter.get("id") == "config"
+    ]
+    if len(config_parameters) != 1:
+        return [
+            (
+                "parameters: must contain exactly one parameter with id "
+                f'"config"; found {len(config_parameters)}'
+            )
+        ]
+
+    errors = []
+    config_parameter = config_parameters[0]
+    if config_parameter.get("type") != "choice":
+        errors.append('parameters: parameter "config" must have type "choice"')
+    if not config_parameter.get("values"):
+        errors.append(
+            'parameters: parameter "config" must define at least one choice value'
+        )
+    return errors
+
+
 def validate_label(
     label_path: Path,
     schema_path: Path = SCHEMA_PATH,
@@ -65,7 +90,8 @@ def validate_label(
     label = prepare_label_for_validation(load_json(label_path))
     validator = Draft7Validator(schema)
     errors = sorted(validator.iter_errors(label), key=lambda error: list(error.path))
-    return [format_validation_error(error) for error in errors]
+    schema_errors = [format_validation_error(error) for error in errors]
+    return schema_errors + validate_packaging_metadata(label)
 
 
 def validate_labels(
