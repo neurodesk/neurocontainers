@@ -16,6 +16,7 @@ import mrdhelper
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 ORIGINAL_SERIES_INDEX = 99
+PROCESSED_SERIES_INDEX = ORIGINAL_SERIES_INDEX + 1
 RGB_IMAGE_TYPE = 6
 DEFAULT_REPETITION_TIME_SECONDS = 1.0
 
@@ -56,6 +57,14 @@ def copy_original_images(images):
         images_out.append(copied_image)
 
     return images_out
+
+
+def get_processed_series_index(images):
+    used_series_indices = {int(image.image_series_index) for image in images}
+    series_index = PROCESSED_SERIES_INDEX
+    while series_index in used_series_indices:
+        series_index += 1
+    return series_index
 
 
 def process(connection, config, metadata):
@@ -381,6 +390,11 @@ def process_image(images, connection, config, metadata):
     }
     # The header determines the assembly of images not their order in
     # the output list.
+    processed_series_index = get_processed_series_index(images)
+    logging.info(
+        'Processed images use image_series_index=%d',
+        processed_series_index,
+    )
     out_idx = 0
     for stat in range(n_stats):
         for slice_position, slice_id in enumerate(slice_ids):
@@ -403,6 +417,7 @@ def process_image(images, connection, config, metadata):
             oldHeader = copy.deepcopy(head[header_index])
 
             oldHeader.data_type = imagesOut[out_idx].data_type
+            oldHeader.image_series_index = processed_series_index
             oldHeader.slice = slice_id
             oldHeader.repetition = stat
             oldHeader.image_index = out_idx + 1
