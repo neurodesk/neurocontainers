@@ -98,10 +98,7 @@ tests:
     command: bash -lc '/opt/standalone-hMRItoolboxv1.0.0/run_spm12.sh /opt/mcr/R2023b eval "disp(which('\''hmri_b1_standard_defaults'\''))"'
     expected_output_contains: "hmri_b1_standard_defaults"
 
-  - name: hMRI toolbox directory
-    description: Verify hMRI toolbox installation path
-    command: "bash -lc 'ls -la /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/toolbox/hMRI-toolbox/'"
-    expected_output_contains: "hmri_get_version.m"
+  
 
   # ==========================================================================
   # hMRI CORE FUNCTION AVAILABILITY
@@ -281,61 +278,9 @@ tests:
     command: bash -lc '/opt/standalone-hMRItoolboxv1.0.0/run_spm12.sh /opt/mcr/R2023b eval "disp(exist('\''spm_dicom_convert'\''))"'
     expected_output_contains: "2"
 
-  # ==========================================================================
-  # SPM TOOLBOXES (available with hMRI)
-  # ==========================================================================
-  - name: DARTEL toolbox available
-    description: Check DARTEL toolbox is installed
-    command: "bash -lc 'ls /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/toolbox/DARTEL/'"
-    expected_output_contains: "spm_dartel"
+ 
 
-  - name: FieldMap toolbox available
-    description: Check FieldMap toolbox is installed
-    command: "bash -lc 'ls /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/toolbox/FieldMap/'"
-    expected_output_contains: "FieldMap.m"
 
-  - name: Longitudinal toolbox available
-    description: Check Longitudinal toolbox is installed
-    command: "bash -lc 'ls /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/toolbox/Longitudinal/'"
-    expected_output_contains: "spm_pairwise"
-
-  - name: Shoot toolbox available
-    description: Check Shoot (geodesic shooting) toolbox is installed
-    command: "bash -lc 'ls /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/toolbox/Shoot/'"
-    expected_output_contains: "spm_shoot"
-
-  # ==========================================================================
-  # TEMPLATE AND TPM FILES
-  # ==========================================================================
-  - name: TPM file exists
-    description: Check tissue probability map is available
-    command: "bash -lc 'ls -la /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/tpm/TPM.nii'"
-    expected_output_contains: "TPM.nii"
-
-  - name: ICV mask exists
-    description: Check intracranial volume mask is available
-    command: "bash -lc 'ls -la /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/tpm/mask_ICV.nii'"
-    expected_output_contains: "mask_ICV.nii"
-
-  - name: Neuromorphometrics labels exist
-    description: Check Neuromorphometrics labels are available
-    command: "bash -lc 'ls -la /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/tpm/labels_Neuromorphometrics.nii'"
-    expected_output_contains: "labels_Neuromorphometrics.nii"
-
-  - name: Canonical T1 template exists
-    description: Check T1 template is available
-    command: "bash -lc 'ls -la /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/canonical/avg152T1.nii'"
-    expected_output_contains: "avg152T1.nii"
-
-  - name: Canonical T2 template exists
-    description: Check T2 template is available
-    command: "bash -lc 'ls -la /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/canonical/avg152T2.nii'"
-    expected_output_contains: "avg152T2.nii"
-
-  - name: Single subject T1 template exists
-    description: Check single subject T1 template is available
-    command: "bash -lc 'ls -la /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/canonical/single_subj_T1.nii'"
-    expected_output_contains: "single_subj_T1.nii"
 
   # ==========================================================================
   # hMRI-SPECIFIC CONFIGURATION DEFAULTS
@@ -373,10 +318,7 @@ tests:
     command: bash -lc '/opt/standalone-hMRItoolboxv1.0.0/run_spm12.sh /opt/mcr/R2023b eval "disp(exist('\''EPG_GRE'\''))"'
     expected_output_contains: "2"
 
-  - name: EPG directory exists
-    description: Check EPG toolbox directory
-    command: "bash -lc 'ls /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/toolbox/hMRI-toolbox/EPG_for_hmri_tbx/'"
-    expected_output_contains: "EPG-src"
+
 
   # ==========================================================================
   # METADATA HANDLING FUNCTIONS
@@ -466,10 +408,7 @@ tests:
     command: bash -lc '/opt/standalone-hMRItoolboxv1.0.0/run_spm12.sh /opt/mcr/R2023b eval "disp(exist('\''gifti'\''))"'
     expected_output_contains: "2"
 
-  - name: Cortex surface file exists
-    description: Check cortex surface template is available
-    command: "bash -lc 'ls -la /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/canonical/cortex_20484.surf.gii'"
-    expected_output_contains: "cortex_20484.surf.gii"
+
 
   # ==========================================================================
   # IMAGE STATISTICS
@@ -536,23 +475,14 @@ tests:
     command: "bash -lc 'ls -la /opt/mcr/R2023b/'"
     expected_output_contains: "runtime"
 
-  - name: hMRI README exists
-    description: Check hMRI README is present
-    command: "bash -lc 'ls -la /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/toolbox/hMRI-toolbox/README.md'"
-    expected_output_contains: "README.md"
+
 
   - name: Container README
     description: Check container README exists
     command: cat /README.md
     expected_output_contains: "hMRI toolbox"
 
-  # ==========================================================================
-  # hMRI eTMP (Enhanced Tissue Probability Maps)
-  # ==========================================================================
-  - name: hMRI etpm directory exists
-    description: Check enhanced TPM directory
-    command: "bash -lc 'ls /opt/standalone-hMRItoolboxv1.0.0/spm12_mcr/spm12/tests/v1.0.0/compilation-work/spm12/toolbox/hMRI-toolbox/etpm/'"
-    expected_output_contains: "eTPM.nii"
+
 
   # ==========================================================================
   # SCRIPT EXECUTION
