@@ -199,7 +199,7 @@ def detect_release_pr_changes(
             continue
 
         recipe = match.group(1)
-        if recipe in entries:
+        if any(entry.recipe == recipe for entry in entries.values()):
             continue
         # A build.yaml change is tested against the exact newly built candidate
         # by PR container candidate. Retesting the previous published image here

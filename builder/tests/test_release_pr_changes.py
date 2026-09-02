@@ -138,6 +138,7 @@ def test_release_metadata_can_be_paired_with_fulltest_yaml(tmp_path: Path) -> No
 
 
 def test_named_variant_release_uses_source_recipe_test_suite(tmp_path: Path) -> None:
+    write_release(tmp_path, "spinalcordtoolbox", "7.3.1", build_date="20260520")
     release = write_release(
         tmp_path,
         "spinalcordtoolbox_gpu",
@@ -146,7 +147,10 @@ def test_named_variant_release_uses_source_recipe_test_suite(tmp_path: Path) -> 
     )
 
     result = detect_release_pr_changes(
-        ["releases/spinalcordtoolbox_gpu/7.3.2.json"],
+        [
+            "releases/spinalcordtoolbox_gpu/7.3.2.json",
+            "recipes/spinalcordtoolbox/fulltest.yaml",
+        ],
         repo_root=tmp_path,
     )
 
