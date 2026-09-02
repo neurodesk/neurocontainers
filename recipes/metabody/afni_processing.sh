@@ -62,18 +62,18 @@ while true; do
     esac
 done
 
-mkdir -p $OUTPUT
-tmp_dir="/tmp/afni"
-mkdir -p $tmp_dir
+mkdir -p "$OUTPUT"
+tmp_dir=$(mktemp -d /tmp/metabody-afni.XXXXXX)
+trap 'rm -rf "$tmp_dir"' EXIT
 
 # For getting back here at the end.
-orig_pwd=$PWD
+orig_pwd="$PWD"
 
 # apply 3dTcat to copy input dsets to temp dir,
 # while removing the first 0 TRs
 echo "${INPUT}[${SKIP_TRS}..$]"
-3dTcat -prefix $tmp_dir/pb00.r01.tcat  "${INPUT}[${SKIP_TRS}..$]"
-cd $tmp_dir
+3dTcat -prefix "$tmp_dir/pb00.r01.tcat" "${INPUT}[${SKIP_TRS}..$]"
+cd "$tmp_dir"
 
 echo "Running despiking..."
 # apply 3dDespike to each run
@@ -176,7 +176,6 @@ echo "Done."
 
 3dAFNItoNIFTI -prefix output_image.nii pb01.r01.volreg+orig
 
-cd $orig_pwd
-cp $tmp_dir/stats.nii $OUTPUT/stats.nii
-cp $tmp_dir/output_image.nii $OUTPUT/output_image.nii
-rm -r $tmp_dir
+cd "$orig_pwd"
+cp "$tmp_dir/stats.nii" "$OUTPUT/stats.nii"
+cp "$tmp_dir/output_image.nii" "$OUTPUT/output_image.nii"

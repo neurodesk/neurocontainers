@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.14.0
+version: 9.15.0
 
 test_data:
   output_dir: test_output

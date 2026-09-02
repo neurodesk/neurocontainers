@@ -53,20 +53,18 @@ adapter; for example, `t2_swi_tra_wave4_2mm` does not provide the required
 unfiltered phase data and should not be used for QSMxT. Start from a plain GRE
 sequence instead, and enable both phase and magnitude reconstruction.
 
-QSM processing selects WH-QSM:
+OpenRecon selects WH-QSM explicitly:
 
 ```text
 qsmxt run <bids_dir> --qsm-algorithm whqsm
 ```
 
-The OpenRecon wrapper also supplies the output directory, resource settings,
-and algorithm defaults to the command. The default pipeline uses ROMEO for
-phase unwrapping, V-SHARP for background-field removal, and WH-QSM for QSM
-inversion. This combination provides the best balance of accuracy,
-reproducibility, and resource use for inline OpenRecon processing. Only the QSM
-map is returned by default, and masking uses the robust-threshold preset. Enable
-`sendoriginal` only when the original magnitude and phase series are needed for
-debugging.
+The OpenRecon wrapper also supplies the output directory and resource settings.
+Its custom-pipeline defaults are ROMEO phase unwrapping, V-SHARP background-field
+removal, WH-QSM inversion, and robust-threshold masking. This differs from the
+upstream QSMxT inversion default, which is RTS. Only the QSM map is returned by
+default. Enable `sendoriginal` only when the original magnitude and phase series
+are needed for debugging.
 
 ### Pipeline presets
 
@@ -75,9 +73,14 @@ algorithm combinations. A pipeline preset overrides **QSM algorithm**,
 **Unwrap**, and **Background**. Select **Custom algorithm controls** to use those
 three selection boxes. The custom default remains ROMEO, V-SHARP, and WH-QSM.
 
-Lower inter-scanner error and runtime are better. Higher xSIM is better.
+Treat these measurements as results from the scanner test used for this adapter,
+not as universal rankings. Lower inter-scanner error and runtime are better.
+Inter-scanner error measures disagreement between the tested scanner outputs.
+Higher [XSIM](https://doi.org/10.1002/mrm.30271), a structural-similarity metric
+tuned for QSM, is better. Runtime will vary with the acquisition and host
+hardware.
 
-| # | Pipeline preset | Preset id | Inter-scanner error | xSIM | Runtime |
+| # | Pipeline preset | Preset id | Inter-scanner error | XSIM | Runtime |
 | --- | --- | --- | ---: | ---: | ---: |
 | 1 | ROMEO + RESHARP + RTS | `romeo-resharp-rts` | 3.7% | 0.293 | 59 s |
 | 2 | ROMEO + iSMV + HD-QSM | `romeo-ismv-hdqsm` | 4.6% | 0.361 | 78 s |
@@ -93,12 +96,78 @@ Lower inter-scanner error and runtime are better. Higher xSIM is better.
 Each preset passes the corresponding `--unwrapping-algorithm`,
 `--bf-algorithm`, and `--qsm-algorithm` values to `qsmxt run`.
 
-## Input Data
+### Custom algorithm controls
+
+The following tables cover every algorithm value exposed by this OpenRecon
+adapter. QSMxT itself may support additional algorithms that are not present in
+the scanner selection boxes. See the [QSMxT algorithm
+reference](https://qsmxt.github.io/QSMxT/reference/algorithms/) for the upstream
+list and method references.
+
+`Default` is not a separate algorithm. With the custom pipeline it resolves to
+the OpenRecon default named in each table.
+
+The stages solve different parts of the reconstruction. Unwrapping removes
+phase jumps, background-field removal isolates the local tissue field, and QSM
+inversion estimates susceptibility from that field. The mask defines which
+voxels enter those calculations.
+
+| QSM algorithm | Method |
+| --- | --- |
+| `default` | Use the OpenRecon default, WH-QSM. |
+| `whqsm` | Weak-Harmonic QSM. |
+| `hdqsm` | Hybrid data-fidelity QSM. |
+| `rts` | Rapid Two-Step inversion. |
+| `tv` | Total Variation inversion solved with ADMM. |
+| `tkd` | Thresholded K-space Division. |
+| `tsvd` | Truncated Singular Value Decomposition. |
+| `tgv` | Total Generalized Variation. |
+| `tikhonov` | Tikhonov-regularized inversion. |
+| `nltv` | Nonlinear Total Variation. |
+| `medi` | Morphology Enabled Dipole Inversion. |
+| `ilsqr` | iLSQR inversion. |
+| `qsmart` | QSMART two-stage reconstruction. |
+
+| Unwrap algorithm | Method |
+| --- | --- |
+| `default` | Use the OpenRecon default, ROMEO. |
+| `romeo` | Rapid Opensource Minimum Spanning TreE AlgOrithm. |
+| `laplacian` | Laplacian phase unwrapping. |
+
+| Background algorithm | Method |
+| --- | --- |
+| `default` | Use the OpenRecon default, V-SHARP. |
+| `vsharp` | Variable-kernel SHARP. |
+| `pdf` | Projection onto Dipole Fields. |
+| `lbv` | Laplacian Boundary Value. |
+| `ismv` | Iterative Spherical Mean Value. |
+| `sharp` | Sophisticated Harmonic Artifact Reduction for Phase data. |
+| `resharp` | Regularization-enabled SHARP. |
+
+| Mask preset | Method |
+| --- | --- |
+| `default` | Use the QSMxT default, robust threshold. |
+| `robust-threshold` | Otsu thresholding of the phase-quality map, followed by dilation, hole filling, and erosion. |
+| `bet` | Brain Extraction Tool masking of the magnitude image. |
+
+The mask preset remains active when an algorithm pipeline preset is selected;
+the pipeline preset only overrides unwrapping, background removal, and QSM
+inversion. OpenRecon uses QSMxT's default parameters for the selected methods.
+
+## Input data
 
 Use a plain GRE acquisition with unfiltered phase and magnitude outputs enabled.
 Do not use filtered SWI phase images as QSMxT input.
 
-## UI Parameters
+An [example Siemens 3 T GRE protocol
+(`gre_qsm.pro`)](https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/qsmxt/gre_qsm.pro)
+is included as a starting point. It acquires five echoes at 5, 10, 15, 20, and
+25 ms. Its saved OpenRecon settings use ROMEO, PDF, and RTS with robust-threshold
+masking, return the QSM map, and also send the original magnitude and phase
+series. These saved settings differ from the current OpenRecon defaults above.
+Review all acquisition and safety settings on the target scanner before use.
+
+## UI parameters
 
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
@@ -106,12 +175,12 @@ Do not use filtered SWI phase images as QSMxT input.
 | Output maps | `sendoutputs` | choice | `qsm` | Selects which QSMxT derivatives are sent back. |
 | Send original | `sendoriginal` | boolean | `false` | Sends original magnitude and phase image series before derived outputs. |
 | Pipeline preset | `pipelinepreset` | choice | `custom` | Selects a three-stage algorithm preset or the custom algorithm controls. |
-| QSM algorithm | `qsmalgorithm` | choice | `whqsm` | QSMxT inversion algorithm. |
-| Unwrap | `unwrappingalgorithm` | choice | `romeo` | QSMxT phase-unwrapping algorithm. |
-| Background | `bfalgorithm` | choice | `vsharp` | QSMxT background-field removal algorithm. |
-| Mask preset | `maskpreset` | choice | `robust-threshold` | QSMxT masking preset. |
+| QSM algorithm | `qsmalgorithm` | choice | `whqsm` | Inversion algorithm for the custom pipeline. |
+| Unwrap | `unwrappingalgorithm` | choice | `romeo` | Phase-unwrapping algorithm for the custom pipeline. |
+| Background | `bfalgorithm` | choice | `vsharp` | Background-field removal algorithm for the custom pipeline. |
+| Mask preset | `maskpreset` | choice | `robust-threshold` | Masking method, independent of the pipeline preset. |
 
-## Open Source Development
+## Open source development
 
 The source for this OpenRecon package is in the NeuroContainers repository:
 https://github.com/NeuroDesk/neurocontainers/tree/main/recipes/qsmxt

@@ -1,4 +1,5 @@
 import importlib.util
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -38,7 +39,12 @@ def load_nifti2mrd_module():
     return module
 
 
-def make_image(slice_id: int, repetition_id: int, value: float):
+def make_image(
+    slice_id: int,
+    repetition_id: int,
+    value: float,
+    repetition_time_ms: float | None = None,
+):
     image = ismrmrd.Image.from_array(
         np.full((2, 3), value, dtype=np.float32), transpose=False
     )
@@ -54,6 +60,8 @@ def make_image(slice_id: int, repetition_id: int, value: float):
     metadata = ismrmrd.Meta()
     metadata["PixelSpacing"] = ["1", "1"]
     metadata["SliceThickness"] = "1"
+    if repetition_time_ms is not None:
+        metadata["RepetitionTime"] = str(repetition_time_ms)
     image.attribute_string = metadata.serialize()
     return image
 
@@ -99,6 +107,62 @@ def test_sparse_counters_use_dense_stacking_and_slice_headers(monkeypatch):
     assert all(image.image_series_index == 99 for image in original_output)
     assert all(image.image_series_index == 12 for image in images)
     assert [image.attribute_string for image in images] == original_attributes
+
+
+def test_afni_failure_returns_originals_and_preserves_image_tr(monkeypatch):
+    metabody = load_metabody_module()
+    images = [
+        make_image(0, 0, 10, repetition_time_ms=2000),
+        make_image(0, 1, 11, repetition_time_ms=2000),
+    ]
+    saved_images = []
+    commands = []
+    monkeypatch.setattr(
+        metabody.nib,
+        "save",
+        lambda image, _path: saved_images.append(image),
+    )
+
+    def fail_afni(command, **kwargs):
+        commands.append((command, kwargs))
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(metabody.subprocess, "run", fail_afni)
+    monkeypatch.setattr(
+        metabody,
+        "show_stats",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("show_stats must not run after AFNI fails")
+        ),
+    )
+
+    output = metabody.process_image(
+        images,
+        None,
+        {"sendOriginal": True, "colormap": "none"},
+        None,
+    )
+
+    assert len(output) == len(images)
+    assert all(cloned is not source for cloned, source in zip(output, images))
+    assert all(image.image_series_index == 99 for image in output)
+    assert [image.image_series_index for image in images] == [12, 12]
+    assert commands == [
+        (
+            [
+                "/opt/code/afni_processing.sh",
+                "--input",
+                "nifti_from_h5.nii",
+                "--output",
+                "output_afni",
+                "--tr",
+                "2",
+            ],
+            {"check": True},
+        )
+    ]
+    assert saved_images[0].header.get_zooms()[-1] == 2
+    assert saved_images[0].header.get_xyzt_units() == ("mm", "sec")
 
 
 def test_nifti_converter_writes_3d_images_and_header(tmp_path):

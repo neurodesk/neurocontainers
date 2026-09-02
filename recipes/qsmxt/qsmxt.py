@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import base64
 import copy
+import hashlib
 import json
 import logging
 import os
 import re
 import subprocess
 import tempfile
+import time
 import traceback
 import uuid
 from pathlib import Path
@@ -130,7 +132,8 @@ QSMXT_OUTPUTS = {
         "units": "binary",
     },
     "magnitude": {
-        "suffix": "magnitude",
+        "suffix": "CombinedMagnitude",
+        "fallback_suffixes": ("magnitude",),
         "token": "QSMXT_MAGNITUDE",
         "series": "QSMxT magnitude",
         "units": "a.u.",
@@ -230,6 +233,7 @@ def process(connection, config, metadata):
 
             conversion = write_bids_dataset(input_images, metadata, bids_dir, settings)
             _run_qsmxt(bids_dir, output_dir, settings)
+            _log_qsmxt_nifti_diagnostics(output_dir)
             output_specs = _find_qsmxt_outputs(output_dir, conversion, settings)
             output_images = _build_output_images(output_specs, conversion, input_images)
 
@@ -260,7 +264,18 @@ def process(connection, config, metadata):
 
 def write_bids_dataset(input_images, metadata, bids_dir, settings):
     series_groups = _group_images_by_series(input_images)
+    _log_source_series_diagnostics(series_groups)
     magnitude_group, phase_group = _select_magnitude_phase_groups(series_groups)
+    logging.info(
+        "QSMxT diagnostic selected input pair: magnitude=%r series_index=%d "
+        "order=%d, phase=%r series_index=%d order=%d",
+        magnitude_group["name"],
+        int(magnitude_group["key"][0]),
+        magnitude_group["order"],
+        phase_group["name"],
+        int(phase_group["key"][0]),
+        phase_group["order"],
+    )
     magnitude_echo_groups = _echo_image_groups(magnitude_group["images"])
     phase_echo_groups = _echo_image_groups(phase_group["images"])
 
@@ -335,6 +350,22 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
             kind="phase",
         )
         phase_volume = _phase_to_qsmxt_counts(phase_volume, settings["phase_wrap"])
+        _log_array_diagnostics(
+            f"BIDS magnitude echo={echo_number}",
+            mag_volume,
+        )
+        _log_array_diagnostics(
+            f"BIDS phase echo={echo_number}",
+            phase_volume,
+        )
+        logging.info(
+            "QSMxT diagnostic BIDS geometry echo=%d: magnitude_affine=%s, "
+            "phase_affine=%s, max_abs_difference=%.6g",
+            echo_number,
+            np.array2string(affine, precision=6, separator=","),
+            np.array2string(phase_affine, precision=6, separator=","),
+            float(np.max(np.abs(np.asarray(affine) - np.asarray(phase_affine)))),
+        )
         if mag_volume.shape != phase_volume.shape:
             raise ValueError(
                 "Magnitude and phase echo volumes have different shapes for "
@@ -442,12 +473,18 @@ def _run_qsmxt(bids_dir, output_dir, settings):
         cmd.append("--no-inhomogeneity-correction")
 
     logging.info("Running QSMxT: %s", " ".join(cmd))
+    started_at = time.monotonic()
     result = subprocess.run(
         cmd,
         check=False,
         text=True,
         capture_output=True,
         cwd=str(bids_dir),
+    )
+    logging.info(
+        "QSMxT diagnostic command result: returncode=%d elapsed_seconds=%.3f",
+        result.returncode,
+        time.monotonic() - started_at,
     )
     if result.stdout:
         logging.info("QSMxT stdout:\n%s", result.stdout)
@@ -468,7 +505,20 @@ def _find_qsmxt_outputs(output_dir, conversion, settings):
     specs = []
     for output_id in selected:
         spec = QSMXT_OUTPUTS[output_id]
-        candidates = sorted(derivative_anat_dir.glob(f"*_{spec['suffix']}.nii*"))
+        suffixes = (spec["suffix"], *spec.get("fallback_suffixes", ()))
+        candidates = sorted(
+            {
+                candidate
+                for suffix in suffixes
+                for candidate in derivative_anat_dir.glob(f"*_{suffix}.nii*")
+            }
+        )
+        logging.info(
+            "QSMxT diagnostic output candidates: output=%s suffixes=%s files=%s",
+            output_id,
+            list(suffixes),
+            [str(candidate) for candidate in candidates],
+        )
         if not candidates:
             logging.info(
                 "Requested QSMxT output %s not found in %s",
@@ -476,8 +526,38 @@ def _find_qsmxt_outputs(output_dir, conversion, settings):
                 derivative_anat_dir,
             )
             continue
+        if len(candidates) > 1:
+            logging.warning(
+                "Multiple QSMxT files match requested output %s; using %s from %s",
+                output_id,
+                candidates[0],
+                [str(candidate) for candidate in candidates],
+            )
         specs.append((output_id, spec, candidates[0]))
     return specs
+
+
+def _log_qsmxt_nifti_diagnostics(output_dir):
+    paths = sorted(
+        set(output_dir.rglob("*.nii")) | set(output_dir.rglob("*.nii.gz"))
+    )
+    logging.info(
+        "QSMxT diagnostic generated NIfTI inventory: root=%s count=%d",
+        output_dir,
+        len(paths),
+    )
+    for path in paths:
+        try:
+            nifti = nib.load(str(path))
+            data = np.asarray(nifti.get_fdata(dtype=np.float32), dtype=np.float32)
+            relative_path = path.relative_to(output_dir)
+            _log_array_diagnostics(f"QSMxT NIfTI path={relative_path}", data)
+        except Exception as error:
+            logging.warning(
+                "QSMxT diagnostic could not inspect NIfTI %s: %s",
+                path,
+                error,
+            )
 
 
 def _build_output_images(output_specs, conversion, input_images):
@@ -1416,6 +1496,76 @@ def _group_images_by_series(images):
     return groups
 
 
+def _log_source_series_diagnostics(groups):
+    for group in groups:
+        echo_groups = _echo_image_groups(group["images"])
+        for echo_index, echo_images in enumerate(echo_groups, start=1):
+            first_image = echo_images[0]
+            first_meta = _meta_from_image(first_image)
+            values = np.concatenate(
+                [np.asarray(image.data).reshape(-1) for image in echo_images]
+            )
+            label = (
+                f"source series name={group['name']!r} "
+                f"series_index={int(group['key'][0])} kind={group['kind']} "
+                f"order={group['order']} echo={echo_index}/{len(echo_groups)} "
+                f"images={len(echo_images)} image_shape={np.asarray(first_image.data).shape} "
+                f"rescale_slope={_meta_text(first_meta, 'RescaleSlope') or 'unset'} "
+                f"rescale_intercept={_meta_text(first_meta, 'RescaleIntercept') or 'unset'} "
+                f"rescale_type={_meta_text(first_meta, 'RescaleType') or 'unset'}"
+            )
+            _log_array_diagnostics(label, values)
+
+
+def _log_array_diagnostics(label, values):
+    array = np.asarray(values)
+    numeric = np.abs(array) if np.iscomplexobj(array) else array
+    finite = np.asarray(numeric[np.isfinite(numeric)], dtype=np.float64)
+    digest = hashlib.sha256()
+    digest.update(np.ascontiguousarray(array).view(np.uint8))
+
+    if finite.size:
+        value_min = float(np.min(finite))
+        value_max = float(np.max(finite))
+        value_mean = float(np.mean(finite))
+        value_std = float(np.std(finite))
+        nonzero = int(np.count_nonzero(finite))
+        sample_step = max(1, finite.size // 262144)
+        percentile_sample = finite[::sample_step]
+        percentiles = np.percentile(
+            percentile_sample,
+            [1.0, 50.0, 95.0, 99.0, 99.9],
+        )
+    else:
+        value_min = value_max = value_mean = value_std = float("nan")
+        nonzero = 0
+        percentiles = np.full(5, np.nan)
+
+    logging.info(
+        "QSMxT diagnostic %s: shape=%s dtype=%s finite=%d/%d nonzero=%d "
+        "min=%.9g p01=%.9g p50=%.9g p95=%.9g p99=%.9g p99.9=%.9g "
+        "max=%.9g mean=%.9g std=%.9g sha256=%s",
+        label,
+        array.shape,
+        array.dtype,
+        finite.size,
+        array.size,
+        nonzero,
+        value_min,
+        *percentiles,
+        value_max,
+        value_mean,
+        value_std,
+        digest.hexdigest()[:16],
+    )
+    if finite.size and value_min == value_max:
+        logging.warning(
+            "QSMxT diagnostic constant array: %s value=%.9g",
+            label,
+            value_min,
+        )
+
+
 def _select_magnitude_phase_groups(groups):
     magnitude_groups = [group for group in groups if group["kind"] == "magnitude"]
     phase_groups = [group for group in groups if group["kind"] == "phase"]
@@ -1669,7 +1819,12 @@ def _output_meta(
         slice_index,
     )
     image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
-    center, width = _window_center_width(physical_data)
+    center, width = _window_center_width(
+        [
+            display_meta["scale_input_min"],
+            display_meta["scale_input_max"],
+        ]
+    )
     if slice_number is None:
         slice_number = slice_index
     slice_number = str(int(slice_number))

@@ -1,4 +1,5 @@
 import base64
+import logging
 import stat
 import sys
 import textwrap
@@ -512,6 +513,82 @@ def test_scanner_display_volume_ignores_sparse_t2star_fit_outlier_for_scaling():
     assert meta["scale"] == 10000.0
     assert meta["clipped_voxels"] == 1
     assert meta["input_max"] == 10000.0
+
+
+def test_output_meta_uses_robust_t2star_range_for_window():
+    source = _image(
+        1,
+        1,
+        "gre_qsm",
+        np.ones((1, 10, 10), dtype=np.float32),
+    )
+    physical = np.full((10, 10, 10), 0.05, dtype=np.float32)
+    physical[0, 0, 0] = 10000.0
+    _, display_meta = qsmxt._scanner_display_volume(physical, "t2star", "s")
+
+    meta = qsmxt._output_meta(
+        source,
+        source.getHead(),
+        qsmxt.OUTPUT_SERIES_START,
+        "QSMxT T2star",
+        "QSMXT_T2STAR",
+        "t2star",
+        "s",
+        physical,
+        Path("/tmp/t2star.nii.gz"),
+        0,
+        10,
+        display_meta,
+    )
+
+    assert float(meta["WindowCenter"]) == 0.025
+    assert float(meta["WindowWidth"]) == 0.05
+
+
+def test_find_qsmxt_outputs_accepts_v9_combined_magnitude_name(tmp_path):
+    anat_dir = tmp_path / "output" / "derivatives" / "qsmxt" / "sub-01" / "anat"
+    anat_dir.mkdir(parents=True)
+    combined_magnitude = anat_dir / "sub-01_acq-greqsm_CombinedMagnitude.nii"
+    nib.save(
+        nib.Nifti1Image(np.ones((2, 2, 2), dtype=np.float32), np.eye(4)),
+        combined_magnitude,
+    )
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"sendoutputs": "magnitude"}},
+        FakeMetadata(),
+    )
+
+    specs = qsmxt._find_qsmxt_outputs(
+        tmp_path / "output",
+        {"subject": "01"},
+        settings,
+    )
+
+    assert specs[0][2] == combined_magnitude
+
+
+def test_write_bids_dataset_logs_source_and_written_volume_statistics(
+    tmp_path,
+    caplog,
+):
+    caplog.set_level(logging.INFO)
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"echotimesms": "10,20"}},
+        FakeMetadata(),
+    )
+
+    qsmxt.write_bids_dataset(
+        _input_images(),
+        FakeMetadata(),
+        tmp_path / "bids",
+        settings,
+    )
+
+    assert "QSMxT diagnostic source series" in caplog.text
+    assert "QSMxT diagnostic selected input pair" in caplog.text
+    assert "QSMxT diagnostic BIDS magnitude echo=1" in caplog.text
+    assert "QSMxT diagnostic BIDS phase echo=1" in caplog.text
+    assert "sha256=" in caplog.text
 
 
 def test_write_bids_dataset_pairs_magnitude_and_phase(tmp_path):

@@ -17,6 +17,46 @@ import mrdhelper
 debugFolder = "/tmp/share/debug"
 ORIGINAL_SERIES_INDEX = 99
 RGB_IMAGE_TYPE = 6
+DEFAULT_REPETITION_TIME_SECONDS = 1.0
+
+
+def get_repetition_time_seconds(image_meta):
+    repetition_time_ms = image_meta.get('RepetitionTime')
+    if isinstance(repetition_time_ms, (list, tuple)):
+        repetition_time_ms = repetition_time_ms[0] if repetition_time_ms else None
+
+    try:
+        repetition_time_seconds = float(repetition_time_ms) / 1000
+    except (TypeError, ValueError):
+        logging.warning(
+            'RepetitionTime is missing or invalid; using %.3f seconds',
+            DEFAULT_REPETITION_TIME_SECONDS,
+        )
+        return DEFAULT_REPETITION_TIME_SECONDS
+
+    if repetition_time_seconds <= 0:
+        logging.warning(
+            'RepetitionTime must be positive; using %.3f seconds',
+            DEFAULT_REPETITION_TIME_SECONDS,
+        )
+        return DEFAULT_REPETITION_TIME_SECONDS
+
+    return repetition_time_seconds
+
+
+def copy_original_images(images):
+    images_out = []
+    for image in images:
+        copied_image = copy.deepcopy(image)
+        copied_image.image_series_index = ORIGINAL_SERIES_INDEX
+
+        copied_meta = ismrmrd.Meta.deserialize(copied_image.attribute_string)
+        copied_meta['Keep_image_geometry'] = 1
+        copied_image.attribute_string = copied_meta.serialize()
+        images_out.append(copied_image)
+
+    return images_out
+
 
 def process(connection, config, metadata):
     logging.info("Config: \n%s", config)
@@ -229,16 +269,45 @@ def process_image(images, connection, config, metadata):
     logging.debug("Voxel size from metadata: %s" % (meta_voxelsize,))
     logging.debug("Voxel size from FoV: %s" % (voxelsize,))
 
+    repetition_time_seconds = get_repetition_time_seconds(meta[0])
     new_img = nib.nifti1.Nifti1Image(data, affine=affine)
+    zooms = list(new_img.header.get_zooms())
+    zooms[3] = repetition_time_seconds
+    new_img.header.set_zooms(zooms)
+    new_img.header.set_xyzt_units(xyz='mm', t='sec')
     nib.save(new_img, 'nifti_from_h5.nii')
     logging.info('Saved NIfTI image for AFNI processing')
 
     ## WRITE AFNI SCRIPTS HERE!!!!
     logging.info('Running AFNI processing')
-    subprocess.run(["/opt/code/afni_processing.sh", "--input", "nifti_from_h5.nii", "--output", "output_afni"])
+    try:
+        subprocess.run(
+            [
+                "/opt/code/afni_processing.sh",
+                "--input",
+                "nifti_from_h5.nii",
+                "--output",
+                "output_afni",
+                "--tr",
+                f"{repetition_time_seconds:g}",
+            ],
+            check=True,
+        )
 
-    logging.info('Running image transformation for showing stats')
-    stat_labels, stat_img = show_stats('output_afni/output_image.nii', 'output_afni/stats.nii')
+        logging.info('Running image transformation for showing stats')
+        stat_labels, stat_img = show_stats(
+            'output_afni/output_image.nii',
+            'output_afni/stats.nii',
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        logging.error('AFNI processing failed:\n%s', traceback.format_exc())
+        if send_originals:
+            logging.warning(
+                'Returning original images because AFNI produced no output'
+            )
+            return copy_original_images(images)
+        raise
+
     stat_data = stat_img.get_fdata()
 
     logging.info("Config: \n%s", config)
@@ -395,25 +464,11 @@ def process_image(images, connection, config, metadata):
 
     # Send a copy of original (unmodified) images back too
     if send_originals:
-        stack = traceback.extract_stack()
-        if stack[-2].name == 'process_raw':
-            logging.warning('sendOriginal is true, but input was raw data, so no original images to return!')
-        else:
-            logging.info('Sending a copy of original unmodified images due to sendOriginal set to True')
-            # In reverse order so that they'll be in correct order as we insert them to the front of the list
-            for image in reversed(images):
-                # Create a copy to not modify the original inputs
-                tmpImg = copy.deepcopy(image)
-
-                # Change the series_index to have a different series
-                tmpImg.image_series_index = ORIGINAL_SERIES_INDEX
-
-                # Ensure Keep_image_geometry is set to not reverse image orientation
-                tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
-                tmpMeta['Keep_image_geometry'] = 1
-                tmpImg.attribute_string = tmpMeta.serialize()
-
-                imagesOut.insert(0, tmpImg)
+        logging.info(
+            'Sending a copy of original unmodified images due to '
+            'sendOriginal set to True'
+        )
+        imagesOut = copy_original_images(images) + imagesOut
 
     n_out_imgs = len(imagesOut)
     x_not_same = np.any(np.diff(image_details['x']) != 0)
