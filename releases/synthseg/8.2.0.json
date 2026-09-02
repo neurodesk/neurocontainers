@@ -1,7 +1,7 @@
 {
   "apps": {
     "synthseg 8.2.0": {
-      "version": "20260730",
+      "version": "20260805",
       "exec": "",
       "apptainer_args": []
     }
