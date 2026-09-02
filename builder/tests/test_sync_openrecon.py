@@ -13,7 +13,19 @@ def write_source_recipe(root: Path, recipe: str = "demo") -> None:
     (recipe_dir / "OpenReconLabel.json").write_text(
         '{"general": {"id": "demo"}}\n', encoding="utf-8"
     )
+    (recipe_dir / "OpenReconLabel.gpu.json").write_text(
+        '{"general": {"id": "demo_gpu"}}\n', encoding="utf-8"
+    )
     (recipe_dir / "OpenReconREADME.md").write_text("# Demo\n", encoding="utf-8")
+    (recipe_dir / "build.yaml").write_text(
+        "name: demo\n"
+        "architectures:\n"
+        "  - x86_64\n"
+        "variants:\n"
+        "  gpu:\n"
+        "    architecture: x86_64\n",
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.parametrize(
@@ -101,6 +113,36 @@ def test_prepare_recipe_separates_two_part_container_and_openrecon_versions(
     assert "export version=0.2\n" in params
     assert "export openrecon_version=0.2.0\n" in params
     assert "export baseDockerImage=vnmd/${toolName}_${version}\n" in params
+
+
+def test_prepare_recipe_resolves_named_variant_to_concrete_container(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+
+    prepared = sync_openrecon.prepare_recipe(
+        source_root,
+        openrecon_root,
+        "demo",
+        "1.2.3",
+        variant="gpu",
+    )
+
+    assert prepared is not None
+    target = openrecon_root / "recipes" / "demo_gpu"
+    assert (target / "OpenReconLabel.json").read_text(encoding="utf-8") == (
+        '{"general": {"id": "demo_gpu"}}\n'
+    )
+    assert "export toolName=demo_gpu" in (target / "params.sh").read_text(
+        encoding="utf-8"
+    )
+    assert prepared.paths == (
+        "recipes/demo_gpu/OpenReconLabel.json",
+        "recipes/demo_gpu/params.sh",
+        "recipes/demo_gpu/README.md",
+    )
 
 
 def test_prepare_recipe_skips_recipes_without_openrecon_label(tmp_path: Path) -> None:

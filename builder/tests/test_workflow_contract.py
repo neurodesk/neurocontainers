@@ -169,10 +169,11 @@ def test_candidate_promotion_syncs_openrecon_from_verified_manifests() -> None:
     assert promote_workflow.index(sync_step) > promote_workflow.index(release_step)
     sync_body = promote_workflow.split(sync_step, 1)[1]
     assert "NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION" in sync_body
-    assert 'select(.architecture == "x86_64" and .variant == "")' in sync_body
+    assert 'select(.architecture == "x86_64")' in sync_body
     assert 'recipe="$(echo "${manifest}" | jq -r \'.recipe\')"' in sync_body
+    assert 'variant="$(echo "${manifest}" | jq -r \'.variant\')"' in sync_body
     assert 'version="$(echo "${manifest}" | jq -r \'.version\')"' in sync_body
-    assert 'python tools/sync_openrecon.py --recipe "${recipe}" --version "${version}"' in sync_body
+    assert '--recipe "${recipe}" --variant "${variant}" --version "${version}"' in sync_body
 
 
 def test_candidate_promotion_waits_for_exact_candidate_before_using_arc() -> None:

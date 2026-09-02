@@ -158,6 +158,7 @@ def cmd_release(args: argparse.Namespace) -> int:
         date,
         compiled.architecture,
         compiled.variant,
+        source_recipe=compiled.base_name,
     )
     version = release_version(compiled.version, compiled.architecture, compiled.variant)
     if args.write:
@@ -217,6 +218,7 @@ def cmd_build(args: argparse.Namespace) -> int:
             date,
             compiled.architecture,
             compiled.variant,
+            source_recipe=compiled.base_name,
         )
         path = write_release_file(
             config.repo_root,

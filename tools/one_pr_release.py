@@ -331,6 +331,7 @@ def command_manifest(args: argparse.Namespace) -> None:
         info["build_date"],
         info["architecture"],
         info["variant"],
+        source_recipe=args.recipe,
     )
     release_path = candidate_dir / f"{info['version']}.json"
     release_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
@@ -638,6 +639,7 @@ def verify_candidate(
         expected_info["build_date"],
         expected_info["architecture"],
         variant,
+        source_recipe=recipe,
     )
     actual_release = json.loads(paths["release_json"].read_text(encoding="utf-8"))
     if actual_release != expected_release:

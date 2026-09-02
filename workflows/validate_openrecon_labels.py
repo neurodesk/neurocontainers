@@ -43,7 +43,7 @@ def prepare_label_for_validation(label: dict[str, Any]) -> dict[str, Any]:
 
 
 def find_labels(recipes_dir: Path = RECIPES_DIR) -> list[Path]:
-    return sorted(recipes_dir.glob("*/OpenReconLabel.json"))
+    return sorted(recipes_dir.glob("*/OpenReconLabel*.json"))
 
 
 def format_validation_error(error: ValidationError) -> str:
@@ -107,7 +107,7 @@ def validate_labels(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Validate OpenReconLabel.json files against OpenRecon schema 1.1.0."
+        description="Validate OpenRecon label files against OpenRecon schema 1.1.0."
     )
     parser.add_argument(
         "labels",

@@ -19,12 +19,14 @@ class ReleaseChangeError(RuntimeError):
 @dataclass(frozen=True)
 class ReleaseEntry:
     name: str
+    recipe: str
     version: str
     file: str
 
     def as_dict(self) -> dict[str, str]:
         return {
             "name": self.name,
+            "recipe": self.recipe,
             "version": self.version,
             "file": self.file,
         }
@@ -47,6 +49,7 @@ RELEASE_PATTERN = re.compile(r"^releases/([^/]+)/([^/]+)\.json$")
 TEST_CONFIG_PATTERN = re.compile(r"^recipes/([^/]+)/fulltest\.yaml$")
 BUILD_RECIPE_PATTERN = re.compile(r"^recipes/([^/]+)/build\.yaml$")
 BUILD_DATE_PATTERN = re.compile(r"^\d{8}$")
+RECIPE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
 
 def _relative_posix(path: Path, repo_root: Path) -> str:
@@ -73,6 +76,20 @@ def _release_build_date(release_file: Path) -> str:
     except Exception:
         pass
     return ""
+
+
+def _release_source_recipe(release_file: Path, fallback: str) -> str:
+    try:
+        data = json.loads(release_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+    recipe = str(data.get("recipe", fallback)).strip()
+    if not RECIPE_NAME_PATTERN.fullmatch(recipe):
+        raise ReleaseChangeError(
+            f"Invalid source recipe {recipe!r} in {release_file.as_posix()}"
+        )
+    return recipe
 
 
 def find_latest_release_file(
@@ -160,8 +177,14 @@ def detect_release_pr_changes(
         if not match:
             continue
 
-        recipe, version = match.groups()
-        entries[recipe] = ReleaseEntry(name=recipe, version=version, file=path)
+        container, version = match.groups()
+        source_recipe = _release_source_recipe(root / path, container)
+        entries[container] = ReleaseEntry(
+            name=container,
+            recipe=source_recipe,
+            version=version,
+            file=path,
+        )
 
     candidate_recipes = {
         match.group(1)
@@ -176,7 +199,7 @@ def detect_release_pr_changes(
             continue
 
         recipe = match.group(1)
-        if recipe in entries:
+        if any(entry.recipe == recipe for entry in entries.values()):
             continue
         # A build.yaml change is tested against the exact newly built candidate
         # by PR container candidate. Retesting the previous published image here
@@ -191,6 +214,7 @@ def detect_release_pr_changes(
         if release_file and version:
             entries[recipe] = ReleaseEntry(
                 name=recipe,
+                recipe=_release_source_recipe(release_file, recipe),
                 version=version,
                 file=_relative_posix(release_file, root),
             )
