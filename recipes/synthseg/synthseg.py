@@ -78,6 +78,7 @@ SCANNER_WRITE_UNSAFE_META_KEYS = {
 
 # mri_synthseg resolves every model and label file relative to FREESURFER_HOME.
 SYNTHSEG_COMMAND = "mri_synthseg"
+SYNTHSEG_CROP_MULTIPLE = 32
 SYNTHSEG_MODEL_FILES = {
     "synthseg": "synthseg_2.0.h5",
     "robust": "synthseg_robust_2.0.h5",
@@ -98,7 +99,9 @@ OPENRECON_DEFAULTS = {
     "ssmodel": OPENRECON_MODEL_DEFAULT,
     "ssparc": False,
     "ssfast": True,
-    "ssusegpu": True,
+    "ssusegpu": False,
+    "ssautocrop": True,
+    "sscrop": 0,
     "ssthreads": 8,
     "ssvolumes": False,
     "ssqc": False,
@@ -555,6 +558,91 @@ def _resolve_synthseg_models(model: str, parcellation: bool, qc: bool) -> list[P
     if qc:
         model_files.append(SYNTHSEG_QC_MODEL_FILE)
     return [_resolve_synthseg_model(model_file) for model_file in model_files]
+
+
+def _resolve_synthseg_crop_options(
+    autocrop: bool,
+    crop_size: int,
+) -> tuple[bool, int]:
+    """Return a valid, mutually exclusive SynthSeg crop configuration."""
+    if crop_size < 0:
+        logging.warning(
+            "Invalid SynthSeg crop size %s requested. Disabling manual crop.",
+            crop_size,
+        )
+        crop_size = 0
+
+    if crop_size > 0 and crop_size % SYNTHSEG_CROP_MULTIPLE:
+        requested_crop_size = crop_size
+        crop_size = (
+            (crop_size + SYNTHSEG_CROP_MULTIPLE - 1)
+            // SYNTHSEG_CROP_MULTIPLE
+            * SYNTHSEG_CROP_MULTIPLE
+        )
+        logging.warning(
+            "SynthSeg crop size %s is not divisible by %s. Rounding up to %s.",
+            requested_crop_size,
+            SYNTHSEG_CROP_MULTIPLE,
+            crop_size,
+        )
+
+    if crop_size > 0 and autocrop:
+        logging.info(
+            "Manual SynthSeg crop size %s overrides automatic cropping.",
+            crop_size,
+        )
+        autocrop = False
+
+    return autocrop, crop_size
+
+
+def _build_synthseg_command(
+    input_path: Path,
+    output_path: Path,
+    *,
+    model: str,
+    fast: bool,
+    parcellation: bool,
+    use_gpu: bool,
+    threads: int,
+    autocrop: bool,
+    crop_size: int,
+    volumes_csv_path: Path | None = None,
+    qc_csv_path: Path | None = None,
+) -> list[str]:
+    """Build the mri_synthseg command for one OpenRecon image volume."""
+    # --keepgeom is mandatory here: mri_synthseg segments at 1 mm isotropic
+    # and would otherwise return a volume that no longer matches the source
+    # MRD slice grid, so the labels could not be stamped back onto the
+    # incoming image headers.
+    cmd = [
+        SYNTHSEG_COMMAND,
+        "--i", str(input_path),
+        "--o", str(output_path),
+        "--keepgeom",
+        "--noaddctab",
+        "--threads", str(threads),
+    ]
+    if model == "robust":
+        cmd.append("--robust")
+    elif model == "v1":
+        cmd.append("--v1")
+    if fast and model != "robust":
+        # --robust implies --fast; passing both is accepted but noisy.
+        cmd.append("--fast")
+    if parcellation:
+        cmd.append("--parc")
+    if crop_size > 0:
+        cmd.extend(["--crop", str(crop_size)])
+    elif autocrop:
+        cmd.append("--autocrop")
+    if not use_gpu:
+        cmd.append("--cpu")
+    if volumes_csv_path is not None:
+        cmd.extend(["--vol", str(volumes_csv_path)])
+    if qc_csv_path is not None:
+        cmd.extend(["--qc", str(qc_csv_path)])
+    return cmd
 
 
 def _clone_mrd_image(image):
@@ -3628,6 +3716,19 @@ def process_image(images, connection, config, metadata):
         fast = True
 
     use_gpu = boolean_checker("ssusegpu", default_val=OPENRECON_DEFAULTS["ssusegpu"])
+    autocrop = boolean_checker(
+        "ssautocrop",
+        default_val=OPENRECON_DEFAULTS["ssautocrop"],
+    )
+    crop_size = int(
+        mrdhelper.get_json_config_param(
+            config,
+            "sscrop",
+            default=OPENRECON_DEFAULTS["sscrop"],
+            type='int',
+        )
+    )
+    autocrop, crop_size = _resolve_synthseg_crop_options(autocrop, crop_size)
     threads = int(
         mrdhelper.get_json_config_param(
             config,
@@ -3726,7 +3827,8 @@ def process_image(images, connection, config, metadata):
         model_paths = _resolve_synthseg_models(model, parcellation, write_qc)
     logging.info(
         "OpenRecon SynthSeg options: run_name=%s model=%s model_files=%s "
-        "parcellation=%s fast=%s use_gpu=%s threads=%s volumes_csv=%s qc_csv=%s "
+        "parcellation=%s fast=%s use_gpu=%s autocrop=%s crop_size=%s "
+        "threads=%s volumes_csv=%s qc_csv=%s "
         "outputgeometry=%s segmentation_send_order=%s "
         "debug_threshold_segment=%s "
         "reslice_sagittal=%s reslice_coronal=%s",
@@ -3736,6 +3838,8 @@ def process_image(images, connection, config, metadata):
         parcellation,
         fast,
         use_gpu,
+        autocrop,
+        crop_size,
         threads,
         write_volumes,
         write_qc,
@@ -3745,36 +3849,6 @@ def process_image(images, connection, config, metadata):
         reslice_sagittal,
         reslice_coronal,
     )
-
-    def build_synthseg_command():
-        # --keepgeom is mandatory here: mri_synthseg segments at 1 mm isotropic
-        # and would otherwise return a volume that no longer matches the source
-        # MRD slice grid, so the labels could not be stamped back onto the
-        # incoming image headers.
-        cmd = [
-            SYNTHSEG_COMMAND,
-            "--i", str(input_path),
-            "--o", str(output_path),
-            "--keepgeom",
-            "--noaddctab",
-            "--threads", str(threads),
-        ]
-        if model == "robust":
-            cmd.append("--robust")
-        elif model == "v1":
-            cmd.append("--v1")
-        if fast and model != "robust":
-            # --robust implies --fast; passing both is accepted but noisy.
-            cmd.append("--fast")
-        if parcellation:
-            cmd.append("--parc")
-        if not use_gpu:
-            cmd.append("--cpu")
-        if write_volumes:
-            cmd.extend(["--vol", str(volumes_csv_path)])
-        if write_qc:
-            cmd.extend(["--qc", str(qc_csv_path)])
-        return cmd
 
     def log_csv_output(label, csv_path):
         if not csv_path.exists():
@@ -3840,7 +3914,21 @@ def process_image(images, connection, config, metadata):
         print('Debug threshold processing done')
 
     else:
-        run_synthseg_command(build_synthseg_command())
+        run_synthseg_command(
+            _build_synthseg_command(
+                input_path,
+                output_path,
+                model=model,
+                fast=fast,
+                parcellation=parcellation,
+                use_gpu=use_gpu,
+                threads=threads,
+                autocrop=autocrop,
+                crop_size=crop_size,
+                volumes_csv_path=volumes_csv_path if write_volumes else None,
+                qc_csv_path=qc_csv_path if write_qc else None,
+            )
+        )
         if write_volumes:
             log_csv_output("region volume", volumes_csv_path)
         if write_qc:

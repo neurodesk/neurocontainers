@@ -135,6 +135,10 @@ tests:
       from pathlib import Path
       label = json.loads(Path(\"/opt/code/python-ismrmrd-server/OpenReconLabel.json\").read_text())
       assert label[\"general\"][\"id\"] == \"synthseg\"
+      parameters = {parameter[\"id\"]: parameter for parameter in label[\"parameters\"]}
+      assert parameters[\"ssusegpu\"][\"default\"] is False
+      assert parameters[\"ssautocrop\"][\"default\"] is True
+      assert parameters[\"sscrop\"][\"default\"] == 0
       assert Path(\"/opt/code/python-ismrmrd-server/OpenReconREADME.md\").stat().st_size > 0
       print(\"openrecon assets ok, parameters:\", len(label[\"parameters\"]))
       "'
