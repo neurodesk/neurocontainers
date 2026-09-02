@@ -1,0 +1,144 @@
+# TopoFit container tests
+#
+# The mock workflow validates the same geometry, surface, manifest, and QC path
+# used by OpenRecon without loading a network. The final test runs real TopoFit
+# on CPU and can take several minutes on a CPU-only release runner.
+
+name: topofit
+version: "0.2"
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  output_dir: test_output/topofit
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p "${output_dir}"
+
+tests:
+  - name: BrainNet launcher available
+    description: Verify the pinned upstream command is on PATH.
+    command: command -v brainnet
+    expected_output_contains: "brainnet"
+
+  - name: BrainNet TopoFit help
+    description: Verify BrainNet imports and exposes the TopoFit subcommand.
+    command: brainnet --help
+    expected_output_contains: "topofit"
+
+  - name: TopoFit OpenRecon launcher available
+    description: Verify the shared NIfTI workflow launcher is installed.
+    command: topofit-openrecon --help
+    expected_output_contains: "OpenRecon adapter"
+
+  - name: Pretrained model assets installed
+    description: Verify the wheel contains every model used by the scanner presets.
+    command: |
+      python3 -c "
+      from importlib.resources import files
+      required = [
+          'topofit/t1w_1mm_config.json',
+          'topofit/t1w_1mm_state.pt',
+          'topofit/synth_1mm_config.json',
+          'topofit/synth_1mm_state.pt',
+          'topofit/synth_random_config.json',
+          'topofit/synth_random_state.pt',
+          'trega/synth_random_config.json',
+          'trega/synth_random_state.pt',
+      ]
+      root = files('brainnet').joinpath('resources/models')
+      for relative in required:
+          path = root.joinpath(relative)
+          assert path.is_file(), path
+      print('validated', len(required), 'BrainNet model assets')
+      "
+    expected_output_contains: "validated 8 BrainNet model assets"
+
+  - name: OpenRecon assets and wrapper import
+    description: Verify the scanner label and MRD reconstruction module are installed.
+    command: |
+      bash -lc 'PYTHONPATH=/opt/code/python-ismrmrd-server python3 -c "
+      import json
+      from pathlib import Path
+      import topofit
+      label = json.loads(Path(\"/opt/code/python-ismrmrd-server/OpenReconLabel.json\").read_text())
+      assert label[\"general\"][\"id\"] == \"topofit\"
+      assert callable(topofit.process)
+      print(\"topofit OpenRecon assets ok\")
+      "'
+    expected_output_contains: "topofit OpenRecon assets ok"
+
+  - name: Reusable workflow unit tests
+    description: Exercise command construction, LPS-to-RAS geometry, validation, and mock artifacts.
+    command: |
+      bash -lc 'cd /opt/code/python-ismrmrd-server && PYTHONPATH=. python3 -m unittest -v test_topofit_core.py'
+    expected_output_contains: "OK"
+
+  - name: OpenRecon mock transport test
+    description: Send real MRD images through the adapter and verify source-grid QC, metadata, and manifest output.
+    command: |
+      bash -lc 'cd /opt/code/python-ismrmrd-server && PYTHONPATH=. python3 -m unittest -v test_topofit_openrecon.py'
+    expected_output_contains: "OK"
+
+  - name: Mock end-to-end NIfTI workflow
+    description: Exercise the production artifact and QC path without neural inference.
+    command: |
+      topofit-openrecon "${t1w}" "${output_dir}/mock" --device cpu --mock
+    validate:
+      - output_exists: ${output_dir}/mock/topofit_manifest.json
+      - output_exists: ${output_dir}/mock/topofit_qc.nii.gz
+      - output_exists: ${output_dir}/mock/surf/lh.white
+      - output_exists: ${output_dir}/mock/surf/rh.pial
+
+  - name: Mock manifest is explicitly non-actionable
+    description: Verify the first milestone cannot emit prescription coordinates.
+    command: |
+      python3 -c "
+      import json
+      manifest = json.load(open('${output_dir}/mock/topofit_manifest.json'))
+      assert manifest['status'] == 'SURFACE_READY_RESEARCH_ONLY'
+      assert manifest['prescription_coordinates'] is None
+      assert manifest['coordinate_status'] == 'WITHHELD_UNTIL_VALIDATED_ANALYSIS_STAGE'
+      print(manifest['warning'])
+      "
+    expected_output_contains: "NOT FOR PRESCRIPTION"
+
+  - name: Real TopoFit CPU workflow
+    description: Run the pinned BrainNet model from T1w input through validated surfaces and source-grid QC.
+    command: |
+      topofit-openrecon "${t1w}" "${output_dir}/real" --device cpu
+    validate:
+      - output_exists: ${output_dir}/real/topofit_manifest.json
+      - output_exists: ${output_dir}/real/topofit_qc.nii.gz
+      - output_exists: ${output_dir}/real/surf/lh.white
+      - output_exists: ${output_dir}/real/surf/rh.white
+      - output_exists: ${output_dir}/real/surf/lh.pial
+      - output_exists: ${output_dir}/real/surf/rh.pial
+      - output_exists: ${output_dir}/real/surf/lh.registration
+      - output_exists: ${output_dir}/real/surf/rh.registration
+
+  - name: Real surfaces and QC geometry are valid
+    description: Parse every mesh and prove the QC volume remains on the source grid.
+    command: |
+      python3 -c "
+      from pathlib import Path
+      import nibabel as nib
+      import numpy as np
+      source = nib.load('${t1w}')
+      qc = nib.load('${output_dir}/real/topofit_qc.nii.gz')
+      assert qc.shape == source.shape, (qc.shape, source.shape)
+      np.testing.assert_allclose(qc.affine, source.affine)
+      for name in ('lh.white', 'rh.white', 'lh.pial', 'rh.pial', 'lh.registration', 'rh.registration'):
+          vertices, faces = nib.freesurfer.read_geometry(str(Path('${output_dir}/real/surf') / name))
+          assert vertices.shape[1] == 3 and faces.shape[1] == 3, name
+          assert np.isfinite(vertices).all(), name
+      print('real TopoFit surfaces and QC geometry valid')
+      "
+    expected_output_contains: "real TopoFit surfaces and QC geometry valid"
