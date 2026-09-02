@@ -17,7 +17,6 @@ build:
   directives:
     - install:
         - wget
-        - unzip
         - ca-certificates
         - openjdk-8-jre
         - dbus-x11
@@ -42,7 +41,7 @@ build:
 
     - run:
         - cp {{ get_file("standalone_hMRItoolboxv1_0_0_tar.gz") }} /opt/standalone-hMRItoolboxv1.0.0.tar.gz
-        - unzip -q /opt/standalone-hMRItoolboxv1.0.0.tar.gz -d /opt
+        - tar -xzf /opt/standalone-hMRItoolboxv1.0.0.tar.gz -C /opt
         - rm -f /opt/standalone-hMRItoolboxv1.0.0.tar.gz
         - /opt/standalone-hMRItoolboxv1.0.0/spm12 function exit
         - chmod a+rx /opt/standalone-hMRItoolboxv1.0.0/ -R
