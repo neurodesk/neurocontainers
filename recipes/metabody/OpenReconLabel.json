@@ -6,17 +6,17 @@
     "information": { "en": "metabody" },
     "id": "metabody",
     "regulatory_information": {
-      "device_trade_name":"metabody",
-      "production_identifier":"VERSION_WILL_BE_REPLACED_BY_SCRIPT",
-      "manufacturer_address":"Erlangen, Germany",
-      "made_in":"DE",
-      "manufacture_date":"2023/02/14",
-      "material_number":"metabody_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
-      "gtin":"00860000171212",
-      "udi":"(01)00860000171212(21)1.3.0",
-      "safety_advices":"",
-      "special_operating_instructions":"Open Recon example",
-      "additional_relevant_information":""
+      "device_trade_name": "metabody",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "Erlangen, Germany",
+      "made_in": "DE",
+      "manufacture_date": "2023/02/14",
+      "material_number": "metabody_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "00860000171212",
+      "udi": "(01)00860000171212(21)1.3.0",
+      "safety_advices": "",
+      "special_operating_instructions": "Open Recon example",
+      "additional_relevant_information": ""
     }
   },
   "reconstruction": {
@@ -37,17 +37,44 @@
   },
   "parameters": [
     {
-      "id": "config",
-      "label": { "en": "config" },
+      "id": "sendOriginal",
+      "label": { "en": "Send original images" },
+      "type": "boolean",
+      "information": { "en": "Return copies of the received images as a separate series." },
+      "default": true
+    },
+    {
+      "id": "colormap",
+      "label": { "en": "Colormap name" },
       "type": "choice",
       "values": [
         {
-          "id": "metabody",
-          "name": { "en": "metabody" }
+          "id": "none",
+          "name": { "en": "none" }
+        },
+        {
+          "id": "seismic",
+          "name": { "en": "seismic" }
+        },
+        {
+          "id": "jet",
+          "name": { "en": "jet" }
+        },
+        {
+          "id": "gray",
+          "name": { "en": "gray" }
+        },
+        {
+          "id": "coolwarm",
+          "name": { "en": "coolwarm" }
+        },
+        {
+          "id": "bwr",
+          "name": { "en": "bwr" }
         }
       ],
-      "default": "metabody",
-      "information": { "en": "Define the config to be executed by MRD server" }
+      "default": "seismic",
+      "information": { "en": "Matplotlib colormap to use." }
     }
   ]
 }

@@ -1,5 +1,5 @@
 name: metabody
-version: 1.0.2
+version: 1.0.3
 architectures:
     - x86_64
 
@@ -11,11 +11,13 @@ files:
       url: https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz
     - name: metabody.py
       filename: metabody.py
+    - name: miniconda_installer
+      url: "{{ context.conda_download_url }}"
 
 readme_url: https://raw.githubusercontent.com/astewartau/prostate/refs/heads/main/README.md
 
 variables:
-    conda_version: "4.12.0"
+    conda_version: "23.11.0-2"
     conda_download_url:
         try:
             - value: "https://repo.anaconda.com/miniconda/Miniconda3-py39_{{ context.conda_version }}-Linux-x86_64.sh"
@@ -114,9 +116,7 @@ build:
         # Miniconda installer
         - workdir: /tmp
         - run:
-              - curl -fsSL -o miniconda.sh {{ context.conda_download_url }}
-              - bash miniconda.sh -b -p /opt/miniconda-{{ context.conda_version }}
-              - rm miniconda.sh
+              - bash {{ get_file("miniconda_installer") }} -b -p /opt/miniconda-{{ context.conda_version }}
         - environment:
               PATH: /opt/miniconda-{{ context.conda_version }}/bin:$PATH
         - run:
