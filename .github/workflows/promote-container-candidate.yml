@@ -502,11 +502,12 @@ jobs:
         run: |
           set -euo pipefail
           gh auth setup-git
-          jq -c '.[] | select(.architecture == "x86_64" and .variant == "")' \
+          jq -c '.[] | select(.architecture == "x86_64")' \
             verified-manifests.json | while IFS= read -r manifest; do
               recipe="$(echo "${manifest}" | jq -r '.recipe')"
+              variant="$(echo "${manifest}" | jq -r '.variant')"
               version="$(echo "${manifest}" | jq -r '.version')"
-              python tools/sync_openrecon.py --recipe "${recipe}" --version "${version}" --dispatch-unchanged
+              python tools/sync_openrecon.py --recipe "${recipe}" --variant "${variant}" --version "${version}" --dispatch-unchanged
             done
 
   report_promotion:

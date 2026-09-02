@@ -13,12 +13,23 @@ from workflows.release_pr_changes import (
 )
 
 
-def write_release(root: Path, recipe: str, version: str, build_date: str = "20260521") -> Path:
+def write_release(
+    root: Path,
+    recipe: str,
+    version: str,
+    build_date: str = "20260521",
+    source_recipe: str | None = None,
+) -> Path:
     release_dir = root / "releases" / recipe
     release_dir.mkdir(parents=True, exist_ok=True)
     release_file = release_dir / f"{version}.json"
     release_file.write_text(
-        json.dumps({"apps": {recipe: {"version": build_date}}}),
+        json.dumps(
+            {
+                "apps": {recipe: {"version": build_date}},
+                **({"recipe": source_recipe} if source_recipe else {}),
+            }
+        ),
         encoding="utf-8",
     )
     return release_file
@@ -41,6 +52,7 @@ def test_existing_recipe_fulltest_yaml_ignores_placeholder_latest_metadata(
     assert result.matrix() == [
         {
             "name": "mrtrix3",
+            "recipe": "mrtrix3",
             "version": "3.0.8",
             "file": latest_release.relative_to(tmp_path).as_posix(),
         }
@@ -58,6 +70,7 @@ def test_existing_recipe_fulltest_yaml_uses_latest_release_metadata(tmp_path: Pa
     assert result.matrix() == [
         {
             "name": "cat12",
+            "recipe": "cat12",
             "version": "26.0.rc3",
             "file": latest_release.relative_to(tmp_path).as_posix(),
         }
@@ -85,6 +98,7 @@ def test_test_config_change_prefers_x86_release_over_arm64_metadata(
     assert result.matrix() == [
         {
             "name": "niimath",
+            "recipe": "niimath",
             "version": "1.0.20250804",
             "file": latest_x86_release.relative_to(tmp_path).as_posix(),
         }
@@ -116,8 +130,32 @@ def test_release_metadata_can_be_paired_with_fulltest_yaml(tmp_path: Path) -> No
     assert result.matrix() == [
         {
             "name": "cat12",
+            "recipe": "cat12",
             "version": "26.0.rc3",
             "file": "releases/cat12/26.0.rc3.json",
+        }
+    ]
+
+
+def test_named_variant_release_uses_source_recipe_test_suite(tmp_path: Path) -> None:
+    release = write_release(
+        tmp_path,
+        "spinalcordtoolbox_gpu",
+        "7.3.2",
+        source_recipe="spinalcordtoolbox",
+    )
+
+    result = detect_release_pr_changes(
+        ["releases/spinalcordtoolbox_gpu/7.3.2.json"],
+        repo_root=tmp_path,
+    )
+
+    assert result.matrix() == [
+        {
+            "name": "spinalcordtoolbox_gpu",
+            "recipe": "spinalcordtoolbox",
+            "version": "7.3.2",
+            "file": release.relative_to(tmp_path).as_posix(),
         }
     ]
 

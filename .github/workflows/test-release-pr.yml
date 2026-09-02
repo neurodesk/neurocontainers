@@ -178,6 +178,7 @@ jobs:
         run: |
           echo "Matrix release data:"
           echo "Name: ${{ matrix.release.name }}"
+          echo "Recipe: ${{ matrix.release.recipe }}"
           echo "Version: ${{ matrix.release.version }}"
           echo "File: ${{ matrix.release.file }}"
           echo "Current directory: $(pwd)"
@@ -187,8 +188,7 @@ jobs:
         id: find-tests
         working-directory: source
         run: |
-          # Look for the fulltest configuration in the recipe directory
-          RECIPE_DIR="recipes/${{ matrix.release.name }}"
+          RECIPE_DIR="recipes/${{ matrix.release.recipe }}"
           TEST_CONFIG=""
 
           if [ -f "$RECIPE_DIR/fulltest.yaml" ]; then
