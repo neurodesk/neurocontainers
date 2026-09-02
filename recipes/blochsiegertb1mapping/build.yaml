@@ -1,5 +1,5 @@
 name: blochsiegertb1mapping
-version: 1.0.11
+version: 1.0.41
 architectures:
   - x86_64
 
@@ -16,6 +16,8 @@ files:
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
+  - name: ABSPulse.mat
+    filename: ABSPulse.mat
   - name: blochsiegertb1mapping
     contents: |-
       #!/usr/bin/env bash
@@ -36,6 +38,7 @@ build:
     - copy: blochsiegertb1mapping.py /opt/code/python-ismrmrd-server/blochsiegertb1mapping.py
     - copy: dicom2mrd.py /opt/code/python-ismrmrd-server/dicom2mrd.py
     - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - copy: ABSPulse.mat /opt/code/python-ismrmrd-server/ABSPulse.mat
     - run:
         - install -m 0755 {{ get_file("blochsiegertb1mapping") }} /usr/local/bin/blochsiegertb1mapping
         - mkdir -p /tmp/share/debug
@@ -57,17 +60,26 @@ readme: |-
   image messages. The runtime implements the workflow from
   `Read_7T_all_rev_openRecon.m`: detects 1Tx versus 8Tx from the frame count,
   uses the revised four-echo calculation, dedicated transmit-phase frames, and
-  pre/post reference frames, builds an optional QC magnitude mask, converts
+  pre/post reference frames, builds phase and magnitude masks, converts
   phase counts to radians, corrects the scanner DICOM BSp polarity, computes
   BSp, measured B1, phase, and B0, then sends selected maps as
   explicit MRD volume images.
 
-  Default outputs are B1, BSp, Tx phase, and B0 maps. Enable `sendmask` to also
-  return the computed QC mask. The default phase scaling is the MATLAB DICOM
+  B1 and B0 maps are always returned. BSp and Tx phase remain configurable,
+  and the computed masks are never returned. When Apply Mask is enabled, the
+  MATLAB-derived magnitude mask is applied to every returned map. Mask holes
+  are filled slice by slice and then across the 3D volume. BS phase/B1 and B0
+  are filtered with a polynomial fit (order 20 for 1Tx, order 10 for 8Tx) and Gaussian sigma 0.5; Apply
+  Filter changes BS phase from untrusted-only replacement to whole-volume
+  replacement. The default phase scaling is the MATLAB DICOM
   conversion `phase * 2*pi/4096 - pi`. Every complete, nonconstant 3D output
   volume is mapped to scanner pixels spanning `0..4095`; DICOM rescaling and
   image comments record the inverse mapping back to physical units. B1 is
-  reported in uT, BSp and Tx phase in degrees, B0 in Hz, and the mask as binary.
+  reported in uT, BSp and Tx phase in degrees, and B0 in Hz.
+  For 1Tx, a reference-amplitude map in V is also returned using
+  `11.74 * Ref_Amplitude / B1`.
+  Processing-information histogram images are generated for masked B1 (one per
+  Tx channel) and masked B0; they use uT and Hz source units respectively.
   Small negative BSp values are retained in the phase output and clamped only
   in the separate nonnegative copy used for the B1 square-root calculation.
 

@@ -1,5 +1,5 @@
 name: blochsiegertb1mapping
-version: 1.0.11
+version: 1.0.41
 default_timeout: 120
 tests:
 - name: Bloch-Siegert OpenRecon workflow unit smoke test
@@ -80,16 +80,23 @@ tests:
         ]
         return magnitude + phase
 
-    # The scanner DICOM phase convention gives -0.3 radians for this BSp
-    # combination; the BSp-only polarity correction must recover +0.3.
+    # The first two pre-reference frames are deliberately different: B0 must
+    # use only frame 3, while BSp must depend only on A and B.
     one_tx_phase = [
-        0.1, 0.1, 0.1,
-        0.1, 0.2, 0.2, 0.4,
+        0.4, -0.2, 0.1,
+        0.1, 0.2, -0.2, 0.4,
+        0.1, 0.3, 0.5,
         -0.6,
-        0.3, 0.3, 0.3,
     ]
     one_tx_images = make_dataset(one_tx_phase)
     settings = module._settings_from_config({"parameters": {}})
+    assert settings["deltatems"] == 1.0
+    assert settings["applymask"] is False
+    assert settings["applyfilter"] is False
+    assert module.FILTER_POLYNOMIAL_ORDER_BY_TX == {1: 10, 8: 10}
+    assert "sendb1" not in settings
+    assert "sendb0" not in settings
+    assert "sendmask" not in settings
     one_tx = module.compute_bloch_siegert_maps(one_tx_images, settings)
     assert one_tx["nframe"] == 11
     assert one_tx["ntx"] == 1
@@ -99,7 +106,11 @@ tests:
     assert one_tx["phsc"].shape == (1, 1, 8, 8)
     assert one_tx["b0"].shape == (1, 8, 8)
     assert np.allclose(one_tx["bsp"][0, 0, 3, 3], 0.3, atol=1e-5)
-    expected_b1 = math.sqrt(0.3 / (0.044 * 12.0 / 6.0))
+    expected_b1 = (
+        math.sqrt(0.3 / (0.044 * 12.0 / 6.0))
+        * 301.0
+        / 200.0
+    )
     assert np.allclose(one_tx["b1"][0, 0, 3, 3], expected_b1, atol=1e-5)
     wider_pulse = module.compute_bloch_siegert_maps(
         one_tx_images,
@@ -116,19 +127,258 @@ tests:
         0.2 * 1000.0 / (2.0 * math.pi),
         atol=1e-5,
     )
-    assert np.allclose(one_tx["bsp"][0, 0, 0, 0], 0.3, atol=1e-5)
-    assert np.allclose(one_tx["b1"][0, 0, 0, 0], expected_b1, atol=1e-5)
+    assert np.allclose(
+        11.74 * settings["refamplitude"] / one_tx["b1"][0, 0, 3, 3],
+        11.74 * 301.0 / expected_b1,
+        atol=1e-5,
+    )
+    half_ms_b0 = module.compute_bloch_siegert_maps(
+        one_tx_images,
+        module._settings_from_config({"parameters": {"deltatems": 0.5}}),
+    )
+    assert np.allclose(
+        half_ms_b0["b0"][0, 3, 3],
+        0.2 * 1000.0 / (2.0 * math.pi * 0.5),
+        atol=1e-5,
+    )
+    try:
+        module.compute_bloch_siegert_maps(
+            one_tx_images,
+            module._settings_from_config({"parameters": {"deltatems": 0.0}}),
+        )
+    except ValueError as error:
+        assert "deltatems must be positive" in str(error)
+    else:
+        raise AssertionError("zero Delta TE must be rejected")
+    assert np.allclose(one_tx["bsp"][0, 0, 0, 0], 0.0, atol=1e-5)
+    assert np.allclose(one_tx["b1"][0, 0, 0, 0], 0.0, atol=1e-5)
     assert np.allclose(one_tx["phsc"][0, 0, 0, 0], -0.6, atol=1e-5)
     assert np.allclose(
         one_tx["b0"][0, 0, 0],
+        0.0,
+        atol=1e-5,
+    )
+    assert one_tx["phase_mask"].shape == (1, 8, 8)
+    assert one_tx["mask_for_magnitude"].shape == (1, 8, 8)
+    assert np.array_equal(one_tx["mask"], one_tx["mask_for_magnitude"])
+    assert int(one_tx["mask_for_magnitude"][0, 3, 3]) == 1
+    assert int(one_tx["mask_for_magnitude"][0, 0, 0]) == 0
+
+    # phaseMask uses the first PreDummy+1 frames and every C/D frame.
+    stability_phase = np.zeros((5, 1, 5, 5), dtype=np.float32)
+    stability_phase[:, :, :, 0] = np.asarray(
+        [0.0, math.pi / 2.0, -math.pi / 2.0, math.pi, -math.pi],
+        dtype=np.float32,
+    )[:, None, None]
+    phase_mask, phase_std = module._phase_stability_mask(
+        np.exp(1j * stability_phase),
+        pre_dummy=2,
+        phase_c_indices=np.asarray([3]),
+        phase_d_indices=np.asarray([4]),
+    )
+    assert bool(phase_mask[0, 2, 0]) is False
+    assert float(phase_std[0, 2, 0]) >= 30.0
+    assert bool(phase_mask[0, 2, 2]) is True
+
+    # MaskForMagnitude follows the MATLAB MBSS1 threshold with 2 * std.
+    magnitude_values = np.asarray([[0.0, 1.0], [2.0, 10.0]], dtype=np.float32)
+    magnitude_stack = np.repeat(magnitude_values[None, None, :, :], 4, axis=0)
+    magnitude_mask = module._bloch_siegert_magnitude_mask(magnitude_stack, ntx=1)
+    assert bool(magnitude_mask[0, 1, 0]) is False
+    assert bool(magnitude_mask[0, 1, 1]) is True
+
+    z_grid, y_grid, x_grid = np.meshgrid(
+        module._normalized_filter_axis(4),
+        module._normalized_filter_axis(5),
+        module._normalized_filter_axis(6),
+        indexing="ij",
+    )
+    polynomial_volume = 1.0 + 0.2 * x_grid - 0.3 * y_grid + 0.4 * z_grid
+    trusted_mask = np.ones(polynomial_volume.shape, dtype=bool)
+    trusted_mask[1:3, 2, 2:4] = False
+    for replace_entire_volume in (False, True):
+        extrapolated = module._extrapolate_phase_volume(
+            polynomial_volume,
+            trusted_mask,
+            polynomial_order=1,
+            zero_non_positive=False,
+            apply_to_entire_volume=replace_entire_volume,
+            smooth_sigma=0.0,
+        )
+        assert np.allclose(extrapolated, polynomial_volume, atol=1e-5)
+    assert len(module._polynomial_exponents(8)) == 165
+    try:
+        module._extrapolate_phase_volume(
+            polynomial_volume,
+            np.zeros(polynomial_volume.shape, dtype=bool),
+            polynomial_order=1,
+        )
+    except ValueError as error:
+        assert "No trusted voxels" in str(error)
+    else:
+        raise AssertionError("filtering without trusted voxels must fail")
+
+    original_extrapolator = module._extrapolate_phase_volume
+    extrapolation_modes = []
+    def recording_extrapolator(
+        volume,
+        mask,
+        polynomial_order,
+        zero_non_positive,
+        apply_to_entire_volume,
+        smooth_sigma,
+    ):
+        extrapolation_modes.append(apply_to_entire_volume)
+        return np.asarray(volume, dtype=np.float32)
+    module._extrapolate_phase_volume = recording_extrapolator
+    try:
+        test_bsp = np.ones((1, 1, 3, 3), dtype=np.float32)
+        test_b0 = np.ones((1, 3, 3), dtype=np.float32)
+        test_mask = np.ones((1, 3, 3), dtype=bool)
+        module._filter_bloch_siegert_maps(
+            test_bsp, test_b0, test_mask, test_mask, False
+        )
+        assert extrapolation_modes == [False, False]
+        extrapolation_modes.clear()
+        module._filter_bloch_siegert_maps(
+            test_bsp, test_b0, test_mask, test_mask, True
+        )
+        assert extrapolation_modes == [True, False]
+    finally:
+        module._extrapolate_phase_volume = original_extrapolator
+
+    hole_2d = np.ones((5, 5), dtype=bool)
+    hole_2d[2, 2] = False
+    hole_2d[0, 0] = False
+    filled_2d = module._fill_holes_2d_or_3d(hole_2d)
+    assert bool(filled_2d[2, 2]) is True
+    assert bool(filled_2d[0, 0]) is False
+    hole_3d = np.ones((5, 5, 5), dtype=bool)
+    hole_3d[2, 2, 2] = False
+    hole_3d[0, 0, 0] = False
+    filled_3d = module._fill_holes_2d_or_3d(hole_3d)
+    assert bool(filled_3d[2, 2, 2]) is True
+    assert bool(filled_3d[0, 0, 0]) is False
+    through_plane_tunnel = np.ones((5, 5, 5), dtype=bool)
+    through_plane_tunnel[:, 2, 2] = False
+    filled_tunnel = module._fill_holes_2d_or_3d(through_plane_tunnel)
+    assert np.all(filled_tunnel[:, 2, 2])
+
+    shorter_dummy_phase = [
+        0.4, 0.1,
+        0.1, 0.2, -0.2, 0.4,
+        0.2, 0.4,
+        -0.6,
+    ]
+    shorter_dummy_settings = module._settings_from_config(
+        {"parameters": {"predummy": 1, "postdummy": 1}}
+    )
+    assert shorter_dummy_settings["predummy"] == 1
+    assert shorter_dummy_settings["postdummy"] == 1
+    shorter_dummy = module.compute_bloch_siegert_maps(
+        make_dataset(shorter_dummy_phase),
+        shorter_dummy_settings,
+    )
+    assert shorter_dummy["nframe"] == 9
+    assert shorter_dummy["ntx"] == 1
+    assert np.allclose(
+        shorter_dummy["bsp"][0, 0, 3, 3],
+        0.3,
+        atol=1e-5,
+    )
+    assert np.allclose(
+        shorter_dummy["phsc"][0, 0, 3, 3],
+        -0.6,
+        atol=1e-5,
+    )
+    assert np.allclose(
+        shorter_dummy["b0"][0, 3, 3],
         0.2 * 1000.0 / (2.0 * math.pi),
         atol=1e-5,
     )
-    assert int(one_tx["mask"][0, 3, 3]) == 1
-    assert int(one_tx["mask"][0, 0, 0]) == 0
+
+    longer_dummy_phase = [
+        0.4, -0.2, 0.0, 0.2,
+        0.1, 0.2, -0.2, 0.4,
+        0.0, 0.2, 0.4, 0.6,
+        -0.6,
+    ]
+    longer_dummy_settings = module._settings_from_config(
+        {"parameters": {"predummy": 3, "postdummy": 3}}
+    )
+    assert longer_dummy_settings["predummy"] == 3
+    assert longer_dummy_settings["postdummy"] == 3
+    longer_dummy = module.compute_bloch_siegert_maps(
+        make_dataset(longer_dummy_phase),
+        longer_dummy_settings,
+    )
+    assert longer_dummy["nframe"] == 13
+    assert longer_dummy["ntx"] == 1
+    assert np.allclose(
+        longer_dummy["bsp"][0, 0, 3, 3],
+        0.3,
+        atol=1e-5,
+    )
+    assert np.allclose(
+        longer_dummy["phsc"][0, 0, 3, 3],
+        -0.6,
+        atol=1e-5,
+    )
+    assert np.allclose(
+        longer_dummy["b0"][0, 3, 3],
+        0.2 * 1000.0 / (2.0 * math.pi),
+        atol=1e-5,
+    )
+
+    zero_dummy_phase = [
+        0.1,
+        0.1, 0.2, -0.2, 0.4,
+        0.3,
+        -0.6,
+    ]
+    zero_dummy_settings = module._settings_from_config(
+        {"parameters": {"predummy": 0, "postdummy": 0}}
+    )
+    zero_dummy = module.compute_bloch_siegert_maps(
+        make_dataset(zero_dummy_phase),
+        zero_dummy_settings,
+    )
+    assert zero_dummy["nframe"] == 7
+    assert zero_dummy["ntx"] == 1
+    assert np.allclose(zero_dummy["bsp"][0, 0, 3, 3], 0.3, atol=1e-5)
+    assert np.allclose(zero_dummy["phsc"][0, 0, 3, 3], -0.6, atol=1e-5)
+    assert np.allclose(
+        zero_dummy["b0"][0, 3, 3],
+        0.2 * 1000.0 / (2.0 * math.pi),
+        atol=1e-5,
+    )
+
+    ten_pre_dummy_phase = [
+        0.4, -0.2,
+        *([0.1] * 9),
+        0.1, 0.2, -0.2, 0.4,
+        0.1, 0.3, 0.5,
+        -0.6,
+    ]
+    ten_pre_dummy_settings = module._settings_from_config(
+        {"parameters": {"predummy": 10, "postdummy": 2}}
+    )
+    ten_pre_dummy = module.compute_bloch_siegert_maps(
+        make_dataset(ten_pre_dummy_phase),
+        ten_pre_dummy_settings,
+    )
+    assert ten_pre_dummy["nframe"] == 19
+    assert ten_pre_dummy["ntx"] == 1
+    assert np.allclose(ten_pre_dummy["bsp"][0, 0, 3, 3], 0.3, atol=1e-5)
+    assert np.allclose(ten_pre_dummy["phsc"][0, 0, 3, 3], -0.6, atol=1e-5)
+    assert np.allclose(
+        ten_pre_dummy["b0"][0, 3, 3],
+        0.2 * 1000.0 / (2.0 * math.pi),
+        atol=1e-5,
+    )
 
     small_negative_phase = list(one_tx_phase)
-    small_negative_phase[5] = 0.6
+    small_negative_phase[5] = 0.2
     small_negative = module.compute_bloch_siegert_maps(
         make_dataset(small_negative_phase),
         settings,
@@ -136,15 +386,24 @@ tests:
     assert np.allclose(small_negative["bsp"][0, 0, 3, 3], -0.1, atol=1e-5)
     assert np.allclose(small_negative["b1"][0, 0, 3, 3], 0.0, atol=1e-5)
 
+    retained_negative_phase = list(one_tx_phase)
+    retained_negative_phase[5] = 0.6
+    retained_negative = module.compute_bloch_siegert_maps(
+        make_dataset(retained_negative_phase),
+        settings,
+    )
+    assert np.allclose(retained_negative["bsp"][0, 0, 3, 3], -0.5, atol=1e-5)
+    assert np.allclose(retained_negative["b1"][0, 0, 3, 3], 0.0, atol=1e-5)
+
     wrapped_negative_phase = list(one_tx_phase)
-    wrapped_negative_phase[5] = 1.0
+    wrapped_negative_phase[5] = 2.0
     wrapped_negative = module.compute_bloch_siegert_maps(
         make_dataset(wrapped_negative_phase),
         settings,
     )
     assert np.allclose(
         wrapped_negative["bsp"][0, 0, 3, 3],
-        2.0 * math.pi - 0.5,
+        2.0 * math.pi - 1.9,
         atol=1e-5,
     )
 
@@ -225,15 +484,68 @@ tests:
     display_one_tx["b0"] = one_tx["b0"].copy()
     display_one_tx["b0"][0, 0, 0] = -100.0
     display_one_tx["b0"][0, 7, 7] = 100.0
-    display_settings = dict(settings, sendmask=True)
     outputs = module.build_output_images(
         display_one_tx,
-        display_settings,
+        settings,
         one_tx_images,
     )
     assert [int(image.image_series_index) for image in outputs] == [
-        101, 120, 140, 160, 161,
+        101, 120, 140, 160, 170, 180, 181,
     ]
+    ref_amplitude_output = [
+        image for image in outputs if int(image.image_series_index) == 170
+    ][0]
+    ref_amplitude_meta = ismrmrd.Meta.deserialize(ref_amplitude_output.attribute_string)
+    assert first(ref_amplitude_meta.get("BlochSiegertOutput")) == (
+        "BlochSiegertReferenceAmplitude"
+    )
+    ref_amplitude_slope = float(first(ref_amplitude_meta.get("RescaleSlope")))
+    ref_amplitude_intercept = float(first(ref_amplitude_meta.get("RescaleIntercept")))
+    ref_amplitude_restored = (
+        np.asarray(ref_amplitude_output.data, dtype=np.float64)
+        * ref_amplitude_slope
+        + ref_amplitude_intercept
+    )
+    assert np.isclose(
+        ref_amplitude_restored[0, 0, 3, 3],
+        11.74 * 301.0 / expected_b1,
+        atol=ref_amplitude_slope / 2.0,
+    )
+    custom_ref_outputs = module.build_output_images(
+        one_tx,
+        dict(settings, refamplitude=100.0, applymask=True),
+        one_tx_images,
+    )
+    custom_ref_output = [
+        image for image in custom_ref_outputs
+        if int(image.image_series_index) == 170
+    ][0]
+    custom_ref_meta = ismrmrd.Meta.deserialize(custom_ref_output.attribute_string)
+    custom_ref_slope = float(first(custom_ref_meta.get("RescaleSlope")))
+    custom_ref_intercept = float(first(custom_ref_meta.get("RescaleIntercept")))
+    custom_ref_restored = (
+        np.asarray(custom_ref_output.data, dtype=np.float64)
+        * custom_ref_slope
+        + custom_ref_intercept
+    )
+    assert np.isclose(
+        custom_ref_restored[0, 0, 3, 3],
+        11.74 * 100.0 / expected_b1,
+        atol=custom_ref_slope / 2.0,
+    )
+    assert np.isclose(
+        custom_ref_restored[0, 0, 0, 0],
+        0.0,
+        atol=abs(custom_ref_slope) / 2.0,
+    )
+    b1_processing = [image for image in outputs if int(image.image_series_index) == 180]
+    b0_processing = [image for image in outputs if int(image.image_series_index) == 181]
+    assert len(b1_processing) == 1
+    assert len(b0_processing) == 1
+    assert np.asarray(b1_processing[0].data).shape == (1, 1, 1024, 1024)
+    assert np.asarray(b0_processing[0].data).shape == (1, 1, 1024, 1024)
+    assert int(b1_processing[0].getHead().image_index) == 1
+    assert int(b0_processing[0].getHead().image_index) == 1
     module._validate_output_images(outputs, one_tx_images)
     for image in outputs:
         pixels = np.asarray(image.data)
@@ -297,7 +609,6 @@ tests:
         (outputs[1], math.degrees(-0.1), 180.0, math.degrees(-0.1)),
         (outputs[2], math.degrees(-1.0), math.degrees(1.0), math.degrees(-0.6)),
         (outputs[3], -100.0, 100.0, float(one_tx["b0"][0, 3, 3])),
-        (outputs[4], 0.0, 1.0, 1.0),
     ]
     for image, physical_min, physical_max, expected_value in expected_ranges:
         meta = ismrmrd.Meta.deserialize(image.attribute_string)
@@ -312,41 +623,59 @@ tests:
             atol=slope / 2.0,
         )
 
+    masked_one_tx = dict(display_one_tx)
+    masked_one_tx["mask_for_magnitude"] = np.ones((1, 8, 8), dtype=np.uint16)
+    masked_one_tx["mask_for_magnitude"][0, 3, 3] = 0
+    masked_outputs = module.build_output_images(
+        masked_one_tx,
+        dict(settings, applymask=True),
+        one_tx_images,
+    )
+    for image in masked_outputs:
+        if int(image.image_series_index) >= 180:
+            continue
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        slope = float(first(meta.get("RescaleSlope")))
+        intercept = float(first(meta.get("RescaleIntercept")))
+        restored = np.asarray(image.data, dtype=np.float64) * slope + intercept
+        assert np.isclose(restored[0, 0, 3, 3], 0.0, atol=abs(slope) / 2.0)
+
     eight_tx_phase = [0.1] * 46
     for tx_index in range(8):
         eight_tx_phase[3 + 4 * tx_index] = 0.1
         eight_tx_phase[4 + 4 * tx_index] = 0.2
-        eight_tx_phase[5 + 4 * tx_index] = 0.2 - 0.01 * tx_index
+        eight_tx_phase[5 + 4 * tx_index] = -0.2 - 0.01 * tx_index
         eight_tx_phase[6 + 4 * tx_index] = 0.4
     eight_tx_phsc = [-0.8 + 0.1 * tx_index for tx_index in range(8)]
-    eight_tx_phase[35:43] = eight_tx_phsc
-    eight_tx_phase[43:46] = [0.3, 0.3, 0.3]
+    eight_tx_phase[35:38] = [0.3, 0.3, 0.3]
+    eight_tx_phase[38:46] = eight_tx_phsc
     eight_tx_images = make_dataset(eight_tx_phase, series_name="bss_8tx")
     eight_tx = module.compute_bloch_siegert_maps(eight_tx_images, settings)
-    assert eight_tx["nframe"] == 46
-    assert eight_tx["ntx"] == 8
-    assert eight_tx["b1"].shape == (8, 1, 8, 8)
-    assert eight_tx["bsp"].shape == (8, 1, 8, 8)
-    assert eight_tx["phsc"].shape == (8, 1, 8, 8)
-    assert np.allclose(
-        eight_tx["bsp"][:, 0, 3, 3],
-        [0.30 + 0.01 * i for i in range(8)],
-        atol=1e-5,
-    )
-    assert np.allclose(
-        eight_tx["phsc"][:, 0, 3, 3],
-        eight_tx_phsc,
-        atol=1e-5,
-    )
-    b1_only = module.build_output_images(
+    mandatory_outputs = module.build_output_images(
         eight_tx,
         {"sendb1": True, "sendbsp": False, "sendphsc": False, "sendb0": False},
         eight_tx_images,
     )
-    assert len(b1_only) == 8
-    assert [int(image.image_series_index) for image in b1_only] == list(range(101, 109))
-    assert first(ismrmrd.Meta.deserialize(b1_only[-1].attribute_string).get("SeriesDescription")) == "bss_8tx-b1-tx08"
-    module._validate_output_images(b1_only, eight_tx_images)
+    assert len(mandatory_outputs) == 18
+    assert [int(image.image_series_index) for image in mandatory_outputs] == [
+        *range(101, 109), 160, *([180] * 8), 181,
+    ]
+    assert first(
+        ismrmrd.Meta.deserialize(mandatory_outputs[9].attribute_string).get(
+            "NumberInSeries"
+        )
+    ) == "8"
+    assert first(
+        ismrmrd.Meta.deserialize(mandatory_outputs[7].attribute_string).get(
+            "SeriesDescription"
+        )
+    ) == "bss_8tx-b1-tx08"
+    assert first(
+        ismrmrd.Meta.deserialize(mandatory_outputs[8].attribute_string).get(
+            "SeriesDescription"
+        )
+    ) == "bss_8tx-b0"
+    module._validate_output_images(mandatory_outputs, eight_tx_images)
 
     forty_slice_phase = list(eight_tx_phase)
     forty_slice_magnitude = []
@@ -377,15 +706,26 @@ tests:
     assert forty_slice["nframe"] == 46
     assert forty_slice["ntx"] == 8
     assert forty_slice["b1"].shape == (8, 40, 8, 8)
-    forty_slice_b1 = module.build_output_images(
+    forty_slice_mandatory = module.build_output_images(
         forty_slice,
         {"sendb1": True, "sendbsp": False, "sendphsc": False, "sendb0": False},
         forty_slice_images,
     )
-    assert len(forty_slice_b1) == 8
-    assert all(np.asarray(image.data).shape == (1, 40, 8, 8) for image in forty_slice_b1)
-    assert all(list(image.getHead().matrix_size) == [8, 8, 40] for image in forty_slice_b1)
-    module._validate_output_images(forty_slice_b1, forty_slice_images)
+    assert len(forty_slice_mandatory) == 18
+    forty_slice_maps = forty_slice_mandatory[:9]
+    assert all(
+        np.asarray(image.data).shape == (1, 40, 8, 8)
+        for image in forty_slice_maps
+    )
+    assert all(
+        list(image.getHead().matrix_size) == [8, 8, 40]
+        for image in forty_slice_maps
+    )
+    assert all(
+        np.asarray(image.data).shape == (1, 1, 1024, 1024)
+        for image in forty_slice_mandatory[9:]
+    )
+    module._validate_output_images(forty_slice_mandatory, forty_slice_images)
 
     class FakeConnection:
         def __init__(self, items):
@@ -414,11 +754,13 @@ tests:
     sent = [image for batch in connection.sent_images for image in batch]
     assert connection.logging == []
     assert connection.closed is True
-    assert [int(image.image_series_index) for image in sent] == [101, 120, 140, 160, 161]
+    assert [int(image.image_series_index) for image in sent] == [
+        101, 120, 140, 160, 170, 180, 181,
+    ]
 
-    no_output_connection = FakeConnection(one_tx_images + [None])
+    optional_outputs_disabled_connection = FakeConnection(one_tx_images + [None])
     module.process(
-        no_output_connection,
+        optional_outputs_disabled_connection,
         {
             "parameters": {
                 "sendb1": False,
@@ -430,8 +772,61 @@ tests:
         },
         None,
     )
-    assert no_output_connection.sent_images == []
-    assert no_output_connection.closed is True
+    mandatory_sent = [
+        image
+        for batch in optional_outputs_disabled_connection.sent_images
+        for image in batch
+    ]
+    assert [int(image.image_series_index) for image in mandatory_sent] == [
+        101, 160, 170, 180, 181,
+    ]
+    assert optional_outputs_disabled_connection.closed is True
 
     print("Bloch-Siegert OpenRecon workflow tests passed")
     PY
+
+- name: Delta TE OpenRecon parameter is packaged
+  description: Verify the scanner UI exposes the floating-point Delta TE control.
+  command: |
+    python3 - <<'PY'
+    import json
+    from pathlib import Path
+
+    label = json.loads(
+        Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json").read_text()
+    )
+    parameters = {item["id"]: item for item in label["parameters"]}
+    assert "sendb1" not in parameters
+    assert "sendb0" not in parameters
+    assert "sendmask" not in parameters
+    for parameter_id, label_text in (
+        ("applymask", "Apply Mask"),
+        ("applyfilter", "Apply Filter"),
+    ):
+        parameter = parameters[parameter_id]
+        assert parameter["label"]["en"] == label_text
+        assert parameter["type"] == "boolean"
+        assert parameter["default"] is False
+    delta_te = parameters["deltatems"]
+    assert delta_te["label"]["en"] == "Delta TE"
+    assert delta_te["type"] == "double"
+    assert delta_te["default"] == 1.0
+    assert delta_te["unit"]["en"] == "ms"
+    assert "abstxrefamp" not in parameters
+    ref_amplitude = parameters["refamplitude"]
+    assert ref_amplitude["label"]["en"] == "Ref Amplitude"
+    assert ref_amplitude["type"] == "double"
+    assert ref_amplitude["default"] == 301.0
+    assert ref_amplitude["minimum"] == 0
+    assert ref_amplitude["maximum"] == 2000
+    assert ref_amplitude["unit"]["en"] == "V"
+    for parameter_id in ("predummy", "postdummy"):
+        dummy = parameters[parameter_id]
+        assert dummy["type"] == "int"
+        assert dummy["default"] == 2
+        assert dummy["minimum"] == 0
+        assert dummy["maximum"] == 10
+        assert dummy["unit"]["en"] == "TRs"
+    print("Delta TE OpenRecon parameter is packaged")
+    PY
+  expected_output_contains: "Delta TE OpenRecon parameter is packaged"

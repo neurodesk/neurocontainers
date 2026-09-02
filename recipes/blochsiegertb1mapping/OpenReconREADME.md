@@ -12,8 +12,8 @@ derived Bloch-Siegert map volumes back to the scanner.
 - The workflow requires 11 frames per anatomical slice for the 1Tx case or 46
   frames per anatomical slice for the 8Tx case. As in the MATLAB code, more
   than 25 available frames selects 8 Tx channels; otherwise it selects 1 Tx.
-  The dedicated Tx-phase block follows the four B/C/A/D echoes per channel and
-  precedes the final three post-reference frames.
+  The post-reference frames follow the four B/C/A/D echoes per channel, and
+  the dedicated Tx-phase block occupies the final `nTx` frames.
 - Phase images are expected in the same raw range used by the MATLAB code:
   `phase_radians = raw_phase * 2*pi / 4096 - pi`.
 
@@ -23,24 +23,34 @@ For each anatomical slice group, the OpenRecon path implements the MATLAB
 operations:
 
 - Replace NaNs in magnitude and phase frames with zero.
-- For optional visual QC output, build a magnitude mask from the mean of frames
-  `1:(2*nTx+2)`, thresholded as
-  `mean(low_background) + 0.5 * std(low_background)`, then fill holes. The mask
-  is not applied to any calculated map.
 - Convert phase frames to complex unit phasors with `exp(1i * phase)`.
-- Average frames 1-3 into the pre-reference phase, then compute each Tx
-  Bloch-Siegert phase from its four-echo block. Correct the scanner DICOM phase
-  polarity before unwrapping as
-  `-angle(A * conj(B) * pre * conj(C) * pre * conj(D))`. This BSp-only
-  correction does not change the dedicated Tx phase or B0 phase difference.
-- Add `2*pi` where `BSp < -25 degrees` and retain the remaining small negative
+- Build `phaseMask` from the first `PreDummy+1` frames and every C/D
+  frame. Circularly average those frames, subtract the average phase from each
+  selected frame, and calculate the phase-difference standard deviation in
+  degrees. `phaseMask` uses a `<30 degree` threshold.
+- Build `MaskForMagnitude` from `MBSS1`, the mean of magnitude frames
+  `1:(2*nTx+2)`. For values below the global `MBSS1` mean, set
+  `thr = mean(low_values) + 2 * std(low_values)`, then use `MBSS1 > thr`.
+  Holes are first filled independently in every 2D slice, followed by a 3D
+  hole fill for multi-slice volumes.
+- Compute each Tx Bloch-Siegert phase as `-angle(A * conj(B))`. The BSp and B1
+  calculations do not use the pre-reference frames.
+- Add `2*pi` where `BSp < -90 degrees` and retain the remaining small negative
   values in the BSp output. Clamp only a separate B1-calculation copy to zero,
   then compute `Meas_B1 = sqrt(BSp_for_B1 / KBS)` with
   `KBS = 0.044 * bspulsewidthms / 6`.
-- Use the dedicated contiguous transmit-phase block after the B/C/A/D echoes
-  for the Tx phase output.
-- Average the final three frames into the post-reference phase and compute
-  `B0 = angle(post * conj(pre)) * 1000 / (2*pi)`.
+- For B0 only, exclude up to the first two pre-reference frames and circularly
+  average all remaining pre-reference frames through the last one. Average the
+  post-reference frames immediately after the B/C/A/D echoes and compute
+  `B0 = angle(post * conj(pre)) * 1000 / (2*pi*deltatems)`.
+- Use the final `nTx` frames as the dedicated transmit-phase block.
+- Filter every BS phase volume and the B0 map with a 3D polynomial fit (order
+  20 for 1Tx, order 10 for 8Tx)
+  over voxels trusted by `phaseMask`, followed by a 3D Gaussian filter with
+  `sigma=0.5` and multiplication by `MaskForMagnitude`. By default, only
+  untrusted BS phase voxels are replaced by the fit. `Apply Filter` replaces
+  the entire BS phase volume instead. B0 always replaces only untrusted voxels.
+  B1 is calculated from the resulting filtered BS phase.
 
 ## Outputs
 
@@ -59,7 +69,12 @@ volume uses zero-valued pixels and stores its physical value in the intercept.
 - `<source>-phsc` or `<source>-phsc-txNN`: dedicated transmit phase maps
   converted from radians to degrees. Preferred series indices start at `140`.
 - `<source>-b0`: B0 phase-difference map in Hz on preferred series index `160`.
-- `<source>-mask`: optional binary mask on preferred series index `161`.
+- `<source>-ref-amplitude`: 1Tx reference-amplitude map in V on preferred
+  series index `170`, computed as `11.74 * Ref Amplitude / B1`.
+- `<source>-b1-processing`: masked B1 histogram/cumulative-sum information
+  images in a single derived series (`1` image for 1Tx, `8` images for 8Tx).
+- `<source>-b0-processing`: masked B0 histogram/cumulative-sum information
+  image in a separate derived series.
 
 The preferred series indices are shifted only if the incoming image stream
 already uses one of them.
@@ -78,13 +93,24 @@ for every output series.
 
 ## Parameters
 
-- `sendb1` default `true`: send measured B1 maps.
 - `sendbsp` default `true`: send Bloch-Siegert phase maps.
 - `sendphsc` default `true`: send dedicated transmit phase maps.
-- `sendb0` default `true`: send the B0 map.
-- `sendmask` default `false`: send the magnitude-derived QC mask.
+- B1 and B0 maps are always sent. The masks are never sent as output series.
+- `applymask` default `false`: apply `MaskForMagnitude` to every returned B1,
+  BSp, transmit-phase, and B0 map.
+- `applyfilter` default `false`: change BS phase filtering from replacing only
+  untrusted voxels to replacing the entire volume with the polynomial fit.
+  B0 filtering always replaces only untrusted voxels.
+- Polynomial fitting uses order `20` for 1Tx and order `10` for 8Tx.
 - `bspulsewidthms` default `12.0`: BS pulse width in milliseconds used in the
   KBS calculation.
+- `deltatems` default `1.0`: echo-time difference in milliseconds used to
+  convert the pre/post reference phase evolution to a B0 map in Hz.
+- `predummy` default `2`: number of additional pre-reference dummy TRs.
+- `postdummy` default `2`: number of additional post-reference dummy TRs.
+
+The scanner UI exposes the dummy counts as integer controls from 0 through 10
+with unit `TRs`.
 
 ## Scanner Notes
 
@@ -104,9 +130,11 @@ Slice groups are detected from physical position when available, falling back to
 MRD slice counters or frame-count chunking. Each output volume is derived from
 sorted frame order within its slice group.
 
-The optional magnitude mask follows the MATLAB threshold and per-slice
-hole-filling steps. It is not applied during map processing and is returned
-only as a separate QC series when `sendmask` is enabled.
+Filtering uses `phaseMask` to choose trusted polynomial-fit voxels and always
+multiplies the filtered BSp/B1 and B0 results by `MaskForMagnitude`, following
+the MATLAB workflow. When `Apply Mask` is also enabled, `MaskForMagnitude` is
+applied to every completed output map—including transmit phase—before scanner
+display encoding.
 
 ## Open Source Development
 

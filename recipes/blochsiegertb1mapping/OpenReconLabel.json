@@ -50,13 +50,6 @@
       "information": { "en": "Define the config to be executed by MRD server" }
     },
     {
-      "id": "sendb1",
-      "label": { "en": "Send B1 map" },
-      "type": "boolean",
-      "information": { "en": "Send measured B1 using the full 12-bit uint16 display range with DICOM rescaling back to uT" },
-      "default": true
-    },
-    {
       "id": "sendbsp",
       "label": { "en": "Send BS phase" },
       "type": "boolean",
@@ -71,28 +64,68 @@
       "default": true
     },
     {
-      "id": "sendb0",
-      "label": { "en": "Send B0 map" },
+      "id": "applymask",
+      "label": { "en": "Apply Mask" },
       "type": "boolean",
-      "information": { "en": "Send B0 using the full 12-bit display range with DICOM rescaling back to Hz" },
-      "default": true
+      "information": { "en": "Apply the MATLAB-derived magnitude mask to all output maps" },
+      "default": false
     },
     {
-      "id": "sendmask",
-      "label": { "en": "Send mask" },
+      "id": "applyfilter",
+      "label": { "en": "Apply Filter" },
       "type": "boolean",
-      "information": { "en": "Send the optional magnitude-threshold mask using the full 12-bit display range; it is not applied to calculated maps" },
+      "information": { "en": "Replace the entire BS phase volume with its polynomial fit; otherwise only untrusted voxels are replaced" },
       "default": false
     },
     {
       "id": "bspulsewidthms",
       "label": { "en": "BS pulse width" },
-      "type": "double",
+      "type": "int",
       "information": { "en": "Bloch-Siegert pulse width used for KBS = 0.044 * pulse_width / 6" },
+      "minimum": 1,
+      "maximum": 15,
+      "default": 6,
+      "unit": { "en": "ms" }
+    },
+    {
+      "id": "deltatems",
+      "label": { "en": "Delta TE" },
+      "type": "double",
+      "information": { "en": "Echo-time difference used to convert the B0 phase evolution to Hz" },
       "minimum": 0.1,
       "maximum": 100.0,
-      "default": 12.0,
+      "default": 1.0,
       "unit": { "en": "ms" }
+    },
+    {
+      "id": "refamplitude",
+      "label": { "en": "Ref Amplitude" },
+      "type": "double",
+      "information": { "en": "Reference transmit amplitude used to scale the B1 map" },
+      "minimum": 0,
+      "maximum": 2000,
+      "default": 301.0,
+      "unit": { "en": "V" }
+    },
+    {
+      "id": "predummy",
+      "label": { "en": "No of pre-dummy TRs" },
+      "type": "int",
+      "information": { "en": "Number of pre-dummy TRs" },
+      "minimum": 0,
+      "maximum": 10,
+      "default": 2,
+      "unit": { "en": "TRs" }
+    },
+    {
+      "id": "postdummy",
+      "label": { "en": "No of post-dummy TRs" },
+      "type": "int",
+      "information": { "en": "Number of post-dummy TRs" },
+      "minimum": 0,
+      "maximum": 10,
+      "default": 2,
+      "unit": { "en": "TRs" }
     }
   ]
 }
