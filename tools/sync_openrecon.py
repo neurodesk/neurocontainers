@@ -21,6 +21,17 @@ VERSION_ASSIGNMENT_PATTERN = re.compile(
     r"^(?P<prefix>[ \t]*(?:export[ \t]+)?(?:version|VERSION)=).*$",
     re.MULTILINE,
 )
+OPENRECON_VERSION_ASSIGNMENT_PATTERN = re.compile(
+    r"^(?P<prefix>[ \t]*(?:export[ \t]+)?openrecon_version=).*$",
+    re.MULTILINE,
+)
+OPENRECON_SEMVER_PATTERN = re.compile(
+    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+    r"(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"
+    r"(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
+    r"(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
+)
+TWO_PART_VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 
 
 @dataclass(frozen=True)
@@ -45,15 +56,45 @@ def validate_version(version: str) -> str:
     return version
 
 
+def openrecon_version(version: str) -> str:
+    """Return a schema-valid OpenRecon version for a container release."""
+    validate_version(version)
+    if OPENRECON_SEMVER_PATTERN.fullmatch(version):
+        return version
+    if TWO_PART_VERSION_PATTERN.fullmatch(version):
+        return f"{version}.0"
+    raise ValueError(
+        f"OpenRecon requires a semantic version; cannot normalize {version!r}"
+    )
+
+
 def update_params_version(contents: str, version: str) -> str:
     """Update the first supported version assignment in params.sh."""
     validate_version(version)
     if not VERSION_ASSIGNMENT_PATTERN.search(contents):
         raise RuntimeError("params.sh has no supported version assignment")
-    return VERSION_ASSIGNMENT_PATTERN.sub(
+    updated = VERSION_ASSIGNMENT_PATTERN.sub(
         lambda match: f"{match.group('prefix')}{version}",
         contents,
         count=1,
+    )
+    metadata_version = openrecon_version(version)
+    if metadata_version == version:
+        return OPENRECON_VERSION_ASSIGNMENT_PATTERN.sub("", updated, count=1)
+    if OPENRECON_VERSION_ASSIGNMENT_PATTERN.search(updated):
+        return OPENRECON_VERSION_ASSIGNMENT_PATTERN.sub(
+            lambda match: f"{match.group('prefix')}{metadata_version}",
+            updated,
+            count=1,
+        )
+
+    version_assignment = VERSION_ASSIGNMENT_PATTERN.search(updated)
+    assert version_assignment is not None
+    insertion = f"\nexport openrecon_version={metadata_version}"
+    return (
+        updated[: version_assignment.end()]
+        + insertion
+        + updated[version_assignment.end() :]
     )
 
 
