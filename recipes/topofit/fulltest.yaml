@@ -5,7 +5,7 @@
 # on CPU and can take several minutes on a CPU-only release runner.
 
 name: topofit
-version: "0.2"
+version: "0.2.1"
 
 required_files:
   - dataset: ds000001
@@ -23,6 +23,17 @@ setup:
     mkdir -p "${output_dir}"
 
 tests:
+  - name: OpenRecon-compatible CUDA runtime
+    description: Verify PyTorch stays within the CUDA ceiling enforced by the OpenRecon packager.
+    command: |
+      python3 -c "
+      import torch
+      version = tuple(map(int, torch.version.cuda.split('.')[:2]))
+      assert version <= (11, 8), torch.version.cuda
+      print('OpenRecon-compatible PyTorch CUDA', torch.version.cuda)
+      "
+    expected_output_contains: "OpenRecon-compatible PyTorch CUDA 11.8"
+
   - name: BrainNet launcher available
     description: Verify the pinned upstream command is on PATH.
     command: command -v brainnet

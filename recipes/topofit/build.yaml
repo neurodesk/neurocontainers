@@ -1,9 +1,9 @@
 name: topofit
-version: "0.2"
+version: "0.2.1"
 
 copyright:
   - license: GPL-3.0-only
-    url: https://github.com/simnibs/brainnet/blob/v{{ context.version }}/LICENSE
+    url: https://github.com/simnibs/brainnet/blob/v{{ context.brainnet_version }}/LICENSE
   - license: GPL-3.0-only
     url: https://github.com/simnibs/brainsynth/blob/v{{ context.brainsynth_version }}/LICENSE
   - license: GPL-3.0-only
@@ -13,15 +13,16 @@ architectures:
   - x86_64
 
 variables:
+  brainnet_version: "0.2"
   brainsynth_version: "0.1"
   cortech_version: "0.1"
-  brainnet_wheel_url: "https://github.com/simnibs/brainnet/releases/download/v{{ context.version }}/brainnet-{{ context.version }}-py3-none-any.whl"
+  brainnet_wheel_url: "https://github.com/simnibs/brainnet/releases/download/v{{ context.brainnet_version }}/brainnet-{{ context.brainnet_version }}-py3-none-any.whl"
   brainsynth_wheel_url: "https://github.com/simnibs/brainsynth/releases/download/v{{ context.brainsynth_version }}/brainsynth-{{ context.brainsynth_version }}-py3-none-any.whl"
   cortech_wheel_url: "https://github.com/simnibs/cortech/releases/download/v{{ context.cortech_version }}/cortech-{{ context.cortech_version }}-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl"
 
 build:
   kind: neurodocker
-  base-image: pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+  base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
   pkg-manager: apt
 
   directives:
@@ -94,7 +95,7 @@ readme: |-
   ----------------------------------
   ## topofit/{{ context.version }} ##
 
-  This container packages BrainNet TopoFit {{ context.version }} for fast
+  This container packages BrainNet TopoFit {{ context.brainnet_version }} for fast
   cortical surface reconstruction. It predicts bilateral white and pial
   surfaces plus spherical registration without running a full FreeSurfer
   `recon-all` workflow.
