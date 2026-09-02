@@ -33,18 +33,18 @@ build:
         MCR_INHIBIT_CTF_LOCK: "1"
         MCR_UPDATE: "9"
         MCR_VERSION: R2023b
-        PATH: $PATH:/opt/standalone-hMRItoolboxv1.0.0
+        PATH: $PATH:/opt/standalone-hMRItoolboxv{{ context.version }}
         SPM_HTML_BROWSER: "0"
         SPM_REVISION: r7771
         SPM_VERSION: "12"
         XAPPLRESDIR: /opt/mcr/R2023b/x11/app-defaults
 
     - run:
-        - cp {{ get_file("standalone_hMRItoolboxv1_0_0_tar.gz") }} /opt/standalone-hMRItoolboxv1.0.0.tar.gz
-        - tar -xzf /opt/standalone-hMRItoolboxv1.0.0.tar.gz -C /opt
-        - rm -f /opt/standalone-hMRItoolboxv1.0.0.tar.gz
-        - /opt/standalone-hMRItoolboxv1.0.0/spm12 function exit
-        - chmod a+rx /opt/standalone-hMRItoolboxv1.0.0/ -R
+        - cp {{ get_file("standalone_hmri_toolbox_tarball") }} /opt/standalone-hMRItoolboxv{{ context.version }}.tar.gz
+        - tar -xzf /opt/standalone-hMRItoolboxv{{ context.version }}.tar.gz -C /opt
+        - rm -f /opt/standalone-hMRItoolboxv{{ context.version }}.tar.gz
+        - /opt/standalone-hMRItoolboxv{{ context.version }}/spm12 function exit
+        - chmod a+rx /opt/standalone-hMRItoolboxv{{ context.version }}/ -R
 
 deploy:
   bins:
@@ -76,5 +76,5 @@ gui_apps:
     exec: "bash run_spm12.sh /opt/mcr/R2023b fmri"
 
 files:
-  - name: standalone_hMRItoolboxv1_0_0_tar.gz
-    url: https://github.com/hMRI-group/hMRI-toolbox/releases/download/v1.0.0/standalone-hMRItoolboxv1.0.0.tar.gz
+  - name: standalone_hmri_toolbox_tarball
+    url: https://github.com/hMRI-group/hMRI-toolbox/releases/download/v{{ context.version }}/standalone-hMRItoolboxv{{ context.version }}.tar.gz
