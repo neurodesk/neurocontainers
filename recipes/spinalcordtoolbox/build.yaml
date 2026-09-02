@@ -5,6 +5,15 @@ copyright:
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
 architectures:
   - x86_64
+options:
+  gpu:
+    description: Install SCT with CUDA-enabled PyTorch
+    default: false
+variants:
+  gpu:
+    architecture: x86_64
+    options:
+      gpu: true
 variables:
   upstream_version: "7.3"
 build:
@@ -35,14 +44,22 @@ build:
     - run:
         - chmod a+rwx /opt/spinalcordtoolbox-{{ context.version }}/ -R
     - user: spinalcordtoolbox
-    - run:
+    - condition: not context.options.gpu
+      run:
+        - ./install_sct -i -y -c
+        - rm -rf /home/spinalcordtoolbox/.cache /opt/spinalcordtoolbox-{{ context.version }}/python/pkgs
+    - condition: context.options.gpu
+      run:
         - ./install_sct -i -y -g -c
         - rm -rf /home/spinalcordtoolbox/.cache /opt/spinalcordtoolbox-{{ context.version }}/python/pkgs
     - environment:
         PATH: /opt/spinalcordtoolbox-{{ context.version }}/bin/:$PATH
         SCT_DIR: /opt/spinalcordtoolbox-{{ context.version }}
+    - condition: context.options.gpu
+      environment:
         SCT_USE_GPU: "1"
-    - run:
+    - condition: context.options.gpu
+      run:
         - /opt/spinalcordtoolbox-{{ context.version }}/python/envs/venv_sct/bin/python -c 'import os, torch; assert torch.version.cuda; assert os.environ.get("SCT_USE_GPU") == "1"; print(torch.__version__, torch.version.cuda)'
     - run:
         - sct_deepseg spinalcord -install
@@ -63,10 +80,14 @@ build:
         - sct_deepseg rootlets -install
         - sct_deepseg sc_canal_t2 -install
         - sct_deepseg spine -install
+        - rm -rf /home/spinalcordtoolbox/.cache
+    - condition: not context.options.gpu
+      run:
+        - sct_check_dependencies
     - user: root
     - copy: spinalcordtoolbox.py /opt/code/python-ismrmrd-server/spinalcordtoolbox.py
     - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
-    - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - copy: openrecon_label /opt/code/python-ismrmrd-server/OpenReconLabel.json
     - copy: OpenReconREADME.md /opt/code/python-ismrmrd-server/OpenReconREADME.md
     - deploy:
           bins:
@@ -75,8 +96,13 @@ build:
             - /opt/spinalcordtoolbox-{{ context.version }}/bin/
 readme: |-
   ----------------------------------
-  ## spinalcordtoolbox/{{ context.version }} ##
+  ## {{ context.name }}/{{ context.version }} ##
   This packages upstream SCT {{ context.upstream_version }}.
+  {% if context.options.gpu %}
+  This variant installs SCT's CUDA-enabled PyTorch environment.
+  {% else %}
+  This is the CPU-only variant. Use spinalcordtoolbox_gpu for CUDA support.
+  {% endif %}
 
   SCT tools process MRI data (NIfTI files) and can do fully automatic tasks such as:
   - Segmentation of the spinal cord and gray matter
@@ -97,7 +123,7 @@ readme: |-
 
   More documentation can be found here: https://spinalcordtoolbox.com/en/latest/user_section/getting-started.html
 
-  To run container outside of this environment: ml spinalcordtoolbox/{{ context.version }}
+  To run container outside of this environment: ml {{ context.name }}/{{ context.version }}
 
   license: LGPLv3 (https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE)
 
@@ -109,3 +135,9 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNS
 files:
   - name: downloaded_tar_file
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{ context.upstream_version }}.tar.gz
+  - name: openrecon_label
+    filename: OpenReconLabel.json
+    condition: not context.options.gpu
+  - name: openrecon_label
+    filename: OpenReconLabel.gpu.json
+    condition: context.options.gpu
