@@ -16,7 +16,6 @@ import pytest
 RECIPE_DIR = Path(__file__).resolve().parent
 WRAPPER_PATH = RECIPE_DIR / "spinalcordtoolbox.py"
 LABEL_PATH = RECIPE_DIR / "OpenReconLabel.json"
-GPU_LABEL_PATH = RECIPE_DIR / "OpenReconLabel.gpu.json"
 NIFTI2MRD_PATH = RECIPE_DIR / "nifti2mrd.py"
 
 
@@ -395,43 +394,6 @@ def test_openrecon_exposes_all_supported_deepseg_tasks():
     for analysis_id in EXPECTED_HIDDEN_ANALYSIS_CHOICES:
         assert analysis_id not in choices
     assert "sct_label_vertebrae" in choices
-
-
-def test_cpu_and_gpu_labels_only_differ_in_identity_and_gpu_requirements():
-    cpu_label = json.loads(LABEL_PATH.read_text())
-    gpu_label = json.loads(GPU_LABEL_PATH.read_text())
-
-    assert cpu_label["parameters"] == gpu_label["parameters"]
-    assert cpu_label["general"]["regulatory_information"] == gpu_label["general"][
-        "regulatory_information"
-    ]
-
-    cpu_general = copy.deepcopy(cpu_label["general"])
-    gpu_general = copy.deepcopy(gpu_label["general"])
-    for field in ("name", "information", "id"):
-        cpu_general.pop(field)
-        gpu_general.pop(field)
-    assert cpu_general == gpu_general
-    assert cpu_label["general"]["id"] == "spinalcordtoolbox"
-    assert gpu_label["general"]["id"] == "spinalcordtoolbox_gpu"
-
-    cpu_reconstruction = copy.deepcopy(cpu_label["reconstruction"])
-    gpu_reconstruction = copy.deepcopy(gpu_label["reconstruction"])
-    gpu_fields = (
-        "can_use_gpu",
-        "min_count_required_gpus",
-        "min_required_gpu_memory",
-    )
-    for field in gpu_fields:
-        cpu_reconstruction.pop(field)
-        gpu_reconstruction.pop(field)
-    assert cpu_reconstruction == gpu_reconstruction
-    assert cpu_label["reconstruction"]["can_use_gpu"] is False
-    assert cpu_label["reconstruction"]["min_count_required_gpus"] == 0
-    assert cpu_label["reconstruction"]["min_required_gpu_memory"] == 0
-    assert gpu_label["reconstruction"]["can_use_gpu"] is True
-    assert gpu_label["reconstruction"]["min_count_required_gpus"] == 1
-    assert gpu_label["reconstruction"]["min_required_gpu_memory"] == 10048
 
 
 def test_openrecon_exposes_combined_analysis_bundles():

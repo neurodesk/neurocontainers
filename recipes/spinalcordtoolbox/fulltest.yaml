@@ -54,25 +54,10 @@ tests:
     command: sct_version
     expected_output_contains: "${upstream_version}"
 
-  - name: OpenRecon GPU declaration matches PyTorch
-    description: Verify the staged OpenRecon label matches the installed PyTorch build
-    command: |
-      /opt/spinalcordtoolbox-${version}/python/envs/venv_sct/bin/python - <<'PY'
-      import json
-      from pathlib import Path
-
-      import torch
-
-      label = json.loads(
-          Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json").read_text()
-      )
-      reconstruction = label["reconstruction"]
-      has_cuda = torch.version.cuda is not None
-      assert reconstruction["can_use_gpu"] is has_cuda
-      assert reconstruction["min_count_required_gpus"] == (1 if has_cuda else 0)
-      assert reconstruction["min_required_gpu_memory"] == (10048 if has_cuda else 0)
-      PY
-    expected_exit_code: 0
+  - name: CUDA-enabled PyTorch build
+    description: Verify SCT's isolated Python environment contains a CUDA-enabled PyTorch build
+    command: /opt/spinalcordtoolbox-${version}/python/envs/venv_sct/bin/python -c 'import os, torch; assert torch.version.cuda; assert os.environ.get("SCT_USE_GPU") == "1"; print(f"cuda={torch.version.cuda}")'
+    expected_output_contains: "cuda="
 
   # ==========================================================================
   # IMAGE CONVERSION (sct_convert)
