@@ -5,14 +5,15 @@ Converts NIfTI files to ISMRMRD format for testing the OpenRecon pipeline
 adapted from: https://github.com/jlautman1/open-recon-fetal-brain-measurements/blob/main/nifti_to_ismrmrd_converter.py
 """
 
-import os
-import sys
 import argparse
-import re
-import numpy as np
-import nibabel as nib
+import copy
 import json
-from pathlib import Path
+import os
+import re
+import types
+
+import nibabel as nib
+import numpy as np
 
 try:
     import ismrmrd
@@ -53,7 +54,6 @@ except ImportError as e:
             return json.dumps(self._data)
     
     # Create a mock ismrmrd module
-    import types
     ismrmrd = types.ModuleType('ismrmrd')
     ismrmrd.Image = MockImage
     ismrmrd.Meta = MockMeta
@@ -179,7 +179,7 @@ def extract_metadata_from_filename(nifti_path):
                     slice_thickness = float(part[4:])  # Remove 'Spac' prefix
                     metadata['SliceThickness'] = slice_thickness
             
-            print(f"✅ Parsed metadata from filename:")
+            print("✅ Parsed metadata from filename:")
             print(f"   Series: {metadata['SeriesNumber']}")
             print(f"   Resolution: {metadata['PixelSpacing']}")
             print(f"   Slice thickness: {metadata['SliceThickness']}")
@@ -197,7 +197,7 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     if not os.path.exists(nifti_path):
         raise FileNotFoundError(f"NIfTI file not found: {nifti_path}")
     
-    print(f"🔄 Converting NIfTI to ISMRMRD format")
+    print("🔄 Converting NIfTI to ISMRMRD format")
     print(f"   Input: {nifti_path}")
     
     # Load NIfTI data
@@ -337,7 +337,7 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     if hasattr(ismrmrd_image, 'attribute_string'):
         ismrmrd_image.attribute_string = meta_obj.serialize()
     
-    print(f"✅ Successfully created ISMRMRD Image")
+    print("✅ Successfully created ISMRMRD Image")
     print(f"   Data shape: {ismrmrd_image.data.shape}")
     print(f"   Data type: {ismrmrd_image.data.dtype}")
     
@@ -353,7 +353,7 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
         try:
             # Check if we have the real ismrmrd module (not mock)
             if hasattr(ismrmrd, 'Dataset'):
-                print(f"📝 Creating proper ISMRMRD Dataset file...")
+                print("📝 Creating proper ISMRMRD Dataset file...")
                 
                 # Ensure parent directory exists
                 os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -363,29 +363,33 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                 mrdDset._file.require_group('dataset')
                 
                 # Create XML header with proper metadata
-                print(f"📋 Creating ISMRMRD XML header...")
-                mrdHead = ismrmrd.xsd.ismrmrdHeader(experimentalConditions=ismrmrd.xsd.experimentalConditionsType(H1resonanceFrequency_Hz=1))
+                print("📋 Creating ISMRMRD XML header...")
+                mrd_head = ismrmrd.xsd.ismrmrdHeader(
+                    experimentalConditions=ismrmrd.xsd.experimentalConditionsType(
+                        H1resonanceFrequency_Hz=1
+                    )
+                )
                 
                 # Study Information
-                mrdHead.studyInformation = ismrmrd.xsd.studyInformationType()
-                mrdHead.studyInformation.studyDescription = metadata.get('StudyDescription', 'NIFTI_CONVERSION')
+                mrd_head.studyInformation = ismrmrd.xsd.studyInformationType()
+                mrd_head.studyInformation.studyDescription = metadata.get('StudyDescription', 'NIFTI_CONVERSION')
                 
                 # Patient Information
-                mrdHead.subjectInformation = ismrmrd.xsd.subjectInformationType()
-                mrdHead.subjectInformation.patientName = metadata.get('PatientName', 'TEST^PATIENT')
-                mrdHead.subjectInformation.patientID = metadata.get('PatientID', 'TEST001')
+                mrd_head.subjectInformation = ismrmrd.xsd.subjectInformationType()
+                mrd_head.subjectInformation.patientName = metadata.get('PatientName', 'TEST^PATIENT')
+                mrd_head.subjectInformation.patientID = metadata.get('PatientID', 'TEST001')
                 
                 # Acquisition System Information
-                mrdHead.acquisitionSystemInformation = ismrmrd.xsd.acquisitionSystemInformationType()
-                mrdHead.acquisitionSystemInformation.systemVendor = 'NIfTI_Converter'
-                mrdHead.acquisitionSystemInformation.systemModel = 'Virtual'
-                mrdHead.acquisitionSystemInformation.institutionName = 'Test'
+                mrd_head.acquisitionSystemInformation = ismrmrd.xsd.acquisitionSystemInformationType()
+                mrd_head.acquisitionSystemInformation.systemVendor = 'NIfTI_Converter'
+                mrd_head.acquisitionSystemInformation.systemModel = 'Virtual'
+                mrd_head.acquisitionSystemInformation.institutionName = 'Test'
                 
                 # Get voxel size and FOV from metadata
                 voxel_size = orientation_info['voxel_size']
 
                 # Encoded space (acquisition space)
-                encodedSpace = ismrmrd.xsd.encodingSpaceType(
+                encoded_space = ismrmrd.xsd.encodingSpaceType(
                     matrixSize=ismrmrd.xsd.matrixSizeType(
                         x=int(ismrmrd_data.shape[0]),
                         y=int(ismrmrd_data.shape[1]),
@@ -398,41 +402,30 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                     )
                 )
                 
-                # Recon space (same as encoded for NIfTI conversion)
-                reconSpace = ismrmrd.xsd.encodingSpaceType(
-                    matrixSize=ismrmrd.xsd.matrixSizeType(
-                        x=int(ismrmrd_data.shape[0]),
-                        y=int(ismrmrd_data.shape[1]),
-                        z=1
-                    ),
-                    fieldOfView_mm=ismrmrd.xsd.fieldOfViewMm(
-                        x=float(ismrmrd_data.shape[0] * voxel_size[0]),
-                        y=float(ismrmrd_data.shape[1] * voxel_size[1]),
-                        z=float(voxel_size[2])
-                    )
-                )
+                # Recon space is identical for NIfTI conversion.
+                recon_space = copy.deepcopy(encoded_space)
 
                 # Encoding information
                 encoding = ismrmrd.xsd.encodingType(
-                    encodedSpace=encodedSpace,
-                    reconSpace=reconSpace,
+                    encodedSpace=encoded_space,
+                    reconSpace=recon_space,
                     trajectory=ismrmrd.xsd.trajectoryType.CARTESIAN,
                     encodingLimits=ismrmrd.xsd.encodingLimitsType()
                 )
-                mrdHead.encoding.append(encoding)
+                mrd_head.encoding.append(encoding)
                 
                 # Sequence parameters
-                mrdHead.sequenceParameters = ismrmrd.xsd.sequenceParametersType()
-                mrdHead.sequenceParameters.TR = [1.0]
-                mrdHead.sequenceParameters.TE = [1.0]
+                mrd_head.sequenceParameters = ismrmrd.xsd.sequenceParametersType()
+                mrd_head.sequenceParameters.TR = [1.0]
+                mrd_head.sequenceParameters.TE = [1.0]
                 
                 print(f"   Matrix size: {ismrmrd_data.shape[0]} x {ismrmrd_data.shape[1]} x {ismrmrd_data.shape[2]}")
                 print(f"   FOV: {encoding.encodedSpace.fieldOfView_mm.x:.2f} x {encoding.encodedSpace.fieldOfView_mm.y:.2f} x {encoding.encodedSpace.fieldOfView_mm.z:.2f} mm")
                 print(f"   Voxel size: {voxel_size[0]:.4f} x {voxel_size[1]:.4f} x {voxel_size[2]:.4f} mm")
                 
                 # Write XML header
-                mrdDset.write_xml_header(mrdHead.toXML('utf-8'))
-                print(f"✅ Written XML header")
+                mrdDset.write_xml_header(mrd_head.toXML('utf-8'))
+                print("✅ Written XML header")
                 
                 # Create image with proper metadata
                 tmpMeta = ismrmrd.Meta()
@@ -460,7 +453,11 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                 for rep_idx in range(n_repetitions):
                     for slice_idx in range(ismrmrd_data.shape[2]):
                         # Extract 2D slice [X, Y]
-                        slice_data = ismrmrd_data[:, :, slice_idx, rep_idx].astype(np.float32)
+                        if ismrmrd_data.ndim == 4:
+                            slice_data = ismrmrd_data[:, :, slice_idx, rep_idx]
+                        else:
+                            slice_data = ismrmrd_data[:, :, slice_idx]
+                        slice_data = slice_data.astype(np.float32)
                         
                         # Create ISMRMRD image for this slice
                         try:
@@ -596,7 +593,7 @@ def main():
         print(f"   Series: {metadata.get('SeriesNumber', 'Unknown')}")
         print(f"   PixelSpacing: {metadata.get('PixelSpacing', 'Unknown')}")
         print(f"   SliceThickness: {metadata.get('SliceThickness', 'Unknown')}")
-        print(f"\n🧭 Orientation Information:")
+        print("\n🧭 Orientation Information:")
         print(f"   First slice position: {metadata.get('position', 'Unknown')}")
         print(f"   Read direction: {metadata.get('read_dir', 'Unknown')}")
         print(f"   Phase direction: {metadata.get('phase_dir', 'Unknown')}")

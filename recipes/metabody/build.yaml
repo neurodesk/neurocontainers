@@ -11,6 +11,8 @@ files:
       url: https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz
     - name: metabody.py
       filename: metabody.py
+    - name: miniconda_installer
+      url: "{{ context.conda_download_url }}"
 
 readme_url: https://raw.githubusercontent.com/astewartau/prostate/refs/heads/main/README.md
 
@@ -114,9 +116,7 @@ build:
         # Miniconda installer
         - workdir: /tmp
         - run:
-              - curl -fsSL -o miniconda.sh {{ context.conda_download_url }}
-              - bash miniconda.sh -b -p /opt/miniconda-{{ context.conda_version }}
-              - rm miniconda.sh
+              - bash {{ get_file("miniconda_installer") }} -b -p /opt/miniconda-{{ context.conda_version }}
         - environment:
               PATH: /opt/miniconda-{{ context.conda_version }}/bin:$PATH
         - run:

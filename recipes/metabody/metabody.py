@@ -1,22 +1,22 @@
-import ismrmrd
-import logging
-import traceback
-import numpy as np
-import base64
-import mrdhelper
-import constants
-import nibabel as nib
-import subprocess
-import matplotlib.pyplot as plt
 import copy
-
-from skimage.segmentation import find_boundaries
-import SimpleITK as sitk
+import logging
 import os
+import subprocess
+import traceback
+
+import ismrmrd
+import matplotlib.pyplot as plt
+import nibabel as nib
+import numpy as np
+
+import constants
+import mrdhelper
 
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
+ORIGINAL_SERIES_INDEX = 99
+RGB_IMAGE_TYPE = 6
 
 def process(connection, config, metadata):
     logging.info("Config: \n%s", config)
@@ -128,7 +128,7 @@ def process(connection, config, metadata):
             connection.send_image(image)
             imgGroup = []
 
-    except Exception as e:
+    except Exception:
         logging.error(traceback.format_exc())
         connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
 
@@ -141,8 +141,12 @@ def process_image(images, connection, config, metadata):
     if len(images) == 0:
         return []
 
-    send_originals = mrdhelper.get_json_config_param(config, 'sendOriginal', default=False)
-    colormap = mrdhelper.get_json_config_param(config, 'colormap', default='none')
+    send_originals = mrdhelper.get_json_config_param(
+        config, 'sendOriginal', default=True
+    )
+    colormap = mrdhelper.get_json_config_param(
+        config, 'colormap', default='seismic'
+    )
     do_rgb = colormap != 'none'
 
     # Note: The MRD Image class stores data as [cha z y x]
@@ -150,19 +154,28 @@ def process_image(images, connection, config, metadata):
     data = []
     head = []
     meta = []
-    stack_order = {}
+    header_index_by_slice = {}
     slices = []
     repetitions = []
     for img_idx, img in enumerate(images):
         data.append(img.data)
         head.append(img.getHead())
         meta.append(ismrmrd.Meta.deserialize(img.attribute_string))
-        stack_order[(img.slice, img.repetition)] = img_idx
+        header_index_by_slice.setdefault(img.slice, img_idx)
         slices.append(img.slice)
         repetitions.append(img.repetition)
     data = np.stack(data)
-    n_slices = np.unique(slices).shape[0]
-    n_repetitions = np.unique(repetitions).shape[0]
+    slice_ids = sorted(set(slices))
+    repetition_ids = sorted(set(repetitions))
+    slice_positions = {
+        slice_id: position for position, slice_id in enumerate(slice_ids)
+    }
+    repetition_positions = {
+        repetition_id: position
+        for position, repetition_id in enumerate(repetition_ids)
+    }
+    n_slices = len(slice_ids)
+    n_repetitions = len(repetition_ids)
 
     # Diagnostic info
     matrix    = np.array(head[0].matrix_size  [:]) 
@@ -189,10 +202,10 @@ def process_image(images, connection, config, metadata):
     # Transpose to [y x rep slc]
     new_data = np.zeros((data.shape[-2], data.shape[-1], n_slices, n_repetitions))
     for img in images:
-            # Using slice and repetition indices from metadata so ordering
-            # is not important here.
-            # Note: The MRD Image class stores data as [cha z y x]
-            new_data[:, :, img.slice, img.repetition] = img.data[0, 0, :, :]
+        # Use dense positions so sparse MRD counters do not become array indices.
+        slice_position = slice_positions[img.slice]
+        repetition_position = repetition_positions[img.repetition]
+        new_data[:, :, slice_position, repetition_position] = img.data[0, 0, :, :]
     data = new_data
 
     logging.debug("Original image data after transposing is %s" % (data.shape,))
@@ -207,7 +220,8 @@ def process_image(images, connection, config, metadata):
     meta_voxelsize[1] = float(meta[0].get('PixelSpacing', ['0', '0'])[1])
     meta_voxelsize[2] = float(meta[0].get('SliceThickness', '0'))
     
-    affine[:3, 3] = np.array(head[0].position)  # Translation
+    first_slice_header = head[header_index_by_slice[slice_ids[0]]]
+    affine[:3, 3] = np.array(first_slice_header.position)  # Translation
     affine[:3, 0] = np.array(head[0].phase_dir ) * voxelsize[1]  # Y direction
     affine[:3, 1] = np.array(head[0].read_dir) * voxelsize[0]  # X direction
     affine[:3, 2] = np.array(head[0].slice_dir) * voxelsize[2]  # Z direction
@@ -218,9 +232,6 @@ def process_image(images, connection, config, metadata):
     new_img = nib.nifti1.Nifti1Image(data, affine=affine)
     nib.save(new_img, 'nifti_from_h5.nii')
     logging.info('Saved NIfTI image for AFNI processing')
-
-    ## TODO: Figure out stimulus times onsets.
-    stim_labels = get_stim_labels(config)
 
     ## WRITE AFNI SCRIPTS HERE!!!!
     logging.info('Running AFNI processing')
@@ -290,8 +301,6 @@ def process_image(images, connection, config, metadata):
     else:
         data = data.astype(np.int16)
 
-    currentSeries = 0
-
     # Re-slice image data back into 2D images.
     # Preallocate outputs for speed and efficiency.
     imagesOut = [None] * (n_stats * n_slices)
@@ -305,14 +314,14 @@ def process_image(images, connection, config, metadata):
     # the output list.
     out_idx = 0
     for stat in range(n_stats):
-        for slc in np.unique(slices):
-            idx = stack_order[(slc, stat)]
+        for slice_position, slice_id in enumerate(slice_ids):
+            header_index = header_index_by_slice[slice_id]
 
             # Create new MRD instance for the final image
             # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
             # from_array() should be called with 'transpose=False' to avoid warnings, and when called
             # with this option, can take input as: [cha z y x], [z y x], or [y x]
-            img_data = data[..., stat, slc]
+            img_data = data[..., stat, slice_position]
             # logging.debug(f'Output image data shape for slice {slc} and stat {stat}: {img_data.shape}')
             # if do_rgb:
             #     # Make sure RGB takes place of 'cha'.
@@ -322,34 +331,26 @@ def process_image(images, connection, config, metadata):
             # Create a copy of the original fixed header and update the data_type
             # (we changed it to int16 from all other types)
             # logging.debug("Head index for img %d is %d (out of %d headers)", idx, head_meta_idx, len(head))
-            try:
-                oldHeader = copy.deepcopy(head[idx])
-            except IndexError as err:
-                logging.debug(f'Error with header index: idx={idx}; max={len(head)} (slice={slc}; stat={stat})')
-
-            # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
-            if mrdhelper.get_meta_value(meta[idx], 'IceMiniHead') is not None:
-                if mrdhelper.extract_minihead_bool_param(base64.b64decode(meta[idx]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
-                    currentSeries += 1
+            oldHeader = copy.deepcopy(head[header_index])
 
             oldHeader.data_type = imagesOut[out_idx].data_type
-            oldHeader.slice = slc
+            oldHeader.slice = slice_id
             oldHeader.repetition = stat
             oldHeader.image_index = out_idx + 1
             if do_rgb:
                 # Set RGB parameters
                 # To be defined as ismrmrd.IMTYPE_RGB
-                oldHeader.image_type = 6
+                oldHeader.image_type = RGB_IMAGE_TYPE
                 # RGB "channels".  This is set by from_array, but need to
                 # be explicit as we're copying the old header instead.
                 # Otherwise the data itself gets amended.
-                oldHeader.channels = 3  
+                oldHeader.channels = 3
             imagesOut[out_idx].setHead(oldHeader)
 
             # Stat maps are first in the output
             img_comment = stat_labels[stat] if stat <= len(stat_labels)-1 else 'fMRI'
             # Create a copy of the original ISMRMRD Meta attributes and update
-            tmpMeta = meta[idx]
+            tmpMeta = ismrmrd.Meta.deserialize(meta[header_index].serialize())
             tmpMeta['DataRole']                       = 'Image'
             tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'METABODY']
             tmpMeta['WindowCenter']                   = str((maxVal+1)/2)
@@ -385,7 +386,7 @@ def process_image(images, connection, config, metadata):
 
             imagesOut[out_idx].attribute_string = metaXml
             # For debugging and troubleshooting.
-            image_details['slice'][out_idx] = int(slc)
+            image_details['slice'][out_idx] = int(slice_id)
             image_details['repetition'][out_idx] = stat
             image_details['x'][out_idx] = imagesOut[out_idx].data.shape[-1]
             image_details['y'][out_idx] = imagesOut[out_idx].data.shape[-2]
@@ -402,10 +403,10 @@ def process_image(images, connection, config, metadata):
             # In reverse order so that they'll be in correct order as we insert them to the front of the list
             for image in reversed(images):
                 # Create a copy to not modify the original inputs
-                tmpImg = image
+                tmpImg = copy.deepcopy(image)
 
                 # Change the series_index to have a different series
-                tmpImg.image_series_index = 99
+                tmpImg.image_series_index = ORIGINAL_SERIES_INDEX
 
                 # Ensure Keep_image_geometry is set to not reverse image orientation
                 tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
@@ -444,9 +445,6 @@ def show_stats(img_path, stats_img_path, output_path='./'):
 
     # Set threshold for showing voxels
     thresh = 0.9
-    # Max value for masking (should be 10% higher than normalised max)
-    mask_val = 4095 * (1 - thresh)
-
     # Set to more usual values for MRI image but reserve the top 10% 
     # for showing stats
     norm_data = norm_data * (4095 * thresh)
@@ -482,7 +480,6 @@ def show_stats(img_path, stats_img_path, output_path='./'):
     output_data = []
     output_labels = []
     for coef_label, tstat_label in coefs_stats:
-        coef_idx = labels.index(coef_label)
         stat_idx = labels.index(tstat_label)
 
         # Find all data that have coefficients above a certain threshold
@@ -510,16 +507,3 @@ def normalise_data(data):
     normalized_data = (data - min_val) / (max_val - min_val)
 
     return normalized_data
-
-
-def get_stim_labels(config):
-    stim_labels = []
-    # Choose a sufficiently high number so to get all possible
-    # conditions.
-    for ii in range(1, 50):
-        condition = mrdhelper.get_json_config_param(config, f'condition-{ii}', default=None)
-        if condition is None or condition == '':
-            break
-        stim_labels.append(condition)
-    logging.info(f'Extracted stimulus labels from config: {stim_labels}')
-    return stim_labels
