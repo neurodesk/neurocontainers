@@ -139,7 +139,7 @@ build:
         # NSM: install against the baseline torch and the minimal pyMSKT set below.
         - git clone https://github.com/gattia/nsm /opt/nsm
         - cd /opt/nsm
-        - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio|mskt)[[:space:]]*$/d' requirements.txt
+        - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio|mskt)([[:space:]]*[<>=!~].*)?[[:space:]]*$/d' requirements.txt
         - pip install --no-cache-dir -r requirements.txt
         - pip install --no-cache-dir --no-deps .
         # DOSMA bone_seg branch (qDESS bone/cartilage segmentation).
