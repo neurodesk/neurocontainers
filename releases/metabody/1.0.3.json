@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "metabody 1.0.3": {
+      "version": "20260902",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ]
+}
