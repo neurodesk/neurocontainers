@@ -37,6 +37,19 @@
   },
   "parameters": [
     {
+      "id": "config",
+      "label": { "en": "Configuration" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "metabody",
+          "name": { "en": "metabody" }
+        }
+      ],
+      "default": "metabody",
+      "information": { "en": "MRD server configuration to run." }
+    },
+    {
       "id": "sendOriginal",
       "label": { "en": "Send original images" },
       "type": "boolean",

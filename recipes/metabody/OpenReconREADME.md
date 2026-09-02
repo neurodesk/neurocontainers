@@ -17,6 +17,7 @@ foot, right foot, left hand, right hand, and tongue contrasts.
 
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
+| Configuration | `config` | choice | `metabody` | Run the Metabody MRD server configuration. |
 | Send original images | `sendOriginal` | boolean | `true` | Return copies of the input images as series 99 before the statistical maps. |
 | Colormap name | `colormap` | choice | `seismic` | Apply a Matplotlib colormap to the statistical maps. Select `none` for grayscale output. |
 
