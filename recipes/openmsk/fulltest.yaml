@@ -35,10 +35,21 @@ tests:
       readme = Path("/opt/code/python-ismrmrd-server/OpenReconREADME.md")
       data = json.loads(label.read_text())
       parameters = {parameter["id"] for parameter in data["parameters"]}
+      segmodel = next(parameter for parameter in data["parameters"] if parameter["id"] == "segmodel")
       assert parameters == {"config", "sendoriginal", "segmodel", "computethickness"}
       assert data["parameters"][0]["values"][0]["name"]["en"] == "DESS"
+      assert segmodel["default"] == "goyal_sagittal"
+      assert [value["id"] for value in segmodel["values"]] == [
+          "goyal_sagittal",
+          "goyal_coronal",
+          "goyal_axial",
+          "nnunet_knee",
+      ]
+      assert "acl_qdess_bone_july_2024" not in label.read_text()
       assert "qDESS" not in label.read_text()
-      assert "OpenMSK" in readme.read_text()
+      readme_text = readme.read_text()
+      assert "## Segmentation models" in readme_text
+      assert "342 training volumes" in readme_text
       print(label)
       PY
 
