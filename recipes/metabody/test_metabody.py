@@ -105,6 +105,7 @@ def test_sparse_counters_use_dense_stacking_and_slice_headers(monkeypatch):
 
     assert all(cloned is not source for cloned, source in zip(original_output, images))
     assert all(image.image_series_index == 99 for image in original_output)
+    assert all(image.image_series_index == 100 for image in stats_output)
     assert all(image.image_series_index == 12 for image in images)
     assert [image.attribute_string for image in images] == original_attributes
 
