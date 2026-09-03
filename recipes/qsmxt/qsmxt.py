@@ -1339,15 +1339,60 @@ def _affine_from_image_stack(images, shape_xyz):
     dims = np.asarray(shape_xyz, dtype=float)
     voxel = np.divide(fov, dims, out=np.ones(3, dtype=float), where=dims > 0)
 
-    slice_step = slice_dir * voxel[2]
+    source_matrix = np.asarray(first_header.matrix_size, dtype=float)
+    source_slice_count = (
+        source_matrix[2]
+        if source_matrix.size >= 3
+        and source_matrix[2] > 0
+        and np.isfinite(source_matrix[2])
+        else 1.0
+    )
+    declared_slice_spacing = float(fov[2] / source_slice_count)
+    if declared_slice_spacing <= 0 or not np.isfinite(declared_slice_spacing):
+        declared_slice_spacing = 1.0
+    slice_step = slice_dir * declared_slice_spacing
     positions = [
         np.asarray(image.getHead().position, dtype=float)
         for image in images
     ]
+    candidate_step = np.zeros(3, dtype=float)
+    candidate_spacing = 0.0
+    candidate_alignment = 0.0
     if len(positions) > 1:
         candidate_step = (positions[-1] - positions[0]) / float(len(positions) - 1)
-        if np.linalg.norm(candidate_step) > 0:
+        candidate_spacing = float(np.linalg.norm(candidate_step))
+        if candidate_spacing > 0 and np.isfinite(candidate_spacing):
+            candidate_alignment = abs(
+                float(np.dot(candidate_step / candidate_spacing, slice_dir))
+            )
+        if (
+            candidate_spacing >= declared_slice_spacing * 0.5
+            and candidate_alignment >= 0.9
+        ):
             slice_step = candidate_step
+        elif candidate_spacing > 0:
+            logging.warning(
+                "Ignoring implausible source stack position step %.9g mm "
+                "(declared slice spacing %.9g mm, alignment %.6g)",
+                candidate_spacing,
+                declared_slice_spacing,
+                candidate_alignment,
+            )
+
+    logging.info(
+        "QSMxT diagnostic source stack geometry: images=%d "
+        "source_matrix=%s field_of_view=%s declared_slice_spacing=%.9g "
+        "position_span=%.9g candidate_spacing=%.9g alignment=%.6g "
+        "selected_slice_step=%s",
+        len(images),
+        np.array2string(source_matrix, precision=6, separator=","),
+        np.array2string(fov, precision=6, separator=","),
+        declared_slice_spacing,
+        float(np.linalg.norm(positions[-1] - positions[0])),
+        candidate_spacing,
+        candidate_alignment,
+        np.array2string(slice_step, precision=9, separator=","),
+    )
 
     first_position = positions[0]
     origin = (

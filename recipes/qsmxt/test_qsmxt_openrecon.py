@@ -747,6 +747,34 @@ def test_write_bids_dataset_stacks_single_slice_echo_groups_from_metadata(tmp_pa
     assert sidecar["B0_dir"] == [0.0, 0.0, 1.0]
 
 
+def test_images_to_nifti_volume_rejects_implausibly_small_position_spacing():
+    images = []
+    for slice_index in range(4):
+        image = _image(
+            1,
+            slice_index + 1,
+            "gre_qsm_Mag",
+            np.full((1, 3, 4), 1000 + slice_index, dtype=np.float32),
+            meta_values={"Actual3DImagePartNumber": str(slice_index)},
+            header_values={"slice": slice_index},
+        )
+        header = image.getHead()
+        _set_header_vector(header, "field_of_view", [4.0, 3.0, 1.0])
+        _set_header_vector(header, "slice_dir", [0.0, 0.0, -1.0])
+        _set_header_vector(
+            header,
+            "position",
+            [0.0, 0.0, -float(slice_index) / 3.0],
+        )
+        image.setHead(header)
+        images.append(image)
+
+    volume, affine = qsmxt._images_to_nifti_volume(images, kind="magnitude")
+
+    assert volume.shape == (4, 3, 4)
+    np.testing.assert_allclose(affine[:3, 2], [0.0, 0.0, -1.0])
+
+
 def test_write_bids_dataset_groups_scanner_slices_by_echo_from_minihead(tmp_path):
     settings = qsmxt._settings_from_config({}, FakeMetadata())
 
