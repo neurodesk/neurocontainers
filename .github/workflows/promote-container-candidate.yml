@@ -205,6 +205,7 @@ jobs:
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
     runs-on: neurodesk-syd-arcrunner-neurocontainers
+    timeout-minutes: 720
     permissions:
       actions: read
       contents: write
