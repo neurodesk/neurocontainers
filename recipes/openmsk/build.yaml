@@ -9,7 +9,6 @@ variables:
   # canonical labels 1-7 (+ subregions 11-15) and leave canonical 8/9 unused,
   # because openmsk.py parks the menisci there during post-processing.
   kneepipeline_commit: "61144f23d9001950a70f77cb70d628e1883da86d"
-  dosma_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/Goyal_Bone_Cart_July_2024_best_model.h5"
   dosma_sagittal_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/sagittal_best_model.h5"
   dosma_coronal_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/coronal_best_model.h5"
   dosma_axial_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/axial_best_model.h5"
@@ -38,8 +37,6 @@ files:
     filename: nnunet_numpy_compat.py
   - name: openmsk_nnunet_worker_patch.py
     filename: openmsk_nnunet_worker_patch.py
-  - name: dosma_qdess_model
-    url: "{{ context.dosma_model_url }}"
   - name: dosma_sagittal_model
     url: "{{ context.dosma_sagittal_model_url }}"
   - name: dosma_coronal_model
@@ -66,10 +63,10 @@ files:
         "perform_bone_only_nsm": false,
         "perform_bone_and_cart_nsm": false,
         "clip_femur_top": true,
-        "default_seg_model": "acl_qdess_bone_july_2024",
+        "default_seg_model": "goyal_sagittal",
         "batch_size": 32,
         "models": {
-          "acl_qdess_bone_july_2024": "/opt/DOSMA_WEIGHTS/Goyal_Bone_Cart_July_2024_best_model.h5",
+          "acl_qdess_bone_july_2024": "/opt/DOSMA_WEIGHTS/sagittal_best_model.h5",
           "goyal_sagittal": "/opt/DOSMA_WEIGHTS/sagittal_best_model.h5",
           "goyal_coronal": "/opt/DOSMA_WEIGHTS/coronal_best_model.h5",
           "goyal_axial": "/opt/DOSMA_WEIGHTS/axial_best_model.h5"
@@ -142,7 +139,7 @@ build:
         # NSM: install against the baseline torch and the minimal pyMSKT set below.
         - git clone https://github.com/gattia/nsm /opt/nsm
         - cd /opt/nsm
-        - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio|mskt)[[:space:]]*$/d' requirements.txt
+        - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio|mskt)([[:space:]]*[<>=!~].*)?[[:space:]]*$/d' requirements.txt
         - pip install --no-cache-dir -r requirements.txt
         - pip install --no-cache-dir --no-deps .
         # DOSMA bone_seg branch (qDESS bone/cartilage segmentation).
@@ -175,7 +172,6 @@ build:
         - git submodule update --init --recursive
         - python {{ get_file("openmsk_nnunet_worker_patch.py") }} /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference/scripts/inference.py
         - mkdir -p /opt/DOSMA_WEIGHTS /opt/NSM_MODELS /opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference/huggingface/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/fold_1
-        - cp {{ get_file("dosma_qdess_model") }} /opt/DOSMA_WEIGHTS/Goyal_Bone_Cart_July_2024_best_model.h5
         - cp {{ get_file("dosma_sagittal_model") }} /opt/DOSMA_WEIGHTS/sagittal_best_model.h5
         - cp {{ get_file("dosma_coronal_model") }} /opt/DOSMA_WEIGHTS/coronal_best_model.h5
         - cp {{ get_file("dosma_axial_model") }} /opt/DOSMA_WEIGHTS/axial_best_model.h5
@@ -229,12 +225,24 @@ readme: |-
 
   OpenMSK packages the KneePipeline knee MRI toolbox as a Siemens OpenRecon
   image-to-image module for DESS knee MRI. The OpenRecon path receives MRD
-  images from the scanner, reconstructs a both-echo RSS NIfTI, runs KneePipeline, and
+  images from the scanner, builds a two-echo RSS NIfTI, runs KneePipeline, and
   returns bone/cartilage/meniscus segmentation with geometry copied from the
-  source images. The wrapper preserves both DESS echo groups and synthesizes a
-  minimal two-echo DICOM series with TR/TE/flip and GL/TG values so
-  KneePipeline's DESS loader can run its analytical T2 step from OpenRecon
-  MRD input. For `sequenceName`, `sequenceName_fid`, and `sequenceName_SE`,
+  source images.
+
+  This OpenRecon workflow was tested using the Siemens DESS WIP
+  `wip_dess_CS_260902` on a MAGNETOM 3.0T X60 running Numaris/X VA61A-092T.
+  The protocol exports are stored in this repository and available from
+  GitHub: [PDF](https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/openmsk/wip_dess_CS_260902.pdf)
+  and [.pro](https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/openmsk/wip_dess_CS_260902.pro).
+  The `.pro` file includes the saved OpenRecon algorithm selection and OpenMSK
+  parameters used for the test.
+
+  The wrapper preserves both DESS echo groups and synthesizes a
+  minimal two-echo DICOM series with TR/TE/flip and DOSMA-compatible GL/TG
+  adapter fields. This lets KneePipeline's DESS loader run its analytical T2
+  step from OpenRecon MRD input. The GL/TG adapter fields are not documented
+  Siemens qDESS private attributes. For `sequenceName`, `sequenceName_fid`,
+  and `sequenceName_SE`,
   segmentation uses the voxelwise root-sum-of-squares of `_fid` and `_SE`,
   fitting uses the echoes separately, and the corrected second echo time is
   computed as `TE2 = 2 * TR - TE1`. Equal-sized `set=0`
@@ -254,9 +262,10 @@ readme: |-
   KneePipeline identifies DESS input, and returns subregion segmentation,
   T2 maps, and a burned-in metrics report image series whenever those artifacts
   are written. The same metrics are copied into output metadata comments.
-  The packaged segmentation models are
-  `acl_qdess_bone_july_2024`, `goyal_sagittal`, `goyal_coronal`,
-  `goyal_axial`, and `nnunet_knee`. Optional mesh/thickness analysis can run
+  The packaged segmentation models are `goyal_sagittal`, `goyal_coronal`,
+  `goyal_axial`, and `nnunet_knee`. Legacy saved protocols that request
+  `acl_qdess_bone_july_2024` use the identical `goyal_sagittal` checkpoint.
+  Optional mesh/thickness analysis can run
   after segmentation when the `computethickness` OpenRecon option is enabled.
   The `nnunet_knee` path is packaged with single preprocessing/export worker
   defaults for scanner-side memory stability.
@@ -272,8 +281,8 @@ readme: |-
   packaged. Legacy DESS acquisition fallback parameters are also accepted but
   hidden from the OpenRecon GUI.
 
-  Direct DICOM usage keeps the DESS GL/TG private tags and can produce the
-  full output set including T2:
+  Direct DICOM usage can produce the full output set, including T2, when the
+  input contains the DESS timing and spoiler metadata expected by DOSMA:
 
   ```bash
   ml openmsk/{{ context.version }}
