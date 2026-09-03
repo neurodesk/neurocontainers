@@ -1,10 +1,32 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from tools import sync_openrecon
+
+
+def test_sync_openrecon_runs_as_workflow_script(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    script = repo_root / "tools" / "sync_openrecon.py"
+    isolated_runner = (
+        "import runpy, sys, types; "
+        "sys.modules['yaml'] = types.ModuleType('yaml'); "
+        "sys.argv = ['sync_openrecon.py', '--help']; "
+        f"runpy.run_path({str(script)!r}, run_name='__main__')"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-S", "-c", isolated_runner],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def write_source_recipe(root: Path, recipe: str = "demo") -> None:
