@@ -1,10 +1,10 @@
 {
   "general": {
-    "name": { "en": "spinalcordtoolbox" },
+    "name": { "en": "spinalcordtoolbox GPU" },
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
-    "information": { "en": "spinalcordtoolbox" },
-    "id": "spinalcordtoolbox",
+    "information": { "en": "spinalcordtoolbox GPU" },
+    "id": "spinalcordtoolbox_gpu",
     "regulatory_information": {
       "device_trade_name":"spinalcordtoolbox",
       "production_identifier":"VERSION_WILL_BE_REPLACED_BY_SCRIPT",
@@ -28,9 +28,9 @@
     "emitter": "image",
     "injector": "image",
     "can_process_adjustment_data": false,
-    "can_use_gpu": false,
-    "min_count_required_gpus": 0,
-    "min_required_gpu_memory": 0,
+    "can_use_gpu": true,
+    "min_count_required_gpus": 1,
+    "min_required_gpu_memory": 10048,
     "min_required_memory": 40096,
     "min_count_required_cpu_cores": 32,
     "content_qualification_type": "RESEARCH"
