@@ -95,8 +95,17 @@
       "id": "ssusegpu",
       "label": { "en": "Use GPU" },
       "type": "boolean",
-      "default": true,
-      "information": { "en": "Run inference on the reconstruction GPU. Disable to force CPU inference, which is several times slower." }
+      "default": false,
+      "information": { "en": "Run inference on the reconstruction GPU. CPU inference is the default to avoid GPU memory exhaustion; enable this only when enough GPU memory is available." }
+    },
+    {
+      "id": "sscrop",
+      "label": { "en": "Crop mode or size" },
+      "type": "int",
+      "minimum": -1,
+      "maximum": 512,
+      "default": 0,
+      "information": { "en": "Use -1 to disable cropping, 0 to crop automatically to the non-zero bounding box, or a positive voxel size to crop every RAS axis. Positive values are rounded up to a multiple of 32. A crop that is too small may exclude anatomy." }
     },
     {
       "id": "ssthreads",

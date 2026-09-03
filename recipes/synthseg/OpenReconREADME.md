@@ -51,7 +51,8 @@ segmentation is visible without manual windowing.
 | SynthSeg model | `ssmodel` | choice | `synthseg` | Trained network used for segmentation: `synthseg` (SynthSeg 2.0), `robust` (SynthSeg-robust 2.0) or `v1` (SynthSeg 1.0). |
 | Cortical parcellation | `ssparc` | boolean | `false` | Also run the cortical parcellation network, adding the Desikan-Killiany cortical parcels to the label map. |
 | Fast mode | `ssfast` | boolean | `true` | Bypass topological refinement and left/right flipping for a faster prediction. |
-| Use GPU | `ssusegpu` | boolean | `true` | Run inference on the reconstruction GPU. Disable to force CPU inference. |
+| Use GPU | `ssusegpu` | boolean | `false` | Run inference on the reconstruction GPU. CPU inference is the default to avoid GPU memory exhaustion. |
+| Crop mode or size | `sscrop` | integer | `0` | Use `-1` to disable cropping, `0` to crop automatically to the non-zero bounding box, or a positive voxel size to crop every RAS axis. Positive values are rounded up to a multiple of 32. |
 | CPU threads | `ssthreads` | integer | `8` | TensorFlow inter/intra-op thread count. Valid GUI range: 1 to 64. |
 | Report region volumes | `ssvolumes` | boolean | `false` | Compute per-structure volumes in mm3 and write them to the reconstruction log as CSV. |
 | Report QC scores | `ssqc` | boolean | `false` | Run the automated QC network and write per-structure QC scores to the reconstruction log as CSV. |
@@ -79,6 +80,19 @@ Runtime is dominated by the segmentation network. Fast mode on a GPU is the
 quickest configuration; disabling fast mode, enabling parcellation or QC, or
 forcing CPU inference each add a substantial amount of time. `robust` is the
 slowest model.
+
+OpenRecon uses CPU inference by default because the parcellation network can
+exhaust scanner GPU memory on a full 1 mm volume. Enable `ssusegpu` only when
+the reconstruction GPU has enough free memory for the selected model and crop.
+
+Automatic cropping is enabled by the default `sscrop=0` to reduce the 3D
+network's peak GPU memory use. It finds the non-zero bounding box after SynthSeg
+normalizes the input. Set `sscrop=-1` to disable cropping, or set it to a
+positive isotropic size for a predictable memory bound. The wrapper rounds a
+positive size up to the next multiple of 32. FreeSurfer restores cropped
+predictions to the original image shape, but anatomy outside a manual crop is
+returned as background. Start with a crop large enough to contain the full
+brain across the expected scanner positioning.
 
 `ssdebugthresholdsegment` is a diagnostic flag. When enabled, the wrapper still
 receives and sorts the source images, but skips the `mri_synthseg` command and

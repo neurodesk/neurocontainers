@@ -119,6 +119,7 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
         "np": np,
         "ndi": type("FakeNdi", (), {"zoom": staticmethod(lambda *args, **kwargs: None)}),
         "os": __import__("os"),
+        "Path": Path,
         "re": re,
         "itertools": itertools,
         "uuid": uuid,
@@ -291,6 +292,64 @@ def _openrecon_helpers():
             "SYNTHSEG_MODEL_FILES",
         ],
     )
+
+
+def _synthseg_command_helpers():
+    return _load_runtime_helpers_for_test(
+        [
+            "_build_synthseg_command",
+            "_resolve_synthseg_crop_options",
+        ],
+        assignments=[
+            "SYNTHSEG_COMMAND",
+            "SYNTHSEG_CROP_MULTIPLE",
+        ],
+    )
+
+
+def test_synthseg_crop_options_are_mutually_exclusive_and_aligned():
+    helpers = _synthseg_command_helpers()
+    resolve = helpers["_resolve_synthseg_crop_options"]
+
+    assert resolve(-1) == (False, 0)
+    assert resolve(0) == (True, 0)
+    assert resolve(192) == (False, 192)
+    assert resolve(193) == (False, 224)
+    assert resolve(-2) == (False, 0)
+
+
+def test_synthseg_command_uses_autocrop_or_manual_crop():
+    helpers = _synthseg_command_helpers()
+    build_command = helpers["_build_synthseg_command"]
+    common = {
+        "model": "synthseg",
+        "fast": True,
+        "parcellation": True,
+        "use_gpu": False,
+        "threads": 8,
+    }
+
+    automatic = build_command(
+        Path("input.nii.gz"),
+        Path("output.nii.gz"),
+        autocrop=True,
+        crop_size=0,
+        **common,
+    )
+    assert "--autocrop" in automatic
+    assert "--crop" not in automatic
+    assert "--cpu" in automatic
+
+    manual = build_command(
+        Path("input.nii.gz"),
+        Path("output.nii.gz"),
+        autocrop=False,
+        crop_size=192,
+        **common,
+    )
+    assert "--autocrop" not in manual
+    crop_index = manual.index("--crop")
+    assert manual[crop_index + 1] == "192"
 
 
 def test_openrecon_defaults_match_the_scanner_label():
