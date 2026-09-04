@@ -37,6 +37,8 @@ DEFAULTS = {
     "tfconform": True,
     "tfdebugmock": False,
     "tfflatpatches": False,
+    "tfsulcalmiddepth": False,
+    "tfsulcalthreshold": 0.1,
     "tfoverlaythickness": 1,
 }
 MP2RAGE_IDENTITY_META_KEYS = (
@@ -78,6 +80,14 @@ def _config_int(config, key: str, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         raise ValueError(f"{key} must be an integer, got {value!r}") from None
+
+
+def _config_float(config, key: str, default: float) -> float:
+    value = _config_value(config, key, default, "float")
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{key} must be a number, got {value!r}") from None
 
 
 def _meta_from_image(image) -> ismrmrd.Meta:
@@ -441,11 +451,22 @@ def _format_flat_patch_comment(flat_patches) -> str:
     return "; ".join(parts)
 
 
+def _format_sulcal_middepth_comment(sulci) -> str:
+    if not sulci:
+        return ""
+    counts = ", ".join(
+        f"{hemisphere}={sulci[hemisphere]['intersecting_voxel_count']}"
+        for hemisphere in ("lh", "rh")
+    )
+    return f"TopoFit sulcal mid-depth research voxels: {counts}"
+
+
 def _qc_mrd_images(
     qc_path: Path,
     source_images,
     series_index: int,
     flat_patches=None,
+    sulci=None,
 ) -> list:
     image = nib.load(str(qc_path))
     volume_xyz = np.asarray(image.get_fdata(dtype=np.float32))
@@ -463,6 +484,7 @@ def _qc_mrd_images(
     series_uid = _new_series_uid()
     description = f"{_series_description(source_images[0], 'mprage')}_topofit_qc"
     patch_comment = _format_flat_patch_comment(flat_patches or {})
+    sulcal_comment = _format_sulcal_middepth_comment(sulci or {})
     output = []
     for index, source in enumerate(source_images):
         plane = np.ascontiguousarray(volume_yxz[:, :, index])
@@ -478,7 +500,7 @@ def _qc_mrd_images(
             description,
             ["PYTHON", "BRAINNET", "TOPOFIT", "SURFACE_QC"],
             RESEARCH_WARNING,
-            patch_comment,
+            "; ".join(part for part in (patch_comment, sulcal_comment) if part),
         )
         output.append(derived)
     return output
@@ -509,6 +531,12 @@ def _options_from_config(config) -> TopoFitOptions:
         mock=_config_bool(config, "tfdebugmock", DEFAULTS["tfdebugmock"]),
         find_flat_patches=_config_bool(
             config, "tfflatpatches", DEFAULTS["tfflatpatches"]
+        ),
+        find_sulcal_middepth=_config_bool(
+            config, "tfsulcalmiddepth", DEFAULTS["tfsulcalmiddepth"]
+        ),
+        sulcal_curvature_threshold_mm_inv=_config_float(
+            config, "tfsulcalthreshold", DEFAULTS["tfsulcalthreshold"]
         ),
         overlay_thickness=_config_int(
             config,
@@ -580,6 +608,7 @@ def process(connection, config, metadata):
                 ordered,
                 next_series_index,
                 result.flat_patches,
+                result.sulci,
             )
             pending_output.append(("TopoFit QC", qc_images))
             next_series_index += 1
@@ -634,6 +663,18 @@ def _parse_args() -> argparse.Namespace:
         help="Find and draw one flat pial-surface patch per hemisphere",
     )
     parser.add_argument(
+        "--find-sulcal-middepth",
+        action="store_true",
+        help="Identify concave pial regions and select their mid-depth voxels",
+    )
+    parser.add_argument(
+        "--sulcal-curvature-threshold",
+        type=float,
+        default=0.1,
+        metavar="MM^-1",
+        help="Minimum concave mean curvature for sulcal selection (default: 0.1)",
+    )
+    parser.add_argument(
         "--overlay-thickness",
         type=int,
         choices=range(4),
@@ -654,6 +695,8 @@ def main() -> int:
         conform=args.conform,
         mock=args.mock,
         find_flat_patches=args.find_flat_patches,
+        find_sulcal_middepth=args.find_sulcal_middepth,
+        sulcal_curvature_threshold_mm_inv=args.sulcal_curvature_threshold,
         overlay_thickness=args.overlay_thickness,
     )
     result = run_topofit_workflow(args.input, args.output_dir, options)

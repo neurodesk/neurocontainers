@@ -18,6 +18,13 @@ from typing import Callable, Sequence
 import nibabel as nib
 import numpy as np
 from scipy.spatial import cKDTree
+from topofit_geometry import (
+    CURVATURE_SIGN_CONVENTION,
+    MIDDLE_DEPTH_FRACTION,
+    SulcalHemisphere,
+    identify_sulcal_middepth,
+    triangle_voxel_mask,
+)
 
 RESEARCH_WARNING = "RESEARCH ONLY - NOT MOTION-CLEARED - NOT FOR PRESCRIPTION"
 SURFACE_NAMES = (
@@ -37,6 +44,7 @@ FLAT_PATCH_RADIUS_MM = 10.0
 FLAT_PATCH_NORMAL_LENGTH_MM = 20.0
 MAX_OVERLAY_THICKNESS = 3
 MAX_PATCH_CANDIDATES = 64
+DEFAULT_SULCAL_CURVATURE_THRESHOLD_MM_INV = 0.1
 
 
 @dataclass(frozen=True)
@@ -48,6 +56,10 @@ class TopoFitOptions:
     conform: bool = True
     mock: bool = False
     find_flat_patches: bool = False
+    find_sulcal_middepth: bool = False
+    sulcal_curvature_threshold_mm_inv: float = (
+        DEFAULT_SULCAL_CURVATURE_THRESHOLD_MM_INV
+    )
     overlay_thickness: int = 1
 
 
@@ -83,6 +95,8 @@ class TopoFitResult:
     manifest: str
     surfaces: dict[str, str]
     flat_patches: dict[str, FlatPatch]
+    sulcal_middepth_mask: str | None
+    sulci: dict[str, dict[str, float | int | str]]
     elapsed_seconds: float
     warning: str = RESEARCH_WARNING
 
@@ -100,6 +114,13 @@ def validate_options(options: TopoFitOptions) -> tuple[str, str]:
         raise ValueError(
             f"overlay thickness must be an integer from 0 to {MAX_OVERLAY_THICKNESS}"
         )
+    if (
+        not isinstance(options.sulcal_curvature_threshold_mm_inv, (int, float))
+        or isinstance(options.sulcal_curvature_threshold_mm_inv, bool)
+        or not np.isfinite(options.sulcal_curvature_threshold_mm_inv)
+        or options.sulcal_curvature_threshold_mm_inv <= 0
+    ):
+        raise ValueError("sulcal curvature threshold must be a positive finite value")
     try:
         return MODEL_PRESETS[options.preset]
     except KeyError:
@@ -609,12 +630,65 @@ def _flat_patch_masks(
     return patch_mask, normal_mask
 
 
+def _find_sulcal_middepth(
+    image: nib.spatialimages.SpatialImage,
+    surfaces: dict[str, Path],
+    threshold_mm_inv: float,
+) -> tuple[dict[str, SulcalHemisphere], dict[str, np.ndarray]]:
+    detections = {}
+    masks = {}
+    for hemisphere in ("lh", "rh"):
+        white_vertices, white_faces = nib.freesurfer.read_geometry(
+            str(surfaces[f"{hemisphere}.white"])
+        )
+        pial_vertices, pial_faces = nib.freesurfer.read_geometry(
+            str(surfaces[f"{hemisphere}.pial"])
+        )
+        detection = identify_sulcal_middepth(
+            hemisphere,
+            white_vertices,
+            white_faces,
+            pial_vertices,
+            pial_faces,
+            threshold_mm_inv,
+        )
+        detections[hemisphere] = detection
+        masks[hemisphere] = triangle_voxel_mask(
+            tuple(int(value) for value in image.shape),
+            image.affine,
+            detection.middle_vertices_ras_mm,
+            detection.selected_faces,
+        )
+    return detections, masks
+
+
+def write_sulcal_middepth_mask(
+    image: nib.spatialimages.SpatialImage,
+    masks: dict[str, np.ndarray],
+    output_path: Path,
+) -> Path:
+    """Write a bilateral label image on the source voxel grid."""
+
+    labels = np.zeros(image.shape, dtype=np.uint8)
+    labels[masks["lh"]] |= 1
+    labels[masks["rh"]] |= 2
+    header = image.header.copy()
+    header.set_data_dtype(np.uint8)
+    header["descrip"] = b"TopoFit sulcal mid-depth research mask"
+    output = nib.Nifti1Image(labels, image.affine, header=header)
+    output.set_qform(image.affine, code=1)
+    output.set_sform(image.affine, code=1)
+    nib.save(output, str(output_path))
+    return output_path
+
+
 def write_qc_overlay(
     image: nib.spatialimages.SpatialImage,
     surfaces: dict[str, Path],
     output_path: Path,
     overlay_thickness: int = 1,
     flat_patches: dict[str, _DetectedFlatPatch] | None = None,
+    sulcal_middepth_masks: dict[str, np.ndarray] | None = None,
 ) -> Path:
     """Rasterize white and pial vertices onto the source voxel grid."""
 
@@ -630,6 +704,8 @@ def write_qc_overlay(
         overlay_thickness,
     )
     output[pial_mask] = 3500
+    if sulcal_middepth_masks:
+        output[sulcal_middepth_masks["lh"] | sulcal_middepth_masks["rh"]] = 3650
     output[white_mask] = 4095
     if flat_patches:
         patch_mask, normal_mask = _flat_patch_masks(
@@ -698,18 +774,45 @@ def run_topofit_workflow(
     detected_flat_patches = (
         find_flat_patches(surfaces) if options.find_flat_patches else {}
     )
+    sulcal_detections, sulcal_masks = (
+        _find_sulcal_middepth(
+            image, surfaces, options.sulcal_curvature_threshold_mm_inv
+        )
+        if options.find_sulcal_middepth
+        else ({}, {})
+    )
+    sulcal_mask_path = (
+        write_sulcal_middepth_mask(
+            image, sulcal_masks, run_dir / "topofit_sulcal_middepth_mask.nii.gz"
+        )
+        if sulcal_masks
+        else None
+    )
     qc_path = write_qc_overlay(
         image,
         surfaces,
         run_dir / "topofit_qc.nii.gz",
         overlay_thickness=options.overlay_thickness,
         flat_patches=detected_flat_patches,
+        sulcal_middepth_masks=sulcal_masks,
     )
     elapsed = perf_counter() - started
     manifest_path = run_dir / "topofit_manifest.json"
     flat_patches = {
         hemisphere: detection.patch
         for hemisphere, detection in detected_flat_patches.items()
+    }
+    sulci = {
+        hemisphere: {
+            "hemisphere": detection.hemisphere,
+            "threshold_mm_inv": detection.threshold_mm_inv,
+            "selected_vertex_count": detection.selected_vertex_count,
+            "selected_face_count": detection.selected_face_count,
+            "intersecting_voxel_count": int(sulcal_masks[hemisphere].sum()),
+            "curvature_min_mm_inv": detection.curvature_min_mm_inv,
+            "curvature_median_mm_inv": detection.curvature_median_mm_inv,
+        }
+        for hemisphere, detection in sulcal_detections.items()
     }
     result = TopoFitResult(
         status="SURFACE_READY_RESEARCH_ONLY",
@@ -719,6 +822,10 @@ def run_topofit_workflow(
         manifest=str(manifest_path.resolve()),
         surfaces={name: str(path.resolve()) for name, path in surfaces.items()},
         flat_patches=flat_patches,
+        sulcal_middepth_mask=(
+            str(sulcal_mask_path.resolve()) if sulcal_mask_path else None
+        ),
+        sulci=sulci,
         elapsed_seconds=round(elapsed, 3),
     )
     manifest = asdict(result)
@@ -729,5 +836,17 @@ def run_topofit_workflow(
     manifest["flat_patch_status"] = (
         "CANDIDATES_REPORTED_RESEARCH_ONLY" if flat_patches else "DISABLED"
     )
+    manifest["sulcal_middepth_status"] = (
+        "VOXELS_REPORTED_RESEARCH_ONLY" if sulcal_mask_path else "DISABLED"
+    )
+    manifest["sulcal_middepth_definition"] = {
+        "depth_fraction": MIDDLE_DEPTH_FRACTION,
+        "curvature_surface": "pial",
+        "curvature_method": "cotangent_mean_curvature",
+        "curvature_units": "mm^-1",
+        "curvature_sign_convention": CURVATURE_SIGN_CONVENTION,
+        "face_selection": "all_vertices_at_or_below_negative_threshold",
+        "mask_labels": {"1": "left", "2": "right", "3": "bilateral_overlap"},
+    }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return result

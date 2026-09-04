@@ -169,6 +169,8 @@ class TopoFitOpenReconTests(unittest.TestCase):
                     "tfconform": True,
                     "tfdebugmock": True,
                     "tfflatpatches": True,
+                    "tfsulcalmiddepth": True,
+                    "tfsulcalthreshold": 100.0,
                     "tfoverlaythickness": 0,
                 }
             }
@@ -207,6 +209,10 @@ class TopoFitOpenReconTests(unittest.TestCase):
                 "TopoFit flat patch rh.pial LPS_mm", output_meta["ImageComments"]
             )
             self.assertIn("normal=(", output_meta["ImageComments"])
+            self.assertIn(
+                "TopoFit sulcal mid-depth research voxels: lh=0, rh=0",
+                output_meta["ImageComments"],
+            )
 
             manifests = list(Path(temporary_directory).glob("*/topofit_manifest.json"))
             self.assertEqual(len(manifests), 1)
@@ -215,6 +221,13 @@ class TopoFitOpenReconTests(unittest.TestCase):
             self.assertEqual(len(manifest["surfaces"]), 6)
             self.assertEqual(set(manifest["flat_patches"]), {"lh", "rh"})
             self.assertEqual(manifest["options"]["overlay_thickness"], 0)
+            self.assertEqual(
+                manifest["options"]["sulcal_curvature_threshold_mm_inv"], 100.0
+            )
+            self.assertEqual(
+                manifest["sulcal_middepth_status"],
+                "VOXELS_REPORTED_RESEARCH_ONLY",
+            )
             for patch in manifest["flat_patches"].values():
                 center_lps = np.asarray(patch["center_ras_mm"]) * (-1.0, -1.0, 1.0)
                 normal_lps = np.asarray(patch["normal_ras"]) * (-1.0, -1.0, 1.0)
