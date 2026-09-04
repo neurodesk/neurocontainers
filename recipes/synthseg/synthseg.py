@@ -3307,7 +3307,7 @@ def _image_identity_values(image):
 
 
 def _select_anatomical_input_images(images):
-    """For an MP2RAGE stream, retain only its denoised uniform contrast."""
+    """Prefer MP2RAGE UNI-DEN, with the first magnitude series as a fallback."""
 
     images = list(images)
     identities = [
@@ -3323,9 +3323,21 @@ def _select_anatomical_input_images(images):
         if any("uniden" in value for value in values)
     ]
     if not selected:
-        raise ValueError(
-            "MP2RAGE input was detected, but no UNI-DEN contrast was received"
+        fallback_series_index = int(getattr(images[0], "image_series_index", 0))
+        selected = [
+            image
+            for image in images
+            if int(getattr(image, "image_series_index", 0))
+            == fallback_series_index
+        ]
+        logging.warning(
+            "MP2RAGE input was detected, but no UNI-DEN contrast was received; "
+            "processing the first magnitude image series instead "
+            "(image_series_index=%d, images=%d)",
+            fallback_series_index,
+            len(selected),
         )
+        return selected
     logging.info(
         "MP2RAGE input detected; selected %d UNI-DEN image(s) and ignored %d "
         "other MP2RAGE image(s)",

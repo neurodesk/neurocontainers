@@ -319,8 +319,16 @@ def _mp2rage_selection_helpers():
     )
 
 
-def _selection_image(helpers, description, protocol="T1_MP2RAGE"):
+def _selection_image(
+    helpers,
+    description,
+    protocol="T1_MP2RAGE",
+    series_index=1,
+):
     image = helpers["FakeImage"](np.zeros((1, 1, 2, 2), dtype=np.int16))
+    head = image.getHead()
+    head.image_series_index = series_index
+    image.setHead(head)
     image.attribute_string = helpers["FakeMeta"](
         {
             "SeriesDescription": description,
@@ -344,26 +352,24 @@ def test_mp2rage_selection_keeps_only_uni_den_images():
     assert selected == images[1:3]
 
 
-def test_mp2rage_selection_fails_without_uni_den():
+def test_mp2rage_selection_uses_first_series_without_uni_den():
     helpers = _mp2rage_selection_helpers()
     images = [
-        _selection_image(helpers, "T1_MP2RAGE_INV1"),
-        _selection_image(helpers, "T1_MP2RAGE_UNI"),
+        _selection_image(helpers, "T1_MP2RAGE_INV1", series_index=4),
+        _selection_image(helpers, "T1_MP2RAGE_INV1", series_index=4),
+        _selection_image(helpers, "T1_MP2RAGE_UNI", series_index=5),
     ]
 
-    try:
-        helpers["_select_anatomical_input_images"](images)
-    except ValueError as error:
-        assert "no UNI-DEN contrast" in str(error)
-    else:
-        raise AssertionError("MP2RAGE input without UNI-DEN should fail closed")
+    selected = helpers["_select_anatomical_input_images"](images)
+
+    assert selected == images[:2]
 
 
 def test_non_mp2rage_selection_preserves_all_magnitude_images():
     helpers = _mp2rage_selection_helpers()
     images = [
         _selection_image(helpers, "MPRAGE_T1W", protocol="MPRAGE"),
-        _selection_image(helpers, "T2_SPACE", protocol="T2_SPACE"),
+        _selection_image(helpers, "GRE_T1W", protocol="GRE"),
     ]
 
     assert helpers["_select_anatomical_input_images"](images) == images
