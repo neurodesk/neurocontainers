@@ -32,6 +32,17 @@ OPENRECON_MODEL_DEFAULT = "synthseg"
 OPENRECON_MODEL_VALUES = ("synthseg", "robust", "v1")
 OPENRECON_SERIES_SUFFIX = "OR"
 OPENRECON_SEGMENT_SOURCE_GEOMETRY_SERIES_SUFFIX = "openrecon"
+MP2RAGE_IDENTITY_META_KEYS = (
+    "SeriesDescription",
+    "SequenceDescription",
+    "ProtocolName",
+    "SequenceName",
+    "ImageComments",
+    "ImageComment",
+    "ImageType",
+    "DicomImageType",
+    "ImageTypeValue4",
+)
 SYNTHSEG_OUTPUT_GEOMETRY_2D = "2d"
 SYNTHSEG_SEGMENT_SEND_ORDER = "after_originals"
 SYNTHSEG_SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
@@ -3272,6 +3283,58 @@ def _as_image_list(images):
     return list(images)
 
 
+def _normalized_identity_text(value):
+    """Normalize scanner labels so UNI-DEN, UNI_DEN, and UNIDEN compare alike."""
+
+    if isinstance(value, (list, tuple)):
+        value = " ".join(str(item) for item in value)
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _image_identity_values(image):
+    meta_obj = _meta_from_image(image)
+    values = []
+    for key in MP2RAGE_IDENTITY_META_KEYS:
+        try:
+            value = meta_obj.get(key)
+        except Exception:
+            continue
+        if isinstance(value, (list, tuple)):
+            values.extend(str(item) for item in value if item is not None)
+        elif value is not None:
+            values.append(str(value))
+    return values
+
+
+def _select_anatomical_input_images(images):
+    """For an MP2RAGE stream, retain only its denoised uniform contrast."""
+
+    images = list(images)
+    identities = [
+        [_normalized_identity_text(value) for value in _image_identity_values(image)]
+        for image in images
+    ]
+    if not any("mp2rage" in value for values in identities for value in values):
+        return images
+
+    selected = [
+        image
+        for image, values in zip(images, identities)
+        if any("uniden" in value for value in values)
+    ]
+    if not selected:
+        raise ValueError(
+            "MP2RAGE input was detected, but no UNI-DEN contrast was received"
+        )
+    logging.info(
+        "MP2RAGE input detected; selected %d UNI-DEN image(s) and ignored %d "
+        "other MP2RAGE image(s)",
+        len(selected),
+        len(images) - len(selected),
+    )
+    return selected
+
+
 def process(connection, config, metadata):
     logging.info("Config: \n%s", config)
 
@@ -3297,7 +3360,7 @@ def process(connection, config, metadata):
 
     # Continuously parse incoming data parsed from MRD messages
     acqGroup = []
-    imageGroups = {}
+    magnitudeImages = []
     skipped_passthrough_images = 0
     waveformGroup = []
     try:
@@ -3327,7 +3390,7 @@ def process(connection, config, metadata):
             elif isinstance(item, ismrmrd.Image):
                 # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
                 if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
-                    imageGroups.setdefault(int(item.image_series_index), []).append(item)
+                    magnitudeImages.append(item)
                 else:
                     skipped_passthrough_images += 1
                     continue
@@ -3343,6 +3406,11 @@ def process(connection, config, metadata):
 
             else:
                 logging.error("Unsupported data type %s", type(item).__name__)
+
+        selectedImages = _select_anatomical_input_images(magnitudeImages)
+        imageGroups = {}
+        for item in selectedImages:
+            imageGroups.setdefault(int(item.image_series_index), []).append(item)
 
         logging.info(
             "Input stream drained before SynthSeg image processing: "

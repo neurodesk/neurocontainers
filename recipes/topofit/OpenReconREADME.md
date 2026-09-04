@@ -11,6 +11,10 @@ not run `recon-all`, cortical parcellation, or longitudinal processing.
 ## Input and output
 
 The input must be one reconstructed three-dimensional magnitude image series.
+For an MP2RAGE scan, only the denoised uniform (`UNI-DEN`) contrast is
+processed; INV1, INV2, UNI, and other contrasts in the same stream are ignored.
+An MP2RAGE stream without a `UNI-DEN` contrast is rejected rather than processed
+as a different anatomical contrast.
 The adapter sorts slices by physical position, converts center-based MRD/LPS
 geometry and reconstructed pixel directions to NIfTI RAS, and writes one
 NIfTI volume for BrainNet. By default, BrainNet conforms the data internally

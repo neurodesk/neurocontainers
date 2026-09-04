@@ -10,6 +10,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import traceback
 import uuid
 
@@ -37,6 +38,17 @@ DEFAULTS = {
     "tfconform": True,
     "tfdebugmock": False,
 }
+MP2RAGE_IDENTITY_META_KEYS = (
+    "SeriesDescription",
+    "SequenceDescription",
+    "ProtocolName",
+    "SequenceName",
+    "ImageComments",
+    "ImageComment",
+    "ImageType",
+    "DicomImageType",
+    "ImageTypeValue4",
+)
 
 
 def _config_value(config, key: str, default, value_type: str):
@@ -92,6 +104,58 @@ def _meta_text(meta: ismrmrd.Meta, key: str) -> str:
     if isinstance(value, (list, tuple)):
         value = value[0] if value else ""
     return str(value or "").strip()
+
+
+def _normalized_identity_text(value) -> str:
+    """Normalize scanner labels so UNI-DEN, UNI_DEN, and UNIDEN compare alike."""
+
+    if isinstance(value, (list, tuple)):
+        value = " ".join(str(item) for item in value)
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _image_identity_values(image) -> list[str]:
+    meta = _meta_from_image(image)
+    values = []
+    for key in MP2RAGE_IDENTITY_META_KEYS:
+        try:
+            value = meta.get(key)
+        except Exception:
+            continue
+        if isinstance(value, (list, tuple)):
+            values.extend(str(item) for item in value if item is not None)
+        elif value is not None:
+            values.append(str(value))
+    return values
+
+
+def _select_anatomical_input_images(images):
+    """For an MP2RAGE stream, retain only its denoised uniform contrast."""
+
+    images = list(images)
+    identities = [
+        [_normalized_identity_text(value) for value in _image_identity_values(image)]
+        for image in images
+    ]
+    if not any("mp2rage" in value for values in identities for value in values):
+        return images
+
+    selected = [
+        image
+        for image, values in zip(images, identities)
+        if any("uniden" in value for value in values)
+    ]
+    if not selected:
+        raise ValueError(
+            "MP2RAGE input was detected, but no UNI-DEN contrast was received"
+        )
+    logging.info(
+        "MP2RAGE input detected; selected %d UNI-DEN image(s) and ignored %d "
+        "other MP2RAGE image(s)",
+        len(selected),
+        len(images) - len(selected),
+    )
+    return selected
 
 
 def _normalized(vector) -> np.ndarray | None:
@@ -418,7 +482,7 @@ def process(connection, config, metadata):
         send_original = _config_bool(
             config, "sendoriginal", DEFAULTS["sendoriginal"]
         )
-        image_groups: dict[int, list] = {}
+        magnitude_images = []
         skipped = 0
         for item in connection:
             if item is None:
@@ -429,17 +493,23 @@ def process(connection, config, metadata):
             if item.image_type not in (ismrmrd.IMTYPE_MAGNITUDE, 0):
                 skipped += 1
                 continue
-            image_groups.setdefault(int(item.image_series_index), []).append(item)
+            magnitude_images.append(item)
 
-        if not image_groups:
+        if not magnitude_images:
             raise ValueError("no magnitude MRD image series was received")
+        next_series_index = max(
+            int(image.image_series_index) for image in magnitude_images
+        ) + 1
+        selected_images = _select_anatomical_input_images(magnitude_images)
+        image_groups: dict[int, list] = {}
+        for image in selected_images:
+            image_groups.setdefault(int(image.image_series_index), []).append(image)
         logging.info(
             "TopoFit received %d series and skipped %d non-magnitude/non-image messages",
             len(image_groups),
             skipped,
         )
 
-        next_series_index = max(image_groups) + 1
         pending_output: list[tuple[str, list]] = []
         for source_series_index, images in sorted(image_groups.items()):
             ordered, volume_xyz, affine = _mrd_series_to_nifti(images)
