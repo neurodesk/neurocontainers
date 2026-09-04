@@ -39,15 +39,12 @@ SCT_DEEPSEG_TASKS = (
     "gm_sc_7t_t2star",
     "gm_wm_exvivo_t2",
     "gm_mouse_t1",
-    "gm_wm_mouse_t1",
-    "lesion_ms",
     "lesion_ms_axial_t2",
     "lesion_ms_mp2rage",
     "lesion_sci_t2",
     "tumor_t2",
     "rootlets",
     "sc_canal_t2",
-    "spine",
 )
 
 SCT_ANALYSIS_REGISTRY = {
@@ -96,16 +93,6 @@ SCT_ANALYSIS_OUTPUTS = {
             "series_suffix": "sct_deepseg_gm_wm_exvivo_t2_wmseg",
         },
     ),
-    "sct_deepseg_gm_wm_mouse_t1": (
-        {
-            "filename": "output_GM_seg.nii.gz",
-            "series_suffix": "sct_deepseg_gm_wm_mouse_t1_gm_seg",
-        },
-        {
-            "filename": "output_WM_seg.nii.gz",
-            "series_suffix": "sct_deepseg_gm_wm_mouse_t1_wm_seg",
-        },
-    ),
     "sct_deepseg_lesion_ms_axial_t2": (
         {
             "filename": "output_sc_seg.nii.gz",
@@ -126,30 +113,9 @@ SCT_ANALYSIS_OUTPUTS = {
             "series_suffix": "sct_deepseg_lesion_sci_t2_sc_seg",
         },
     ),
-    "sct_deepseg_spine": (
-        {
-            "filename": "output_totalspineseg_discs.nii.gz",
-            "series_suffix": "sct_deepseg_spine_totalspineseg_discs",
-        },
-        {
-            "filename": "output_totalspineseg_all.nii.gz",
-            "series_suffix": "sct_deepseg_spine_totalspineseg_all",
-        },
-    ),
 }
 
 SCT_ANALYSIS_BUNDLES = {
-    "sct_bundle_t2_anatomy": (
-        "sct_deepseg_spinalcord",
-        "sct_label_vertebrae",
-        "sct_deepseg_sc_canal_t2",
-        "sct_deepseg_spine",
-    ),
-    "sct_bundle_t2_ms": (
-        "sct_deepseg_spinalcord",
-        "sct_deepseg_lesion_ms",
-        "sct_deepseg_lesion_ms_axial_t2",
-    ),
     "sct_bundle_t2s_gm": (
         "sct_deepseg_spinalcord",
         "sct_deepseg_graymatter",
