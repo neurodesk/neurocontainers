@@ -1,5 +1,5 @@
 name: topofit
-version: "0.3.0"
+version: "0.4.0"
 
 copyright:
   - license: GPL-3.0-only
@@ -48,9 +48,11 @@ build:
 
     - run:
         - install -m 0644 {{ get_file("topofit_core.py") }} /opt/code/python-ismrmrd-server/topofit_core.py
+        - install -m 0644 {{ get_file("topofit_geometry.py") }} /opt/code/python-ismrmrd-server/topofit_geometry.py
         - install -m 0755 {{ get_file("topofit.py") }} /opt/code/python-ismrmrd-server/topofit.py
         - install -m 0755 {{ get_file("topofit-openrecon") }} /usr/local/bin/topofit-openrecon
         - install -m 0644 {{ get_file("test_topofit_core.py") }} /opt/code/python-ismrmrd-server/test_topofit_core.py
+        - install -m 0644 {{ get_file("test_topofit_geometry.py") }} /opt/code/python-ismrmrd-server/test_topofit_geometry.py
         - install -m 0644 {{ get_file("test_topofit_openrecon.py") }} /opt/code/python-ismrmrd-server/test_topofit_openrecon.py
         - install -m 0644 {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - install -m 0644 {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
@@ -78,12 +80,16 @@ files:
     url: "{{ context.cortech_wheel_url }}"
   - name: topofit_core.py
     filename: topofit_core.py
+  - name: topofit_geometry.py
+    filename: topofit_geometry.py
   - name: topofit.py
     filename: topofit.py
   - name: topofit-openrecon
     filename: topofit-openrecon
   - name: test_topofit_core.py
     filename: test_topofit_core.py
+  - name: test_topofit_geometry.py
+    filename: test_topofit_geometry.py
   - name: test_topofit_openrecon.py
     filename: test_topofit_openrecon.py
   - name: OpenReconLabel.json
@@ -111,6 +117,9 @@ readme: |-
 
   Add `--find-flat-patches` to find one planar pial candidate per hemisphere,
   draw its patch and outward normal, and record the geometry in the manifest.
+  Add `--find-sulcal-middepth` to classify concave pial regions by mean
+  curvature and write the intersecting middle-cortical-depth voxels as a
+  source-grid label image.
   `--overlay-thickness 0` produces the thinnest projected surface trace.
 
   The OpenRecon output is research-only. It does not emit actionable slice

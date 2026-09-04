@@ -26,6 +26,7 @@ Each successful run writes these artifacts below `/tmp/share/topofit`:
 - `surf/lh.pial` and `surf/rh.pial`
 - `surf/lh.registration` and `surf/rh.registration`
 - `topofit_qc.nii.gz`
+- `topofit_sulcal_middepth_mask.nii.gz` when sulcal analysis is enabled
 - `topofit_manifest.json`
 
 The QC volume preserves the input dimensions and affine. It displays the
@@ -47,6 +48,14 @@ Surface artifacts stay in the run workspace so later research analysis can
 consume them. Flat-patch coordinates are candidates only. They are not
 motion-cleared prescription coordinates.
 
+When **Find sulcal mid-depth voxels** is enabled, the workflow computes signed
+cotangent mean curvature on each pial mesh. Negative curvature is concave and
+sulcal. Faces whose three vertices meet the configured threshold are moved to
+50% cortical depth using the corresponding white and pial vertices. The
+workflow writes every source-grid voxel cell intersected by those faces to
+`topofit_sulcal_middepth_mask.nii.gz`. Labels 1 and 2 mark the left and right
+hemispheres; 3 marks overlap. The mask keeps the source shape and affine.
+
 ## Parameters
 
 | GUI label | Parameter | Default | Meaning |
@@ -56,6 +65,8 @@ motion-cleared prescription coordinates.
 | TopoFit model | `tfmodel` | `t1w_1mm` | Select the T1w or synthetic pretrained model. |
 | Conform input | `tfconform` | `true` | Resample internally to the model grid. |
 | Find flat pial patches | `tfflatpatches` | `false` | Find one candidate per hemisphere, draw its patch and normal, and write LPS geometry into image comments. |
+| Find sulcal mid-depth voxels | `tfsulcalmiddepth` | `false` | Write a source-grid label mask for curvature-defined sulci at 50% cortical depth. |
+| Sulcal curvature threshold | `tfsulcalthreshold` | `0.1 mm^-1` | Set the minimum magnitude of negative mean curvature. |
 | Surface thickness | `tfoverlaythickness` | `1` voxel | Set the in-plane dilation radius from 0 to 3 voxels. |
 | Mock surfaces | `tfdebugmock` | `false` | Exercise MRD transport and geometry without neural inference. |
 
@@ -86,6 +97,7 @@ The container exposes the same workflow as a command-line tool:
 topofit-openrecon mprage.nii.gz output --device cuda
 topofit-openrecon mprage.nii.gz transport-test --device cpu --mock
 topofit-openrecon mprage.nii.gz flat-patches --find-flat-patches --overlay-thickness 0
+topofit-openrecon mprage.nii.gz sulci --find-sulcal-middepth --sulcal-curvature-threshold 0.1
 ```
 
 The first command runs the real model. The second tests the artifact and QC

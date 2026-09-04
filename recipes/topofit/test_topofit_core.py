@@ -81,6 +81,16 @@ class TopoFitCoreTests(unittest.TestCase):
             ):
                 validate_options(TopoFitOptions(overlay_thickness=thickness))
 
+    def test_invalid_sulcal_curvature_threshold_is_rejected_at_boundary(self):
+        for threshold in (0.0, -0.1, float("nan")):
+            with (
+                self.subTest(threshold=threshold),
+                self.assertRaisesRegex(ValueError, "sulcal curvature threshold"),
+            ):
+                validate_options(
+                    TopoFitOptions(sulcal_curvature_threshold_mm_inv=threshold)
+                )
+
     def test_in_plane_dilation_is_configurable_without_edge_wrapping(self):
         mask = np.zeros((5, 5, 3), dtype=bool)
         mask[0, 0, 1] = True
@@ -164,6 +174,8 @@ class TopoFitCoreTests(unittest.TestCase):
                     device="cpu",
                     mock=True,
                     find_flat_patches=True,
+                    find_sulcal_middepth=True,
+                    sulcal_curvature_threshold_mm_inv=100.0,
                     overlay_thickness=0,
                 ),
             )
@@ -186,6 +198,11 @@ class TopoFitCoreTests(unittest.TestCase):
             qc_data = np.asarray(qc.dataobj)
             self.assertEqual(int(qc_data.max()), 4095)
             self.assertIn(3800, np.unique(qc_data))
+            self.assertIsNotNone(result.sulcal_middepth_mask)
+            sulcal_mask = nib.load(result.sulcal_middepth_mask)
+            self.assertEqual(sulcal_mask.shape, data.shape)
+            np.testing.assert_allclose(sulcal_mask.affine, affine)
+            self.assertEqual(sulcal_mask.get_data_dtype(), np.dtype(np.uint8))
             inverse_affine = np.linalg.inv(affine)
             for patch in result.flat_patches.values():
                 center = np.asarray(patch.center_ras_mm)
@@ -213,6 +230,14 @@ class TopoFitCoreTests(unittest.TestCase):
             )
             self.assertEqual(set(manifest["flat_patches"]), {"lh", "rh"})
             self.assertTrue(manifest["options"]["mock"])
+            self.assertEqual(
+                manifest["sulcal_middepth_status"],
+                "VOXELS_REPORTED_RESEARCH_ONLY",
+            )
+            self.assertEqual(set(manifest["sulci"]), {"lh", "rh"})
+            self.assertEqual(
+                manifest["sulcal_middepth_definition"]["depth_fraction"], 0.5
+            )
 
 
 if __name__ == "__main__":
