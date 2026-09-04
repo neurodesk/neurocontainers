@@ -1,437 +1,566 @@
-name: blochsiegertb1mapping
-version: 1.0.11
+name: arfirecon
+version: 1.0.1
 default_timeout: 120
 tests:
-- name: Bloch-Siegert OpenRecon workflow unit smoke test
-  description: Verify the container runtime smoke test for this tool.
-  command: |
-    python3 - <<'PY'
-    import importlib.util
-    import math
-    import sys
-    from pathlib import Path
+  - name: ARFI magnitude and phase OpenRecon workflow smoke test
+    description: Verify every magnitude and phase frame is returned in two series.
+    command: |
+      python3 - <<'PY'
+      import importlib.util
+      import math
+      import sys
+      from pathlib import Path
 
-    import ismrmrd
-    import numpy as np
+      import ismrmrd
+      import numpy as np
 
-    wrapper_path = Path("/opt/code/python-ismrmrd-server/blochsiegertb1mapping.py")
-    if not wrapper_path.exists():
-        wrapper_path = Path("blochsiegertb1mapping.py")
-    spec = importlib.util.spec_from_file_location("blochsiegertb1mapping", wrapper_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["blochsiegertb1mapping"] = module
-    spec.loader.exec_module(module)
+      wrapper_path = Path("/opt/code/python-ismrmrd-server/arfirecon.py")
+      if not wrapper_path.exists():
+          wrapper_path = Path("arfirecon.py")
+      spec = importlib.util.spec_from_file_location("arfirecon", wrapper_path)
+      module = importlib.util.module_from_spec(spec)
+      sys.modules["arfirecon"] = module
+      spec.loader.exec_module(module)
 
-    def first(value):
-        return value[0] if isinstance(value, list) else value
+      def first(value):
+          return value[0] if isinstance(value, list) else value
 
-    def raw_phase(radians):
-        return (float(radians) + math.pi) * module.PHASE_WRAP / (2.0 * math.pi)
+      def raw_phase(radians):
+          return (float(radians) + math.pi) * module.PHASE_WRAP / (2.0 * math.pi)
 
-    def make_image(
-        frame_index,
-        kind,
-        value,
-        slice_index=0,
-        series_name="bss_source",
-        series_uid="1.2.826.0.1.3680043.10.543.1",
-    ):
-        data = np.full((1, 1, 8, 8), value, dtype=np.float32)
-        if kind == "magnitude":
-            data[:, :, 2:6, 2:6] += 100.0 + frame_index
-        image = ismrmrd.Image.from_array(data, transpose=False)
-        header = image.getHead()
-        header.image_type = (
-            ismrmrd.IMTYPE_MAGNITUDE if kind == "magnitude" else ismrmrd.IMTYPE_PHASE
-        )
-        header.image_series_index = 1 if kind == "magnitude" else 2
-        header.image_index = frame_index + 1
-        header.slice = slice_index
-        header.position = (0.0, 0.0, float(slice_index * 5.0))
-        header.slice_dir = (0.0, 0.0, 1.0)
-        header.field_of_view = (8.0, 8.0, 5.0)
-        image.setHead(header)
+      def make_image(
+          frame_index,
+          slice_index,
+          radians,
+          series_index=2,
+          phase=True,
+          volume_slices=1,
+          data_is_phase=None,
+          corner_offset=0.25,
+      ):
+          if data_is_phase is None:
+              data_is_phase = phase
+          stored_value = raw_phase(radians) if data_is_phase else float(radians)
+          data = np.full(
+              (1, volume_slices, 8, 8),
+              stored_value,
+              dtype=np.float32,
+          )
+          data[0, :, 0, 0] = (
+              raw_phase(radians + corner_offset)
+              if data_is_phase
+              else float(radians + 1.0)
+          )
+          image = ismrmrd.Image.from_array(data, transpose=False)
+          header = image.getHead()
+          header.image_type = (
+              ismrmrd.IMTYPE_PHASE if phase else ismrmrd.IMTYPE_MAGNITUDE
+          )
+          header.image_series_index = series_index
+          header.image_index = frame_index + 1
+          header.slice = slice_index
+          # Coronal source geometry: array rows run in the Head-Feet axis.
+          # The asymmetric corner pixel below makes a row reversal detectable.
+          header.read_dir = (1.0, 0.0, 0.0)
+          header.phase_dir = (0.0, 0.0, -1.0)
+          header.slice_dir = (0.0, 1.0, 0.0)
+          header.position = (0.0, float(slice_index * 5.0), 0.0)
+          header.field_of_view = (8.0, 8.0, float(5.0 * volume_slices))
+          image.setHead(header)
 
-        meta = ismrmrd.Meta()
-        meta["DataRole"] = "Image"
-        meta["SeriesDescription"] = series_name
-        meta["SequenceDescription"] = series_name
-        meta["ProtocolName"] = series_name
-        meta["SeriesNumberRangeNameUID"] = f"{series_name}_{kind}"
-        meta["SeriesInstanceUID"] = f"{series_uid}.{1 if kind == 'magnitude' else 2}"
-        meta["SOPInstanceUID"] = f"{series_uid}.{1 if kind == 'magnitude' else 2}.{frame_index + 1}"
-        meta["ComplexImageComponent"] = "MAGNITUDE" if kind == "magnitude" else "PHASE"
-        meta["ImageType"] = (
-            "ORIGINAL\\PRIMARY\\M" if kind == "magnitude" else "ORIGINAL\\PRIMARY\\P"
-        )
-        meta["RescaleSlope"] = "2"
-        meta["RescaleIntercept"] = "-4096"
-        image.attribute_string = meta.serialize()
-        return image
+          meta = ismrmrd.Meta()
+          meta["DataRole"] = "Image"
+          meta["SeriesDescription"] = "arfi_source"
+          meta["SequenceDescription"] = "arfi_source"
+          meta["ProtocolName"] = "arfi_source"
+          meta["SeriesNumberRangeNameUID"] = f"arfi_source_{series_index}"
+          meta["SeriesInstanceUID"] = f"1.2.826.0.1.3680043.10.543.{series_index}"
+          meta["SOPInstanceUID"] = (
+              f"1.2.826.0.1.3680043.10.543.{series_index}."
+              f"{slice_index + 1}.{frame_index + 1}"
+          )
+          meta["ComplexImageComponent"] = "PHASE" if phase else "MAGNITUDE"
+          meta["ImageType"] = (
+              "ORIGINAL\\PRIMARY\\P" if phase else "ORIGINAL\\PRIMARY\\M"
+          )
+          image.attribute_string = meta.serialize()
+          return image
 
-    def make_dataset(phase_radians, series_name="bss_source"):
-        magnitude = [
-            make_image(index, "magnitude", 10.0 + index, series_name=series_name)
-            for index in range(len(phase_radians))
-        ]
-        phase = [
-            make_image(index, "phase", raw_phase(radian), series_name=series_name)
-            for index, radian in enumerate(phase_radians)
-        ]
-        return magnitude + phase
+      frame_phases = [-1.0, 0.0, 1.0]
+      frame_magnitudes = [10.0, 20.0, 30.0]
+      magnitude_images = [
+          make_image(
+              frame,
+              slice_index,
+              magnitude + slice_index,
+              series_index=1,
+              phase=False,
+          )
+          for slice_index in range(2)
+          for frame, magnitude in enumerate(frame_magnitudes)
+      ]
+      phase_images = [
+          make_image(frame, slice_index, radians + 0.1 * slice_index)
+          for slice_index in range(2)
+          for frame, radians in enumerate(frame_phases)
+      ]
+      settings = module._settings_from_config(
+          {"parameters": {"arfischemes": "multiplefreq", "arfiblocklength": 3}}
+      )
+      input_images = magnitude_images + phase_images
+      result = module.compute_image_frames(input_images, settings)
+      assert result["frame_count"] == 3
+      assert result["slice_count"] == 2
+      assert result["magnitude"].shape == (3, 2, 8, 8)
+      assert result["phase"].shape == (3, 2, 8, 8)
+      assert set(result) == {
+          "frame_count",
+          "slice_count",
+          "magnitude_frame_anchor_images",
+          "phase_frame_anchor_images",
+          "magnitude_images",
+          "phase_images",
+          "magnitude",
+          "phase",
+          "arfi_phase_difference",
+          "with_fus_phase_standard_deviation",
+          "no_fus_phase_standard_deviation",
+      }
+      assert result["with_fus_phase_standard_deviation"] is None
+      assert result["no_fus_phase_standard_deviation"] is None
+      expected_multiple_no_fus = np.mean(
+          [
+              frame_magnitudes[0] * np.exp(1j * frame_phases[0]),
+              frame_magnitudes[2] * np.exp(1j * frame_phases[2]),
+          ]
+      )
+      expected_multiple_with_fus = (
+          frame_magnitudes[1] * np.exp(1j * frame_phases[1])
+      )
+      expected_multiple_phase = np.angle(
+          expected_multiple_with_fus * np.conj(expected_multiple_no_fus)
+      )
+      assert np.isclose(
+          result["arfi_phase_difference"][0, 3, 3],
+          expected_multiple_phase,
+          atol=1e-5,
+      )
+      multiple_no_fus, multiple_with_fus = (
+          module._multiple_frequency_frame_groups(10)
+      )
+      assert multiple_no_fus.tolist() == [0, 2, 3, 6, 7, 8]
+      assert multiple_with_fus.tolist() == [1, 4, 5, 9]
+      assert np.allclose(
+          result["magnitude"][:, 0, 3, 3],
+          frame_magnitudes,
+          atol=1e-5,
+      )
+      assert np.allclose(result["phase"][:, 0, 3, 3], frame_phases, atol=1e-5)
+      assert np.allclose(
+          result["phase"][:, 1, 3, 3],
+          np.asarray(frame_phases) + 0.1,
+          atol=1e-5,
+      )
 
-    # The scanner DICOM phase convention gives -0.3 radians for this BSp
-    # combination; the BSp-only polarity correction must recover +0.3.
-    one_tx_phase = [
-        0.1, 0.1, 0.1,
-        0.1, 0.2, 0.2, 0.4,
-        -0.6,
-        0.3, 0.3, 0.3,
-    ]
-    one_tx_images = make_dataset(one_tx_phase)
-    settings = module._settings_from_config({"parameters": {}})
-    one_tx = module.compute_bloch_siegert_maps(one_tx_images, settings)
-    assert one_tx["nframe"] == 11
-    assert one_tx["ntx"] == 1
-    assert one_tx["slice_count"] == 1
-    assert one_tx["b1"].shape == (1, 1, 8, 8)
-    assert one_tx["bsp"].shape == (1, 1, 8, 8)
-    assert one_tx["phsc"].shape == (1, 1, 8, 8)
-    assert one_tx["b0"].shape == (1, 8, 8)
-    assert np.allclose(one_tx["bsp"][0, 0, 3, 3], 0.3, atol=1e-5)
-    expected_b1 = math.sqrt(0.3 / (0.044 * 12.0 / 6.0))
-    assert np.allclose(one_tx["b1"][0, 0, 3, 3], expected_b1, atol=1e-5)
-    wider_pulse = module.compute_bloch_siegert_maps(
-        one_tx_images,
-        module._settings_from_config({"parameters": {"bspulsewidthms": 24.0}}),
-    )
-    assert np.allclose(
-        wider_pulse["b1"][0, 0, 3, 3],
-        expected_b1 / math.sqrt(2.0),
-        atol=1e-5,
-    )
-    assert np.allclose(one_tx["phsc"][0, 0, 3, 3], -0.6, atol=1e-5)
-    assert np.allclose(
-        one_tx["b0"][0, 3, 3],
-        0.2 * 1000.0 / (2.0 * math.pi),
-        atol=1e-5,
-    )
-    assert np.allclose(one_tx["bsp"][0, 0, 0, 0], 0.3, atol=1e-5)
-    assert np.allclose(one_tx["b1"][0, 0, 0, 0], expected_b1, atol=1e-5)
-    assert np.allclose(one_tx["phsc"][0, 0, 0, 0], -0.6, atol=1e-5)
-    assert np.allclose(
-        one_tx["b0"][0, 0, 0],
-        0.2 * 1000.0 / (2.0 * math.pi),
-        atol=1e-5,
-    )
-    assert int(one_tx["mask"][0, 3, 3]) == 1
-    assert int(one_tx["mask"][0, 0, 0]) == 0
+      outputs = module.build_output_images(result, settings, input_images)
+      assert len(outputs) == (2 * len(frame_phases) + 1) * 2
+      assert [int(image.image_series_index) for image in outputs] == [
+          *([101] * 6), *([102] * 6), *([103] * 2),
+      ]
+      assert [int(image.getHead().image_index) for image in outputs] == [
+          1, 2, 3, 4, 5, 6,
+          1, 2, 3, 4, 5, 6,
+          1, 2,
+      ]
+      assert all(np.asarray(image.data).shape == (1, 1, 8, 8) for image in outputs)
+      assert [int(image.getHead().slice) for image in outputs] == [
+          *([0, 1] * 6), 0, 1,
+      ]
+      assert np.allclose(
+          [image.getHead().position for image in outputs],
+          [(0.0, 0.0, 0.0), (0.0, 5.0, 0.0)] * 7,
+      )
+      module._validate_output_images(outputs, input_images)
 
-    small_negative_phase = list(one_tx_phase)
-    small_negative_phase[5] = 0.6
-    small_negative = module.compute_bloch_siegert_maps(
-        make_dataset(small_negative_phase),
-        settings,
-    )
-    assert np.allclose(small_negative["bsp"][0, 0, 3, 3], -0.1, atol=1e-5)
-    assert np.allclose(small_negative["b1"][0, 0, 3, 3], 0.0, atol=1e-5)
+      # Preserve coronal orientation and pixel row order. Reversing the
+      # phase_dir or the y array axis would flip Head and Feet on the scanner.
+      for output in outputs:
+          header = output.getHead()
+          meta = ismrmrd.Meta.deserialize(output.attribute_string)
+          assert np.allclose(header.read_dir, (1.0, 0.0, 0.0))
+          assert np.allclose(header.phase_dir, (0.0, 0.0, -1.0))
+          assert np.allclose(header.slice_dir, (0.0, 1.0, 0.0))
+          assert first(meta.get("Keep_image_geometry")) == "1"
+          assert np.allclose(
+              [float(value) for value in meta.get("ImageRowDir")],
+              header.read_dir,
+          )
+          assert np.allclose(
+              [float(value) for value in meta.get("ImageColumnDir")],
+              header.phase_dir,
+          )
 
-    wrapped_negative_phase = list(one_tx_phase)
-    wrapped_negative_phase[5] = 1.0
-    wrapped_negative = module.compute_bloch_siegert_maps(
-        make_dataset(wrapped_negative_phase),
-        settings,
-    )
-    assert np.allclose(
-        wrapped_negative["bsp"][0, 0, 3, 3],
-        2.0 * math.pi - 0.5,
-        atol=1e-5,
-    )
+      magnitude_pixels = np.asarray(outputs[0].data, dtype=np.float64)
+      magnitude_meta = ismrmrd.Meta.deserialize(outputs[0].attribute_string)
+      magnitude_slope = float(first(magnitude_meta.get("RescaleSlope")))
+      magnitude_intercept = float(first(magnitude_meta.get("RescaleIntercept")))
+      restored_magnitude = (
+          magnitude_pixels * magnitude_slope + magnitude_intercept
+      )
+      assert np.isclose(
+          restored_magnitude[0, 0, 0, 0],
+          11.0,
+          atol=magnitude_slope / 2.0,
+      )
+      assert np.isclose(
+          restored_magnitude[0, 0, -1, 0],
+          10.0,
+          atol=magnitude_slope / 2.0,
+      )
 
-    converted_dicom_like_images = []
-    for image in one_tx_images:
-        copied = ismrmrd.Image.from_array(np.asarray(image.data).copy(), transpose=False)
-        header = image.getHead()
-        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-        copied.setHead(header)
-        copied.attribute_string = image.attribute_string
-        converted_dicom_like_images.append(copied)
-    fallback_magnitude, fallback_phase = module._split_magnitude_phase_images(
-        converted_dicom_like_images
-    )
-    assert len(fallback_magnitude) == 11
-    assert len(fallback_phase) == 11
-    fallback_result = module.compute_bloch_siegert_maps(
-        converted_dicom_like_images,
-        settings,
-    )
-    assert np.allclose(fallback_result["b1"], one_tx["b1"], atol=1e-5)
+      frame_series_count = len(frame_phases) * 2
+      for output_index, output in enumerate(outputs[: 2 * frame_series_count]):
+          meta = ismrmrd.Meta.deserialize(output.attribute_string)
+          is_phase = output_index >= frame_series_count
+          series_offset = output_index % frame_series_count
+          frame_in_series = series_offset // 2
+          slice_in_frame = series_offset % 2
+          assert first(meta.get("SeriesDescription")) == (
+              "arfi_source Phase" if is_phase else "arfi_source Magnitude"
+          )
+          assert first(meta.get("ARFIOutput")) == (
+              "ARFIPhase" if is_phase else "ARFIMagnitude"
+          )
+          assert first(meta.get("ARFIUnits")) == (
+              "degrees" if is_phase else "a.u."
+          )
+          assert first(meta.get("ARFIFrameIndex")) == str(frame_in_series + 1)
+          assert first(meta.get("ARFIScheme")) == "multiplefreq"
+          assert first(meta.get("ARFIBlockLength")) == "3"
+          if is_phase:
+              assert first(meta.get("ARFIDisplayConversion")) == "radians to degrees"
+          else:
+              assert first(meta.get("ARFIDisplayConversion")) is None
+          assert not any("BlochSiegert" in key for key in meta.keys())
 
-    volume_frame_images = []
-    for image in one_tx_images:
-        base = np.asarray(image.data)[0, 0]
-        volume_data = np.stack([base, base + 1.0, base + 2.0], axis=0)
-        copied = ismrmrd.Image.from_array(volume_data, transpose=False)
-        source_header = image.getHead()
-        header = copied.getHead()
-        header.image_type = source_header.image_type
-        header.image_series_index = source_header.image_series_index
-        header.image_index = source_header.image_index
-        header.slice = source_header.slice
-        header.position = source_header.position
-        header.slice_dir = source_header.slice_dir
-        header.field_of_view = (8.0, 8.0, 12.0)
-        copied.setHead(header)
-        copied.attribute_string = image.attribute_string
-        volume_frame_images.append(copied)
-    volume_result = module.compute_bloch_siegert_maps(volume_frame_images, settings)
-    assert volume_result["b1"].shape == (1, 3, 8, 8)
-    assert volume_result["b0"].shape == (3, 8, 8)
-    volume_result["b1"][0, 0, :, :] = 1.0
-    volume_result["b1"][0, 1, :, :] = 2.0
-    volume_result["b1"][0, 2, :, :] = 5.0
-    volume_outputs = module.build_output_images(volume_result, settings, volume_frame_images)
-    assert np.asarray(volume_outputs[0].data).shape == (1, 3, 8, 8)
-    assert list(volume_outputs[0].getHead().matrix_size) == [8, 8, 3]
-    volume_b1_pixels = np.asarray(volume_outputs[0].data)[0]
-    assert int(np.min(volume_b1_pixels)) == 0
-    assert int(np.max(volume_b1_pixels)) == 4095
-    assert int(volume_b1_pixels[0, 0, 0]) == 0
-    assert int(volume_b1_pixels[1, 0, 0]) == round(4095.0 / 4.0)
-    assert int(volume_b1_pixels[2, 0, 0]) == 4095
-    volume_b1_meta = ismrmrd.Meta.deserialize(volume_outputs[0].attribute_string)
-    assert float(first(volume_b1_meta.get("BlochSiegertDisplayInputMin"))) == 1.0
-    assert float(first(volume_b1_meta.get("BlochSiegertDisplayInputMax"))) == 5.0
-    assert np.isclose(
-        float(first(volume_b1_meta.get("RescaleSlope"))),
-        4.0 / 4095.0,
-    )
-    assert float(first(volume_b1_meta.get("RescaleIntercept"))) == 1.0
-    assert float(first(volume_b1_meta.get("WindowCenter"))) == 3.0
-    assert float(first(volume_b1_meta.get("WindowWidth"))) == 4.0
-    module._validate_output_images(volume_outputs, volume_frame_images)
+          slope = float(first(meta.get("RescaleSlope")))
+          intercept = float(first(meta.get("RescaleIntercept")))
+          restored = np.asarray(output.data, dtype=np.float64) * slope + intercept
+          expected = (
+              math.degrees(frame_phases[frame_in_series] + 0.1 * slice_in_frame)
+              if is_phase
+              else frame_magnitudes[frame_in_series] + slice_in_frame
+          )
+          assert np.isclose(restored[0, 0, 3, 3], expected, atol=slope / 2.0)
 
-    display_one_tx = dict(one_tx)
-    display_one_tx["b1"] = one_tx["b1"].copy()
-    display_one_tx["b1"][0, 0, 0, 0] = 0.0
-    display_one_tx["b1"][0, 0, 7, 7] = 8.0
-    display_one_tx["bsp"] = one_tx["bsp"].copy()
-    display_one_tx["bsp"][0, 0, 0, 0] = 0.0
-    display_one_tx["bsp"][0, 0, 3, 3] = -0.1
-    display_one_tx["bsp"][0, 0, 7, 7] = math.pi
-    display_one_tx["phsc"] = one_tx["phsc"].copy()
-    display_one_tx["phsc"][0, 0, 0, 0] = -1.0
-    display_one_tx["phsc"][0, 0, 7, 7] = 1.0
-    display_one_tx["b0"] = one_tx["b0"].copy()
-    display_one_tx["b0"][0, 0, 0] = -100.0
-    display_one_tx["b0"][0, 7, 7] = 100.0
-    display_settings = dict(settings, sendmask=True)
-    outputs = module.build_output_images(
-        display_one_tx,
-        display_settings,
-        one_tx_images,
-    )
-    assert [int(image.image_series_index) for image in outputs] == [
-        101, 120, 140, 160, 161,
-    ]
-    module._validate_output_images(outputs, one_tx_images)
-    for image in outputs:
-        pixels = np.asarray(image.data)
-        assert pixels.dtype == np.uint16
-        assert int(np.min(pixels)) == 0
-        assert int(np.max(pixels)) == 4095
-        meta = ismrmrd.Meta.deserialize(image.attribute_string)
-        assert first(meta.get("BlochSiegertDisplayMin")) == "0"
-        assert first(meta.get("BlochSiegertDisplayMax")) == "4095"
-        assert first(meta.get("RescaleSlope")) != "2"
-        assert first(meta.get("RescaleIntercept")) != "-4096"
+      multiple_arfi_outputs = outputs[-2:]
+      multiple_arfi_output = multiple_arfi_outputs[0]
+      multiple_arfi_meta = ismrmrd.Meta.deserialize(
+          multiple_arfi_output.attribute_string
+      )
+      assert first(multiple_arfi_meta.get("SeriesDescription")) == (
+          "arfi_source ARFI phase"
+      )
+      assert first(multiple_arfi_meta.get("ARFIOutput")) == (
+          "ARFIPhaseDifference"
+      )
+      assert first(multiple_arfi_meta.get("ARFIScheme")) == "multiplefreq"
+      multiple_pixels = np.concatenate(
+          [np.asarray(image.data) for image in multiple_arfi_outputs],
+          axis=1,
+      )
+      assert int(np.min(multiple_pixels)) == 0
+      assert int(np.max(multiple_pixels)) == 4095
+      multiple_slope = float(first(multiple_arfi_meta.get("RescaleSlope")))
+      multiple_intercept = float(
+          first(multiple_arfi_meta.get("RescaleIntercept"))
+      )
+      restored_multiple = (
+          multiple_pixels.astype(np.float64) * multiple_slope
+          + multiple_intercept
+      )
+      assert np.isclose(
+          restored_multiple[0, 0, 3, 3],
+          math.degrees(expected_multiple_phase),
+          atol=multiple_slope / 2.0,
+      )
 
-    b1_pixels = np.asarray(outputs[0].data)
-    assert b1_pixels.dtype == np.uint16
-    assert int(b1_pixels[0, 0, 3, 3]) == round(expected_b1 * 4095.0 / 8.0)
-    assert int(np.min(b1_pixels)) == 0
-    assert int(np.max(b1_pixels)) == 4095
-    first_meta = ismrmrd.Meta.deserialize(outputs[0].attribute_string)
-    assert first(first_meta.get("SeriesDescription")) == "bss_source-b1"
-    assert first(first_meta.get("BlochSiegertOutput")) == "BlochSiegertB1Map"
-    assert first(first_meta.get("BlochSiegertUnits")) == "uT"
-    assert int(first(first_meta.get("Keep_image_geometry"))) == 0
-    assert first(first_meta.get("SequenceDescriptionAdditional")) == "openrecon"
-    assert first(first_meta.get("IceMiniHead")) is None
-    assert first(first_meta.get("ImageTypeValue3")) is None
-    assert np.isclose(
-        float(first(first_meta.get("BlochSiegertDisplayScale"))),
-        4095.0 / 8.0,
-    )
-    assert first(first_meta.get("BlochSiegertDisplayInputMin")) == "0"
-    assert first(first_meta.get("BlochSiegertDisplayInputMax")) == "8"
-    assert first(first_meta.get("BlochSiegertDisplayMin")) == "0"
-    assert first(first_meta.get("BlochSiegertDisplayMax")) == "4095"
-    b1_rescale_slope = float(first(first_meta.get("RescaleSlope")))
-    assert np.isclose(b1_rescale_slope, 8.0 / 4095.0)
-    assert first(first_meta.get("RescaleIntercept")) == "0"
-    b1_formula = first(first_meta.get("BlochSiegertDisplayFormula"))
-    assert b1_formula == (
-        f"uT = display * {module._format_display_number(8.0 / 4095.0)} + 0"
-    )
-    assert first(first_meta.get("ImageComments")) == (
-        f"bss_source-b1; scanner display uint16 0-4095; {b1_formula}"
-    )
-    assert first(first_meta.get("ImageComment")) == first(first_meta.get("ImageComments"))
-    assert float(first(first_meta.get("WindowCenter"))) == 4.0
-    assert float(first(first_meta.get("WindowWidth"))) == 8.0
-    restored_b1 = b1_pixels.astype(np.float64) * b1_rescale_slope
-    assert np.isclose(
-        restored_b1[0, 0, 3, 3],
-        expected_b1,
-        atol=b1_rescale_slope / 2.0,
-    )
-    phase_meta = ismrmrd.Meta.deserialize(outputs[2].attribute_string)
-    assert first(phase_meta.get("BlochSiegertOutput")) == "BlochSiegertTransmitPhase"
-    assert first(phase_meta.get("BlochSiegertUnits")) == "degrees"
-    assert first(phase_meta.get("BlochSiegertDisplayConversion")) == "radians to degrees"
-    assert "scanner display uint16 0-4095" in first(phase_meta.get("ImageComments"))
-    assert first(phase_meta.get("ImageComment")) == first(phase_meta.get("ImageComments"))
+      # Optional phase standard deviation uses each set's complex mean as its
+      # phase reference, followed by sample standard deviation of the residual
+      # wrapped phases. A one-frame set has zero standard deviation.
+      std_settings = module._settings_from_config({
+          "parameters": {
+              "arfischemes": "multiplefreq",
+              "arfiblocklength": 3,
+              "sendphasestandarddeviation": True,
+          }
+      })
+      assert std_settings["sendphasestandarddeviation"] is True
+      std_result = module.compute_image_frames(input_images, std_settings)
+      no_fus_values = np.asarray(frame_magnitudes)[[0, 2]] * np.exp(
+          1j * np.asarray(frame_phases)[[0, 2]]
+      )
+      no_fus_mean = np.mean(no_fus_values)
+      expected_no_fus_std = np.std(
+          np.angle(no_fus_values * np.conj(no_fus_mean)),
+          ddof=1,
+      )
+      assert np.isclose(
+          std_result["no_fus_phase_standard_deviation"][0, 3, 3],
+          expected_no_fus_std,
+          atol=1e-6,
+      )
+      assert np.allclose(
+          std_result["with_fus_phase_standard_deviation"],
+          0.0,
+      )
 
-    expected_ranges = [
-        (outputs[1], math.degrees(-0.1), 180.0, math.degrees(-0.1)),
-        (outputs[2], math.degrees(-1.0), math.degrees(1.0), math.degrees(-0.6)),
-        (outputs[3], -100.0, 100.0, float(one_tx["b0"][0, 3, 3])),
-        (outputs[4], 0.0, 1.0, 1.0),
-    ]
-    for image, physical_min, physical_max, expected_value in expected_ranges:
-        meta = ismrmrd.Meta.deserialize(image.attribute_string)
-        slope = float(first(meta.get("RescaleSlope")))
-        intercept = float(first(meta.get("RescaleIntercept")))
-        assert np.isclose(slope, (physical_max - physical_min) / 4095.0)
-        assert np.isclose(intercept, physical_min)
-        restored = np.asarray(image.data, dtype=np.float64) * slope + intercept
-        assert np.isclose(
-            restored[0, 0, 3, 3],
-            expected_value,
-            atol=slope / 2.0,
-        )
+      std_outputs = module.build_output_images(
+          std_result,
+          std_settings,
+          input_images,
+      )
+      assert len(std_outputs) == 18
+      assert [int(image.image_series_index) for image in std_outputs[-4:]] == [
+          104, 104, 105, 105,
+      ]
+      with_fus_std_meta = ismrmrd.Meta.deserialize(
+          std_outputs[-4].attribute_string
+      )
+      no_fus_std_meta = ismrmrd.Meta.deserialize(
+          std_outputs[-2].attribute_string
+      )
+      assert first(with_fus_std_meta.get("SeriesDescription")) == (
+          "arfi_source withFUS phase standard deviation"
+      )
+      assert first(with_fus_std_meta.get("ARFIOutput")) == (
+          "ARFIWithFUSPhaseStandardDeviation"
+      )
+      assert first(no_fus_std_meta.get("SeriesDescription")) == (
+          "arfi_source noFUS phase standard deviation"
+      )
+      assert first(no_fus_std_meta.get("ARFIOutput")) == (
+          "ARFINoFUSPhaseStandardDeviation"
+      )
+      no_fus_std_slope = float(first(no_fus_std_meta.get("RescaleSlope")))
+      no_fus_std_intercept = float(
+          first(no_fus_std_meta.get("RescaleIntercept"))
+      )
+      restored_no_fus_std = (
+          np.asarray(std_outputs[-2].data, dtype=np.float64)
+          * no_fus_std_slope
+          + no_fus_std_intercept
+      )
+      assert np.isclose(
+          restored_no_fus_std[0, 0, 3, 3],
+          math.degrees(expected_no_fus_std),
+          atol=max(no_fus_std_slope / 2.0, 1e-6),
+      )
+      module._validate_output_images(std_outputs, input_images)
 
-    eight_tx_phase = [0.1] * 46
-    for tx_index in range(8):
-        eight_tx_phase[3 + 4 * tx_index] = 0.1
-        eight_tx_phase[4 + 4 * tx_index] = 0.2
-        eight_tx_phase[5 + 4 * tx_index] = 0.2 - 0.01 * tx_index
-        eight_tx_phase[6 + 4 * tx_index] = 0.4
-    eight_tx_phsc = [-0.8 + 0.1 * tx_index for tx_index in range(8)]
-    eight_tx_phase[35:43] = eight_tx_phsc
-    eight_tx_phase[43:46] = [0.3, 0.3, 0.3]
-    eight_tx_images = make_dataset(eight_tx_phase, series_name="bss_8tx")
-    eight_tx = module.compute_bloch_siegert_maps(eight_tx_images, settings)
-    assert eight_tx["nframe"] == 46
-    assert eight_tx["ntx"] == 8
-    assert eight_tx["b1"].shape == (8, 1, 8, 8)
-    assert eight_tx["bsp"].shape == (8, 1, 8, 8)
-    assert eight_tx["phsc"].shape == (8, 1, 8, 8)
-    assert np.allclose(
-        eight_tx["bsp"][:, 0, 3, 3],
-        [0.30 + 0.01 * i for i in range(8)],
-        atol=1e-5,
-    )
-    assert np.allclose(
-        eight_tx["phsc"][:, 0, 3, 3],
-        eight_tx_phsc,
-        atol=1e-5,
-    )
-    b1_only = module.build_output_images(
-        eight_tx,
-        {"sendb1": True, "sendbsp": False, "sendphsc": False, "sendb0": False},
-        eight_tx_images,
-    )
-    assert len(b1_only) == 8
-    assert [int(image.image_series_index) for image in b1_only] == list(range(101, 109))
-    assert first(ismrmrd.Meta.deserialize(b1_only[-1].attribute_string).get("SeriesDescription")) == "bss_8tx-b1-tx08"
-    module._validate_output_images(b1_only, eight_tx_images)
+      # Retain compatibility with replay data where both source series are
+      # incorrectly marked as magnitude: the second equal-length series is phase.
+      fallback_images = [
+          make_image(frame, 0, radians, series_index=1, phase=False)
+          for frame, radians in enumerate(frame_phases)
+      ] + [
+          make_image(
+              frame,
+              0,
+              radians,
+              series_index=2,
+              phase=False,
+              data_is_phase=True,
+          )
+          for frame, radians in enumerate(frame_phases)
+      ]
+      fallback = module.compute_image_frames(fallback_images, settings)
+      assert fallback["frame_count"] == 3
+      assert np.allclose(fallback["phase"][:, 0, 3, 3], frame_phases, atol=1e-5)
 
-    forty_slice_phase = list(eight_tx_phase)
-    forty_slice_magnitude = []
-    forty_slice_phase_images = []
-    for slice_index in range(40):
-        for frame_index, phase_radian in enumerate(forty_slice_phase):
-            forty_slice_magnitude.append(
-                make_image(
-                    frame_index,
-                    "magnitude",
-                    10.0 + frame_index,
-                    slice_index=slice_index,
-                    series_name="bss_8tx_40_slice",
-                )
-            )
-            forty_slice_phase_images.append(
-                make_image(
-                    frame_index,
-                    "phase",
-                    raw_phase(phase_radian),
-                    slice_index=slice_index,
-                    series_name="bss_8tx_40_slice",
-                )
-            )
-    forty_slice_images = forty_slice_magnitude + forty_slice_phase_images
-    forty_slice = module.compute_bloch_siegert_maps(forty_slice_images, settings)
-    assert forty_slice["slice_count"] == 40
-    assert forty_slice["nframe"] == 46
-    assert forty_slice["ntx"] == 8
-    assert forty_slice["b1"].shape == (8, 40, 8, 8)
-    forty_slice_b1 = module.build_output_images(
-        forty_slice,
-        {"sendb1": True, "sendbsp": False, "sendphsc": False, "sendb0": False},
-        forty_slice_images,
-    )
-    assert len(forty_slice_b1) == 8
-    assert all(np.asarray(image.data).shape == (1, 40, 8, 8) for image in forty_slice_b1)
-    assert all(list(image.getHead().matrix_size) == [8, 8, 40] for image in forty_slice_b1)
-    module._validate_output_images(forty_slice_b1, forty_slice_images)
+      volume_magnitude_images = [
+          make_image(
+              frame,
+              0,
+              magnitude,
+              series_index=1,
+              phase=False,
+              volume_slices=2,
+          )
+          for frame, magnitude in enumerate(frame_magnitudes)
+      ]
+      volume_phase_images = [
+          make_image(frame, 0, radians, series_index=2, volume_slices=2)
+          for frame, radians in enumerate(frame_phases)
+      ]
+      volume_images = volume_magnitude_images + volume_phase_images
+      volume_result = module.compute_image_frames(volume_images, settings)
+      assert volume_result["frame_count"] == 3
+      assert volume_result["slice_count"] == 2
+      assert volume_result["phase"].shape == (3, 2, 8, 8)
+      volume_outputs = module.build_output_images(
+          volume_result,
+          settings,
+          volume_images,
+      )
+      assert len(volume_outputs) == 14
+      assert all(
+          np.asarray(image.data).shape == (1, 1, 8, 8)
+          for image in volume_outputs
+      )
+      assert np.allclose(
+          [image.getHead().position for image in volume_outputs[:2]],
+          [(0.0, 0.0, 0.0), (0.0, 5.0, 0.0)],
+      )
+      module._validate_output_images(volume_outputs, volume_images)
 
-    class FakeConnection:
-        def __init__(self, items):
-            self.items = iter(items)
-            self.sent_images = []
-            self.logging = []
-            self.closed = False
+      # Single Freq groups frames sequentially. One-based odd groups are noFUS
+      # and one-based even groups are withFUS; both averages are complex-valued.
+      single_phases = [0.1, 0.1, 0.4, 0.4, 0.1, 0.1]
+      single_magnitude_images = [
+          make_image(
+              frame,
+              0,
+              10.0 + frame,
+              series_index=1,
+              phase=False,
+          )
+          for frame in range(len(single_phases))
+      ]
+      single_phase_images = [
+          make_image(
+              frame,
+              0,
+              radians,
+              series_index=2,
+              corner_offset=0.5 if frame in (2, 3) else 0.25,
+          )
+          for frame, radians in enumerate(single_phases)
+      ]
+      single_images = single_magnitude_images + single_phase_images
+      single_settings = module._settings_from_config(
+          {"parameters": {"arfischemes": "singlefreq", "arfiblocklength": 2}}
+      )
+      single_result = module.compute_image_frames(single_images, single_settings)
+      assert np.isclose(
+          single_result["arfi_phase_difference"][0, 3, 3],
+          0.3,
+          atol=1e-5,
+      )
+      assert np.isclose(
+          single_result["arfi_phase_difference"][0, 0, 0],
+          0.55,
+          atol=1e-5,
+      )
+      single_std_settings = module._settings_from_config({
+          "parameters": {
+              "arfischemes": "singlefreq",
+              "arfiblocklength": 2,
+              "sendphasestandarddeviation": True,
+          }
+      })
+      single_std_result = module.compute_image_frames(
+          single_images,
+          single_std_settings,
+      )
+      single_no_fus_indices, single_with_fus_indices = (
+          module._single_frequency_frame_groups(len(single_phases), 2)
+      )
+      assert single_no_fus_indices.tolist() == [0, 1, 4, 5]
+      assert single_with_fus_indices.tolist() == [2, 3]
+      single_complex_values = (
+          np.arange(10.0, 16.0) * np.exp(1j * np.asarray(single_phases))
+      )
+      single_no_fus_mean = np.mean(
+          single_complex_values[single_no_fus_indices]
+      )
+      expected_single_no_fus_std = np.std(
+          np.angle(
+              single_complex_values[single_no_fus_indices]
+              * np.conj(single_no_fus_mean)
+          ),
+          ddof=1,
+      )
+      assert np.isclose(
+          single_std_result["no_fus_phase_standard_deviation"][0, 3, 3],
+          expected_single_no_fus_std,
+          atol=1e-6,
+      )
+      assert np.isclose(
+          single_std_result["with_fus_phase_standard_deviation"][0, 3, 3],
+          0.0,
+          atol=1e-6,
+      )
+      assert len(module.build_output_images(
+          single_std_result,
+          single_std_settings,
+          single_images,
+      )) == 15
+      single_outputs = module.build_output_images(
+          single_result,
+          single_settings,
+          single_images,
+      )
+      assert len(single_outputs) == 13
+      assert [int(image.image_series_index) for image in single_outputs] == (
+          [101] * 6 + [102] * 6 + [103]
+      )
+      arfi_phase_output = single_outputs[-1]
+      arfi_phase_meta = ismrmrd.Meta.deserialize(
+          arfi_phase_output.attribute_string
+      )
+      assert first(arfi_phase_meta.get("SeriesDescription")) == (
+          "arfi_source ARFI phase"
+      )
+      assert first(arfi_phase_meta.get("ARFIOutput")) == "ARFIPhaseDifference"
+      assert first(arfi_phase_meta.get("ARFIBlockLength")) == "2"
+      arfi_phase_pixels = np.asarray(arfi_phase_output.data)
+      assert int(np.min(arfi_phase_pixels)) == 0
+      assert int(np.max(arfi_phase_pixels)) == 4095
+      arfi_slope = float(first(arfi_phase_meta.get("RescaleSlope")))
+      arfi_intercept = float(first(arfi_phase_meta.get("RescaleIntercept")))
+      restored_arfi_phase = arfi_phase_pixels.astype(np.float64) * arfi_slope
+      restored_arfi_phase += arfi_intercept
+      assert np.isclose(
+          restored_arfi_phase[0, 0, 3, 3],
+          math.degrees(0.3),
+          atol=arfi_slope / 2.0,
+      )
+      module._validate_output_images(single_outputs, single_images)
 
-        def __iter__(self):
-            return self
+      class FakeConnection:
+          def __init__(self, items):
+              self.items = iter(items)
+              self.sent_images = []
+              self.logging = []
+              self.closed = False
 
-        def __next__(self):
-            return next(self.items)
+          def __iter__(self):
+              return self
 
-        def send_image(self, images_to_send):
-            self.sent_images.append(list(images_to_send))
+          def __next__(self):
+              return next(self.items)
 
-        def send_logging(self, level, message):
-            self.logging.append((level, message))
+          def send_image(self, images):
+              self.sent_images.append(list(images))
 
-        def send_close(self):
-            self.closed = True
+          def send_logging(self, level, message):
+              self.logging.append((level, message))
 
-    connection = FakeConnection(one_tx_images + [None])
-    module.process(connection, {"parameters": {"sendmask": True}}, None)
-    sent = [image for batch in connection.sent_images for image in batch]
-    assert connection.logging == []
-    assert connection.closed is True
-    assert [int(image.image_series_index) for image in sent] == [101, 120, 140, 160, 161]
+          def send_close(self):
+              self.closed = True
 
-    no_output_connection = FakeConnection(one_tx_images + [None])
-    module.process(
-        no_output_connection,
-        {
-            "parameters": {
-                "sendb1": False,
-                "sendbsp": False,
-                "sendphsc": False,
-                "sendb0": False,
-                "sendmask": False,
-            }
-        },
-        None,
-    )
-    assert no_output_connection.sent_images == []
-    assert no_output_connection.closed is True
+      connection = FakeConnection(input_images + [None])
+      module.process(
+          connection,
+          {"parameters": {"arfischemes": "multiplefreq", "arfiblocklength": 3}},
+          None,
+      )
+      sent = [image for batch in connection.sent_images for image in batch]
+      assert connection.logging == []
+      assert connection.closed is True
+      assert len(connection.sent_images) == 3
+      assert len(sent) == (2 * len(frame_phases) + 1) * 2
 
-    print("Bloch-Siegert OpenRecon workflow tests passed")
-    PY
+      print("ARFI magnitude and phase OpenRecon workflow tests passed")
+      PY

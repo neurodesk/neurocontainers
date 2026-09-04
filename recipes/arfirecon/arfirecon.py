@@ -1,4 +1,4 @@
-"""OpenRecon Bloch-Siegert B1 mapping from reconstructed MRD images."""
+"""OpenRecon ARFI magnitude and phase output from reconstructed MRD images."""
 
 import base64
 import json
@@ -20,19 +20,14 @@ except ImportError:
 
 RECIPE_NAME = "arfirecon"
 PHASE_WRAP = 4096.0
-BSS_PULSE_WIDTH_MS = 12.0
-PRE_DUMMY = 2
-POST_DUMMY = 2
-ECHOES_PER_TX = 4
-KBS_SCALE = 0.044 / 6.0
 SCANNER_DISPLAY_MIN = 0
 SCANNER_DISPLAY_MAX = 4095
 
-B1_SERIES_INDEX_START = 101
-BSP_SERIES_INDEX_START = 120
-PHSC_SERIES_INDEX_START = 140
-B0_SERIES_INDEX = 160
-MASK_SERIES_INDEX = 161
+MAGNITUDE_SERIES_INDEX = 101
+PHASE_SERIES_INDEX = 102
+ARFI_PHASE_SERIES_INDEX = 103
+WITH_FUS_PHASE_STD_SERIES_INDEX = 104
+NO_FUS_PHASE_STD_SERIES_INDEX = 105
 
 SOURCE_PARENT_REFERENCE_META_KEYS = {
     "DicomEngineDimString",
@@ -69,19 +64,15 @@ def process(connection, config, metadata):
             return
 
         settings = _settings_from_config(config)
-        result = compute_bloch_siegert_maps(input_images, settings)
+        result = compute_image_frames(input_images, settings)
         output_images = build_output_images(result, settings, input_images)
 
         logging.info(
-            "Bloch-Siegert OpenRecon: slices=%d nframe=%d ntx=%d outputs=%d",
+            "ARFI reconstruction: slices=%d frames=%d outputs=%d",
             result["slice_count"],
-            result["nframe"],
-            result["ntx"],
+            result["frame_count"],
             len(output_images),
         )
-        if not output_images:
-            logging.info("No output maps enabled; closing without output")
-            return
 
         _validate_output_images(output_images, input_images)
         _send_images_by_series(connection, output_images)
@@ -94,416 +85,390 @@ def process(connection, config, metadata):
         connection.send_close()
 
 
-def compute_bloch_siegert_maps(input_images, settings=None):
+def compute_image_frames(input_images, settings=None):
     settings = dict(settings or {})
     magnitude_images, phase_images = _split_magnitude_phase_images(input_images)
     if not magnitude_images:
-        raise ValueError("Bloch-Siegert mapping requires magnitude image messages")
+        raise ValueError("ARFI reconstruction requires magnitude image messages")
     if not phase_images:
-        raise ValueError("Bloch-Siegert mapping requires phase image messages")
+        raise ValueError("ARFI reconstruction requires phase image messages")
 
     magnitude_groups = _group_frames_by_slice(magnitude_images)
     phase_groups = _group_frames_by_slice(phase_images)
-    magnitude_groups, phase_groups = _pair_slice_groups(magnitude_groups, phase_groups)
+    if len(magnitude_groups) != len(phase_groups):
+        raise ValueError(
+            "Magnitude and phase inputs contain different numbers of slices: "
+            f"{len(magnitude_groups)} and {len(phase_groups)}"
+        )
 
-    slice_results = []
-    nframe = None
-    ntx = None
+    frame_count = len(magnitude_groups[0])
     for slice_index, (magnitude_group, phase_group) in enumerate(
         zip(magnitude_groups, phase_groups)
     ):
-        sequence_nframe, sequence_ntx = _sequence_shape(
-            min(len(magnitude_group), len(phase_group))
-        )
-        if nframe is None:
-            nframe = sequence_nframe
-            ntx = sequence_ntx
-        elif nframe != sequence_nframe or ntx != sequence_ntx:
+        if len(magnitude_group) != frame_count or len(phase_group) != frame_count:
             raise ValueError(
-                "All Bloch-Siegert slices must use the same sequence shape; "
-                f"slice 0 has nframe={nframe}, ntx={ntx}, slice {slice_index} "
-                f"has nframe={sequence_nframe}, ntx={sequence_ntx}"
+                "All ARFI slices must contain matching magnitude and phase "
+                f"frames; expected {frame_count}, slice {slice_index} has "
+                f"{len(magnitude_group)} magnitude and {len(phase_group)} phase"
             )
 
-        slice_results.append(
-            _compute_slice_maps(
-                magnitude_group[:nframe],
-                phase_group[:nframe],
-                ntx,
-                settings,
-                slice_index,
-            )
+    phase_wrap = _setting_float(settings, "phasewrap", default=PHASE_WRAP)
+    slice_magnitude = []
+    slice_phase = []
+    for magnitude_group, phase_group in zip(magnitude_groups, phase_groups):
+        magnitude_stack = np.stack(
+            [_image_volume_data(image) for image in magnitude_group],
+            axis=0,
+        )
+        phase_stack = np.stack(
+            [_image_volume_data(image) for image in phase_group],
+            axis=0,
+        )
+        magnitude_stack = np.nan_to_num(
+            magnitude_stack.astype(np.float32),
+            copy=False,
+        )
+        phase_stack = np.nan_to_num(phase_stack.astype(np.float32), copy=False)
+        slice_magnitude.append(magnitude_stack)
+        slice_phase.append(
+            np.angle(np.exp(1j * _phase_to_radians(phase_stack, phase_wrap)))
         )
 
-    b1 = np.concatenate([item["b1"] for item in slice_results], axis=1)
-    bsp = np.concatenate([item["bsp"] for item in slice_results], axis=1)
-    phsc = np.concatenate([item["phsc"] for item in slice_results], axis=1)
-    b0 = np.concatenate([item["b0"] for item in slice_results], axis=0)
-    mask = np.concatenate([item["mask"] for item in slice_results], axis=0)
+    magnitude = np.concatenate(slice_magnitude, axis=1).astype(np.float32)
+    phase = np.concatenate(slice_phase, axis=1).astype(np.float32)
+    if magnitude.shape != phase.shape:
+        raise ValueError(
+            "Magnitude and phase frame volumes have different shapes: "
+            f"{magnitude.shape} and {phase.shape}"
+        )
+
+    arfi_scheme = settings.get("arfischemes", "singlefreq")
+    arfi_block_length = int(settings.get("arfiblocklength", 25))
+    send_phase_standard_deviation = bool(
+        settings.get("sendphasestandarddeviation", False)
+    )
+    arfi_phase_difference = None
+    with_fus_phase_standard_deviation = None
+    no_fus_phase_standard_deviation = None
+    if arfi_scheme == "singlefreq":
+        no_fus_indices, with_fus_indices = _single_frequency_frame_groups(
+            phase.shape[0],
+            arfi_block_length,
+        )
+        arfi_phase_difference = _single_frequency_phase_difference(
+            magnitude,
+            phase,
+            arfi_block_length,
+        )
+    elif arfi_scheme == "multiplefreq":
+        no_fus_indices, with_fus_indices = _multiple_frequency_frame_groups(
+            phase.shape[0]
+        )
+        arfi_phase_difference = _multiple_frequency_phase_difference(
+            magnitude,
+            phase,
+        )
+
+    if send_phase_standard_deviation and arfi_phase_difference is not None:
+        (
+            no_fus_phase_standard_deviation,
+            with_fus_phase_standard_deviation,
+        ) = _phase_standard_deviations(
+            magnitude,
+            phase,
+            no_fus_indices,
+            with_fus_indices,
+        )
 
     return {
-        "nframe": nframe,
-        "ntx": ntx,
-        "slice_count": len(slice_results),
-        "anchor_images": [group[0] for group in magnitude_groups],
+        "frame_count": frame_count,
+        "slice_count": int(phase.shape[1]),
+        "magnitude_frame_anchor_images": [
+            [group[frame_index] for group in magnitude_groups]
+            for frame_index in range(frame_count)
+        ],
+        "phase_frame_anchor_images": [
+            [group[frame_index] for group in phase_groups]
+            for frame_index in range(frame_count)
+        ],
         "magnitude_images": magnitude_images,
         "phase_images": phase_images,
-        "b1": b1.astype(np.float32),
-        "bsp": bsp.astype(np.float32),
-        "phsc": phsc.astype(np.float32),
-        "b0": b0.astype(np.float32),
-        "mask": mask.astype(np.uint16),
+        "magnitude": magnitude,
+        "phase": phase,
+        "arfi_phase_difference": arfi_phase_difference,
+        "with_fus_phase_standard_deviation": (
+            with_fus_phase_standard_deviation
+        ),
+        "no_fus_phase_standard_deviation": no_fus_phase_standard_deviation,
     }
 
 
 def build_output_images(result, settings=None, input_images=None):
     settings = dict(settings or {})
     input_images = input_images or result["magnitude_images"] + result["phase_images"]
-    series_indices = _allocate_output_series_indices(input_images, result["ntx"])
-    anchor = result["anchor_images"][0]
-    slice_anchors = result["anchor_images"]
-    source_name = _source_series_name(anchor) or RECIPE_NAME
+    series_indices = _allocate_output_series_indices(input_images)
+    source_name = (
+        _source_series_name(result["magnitude_frame_anchor_images"][0][0])
+        or RECIPE_NAME
+    )
+    arfi_scheme = settings.get("arfischemes", "singlefreq")
+    arfi_block_length = int(settings.get("arfiblocklength", 25))
+    slice_count = int(result["slice_count"])
+    frame_count = int(result["frame_count"])
 
     outputs = []
-    if _setting_bool(settings, "sendb1", default=True):
-        for tx_index in range(result["ntx"]):
-            outputs.append(
-                _map_to_mrd_image(
-                    result["b1"][tx_index],
-                    anchor,
-                    slice_anchors,
-                    series_indices["b1"][tx_index],
-                    _map_series_name(source_name, "b1", tx_index, result["ntx"]),
-                    "BSSB1",
-                    "BlochSiegertB1Map",
-                    "uT",
-                    tx_index,
-                )
-            )
+    for frame_index in range(frame_count):
+        slice_anchors = result["magnitude_frame_anchor_images"][frame_index]
+        prepared_display = _prepare_display_volume(
+            result["magnitude"][frame_index],
+            "ARFIMAGNITUDE",
+            "a.u.",
+        )
+        for slice_index in range(slice_count):
+            anchor = slice_anchors[min(slice_index, len(slice_anchors) - 1)]
+            outputs.append(_map_to_mrd_image(
+                result["magnitude"][frame_index], anchor,
+                slice_anchors,
+                series_indices["magnitude"],
+                f"{source_name} Magnitude",
+                "ARFIMAGNITUDE",
+                "ARFIMagnitude",
+                "a.u.",
+                frame_index=frame_index,
+                slice_index=slice_index,
+                slice_count=slice_count,
+                image_index=frame_index * slice_count + slice_index + 1,
+                images_in_series=frame_count * slice_count,
+                arfi_scheme=arfi_scheme,
+                arfi_block_length=arfi_block_length,
+                prepared_display=prepared_display,
+            ))
 
-    if _setting_bool(settings, "sendbsp", default=True):
-        for tx_index in range(result["ntx"]):
-            outputs.append(
-                _map_to_mrd_image(
-                    result["bsp"][tx_index],
-                    anchor,
-                    slice_anchors,
-                    series_indices["bsp"][tx_index],
-                    _map_series_name(source_name, "bsp", tx_index, result["ntx"]),
-                    "BSSBSP",
-                    "BlochSiegertPhase",
-                    "degrees",
-                    tx_index,
-                )
-            )
+    for frame_index in range(frame_count):
+        slice_anchors = result["phase_frame_anchor_images"][frame_index]
+        prepared_display = _prepare_display_volume(
+            result["phase"][frame_index],
+            "ARFIPHASE",
+            "degrees",
+        )
+        for slice_index in range(slice_count):
+            anchor = slice_anchors[min(slice_index, len(slice_anchors) - 1)]
+            outputs.append(_map_to_mrd_image(
+                result["phase"][frame_index], anchor,
+                slice_anchors,
+                series_indices["phase"],
+                f"{source_name} Phase",
+                "ARFIPHASE",
+                "ARFIPhase",
+                "degrees",
+                frame_index=frame_index,
+                slice_index=slice_index,
+                slice_count=slice_count,
+                image_index=frame_index * slice_count + slice_index + 1,
+                images_in_series=frame_count * slice_count,
+                arfi_scheme=arfi_scheme,
+                arfi_block_length=arfi_block_length,
+                prepared_display=prepared_display,
+            ))
 
-    if _setting_bool(settings, "sendphsc", default=True):
-        for phase_index in range(result["phsc"].shape[0]):
-            outputs.append(
-                _map_to_mrd_image(
-                    result["phsc"][phase_index],
-                    anchor,
-                    slice_anchors,
-                    series_indices["phsc"][phase_index],
-                    _map_series_name(
-                        source_name,
-                        "phsc",
-                        phase_index,
-                        result["phsc"].shape[0],
-                    ),
-                    "BSSPHSC",
-                    "BlochSiegertTransmitPhase",
-                    "degrees",
-                    phase_index,
-                )
-            )
+    if result["arfi_phase_difference"] is not None:
+        slice_anchors = result["phase_frame_anchor_images"][0]
+        prepared_display = _prepare_display_volume(
+            result["arfi_phase_difference"],
+            "ARFIPHASE",
+            "degrees",
+        )
+        for slice_index in range(slice_count):
+            anchor = slice_anchors[min(slice_index, len(slice_anchors) - 1)]
+            outputs.append(_map_to_mrd_image(
+                result["arfi_phase_difference"], anchor,
+                slice_anchors,
+                series_indices["arfi_phase"],
+                f"{source_name} ARFI phase",
+                "ARFIPHASE",
+                "ARFIPhaseDifference",
+                "degrees",
+                frame_index=0,
+                slice_index=slice_index,
+                slice_count=slice_count,
+                image_index=slice_index + 1,
+                images_in_series=slice_count,
+                arfi_scheme=arfi_scheme,
+                arfi_block_length=arfi_block_length,
+                prepared_display=prepared_display,
+            ))
 
-    if _setting_bool(settings, "sendb0", default=True):
-        outputs.append(
-            _map_to_mrd_image(
-                result["b0"],
+    standard_deviation_outputs = (
+        (
+            "with_fus_phase_standard_deviation",
+            "with_fus_phase_std",
+            f"{source_name} withFUS phase standard deviation",
+            "ARFIWithFUSPhaseStandardDeviation",
+        ),
+        (
+            "no_fus_phase_standard_deviation",
+            "no_fus_phase_std",
+            f"{source_name} noFUS phase standard deviation",
+            "ARFINoFUSPhaseStandardDeviation",
+        ),
+    )
+    for result_key, series_key, series_name, map_role in (
+        standard_deviation_outputs
+    ):
+        standard_deviation = result.get(result_key)
+        if standard_deviation is None:
+            continue
+        slice_anchors = result["phase_frame_anchor_images"][0]
+        prepared_display = _prepare_display_volume(
+            standard_deviation,
+            "ARFIPHASESTD",
+            "degrees",
+        )
+        for slice_index in range(slice_count):
+            anchor = slice_anchors[min(slice_index, len(slice_anchors) - 1)]
+            outputs.append(_map_to_mrd_image(
+                standard_deviation,
                 anchor,
                 slice_anchors,
-                series_indices["b0"],
-                f"{source_name}-b0",
-                "BSSB0",
-                "BlochSiegertB0Map",
-                "Hz",
-            )
-        )
-
-    if _setting_bool(settings, "sendmask", default=False):
-        outputs.append(
-            _map_to_mrd_image(
-                result["mask"],
-                anchor,
-                slice_anchors,
-                series_indices["mask"],
-                f"{source_name}-mask",
-                "BSSMASK",
-                "BlochSiegertMask",
-                "binary",
-                window_center=0.5,
-                window_width=1.0,
-            )
-        )
+                series_indices[series_key],
+                series_name,
+                "ARFIPHASESTD",
+                map_role,
+                "degrees",
+                frame_index=None,
+                slice_index=slice_index,
+                slice_count=slice_count,
+                image_index=slice_index + 1,
+                images_in_series=slice_count,
+                arfi_scheme=arfi_scheme,
+                arfi_block_length=arfi_block_length,
+                prepared_display=prepared_display,
+            ))
 
     return outputs
-
-
-def _diagnostic_quantiles(values):
-    values = np.asarray(values, dtype=np.float64)
-    finite = values[np.isfinite(values)]
-    if finite.size == 0:
-        return float("nan"), float("nan"), float("nan")
-    return tuple(float(value) for value in np.percentile(finite, [5, 50, 95]))
-
-
-def _phase_input_domain(data_min, data_max, phase_wrap):
-    tolerance = 0.01
-    if data_min >= -math.pi - tolerance and data_max <= math.pi + tolerance:
-        return "radians_candidate"
-    if phase_wrap <= 0:
-        return "native_values"
-    if data_min >= -tolerance and data_max <= phase_wrap + tolerance:
-        return "unsigned_counts_candidate"
-    if data_min >= -phase_wrap - tolerance and data_max <= phase_wrap + tolerance:
-        return "signed_or_rescaled_counts_candidate"
-    return "unknown"
-
-
-def _format_frame_indices(indices):
-    return "[" + ",".join(str(int(index + 1)) for index in indices) + "]"
-
-
-def _compute_slice_maps(magnitude_images, phase_images, ntx, settings, slice_index):
-    magnitude_stack = np.stack([_image_volume_data(image) for image in magnitude_images])
-    phase_stack = np.stack([_image_volume_data(image) for image in phase_images])
-
-    magnitude_nonfinite = int(np.count_nonzero(~np.isfinite(magnitude_stack)))
-    phase_nonfinite = int(np.count_nonzero(~np.isfinite(phase_stack)))
-    magnitude_stack = np.nan_to_num(magnitude_stack.astype(np.float32), copy=False)
-    mask = _bloch_siegert_mask(magnitude_stack, ntx)
-
-    raw_phase_finite = phase_stack[np.isfinite(phase_stack)]
-    if raw_phase_finite.size:
-        raw_phase_min = float(np.min(raw_phase_finite))
-        raw_phase_max = float(np.max(raw_phase_finite))
-    else:
-        raw_phase_min = 0.0
-        raw_phase_max = 0.0
-    raw_phase_quantiles = _diagnostic_quantiles(raw_phase_finite)
-    masked_raw_phase_quantiles = _diagnostic_quantiles(phase_stack[:, mask])
-    phase_wrap = _setting_float(settings, "phasewrap", default=PHASE_WRAP)
-    phase_source_meta = _meta_from_image(phase_images[0])
-    logging.info(
-        "Bloch-Siegert phase input diagnostics: slice=%d raw=[%.6g,%.6g] "
-        "raw_q05_50_95=[%.6g,%.6g,%.6g] "
-        "masked_raw_q05_50_95=[%.6g,%.6g,%.6g] domain=%s "
-        "phasewrap=%.6g source_slope=%s source_intercept=%s",
-        slice_index + 1,
-        raw_phase_min,
-        raw_phase_max,
-        *raw_phase_quantiles,
-        *masked_raw_phase_quantiles,
-        _phase_input_domain(raw_phase_min, raw_phase_max, phase_wrap),
-        phase_wrap,
-        _meta_text(phase_source_meta, "RescaleSlope") or "missing",
-        _meta_text(phase_source_meta, "RescaleIntercept") or "missing",
-    )
-
-    myPRE_DUMMY = _setting_float(settings, "predummiescounts", default=PRE_DUMMY)
-    myPOST_DUMMY = _setting_float(settings, "postdummiescounts", default=POST_DUMMY)
-
-
-    phase_stack = np.nan_to_num(phase_stack.astype(np.float32), copy=False)
-    phase_stack = _phase_to_radians(phase_stack, phase_wrap)
-
-    complex_phase = np.exp(1j * phase_stack)
-
-    # MATLAB uses 1-based frames 1:3 as the pre-reference, followed by
-    # B/C/A/D for each Tx channel, one dedicated phase frame per Tx channel,
-    # then three post-reference frames.
-    #pre_reference = np.mean(complex_phase[: myPRE_DUMMY + 1], axis=0)
-    pre_reference = np.mean(complex_phase[: myPRE_DUMMY], axis=0) #Python starts from 0 unlike MATLAB
-    tx_indices = np.arange(ntx) * ECHOES_PER_TX
-    phase_a_indices = myPRE_DUMMY + 3 + tx_indices
-    phase_b_indices = myPRE_DUMMY + 1 + tx_indices
-    phase_c_indices = myPRE_DUMMY + 2 + tx_indices
-    phase_d_indices = myPRE_DUMMY + 4 + tx_indices
-    phase_a = complex_phase[phase_a_indices]
-    phase_b = complex_phase[phase_b_indices]
-    phase_c = complex_phase[phase_c_indices]
-    phase_d = complex_phase[phase_d_indices]
-    # Scanner DICOM phase has the opposite BSp polarity to the positive phase
-    # convention used by the MATLAB-derived B1 calculation. Correct that
-    # polarity before applying the negative branch-cut unwrap.
-    raw_bsp = -np.angle(
-        phase_a
-        * np.conj(phase_b)
-        * pre_reference
-        * np.conj(phase_c)
-        * pre_reference
-        * np.conj(phase_d)
-    ).astype(np.float32)
-    wrap_threshold = math.radians(-25.0)
-    wrap_mask = raw_bsp < wrap_threshold
-    bsp = raw_bsp.copy()
-    bsp[wrap_mask] += 2 * math.pi
-
-
-    pulse_width = _setting_float(settings, "bspulsewidthms", default=BSS_PULSE_WIDTH_MS)
-    kbs = KBS_SCALE * pulse_width
-    if kbs <= 0:
-        raise ValueError(f"bspulsewidthms must be positive, got {pulse_width}")
-    bsp_for_b1 = np.maximum(bsp, 0.0)
-    b1 = np.sqrt(bsp_for_b1 / kbs)
-
-    tx_phase_start = ECHOES_PER_TX * ntx + myPRE_DUMMY + 1
-    tx_phase_stop = tx_phase_start + ntx
-    post_start = tx_phase_stop
-    if slice_index == 0:
-        logging.info(
-            "Bloch-Siegert frame layout (1-based): pre=1-%d B=%s C=%s A=%s "
-            "D=%s tx_phase=%d-%d post=%d-%d",
-            myPRE_DUMMY + 1,
-            _format_frame_indices(phase_b_indices),
-            _format_frame_indices(phase_c_indices),
-            _format_frame_indices(phase_a_indices),
-            _format_frame_indices(phase_d_indices),
-            tx_phase_start + 1,
-            tx_phase_stop,
-            post_start + 1,
-            post_start + myPOST_DUMMY + 1,
-        )
-
-    logging.info(
-        "Bloch-Siegert input diagnostics: slice=%d magnitude_nonfinite=%d "
-        "phase_nonfinite=%d mask_foreground=%d/%d mask_applied_to_maps=false",
-        slice_index + 1,
-        magnitude_nonfinite,
-        phase_nonfinite,
-        int(np.count_nonzero(mask)),
-        int(mask.size),
-    )
-    pre_degrees = np.degrees(np.angle(pre_reference))
-    pre_phase_quantiles = _diagnostic_quantiles(pre_degrees[mask])
-    pre_coherence_quantiles = _diagnostic_quantiles(np.abs(pre_reference)[mask])
-    logging.info(
-        "Bloch-Siegert masked pre-reference diagnostics: slice=%d voxels=%d "
-        "phase_deg_q05_50_95=[%.3f,%.3f,%.3f] "
-        "coherence_q05_50_95=[%.6g,%.6g,%.6g]",
-        slice_index + 1,
-        int(np.count_nonzero(mask)),
-        *pre_phase_quantiles,
-        *pre_coherence_quantiles,
-    )
-    for tx_index in range(ntx):
-        raw_degrees = np.degrees(raw_bsp[tx_index])
-        bsp_degrees = np.degrees(bsp[tx_index])
-        negative_for_b1 = bsp[tx_index] < 0
-        logging.info(
-            "Bloch-Siegert BSp diagnostics: slice=%d tx=%d voxels=%d "
-            "raw_deg=[%.3f,%.3f] dicom_polarity_corrected=true wrapped=%d "
-            "retained_negative=%d phase_zero=%d b1_clamped=%d "
-            "b1_uT=[%.6g,%.6g]",
-            slice_index + 1,
-            tx_index + 1,
-            int(bsp[tx_index].size),
-            float(np.min(raw_degrees)),
-            float(np.max(raw_degrees)),
-            int(np.count_nonzero(wrap_mask[tx_index])),
-            int(np.count_nonzero(negative_for_b1)),
-            int(np.count_nonzero(bsp_degrees == 0)),
-            int(np.count_nonzero(negative_for_b1)),
-            float(np.min(b1[tx_index])),
-            float(np.max(b1[tx_index])),
-        )
-        phase_b_quantiles = _diagnostic_quantiles(
-            np.degrees(np.angle(phase_b[tx_index]))[mask]
-        )
-        phase_c_quantiles = _diagnostic_quantiles(
-            np.degrees(np.angle(phase_c[tx_index]))[mask]
-        )
-        phase_a_quantiles = _diagnostic_quantiles(
-            np.degrees(np.angle(phase_a[tx_index]))[mask]
-        )
-        phase_d_quantiles = _diagnostic_quantiles(
-            np.degrees(np.angle(phase_d[tx_index]))[mask]
-        )
-        logging.info(
-            "Bloch-Siegert masked phase-term diagnostics: slice=%d tx=%d "
-            "B_deg_q05_50_95=[%.3f,%.3f,%.3f] "
-            "C_deg_q05_50_95=[%.3f,%.3f,%.3f] "
-            "A_deg_q05_50_95=[%.3f,%.3f,%.3f] "
-            "D_deg_q05_50_95=[%.3f,%.3f,%.3f]",
-            slice_index + 1,
-            tx_index + 1,
-            *phase_b_quantiles,
-            *phase_c_quantiles,
-            *phase_a_quantiles,
-            *phase_d_quantiles,
-        )
-        raw_bsp_quantiles = _diagnostic_quantiles(raw_degrees[mask])
-        output_bsp_quantiles = _diagnostic_quantiles(bsp_degrees[mask])
-        logging.info(
-            "Bloch-Siegert masked BSp diagnostics: slice=%d tx=%d voxels=%d "
-            "raw_deg_q05_50_95=[%.3f,%.3f,%.3f] "
-            "output_deg_q05_50_95=[%.3f,%.3f,%.3f] wrapped=%d "
-            "retained_negative_inside=%d retained_negative_outside=%d "
-            "phase_zero_inside=%d",
-            slice_index + 1,
-            tx_index + 1,
-            int(np.count_nonzero(mask)),
-            *raw_bsp_quantiles,
-            *output_bsp_quantiles,
-            int(np.count_nonzero(wrap_mask[tx_index] & mask)),
-            int(np.count_nonzero(negative_for_b1 & mask)),
-            int(np.count_nonzero(negative_for_b1 & ~mask)),
-            int(np.count_nonzero((bsp_degrees == 0) & mask)),
-        )
-
-    phsc = np.angle(complex_phase[tx_phase_start:tx_phase_stop]).astype(np.float32)
-
-    post_reference = np.mean(
-        complex_phase[post_start + 1 : post_start + myPOST_DUMMY + 1],
-        axis=0,
-    )
-    b0 = (
-        np.angle(post_reference * np.conj(pre_reference))
-        * 1000.0
-        / (2.0 * math.pi)
-    ).astype(np.float32)
-
-    return {
-        "bsp": bsp,
-        "b1": b1.astype(np.float32),
-        "phsc": phsc,
-        "b0": b0,
-        "mask": mask.astype(np.uint16),
-    }
-
-
-def _bloch_siegert_mask(magnitude_stack, ntx):
-    mask_source = np.mean(magnitude_stack[: 2 * ntx + 2], axis=0)
-    finite_values = mask_source[np.isfinite(mask_source)]
-    if finite_values.size == 0:
-        return np.zeros(mask_source.shape, dtype=bool)
-
-    source_mean = float(np.mean(finite_values))
-    low_values = finite_values[finite_values < source_mean]
-    if low_values.size == 0:
-        threshold = source_mean
-    else:
-        threshold = float(np.mean(low_values) + 0.5 * np.std(low_values))
-
-    return _fill_holes_per_slice(mask_source > threshold)
 
 
 def _phase_to_radians(phase_stack, phase_wrap):
     if phase_wrap <= 0:
         return phase_stack.astype(np.float32)
     return phase_stack.astype(np.float32) * (2.0 * math.pi / phase_wrap) - math.pi
+
+
+def _single_frequency_phase_difference(
+    magnitude_frames,
+    phase_frames,
+    block_length,
+):
+    no_fus_indices, with_fus_indices = _single_frequency_frame_groups(
+        phase_frames.shape[0],
+        block_length,
+    )
+    return _complex_phase_difference(
+        magnitude_frames,
+        phase_frames,
+        no_fus_indices,
+        with_fus_indices,
+        f"Single Freq block_length={block_length}",
+    )
+
+
+def _single_frequency_frame_groups(frame_count, block_length):
+    if block_length <= 0:
+        raise ValueError(
+            "ARFI Block Length must be greater than zero for Single Freq"
+        )
+
+    frame_count = int(frame_count)
+    group_indices = np.arange(frame_count) // int(block_length)
+    no_fus_indices = np.flatnonzero(group_indices % 2 == 0)
+    with_fus_indices = np.flatnonzero(group_indices % 2 == 1)
+    if with_fus_indices.size == 0:
+        raise ValueError(
+            "Single Freq ARFI requires at least two sequential blocks; "
+            f"got {frame_count} frames with block length {block_length}"
+        )
+
+    return no_fus_indices, with_fus_indices
+
+
+def _multiple_frequency_frame_groups(frame_count):
+    frame_numbers = np.arange(1, int(frame_count) + 1, dtype=np.int64)
+    my_temp = np.floor(
+        (
+            np.sqrt(((frame_numbers - 1) // 2) * 8 + 1)
+            + 1
+        )
+        / 2
+    ).astype(np.int64)
+    with_fus = frame_numbers > my_temp * my_temp
+    return np.flatnonzero(~with_fus), np.flatnonzero(with_fus)
+
+
+def _multiple_frequency_phase_difference(magnitude_frames, phase_frames):
+    no_fus_indices, with_fus_indices = _multiple_frequency_frame_groups(
+        phase_frames.shape[0]
+    )
+    if no_fus_indices.size == 0 or with_fus_indices.size == 0:
+        raise ValueError(
+            "Multiple Freq ARFI requires at least one noFUS and one withFUS "
+            f"frame; got {phase_frames.shape[0]} frame(s)"
+        )
+    return _complex_phase_difference(
+        magnitude_frames,
+        phase_frames,
+        no_fus_indices,
+        with_fus_indices,
+        "Multiple Freq",
+    )
+
+
+def _complex_phase_difference(
+    magnitude_frames,
+    phase_frames,
+    no_fus_indices,
+    with_fus_indices,
+    scheme_description,
+):
+    complex_frames = np.asarray(magnitude_frames, dtype=np.float32) * np.exp(
+        1j * np.asarray(phase_frames, dtype=np.float32)
+    )
+    no_fus_average_frame = np.mean(complex_frames[no_fus_indices], axis=0)
+    with_fus_average_frame = np.mean(complex_frames[with_fus_indices], axis=0)
+    logging.info(
+        "%s ARFI complex averages: noFUS_frames=%d withFUS_frames=%d",
+        scheme_description,
+        no_fus_indices.size,
+        with_fus_indices.size,
+    )
+    return np.angle(
+        with_fus_average_frame * np.conj(no_fus_average_frame)
+    ).astype(np.float32)
+
+
+def _phase_standard_deviations(
+    magnitude_frames,
+    phase_frames,
+    no_fus_indices,
+    with_fus_indices,
+):
+    complex_frames = np.asarray(magnitude_frames, dtype=np.float32) * np.exp(
+        1j * np.asarray(phase_frames, dtype=np.float32)
+    )
+    return (
+        _phase_standard_deviation(complex_frames, no_fus_indices),
+        _phase_standard_deviation(complex_frames, with_fus_indices),
+    )
+
+
+def _phase_standard_deviation(complex_frames, frame_indices):
+    selected_frames = complex_frames[frame_indices]
+    mean_frame = np.mean(selected_frames, axis=0)
+    residual_phase = np.angle(
+        selected_frames * np.conj(mean_frame)[np.newaxis, ...]
+    )
+    if selected_frames.shape[0] <= 1:
+        return np.zeros(mean_frame.shape, dtype=np.float32)
+    return np.std(residual_phase, axis=0, ddof=1).astype(np.float32)
 
 
 def _split_magnitude_phase_images(images):
@@ -515,7 +480,10 @@ def _split_magnitude_phase_images(images):
         elif _is_magnitude_image(image):
             magnitude_images.append(image)
         else:
-            logging.info("Ignoring non-magnitude/non-phase image_type=%s", image.image_type)
+            logging.info(
+                "Ignoring non-magnitude/non-phase image_type=%s",
+                image.image_type,
+            )
     if not phase_images:
         fallback_magnitude, fallback_phase = _fallback_split_magnitude_phase_series(
             magnitude_images
@@ -545,9 +513,6 @@ def _fallback_split_magnitude_phase_series(images):
         return images, []
 
     series_groups = sorted(series_groups, key=_series_group_sort_key)
-    frame_count = len(series_groups[0])
-    if frame_count < 11:
-        return images, []
     return series_groups[0], series_groups[1]
 
 
@@ -607,7 +572,7 @@ def _group_frames_by_slice(images):
     indexed = list(enumerate(images))
     if indexed and all(_is_volume_frame_image(image) for _order, image in indexed):
         logging.info(
-            "Grouped %d volume-frame image(s) into one Bloch-Siegert frame group",
+            "Grouped %d volume-frame image(s) into one ARFI frame group",
             len(indexed),
         )
         return [[image for _order, image in sorted(indexed, key=_frame_sort_key)]]
@@ -618,18 +583,11 @@ def _group_frames_by_slice(images):
         ("slice", _slice_group_key),
     ):
         groups = _groups_from_key(indexed, key_func)
-        if groups and all(len(group) >= 11 for group in groups):
+        if groups and all(group for group in groups):
             candidates.append((name, groups))
 
-    chunked = _chunked_frame_groups(indexed)
-    if chunked:
-        candidates.append(("chunk", chunked))
-
     if not candidates:
-        raise ValueError(
-            "Bloch-Siegert mapping requires at least 11 frames per slice "
-            "(1Tx) or 46 frames per slice (8Tx)"
-        )
+        raise ValueError("ARFI phase reconstruction could not group frames by slice")
 
     def score(candidate):
         name, groups = candidate
@@ -639,10 +597,8 @@ def _group_frames_by_slice(images):
             and len(groups) > 1
             and len(group_sizes) == 1
         )
-        exact = sum(1 for group in groups if len(group) in (11, 46))
         return (
             informative_geometry,
-            exact,
             name != "chunk",
             len(groups),
             -max(group_sizes),
@@ -650,7 +606,7 @@ def _group_frames_by_slice(images):
 
     selected_name, selected_groups = max(candidates, key=score)
     logging.info(
-        "Grouped %d image(s) into %d Bloch-Siegert slice group(s) using %s",
+        "Grouped %d image(s) into %d ARFI slice group(s) using %s",
         len(images),
         len(selected_groups),
         selected_name,
@@ -686,20 +642,6 @@ def _slice_group_key(image):
     return int(image.getHead().slice)
 
 
-def _chunked_frame_groups(indexed_images):
-    total = len(indexed_images)
-    if total >= 46 and total % 46 == 0:
-        chunk_size = 46
-    elif total >= 11 and total % 11 == 0:
-        chunk_size = 11
-    else:
-        return []
-    return [
-        indexed_images[index : index + chunk_size]
-        for index in range(0, total, chunk_size)
-    ]
-
-
 def _frame_sort_key(indexed_image):
     order, image = indexed_image
     header = image.getHead()
@@ -724,47 +666,6 @@ def _slice_sort_key(group):
     return (float(np.dot(position, axis)), group[0][0])
 
 
-def _pair_slice_groups(magnitude_groups, phase_groups):
-    if len(magnitude_groups) != len(phase_groups):
-        raise ValueError(
-            "Magnitude and phase image groups do not describe the same number of "
-            f"slices: {len(magnitude_groups)} magnitude, {len(phase_groups)} phase"
-        )
-
-    paired_magnitude = []
-    paired_phase = []
-    for index, (magnitude_group, phase_group) in enumerate(
-        zip(magnitude_groups, phase_groups)
-    ):
-        if len(magnitude_group) < 11 or len(phase_group) < 11:
-            raise ValueError(
-                f"Slice {index} has too few frames: {len(magnitude_group)} "
-                f"magnitude, {len(phase_group)} phase"
-            )
-        paired_magnitude.append(magnitude_group)
-        paired_phase.append(phase_group)
-    return paired_magnitude, paired_phase
-
-
-def _sequence_shape(frame_count):
-    ntx = 8 if frame_count > 25 else 1
-    required_frames = (
-        ECHOES_PER_TX * ntx
-        + ntx
-        + (myPRE_DUMMY + 1)
-        + (myPOST_DUMMY + 1)
-    )
-    if frame_count >= required_frames:
-        return required_frames, ntx
-    if frame_count > 25:
-        expected = "46 frames for 8Tx"
-    else:
-        expected = "11 frames for 1Tx"
-    raise ValueError(
-        f"Bloch-Siegert mapping requires {expected}, got {frame_count}"
-    )
-
-
 def _is_volume_frame_image(image):
     data = np.asarray(image.data)
     return data.ndim == 4 and data.shape[0] == 1 and data.shape[1] > 1
@@ -779,7 +680,7 @@ def _image_volume_data(image):
         return data[np.newaxis, :, :]
     if data.ndim != 3:
         raise ValueError(
-            "Bloch-Siegert input images must be single-channel 2D frames or "
+            "ARFI input images must be single-channel 2D frames or "
             "single-channel 3D volume frames; "
             f"got data shape {np.asarray(image.data).shape}"
         )
@@ -854,24 +755,12 @@ def _scale_volume_to_display_range(volume, units):
     }
 
 
-def _map_to_mrd_image(
-    volume,
-    anchor_image,
-    slice_anchor_images,
-    series_index,
-    series_name,
-    image_type_token,
-    map_role,
-    units,
-    tx_index=None,
-    window_center=None,
-    window_width=None,
-):
+def _prepare_display_volume(volume, image_type_token, units):
     volume = np.asarray(volume)
     if volume.ndim != 3:
         raise ValueError(f"Output map volume must be 3D, got shape {volume.shape}")
 
-    if image_type_token in {"BSSBSP", "BSSPHSC"}:
+    if image_type_token.startswith("ARFIPHASE"):
         physical_volume = np.degrees(volume)
         conversion_comment = "phase converted from radians to degrees; "
     else:
@@ -889,14 +778,56 @@ def _map_to_mrd_image(
     )
     if conversion_comment:
         display_meta["conversion"] = "radians to degrees"
-    output = ismrmrd.Image.from_array(output_data, transpose=False)
+    return physical_volume, output_data, display_meta
+
+
+def _map_to_mrd_image(
+    volume,
+    anchor_image,
+    slice_anchor_images,
+    series_index,
+    series_name,
+    image_type_token,
+    map_role,
+    units,
+    frame_index=None,
+    slice_index=0,
+    slice_count=None,
+    image_index=None,
+    images_in_series=None,
+    arfi_scheme="singlefreq",
+    arfi_block_length=25,
+    window_center=None,
+    window_width=None,
+    prepared_display=None,
+):
+    volume = np.asarray(volume)
+    if volume.ndim != 3:
+        raise ValueError(f"Output map volume must be 3D, got shape {volume.shape}")
+    slice_count = int(slice_count if slice_count is not None else volume.shape[0])
+    slice_index = int(slice_index)
+    if not 0 <= slice_index < volume.shape[0]:
+        raise ValueError(
+            f"Output slice index {slice_index} is outside volume shape {volume.shape}"
+        )
+    if prepared_display is None:
+        prepared_display = _prepare_display_volume(
+            volume,
+            image_type_token,
+            units,
+        )
+    physical_volume, output_volume, display_meta = prepared_display
+    output = ismrmrd.Image.from_array(
+        output_volume[slice_index],
+        transpose=False,
+    )
 
     header = anchor_image.getHead()
     header.data_type = output.data_type
     header.image_type = int(getattr(ismrmrd, "IMTYPE_MAGNITUDE", 1))
     header.image_series_index = int(series_index)
-    header.image_index = 1
-    header.slice = 0
+    header.image_index = int(image_index if image_index is not None else slice_index + 1)
+    header.slice = slice_index
     header.contrast = 0
     output_header = output.getHead()
     _set_header_sequence_field(
@@ -909,17 +840,18 @@ def _map_to_mrd_image(
     _set_header_sequence_field(
         header,
         "position",
-        [float(value) for value in slice_anchor_images[0].getHead().position],
+        _output_slice_position(
+            slice_anchor_images,
+            slice_axis,
+            slice_index,
+            slice_count,
+        ),
     )
     _set_header_sequence_field(
         header,
         "slice_dir",
         [float(value) for value in slice_axis],
     )
-    fov = [float(value) for value in header.field_of_view]
-    fov[2] = _output_fov_z(slice_anchor_images, slice_axis, volume.shape[0])
-    _set_header_sequence_field(header, "field_of_view", fov)
-
     output.setHead(header)
     output.image_series_index = int(series_index)
 
@@ -931,12 +863,13 @@ def _map_to_mrd_image(
     if window_width is not None:
         width = window_width
     logging.info(
-        "Bloch-Siegert output scaling: series=%d type=%s tx=%s units=%s "
+        "ARFI output scaling: series=%d type=%s frame=%s slice=%d units=%s "
         "physical=[%s,%s] display=[%d,%d] slope=%s intercept=%s "
         "window=[%.6g,%.6g]",
         series_index,
         image_type_token,
-        "-" if tx_index is None else str(tx_index + 1),
+        "-" if frame_index is None else str(frame_index + 1),
+        slice_index + 1,
         units,
         _format_display_number(display_meta["input_min"]),
         _format_display_number(display_meta["input_max"]),
@@ -955,10 +888,15 @@ def _map_to_mrd_image(
         image_type_token,
         map_role,
         units,
-        volume.shape[0],
+        slice_count,
+        slice_index,
+        int(image_index if image_index is not None else slice_index + 1),
+        int(images_in_series if images_in_series is not None else slice_count),
         center,
         width,
-        tx_index,
+        frame_index,
+        arfi_scheme,
+        arfi_block_length,
         display_meta,
     ).serialize()
     return output
@@ -973,9 +911,14 @@ def _output_meta(
     map_role,
     units,
     slice_count,
+    slice_index,
+    image_index,
+    images_in_series,
     window_center,
     window_width,
-    tx_index=None,
+    frame_index=None,
+    arfi_scheme="singlefreq",
+    arfi_block_length=25,
     display_meta=None,
 ):
     meta = _meta_from_image(source_image)
@@ -985,11 +928,17 @@ def _output_meta(
         del meta["IceMiniHead"]
 
     series_uid = _derived_series_uid(source_image, series_index, series_name)
-    sop_uid = _derived_instance_uid(source_image, series_uid, series_index, series_name)
+    sop_uid = _derived_instance_uid(
+        source_image,
+        series_uid,
+        series_index,
+        series_name,
+        image_index,
+    )
     image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
 
     meta["DataRole"] = "Image"
-    meta["ImageProcessingHistory"] = ["PYTHON", "BLOCHSIEGERTB1MAPPING"]
+    meta["ImageProcessingHistory"] = ["PYTHON", "ARFIRECON"]
     meta["ImageType"] = image_type
     meta["DicomImageType"] = image_type
     meta["ImageTypeValue4"] = image_type_token
@@ -1001,16 +950,16 @@ def _output_meta(
     if display_meta is not None:
         scale_text = _format_display_number(display_meta["scale"])
         image_comment = f"{series_name}; {display_meta['comment']}"
-        meta["BlochSiegertDisplayScale"] = scale_text
-        meta["BlochSiegertDisplayFormula"] = display_meta["formula"]
-        meta["BlochSiegertDisplayInputMin"] = _format_display_number(
+        meta["ARFIDisplayScale"] = scale_text
+        meta["ARFIDisplayFormula"] = display_meta["formula"]
+        meta["ARFIDisplayInputMin"] = _format_display_number(
             display_meta["input_min"]
         )
-        meta["BlochSiegertDisplayInputMax"] = _format_display_number(
+        meta["ARFIDisplayInputMax"] = _format_display_number(
             display_meta["input_max"]
         )
-        meta["BlochSiegertDisplayMin"] = str(display_meta["display_min"])
-        meta["BlochSiegertDisplayMax"] = str(display_meta["display_max"])
+        meta["ARFIDisplayMin"] = str(display_meta["display_min"])
+        meta["ARFIDisplayMax"] = str(display_meta["display_max"])
         # The DICOM writer maps these MRD image attributes to
         # (0028,1053) Rescale Slope and (0028,1052) Rescale Intercept.
         meta["RescaleSlope"] = _format_display_number(
@@ -1020,7 +969,7 @@ def _output_meta(
             display_meta["rescale_intercept"]
         )
         if "conversion" in display_meta:
-            meta["BlochSiegertDisplayConversion"] = display_meta["conversion"]
+            meta["ARFIDisplayConversion"] = display_meta["conversion"]
     meta["ImageComments"] = image_comment
     meta["ImageComment"] = image_comment
     meta["SeriesNumberRangeNameUID"] = _derived_series_grouping(
@@ -1030,22 +979,27 @@ def _output_meta(
     meta["SeriesInstanceUID"] = series_uid
     meta["SOPInstanceUID"] = sop_uid
     meta["SequenceDescriptionAdditional"] = "openrecon"
-    meta["Keep_image_geometry"] = "0"
+    # The output pixels retain the source row/column ordering. Ask ICE to keep
+    # the matching source geometry so coronal images are not reversed in the
+    # Head-Feet direction when the derived series is written to DICOM.
+    meta["Keep_image_geometry"] = "1"
     meta["partition_count"] = "1"
     meta["slice_count"] = str(int(slice_count))
     meta["NumberOfSlices"] = str(int(slice_count))
-    meta["ImagesInAcquisition"] = str(int(slice_count))
-    meta["NumberInSeries"] = "1"
-    meta["SliceNo"] = "0"
-    meta["AnatomicalSliceNo"] = "0"
-    meta["ChronSliceNo"] = "0"
-    meta["ProtocolSliceNumber"] = "0"
+    meta["ImagesInAcquisition"] = str(int(images_in_series))
+    meta["NumberInSeries"] = str(int(image_index))
+    meta["SliceNo"] = str(int(slice_index))
+    meta["AnatomicalSliceNo"] = str(int(slice_index))
+    meta["ChronSliceNo"] = str(int(slice_index))
+    meta["ProtocolSliceNumber"] = str(int(slice_index))
     meta["Actual3DImagePartNumber"] = "0"
     meta["AnatomicalPartitionNo"] = "0"
-    meta["BlochSiegertOutput"] = map_role
-    meta["BlochSiegertUnits"] = units
-    if tx_index is not None:
-        meta["BlochSiegertTxIndex"] = str(int(tx_index + 1))
+    meta["ARFIOutput"] = map_role
+    meta["ARFIUnits"] = units
+    if frame_index is not None:
+        meta["ARFIFrameIndex"] = str(int(frame_index + 1))
+    meta["ARFIScheme"] = str(arfi_scheme)
+    meta["ARFIBlockLength"] = str(int(arfi_block_length))
     meta["WindowCenter"] = f"{float(window_center):.6g}"
     meta["WindowWidth"] = f"{float(window_width):.6g}"
     meta.update(_header_geometry_meta(header))
@@ -1062,7 +1016,7 @@ def _header_geometry_meta(header):
     }
 
 
-def _allocate_output_series_indices(input_images, ntx):
+def _allocate_output_series_indices(input_images):
     used = {int(image.getHead().image_series_index) for image in input_images}
 
     def reserve(preferred):
@@ -1073,18 +1027,12 @@ def _allocate_output_series_indices(input_images, ntx):
         return series_index
 
     return {
-        "b1": [reserve(B1_SERIES_INDEX_START + index) for index in range(ntx)],
-        "bsp": [reserve(BSP_SERIES_INDEX_START + index) for index in range(ntx)],
-        "phsc": [reserve(PHSC_SERIES_INDEX_START + index) for index in range(ntx)],
-        "b0": reserve(B0_SERIES_INDEX),
-        "mask": reserve(MASK_SERIES_INDEX),
+        "magnitude": reserve(MAGNITUDE_SERIES_INDEX),
+        "phase": reserve(PHASE_SERIES_INDEX),
+        "arfi_phase": reserve(ARFI_PHASE_SERIES_INDEX),
+        "with_fus_phase_std": reserve(WITH_FUS_PHASE_STD_SERIES_INDEX),
+        "no_fus_phase_std": reserve(NO_FUS_PHASE_STD_SERIES_INDEX),
     }
-
-
-def _map_series_name(source_name, map_name, index, count):
-    if count == 1:
-        return f"{source_name}-{map_name}"
-    return f"{source_name}-{map_name}-tx{index + 1:02d}"
 
 
 def _derived_series_grouping(series_name, series_index):
@@ -1095,7 +1043,9 @@ def _derived_series_uid(source_image, series_index, series_name):
     seed = "|".join(
         [
             RECIPE_NAME,
-            _source_series_uid(source_image) or _source_series_name(source_image) or "source",
+            _source_series_uid(source_image)
+            or _source_series_name(source_image)
+            or "source",
             str(int(series_index)),
             series_name,
         ]
@@ -1103,7 +1053,13 @@ def _derived_series_uid(source_image, series_index, series_name):
     return f"2.25.{uuid.uuid5(uuid.NAMESPACE_URL, seed).int}"
 
 
-def _derived_instance_uid(source_image, series_uid, series_index, series_name):
+def _derived_instance_uid(
+    source_image,
+    series_uid,
+    series_index,
+    series_name,
+    image_index,
+):
     seed = "|".join(
         [
             f"{RECIPE_NAME}-instance",
@@ -1111,6 +1067,7 @@ def _derived_instance_uid(source_image, series_uid, series_index, series_name):
             _source_sop_uid(source_image) or "source",
             str(int(series_index)),
             series_name,
+            str(int(image_index)),
         ]
     )
     return f"2.25.{uuid.uuid5(uuid.NAMESPACE_URL, seed).int}"
@@ -1152,7 +1109,10 @@ def _strip_source_parent_refs(meta):
         if key in SOURCE_PARENT_REFERENCE_META_KEYS:
             del meta[key]
             continue
-        if any(key.startswith(prefix) for prefix in SOURCE_PARENT_REFERENCE_META_PREFIXES):
+        if any(
+            key.startswith(prefix)
+            for prefix in SOURCE_PARENT_REFERENCE_META_PREFIXES
+        ):
             del meta[key]
 
 
@@ -1186,9 +1146,13 @@ def _validate_output_images(output_images, input_images):
         image_type_token = _meta_text(meta, "ImageTypeValue4")
 
         if series_index in input_series_indices:
-            errors.append(f"image {index} reuses input image_series_index {series_index}")
-        if keep_geometry != 0:
-            errors.append(f"image {index} has Keep_image_geometry={keep_geometry}, expected 0")
+            errors.append(
+                f"image {index} reuses input image_series_index {series_index}"
+            )
+        if keep_geometry != 1:
+            errors.append(
+                f"image {index} has Keep_image_geometry={keep_geometry}, expected 1"
+            )
         if _meta_text(meta, "IceMiniHead"):
             errors.append(f"image {index} keeps source IceMiniHead on derived output")
         if _meta_text(meta, "ImageTypeValue3"):
@@ -1209,47 +1173,62 @@ def _validate_output_images(output_images, input_images):
         if sop_uid:
             previous = seen_sop_uids.setdefault(sop_uid, index)
             if previous != index:
-                errors.append(f"image {index} duplicates SOPInstanceUID from image {previous}")
+                errors.append(
+                    f"image {index} duplicates SOPInstanceUID from image {previous}"
+                )
         if int(header.image_index) < 1:
-            errors.append(f"image {index} has image_index {header.image_index}, expected >= 1")
-        if int(header.slice) != 0:
-            errors.append(f"image {index} has slice {header.slice}, expected 0")
+            errors.append(
+                f"image {index} has image_index {header.image_index}, expected >= 1"
+            )
+        slice_count = _meta_int(meta, "NumberOfSlices")
+        slice_index = int(header.slice)
+        if slice_count < 1 or not 0 <= slice_index < slice_count:
+            errors.append(
+                f"image {index} has slice {slice_index} outside "
+                f"NumberOfSlices={slice_count}"
+            )
+        if _meta_int(meta, "SliceNo") != slice_index:
+            errors.append(
+                f"image {index} SliceNo does not match header slice {slice_index}"
+            )
         data = np.asarray(image.data)
         if data.dtype != np.uint16:
             errors.append(f"image {index} {image_type_token} data is not uint16")
+        if data.ndim != 4 or data.shape[1] != 1:
+            errors.append(
+                f"image {index} {image_type_token} is not a single-slice 2D image"
+            )
         data_min = int(np.min(data)) if data.size else SCANNER_DISPLAY_MIN
         data_max = int(np.max(data)) if data.size else SCANNER_DISPLAY_MIN
         if data_min < SCANNER_DISPLAY_MIN or data_max > SCANNER_DISPLAY_MAX:
             errors.append(f"image {index} {image_type_token} data is outside 0..4095")
-        if data_min != data_max and (
-            data_min != SCANNER_DISPLAY_MIN or data_max != SCANNER_DISPLAY_MAX
-        ):
-            errors.append(
-                f"image {index} nonconstant {image_type_token} data does not use 0..4095"
-            )
-        formula = _meta_text(meta, "BlochSiegertDisplayFormula")
+        formula = _meta_text(meta, "ARFIDisplayFormula")
         if not formula or formula not in _meta_text(meta, "ImageComments"):
             errors.append(
                 f"image {index} {image_type_token} ImageComments is missing "
                 "its inverse formula"
             )
-        if _meta_int(meta, "BlochSiegertDisplayMin") != data_min:
+        display_min = _meta_int(meta, "ARFIDisplayMin")
+        display_max = _meta_int(meta, "ARFIDisplayMax")
+        if data_min < display_min:
             errors.append(
-                f"image {index} {image_type_token} display minimum metadata is wrong"
+                f"image {index} {image_type_token} is below its display minimum"
             )
-        if _meta_int(meta, "BlochSiegertDisplayMax") != data_max:
+        if data_max > display_max:
             errors.append(
-                f"image {index} {image_type_token} display maximum metadata is wrong"
+                f"image {index} {image_type_token} exceeds its display maximum"
             )
         for key in (
-            "BlochSiegertDisplayInputMin",
-            "BlochSiegertDisplayInputMax",
+            "ARFIDisplayInputMin",
+            "ARFIDisplayInputMax",
             "RescaleSlope",
             "RescaleIntercept",
         ):
             if not _meta_text(meta, key):
-                errors.append(f"image {index} {image_type_token} output is missing {key}")
-        if image_type_token in {"BSSBSP", "BSSPHSC"}:
+                errors.append(
+                    f"image {index} {image_type_token} output is missing {key}"
+                )
+        if image_type_token.startswith("ARFIPHASE"):
             comments = _meta_text(meta, "ImageComments")
             if "radians to degrees" not in comments:
                 errors.append(
@@ -1278,25 +1257,23 @@ def _send_images_by_series(connection, images):
 
 def _settings_from_config(config):
     return {
-        "sendb1": _config_bool(config, "sendb1", default=True),
-        "sendbsp": _config_bool(config, "sendbsp", default=True),
-        "sendphsc": _config_bool(config, "sendphsc", default=True),
-        "sendb0": _config_bool(config, "sendb0", default=True),
-        "sendmask": _config_bool(config, "sendmask", default=False),
-        "bspulsewidthms": _config_float(
+        "arfischemes": _config_choice(
             config,
-            "bspulsewidthms",
-            default=BSS_PULSE_WIDTH_MS,
+            "arfischemes",
+            choices={"singlefreq", "multiplefreq"},
+            default="singlefreq",
         ),
-        "predummiescounts": _config_float(
+        "arfiblocklength": _config_int(
             config,
-            "predummiescounts",
-            default=myPRE_DUMMY,
+            "arfiblocklength",
+            default=25,
+            minimum=0,
+            maximum=100,
         ),
-        "postdummiescounts": _config_float(
+        "sendphasestandarddeviation": _config_bool(
             config,
-            "postdummiescounts",
-            default=myPOST_DUMMY,
+            "sendphasestandarddeviation",
+            default=False,
         ),
         "phasewrap": _config_float(config, "phasewrap", default=PHASE_WRAP),
     }
@@ -1314,10 +1291,6 @@ def _config_parameters(config):
     return parameters if isinstance(parameters, dict) else {}
 
 
-def _config_bool(config, key, default=False):
-    return _coerce_bool(_config_parameters(config).get(key, default), default)
-
-
 def _config_float(config, key, default=0.0):
     value = _config_parameters(config).get(key, default)
     try:
@@ -1326,8 +1299,37 @@ def _config_float(config, key, default=0.0):
         return float(default)
 
 
-def _setting_bool(settings, key, default=False):
-    return _coerce_bool(settings.get(key, default), default)
+def _config_int(config, key, default=0, minimum=None, maximum=None):
+    value = _config_parameters(config).get(key, default)
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        value = int(default)
+    if minimum is not None and value < minimum:
+        return int(default)
+    if maximum is not None and value > maximum:
+        return int(default)
+    return value
+
+
+def _config_bool(config, key, default=False):
+    value = _config_parameters(config).get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off", ""}:
+            return False
+    return bool(default)
+
+
+def _config_choice(config, key, choices, default):
+    value = str(_config_parameters(config).get(key, default)).strip().lower()
+    return value if value in choices else default
 
 
 def _setting_float(settings, key, default=0.0):
@@ -1337,78 +1339,16 @@ def _setting_float(settings, key, default=0.0):
         return float(default)
 
 
-def _coerce_bool(value, default=False):
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return default
-    if isinstance(value, (int, float)):
-        return bool(value)
-    text = str(value).strip().lower()
-    if text in {"1", "true", "yes", "y", "on"}:
-        return True
-    if text in {"0", "false", "no", "n", "off"}:
-        return False
-    return default
-
-
-def _fill_holes_per_slice(mask):
-    mask = np.asarray(mask, dtype=bool)
-    if mask.ndim == 2:
-        return _fill_holes_2d(mask)
-    if mask.ndim != 3:
-        raise ValueError(f"_fill_holes_per_slice expects 2D or 3D mask, got {mask.shape}")
-    return np.stack([_fill_holes_2d(slice_mask) for slice_mask in mask], axis=0)
-
-
-def _fill_holes_2d(mask):
-    mask = np.asarray(mask, dtype=bool)
-    if mask.ndim != 2:
-        raise ValueError(f"_fill_holes_2d expects a 2D mask, got {mask.shape}")
-
-    inverse = ~mask
-    visited = np.zeros(mask.shape, dtype=bool)
-    stack = []
-    height, width = mask.shape
-    for row in range(height):
-        for col in (0, width - 1):
-            if inverse[row, col] and not visited[row, col]:
-                visited[row, col] = True
-                stack.append((row, col))
-    for col in range(width):
-        for row in (0, height - 1):
-            if inverse[row, col] and not visited[row, col]:
-                visited[row, col] = True
-                stack.append((row, col))
-
-    while stack:
-        row, col = stack.pop()
-        for next_row, next_col in (
-            (row - 1, col),
-            (row + 1, col),
-            (row, col - 1),
-            (row, col + 1),
-        ):
-            if (
-                0 <= next_row < height
-                and 0 <= next_col < width
-                and inverse[next_row, next_col]
-                and not visited[next_row, next_col]
-            ):
-                visited[next_row, next_col] = True
-                stack.append((next_row, next_col))
-
-    holes = inverse & ~visited
-    return mask | holes
-
-
 def _infer_slice_axis(images):
     if images:
         axis = _normalize_vector(images[0].getHead().slice_dir)
         if axis is not None:
             return axis
     if len(images) > 1:
-        positions = [np.asarray(image.getHead().position, dtype=float) for image in images]
+        positions = [
+            np.asarray(image.getHead().position, dtype=float)
+            for image in images
+        ]
         delta = positions[-1] - positions[0]
         axis = _normalize_vector(delta)
         if axis is not None:
@@ -1422,6 +1362,43 @@ def _normalize_vector(values):
     if norm <= 0:
         return None
     return vector / norm
+
+
+def _output_slice_position(images, slice_axis, slice_index, slice_count):
+    if len(images) > slice_index:
+        return [
+            float(value)
+            for value in images[slice_index].getHead().position
+        ]
+
+    first_image = images[0]
+    position = np.asarray(first_image.getHead().position, dtype=float)
+    spacing = _source_slice_spacing(first_image, slice_count)
+    return [
+        float(value)
+        for value in position + np.asarray(slice_axis, dtype=float) * spacing * slice_index
+    ]
+
+
+def _source_slice_spacing(image, slice_count):
+    meta = _meta_from_image(image)
+    for key in ("SpacingBetweenSlices", "SliceThickness"):
+        try:
+            spacing = abs(float(_meta_text(meta, key)))
+        except (TypeError, ValueError):
+            spacing = 0.0
+        if spacing > 0.0:
+            return spacing
+
+    for tag in ("00180088", "00180050"):
+        spacing = _dicom_json_numeric_value(meta, tag)
+        if spacing is not None and abs(float(spacing)) > 0.0:
+            return abs(float(spacing))
+
+    fov_z = abs(float(image.getHead().field_of_view[2]))
+    if slice_count > 1 and fov_z > 0.0:
+        return fov_z / float(slice_count)
+    return fov_z
 
 
 def _output_fov_z(slice_anchor_images, slice_axis, output_slice_count):

@@ -1,120 +1,135 @@
-# OpenRecon Bloch-Siegert B1 Mapping
+# OpenRecon ARFI Magnitude and Phase Reconstruction
 
-`blochsiegertb1mapping` ports the MATLAB workflow in
-`Read_7T_all_rev_openRecon.m` to an OpenRecon image-processing module. It consumes
-reconstructed MRD image messages, separates magnitude and phase frames, and sends
-derived Bloch-Siegert map volumes back to the scanner.
+`arfirecon` returns every incoming ARFI magnitude frame and converts every
+matching phase frame to wrapped phase. Magnitude and phase are always returned
+as separate derived series. Both schemes additionally calculate a complex
+noFUS/withFUS phase difference in a third series. The workflow does not
+calculate B1, Bloch-Siegert phase, B0, or a magnitude mask.
 
-## Inputs
+## Input Preparation
 
-- Reconstructed MRD magnitude and phase `ismrmrd.Image` messages from the same
-  Bloch-Siegert acquisition.
-- The workflow requires 11 frames per anatomical slice for the 1Tx case or 46
-  frames per anatomical slice for the 8Tx case. As in the MATLAB code, more
-  than 25 available frames selects 8 Tx channels; otherwise it selects 1 Tx.
-  The dedicated Tx-phase block follows the four B/C/A/D echoes per channel and
-  precedes the final three post-reference frames.
-- Phase images are expected in the same raw range used by the MATLAB code:
-  `phase_radians = raw_phase * 2*pi / 4096 - pi`.
+- Classify magnitude and phase images using the MRD image type and image
+  metadata.
+- If a scanner labels both equal-length source series as magnitude, treat the
+  second series as phase for compatibility with local DICOM replay data.
+- Group 2D frames by physical slice position (falling back to the MRD slice
+  counter), or treat each incoming 3D image as one volume frame.
+- Require the same number, dimensions, and spatial coverage of magnitude and
+  phase frames for every slice.
+- Replace non-finite values with zero and combine matching 2D slices into one
+  volume per frame. The former fixed 11-frame and 46-frame layouts are not
+  required.
+- Convert scanner phase counts to radians with
+  `phase = raw * 2*pi/4096 - pi`, then wrap phase to `[-pi, pi]`.
 
-## Workflow
+## Single Freq Processing
 
-For each anatomical slice group, the OpenRecon path implements the MATLAB
-operations:
+For `ARFI Schemes = Single Freq`:
 
-- Replace NaNs in magnitude and phase frames with zero.
-- For optional visual QC output, build a magnitude mask from the mean of frames
-  `1:(2*nTx+2)`, thresholded as
-  `mean(low_background) + 0.5 * std(low_background)`, then fill holes. The mask
-  is not applied to any calculated map.
-- Convert phase frames to complex unit phasors with `exp(1i * phase)`.
-- Average frames 1-3 into the pre-reference phase, then compute each Tx
-  Bloch-Siegert phase from its four-echo block. Correct the scanner DICOM phase
-  polarity before unwrapping as
-  `-angle(A * conj(B) * pre * conj(C) * pre * conj(D))`. This BSp-only
-  correction does not change the dedicated Tx phase or B0 phase difference.
-- Add `2*pi` where `BSp < -25 degrees` and retain the remaining small negative
-  values in the BSp output. Clamp only a separate B1-calculation copy to zero,
-  then compute `Meas_B1 = sqrt(BSp_for_B1 / KBS)` with
-  `KBS = 0.044 * bspulsewidthms / 6`.
-- Use the dedicated contiguous transmit-phase block after the B/C/A/D echoes
-  for the Tx phase output.
-- Average the final three frames into the post-reference phase and compute
-  `B0 = angle(post * conj(pre)) * 1000 / (2*pi)`.
+1. Number frames from one in acquisition order.
+2. Divide them into consecutive groups of `ARFI Block Length`. A final partial
+   group is retained.
+3. Assign every frame from one-based odd groups to noFUS and every frame from
+   one-based even groups to withFUS.
+4. Form each complex frame as `magnitude * exp(i * phase)`.
+5. Complex-average all noFUS frames together to create the noFUS average frame.
+6. Complex-average all withFUS frames together to create the withFUS average
+   frame.
+7. Calculate the phase difference, in radians, as
+   `angle(withFUS_average * conj(noFUS_average))`.
+
+For example, with a block length of 25, frames 1–25 are noFUS, frames 26–50 are
+withFUS, frames 51–75 are noFUS, and so on. At least one odd and one even block
+are required. A block length of zero is accepted by the UI but cannot be used
+for Single Freq processing.
+
+## Multiple Freq Processing
+
+For `ARFI Schemes = Multiple Freq`, classify every one-based `frame_number`
+using:
+
+```text
+myTemp = floor((sqrt(floor((frame_number - 1) / 2) * 8 + 1) + 1) / 2)
+```
+
+- If `frame_number > myTemp * myTemp`, assign the frame to withFUS.
+- Otherwise, assign the frame to noFUS.
+
+This produces noFUS frame numbers `1, 3, 4, 7, 8, 9, ...` and withFUS frame
+numbers `2, 5, 6, 10, ...`. As in Single Freq, form magnitude-weighted complex
+frames, average all noFUS frames together, average all withFUS frames together,
+and calculate `angle(withFUS_average * conj(noFUS_average))`.
+
+## Optional Phase Standard Deviation
+
+When `Send Phase Standard Deviation` is enabled, the runtime also measures the
+phase variation within the withFUS and noFUS sets independently. For each set:
+
+1. Form every complex frame as `magnitude * exp(i * phase)`.
+2. Calculate the complex mean of all frames in that set.
+3. Calculate each frame's residual phase as
+   `angle(complex_frame * conj(complex_mean))`.
+4. Calculate the sample standard deviation (`N-1`) of those residual phases at
+   each voxel. A set containing one frame has a standard deviation of zero.
+
+The two standard-deviation maps are converted from radians to degrees and use
+the same full-range DICOM scaling as the other phase outputs.
 
 ## Outputs
 
-All derived outputs are sent as explicit-volume MRD images with fresh returned
-series identities, `Keep_image_geometry = 0`, no source `IceMiniHead`, and
-`SequenceDescriptionAdditional = openrecon`. Every complete, nonconstant 3D
-output volume is linearly encoded into the full scanner display range
-`0..4095`. DICOM `RescaleSlope` and `RescaleIntercept` restore its physical
-units, and window center/width are recorded in those physical units. A constant
-volume uses zero-valued pixels and stores its physical value in the intercept.
+| Series description | Preferred index | Contents |
+| --- | ---: | --- |
+| `<source> Magnitude` | 101 | Every reconstructed magnitude frame, emitted as one 2D image per slice |
+| `<source> Phase` | 102 | Every wrapped phase frame in degrees, emitted as one 2D image per slice |
+| `<source> ARFI phase` | 103 | withFUS-minus-noFUS phase difference in degrees, emitted as one 2D image per slice |
+| `<source> withFUS phase standard deviation` | 104 | Optional withFUS residual-phase standard deviation in degrees |
+| `<source> noFUS phase standard deviation` | 105 | Optional noFUS residual-phase standard deviation in degrees |
 
-- `<source>-b1` or `<source>-b1-txNN`: measured B1 maps in uT. Preferred series
-  indices start at `101`.
-- `<source>-bsp` or `<source>-bsp-txNN`: Bloch-Siegert phase maps converted
-  from radians to degrees. Preferred series indices start at `120`.
-- `<source>-phsc` or `<source>-phsc-txNN`: dedicated transmit phase maps
-  converted from radians to degrees. Preferred series indices start at `140`.
-- `<source>-b0`: B0 phase-difference map in Hz on preferred series index `160`.
-- `<source>-mask`: optional binary mask on preferred series index `161`.
+Preferred indices move upward when an incoming series already uses them. Each
+source frame keeps its order through `image_index` and `ARFIFrameIndex`.
+`ARFIScheme` and `ARFIBlockLength` record the selected processing parameters.
+The outputs retain the source pixel ordering and set `Keep_image_geometry = 1`
+so ICE preserves the source orientation, including the Head-Feet direction in
+coronal acquisitions. Each output is a single-slice 2D MRD image with its own
+source slice position, slice index, and instance number. A 3D input frame is
+split into 2D slices; positions are derived along the source slice direction
+using DICOM spacing metadata or the source volume FOV.
 
-The preferred series indices are shifted only if the incoming image stream
-already uses one of them.
+## DICOM Scaling
 
-The finite physical bounds, inverse scaling formula, and radians-to-degrees
-conversion where applicable are recorded in `ImageComments`, `ImageComment`,
-and `BlochSiegertDisplay*` metadata for every output.
+Every nonconstant output volume is encoded across the complete scanner display
+range `0..4095`. For physical bounds `minimum` and `maximum`, the output stores:
 
-Runtime logs report the source phase range, source rescale metadata, inferred
-input domain, and the one-based frame layout. Mask-restricted quantiles cover
-the pre-reference phase/coherence, every B/C/A/D phase term, and the raw and
-corrected BSp phase. Per-Tx wrap counts, retained-negative counts inside and
-outside the QC mask, true-zero counts, B1 clamp counts and ranges are also
-reported, together with the physical bounds, rescale parameters, and window
-for every output series.
+```text
+display = round((physical - minimum) * 4095 / (maximum - minimum))
+RescaleSlope = (maximum - minimum) / 4095
+RescaleIntercept = minimum
+physical = display * RescaleSlope + RescaleIntercept
+```
+
+Phase is converted from radians to degrees before this encoding. Consequently,
+DICOM viewers display the correct physical phase after applying rescale slope
+and intercept, while the stored pixels use the available 12-bit range. The
+inverse formula, physical bounds, display bounds, and conversion are also saved
+in `ImageComments` and `ARFIDisplay*` metadata. A constant volume uses zero
+pixels and stores its physical value in `RescaleIntercept` because no finite
+range exists to expand.
 
 ## Parameters
 
-- `sendb1` default `true`: send measured B1 maps.
-- `sendbsp` default `true`: send Bloch-Siegert phase maps.
-- `sendphsc` default `true`: send dedicated transmit phase maps.
-- `sendb0` default `true`: send the B0 map.
-- `sendmask` default `false`: send the magnitude-derived QC mask.
-- `bspulsewidthms` default `12.0`: BS pulse width in milliseconds used in the
-  KBS calculation.
+- `arfischemes` default `singlefreq`: select Single Freq or Multiple Freq.
+- `arfiblocklength` default `25`: number of sequential frames in each ARFI
+  block, from 0 through 100 frames.
+- `sendphasestandarddeviation` default `false`: output separate withFUS and
+  noFUS phase-standard-deviation series.
 
-## Scanner Notes
+ARFI Block Length controls only Single Freq complex averaging. It must be
+greater than zero and the acquisition must contain enough frames to produce at
+least two blocks. Multiple Freq derives its groups from the frame-number formula
+and does not use ARFI Block Length.
 
-The OpenRecon implementation does not read DICOM directories. The DICOM file
-loading in the MATLAB script is replaced by buffering the MRD image stream. The
-recipe includes `dicom2mrd.py` only for local replay tests such as
-`testData.tgz`.
+## Input Shapes
 
-The runtime accepts either single-slice 2D image frames or single-channel 3D
-volume-frame images. This matters for the bundled replay data because the DICOM
-converter writes each Bloch-Siegert acquisition frame as one 32-slice MRD
-volume. If a converter marks both source series as magnitude images, the runtime
-can split two equal-length source series into magnitude then phase using their
-source-series ordering.
-
-Slice groups are detected from physical position when available, falling back to
-MRD slice counters or frame-count chunking. Each output volume is derived from
-sorted frame order within its slice group.
-
-The optional magnitude mask follows the MATLAB threshold and per-slice
-hole-filling steps. It is not applied during map processing and is returned
-only as a separate QC series when `sendmask` is enabled.
-
-## Open Source Development
-
-The source for this OpenRecon package is in the NeuroContainers repository:
-https://github.com/NeuroDesk/neurocontainers/tree/main/recipes/blochsiegertb1mapping
-
-For bugs and feature requests, opening an issue in the NeuroContainers
-repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
-Questions can also be posted in the Neurodesk discussion forum at
-https://github.com/orgs/neurodesk/discussions or sent via
-https://neurodesk.org/contact/.
+The runtime accepts single-channel 2D frames and single-channel 3D volume
+frames. Every slice must contain the same number of matching magnitude and
+phase frames so that each output volume has complete spatial coverage.
