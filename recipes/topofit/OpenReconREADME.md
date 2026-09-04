@@ -30,13 +30,22 @@ Each successful run writes these artifacts below `/tmp/share/topofit`:
 
 The QC volume preserves the input dimensions and affine. It displays the
 source anatomy with pial vertices at intensity 3500 and white vertices at
-intensity 4095. OpenRecon sends that volume back as
+intensity 4095. The surface thickness control sets the in-plane dilation
+radius. A value of zero keeps only the projected vertices. A value of one
+retains the previous width. OpenRecon sends that volume back as
 `<source>_topofit_qc`. When **Keep original images** is enabled, a restamped
 `<source>_original` series is sent first.
 
-Surface artifacts stay in the run workspace so a later in-container analysis
-stage can consume them. This first milestone does not export prescription
-coordinates.
+When **Find flat pial patches** is enabled, the workflow searches each pial
+mesh for the 10 mm-radius neighborhood with the lowest area-weighted plane-fit
+residual and coherent face normals. It draws both selected patches and their
+20 mm outward normals into the QC pixels. The result manifest stores the
+centers and normals in NIfTI world RAS. Each QC image comment also contains the
+centers in scanner patient-space LPS millimetres and the unit normals in LPS.
+
+Surface artifacts stay in the run workspace so later research analysis can
+consume them. Flat-patch coordinates are candidates only. They are not
+motion-cleared prescription coordinates.
 
 ## Parameters
 
@@ -46,6 +55,8 @@ coordinates.
 | Inference device | `tfdevice` | `cuda` | Run on the scanner GPU or use CPU for compatibility testing. |
 | TopoFit model | `tfmodel` | `t1w_1mm` | Select the T1w or synthetic pretrained model. |
 | Conform input | `tfconform` | `true` | Resample internally to the model grid. |
+| Find flat pial patches | `tfflatpatches` | `false` | Find one candidate per hemisphere, draw its patch and normal, and write LPS geometry into image comments. |
+| Surface thickness | `tfoverlaythickness` | `1` voxel | Set the in-plane dilation radius from 0 to 3 voxels. |
 | Mock surfaces | `tfdebugmock` | `false` | Exercise MRD transport and geometry without neural inference. |
 
 The mock option follows the full scanner conversion, QC, metadata, and return
@@ -58,9 +69,9 @@ Every QC image and manifest is marked:
 
 `RESEARCH ONLY - NOT MOTION-CLEARED - NOT FOR PRESCRIPTION`
 
-The manifest explicitly sets `prescription_coordinates` to `null`. A later
-stage must define the target, assess motion and surface quality, transform the
-result into the scanner frame, and pass independent validation before any
+The manifest explicitly keeps `prescription_coordinates` set to `null`, even
+when it records research-only flat-patch candidates. A later stage must assess
+motion and surface quality and pass independent validation before any
 coordinate can be actionable.
 
 The adapter fails closed: it buffers outputs until every required bilateral
@@ -74,10 +85,12 @@ The container exposes the same workflow as a command-line tool:
 ```bash
 topofit-openrecon mprage.nii.gz output --device cuda
 topofit-openrecon mprage.nii.gz transport-test --device cpu --mock
+topofit-openrecon mprage.nii.gz flat-patches --find-flat-patches --overlay-thickness 0
 ```
 
 The first command runs the real model. The second tests the artifact and QC
-path in seconds.
+path in seconds. The third enables flat-patch analysis and uses the thinnest
+surface trace.
 
 ## Citation
 
