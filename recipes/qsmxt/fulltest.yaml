@@ -277,21 +277,36 @@ tests:
       assert first_meta["ImageType"] == "DERIVED\\PRIMARY\\M\\QSMXT_CHIMAP"
       assert first_meta["QSMxTDisplayFormula"] == "ppm = (display - 2048) / 1000"
       assert first_meta["DataRole"] == ["Image", "Quantitative"]
-      assert float(first_meta["RescaleSlope"]) == 0.001
-      assert float(first_meta["RescaleIntercept"]) == -2.048
-      assert first_meta["RescaleType"] == "US"
       assert first_meta["PixelPaddingValue"] == "0"
-      if first_meta.get("QSMxTWindowDomain") == "stored":
+      window_domain = first_meta.get("QSMxTWindowDomain")
+      if window_domain == "ppb":
+          assert float(first_meta["RescaleSlope"]) == 1.0
+          assert float(first_meta["RescaleIntercept"]) == -2048.0
+          assert first_meta["RescaleType"] == "US"
+          assert float(first_meta["WindowCenter"]) == 1500.0
+          assert float(first_meta["WindowWidth"]) == 1000.0
+          assert float(first_meta["QSMxTPhysicalWindowCenter"]) == 1.5
+          assert float(first_meta["QSMxTPhysicalWindowWidth"]) == 1.0
+      elif window_domain == "stored":
+          assert float(first_meta["RescaleSlope"]) == 0.001
+          assert float(first_meta["RescaleIntercept"]) == -2.048
+          assert first_meta["RescaleType"] == "US"
           assert first_meta["PixelPaddingRangeLimit"] == "0"
           assert float(first_meta["WindowCenter"]) == 3548.0
           assert float(first_meta["WindowWidth"]) == 1000.0
           assert float(first_meta["QSMxTPhysicalWindowCenter"]) == 1.5
           assert float(first_meta["QSMxTPhysicalWindowWidth"]) == 1.0
       elif "WindowCenter" in first_meta:
+          assert float(first_meta["RescaleSlope"]) == 0.001
+          assert float(first_meta["RescaleIntercept"]) == -2.048
+          assert first_meta["RescaleType"] == "US"
           assert float(first_meta["WindowCenter"]) == 1.5
           assert float(first_meta["WindowWidth"]) == 1.0
       else:
-          assert first_meta["QSMxTWindowDomain"] == "physical"
+          assert float(first_meta["RescaleSlope"]) == 0.001
+          assert float(first_meta["RescaleIntercept"]) == -2.048
+          assert first_meta["RescaleType"] == "US"
+          assert window_domain == "physical"
           assert "WindowWidth" not in first_meta
           assert "VOILUTFunction" not in first_meta
           assert float(first_meta["QSMxTPhysicalWindowCenter"]) == 1.5
