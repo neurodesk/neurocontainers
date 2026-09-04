@@ -54,7 +54,7 @@
       "label": { "en": "Keep original images" },
       "type": "boolean",
       "default": true,
-      "information": { "en": "Return a restamped copy of the input MPRAGE before the TopoFit QC series." }
+      "information": { "en": "Return a restamped copy of the selected anatomical input before the TopoFit QC series." }
     },
     {
       "id": "tfdevice",
@@ -133,13 +133,6 @@
       "default": 1,
       "unit": { "en": "vox" },
       "information": { "en": "Set the in-plane dilation radius in voxels. Zero draws the undilated projected vertices; one retains the previous width." }
-    },
-    {
-      "id": "tfdebugmock",
-      "label": { "en": "Mock surfaces" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Transport test only: generate small geometry-valid meshes without running the neural network. Never use mock output for analysis." }
     }
   ]
 }
