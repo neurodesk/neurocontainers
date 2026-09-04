@@ -35,7 +35,13 @@ class RecordingConnection:
         self.closed = True
 
 
-def _mrd_volume(shape=(24, 20, 8)):
+def _mrd_volume(
+    shape=(24, 20, 8),
+    *,
+    series_description="MPRAGE_TEST",
+    protocol_name="MPRAGE_TEST",
+    series_index=7,
+):
     x_size, y_size, z_size = shape
     grid_y, grid_x = np.indices((y_size, x_size), dtype=np.float32)
     images = []
@@ -66,12 +72,13 @@ def _mrd_volume(shape=(24, 20, 8)):
             for index, value in enumerate(values):
                 field[index] = value
         header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-        header.image_series_index = 7
+        header.image_series_index = series_index
         header.image_index = slice_index + 1
         header.slice = slice_index
         image.setHead(header)
         meta = ismrmrd.Meta()
-        meta["SeriesDescription"] = "MPRAGE_TEST"
+        meta["SeriesDescription"] = series_description
+        meta["ProtocolName"] = protocol_name
         meta["FrameOfReferenceUID"] = "1.2.826.0.1.3680043.10.999"
         meta["ImageRowDir"] = ["0.0", "1.0", "0.0"]
         meta["ImageColumnDir"] = ["-1.0", "0.0", "0.0"]
@@ -82,6 +89,76 @@ def _mrd_volume(shape=(24, 20, 8)):
 
 
 class TopoFitOpenReconTests(unittest.TestCase):
+    def test_mp2rage_processes_only_uni_den_contrast(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            topofit.WORKSPACE = Path(temporary_directory)
+            images = (
+                _mrd_volume(
+                    series_description="T1_MP2RAGE_INV1",
+                    protocol_name="T1_MP2RAGE",
+                    series_index=5,
+                )
+                + _mrd_volume(
+                    series_description="T1_MP2RAGE_UNI_DEN",
+                    protocol_name="T1_MP2RAGE",
+                    series_index=6,
+                )
+                + _mrd_volume(
+                    series_description="T1_MP2RAGE_INV2",
+                    protocol_name="T1_MP2RAGE",
+                    series_index=7,
+                )
+            )
+            connection = RecordingConnection(images)
+            config = {
+                "parameters": {
+                    "sendoriginal": False,
+                    "tfdevice": "cpu",
+                    "tfmodel": "t1w_1mm",
+                    "tfconform": True,
+                    "tfdebugmock": True,
+                }
+            }
+
+            topofit.process(connection, config, metadata=None)
+
+            errors = [
+                message
+                for level, message in connection.logs
+                if level == constants.MRD_LOGGING_ERROR
+            ]
+            self.assertEqual(errors, [])
+            outputs = [image for batch in connection.image_batches for image in batch]
+            self.assertEqual(len(outputs), 8)
+            self.assertEqual({int(image.image_series_index) for image in outputs}, {8})
+            output_meta = ismrmrd.Meta.deserialize(outputs[0].attribute_string)
+            self.assertEqual(
+                output_meta["SeriesDescription"],
+                "T1_MP2RAGE_UNI_DEN_topofit_qc",
+            )
+            manifests = list(Path(temporary_directory).glob("*/topofit_manifest.json"))
+            self.assertEqual(len(manifests), 1)
+
+    def test_mp2rage_without_uni_den_fails_closed(self):
+        connection = RecordingConnection(
+            _mrd_volume(
+                series_description="T1_MP2RAGE_INV2",
+                protocol_name="T1_MP2RAGE",
+            )
+        )
+
+        topofit.process(connection, {}, metadata=None)
+
+        self.assertTrue(connection.closed)
+        self.assertEqual(connection.image_batches, [])
+        errors = [
+            message
+            for level, message in connection.logs
+            if level == constants.MRD_LOGGING_ERROR
+        ]
+        self.assertEqual(len(errors), 1)
+        self.assertIn("no UNI-DEN contrast", errors[0])
+
     def test_mock_mrd_series_returns_source_grid_qc_and_manifest(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             topofit.WORKSPACE = Path(temporary_directory)

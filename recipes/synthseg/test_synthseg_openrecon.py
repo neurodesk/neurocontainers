@@ -307,6 +307,68 @@ def _synthseg_command_helpers():
     )
 
 
+def _mp2rage_selection_helpers():
+    return _load_runtime_helpers_for_test(
+        [
+            "_image_identity_values",
+            "_meta_from_image",
+            "_normalized_identity_text",
+            "_select_anatomical_input_images",
+        ],
+        assignments=["MP2RAGE_IDENTITY_META_KEYS"],
+    )
+
+
+def _selection_image(helpers, description, protocol="T1_MP2RAGE"):
+    image = helpers["FakeImage"](np.zeros((1, 1, 2, 2), dtype=np.int16))
+    image.attribute_string = helpers["FakeMeta"](
+        {
+            "SeriesDescription": description,
+            "ProtocolName": protocol,
+        }
+    ).serialize()
+    return image
+
+
+def test_mp2rage_selection_keeps_only_uni_den_images():
+    helpers = _mp2rage_selection_helpers()
+    images = [
+        _selection_image(helpers, "T1_MP2RAGE_INV1"),
+        _selection_image(helpers, "T1_MP2RAGE_UNI-DEN"),
+        _selection_image(helpers, "T1_MP2RAGE_UNI_DEN"),
+        _selection_image(helpers, "T1_MP2RAGE_INV2"),
+    ]
+
+    selected = helpers["_select_anatomical_input_images"](images)
+
+    assert selected == images[1:3]
+
+
+def test_mp2rage_selection_fails_without_uni_den():
+    helpers = _mp2rage_selection_helpers()
+    images = [
+        _selection_image(helpers, "T1_MP2RAGE_INV1"),
+        _selection_image(helpers, "T1_MP2RAGE_UNI"),
+    ]
+
+    try:
+        helpers["_select_anatomical_input_images"](images)
+    except ValueError as error:
+        assert "no UNI-DEN contrast" in str(error)
+    else:
+        raise AssertionError("MP2RAGE input without UNI-DEN should fail closed")
+
+
+def test_non_mp2rage_selection_preserves_all_magnitude_images():
+    helpers = _mp2rage_selection_helpers()
+    images = [
+        _selection_image(helpers, "MPRAGE_T1W", protocol="MPRAGE"),
+        _selection_image(helpers, "T2_SPACE", protocol="T2_SPACE"),
+    ]
+
+    assert helpers["_select_anatomical_input_images"](images) == images
+
+
 def test_synthseg_crop_options_are_mutually_exclusive_and_aligned():
     helpers = _synthseg_command_helpers()
     resolve = helpers["_resolve_synthseg_crop_options"]

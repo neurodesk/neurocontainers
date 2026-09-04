@@ -18,6 +18,10 @@ photographs rather than MR images.
 
 Use this reconstruction pipeline on 3D brain image data. Any contrast works;
 no bias correction, skull stripping or intensity normalisation is required.
+For an MP2RAGE scan, only the denoised uniform (`UNI-DEN`) contrast is
+processed; INV1, INV2, UNI, and other contrasts in the same stream are ignored.
+An MP2RAGE stream without a `UNI-DEN` contrast is rejected rather than processed
+as a different anatomical contrast.
 
 SynthSeg always segments at 1 mm isotropic internally. The wrapper always runs
 `mri_synthseg --keepgeom`, so the returned label map is resampled with nearest
