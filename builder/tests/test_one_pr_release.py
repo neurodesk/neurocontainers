@@ -382,6 +382,57 @@ def test_verify_candidate_rejects_a_variant_the_recipe_does_not_declare(
         raise AssertionError("undeclared variant identity was accepted")
 
 
+def test_verify_published_metadata_rechecks_identity_without_large_artifacts(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The locked finalizer needs only the verified manifest and release preview."""
+    recipe_dir = write_recipe(tmp_path)
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    bundle = tmp_path / "release-previews"
+    candidate_dir = bundle / "demo"
+    candidate_dir.mkdir(parents=True)
+
+    recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text(encoding="utf-8"))
+    release = release_data("demo", "1.2.3", recipe, "20260721", "x86_64")
+    (candidate_dir / "1.2.3.json").write_text(
+        json.dumps(release), encoding="utf-8"
+    )
+    manifest = {
+        "recipe": "demo",
+        "container": "demo",
+        "variant": "",
+        "architecture": "x86_64",
+        "version": "1.2.3",
+        "build_date": "20260721",
+        "image_name": "demo_1.2.3",
+        "pr_number": 42,
+        "head_sha": "abc123",
+        "candidate_tag": "nd-candidate-demo:abc123",
+        "recipe_fingerprint": one_pr_release.recipe_fingerprint("demo"),
+        "docker_archive": "demo_1.2.3_20260721.docker.tar",
+        "docker_sha256": "1" * 64,
+        "sif": "demo_1.2.3_20260721.simg",
+        "sif_sha256": "2" * 64,
+        "release_json": "1.2.3.json",
+    }
+    manifests_path = tmp_path / "verified-manifests.json"
+    manifests_path.write_text(json.dumps([manifest]), encoding="utf-8")
+
+    verified = one_pr_release.verify_published_metadata(
+        bundle, manifests_path, "abc123", 42
+    )
+    assert verified == [manifest]
+    assert not (candidate_dir / manifest["docker_archive"]).exists()
+    assert not (candidate_dir / manifest["sif"]).exists()
+
+    manifest["head_sha"] = "different"
+    manifests_path.write_text(json.dumps([manifest]), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Published head SHA mismatch"):
+        one_pr_release.verify_published_metadata(
+            bundle, manifests_path, "abc123", 42
+        )
+
+
 def test_detect_targets_expands_declared_architectures(tmp_path: Path, monkeypatch) -> None:
     """Every architecture a recipe declares becomes its own build target."""
     recipe_dir = write_recipe(tmp_path)

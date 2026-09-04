@@ -27,15 +27,10 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: promote-container-and-metadata
-  cancel-in-progress: false
-  # Without this, GitHub keeps at most one run pending per group and a newer
-  # run evicts the one already waiting. Promote takes longer than the gap
-  # between merges, so pending runs were being discarded and their containers
-  # never published. `queue: max` keeps the same strict serialization and only
-  # stops the queue dropping work.
-  queue: max
+# Candidate publication is intentionally not locked at workflow scope. Each
+# candidate is uploaded under a PR-head staging identity, so unrelated releases
+# can move their large Docker and SIF artifacts concurrently. Only the final,
+# manifest-only promotion to public tags and release metadata is serialized.
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -199,19 +194,23 @@ jobs:
             }
             throw new Error(`Timed out waiting for candidate run for ${headSha}`);
 
-  promote:
+  publish:
+    name: publish (${{ matrix.artifact.name }})
     needs: [resolve, await_candidate]
     if: >-
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
     runs-on: neurodesk-syd-arcrunner-neurocontainers
     timeout-minutes: 720
+    strategy:
+      fail-fast: false
+      matrix:
+        artifact: ${{ fromJSON(needs.await_candidate.outputs.artifacts) }}
     permissions:
       actions: read
-      contents: write
+      contents: read
       id-token: write
       packages: write
-      pull-requests: read
     steps:
       - name: Checkout trusted main
         uses: actions/checkout@v5
@@ -238,33 +237,39 @@ jobs:
             rm -rf "${aws_archive}" "${aws_install_dir}"
           fi
           aws --version
-      - name: Download candidate bundles without executing them
+      - name: Resolve staged candidate identity
+        id: identity
         env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACTS: ${{ needs.await_candidate.outputs.artifacts }}
+          ARTIFACT_NAME: ${{ matrix.artifact.name }}
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
-          mkdir -p promotion-bundle
-          echo "${ARTIFACTS}" | jq -c '.[]' | while read -r artifact; do
-            id="$(echo "${artifact}" | jq -r '.id')"
-            name="$(echo "${artifact}" | jq -r '.name')"
-            container="${name#candidate-}"
-            container="${container%-${HEAD_SHA}}"
-            mkdir -p "promotion-bundle/${container}"
-            for attempt in 1 2 3 4 5; do
-              rm -f artifact.zip
-              if gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}/zip" > artifact.zip; then
-                break
-              fi
-              if [ "${attempt}" = 5 ]; then
-                echo "Failed to download ${name} after ${attempt} attempts" >&2
-                exit 1
-              fi
-              sleep "$((attempt * 10))"
-            done
-            unzip -q artifact.zip -d "promotion-bundle/${container}"
-            rm artifact.zip
+          container="${ARTIFACT_NAME#candidate-}"
+          container="${container%-${HEAD_SHA}}"
+          if ! [[ "${container}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "Invalid candidate container identity: ${container}" >&2
+            exit 1
+          fi
+          echo "container=${container}" >> "${GITHUB_OUTPUT}"
+      - name: Download candidate bundle without executing it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ matrix.artifact.id }}
+          CONTAINER: ${{ steps.identity.outputs.container }}
+        run: |
+          mkdir -p "promotion-bundle/${CONTAINER}"
+          for attempt in 1 2 3 4 5; do
+            rm -f artifact.zip
+            if gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > artifact.zip; then
+              break
+            fi
+            if [ "${attempt}" = 5 ]; then
+              echo "Failed to download candidate artifact ${ARTIFACT_ID} after ${attempt} attempts" >&2
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
           done
+          unzip -q artifact.zip -d "promotion-bundle/${CONTAINER}"
+          rm artifact.zip
       - name: Verify candidate against merged recipes and checksums
         env:
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
@@ -273,6 +278,16 @@ jobs:
           python tools/one_pr_release.py verify --bundle promotion-bundle \
             --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}" \
             --output verified-manifests.json
+      - name: Prepare trusted promotion metadata
+        env:
+          CONTAINER: ${{ steps.identity.outputs.container }}
+        run: |
+          manifest="$(jq -c 'if length == 1 then .[0] else error("expected one verified manifest") end' verified-manifests.json)"
+          release_json="$(echo "${manifest}" | jq -r '.release_json')"
+          mkdir -p "promotion-metadata/release-previews/${CONTAINER}"
+          cp verified-manifests.json "promotion-metadata/verified-manifest-${CONTAINER}.json"
+          cp "promotion-bundle/${CONTAINER}/${release_json}" \
+            "promotion-metadata/release-previews/${CONTAINER}/${release_json}"
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -299,10 +314,11 @@ jobs:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_ROBOT_TOKEN }}
-      - name: Publish the exact tested Docker archives
+      - name: Publish exact tested Docker archive to unique staging tags
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
           push_mandatory_ghcr() {
             local image="$1"
@@ -322,55 +338,34 @@ jobs:
             done
           }
 
-          jq -c '.[]' verified-manifests.json | while read -r manifest; do
-            container="$(echo "${manifest}" | jq -r '.container')"
-            version="$(echo "${manifest}" | jq -r '.version')"
-            build_date="$(echo "${manifest}" | jq -r '.build_date')"
-            archive="$(echo "${manifest}" | jq -r '.docker_archive')"
-            source="$(echo "${manifest}" | jq -r '.candidate_tag')"
-            docker load --input "promotion-bundle/${container}/${archive}"
+          manifest="$(jq -c '.[0]' verified-manifests.json)"
+          container="$(echo "${manifest}" | jq -r '.container')"
+          version="$(echo "${manifest}" | jq -r '.version')"
+          archive="$(echo "${manifest}" | jq -r '.docker_archive')"
+          source="$(echo "${manifest}" | jq -r '.candidate_tag')"
+          staging_tag="candidate-${HEAD_SHA}"
+          docker load --input "promotion-bundle/${container}/${archive}"
 
-            legacy="${container}_${version}"
-            legacy_ghcr="ghcr.io/${GH_REGISTRY}/${legacy}"
-            docker tag "${source}" "${legacy_ghcr}:${build_date}"
-            docker tag "${source}" "${legacy_ghcr}:latest"
-            push_mandatory_ghcr "${legacy_ghcr}:${build_date}"
-            push_mandatory_ghcr "${legacy_ghcr}:latest"
+          legacy="${container}_${version}"
+          legacy_ghcr="ghcr.io/${GH_REGISTRY}/${legacy}:${staging_tag}"
+          ghcr="ghcr.io/${GH_REGISTRY}/${container}:${staging_tag}"
+          docker tag "${source}" "${legacy_ghcr}"
+          docker tag "${source}" "${ghcr}"
+          push_mandatory_ghcr "${legacy_ghcr}"
+          push_mandatory_ghcr "${ghcr}"
 
-            ghcr="ghcr.io/${GH_REGISTRY}/${container}"
-            for tag in "${version}_${build_date}" "${version}" latest; do
-              docker tag "${source}" "${ghcr}:${tag}"
-              push_mandatory_ghcr "${ghcr}:${tag}"
-            done
-
-            for destination in \
-              "${DOCKERHUB_ORG}/${legacy}" \
-              "registry.rc.nectar.org.au/ssdsorg/${legacy}"; do
-              docker tag "${source}" "${destination}:${build_date}"
-              docker tag "${source}" "${destination}:latest"
-              published=false
-              for attempt in 1 2 3; do
-                if docker push "${destination}:${build_date}" && \
-                   docker push "${destination}:latest"; then
-                  published=true
-                  break
-                fi
-                if [ "${attempt}" -lt 3 ]; then
-                  sleep $((attempt * 30))
-                fi
-              done
-              if [ "${published}" != true ]; then
-                echo "::warning::Optional registry publish failed for ${destination}"
-              fi
-            done
-
-            quay="quay.io/neurodesk/${container}"
-            for tag in "${version}_${build_date}" "${version}" latest; do
-              docker tag "${source}" "${quay}:${tag}"
-              docker push "${quay}:${tag}" || \
-                echo "::warning::Optional Quay publish failed for ${quay}:${tag}"
-            done
+          for destination in \
+            "${DOCKERHUB_ORG}/${legacy}:${staging_tag}" \
+            "registry.rc.nectar.org.au/ssdsorg/${legacy}:${staging_tag}"; do
+            docker tag "${source}" "${destination}"
+            docker push "${destination}" || \
+              echo "::warning::Optional staging publish failed for ${destination}"
           done
+
+          quay="quay.io/neurodesk/${container}:${staging_tag}"
+          docker tag "${source}" "${quay}"
+          docker push "${quay}" || \
+            echo "::warning::Optional Quay staging publish failed for ${quay}"
       # New Quay repositories default to private. The robot credentials used
       # for image pushes cannot change visibility, so retain the legacy
       # best-effort API step with the separately scoped admin token.
@@ -378,7 +373,7 @@ jobs:
         env:
           QUAY_API_TOKEN: ${{ secrets.QUAY_API_TOKEN }}
         run: |
-          jq -r '.[].container' verified-manifests.json | sort -u | while read -r container; do
+          jq -r '.[0].container' verified-manifests.json | while read -r container; do
             if [ -z "${QUAY_API_TOKEN:-}" ]; then
               echo "::warning::QUAY_API_TOKEN is not set; cannot confirm neurodesk/${container} is public"
               continue
@@ -401,27 +396,29 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
-      - name: Publish tested SIFs to object storage
+      - name: Publish tested SIF to unique staging object keys
         env:
           OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
           OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
           OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
           OS_AUTH_TYPE: v3applicationcredential
           OS_IDENTITY_API_VERSION: "3"
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
-          jq -c '.[]' verified-manifests.json | while read -r manifest; do
-            container="$(echo "${manifest}" | jq -r '.container')"
-            sif="$(echo "${manifest}" | jq -r '.sif')"
-            path="promotion-bundle/${container}/${sif}"
-            aws s3 cp "${path}" "s3://neurocontainers/${sif}"
-            aws s3api head-object --bucket neurocontainers --key "${sif}" >/dev/null
-            swift upload neurodesk "${path}" --object-name "${sif}" \
-              --segment-size 1073741824 --segment-threads 10 || \
-              echo "::warning::Nectar object upload failed for ${sif}"
-          done
-      - name: Attach tested SIFs to OCI images
+          manifest="$(jq -c '.[0]' verified-manifests.json)"
+          container="$(echo "${manifest}" | jq -r '.container')"
+          sif="$(echo "${manifest}" | jq -r '.sif')"
+          path="promotion-bundle/${container}/${sif}"
+          staged_key="promotion-staging/${HEAD_SHA}/${container}/${sif}"
+          aws s3 cp "${path}" "s3://neurocontainers/${staged_key}"
+          aws s3api head-object --bucket neurocontainers --key "${staged_key}" >/dev/null
+          swift upload neurodesk "${path}" --object-name "${staged_key}" \
+            --segment-size 1073741824 --segment-threads 10 || \
+            echo "::warning::Nectar staging upload failed for ${sif}"
+      - name: Attach tested SIF to staged OCI images
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
         run: |
           oras_archive="${RUNNER_TEMP}/oras_1.2.0_linux_amd64.tar.gz"
           curl -fsSL \
@@ -431,25 +428,203 @@ jobs:
             | sha256sum -c -
           sudo tar -xzf "${oras_archive}" -C /usr/local/bin oras
           rm "${oras_archive}"
+          manifest="$(jq -c '.[0]' verified-manifests.json)"
+          container="$(echo "${manifest}" | jq -r '.container')"
+          version="$(echo "${manifest}" | jq -r '.version')"
+          build_date="$(echo "${manifest}" | jq -r '.build_date')"
+          sif="$(echo "${manifest}" | jq -r '.sif')"
+          staging_tag="candidate-${HEAD_SHA}"
+          cp "promotion-bundle/${container}/${sif}" "${RUNNER_TEMP}/${sif}"
+          cd "${RUNNER_TEMP}"
+          oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
+            --annotation "org.opencontainers.image.title=${container}" \
+            --annotation "org.opencontainers.image.version=${version}_${build_date}" \
+            "ghcr.io/${GH_REGISTRY}/${container}:${staging_tag}" \
+            "${sif}:application/vnd.sylabs.sif.layer.v1.sif"
+          oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
+            --annotation "org.opencontainers.image.title=${container}" \
+            --annotation "org.opencontainers.image.version=${version}_${build_date}" \
+            "quay.io/neurodesk/${container}:${staging_tag}" \
+            "${sif}:application/vnd.sylabs.sif.layer.v1.sif" || \
+            echo "::warning::Optional Quay SIF attach failed for ${container}"
+      - name: Upload trusted promotion metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: promotion-metadata-${{ steps.identity.outputs.container }}-${{ needs.resolve.outputs.head_sha }}
+          path: promotion-metadata/
+          if-no-files-found: error
+          retention-days: 7
+
+  finalize:
+    needs: [resolve, await_candidate, publish]
+    if: >-
+      needs.resolve.outputs.should_promote == 'true' &&
+      needs.resolve.outputs.recipes != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      # Reuse the former workflow-wide group so rollout cannot overlap a
+      # promotion run that started with the old workflow definition.
+      group: promote-container-and-metadata
+      cancel-in-progress: false
+      # Preserve every merged release while keeping the lock limited to remote
+      # retagging, server-side object copies, and the metadata commit.
+      queue: max
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      packages: write
+      pull-requests: read
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install finalization dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml python-swiftclient python-keystoneclient
+          oras_archive="${RUNNER_TEMP}/oras_1.2.0_linux_amd64.tar.gz"
+          curl -fsSL \
+            https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz \
+            -o "${oras_archive}"
+          echo "5b3f1cbb86d869eee68120b9b45b9be983f3738442f87ee5f06b00edd0bab336  ${oras_archive}" \
+            | sha256sum -c -
+          sudo tar -xzf "${oras_archive}" -C /usr/local/bin oras
+          rm "${oras_archive}"
+          aws --version
+      - name: Download trusted promotion metadata
+        uses: actions/download-artifact@v5
+        with:
+          pattern: promotion-metadata-*-${{ needs.resolve.outputs.head_sha }}
+          path: promotion-metadata
+          merge-multiple: true
+      - name: Revalidate and combine published manifests
+        env:
+          ARTIFACTS: ${{ needs.await_candidate.outputs.artifacts }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        run: |
+          jq -s 'add' promotion-metadata/verified-manifest-*.json > verified-manifests.json
+          expected="$(echo "${ARTIFACTS}" | jq 'length')"
+          actual="$(jq 'length' verified-manifests.json)"
+          if [ "${actual}" -ne "${expected}" ]; then
+            echo "Expected ${expected} published manifests, found ${actual}" >&2
+            exit 1
+          fi
+          python tools/one_pr_release.py verify-metadata \
+            --bundle promotion-metadata/release-previews \
+            --manifests verified-manifests.json \
+            --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}"
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Log in to Docker Hub
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Log in to Nectar registry
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: registry.rc.nectar.org.au
+          username: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME }}
+          password: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
+      - name: Log in to Quay
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_ROBOT_TOKEN }}
+      - name: Finalize public Docker tags from staged manifests
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+          DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          retag_mandatory() {
+            local source="$1"
+            local tag="$2"
+            local attempt
+            for attempt in 1 2 3; do
+              if oras tag "${source}" "${tag}"; then
+                return 0
+              fi
+              if [ "${attempt}" -eq 3 ]; then
+                echo "::error::Mandatory tag finalization failed for ${source%:*}:${tag}"
+                return 1
+              fi
+              sleep $((attempt * 30))
+            done
+          }
+          retag_optional() {
+            oras tag "$1" "$2" || \
+              echo "::warning::Optional tag finalization failed for ${1%:*}:$2"
+          }
+
           jq -c '.[]' verified-manifests.json | while read -r manifest; do
             container="$(echo "${manifest}" | jq -r '.container')"
             version="$(echo "${manifest}" | jq -r '.version')"
             build_date="$(echo "${manifest}" | jq -r '.build_date')"
+            staging_tag="candidate-${HEAD_SHA}"
+            legacy="${container}_${version}"
+
+            legacy_ghcr="ghcr.io/${GH_REGISTRY}/${legacy}"
+            for tag in "${build_date}" latest; do
+              retag_mandatory "${legacy_ghcr}:${staging_tag}" "${tag}"
+            done
+            ghcr="ghcr.io/${GH_REGISTRY}/${container}"
+            for tag in "${version}_${build_date}" "${version}" latest; do
+              retag_mandatory "${ghcr}:${staging_tag}" "${tag}"
+            done
+
+            for destination in \
+              "${DOCKERHUB_ORG}/${legacy}" \
+              "registry.rc.nectar.org.au/ssdsorg/${legacy}"; do
+              for tag in "${build_date}" latest; do
+                retag_optional "${destination}:${staging_tag}" "${tag}"
+              done
+            done
+            quay="quay.io/neurodesk/${container}"
+            for tag in "${version}_${build_date}" "${version}" latest; do
+              retag_optional "${quay}:${staging_tag}" "${tag}"
+            done
+          done
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+      - name: Finalize public SIF object names with server-side copies
+        env:
+          OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
+          OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
+          OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
+          OS_AUTH_TYPE: v3applicationcredential
+          OS_IDENTITY_API_VERSION: "3"
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          jq -c '.[]' verified-manifests.json | while read -r manifest; do
+            container="$(echo "${manifest}" | jq -r '.container')"
             sif="$(echo "${manifest}" | jq -r '.sif')"
-            cp "promotion-bundle/${container}/${sif}" "${RUNNER_TEMP}/${sif}"
-            cd "${RUNNER_TEMP}"
-            oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
-              --annotation "org.opencontainers.image.title=${container}" \
-              --annotation "org.opencontainers.image.version=${version}_${build_date}" \
-              "ghcr.io/${GH_REGISTRY}/${container}:${version}_${build_date}" \
-              "${sif}:application/vnd.sylabs.sif.layer.v1.sif"
-            oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
-              --annotation "org.opencontainers.image.title=${container}" \
-              --annotation "org.opencontainers.image.version=${version}_${build_date}" \
-              "quay.io/neurodesk/${container}:${version}_${build_date}" \
-              "${sif}:application/vnd.sylabs.sif.layer.v1.sif" || \
-              echo "::warning::Optional Quay SIF attach failed for ${container}"
-            cd "${GITHUB_WORKSPACE}"
+            staged_key="promotion-staging/${HEAD_SHA}/${container}/${sif}"
+            aws s3 cp "s3://neurocontainers/${staged_key}" "s3://neurocontainers/${sif}"
+            aws s3api head-object --bucket neurocontainers --key "${sif}" >/dev/null
+            swift copy neurodesk "${staged_key}" \
+              --destination "/neurodesk/${sif}" || \
+              echo "::warning::Nectar object finalization failed for ${sif}"
           done
       # Candidate downloads and multi-registry publication can take longer than
       # a GitHub App installation token's one-hour lifetime. Mint the
@@ -467,7 +642,8 @@ jobs:
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
           RELEASE_TOKEN: ${{ steps.metadata-token.outputs.token }}
         run: |
-          python tools/one_pr_release.py materialize --bundle promotion-bundle \
+          python tools/one_pr_release.py materialize \
+            --bundle promotion-metadata/release-previews \
             --manifests verified-manifests.json
           git config user.name "neurocontainers-release[bot]"
           git config user.email "neurocontainers-release[bot]@users.noreply.github.com"
@@ -486,9 +662,10 @@ jobs:
               sleep $((attempt * 5))
               continue
             fi
-            python tools/one_pr_release.py verify --bundle promotion-bundle \
-              --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}" \
-              --output verified-manifests.json
+            python tools/one_pr_release.py verify-metadata \
+              --bundle promotion-metadata/release-previews \
+              --manifests verified-manifests.json \
+              --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}"
             if git -c http.https://github.com/.extraheader="${git_auth_header}" \
                 push origin HEAD:main; then
               exit 0
@@ -512,7 +689,7 @@ jobs:
             done
 
   report_promotion:
-    needs: [resolve, await_candidate, promote]
+    needs: [resolve, await_candidate, publish, finalize]
     if: >-
       always() &&
       needs.resolve.outputs.should_promote == 'true' &&
@@ -526,7 +703,8 @@ jobs:
         env:
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
           AWAIT_RESULT: ${{ needs.await_candidate.result }}
-          PROMOTION_RESULT: ${{ needs.promote.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          FINALIZE_RESULT: ${{ needs.finalize.result }}
         with:
           script: |
             const issue_number = Number(process.env.PR_NUMBER);
@@ -563,7 +741,13 @@ jobs:
             const runUrl =
               `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const awaitResult = process.env.AWAIT_RESULT;
-            const promotionResult = process.env.PROMOTION_RESULT;
+            const publishResult = process.env.PUBLISH_RESULT;
+            const finalizeResult = process.env.FINALIZE_RESULT;
+            const promotionResult = finalizeResult === 'success'
+              ? 'success'
+              : publishResult !== 'success'
+                ? publishResult
+                : finalizeResult;
             let heading;
             let action;
             if (promotionResult === 'success') {

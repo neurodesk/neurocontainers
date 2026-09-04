@@ -660,6 +660,114 @@ def command_verify(args: argparse.Namespace) -> None:
     )
 
 
+def verify_published_metadata(
+    bundle: Path,
+    manifests_path: Path,
+    expected_head_sha: str,
+    expected_pr_number: int,
+) -> list[dict[str, Any]]:
+    """Revalidate small promotion metadata after large artifacts are published."""
+    try:
+        manifests = json.loads(manifests_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            f"Unable to read published manifests {manifests_path}: {error}"
+        ) from error
+    if not isinstance(manifests, list) or not manifests:
+        raise RuntimeError("Published manifests must be a non-empty JSON array")
+
+    containers: set[str] = set()
+    for manifest in manifests:
+        if not isinstance(manifest, dict):
+            raise RuntimeError("Each published manifest must be a JSON object")
+        missing = [
+            field for field in CANDIDATE_MANIFEST_FIELDS if field not in manifest
+        ]
+        if missing:
+            raise RuntimeError(
+                "Published manifest is missing fields: " + ", ".join(missing)
+            )
+
+        recipe = validate_recipe_identifier(manifest.get("recipe"))
+        container = validate_recipe_identifier(manifest.get("container"))
+        if container in containers:
+            raise RuntimeError(f"Duplicate published container manifest: {container}")
+        containers.add(container)
+
+        variant = manifest.get("variant")
+        if not isinstance(variant, str):
+            raise RuntimeError(f"Invalid candidate variant for {recipe}: {variant!r}")
+        expected_info = inspect_recipe(
+            recipe,
+            expected_head_sha,
+            variant,
+            manifest.get("build_date"),
+        )
+        if manifest.get("head_sha") != expected_head_sha:
+            raise RuntimeError(f"Published head SHA mismatch for {container}")
+        if manifest.get("pr_number") != expected_pr_number:
+            raise RuntimeError(f"Published PR number mismatch for {container}")
+        if manifest.get("recipe_fingerprint") != recipe_fingerprint(recipe):
+            raise RuntimeError(
+                f"Merged recipe differs from published candidate: {container}"
+            )
+
+        expected_release_json = f"{expected_info['version']}.json"
+        expected_values = {
+            "recipe": recipe,
+            "container": expected_info["container"],
+            "variant": variant,
+            "architecture": expected_info["architecture"],
+            "version": expected_info["version"],
+            "build_date": expected_info["build_date"],
+            "image_name": expected_info["image_name"],
+            "candidate_tag": expected_info["candidate_tag"],
+            "docker_archive": expected_info["docker_archive"],
+            "sif": expected_info["sif"],
+            "release_json": expected_release_json,
+        }
+        for field, expected in expected_values.items():
+            if manifest.get(field) != expected:
+                raise RuntimeError(
+                    f"Published {field} mismatch for {container}: "
+                    f"expected {expected!r}, got {manifest.get(field)!r}"
+                )
+
+        release_path = candidate_file(
+            bundle / container,
+            manifest.get("release_json"),
+            "release JSON",
+        )
+        try:
+            actual_release = json.loads(release_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise RuntimeError(
+                f"Unable to read published release JSON {release_path}: {error}"
+            ) from error
+        expected_release = release_data(
+            container,
+            expected_info["version"],
+            load_recipe(recipe),
+            expected_info["build_date"],
+            expected_info["architecture"],
+            variant,
+            source_recipe=recipe,
+        )
+        if actual_release != expected_release:
+            raise RuntimeError(f"Published release JSON mismatch for {container}")
+    return manifests
+
+
+def command_verify_metadata(args: argparse.Namespace) -> None:
+    """Verify staged metadata without downloading Docker or SIF artifacts."""
+    verify_published_metadata(
+        Path(args.bundle),
+        Path(args.manifests),
+        args.head_sha,
+        args.pr_number,
+    )
+
+
 def command_materialize(args: argparse.Namespace) -> None:
     """Copy verified release previews into the repository release tree."""
     bundle = Path(args.bundle)
@@ -719,6 +827,13 @@ def parser() -> argparse.ArgumentParser:
     verify.add_argument("--pr-number", required=True, type=int)
     verify.add_argument("--output", required=True)
     verify.set_defaults(func=command_verify)
+
+    verify_metadata = subparsers.add_parser("verify-metadata")
+    verify_metadata.add_argument("--bundle", required=True)
+    verify_metadata.add_argument("--manifests", required=True)
+    verify_metadata.add_argument("--head-sha", required=True)
+    verify_metadata.add_argument("--pr-number", required=True, type=int)
+    verify_metadata.set_defaults(func=command_verify_metadata)
 
     materialize = subparsers.add_parser("materialize")
     materialize.add_argument("--bundle", required=True)

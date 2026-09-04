@@ -111,7 +111,7 @@ def test_promotion_updates_the_existing_candidate_comment_in_place() -> None:
 
     report_job = workflow.split("  report_promotion:", 1)[1]
 
-    assert "needs: [resolve, await_candidate, promote]" in report_job
+    assert "needs: [resolve, await_candidate, publish, finalize]" in report_job
     assert "always()" in report_job
     assert "pull-requests: write" in report_job
     assert "container-release-status:start" in report_job
@@ -125,18 +125,22 @@ def test_candidate_artifacts_and_promotion_key_off_container_identity() -> None:
     candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
     promote_workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
     publish_steps = promote_workflow.split(
-        "      - name: Publish the exact tested Docker archives", 1
-    )[1].split("      - name: Commit generated release metadata directly to main", 1)[0]
+        "      - name: Publish exact tested Docker archive to unique staging tags", 1
+    )[1].split("  finalize:", 1)[0]
+    finalize_steps = promote_workflow.split("  finalize:", 1)[1]
 
     assert (
         "name: candidate-${{ matrix.container }}-${{ github.event.pull_request.head.sha }}"
         in candidate_workflow
     )
     assert "path: candidate/${{ matrix.container }}/" in candidate_workflow
-    # Two variants of one recipe publish to different registry repositories.
-    assert 'ghcr="ghcr.io/${GH_REGISTRY}/${container}"' in publish_steps
-    assert 'quay="quay.io/neurodesk/${container}"' in publish_steps
+    # Two variants of one recipe publish to different registry repositories,
+    # while the PR head gives every staging tag a collision-free identity.
+    assert 'ghcr="ghcr.io/${GH_REGISTRY}/${container}:${staging_tag}"' in publish_steps
+    assert 'quay="quay.io/neurodesk/${container}:${staging_tag}"' in publish_steps
+    assert 'staging_tag="candidate-${HEAD_SHA}"' in publish_steps
     assert "${recipe}" not in publish_steps
+    assert 'for tag in "${version}_${build_date}" "${version}" latest' in finalize_steps
 
 
 def test_candidate_promotion_retries_mandatory_ghcr_pushes() -> None:
@@ -144,17 +148,20 @@ def test_candidate_promotion_retries_mandatory_ghcr_pushes() -> None:
         ".github/workflows/promote-container-candidate.yml"
     ).read_text()
     publish_steps = workflow.split(
-        "      - name: Publish the exact tested Docker archives", 1
+        "      - name: Publish exact tested Docker archive to unique staging tags", 1
     )[1].split("      - name: Make Quay repositories public", 1)[0]
+    finalize_steps = workflow.split(
+        "      - name: Finalize public Docker tags from staged manifests", 1
+    )[1].split("      - name: Configure AWS credentials", 1)[0]
 
     assert "push_mandatory_ghcr()" in publish_steps
     assert 'if docker push "${image}"; then' in publish_steps
     assert "Mandatory GHCR publish failed after 3 attempts" in publish_steps
-    assert 'push_mandatory_ghcr "${legacy_ghcr}:${build_date}"' in publish_steps
-    assert 'push_mandatory_ghcr "${legacy_ghcr}:latest"' in publish_steps
-    assert 'push_mandatory_ghcr "${ghcr}:${tag}"' in publish_steps
-    assert 'docker push "${legacy_ghcr}:' not in publish_steps
-    assert 'docker push "${ghcr}:' not in publish_steps
+    assert 'push_mandatory_ghcr "${legacy_ghcr}"' in publish_steps
+    assert 'push_mandatory_ghcr "${ghcr}"' in publish_steps
+    assert "retag_mandatory()" in finalize_steps
+    assert 'if oras tag "${source}" "${tag}"; then' in finalize_steps
+    assert 'retag_mandatory "${ghcr}:${staging_tag}" "${tag}"' in finalize_steps
 
 
 def test_candidate_promotion_syncs_openrecon_from_verified_manifests() -> None:
@@ -181,8 +188,8 @@ def test_candidate_promotion_waits_for_exact_candidate_before_using_arc() -> Non
         ".github/workflows/promote-container-candidate.yml"
     ).read_text()
 
-    wait_job = workflow.split("  await_candidate:", 1)[1].split("  promote:", 1)[0]
-    promote_job = workflow.split("  promote:", 1)[1]
+    wait_job = workflow.split("  await_candidate:", 1)[1].split("  publish:", 1)[0]
+    publish_job = workflow.split("  publish:", 1)[1].split("  finalize:", 1)[0]
 
     assert "runs-on: ubuntu-latest" in wait_job
     assert "timeout-minutes: 180" in wait_job
@@ -191,12 +198,37 @@ def test_candidate_promotion_waits_for_exact_candidate_before_using_arc() -> Non
     assert "await new Promise(resolve => setTimeout(resolve, 30_000))" in wait_job
     assert "item.head_sha === headSha" in wait_job
     assert "run.status === 'completed'" in wait_job
-    assert "No successful candidate run" not in promote_job
-    assert "needs: [resolve, await_candidate]" in promote_job
+    assert "No successful candidate run" not in publish_job
+    assert "needs: [resolve, await_candidate]" in publish_job
     assert (
-        "ARTIFACTS: ${{ needs.await_candidate.outputs.artifacts }}"
-        in promote_job
+        "artifact: ${{ fromJSON(needs.await_candidate.outputs.artifacts) }}"
+        in publish_job
     )
+
+
+def test_candidate_publication_is_parallel_and_only_finalization_is_locked() -> None:
+    workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    pre_jobs, jobs = workflow.split("jobs:", 1)
+    publish_job = jobs.split("  publish:", 1)[1].split("  finalize:", 1)[0]
+    finalize_job = jobs.split("  finalize:", 1)[1].split(
+        "  report_promotion:", 1
+    )[0]
+
+    assert "concurrency:" not in pre_jobs
+    assert "strategy:" in publish_job
+    assert "fail-fast: false" in publish_job
+    assert "concurrency:" not in publish_job
+    assert "promotion-metadata-${{ steps.identity.outputs.container }}" in publish_job
+    assert "concurrency:" in finalize_job
+    assert "group: promote-container-and-metadata" in finalize_job
+    assert "queue: max" in finalize_job
+    assert "candidate-${HEAD_SHA}" in publish_job
+    assert "Finalize public Docker tags from staged manifests" not in publish_job
+    assert "Finalize public Docker tags from staged manifests" in finalize_job
+    assert "Finalize public SIF object names with server-side copies" in finalize_job
 
 
 def test_release_paths_dispatch_unchanged_openrecon_recipes() -> None:
@@ -282,7 +314,7 @@ def test_candidate_promotion_refreshes_auth_after_long_publication() -> None:
     metadata_step = "      - name: Commit generated release metadata directly to main"
 
     assert "persist-credentials: false" in checkout
-    assert workflow.index("      - name: Attach tested SIFs to OCI images") < workflow.index(
+    assert workflow.index("      - name: Attach tested SIF to staged OCI images") < workflow.index(
         token_step
     )
     assert workflow.index(token_step) < workflow.index(metadata_step)
