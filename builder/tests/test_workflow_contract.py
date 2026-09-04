@@ -111,7 +111,10 @@ def test_promotion_updates_the_existing_candidate_comment_in_place() -> None:
 
     report_job = workflow.split("  report_promotion:", 1)[1]
 
-    assert "needs: [resolve, await_candidate, publish, finalize]" in report_job
+    assert (
+        "needs: [resolve, await_candidate, publish, finalize, sync_openrecon]"
+        in report_job
+    )
     assert "always()" in report_job
     assert "pull-requests: write" in report_job
     assert "container-release-status:start" in report_job
@@ -214,6 +217,9 @@ def test_candidate_publication_is_parallel_and_only_finalization_is_locked() -> 
     pre_jobs, jobs = workflow.split("jobs:", 1)
     publish_job = jobs.split("  publish:", 1)[1].split("  finalize:", 1)[0]
     finalize_job = jobs.split("  finalize:", 1)[1].split(
+        "  sync_openrecon:", 1
+    )[0]
+    sync_job = jobs.split("  sync_openrecon:", 1)[1].split(
         "  report_promotion:", 1
     )[0]
 
@@ -229,6 +235,9 @@ def test_candidate_publication_is_parallel_and_only_finalization_is_locked() -> 
     assert "Finalize public Docker tags from staged manifests" not in publish_job
     assert "Finalize public Docker tags from staged manifests" in finalize_job
     assert "Finalize public SIF object names with server-side copies" in finalize_job
+    assert "Sync OpenRecon metadata" not in finalize_job
+    assert "concurrency:" not in sync_job
+    assert "needs: [resolve, finalize]" in sync_job
 
 
 def test_release_paths_dispatch_unchanged_openrecon_recipes() -> None:

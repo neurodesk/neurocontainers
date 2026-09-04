@@ -674,12 +674,40 @@ jobs:
           done
           echo "::error::Release metadata push failed after three attempts; artifacts are already published."
           exit 1
+  sync_openrecon:
+    needs: [resolve, finalize]
+    if: >-
+      needs.resolve.outputs.should_promote == 'true' &&
+      needs.resolve.outputs.recipes != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout trusted main after metadata finalization
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install OpenRecon sync dependencies
+        run: pip install pyyaml
+      - name: Download finalized promotion metadata
+        uses: actions/download-artifact@v5
+        with:
+          pattern: promotion-metadata-*-${{ needs.resolve.outputs.head_sha }}
+          path: promotion-metadata
+          merge-multiple: true
       - name: Sync OpenRecon metadata
         env:
           GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
         run: |
           set -euo pipefail
           gh auth setup-git
+          jq -s 'add' promotion-metadata/verified-manifest-*.json > verified-manifests.json
           jq -c '.[] | select(.architecture == "x86_64")' \
             verified-manifests.json | while IFS= read -r manifest; do
               recipe="$(echo "${manifest}" | jq -r '.recipe')"
@@ -689,7 +717,7 @@ jobs:
             done
 
   report_promotion:
-    needs: [resolve, await_candidate, publish, finalize]
+    needs: [resolve, await_candidate, publish, finalize, sync_openrecon]
     if: >-
       always() &&
       needs.resolve.outputs.should_promote == 'true' &&
@@ -705,6 +733,7 @@ jobs:
           AWAIT_RESULT: ${{ needs.await_candidate.result }}
           PUBLISH_RESULT: ${{ needs.publish.result }}
           FINALIZE_RESULT: ${{ needs.finalize.result }}
+          SYNC_RESULT: ${{ needs.sync_openrecon.result }}
         with:
           script: |
             const issue_number = Number(process.env.PR_NUMBER);
@@ -743,11 +772,12 @@ jobs:
             const awaitResult = process.env.AWAIT_RESULT;
             const publishResult = process.env.PUBLISH_RESULT;
             const finalizeResult = process.env.FINALIZE_RESULT;
-            const promotionResult = finalizeResult === 'success'
-              ? 'success'
-              : publishResult !== 'success'
-                ? publishResult
-                : finalizeResult;
+            const syncResult = process.env.SYNC_RESULT;
+            const promotionResult = publishResult !== 'success'
+              ? publishResult
+              : finalizeResult !== 'success'
+                ? finalizeResult
+                : syncResult;
             let heading;
             let action;
             if (promotionResult === 'success') {
