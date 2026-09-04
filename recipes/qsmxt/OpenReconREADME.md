@@ -23,26 +23,35 @@ Echo grouping, echo times, field strength, and B0 direction are derived from the
 incoming MRD image stream and generated NIfTI geometry when available. The
 container still accepts `maxechoes`, `echotimesms`, `echotimems`,
 `echospacingms`, `fieldstrength`, and `b0dir` as manual JSON overrides for
-debugging, but they are not shown in the scanner UI.
+debugging, but they are not shown in the scanner UI. **Voxel size override** is
+available in the UI. Its default value of zero uses the geometry supplied by
+MRD.
 
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
 QSMxT derivatives that exist after the run.
 
 Derived outputs are converted to unsigned 12-bit display values in the valid
-`0..4095` range. Binary masks use `0` and `4095`. T2* scaling uses the 99.9th
-percentile of positive finite fits so isolated extreme fits are clipped instead
-of quantizing the useful map to zero. The original range, scaling range, scale,
-inverse formula, and clipped-voxel count are included in the returned metadata.
+`0..4095` range. Binary masks use `0` and `4095`. QSM storage scaling preserves
+the complete finite susceptibility range, while its automatic display window
+uses the 1st and 99th percentiles of finite non-zero voxels. Sparse extrema
+therefore remain quantitatively recoverable without flattening the visible
+contrast. T2* scaling uses the 99.9th percentile of positive finite fits so
+isolated extreme fits are clipped instead of quantizing the useful map to zero.
+The original range, scaling range, scale, inverse formula, physical display
+window, and clipped-voxel count are included in the returned metadata.
 
 Derived maps set the MRD `RescaleSlope` and `RescaleIntercept` attributes. The
-OpenRecon DICOM writer maps these attributes to the standard DICOM fields.
-Window center and width use the rescaled physical units.
+OpenRecon DICOM writer maps these attributes to the standard DICOM fields. The
+Siemens writer truncates sub-unit window values, so standard `WindowCenter` and
+`WindowWidth` are supplied as integers in the stored-pixel domain. Their
+physical equivalents are retained as `QSMxTPhysicalWindowCenter` and
+`QSMxTPhysicalWindowWidth`, with `QSMxTWindowDomain=stored` documenting the
+workaround.
 
 Maps with a non-zero stored-value offset, including QSM, reserve stored code `0`.
-The bridge sends `PixelPaddingValue=0`, and native map values use codes
-`1..4095`. Scanner testing must confirm that the DICOM writer preserves this
-attribute through distortion correction. If preserved, outside-FOV pixels are
-padding rather than susceptibility measurements.
+The bridge sends `PixelPaddingValue=0` and `PixelPaddingRangeLimit=0`, and native
+map values use codes `1..4095`. Outside-FOV pixels can therefore be represented
+as padding rather than susceptibility measurements.
 
 QSM images remain magnitude-type derived images. Their MRD `DataRole` contains
 `Quantitative` so the scanner does not normalize the parametric pixel values.
@@ -61,10 +70,11 @@ qsmxt run <bids_dir> --qsm-algorithm whqsm
 
 The OpenRecon wrapper also supplies the output directory and resource settings.
 Its custom-pipeline defaults are ROMEO phase unwrapping, V-SHARP background-field
-removal, WH-QSM inversion, and robust-threshold masking. This differs from the
-upstream QSMxT inversion default, which is RTS. Only the QSM map is returned by
-default. Enable `sendoriginal` only when the original magnitude and phase series
-are needed for debugging.
+removal, WH-QSM inversion, and BET magnitude masking. BET uses a 0.5 fractional
+intensity threshold, closing radius 1, and automatic hole filling. This differs
+from the upstream QSMxT inversion default, which is RTS. Only the QSM map is
+returned by default. Enable `sendoriginal` only when the original magnitude and
+phase series are needed for debugging.
 
 ### Pipeline presets
 
@@ -146,13 +156,18 @@ voxels enter those calculations.
 
 | Mask preset | Method |
 | --- | --- |
-| `default` | Use the QSMxT default, robust threshold. |
-| `robust-threshold` | Otsu thresholding of the phase-quality map, followed by dilation, hole filling, and erosion. |
-| `bet` | Brain Extraction Tool masking of the magnitude image. |
+| `bet` | Brain Extraction Tool masking of magnitude. This is the OpenRecon default. |
+| `robust-threshold` | Otsu or percentile thresholding of the selected magnitude or phase-quality input. |
+| `combined` | Union of independently generated BET and threshold masks. |
 
 The mask preset remains active when an algorithm pipeline preset is selected;
 the pipeline preset only overrides unwrapping, background removal, and QSM
-inversion. OpenRecon uses QSMxT's default parameters for the selected methods.
+inversion. Mask controls expose the threshold input and method, BET fractional
+intensity, and a cleanup preset.
+Magnitude thresholding is the safer choice for single-echo data because a
+single echo provides no inter-echo phase-coherence information. Closing and
+hole filling run before erosion; erosion defaults to zero so repaired gaps are
+not reopened.
 
 ## Input data
 
@@ -178,7 +193,13 @@ Review all acquisition and safety settings on the target scanner before use.
 | QSM algorithm | `qsmalgorithm` | choice | `whqsm` | Inversion algorithm for the custom pipeline. |
 | Unwrap | `unwrappingalgorithm` | choice | `romeo` | Phase-unwrapping algorithm for the custom pipeline. |
 | Background | `bfalgorithm` | choice | `vsharp` | Background-field removal algorithm for the custom pipeline. |
-| Mask preset | `maskpreset` | choice | `robust-threshold` | Masking method, independent of the pipeline preset. |
+| Mask preset | `maskpreset` | choice | `bet` | BET, threshold, or their union; independent of the pipeline preset. |
+| Threshold input | `maskinginput` | choice | `magnitude` | Input for threshold-based masking. |
+| BET threshold | `betfractionalintensity` | double | `0.5` | BET fractional intensity threshold. |
+| Threshold method | `maskthresholdmethod` | choice | `otsu` | Otsu or percentile threshold generation. |
+| Mask percentile | `maskthresholdpercentile` | double | `65` | Cutoff used by percentile thresholding. |
+| Mask cleanup | `maskcleanup` | choice | `close-fill` | None, fill holes, close and fill, or robust dilate/fill/erode cleanup. |
+| Voxel size override | `voxelsizemm` | double | `0` | Isotropic spacing; zero uses MRD geometry. |
 
 ## Open source development
 
