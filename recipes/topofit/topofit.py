@@ -5,29 +5,28 @@ from __future__ import annotations
 
 import argparse
 import copy
-from dataclasses import asdict
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import traceback
 import uuid
+from dataclasses import asdict
+from pathlib import Path
 
 import constants
 import ismrmrd
+import mrdhelper
 import nibabel as nib
 import numpy as np
-
-import mrdhelper
 from topofit_core import (
     MODEL_PRESETS,
     RESEARCH_WARNING,
     TopoFitOptions,
     mrd_lps_to_nifti_ras_affine,
     run_topofit_workflow,
+    validate_options,
 )
-
 
 WORKSPACE = Path(os.environ.get("TOPOFIT_OPENRECON_WORKSPACE", "/tmp/share/topofit"))
 SEND_CHUNK_SIZE = 64
@@ -37,6 +36,8 @@ DEFAULTS = {
     "tfmodel": "t1w_1mm",
     "tfconform": True,
     "tfdebugmock": False,
+    "tfflatpatches": False,
+    "tfoverlaythickness": 1,
 }
 MP2RAGE_IDENTITY_META_KEYS = (
     "SeriesDescription",
@@ -71,6 +72,14 @@ def _config_bool(config, key: str, default: bool) -> bool:
     return bool(value)
 
 
+def _config_int(config, key: str, default: int) -> int:
+    value = _config_value(config, key, default, "int")
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{key} must be an integer, got {value!r}") from None
+
+
 def _meta_from_image(image) -> ismrmrd.Meta:
     attribute_string = getattr(image, "attribute_string", "")
     if not attribute_string:
@@ -78,7 +87,9 @@ def _meta_from_image(image) -> ismrmrd.Meta:
     try:
         return ismrmrd.Meta.deserialize(attribute_string)
     except Exception:
-        logging.warning("Could not deserialize source MRD metadata; using a new Meta block")
+        logging.warning(
+            "Could not deserialize source MRD metadata; using a new Meta block"
+        )
         return ismrmrd.Meta()
 
 
@@ -200,11 +211,7 @@ def _image_directions(image) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if meta_phase_dir is None:
         phase_dir = _normalized(header.phase_dir)
     slice_dir = _meta_vector(meta, "ImageSliceNormDir")
-    if (
-        slice_dir is None
-        and meta_read_dir is not None
-        and meta_phase_dir is not None
-    ):
+    if slice_dir is None and meta_read_dir is not None and meta_phase_dir is not None:
         slice_dir = _normalized(np.cross(read_dir, phase_dir))
     if slice_dir is None:
         slice_dir = _normalized(header.slice_dir)
@@ -272,13 +279,15 @@ def _mrd_series_to_nifti(images) -> tuple[list, np.ndarray, np.ndarray]:
             plane = np.abs(plane)
         if plane.ndim != 2:
             raise ValueError(
-                f"source image {index} must contain one 2D plane, got shape {plane.shape}"
+                f"source image {index} must contain one 2D plane, "
+                f"got shape {plane.shape}"
             )
         if expected_shape is None:
             expected_shape = plane.shape
         elif plane.shape != expected_shape:
             raise ValueError(
-                f"source image shapes differ: expected {expected_shape}, got {plane.shape}"
+                f"source image shapes differ: expected {expected_shape}, "
+                f"got {plane.shape}"
             )
         planes.append(np.asarray(plane, dtype=np.float32))
 
@@ -286,7 +295,9 @@ def _mrd_series_to_nifti(images) -> tuple[list, np.ndarray, np.ndarray]:
     matrix = np.asarray(header.matrix_size, dtype=float)
     field_of_view = np.asarray(header.field_of_view, dtype=float)
     if matrix.shape != (3,) or field_of_view.shape != (3,):
-        raise ValueError("MRD matrix_size and field_of_view must each have three values")
+        raise ValueError(
+            "MRD matrix_size and field_of_view must each have three values"
+        )
     if (
         matrix[0] <= 0
         or matrix[1] <= 0
@@ -360,6 +371,7 @@ def _stamp_output(
     series_description: str,
     processing_history: list[str],
     warning: str = "",
+    details: str = "",
 ) -> None:
     header = copy.copy(source.getHead())
     header.data_type = output.data_type
@@ -377,7 +389,9 @@ def _stamp_output(
     meta["SeriesDescription"] = series_description[:64]
     meta["SequenceDescriptionAdditional"] = "TopoFit"
     if warning:
-        meta["ImageComments"] = warning
+        comment = f"{warning}; {details}" if details else warning
+        meta["ImageComment"] = comment
+        meta["ImageComments"] = comment
         meta["TopoFitStatus"] = "SURFACE_READY_RESEARCH_ONLY"
         meta["TopoFitPrescriptionStatus"] = "WITHHELD"
         meta["WindowCenter"] = "2048"
@@ -394,7 +408,9 @@ def _clone_original_series(images, series_index: int) -> list:
     description = f"{_series_description(images[0], 'mprage')}_original"
     output = []
     for index, source in enumerate(images):
-        clone = ismrmrd.Image.from_array(np.array(source.data, copy=True), transpose=False)
+        clone = ismrmrd.Image.from_array(
+            np.array(source.data, copy=True), transpose=False
+        )
         _stamp_output(
             clone,
             source,
@@ -408,7 +424,29 @@ def _clone_original_series(images, series_index: int) -> list:
     return output
 
 
-def _qc_mrd_images(qc_path: Path, source_images, series_index: int) -> list:
+def _format_flat_patch_comment(flat_patches) -> str:
+    parts = []
+    for hemisphere in ("lh", "rh"):
+        patch = flat_patches.get(hemisphere)
+        if patch is None:
+            continue
+        center_lps = np.asarray(patch.center_ras_mm, dtype=float) * (-1.0, -1.0, 1.0)
+        normal_lps = np.asarray(patch.normal_ras, dtype=float) * (-1.0, -1.0, 1.0)
+        center = ",".join(f"{value:.2f}" for value in center_lps)
+        normal = ",".join(f"{value:.4f}" for value in normal_lps)
+        parts.append(
+            f"TopoFit flat patch {patch.surface} LPS_mm center=({center}) "
+            f"normal=({normal})"
+        )
+    return "; ".join(parts)
+
+
+def _qc_mrd_images(
+    qc_path: Path,
+    source_images,
+    series_index: int,
+    flat_patches=None,
+) -> list:
     image = nib.load(str(qc_path))
     volume_xyz = np.asarray(image.get_fdata(dtype=np.float32))
     if volume_xyz.shape != (
@@ -424,6 +462,7 @@ def _qc_mrd_images(qc_path: Path, source_images, series_index: int) -> list:
     volume_yxz = np.rint(volume_xyz.transpose((1, 0, 2))).astype(np.int16)
     series_uid = _new_series_uid()
     description = f"{_series_description(source_images[0], 'mprage')}_topofit_qc"
+    patch_comment = _format_flat_patch_comment(flat_patches or {})
     output = []
     for index, source in enumerate(source_images):
         plane = np.ascontiguousarray(volume_yxz[:, :, index])
@@ -439,6 +478,7 @@ def _qc_mrd_images(qc_path: Path, source_images, series_index: int) -> list:
             description,
             ["PYTHON", "BRAINNET", "TOPOFIT", "SURFACE_QC"],
             RESEARCH_WARNING,
+            patch_comment,
         )
         output.append(derived)
     return output
@@ -459,17 +499,24 @@ def _send_images(connection, images, label: str) -> None:
 
 def _options_from_config(config) -> TopoFitOptions:
     options = TopoFitOptions(
-        device=str(
-            _config_value(config, "tfdevice", DEFAULTS["tfdevice"], "str")
-        ).strip().lower(),
-        preset=str(
-            _config_value(config, "tfmodel", DEFAULTS["tfmodel"], "str")
-        ).strip().lower(),
+        device=str(_config_value(config, "tfdevice", DEFAULTS["tfdevice"], "str"))
+        .strip()
+        .lower(),
+        preset=str(_config_value(config, "tfmodel", DEFAULTS["tfmodel"], "str"))
+        .strip()
+        .lower(),
         conform=_config_bool(config, "tfconform", DEFAULTS["tfconform"]),
         mock=_config_bool(config, "tfdebugmock", DEFAULTS["tfdebugmock"]),
+        find_flat_patches=_config_bool(
+            config, "tfflatpatches", DEFAULTS["tfflatpatches"]
+        ),
+        overlay_thickness=_config_int(
+            config,
+            "tfoverlaythickness",
+            DEFAULTS["tfoverlaythickness"],
+        ),
     )
-    if options.preset not in MODEL_PRESETS:
-        raise ValueError(f"unsupported TopoFit model preset: {options.preset}")
+    validate_options(options)
     return options
 
 
@@ -479,9 +526,7 @@ def process(connection, config, metadata):
     del metadata
     try:
         options = _options_from_config(config)
-        send_original = _config_bool(
-            config, "sendoriginal", DEFAULTS["sendoriginal"]
-        )
+        send_original = _config_bool(config, "sendoriginal", DEFAULTS["sendoriginal"])
         magnitude_images = []
         skipped = 0
         for item in connection:
@@ -497,15 +542,16 @@ def process(connection, config, metadata):
 
         if not magnitude_images:
             raise ValueError("no magnitude MRD image series was received")
-        next_series_index = max(
-            int(image.image_series_index) for image in magnitude_images
-        ) + 1
+        next_series_index = (
+            max(int(image.image_series_index) for image in magnitude_images) + 1
+        )
         selected_images = _select_anatomical_input_images(magnitude_images)
         image_groups: dict[int, list] = {}
         for image in selected_images:
             image_groups.setdefault(int(image.image_series_index), []).append(image)
         logging.info(
-            "TopoFit received %d series and skipped %d non-magnitude/non-image messages",
+            "TopoFit received %d series and skipped %d "
+            "non-magnitude/non-image messages",
             len(image_groups),
             skipped,
         )
@@ -530,7 +576,10 @@ def process(connection, config, metadata):
 
             result = run_topofit_workflow(input_path, run_dir, options)
             qc_images = _qc_mrd_images(
-                Path(result.qc_image), ordered, next_series_index
+                Path(result.qc_image),
+                ordered,
+                next_series_index,
+                result.flat_patches,
             )
             pending_output.append(("TopoFit QC", qc_images))
             next_series_index += 1
@@ -567,9 +616,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("input", type=Path, help="Input 3D MRI in NIfTI format")
     parser.add_argument("output_dir", type=Path, help="Directory for surfaces and QC")
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
-    parser.add_argument(
-        "--model", choices=tuple(MODEL_PRESETS), default="t1w_1mm"
-    )
+    parser.add_argument("--model", choices=tuple(MODEL_PRESETS), default="t1w_1mm")
     parser.add_argument(
         "--no-conform",
         dest="conform",
@@ -580,6 +627,19 @@ def _parse_args() -> argparse.Namespace:
         "--mock",
         action="store_true",
         help="Generate geometry-valid test surfaces without running BrainNet",
+    )
+    parser.add_argument(
+        "--find-flat-patches",
+        action="store_true",
+        help="Find and draw one flat pial-surface patch per hemisphere",
+    )
+    parser.add_argument(
+        "--overlay-thickness",
+        type=int,
+        choices=range(4),
+        default=1,
+        metavar="VOXELS",
+        help="In-plane surface dilation radius; 0 draws the undilated trace",
     )
     parser.set_defaults(conform=True)
     return parser.parse_args()
@@ -593,6 +653,8 @@ def main() -> int:
         preset=args.model,
         conform=args.conform,
         mock=args.mock,
+        find_flat_patches=args.find_flat_patches,
+        overlay_thickness=args.overlay_thickness,
     )
     result = run_topofit_workflow(args.input, args.output_dir, options)
     print(json.dumps(asdict(result), indent=2))

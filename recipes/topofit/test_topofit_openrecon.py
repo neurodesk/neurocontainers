@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 import constants
 import ismrmrd
 import nibabel as nib
 import numpy as np
-
 import topofit
 
 
@@ -48,8 +47,7 @@ def _mrd_volume(
     for slice_index in range(z_size):
         radius = 5.0 + min(slice_index, z_size - 1 - slice_index)
         plane = np.where(
-            ((grid_x - (x_size - 1) / 2) ** 2)
-            + ((grid_y - (y_size - 1) / 2) ** 2)
+            ((grid_x - (x_size - 1) / 2) ** 2) + ((grid_y - (y_size - 1) / 2) ** 2)
             <= radius**2,
             900,
             20,
@@ -170,6 +168,8 @@ class TopoFitOpenReconTests(unittest.TestCase):
                     "tfmodel": "t1w_1mm",
                     "tfconform": True,
                     "tfdebugmock": True,
+                    "tfflatpatches": True,
+                    "tfoverlaythickness": 0,
                 }
             }
 
@@ -185,7 +185,9 @@ class TopoFitOpenReconTests(unittest.TestCase):
             outputs = [image for batch in connection.image_batches for image in batch]
             self.assertEqual(len(outputs), 8)
             self.assertEqual({int(image.image_series_index) for image in outputs}, {8})
-            self.assertTrue(all(image.data.shape == (1, 1, 20, 24) for image in outputs))
+            self.assertTrue(
+                all(image.data.shape == (1, 1, 20, 24) for image in outputs)
+            )
             self.assertEqual(max(int(np.max(image.data)) for image in outputs), 4095)
 
             output_meta = ismrmrd.Meta.deserialize(outputs[0].attribute_string)
@@ -197,12 +199,31 @@ class TopoFitOpenReconTests(unittest.TestCase):
                 output_meta["TopoFitStatus"], "SURFACE_READY_RESEARCH_ONLY"
             )
             self.assertEqual(output_meta["TopoFitPrescriptionStatus"], "WITHHELD")
+            self.assertEqual(output_meta["ImageComment"], output_meta["ImageComments"])
+            self.assertIn(
+                "TopoFit flat patch lh.pial LPS_mm", output_meta["ImageComments"]
+            )
+            self.assertIn(
+                "TopoFit flat patch rh.pial LPS_mm", output_meta["ImageComments"]
+            )
+            self.assertIn("normal=(", output_meta["ImageComments"])
 
             manifests = list(Path(temporary_directory).glob("*/topofit_manifest.json"))
             self.assertEqual(len(manifests), 1)
             manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
             self.assertIsNone(manifest["prescription_coordinates"])
             self.assertEqual(len(manifest["surfaces"]), 6)
+            self.assertEqual(set(manifest["flat_patches"]), {"lh", "rh"})
+            self.assertEqual(manifest["options"]["overlay_thickness"], 0)
+            for patch in manifest["flat_patches"].values():
+                center_lps = np.asarray(patch["center_ras_mm"]) * (-1.0, -1.0, 1.0)
+                normal_lps = np.asarray(patch["normal_ras"]) * (-1.0, -1.0, 1.0)
+                center_text = ",".join(f"{value:.2f}" for value in center_lps)
+                normal_text = ",".join(f"{value:.4f}" for value in normal_lps)
+                self.assertIn(
+                    f"center=({center_text}) normal=({normal_text})",
+                    output_meta["ImageComments"],
+                )
 
     def test_mrd_affine_uses_image_center_and_reconstructed_pixel_directions(self):
         images = _mrd_volume()

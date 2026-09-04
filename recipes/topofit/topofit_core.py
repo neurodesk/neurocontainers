@@ -7,17 +7,17 @@ without a scanner connection.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import json
 import logging
-from pathlib import Path
 import subprocess
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from time import perf_counter
 from typing import Callable, Sequence
 
 import nibabel as nib
 import numpy as np
-
+from scipy.spatial import cKDTree
 
 RESEARCH_WARNING = "RESEARCH ONLY - NOT MOTION-CLEARED - NOT FOR PRESCRIPTION"
 SURFACE_NAMES = (
@@ -33,6 +33,10 @@ MODEL_PRESETS = {
     "synth_1mm": ("synth", "1mm"),
     "synth_random": ("synth", "random"),
 }
+FLAT_PATCH_RADIUS_MM = 10.0
+FLAT_PATCH_NORMAL_LENGTH_MM = 20.0
+MAX_OVERLAY_THICKNESS = 3
+MAX_PATCH_CANDIDATES = 64
 
 
 @dataclass(frozen=True)
@@ -43,6 +47,29 @@ class TopoFitOptions:
     preset: str = "t1w_1mm"
     conform: bool = True
     mock: bool = False
+    find_flat_patches: bool = False
+    overlay_thickness: int = 1
+
+
+@dataclass(frozen=True)
+class FlatPatch:
+    """One locally planar pial-surface candidate in NIfTI world RAS."""
+
+    surface: str
+    center_ras_mm: tuple[float, float, float]
+    normal_ras: tuple[float, float, float]
+    radius_mm: float
+    area_mm2: float
+    rms_distance_mm: float
+    vertex_count: int
+
+
+@dataclass(frozen=True)
+class _DetectedFlatPatch:
+    """Flat-patch measurements plus private mesh support for the QC renderer."""
+
+    patch: FlatPatch
+    vertex_indices: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -55,6 +82,7 @@ class TopoFitResult:
     qc_image: str
     manifest: str
     surfaces: dict[str, str]
+    flat_patches: dict[str, FlatPatch]
     elapsed_seconds: float
     warning: str = RESEARCH_WARNING
 
@@ -64,11 +92,21 @@ def validate_options(options: TopoFitOptions) -> tuple[str, str]:
 
     if options.device not in {"cuda", "cpu"}:
         raise ValueError("device must be 'cuda' or 'cpu'")
+    if (
+        not isinstance(options.overlay_thickness, int)
+        or isinstance(options.overlay_thickness, bool)
+        or not 0 <= options.overlay_thickness <= MAX_OVERLAY_THICKNESS
+    ):
+        raise ValueError(
+            f"overlay thickness must be an integer from 0 to {MAX_OVERLAY_THICKNESS}"
+        )
     try:
         return MODEL_PRESETS[options.preset]
     except KeyError:
         valid = ", ".join(sorted(MODEL_PRESETS))
-        raise ValueError(f"unknown model preset {options.preset!r}; choose {valid}") from None
+        raise ValueError(
+            f"unknown model preset {options.preset!r}; choose {valid}"
+        ) from None
 
 
 def build_brainnet_command(
@@ -119,15 +157,25 @@ def mrd_lps_to_nifti_ras_affine(
     if position_array.shape != (3,) or any(
         item.shape != (3,) for item in raw_directions
     ):
-        raise ValueError("MRD position and direction vectors must each have three values")
+        raise ValueError(
+            "MRD position and direction vectors must each have three values"
+        )
     if not np.all(np.isfinite(position_array)) or any(
         not np.all(np.isfinite(item)) for item in raw_directions
     ):
         raise ValueError("MRD position and direction vectors must be finite")
-    if spacing.shape != (3,) or not np.all(np.isfinite(spacing)) or np.any(spacing <= 0):
-        raise ValueError(f"voxel size must contain three positive values, got {spacing}")
+    if (
+        spacing.shape != (3,)
+        or not np.all(np.isfinite(spacing))
+        or np.any(spacing <= 0)
+    ):
+        raise ValueError(
+            f"voxel size must contain three positive values, got {spacing}"
+        )
     if shape.shape != (2,) or np.any(shape < 2):
-        raise ValueError(f"in-plane shape must contain two values greater than one, got {shape}")
+        raise ValueError(
+            f"in-plane shape must contain two values greater than one, got {shape}"
+        )
 
     norms = [float(np.linalg.norm(item)) for item in raw_directions]
     if any(norm < 1e-8 for norm in norms):
@@ -153,7 +201,10 @@ def mrd_lps_to_nifti_ras_affine(
         [lps_to_ras @ direction * step for direction, step in zip(directions, spacing)]
     )
     affine[:3, 3] = lps_to_ras @ origin_lps
-    if not np.all(np.isfinite(affine)) or abs(float(np.linalg.det(affine[:3, :3]))) < 1e-8:
+    if (
+        not np.all(np.isfinite(affine))
+        or abs(float(np.linalg.det(affine[:3, :3]))) < 1e-8
+    ):
         raise ValueError("MRD geometry produced a singular or non-finite NIfTI affine")
     return affine
 
@@ -248,7 +299,9 @@ def validate_surface_outputs(surface_dir: Path) -> dict[str, Path]:
             raise RuntimeError(f"TopoFit did not produce required surface {name}")
         vertices, faces = nib.freesurfer.read_geometry(str(path))
         if vertices.ndim != 2 or vertices.shape[1] != 3 or vertices.shape[0] < 4:
-            raise RuntimeError(f"surface {name} has invalid vertices shape {vertices.shape}")
+            raise RuntimeError(
+                f"surface {name} has invalid vertices shape {vertices.shape}"
+            )
         if faces.ndim != 2 or faces.shape[1] != 3 or faces.shape[0] < 4:
             raise RuntimeError(f"surface {name} has invalid faces shape {faces.shape}")
         if not np.all(np.isfinite(vertices)):
@@ -257,6 +310,212 @@ def validate_surface_outputs(surface_dir: Path) -> dict[str, Path]:
             raise RuntimeError(f"surface {name} contains out-of-range face indices")
         outputs[name] = path
     return outputs
+
+
+def _face_geometry(
+    vertices: np.ndarray,
+    faces: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    triangles = vertices[faces]
+    cross_products = np.cross(
+        triangles[:, 1] - triangles[:, 0],
+        triangles[:, 2] - triangles[:, 0],
+    )
+    twice_area = np.linalg.norm(cross_products, axis=1)
+    valid = twice_area > 1e-8
+    if int(valid.sum()) < 3:
+        raise ValueError(
+            "flat-patch analysis requires at least three non-degenerate faces"
+        )
+
+    valid_faces = faces[valid]
+    centers = triangles[valid].mean(axis=1)
+    areas = twice_area[valid] * 0.5
+    normals = cross_products[valid] / twice_area[valid, np.newaxis]
+
+    mesh_center = vertices.mean(axis=0)
+    orientation = np.sum(areas * np.einsum("ij,ij->i", normals, centers - mesh_center))
+    if orientation < 0:
+        normals = -normals
+    return valid_faces, centers, normals, areas
+
+
+def _fit_face_patch(
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    normals: np.ndarray,
+    areas: np.ndarray,
+    face_indices: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, float, float, float]:
+    selected_faces = faces[face_indices]
+    selected_areas = areas[face_indices]
+    points = vertices[selected_faces].reshape(-1, 3)
+    weights = np.repeat(selected_areas / 3.0, 3)
+    total_area = float(selected_areas.sum())
+    center = np.average(points, axis=0, weights=weights)
+    centered = points - center
+    covariance = (centered * weights[:, np.newaxis]).T @ centered / weights.sum()
+    eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+    normal = eigenvectors[:, int(np.argmin(eigenvalues))]
+
+    mean_normal = np.sum(normals[face_indices] * selected_areas[:, np.newaxis], axis=0)
+    if float(np.dot(normal, mean_normal)) < 0:
+        normal = -normal
+    normal /= np.linalg.norm(normal)
+    residuals = centered @ normal
+    rms_distance = float(np.sqrt(np.average(residuals**2, weights=weights)))
+    coherence = float(
+        np.average(
+            np.abs(normals[face_indices] @ normal),
+            weights=selected_areas,
+        )
+    )
+    return center, normal, rms_distance, total_area, coherence
+
+
+def _candidate_face_indices(
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    normals: np.ndarray,
+    areas: np.ndarray,
+    centers: np.ndarray,
+    radius_mm: float,
+) -> list[int]:
+    vertex_normal_sums = np.zeros_like(vertices, dtype=float)
+    weighted_normals = normals * areas[:, np.newaxis]
+    for corner in range(3):
+        np.add.at(vertex_normal_sums, faces[:, corner], weighted_normals)
+    magnitudes = np.linalg.norm(vertex_normal_sums, axis=1)
+    valid = magnitudes > 1e-8
+    vertex_normal_sums[valid] /= magnitudes[valid, np.newaxis]
+    alignment = np.einsum("ij,ikj->ik", normals, vertex_normal_sums[faces])
+    local_bending = 1.0 - np.mean(np.clip(alignment, -1.0, 1.0), axis=1)
+    ranked = np.lexsort((np.arange(faces.shape[0]), local_bending))
+    if ranked.size <= MAX_PATCH_CANDIDATES:
+        return [int(index) for index in ranked]
+
+    selected: list[int] = []
+    minimum_separation = radius_mm * 0.5
+    for index in ranked:
+        point = centers[index]
+        if all(
+            float(np.linalg.norm(point - centers[other])) >= minimum_separation
+            for other in selected
+        ):
+            selected.append(int(index))
+            if len(selected) == MAX_PATCH_CANDIDATES:
+                break
+    if not selected:
+        selected.append(int(ranked[0]))
+    return selected
+
+
+def _connected_face_component(
+    faces: np.ndarray,
+    face_indices: np.ndarray,
+    seed_index: int,
+) -> np.ndarray:
+    """Keep the vertex-connected part of a local neighborhood containing its seed."""
+
+    face_set = {int(index) for index in face_indices}
+    if seed_index not in face_set:
+        face_set.add(seed_index)
+    vertex_faces: dict[int, list[int]] = {}
+    for face_index in face_set:
+        for vertex_index in faces[face_index]:
+            vertex_faces.setdefault(int(vertex_index), []).append(face_index)
+
+    connected = {seed_index}
+    pending = [seed_index]
+    while pending:
+        face_index = pending.pop()
+        for vertex_index in faces[face_index]:
+            for neighbor in vertex_faces[int(vertex_index)]:
+                if neighbor not in connected:
+                    connected.add(neighbor)
+                    pending.append(neighbor)
+    return np.asarray(sorted(connected), dtype=np.int64)
+
+
+def find_flattest_patch(
+    vertices: np.ndarray,
+    faces: np.ndarray,
+    surface: str,
+    radius_mm: float = FLAT_PATCH_RADIUS_MM,
+) -> _DetectedFlatPatch:
+    """Find the lowest-residual fixed-radius planar neighborhood on one mesh."""
+
+    vertices = np.asarray(vertices, dtype=float)
+    faces = np.asarray(faces, dtype=np.int64)
+    if vertices.ndim != 2 or vertices.shape[1] != 3:
+        raise ValueError("flat-patch vertices must have shape (n, 3)")
+    if faces.ndim != 2 or faces.shape[1] != 3:
+        raise ValueError("flat-patch faces must have shape (n, 3)")
+    if not np.isfinite(radius_mm) or radius_mm <= 0:
+        raise ValueError("flat-patch radius must be positive")
+
+    valid_faces, centers, normals, areas = _face_geometry(vertices, faces)
+    candidate_indices = _candidate_face_indices(
+        vertices,
+        valid_faces,
+        normals,
+        areas,
+        centers,
+        radius_mm,
+    )
+    tree = cKDTree(centers)
+    target_area = np.pi * radius_mm**2 * 0.25
+    best = None
+    for seed_index in candidate_indices:
+        neighborhood = np.asarray(
+            tree.query_ball_point(centers[seed_index], radius_mm), dtype=np.int64
+        )
+        neighborhood = _connected_face_component(valid_faces, neighborhood, seed_index)
+        if neighborhood.size < 3:
+            neighborhood = np.asarray([seed_index], dtype=np.int64)
+        center, normal, rms, area, coherence = _fit_face_patch(
+            vertices, valid_faces, normals, areas, neighborhood
+        )
+        aligned = neighborhood[
+            np.abs(normals[neighborhood] @ normal) >= np.cos(np.deg2rad(45.0))
+        ]
+        if aligned.size >= 3 and aligned.size != neighborhood.size:
+            neighborhood = aligned
+            center, normal, rms, area, coherence = _fit_face_patch(
+                vertices, valid_faces, normals, areas, neighborhood
+            )
+        coverage_penalty = max(0.0, target_area - area) / target_area * radius_mm
+        score = rms + radius_mm * (1.0 - coherence) + coverage_penalty
+        candidate = (score, seed_index, neighborhood, center, normal, rms, area)
+        if best is None or candidate[:2] < best[:2]:
+            best = candidate
+
+    assert best is not None
+    _, _, support_faces, center, normal, rms, area = best
+    vertex_indices = np.unique(valid_faces[support_faces].reshape(-1))
+    patch = FlatPatch(
+        surface=surface,
+        center_ras_mm=tuple(float(value) for value in center),
+        normal_ras=tuple(float(value) for value in normal),
+        radius_mm=float(radius_mm),
+        area_mm2=area,
+        rms_distance_mm=rms,
+        vertex_count=int(vertex_indices.size),
+    )
+    return _DetectedFlatPatch(patch=patch, vertex_indices=vertex_indices)
+
+
+def find_flat_patches(
+    surfaces: dict[str, Path],
+) -> dict[str, _DetectedFlatPatch]:
+    """Find one fixed-radius flat pial candidate per hemisphere."""
+
+    detected = {}
+    for hemisphere in ("lh", "rh"):
+        surface = f"{hemisphere}.pial"
+        vertices, faces = nib.freesurfer.read_geometry(str(surfaces[surface]))
+        detected[hemisphere] = find_flattest_patch(vertices, faces, surface)
+    return detected
 
 
 def _scaled_anatomy(image: nib.spatialimages.SpatialImage) -> np.ndarray:
@@ -274,47 +533,113 @@ def _scaled_anatomy(image: nib.spatialimages.SpatialImage) -> np.ndarray:
     return np.rint(scaled * 3000.0).astype(np.int16)
 
 
-def _surface_voxel_mask(
+def _dilate_in_plane(mask: np.ndarray, radius: int) -> np.ndarray:
+    """Expand a mask in image axes 0 and 1 without wrapping at the edges."""
+
+    dilated = mask.copy()
+    for _ in range(radius):
+        expanded = dilated.copy()
+        expanded[1:, :, :] |= dilated[:-1, :, :]
+        expanded[:-1, :, :] |= dilated[1:, :, :]
+        expanded[:, 1:, :] |= dilated[:, :-1, :]
+        expanded[:, :-1, :] |= dilated[:, 1:, :]
+        dilated = expanded
+    return dilated
+
+
+def _world_points_voxel_mask(
     image: nib.spatialimages.SpatialImage,
-    paths: Sequence[Path],
+    world_points: np.ndarray,
+    thickness: int,
 ) -> np.ndarray:
     mask = np.zeros(image.shape, dtype=bool)
     inverse_affine = np.linalg.inv(image.affine)
+    voxel_points = np.rint(
+        nib.affines.apply_affine(inverse_affine, world_points)
+    ).astype(int)
+    inside = np.all(voxel_points >= 0, axis=1) & np.all(
+        voxel_points < np.asarray(image.shape), axis=1
+    )
+    voxel_points = voxel_points[inside]
+    if voxel_points.size:
+        mask[tuple(voxel_points.T)] = True
+    return _dilate_in_plane(mask, thickness)
+
+
+def _surface_voxel_mask(
+    image: nib.spatialimages.SpatialImage,
+    paths: Sequence[Path],
+    thickness: int,
+) -> np.ndarray:
+    mask = np.zeros(image.shape, dtype=bool)
     for path in paths:
         vertices, _ = nib.freesurfer.read_geometry(str(path))
-        voxel_vertices = np.rint(
-            nib.affines.apply_affine(inverse_affine, vertices)
-        ).astype(int)
-        inside = np.all(voxel_vertices >= 0, axis=1) & np.all(
-            voxel_vertices < np.asarray(image.shape), axis=1
-        )
-        voxel_vertices = voxel_vertices[inside]
-        if voxel_vertices.size:
-            mask[tuple(voxel_vertices.T)] = True
+        mask |= _world_points_voxel_mask(image, vertices, 0)
+    return _dilate_in_plane(mask, thickness)
 
-    dilated = mask.copy()
-    for axis in (0, 1):
-        dilated |= np.roll(mask, 1, axis=axis)
-        dilated |= np.roll(mask, -1, axis=axis)
-    return dilated
+
+def _flat_patch_masks(
+    image: nib.spatialimages.SpatialImage,
+    surfaces: dict[str, Path],
+    detections: dict[str, _DetectedFlatPatch],
+    thickness: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    patch_mask = np.zeros(image.shape, dtype=bool)
+    normal_mask = np.zeros(image.shape, dtype=bool)
+    sample_step = max(min(image.header.get_zooms()[:3]) * 0.5, 0.1)
+    sample_count = int(np.ceil(FLAT_PATCH_NORMAL_LENGTH_MM / sample_step)) + 1
+    distances = np.linspace(0.0, FLAT_PATCH_NORMAL_LENGTH_MM, sample_count)
+    for detection in detections.values():
+        vertices, _ = nib.freesurfer.read_geometry(
+            str(surfaces[detection.patch.surface])
+        )
+        patch_mask |= _world_points_voxel_mask(
+            image,
+            vertices[detection.vertex_indices],
+            thickness,
+        )
+        center = np.asarray(detection.patch.center_ras_mm)
+        normal = np.asarray(detection.patch.normal_ras)
+        line_points = center + distances[:, np.newaxis] * normal
+        normal_mask |= _world_points_voxel_mask(
+            image,
+            line_points,
+            thickness,
+        )
+    return patch_mask, normal_mask
 
 
 def write_qc_overlay(
     image: nib.spatialimages.SpatialImage,
     surfaces: dict[str, Path],
     output_path: Path,
+    overlay_thickness: int = 1,
+    flat_patches: dict[str, _DetectedFlatPatch] | None = None,
 ) -> Path:
     """Rasterize white and pial vertices onto the source voxel grid."""
 
     output = _scaled_anatomy(image)
     pial_mask = _surface_voxel_mask(
-        image, [surfaces["lh.pial"], surfaces["rh.pial"]]
+        image,
+        [surfaces["lh.pial"], surfaces["rh.pial"]],
+        overlay_thickness,
     )
     white_mask = _surface_voxel_mask(
-        image, [surfaces["lh.white"], surfaces["rh.white"]]
+        image,
+        [surfaces["lh.white"], surfaces["rh.white"]],
+        overlay_thickness,
     )
     output[pial_mask] = 3500
     output[white_mask] = 4095
+    if flat_patches:
+        patch_mask, normal_mask = _flat_patch_masks(
+            image,
+            surfaces,
+            flat_patches,
+            overlay_thickness,
+        )
+        output[patch_mask] = 3800
+        output[normal_mask] = 4095
 
     header = image.header.copy()
     header.set_data_dtype(np.int16)
@@ -370,9 +695,22 @@ def run_topofit_workflow(
         _run_command(command, runner)
 
     surfaces = validate_surface_outputs(surface_dir)
-    qc_path = write_qc_overlay(image, surfaces, run_dir / "topofit_qc.nii.gz")
+    detected_flat_patches = (
+        find_flat_patches(surfaces) if options.find_flat_patches else {}
+    )
+    qc_path = write_qc_overlay(
+        image,
+        surfaces,
+        run_dir / "topofit_qc.nii.gz",
+        overlay_thickness=options.overlay_thickness,
+        flat_patches=detected_flat_patches,
+    )
     elapsed = perf_counter() - started
     manifest_path = run_dir / "topofit_manifest.json"
+    flat_patches = {
+        hemisphere: detection.patch
+        for hemisphere, detection in detected_flat_patches.items()
+    }
     result = TopoFitResult(
         status="SURFACE_READY_RESEARCH_ONLY",
         run_dir=str(run_dir.resolve()),
@@ -380,6 +718,7 @@ def run_topofit_workflow(
         qc_image=str(qc_path.resolve()),
         manifest=str(manifest_path.resolve()),
         surfaces={name: str(path.resolve()) for name, path in surfaces.items()},
+        flat_patches=flat_patches,
         elapsed_seconds=round(elapsed, 3),
     )
     manifest = asdict(result)
@@ -387,5 +726,8 @@ def run_topofit_workflow(
     manifest["brainnet_command"] = command
     manifest["prescription_coordinates"] = None
     manifest["coordinate_status"] = "WITHHELD_UNTIL_VALIDATED_ANALYSIS_STAGE"
+    manifest["flat_patch_status"] = (
+        "CANDIDATES_REPORTED_RESEARCH_ONLY" if flat_patches else "DISABLED"
+    )
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return result

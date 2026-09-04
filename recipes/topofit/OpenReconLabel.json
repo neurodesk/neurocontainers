@@ -102,6 +102,23 @@
       "information": { "en": "Resample the input internally to the 1 mm RAS geometry expected by TopoFit while writing QC back on the source grid." }
     },
     {
+      "id": "tfflatpatches",
+      "label": { "en": "Find flat pial patches" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Find one locally planar pial-surface patch per hemisphere, draw each patch and outward normal, and append research-only LPS coordinates to the image comments." }
+    },
+    {
+      "id": "tfoverlaythickness",
+      "label": { "en": "Surface thickness" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 3,
+      "default": 1,
+      "unit": { "en": "vox" },
+      "information": { "en": "Set the in-plane dilation radius in voxels. Zero draws the undilated projected vertices; one retains the previous width." }
+    },
+    {
       "id": "tfdebugmock",
       "label": { "en": "Mock surfaces" },
       "type": "boolean",

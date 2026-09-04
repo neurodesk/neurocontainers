@@ -1,5 +1,5 @@
 name: topofit
-version: "0.2.1"
+version: "0.3.0"
 
 copyright:
   - license: GPL-3.0-only
@@ -108,6 +108,10 @@ readme: |-
   The output directory contains FreeSurfer geometry files, a source-grid QC
   overlay, and a JSON manifest. The same workflow is available through the
   included OpenRecon image-to-image adapter for inline scanner testing.
+
+  Add `--find-flat-patches` to find one planar pial candidate per hemisphere,
+  draw its patch and outward normal, and record the geometry in the manifest.
+  `--overlay-thickness 0` produces the thinnest projected surface trace.
 
   The OpenRecon output is research-only. It does not emit actionable slice
   prescription coordinates and is marked as not motion-cleared.
