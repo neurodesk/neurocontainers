@@ -137,21 +137,34 @@ def identify_sulcal_middepth(
     )
 
 
-def _triangle_intersects_unit_box(triangle: np.ndarray, center: np.ndarray) -> bool:
-    shifted = triangle - center
-    edges = (shifted[1] - shifted[0], shifted[2] - shifted[1], shifted[0] - shifted[2])
-    axes = [np.eye(3)[axis] for axis in range(3)]
-    axes.append(np.cross(edges[0], edges[1]))
-    for edge in edges:
-        axes.extend(np.cross(edge, np.eye(3)[axis]) for axis in range(3))
-    for axis in axes:
-        if float(np.dot(axis, axis)) <= 1e-16:
-            continue
-        projections = shifted @ axis
-        radius = 0.5 * float(np.abs(axis).sum())
-        if float(projections.min()) > radius or float(projections.max()) < -radius:
-            return False
-    return True
+def _triangles_intersect_unit_boxes(
+    triangles: np.ndarray,
+    centers: np.ndarray,
+) -> np.ndarray:
+    """Test triangle-box pairs in one vectorized separating-axis pass."""
+
+    shifted = triangles - centers[:, np.newaxis, :]
+    edges = np.stack(
+        (
+            shifted[:, 1] - shifted[:, 0],
+            shifted[:, 2] - shifted[:, 1],
+            shifted[:, 0] - shifted[:, 2],
+        ),
+        axis=1,
+    )
+    box_axes = np.broadcast_to(np.eye(3), (triangles.shape[0], 3, 3))
+    face_normals = np.cross(edges[:, 0], edges[:, 1])[:, np.newaxis, :]
+    edge_axes = np.cross(edges[:, :, np.newaxis, :], np.eye(3)[np.newaxis, :, :])
+    axes = np.concatenate(
+        (box_axes, face_normals, edge_axes.reshape(-1, 9, 3)), axis=1
+    )
+    projections = np.einsum("mva,mka->mvk", shifted, axes)
+    radii = 0.5 * np.abs(axes).sum(axis=2)
+    separated = (projections.min(axis=1) > radii) | (
+        projections.max(axis=1) < -radii
+    )
+    nonzero_axes = np.einsum("mka,mka->mk", axes, axes) > 1e-16
+    return ~np.any(separated & nonzero_axes, axis=1)
 
 
 def triangle_voxel_mask(
@@ -168,15 +181,34 @@ def triangle_voxel_mask(
     voxel_vertices = np.asarray(
         nib.affines.apply_affine(np.linalg.inv(affine), vertices_ras_mm)
     )
+    triangles = voxel_vertices[faces]
     upper = np.asarray(shape) - 1
-    for face in faces:
-        triangle = voxel_vertices[face]
-        lower_bound = np.maximum(np.ceil(triangle.min(axis=0) - 0.5), 0).astype(int)
-        upper_bound = np.minimum(np.floor(triangle.max(axis=0) + 0.5), upper).astype(int)
-        for i in range(lower_bound[0], upper_bound[0] + 1):
-            for j in range(lower_bound[1], upper_bound[1] + 1):
-                for k in range(lower_bound[2], upper_bound[2] + 1):
-                    index = np.asarray((i, j, k))
-                    if _triangle_intersects_unit_box(triangle, index):
-                        mask[i, j, k] = True
+    lower_bounds = np.maximum(np.ceil(triangles.min(axis=1) - 0.5), 0).astype(int)
+    upper_bounds = np.minimum(
+        np.floor(triangles.max(axis=1) + 0.5), upper
+    ).astype(int)
+    candidate_centers = []
+    candidate_faces = []
+    for face_index, (lower, candidate_upper) in enumerate(
+        zip(lower_bounds, upper_bounds)
+    ):
+        if np.any(candidate_upper < lower):
+            continue
+        grid = np.indices(tuple(candidate_upper - lower + 1)).reshape(3, -1).T
+        candidate_centers.append(grid + lower)
+        candidate_faces.append(np.full(grid.shape[0], face_index, dtype=np.int64))
+    if not candidate_centers:
+        return mask
+
+    centers = np.concatenate(candidate_centers)
+    face_indices = np.concatenate(candidate_faces)
+    chunk_size = 100_000
+    for start in range(0, centers.shape[0], chunk_size):
+        stop = min(start + chunk_size, centers.shape[0])
+        chunk_centers = centers[start:stop]
+        intersects = _triangles_intersect_unit_boxes(
+            triangles[face_indices[start:stop]], chunk_centers
+        )
+        selected = chunk_centers[intersects]
+        mask[tuple(selected.T)] = True
     return mask
