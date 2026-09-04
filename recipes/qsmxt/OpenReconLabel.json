@@ -50,6 +50,18 @@
       "information": { "en": "Define the config to be executed by the MRD server." }
     },
     {
+      "id": "inputseries",
+      "label": { "en": "Input images" },
+      "type": "choice",
+      "values": [
+        { "id": "distortion-corrected", "name": { "en": "Distortion corrected" } },
+        { "id": "non-distortion-corrected", "name": { "en": "Not distortion corrected (ND)" } },
+        { "id": "both", "name": { "en": "Both" } }
+      ],
+      "default": "distortion-corrected",
+      "information": { "en": "Choose the magnitude and phase images used by QSMxT. ND matches source series containing a separate ND name token. Both runs QSMxT twice and returns separately named DC and ND results." }
+    },
+    {
       "id": "sendoutputs",
       "label": { "en": "Output maps" },
       "type": "choice",
@@ -209,16 +221,6 @@
       ],
       "default": "close-fill",
       "information": { "en": "Morphological cleanup applied after mask generation. Close and fill holes bridges narrow gaps without shrinking the repaired mask." }
-    },
-    {
-      "id": "voxelsizemm",
-      "label": { "en": "Voxel size override" },
-      "type": "double",
-      "minimum": 0.0,
-      "maximum": 10.0,
-      "default": 0.0,
-      "unit": { "en": "mm" },
-      "information": { "en": "Isotropic voxel size used for BIDS geometry. Zero uses the geometry supplied by MRD." }
     }
   ]
 }

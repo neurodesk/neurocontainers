@@ -224,6 +224,28 @@ def _input_images():
     return images
 
 
+def _dual_input_images():
+    shape_zyx = (2, 3, 4)
+    images = []
+    for series_index, sequence, image_type, base_value in (
+        (1, "gre_qsm_ND", ismrmrd.IMTYPE_MAGNITUDE, 1000),
+        (2, "gre_qsm_ND", getattr(ismrmrd, "IMTYPE_PHASE", 2), 2000),
+        (3, "gre_qsm", ismrmrd.IMTYPE_MAGNITUDE, 3000),
+        (4, "gre_qsm", getattr(ismrmrd, "IMTYPE_PHASE", 2), 4000),
+    ):
+        for echo in (1, 2):
+            images.append(
+                _image(
+                    series_index,
+                    echo,
+                    sequence,
+                    np.full(shape_zyx, base_value + echo, dtype=np.float32),
+                    image_type=image_type,
+                )
+            )
+    return images
+
+
 def _packed_scanner_images():
     shape_zyx = (144, 3, 4)
     images = []
@@ -320,6 +342,61 @@ def test_openrecon_defaults_select_whqsm_romeo_and_vsharp():
     assert settings["mask_close"] == 1
     assert settings["mask_fill_holes"] is True
     assert settings["mask_erode"] == 0
+    assert settings["input_series"] == "distortion-corrected"
+
+
+def test_openrecon_input_series_rejects_unknown_value():
+    with pytest.raises(ValueError, match="unknown inputseries"):
+        qsmxt._settings_from_config(
+            {"parameters": {"inputseries": "arrival-order"}},
+            FakeMetadata(),
+        )
+
+
+def test_openrecon_label_exposes_all_input_series_modes():
+    label = qsmxt.json.loads(
+        (Path(qsmxt.__file__).with_name("OpenReconLabel.json")).read_text()
+    )
+    parameters = {
+        parameter["id"]: parameter for parameter in label["parameters"]
+    }
+
+    selector = parameters["inputseries"]
+    assert selector["default"] == "distortion-corrected"
+    assert [value["id"] for value in selector["values"]] == [
+        "distortion-corrected",
+        "non-distortion-corrected",
+        "both",
+    ]
+    assert "voxelsizemm" not in parameters
+
+
+def test_select_magnitude_phase_pairs_matches_requested_distortion_variant():
+    groups = qsmxt._group_images_by_series(_dual_input_images())
+
+    corrected = qsmxt._select_magnitude_phase_pairs(
+        groups,
+        "distortion-corrected",
+    )
+    non_corrected = qsmxt._select_magnitude_phase_pairs(
+        groups,
+        "non-distortion-corrected",
+    )
+    both = qsmxt._select_magnitude_phase_pairs(groups, "both")
+
+    assert [pair["variant"] for pair in both] == [
+        "distortion-corrected",
+        "non-distortion-corrected",
+    ]
+    assert [int(group["key"][0]) for group in corrected[0]["groups"]] == [3, 4]
+    assert [int(group["key"][0]) for group in non_corrected[0]["groups"]] == [1, 2]
+
+
+def test_select_magnitude_phase_pairs_rejects_incomplete_both_selection():
+    groups = qsmxt._group_images_by_series(_input_images())
+
+    with pytest.raises(ValueError, match="non-distortion-corrected"):
+        qsmxt._select_magnitude_phase_pairs(groups, "both")
 
 
 def test_openrecon_pipeline_presets_select_all_three_algorithms():
@@ -508,7 +585,7 @@ def test_openrecon_label_exposes_processing_defaults():
     assert parameters["maskinginput"]["default"] == "magnitude"
     assert parameters["betfractionalintensity"]["default"] == 0.5
     assert parameters["maskcleanup"]["default"] == "close-fill"
-    assert parameters["voxelsizemm"]["default"] == 0.0
+    assert "voxelsizemm" not in parameters
 
 
 def test_scanner_display_volume_scales_qsm_ppm_range_to_uint12_interval():
@@ -570,6 +647,9 @@ def test_output_meta_replaces_source_scaling_with_qsm_dicom_contract():
             "RescaleType": "PHASE",
             "PixelPaddingValue": "4095",
             "PixelPaddingRangeLimit": "4095",
+            "WindowCenter": "2048",
+            "WindowWidth": "4096",
+            "VOILUTFunction": "LINEAR",
         },
     )
     physical = np.asarray([[[-0.01, 0.0, 0.01]]], dtype=np.float32)
@@ -596,12 +676,22 @@ def test_output_meta_replaces_source_scaling_with_qsm_dicom_contract():
     assert meta["RescaleType"] == "US"
     assert meta["PixelPaddingValue"] == "0"
     assert meta["PixelPaddingRangeLimit"] == "0"
-    assert float(meta["WindowCenter"]) == 2048.0
-    assert float(meta["WindowWidth"]) == 2000.0
+    assert "WindowCenter" not in meta
+    assert "WindowWidth" not in meta
+    assert "VOILUTFunction" not in meta
     assert float(meta["QSMxTPhysicalWindowCenter"]) == 0.0
     assert float(meta["QSMxTPhysicalWindowWidth"]) == 0.02
-    assert meta["QSMxTWindowDomain"] == "stored"
+    assert meta["QSMxTWindowDomain"] == "physical"
     assert 0 not in display
+
+    decoded = (
+        display.astype(np.float64) * float(meta["RescaleSlope"])
+        + float(meta["RescaleIntercept"])
+    )
+    center = float(meta["QSMxTPhysicalWindowCenter"])
+    width = float(meta["QSMxTPhysicalWindowWidth"])
+    rendered = np.clip((decoded - (center - width / 2.0)) / width, 0.0, 1.0)
+    assert np.unique(rendered).size == 3
 
 
 def test_scanner_display_volume_maps_mask_foreground_to_valid_uint12_maximum():
@@ -656,8 +746,8 @@ def test_output_meta_uses_robust_t2star_range_for_window():
         display_meta,
     )
 
-    assert float(meta["WindowCenter"]) == 250.0
-    assert float(meta["WindowWidth"]) == 500.0
+    assert "WindowCenter" not in meta
+    assert "WindowWidth" not in meta
 
 
 def test_find_qsmxt_outputs_accepts_v9_combined_magnitude_name(tmp_path):
@@ -890,46 +980,6 @@ def test_images_to_nifti_volume_rejects_implausibly_small_position_spacing():
     np.testing.assert_allclose(affine[:3, 2], [0.0, 0.0, -1.0])
 
 
-def test_write_bids_dataset_applies_explicit_isotropic_resolution(tmp_path):
-    images = []
-    for series_index, image_type, suffix in (
-        (1, ismrmrd.IMTYPE_MAGNITUDE, "Mag"),
-        (2, getattr(ismrmrd, "IMTYPE_PHASE", 2), "Pha"),
-    ):
-        for slice_index in range(4):
-            image = _image(
-                series_index,
-                slice_index + 1,
-                f"gre_qsm_{suffix}",
-                np.ones((1, 3, 4), dtype=np.float32),
-                image_type=image_type,
-                meta_values={"Actual3DImagePartNumber": str(slice_index)},
-                header_values={"slice": slice_index},
-            )
-            header = image.getHead()
-            _set_header_vector(header, "field_of_view", [4.0, 3.0, 1.0])
-            _set_header_vector(header, "position", [0.0, 0.0, 0.4 * slice_index])
-            image.setHead(header)
-            images.append(image)
-
-    metadata = FakeMetadata()
-    settings = qsmxt._settings_from_config(
-        {"parameters": {"voxelsizemm": 0.4}},
-        metadata,
-    )
-    result = qsmxt.write_bids_dataset(
-        images,
-        metadata,
-        tmp_path / "bids",
-        settings,
-    )
-
-    magnitude = nib.load(str(result["magnitude_paths"][0]))
-    np.testing.assert_allclose(magnitude.header.get_zooms()[:3], [0.4, 0.4, 0.4])
-    assert settings["voxel_size_source"] == "config"
-    assert result["source_geometry_images"] == []
-
-
 def test_write_bids_dataset_groups_scanner_slices_by_echo_from_minihead(tmp_path):
     settings = qsmxt._settings_from_config({}, FakeMetadata())
 
@@ -998,8 +1048,9 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert meta["RescaleType"] == "US"
     assert meta["PixelPaddingValue"] == "0"
     assert meta["PixelPaddingRangeLimit"] == "0"
-    assert float(meta["WindowCenter"]) == 3548.0
-    assert float(meta["WindowWidth"]) == 1000.0
+    assert "WindowCenter" not in meta
+    assert "WindowWidth" not in meta
+    assert "VOILUTFunction" not in meta
     assert float(meta["QSMxTPhysicalWindowCenter"]) == 1.5
     assert float(meta["QSMxTPhysicalWindowWidth"]) == 1.0
     assert meta["QSMxTDisplayScaleInputMin"] == "1.5"
@@ -1008,7 +1059,7 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert meta["QSMxTDisplayMax"] == "3548"
     assert meta["QSMxTDisplayClippedVoxels"] == "0"
     assert meta["ImageComment"] == (
-        "QSMxT QSM; scanner display uint16 0-4095; "
+        "QSMxT QSM DC; scanner display uint16 0-4095; "
         "ppm = (display - 2048) / 1000; "
         "stored 0 is DICOM pixel padding"
     )
@@ -1033,6 +1084,52 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert second_meta["IsmrmrdSliceNo"] == "1"
     assert second_meta["SeriesInstanceUID"] == meta["SeriesInstanceUID"]
     assert second_meta["SOPInstanceUID"] != meta["SOPInstanceUID"]
+
+
+def test_process_both_input_series_runs_separately_and_returns_unique_outputs(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    fake_qsmxt = _fake_qsmxt_binary(tmp_path)
+    connection = FakeConnection(_dual_input_images())
+
+    qsmxt.process(
+        connection,
+        {
+            "parameters": {
+                "qsmxtbinary": str(fake_qsmxt),
+                "echotimesms": "10,20",
+                "inputseries": "both",
+            }
+        },
+        FakeMetadata(),
+    )
+
+    assert connection.closed is True
+    assert connection.logs == []
+    assert len(connection.sent_batches) == 2
+    assert [len(batch) for batch in connection.sent_batches] == [2, 2]
+
+    first_meta = [
+        ismrmrd.Meta.deserialize(batch[0].attribute_string)
+        for batch in connection.sent_batches
+    ]
+    assert [meta["SeriesDescription"] for meta in first_meta] == [
+        "QSMxT QSM DC",
+        "QSMxT QSM ND",
+    ]
+    assert [meta["QSMxTInputSeries"] for meta in first_meta] == [
+        "distortion-corrected",
+        "non-distortion-corrected",
+    ]
+    assert len(
+        {
+            int(batch[0].getHead().image_series_index)
+            for batch in connection.sent_batches
+        }
+    ) == 2
+    assert len({meta["SeriesInstanceUID"] for meta in first_meta}) == 2
 
 
 def test_process_returns_scanner_packed_volume_as_one_mm_slices(tmp_path, monkeypatch):
@@ -1177,7 +1274,6 @@ def test_original_passthrough_merges_concatenations_into_one_series_per_contrast
         series_index = int(output.getHead().image_series_index)
         series_counts[series_index] = series_counts.get(series_index, 0) + 1
 
-    # Exactly two output series: one magnitude (6 slices) and one phase (6).
     assert len(series_counts) == 2
     assert sorted(series_counts.values()) == [6, 6]
 

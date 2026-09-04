@@ -95,6 +95,7 @@ tests:
       parameter_ids = {parameter["id"] for parameter in data["parameters"]}
       expected = {
           "config",
+          "inputseries",
           "sendoutputs",
           "sendoriginal",
           "pipelinepreset",
@@ -115,6 +116,14 @@ tests:
       }
       assert parameters["unwrappingalgorithm"]["default"] == "romeo"
       assert parameters["bfalgorithm"]["default"] == "vsharp"
+      assert parameters["inputseries"]["default"] == "distortion-corrected"
+      assert [
+          value["id"] for value in parameters["inputseries"]["values"]
+      ] == [
+          "distortion-corrected",
+          "non-distortion-corrected",
+          "both",
+      ]
       if "maskcleanup" in parameter_ids:
           assert parameters["maskpreset"]["default"] == "bet"
           assert parameters["maskinginput"]["default"] == "magnitude"
@@ -272,15 +281,13 @@ tests:
       assert float(first_meta["RescaleIntercept"]) == -2.048
       assert first_meta["RescaleType"] == "US"
       assert first_meta["PixelPaddingValue"] == "0"
-      if first_meta.get("QSMxTWindowDomain") == "stored":
-          assert first_meta["PixelPaddingRangeLimit"] == "0"
-          assert float(first_meta["WindowCenter"]) == 3548.0
-          assert float(first_meta["WindowWidth"]) == 1000.0
-          assert float(first_meta["QSMxTPhysicalWindowCenter"]) == 1.5
-          assert float(first_meta["QSMxTPhysicalWindowWidth"]) == 1.0
-      else:
-          assert float(first_meta["WindowCenter"]) == 1.5
-          assert float(first_meta["WindowWidth"]) == 1.0
+      assert first_meta["PixelPaddingRangeLimit"] == "0"
+      assert first_meta["QSMxTWindowDomain"] == "physical"
+      assert "WindowCenter" not in first_meta
+      assert "WindowWidth" not in first_meta
+      assert "VOILUTFunction" not in first_meta
+      assert float(first_meta["QSMxTPhysicalWindowCenter"]) == 1.5
+      assert float(first_meta["QSMxTPhysicalWindowWidth"]) == 1.0
       assert first_meta["slice_count"] == "2"
       assert first_meta["NumberOfSlices"] == "2"
       assert first_meta["ImagesInAcquisition"] == "2"

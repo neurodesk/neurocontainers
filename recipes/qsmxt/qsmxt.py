@@ -112,6 +112,14 @@ DEFAULT_MASK_PRESET = "bet"
 DEFAULT_MASKING_INPUT = "magnitude"
 DEFAULT_BET_FRACTIONAL_INTENSITY = 0.5
 DEFAULT_MASK_CLEANUP = "close-fill"
+DISTORTION_CORRECTED = "distortion-corrected"
+NON_DISTORTION_CORRECTED = "non-distortion-corrected"
+INPUT_SERIES_CHOICES = (
+    DISTORTION_CORRECTED,
+    NON_DISTORTION_CORRECTED,
+    "both",
+)
+DEFAULT_INPUT_SERIES = DISTORTION_CORRECTED
 MASK_CLEANUP_PRESETS = {
     "none": {"dilate": 0, "close": 0, "fill_holes": False, "erode": 0},
     "fill": {"dilate": 0, "close": 0, "fill_holes": True, "erode": 0},
@@ -180,6 +188,9 @@ SOURCE_SCALING_META_KEYS = {
     "RescaleIntercept",
     "RescaleSlope",
     "RescaleType",
+    "VOILUTFunction",
+    "WindowCenter",
+    "WindowWidth",
 }
 ORIGINAL_STORAGE_FIELDS = (
     "Actual3DImagePartNumber",
@@ -241,14 +252,50 @@ def process(connection, config, metadata):
             dir=str(OPENRECON_WORK_ROOT),
         ) as work_dir_name:
             work_dir = Path(work_dir_name)
-            bids_dir = work_dir / "bids"
-            output_dir = work_dir / "output"
-
-            conversion = write_bids_dataset(input_images, metadata, bids_dir, settings)
-            _run_qsmxt(bids_dir, output_dir, settings)
-            _log_qsmxt_nifti_diagnostics(output_dir)
-            output_specs = _find_qsmxt_outputs(output_dir, conversion, settings)
-            output_images = _build_output_images(output_specs, conversion, input_images)
+            series_groups = _group_images_by_series(input_images)
+            _log_source_series_diagnostics(series_groups)
+            input_pairs = _select_magnitude_phase_pairs(
+                series_groups,
+                settings["input_series"],
+            )
+            used_series = {
+                int(image.getHead().image_series_index)
+                for image in input_images
+            }
+            output_images = []
+            for input_pair in input_pairs:
+                variant = input_pair["variant"]
+                run_dir = work_dir / input_pair["short_label"].lower()
+                bids_dir = run_dir / "bids"
+                output_dir = run_dir / "output"
+                logging.info("Processing QSMxT %s input pair", variant)
+                try:
+                    conversion = write_bids_dataset(
+                        input_images,
+                        metadata,
+                        bids_dir,
+                        settings,
+                        input_pair=input_pair,
+                    )
+                    _run_qsmxt(bids_dir, output_dir, settings)
+                    _log_qsmxt_nifti_diagnostics(output_dir)
+                    output_specs = _find_qsmxt_outputs(
+                        output_dir,
+                        conversion,
+                        settings,
+                    )
+                    output_images.extend(
+                        _build_output_images(
+                            output_specs,
+                            conversion,
+                            input_images,
+                            used_series=used_series,
+                        )
+                    )
+                except Exception as error:
+                    raise RuntimeError(
+                        f"QSMxT failed for {variant} input: {error}"
+                    ) from error
 
         if settings["send_original"]:
             original_images = _build_original_passthrough_images(
@@ -275,13 +322,33 @@ def process(connection, config, metadata):
         connection.send_close()
 
 
-def write_bids_dataset(input_images, metadata, bids_dir, settings):
-    series_groups = _group_images_by_series(input_images)
-    _log_source_series_diagnostics(series_groups)
-    magnitude_group, phase_group = _select_magnitude_phase_groups(series_groups)
+def write_bids_dataset(
+    input_images,
+    metadata,
+    bids_dir,
+    settings,
+    *,
+    input_pair=None,
+):
+    if input_pair is None:
+        series_groups = _group_images_by_series(input_images)
+        _log_source_series_diagnostics(series_groups)
+        input_pairs = _select_magnitude_phase_pairs(
+            series_groups,
+            settings["input_series"],
+        )
+        if len(input_pairs) != 1:
+            raise ValueError(
+                "write_bids_dataset requires one input pair; use process() "
+                "for inputseries=both"
+            )
+        input_pair = input_pairs[0]
+
+    magnitude_group, phase_group = input_pair["groups"]
     logging.info(
-        "QSMxT diagnostic selected input pair: magnitude=%r series_index=%d "
+        "QSMxT diagnostic selected input pair (%s): magnitude=%r series_index=%d "
         "order=%d, phase=%r series_index=%d order=%d",
+        input_pair["variant"],
         magnitude_group["name"],
         int(magnitude_group["key"][0]),
         magnitude_group["order"],
@@ -328,18 +395,11 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
     field_strength = settings["field_strength_t"]
     logging.info(
         "Resolved QSMxT acquisition parameters: echo_times_ms=%s, "
-        "field_strength_t=%.6g (%s), phase_wrap=%.6g, "
-        "voxel_size_mm=%s (%s)",
+        "field_strength_t=%.6g (%s), phase_wrap=%.6g",
         [round(value * 1000.0, 6) for value in echo_times],
         field_strength,
         settings["field_strength_source"],
         settings["phase_wrap"],
-        (
-            f"{settings['voxel_size_mm']:.6g}"
-            if settings["voxel_size_mm"] is not None
-            else "MRD"
-        ),
-        settings["voxel_size_source"],
     )
 
     anat_dir = bids_dir / "sub-01" / "anat"
@@ -364,12 +424,10 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
         mag_volume, affine = _images_to_nifti_volume(
             magnitude_echo_groups[echo_index],
             kind="magnitude",
-            voxel_size_mm=settings["voxel_size_mm"],
         )
         phase_volume, phase_affine = _images_to_nifti_volume(
             phase_echo_groups[echo_index],
             kind="phase",
-            voxel_size_mm=settings["voxel_size_mm"],
         )
         phase_volume = _phase_to_qsmxt_counts(phase_volume, settings["phase_wrap"])
         _log_array_diagnostics(
@@ -414,7 +472,7 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
             "ProtocolName": _metadata_protocol_name(metadata),
             "QSMxTOpenReconSource": "ISMRMRD image stream",
             "QSMxTRawPhaseScale": settings["phase_wrap"],
-            "QSMxTOpenReconVoxelSizeSource": settings["voxel_size_source"],
+            "QSMxTOpenReconVoxelSizeSource": "MRD",
         }
         _write_json(_nifti_sidecar_path(mag_path), dict(sidecar, ImageType=["ORIGINAL", "PRIMARY", "M"]))
         _write_json(_nifti_sidecar_path(phase_path), dict(sidecar, ImageType=["ORIGINAL", "PRIMARY", "P"]))
@@ -439,13 +497,6 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
         phase_paths[0],
     )
     source_geometry_images = _sorted_stack_images(magnitude_echo_groups[0])
-    if settings["voxel_size_mm"] is not None:
-        source_geometry_images = []
-        logging.info(
-            "Using derivative affine rather than source MRD geometry because "
-            "voxel size was resolved from %s",
-            settings["voxel_size_source"],
-        )
     return {
         "bids_dir": bids_dir,
         "anat_dir": anat_dir,
@@ -462,6 +513,8 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
         "field_strength_t": field_strength,
         "b0_dir": resolved_b0_dir or DEFAULT_B0_DIR,
         "b0_dir_source": resolved_b0_dir_source or "nifti_affine",
+        "input_variant": input_pair["variant"],
+        "input_short_label": input_pair["short_label"],
     }
 
 
@@ -592,21 +645,33 @@ def _log_qsmxt_nifti_diagnostics(output_dir):
             )
 
 
-def _build_output_images(output_specs, conversion, input_images):
-    used_series = {int(image.getHead().image_series_index) for image in input_images}
+def _build_output_images(
+    output_specs,
+    conversion,
+    input_images,
+    *,
+    used_series=None,
+):
+    if used_series is None:
+        used_series = {
+            int(image.getHead().image_series_index)
+            for image in input_images
+        }
     output_images = []
     for index, (output_id, spec, nifti_path) in enumerate(output_specs):
         series_index = _reserve_series_index(used_series, OUTPUT_SERIES_START + index)
+        series_name = f"{spec['series']} {conversion['input_short_label']}"
         output_images.extend(
             _nifti_to_mrd_images(
                 nifti_path,
                 conversion["anchor_image"],
                 series_index,
-                f"{spec['series']}",
+                series_name,
                 spec["token"],
                 output_id,
                 spec["units"],
                 source_geometry_images=conversion.get("source_geometry_images"),
+                input_variant=conversion["input_variant"],
             )
         )
     return output_images
@@ -997,6 +1062,7 @@ def _nifti_to_mrd_images(
     units,
     *,
     source_geometry_images=None,
+    input_variant=None,
 ):
     nifti = nib.load(str(nifti_path))
     data_xyz = np.asarray(nifti.get_fdata(dtype=np.float32), dtype=np.float32)
@@ -1102,6 +1168,7 @@ def _nifti_to_mrd_images(
             display_meta,
             source_geometry=use_source_geometry,
             slice_number=slice_number,
+            input_variant=input_variant,
         ).serialize()
         output_images.append(output)
 
@@ -1200,7 +1267,7 @@ def _slice_position_from_affine(nifti, shape_xyz, slice_index, fallback_image):
     return [float(value) for value in fallback_image.getHead().position]
 
 
-def _image_to_nifti_volume(image, kind, voxel_size_mm=None):
+def _image_to_nifti_volume(image, kind):
     data = np.asarray(image.data)
     if data.ndim == 4:
         if kind == "magnitude":
@@ -1223,37 +1290,21 @@ def _image_to_nifti_volume(image, kind, voxel_size_mm=None):
             raise ValueError(f"Unsupported MRD image data shape: {data.shape}")
 
     vol_xyz = np.transpose(np.asarray(vol_zyx, dtype=np.float32), (2, 1, 0))
-    return vol_xyz, _affine_from_image(
-        image,
-        vol_xyz.shape,
-        voxel_size_mm=voxel_size_mm,
-    )
+    return vol_xyz, _affine_from_image(image, vol_xyz.shape)
 
 
-def _images_to_nifti_volume(images, kind, voxel_size_mm=None):
+def _images_to_nifti_volume(images, kind):
     ordered_images = _sorted_stack_images(images)
     if len(ordered_images) == 1:
-        return _image_to_nifti_volume(
-            ordered_images[0],
-            kind,
-            voxel_size_mm=voxel_size_mm,
-        )
+        return _image_to_nifti_volume(ordered_images[0], kind)
 
     volumes = []
     for image in ordered_images:
-        volume, _ = _image_to_nifti_volume(
-            image,
-            kind,
-            voxel_size_mm=voxel_size_mm,
-        )
+        volume, _ = _image_to_nifti_volume(image, kind)
         volumes.append(volume)
 
     stacked = np.concatenate(volumes, axis=2)
-    return stacked, _affine_from_image_stack(
-        ordered_images,
-        stacked.shape,
-        voxel_size_mm=voxel_size_mm,
-    )
+    return stacked, _affine_from_image_stack(ordered_images, stacked.shape)
 
 
 def _sorted_stack_images(images):
@@ -1306,7 +1357,7 @@ def _phase_to_qsmxt_counts(phase_volume, phase_wrap):
     return phase * (4096.0 / phase_wrap)
 
 
-def _affine_from_image(image, shape_xyz, voxel_size_mm=None):
+def _affine_from_image(image, shape_xyz):
     header = image.getHead()
     read_dir = _normalized_or_default(header.read_dir, (1.0, 0.0, 0.0))
     phase_dir = _normalized_or_default(header.phase_dir, (0.0, 1.0, 0.0))
@@ -1314,15 +1365,13 @@ def _affine_from_image(image, shape_xyz, voxel_size_mm=None):
     fov = np.asarray(header.field_of_view, dtype=float)
     dims = np.asarray(shape_xyz, dtype=float)
     voxel = np.divide(fov, dims, out=np.ones(3, dtype=float), where=dims > 0)
-    if voxel_size_mm is not None:
-        voxel[:] = float(voxel_size_mm)
     packed_slice_spacing = _scanner_packed_volume_slice_spacing(
         image,
         shape_xyz,
         fov,
         voxel,
     )
-    if packed_slice_spacing is not None and voxel_size_mm is None:
+    if packed_slice_spacing is not None:
         voxel[2] = packed_slice_spacing
         logging.info(
             "Using scanner packed-volume slice spacing %.6g mm for %d slices",
@@ -1380,7 +1429,7 @@ def _scanner_packed_volume_slice_spacing(image, shape_xyz, fov, voxel):
     return float(fov[2])
 
 
-def _affine_from_image_stack(images, shape_xyz, voxel_size_mm=None):
+def _affine_from_image_stack(images, shape_xyz):
     first_header = images[0].getHead()
     read_dir = _normalized_or_default(first_header.read_dir, (1.0, 0.0, 0.0))
     phase_dir = _normalized_or_default(first_header.phase_dir, (0.0, 1.0, 0.0))
@@ -1388,8 +1437,6 @@ def _affine_from_image_stack(images, shape_xyz, voxel_size_mm=None):
     fov = np.asarray(first_header.field_of_view, dtype=float)
     dims = np.asarray(shape_xyz, dtype=float)
     voxel = np.divide(fov, dims, out=np.ones(3, dtype=float), where=dims > 0)
-    if voxel_size_mm is not None:
-        voxel[:] = float(voxel_size_mm)
 
     source_matrix = np.asarray(first_header.matrix_size, dtype=float)
     source_slice_count = (
@@ -1402,11 +1449,7 @@ def _affine_from_image_stack(images, shape_xyz, voxel_size_mm=None):
     declared_slice_spacing = float(fov[2] / source_slice_count)
     if declared_slice_spacing <= 0 or not np.isfinite(declared_slice_spacing):
         declared_slice_spacing = 1.0
-    slice_step = slice_dir * (
-        float(voxel_size_mm)
-        if voxel_size_mm is not None
-        else declared_slice_spacing
-    )
+    slice_step = slice_dir * declared_slice_spacing
     positions = [
         np.asarray(image.getHead().position, dtype=float)
         for image in images
@@ -1421,20 +1464,19 @@ def _affine_from_image_stack(images, shape_xyz, voxel_size_mm=None):
             candidate_alignment = abs(
                 float(np.dot(candidate_step / candidate_spacing, slice_dir))
             )
-        if voxel_size_mm is None:
-            if (
-                candidate_spacing >= declared_slice_spacing * 0.5
-                and candidate_alignment >= 0.9
-            ):
-                slice_step = candidate_step
-            elif candidate_spacing > 0:
-                logging.warning(
-                    "Ignoring implausible source stack position step %.9g mm "
-                    "(declared slice spacing %.9g mm, alignment %.6g)",
-                    candidate_spacing,
-                    declared_slice_spacing,
-                    candidate_alignment,
-                )
+        if (
+            candidate_spacing >= declared_slice_spacing * 0.5
+            and candidate_alignment >= 0.9
+        ):
+            slice_step = candidate_step
+        elif candidate_spacing > 0:
+            logging.warning(
+                "Ignoring implausible source stack position step %.9g mm "
+                "(declared slice spacing %.9g mm, alignment %.6g)",
+                candidate_spacing,
+                declared_slice_spacing,
+                candidate_alignment,
+            )
 
     logging.info(
         "QSMxT diagnostic source stack geometry: images=%d "
@@ -1496,6 +1538,16 @@ def _b0_dir_from_affine(affine):
 
 def _settings_from_config(config, metadata=None):
     params = _config_parameters(config)
+    input_series = _config_text(
+        params,
+        "inputseries",
+        DEFAULT_INPUT_SERIES,
+    ).lower()
+    if input_series not in INPUT_SERIES_CHOICES:
+        choices = ", ".join(INPUT_SERIES_CHOICES)
+        raise ValueError(
+            f"unknown inputseries {input_series!r}; expected {choices}"
+        )
     configured_field_strength = _config_float_or_none(params, "fieldstrength")
     metadata_field_strength = _metadata_field_strength(metadata)
     if configured_field_strength is not None:
@@ -1523,15 +1575,8 @@ def _settings_from_config(config, metadata=None):
         raise ValueError(
             f"unknown maskcleanup {mask_cleanup!r}; expected {choices}"
         ) from error
-    configured_voxel_size = _config_float(params, "voxelsizemm", 0.0)
-    if configured_voxel_size > 0.0:
-        voxel_size_mm = configured_voxel_size
-        voxel_size_source = "config"
-    else:
-        voxel_size_mm = None
-        voxel_size_source = "MRD"
-
     return {
+        "input_series": input_series,
         "send_original": _config_bool(params, "sendoriginal", False),
         "send_outputs": str(params.get("sendoutputs", "qsm") or "qsm"),
         "max_echoes": _config_int(params, "maxechoes", 0),
@@ -1543,8 +1588,6 @@ def _settings_from_config(config, metadata=None):
         "b0_dir_override": configured_b0_dir,
         "b0_dir_source": b0_dir_source,
         "phase_wrap": _config_float(params, "phasewrap", 4096.0),
-        "voxel_size_mm": voxel_size_mm,
-        "voxel_size_source": voxel_size_source,
         "qsmxt_binary": _config_text(params, "qsmxtbinary", ""),
         "pipeline_preset": pipeline_preset,
         **algorithm_settings,
@@ -1786,7 +1829,48 @@ def _log_array_diagnostics(label, values):
         )
 
 
-def _select_magnitude_phase_groups(groups):
+def _input_variant_from_series_name(name):
+    if re.search(r"(?:^|[_\s-])ND(?:$|[_\s-])", str(name), re.IGNORECASE):
+        return NON_DISTORTION_CORRECTED
+    return DISTORTION_CORRECTED
+
+
+def _select_magnitude_phase_pairs(groups, selection):
+    if selection not in INPUT_SERIES_CHOICES:
+        choices = ", ".join(INPUT_SERIES_CHOICES)
+        raise ValueError(
+            f"unknown inputseries {selection!r}; expected {choices}"
+        )
+
+    requested_variants = (
+        [DISTORTION_CORRECTED, NON_DISTORTION_CORRECTED]
+        if selection == "both"
+        else [selection]
+    )
+    pairs = []
+    for variant in requested_variants:
+        variant_groups = [
+            group
+            for group in groups
+            if _input_variant_from_series_name(group["name"]) == variant
+        ]
+        magnitude_group, phase_group = _select_magnitude_phase_groups(
+            variant_groups,
+            variant,
+        )
+        pairs.append(
+            {
+                "variant": variant,
+                "short_label": (
+                    "ND" if variant == NON_DISTORTION_CORRECTED else "DC"
+                ),
+                "groups": (magnitude_group, phase_group),
+            }
+        )
+    return pairs
+
+
+def _select_magnitude_phase_groups(groups, variant):
     magnitude_groups = [group for group in groups if group["kind"] == "magnitude"]
     phase_groups = [group for group in groups if group["kind"] == "phase"]
 
@@ -1804,19 +1888,31 @@ def _select_magnitude_phase_groups(groups):
         )
 
     if not magnitude_groups:
-        raise ValueError("No magnitude image series found in MRD stream")
+        raise ValueError(
+            f"No magnitude image series found for {variant} input; "
+            f"available series: {_available_series_summary(groups)}"
+        )
     if not phase_groups:
-        raise ValueError("No phase image series found in MRD stream")
-    if len(magnitude_groups) > 1 or len(phase_groups) > 1:
-        logging.warning(
-            "Multiple magnitude/phase series found; using first pair: %d magnitude, %d phase",
-            len(magnitude_groups),
-            len(phase_groups),
+        raise ValueError(
+            f"No phase image series found for {variant} input; "
+            f"available series: {_available_series_summary(groups)}"
+        )
+    if len(magnitude_groups) != 1 or len(phase_groups) != 1:
+        raise ValueError(
+            f"Ambiguous {variant} input: found {len(magnitude_groups)} "
+            f"magnitude and {len(phase_groups)} phase series; available series: "
+            f"{_available_series_summary(groups)}"
         )
 
-    return (
-        sorted(magnitude_groups, key=lambda group: group["order"])[0],
-        sorted(phase_groups, key=lambda group: group["order"])[0],
+    return magnitude_groups[0], phase_groups[0]
+
+
+def _available_series_summary(groups):
+    if not groups:
+        return "none"
+    return ", ".join(
+        f"{group['name'] or group['key']} ({group['kind']})"
+        for group in groups
     )
 
 
@@ -2020,6 +2116,7 @@ def _output_meta(
     *,
     source_geometry=False,
     slice_number=None,
+    input_variant=None,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -2045,13 +2142,6 @@ def _output_meta(
             display_meta["window_input_max"],
         ]
     )
-    center = int(
-        np.rint(
-            physical_center * display_meta["scale"]
-            + display_meta["offset"]
-        )
-    )
-    width = max(1, int(np.rint(physical_width * display_meta["scale"])))
     if slice_number is None:
         slice_number = slice_index
     slice_number = str(int(slice_number))
@@ -2089,6 +2179,8 @@ def _output_meta(
     meta["AnatomicalPartitionNo"] = "0"
     meta["QSMxTOutput"] = output_id
     meta["QSMxTUnits"] = units
+    if input_variant is not None:
+        meta["QSMxTInputSeries"] = input_variant
     meta["QSMxTSourceFile"] = str(nifti_path)
     meta["QSMxTDisplayScale"] = _format_display_number(display_meta["scale"])
     meta["QSMxTDisplayOffset"] = _format_display_number(display_meta["offset"])
@@ -2103,7 +2195,7 @@ def _output_meta(
     )
     meta["QSMxTPhysicalWindowCenter"] = f"{float(physical_center):.6g}"
     meta["QSMxTPhysicalWindowWidth"] = f"{float(physical_width):.6g}"
-    meta["QSMxTWindowDomain"] = "stored"
+    meta["QSMxTWindowDomain"] = "physical"
     meta["QSMxTDisplayMin"] = str(int(display_meta["display_min"]))
     meta["QSMxTDisplayMax"] = str(int(display_meta["display_max"]))
     meta["QSMxTDisplayClippedVoxels"] = str(int(display_meta["clipped_voxels"]))
@@ -2119,8 +2211,6 @@ def _output_meta(
         meta["PixelPaddingRangeLimit"] = str(
             int(display_meta["padding_value"])
         )
-    meta["WindowCenter"] = str(center)
-    meta["WindowWidth"] = str(width)
     meta.update(_header_geometry_meta(header))
     _strip_scanner_write_unsafe_meta(meta)
     return meta
