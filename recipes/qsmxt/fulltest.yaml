@@ -115,6 +115,15 @@ tests:
       }
       assert parameters["unwrappingalgorithm"]["default"] == "romeo"
       assert parameters["bfalgorithm"]["default"] == "vsharp"
+      if "inputseries" in parameters:
+          assert parameters["inputseries"]["default"] == "distortion-corrected"
+          assert [
+              value["id"] for value in parameters["inputseries"]["values"]
+          ] == [
+              "distortion-corrected",
+              "non-distortion-corrected",
+              "both",
+          ]
       if "maskcleanup" in parameter_ids:
           assert parameters["maskpreset"]["default"] == "bet"
           assert parameters["maskinginput"]["default"] == "magnitude"
@@ -278,9 +287,15 @@ tests:
           assert float(first_meta["WindowWidth"]) == 1000.0
           assert float(first_meta["QSMxTPhysicalWindowCenter"]) == 1.5
           assert float(first_meta["QSMxTPhysicalWindowWidth"]) == 1.0
-      else:
+      elif "WindowCenter" in first_meta:
           assert float(first_meta["WindowCenter"]) == 1.5
           assert float(first_meta["WindowWidth"]) == 1.0
+      else:
+          assert first_meta["QSMxTWindowDomain"] == "physical"
+          assert "WindowWidth" not in first_meta
+          assert "VOILUTFunction" not in first_meta
+          assert float(first_meta["QSMxTPhysicalWindowCenter"]) == 1.5
+          assert float(first_meta["QSMxTPhysicalWindowWidth"]) == 1.0
       assert first_meta["slice_count"] == "2"
       assert first_meta["NumberOfSlices"] == "2"
       assert first_meta["ImagesInAcquisition"] == "2"
