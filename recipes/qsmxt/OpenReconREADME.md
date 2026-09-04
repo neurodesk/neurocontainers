@@ -5,11 +5,17 @@ the magnitude and phase series, writes a temporary BIDS MEGRE dataset, runs the
 QSMxT v9 Rust binary, and sends selected derivatives back as derived MRD image
 series.
 
-The wrapper expects one magnitude series and one phase series. It classifies
-phase data from MRD image type metadata, DICOM image type metadata, or source
-series names such as `phase`, `pha`, or `_Pha`. If explicit metadata is absent
-and exactly two series are present, the lower dynamic-range series is used as
-phase.
+The **Input images** control selects distortion-corrected images, images marked
+`ND` (not distortion corrected), or both. Distortion-corrected input is the
+default. **Both** runs QSMxT once per magnitude/phase pair and returns distinct
+`DC` and `ND` output series. It takes roughly twice as long as processing one
+pair.
+
+The wrapper classifies phase data from MRD image type metadata, DICOM image type
+metadata, or source series names such as `phase`, `pha`, or `_Pha`. It recognizes
+`ND` only as a separate, case-insensitive name token, so magnitude and phase are
+always paired within the same distortion-correction variant. A missing or
+ambiguous requested pair fails explicitly instead of selecting by arrival order.
 
 For each derived magnitude/phase echo group the wrapper writes:
 
@@ -23,9 +29,8 @@ Echo grouping, echo times, field strength, and B0 direction are derived from the
 incoming MRD image stream and generated NIfTI geometry when available. The
 container still accepts `maxechoes`, `echotimesms`, `echotimems`,
 `echospacingms`, `fieldstrength`, and `b0dir` as manual JSON overrides for
-debugging, but they are not shown in the scanner UI. **Voxel size override** is
-available in the UI. Its default value of zero uses the geometry supplied by
-MRD.
+debugging, but they are not shown in the scanner UI. Voxel geometry comes from
+the MRD image stream.
 
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
 QSMxT derivatives that exist after the run.
@@ -41,12 +46,15 @@ The original range, scaling range, scale, inverse formula, physical display
 window, and clipped-voxel count are included in the returned metadata.
 
 Derived maps set the MRD `RescaleSlope` and `RescaleIntercept` attributes. The
-OpenRecon DICOM writer maps these attributes to the standard DICOM fields. The
-Siemens writer truncates sub-unit window values, so standard `WindowCenter` and
-`WindowWidth` are supplied as integers in the stored-pixel domain. Their
-physical equivalents are retained as `QSMxTPhysicalWindowCenter` and
-`QSMxTPhysicalWindowWidth`, with `QSMxTWindowDomain=stored` documenting the
-workaround.
+OpenRecon DICOM writer maps these attributes to the standard DICOM fields.
+Because DICOM applies modality rescaling before its display window, a QSM window
+must also use physical units. Siemens MRD metadata represents standard window
+values as integers, which cannot encode a typical sub-unit ppm window. The
+bridge therefore removes `WindowCenter`, `WindowWidth`, and `VOILUTFunction`
+instead of supplying a misleading stored-pixel window. The intended physical
+window remains available as `QSMxTPhysicalWindowCenter` and
+`QSMxTPhysicalWindowWidth`, with `QSMxTWindowDomain=physical` documenting its
+domain. The scanner or DICOM viewer chooses the displayed window automatically.
 
 Maps with a non-zero stored-value offset, including QSM, reserve stored code `0`.
 The bridge sends `PixelPaddingValue=0` and `PixelPaddingRangeLimit=0`, and native
@@ -187,6 +195,7 @@ Review all acquisition and safety settings on the target scanner before use.
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `qsmxt` | Selects the MRD server configuration. |
+| Input images | `inputseries` | choice | `distortion-corrected` | Processes corrected, ND, or both magnitude/phase pairs. |
 | Output maps | `sendoutputs` | choice | `qsm` | Selects which QSMxT derivatives are sent back. |
 | Send original | `sendoriginal` | boolean | `false` | Sends original magnitude and phase image series before derived outputs. |
 | Pipeline preset | `pipelinepreset` | choice | `custom` | Selects a three-stage algorithm preset or the custom algorithm controls. |
@@ -199,7 +208,6 @@ Review all acquisition and safety settings on the target scanner before use.
 | Threshold method | `maskthresholdmethod` | choice | `otsu` | Otsu or percentile threshold generation. |
 | Mask percentile | `maskthresholdpercentile` | double | `65` | Cutoff used by percentile thresholding. |
 | Mask cleanup | `maskcleanup` | choice | `close-fill` | None, fill holes, close and fill, or robust dilate/fill/erode cleanup. |
-| Voxel size override | `voxelsizemm` | double | `0` | Isotropic spacing; zero uses MRD geometry. |
 
 ## Open source development
 
