@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "topofit 0.3.0": {
+      "version": "20260904",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "shape analysis",
+    "machine learning"
+  ]
+}
