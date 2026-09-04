@@ -147,12 +147,108 @@
       "label": { "en": "Mask preset" },
       "type": "choice",
       "values": [
-        { "id": "default", "name": { "en": "Default" } },
+        { "id": "bet", "name": { "en": "BET (recommended)" } },
         { "id": "robust-threshold", "name": { "en": "Robust threshold" } },
-        { "id": "bet", "name": { "en": "BET" } }
+        { "id": "combined", "name": { "en": "BET + threshold union" } }
       ],
-      "default": "robust-threshold",
-      "information": { "en": "QSMxT masking preset. Robust threshold avoids external BET dependencies and is the recommended inline default." }
+      "default": "bet",
+      "information": { "en": "BET is the default because it follows the magnitude brain boundary and is less vulnerable to phase-quality dropouts in single-echo 7 T data. Combined unions BET and threshold masks." }
+    },
+    {
+      "id": "maskinginput",
+      "label": { "en": "Threshold input" },
+      "type": "choice",
+      "values": [
+        { "id": "magnitude", "name": { "en": "Combined magnitude" } },
+        { "id": "magnitude-first", "name": { "en": "First-echo magnitude" } },
+        { "id": "magnitude-last", "name": { "en": "Last-echo magnitude" } },
+        { "id": "phase-quality", "name": { "en": "Phase quality" } }
+      ],
+      "default": "magnitude",
+      "information": { "en": "Input used by Robust threshold and the threshold part of Combined. Magnitude is safer for single-echo acquisitions; phase quality is most useful with multiple echoes." }
+    },
+    {
+      "id": "betfractionalintensity",
+      "label": { "en": "BET threshold" },
+      "type": "double",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "default": 0.5,
+      "information": { "en": "BET fractional intensity threshold. Lower values create a larger mask." }
+    },
+    {
+      "id": "maskthresholdmethod",
+      "label": { "en": "Threshold method" },
+      "type": "choice",
+      "values": [
+        { "id": "otsu", "name": { "en": "Otsu" } },
+        { "id": "percentile", "name": { "en": "Percentile" } }
+      ],
+      "default": "otsu",
+      "information": { "en": "Threshold generator used by Robust threshold and Combined." }
+    },
+    {
+      "id": "maskthresholdpercentile",
+      "label": { "en": "Mask percentile" },
+      "type": "double",
+      "minimum": 0.0,
+      "maximum": 100.0,
+      "default": 65.0,
+      "unit": { "en": "%" },
+      "information": { "en": "Percentile cutoff when Threshold method is Percentile." }
+    },
+    {
+      "id": "maskdilate",
+      "label": { "en": "Dilate mask" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 20,
+      "default": 0,
+      "information": { "en": "Number of dilation iterations after mask generation." }
+    },
+    {
+      "id": "maskclose",
+      "label": { "en": "Close mask" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 20,
+      "default": 1,
+      "information": { "en": "Morphological closing radius. Closing bridges narrow gaps before holes are filled." }
+    },
+    {
+      "id": "maskfillholes",
+      "label": { "en": "Fill mask holes" },
+      "type": "boolean",
+      "default": true,
+      "information": { "en": "Fill enclosed holes after closing." }
+    },
+    {
+      "id": "maskmaxholesize",
+      "label": { "en": "Maximum hole size" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 10000000,
+      "default": 0,
+      "information": { "en": "Largest enclosed hole to fill, in voxels. Zero uses QSMxT's automatic volume-based limit." }
+    },
+    {
+      "id": "maskerode",
+      "label": { "en": "Erode mask" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 20,
+      "default": 0,
+      "information": { "en": "Number of erosion iterations after hole filling. The default avoids reopening dropout gaps." }
+    },
+    {
+      "id": "voxelsizemm",
+      "label": { "en": "Voxel size override" },
+      "type": "double",
+      "minimum": 0.0,
+      "maximum": 10.0,
+      "default": 0.0,
+      "unit": { "en": "mm" },
+      "information": { "en": "Isotropic voxel size used for BIDS geometry. Zero uses the geometry supplied by MRD." }
     }
   ]
 }

@@ -105,6 +105,12 @@ SCANNER_DISPLAY_PADDING_VALUE = 0
 SCANNER_DISPLAY_DATA_MIN = 1
 T2STAR_SCALE_PERCENTILE = 99.9
 T2STAR_SCALE_MIN_POSITIVE_VOXELS = 100
+QSM_WINDOW_LOW_PERCENTILE = 1.0
+QSM_WINDOW_HIGH_PERCENTILE = 99.0
+QSM_WINDOW_MIN_NONZERO_VOXELS = 100
+DEFAULT_MASK_PRESET = "bet"
+DEFAULT_MASKING_INPUT = "magnitude"
+DEFAULT_BET_FRACTIONAL_INTENSITY = 0.5
 SCANNER_DISPLAY_SCALE_FACTORS = (
     1000000.0,
     100000.0,
@@ -315,11 +321,18 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
     field_strength = settings["field_strength_t"]
     logging.info(
         "Resolved QSMxT acquisition parameters: echo_times_ms=%s, "
-        "field_strength_t=%.6g (%s), phase_wrap=%.6g",
+        "field_strength_t=%.6g (%s), phase_wrap=%.6g, "
+        "voxel_size_mm=%s (%s)",
         [round(value * 1000.0, 6) for value in echo_times],
         field_strength,
         settings["field_strength_source"],
         settings["phase_wrap"],
+        (
+            f"{settings['voxel_size_mm']:.6g}"
+            if settings["voxel_size_mm"] is not None
+            else "MRD"
+        ),
+        settings["voxel_size_source"],
     )
 
     anat_dir = bids_dir / "sub-01" / "anat"
@@ -344,10 +357,12 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
         mag_volume, affine = _images_to_nifti_volume(
             magnitude_echo_groups[echo_index],
             kind="magnitude",
+            voxel_size_mm=settings["voxel_size_mm"],
         )
         phase_volume, phase_affine = _images_to_nifti_volume(
             phase_echo_groups[echo_index],
             kind="phase",
+            voxel_size_mm=settings["voxel_size_mm"],
         )
         phase_volume = _phase_to_qsmxt_counts(phase_volume, settings["phase_wrap"])
         _log_array_diagnostics(
@@ -392,6 +407,7 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
             "ProtocolName": _metadata_protocol_name(metadata),
             "QSMxTOpenReconSource": "ISMRMRD image stream",
             "QSMxTRawPhaseScale": settings["phase_wrap"],
+            "QSMxTOpenReconVoxelSizeSource": settings["voxel_size_source"],
         }
         _write_json(_nifti_sidecar_path(mag_path), dict(sidecar, ImageType=["ORIGINAL", "PRIMARY", "M"]))
         _write_json(_nifti_sidecar_path(phase_path), dict(sidecar, ImageType=["ORIGINAL", "PRIMARY", "P"]))
@@ -415,6 +431,14 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
         magnitude_paths[0],
         phase_paths[0],
     )
+    source_geometry_images = _sorted_stack_images(magnitude_echo_groups[0])
+    if settings["voxel_size_mm"] is not None:
+        source_geometry_images = []
+        logging.info(
+            "Using derivative affine rather than source MRD geometry because "
+            "voxel size was resolved from %s",
+            settings["voxel_size_source"],
+        )
     return {
         "bids_dir": bids_dir,
         "anat_dir": anat_dir,
@@ -425,7 +449,7 @@ def write_bids_dataset(input_images, metadata, bids_dir, settings):
         "magnitude_images": [image for group in magnitude_echo_groups for image in group],
         "phase_images": [image for group in phase_echo_groups for image in group],
         "anchor_image": magnitude_echo_groups[0][0],
-        "source_geometry_images": _sorted_stack_images(magnitude_echo_groups[0]),
+        "source_geometry_images": source_geometry_images,
         "magnitude_paths": magnitude_paths,
         "phase_paths": phase_paths,
         "field_strength_t": field_strength,
@@ -453,7 +477,8 @@ def _run_qsmxt(bids_dir, output_dir, settings):
     _append_optional_arg(cmd, "--qsm-algorithm", settings["qsm_algorithm"])
     _append_optional_arg(cmd, "--unwrapping-algorithm", settings["unwrapping_algorithm"])
     _append_optional_arg(cmd, "--bf-algorithm", settings["bf_algorithm"])
-    _append_optional_arg(cmd, "--mask-preset", settings["mask_preset"])
+    for mask_section in _mask_sections(settings):
+        cmd.extend(["--mask", mask_section])
     _append_optional_arg(cmd, "--qsm-reference", settings["qsm_reference"])
     # Auto-enable the generation flags for any derivative the user selected in
     # sendoutputs; otherwise the map is requested but never produced by QSMxT.
@@ -1168,7 +1193,7 @@ def _slice_position_from_affine(nifti, shape_xyz, slice_index, fallback_image):
     return [float(value) for value in fallback_image.getHead().position]
 
 
-def _image_to_nifti_volume(image, kind):
+def _image_to_nifti_volume(image, kind, voxel_size_mm=None):
     data = np.asarray(image.data)
     if data.ndim == 4:
         if kind == "magnitude":
@@ -1191,21 +1216,37 @@ def _image_to_nifti_volume(image, kind):
             raise ValueError(f"Unsupported MRD image data shape: {data.shape}")
 
     vol_xyz = np.transpose(np.asarray(vol_zyx, dtype=np.float32), (2, 1, 0))
-    return vol_xyz, _affine_from_image(image, vol_xyz.shape)
+    return vol_xyz, _affine_from_image(
+        image,
+        vol_xyz.shape,
+        voxel_size_mm=voxel_size_mm,
+    )
 
 
-def _images_to_nifti_volume(images, kind):
+def _images_to_nifti_volume(images, kind, voxel_size_mm=None):
     ordered_images = _sorted_stack_images(images)
     if len(ordered_images) == 1:
-        return _image_to_nifti_volume(ordered_images[0], kind)
+        return _image_to_nifti_volume(
+            ordered_images[0],
+            kind,
+            voxel_size_mm=voxel_size_mm,
+        )
 
     volumes = []
     for image in ordered_images:
-        volume, _ = _image_to_nifti_volume(image, kind)
+        volume, _ = _image_to_nifti_volume(
+            image,
+            kind,
+            voxel_size_mm=voxel_size_mm,
+        )
         volumes.append(volume)
 
     stacked = np.concatenate(volumes, axis=2)
-    return stacked, _affine_from_image_stack(ordered_images, stacked.shape)
+    return stacked, _affine_from_image_stack(
+        ordered_images,
+        stacked.shape,
+        voxel_size_mm=voxel_size_mm,
+    )
 
 
 def _sorted_stack_images(images):
@@ -1258,7 +1299,7 @@ def _phase_to_qsmxt_counts(phase_volume, phase_wrap):
     return phase * (4096.0 / phase_wrap)
 
 
-def _affine_from_image(image, shape_xyz):
+def _affine_from_image(image, shape_xyz, voxel_size_mm=None):
     header = image.getHead()
     read_dir = _normalized_or_default(header.read_dir, (1.0, 0.0, 0.0))
     phase_dir = _normalized_or_default(header.phase_dir, (0.0, 1.0, 0.0))
@@ -1266,13 +1307,15 @@ def _affine_from_image(image, shape_xyz):
     fov = np.asarray(header.field_of_view, dtype=float)
     dims = np.asarray(shape_xyz, dtype=float)
     voxel = np.divide(fov, dims, out=np.ones(3, dtype=float), where=dims > 0)
+    if voxel_size_mm is not None:
+        voxel[:] = float(voxel_size_mm)
     packed_slice_spacing = _scanner_packed_volume_slice_spacing(
         image,
         shape_xyz,
         fov,
         voxel,
     )
-    if packed_slice_spacing is not None:
+    if packed_slice_spacing is not None and voxel_size_mm is None:
         voxel[2] = packed_slice_spacing
         logging.info(
             "Using scanner packed-volume slice spacing %.6g mm for %d slices",
@@ -1330,7 +1373,7 @@ def _scanner_packed_volume_slice_spacing(image, shape_xyz, fov, voxel):
     return float(fov[2])
 
 
-def _affine_from_image_stack(images, shape_xyz):
+def _affine_from_image_stack(images, shape_xyz, voxel_size_mm=None):
     first_header = images[0].getHead()
     read_dir = _normalized_or_default(first_header.read_dir, (1.0, 0.0, 0.0))
     phase_dir = _normalized_or_default(first_header.phase_dir, (0.0, 1.0, 0.0))
@@ -1338,6 +1381,8 @@ def _affine_from_image_stack(images, shape_xyz):
     fov = np.asarray(first_header.field_of_view, dtype=float)
     dims = np.asarray(shape_xyz, dtype=float)
     voxel = np.divide(fov, dims, out=np.ones(3, dtype=float), where=dims > 0)
+    if voxel_size_mm is not None:
+        voxel[:] = float(voxel_size_mm)
 
     source_matrix = np.asarray(first_header.matrix_size, dtype=float)
     source_slice_count = (
@@ -1350,7 +1395,11 @@ def _affine_from_image_stack(images, shape_xyz):
     declared_slice_spacing = float(fov[2] / source_slice_count)
     if declared_slice_spacing <= 0 or not np.isfinite(declared_slice_spacing):
         declared_slice_spacing = 1.0
-    slice_step = slice_dir * declared_slice_spacing
+    slice_step = slice_dir * (
+        float(voxel_size_mm)
+        if voxel_size_mm is not None
+        else declared_slice_spacing
+    )
     positions = [
         np.asarray(image.getHead().position, dtype=float)
         for image in images
@@ -1365,19 +1414,20 @@ def _affine_from_image_stack(images, shape_xyz):
             candidate_alignment = abs(
                 float(np.dot(candidate_step / candidate_spacing, slice_dir))
             )
-        if (
-            candidate_spacing >= declared_slice_spacing * 0.5
-            and candidate_alignment >= 0.9
-        ):
-            slice_step = candidate_step
-        elif candidate_spacing > 0:
-            logging.warning(
-                "Ignoring implausible source stack position step %.9g mm "
-                "(declared slice spacing %.9g mm, alignment %.6g)",
-                candidate_spacing,
-                declared_slice_spacing,
-                candidate_alignment,
-            )
+        if voxel_size_mm is None:
+            if (
+                candidate_spacing >= declared_slice_spacing * 0.5
+                and candidate_alignment >= 0.9
+            ):
+                slice_step = candidate_step
+            elif candidate_spacing > 0:
+                logging.warning(
+                    "Ignoring implausible source stack position step %.9g mm "
+                    "(declared slice spacing %.9g mm, alignment %.6g)",
+                    candidate_spacing,
+                    declared_slice_spacing,
+                    candidate_alignment,
+                )
 
     logging.info(
         "QSMxT diagnostic source stack geometry: images=%d "
@@ -1458,6 +1508,13 @@ def _settings_from_config(config, metadata=None):
         b0_dir_source = "nifti_affine"
 
     pipeline_preset, algorithm_settings = _algorithm_settings(params)
+    configured_voxel_size = _config_float(params, "voxelsizemm", 0.0)
+    if configured_voxel_size > 0.0:
+        voxel_size_mm = configured_voxel_size
+        voxel_size_source = "config"
+    else:
+        voxel_size_mm = None
+        voxel_size_source = "MRD"
 
     return {
         "send_original": _config_bool(params, "sendoriginal", False),
@@ -1471,10 +1528,43 @@ def _settings_from_config(config, metadata=None):
         "b0_dir_override": configured_b0_dir,
         "b0_dir_source": b0_dir_source,
         "phase_wrap": _config_float(params, "phasewrap", 4096.0),
+        "voxel_size_mm": voxel_size_mm,
+        "voxel_size_source": voxel_size_source,
         "qsmxt_binary": _config_text(params, "qsmxtbinary", ""),
         "pipeline_preset": pipeline_preset,
         **algorithm_settings,
-        "mask_preset": _optional_choice(params, "maskpreset"),
+        "mask_preset": (
+            _optional_choice(params, "maskpreset") or DEFAULT_MASK_PRESET
+        ),
+        "masking_input": (
+            _optional_choice(params, "maskinginput") or DEFAULT_MASKING_INPUT
+        ),
+        "bet_fractional_intensity": min(
+            1.0,
+            max(
+                0.0,
+                _config_float(
+                    params,
+                    "betfractionalintensity",
+                    DEFAULT_BET_FRACTIONAL_INTENSITY,
+                ),
+            ),
+        ),
+        "mask_threshold_method": (
+            _optional_choice(params, "maskthresholdmethod") or "otsu"
+        ),
+        "mask_threshold_percentile": min(
+            100.0,
+            max(0.0, _config_float(params, "maskthresholdpercentile", 65.0)),
+        ),
+        "mask_dilate": max(0, _config_int(params, "maskdilate", 0)),
+        "mask_close": max(0, _config_int(params, "maskclose", 1)),
+        "mask_fill_holes": _config_bool(params, "maskfillholes", True),
+        "mask_max_hole_size": max(
+            0,
+            _config_int(params, "maskmaxholesize", 0),
+        ),
+        "mask_erode": max(0, _config_int(params, "maskerode", 0)),
         "qsm_reference": _optional_choice(params, "qsmreference"),
         "no_qsm": _config_bool(params, "noqsm", False),
         "do_swi": _config_bool(params, "doswi", False),
@@ -1511,6 +1601,62 @@ def _algorithm_settings(params):
             f"unknown pipelinepreset {pipeline_preset!r}; expected custom or {choices}"
         ) from error
     return pipeline_preset, dict(preset)
+
+
+def _mask_sections(settings):
+    refinements = []
+    if settings["mask_dilate"]:
+        refinements.append(f"dilate:{settings['mask_dilate']}")
+    if settings["mask_close"]:
+        refinements.append(f"close:{settings['mask_close']}")
+    if settings["mask_fill_holes"]:
+        refinements.append(f"fill-holes:{settings['mask_max_hole_size']}")
+    if settings["mask_erode"]:
+        refinements.append(f"erode:{settings['mask_erode']}")
+    refinement_suffix = "" if not refinements else "," + ",".join(refinements)
+
+    preset = settings["mask_preset"]
+    if preset not in {"bet", "robust-threshold", "combined"}:
+        raise ValueError(
+            f"unknown maskpreset {preset!r}; expected bet, robust-threshold, or combined"
+        )
+
+    sections = []
+    if preset in {"bet", "combined"}:
+        bet_fraction = _format_display_number(
+            settings["bet_fractional_intensity"]
+        )
+        sections.append(f"magnitude,bet:{bet_fraction}{refinement_suffix}")
+
+    if preset in {"robust-threshold", "combined"}:
+        masking_input = settings["masking_input"]
+        if masking_input not in {
+            "magnitude",
+            "magnitude-first",
+            "magnitude-last",
+            "phase-quality",
+        }:
+            raise ValueError(
+                f"unknown maskinginput {masking_input!r}; expected magnitude, "
+                "magnitude-first, magnitude-last, or phase-quality"
+            )
+        method = settings["mask_threshold_method"]
+        if method == "otsu":
+            threshold = "threshold:otsu"
+        elif method == "percentile":
+            percentile = _format_display_number(
+                settings["mask_threshold_percentile"]
+            )
+            threshold = f"threshold:percentile:{percentile}"
+        else:
+            raise ValueError(
+                f"unknown maskthresholdmethod {method!r}; expected otsu or percentile"
+            )
+        sections.append(
+            f"{masking_input},{threshold}{refinement_suffix}"
+        )
+
+    return sections
 
 
 def _group_images_by_series(images):
@@ -1864,12 +2010,19 @@ def _output_meta(
         slice_index,
     )
     image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
-    center, width = _window_center_width(
+    physical_center, physical_width = _window_center_width(
         [
-            display_meta["scale_input_min"],
-            display_meta["scale_input_max"],
+            display_meta["window_input_min"],
+            display_meta["window_input_max"],
         ]
     )
+    center = int(
+        np.rint(
+            physical_center * display_meta["scale"]
+            + display_meta["offset"]
+        )
+    )
+    width = max(1, int(np.rint(physical_width * display_meta["scale"])))
     if slice_number is None:
         slice_number = slice_index
     slice_number = str(int(slice_number))
@@ -1919,6 +2072,9 @@ def _output_meta(
     meta["QSMxTDisplayScaleInputMax"] = (
         f"{float(display_meta['scale_input_max']):.6g}"
     )
+    meta["QSMxTPhysicalWindowCenter"] = f"{float(physical_center):.6g}"
+    meta["QSMxTPhysicalWindowWidth"] = f"{float(physical_width):.6g}"
+    meta["QSMxTWindowDomain"] = "stored"
     meta["QSMxTDisplayMin"] = str(int(display_meta["display_min"]))
     meta["QSMxTDisplayMax"] = str(int(display_meta["display_max"]))
     meta["QSMxTDisplayClippedVoxels"] = str(int(display_meta["clipped_voxels"]))
@@ -1931,8 +2087,11 @@ def _output_meta(
     meta["RescaleType"] = "US"
     if display_meta["padding_value"] is not None:
         meta["PixelPaddingValue"] = str(int(display_meta["padding_value"]))
-    meta["WindowCenter"] = f"{float(center):.6g}"
-    meta["WindowWidth"] = f"{float(width):.6g}"
+        meta["PixelPaddingRangeLimit"] = str(
+            int(display_meta["padding_value"])
+        )
+    meta["WindowCenter"] = str(center)
+    meta["WindowWidth"] = str(width)
     meta.update(_header_geometry_meta(header))
     _strip_scanner_write_unsafe_meta(meta)
     return meta
@@ -2426,6 +2585,8 @@ def _scanner_display_volume(data, output_id, units):
             "input_max": float(np.max(finite)) if finite.size else 0.0,
             "scale_input_min": 0.0,
             "scale_input_max": 1.0,
+            "window_input_min": 0.0,
+            "window_input_max": 1.0,
             "display_min": int(np.min(display)) if display.size else 0,
             "display_max": int(np.max(display)) if display.size else 0,
         }
@@ -2437,6 +2598,12 @@ def _scanner_display_volume(data, output_id, units):
         output_id,
         input_min,
         input_max,
+    )
+    window_input_min, window_input_max = _scanner_display_window_range(
+        values,
+        output_id,
+        scale_input_min,
+        scale_input_max,
     )
     needs_offset = _scanner_display_needs_offset(
         output_id,
@@ -2479,6 +2646,8 @@ def _scanner_display_volume(data, output_id, units):
         "input_max": input_max,
         "scale_input_min": scale_input_min,
         "scale_input_max": scale_input_max,
+        "window_input_min": window_input_min,
+        "window_input_max": window_input_max,
         "display_min": int(np.min(display)) if display.size else 0,
         "display_max": int(np.max(display)) if display.size else 0,
     }
@@ -2498,6 +2667,30 @@ def _scanner_display_scale_range(values, output_id, input_min, input_max):
     if robust_max <= 0.0 or not np.isfinite(robust_max):
         return 0.0, input_max
     return 0.0, min(input_max, robust_max)
+
+
+def _scanner_display_window_range(
+    values,
+    output_id,
+    scale_input_min,
+    scale_input_max,
+):
+    if output_id != "qsm":
+        return scale_input_min, scale_input_max
+
+    finite_nonzero = values[np.isfinite(values) & (values != 0.0)]
+    if finite_nonzero.size < QSM_WINDOW_MIN_NONZERO_VOXELS:
+        return scale_input_min, scale_input_max
+
+    low, high = np.percentile(
+        finite_nonzero,
+        [QSM_WINDOW_LOW_PERCENTILE, QSM_WINDOW_HIGH_PERCENTILE],
+    )
+    low = min(0.0, float(low))
+    high = max(0.0, float(high))
+    if not np.isfinite(low) or not np.isfinite(high) or high <= low:
+        return scale_input_min, scale_input_max
+    return low, high
 
 
 def _scanner_display_needs_offset(output_id, input_min):
