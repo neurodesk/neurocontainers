@@ -163,7 +163,7 @@ voxels enter those calculations.
 The mask preset remains active when an algorithm pipeline preset is selected;
 the pipeline preset only overrides unwrapping, background removal, and QSM
 inversion. Mask controls expose the threshold input and method, BET fractional
-intensity, dilation, closing, hole filling and maximum hole size, and erosion.
+intensity, and a cleanup preset.
 Magnitude thresholding is the safer choice for single-echo data because a
 single echo provides no inter-echo phase-coherence information. Closing and
 hole filling run before erosion; erosion defaults to zero so repaired gaps are
@@ -198,12 +198,8 @@ Review all acquisition and safety settings on the target scanner before use.
 | BET threshold | `betfractionalintensity` | double | `0.5` | BET fractional intensity threshold. |
 | Threshold method | `maskthresholdmethod` | choice | `otsu` | Otsu or percentile threshold generation. |
 | Mask percentile | `maskthresholdpercentile` | double | `65` | Cutoff used by percentile thresholding. |
-| Dilate mask | `maskdilate` | int | `0` | Dilation iterations after generation. |
-| Close mask | `maskclose` | int | `1` | Closing radius used to bridge narrow gaps. |
-| Fill mask holes | `maskfillholes` | boolean | `true` | Fill enclosed holes after closing. |
-| Maximum hole size | `maskmaxholesize` | int | `0` | Largest hole in voxels; zero selects QSMxT auto sizing. |
-| Erode mask | `maskerode` | int | `0` | Erosion iterations after hole filling. |
-| Voxel size override | `voxelsizemm` | double | `0` | Isotropic spacing; zero uses MRD/protocol auto detection. |
+| Mask cleanup | `maskcleanup` | choice | `close-fill` | None, fill holes, close and fill, or robust dilate/fill/erode cleanup. |
+| Voxel size override | `voxelsizemm` | double | `0` | Isotropic spacing; zero uses MRD geometry. |
 
 ## Open source development
 

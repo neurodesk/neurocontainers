@@ -198,47 +198,17 @@
       "information": { "en": "Percentile cutoff when Threshold method is Percentile." }
     },
     {
-      "id": "maskdilate",
-      "label": { "en": "Dilate mask" },
-      "type": "int",
-      "minimum": 0,
-      "maximum": 20,
-      "default": 0,
-      "information": { "en": "Number of dilation iterations after mask generation." }
-    },
-    {
-      "id": "maskclose",
-      "label": { "en": "Close mask" },
-      "type": "int",
-      "minimum": 0,
-      "maximum": 20,
-      "default": 1,
-      "information": { "en": "Morphological closing radius. Closing bridges narrow gaps before holes are filled." }
-    },
-    {
-      "id": "maskfillholes",
-      "label": { "en": "Fill mask holes" },
-      "type": "boolean",
-      "default": true,
-      "information": { "en": "Fill enclosed holes after closing." }
-    },
-    {
-      "id": "maskmaxholesize",
-      "label": { "en": "Maximum hole size" },
-      "type": "int",
-      "minimum": 0,
-      "maximum": 10000000,
-      "default": 0,
-      "information": { "en": "Largest enclosed hole to fill, in voxels. Zero uses QSMxT's automatic volume-based limit." }
-    },
-    {
-      "id": "maskerode",
-      "label": { "en": "Erode mask" },
-      "type": "int",
-      "minimum": 0,
-      "maximum": 20,
-      "default": 0,
-      "information": { "en": "Number of erosion iterations after hole filling. The default avoids reopening dropout gaps." }
+      "id": "maskcleanup",
+      "label": { "en": "Mask cleanup" },
+      "type": "choice",
+      "values": [
+        { "id": "close-fill", "name": { "en": "Close and fill holes" } },
+        { "id": "fill", "name": { "en": "Fill holes" } },
+        { "id": "robust", "name": { "en": "Dilate, fill, and erode" } },
+        { "id": "none", "name": { "en": "None" } }
+      ],
+      "default": "close-fill",
+      "information": { "en": "Morphological cleanup applied after mask generation. Close and fill holes bridges narrow gaps without shrinking the repaired mask." }
     },
     {
       "id": "voxelsizemm",

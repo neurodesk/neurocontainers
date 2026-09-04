@@ -102,11 +102,7 @@ tests:
           "betfractionalintensity",
           "maskthresholdmethod",
           "maskthresholdpercentile",
-          "maskdilate",
-          "maskclose",
-          "maskfillholes",
-          "maskmaxholesize",
-          "maskerode",
+          "maskcleanup",
           "voxelsizemm",
       }
       assert expected <= parameter_ids

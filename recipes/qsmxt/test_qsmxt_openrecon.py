@@ -315,6 +315,7 @@ def test_openrecon_defaults_select_whqsm_romeo_and_vsharp():
     assert settings["mask_preset"] == "bet"
     assert settings["masking_input"] == "magnitude"
     assert settings["bet_fractional_intensity"] == 0.5
+    assert settings["mask_cleanup"] == "close-fill"
     assert settings["mask_dilate"] == 0
     assert settings["mask_close"] == 1
     assert settings["mask_fill_holes"] is True
@@ -506,10 +507,7 @@ def test_openrecon_label_exposes_processing_defaults():
     }
     assert parameters["maskinginput"]["default"] == "magnitude"
     assert parameters["betfractionalintensity"]["default"] == 0.5
-    assert parameters["maskdilate"]["default"] == 0
-    assert parameters["maskclose"]["default"] == 1
-    assert parameters["maskfillholes"]["default"] is True
-    assert parameters["maskerode"]["default"] == 0
+    assert parameters["maskcleanup"]["default"] == "close-fill"
     assert parameters["voxelsizemm"]["default"] == 0.0
 
 

@@ -111,6 +111,13 @@ QSM_WINDOW_MIN_NONZERO_VOXELS = 100
 DEFAULT_MASK_PRESET = "bet"
 DEFAULT_MASKING_INPUT = "magnitude"
 DEFAULT_BET_FRACTIONAL_INTENSITY = 0.5
+DEFAULT_MASK_CLEANUP = "close-fill"
+MASK_CLEANUP_PRESETS = {
+    "none": {"dilate": 0, "close": 0, "fill_holes": False, "erode": 0},
+    "fill": {"dilate": 0, "close": 0, "fill_holes": True, "erode": 0},
+    "close-fill": {"dilate": 0, "close": 1, "fill_holes": True, "erode": 0},
+    "robust": {"dilate": 1, "close": 0, "fill_holes": True, "erode": 1},
+}
 SCANNER_DISPLAY_SCALE_FACTORS = (
     1000000.0,
     100000.0,
@@ -1508,6 +1515,14 @@ def _settings_from_config(config, metadata=None):
         b0_dir_source = "nifti_affine"
 
     pipeline_preset, algorithm_settings = _algorithm_settings(params)
+    mask_cleanup = _optional_choice(params, "maskcleanup") or DEFAULT_MASK_CLEANUP
+    try:
+        mask_cleanup_defaults = MASK_CLEANUP_PRESETS[mask_cleanup]
+    except KeyError as error:
+        choices = ", ".join(MASK_CLEANUP_PRESETS)
+        raise ValueError(
+            f"unknown maskcleanup {mask_cleanup!r}; expected {choices}"
+        ) from error
     configured_voxel_size = _config_float(params, "voxelsizemm", 0.0)
     if configured_voxel_size > 0.0:
         voxel_size_mm = configured_voxel_size
@@ -1557,14 +1572,28 @@ def _settings_from_config(config, metadata=None):
             100.0,
             max(0.0, _config_float(params, "maskthresholdpercentile", 65.0)),
         ),
-        "mask_dilate": max(0, _config_int(params, "maskdilate", 0)),
-        "mask_close": max(0, _config_int(params, "maskclose", 1)),
-        "mask_fill_holes": _config_bool(params, "maskfillholes", True),
+        "mask_cleanup": mask_cleanup,
+        "mask_dilate": max(
+            0,
+            _config_int(params, "maskdilate", mask_cleanup_defaults["dilate"]),
+        ),
+        "mask_close": max(
+            0,
+            _config_int(params, "maskclose", mask_cleanup_defaults["close"]),
+        ),
+        "mask_fill_holes": _config_bool(
+            params,
+            "maskfillholes",
+            mask_cleanup_defaults["fill_holes"],
+        ),
         "mask_max_hole_size": max(
             0,
             _config_int(params, "maskmaxholesize", 0),
         ),
-        "mask_erode": max(0, _config_int(params, "maskerode", 0)),
+        "mask_erode": max(
+            0,
+            _config_int(params, "maskerode", mask_cleanup_defaults["erode"]),
+        ),
         "qsm_reference": _optional_choice(params, "qsmreference"),
         "no_qsm": _config_bool(params, "noqsm", False),
         "do_swi": _config_bool(params, "doswi", False),
