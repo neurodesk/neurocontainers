@@ -5,13 +5,16 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 import constants
 import ismrmrd
 import nibabel as nib
 import numpy as np
 import topofit
+from topofit_core import run_topofit_workflow
 
 
 class RecordingConnection:
@@ -86,7 +89,38 @@ def _mrd_volume(
     return images
 
 
+def _run_mock_workflow(input_path, run_dir, options):
+    return run_topofit_workflow(
+        input_path,
+        run_dir,
+        replace(options, mock=True),
+    )
+
+
 class TopoFitOpenReconTests(unittest.TestCase):
+    def test_openrecon_config_cannot_enable_mock_surfaces(self):
+        options = topofit._options_from_config(
+            {"parameters": {"tfdebugmock": True}}
+        )
+
+        self.assertFalse(options.mock)
+
+    def test_mprage_and_gre_inputs_are_not_filtered(self):
+        images = (
+            _mrd_volume(
+                series_description="MPRAGE_T1W",
+                protocol_name="MPRAGE",
+                series_index=5,
+            )
+            + _mrd_volume(
+                series_description="GRE_T1W",
+                protocol_name="GRE",
+                series_index=6,
+            )
+        )
+
+        self.assertEqual(topofit._select_anatomical_input_images(images), images)
+
     def test_mp2rage_processes_only_uni_den_contrast(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             topofit.WORKSPACE = Path(temporary_directory)
@@ -114,11 +148,15 @@ class TopoFitOpenReconTests(unittest.TestCase):
                     "tfdevice": "cpu",
                     "tfmodel": "t1w_1mm",
                     "tfconform": True,
-                    "tfdebugmock": True,
                 }
             }
 
-            topofit.process(connection, config, metadata=None)
+            with mock.patch.object(
+                topofit,
+                "run_topofit_workflow",
+                side_effect=_run_mock_workflow,
+            ):
+                topofit.process(connection, config, metadata=None)
 
             errors = [
                 message
@@ -157,7 +195,7 @@ class TopoFitOpenReconTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("no UNI-DEN contrast", errors[0])
 
-    def test_mock_mrd_series_returns_source_grid_qc_and_manifest(self):
+    def test_mrd_series_returns_source_grid_qc_and_manifest(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             topofit.WORKSPACE = Path(temporary_directory)
             connection = RecordingConnection(_mrd_volume())
@@ -167,7 +205,6 @@ class TopoFitOpenReconTests(unittest.TestCase):
                     "tfdevice": "cpu",
                     "tfmodel": "t1w_1mm",
                     "tfconform": True,
-                    "tfdebugmock": True,
                     "tfflatpatches": True,
                     "tfsulcalmiddepth": True,
                     "tfsulcalthreshold": 100.0,
@@ -175,7 +212,12 @@ class TopoFitOpenReconTests(unittest.TestCase):
                 }
             }
 
-            topofit.process(connection, config, metadata=None)
+            with mock.patch.object(
+                topofit,
+                "run_topofit_workflow",
+                side_effect=_run_mock_workflow,
+            ):
+                topofit.process(connection, config, metadata=None)
 
             self.assertTrue(connection.closed)
             errors = [

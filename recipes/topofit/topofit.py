@@ -35,7 +35,6 @@ DEFAULTS = {
     "tfdevice": "cuda",
     "tfmodel": "t1w_1mm",
     "tfconform": True,
-    "tfdebugmock": False,
     "tfflatpatches": False,
     "tfsulcalmiddepth": False,
     "tfsulcalthreshold": 0.1,
@@ -528,7 +527,6 @@ def _options_from_config(config) -> TopoFitOptions:
         .strip()
         .lower(),
         conform=_config_bool(config, "tfconform", DEFAULTS["tfconform"]),
-        mock=_config_bool(config, "tfdebugmock", DEFAULTS["tfdebugmock"]),
         find_flat_patches=_config_bool(
             config, "tfflatpatches", DEFAULTS["tfflatpatches"]
         ),

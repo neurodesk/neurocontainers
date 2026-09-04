@@ -1,9 +1,9 @@
 # TopoFit OpenRecon
 
-This OpenRecon workflow runs BrainNet TopoFit on a reconstructed 3D MPRAGE
-during the scanner session. It generates bilateral white, pial, and spherical
-registration surfaces in FreeSurfer geometry format. It then returns a
-scanner-visible axial QC series on the exact source image grid.
+This OpenRecon workflow runs BrainNet TopoFit on a reconstructed 3D anatomical
+MR image during the scanner session. It generates bilateral white, pial, and
+spherical registration surfaces in FreeSurfer geometry format. It then returns
+a scanner-visible axial QC series on the exact source image grid.
 
 This is a research workflow, not a complete FreeSurfer reconstruction. It does
 not run `recon-all`, cortical parcellation, or longitudinal processing.
@@ -11,10 +11,13 @@ not run `recon-all`, cortical parcellation, or longitudinal processing.
 ## Input and output
 
 The input must be one reconstructed three-dimensional magnitude image series.
-For an MP2RAGE scan, only the denoised uniform (`UNI-DEN`) contrast is
-processed; INV1, INV2, UNI, and other contrasts in the same stream are ignored.
-An MP2RAGE stream without a `UNI-DEN` contrast is rejected rather than processed
-as a different anatomical contrast.
+MP2RAGE is not required. MPRAGE and other non-MP2RAGE 3D anatomical GRE series
+pass through the input selector unchanged. For an MP2RAGE scan, only the
+denoised uniform (`UNI-DEN`) contrast is processed; INV1, INV2, UNI, and other
+contrasts in the same stream are ignored. An MP2RAGE stream without a
+`UNI-DEN` contrast is rejected rather than processed as a different anatomical
+contrast.
+
 The adapter sorts slices by physical position, converts center-based MRD/LPS
 geometry and reconstructed pixel directions to NIfTI RAS, and writes one
 NIfTI volume for BrainNet. By default, BrainNet conforms the data internally
@@ -68,11 +71,6 @@ hemispheres; 3 marks overlap. The mask keeps the source shape and affine.
 | Find sulcal mid-depth voxels | `tfsulcalmiddepth` | `false` | Write a source-grid label mask for curvature-defined sulci at 50% cortical depth. |
 | Sulcal curvature threshold | `tfsulcalthreshold` | `0.1 mm^-1` | Set the minimum magnitude of negative mean curvature. |
 | Surface thickness | `tfoverlaythickness` | `1` voxel | Set the in-plane dilation radius from 0 to 3 voxels. |
-| Mock surfaces | `tfdebugmock` | `false` | Exercise MRD transport and geometry without neural inference. |
-
-The mock option follows the full scanner conversion, QC, metadata, and return
-path, but creates six tiny synthetic meshes. It is useful for a quick scanner
-integration test. Mock artifacts are not analysis results.
 
 ## Safety boundary
 
