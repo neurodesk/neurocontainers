@@ -403,6 +403,7 @@ def _stamp_output(
         meta["ImageComments"] = comment
         meta["TopoFitStatus"] = "SURFACE_READY_RESEARCH_ONLY"
         meta["TopoFitPrescriptionStatus"] = "WITHHELD"
+        meta["BurnedInAnnotation"] = "YES"
         meta["WindowCenter"] = "2048"
         meta["WindowWidth"] = "4096"
     output.attribute_string = meta.serialize()
@@ -435,17 +436,14 @@ def _clone_original_series(images, series_index: int) -> list:
 
 def _format_flat_patch_comment(flat_patches) -> str:
     parts = []
-    for hemisphere in ("lh", "rh"):
-        patch = flat_patches.get(hemisphere)
-        if patch is None:
-            continue
+    for patch_id, patch in flat_patches.items():
         center_lps = np.asarray(patch.center_ras_mm, dtype=float) * (-1.0, -1.0, 1.0)
         normal_lps = np.asarray(patch.normal_ras, dtype=float) * (-1.0, -1.0, 1.0)
         center = ",".join(f"{value:.2f}" for value in center_lps)
         normal = ",".join(f"{value:.4f}" for value in normal_lps)
         parts.append(
-            f"TopoFit flat patch {patch.surface} LPS_mm center=({center}) "
-            f"normal=({normal})"
+            f"TopoFit patch {patch_id} {patch.surface} LPS_mm center=({center}) "
+            f"normal=({normal}) area_mm2={patch.area_mm2:.1f} rms_mm={patch.rms_distance_mm:.3f}"
         )
     return "; ".join(parts)
 
@@ -460,14 +458,15 @@ def _format_sulcal_middepth_comment(sulci) -> str:
     return f"TopoFit sulcal mid-depth research voxels: {counts}"
 
 
-def _qc_mrd_images(
-    qc_path: Path,
+def _source_grid_mrd_images(
+    image_path: Path,
     source_images,
     series_index: int,
-    flat_patches=None,
-    sulci=None,
+    description_suffix: str,
+    processing_role: str,
+    details: str,
 ) -> list:
-    image = nib.load(str(qc_path))
+    image = nib.load(str(image_path))
     volume_xyz = np.asarray(image.get_fdata(dtype=np.float32))
     if volume_xyz.shape != (
         source_images[0].data.shape[-1],
@@ -475,15 +474,15 @@ def _qc_mrd_images(
         len(source_images),
     ):
         raise ValueError(
-            "TopoFit QC geometry does not match the source MRD series: "
-            f"qc={volume_xyz.shape} source_yx={source_images[0].data.shape[-2:]} "
+            "TopoFit source-grid output does not match the source MRD series: "
+            f"output={volume_xyz.shape} source_yx={source_images[0].data.shape[-2:]} "
             f"source_z={len(source_images)}"
         )
     volume_yxz = np.rint(volume_xyz.transpose((1, 0, 2))).astype(np.int16)
     series_uid = _new_series_uid()
-    description = f"{_series_description(source_images[0], 'mprage')}_topofit_qc"
-    patch_comment = _format_flat_patch_comment(flat_patches or {})
-    sulcal_comment = _format_sulcal_middepth_comment(sulci or {})
+    description = (
+        f"{_series_description(source_images[0], 'mprage')}{description_suffix}"
+    )
     output = []
     for index, source in enumerate(source_images):
         plane = np.ascontiguousarray(volume_yxz[:, :, index])
@@ -497,12 +496,61 @@ def _qc_mrd_images(
             index,
             series_uid,
             description,
-            ["PYTHON", "BRAINNET", "TOPOFIT", "SURFACE_QC"],
+            ["PYTHON", "BRAINNET", "TOPOFIT", processing_role],
             RESEARCH_WARNING,
-            "; ".join(part for part in (patch_comment, sulcal_comment) if part),
+            details,
         )
         output.append(derived)
     return output
+
+
+def _qc_mrd_images(
+    qc_path: Path,
+    source_images,
+    series_index: int,
+    flat_patches=None,
+    sulci=None,
+    patch_search_enabled: bool = False,
+) -> list:
+    patch_comment = _format_flat_patch_comment(flat_patches or {})
+    if patch_search_enabled:
+        patch_comment = f"Accepted cortical patches: {len(flat_patches or {})}. " + (
+            patch_comment or "No patch met the quality criteria; no prescription coordinates."
+        )
+    sulcal_comment = _format_sulcal_middepth_comment(sulci or {})
+    return _source_grid_mrd_images(
+        qc_path,
+        source_images,
+        series_index,
+        "_topofit_qc",
+        "SURFACE_QC",
+        "; ".join(part for part in (patch_comment, sulcal_comment) if part),
+    )
+
+
+def _patch_qc_mrd_images(
+    patch_qc_path: Path,
+    source_images,
+    series_index: int,
+    flat_patches,
+) -> list:
+    details = "; ".join(
+        part
+        for part in (
+            _format_flat_patch_comment(flat_patches),
+            "TopoFit normal glyph: dot=increasing slice position, "
+            "cross=decreasing slice position",
+        )
+        if part
+    )
+    return _source_grid_mrd_images(
+        patch_qc_path,
+        source_images,
+        series_index,
+        "_topofit_patch_qc",
+        "PATCH_QC",
+        details,
+    )
 
 
 def _send_images(connection, images, label: str) -> None:
@@ -519,6 +567,7 @@ def _send_images(connection, images, label: str) -> None:
 
 
 def _options_from_config(config) -> TopoFitOptions:
+    patch_region = str(_config_value(config, "tfpatchregion", "cortex", "str"))
     options = TopoFitOptions(
         device=str(_config_value(config, "tfdevice", DEFAULTS["tfdevice"], "str"))
         .strip()
@@ -527,6 +576,14 @@ def _options_from_config(config) -> TopoFitOptions:
         .strip()
         .lower(),
         conform=_config_bool(config, "tfconform", DEFAULTS["tfconform"]),
+        patch_roi=(str(_config_value(config, "tfpatchroi", "", "str")).strip() or None)
+        if patch_region == "roi" else None,
+        patch_count=_config_int(config, "tfpatchcount", 3),
+        patch_radius_mm=_config_float(config, "tfpatchradius", 10.0),
+        patch_max_rms_mm=_config_float(config, "tfpatchmaxrms", 0.5),
+        patch_min_area_fraction=_config_float(config, "tfpatchminarea", 0.25),
+        patch_hemisphere=str(_config_value(config, "tfpatchhemisphere", "both", "str")),
+        patch_search_region=patch_region,
         find_flat_patches=_config_bool(
             config, "tfflatpatches", DEFAULTS["tfflatpatches"]
         ),
@@ -607,9 +664,19 @@ def process(connection, config, metadata):
                 next_series_index,
                 result.flat_patches,
                 result.sulci,
+                patch_search_enabled=options.find_flat_patches,
             )
             pending_output.append(("TopoFit QC", qc_images))
             next_series_index += 1
+            if result.patch_qc_image:
+                patch_qc_images = _patch_qc_mrd_images(
+                    Path(result.patch_qc_image),
+                    ordered,
+                    next_series_index,
+                    result.flat_patches,
+                )
+                pending_output.append(("TopoFit patch QC", patch_qc_images))
+                next_series_index += 1
             logging.info(
                 "TOPOFIT_OPENRECON_RESULT status=%s elapsed_seconds=%.3f "
                 "manifest=%s warning=%s",
@@ -658,8 +725,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--find-flat-patches",
         action="store_true",
-        help="Find and draw one flat pial-surface patch per hemisphere",
+        help="Find and draw up to three distinct mid-cortical patches per hemisphere",
     )
+    parser.add_argument(
+        "--patch-roi", type=str,
+        help="Restrict patch selection to a nonzero NIfTI mask on the input grid",
+    )
+    parser.add_argument("--patch-count", type=int, default=3, help="Maximum patches per hemisphere, 1-10")
+    parser.add_argument("--patch-radius", type=float, default=10.0, help="Mesh-edge radius in mm, 5-20")
+    parser.add_argument("--patch-max-rms", type=float, default=0.5, help="Maximum plane-fit error in mm")
+    parser.add_argument("--patch-min-area", type=float, default=0.25, help="Minimum area as a fraction of pi * radius^2")
+    parser.add_argument("--patch-hemisphere", choices=("both", "lh", "rh"), default="both")
+    parser.add_argument("--patch-region", choices=("cortex", "roi"), default="cortex")
     parser.add_argument(
         "--find-sulcal-middepth",
         action="store_true",
@@ -693,6 +770,13 @@ def main() -> int:
         conform=args.conform,
         mock=args.mock,
         find_flat_patches=args.find_flat_patches,
+        patch_roi=args.patch_roi,
+        patch_count=args.patch_count,
+        patch_radius_mm=args.patch_radius,
+        patch_max_rms_mm=args.patch_max_rms,
+        patch_min_area_fraction=args.patch_min_area,
+        patch_hemisphere=args.patch_hemisphere,
+        patch_search_region="roi" if args.patch_roi else args.patch_region,
         find_sulcal_middepth=args.find_sulcal_middepth,
         sulcal_curvature_threshold_mm_inv=args.sulcal_curvature_threshold,
         overlay_thickness=args.overlay_thickness,
