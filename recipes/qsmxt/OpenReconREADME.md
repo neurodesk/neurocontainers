@@ -47,14 +47,16 @@ window, and clipped-voxel count are included in the returned metadata.
 
 Derived maps set the MRD `RescaleSlope` and `RescaleIntercept` attributes. The
 OpenRecon DICOM writer maps these attributes to the standard DICOM fields.
-Because DICOM applies modality rescaling before its display window, a QSM window
-must also use physical units. Siemens MRD metadata represents standard window
-values as integers, which cannot encode a typical sub-unit ppm window. The
-bridge therefore removes `WindowCenter`, `WindowWidth`, and `VOILUTFunction`
-instead of supplying a misleading stored-pixel window. The intended physical
-window remains available as `QSMxTPhysicalWindowCenter` and
-`QSMxTPhysicalWindowWidth`, with `QSMxTWindowDomain=physical` documenting its
-domain. The scanner or DICOM viewer chooses the displayed window automatically.
+Siemens MRD metadata truncates sub-unit window values, so QSM DICOM values use
+parts per billion. One ppm equals 1000 ppb. This unit conversion preserves the
+quantitative values and lets the bridge publish integer `WindowCenter` and
+`WindowWidth` values for the robust display range.
+
+`QSMxTPhysicalWindowCenter` and `QSMxTPhysicalWindowWidth` retain the same
+window in ppm. The Enhanced MR object keeps `RescaleType=US` as required.
+`QSMxTWindowDomain=ppb` records the domain of the standard DICOM window fields.
+`QSMxTDisplayFormula` records how to recover the source ppm value from a stored
+pixel.
 
 Maps with a non-zero stored-value offset, including QSM, reserve stored code `0`.
 The bridge sends `PixelPaddingValue=0` and `PixelPaddingRangeLimit=0`, and native

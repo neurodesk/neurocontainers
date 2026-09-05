@@ -108,6 +108,7 @@ T2STAR_SCALE_MIN_POSITIVE_VOXELS = 100
 QSM_WINDOW_LOW_PERCENTILE = 1.0
 QSM_WINDOW_HIGH_PERCENTILE = 99.0
 QSM_WINDOW_MIN_NONZERO_VOXELS = 100
+QSM_DICOM_PPB_PER_PPM = 1000.0
 DEFAULT_MASK_PRESET = "bet"
 DEFAULT_MASKING_INPUT = "magnitude"
 DEFAULT_BET_FRACTIONAL_INTENSITY = 0.5
@@ -2195,21 +2196,33 @@ def _output_meta(
     )
     meta["QSMxTPhysicalWindowCenter"] = f"{float(physical_center):.6g}"
     meta["QSMxTPhysicalWindowWidth"] = f"{float(physical_width):.6g}"
-    meta["QSMxTWindowDomain"] = "physical"
+    dicom_value_scale = (
+        QSM_DICOM_PPB_PER_PPM if output_id == "qsm" else 1.0
+    )
+    meta["QSMxTWindowDomain"] = (
+        "ppb" if output_id == "qsm" else "physical"
+    )
     meta["QSMxTDisplayMin"] = str(int(display_meta["display_min"]))
     meta["QSMxTDisplayMax"] = str(int(display_meta["display_max"]))
     meta["QSMxTDisplayClippedVoxels"] = str(int(display_meta["clipped_voxels"]))
     meta["RescaleSlope"] = _format_display_number(
-        display_meta["rescale_slope"]
+        display_meta["rescale_slope"] * dicom_value_scale
     )
     meta["RescaleIntercept"] = _format_display_number(
-        display_meta["rescale_intercept"]
+        display_meta["rescale_intercept"] * dicom_value_scale
     )
     meta["RescaleType"] = "US"
     if display_meta["padding_value"] is not None:
         meta["PixelPaddingValue"] = str(int(display_meta["padding_value"]))
         meta["PixelPaddingRangeLimit"] = str(
             int(display_meta["padding_value"])
+        )
+    if output_id == "qsm":
+        meta["WindowCenter"] = str(
+            int(np.rint(physical_center * dicom_value_scale))
+        )
+        meta["WindowWidth"] = str(
+            max(1, int(np.rint(physical_width * dicom_value_scale)))
         )
     meta.update(_header_geometry_meta(header))
     _strip_scanner_write_unsafe_meta(meta)
@@ -2279,9 +2292,17 @@ def _validate_output_images(output_images, input_images):
         display_offset = _meta_float(meta, "QSMxTDisplayOffset")
         rescale_slope = _meta_float(meta, "RescaleSlope")
         rescale_intercept = _meta_float(meta, "RescaleIntercept")
+        output_id = _meta_text(meta, "QSMxTOutput")
+        dicom_value_scale = (
+            QSM_DICOM_PPB_PER_PPM if output_id == "qsm" else 1.0
+        )
         if display_scale is not None and display_scale > 0.0:
-            expected_slope = 1.0 / display_scale
-            expected_intercept = -(display_offset or 0.0) / display_scale
+            expected_slope = dicom_value_scale / display_scale
+            expected_intercept = (
+                -(display_offset or 0.0)
+                * dicom_value_scale
+                / display_scale
+            )
             if rescale_slope is None or not np.isclose(
                 rescale_slope,
                 expected_slope,
@@ -2301,6 +2322,36 @@ def _validate_output_images(output_images, input_images):
                 )
         if _meta_text(meta, "RescaleType") != "US":
             errors.append(f"image {index} RescaleType is not US")
+
+        if output_id == "qsm":
+            window_center = _meta_float(meta, "WindowCenter")
+            window_width = _meta_float(meta, "WindowWidth")
+            physical_window_center = _meta_float(
+                meta,
+                "QSMxTPhysicalWindowCenter",
+            )
+            physical_window_width = _meta_float(
+                meta,
+                "QSMxTPhysicalWindowWidth",
+            )
+            if window_center is None:
+                errors.append(f"image {index} is missing WindowCenter")
+            elif physical_window_center is None or not np.isclose(
+                window_center,
+                np.rint(physical_window_center * dicom_value_scale),
+            ):
+                errors.append(
+                    f"image {index} WindowCenter does not match physical window"
+                )
+            if window_width is None or window_width < 1.0:
+                errors.append(f"image {index} has invalid WindowWidth")
+            elif physical_window_width is None or not np.isclose(
+                window_width,
+                max(1, np.rint(physical_window_width * dicom_value_scale)),
+            ):
+                errors.append(
+                    f"image {index} WindowWidth does not match physical window"
+                )
 
         padding_value = _meta_int(meta, "PixelPaddingValue")
         if display_offset:

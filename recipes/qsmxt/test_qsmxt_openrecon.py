@@ -635,6 +635,54 @@ def test_scanner_display_volume_uses_robust_qsm_window_without_clipping_extrema(
     assert meta["window_input_max"] == pytest.approx(0.05)
 
 
+def test_output_meta_publishes_qsm_window_in_integer_ppb_domain():
+    source = _image(
+        1,
+        1,
+        "gre_qsm",
+        np.ones((1, 1, 3), dtype=np.float32),
+    )
+    physical = np.concatenate(
+        (
+            np.full(500, -0.05, dtype=np.float32),
+            np.full(500, 0.05, dtype=np.float32),
+            np.asarray([-0.4, 0.5], dtype=np.float32),
+        )
+    ).reshape(1, 1, -1)
+    display, display_meta = qsmxt._scanner_display_volume(
+        physical,
+        "qsm",
+        "ppm",
+    )
+
+    meta = qsmxt._output_meta(
+        source,
+        source.getHead(),
+        qsmxt.OUTPUT_SERIES_START,
+        "QSMxT QSM",
+        "QSMXT_CHIMAP",
+        "qsm",
+        "ppm",
+        physical,
+        Path("/tmp/qsm.nii.gz"),
+        0,
+        1,
+        display_meta,
+    )
+
+    assert meta["RescaleType"] == "US"
+    assert float(meta["RescaleSlope"]) == 1.0
+    assert float(meta["RescaleIntercept"]) == -2048.0
+    assert float(meta["WindowCenter"]) == 0.0
+    assert float(meta["WindowWidth"]) == 100.0
+    assert meta["QSMxTWindowDomain"] == "ppb"
+    decoded_ppb = (
+        display.astype(np.float64) * float(meta["RescaleSlope"])
+        + float(meta["RescaleIntercept"])
+    )
+    np.testing.assert_allclose(decoded_ppb, physical * 1000.0, atol=0.5)
+
+
 def test_output_meta_replaces_source_scaling_with_qsm_dicom_contract():
     source = _image(
         1,
@@ -671,26 +719,30 @@ def test_output_meta_replaces_source_scaling_with_qsm_dicom_contract():
     )
 
     assert meta["DataRole"] == ["Image", "Quantitative"]
-    assert float(meta["RescaleSlope"]) == 0.00001
-    assert float(meta["RescaleIntercept"]) == -0.02048
+    assert float(meta["RescaleSlope"]) == 0.01
+    assert float(meta["RescaleIntercept"]) == -20.48
     assert meta["RescaleType"] == "US"
     assert meta["PixelPaddingValue"] == "0"
     assert meta["PixelPaddingRangeLimit"] == "0"
-    assert "WindowCenter" not in meta
-    assert "WindowWidth" not in meta
+    assert float(meta["WindowCenter"]) == 0.0
+    assert float(meta["WindowWidth"]) == 20.0
     assert "VOILUTFunction" not in meta
     assert float(meta["QSMxTPhysicalWindowCenter"]) == 0.0
     assert float(meta["QSMxTPhysicalWindowWidth"]) == 0.02
-    assert meta["QSMxTWindowDomain"] == "physical"
+    assert meta["QSMxTWindowDomain"] == "ppb"
     assert 0 not in display
 
-    decoded = (
+    decoded_ppb = (
         display.astype(np.float64) * float(meta["RescaleSlope"])
         + float(meta["RescaleIntercept"])
     )
-    center = float(meta["QSMxTPhysicalWindowCenter"])
-    width = float(meta["QSMxTPhysicalWindowWidth"])
-    rendered = np.clip((decoded - (center - width / 2.0)) / width, 0.0, 1.0)
+    center = float(meta["WindowCenter"])
+    width = float(meta["WindowWidth"])
+    rendered = np.clip(
+        (decoded_ppb - (center - width / 2.0)) / width,
+        0.0,
+        1.0,
+    )
     assert np.unique(rendered).size == 3
 
 
@@ -1043,16 +1095,17 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert meta["QSMxTDisplayOffset"] == "2048"
     assert meta["QSMxTDisplayFormula"] == "ppm = (display - 2048) / 1000"
     assert meta["DataRole"] == ["Image", "Quantitative"]
-    assert float(meta["RescaleSlope"]) == 0.001
-    assert float(meta["RescaleIntercept"]) == -2.048
+    assert float(meta["RescaleSlope"]) == 1.0
+    assert float(meta["RescaleIntercept"]) == -2048.0
     assert meta["RescaleType"] == "US"
     assert meta["PixelPaddingValue"] == "0"
     assert meta["PixelPaddingRangeLimit"] == "0"
-    assert "WindowCenter" not in meta
-    assert "WindowWidth" not in meta
+    assert float(meta["WindowCenter"]) == 1500.0
+    assert float(meta["WindowWidth"]) == 1000.0
     assert "VOILUTFunction" not in meta
     assert float(meta["QSMxTPhysicalWindowCenter"]) == 1.5
     assert float(meta["QSMxTPhysicalWindowWidth"]) == 1.0
+    assert meta["QSMxTWindowDomain"] == "ppb"
     assert meta["QSMxTDisplayScaleInputMin"] == "1.5"
     assert meta["QSMxTDisplayScaleInputMax"] == "1.5"
     assert meta["QSMxTDisplayMin"] == "3548"
