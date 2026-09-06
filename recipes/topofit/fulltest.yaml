@@ -5,7 +5,7 @@
 # on CPU and can take several minutes on a CPU-only release runner.
 
 name: topofit
-version: "0.4.0"
+version: "0.5.1"
 
 required_files:
   - dataset: ds000001
@@ -23,6 +23,21 @@ setup:
     mkdir -p "${output_dir}"
 
 tests:
+  - name: Cortical eligibility atlas installed
+    description: Verify the runtime atlas contains both cortex labels and usable registration spheres.
+    command: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python3 -c "
+      from pathlib import Path
+      import nibabel as nib
+      from topofit_core import mapped_cortex_mask
+      for hemisphere in ('lh', 'rh'):
+          sphere, _ = nib.freesurfer.read_geometry(str(Path('/opt/topofit-atlas') / (hemisphere + '.sphere.reg')))
+          mask = mapped_cortex_mask(sphere, hemisphere)
+          assert 0.8 < mask.mean() < 0.99
+      print('cortex atlas ok')
+      "
+    expected_output_contains: "cortex atlas ok"
+
   - name: OpenRecon-compatible CUDA runtime
     description: Verify PyTorch stays within the CUDA ceiling enforced by the OpenRecon packager.
     command: |
@@ -111,6 +126,7 @@ tests:
     validate:
       - output_exists: ${output_dir}/mock/topofit_manifest.json
       - output_exists: ${output_dir}/mock/topofit_qc.nii.gz
+      - output_exists: ${output_dir}/mock/topofit_patch_qc.nii.gz
       - output_exists: ${output_dir}/mock/topofit_sulcal_middepth_mask.nii.gz
       - output_exists: ${output_dir}/mock/surf/lh.white
       - output_exists: ${output_dir}/mock/surf/rh.pial
@@ -127,7 +143,7 @@ tests:
       assert manifest['flat_patch_status'] == 'CANDIDATES_REPORTED_RESEARCH_ONLY'
       assert manifest['sulcal_middepth_status'] == 'VOXELS_REPORTED_RESEARCH_ONLY'
       assert set(manifest['sulci']) == {'lh', 'rh'}
-      assert set(manifest['flat_patches']) == {'lh', 'rh'}
+      assert all(1 <= manifest['patch_counts'][h] <= 3 for h in ('lh', 'rh'))
       assert manifest['options']['overlay_thickness'] == 0
       print(manifest['warning'])
       "
@@ -140,6 +156,7 @@ tests:
     validate:
       - output_exists: ${output_dir}/real/topofit_manifest.json
       - output_exists: ${output_dir}/real/topofit_qc.nii.gz
+      - output_exists: ${output_dir}/real/topofit_patch_qc.nii.gz
       - output_exists: ${output_dir}/real/topofit_sulcal_middepth_mask.nii.gz
       - output_exists: ${output_dir}/real/surf/lh.white
       - output_exists: ${output_dir}/real/surf/rh.white
@@ -151,20 +168,46 @@ tests:
   - name: Real surfaces and QC geometry are valid
     description: Parse every mesh and prove the QC volume remains on the source grid.
     command: |
-      python3 -c "
+      PYTHONPATH=/opt/code/python-ismrmrd-server python3 -c "
       from pathlib import Path
       import nibabel as nib
       import numpy as np
+      from topofit_core import mapped_cortex_mask, erode_cortex_mask, cortical_ribbon_mask
       source = nib.load('${t1w}')
       qc = nib.load('${output_dir}/real/topofit_qc.nii.gz')
       assert qc.shape == source.shape, (qc.shape, source.shape)
       np.testing.assert_allclose(qc.affine, source.affine)
       manifest = __import__('json').load(open('${output_dir}/real/topofit_manifest.json'))
-      assert set(manifest['flat_patches']) == {'lh', 'rh'}
-      sulcal = nib.load('${output_dir}/real/topofit_sulcal_middepth_mask.nii.gz')
-      assert sulcal.shape == source.shape
-      np.testing.assert_allclose(sulcal.affine, source.affine)
-      assert set(np.unique(np.asarray(sulcal.dataobj))).issubset({0, 1, 2, 3})
+      assert all(1 <= manifest['patch_counts'][h] <= 3 for h in ('lh', 'rh'))
+      geometry = np.load('${output_dir}/real/topofit_patch_geometry.npz')
+      for hemisphere in ('lh', 'rh'):
+          root = Path('${output_dir}/real/surf')
+          white, faces = nib.freesurfer.read_geometry(str(root / (hemisphere + '.white')))
+          pial, _ = nib.freesurfer.read_geometry(str(root / (hemisphere + '.pial')))
+          sphere, _ = nib.freesurfer.read_geometry(str(root / (hemisphere + '.registration')))
+          cortex = erode_cortex_mask((white + pial) / 2, faces, mapped_cortex_mask(sphere, hemisphere))
+          eligible = cortical_ribbon_mask(white, pial, cortex)
+          used = set()
+          for patch_id, patch in manifest['flat_patches'].items():
+              if patch['surface'] != hemisphere + '.mid':
+                  continue
+              indices = geometry[patch_id + '_vertex_indices']
+              assert patch_id == patch['patch_id']
+              assert used.isdisjoint(indices)
+              used.update(indices)
+              assert eligible[indices].all()
+              assert patch['rms_distance_mm'] <= manifest['options']['patch_max_rms_mm']
+              assert patch['area_mm2'] >= manifest['flat_patch_definition']['minimum_area_mm2']
+              assert patch['normal_coherence'] >= 0.9
+              np.testing.assert_allclose(geometry[patch_id + '_mid_ras_mm'], (white[indices] + pial[indices]) / 2)
+              normals = geometry[patch_id + '_normals_ras']
+              np.testing.assert_allclose(np.linalg.norm(normals, axis=1), 1)
+              assert np.all(np.einsum('ij,ij->i', normals, pial[indices] - white[indices]) >= 0)
+      if manifest['options']['find_sulcal_middepth']:
+          sulcal = nib.load('${output_dir}/real/topofit_sulcal_middepth_mask.nii.gz')
+          assert sulcal.shape == source.shape
+          np.testing.assert_allclose(sulcal.affine, source.affine)
+          assert set(np.unique(np.asarray(sulcal.dataobj))).issubset({0, 1, 2, 3})
       for name in ('lh.white', 'rh.white', 'lh.pial', 'rh.pial', 'lh.registration', 'rh.registration'):
           vertices, faces = nib.freesurfer.read_geometry(str(Path('${output_dir}/real/surf') / name))
           assert vertices.shape[1] == 3 and faces.shape[1] == 3, name

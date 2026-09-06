@@ -114,6 +114,7 @@ def identify_sulcal_middepth(
     pial_vertices: np.ndarray,
     pial_faces: np.ndarray,
     threshold_mm_inv: float,
+    eligible_vertices: np.ndarray | None = None,
 ) -> SulcalHemisphere:
     """Select concave pial faces and place them at middle cortical depth."""
 
@@ -123,6 +124,10 @@ def identify_sulcal_middepth(
         white_vertices, white_faces, pial_vertices, pial_faces
     )
     selected_vertices = curvature <= -threshold_mm_inv
+    if eligible_vertices is not None:
+        if eligible_vertices.shape != selected_vertices.shape:
+            raise ValueError("cortical mask must have one value per vertex")
+        selected_vertices &= eligible_vertices
     selected_faces = faces[np.all(selected_vertices[faces], axis=1)]
     values = curvature[selected_vertices]
     return SulcalHemisphere(

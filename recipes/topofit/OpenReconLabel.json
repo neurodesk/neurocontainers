@@ -103,10 +103,45 @@
     },
     {
       "id": "tfflatpatches",
-      "label": { "en": "Find flat pial patches" },
+      "label": { "en": "Find cortical patches" },
       "type": "boolean",
       "default": false,
-      "information": { "en": "Find one locally planar pial-surface patch per hemisphere, draw each patch and outward normal, and append research-only LPS coordinates to the image comments." }
+      "information": { "en": "Find ranked, non-overlapping cortical patches with visible IDs and normals. Default: up to three per hemisphere at 50% depth. Automatic candidates are not lesion ROIs or matched controls." }
+    },
+    {
+      "id": "tfpatchcount", "label": { "en": "Maximum patches per hemisphere" },
+      "type": "int", "minimum": 1, "maximum": 10, "default": 3,
+      "information": { "en": "Return up to this many distinct patches in each selected hemisphere. Fewer are returned when quality criteria cannot be met." }
+    },
+    {
+      "id": "tfpatchradius", "label": { "en": "Cortical patch radius" },
+      "type": "double", "minimum": 5.0, "maximum": 20.0, "default": 10.0,
+      "unit": { "en": "mm" },
+      "information": { "en": "Grow neighborhoods along cortical mesh edges, not by straight-line distance through the brain." }
+    },
+    {
+      "id": "tfpatchhemisphere", "label": { "en": "Patch hemisphere" },
+      "type": "choice", "default": "both",
+      "values": [
+        { "id": "both", "name": { "en": "Both" } },
+        { "id": "lh", "name": { "en": "Left" } },
+        { "id": "rh", "name": { "en": "Right" } }
+      ],
+      "information": { "en": "Restrict cortical patch search to the selected hemisphere. Surface reconstruction remains bilateral." }
+    },
+    {
+      "id": "tfpatchregion", "label": { "en": "Patch search region" },
+      "type": "choice", "default": "cortex",
+      "values": [
+        { "id": "cortex", "name": { "en": "Whole eligible cortex" } },
+        { "id": "roi", "name": { "en": "Native-space ROI" } }
+      ],
+      "information": { "en": "ROI mode requires a supplied NIfTI mask on the source image grid. It never falls back to whole-brain search." }
+    },
+    {
+      "id": "tfpatchroi", "label": { "en": "Native-space ROI path" },
+      "type": "string", "default": "",
+      "information": { "en": "Container-visible path to a NIfTI mask, for example /data/roi.nii.gz. Used only in ROI mode. The mask must already be registered to the input image." }
     },
     {
       "id": "tfsulcalmiddepth",
