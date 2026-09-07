@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.15.0
+version: 9.16.0
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
@@ -9,6 +9,7 @@ architectures:
   - x86_64
 
 variables:
+  model_revision: e7c66cece159dc163885afd6165f582769dc5f29
   qsmxt_tarball:
     try:
       - value: qsmxt_x86_64_tar_gz
@@ -46,18 +47,42 @@ build:
         - tar -xzf {{ get_file(context.qsmxt_tarball) }} -C /opt/qsmxt
         - chmod +x /opt/qsmxt/qsmxt /opt/qsmxt/dcm2niix
 
+    - run:
+        - mkdir -p /opt/qsmxt/models
+        - install -m 644 {{ get_file("bfrnet.onnx") }} /opt/qsmxt/models/bfrnet.onnx
+        - install -m 644 {{ get_file("xqsm.onnx") }} /opt/qsmxt/models/xqsm.onnx
+        - install -m 644 {{ get_file("qsmnet.onnx") }} /opt/qsmxt/models/qsmnet.onnx
+        - install -m 644 {{ get_file("qsmnet-plus.onnx") }} /opt/qsmxt/models/qsmnet-plus.onnx
+        - install -m 644 {{ get_file("qsmgan.onnx") }} /opt/qsmxt/models/qsmgan.onnx
+        - install -m 644 {{ get_file("lpcnn.onnx") }} /opt/qsmxt/models/lpcnn.onnx
+        - install -m 644 {{ get_file("ir2qsm.onnx") }} /opt/qsmxt/models/ir2qsm.onnx
+        - install -m 644 {{ get_file("autoqsm.onnx") }} /opt/qsmxt/models/autoqsm.onnx
+        - install -m 644 {{ get_file("iqsm.onnx") }} /opt/qsmxt/models/iqsm.onnx
+        - install -m 644 {{ get_file("iqsm-plus.onnx") }} /opt/qsmxt/models/iqsm-plus.onnx
+        - install -m 644 {{ get_file("iqfm.onnx") }} /opt/qsmxt/models/iqfm.onnx
+        - install -m 644 {{ get_file("nextqsm-bf.onnx") }} /opt/qsmxt/models/nextqsm-bf.onnx
+        - install -m 644 {{ get_file("nextqsm-vjp.onnx") }} /opt/qsmxt/models/nextqsm-vjp.onnx
+        - install -m 644 {{ get_file("modl-qsm.onnx") }} /opt/qsmxt/models/modl-qsm.onnx
+        - install -m 644 {{ get_file("susep-net.onnx") }} /opt/qsmxt/models/susep-net.onnx
+        - install -m 644 {{ get_file("chi-sepnet.onnx") }} /opt/qsmxt/models/chi-sepnet.onnx
+        - install -m 644 {{ get_file("models.sha256") }} /opt/qsmxt/models/models.sha256
+        - cd /opt/qsmxt/models && sha256sum -c models.sha256
+
     - environment:
         PATH: /opt/qsmxt:$PATH
         # qsmxt resolves dcm2niix via this env var first; the bundled copy sits
         # alongside the binary, so conversion works out of the box.
         QSMXT_DCM2NIIX: /opt/qsmxt/dcm2niix
+        QSM_MODEL_DIR: /opt/qsmxt/models
+        QSM_MODEL_CACHE: /tmp/share/qsmxt_models
 
     - run:
         - cp {{ get_file("qsmxt.py") }} /opt/code/python-ismrmrd-server/qsmxt.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
-        - mkdir -p /tmp/share/qsmxt_openrecon
-        - chmod 1777 /tmp/share /tmp/share/qsmxt_openrecon
+        - chmod 644 /opt/code/python-ismrmrd-server/qsmxt.py /opt/code/python-ismrmrd-server/OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - mkdir -p /tmp/share/qsmxt_openrecon /tmp/share/qsmxt_models
+        - chmod 1777 /tmp/share /tmp/share/qsmxt_openrecon /tmp/share/qsmxt_models
 
     - deploy:
         path:
@@ -155,3 +180,37 @@ files:
     url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.version }}/qsmxt-v{{ context.version }}-x86_64-unknown-linux-gnu.tar.gz
   - name: qsmxt_aarch64_tar_gz
     url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.version }}/qsmxt-v{{ context.version }}-aarch64-unknown-linux-gnu.tar.gz
+  - name: models.sha256
+    filename: models.sha256
+  - name: bfrnet.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/bfrnet.onnx
+  - name: xqsm.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/xqsm.onnx
+  - name: qsmnet.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/qsmnet.onnx
+  - name: qsmnet-plus.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/qsmnet-plus.onnx
+  - name: qsmgan.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/qsmgan.onnx
+  - name: lpcnn.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/lpcnn.onnx
+  - name: ir2qsm.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/ir2qsm.onnx
+  - name: autoqsm.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/autoqsm.onnx
+  - name: iqsm.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/iqsm.onnx
+  - name: iqsm-plus.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/iqsm-plus.onnx
+  - name: iqfm.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/iqfm.onnx
+  - name: nextqsm-bf.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/nextqsm-bf.onnx
+  - name: nextqsm-vjp.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/nextqsm-vjp.onnx
+  - name: modl-qsm.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/modl-qsm.onnx
+  - name: susep-net.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/susep-net.onnx
+  - name: chi-sepnet.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/chi-sepnet.onnx

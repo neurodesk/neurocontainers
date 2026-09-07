@@ -1,0 +1,914 @@
+{
+  "retrieved": "2026-09-07",
+  "index_url": "https://qsmxt.github.io/QSM-CI/results/index.json",
+  "index_sha256": "6c1fa893011bb386d6e677f10a469b8fb0c6ad7f89629e5a937c9dd3d5899b9f",
+  "algorithms_url": "https://qsmxt.github.io/QSM-CI/algorithms.json",
+  "algorithms_sha256": "081b1968b0e69767770a96a98df17cb6d617fe2df77fe2957f996b9ee1f16d64",
+  "algorithms": {
+    "whqsm": {
+      "id": "whqsm-qsmrs-iso",
+      "slug": "whqsm-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 158.61889791488647,
+      "metrics": {
+        "xsim": 0.6217515834364545,
+        "nrmse": 42.5025299061804
+      }
+    },
+    "hdqsm": {
+      "id": "hdqsm-qsmrs-iso",
+      "slug": "hdqsm-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 33.608713150024414,
+      "metrics": {
+        "xsim": 0.6715373663357117,
+        "nrmse": 33.17252193736282
+      }
+    },
+    "rts": {
+      "id": "rts-qsmrs-iso",
+      "slug": "rts-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 11.975716352462769,
+      "metrics": {
+        "xsim": 0.6942398283715571,
+        "nrmse": 38.447135529108486
+      }
+    },
+    "tv": {
+      "id": "tv-qsmrs-iso",
+      "slug": "tv-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 10.32469391822815,
+      "metrics": {
+        "xsim": 0.7648294899167801,
+        "nrmse": 28.6886159615408
+      }
+    },
+    "tkd": {
+      "id": "tkd-qsmrs-iso",
+      "slug": "tkd-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 2.6837496757507324,
+      "metrics": {
+        "xsim": 0.7296238085504234,
+        "nrmse": 36.30613223593693
+      }
+    },
+    "tsvd": {
+      "id": "tsvd-qsmrs-iso",
+      "slug": "tsvd-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 3.1275031566619873,
+      "metrics": {
+        "xsim": 0.5994907209796654,
+        "nrmse": 46.388942655474146
+      }
+    },
+    "tgv": {
+      "id": "tgv-qsmrs-iso",
+      "slug": "tgv-qsmrs",
+      "stage": "bfr+dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 183.71307754516602,
+      "metrics": {
+        "xsim": 0.4674566344191894,
+        "nrmse": 56.14768979062488
+      }
+    },
+    "tikhonov": {
+      "id": "tikhonov-qsmrs-iso",
+      "slug": "tikhonov-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 2.5264809131622314,
+      "metrics": {
+        "xsim": 0.7016639605553306,
+        "nrmse": 38.70587749353184
+      }
+    },
+    "nltv": {
+      "id": "nltv-qsmrs-iso",
+      "slug": "nltv-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 108.71939754486084,
+      "metrics": {
+        "xsim": 0.7818947119074875,
+        "nrmse": 34.960801856650136
+      }
+    },
+    "medi": {
+      "id": "medi-qsmrs-iso",
+      "slug": "medi-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 40.699549436569214,
+      "metrics": {
+        "xsim": 0.6219428445243117,
+        "nrmse": 53.05607985908514
+      }
+    },
+    "ilsqr": {
+      "id": "ilsqr-qsmrs-iso",
+      "slug": "ilsqr-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": null,
+      "status": "ok",
+      "runtime_s": 68.97674465179443,
+      "metrics": {
+        "xsim": 0.5810902196336484,
+        "nrmse": 53.27187958007887
+      }
+    },
+    "qsmart": {
+      "id": "qsmart-qsmrs-iso",
+      "slug": "qsmart-qsmrs",
+      "stage": "bfr+dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 666.0749349594116,
+      "metrics": {
+        "xsim": 0.2450592797508551,
+        "nrmse": 83.82779884208755
+      }
+    },
+    "tfi": {
+      "id": "tfi-qsmrs-iso",
+      "slug": "tfi-qsmrs",
+      "stage": "bfr+dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 247.50743675231934,
+      "metrics": {
+        "xsim": 0.44134197810977277,
+        "nrmse": 81.06825346022801
+      }
+    },
+    "ndi": {
+      "id": "ndi-qsmrs-iso",
+      "slug": "ndi-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 136.42091035842896,
+      "metrics": {
+        "xsim": 0.6155901738442324,
+        "nrmse": 48.331511604777944
+      }
+    },
+    "fansi": {
+      "id": "fansi-nltv-qsmrs-iso",
+      "slug": "fansi-nltv-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 201.32023811340332,
+      "metrics": {
+        "xsim": 0.666691750169656,
+        "nrmse": 31.93850220820435
+      }
+    },
+    "fansi-tgv": {
+      "id": "fansi-nltgv-qsmrs-iso",
+      "slug": "fansi-nltgv-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 660.6927392482758,
+      "metrics": {
+        "xsim": 0.6769956308724998,
+        "nrmse": 32.99364386158841
+      }
+    },
+    "l1qsm": {
+      "id": "l1qsm-qsmrs-iso",
+      "slug": "l1qsm-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 118.7577977180481,
+      "metrics": {
+        "xsim": 0.7099391035309035,
+        "nrmse": 47.734840041181094
+      }
+    },
+    "amp-pe": {
+      "id": "amp-pe-qsmrs-iso",
+      "slug": "amp-pe-qsmrs",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 375.370920419693,
+      "metrics": {
+        "xsim": 0.6528487613912314,
+        "nrmse": 52.47826608673199
+      }
+    },
+    "xqsm": {
+      "id": "xqsm-iso",
+      "slug": "xqsm",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 113.7213761806488,
+      "metrics": {
+        "xsim": 0.6202409111130656,
+        "nrmse": 49.793814036732016
+      }
+    },
+    "qsmnet": {
+      "id": "qsmnet-iso",
+      "slug": "qsmnet",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 222.50838351249695,
+      "metrics": {
+        "xsim": 0.6217182151897079,
+        "nrmse": 49.0209158178078
+      }
+    },
+    "qsmnet-plus": {
+      "id": "qsmnet-plus-iso",
+      "slug": "qsmnet-plus",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": null,
+      "status": "ok",
+      "runtime_s": 213.63435053825378,
+      "metrics": {
+        "xsim": 0.5114892145867522,
+        "nrmse": 52.78238625976493
+      }
+    },
+    "autoqsm": {
+      "id": "autoqsm-iso",
+      "slug": "autoqsm",
+      "stage": "bfr+dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 268.933758020401,
+      "metrics": {
+        "xsim": 0.2467547151749711,
+        "nrmse": 85.67732622957605
+      }
+    },
+    "qsmgan": {
+      "id": "qsmgan-iso",
+      "slug": "qsmgan",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 476.2462658882141,
+      "metrics": {
+        "xsim": 0.2445412154186394,
+        "nrmse": 77.5331679431055
+      }
+    },
+    "ir2qsm": {
+      "id": "ir2qsm-iso",
+      "slug": "ir2qsm",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 125.29134368896484,
+      "metrics": {
+        "xsim": 0.6676989430747042,
+        "nrmse": 41.35378607468433
+      }
+    },
+    "lpcnn": {
+      "id": "lpcnn-iso",
+      "slug": "lpcnn",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 513.4902448654175,
+      "metrics": {
+        "xsim": 0.6201424275411298,
+        "nrmse": 45.658848234969554
+      }
+    },
+    "modl-qsm": {
+      "id": "modl-qsm-iso",
+      "slug": "modl-qsm",
+      "stage": "dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 349.41113114356995,
+      "metrics": {
+        "xsim": 0.25474550068423585,
+        "nrmse": 73.82661515277167
+      }
+    },
+    "nextqsm": {
+      "id": "nextqsm-iso",
+      "slug": "nextqsm",
+      "stage": "bfr+dipole",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 169.6996636390686,
+      "metrics": {
+        "xsim": 0.4283929394468237,
+        "nrmse": 70.26445973174881
+      }
+    },
+    "iqsm": {
+      "id": "iqsm-iso",
+      "slug": "iqsm",
+      "stage": "end-to-end",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 86.19397735595703,
+      "metrics": {
+        "xsim": 0.31209203078098946,
+        "nrmse": 74.5517058913381
+      }
+    },
+    "iqsm-plus": {
+      "id": "iqsm-plus-iso",
+      "slug": "iqsm-plus",
+      "stage": "end-to-end",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 115.13810968399048,
+      "metrics": {
+        "xsim": 0.3197975755371504,
+        "nrmse": 77.003159267797
+      }
+    },
+    "romeo": {
+      "id": "romeo-qsmrs-iso",
+      "slug": "romeo-qsmrs",
+      "stage": "field-mapping",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 31.919625282287598,
+      "metrics": {
+        "xsim": 0.1902625581124188,
+        "nrmse": 73.24315203974926
+      }
+    },
+    "laplacian": {
+      "id": "laplacian-qsmci-iso",
+      "slug": "laplacian-qsmci",
+      "stage": "field-mapping",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 24.695618391036987,
+      "metrics": {
+        "xsim": 0.1833579935358206,
+        "nrmse": 78.8362894008095
+      }
+    },
+    "vsharp": {
+      "id": "vsharp-qsmrs-iso",
+      "slug": "vsharp-qsmrs",
+      "stage": "bfr",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 7.976885080337524,
+      "metrics": {
+        "xsim": 0.8656682672542579,
+        "nrmse": 42.623581251534
+      }
+    },
+    "pdf": {
+      "id": "pdf-qsmrs-iso",
+      "slug": "pdf-qsmrs",
+      "stage": "bfr",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 262.7697277069092,
+      "metrics": {
+        "xsim": 0.8430211307719389,
+        "nrmse": 44.49073623165467
+      }
+    },
+    "lbv": {
+      "id": "lbv-qsmrs-iso",
+      "slug": "lbv-qsmrs",
+      "stage": "bfr",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 17.474193811416626,
+      "metrics": {
+        "xsim": 0.8776557129948063,
+        "nrmse": 42.38767750033696
+      }
+    },
+    "ismv": {
+      "id": "ismv-qsmrs-iso",
+      "slug": "ismv-qsmrs",
+      "stage": "bfr",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 21.74703621864319,
+      "metrics": {
+        "xsim": 0.9251047096854906,
+        "nrmse": 28.10908187188692
+      }
+    },
+    "sharp": {
+      "id": "sharp-qsmrs-iso",
+      "slug": "sharp-qsmrs",
+      "stage": "bfr",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 2.4266819953918457,
+      "metrics": {
+        "xsim": 0.890581695735657,
+        "nrmse": 36.333968017797716
+      }
+    },
+    "resharp": {
+      "id": "resharp-qsmrs-iso",
+      "slug": "resharp-qsmrs",
+      "stage": "bfr",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 17.855551958084106,
+      "metrics": {
+        "xsim": 0.9034796308624468,
+        "nrmse": 32.99950301675298
+      }
+    },
+    "harperella": {
+      "id": "harperella-qsmrs-iso",
+      "slug": "harperella-qsmrs",
+      "stage": "unwrap+bfr",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 33.21861934661865,
+      "metrics": {
+        "xsim": 0.25120027481868135,
+        "nrmse": 105.33702394416613
+      }
+    },
+    "iharperella": {
+      "id": "iharperella-qsmrs-iso",
+      "slug": "iharperella-qsmrs",
+      "stage": "unwrap+bfr",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 48.69553804397583,
+      "metrics": {
+        "xsim": 0.5345961347610801,
+        "nrmse": 75.93499425864555
+      }
+    },
+    "bfrnet": {
+      "id": "bfrnet-iso",
+      "slug": "bfrnet",
+      "stage": "bfr",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 378.5189297199249,
+      "metrics": {
+        "xsim": 0.8131375567989069,
+        "nrmse": 58.703795678022
+      }
+    },
+    "iqfm": {
+      "id": "iqfm-iso",
+      "slug": "iqfm",
+      "stage": "unwrap+bfr",
+      "mode": "isolated",
+      "variant": "default",
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 109.9021544456482,
+      "metrics": {
+        "xsim": 0.5711325438411617,
+        "nrmse": 70.44095319582854
+      }
+    }
+  },
+  "pipelines": {
+    "romeo-resharp-rts": {
+      "id": "romeo-qsmrs~resharp-qsmrs~rts-qsmrs-cmp",
+      "slug": "romeo-qsmrs+resharp-qsmrs+rts-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs",
+        "bfr": "resharp-qsmrs",
+        "dipole": "rts-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 63.15810465812683,
+      "metrics": {
+        "xsim": 0.29253283854680867,
+        "nrmse": 84.60996856572788
+      }
+    },
+    "romeo-ismv-hdqsm": {
+      "id": "romeo-qsmrs~ismv-qsmrs~hdqsm-qsmrs-cmp",
+      "slug": "romeo-qsmrs+ismv-qsmrs+hdqsm-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs",
+        "bfr": "ismv-qsmrs",
+        "dipole": "hdqsm-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 83.66205430030823,
+      "metrics": {
+        "xsim": 0.36080840510886,
+        "nrmse": 82.4943926502166
+      }
+    },
+    "romeo-resharp-tikhonov": {
+      "id": "romeo-qsmrs~resharp-qsmrs~tikhonov-qsmrs-cmp",
+      "slug": "romeo-qsmrs+resharp-qsmrs+tikhonov-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs",
+        "bfr": "resharp-qsmrs",
+        "dipole": "tikhonov-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 50.907986640930176,
+      "metrics": {
+        "xsim": 0.2826965204011119,
+        "nrmse": 85.79855648723442
+      }
+    },
+    "romeo-resharp-tv": {
+      "id": "romeo-qsmrs~resharp-qsmrs~tv-qsmrs-cmp",
+      "slug": "romeo-qsmrs+resharp-qsmrs+tv-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs",
+        "bfr": "resharp-qsmrs",
+        "dipole": "tv-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 73.71509623527527,
+      "metrics": {
+        "xsim": 0.3081612069087422,
+        "nrmse": 82.53266996360726
+      }
+    },
+    "romeo-resharp-hdqsm": {
+      "id": "romeo-qsmrs~resharp-qsmrs~hdqsm-qsmrs-cmp",
+      "slug": "romeo-qsmrs+resharp-qsmrs+hdqsm-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs",
+        "bfr": "resharp-qsmrs",
+        "dipole": "hdqsm-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 83.50031208992004,
+      "metrics": {
+        "xsim": 0.36005560520155594,
+        "nrmse": 81.38373468702743
+      }
+    },
+    "romeo-ismv-rts": {
+      "id": "romeo-qsmrs~ismv-qsmrs~rts-qsmrs-cmp",
+      "slug": "romeo-qsmrs+ismv-qsmrs+rts-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs",
+        "bfr": "ismv-qsmrs",
+        "dipole": "rts-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 49.20045256614685,
+      "metrics": {
+        "xsim": 0.3030980229895849,
+        "nrmse": 84.86698553732735
+      }
+    },
+    "romeo-ismv-whqsm": {
+      "id": "romeo-qsmrs~ismv-qsmrs~whqsm-qsmrs-cmp",
+      "slug": "romeo-qsmrs+ismv-qsmrs+whqsm-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs",
+        "bfr": "ismv-qsmrs",
+        "dipole": "whqsm-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 215.01936602592468,
+      "metrics": {
+        "xsim": 0.3880048377472225,
+        "nrmse": 77.75792516222295
+      }
+    },
+    "romeo-sharp-whqsm": {
+      "id": "romeo-qsmrs~sharp-qsmrs~whqsm-qsmrs-cmp",
+      "slug": "romeo-qsmrs+sharp-qsmrs+whqsm-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs",
+        "bfr": "sharp-qsmrs",
+        "dipole": "whqsm-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 232.4991753101349,
+      "metrics": {
+        "xsim": 0.37238936443456017,
+        "nrmse": 78.62103532214796
+      }
+    },
+    "romeo-resharp-whqsm": {
+      "id": "romeo-qsmrs~resharp-qsmrs~whqsm-qsmrs-cmp",
+      "slug": "romeo-qsmrs+resharp-qsmrs+whqsm-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs",
+        "bfr": "resharp-qsmrs",
+        "dipole": "whqsm-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 223.047189950943,
+      "metrics": {
+        "xsim": 0.3838690387762323,
+        "nrmse": 77.66316960362553
+      }
+    },
+    "romeo-sharp-tikhonov": {
+      "id": "romeo-qsmrs~sharp-qsmrs~tikhonov-qsmrs-cmp",
+      "slug": "romeo-qsmrs+sharp-qsmrs+tikhonov-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs",
+        "bfr": "sharp-qsmrs",
+        "dipole": "tikhonov-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 30.04679775238037,
+      "metrics": {
+        "xsim": 0.2713456559170557,
+        "nrmse": 88.746700030181
+      }
+    },
+    "qsmart": {
+      "id": "romeo-qsmrs~qsmart-qsmrs-cmp",
+      "slug": "qsmart-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs"
+      },
+      "phantom": null,
+      "status": "ok",
+      "runtime_s": 561.1631233692169,
+      "metrics": {
+        "xsim": 0.13786397868115038,
+        "nrmse": 97.36823612882118
+      }
+    },
+    "tgv": {
+      "id": "romeo-qsmrs~tgv-qsmrs-cmp",
+      "slug": "tgv-qsmrs",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 161.2389349937439,
+      "metrics": {
+        "xsim": 0.29367064143137794,
+        "nrmse": 92.99662208565435
+      }
+    },
+    "autoqsm": {
+      "id": "romeo-qsmrs~autoqsm-cmp",
+      "slug": "autoqsm",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 234.10726761817932,
+      "metrics": {
+        "xsim": 0.2004266958921991,
+        "nrmse": 90.34247405671398
+      }
+    },
+    "nextqsm": {
+      "id": "romeo-qsmrs~nextqsm-cmp",
+      "slug": "nextqsm",
+      "stage": "field-mapping+bfr+dipole",
+      "mode": "composed",
+      "variant": null,
+      "combo": {
+        "field_mapping": "romeo-qsmrs"
+      },
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 149.8877215385437,
+      "metrics": {
+        "xsim": 0.2338822562541516,
+        "nrmse": 100.77861356912621
+      }
+    },
+    "iqsm": {
+      "id": "iqsm-cmp",
+      "slug": "iqsm",
+      "stage": "end-to-end",
+      "mode": "composed",
+      "variant": null,
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 47.2990505695343,
+      "metrics": {
+        "xsim": 0.31209194785267863,
+        "nrmse": 74.55170655340491
+      }
+    },
+    "iqsm-plus": {
+      "id": "iqsm-plus-cmp",
+      "slug": "iqsm-plus",
+      "stage": "end-to-end",
+      "mode": "composed",
+      "variant": null,
+      "combo": null,
+      "phantom": "sim",
+      "status": "ok",
+      "runtime_s": 99.69761633872986,
+      "metrics": {
+        "xsim": 0.31979752710472986,
+        "nrmse": 77.00316528466448
+      }
+    }
+  }
+}

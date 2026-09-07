@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.15.0
+version: 9.16.0
 
 test_data:
   output_dir: test_output
@@ -27,9 +27,9 @@ setup:
     if nprocs_index + 1 >= len(sys.argv) or sys.argv[nprocs_index + 1] != "24":
         raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
     for flag, expected in (
-        ("--qsm-algorithm", "whqsm"),
+        ("--qsm-algorithm", "hdqsm"),
         ("--unwrapping-algorithm", "romeo"),
-        ("--bf-algorithm", "vsharp"),
+        ("--bf-algorithm", "ismv"),
     ):
         try:
             flag_index = sys.argv.index(flag)
@@ -68,6 +68,82 @@ tests:
       qsmxt run --help >/dev/null
       dcm2niix --version > "${output_dir}/dcm2niix-version.txt" 2>&1 || [ "$?" -eq 3 ]
       grep -i dcm2niix "${output_dir}/dcm2niix-version.txt"
+
+  - name: QSMxT release version
+    command: qsmxt --version
+    expected_output_contains: "${version}"
+
+  - name: OpenRecon algorithm coverage
+    description: Compare GUI algorithm choices with the installed QSMxT CLI
+    script: |
+      set -euo pipefail
+      python - <<'PYCODE'
+      import json
+      import os
+      import re
+      import subprocess
+      from pathlib import Path
+
+      label = json.loads(Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json").read_text())
+      parameters = {item["id"]: item for item in label["parameters"]}
+      help_text = subprocess.check_output(["qsmxt", "run", "--help"], text=True)
+      for parameter, flag in (
+          ("qsmalgorithm", "qsm-algorithm"),
+          ("unwrappingalgorithm", "unwrapping-algorithm"),
+          ("bfalgorithm", "bf-algorithm"),
+      ):
+          section = help_text.split(f"--{flag} <", 1)[1].split("\n      --", 1)[0]
+          inline = re.search(r"\[possible values: ([^]]+)\]", section)
+          supported = (
+              set(inline.group(1).split(", ")) if inline
+              else set(re.findall(r"^          - ([a-z0-9-]+)", section, re.MULTILINE))
+          )
+          exposed = {value["id"] for value in parameters[parameter]["values"]} - {"default"}
+          assert supported, f"Cannot read choices for {flag}"
+          assert exposed == supported, f"{flag}: missing={supported - exposed}, unsupported={exposed - supported}"
+          print(f"{flag}: all {len(supported)} algorithms exposed")
+      cache = Path(os.environ["QSM_MODEL_CACHE"])
+      cache.mkdir(parents=True, exist_ok=True)
+      import tempfile
+      with tempfile.TemporaryFile(dir=cache) as probe:
+          probe.write(b"writable model cache")
+      assert not str(cache).startswith("/home/")
+      PYCODE
+
+  - name: Bundled neural-network weights and offline inference
+    description: Verify every model checksum and run xQSM using the packaged weights
+    script: |
+      set -euo pipefail
+      cd /opt/qsmxt/models
+      sha256sum -c models.sha256
+      python - <<'PYCODE'
+      import os
+      import subprocess
+      import tempfile
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+
+      assert os.environ["QSM_MODEL_DIR"] == "/opt/qsmxt/models"
+      with tempfile.TemporaryDirectory() as directory:
+          root = Path(directory)
+          x, y, z = np.indices((16, 16, 16))
+          radius = (x - 7.5)**2 + (y - 7.5)**2 + (z - 7.5)**2
+          field = (0.01 * np.exp(-radius / 20)).astype(np.float32)
+          mask = (radius < 40).astype(np.uint8)
+          for name, data in (("field", field), ("mask", mask)):
+              nib.save(nib.Nifti1Image(data, np.eye(4)), root / f"{name}.nii.gz")
+          subprocess.run([
+              "qsmxt", "invert", "xqsm", str(root / "field.nii.gz"),
+              "--mask", str(root / "mask.nii.gz"),
+              "--output", str(root / "chi.nii.gz"),
+          ], check=True)
+          result = nib.load(root / "chi.nii.gz").get_fdata()
+          assert result.shape == field.shape
+          assert np.isfinite(result).all() and np.ptp(result) > 0
+          print("xQSM produced a finite, nonconstant susceptibility map")
+      PYCODE
 
   - name: OpenRecon server entrypoints
     description: Verify the OpenRecon server and deployed qsmxt module are present
@@ -108,13 +184,18 @@ tests:
       pipeline_preset = parameters["pipelinepreset"]
       assert pipeline_preset["type"] == "choice"
       assert pipeline_preset["default"] == "custom"
-      assert len(pipeline_preset["values"]) == 11
-      assert parameters["qsmalgorithm"]["default"] == "whqsm"
+      import sys
+      sys.path.insert(0, "/opt/code/python-ismrmrd-server")
+      import qsmxt
+      assert {value["id"] for value in pipeline_preset["values"]} == {
+          "custom", *qsmxt.ALGORITHM_PIPELINE_PRESETS,
+      }
+      assert parameters["qsmalgorithm"]["default"] == "hdqsm"
       assert "whqsm" in {
           value["id"] for value in parameters["qsmalgorithm"]["values"]
       }
       assert parameters["unwrappingalgorithm"]["default"] == "romeo"
-      assert parameters["bfalgorithm"]["default"] == "vsharp"
+      assert parameters["bfalgorithm"]["default"] == "ismv"
       if "inputseries" in parameters:
           assert parameters["inputseries"]["default"] == "distortion-corrected"
           assert [
