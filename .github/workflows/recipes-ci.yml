@@ -123,14 +123,22 @@ jobs:
           mapfile -d '' -t IMAGE_CONTEXT_ARGS < "$RUNNER_TEMP/image-context-args"
           docker buildx build "build/$CONTAINER" --load --file "$dockerfile" --tag "$IMAGE" \
             --build-context "neurocontainer-cache=build/$CONTAINER/cache" "${IMAGE_CONTEXT_ARGS[@]}"
+      - name: Set up Go for image conversion
+        if: inputs.run-tests
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.1'
+          cache: false
       - name: Convert the freshly built image for runtime tests
         if: inputs.run-tests
         run: |
+          set -euo pipefail
           mkdir -p "check/$CONTAINER/test-output/fulltest-containers"
-          docker save "$IMAGE" --output "check/$CONTAINER/image.tar"
-          apptainer build "check/$CONTAINER/test-output/fulltest-containers/${CONTAINER}_${VERSION}.simg" \
-            "docker-archive://check/$CONTAINER/image.tar"
-          rm "check/$CONTAINER/image.tar"
+          CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
+            -o "$RUNNER_TEMP/docker-save-to-simg" builder/docker-save-to-simg.go
+          candidate="check/$CONTAINER/test-output/fulltest-containers/${CONTAINER}_${VERSION}.simg"
+          docker save "$IMAGE" | TMPDIR="$RUNNER_TEMP" "$RUNNER_TEMP/docker-save-to-simg" - "$candidate.tmp"
+          mv "$candidate.tmp" "$candidate"
       - name: Run deploy checks and the recipe runtime suite
         if: inputs.run-tests
         run: |

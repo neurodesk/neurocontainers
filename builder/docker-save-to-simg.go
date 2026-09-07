@@ -94,13 +94,33 @@ func convertDockerSave(inPath, outPath, arch string, imageIndex int) error {
 	layers := make([]LayerSource, 0, len(layerPaths))
 	for _, p := range layerPaths {
 		layerPath := p
+		mediaType, err := dockerLayerMediaType(layerPath)
+		if err != nil {
+			return err
+		}
 		layers = append(layers, LayerSource{
 			Name:      layerPath,
-			MediaType: "application/vnd.docker.image.rootfs.diff.tar",
+			MediaType: mediaType,
 			Open:      func() (io.ReadCloser, error) { return os.Open(layerPath) },
 		})
 	}
 	return WriteFromLayerSourcesWithConfig(layers, outPath, arch, cfg)
+}
+
+func dockerLayerMediaType(layerPath string) (string, error) {
+	f, err := os.Open(layerPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	var magic [3]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return "", fmt.Errorf("read layer compression %s: %w", layerPath, err)
+	}
+	if magic == [3]byte{0x1f, 0x8b, 0x08} {
+		return "application/vnd.docker.image.rootfs.diff.tar.gzip", nil
+	}
+	return "application/vnd.docker.image.rootfs.diff.tar", nil
 }
 
 func extractDockerSave(inPath, tmp string, imageIndex int) (dockerManifestEntry, string, []string, error) {
