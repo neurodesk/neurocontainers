@@ -1,584 +1,498 @@
-# DSI Studio container test suite
-# Tests for DSI Studio version 2024.06.12 "Hou" - Tractography Software for Diffusion MRI
-#
-# DSI Studio is a tractography software tool that maps brain connections and correlates
-# findings with neuropsychological disorders. It implements several diffusion MRI methods:
-#   - Diffusion tensor imaging (DTI)
-#   - Generalized q-sampling imaging (GQI)
-#   - Q-space diffeomorphic reconstruction (QSDR)
-#   - Diffusion MRI connectometry
-#   - Generalized deterministic fiber tracking
-#
-# More info: http://dsi-studio.labsolver.org/
-# License: CC BY-NC-SA 4.0 (non-commercial use)
-#
-# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
-#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
-#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
-#
-# NOTE: Full DSI Studio pipeline testing requires DWI (diffusion-weighted imaging) data.
-# These tests verify available CLI actions using structural data where applicable,
-# and test help/version output for diffusion-specific functions.
-
+# Runtime checks use the bundled GQI template; it contains QA and ISO, not tensor FA/AD/RD.
 name: dsistudio
-version: 2024.06.12
-
-# Environment variable required for headless operation
+version: 2024.06.12.post1
+upstream_version: 2024.06.12
 env:
   QT_QPA_PLATFORM: offscreen
-
 required_files:
   - dataset: ds000001
     files:
       - sub-01/anat/sub-01_T1w.nii.gz
       - sub-01/anat/sub-01_inplaneT2.nii.gz
-      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
-
 test_data:
   t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
   t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
-  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
   output_dir: test_output
-  # Atlas paths inside container
-  atlas_dir: /opt/dsi-studio/atlas/ICBM152_adult
-  template_fib: /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.fz
-  template_t1w: /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.T1W.nii.gz
-  template_qa: /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.QA.nii.gz
-
+  atlas_dir: /opt/dsi-studio/atlas/human
+  template_fib: test_output/human.fz
+  template_t1w: /opt/dsi-studio/atlas/human/human.T1W.nii.gz
+  template_qa: /opt/dsi-studio/atlas/human/human.QA.nii.gz
 setup:
   script: |
-    #!/usr/bin/env bash
-    set -e
+    set -eu
     mkdir -p test_output
-
+    cp /opt/dsi-studio/atlas/human/human.fz test_output/human.fz
 tests:
-  # ==========================================================================
-  # BASIC FUNCTIONALITY - Version and Binary Check
-  # ==========================================================================
   - name: DSI Studio binary exists
     description: Verify dsi_studio binary is in PATH
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen which dsi_studio'"
-    expected_output_contains: "dsi_studio"
-
+    command: command -v dsi_studio
+    expected_output_contains: dsi_studio
   - name: DSI Studio version check
     description: Check DSI Studio version output
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --version 2>&1 || true'"
-    expected_output_contains: "DSI Studio"
-
+    command: dsi_studio --version
+    expected_output_contains: 'DSI Studio version:'
   - name: DSI Studio atlas directory exists
     description: Verify atlas directory is present
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls -la /opt/dsi-studio/atlas/'\"'\"''"
-    expected_output_contains: "ICBM152_adult"
-
-  - name: DSI Studio ICBM152 template files exist
-    description: Verify ICBM152 adult template files are present
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/*.fz'\"'\"''"
-    expected_output_contains: "ICBM152_adult.fz"
-
-  # ==========================================================================
-  # ACTION: src - Generate SRC Files (Help/Validation)
-  # ==========================================================================
-  - name: src action help check
-    description: Verify src action is recognized (generates SRC from NIFTI/DICOM)
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=src --source=nonexistent 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "action=src"
-
-  # ==========================================================================
-  # ACTION: rec - Reconstruction (Help/Validation)
-  # Note: Requires DWI data for full testing, check help output
-  # ==========================================================================
-  - name: rec action help check
-    description: Verify rec action help shows reconstruction parameters
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=rec --source=nonexistent 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "action=rec"
-
-  # ==========================================================================
-  # ACTION: trk - Fiber Tracking (Help/Validation)
-  # Note: Requires FIB file for full tracking
-  # ==========================================================================
-  - name: trk action help check
-    description: Verify trk action for fiber tracking is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=trk --source=nonexistent 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "action=trk"
-
-  # ==========================================================================
-  # ACTION: ana - Analysis (Help/Validation)
-  # ==========================================================================
-  - name: ana action help check
-    description: Verify ana action for tract/region analysis is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=ana --source=nonexistent 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "action=ana"
-
-  # ==========================================================================
-  # ACTION: atk - Automatic Fiber Tracking (Help/Validation)
-  # ==========================================================================
-  - name: atk action help check
-    description: Verify atk action for automatic bundle tracking is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=atk --source=nonexistent 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "action=atk"
-
-  # ==========================================================================
-  # ACTION: exp - Export (Help/Validation)
-  # ==========================================================================
-  - name: exp action help check
-    description: Verify exp action for exporting data is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=exp --source=nonexistent 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "action=exp"
-
-  # ==========================================================================
-  # ACTION: reg - Registration
-  # Registration can be tested with structural images
-  # ==========================================================================
-  - name: reg action help check
-    description: Verify reg action for image registration is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=reg --source=nonexistent 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "action=reg"
-
+    command: ls -la /opt/dsi-studio/atlas/
+    expected_output_contains: human
+  - name: DSI Studio human template files exist
+    description: Verify the bundled human FIB template is available.
+    command: ls /opt/dsi-studio/atlas/human/*.fz
+    expected_output_contains: human.fz
+  - name: src action rejects missing input
+    description: Verify the action fails for missing or invalid input.
+    command: dsi_studio --action=src --source=nonexistent
+    expected_exit_code: 1
+  - name: rec action rejects missing input
+    description: Verify the action fails for missing or invalid input.
+    command: dsi_studio --action=rec --source=nonexistent
+    expected_exit_code: 1
+    expected_output_contains: does not exist
+  - name: trk action rejects missing input
+    description: Verify the action fails for missing or invalid input.
+    command: dsi_studio --thread_count=2 --action=trk --source=nonexistent
+    expected_exit_code: 1
+    expected_output_contains: does not exist
+  - name: ana action rejects missing input
+    description: Verify the action fails for missing or invalid input.
+    command: dsi_studio --action=ana --source=nonexistent
+    expected_exit_code: 1
+    expected_output_contains: does not exist
+  - name: atk action rejects missing input
+    description: Verify the action fails for missing or invalid input.
+    command: dsi_studio --thread_count=2 --action=atk --source=nonexistent
+    expected_exit_code: 1
+    expected_output_contains: does not exist
+  - name: exp action rejects missing input
+    description: Verify the action fails for missing or invalid input.
+    command: dsi_studio --action=exp --source=nonexistent
+    expected_exit_code: 1
+    expected_output_contains: unsupported file format
+  - name: reg action rejects missing input
+    description: Verify the action fails for missing or invalid input.
+    command: dsi_studio --action=reg --source=nonexistent
+    expected_exit_code: 1
+    expected_output_contains: please specify the images to warp
   - name: reg action - linear registration T1w to template
-    description: Register subject T1w to ICBM152 template (linear only, timeout before completion - CUDA prevents saving output)
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=reg \\\n  --from=${t1w} \\\n  --to=${template_t1w} \\\n  --reg_type=0 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "linear registration"
-
-  - name: reg action - apply mapping parameter check
-    description: Verify reg action accepts --apply_warp parameter for transforming images
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=reg \\\n  --from=${t1w} \\\n  --to=${template_t1w} \\\n  --apply_warp=${t2} 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "from="
-
+    description: Complete structural registration on CPU and verify the transformed image is written.
+    command: mkdir -p test_output/reg_11 && dsi_studio --action=reg --source=${t1w} --to=${template_t1w} --reg_type=0
+      --overwrite=1 --output=test_output/reg_11
+    validate:
+      - output_exists: test_output/reg_11/sub-01_T1w.nii.gz.wp.nii.gz
+    timeout: 600
+  - name: reg action - save reusable mapping
+    description: Save an affine mapping and registered image.
+    command: mkdir -p test_output/reg_mapping && dsi_studio --action=reg --source=${t1w} --to=${template_t1w} --reg_type=1
+      --skip_nonlinear=1 --output_mapping=test_output/mapping.mz --output=test_output/reg_mapping --overwrite=1
+    validate:
+      - output_exists: test_output/mapping.mz
+      - output_exists: test_output/reg_mapping/sub-01_T1w.nii.gz.wp.nii.gz
+    timeout: 600
   - name: reg action - nonlinear registration T1w to template
-    description: Register subject T1w to ICBM152 template with nonlinear warping (timeout - CUDA prevents saving output)
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=reg \\\n  --from=${t1w} \\\n  --to=${template_t1w} \\\n  --reg_type=1 \\\n  --resolution=4 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "reg_type=1"
-
-  - name: reg action - subject to template transformation
-    description: Verify reg action accepts --from and --to with s2t parameter (timeout - CUDA prevents saving)
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=reg \\\n  --from=${t1w} \\\n  --to=${template_t1w} \\\n  --s2t=${t2} 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "from dim"
-
+    description: Complete structural registration on CPU and verify the transformed image is written.
+    command: mkdir -p test_output/reg_13 && dsi_studio --action=reg --source=${t1w} --to=${template_t1w} --reg_type=1
+      --resolution=4 --overwrite=1 --output=test_output/reg_13
+    validate:
+      - output_exists: test_output/reg_13/sub-01_T1w.nii.gz.wp.nii.gz
+    timeout: 600
+  - name: reg action - apply saved mapping
+    description: Transform the subject image with the mapping produced by registration.
+    command: mkdir -p test_output/reg_reuse && dsi_studio --action=reg --source=${t1w} --mapping=test_output/mapping.mz
+      --output=test_output/reg_reuse
+    depends_on: reg action - save reusable mapping
+    validate:
+      - output_exists: test_output/reg_reuse/sub-01_T1w.nii.gz.wp.nii.gz
   - name: reg action - multi-modality registration
-    description: Verify reg action accepts comma-separated multi-modality input (comma format not supported with --from, checks parameter received)
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=reg \\\n  --from=${t1w},${t2} \\\n  --to=${template_t1w},${template_t1w} \\\n  --reg_type=0 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "from="
-
-  # ==========================================================================
-  # ACTION: exp - Export from Template FIB
-  # Export metrics from the included ICBM152 template FIB file
-  # ==========================================================================
+    description: Complete structural registration on CPU and verify the transformed image is written.
+    command: mkdir -p test_output/reg_15 && dsi_studio --action=reg --source=${t1w},${t2} --to=${template_t1w},${template_t1w}
+      --reg_type=0 --overwrite=1 --output=test_output/reg_15
+    validate:
+      - output_exists: test_output/reg_15/sub-01_T1w.nii.gz.wp.nii.gz
+      - output_exists: test_output/reg_15/sub-01_inplaneT2.nii.gz.wp.nii.gz
+    timeout: 600
   - name: exp action - export QA from template FIB
-    description: Export QA metric from ICBM152 template FIB file (writes inside container)
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=exp \\\n  --source=${template_fib} \\\n  --export=qa 2>&1 || true'"
-    expected_output_contains: "saving"
-
+    description: Export the GQI metrics present in the bundled FIB to the writable test directory.
+    command: rm -f ${template_fib}.qa.nii.gz && dsi_studio --action=exp --source=${template_fib} --export=qa
+    validate:
+      - output_exists: ${template_fib}.qa.nii.gz
   - name: exp action - export ISO from template FIB
-    description: Export ISO metric from ICBM152 template FIB file
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=exp \\\n  --source=${template_fib} \\\n  --export=iso 2>&1 || true'"
+    description: Export the GQI metrics present in the bundled FIB to the writable test directory.
+    command: rm -f ${template_fib}.iso.nii.gz && dsi_studio --action=exp --source=${template_fib} --export=iso
     expected_exit_code: 0
-
+    validate:
+      - output_exists: ${template_fib}.iso.nii.gz
   - name: exp action - export multiple metrics
-    description: Export multiple diffusion metrics from template FIB
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=exp \\\n  --source=${template_fib} \\\n  --export=qa,iso,rd,ad 2>&1 || true'"
+    description: Export the GQI metrics present in the bundled FIB to the writable test directory.
+    command: rm -f ${template_fib}.qa.nii.gz ${template_fib}.iso.nii.gz && dsi_studio --action=exp --source=${template_fib}
+      --export=qa,iso
     expected_exit_code: 0
-
-  # ==========================================================================
-  # ACTION: trk - Fiber Tracking on Template
-  # Basic tracking tests using the ICBM152 template FIB
-  # ==========================================================================
+    validate:
+      - output_exists: ${template_fib}.qa.nii.gz
+      - output_exists: ${template_fib}.iso.nii.gz
   - name: trk action - whole brain tracking (limited)
-    description: Run limited whole-brain tracking on ICBM152 template
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=100 \\\n  --output=test_output/template_wb_tracks.tt.gz 2>&1 || true'"
+    description: Run limited whole-brain tracking on human template
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --output=test_output/template_wb_tracks.tt.gz
     validate:
       - output_exists: ${output_dir}/template_wb_tracks.tt.gz
-
   - name: trk action - tracking with parameters
     description: Test fiber tracking with custom parameters
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=50 \\\n  --fa_threshold=0.1 \\\n  --turning_angle=60 \\\n  --step_size=1.0 \\\n  --min_length=20 \\\n  --max_length=200 \\\n  --output=test_output/template_tracks_params.tt.gz 2>&1 || true'"
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=50 --fa_threshold=0.1
+      --turning_angle=60 --step_size=1.0 --min_length=20 --max_length=200 --output=test_output/template_tracks_params.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_params.tt.gz
-
   - name: trk action - tracking with ROI
     description: Test fiber tracking with region of interest
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=100 \\\n  --roi=HCP-MMP:L_V1 \\\n  --output=test_output/template_tracks_roi.tt.gz 2>&1 || true'"
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=5000 --roi=HCP-MMP:L_V1
+      --output=test_output/template_tracks_roi.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_roi.tt.gz
-
   - name: trk action - tracking with connectome
     description: Test fiber tracking with connectivity matrix output
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=100 \\\n  --connectivity=Brodmann \\\n  --output=test_output/template_tracks_conn.tt.gz 2>&1 || true'"
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --connectivity=Brodmann
+      --output=test_output/template_tracks_conn.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_conn.tt.gz
-
-  # ==========================================================================
-  # ACTION: atk - Automatic Fiber Tracking on Template
-  # ==========================================================================
+      - output_exists: test_output/template_tracks_conn.tt.gz.Brodmann.count.pass.connectivity.mat
   - name: atk action - track arcuate fasciculus
     description: Automatic tracking of arcuate fasciculus bundle
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=atk \\\n  --source=${template_fib} \\\n  --track_id=Arcuate \\\n  --output=test_output/ 2>&1 || true'"
-    expected_exit_code: 0
-
-  - name: atk action - track corticospinal tract
-    description: Automatic tracking of corticospinal tract
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=atk \\\n  --source=${template_fib} \\\n  --track_id=Corticos \\\n  --output=test_output/ 2>&1 || true'"
-    expected_exit_code: 0
-
-  - name: atk action - track multiple bundles
-    description: Automatic tracking of multiple bundles
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=atk \\\n  --source=${template_fib} \\\n  --track_id=Arcuate,Cingulum,Fornix \\\n  --output=test_output/ 2>&1 || true'"
+    command: mkdir -p test_output/atk_23 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Arcuate
+      --output=test_output/atk_23 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_23
+      -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_23 -name '*.no_result.txt' -print
+      -quit)"
     expected_exit_code: 0
     timeout: 300
-
+  - name: atk action - track corticospinal tract
+    description: Automatic tracking of corticospinal tract
+    command: mkdir -p test_output/atk_24 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Corticos
+      --output=test_output/atk_24 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_24
+      -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_24 -name '*.no_result.txt' -print
+      -quit)"
+    expected_exit_code: 0
+    timeout: 300
+  - name: atk action - track multiple bundles
+    description: Automatic tracking of multiple bundles
+    command: mkdir -p test_output/atk_25 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Arcuate,Cingulum,Fornix
+      --output=test_output/atk_25 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_25
+      -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_25 -name '*.no_result.txt' -print
+      -quit)"
+    expected_exit_code: 0
+    timeout: 300
   - name: atk action - with custom tolerance
     description: Automatic tracking with adjusted tolerance
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=atk \\\n  --source=${template_fib} \\\n  --track_id=Uncinate \\\n  --tolerance=22,26,30 \\\n  --output=test_output/ 2>&1 || true'"
+    command: mkdir -p test_output/atk_26 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Uncinate
+      --tolerance=22,26,30 --output=test_output/atk_26 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1
+      && test -n "$(find test_output/atk_26 -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_26
+      -name '*.no_result.txt' -print -quit)"
     expected_exit_code: 0
-
-  # ==========================================================================
-  # ACTION: ana - Analysis on Template and Tracks
-  # ==========================================================================
+    timeout: 300
   - name: ana action - tract statistics
     description: Generate tract statistics from tracked fibers
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=ana \\\n  --source=${template_fib} \\\n  --tract=test_output/template_wb_tracks.tt.gz \\\n  --export=stat 2>&1 || true'"
+    command: dsi_studio --action=ana --source=${template_fib} --tract=test_output/template_wb_tracks.tt.gz --export=stat
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
-
+    validate:
+      - output_exists: test_output/template_wb_tracks.tt.gz.stat.txt
   - name: ana action - tract density image
     description: Generate tract density image from tracked fibers
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=ana \\\n  --source=${template_fib} \\\n  --tract=test_output/template_wb_tracks.tt.gz \\\n  --export=tdi 2>&1 || true'"
+    command: dsi_studio --action=ana --source=${template_fib} --tract=test_output/template_wb_tracks.tt.gz --export=tdi
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
-
+    validate:
+      - output_exists: test_output/template_wb_tracks.tt.gz.tdi.nii.gz
   - name: ana action - tract to region connectivity
     description: Calculate tract-to-region connectivity matrix
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=ana \\\n  --source=${template_fib} \\\n  --tract=test_output/template_wb_tracks.tt.gz \\\n  --connectivity=Brodmann 2>&1 || true'"
+    command: dsi_studio --action=ana --source=${template_fib} --tract=test_output/template_wb_tracks.tt.gz --connectivity=Brodmann
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
-
+    validate:
+      - output_exists: test_output/template_wb_tracks.tt.gz.Brodmann.count.pass.connectivity.mat
   - name: ana action - region statistics with atlas
     description: Get region statistics using HCP-MMP atlas
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=ana \\\n  --source=${template_fib} \\\n  --region=HCP-MMP:L_V1 \\\n  --export=stat 2>&1 || true'"
+    command: dsi_studio --action=ana --source=${template_fib} --region=HCP-MMP:L_V1 --output=test_output/region_30.txt
     expected_exit_code: 0
-
+    validate:
+      - output_exists: test_output/region_30.txt
   - name: ana action - export tract endpoints
     description: Export tract endpoint coordinates
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=ana \\\n  --source=${template_fib} \\\n  --tract=test_output/template_wb_tracks.tt.gz \\\n  --export=end_point 2>&1 || true'"
+    command: dsi_studio --action=ana --source=${template_fib} --tract=test_output/template_wb_tracks.tt.gz --end_point=test_output/endpoints.txt
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
-
-  # ==========================================================================
-  # ACTION: cnt - Correlational Tractography (Help Check)
-  # ==========================================================================
-  - name: cnt action help check
-    description: Verify cnt action for correlational tractography is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=cnt --source=nonexistent 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "action=cnt"
-
-  # ==========================================================================
-  # ACTION: ren - Rename/Convert (Help Check)
-  # ==========================================================================
-  - name: ren action help check
-    description: Verify ren action for file renaming/conversion is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=ren --source=nonexistent 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "action=ren"
-
-  # ==========================================================================
-  # ATLAS VERIFICATION
-  # ==========================================================================
+    validate:
+      - output_exists: test_output/endpoints.txt
+  - name: cnt action rejects missing input
+    description: Verify the action fails for missing or invalid input.
+    command: dsi_studio --action=cnt --source=nonexistent
+    expected_exit_code: 1
+    expected_output_contains: invalid fib file
+  - name: ren action accepts an empty directory
+    description: Verify the DICOM renamer completes on an empty input directory.
+    command: mkdir -p test_output/empty_dicom && dsi_studio --action=ren --source=test_output/empty_dicom --output=test_output/renamed_dicom
+    expected_output_contains: Renaming DICOM
   - name: Atlas Brodmann exists
     description: Verify Brodmann atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/Brodmann.nii.gz'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human/Brodmann.nii.gz
     expected_exit_code: 0
-
   - name: Atlas HCP-MMP exists
     description: Verify HCP-MMP atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/HCP-MMP.nii.gz'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human/HCP-MMP.nii.gz
     expected_exit_code: 0
-
   - name: Atlas FreeSurferDKT exists
     description: Verify FreeSurfer DKT atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/FreeSurferDKT_Cortical.nii.gz'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human/FreeSurferDKT_Cortical.nii.gz
     expected_exit_code: 0
-
   - name: Atlas Brainnectome exists
     description: Verify Brainnectome atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/Brainnectome.nii.gz'\"'\"''"
+    command: test -s /opt/dsi-studio/atlas/human/Brainnectome.nii.gz
     expected_exit_code: 0
-
   - name: Atlas CerebrA exists
     description: Verify CerebrA atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/CerebrA.nii.gz'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human/CerebrA.nii.gz
     expected_exit_code: 0
-
   - name: Atlas HCPex exists
     description: Verify HCPex atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/HCPex.nii.gz'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human/HCPex.nii.gz
     expected_exit_code: 0
-
   - name: Atlas JulichBrain exists
     description: Verify JulichBrain atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/JulichBrain.nii.gz'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human/JulichBrain.nii.gz
     expected_exit_code: 0
-
   - name: HCP842 tractography template exists
     description: Verify HCP842 tractography template is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/HCP842_tractography.nii.gz'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human/HCP842_tractography.nii.gz
     expected_exit_code: 0
-
-  # ==========================================================================
-  # NON-HUMAN ATLAS TEMPLATES
-  # ==========================================================================
   - name: Mouse atlas exists
     description: Verify C57BL6 mouse atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/C57BL6_mouse/'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/mouse/
     expected_exit_code: 0
-
   - name: Rat atlas exists
     description: Verify WHS SD rat atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/WHS_SD_rat/'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/rat/
     expected_exit_code: 0
-
   - name: Marmoset atlas exists
     description: Verify Pitt marmoset atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/Pitt_marmoset/'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/marmoset/
     expected_exit_code: 0
-
   - name: Rhesus atlas exists
     description: Verify INDI rhesus atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/INDI_rhesus/'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/rhesus/
     expected_exit_code: 0
-
   - name: Neonate atlas exists
     description: Verify dHCP neonate atlas is available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/dHCP_neonate/'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human_neonate/
     expected_exit_code: 0
-
-  # ==========================================================================
-  # NETWORK AND COLOR MAP FILES
-  # ==========================================================================
   - name: Network files exist
     description: Verify network definition files are available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/network/'\"'\"''"
+    command: ls /opt/dsi-studio/network/
     expected_exit_code: 0
-
   - name: Color map files exist
     description: Verify color map files are available
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/color_map/'\"'\"''"
+    command: ls /opt/dsi-studio/color_map/
     expected_exit_code: 0
-
-  # ==========================================================================
-  # ADVANCED TRACKING TESTS
-  # ==========================================================================
-  - name: trk action - differential tracking help
-    description: Test differential tracking parameters are recognized
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --dt_threshold=0.1 2>&1 || true'"
-    expected_exit_code: 0
-
+  - name: trk action rejects unknown differential metric
+    description: Differential tracking must reject metrics missing from the input FIB.
+    command: dsi_studio --action=trk --source=${template_fib} --dt_metric1=missing_metric --dt_metric2=missing_metric
+      --dt_threshold=0.1 --seed_count=50
+    expected_exit_code: 1
+    expected_output_contains: 'cannot find the metric: missing_metric'
   - name: trk action - tracking with smoothing
     description: Test fiber tracking with smoothing parameter
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=50 \\\n  --smoothing=0.5 \\\n  --output=test_output/template_tracks_smooth.tt.gz 2>&1 || true'"
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=50 --smoothing=0.5 --output=test_output/template_tracks_smooth.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_smooth.tt.gz
-
   - name: trk action - delete repeat streamlines
     description: Test fiber tracking with duplicate removal
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=100 \\\n  --delete_repeat=1 \\\n  --output=test_output/template_tracks_unique.tt.gz 2>&1 || true'"
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --delete_repeat=1
+      --output=test_output/template_tracks_unique.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_unique.tt.gz
-
   - name: trk action - output tract statistics
     description: Test fiber tracking with inline statistics export
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=50 \\\n  --export=stat \\\n  --output=test_output/template_tracks_stat.tt.gz 2>&1 || true'"
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=50 --export=stat --output=test_output/template_tracks_stat.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_stat.tt.gz
-
-  # ==========================================================================
-  # CONNECTIVITY ANALYSIS
-  # ==========================================================================
+      - output_exists: test_output/template_tracks_stat.tt.gz.stat.txt
   - name: trk action - HCP-MMP connectivity
     description: Generate connectivity matrix using HCP-MMP parcellation
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=200 \\\n  --connectivity=HCP-MMP \\\n  --connectivity_type=pass \\\n  --output=test_output/template_conn_hcpmmp.tt.gz 2>&1 || true'"
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=200 --connectivity=HCP-MMP
+      --connectivity_type=pass --output=test_output/template_conn_hcpmmp.tt.gz
     validate:
       - output_exists: ${output_dir}/template_conn_hcpmmp.tt.gz
-
+      - output_exists: test_output/template_conn_hcpmmp.tt.gz.HCP-MMP.count.pass.connectivity.mat
   - name: trk action - multiple atlas connectivity
     description: Generate connectivity matrices for multiple atlases
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=100 \\\n  --connectivity=Brodmann,FreeSurferDKT_Cortical \\\n  --output=test_output/template_conn_multi.tt.gz 2>&1 || true'"
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --connectivity=Brodmann,FreeSurferDKT_Cortical
+      --output=test_output/template_conn_multi.tt.gz
     validate:
       - output_exists: ${output_dir}/template_conn_multi.tt.gz
-
+      - output_exists: test_output/template_conn_multi.tt.gz.Brodmann.count.pass.connectivity.mat
+      - output_exists: test_output/template_conn_multi.tt.gz.FreeSurferDKT_Cortical.count.pass.connectivity.mat
   - name: trk action - endpoint connectivity
     description: Generate endpoint-based connectivity matrix
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=100 \\\n  --connectivity=Brodmann \\\n  --connectivity_type=end \\\n  --output=test_output/template_conn_end.tt.gz 2>&1 || true'"
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --connectivity=Brodmann
+      --connectivity_type=end --output=test_output/template_conn_end.tt.gz
     validate:
       - output_exists: ${output_dir}/template_conn_end.tt.gz
-
-  # ==========================================================================
-  # REGISTRATION WITH DIFFERENT PARAMETERS
-  # ==========================================================================
+      - output_exists: test_output/template_conn_end.tt.gz.Brodmann.count.end.connectivity.mat
   - name: reg action - cost function mutual information
-    description: Test registration accepts mutual information cost function parameter (timeout - CUDA prevents saving)
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=reg \\\n  --from=${t1w} \\\n  --to=${template_t1w} \\\n  --cost_function=mi \\\n  --reg_type=0 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "cost_function=mi"
-
+    description: Complete structural registration on CPU and verify the transformed image is written.
+    command: mkdir -p test_output/reg_56 && dsi_studio --action=reg --source=${t1w} --to=${template_t1w} --reg_type=0
+      --cost_function=mi --overwrite=1 --output=test_output/reg_56
+    validate:
+      - output_exists: test_output/reg_56/sub-01_T1w.nii.gz.wp.nii.gz
+    timeout: 600
   - name: reg action - high resolution registration
-    description: Test registration accepts resolution parameter (timeout - CUDA prevents saving)
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=reg \\\n  --from=${t1w} \\\n  --to=${template_t1w} \\\n  --resolution=2 \\\n  --reg_type=0 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "linear registration"
-
+    description: Complete structural registration on CPU and verify the transformed image is written.
+    command: mkdir -p test_output/reg_57 && dsi_studio --action=reg --source=${t1w} --to=${template_t1w} --reg_type=1
+      --resolution=2 --overwrite=1 --output=test_output/reg_57
+    validate:
+      - output_exists: test_output/reg_57/sub-01_T1w.nii.gz.wp.nii.gz
+    timeout: 600
   - name: reg action - smoothed registration
-    description: Test registration accepts smoothing parameter (timeout - CUDA prevents saving)
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=reg \\\n  --from=${t1w} \\\n  --to=${template_t1w} \\\n  --smoothing=0.5 \\\n  --reg_type=0 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true'"
-    expected_output_contains: "linear registration"
-
-  # ==========================================================================
-  # BUNDLE-SPECIFIC AUTOMATIC TRACKING
-  # ==========================================================================
+    description: Complete structural registration on CPU and verify the transformed image is written.
+    command: mkdir -p test_output/reg_58 && dsi_studio --action=reg --source=${t1w} --to=${template_t1w} --reg_type=1
+      --smoothing=0.5 --overwrite=1 --output=test_output/reg_58
+    validate:
+      - output_exists: test_output/reg_58/sub-01_T1w.nii.gz.wp.nii.gz
+    timeout: 600
   - name: atk action - inferior longitudinal fasciculus
     description: Track inferior longitudinal fasciculus
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=atk \\\n  --source=${template_fib} \\\n  --track_id=InferiorLongitudinal \\\n  --output=test_output/ 2>&1 || true'"
+    command: mkdir -p test_output/atk_59 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=InferiorLongitudinal
+      --output=test_output/atk_59 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_59
+      -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_59 -name '*.no_result.txt' -print
+      -quit)"
     expected_exit_code: 0
-
+    timeout: 300
   - name: atk action - superior longitudinal fasciculus
     description: Track superior longitudinal fasciculus
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=atk \\\n  --source=${template_fib} \\\n  --track_id=SuperiorLongitudinal \\\n  --output=test_output/ 2>&1 || true'"
+    command: mkdir -p test_output/atk_60 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=SuperiorLongitudinal
+      --output=test_output/atk_60 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_60
+      -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_60 -name '*.no_result.txt' -print
+      -quit)"
     expected_exit_code: 0
-
+    timeout: 300
   - name: atk action - optic radiation
     description: Track optic radiation
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=atk \\\n  --source=${template_fib} \\\n  --track_id=Optic \\\n  --output=test_output/ 2>&1 || true'"
+    command: mkdir -p test_output/atk_61 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Optic
+      --output=test_output/atk_61 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_61
+      -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_61 -name '*.no_result.txt' -print
+      -quit)"
     expected_exit_code: 0
-
+    timeout: 300
   - name: atk action - corpus callosum
     description: Track corpus callosum
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=atk \\\n  --source=${template_fib} \\\n  --track_id=Corpus \\\n  --output=test_output/ 2>&1 || true'"
+    command: mkdir -p test_output/atk_62 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Corpus
+      --output=test_output/atk_62 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_62
+      -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_62 -name '*.no_result.txt' -print
+      -quit)"
     expected_exit_code: 0
-
+    timeout: 300
   - name: atk action - thalamic radiation
     description: Track thalamic radiation
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=atk \\\n  --source=${template_fib} \\\n  --track_id=ThalamicR \\\n  --output=test_output/ 2>&1 || true'"
+    command: mkdir -p test_output/atk_63 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=ThalamicR
+      --output=test_output/atk_63 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_63
+      -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_63 -name '*.no_result.txt' -print
+      -quit)"
     expected_exit_code: 0
-
-  # ==========================================================================
-  # CONFIGURATION AND PARAMETER FILES
-  # ==========================================================================
+    timeout: 300
   - name: Device configuration exists
     description: Verify device configuration file is present
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/device.txt'\"'\"''"
+    command: ls /opt/dsi-studio/device.txt
     expected_exit_code: 0
-
   - name: TOPUP parameter file exists
     description: Verify TOPUP parameter file is present
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/topup_param.txt'\"'\"''"
+    command: ls /opt/dsi-studio/topup_param.txt
     expected_exit_code: 0
-
   - name: License file exists
     description: Verify license file is present
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/LICENSE'\"'\"''"
+    command: ls /opt/dsi-studio/LICENSE
     expected_exit_code: 0
-
-  # ==========================================================================
-  # TEMPLATE FILE VERIFICATION
-  # ==========================================================================
   - name: Template FIB file valid
-    description: Verify template FIB file can be queried
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=exp \\\n  --source=${template_fib} \\\n  --export=fa 2>&1 || true'"
+    description: Export the GQI metrics present in the bundled FIB to the writable test directory.
+    command: rm -f ${template_fib}.qa.nii.gz && dsi_studio --action=exp --source=${template_fib} --export=qa
     expected_exit_code: 0
-
+    validate:
+      - output_exists: ${template_fib}.qa.nii.gz
   - name: Template tract file exists
     description: Verify template tractography file exists
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.tt.gz'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human/human.tt.gz
     expected_exit_code: 0
-
   - name: Template mask file exists
     description: Verify template mask file exists
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.mask.nii.gz'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human/human.mask.nii.gz
     expected_exit_code: 0
-
   - name: Template white matter file exists
     description: Verify template white matter file exists
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.WM.nii.gz'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human/human.WM.nii.gz
     expected_exit_code: 0
-
   - name: Template ROI file exists
     description: Verify template ROI file exists
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen bash -lc '\"'\"'ls /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.roi.nii.gz'\"'\"''"
+    command: ls /opt/dsi-studio/atlas/human/human.roi.nii.gz
     expected_exit_code: 0
-
-  # ==========================================================================
-  # ANALYSIS WITH SPECIFIC REGIONS
-  # ==========================================================================
   - name: ana action - Brodmann region analysis
     description: Analyze specific Brodmann area
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=ana \\\n  --source=${template_fib} \\\n  --region=Brodmann:17 \\\n  --export=stat 2>&1 || true'"
+    command: dsi_studio --action=ana --source=${template_fib} --region=Brodmann:BA17_L --output=test_output/region_72.txt
     expected_exit_code: 0
-
+    validate:
+      - output_exists: test_output/region_72.txt
   - name: ana action - FreeSurfer region analysis
     description: Analyze FreeSurfer DKT region
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=ana \\\n  --source=${template_fib} \\\n  --region=FreeSurferDKT_Cortical:L_precentral \\\n  --export=stat 2>&1 || true'"
+    command: dsi_studio --action=ana --source=${template_fib} --region=FreeSurferDKT_Cortical:left_precentral --output=test_output/region_73.txt
     expected_exit_code: 0
-
+    validate:
+      - output_exists: test_output/region_73.txt
   - name: ana action - cerebellum region analysis
     description: Analyze cerebellum region using SUIT atlas
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=ana \\\n  --source=${template_fib} \\\n  --region=Cerebellum-SUIT:Left_I_IV \\\n  --export=stat 2>&1 || true'"
+    command: dsi_studio --action=ana --source=${template_fib} --region=Cerebellum-SUIT:Left_I_IV --output=test_output/region_74.txt
     expected_exit_code: 0
-
-  # ==========================================================================
-  # TRACKING OUTPUT FORMATS
-  # ==========================================================================
+    validate:
+      - output_exists: test_output/region_74.txt
   - name: trk action - output as TRK format
     description: Test fiber tracking with TRK output format
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=50 \\\n  --output=test_output/template_tracks.trk.gz 2>&1 || true'"
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=50 --output=test_output/template_tracks.trk.gz
     validate:
       - output_exists: ${output_dir}/template_tracks.trk.gz
-
-  # ==========================================================================
-  # ERROR HANDLING
-  # ==========================================================================
   - name: Missing source file error
-    description: Verify proper error handling for missing source file
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=rec --source=nonexistent_file.src.gz 2>&1 || true'"
-    expected_output_contains: "does not exist"
-
+    description: Verify the action fails for missing or invalid input.
+    command: dsi_studio --action=rec --source=nonexistent_file.src.gz
+    expected_exit_code: 1
+    expected_output_contains: does not exist
   - name: Invalid action error
-    description: Verify proper error handling for invalid action
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=invalid_action --source=nonexistent 2>&1 || true'"
-    expected_output_contains: "unknown action"
-
-  # ==========================================================================
-  # THREADING AND PERFORMANCE
-  # ==========================================================================
+    description: Verify the action fails for missing or invalid input.
+    command: dsi_studio --action=invalid_action --source=nonexistent
+    expected_exit_code: 1
+    expected_output_contains: unknown action
   - name: trk action - single threaded
     description: Test fiber tracking with single thread
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=50 \\\n  --thread_count=1 \\\n  --output=test_output/template_tracks_1thread.tt.gz 2>&1 || true'"
+    command: dsi_studio --action=trk --source=${template_fib} --seed_count=50 --thread_count=1 --output=test_output/template_tracks_1thread.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_1thread.tt.gz
-
   - name: trk action - multi threaded
     description: Test fiber tracking with multiple threads
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=50 \\\n  --thread_count=4 \\\n  --output=test_output/template_tracks_4thread.tt.gz 2>&1 || true'"
+    command: dsi_studio --action=trk --source=${template_fib} --seed_count=50 --thread_count=4 --output=test_output/template_tracks_4thread.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_4thread.tt.gz
-
-  # ==========================================================================
-  # COMPLEX PIPELINES
-  # ==========================================================================
   - name: Pipeline - register and track
-    description: Verify reg action starts then run tracking on template (reg can't save output without CUDA)
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen timeout 10 dsi_studio --action=reg \\\n  --from=${t1w} \\\n  --to=${template_t1w} \\\n  --reg_type=0 2>&1 | sed '\"'\"'s/\\x1b\\[[0-9;]*m//g'\"'\"' || true\ndsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=50 \\\n  --output=test_output/pipeline_tracks.tt.gz 2>&1 || true'"
+    description: Complete structural registration on CPU and verify the transformed image is written.
+    command: mkdir -p test_output/reg_80 && dsi_studio --action=reg --source=${t1w} --to=${template_t1w} --reg_type=0
+      --overwrite=1 --output=test_output/reg_80 && dsi_studio --action=trk --source=${template_fib} --seed_count=100
+      --thread_count=2 --output=test_output/pipeline_tracks.tt.gz
     validate:
-      - output_exists: ${output_dir}/pipeline_tracks.tt.gz
-
+      - output_exists: test_output/reg_80/sub-01_T1w.nii.gz.wp.nii.gz
+      - output_exists: test_output/pipeline_tracks.tt.gz
+    timeout: 600
   - name: Pipeline - track and analyze
     description: Run tracking and then analyze the resulting tracts
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=trk \\\n  --source=${template_fib} \\\n  --seed_count=100 \\\n  --output=test_output/pipeline_ana_tracks.tt.gz 2>&1 && \\\ndsi_studio --action=ana \\\n  --source=${template_fib} \\\n  --tract=test_output/pipeline_ana_tracks.tt.gz \\\n  --connectivity=Brodmann 2>&1 || true'"
+    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --output=test_output/pipeline_ana_tracks.tt.gz
+      && dsi_studio --action=ana --source=${template_fib} --tract=test_output/pipeline_ana_tracks.tt.gz --connectivity=Brodmann
     validate:
       - output_exists: ${output_dir}/pipeline_ana_tracks.tt.gz
-
+      - output_exists: test_output/pipeline_ana_tracks.tt.gz.Brodmann.count.pass.connectivity.mat
   - name: Pipeline - autotrack multiple bundles with export
     description: Automatically track bundles and export statistics
-    command: "bash -lc 'env QT_QPA_PLATFORM=offscreen dsi_studio --action=atk \\\n  --source=${template_fib} \\\n  --track_id=Arcuate,Uncinate \\\n  --export=stat \\\n  --output=test_output/ 2>&1 || true'"
+    command: mkdir -p test_output/atk_82 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Arcuate,Uncinate
+      --export_stat=1 --output=test_output/atk_82 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test
+      -n "$(find test_output/atk_82 -name '*.tt.gz' -size +0c -print -quit)" && test -n "$(find test_output/atk_82
+      -name '*.stat.txt' -size +0c -print -quit)" && test -z "$(find test_output/atk_82 -name '*.no_result.txt'
+      -print -quit)"
     expected_exit_code: 0
-
-cleanup:
-  script: |
-    #!/usr/bin/env bash
-    # Optionally remove test outputs
-    # rm -rf test_output
-    echo "Test outputs preserved in test_output/"
+    timeout: 300
