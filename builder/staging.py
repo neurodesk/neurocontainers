@@ -54,6 +54,18 @@ def disambiguated_cache_name(cache_dir: Path, preferred: str, source: Path) -> s
     return f"{stem}_{sha256_text(str(source))[:12]}{suffix}"
 
 
+def _stage_file(source: Path, target: Path, *, executable: bool) -> None:
+    source_mode = source.stat().st_mode & 0o777
+    mode = 0o755 if executable or source_mode & 0o111 else 0o644
+    if source_mode == mode:
+        link_or_copy(source, target)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.unlink(missing_ok=True)
+        shutil.copyfile(source, target)
+        target.chmod(mode)
+
+
 def materialize_plan(
     plan: StagingPlan,
     recipe_dir: Path,
@@ -72,9 +84,9 @@ def materialize_plan(
         if file.contents is not None:
             target = cache_dir / preferred
             target.parent.mkdir(parents=True, exist_ok=True)
+            target.unlink(missing_ok=True)
             target.write_text(file.contents)
-            if file.executable:
-                target.chmod(0o755)
+            target.chmod(0o755 if file.executable else 0o644)
             materialized[file.name] = target
             continue
 
@@ -86,9 +98,7 @@ def materialize_plan(
                 raise FileNotFoundError(f"declared file not found: {source}")
             name = disambiguated_cache_name(cache_dir, preferred, source)
             target = cache_dir / name
-            link_or_copy(source, target)
-            if file.executable:
-                target.chmod(0o755)
+            _stage_file(source, target, executable=file.executable)
             materialized[file.name] = target
             continue
 
@@ -103,13 +113,13 @@ def materialize_plan(
             if not source.exists():
                 target = cache_dir / preferred
                 target.parent.mkdir(parents=True, exist_ok=True)
+                target.unlink(missing_ok=True)
                 target.touch()
+                target.chmod(0o755 if file.executable else 0o644)
             else:
                 name = disambiguated_cache_name(cache_dir, preferred, source)
                 target = cache_dir / name
-                link_or_copy(source, target)
-            if file.executable:
-                target.chmod(0o755)
+                _stage_file(source, target, executable=file.executable)
             materialized[file.name] = target
             continue
 

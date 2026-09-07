@@ -147,6 +147,7 @@ class HttpCache:
                     shutil.copyfileobj(response, handle)
                 if expected is not None:
                     _verify_checksum(tmp, expected, label)
+                tmp.chmod(0o644)
                 tmp.replace(path)
                 return path
             except (

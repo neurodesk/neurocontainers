@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import os
+import stat
 from pathlib import Path
 import urllib.error
 import urllib.request
@@ -190,3 +192,77 @@ def test_declared_copy_sources_are_staged_into_build_context(tmp_path: Path) -> 
     )
     assert (build_dir / "inline.txt").read_text() == "hello inline"
     assert (build_dir / "copied.txt").read_text() == "hello copied\n"
+
+
+@pytest.mark.parametrize("source_kind", ["url", "filename", "contents"])
+@pytest.mark.parametrize("executable", [False, True])
+def test_staged_inputs_are_readable_without_changing_sources(
+    tmp_path: Path, source_kind: str, executable: bool
+) -> None:
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    cache = HttpCache(tmp_path / "httpcache")
+    url = "https://example.org/tool.dat"
+    source = cache.path_for(url) if source_kind == "url" else recipe_dir / "tool.dat"
+    payload = "#!/bin/sh\nprintf staged-input-ok\n"
+    source.write_text(payload)
+    source.chmod(0o600)
+    mapping = {source_kind: payload if source_kind == "contents" else (
+        url if source_kind == "url" else "tool.dat"
+    ), "executable": executable}
+    plan = StagingPlan()
+    plan.add_file(declared_file_from_mapping("tool.dat", mapping))
+    plan.cache_mounts["input"] = {"tool.dat": "tool.dat"}
+    build = tmp_path / "build"
+    previous_umask = os.umask(0o077)
+    try:
+        for _ in range(2):
+            materialize_plan(plan, recipe_dir, build, http_cache_dir=cache.root)
+    finally:
+        os.umask(previous_umask)
+    staged = build / "cache/input/tool.dat"
+    assert staged.read_text() == payload
+    assert stat.S_IMODE(staged.stat().st_mode) == (0o755 if executable else 0o644)
+    assert stat.S_IMODE(source.stat().st_mode) == 0o600
+    assert source.read_text() == payload
+
+
+def test_staging_preserves_local_executable_without_changing_its_mode(tmp_path: Path) -> None:
+    source = tmp_path / "tool.sh"
+    source.write_text("#!/bin/sh\nprintf staged-input-ok\n")
+    source.chmod(0o700)
+    plan = StagingPlan()
+    plan.add_file(DeclaredFile(name="tool.sh", filename=str(source)))
+    cache = materialize_plan(plan, tmp_path, tmp_path / "build", http_cache_dir=tmp_path / "http")
+    assert stat.S_IMODE((cache / "tool.sh").stat().st_mode) == 0o755
+    assert stat.S_IMODE(source.stat().st_mode) == 0o700
+
+
+def test_new_downloads_remain_hardlinked_when_staged(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: FakeResponse(b"asset"))
+    plan = StagingPlan()
+    url = "https://example.org/asset.dat"
+    plan.add_file(declared_file_from_mapping("asset.dat", {"url": url}))
+    http_cache_dir = tmp_path / "http"
+    staged = materialize_plan(plan, tmp_path, tmp_path / "build", http_cache_dir=http_cache_dir, download=True)
+    source = HttpCache(http_cache_dir).path_for(url)
+    assert stat.S_IMODE(source.stat().st_mode) == 0o644
+    assert source.samefile(staged / "asset.dat")
+
+
+@pytest.mark.parametrize("replacement", [{"contents": "replacement"}, {"url": "https://example.org/input.txt"}])
+def test_restaging_a_different_source_does_not_modify_old_hardlinks(tmp_path: Path, replacement) -> None:
+    source = tmp_path / "input.txt"
+    source.write_text("original")
+    source.chmod(0o644)
+    plan = StagingPlan()
+    plan.add_file(DeclaredFile(name="input.txt", filename=str(source)))
+    kwargs = {"http_cache_dir": tmp_path / "http"}
+    staged = materialize_plan(plan, tmp_path, tmp_path / "build", **kwargs)
+    assert source.samefile(staged / "input.txt")
+    next_plan = StagingPlan()
+    next_plan.add_file(declared_file_from_mapping("input.txt", {**replacement, "executable": True}))
+    materialize_plan(next_plan, tmp_path, tmp_path / "build", **kwargs)
+    assert source.read_text() == "original"
+    assert stat.S_IMODE(source.stat().st_mode) == 0o644
+    assert not source.samefile(staged / "input.txt")
