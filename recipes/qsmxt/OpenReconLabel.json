@@ -99,10 +99,16 @@
         { "id": "romeo-ismv-whqsm", "name": { "en": "7. ROMEO + iSMV + WH-QSM" } },
         { "id": "romeo-sharp-whqsm", "name": { "en": "8. ROMEO + SHARP + WH-QSM" } },
         { "id": "romeo-resharp-whqsm", "name": { "en": "9. ROMEO + RESHARP + WH-QSM" } },
-        { "id": "romeo-sharp-tikhonov", "name": { "en": "10. ROMEO + SHARP + Tikhonov" } }
+        { "id": "romeo-sharp-tikhonov", "name": { "en": "10. ROMEO + SHARP + Tikhonov" } },
+        { "id": "qsmart", "name": { "en": "QSMART full pipeline (ROMEO + QSMART)" } },
+        { "id": "tgv", "name": { "en": "TGV full pipeline" } },
+        { "id": "autoqsm", "name": { "en": "AutoQSM full pipeline (ROMEO + AutoQSM)" } },
+        { "id": "nextqsm", "name": { "en": "NeXtQSM full pipeline (ROMEO + NeXtQSM)" } },
+        { "id": "iqsm", "name": { "en": "iQSM full pipeline (phase to QSM)" } },
+        { "id": "iqsm-plus", "name": { "en": "iQSM+ full pipeline (phase to QSM)" } }
       ],
       "default": "custom",
-      "information": { "en": "Select a tested pipeline combination. A preset overrides QSM algorithm, Unwrap, and Background. Select Custom to use those controls." }
+      "information": { "en": "Select a scanner-tested combination or a complete reconstruction method. Presets override the custom algorithm controls. Complete methods handle their own background removal; iQSM and iQSM+ also handle unwrapping. Select Custom to choose individual stages." }
     },
     {
       "id": "qsmalgorithm",
@@ -121,10 +127,27 @@
         { "id": "nltv", "name": { "en": "NLTV" } },
         { "id": "medi", "name": { "en": "MEDI" } },
         { "id": "ilsqr", "name": { "en": "iLSQR" } },
-        { "id": "qsmart", "name": { "en": "QSMART" } }
+        { "id": "qsmart", "name": { "en": "QSMART" } },
+        { "id": "tfi", "name": { "en": "TFI" } },
+        { "id": "ndi", "name": { "en": "NDI" } },
+        { "id": "fansi", "name": { "en": "FANSI" } },
+        { "id": "fansi-tgv", "name": { "en": "FANSI-TGV" } },
+        { "id": "l1qsm", "name": { "en": "L1-QSM" } },
+        { "id": "amp-pe", "name": { "en": "AMP-PE" } },
+        { "id": "xqsm", "name": { "en": "xQSM" } },
+        { "id": "qsmnet", "name": { "en": "QSMnet" } },
+        { "id": "qsmnet-plus", "name": { "en": "QSMnet+" } },
+        { "id": "autoqsm", "name": { "en": "AutoQSM" } },
+        { "id": "qsmgan", "name": { "en": "QSMGAN" } },
+        { "id": "ir2qsm", "name": { "en": "IR2QSM" } },
+        { "id": "lpcnn", "name": { "en": "LPCNN" } },
+        { "id": "modl-qsm", "name": { "en": "MoDL-QSM" } },
+        { "id": "nextqsm", "name": { "en": "NeXtQSM" } },
+        { "id": "iqsm", "name": { "en": "iQSM" } },
+        { "id": "iqsm-plus", "name": { "en": "iQSM+" } }
       ],
-      "default": "whqsm",
-      "information": { "en": "QSMxT inversion algorithm for the Custom pipeline preset. WH-QSM is the OpenRecon default for its balance of accuracy, reproducibility, and resource use." }
+      "default": "hdqsm",
+      "information": { "en": "QSMxT inversion algorithm for the Custom pipeline preset. HD-QSM is the OpenRecon default for a fast reconstruction with good QSM-CI performance." }
     },
     {
       "id": "unwrappingalgorithm",
@@ -149,10 +172,14 @@
         { "id": "lbv", "name": { "en": "LBV" } },
         { "id": "ismv", "name": { "en": "iSMV" } },
         { "id": "sharp", "name": { "en": "SHARP" } },
-        { "id": "resharp", "name": { "en": "RESHARP" } }
+        { "id": "resharp", "name": { "en": "RESHARP" } },
+        { "id": "harperella", "name": { "en": "HARPERELLA" } },
+        { "id": "iharperella", "name": { "en": "iHARPERELLA" } },
+        { "id": "bfrnet", "name": { "en": "BFRnet" } },
+        { "id": "iqfm", "name": { "en": "iQFM" } }
       ],
-      "default": "vsharp",
-      "information": { "en": "QSMxT background-field removal algorithm for the Custom pipeline preset. V-SHARP is the OpenRecon default." }
+      "default": "ismv",
+      "information": { "en": "QSMxT background-field removal algorithm for the Custom pipeline preset. iSMV is the OpenRecon default, paired with ROMEO and HD-QSM." }
     },
     {
       "id": "maskpreset",
