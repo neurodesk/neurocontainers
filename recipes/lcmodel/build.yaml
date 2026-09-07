@@ -1,5 +1,5 @@
 name: lcmodel
-version: "6.3"
+version: "6.3.post1"
 icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjE4IiBmaWxsPSIjMTAyYTQzIi8+PHBhdGggZD0iTTE0IDc2IEMyNCA3NiAyNSAzOCAzNSAzOCBDNDUgMzggNDcgOTIgNTcgOTIgQzY3IDkyIDY5IDUyIDc5IDUyIEM4OSA1MiA5MSA3NiAxMDEgNzYgTDExNiA3NiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjhkMzkxIiBzdHJva2Utd2lkdGg9IjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjx0ZXh0IHg9IjY0IiB5PSIxMTIiIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZjdmYWZjIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5MQ01vZGVsPC90ZXh0Pjwvc3ZnPg==
 
 architectures:
@@ -105,6 +105,7 @@ build:
         - /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/profiles/1/gui-defaults
     - run:
         - chmod a+rwx /opt/lcmodel-{{ context.upstream_version }} -R
+        - chmod 644 /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/license
     - environment:
         PATH: /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/bin/:/opt/lcmodel-{{ context.upstream_version }}/.lcmodel/:$PATH
 

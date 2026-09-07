@@ -15,7 +15,7 @@
 #   - Siemens, Philips, Bruker, GE, Varian, Marconi, Toshiba
 
 name: lcmodel
-version: "6.3"
+version: "6.3.post1"
 
 test_data:
   lcmodel_dir: /opt/lcmodel-${upstream_version}/.lcmodel
@@ -503,8 +503,8 @@ tests:
     expected_output_contains: "profiles directory found"
 
   - name: License file location exists
-    description: Verify license file placeholder exists
-    command: bash -lc 'test -f /opt/lcmodel-${upstream_version}/.lcmodel/license && echo "license file found"'
+    description: Verify the free-license marker is empty and not executable
+    command: bash -lc 'test -f /opt/lcmodel-${upstream_version}/.lcmodel/license && test ! -s /opt/lcmodel-${upstream_version}/.lcmodel/license && test ! -x /opt/lcmodel-${upstream_version}/.lcmodel/license && echo "license file found"'
     expected_output_contains: "license file found"
 
   - name: Queries file exists
