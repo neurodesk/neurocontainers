@@ -1,5 +1,5 @@
 name: brainnetviewer
-version: 1.7.20191031
+version: 1.7.20191031.post1
 
 copyright:
   - license: GPL-3.0-only
@@ -31,6 +31,7 @@ build:
       - openjdk-17-jdk
       - bash
       - ca-certificates
+      - file
       - unzip
       - libxext6
       - libxt6
@@ -75,6 +76,10 @@ readme: |-
   Homepage: https://www.nitrc.org/projects/bnv/
   Example: `brainnetviewer`
   License: GNU General Public License Version 3 (GPL-3.0)
+
+  Citation: Xia M, Wang J, He Y (2013). BrainNet Viewer: A Network Visualization Tool
+  for Human Brain Connectomics. PLoS ONE 8(7): e68910.
+  https://doi.org/10.1371/journal.pone.0068910
 
   ----------------------------------
 
