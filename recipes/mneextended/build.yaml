@@ -1,10 +1,11 @@
 variables:
+  debian_security_snapshot: 20260901T000000Z
   mne_version: 1.1.0
   vscode_version: "1.136.1"
   pipeline_commit: a792f818dda95bfe63e0ab0f0011d54c9818f1ad
 
 name: mneextended
-version: 1.1.0
+version: 1.1.0.post1
 
 architectures:
   - x86_64
@@ -37,10 +38,29 @@ build:
   kind: neurodocker
   base-image: debian:bullseye
   pkg-manager: apt
+  add-default-template: false
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
+        LANG: en_US.UTF-8
+        LC_ALL: en_US.UTF-8
+        TZ: UTC
+    - run:
+        - mkdir -p /tmp/debian-ca-certificates /etc/ssl/certs
+        - dpkg-deb --extract {{ get_file("debian_ca_certificates") }} /tmp/debian-ca-certificates
+        - cat /tmp/debian-ca-certificates/usr/share/ca-certificates/mozilla/*.crt > /etc/ssl/certs/ca-certificates.crt
+        - rm -rf /tmp/debian-ca-certificates
+        - sed -i 's|^deb http://deb.debian.org/debian-security |deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/ |; s|http://|https://|g' /etc/apt/sources.list
+
+    - copy: container_entrypoint /usr/local/bin/container-entrypoint
+
+    - entrypoint: /usr/local/bin/container-entrypoint
+
     - install:
+        - apt-utils
+        - bzip2
+        - locales
+        - tzdata
         - xdg-utils
         - unzip
         - git
@@ -64,6 +84,14 @@ build:
         - libgl1-mesa-dri
         - mesa-utils
         - libgl1-mesa-glx
+    - run:
+        - sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+        - locale-gen en_US.UTF-8
+        - update-locale LANG=en_US.UTF-8
+        - ln -snf /usr/share/zoneinfo/UTC /etc/localtime
+        - echo UTC > /etc/timezone
+        - chmod 777 /opt
+
     - run:
         - cp {{ get_file("mne_extended_yml") }} /opt/mne-extended.yml
     - template:
@@ -129,6 +157,19 @@ readme: |-
   ----------------------------------
 
 files:
+- name: container_entrypoint
+  executable: true
+  contents: |
+    #!/bin/sh
+    set -e
+    export USER="${USER:-$(id -un)}"
+    if [ "$#" -eq 0 ]; then
+      set -- /bin/bash
+    fi
+    exec "$@"
+- name: debian_ca_certificates
+  url: https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/pool/updates/main/c/ca-certificates/ca-certificates_20250419~deb12u1~deb11u1_all.deb
+  sha256: a588acf469f96e272fe3e83225f68ddcda72a95e2dd139086d5edc165d3939e3
 - name: mne_extended_yml
   contents: |
     name: mne-extended
