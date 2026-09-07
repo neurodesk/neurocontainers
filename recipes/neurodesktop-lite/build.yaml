@@ -1,5 +1,5 @@
 name: neurodesktop-lite
-version: "20260428"
+version: "20260428.post1"
 
 copyright:
   - license: MIT
@@ -48,7 +48,7 @@ variables:
   codex_version: 0.153.4
   claude_version: 2.1.263
   opencode_version: 1.18.29
-  nextflow_version: 26.04.6
+  nextflow_tag: v26.04.6
   nf_test_version: 0.9.5
   datalad_version: 1.6.2
   nipype_version: 1.12.0
@@ -146,12 +146,15 @@ auto_update:
     method: github_release
     repo: nextflow-io/nextflow
     target:
-      variable: nextflow_version
+      variable: nextflow_tag
+      value: tag
+      fulltest_variable: nextflow_tag
   - id: nf_test
     method: github_release
     repo: askimed/nf-test
     target:
       variable: nf_test_version
+      fulltest_variable: nf_test_version
   - id: datalad
     method: pypi
     package: datalad
@@ -529,18 +532,13 @@ build:
 
     - run:
         - mkdir -p "${NF_TEST_HOME}"
-        - cp {{ get_file("nextflow_install") }} /tmp/get-nextflow.sh
-        - cd /tmp && NXF_VER={{ context.nextflow_version }} bash /tmp/get-nextflow.sh
-        - mv /tmp/nextflow /usr/local/bin/nextflow
-        - chmod 755 /usr/local/bin/nextflow
-        - bash {{ get_file("nf_test_install") }} {{ context.nf_test_version }}
-        - cp -a "${HOME}/.nf-test/." "${NF_TEST_HOME}/"
-        - printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'exec java -jar /opt/nf-test/nf-test.jar "$@"' > /usr/local/bin/nf-test
+        - install -m 755 {{ get_file("nextflow_dist") }} /usr/local/bin/nextflow
+        - tar -xzf {{ get_file("nf_test_dist") }} -C "${NF_TEST_HOME}"
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'exec /opt/nf-test/nf-test "$@"' > /usr/local/bin/nf-test
         - chmod 755 /usr/local/bin/nf-test
         - mkdir -p /opt/nf-neuro
         - tar -xzf {{ get_file("nf_neuro_modules") }} -C /opt/nf-neuro --strip-components=1
-        - chown -R ${NB_UID}:${NB_GID} /opt/nf-neuro "${NF_TEST_HOME}" "${HOME}/.nextflow"
-        - rm -rf /root/.cache "${HOME}/.nf-test" /tmp/nf-test /tmp/nextflow /tmp/get-nextflow.sh
+        - chown -R ${NB_UID}:${NB_GID} /opt/nf-neuro "${NF_TEST_HOME}"
 
     - run:
         - npm install -g @openai/codex@{{ context.codex_version }}
@@ -827,12 +825,12 @@ files:
     url: https://yihui.org/tinytex/install-bin-unix.sh
     retry: 5
 
-  - name: nextflow_install
-    url: https://get.nextflow.io
+  - name: nextflow_dist
+    url: https://github.com/nextflow-io/nextflow/releases/download/{{ context.nextflow_tag }}/nextflow-{{ context.nextflow_tag[1:] }}-dist
     retry: 5
 
-  - name: nf_test_install
-    url: https://get.nf-test.com
+  - name: nf_test_dist
+    url: https://github.com/askimed/nf-test/releases/download/v{{ context.nf_test_version }}/nf-test-{{ context.nf_test_version }}.tar.gz
     retry: 5
 
   - name: nf_neuro_modules
