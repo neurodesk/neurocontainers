@@ -1,13 +1,49 @@
+import json
 import re
 import shlex
 import subprocess
 
 import pytest
 
-from builder.dockerfile import render_dockerfile
-from builder.ir import Definition, Run
+from builder.dockerfile import render_directive, render_dockerfile
+from builder.ir import Definition, Run, RunWithMounts
 from builder.recipe import _default_template_command
 from builder.template_backend import apply_builtin_template
+
+
+@pytest.mark.parametrize('with_mount', [False, True])
+def test_blank_lines_do_not_change_rendered_shell_execution(with_mount, tmp_path):
+    command = "\n\n  printf '%s\\n' first\n\n  printf '%s\\n' second\n\n"
+    mount = '--mount=type=cache,target=/cache'
+    directive = RunWithMounts((mount,), command) if with_mount else Run(command)
+    rendered = render_directive(directive)[0].removeprefix('RUN ')
+    if with_mount:
+        assert rendered.startswith(mount + ' ')
+        rendered = rendered.removeprefix(mount + ' ')
+    result = subprocess.run(['sh', '-ec', rendered.replace('\\\n', ' ')],
+                            text=True, capture_output=True, check=True)
+    assert result.stdout == 'first\nsecond\n'
+    definition = Definition(pkg_manager='apt')
+    definition.add(directive)
+    dockerfile = render_dockerfile(definition)
+    save = dockerfile.split('# Save specification to JSON.\nRUN ', 1)[1]
+    save = save.split('# End saving to specification to JSON.', 1)[0]
+    spec_path = tmp_path / 'reproenv.json'
+    save = save.replace('/.reproenv.json', shlex.quote(str(spec_path)))
+    subprocess.run(['sh', '-ec', save.replace('\\\n', ' ')], check=True)
+    recorded = json.loads(spec_path.read_text())['instructions'][0]['kwds']['command']
+    expected = [mount, *shlex.split(command)] if with_mount else shlex.split(command)
+    assert shlex.split(recorded) == expected
+
+
+@pytest.mark.parametrize('version', ['2018a', '2019b', '2020a', '2023a', '2023b'])
+def test_matlab_template_renders_valid_shell(version):
+    directives = []
+    apply_builtin_template('matlabmcr', {'version': version}, 'apt', directives.append)
+    for directive in directives:
+        if isinstance(directive, Run):
+            rendered = render_directive(directive)[0].removeprefix('RUN ')
+            subprocess.run(['sh', '-n'], input=rendered.replace('\\\n', ' '), text=True, check=True)
 
 
 @pytest.mark.parametrize('manager', ['apt', 'rpm'])
