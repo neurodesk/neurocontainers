@@ -571,7 +571,7 @@ tests:
   - name: Mesh2img help
     description: Verify mesh2img is available
     command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/mesh2img 2>&1 | head -10
-    expected_output_contains: "mesh2img"
+    expected_output_contains: "meshtoimg - fill in a 3D mesh"
     expected_exit_code: 0
 
   - name: Warpmesh help

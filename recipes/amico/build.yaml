@@ -1,5 +1,7 @@
 name: amico
-version: 2.1.0
+version: 2.1.0.post1
+variables:
+  upstream_version: 2.1.0
 architectures:
   - x86_64
   - aarch64
@@ -50,8 +52,14 @@ structured_readme:
     Neuroimage 215 (2020): 116835.
     https://doi.org/10.1016/j.neuroimage.2020.116835
 auto_update:
-  method: pypi
-  package: dmri-amico
+  method: sources
+  sources:
+    - id: amico
+      method: pypi
+      package: dmri-amico
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
 
 build:
   kind: neurodocker
@@ -64,7 +72,8 @@ build:
         install_path: /opt/miniconda
         env_name: amico
         env_exists: "false"
-        pip_install: dmri-amico=={{ context.version }}
+        conda_install: python=3.12
+        pip_install: setuptools<81 dmri-amico=={{ context.upstream_version }}
     - environment:
         PATH: /opt/miniconda/envs/amico/bin:/opt/miniconda/bin:$PATH
     - deploy:
@@ -78,7 +87,7 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAWZklE
 readme: >-
   ----------------------------------
 
-  ## amico/2.1.0 ##
+  ## amico/{{ context.version }} ##
 
 
   Accelerated Microstructure Imaging via Convex Optimization (AMICO) from
@@ -143,7 +152,7 @@ readme: >-
   \\\`\\\`\\\`
 
 
-  To run container outside of this environment: ml amico/2.1.0
+  To run container outside of this environment: ml amico/{{ context.version }}
 
 
   ----------------------------------
