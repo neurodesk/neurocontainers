@@ -1,5 +1,5 @@
 # hnncore container test suite
-# Tests for HNN-core v0.3 - Human Neocortical Neurosolver
+# Tests for HNN-core - Human Neocortical Neurosolver
 #
 # HNN-core is a Python library for simulation and optimization of neural
 # circuits for MEG/EEG source estimates. It provides biophysically detailed
@@ -8,7 +8,9 @@
 # Documentation: https://jonescompneurolab.github.io/hnn-core
 
 name: hnncore
-version: "0.3"
+version: "0.6.1"
+hnn_core_version: "0.6.1"
+neuron_commit: 34cf696c4ba947a070abc008b1fc58939d3e6418
 
 test_data:
   output_dir: test_output
@@ -31,12 +33,23 @@ tests:
   - name: hnn-core version check
     description: Verify hnn_core module version
     command: python3 -c "import hnn_core; print(\"hnn_core version:\", hnn_core.__version__)"
-    expected_output_contains: "0.5.0"
+    expected_output_contains: "${hnn_core_version}"
 
   - name: NEURON version check
     description: Verify NEURON simulator is available
     command: python3 -c "import neuron; print(\"NEURON version:\", neuron.__version__)"
     expected_output_contains: "8.2"
+
+  - name: NEURON source commit
+    description: Verify the simulator binary was compiled from the recipe's tracked source
+    command: |
+      python3 - <<'PYTHON'
+      from neuron import h
+      actual = h.nrnversion(3)
+      assert len(actual) >= 7 and "${neuron_commit}".startswith(actual), actual
+      print("NEURON source commit matches the recipe")
+      PYTHON
+    expected_output_contains: "NEURON source commit matches the recipe"
 
   - name: nrniv executable check
     description: Verify NEURON nrniv executable works
@@ -632,6 +645,82 @@ tests:
       print(\"Drive names:\", list(net.external_drives.keys()))
       "
     expected_output_contains: "evdist1"
+
+  - name: Installed dependency compatibility
+    description: Verify the installed simulator satisfies HNN-core's declared requirements
+    command: python3 -m pip check
+    expected_output_contains: "No broken requirements found"
+
+  - name: Serial and MPI dipole simulation
+    description: Run a driven cortical model and compare serial and two-process MPI results
+    command: |
+      python3 - <<'PYTHON'
+      import numpy as np
+      from hnn_core import JoblibBackend, MPIBackend, neymotin_2020_model, simulate_dipole
+
+      net = neymotin_2020_model(mesh_shape=(3, 3))
+      net.add_tonic_bias(amplitude={"L5_pyramidal": 0.1})
+      with JoblibBackend(n_jobs=1):
+          serial = simulate_dipole(net.copy(), tstop=5, n_trials=1, verbose=False)[0]
+      with MPIBackend(n_procs=2):
+          parallel = simulate_dipole(net.copy(), tstop=5, n_trials=1, verbose=False)[0]
+      assert len(serial.times) == 201
+      assert np.isclose(serial.times[-1], 5)
+      for component in ("agg", "L2", "L5"):
+          assert np.isfinite(serial.data[component]).all()
+          assert np.ptp(serial.data[component]) > 0
+          np.testing.assert_allclose(parallel.data[component], serial.data[component],
+                                     rtol=1e-8, atol=1e-14)
+      print("Serial and MPI simulations agree on 201 finite dipole samples")
+      PYTHON
+    expected_output_contains: "Serial and MPI simulations agree on 201 finite dipole samples"
+
+  - name: Browser GUI without a home directory
+    description: Verify the deployed GUI renders its notebook using writable temporary application directories
+    command: |
+      python3 - <<'PYTHON'
+      import os
+      import socket
+      import subprocess
+      import tempfile
+      import time
+      import urllib.request
+
+      env = os.environ.copy()
+      env["HOME"] = "/proc/hnn-core-no-home"
+      for variable in ("MPLCONFIGDIR", "IPYTHONDIR", "JUPYTER_CONFIG_DIR",
+                       "JUPYTER_DATA_DIR", "JUPYTER_RUNTIME_DIR"):
+          env.pop(variable, None)
+      with socket.socket() as sock:
+          sock.bind(("127.0.0.1", 0))
+          port = sock.getsockname()[1]
+      with tempfile.TemporaryFile(mode="w+") as log:
+          proc = subprocess.Popen(
+              ["hnn-gui", "--no-browser", f"--port={port}", "--Voila.ip=127.0.0.1"],
+              env=env, stdout=log, stderr=subprocess.STDOUT)
+          try:
+              deadline = time.monotonic() + 90
+              while time.monotonic() < deadline and proc.poll() is None:
+                  try:
+                      with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10) as response:
+                          html = response.read().decode()
+                          assert response.status == 200 and "voila" in html.lower()
+                      print("HNN browser GUI renders without a home directory")
+                      break
+                  except OSError:
+                      time.sleep(1)
+              else:
+                  log.seek(0)
+                  raise RuntimeError(log.read())
+          finally:
+              proc.terminate()
+              try:
+                  proc.wait(timeout=10)
+              except subprocess.TimeoutExpired:
+                  proc.kill()
+                  proc.wait()
+      PYTHON
+    expected_output_contains: "HNN browser GUI renders without a home directory"
 
 cleanup:
   script: |

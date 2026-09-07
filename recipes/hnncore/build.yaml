@@ -1,5 +1,5 @@
 name: hnncore
-version: "0.3"
+version: "0.6.1"
 
 copyright:
   - license: BSD-3-Clause
@@ -9,9 +9,26 @@ architectures:
   - x86_64
   - aarch64
 
+variables:
+  hnn_core_version: "0.6.1"
+  neuron_commit: 34cf696c4ba947a070abc008b1fc58939d3e6418
+
 auto_update:
-  method: pypi
-  package: hnn-core
+  method: sources
+  sources:
+    - id: hnn_core
+      method: pypi
+      package: hnn-core
+      target:
+        variable: hnn_core_version
+        fulltest_variable: hnn_core_version
+    - id: neuron
+      method: github_commit
+      repo: neuronsimulator/nrn
+      ref: release/8.2
+      target:
+        variable: neuron_commit
+        fulltest_variable: neuron_commit
 
 build:
   kind: neurodocker
@@ -24,22 +41,46 @@ build:
         DEBIAN_FRONTEND: noninteractive
 
     - install:
-        - python3.9
+        - python3
         - python3-pip
-        - libpython3-dev
+        - python3-dev
         - build-essential
+        - bison
+        - cmake
+        - flex
+        - git
+        - libncurses-dev
+        - libreadline-dev
         - openmpi-bin
-        - openmpi-doc
         - libopenmpi-dev
 
     - run:
-        - pip install numpy scipy matplotlib NEURON
+        - python3 -m pip install --no-cache-dir 'setuptools<70' wheel 'Cython<3' numpy
+        - git clone --filter=blob:none --no-checkout https://github.com/neuronsimulator/nrn.git /tmp/neuron
+        - cd /tmp/neuron
+        - git checkout {{ context.neuron_commit }}
+        - NEURON_NIGHTLY_TAG='' python3 setup.py build_ext --disable-iv --cmake-defs=NRN_ENABLE_MPI_DYNAMIC=OFF bdist_wheel
+        - python3 -m pip install --no-cache-dir dist/*.whl
+        - cd /
+        - rm -rf /tmp/neuron
 
     - run:
-        - pip install ipywidgets voila scikit-learn joblib mpi4py psutil
+        - python3 -c "from importlib.metadata import version; print('NEURON==' + version('NEURON'))" > /opt/neuron-constraints.txt
+        - python3 -m pip install --no-cache-dir --no-build-isolation --constraint /opt/neuron-constraints.txt 'hnn-core[opt,gui,parallel]=={{ context.hnn_core_version }}' mpi4py
+        - python3 -m pip check
 
     - run:
-        - pip install hnn_core[opt,gui]=={{ context.version }}
+        - python3 -c "import hnn_core"
+
+    - copy:
+        - hnn-gui
+        - /usr/local/bin/hnn-gui
+    - run:
+        - chmod +x /usr/local/bin/hnn-gui
+
+files:
+  - name: hnn-gui
+    filename: hnn-gui
 
 deploy:
   bins:
