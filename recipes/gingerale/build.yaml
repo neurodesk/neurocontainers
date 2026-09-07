@@ -1,5 +1,5 @@
 name: gingerale
-version: 3.0.2
+version: 3.0.2.post1
 architectures:
   - x86_64
 structured_readme:
@@ -28,7 +28,7 @@ build:
     - install: openjdk-21-jre
     - run:
       - mkdir /opt/gingerale
-      - cp {{ get_file("gingerale.jar") }} /opt/gingerale
+      - cp {{ get_file("gingerale.jar") }} /opt/gingerale/gingerale.jar
     - group:
       - file:
           name: gingerale
