@@ -1,5 +1,5 @@
 name: mgltools
-version: 1.5.7.post1
+version: 1.5.7.post2
 # check for latest version: https://ccsb.scripps.edu/mgltools/downloads/
 
 architectures:
@@ -26,6 +26,8 @@ build:
 
   directives:
     - install:
+        - perl
+        - tcsh
         - curl
         - ca-certificates
         - tk
@@ -39,6 +41,14 @@ build:
     - run:
         - tar -zx -f {{ get_file("491") }}
         - cd mgltools_x86_64Linux2_{{ context.upstream_version }} && ./install.sh -d /opt/mgltools -c 1
+        - >-
+          find /opt/mgltools/bin -maxdepth 1 -type f -exec
+          sed -i '1s|^#!/data/mgltools/MakeInstallers/.*python[0-9.]*|#!/opt/mgltools/bin/pythonsh|' {} +
+    - environment:
+        PATH: /opt/mgltools/bin:$PATH
+    - copy:
+        - mgltools_profile
+        - /etc/profile.d/mgltools.sh
 
 deploy:
   path:
@@ -70,6 +80,9 @@ readme: |
   ----------------------------------
 
 files:
+  - name: mgltools_profile
+    contents: |
+      export PATH=/opt/mgltools/bin:$PATH
   - name: '491'
     url: "https://ccsb.scripps.edu/mgltools/download/491/"
     sha256: b6152c047af739d5ca150f2b300fdbbef664758246306fde0b26df0c03f88c3b
