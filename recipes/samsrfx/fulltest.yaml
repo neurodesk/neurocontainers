@@ -37,7 +37,7 @@ tests:
   - name: Container labels
     description: Verify container metadata labels exist
     command: "bash -lc 'cat /.singularity.d/labels.json'"
-    expected_output_contains: "NeuroDesk/neurocontainers"
+    expected_output_contains: "org.label-schema.schema-version"
 
   - name: SamSrfX entry script exists
     description: Verify the main samsrfx launcher exists

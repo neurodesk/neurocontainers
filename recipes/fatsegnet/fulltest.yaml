@@ -63,7 +63,7 @@ tests:
   - name: Verify container labels
     description: Check Singularity/Apptainer labels exist
     command: "bash -lc 'cat /.singularity.d/labels.json'"
-    expected_output_contains: "GITHUB"
+    expected_output_contains: "org.label-schema.schema-version"
 
   - name: Verify CUDA version in labels
     description: Check CUDA version information

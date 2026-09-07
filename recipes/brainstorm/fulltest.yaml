@@ -291,10 +291,12 @@ tests:
     command: which bash
     expected_output_contains: "/bin/bash"
 
-  - name: GitHub repository label
-    description: Verify container has GitHub repository label
-    command: "bash -lc 'cat /.singularity.d/labels.json 2>/dev/null || echo \"No labels\"'"
-    expected_output_contains: "NeuroDesk"
+  - name: Embedded upstream repository
+    description: Verify the embedded recipe records the upstream repository
+    command: cat /build.yaml
+    expected_output_contains:
+      - "name: brainstorm"
+      - "https://github.com/brainstorm-tools/brainstorm3"
 
   # ==========================================================================
   # CONTAINER MOUNTING POINTS

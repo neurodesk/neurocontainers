@@ -139,18 +139,48 @@ tests:
 
   - name: LD_LIBRARY_PATH includes MCR runtime
     description: Verify LD_LIBRARY_PATH includes MCR runtime libraries
-    command: echo $LD_LIBRARY_PATH
-    expected_output_contains: "/opt/matlab-runtime/runtime/glnxa64"
+    command: |
+      expected=$(readlink -f /opt/matlab-runtime/runtime/glnxa64)
+      test -d "$expected" || exit 1
+      IFS=:
+      for directory in $LD_LIBRARY_PATH; do
+        if [ "$(readlink -f "$directory")" = "$expected" ]; then
+          echo "MCR library directory available"
+          exit 0
+        fi
+      done
+      exit 1
+    expected_output_contains: "MCR library directory available"
 
   - name: LD_LIBRARY_PATH includes MCR bin
     description: Verify LD_LIBRARY_PATH includes MCR bin libraries
-    command: echo $LD_LIBRARY_PATH
-    expected_output_contains: "/opt/matlab-runtime/bin/glnxa64"
+    command: |
+      expected=$(readlink -f /opt/matlab-runtime/bin/glnxa64)
+      test -d "$expected" || exit 1
+      IFS=:
+      for directory in $LD_LIBRARY_PATH; do
+        if [ "$(readlink -f "$directory")" = "$expected" ]; then
+          echo "MCR library directory available"
+          exit 0
+        fi
+      done
+      exit 1
+    expected_output_contains: "MCR library directory available"
 
   - name: LD_LIBRARY_PATH includes MCR sys/os
     description: Verify LD_LIBRARY_PATH includes MCR system libraries
-    command: echo $LD_LIBRARY_PATH
-    expected_output_contains: "/opt/matlab-runtime/sys/os/glnxa64"
+    command: |
+      expected=$(readlink -f /opt/matlab-runtime/sys/os/glnxa64)
+      test -d "$expected" || exit 1
+      IFS=:
+      for directory in $LD_LIBRARY_PATH; do
+        if [ "$(readlink -f "$directory")" = "$expected" ]; then
+          echo "MCR library directory available"
+          exit 0
+        fi
+      done
+      exit 1
+    expected_output_contains: "MCR library directory available"
 
   - name: XAPPLRESDIR set correctly
     description: Verify X11 application resources directory is set

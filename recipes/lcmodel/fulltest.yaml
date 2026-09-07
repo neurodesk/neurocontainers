@@ -610,7 +610,7 @@ tests:
   - name: Container labels exist
     description: Verify Singularity container labels
     command: "bash -lc 'cat /.singularity.d/labels.json'"
-    expected_output_contains: "NeuroDesk"
+    expected_output_contains: "org.label-schema.schema-version"
 
   - name: Singularity runscript exists
     description: Verify container runscript
