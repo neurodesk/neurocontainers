@@ -1,5 +1,5 @@
 name: deepsif
-version: 0.0.1
+version: 0.0.1.post1
 default_timeout: 240
 
 python_bin: /opt/miniconda-4.7.12/envs/deepsif-0.0.1/bin/python3
