@@ -76,3 +76,18 @@ def test_container_variables_expand_literal_recipe_version() -> None:
         run_tests.substitute_variables(config["container"], variables)
         == "deeplabcut_2.3.11_REFERENCE.simg"
     )
+
+
+def test_script_runner_expands_independent_version_variables(tmp_path) -> None:
+    runner = tmp_path / "runner-2.3"
+    runner.write_text('#!/bin/sh\nprintf "runner-2.3\\n"\nexec bash "$1"\n')
+    runner.chmod(0o755)
+    result = run_tests.run_single_test(
+        {"name": "versioned runner", "script": "printf 'payload-${upstream_version}\\n'",
+         "expected_output_contains": "runner-2.3\npayload-2.3"},
+        None,
+        {"upstream_version": "2.3", "runner_dir": str(tmp_path)},
+        tmp_path,
+        script_runner='${runner_dir}/runner-${upstream_version}',
+    )
+    assert result.passed, result.stderr or result.message

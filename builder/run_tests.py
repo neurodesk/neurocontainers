@@ -315,7 +315,7 @@ def run_single_test(
                 )
 
             if script_runner:
-                command = f"{script_runner} {extra_script_path}"
+                command = f"{substitute_variables(script_runner, variables)} {extra_script_path}"
             else:
                 # Default: run as bash script
                 command = str(extra_script_path)
