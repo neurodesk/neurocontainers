@@ -42,13 +42,14 @@ jobs:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-22.04
     timeout-minutes: 120
-    env:
-      NEURO_MATLAB_REQUEST: ${{ runner.temp }}/matlab-request.json
-      NEURO_MATLAB_OUTPUT: ${{ runner.temp }}/matlab-standalone
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Set compilation scratch paths
+        run: |
+          echo "NEURO_MATLAB_REQUEST=$RUNNER_TEMP/matlab-request.json" >> "$GITHUB_ENV"
+          echo "NEURO_MATLAB_OUTPUT=$RUNNER_TEMP/matlab-standalone" >> "$GITHUB_ENV"
       - name: Require compiler licensing and validate the request
         id: request
         env:
