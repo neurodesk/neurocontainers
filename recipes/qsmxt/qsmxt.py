@@ -40,9 +40,9 @@ DEFAULT_ECHO_TIME_MS = 20.0
 DEFAULT_ECHO_SPACING_MS = 5.0
 DEFAULT_FIELD_STRENGTH_T = 3.0
 DEFAULT_B0_DIR = (0.0, 0.0, 1.0)
-DEFAULT_QSM_ALGORITHM = "whqsm"
+DEFAULT_QSM_ALGORITHM = "hdqsm"
 DEFAULT_UNWRAPPING_ALGORITHM = "romeo"
-DEFAULT_BF_ALGORITHM = "vsharp"
+DEFAULT_BF_ALGORITHM = "ismv"
 ALGORITHM_PIPELINE_PRESETS = {
     "romeo-resharp-rts": {
         "unwrapping_algorithm": "romeo",
@@ -93,6 +93,36 @@ ALGORITHM_PIPELINE_PRESETS = {
         "unwrapping_algorithm": "romeo",
         "bf_algorithm": "sharp",
         "qsm_algorithm": "tikhonov",
+    },
+    "qsmart": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": None,
+        "qsm_algorithm": "qsmart",
+    },
+    "tgv": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": None,
+        "qsm_algorithm": "tgv",
+    },
+    "autoqsm": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": None,
+        "qsm_algorithm": "autoqsm",
+    },
+    "nextqsm": {
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": None,
+        "qsm_algorithm": "nextqsm",
+    },
+    "iqsm": {
+        "unwrapping_algorithm": None,
+        "bf_algorithm": None,
+        "qsm_algorithm": "iqsm",
+    },
+    "iqsm-plus": {
+        "unwrapping_algorithm": None,
+        "bf_algorithm": None,
+        "qsm_algorithm": "iqsm-plus",
     },
 }
 ORIGINAL_SERIES_START = 100

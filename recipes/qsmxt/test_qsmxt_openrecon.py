@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 import stat
 import sys
@@ -297,9 +298,9 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
             if nprocs_index + 1 >= len(sys.argv) or sys.argv[nprocs_index + 1] != "24":
                 raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
             for flag, expected in (
-                ("--qsm-algorithm", "whqsm"),
+                ("--qsm-algorithm", "hdqsm"),
                 ("--unwrapping-algorithm", "romeo"),
-                ("--bf-algorithm", "vsharp"),
+                ("--bf-algorithm", "ismv"),
             ):
                 try:
                     flag_index = sys.argv.index(flag)
@@ -325,15 +326,15 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
     return fake
 
 
-def test_openrecon_defaults_select_whqsm_romeo_and_vsharp():
+def test_openrecon_defaults_select_hdqsm_romeo_and_ismv():
     assert qsmxt.QSMXT_DERIVATIVE_ROOT == Path("derivatives/qsmxt")
 
     settings = qsmxt._settings_from_config({}, FakeMetadata())
 
     assert settings["pipeline_preset"] == "custom"
-    assert settings["qsm_algorithm"] == "whqsm"
+    assert settings["qsm_algorithm"] == "hdqsm"
     assert settings["unwrapping_algorithm"] == "romeo"
-    assert settings["bf_algorithm"] == "vsharp"
+    assert settings["bf_algorithm"] == "ismv"
     assert settings["mask_preset"] == "bet"
     assert settings["masking_input"] == "magnitude"
     assert settings["bet_fractional_intensity"] == 0.5
@@ -411,9 +412,15 @@ def test_openrecon_pipeline_presets_select_all_three_algorithms():
         "romeo-sharp-whqsm": ("romeo", "sharp", "whqsm"),
         "romeo-resharp-whqsm": ("romeo", "resharp", "whqsm"),
         "romeo-sharp-tikhonov": ("romeo", "sharp", "tikhonov"),
+        "qsmart": ("romeo", None, "qsmart"),
+        "tgv": ("romeo", None, "tgv"),
+        "autoqsm": ("romeo", None, "autoqsm"),
+        "nextqsm": ("romeo", None, "nextqsm"),
+        "iqsm": (None, None, "iqsm"),
+        "iqsm-plus": (None, None, "iqsm-plus"),
     }
 
-    assert len(qsmxt.ALGORITHM_PIPELINE_PRESETS) == 10
+    assert set(qsmxt.ALGORITHM_PIPELINE_PRESETS) == set(expected)
     for preset_id, algorithms in expected.items():
         settings = qsmxt._settings_from_config(
             {
@@ -435,9 +442,10 @@ def test_openrecon_pipeline_presets_select_all_three_algorithms():
         ) == algorithms
 
 
-def test_openrecon_pipeline_preset_reaches_qsmxt_command(tmp_path, monkeypatch):
+@pytest.mark.parametrize("preset", qsmxt.ALGORITHM_PIPELINE_PRESETS)
+def test_openrecon_pipeline_preset_reaches_qsmxt_command(preset, tmp_path, monkeypatch):
     settings = qsmxt._settings_from_config(
-        {"parameters": {"pipelinepreset": "romeo-resharp-hdqsm"}},
+        {"parameters": {"pipelinepreset": preset}},
         FakeMetadata(),
     )
     settings["qsmxt_binary"] = "/opt/qsmxt/qsmxt"
@@ -454,9 +462,16 @@ def test_openrecon_pipeline_preset_reaches_qsmxt_command(tmp_path, monkeypatch):
     qsmxt._run_qsmxt(bids_dir, tmp_path / "output", settings)
 
     command, kwargs = commands[0]
-    assert command[command.index("--unwrapping-algorithm") + 1] == "romeo"
-    assert command[command.index("--bf-algorithm") + 1] == "resharp"
-    assert command[command.index("--qsm-algorithm") + 1] == "hdqsm"
+    for setting, flag in (
+        ("unwrapping_algorithm", "--unwrapping-algorithm"),
+        ("bf_algorithm", "--bf-algorithm"),
+        ("qsm_algorithm", "--qsm-algorithm"),
+    ):
+        expected = qsmxt.ALGORITHM_PIPELINE_PRESETS[preset][setting]
+        if expected is None:
+            assert flag not in command
+        else:
+            assert command[command.index(flag) + 1] == expected
     assert command[command.index("--mask") + 1] == (
         "magnitude,bet:0.5,close:1,fill-holes:0"
     )
@@ -565,13 +580,13 @@ def test_openrecon_label_exposes_processing_defaults():
         "custom",
         *qsmxt.ALGORITHM_PIPELINE_PRESETS,
     ]
-    assert parameters["qsmalgorithm"]["default"] == "whqsm"
+    assert parameters["qsmalgorithm"]["default"] == "hdqsm"
     qsm_algorithms = {
         value["id"] for value in parameters["qsmalgorithm"]["values"]
     }
     assert {"hdqsm", "whqsm"} <= qsm_algorithms
     assert parameters["unwrappingalgorithm"]["default"] == "romeo"
-    assert parameters["bfalgorithm"]["default"] == "vsharp"
+    assert parameters["bfalgorithm"]["default"] == "ismv"
     bf_algorithms = {
         value["id"] for value in parameters["bfalgorithm"]["values"]
     }
@@ -1533,3 +1548,34 @@ def test_derived_outputs_use_original_source_geometry_when_originals_are_sent(
         np.testing.assert_allclose(output_header.read_dir, source_header.read_dir)
         np.testing.assert_allclose(output_header.phase_dir, source_header.phase_dir)
         np.testing.assert_allclose(output_header.slice_dir, source_header.slice_dir)
+
+
+@pytest.mark.parametrize(
+    "parameter,flag,value",
+    [
+        (parameter, flag, choice["id"])
+        for parameter, flag in (
+            ("qsmalgorithm", "--qsm-algorithm"),
+            ("unwrappingalgorithm", "--unwrapping-algorithm"),
+            ("bfalgorithm", "--bf-algorithm"),
+        )
+        for item in json.loads(Path(__file__).with_name("OpenReconLabel.json").read_text())["parameters"]
+        if item["id"] == parameter
+        for choice in item["values"]
+        if choice["id"] != "default"
+    ],
+)
+def test_gui_algorithm_reaches_command(parameter, flag, value, tmp_path, monkeypatch):
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"pipelinepreset": "custom", parameter: value}}, FakeMetadata()
+    )
+    commands = []
+
+    def capture(command, **kwargs):
+        commands.append(command)
+        return qsmxt.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", capture)
+    qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
+    command = commands[0]
+    assert command[command.index(flag) + 1] == value
