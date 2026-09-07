@@ -2,7 +2,7 @@ variables:
   upstream_commit: 3f53965001a992bf54cea46382e10c5b96c40a15
 
 name: brainager
-version: 2.1.0
+version: "2.1.0.post1"
 
 copyright:
   - license: LGPL-3.0
@@ -36,6 +36,7 @@ build:
         - python3-pip
         - git
         - r-base
+        - r-cran-caret
         - build-essential
         - gfortran
         - libblas-dev

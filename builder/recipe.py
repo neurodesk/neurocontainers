@@ -262,7 +262,7 @@ def _default_template_command(pkg_manager: str) -> str:
             "if ! grep -qx 'en_US.UTF-8 UTF-8' /etc/locale.gen 2>/dev/null; then\n"
             "  printf 'en_US.UTF-8 UTF-8\\n' >> /etc/locale.gen;\n"
             "fi\n"
-            "dpkg-reconfigure --frontend=noninteractive locales\n"
+            "locale-gen en_US.UTF-8\n"
             'update-locale LANG="en_US.UTF-8"\n'
             "chmod 777 /opt && chmod a+s /opt\n"
             "mkdir -p /neurodocker\n"

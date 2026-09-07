@@ -1,8 +1,8 @@
 variables:
-  dcm2niix_version: 1.0.20260724
+  dcm2niix_tag: v1.0.20260724
 
 name: dicomtools
-version: 1.0.0
+version: "1.0.0.post1"
 
 copyright:
   - name: dcmtk license
@@ -21,7 +21,8 @@ auto_update:
     method: github_release
     repo: rordenlab/dcm2niix
     target:
-      variable: dcm2niix_version
+      variable: dcm2niix_tag
+      value: tag
 
 build:
   kind: neurodocker
@@ -43,7 +44,7 @@ build:
     - template:
         name: dcm2niix
         method: source
-        version: "{{ context.dcm2niix_version }}"
+        version: "{{ context.dcm2niix_tag }}"
 
 deploy:
   bins:

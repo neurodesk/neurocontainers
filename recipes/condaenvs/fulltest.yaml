@@ -1,8 +1,16 @@
 name: condaenvs
-version: 1.0.1
+version: "1.0.1.post1"
 
 tests:
   - name: conda environment manager available
     description: Verify the environment manager installed by the shared launcher image.
-    command: /opt/miniconda/bin/conda --version
+    command: conda --version
     expected_output_contains: conda
+
+  - name: MNE environment can read EDF files
+    description: Verify the compiled EDF reader imports in the installed MNE environment.
+    command: |
+      for environment in /opt/miniconda*/envs/mne-eeg-meg*; do
+        conda run -p "$environment" python -c 'import pyedflib; print(pyedflib.__version__)' && exit 0
+      done
+      exit 1

@@ -1,5 +1,5 @@
 name: fieldtrip
-version: "20220617"
+version: "20220617.post1"
 
 copyright:
   - license: GPL-3.0
@@ -37,6 +37,7 @@ build:
 
     - template:
         name: matlabmcr
+        ncurses_package: libncurses5
         install_path: "/opt/MCR"
         version: "{{ context.matlab_version }}"
 

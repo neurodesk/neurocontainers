@@ -1,5 +1,5 @@
 name: eeglab
-version: "2020.0"
+version: "2020.0.post1"
 
 copyright:
   - license: BSD-2-Clause
@@ -37,6 +37,7 @@ build:
 
     - template:
         name: matlabmcr
+        ncurses_package: libncurses5
         install_path: "/opt/MCR"
         version: "{{ context.matlab_version }}"
 

@@ -299,3 +299,8 @@ def test_matlabmcr_template_allows_legacy_ncurses_package() -> None:
     command = "\n".join(item.command for item in directives if isinstance(item, Run))
     assert "libncurses5" in command
     assert "libncurses6" not in command
+
+
+def test_matlabmcr_rejects_unmapped_runtime_before_building() -> None:
+    with pytest.raises(ValueError, match="Unsupported MATLAB Runtime release"):
+        apply_builtin_template("matlabmcr", {"version": "2099a"}, "apt", lambda _: None)

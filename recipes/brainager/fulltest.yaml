@@ -10,7 +10,7 @@
 #   - T1w: 3D structural MRI for brain age estimation
 
 name: brainager
-version: 2.1.0
+version: "2.1.0.post1"
 
 required_files:
   - dataset: ds000001
@@ -123,6 +123,11 @@ tests:
     description: Verify kernlab package is installed for GPR
     command: Rscript -e "library(kernlab); cat('kernlab loaded successfully\n')"
     expected_output_contains: "kernlab loaded successfully"
+
+  - name: Load the model training dependencies
+    description: Verify caret and its dependencies load in the installed R runtime
+    command: Rscript -e "library(caret); cat('caret loaded successfully\n')"
+    expected_output_contains: "caret loaded successfully"
 
   - name: Check RNifti R package
     description: Verify RNifti package is installed for NIfTI I/O

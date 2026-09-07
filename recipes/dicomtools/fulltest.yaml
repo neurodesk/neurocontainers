@@ -18,7 +18,7 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 
 name: dicomtools
-version: 1.0.0
+version: "1.0.0.post1"
 
 required_files:
   - dataset: ds000001

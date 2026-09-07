@@ -1,5 +1,5 @@
 name: mfcsc
-version: "1.1"
+version: "1.1.post1"
 
 copyright:
   - license: MIT
@@ -29,6 +29,7 @@ build:
         - dbus-x11
     - template:
         name: matlabmcr
+        ncurses_package: libncurses5
         version: 2020a
         install_path: /opt/MCR
     - workdir: /opt/mfcsc-{{ context.upstream_version }}/

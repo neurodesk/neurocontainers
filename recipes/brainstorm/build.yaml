@@ -1,5 +1,5 @@
 name: brainstorm
-version: "3.211130"
+version: "3.211130.post1"
 
 copyright:
   - license: GPL-3.0
@@ -39,6 +39,7 @@ build:
         name: matlabmcr
         install_path: "/opt/MCR"
         version: "{{ context.matlab_version }}"
+        ncurses_package: libncurses5
 
     - run:
       - ln -s /opt/MCR/{{ context.matlab_runtime_subdir }} /opt/matlab-runtime

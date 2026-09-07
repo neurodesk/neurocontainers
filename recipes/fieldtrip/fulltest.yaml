@@ -14,7 +14,7 @@
 # Analysis of MEG, EEG, and Invasive Electrophysiological Data. doi:10.1155/2011/156869
 
 name: fieldtrip
-version: "20220617"
+version: "20220617.post1"
 
 # FieldTrip works with MEG/EEG data, not NIfTI. Tests use simulated data.
 # Scripts are MATLAB code to be saved as .m files and executed via the compiled runtime.
