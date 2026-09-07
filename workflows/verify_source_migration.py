@@ -17,7 +17,7 @@ from builder.audit_updates import validate_update_policy
 from builder.config import default_config
 from builder.dockerfile import render_dockerfile
 from builder.recipe import compile_recipe, load_recipe
-from builder.update_observations import SourceObservation
+from builder.update_observations import SourceObservation, VERSION_METHODS
 from builder.update_plan import plan_sources
 from builder.variants import concrete_variant_specs
 
@@ -37,6 +37,8 @@ def verify(recipe_dir: Path, source_prefix: str = "", next_version: str = "9999.
     for source in sources:
         target = source["target"]
         metadata = {field: recipe["variables"][name] for name, field in target.get("variables", {}).items()}
+        if source["method"] in VERSION_METHODS:
+            metadata = {}
         if "variable" in target:
             value = str(recipe["variables"][target["variable"]])
             observations[source["id"]] = SourceObservation(value, "https://example.com/recorded-source", version=value, tag=value, metadata=metadata)
@@ -59,6 +61,8 @@ def verify(recipe_dir: Path, source_prefix: str = "", next_version: str = "9999.
             metadata = dict(observations[source["id"]].metadata)
             for field in source["target"].get("variables", {}).values():
                 metadata[field] = next_version
+            if source["method"] in VERSION_METHODS:
+                metadata = {}
             if source["method"] in {"github_commit", "git_commit"}:
                 value = "a" * 40 if observations[source["id"]].value != "a" * 40 else "b" * 40
                 advanced[source["id"]] = SourceObservation(

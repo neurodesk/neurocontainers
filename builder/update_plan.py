@@ -290,15 +290,21 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
         )
         if observation is None:
             raise ValueError(f"{source['id']}: upstream supplied no installable input")
+        fields = {
+            "value": observation.value,
+            "version": observation.version,
+            "tag": observation.tag,
+            **observation.metadata,
+        }
         edits = []
         metadata_downgrade = False
         for variable, field in target.get("variables", {}).items():
             if field != "version":
                 continue
-            observed_version = observation.metadata.get(field)
+            observed_version = fields.get(field)
             if not isinstance(observed_version, str) or not observed_version:
                 raise ValueError(
-                    f"{source['id']}: observation lacks metadata version"
+                    f"{source['id']}: observation lacks field version"
                 )
             if _is_older(observed_version, str(recipe["variables"][variable])):
                 metadata_downgrade = True
@@ -344,7 +350,9 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
             if source["method"] != "http_digest":
                 edits.append((("files", index, "url"), observation.value))
         for variable, field in target.get("variables", {}).items():
-            selected = str(observation.metadata[field])
+            if fields.get(field) is None:
+                raise ValueError(f"{source['id']}: observation lacks field {field}")
+            selected = str(fields[field])
             edits.append((("variables", variable), selected))
             if variable in yaml.safe_load(suite_updated):
                 suite_updated = rewrite_scalar(suite_updated, (variable,), selected)

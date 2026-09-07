@@ -227,6 +227,43 @@ def test_coupled_metadata_version_cannot_downgrade_a_source_plan(
     assert plan_sources(path, observations={"source": older}) is None
 
 
+@pytest.mark.parametrize("release", ["1.9.0", "2.0.0", "2.1.0"])
+def test_release_tag_and_software_version_advance_together(tmp_path, release):
+    recipe = {
+        "name": "demo", "version": "7.0.0",
+        "variables": {"source_tag": "v2.0.0", "software_version": "2.0.0"},
+        "auto_update": {"method": "sources", "sources": [{
+            "id": "source", "method": "github_release", "repo": "example/demo",
+            "target": {"variable": "source_tag", "value": "tag",
+                       "variables": {"software_version": "version"}},
+        }]},
+        "build": {"directives": [{"run": [
+            "git clone --branch {{ context.source_tag }} https://github.com/example/demo"
+        ]}]},
+    }
+    path = write_recipe(tmp_path, recipe, {
+        "name": "demo", "version": "7.0.0", "software_version": "2.0.0",
+        "tests": [],
+    })
+    observation = SourceObservation(
+        release, "https://github.com/example/demo/releases", version=release,
+        tag=f"v{release}",
+    )
+    plan = plan_sources(path, observations={"source": observation})
+    if release != "2.1.0":
+        assert plan is None
+        return
+    plan.apply()
+    changed = yaml.safe_load(path.read_text())
+    suite = yaml.safe_load(path.with_name("fulltest.yaml").read_text())
+    assert changed["variables"] == {
+        "source_tag": "v2.1.0", "software_version": "2.1.0",
+    }
+    assert suite["software_version"] == "2.1.0"
+    assert suite["version"] == changed["version"] == "7.0.0.post1"
+    assert plan_sources(path, observations={"source": observation}) is None
+
+
 def test_artifact_runtime_metadata_must_match_fulltest_baseline(
     tmp_path: Path,
 ) -> None:

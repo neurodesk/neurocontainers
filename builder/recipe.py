@@ -260,7 +260,7 @@ def _default_template_command(pkg_manager: str) -> str:
             "    unzip\n"
             "rm -rf /var/lib/apt/lists/*\n"
             "if ! grep -qx 'en_US.UTF-8 UTF-8' /etc/locale.gen 2>/dev/null; then\n"
-            "  printf 'en_US.UTF-8 UTF-8\\n' >> /etc/locale.gen\n"
+            "  printf 'en_US.UTF-8 UTF-8\\n' >> /etc/locale.gen;\n"
             "fi\n"
             "dpkg-reconfigure --frontend=noninteractive locales\n"
             'update-locale LANG="en_US.UTF-8"\n'

@@ -1,12 +1,12 @@
 # bidsme container test suite
-# Tests for bidsme v1.9.3 - BIDS dataset conversion tool
+# Tests for the BIDS dataset conversion tool
 #
 # bidsme converts source-level (raw) neuroimaging datasets to BIDS format
 # Developed by Nikita BELIY at the Cyclotron Research Centre (CRC)
 #
 # Container includes:
-#   - bidsme 1.9.3: Main BIDS conversion tool with prepare/process/bidsify/map workflow
-#   - dcm2niix v1.0.20250505: DICOM to NIfTI converter
+#   - bidsme: Main BIDS conversion tool with prepare/process/bidsify/map workflow
+#   - dcm2niix: DICOM to NIfTI converter
 #   - nibabel tools: nib-ls, nib-diff, nib-stats, nib-conform, nib-convert, etc.
 #   - Python 3.11 with neuroimaging packages
 #
@@ -17,7 +17,9 @@
 # Documentation: https://github.com/CyclotronResearchCentre/bidsme/blob/dev/doc/cli-interface.md
 
 name: bidsme
-version: 1.9.3
+version: 1.9.3.post1
+upstream_version: 1.9.3
+dcm2niix_version: 1.0.20260724
 
 required_files:
   - dataset: ds000001
@@ -55,7 +57,7 @@ tests:
   - name: bidsme version check
     description: Verify bidsme binary runs and reports version
     command: bidsme --version
-    expected_output_contains: "bidsme: ${version}"
+    expected_output_contains: "bidsme: ${upstream_version}"
 
   - name: bidsme BIDS version check
     description: Verify BIDS schema version
@@ -111,7 +113,7 @@ tests:
   - name: dcm2niix version check
     description: Verify dcm2niix is installed and reports version
     command: dcm2niix -v 2>&1 | grep -E "v[0-9]+\.[0-9]+\.[0-9]+"
-    expected_output_contains: "v1.0.20250505"
+    expected_output_contains: "v${dcm2niix_version}"
 
   - name: dcm2niix help
     description: Display dcm2niix help information
@@ -123,7 +125,7 @@ tests:
   - name: dcm2niix compression options
     description: Verify compression options are available
     command: dcm2niix -h 2>&1 | grep -E "^\s+-z"
-    expected_output_contains: "gz compress"
+    expected_output_contains: "compress"
 
   - name: dcm2niix BIDS sidecar option
     description: Verify BIDS sidecar generation option

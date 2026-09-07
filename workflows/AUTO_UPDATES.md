@@ -162,7 +162,8 @@ The source list supports the release providers above and these providers:
 
 A `target.variable` receives the observed identity by default. Set `value: tag`
 for exact release tags or `value: version` for parsed release versions.
-`target.variables` maps additional recipe variables to metadata fields from the
+`target.variables` maps additional recipe variables to observation fields such
+as `version` and `tag`, or to metadata fields from the
 same observation. MuscleMap uses this to update a model record and its version
 together. Slicer uses it to keep the application and extension compatible.
 

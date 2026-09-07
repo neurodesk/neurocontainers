@@ -1,5 +1,5 @@
 name: bidstools
-version: 1.0.4
+version: 1.0.4.post1
 
 architectures:
   - x86_64
@@ -13,6 +13,7 @@ variables:
     - value: Miniconda3-latest-Linux-aarch64.sh
       condition: arch == "aarch64"
   heudiconv_version: 1.5.0
+  traits_version: 7.1.0
   bru2nii_version: 1.0.20180303
   dcm2niix_version: 1.0.20250505
 
@@ -25,6 +26,13 @@ auto_update:
     package: heudiconv
     target:
       variable: heudiconv_version
+      fulltest_variable: heudiconv_version
+  - id: traits
+    method: pypi
+    package: traits
+    target:
+      variable: traits_version
+      fulltest_variable: traits_version
   - id: bru2nii
     method: github_release
     repo: neurolabusc/Bru2Nii
@@ -65,7 +73,7 @@ build:
         - conda config --system --set show_channel_urls true
         - conda init bash
         - conda create -y -q --name bidstools python=3.11 pip
-        - bash -lc 'source /opt/miniconda/etc/profile.d/conda.sh && conda activate bidstools && python -m pip install --no-cache-dir heudiconv=={{ context.heudiconv_version }} traits'
+        - bash -lc 'source /opt/miniconda/etc/profile.d/conda.sh && conda activate bidstools && python -m pip install --no-cache-dir heudiconv=={{ context.heudiconv_version }} traits=={{ context.traits_version }}'
         - sync && conda clean --all --yes && sync
         - rm -rf /root/.cache/pip/*
 
@@ -98,6 +106,7 @@ build:
         - cmake -DCMAKE_INSTALL_PREFIX:PATH=/opt/dcm2niix-latest ..
         - make -j1
         - make install
+        - install -D -m 0644 ../console/nii_dicom.h /opt/dcm2niix-latest/share/nii_dicom.h
         - rm -rf /tmp/dcm2niix-src
 
     - environment:
