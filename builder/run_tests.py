@@ -359,7 +359,10 @@ def run_single_test(
                             if not any(abs_parent == d or abs_parent.startswith(d + "/") for d in container_dirs):
                                 binds.add(f"{parent}:{parent}")
 
-                cmd_list = [container_runtime_command(), "exec", "--writable-tmpfs"]
+                cmd_list = [
+                    container_runtime_command(), "exec", "--writable-tmpfs",
+                    "--pwd", str(work_dir),
+                ]
                 for b in binds:
                     cmd_list.extend(["-B", b])
                 cmd_list.extend([str(container_path), "bash", str(script_path)])
@@ -454,6 +457,7 @@ def run_single_test(
                 for val_type, val_arg in validation.items():
                     if val_type == "output_exists":
                         path = substitute_variables(str(val_arg), variables)
+                        path = str(work_dir / path)
                         if not check_file_exists(path):
                             return TestResult(
                                 name=name,
@@ -470,6 +474,8 @@ def run_single_test(
                         if isinstance(val_arg, list) and len(val_arg) == 2:
                             path1 = substitute_variables(str(val_arg[0]), variables)
                             path2 = substitute_variables(str(val_arg[1]), variables)
+                            path1 = str(work_dir / path1)
+                            path2 = str(work_dir / path2)
                             ok, msg = check_same_dimensions(path1, path2)
                             if not ok:
                                 return TestResult(
@@ -523,7 +529,10 @@ def _run_container_health_check(
     binds = set()
     binds.add(f"{work_dir}:{work_dir}")
 
-    cmd_list = [container_runtime_command(), "exec", "--writable-tmpfs"]
+    cmd_list = [
+        container_runtime_command(), "exec", "--writable-tmpfs",
+        "--pwd", str(work_dir),
+    ]
     for b in binds:
         cmd_list.extend(["-B", b])
     cmd_list.extend([str(container_path), "true"])
@@ -582,7 +591,10 @@ def _run_setup_in_container(
                 if parent.exists():
                     binds.add(f"{parent}:{parent}")
 
-        cmd_list = [container_runtime_command(), "exec", "--writable-tmpfs"]
+        cmd_list = [
+            container_runtime_command(), "exec", "--writable-tmpfs",
+            "--pwd", str(work_dir),
+        ]
         for b in binds:
             cmd_list.extend(["-B", b])
         cmd_list.extend([str(container_path), "bash", str(script_path)])

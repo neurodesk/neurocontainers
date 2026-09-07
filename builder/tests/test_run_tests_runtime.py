@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+
 from builder import run_tests
 
 
@@ -91,3 +93,31 @@ def test_script_runner_expands_independent_version_variables(tmp_path) -> None:
         script_runner='${runner_dir}/runner-${upstream_version}',
     )
     assert result.passed, result.stderr or result.message
+
+
+def test_container_setup_and_tests_share_the_output_directory(tmp_path, monkeypatch) -> None:
+    work = tmp_path / "suite"
+    work.mkdir()
+    fallback = tmp_path / "runtime-default"
+    fallback.mkdir()
+    real_run = subprocess.run
+
+    def runtime_run(command, **kwargs):
+        # Model a runtime whose default cwd differs from the host subprocess cwd.
+        cwd = command[command.index("--pwd") + 1] if "--pwd" in command else fallback
+        payload = command[command.index("image.sif") + 1:]
+        return real_run(payload, **{**kwargs, "cwd": cwd})
+
+    monkeypatch.setattr(run_tests.subprocess, "run", runtime_run)
+    error = run_tests._run_setup_in_container(
+        "mkdir -p output\nprintf fixture > output/input", "image.sif", work, {}
+    )
+    assert error is None, error
+    assert (work / "output/input").read_text() == "fixture"
+    result = run_tests.run_single_test(
+        {"name": "relative output", "command": "cp output/input output/result",
+         "validate": [{"output_exists": "output/result"}]},
+        "image.sif", {}, work,
+    )
+    assert result.passed, result.message
+    assert (work / "output/result").read_text() == "fixture"

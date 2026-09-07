@@ -14,7 +14,6 @@ test_data:
   t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
   output_dir: test_output
   atlas_dir: /opt/dsi-studio/atlas/human
-  template_fib: test_output/human.fz
   template_t1w: /opt/dsi-studio/atlas/human/human.T1W.nii.gz
   template_qa: /opt/dsi-studio/atlas/human/human.QA.nii.gz
 setup:
@@ -112,50 +111,50 @@ tests:
     timeout: 600
   - name: exp action - export QA from template FIB
     description: Export the GQI metrics present in the bundled FIB to the writable test directory.
-    command: rm -f ${template_fib}.qa.nii.gz && dsi_studio --action=exp --source=${template_fib} --export=qa
+    command: rm -f ${output_dir}/human.fz.qa.nii.gz && dsi_studio --action=exp --source=${output_dir}/human.fz --export=qa
     validate:
-      - output_exists: ${template_fib}.qa.nii.gz
+      - output_exists: ${output_dir}/human.fz.qa.nii.gz
   - name: exp action - export ISO from template FIB
     description: Export the GQI metrics present in the bundled FIB to the writable test directory.
-    command: rm -f ${template_fib}.iso.nii.gz && dsi_studio --action=exp --source=${template_fib} --export=iso
+    command: rm -f ${output_dir}/human.fz.iso.nii.gz && dsi_studio --action=exp --source=${output_dir}/human.fz --export=iso
     expected_exit_code: 0
     validate:
-      - output_exists: ${template_fib}.iso.nii.gz
+      - output_exists: ${output_dir}/human.fz.iso.nii.gz
   - name: exp action - export multiple metrics
     description: Export the GQI metrics present in the bundled FIB to the writable test directory.
-    command: rm -f ${template_fib}.qa.nii.gz ${template_fib}.iso.nii.gz && dsi_studio --action=exp --source=${template_fib}
+    command: rm -f ${output_dir}/human.fz.qa.nii.gz ${output_dir}/human.fz.iso.nii.gz && dsi_studio --action=exp --source=${output_dir}/human.fz
       --export=qa,iso
     expected_exit_code: 0
     validate:
-      - output_exists: ${template_fib}.qa.nii.gz
-      - output_exists: ${template_fib}.iso.nii.gz
+      - output_exists: ${output_dir}/human.fz.qa.nii.gz
+      - output_exists: ${output_dir}/human.fz.iso.nii.gz
   - name: trk action - whole brain tracking (limited)
     description: Run limited whole-brain tracking on human template
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --output=test_output/template_wb_tracks.tt.gz
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=100 --output=test_output/template_wb_tracks.tt.gz
     validate:
       - output_exists: ${output_dir}/template_wb_tracks.tt.gz
   - name: trk action - tracking with parameters
     description: Test fiber tracking with custom parameters
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=50 --fa_threshold=0.1
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=50 --fa_threshold=0.1
       --turning_angle=60 --step_size=1.0 --min_length=20 --max_length=200 --output=test_output/template_tracks_params.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_params.tt.gz
   - name: trk action - tracking with ROI
     description: Test fiber tracking with region of interest
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=5000 --roi=HCP-MMP:L_V1
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=5000 --roi=HCP-MMP:L_V1
       --output=test_output/template_tracks_roi.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_roi.tt.gz
   - name: trk action - tracking with connectome
     description: Test fiber tracking with connectivity matrix output
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --connectivity=Brodmann
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=100 --connectivity=Brodmann
       --output=test_output/template_tracks_conn.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_conn.tt.gz
       - output_exists: test_output/template_tracks_conn.tt.gz.Brodmann.count.pass.connectivity.mat
   - name: atk action - track arcuate fasciculus
     description: Automatic tracking of arcuate fasciculus bundle
-    command: mkdir -p test_output/atk_23 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Arcuate
+    command: mkdir -p test_output/atk_23 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=Arcuate
       --output=test_output/atk_23 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_23
       -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_23 -name '*.no_result.txt' -print
       -quit)"
@@ -163,7 +162,7 @@ tests:
     timeout: 300
   - name: atk action - track corticospinal tract
     description: Automatic tracking of corticospinal tract
-    command: mkdir -p test_output/atk_24 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Corticos
+    command: mkdir -p test_output/atk_24 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=Corticos
       --output=test_output/atk_24 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_24
       -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_24 -name '*.no_result.txt' -print
       -quit)"
@@ -171,7 +170,7 @@ tests:
     timeout: 300
   - name: atk action - track multiple bundles
     description: Automatic tracking of multiple bundles
-    command: mkdir -p test_output/atk_25 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Arcuate,Cingulum,Fornix
+    command: mkdir -p test_output/atk_25 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=Arcuate,Cingulum,Fornix
       --output=test_output/atk_25 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_25
       -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_25 -name '*.no_result.txt' -print
       -quit)"
@@ -179,7 +178,7 @@ tests:
     timeout: 300
   - name: atk action - with custom tolerance
     description: Automatic tracking with adjusted tolerance
-    command: mkdir -p test_output/atk_26 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Uncinate
+    command: mkdir -p test_output/atk_26 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=Uncinate
       --tolerance=22,26,30 --output=test_output/atk_26 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1
       && test -n "$(find test_output/atk_26 -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_26
       -name '*.no_result.txt' -print -quit)"
@@ -187,34 +186,34 @@ tests:
     timeout: 300
   - name: ana action - tract statistics
     description: Generate tract statistics from tracked fibers
-    command: dsi_studio --action=ana --source=${template_fib} --tract=test_output/template_wb_tracks.tt.gz --export=stat
+    command: dsi_studio --action=ana --source=${output_dir}/human.fz --tract=test_output/template_wb_tracks.tt.gz --export=stat
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
     validate:
       - output_exists: test_output/template_wb_tracks.tt.gz.stat.txt
   - name: ana action - tract density image
     description: Generate tract density image from tracked fibers
-    command: dsi_studio --action=ana --source=${template_fib} --tract=test_output/template_wb_tracks.tt.gz --export=tdi
+    command: dsi_studio --action=ana --source=${output_dir}/human.fz --tract=test_output/template_wb_tracks.tt.gz --export=tdi
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
     validate:
       - output_exists: test_output/template_wb_tracks.tt.gz.tdi.nii.gz
   - name: ana action - tract to region connectivity
     description: Calculate tract-to-region connectivity matrix
-    command: dsi_studio --action=ana --source=${template_fib} --tract=test_output/template_wb_tracks.tt.gz --connectivity=Brodmann
+    command: dsi_studio --action=ana --source=${output_dir}/human.fz --tract=test_output/template_wb_tracks.tt.gz --connectivity=Brodmann
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
     validate:
       - output_exists: test_output/template_wb_tracks.tt.gz.Brodmann.count.pass.connectivity.mat
   - name: ana action - region statistics with atlas
     description: Get region statistics using HCP-MMP atlas
-    command: dsi_studio --action=ana --source=${template_fib} --region=HCP-MMP:L_V1 --output=test_output/region_30.txt
+    command: dsi_studio --action=ana --source=${output_dir}/human.fz --region=HCP-MMP:L_V1 --output=test_output/region_30.txt
     expected_exit_code: 0
     validate:
       - output_exists: test_output/region_30.txt
   - name: ana action - export tract endpoints
     description: Export tract endpoint coordinates
-    command: dsi_studio --action=ana --source=${template_fib} --tract=test_output/template_wb_tracks.tt.gz --end_point=test_output/endpoints.txt
+    command: dsi_studio --action=ana --source=${output_dir}/human.fz --tract=test_output/template_wb_tracks.tt.gz --end_point=test_output/endpoints.txt
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
     validate:
@@ -290,37 +289,37 @@ tests:
     expected_exit_code: 0
   - name: trk action rejects unknown differential metric
     description: Differential tracking must reject metrics missing from the input FIB.
-    command: dsi_studio --action=trk --source=${template_fib} --dt_metric1=missing_metric --dt_metric2=missing_metric
+    command: dsi_studio --action=trk --source=${output_dir}/human.fz --dt_metric1=missing_metric --dt_metric2=missing_metric
       --dt_threshold=0.1 --seed_count=50
     expected_exit_code: 1
     expected_output_contains: 'cannot find the metric: missing_metric'
   - name: trk action - tracking with smoothing
     description: Test fiber tracking with smoothing parameter
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=50 --smoothing=0.5 --output=test_output/template_tracks_smooth.tt.gz
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=50 --smoothing=0.5 --output=test_output/template_tracks_smooth.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_smooth.tt.gz
   - name: trk action - delete repeat streamlines
     description: Test fiber tracking with duplicate removal
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --delete_repeat=1
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=100 --delete_repeat=1
       --output=test_output/template_tracks_unique.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_unique.tt.gz
   - name: trk action - output tract statistics
     description: Test fiber tracking with inline statistics export
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=50 --export=stat --output=test_output/template_tracks_stat.tt.gz
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=50 --export=stat --output=test_output/template_tracks_stat.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_stat.tt.gz
       - output_exists: test_output/template_tracks_stat.tt.gz.stat.txt
   - name: trk action - HCP-MMP connectivity
     description: Generate connectivity matrix using HCP-MMP parcellation
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=200 --connectivity=HCP-MMP
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=200 --connectivity=HCP-MMP
       --connectivity_type=pass --output=test_output/template_conn_hcpmmp.tt.gz
     validate:
       - output_exists: ${output_dir}/template_conn_hcpmmp.tt.gz
       - output_exists: test_output/template_conn_hcpmmp.tt.gz.HCP-MMP.count.pass.connectivity.mat
   - name: trk action - multiple atlas connectivity
     description: Generate connectivity matrices for multiple atlases
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --connectivity=Brodmann,FreeSurferDKT_Cortical
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=100 --connectivity=Brodmann,FreeSurferDKT_Cortical
       --output=test_output/template_conn_multi.tt.gz
     validate:
       - output_exists: ${output_dir}/template_conn_multi.tt.gz
@@ -328,7 +327,7 @@ tests:
       - output_exists: test_output/template_conn_multi.tt.gz.FreeSurferDKT_Cortical.count.pass.connectivity.mat
   - name: trk action - endpoint connectivity
     description: Generate endpoint-based connectivity matrix
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --connectivity=Brodmann
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=100 --connectivity=Brodmann
       --connectivity_type=end --output=test_output/template_conn_end.tt.gz
     validate:
       - output_exists: ${output_dir}/template_conn_end.tt.gz
@@ -356,7 +355,7 @@ tests:
     timeout: 600
   - name: atk action - inferior longitudinal fasciculus
     description: Track inferior longitudinal fasciculus
-    command: mkdir -p test_output/atk_59 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=InferiorLongitudinal
+    command: mkdir -p test_output/atk_59 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=InferiorLongitudinal
       --output=test_output/atk_59 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_59
       -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_59 -name '*.no_result.txt' -print
       -quit)"
@@ -364,7 +363,7 @@ tests:
     timeout: 300
   - name: atk action - superior longitudinal fasciculus
     description: Track superior longitudinal fasciculus
-    command: mkdir -p test_output/atk_60 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=SuperiorLongitudinal
+    command: mkdir -p test_output/atk_60 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=SuperiorLongitudinal
       --output=test_output/atk_60 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_60
       -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_60 -name '*.no_result.txt' -print
       -quit)"
@@ -372,7 +371,7 @@ tests:
     timeout: 300
   - name: atk action - optic radiation
     description: Track optic radiation
-    command: mkdir -p test_output/atk_61 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Optic
+    command: mkdir -p test_output/atk_61 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=Optic
       --output=test_output/atk_61 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_61
       -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_61 -name '*.no_result.txt' -print
       -quit)"
@@ -380,7 +379,7 @@ tests:
     timeout: 300
   - name: atk action - corpus callosum
     description: Track corpus callosum
-    command: mkdir -p test_output/atk_62 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Corpus
+    command: mkdir -p test_output/atk_62 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=Corpus
       --output=test_output/atk_62 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_62
       -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_62 -name '*.no_result.txt' -print
       -quit)"
@@ -388,7 +387,7 @@ tests:
     timeout: 300
   - name: atk action - thalamic radiation
     description: Track thalamic radiation
-    command: mkdir -p test_output/atk_63 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=ThalamicR
+    command: mkdir -p test_output/atk_63 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=ThalamicR
       --output=test_output/atk_63 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_63
       -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_63 -name '*.no_result.txt' -print
       -quit)"
@@ -408,10 +407,10 @@ tests:
     expected_exit_code: 0
   - name: Template FIB file valid
     description: Export the GQI metrics present in the bundled FIB to the writable test directory.
-    command: rm -f ${template_fib}.qa.nii.gz && dsi_studio --action=exp --source=${template_fib} --export=qa
+    command: rm -f ${output_dir}/human.fz.qa.nii.gz && dsi_studio --action=exp --source=${output_dir}/human.fz --export=qa
     expected_exit_code: 0
     validate:
-      - output_exists: ${template_fib}.qa.nii.gz
+      - output_exists: ${output_dir}/human.fz.qa.nii.gz
   - name: Template tract file exists
     description: Verify template tractography file exists
     command: ls /opt/dsi-studio/atlas/human/human.tt.gz
@@ -430,25 +429,25 @@ tests:
     expected_exit_code: 0
   - name: ana action - Brodmann region analysis
     description: Analyze specific Brodmann area
-    command: dsi_studio --action=ana --source=${template_fib} --region=Brodmann:BA17_L --output=test_output/region_72.txt
+    command: dsi_studio --action=ana --source=${output_dir}/human.fz --region=Brodmann:BA17_L --output=test_output/region_72.txt
     expected_exit_code: 0
     validate:
       - output_exists: test_output/region_72.txt
   - name: ana action - FreeSurfer region analysis
     description: Analyze FreeSurfer DKT region
-    command: dsi_studio --action=ana --source=${template_fib} --region=FreeSurferDKT_Cortical:left_precentral --output=test_output/region_73.txt
+    command: dsi_studio --action=ana --source=${output_dir}/human.fz --region=FreeSurferDKT_Cortical:left_precentral --output=test_output/region_73.txt
     expected_exit_code: 0
     validate:
       - output_exists: test_output/region_73.txt
   - name: ana action - cerebellum region analysis
     description: Analyze cerebellum region using SUIT atlas
-    command: dsi_studio --action=ana --source=${template_fib} --region=Cerebellum-SUIT:Left_I_IV --output=test_output/region_74.txt
+    command: dsi_studio --action=ana --source=${output_dir}/human.fz --region=Cerebellum-SUIT:Left_I_IV --output=test_output/region_74.txt
     expected_exit_code: 0
     validate:
       - output_exists: test_output/region_74.txt
   - name: trk action - output as TRK format
     description: Test fiber tracking with TRK output format
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=50 --output=test_output/template_tracks.trk.gz
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=50 --output=test_output/template_tracks.trk.gz
     validate:
       - output_exists: ${output_dir}/template_tracks.trk.gz
   - name: Missing source file error
@@ -463,18 +462,18 @@ tests:
     expected_output_contains: unknown action
   - name: trk action - single threaded
     description: Test fiber tracking with single thread
-    command: dsi_studio --action=trk --source=${template_fib} --seed_count=50 --thread_count=1 --output=test_output/template_tracks_1thread.tt.gz
+    command: dsi_studio --action=trk --source=${output_dir}/human.fz --seed_count=50 --thread_count=1 --output=test_output/template_tracks_1thread.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_1thread.tt.gz
   - name: trk action - multi threaded
     description: Test fiber tracking with multiple threads
-    command: dsi_studio --action=trk --source=${template_fib} --seed_count=50 --thread_count=4 --output=test_output/template_tracks_4thread.tt.gz
+    command: dsi_studio --action=trk --source=${output_dir}/human.fz --seed_count=50 --thread_count=4 --output=test_output/template_tracks_4thread.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_4thread.tt.gz
   - name: Pipeline - register and track
     description: Complete structural registration on CPU and verify the transformed image is written.
     command: mkdir -p test_output/reg_80 && dsi_studio --action=reg --source=${t1w} --to=${template_t1w} --reg_type=0
-      --overwrite=1 --output=test_output/reg_80 && dsi_studio --action=trk --source=${template_fib} --seed_count=100
+      --overwrite=1 --output=test_output/reg_80 && dsi_studio --action=trk --source=${output_dir}/human.fz --seed_count=100
       --thread_count=2 --output=test_output/pipeline_tracks.tt.gz
     validate:
       - output_exists: test_output/reg_80/sub-01_T1w.nii.gz.wp.nii.gz
@@ -482,14 +481,14 @@ tests:
     timeout: 600
   - name: Pipeline - track and analyze
     description: Run tracking and then analyze the resulting tracts
-    command: dsi_studio --thread_count=2 --action=trk --source=${template_fib} --seed_count=100 --output=test_output/pipeline_ana_tracks.tt.gz
-      && dsi_studio --action=ana --source=${template_fib} --tract=test_output/pipeline_ana_tracks.tt.gz --connectivity=Brodmann
+    command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=100 --output=test_output/pipeline_ana_tracks.tt.gz
+      && dsi_studio --action=ana --source=${output_dir}/human.fz --tract=test_output/pipeline_ana_tracks.tt.gz --connectivity=Brodmann
     validate:
       - output_exists: ${output_dir}/pipeline_ana_tracks.tt.gz
       - output_exists: test_output/pipeline_ana_tracks.tt.gz.Brodmann.count.pass.connectivity.mat
   - name: Pipeline - autotrack multiple bundles with export
     description: Automatically track bundles and export statistics
-    command: mkdir -p test_output/atk_82 && dsi_studio --thread_count=2 --action=atk --source=${template_fib} --track_id=Arcuate,Uncinate
+    command: mkdir -p test_output/atk_82 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=Arcuate,Uncinate
       --export_stat=1 --output=test_output/atk_82 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test
       -n "$(find test_output/atk_82 -name '*.tt.gz' -size +0c -print -quit)" && test -n "$(find test_output/atk_82
       -name '*.stat.txt' -size +0c -print -quit)" && test -z "$(find test_output/atk_82 -name '*.no_result.txt'
