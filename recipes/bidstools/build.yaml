@@ -8,10 +8,33 @@ architectures:
 variables:
   miniconda_installer:
     try:
-      - value: Miniconda3-latest-Linux-x86_64.sh
-        condition: arch == "x86_64"
-      - value: Miniconda3-latest-Linux-aarch64.sh
-        condition: arch == "aarch64"
+    - value: Miniconda3-latest-Linux-x86_64.sh
+      condition: arch == "x86_64"
+    - value: Miniconda3-latest-Linux-aarch64.sh
+      condition: arch == "aarch64"
+  heudiconv_version: 1.5.0
+  bru2nii_version: 1.0.20180303
+  dcm2niix_version: 1.0.20250505
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: heudiconv
+    method: pypi
+    package: heudiconv
+    target:
+      variable: heudiconv_version
+  - id: bru2nii
+    method: github_release
+    repo: neurolabusc/Bru2Nii
+    target:
+      variable: bru2nii_version
+  - id: dcm2niix
+    method: github_release
+    repo: rordenlab/dcm2niix
+    target:
+      variable: dcm2niix_version
 
 build:
   kind: neurodocker
@@ -42,7 +65,7 @@ build:
         - conda config --system --set show_channel_urls true
         - conda init bash
         - conda create -y -q --name bidstools python=3.11 pip
-        - bash -lc 'source /opt/miniconda/etc/profile.d/conda.sh && conda activate bidstools && python -m pip install --no-cache-dir heudiconv traits'
+        - bash -lc 'source /opt/miniconda/etc/profile.d/conda.sh && conda activate bidstools && python -m pip install --no-cache-dir heudiconv=={{ context.heudiconv_version }} traits'
         - sync && conda clean --all --yes && sync
         - rm -rf /root/.cache/pip/*
 
@@ -125,8 +148,8 @@ files:
   - name: Miniconda3-latest-Linux-aarch64.sh
     url: https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh
   - name: Bru2_Linux_zip
-    url: https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip
+    url: https://github.com/neurolabusc/Bru2Nii/releases/download/v{{ context.bru2nii_version }}/Bru2_Linux.zip
   - name: bru2nii_v1_0_20180303_tar_gz
-    url: https://github.com/neurolabusc/Bru2Nii/archive/refs/tags/v1.0.20180303.tar.gz
+    url: https://github.com/neurolabusc/Bru2Nii/archive/refs/tags/v{{ context.bru2nii_version }}.tar.gz
   - name: dcm2niix_v1_0_20250505_tar_gz
-    url: https://github.com/rordenlab/dcm2niix/archive/refs/tags/v1.0.20250505.tar.gz
+    url: https://github.com/rordenlab/dcm2niix/archive/refs/tags/v{{ context.dcm2niix_version }}.tar.gz

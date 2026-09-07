@@ -14,6 +14,10 @@ variables:
       - value: Miniforge3-Linux-aarch64.sh
         condition: arch == "aarch64"
 
+auto_update:
+  method: github_release
+  repo: JacobBumgarner/VesselVio
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -46,7 +50,7 @@ build:
         - conda clean --all --yes
 
     - run:
-        - git clone https://github.com/JacobBumgarner/VesselVio.git /opt/vesselvio-{{ context.version }}/
+        - git clone --branch v{{ context.version }} https://github.com/JacobBumgarner/VesselVio.git /opt/vesselvio-{{ context.version }}/
         - sed -i '/^PyQt5==/d;/^PyQt5-Qt5==/d;/^PyQt5-sip==/d' /opt/vesselvio-{{ context.version }}/requirements.txt
         - conda run -n vesselvio python -m pip install -r /opt/vesselvio-{{ context.version }}/requirements.txt
 
@@ -80,12 +84,12 @@ files:
           echo "$FILE exists. Not overwriting."
       else
           echo "$FILE does not exist. Copying file template."
-          cp /opt/vesselvio-1.1.2/library/cache/preferences.json ~/library/cache/preferences.json
+          cp /opt/vesselvio-{{ context.version }}/library/cache/preferences.json ~/library/cache/preferences.json
       fi
 
-      cp -r /opt/vesselvio-1.1.2/library/annotation/ ~/library/
-      cp -r /opt/vesselvio-1.1.2/library/volumes/ ~/library/
-      python /opt/vesselvio-1.1.2/VesselVio.py
+      cp -r /opt/vesselvio-{{ context.version }}/library/annotation/ ~/library/
+      cp -r /opt/vesselvio-{{ context.version }}/library/volumes/ ~/library/
+      python /opt/vesselvio-{{ context.version }}/VesselVio.py
 
 categories:
   - quantitative imaging

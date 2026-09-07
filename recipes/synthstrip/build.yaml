@@ -9,6 +9,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_tags
+  repo: freesurfer/freesurfer
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -67,7 +71,7 @@ readme: |-
 
 files:
   - name: mri_synthstrip
-    url: https://raw.githubusercontent.com/freesurfer/freesurfer/v7.4.1/mri_synthstrip/mri_synthstrip
+    url: https://raw.githubusercontent.com/freesurfer/freesurfer/v{{ context.version }}/mri_synthstrip/mri_synthstrip
   - name: synthstrip_model
     url: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.1.pt
   - name: synthstrip_nocsf_model

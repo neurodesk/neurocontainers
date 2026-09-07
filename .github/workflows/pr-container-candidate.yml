@@ -48,7 +48,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install detection and validation dependencies
-        run: pip install 'attrs>=23.0.0' 'pyyaml>=6.0.2' jinja2 jsonschema==4.23.0
+        run: pip install 'attrs>=23.0.0' 'pyyaml>=6.0.2' jinja2 jsonschema==4.23.0 packaging requests
       - name: Detect recipe-only changes
         id: detect
         working-directory: source

@@ -1,3 +1,7 @@
+irkernel_version: 1.3.2
+
+r_version: 4.5.3
+
 name: irkernel
 version: 4.4.3
 
@@ -15,7 +19,7 @@ tests:
     description: Verify the packaged R runtime reports the ARM64 platform
     command: R --version
     expected_output_contains:
-      - "R version 4.5.3"
+      - "R version ${r_version}"
       - "Platform: aarch64-conda-linux-gnu"
     expected_exit_code: 0
 

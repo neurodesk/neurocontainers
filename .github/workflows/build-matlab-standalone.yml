@@ -1,0 +1,154 @@
+name: Build MATLAB standalone candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      software:
+        description: Upstream with a verified compilation entrypoint
+        type: choice
+        options: [fieldtrip, physio]
+        required: true
+      source_ref:
+        description: Full commit SHA of the official FieldTrip or PhysIO source tag
+        type: string
+        required: true
+      source_version:
+        description: Exact source tag (FieldTrip YYYYMMDD or PhysIO vX.Y.Z)
+        type: string
+        required: true
+      runtime_release:
+        description: MATLAB release licensed by the batch token
+        type: string
+        default: R2023b
+        required: true
+      spm_ref:
+        description: Full spm/spm12 commit SHA (required only for PhysIO)
+        type: string
+        default: ''
+      publish_candidate:
+        description: Upload the validated candidate to Swift; never promotes a release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: matlab-standalone-${{ inputs.software }}-${{ inputs.source_ref }}-${{ inputs.runtime_release }}
+  cancel-in-progress: false
+
+jobs:
+  compile:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      NEURO_MATLAB_REQUEST: ${{ runner.temp }}/matlab-request.json
+      NEURO_MATLAB_OUTPUT: ${{ runner.temp }}/matlab-standalone
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require compiler licensing and validate the request
+        id: request
+        env:
+          MLM_LICENSE_TOKEN: ${{ secrets.MATLAB_BATCH_LICENSE_TOKEN }}
+          INPUT_SOFTWARE: ${{ inputs.software }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+          INPUT_SOURCE_VERSION: ${{ inputs.source_version }}
+          INPUT_RUNTIME_RELEASE: ${{ inputs.runtime_release }}
+          INPUT_SPM_REF: ${{ inputs.spm_ref }}
+        run: |
+          test -n "$MLM_LICENSE_TOKEN" || { echo 'MATLAB_BATCH_LICENSE_TOKEN is required and must cover MATLAB Compiler.' >&2; exit 1; }
+          python3 -m builder.matlab_standalone request \
+            --request "$NEURO_MATLAB_REQUEST" --workspace "$GITHUB_WORKSPACE" --output "$NEURO_MATLAB_OUTPUT"
+      - name: Checkout the exact official software source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.request.outputs.source_repository }}
+          ref: ${{ inputs.source_ref }}
+          path: _matlab_source
+          persist-credentials: false
+      - name: Checkout the exact SPM12 source
+        if: inputs.software == 'physio'
+        uses: actions/checkout@v4
+        with:
+          repository: spm/spm12
+          ref: ${{ inputs.spm_ref }}
+          path: _matlab_spm
+          persist-credentials: false
+      - name: Verify source tags and compilation inputs
+        run: |
+          python3 -m builder.matlab_standalone prepare \
+            --request "$NEURO_MATLAB_REQUEST" --workspace "$GITHUB_WORKSPACE" --output "$NEURO_MATLAB_OUTPUT"
+      - name: Install MATLAB and the upstream compiler dependencies
+        uses: matlab-actions/setup-matlab@v3
+        with:
+          release: ${{ inputs.runtime_release }}
+          products: >-
+            MATLAB_Compiler Signal_Processing_Toolbox Image_Processing_Toolbox
+            Statistics_and_Machine_Learning_Toolbox Optimization_Toolbox Curve_Fitting_Toolbox
+      - name: Compile using the upstream entrypoint
+        uses: matlab-actions/run-command@v3
+        env:
+          MLM_LICENSE_TOKEN: ${{ secrets.MATLAB_BATCH_LICENSE_TOKEN }}
+        with:
+          command: addpath('workflows'); compile_matlab_standalone
+      - name: Exercise the compiled application and package its candidate
+        run: |
+          python3 -m builder.matlab_standalone package \
+            --request "$NEURO_MATLAB_REQUEST" --workspace "$GITHUB_WORKSPACE" --output "$NEURO_MATLAB_OUTPUT"
+      - name: Retain the validated package and provenance for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: matlab-standalone-candidate
+          path: |
+            ${{ env.NEURO_MATLAB_OUTPUT }}/*.tar.gz
+            ${{ env.NEURO_MATLAB_OUTPUT }}/manifest.json
+            ${{ env.NEURO_MATLAB_OUTPUT }}/SHA256SUMS
+            ${{ env.NEURO_MATLAB_OUTPUT }}/runtime-smoke.log
+          if-no-files-found: error
+      - name: Retain diagnostics when compilation or runtime checks fail
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matlab-standalone-diagnostics
+          path: |
+            ${{ env.NEURO_MATLAB_OUTPUT }}/runtime-smoke.log
+            ${{ env.NEURO_MATLAB_OUTPUT }}/compiler-report.json
+          if-no-files-found: ignore
+
+  publish-candidate:
+    needs: compile
+    if: inputs.publish_candidate
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: matlab-standalone-candidate
+          path: candidate
+      - name: Verify candidate bytes before requesting Swift access
+        id: candidate
+        run: python3 -m builder.matlab_standalone verify --output candidate
+      - name: Install the existing Swift publication client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends python3-swiftclient python3-keystoneclient
+      - name: Upload only into the candidate prefix
+        working-directory: candidate
+        env:
+          OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
+          OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
+          OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
+          OS_AUTH_TYPE: v3applicationcredential
+          OS_IDENTITY_API_VERSION: '3'
+          CANDIDATE_ARCHIVE: ${{ steps.candidate.outputs.archive }}
+          CANDIDATE_OBJECT: ${{ steps.candidate.outputs.swift_object }}
+        run: |
+          set -euo pipefail
+          swift upload build "$CANDIDATE_ARCHIVE" --object-name "$CANDIDATE_OBJECT"
+          swift upload build manifest.json --object-name "${CANDIDATE_OBJECT}.manifest.json"

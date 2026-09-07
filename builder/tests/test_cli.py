@@ -90,3 +90,17 @@ def test_write_build_files_rejects_empty_readme(tmp_path: cli.Path) -> None:
 
     with pytest.raises(ValueError, match="compiled README.*cannot be empty"):
         cli.write_build_files(tmp_path, compiled, tmp_path / "build")
+
+
+def test_init_requires_user_to_configure_upstream(tmp_path, monkeypatch):
+    import yaml
+    from builder.audit_updates import validate_update_policy
+
+    monkeypatch.setattr(
+        cli, "default_config", lambda: SimpleNamespace(repo_root=tmp_path)
+    )
+    cli.cmd_init(argparse.Namespace(name="demo", version="1.0.0"))
+    data = yaml.safe_load((tmp_path / "recipes/demo/build.yaml").read_text())
+    assert data["auto_update"]["method"] == "github_release"
+    with pytest.raises(ValueError):
+        validate_update_policy(data)

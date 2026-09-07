@@ -45,7 +45,7 @@ tests:
   - name: HALFpipe version check
     description: Verify halfpipe binary runs and reports version
     command: halfpipe --version
-    expected_output_contains: "1.2.3"
+    expected_output_contains: "${version}"
 
   - name: HALFpipe help
     description: Display halfpipe help message
@@ -81,7 +81,7 @@ tests:
   - name: Halfpipe module import
     description: Verify halfpipe Python module can be imported
     command: python3 -c "import halfpipe; print('halfpipe version:', halfpipe.__version__)"
-    expected_output_contains: "halfpipe version: 1.2.3"
+    expected_output_contains: "halfpipe version: ${version}"
 
   - name: Nipype module import
     description: Verify nipype module can be imported

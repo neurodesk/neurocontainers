@@ -9,10 +9,15 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: dockerhub
+  repo: bids/mrtrix3_connectome
+  version_regex: ^(?P<version>[0-9]+\.[0-9]+\.[0-9]+)$
+
 build:
   kind: neurodocker
 
-  base-image: bids/mrtrix3_connectome:0.5.3
+  base-image: bids/mrtrix3_connectome:{{ context.version }}
   pkg-manager: apt
 
   directives:

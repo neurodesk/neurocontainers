@@ -1,3 +1,6 @@
+variables:
+  upstream_commit: 113d1054b8700b362a86b8e495045c2b78a46bb1
+
 name: megnet
 version: 1.0.1
 architectures:
@@ -7,6 +10,17 @@ structured_readme:
   example: python xxx.py config_file
   documentation: https://github.com/miao-cao/MEGNET_pipeline.git
   citation: ""
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: miao-cao/MEGNET_pipeline
+    ref: HEAD
+    target:
+      variable: upstream_commit
+      fulltest_variable: upstream_commit
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -22,7 +36,7 @@ build:
         installed: false
     - install: git
     - run:
-        - git clone https://github.com/miao-cao/MEGNET_pipeline.git
+        - git clone https://github.com/miao-cao/MEGNET_pipeline.git && git -C /MEGNET_pipeline checkout {{ context.upstream_commit }}
     - deploy:
         path: []
         bins:

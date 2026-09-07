@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: nipy/nipype
+
 build:
   kind: neurodocker
 
@@ -57,7 +61,7 @@ build:
 
     - template:
         name: miniconda
-        conda_install: python=3.9 nipype=1.8.5 traits scipy scikit-learn scikit-image jupyter nb_conda_kernels h5py seaborn numpy
+        conda_install: python=3.9 nipype={{ context.version }} traits scipy scikit-learn scikit-image jupyter nb_conda_kernels h5py seaborn numpy
         pip_install: osfclient pybids
         version: latest
 

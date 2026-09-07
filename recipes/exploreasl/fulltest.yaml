@@ -1,0 +1,6 @@
+name: exploreasl
+version: 1.11.0
+tests:
+- name: ExploreASL launcher and runtime
+  command: command -v ExploreASL && test -x /opt/xasl/xASL_latest/run_xASL_latest.sh
+  expected_output_contains: ExploreASL

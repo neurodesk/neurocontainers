@@ -12,6 +12,14 @@ structured_readme:
     bidsme
   documentation: https://github.com/CyclotronResearchCentre/bidsme/blob/dev/doc/cli-interface.md
   citation: ''
+auto_update:
+  method: github_release
+  repo: CyclotronResearchCentre/bidsme
+  tag_variable: upstream_tag
+
+variables:
+  upstream_tag: '1.9.3'
+
 build:
   kind: neurodocker
   base-image: python:3.11-slim-bookworm
@@ -26,7 +34,7 @@ build:
         - tk
     - workdir: /opt
     - run:
-        - git clone --depth 1 --branch {{ context.version }} https://github.com/CyclotronResearchCentre/bidsme.git
+        - git clone --depth 1 --branch {{ context.upstream_tag }} https://github.com/CyclotronResearchCentre/bidsme.git
         - cd /opt/bidsme
         - python -m pip install --no-cache-dir .[all]
     - test:

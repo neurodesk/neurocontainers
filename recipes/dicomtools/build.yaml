@@ -1,3 +1,6 @@
+variables:
+  dcm2niix_version: 1.0.20260724
+
 name: dicomtools
 version: 1.0.0
 
@@ -10,10 +13,20 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: dcm2niix
+    method: github_release
+    repo: rordenlab/dcm2niix
+    target:
+      variable: dcm2niix_version
+
 build:
   kind: neurodocker
 
-  base-image: ubuntu:24.10
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
@@ -30,7 +43,7 @@ build:
     - template:
         name: dcm2niix
         method: source
-        version: latest
+        version: "{{ context.dcm2niix_version }}"
 
 deploy:
   bins:

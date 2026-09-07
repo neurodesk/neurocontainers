@@ -436,3 +436,4 @@ cleanup:
     echo ""
     echo "Output directories created:"
     ls -d test_output/mfcsc/output_* 2>/dev/null || echo "No output directories found"
+upstream_version: '1.1'

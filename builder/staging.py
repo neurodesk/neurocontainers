@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import shutil
 
-from .cache import HttpCache, get_guest_filename, link_or_copy, sha256_text
+from .cache import HttpCache, get_guest_filename, link_or_copy, normalize_sha256, sha256_text
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class DeclaredFile:
     executable: bool = False
     guest_filename: str | None = None
     retry: int | None = None
+    sha256: str | None = None
 
 
 @dataclass
@@ -97,6 +98,7 @@ def materialize_plan(
                 download=download,
                 file_name=file.name,
                 retry=file.retry,
+                sha256=file.sha256,
             )
             if not source.exists():
                 target = cache_dir / preferred
@@ -149,6 +151,11 @@ def declared_file_from_mapping(name: str, mapping: dict[str, object]) -> Declare
     contents = mapping.get("contents")
     executable = bool(mapping.get("executable", False))
     retry = mapping.get("retry")
+    sha256 = mapping.get("sha256")
+    if sha256 is not None:
+        if url is None or filename is not None or contents is not None:
+            raise ValueError(f"declared file {name!r}: sha256 requires a URL source")
+        sha256 = normalize_sha256(sha256)
     url_str = str(url) if url is not None else None
     guest_filename = get_guest_filename(name, url_str)
     return DeclaredFile(
@@ -159,4 +166,5 @@ def declared_file_from_mapping(name: str, mapping: dict[str, object]) -> Declare
         executable=executable,
         guest_filename=guest_filename,
         retry=int(retry) if retry is not None else None,
+        sha256=sha256,
     )

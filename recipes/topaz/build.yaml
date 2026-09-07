@@ -5,6 +5,10 @@ architectures:
   - x86_64
   - aarch64
 
+auto_update:
+  method: pypi
+  package: topaz-em
+
 build:
   kind: neurodocker
 
@@ -35,7 +39,7 @@ build:
     - run:
         - |
           bash -lc "source activate topaz
-          python -m pip install --no-cache-dir topaz-em==0.2.5
+          python -m pip install --no-cache-dir topaz-em=={{ context.version }}
           "
 
 deploy:

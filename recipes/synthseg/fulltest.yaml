@@ -189,3 +189,4 @@ tests:
       print(\"segmentation ok, distinct labels:\", labels.size)
       "'
     expected_output_contains: "segmentation ok"
+upstream_version: 8.2.0

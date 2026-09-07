@@ -11,10 +11,8 @@ binaries:
       exclude_paths: ''
       fslpython_debug: 'false'
       fslpython_accept_tos: 'false'
+      fslinstaller_url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/fslinstaller.py
   urls:
-    6.0.7.22: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/fslinstaller.py
-    6.0.7.18: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/fslinstaller.py
-    6.0.7.16: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/fslinstaller.py
     6.0.5.1: https://fsl.fmrib.ox.ac.uk/fsldownloads/fsl-6.0.5.1-centos7_64.tar.gz
     6.0.4: https://fsl.fmrib.ox.ac.uk/fsldownloads/fsl-6.0.4-centos6_64.tar.gz
     5.0.10: https://fsl.fmrib.ox.ac.uk/fsldownloads/fsl-5.0.10-centos6_64.tar.gz
@@ -83,7 +81,7 @@ binaries:
       {{ self.install_dependencies() }}
       {% if self.version.split('.') | map('int') | list >= [6, 0, 6] %}
       echo "Installing FSL ..."
-      curl -fsSL {{ self.urls[self.version] }} | python3 - -d {{ self.install_path }} -V {{ self.version }}
+      curl -fsSL "{{ self.fslinstaller_url }}" | python3 - -d {{ self.install_path }} -V {{ self.version }}
       {% else %}
       echo "Downloading FSL ..."
       mkdir -p {{ self.install_path }}

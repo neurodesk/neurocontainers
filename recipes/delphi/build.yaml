@@ -1,8 +1,22 @@
+variables:
+  upstream_commit: 6511b37b3165968387687fe980e407e7ecda68c0
+
 name: delphi
 version: 0.0.2
 
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: yexincheng/delphi
+    ref: HEAD
+    target:
+      variable: upstream_commit
+      fulltest_variable: upstream_commit
 
 build:
   kind: neurodocker
@@ -59,7 +73,7 @@ build:
         - rustup default nightly
 
     - run:
-        - git clone https://github.com/yexincheng/delphi.git /opt/encryption
+        - git clone https://github.com/yexincheng/delphi.git /opt/encryption && git -C /opt/encryption checkout {{ context.upstream_commit }}
 
     - workdir: /opt/encryption
 

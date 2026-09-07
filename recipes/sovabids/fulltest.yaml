@@ -29,7 +29,7 @@ tests:
   - name: Check sovabids version
     description: Verify sovabids is installed and check version
     command: python -c "import sovabids; print(sovabids.__version__)"
-    expected_output_contains: "v0.3.1-alpha"
+    expected_output_contains: "${sovabids_tag}"
 
   - name: Check sovabids module import
     description: Verify sovabids module can be imported
@@ -689,3 +689,5 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
+
+sovabids_tag: v0.3.1-alpha

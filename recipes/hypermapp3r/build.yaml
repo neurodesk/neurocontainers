@@ -11,7 +11,8 @@ architectures:
 variables:
   # Upstream has no tags or releases; pin the commit so rebuilds are
   # reproducible. Update this together with the recipe version.
-  hypermapper_commit: 00c0b7693c2be27b9aaf6ff43f8547beee313b96
+  keras_contrib_commit: "3fc5ef709e061416f4bc8a92ca3750c824b5d2b0"
+  hypermapper_commit: "00c0b7693c2be27b9aaf6ff43f8547beee313b96"
   hypermapper_dir: /opt/hypermapp3r
   # The authors distribute the trained models through a Google Drive folder
   # (docs/install.md). Their own Dockerfile fetches individual file IDs with a
@@ -27,6 +28,22 @@ variables:
   # it caps Python at 3.7. CPU wheels only -- the GPU build of TF 1.15 needs
   # CUDA 10.0, which no current NVIDIA base image ships.
   python_version: "3.7"
+
+auto_update:
+  method: sources
+  sources:
+  - id: hypermapper
+    method: github_commit
+    repo: AICONSlab/HyperMapp3r
+    ref: HEAD
+    target:
+      variable: hypermapper_commit
+  - id: keras-contrib
+    method: github_commit
+    repo: keras-team/keras-contrib
+    ref: HEAD
+    target:
+      variable: keras_contrib_commit
 
 build:
   kind: neurodocker
@@ -172,7 +189,7 @@ build:
     # pinned commit (see requirements.txt).
     - run:
         - python -m pip install --no-cache-dir --no-deps
-          "git+https://github.com/keras-team/keras-contrib.git@3fc5ef709e061416f4bc8a92ca3750c824b5d2b0"
+          "git+https://github.com/keras-team/keras-contrib.git@{{ context.keras_contrib_commit }}"
 
     # PyQt5 is NOT optional despite only the GUI using it: cli.py does
     # "from hypermapper import gui" at import time, so without PyQt5 every

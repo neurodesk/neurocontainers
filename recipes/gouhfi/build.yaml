@@ -1,3 +1,6 @@
+variables:
+  upstream_commit: 1eb71b642bcd3b6c92dbf65e4b69c8cf52847205
+
 name: gouhfi
 version: 0.0.1
 architectures:
@@ -21,6 +24,16 @@ structured_readme:
       year={2025},
       doi={10.48550/arXiv.2505.11445}
     }
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: mafortin/GOUHFI
+    ref: HEAD
+    target:
+      variable: upstream_commit
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -43,7 +56,7 @@ build:
         - bash -c "source activate base && python -m pip install --no-cache-dir torch torchvision torchaudio"
     - run:
         - cd /opt
-        - git clone https://github.com/mafortin/GOUHFI.git
+        - git clone https://github.com/mafortin/GOUHFI.git && git -C /opt/GOUHFI checkout {{ context.upstream_commit }}
         - cd GOUHFI
         - pip install antspyx==0.4.2 antspynet==0.3.1
         - pip install -e .

@@ -4,6 +4,10 @@ epoch: 1
 architectures:
   - x86_64
   - aarch64
+auto_update:
+  method: pypi
+  package: fitlins
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

@@ -8,6 +8,21 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build?format=json&prefix=spm12
+    version_regex: spm12r(?P<spm_revision>\d+)_physioR(?P<version>\d{4}[ab])_standalone_MCRv99_MatlabR(?P<runtime>2020b)_Linux\.tar\.gz$
+    download_base: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/
+    version_scheme: year_letter
+    target:
+      file: spm12r8224_physioR2021a_standalone_MCRv99_MatlabR2020b_Linux_tar_gz
+      variables:
+        physio_release: version
+        spm_revision: spm_revision
+        matlab_version: runtime
 build:
   kind: neurodocker
 
@@ -23,19 +38,21 @@ build:
         - dbus-x11
 
     - environment:
-        MATLAB_VERSION: R2020b
-        MCR_VERSION: v99
+        MATLAB_VERSION: "R{{ context.matlab_version }}"
+        MCR_VERSION: "{{ context.matlab_runtime_subdir }}"
 
     - template:
         name: matlabmcr
-        install_path: /opt/mcr
-        version: 2020b
+        install_path: "/opt/mcr"
+        version: "{{ context.matlab_version }}"
         ncurses_package: libncurses5
 
+    - run:
+      - ln -s /opt/mcr/{{ context.matlab_runtime_subdir }} /opt/matlab-runtime
     - environment:
         MCR_INHIBIT_CTF_LOCK: "1"
         SPM_HTML_BROWSER: "0"
-        SPM_REVISION: r2021a
+        SPM_REVISION: "r{{ context.spm_revision }}"
         SPM_VERSION: "12"
 
     - workdir: /opt/spm12/
@@ -44,7 +61,7 @@ build:
         - tar -xz -C /opt/spm12/ --strip-components 1 -f {{ get_file("spm12r8224_physioR2021a_standalone_MCRv99_MatlabR2020b_Linux_tar_gz") }}
 
     - environment:
-        LD_LIBRARY_PATH: /opt/mcr/v99/runtime/glnxa64:/opt/mcr/v99/bin/glnxa64:/opt/mcr/v99/sys/os/glnxa64:/opt/mcr/v99/sys/opengl/lib/glnxa64:/opt/mcr/v99/extern/bin/glnxa64
+        LD_LIBRARY_PATH: /opt/matlab-runtime/runtime/glnxa64:/opt/matlab-runtime/bin/glnxa64:/opt/matlab-runtime/sys/os/glnxa64:/opt/matlab-runtime/sys/opengl/lib/glnxa64:/opt/matlab-runtime/extern/bin/glnxa64
 
     - run:
         - /opt/spm12/spm12 function exit
@@ -52,7 +69,7 @@ build:
 
     - environment:
         PATH: /opt/spm12:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-        XAPPLRESDIR: /opt/mcr/v99/x11/app-defaults
+        XAPPLRESDIR: /opt/matlab-runtime/x11/app-defaults
 
 deploy:
   bins:
@@ -66,11 +83,11 @@ readme: |
   Example:
   - To run PhysIO batch file (`.m` or `.mat`) directly
     ```
-    run_spm12.sh /opt/mcr/v99/ batch batch_spm_job.mat
+    run_spm12.sh /opt/matlab-runtime/ batch batch_spm_job.mat
     ```
   - To call SPM for fMRI GUI
     ```
-    run_spm12.sh /opt/mcr/v99/ fmri
+    run_spm12.sh /opt/matlab-runtime/ fmri
     ```
 
   The PhysIO Toolbox implements ideas for robust physiological noise modeling in fMRI, outlined in this paper:
@@ -101,8 +118,17 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABBCAIAAADuVzUsAAAACXBI
 
 gui_apps:
   - name: "physioGUI"
-    exec: "bash run_spm12.sh /opt/mcr/v99/ fmri"
+    exec: "bash run_spm12.sh /opt/matlab-runtime/ fmri"
 
 files:
   - name: spm12r8224_physioR2021a_standalone_MCRv99_MatlabR2020b_Linux_tar_gz
-    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/spm12r8224_physioR2021a_standalone_MCRv99_MatlabR2020b_Linux.tar.gz
+    url: "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/spm12r8224_physioR2021a_standalone_MCRv99_MatlabR2020b_Linux.tar.gz"
+    sha256: 1297969f09c1ecc5d22a5f45d5aeba18ee1c4d8877531ab10fdee41b81994737
+variables:
+  upstream_version: r2021a
+  matlab_version: 2020b
+  matlab_runtime_subdir: '{{ {''2018a'': ''v94'', ''2019b'': ''v97'', ''2020a'': ''v98'', ''2020b'': ''v99'', ''2021a'': ''v910'',
+    ''2021b'': ''v911'', ''2022a'': ''v912'', ''2022b'': ''v913'', ''2023a'': ''v914''}.get(context.matlab_version, ''R'' +
+    context.matlab_version) }}'
+  physio_release: 2021a
+  spm_revision: '8224'

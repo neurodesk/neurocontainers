@@ -55,6 +55,10 @@ readme: |-
 
   ----------------------------------
 
+auto_update:
+  method: pypi
+  package: cbig_network_correspondence
+
 build:
   kind: neurodocker
 
@@ -115,7 +119,7 @@ build:
     - install: libx11-6 libgl1 libxext6 libsm6 libxrender1 git
 
     - run:
-        - python3 -m pip install --no-cache-dir cbig_network_correspondence
+        - python3 -m pip install --no-cache-dir cbig_network_correspondence=={{ context.version }}
 
     - deploy:
         bins:

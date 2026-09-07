@@ -26,7 +26,7 @@ tests:
     set -eu
 
     set +e
-    output="$(timeout 180 bash /opt/ss_noddi/run_ss_noddi.sh "${MCRROOT:-/usr/local/MATLAB/v99}" 2>&1)"
+    output="$(timeout 180 bash /opt/ss_noddi/run_ss_noddi.sh "${MCRROOT:-/opt/matlab-runtime}" 2>&1)"
     status="$?"
     set -e
 
@@ -40,3 +40,5 @@ tests:
         exit 1
     fi
     echo "NODDI MATLAB Runtime launcher reached application code"
+upstream_version: '1.0'
+matlab_version: 2020b

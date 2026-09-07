@@ -4,21 +4,25 @@ architectures:
   - x86_64
 
 variables:
-  # When bumping this commit, re-check the label contract in openmsk.py:
-  # steps/generate_meshes.py and steps/t2_mapping.py must still hard-code
-  # canonical labels 1-7 (+ subregions 11-15) and leave canonical 8/9 unused,
-  # because openmsk.py parks the menisci there during post-processing.
-  kneepipeline_commit: "61144f23d9001950a70f77cb70d628e1883da86d"
-  dosma_sagittal_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/sagittal_best_model.h5"
-  dosma_coronal_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/coronal_best_model.h5"
-  dosma_axial_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/axial_best_model.h5"
-  nnunet_fullres_dataset_url: "https://huggingface.co/aagatti/nnunet_knee/resolve/main/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/dataset.json"
-  nnunet_fullres_model_config_url: "https://huggingface.co/aagatti/nnunet_knee/resolve/main/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/model_config.json"
-  nnunet_fullres_plans_url: "https://huggingface.co/aagatti/nnunet_knee/resolve/main/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/plans.json"
-  nnunet_fullres_checkpoint_best_url: "https://huggingface.co/aagatti/nnunet_knee/resolve/main/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/fold_1/checkpoint_best.pth"
-  pymskt_commit: "88b947e3075d270f345bf7f8b545ead7daefd125"
-  pymskt_right_knee_reference_url: "https://raw.githubusercontent.com/gattia/pymskt/{{ context.pymskt_commit }}/data/right_knee_example.nrrd"
-  pymskt_right_knee_reference_sha256: "90af3273cf9323f2e5212f917f60b60725dde90838569c3607990d16309fc2aa"
+  dosma_models_commit: ff5e0b5d1bf8b850ee6258210e05418889d7133f
+  nnunet_models_commit: 6ccfbd6c5756c8f203f8f0170305cfb0d7bb3221
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  kneepipeline_commit: 61144f23d9001950a70f77cb70d628e1883da86d
+  dosma_sagittal_model_url: https://huggingface.co/aagatti/dosma_bones/resolve/{{ context.dosma_models_commit }}/sagittal_best_model.h5
+  dosma_coronal_model_url: https://huggingface.co/aagatti/dosma_bones/resolve/{{ context.dosma_models_commit }}/coronal_best_model.h5
+  dosma_axial_model_url: https://huggingface.co/aagatti/dosma_bones/resolve/{{ context.dosma_models_commit }}/axial_best_model.h5
+  nnunet_fullres_dataset_url: https://huggingface.co/aagatti/nnunet_knee/resolve/{{ context.nnunet_models_commit }}/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/dataset.json
+  nnunet_fullres_model_config_url: https://huggingface.co/aagatti/nnunet_knee/resolve/{{ context.nnunet_models_commit }}/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/model_config.json
+  nnunet_fullres_plans_url: https://huggingface.co/aagatti/nnunet_knee/resolve/{{ context.nnunet_models_commit }}/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/plans.json
+  nnunet_fullres_checkpoint_best_url: https://huggingface.co/aagatti/nnunet_knee/resolve/{{ context.nnunet_models_commit }}/models/Dataset500_KneeMRI/nnUNetTrainer__nnUNetResEncUNetMPlans__3d_fullres/fold_1/checkpoint_best.pth
+  pymskt_commit: 88b947e3075d270f345bf7f8b545ead7daefd125
+  pymskt_right_knee_reference_url: https://raw.githubusercontent.com/gattia/pymskt/{{ context.pymskt_commit }}/data/right_knee_example.nrrd
+  pymskt_right_knee_reference_sha256: 90af3273cf9323f2e5212f917f60b60725dde90838569c3607990d16309fc2aa
+  nsm_commit: b0b5d3fe3ca48c0568bcf025e50fb4fcf835a27b
+  dosma_commit: e4ea96a991a95ac0178a6a2073b46e07aa5c3ee0
 
 files:
   - name: openmsk.py
@@ -76,6 +80,66 @@ files:
           "model_name": "Dataset500_KneeMRI"
         }
       }
+
+auto_update:
+  method: sources
+  local:
+  - macros/openrecon
+  sources:
+  - id: kneepipeline_commit
+    method: github_commit
+    repo: gattia/KneePipeline
+    ref: HEAD
+    target:
+      variable: kneepipeline_commit
+  - id: nsm_commit
+    method: github_commit
+    repo: gattia/nsm
+    ref: HEAD
+    target:
+      variable: nsm_commit
+  - id: dosma_commit
+    method: github_commit
+    repo: gattia/DOSMA
+    ref: bone_seg
+    target:
+      variable: dosma_commit
+  - id: dosma_models
+    method: git_commit
+    url: https://huggingface.co/aagatti/dosma_bones
+    ref: refs/heads/main
+    target:
+      variable: dosma_models_commit
+  - id: nnunet_models
+    method: git_commit
+    url: https://huggingface.co/aagatti/nnunet_knee
+    ref: refs/heads/main
+    target:
+      variable: nnunet_models_commit
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
 
 build:
   kind: neurodocker
@@ -138,14 +202,16 @@ build:
         - pip install --no-cache-dir huggingface-hub==0.24.7
         # NSM: install against the baseline torch and the minimal pyMSKT set below.
         - git clone https://github.com/gattia/nsm /opt/nsm
+        - git -C /opt/nsm checkout {{ context.nsm_commit }}
         - cd /opt/nsm
         - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio|mskt)([[:space:]]*[<>=!~].*)?[[:space:]]*$/d' requirements.txt
         - pip install --no-cache-dir -r requirements.txt
         - pip install --no-cache-dir --no-deps .
         # DOSMA bone_seg branch (qDESS bone/cartilage segmentation).
         - git clone https://github.com/gattia/DOSMA /opt/DOSMA
+        - git -C /opt/DOSMA checkout {{ context.dosma_commit }}
         - cd /opt/DOSMA
-        - git checkout bone_seg
+        - git checkout {{ context.dosma_commit }}
         - pip install --no-cache-dir '.[ai]'
         # Install only the pyMSKT dependencies used by KneePipeline's subregion,
         # mesh, and thickness paths. Omit ITK widgets, Jupyter/Notebook,

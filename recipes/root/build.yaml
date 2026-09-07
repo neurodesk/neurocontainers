@@ -8,10 +8,15 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: dockerhub
+  repo: rootproject/root
+  version_regex: ^(?P<version>\d+(?:\.\d+)+)-centos7$
+
 build:
   kind: neurodocker
 
-  base-image: rootproject/root:6.22.02-centos7
+  base-image: rootproject/root:{{ context.version }}-centos7
   pkg-manager: yum
 
   directives: []

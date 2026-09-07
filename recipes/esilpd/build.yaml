@@ -1,3 +1,7 @@
+variables:
+  vscode_version: "1.136.1"
+  mne_bids_pipeline_commit: 91c2e0677f4a015a35dad48c2faa5e47633ae497
+
 name: esilpd
 version: 0.0.1
 
@@ -7,6 +11,23 @@ copyright:
 
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: vscode
+    method: webpage
+    target:
+      variable: vscode_version
+    url: https://update.code.visualstudio.com/api/update/linux-x64/stable/latest
+    version_regex: '"productVersion":\s*"(?P<version>\d+(?:\.\d+)+)"'
+  - id: mne-bids-pipeline
+    method: github_commit
+    repo: mne-tools/mne-bids-pipeline
+    ref: main
+    target:
+      variable: mne_bids_pipeline_commit
 
 build:
   kind: neurodocker
@@ -111,7 +132,7 @@ build:
     - workdir: /opt/
 
     - run:
-        - tar xz -f {{ get_file("main_tar_gz") }}
+        - mkdir -p mne-bids-pipeline-main && tar xz --strip-components=1 -C mne-bids-pipeline-main -f {{ get_file("main_tar_gz") }}
         - chmod a+rwx /opt/mne-bids-pipeline-main -R
 
     - environment:
@@ -164,7 +185,7 @@ readme: |
 
 files:
   - name: main_tar_gz
-    url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz
+    url: https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.mne_bids_pipeline_commit }}.tar.gz
   - name: cuda_keyring_1_0_1_all_deb
     url: https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/cuda-keyring_1.0-1_all.deb
 
@@ -172,7 +193,7 @@ files:
     url: https://developer.download.nvidia.com/compute/redist/cudnn/v8.3.0/cudnn-11.5-linux-x64-v8.3.0.98.tgz
 
   - name: download
-    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+    url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-x64/stable
   - name: code
     contents: |-
       #!/usr/bin/env sh

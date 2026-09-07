@@ -8,6 +8,10 @@ on:
       - 'recipes/**/OpenReconLabel.json'
       - 'recipes/OpenReconSchema_1.1.0.json'
       - 'builder/validation.py'
+      - 'builder/update_sources.py'
+      - 'builder/update_assets.py'
+      - 'builder/audit_updates.py'
+      - '.github/workflows/validate-recipes.yml'
       - 'workflows/validate_openrecon_labels.py'
       - 'workflows/validate_all.sh'
 
@@ -33,7 +37,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install 'attrs>=23.0.0' 'pyyaml>=6.0.2' jinja2 jsonschema==4.23.0
+          python -m pip install 'attrs>=23.0.0' 'pyyaml>=6.0.2' jinja2 jsonschema==4.23.0 packaging requests
+
+      - name: Require an update policy for every recipe
+        run: python -m builder.audit_updates
 
       - name: Validate OpenRecon labels
         run: python workflows/validate_openrecon_labels.py

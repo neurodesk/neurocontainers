@@ -7,9 +7,23 @@ structured_readme:
   example: nftsim -i /app/configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
   documentation: https://github.com/BrainDynamicsUSYD/nftsim
   citation: ''
+variables:
+  base_image_tag: 1.0.2
+
+auto_update:
+  method: sources
+  sources:
+    - id: base_image_tag
+      method: oci
+      url: https://ghcr.io/v2/farwa-abbas/nftsim/tags/list
+      version_regex: '(?P<version>\d+\.\d+\.\d+)'
+      target:
+        variable: base_image_tag
+        value: tag
+
 build:
   kind: neurodocker
-  base-image: ghcr.io/farwa-abbas/nftsim:1.0.2
+  base-image: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
   pkg-manager: apt
   directives:
     - environment:

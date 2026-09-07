@@ -17,11 +17,52 @@ files:
 readme_url: https://raw.githubusercontent.com/astewartau/prostate/refs/heads/main/README.md
 
 variables:
+    openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+    openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+    openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+    openrecon_ismrmrd_version: "1.14.2"
+    upstream_commit: "9e55ef71c2124ef322fdb942af2627432bebd266"
     conda_version: "23.11.0-2"
     conda_download_url:
         try:
             - value: "https://repo.anaconda.com/miniconda/Miniconda3-py39_{{ context.conda_version }}-Linux-x86_64.sh"
               condition: arch=="x86_64"
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: thomshaw92/BodyLocaliser
+    ref: HEAD
+    target:
+      variable: upstream_commit
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+  local:
+  - macros/openrecon
 
 build:
     kind: neurodocker
@@ -140,7 +181,7 @@ build:
         - copy: afni_processing.sh /opt/code/afni_processing.sh
         - run:
               - mkdir -p /opt/code/stim_times
-              - git clone --branch 1.0.0 https://github.com/thomshaw92/BodyLocaliser.git /opt/code/BodyLocaliser
+              - git clone https://github.com/thomshaw92/BodyLocaliser.git /opt/code/BodyLocaliser && git -C /opt/code/BodyLocaliser checkout {{ context.upstream_commit }}
               - cp /opt/code/BodyLocaliser/sub-1_TBS/sub-1_run-1*.1D /opt/code/stim_times/
 
         # install small pip packages

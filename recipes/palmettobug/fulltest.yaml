@@ -13,7 +13,7 @@
 #   - And many more scientific Python packages
 
 name: palmettobug
-version: 0.0.3
+version: "0.0.3.post1"
 
 test_data:
   output_dir: test_output
@@ -25,13 +25,22 @@ setup:
     mkdir -p test_output
 
 tests:
+  - name: PalmettoBUG software version and launcher
+    description: Verify the selected upstream distribution exposes its GUI command.
+    command: >-
+      python3 -c 'import importlib.metadata as m; import palmettobug;
+      d = m.distribution("palmettobug");
+      assert d.version == "${upstream_version}";
+      assert any(e.name == "palmettobug" for e in d.entry_points)'
+    expected_exit_code: 0
+
   # ==========================================================================
   # BASIC ENVIRONMENT CHECKS
   # ==========================================================================
   - name: Python version check
-    description: Verify Python 3.9 is available
+    description: Verify Python 3.11 is available
     command: python3 --version
-    expected_output_contains: "Python 3.9"
+    expected_output_contains: "Python 3.11"
     expected_exit_code: 0
 
   - name: Python executable path
@@ -701,7 +710,10 @@ tests:
 
   - name: Palmettobug package files
     description: List palmettobug package contents
-    command: "bash -lc 'ls /opt/miniconda-latest/lib/python3.9/site-packages/palmettobug/'"
+    command: >
+      python3 -c 'import importlib.util; from pathlib import Path;
+      p = Path(importlib.util.find_spec("palmettobug").origin).parent;
+      assert (p / "Executable.py").is_file(); print("Executable.py")'
     expected_output_contains: "Executable.py"
     expected_exit_code: 0
 
@@ -711,3 +723,5 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
+
+upstream_version: 0.2.11

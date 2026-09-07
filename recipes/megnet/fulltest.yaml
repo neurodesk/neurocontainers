@@ -1,0 +1,11 @@
+name: megnet
+version: 1.0.1
+tests:
+- name: source revision
+  command: git -C /MEGNET_pipeline rev-parse HEAD
+  expected_exit_code: 0
+  expected_output_contains: ${upstream_commit}
+- name: MEG analysis imports
+  command: python -c 'import mne, mne_bids, mne_connectivity'
+  expected_exit_code: 0
+upstream_commit: 113d1054b8700b362a86b8e495045c2b78a46bb1

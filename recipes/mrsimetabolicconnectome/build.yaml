@@ -1,3 +1,6 @@
+variables:
+  upstream_commit: 20b82a12a75e690f559c91b948d839d2ebd2d23b
+
 name: mrsimetabolicconnectome
 version: 1.0.0
 architectures:
@@ -12,6 +15,16 @@ structured_readme:
   citation: |-
     Constructing the Human Brain Metabolic Connectome Using MR Spectroscopic Imaging: Insights into Biochemical Organization, Cytoarchitectonic Similarity and Gene Co-expression Networks Federico Lucchetti, Edgar Céléreau, Pascal Steullet, Yasser Alemán-Gómez, Patric Hagmann, Antoine Klauser, Paul Klauser
     bioRxiv 2025.03.10.642332; doi: https://doi.org/10.1101/2025.03.10.642332
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: MRSI-Psychosis-UP/MRSI-Metabolic-Connectome
+    ref: HEAD
+    target:
+      variable: upstream_commit
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -22,7 +35,7 @@ build:
         - git
     - run:
         - cd /opt
-        - git clone https://github.com/MRSI-Psychosis-UP/MRSI-Metabolic-Connectome.git
+        - git clone https://github.com/MRSI-Psychosis-UP/MRSI-Metabolic-Connectome.git && git -C MRSI-Metabolic-Connectome checkout {{ context.upstream_commit }}
     - run:
         - cd /opt/MRSI-Metabolic-Connectome
         - sed -i -e 's/^  - python$/  - python=3.10/' -e 's/^  - numpy=2.2.6$/  - numpy=1.26.4/' environment.yaml

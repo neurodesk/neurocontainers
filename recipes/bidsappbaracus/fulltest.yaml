@@ -47,7 +47,7 @@ tests:
   - name: BARACUS version check
     description: Verify BARACUS brain age prediction tool version
     command: run_brain_age_bids.py --version
-    expected_output_contains: "BARACUS version v1.1.4"
+    expected_output_contains: "BARACUS version v${version}"
 
   - name: BARACUS BIDS mode help
     description: Verify run_brain_age_bids.py help and arguments

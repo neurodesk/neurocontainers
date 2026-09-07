@@ -1,0 +1,12 @@
+name: lstai
+version: 1.2.0
+tests:
+- name: LST launcher
+  command: command -v lst
+  expected_exit_code: 0
+  expected_output_contains: lst
+- name: source revision
+  command: git -C /opt/lstai rev-parse HEAD
+  expected_exit_code: 0
+  expected_output_contains: ${upstream_commit}
+upstream_commit: 69e1ad0c57fd2b16e04cabae038a16749965e069

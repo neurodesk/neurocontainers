@@ -1,8 +1,21 @@
+variables:
+  upstream_commit: ec5a62cf2ffb347c752293e6234b7c89cebe711d
+
 name: wftfi
 version: 1.0.0
 
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  sources:
+  - id: wftfi
+    method: git_commit
+    url: https://gitlab.com/thomshaw92/wftfi.git
+    ref: HEAD
+    target:
+      variable: upstream_commit
 
 build:
   kind: neurodocker
@@ -23,7 +36,7 @@ build:
     - workdir: /opt
 
     - run:
-        - git clone https://gitlab.com/thomshaw92/wftfi.git
+        - git clone https://gitlab.com/thomshaw92/wftfi.git && git -C wftfi checkout {{ context.upstream_commit }}
 
     - copy: environment.yml /opt/wftfi/
 

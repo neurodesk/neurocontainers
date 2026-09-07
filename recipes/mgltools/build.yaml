@@ -5,6 +5,18 @@ version: 1.5.7
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://ccsb.scripps.edu/mgltools/downloads/
+    version_regex: "mgltools_Linux-x86_64_(?P<version>\\d+(?:\\.\\d+)+)\\.tar\\.gz(?: Patch \\d+)? \\(Linux 64 tarball installer [^)]+\\)"
+    download_base: "https://ccsb.scripps.edu/"
+    target:
+      file: '491'
+      variables:
+        upstream_version: version
 build:
   kind: neurodocker
 
@@ -25,7 +37,7 @@ build:
 
     - run:
         - tar -zx -f {{ get_file("491") }}
-        - cd mgltools_x86_64Linux2_{{ context.version }} && ./install.sh -d /opt/mgltools -c 1
+        - cd mgltools_x86_64Linux2_{{ context.upstream_version }} && ./install.sh -d /opt/mgltools -c 1
 
 deploy:
   path:
@@ -57,5 +69,8 @@ readme: |
   ----------------------------------
 
 files:
-  - name: "491"
-    url: https://ccsb.scripps.edu/mgltools/download/491
+  - name: '491'
+    url: "https://ccsb.scripps.edu/download/491/"
+    sha256: b6152c047af739d5ca150f2b300fdbbef664758246306fde0b26df0c03f88c3b
+variables:
+  upstream_version: 1.5.7

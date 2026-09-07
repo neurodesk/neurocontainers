@@ -23,7 +23,7 @@ tests:
 
       print(version("dafne"))
       PY
-    expected_output_contains: "1.8a4"
+    expected_output_contains: "${version}"
 
   - name: DAFNE Python imports
     description: Verify DAFNE and its main runtime dependencies import together

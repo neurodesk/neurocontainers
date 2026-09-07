@@ -4,86 +4,199 @@ architectures:
     - x86_64
 
 variables:
-    musclemap_model_version: "{{ context.version.split('.')[:2] | join('.') }}"
-    musclemap_regional_model_version: "0.0"
-    musclemap_software_version: "2.0"
-    # The requested model support landed after the upstream software tag. Pin
-    # the exact audited commit instead of following the mutable main branch.
-    musclemap_source_revision: "6e1e1eb6732337c13cab53bd5cc800c69024774f"
-    musclemap_archive_url: "https://github.com/MuscleMap/MuscleMap/archive/{{ context.musclemap_source_revision }}.zip"
-    wholebody_model_record: "21929873"
-    abdomen_model_record: "19631081"
-    forearm_model_record: "19633115"
-    leg_model_record: "19633057"
-    pelvis_model_record: "19632902"
-    thigh_model_record: "19633000"
-    abdomen_template_record: "20043148"
-    spinalcordtoolbox_version: "6.5"
-    spinalcordtoolbox_archive_url: "https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{ context.spinalcordtoolbox_version }}.tar.gz"
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  musclemap_model_version: '1.4'
+  musclemap_regional_model_version: '0.0'
+  musclemap_software_version: '2.0'
+  musclemap_source_revision: 6e1e1eb6732337c13cab53bd5cc800c69024774f
+  musclemap_archive_url: https://github.com/MuscleMap/MuscleMap/archive/{{ context.musclemap_source_revision }}.zip
+  wholebody_model_record: '21929873'
+  abdomen_model_record: '19631081'
+  forearm_model_record: '19633115'
+  leg_model_record: '19633057'
+  pelvis_model_record: '19632902'
+  thigh_model_record: '19633000'
+  abdomen_template_record: '20043148'
+  spinalcordtoolbox_version: '6.5'
+  spinalcordtoolbox_archive_url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{ context.spinalcordtoolbox_version
+    }}.tar.gz
+  abdomen_model_version: '0.0'
+  forearm_model_version: '0.0'
+  leg_model_version: '0.0'
+  pelvis_model_version: '0.0'
+  thigh_model_version: '0.0'
 
 files:
-    - name: musclemap.py
-      filename: musclemap.py
-    - name: nifti2mrd.py
-      filename: nifti2mrd.py
-    - name: enhanceddicom2mrd.py
-      filename: enhanceddicom2mrd.py
-    - name: OpenReconLabel.json
-      filename: OpenReconLabel.json
-    - name: OpenReconREADME.md
-      filename: OpenReconREADME.md
-    - name: musclemap-container-defaults.patch
-      filename: musclemap-container-defaults.patch
-    - name: verify_musclemap_install.py
-      filename: verify_musclemap_install.py
-    - name: musclemap_zip
-      url: "{{ context.musclemap_archive_url }}"
-    - name: spinalcordtoolbox_tar
-      url: "{{ context.spinalcordtoolbox_archive_url }}"
-    - name: wholebody_model_pth
-      url: "https://zenodo.org/api/records/{{ context.wholebody_model_record }}/files/contrast_agnostic_wholebody_model.pth/content"
-    - name: wholebody_model_json
-      url: "https://zenodo.org/api/records/{{ context.wholebody_model_record }}/files/contrast_agnostic_wholebody_model.json/content"
-    - name: abdomen_model_pth
-      url: "https://zenodo.org/api/records/{{ context.abdomen_model_record }}/files/contrast_agnostic_abdomen_model.pth/content"
-    - name: abdomen_model_json
-      url: "https://zenodo.org/api/records/{{ context.abdomen_model_record }}/files/contrast_agnostic_abdomen_model.json/content"
-    - name: forearm_model_pth
-      url: "https://zenodo.org/api/records/{{ context.forearm_model_record }}/files/contrast_agnostic_forearm_model.pth/content"
-    - name: forearm_model_json
-      url: "https://zenodo.org/api/records/{{ context.forearm_model_record }}/files/contrast_agnostic_forearm_model.json/content"
-    - name: leg_model_pth
-      url: "https://zenodo.org/api/records/{{ context.leg_model_record }}/files/contrast_agnostic_leg_model.pth/content"
-    - name: leg_model_json
-      url: "https://zenodo.org/api/records/{{ context.leg_model_record }}/files/contrast_agnostic_leg_model.json/content"
-    - name: pelvis_model_pth
-      url: "https://zenodo.org/api/records/{{ context.pelvis_model_record }}/files/contrast_agnostic_pelvis_model.pth/content"
-    - name: pelvis_model_json
-      url: "https://zenodo.org/api/records/{{ context.pelvis_model_record }}/files/contrast_agnostic_pelvis_model.json/content"
-    - name: thigh_model_pth
-      url: "https://zenodo.org/api/records/{{ context.thigh_model_record }}/files/contrast_agnostic_thigh_model.pth/content"
-    - name: thigh_model_json
-      url: "https://zenodo.org/api/records/{{ context.thigh_model_record }}/files/contrast_agnostic_thigh_model.json/content"
-    - name: abdomen_template
-      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template.nii.gz/content"
-    - name: abdomen_template_dseg
-      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg.nii.gz/content"
-    - name: abdomen_template_label_1
-      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-1.nii.gz/content"
-    - name: abdomen_template_label_2
-      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-2.nii.gz/content"
-    - name: abdomen_template_label_3
-      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-3.nii.gz/content"
-    - name: abdomen_template_label_4
-      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-4.nii.gz/content"
-    - name: abdomen_template_label_5
-      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-5.nii.gz/content"
-    - name: abdomen_template_label_6
-      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-6.nii.gz/content"
-    - name: abdomen_template_label_7
-      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-7.nii.gz/content"
-    - name: abdomen_template_label_8
-      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-8.nii.gz/content"
+- name: musclemap.py
+  filename: musclemap.py
+- name: nifti2mrd.py
+  filename: nifti2mrd.py
+- name: enhanceddicom2mrd.py
+  filename: enhanceddicom2mrd.py
+- name: OpenReconLabel.json
+  filename: OpenReconLabel.json
+- name: OpenReconREADME.md
+  filename: OpenReconREADME.md
+- name: musclemap-container-defaults.patch
+  filename: musclemap-container-defaults.patch
+- name: verify_musclemap_install.py
+  filename: verify_musclemap_install.py
+- name: musclemap_zip
+  url: '{{ context.musclemap_archive_url }}'
+- name: spinalcordtoolbox_tar
+  url: '{{ context.spinalcordtoolbox_archive_url }}'
+- name: wholebody_model_pth
+  url: https://zenodo.org/api/records/{{ context.wholebody_model_record }}/files/contrast_agnostic_wholebody_model.pth/content
+- name: wholebody_model_json
+  url: https://zenodo.org/api/records/{{ context.wholebody_model_record }}/files/contrast_agnostic_wholebody_model.json/content
+- name: abdomen_model_pth
+  url: https://zenodo.org/api/records/{{ context.abdomen_model_record }}/files/contrast_agnostic_abdomen_model.pth/content
+- name: abdomen_model_json
+  url: https://zenodo.org/api/records/{{ context.abdomen_model_record }}/files/contrast_agnostic_abdomen_model.json/content
+- name: forearm_model_pth
+  url: https://zenodo.org/api/records/{{ context.forearm_model_record }}/files/contrast_agnostic_forearm_model.pth/content
+- name: forearm_model_json
+  url: https://zenodo.org/api/records/{{ context.forearm_model_record }}/files/contrast_agnostic_forearm_model.json/content
+- name: leg_model_pth
+  url: https://zenodo.org/api/records/{{ context.leg_model_record }}/files/contrast_agnostic_leg_model.pth/content
+- name: leg_model_json
+  url: https://zenodo.org/api/records/{{ context.leg_model_record }}/files/contrast_agnostic_leg_model.json/content
+- name: pelvis_model_pth
+  url: https://zenodo.org/api/records/{{ context.pelvis_model_record }}/files/contrast_agnostic_pelvis_model.pth/content
+- name: pelvis_model_json
+  url: https://zenodo.org/api/records/{{ context.pelvis_model_record }}/files/contrast_agnostic_pelvis_model.json/content
+- name: thigh_model_pth
+  url: https://zenodo.org/api/records/{{ context.thigh_model_record }}/files/contrast_agnostic_thigh_model.pth/content
+- name: thigh_model_json
+  url: https://zenodo.org/api/records/{{ context.thigh_model_record }}/files/contrast_agnostic_thigh_model.json/content
+- name: abdomen_template
+  url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template.nii.gz/content
+- name: abdomen_template_dseg
+  url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg.nii.gz/content
+- name: abdomen_template_label_1
+  url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-1.nii.gz/content
+- name: abdomen_template_label_2
+  url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-2.nii.gz/content
+- name: abdomen_template_label_3
+  url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-3.nii.gz/content
+- name: abdomen_template_label_4
+  url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-4.nii.gz/content
+- name: abdomen_template_label_5
+  url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-5.nii.gz/content
+- name: abdomen_template_label_6
+  url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-6.nii.gz/content
+- name: abdomen_template_label_7
+  url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-7.nii.gz/content
+- name: abdomen_template_label_8
+  url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-8.nii.gz/content
+- name: wholebody_record_metadata
+  url: https://zenodo.org/api/records/{{ context.wholebody_model_record }}
+- name: abdomen_record_metadata
+  url: https://zenodo.org/api/records/{{ context.abdomen_model_record }}
+- name: forearm_record_metadata
+  url: https://zenodo.org/api/records/{{ context.forearm_model_record }}
+- name: leg_record_metadata
+  url: https://zenodo.org/api/records/{{ context.leg_model_record }}
+- name: pelvis_record_metadata
+  url: https://zenodo.org/api/records/{{ context.pelvis_model_record }}
+- name: thigh_record_metadata
+  url: https://zenodo.org/api/records/{{ context.thigh_model_record }}
+- name: abdomen_template_record_metadata
+  url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}
+
+auto_update:
+  method: sources
+  local:
+  - macros/openrecon
+  sources:
+  - id: musclemap
+    method: github_commit
+    repo: MuscleMap/MuscleMap
+    ref: HEAD
+    version_file: version.txt
+    target:
+      variable: musclemap_source_revision
+      variables:
+        musclemap_software_version: version
+  - id: spinalcordtoolbox
+    method: github_release
+    repo: spinalcordtoolbox/spinalcordtoolbox
+    target:
+      variable: spinalcordtoolbox_version
+  - id: wholebody_model_record
+    method: zenodo
+    record: '21929873'
+    target:
+      variable: wholebody_model_record
+      variables:
+        musclemap_model_version: version
+  - id: abdomen_model_record
+    method: zenodo
+    record: '19631081'
+    target:
+      variable: abdomen_model_record
+      variables:
+        abdomen_model_version: version
+  - id: forearm_model_record
+    method: zenodo
+    record: '19633115'
+    target:
+      variable: forearm_model_record
+      variables:
+        forearm_model_version: version
+  - id: leg_model_record
+    method: zenodo
+    record: '19633057'
+    target:
+      variable: leg_model_record
+      variables:
+        leg_model_version: version
+  - id: pelvis_model_record
+    method: zenodo
+    record: '19632902'
+    target:
+      variable: pelvis_model_record
+      variables:
+        pelvis_model_version: version
+  - id: thigh_model_record
+    method: zenodo
+    record: '19633000'
+    target:
+      variable: thigh_model_record
+      variables:
+        thigh_model_version: version
+  - id: abdomen_template_record
+    method: zenodo
+    record: '20043148'
+    target:
+      variable: abdomen_template_record
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
 
 build:
     kind: neurodocker
@@ -122,16 +235,16 @@ build:
         - run:
             - install -D -m 0444 {{ get_file("wholebody_model_pth") }} scripts/models/wholebody/v{{ context.musclemap_model_version }}/contrast_agnostic_wholebody_model.pth
             - install -D -m 0444 {{ get_file("wholebody_model_json") }} scripts/models/wholebody/v{{ context.musclemap_model_version }}/contrast_agnostic_wholebody_model.json
-            - install -D -m 0444 {{ get_file("abdomen_model_pth") }} scripts/models/abdomen/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_abdomen_model.pth
-            - install -D -m 0444 {{ get_file("abdomen_model_json") }} scripts/models/abdomen/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_abdomen_model.json
-            - install -D -m 0444 {{ get_file("forearm_model_pth") }} scripts/models/forearm/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_forearm_model.pth
-            - install -D -m 0444 {{ get_file("forearm_model_json") }} scripts/models/forearm/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_forearm_model.json
-            - install -D -m 0444 {{ get_file("leg_model_pth") }} scripts/models/leg/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_leg_model.pth
-            - install -D -m 0444 {{ get_file("leg_model_json") }} scripts/models/leg/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_leg_model.json
-            - install -D -m 0444 {{ get_file("pelvis_model_pth") }} scripts/models/pelvis/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_pelvis_model.pth
-            - install -D -m 0444 {{ get_file("pelvis_model_json") }} scripts/models/pelvis/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_pelvis_model.json
-            - install -D -m 0444 {{ get_file("thigh_model_pth") }} scripts/models/thigh/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_thigh_model.pth
-            - install -D -m 0444 {{ get_file("thigh_model_json") }} scripts/models/thigh/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_thigh_model.json
+            - install -D -m 0444 {{ get_file("abdomen_model_pth") }} scripts/models/abdomen/v{{ context.abdomen_model_version }}/contrast_agnostic_abdomen_model.pth
+            - install -D -m 0444 {{ get_file("abdomen_model_json") }} scripts/models/abdomen/v{{ context.abdomen_model_version }}/contrast_agnostic_abdomen_model.json
+            - install -D -m 0444 {{ get_file("forearm_model_pth") }} scripts/models/forearm/v{{ context.forearm_model_version }}/contrast_agnostic_forearm_model.pth
+            - install -D -m 0444 {{ get_file("forearm_model_json") }} scripts/models/forearm/v{{ context.forearm_model_version }}/contrast_agnostic_forearm_model.json
+            - install -D -m 0444 {{ get_file("leg_model_pth") }} scripts/models/leg/v{{ context.leg_model_version }}/contrast_agnostic_leg_model.pth
+            - install -D -m 0444 {{ get_file("leg_model_json") }} scripts/models/leg/v{{ context.leg_model_version }}/contrast_agnostic_leg_model.json
+            - install -D -m 0444 {{ get_file("pelvis_model_pth") }} scripts/models/pelvis/v{{ context.pelvis_model_version }}/contrast_agnostic_pelvis_model.pth
+            - install -D -m 0444 {{ get_file("pelvis_model_json") }} scripts/models/pelvis/v{{ context.pelvis_model_version }}/contrast_agnostic_pelvis_model.json
+            - install -D -m 0444 {{ get_file("thigh_model_pth") }} scripts/models/thigh/v{{ context.thigh_model_version }}/contrast_agnostic_thigh_model.pth
+            - install -D -m 0444 {{ get_file("thigh_model_json") }} scripts/models/thigh/v{{ context.thigh_model_version }}/contrast_agnostic_thigh_model.json
             - install -D -m 0444 {{ get_file("abdomen_template") }} scripts/templates/abdomen/abdomen_template.nii.gz
             - install -D -m 0444 {{ get_file("abdomen_template_dseg") }} scripts/templates/abdomen/abdomen_template_dseg.nii.gz
             - install -D -m 0444 {{ get_file("abdomen_template_label_1") }} scripts/templates/abdomen/abdomen_template_dseg_label-1.nii.gz
@@ -142,6 +255,13 @@ build:
             - install -D -m 0444 {{ get_file("abdomen_template_label_6") }} scripts/templates/abdomen/abdomen_template_dseg_label-6.nii.gz
             - install -D -m 0444 {{ get_file("abdomen_template_label_7") }} scripts/templates/abdomen/abdomen_template_dseg_label-7.nii.gz
             - install -D -m 0444 {{ get_file("abdomen_template_label_8") }} scripts/templates/abdomen/abdomen_template_dseg_label-8.nii.gz
+            - install -D -m 0444 {{ get_file("wholebody_record_metadata") }} /opt/MuscleMap/records/wholebody.json
+            - install -D -m 0444 {{ get_file("abdomen_record_metadata") }} /opt/MuscleMap/records/abdomen.json
+            - install -D -m 0444 {{ get_file("forearm_record_metadata") }} /opt/MuscleMap/records/forearm.json
+            - install -D -m 0444 {{ get_file("leg_record_metadata") }} /opt/MuscleMap/records/leg.json
+            - install -D -m 0444 {{ get_file("pelvis_record_metadata") }} /opt/MuscleMap/records/pelvis.json
+            - install -D -m 0444 {{ get_file("thigh_record_metadata") }} /opt/MuscleMap/records/thigh.json
+            - install -D -m 0444 {{ get_file("abdomen_template_record_metadata") }} /opt/MuscleMap/records/abdomen_template.json
             - install -D -m 0555 {{ get_file("verify_musclemap_install.py") }} /opt/code/verify_musclemap_install.py
 
         - run:
@@ -170,6 +290,11 @@ build:
               MUSCLEMAP_SOFTWARE_VERSION: "{{ context.musclemap_software_version }}"
               MUSCLEMAP_SOURCE_REVISION: "{{ context.musclemap_source_revision }}"
               MUSCLEMAP_WHOLEBODY_MODEL_VERSION: "{{ context.musclemap_model_version }}"
+              MUSCLEMAP_ABDOMEN_MODEL_VERSION: "{{ context.abdomen_model_version }}"
+              MUSCLEMAP_FOREARM_MODEL_VERSION: "{{ context.forearm_model_version }}"
+              MUSCLEMAP_LEG_MODEL_VERSION: "{{ context.leg_model_version }}"
+              MUSCLEMAP_PELVIS_MODEL_VERSION: "{{ context.pelvis_model_version }}"
+              MUSCLEMAP_THIGH_MODEL_VERSION: "{{ context.thigh_model_version }}"
               MUSCLEMAP_REGIONAL_MODEL_VERSION: "{{ context.musclemap_regional_model_version }}"
 
         - run:

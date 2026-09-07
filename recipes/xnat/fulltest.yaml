@@ -265,8 +265,8 @@ tests:
 
   - name: XNAT version in entrypoint
     description: Verify XNAT version is set in entrypoint script
-    command: grep 'XNAT_VERSION="1.9.2.1"' /usr/bin/xnat && echo "version found"
-    expected_output_contains: 'XNAT_VERSION="1.9.2.1"'
+    command: grep 'XNAT_VERSION="${version}"' /usr/bin/xnat && echo "version found"
+    expected_output_contains: 'XNAT_VERSION="${version}"'
 
   # ==========================================================================
   # SYSTEM UTILITIES VERIFICATION
@@ -302,7 +302,7 @@ tests:
   - name: XNAT manifest version
     description: Verify the packaged XNAT manifest reports the expected version
     command: grep "^Implementation-Version:" /opt/xnat-webapp/META-INF/MANIFEST.MF
-    expected_output_contains: "Implementation-Version: 1.9.2.1"
+    expected_output_contains: "Implementation-Version: ${version}"
 
   - name: XNAT sample config exists
     description: Verify the packaged XNAT sample configuration exists

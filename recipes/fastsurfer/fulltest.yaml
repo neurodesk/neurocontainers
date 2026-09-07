@@ -41,7 +41,7 @@ tests:
   - name: FastSurfer version check
     description: Verify FastSurfer reports correct version
     command: run_fastsurfer.sh --version
-    expected_output_contains: "2.4.2"
+    expected_output_contains: "${version}"
 
   - name: run_fastsurfer.sh help
     description: Verify main pipeline help is accessible

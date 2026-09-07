@@ -7,7 +7,24 @@ architectures:
 variables:
   slicer_revision: 34045
   monailabel_extension_item: 6912128dac7b1c95e7938b38
-
+  upstream_version: 5.10.0
+  slicer_abi: '5.10'
+  monailabel_extension_sha256: e726478a7c2a79e78a5a507b29f4d8dea40a9b9e31175a62cffd448dbdc133b1
+auto_update:
+  method: sources
+  sources:
+  - id: slicer
+    method: slicer_release
+    app_id: 5f4474d0e1d8c75dfc705482
+    extension: MONAILabel
+    target:
+      file: download
+      variables:
+        upstream_version: version
+        slicer_revision: revision
+        slicer_abi: abi
+        monailabel_extension_item: extension_item
+        monailabel_extension_sha256: extension_sha256
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -74,7 +91,7 @@ build:
         - nvidia-cuda-toolkit
 
     - environment:
-        PATH: /miniconda3/bin:/usr/local/bin:/usr/bin:/opt/Slicer-{{ context.version }}-linux-amd64/bin:/opt/Slicer-{{ context.version }}-linux-amd64
+        PATH: /miniconda3/bin:/usr/local/bin:/usr/bin:/opt/Slicer-{{ context.upstream_version }}-linux-amd64/bin:/opt/Slicer-{{ context.upstream_version }}-linux-amd64
 
 deploy:
   path:
@@ -93,20 +110,22 @@ gui_apps:
 
 files:
   - name: download
-    url: https://download.slicer.org/download?os=linux&stability=release&version={{ context.version }}
+    url: "https://download.slicer.org/download?os=linux&stability=release&version=5.10.0"
 
+    sha256: 682129db1673dd3a0ebc35005c4f307d9dd3dc101d19fd7f48403130854f4ff5
   - name: download_1
     url: https://slicer-packages.kitware.com/api/v1/item/{{ context.monailabel_extension_item }}/download
+    sha256: '{{ context.monailabel_extension_sha256 }}'
   - name: slicer-entrypoint.sh
     contents: |
       #!/usr/bin/env bash
       set -u
 
-      SLICER_HOME="/opt/Slicer-{{ context.version }}-linux-amd64"
+      SLICER_HOME="/opt/Slicer-{{ context.upstream_version }}-linux-amd64"
       SLICER_CMD="${SLICER_HOME}/Slicer"
       EXTENSION_REVISION="{{ context.slicer_revision }}"
       EXTENSION_SOURCE="/opt/slicer-extensions/MONAILabel"
-      SLICER_MODULE_PATH_SUFFIX="lib/Slicer-5.10/qt-scripted-modules"
+      SLICER_MODULE_PATH_SUFFIX="lib/Slicer-{{ context.slicer_abi }}/qt-scripted-modules"
 
       if [ -n "${HOME:-}" ] && [ -d "${HOME}" ] && [ -d "${EXTENSION_SOURCE}" ]; then
         EXTENSION_PARENT="${HOME}/.config/NA-MIC/Extensions-${EXTENSION_REVISION}"
@@ -128,7 +147,7 @@ files:
       ServerUrl=https://slicer-packages.kitware.com
 
       [LibraryPaths]
-      1\path=${EXTENSION_TARGET}/lib/Slicer-5.10
+      1\path=${EXTENSION_TARGET}/lib/Slicer-{{ context.slicer_abi }}
       size=1
 
       [Modules]

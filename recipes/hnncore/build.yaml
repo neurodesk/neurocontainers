@@ -9,6 +9,10 @@ architectures:
   - x86_64
   - aarch64
 
+auto_update:
+  method: pypi
+  package: hnn-core
+
 build:
   kind: neurodocker
 
@@ -35,7 +39,7 @@ build:
         - pip install ipywidgets voila scikit-learn joblib mpi4py psutil
 
     - run:
-        - pip install hnn_core hnn_core[opt] hnn_core[gui]
+        - pip install hnn_core[opt,gui]=={{ context.version }}
 
 deploy:
   bins:

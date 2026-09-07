@@ -61,7 +61,7 @@ tests:
   - name: RStudio version check
     description: Verify RStudio binary exists and reports version
     command: command -v rstudio && rstudio --version 2>&1 | head -1
-    expected_output_contains: "rstudio"
+    expected_output_contains: "${version}"
 
   - name: RStudio server exists
     description: Verify RStudio Server binary exists

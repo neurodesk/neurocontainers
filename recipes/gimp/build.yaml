@@ -1,3 +1,6 @@
+variables:
+  package_version: 2.10.36-3ubuntu0.24.04.1
+
 name: gimp
 version: "2.10.18"
 
@@ -5,20 +8,31 @@ architectures:
   - x86_64
   - aarch64
 
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: gimp
+    method: apt
+    package: gimp
+    urls:
+    - https://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+    - https://archive.ubuntu.com/ubuntu/dists/noble-updates/universe/binary-amd64/Packages.gz
+    target:
+      variable: package_version
+      fulltest_variable: package_version
+
 build:
   kind: neurodocker
 
-  base-image: ubuntu:20.04
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
     - install:
         - gtk2-engines-pixbuf
-        - gimp
+        - "gimp={{ context.package_version }}"
         - gimp-data-extras
-        - gimp-dcraw
-        - gimp-dds
-        - gimp-gap
 
 deploy:
   bins:

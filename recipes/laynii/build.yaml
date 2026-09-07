@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: layerfMRI/LAYNII
+
 build:
   kind: neurodocker
 
@@ -23,19 +27,19 @@ build:
         - ca-certificates
         - unzip
 
-    - workdir: /opt/laynii-2.2.1/
+    - workdir: /opt/laynii-{{ context.version }}/
 
     - run:
-        - cp {{ get_file("LayNii_v2_2_1_Linux64_zip") }} LayNii_v2.2.1_Linux64.zip
-        - unzip LayNii_v2.2.1_Linux64.zip
-        - rm LayNii_v2.2.1_Linux64.zip
+        - cp {{ get_file("LayNii_v2_2_1_Linux64_zip") }} LayNii_v{{ context.version }}_Linux64.zip
+        - unzip LayNii_v{{ context.version }}_Linux64.zip
+        - rm LayNii_v{{ context.version }}_Linux64.zip
 
     - environment:
-        PATH: $PATH:/opt/laynii-2.2.1/
+        PATH: $PATH:/opt/laynii-{{ context.version }}/
 
 deploy:
   path:
-    - /opt/laynii-2.2.1/
+    - /opt/laynii-{{ context.version }}/
 
 readme: |-
   ----------------------------------
@@ -80,4 +84,4 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBI
 
 files:
   - name: LayNii_v2_2_1_Linux64_zip
-    url: https://github.com/layerfMRI/LAYNII/releases/download/v2.2.1/LayNii_v2.2.1_Linux64.zip
+    url: https://github.com/layerfMRI/LAYNII/releases/download/v{{ context.version }}/LayNii_v{{ context.version }}_Linux64.zip

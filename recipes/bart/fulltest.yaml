@@ -28,7 +28,7 @@ tests:
   - name: Version check
     description: Verify BART binary runs and reports version
     command: bart version
-    expected_output_contains: "v0.9.00"
+    expected_output_contains: "v${version}"
 
   - name: Benchmark
     description: Run BART benchmark to verify computational kernels

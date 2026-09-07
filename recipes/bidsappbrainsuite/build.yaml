@@ -5,9 +5,15 @@ version: "21a"
 architectures:
   - x86_64
 
+auto_update:
+  method: dockerhub
+  repo: bids/brainsuite
+  version_regex: ^v(?P<version>[0-9]+[a-z])$
+  version_scheme: year_letter
+
 build:
   kind: neurodocker
-  base-image: bids/brainsuite:v21a
+  base-image: bids/brainsuite:v{{ context.version }}
   pkg-manager: apt
 
   directives:

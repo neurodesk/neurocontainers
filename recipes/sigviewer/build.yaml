@@ -1,3 +1,6 @@
+variables:
+  package_version: 0.6.4-1
+
 name: sigviewer
 version: 0.6.4
 
@@ -7,6 +10,19 @@ copyright:
 
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: sigviewer
+    method: apt
+    package: sigviewer
+    urls:
+    - https://deb.debian.org/debian/dists/bullseye/main/binary-amd64/Packages.xz
+    target:
+      variable: package_version
+      fulltest_variable: package_version
 
 build:
   kind: neurodocker
@@ -19,7 +35,7 @@ build:
         DEBIAN_FRONTEND: noninteractive
 
     - install:
-        - sigviewer
+        - "sigviewer={{ context.package_version }}"
 
 deploy:
   bins:

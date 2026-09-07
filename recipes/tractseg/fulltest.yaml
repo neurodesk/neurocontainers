@@ -52,7 +52,7 @@ tests:
   - name: TractSeg version check
     description: Verify TractSeg binary runs and reports version
     command: TractSeg --version
-    expected_output_contains: "2.9"
+    expected_output_contains: "${version}"
 
   - name: TractSeg help output
     description: Verify TractSeg help is accessible

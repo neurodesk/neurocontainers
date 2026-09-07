@@ -19,7 +19,7 @@ from .staging import CopySource, StagingPlan, declared_file_from_mapping
 from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
-from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT, sha256_text
+from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT, download_cache_key
 from .config import ARCHITECTURE_ALIASES, canonical_architecture
 from .variants import concrete_variant_specs, forced_variant_spec, variant_specs
 
@@ -428,14 +428,17 @@ def compile_recipe(
         name = renderer.render_string(str(mapping["name"]), context)
         rendered = dict(mapping)
         rendered["name"] = name
-        for key in ("filename", "url", "contents"):
+        for key in ("filename", "url", "contents", "sha256"):
             if key in rendered and rendered[key] is not None:
                 rendered[key] = renderer.render_value(rendered[key], context)
         file = declared_file_from_mapping(name, rendered)
         plan.add_file(file)
         context.file_paths[name] = file.guest_filename or name
         if file.url is not None:
-            context.file_sources[name] = str(Path.home() / ".cache" / "neurocontainers" / sha256_text(file.url))
+            context.file_sources[name] = str(
+                Path.home() / ".cache" / "neurocontainers"
+                / download_cache_key(file.url, file.sha256)
+            )
         elif file.filename is not None:
             source = Path(file.filename)
             if not source.is_absolute():

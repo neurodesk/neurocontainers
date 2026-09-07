@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: mrirecon/bart
+
 build:
   kind: neurodocker
 
@@ -23,21 +27,21 @@ build:
         - libpng-dev
         - libopenblas-dev
 
-    - workdir: /opt/bart-0.9.00/
+    - workdir: /opt/bart-{{ context.version }}/
 
     - run:
-        - tar -xz -C /opt/bart-0.9.00/ --strip-components 1 -f {{ get_file("v0_9_00_tar_gz") }}
+        - tar -xz -C /opt/bart-{{ context.version }}/ --strip-components 1 -f {{ get_file("v0_9_00_tar_gz") }}
 
     - run:
         - CUDA_BASE=/usr/local/cuda/ CUDA_LIB=lib64 CUDA=1 make -j 8
 
     - environment:
-        PATH: /opt/bart-0.9.00:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
-        TOOLBOX_PATH: /opt/bart-0.9.00/
+        PATH: /opt/bart-{{ context.version }}:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+        TOOLBOX_PATH: /opt/bart-{{ context.version }}/
 
 deploy:
   path:
-    - /opt/bart-0.9.00/
+    - /opt/bart-{{ context.version }}/
 
 readme: |-
   ----------------------------------
@@ -71,4 +75,4 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBI
 
 files:
   - name: v0_9_00_tar_gz
-    url: https://github.com/mrirecon/bart/archive/v0.9.00.tar.gz
+    url: https://github.com/mrirecon/bart/archive/v{{ context.version }}.tar.gz

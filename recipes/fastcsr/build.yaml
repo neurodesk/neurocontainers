@@ -6,11 +6,12 @@ architectures:
   - x86_64
 
 variables:
+  upstream_commit: "b2bbc0e109f7c0f5667e7ee89611f1b320732cc8"
   fastcsr_repo: https://github.com/IndiLab/FastCSR.git
   freesurfer_version: 6.0.0
   freesurfer_home: /opt/freesurfer-{{ context.freesurfer_version }}
   freesurfer_url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/6.0.0/freesurfer-Linux-centos6_x86_64-stable-pub-v6.0.0.tar.gz
-  nighres_wheel_url: https://raw.githubusercontent.com/IndiLab/FastCSR/main/docker/nighres-1.5.0-cp38-cp38-linux_x86_64.whl
+  nighres_wheel_url: https://raw.githubusercontent.com/IndiLab/FastCSR/{{ context.upstream_commit }}/docker/nighres-1.5.0-cp38-cp38-linux_x86_64.whl
   model_zip_url: "https://drive.usercontent.google.com/download?id=1qATJ2PT8e6RhBnfJviU6qTtBicVO9_Qr&export=download&authuser=0&confirm=t&uuid=ba0ee838-2af9-48be-8a27-39e5475e4802&at=APZUnTWLoGPK9o4jOoHb5vxdbqCf:1698212871026"
   data_zip_url: "https://drive.usercontent.google.com/download?id=1Ypw25hbpCloQzlbWhg1XWB-HuxIVlHH7&export=download&authuser=0&confirm=t&uuid=e00becd7-c885-4748-8099-04f472d7ccdd&at=APZUnTX9F-JDE6TLLHxD2NuSF0pA:1698212916237"
 
@@ -23,6 +24,16 @@ files:
     url: "{{ context.model_zip_url }}"
   - name: data_zip
     url: "{{ context.data_zip_url }}"
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: IndiLab/FastCSR
+    ref: HEAD
+    target:
+      variable: upstream_commit
 
 build:
   kind: neurodocker
@@ -91,7 +102,7 @@ build:
         - pip install nnunet==1.7.1 antspyx sh
     - workdir: /opt
     - run:
-        - git clone {{ context.fastcsr_repo }}
+        - git clone {{ context.fastcsr_repo }} && git -C /opt/FastCSR checkout {{ context.upstream_commit }}
     - workdir: /opt/FastCSR/
     - run:
         - unzip '{{ get_file("model_zip") }}'

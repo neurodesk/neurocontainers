@@ -28,6 +28,12 @@ variables:
     Statistics_and_Machine_Learning_Toolbox
     Text_Analytics_Toolbox
 
+auto_update:
+  method: dockerhub
+  repo: mathworks/matlab
+  version_regex: ^R(?P<version>20\d{2}[ab])$
+  version_scheme: year_letter
+
 build:
   kind: neurodocker
   base-image: mathworks/matlab:R{{ context.version }}

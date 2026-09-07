@@ -55,7 +55,7 @@ tests:
   - name: bidsme version check
     description: Verify bidsme binary runs and reports version
     command: bidsme --version
-    expected_output_contains: "bidsme: 1.9.3"
+    expected_output_contains: "bidsme: ${version}"
 
   - name: bidsme BIDS version check
     description: Verify BIDS schema version

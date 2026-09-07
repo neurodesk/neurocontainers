@@ -1,8 +1,21 @@
+variables:
+  upstream_commit: 720d36b0cffcc1be42417a538153fde99b2ad4f2
+
 name: fatsegnet
 version: 1.0.gpu
 
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: Deep-MI/FatSegNet
+    ref: HEAD
+    target:
+      variable: upstream_commit
 
 build:
   kind: neurodocker
@@ -22,7 +35,7 @@ build:
     - workdir: /opt
 
     - run:
-        - git clone https://github.com/Deep-MI/FatSegNet.git
+        - git clone https://github.com/Deep-MI/FatSegNet.git && git -C /opt/FatSegNet checkout {{ context.upstream_commit }}
 
     - workdir: /opt/FatSegNet
 

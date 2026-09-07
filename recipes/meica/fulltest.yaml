@@ -52,6 +52,8 @@ tests:
     script: |
       set -euo pipefail
       command -v meica.py | grep -x /usr/local/bin/meica.py
+      test "${MEICA_SOURCE_TAG}" = '${upstream_version}'
+      test "${MEICA_RUNTIME_TAG}" = '${upstream_version}'
       meica.py -h > "${output_dir}/meica-help.txt"
       grep -q '^Usage: meica.py \[options\]' "${output_dir}/meica-help.txt"
       test -x "${MEICA_AFNI_RUNTIME}/bin/3dinfo"
@@ -333,3 +335,5 @@ tests:
       assert set(np.unique(t2s_values)) == {205.0}
       print("returned uint16 and optional float32 dR2* and T2* ME-ICA MRD series")
       PY
+
+upstream_version: 4.0.1

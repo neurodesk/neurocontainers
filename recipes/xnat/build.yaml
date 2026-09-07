@@ -5,6 +5,11 @@ architectures:
   - x86_64
   - aarch64
 
+auto_update:
+  method: webpage
+  url: https://api.bitbucket.org/2.0/repositories/xnatdev/xnat-web/downloads?pagelen=100
+  version_regex: xnat-web-(?P<version>\d+(?:\.\d+)+)\.war
+
 build:
   kind: neurodocker
 

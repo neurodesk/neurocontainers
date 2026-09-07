@@ -21,6 +21,11 @@ structured_readme:
   documentation: https://bids-apps.neuroimaging.io/rsHRF/
   citation: 'Wu, G. R., Colenbier, N., Van Den Bossche, S., Clauw, K., Johri, A., Tandon, M., & Marinazzo, D. (2021). rsHRF: A toolbox for resting-state HRF estimation and deconvolution. NeuroImage, 244, 118591. doi:10.1016/j.neuroimage.2021.118591.'
 
+auto_update:
+  method: dockerhub
+  repo: bids/rshrf
+  version_regex: ^v(?P<version>\d+(?:\.\d+)+)$
+
 build:
   kind: neurodocker
   base-image: bids/rshrf:v{{ context.version }}

@@ -4,9 +4,24 @@ version: "0.4"
 architectures:
   - x86_64
 
+variables:
+  software_version: 0.4
+  base_image_tag: 20220614
+
+auto_update:
+  method: sources
+  sources:
+    - id: base_image_tag
+      method: dockerhub
+      repo: jerync/oshyx_0.4
+      version_regex: '(?P<version>\d{8})'
+      target:
+        variable: base_image_tag
+        value: tag
+
 build:
   kind: neurodocker
-  base-image: jerync/oshyx_0.4:20220614
+  base-image: jerync/oshyx_0.4:{{ context.base_image_tag }}
   pkg-manager: apt
   directives: []
 

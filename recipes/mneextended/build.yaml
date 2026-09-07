@@ -1,8 +1,37 @@
+variables:
+  mne_version: 1.1.0
+  vscode_version: "1.136.1"
+  pipeline_commit: a792f818dda95bfe63e0ab0f0011d54c9818f1ad
+
 name: mneextended
 version: 1.1.0
 
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: mne
+    method: webpage
+    url: https://api.anaconda.org/package/conda-forge/mne
+    version_regex: '"latest_version":\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: mne_version
+      fulltest_variable: mne_version
+  - id: vscode
+    method: webpage
+    target:
+      variable: vscode_version
+    url: https://update.code.visualstudio.com/api/update/linux-x64/stable/latest
+    version_regex: '"productVersion":\s*"(?P<version>\d+(?:\.\d+)+)"'
+  - id: mne-bids-pipeline
+    method: github_commit
+    repo: mne-tools/mne-bids-pipeline
+    ref: main
+    target:
+      variable: pipeline_commit
 
 build:
   kind: neurodocker
@@ -35,7 +64,8 @@ build:
         - libgl1-mesa-dri
         - mesa-utils
         - libgl1-mesa-glx
-    - copy: mne-extended.yml /opt/mne-extended.yml
+    - run:
+        - cp {{ get_file("mne_extended_yml") }} /opt/mne-extended.yml
     - template:
         name: miniconda
         version: py310_25.5.1-0
@@ -54,7 +84,7 @@ build:
     - workdir: /opt/
     - run:
         - mkdir -p /opt/mne-bids-pipeline
-        - echo "d23a78551dccfef70e295626f07ceab76d33a8b666d1a8938b6f7b6a8b2e5e3d  {{ get_file("mne_bids_pipeline_tar_gz") }}" | sha256sum -c -
+
         - tar xz -f {{ get_file("mne_bids_pipeline_tar_gz") }} --strip-components=1 -C /opt/mne-bids-pipeline
         - chmod a+rwx /opt/mne-bids-pipeline -R
     - copy: code /usr/local/sbin/code
@@ -71,42 +101,83 @@ deploy:
     - code
 
 readme: |-
-  
+
   ----------------------------------
   ## mneextended/{{ context.version }} ##
-  Python MNE environment with VScode 
-  
-  This environment contains MNE Python and some additional tools with dependencies (MNE BIDS Pipeline, MNE-connectivity, MNE-icalabel, Neurokit2)   
-  
+  Python MNE environment with VScode
+
+  This environment contains MNE Python and some additional tools with dependencies (MNE BIDS Pipeline, MNE-connectivity, MNE-icalabel, Neurokit2)
+
   Example:
   ```
   source /opt/miniconda/etc/profile.d/conda.sh
-  conda activate mne-extended 
+  conda activate mne-extended
   ```
-  
+
   More documentation can be found here: https://mne.tools/stable/index.html
   To cite MNE Python see here: https://mne.tools/stable/overview/cite.html
-  
-  
+
+
   To use the MNE BIDS Pipeline (https://mne.tools/mne-bids-pipeline/)
   ```
   python /opt/mne-bids-pipeline/run.py --config=/path/to/your/custom_config.py
   ```
-  
+
   To run applications outside of this container: ml mneextended/{{ context.version }}
   Note the use of the module system does not currently interface with MNE and conda environments in this container
-  
+
   ----------------------------------
 
 files:
-  - name: mne_extended_yml
-    filename: mne-extended.yml
-  - name: code
-    filename: code
-  - name: vscode_deb
-    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
-  - name: mne_bids_pipeline_tar_gz
-    url: https://github.com/mne-tools/mne-bids-pipeline/archive/a792f818dda95bfe63e0ab0f0011d54c9818f1ad.tar.gz
+- name: mne_extended_yml
+  contents: |
+    name: mne-extended
+    channels:
+      - conda-forge
+
+    dependencies:
+      - python=3.12
+      - setuptools<81
+      - mne={{ context.mne_version }}
+      - jupyter
+      - mne-bids
+      - mnelab
+      - nb_conda_kernels
+      - pytables
+      - h5py
+      - h5io
+      - pymatreader
+      - seaborn
+      - statsmodels
+      - pybv
+      - scikit-learn
+      - pyxdf
+      - pyEDFlib
+      - neurokit2
+      - autoreject
+      - coloredlogs
+      - pandas
+      - openpyxl
+      - json_tricks
+      - fire
+      - typing_extensions
+      - python-picard
+      - dask
+      - distributed
+      - psutil
+      - joblib
+      - jupyter-server-proxy
+      - pyqt
+      - pyvista
+      - pyvistaqt
+      - hdf5
+      - mne-icalabel
+- name: code
+  filename: code
+- name: vscode_deb
+  url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-x64/stable
+- name: mne_bids_pipeline_tar_gz
+  url: https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.pipeline_commit }}.tar.gz
 
 categories:
   - electrophysiology

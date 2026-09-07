@@ -24,6 +24,10 @@ variables:
   # same multiversioned target Julia uses for its own x86_64 binaries.
   sysimage_cpu_target: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1);x86-64-v4,-rdrnd,base(1)"
 
+auto_update:
+  method: github_release
+  repo: korbinian90/CLEARSWI.jl
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

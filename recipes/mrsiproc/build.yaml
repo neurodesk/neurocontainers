@@ -5,6 +5,7 @@ architectures:
   - x86_64
 
 variables:
+  hdbet_commit: "678e44d546a84de0f2a7fc245f176b82b7d912fd"
   matlab_version: "2021b"
   matlab_update_version: "6"
   minc_version: "1.9.15"
@@ -13,9 +14,25 @@ variables:
   julia_version: "1.10.4"
   freesurfer_version: "7.4.1"
   julia_minor_version: "1.10"
-  mrsi_pipeline_commit: 916b28dbb1828573173c5404dea2555389a610f6
+  mrsi_pipeline_commit: "916b28dbb1828573173c5404dea2555389a610f6"
   mcr_root: /opt/MATLAB_Runtime_R{{ context.matlab_version }}
   mcr_runtime: /opt/MATLAB_Runtime_R{{ context.matlab_version }}/v911
+
+auto_update:
+  method: sources
+  sources:
+  - id: mrsi-pipeline
+    method: github_commit
+    repo: korbinian90/mrsi_pipeline_neurodesk
+    ref: HEAD
+    target:
+      variable: mrsi_pipeline_commit
+  - id: hdbet
+    method: github_commit
+    repo: MIC-DKFZ/HD-BET
+    ref: HEAD
+    target:
+      variable: hdbet_commit
 
 build:
   kind: neurodocker
@@ -66,7 +83,7 @@ build:
     - group:
         - workdir: /opt
         - run:
-            - git clone https://github.com/MIC-DKFZ/HD-BET
+            - git clone https://github.com/MIC-DKFZ/HD-BET && git -C HD-BET checkout {{ context.hdbet_commit }}
         - workdir: /opt/HD-BET
         - run:
             - echo 'import os' > /opt/HD-BET/HD_BET/paths.py

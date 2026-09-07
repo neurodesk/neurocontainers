@@ -8,9 +8,22 @@ copyright:
 architectures:
   - x86_64
 
+variables:
+  base_image_digest: sha256:318a11ba9d70fdca2fb96200afabe0109722c9072bc71b9644f65c6c10de57b3
+
+auto_update:
+  method: sources
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: biomedia/dhcp-structural-pipeline
+      tag: latest
+      target:
+        variable: base_image_digest
+
 build:
   kind: neurodocker
-  base-image: biomedia/dhcp-structural-pipeline:latest
+  base-image: biomedia/dhcp-structural-pipeline:latest@{{ context.base_image_digest }}
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false

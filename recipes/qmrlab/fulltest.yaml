@@ -33,7 +33,7 @@ test_data:
 
 # Octave initialization command (used as prefix for all qMRLab commands)
 octave_init: |
-  addpath(genpath('/qMRLab-2.4.2'));
+  addpath(genpath('/opt/qmrlab'));
   pkg load struct;
   pkg load io;
   pkg load statistics;
@@ -64,13 +64,13 @@ tests:
 
   - name: qMRLab installation check
     description: Verify qMRLab directory exists and is accessible
-    command: ls -la /qMRLab-2.4.2/qMRLab.m
+    command: ls -la /opt/qmrlab/qMRLab.m
     expected_exit_code: 0
 
   - name: qMRLab version check
     description: Read qMRLab version file
-    command: cat /qMRLab-2.4.2/version.txt
-    expected_output_contains: "v2.4.2"
+    command: cat /opt/qmrlab/version.txt
+    expected_output_contains: "v${version}"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -81,7 +81,7 @@ tests:
     command: |
       octave --no-gui --eval "
         warning('off', 'all');
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         models = list_models();
         for i = 1:length(models)
@@ -95,7 +95,7 @@ tests:
     description: Create inversion_recovery model object for T1 mapping
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = inversion_recovery();
@@ -110,7 +110,7 @@ tests:
     description: Create Variable Flip Angle T1 mapping model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = vfa_t1();
@@ -124,7 +124,7 @@ tests:
     description: Create MP2RAGE T1 mapping model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mp2rage();
@@ -138,7 +138,7 @@ tests:
     description: Create monoexponential T2 mapping model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mono_t2();
@@ -153,7 +153,7 @@ tests:
     description: Create Myelin Water Fraction model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mwf();
@@ -167,7 +167,7 @@ tests:
     description: Create Magnetization Transfer Ratio model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mt_ratio();
@@ -181,7 +181,7 @@ tests:
     description: Create MT saturation model with B1/T1 correction
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mt_sat();
@@ -195,7 +195,7 @@ tests:
     description: Create Diffusion Tensor Imaging model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = dti();
@@ -210,7 +210,7 @@ tests:
     description: Create NODDI (Neurite Orientation Dispersion and Density Imaging) model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = noddi();
@@ -224,7 +224,7 @@ tests:
     description: Create CHARMED diffusion model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = charmed();
@@ -238,7 +238,7 @@ tests:
     description: Create Actual Flip-angle Imaging B1 mapping model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = b1_afi();
@@ -252,7 +252,7 @@ tests:
     description: Create Double Angle Method B1 mapping model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = b1_dam();
@@ -266,7 +266,7 @@ tests:
     description: Create qMT SPGR model for quantitative magnetization transfer
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = qmt_spgr();
@@ -283,7 +283,7 @@ tests:
     description: Set up TI values for inversion recovery experiment
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = inversion_recovery();
@@ -298,7 +298,7 @@ tests:
     description: Set up TE values for multi-echo T2 mapping
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mono_t2();
@@ -314,7 +314,7 @@ tests:
     description: Set up flip angles for Variable Flip Angle T1 mapping
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = vfa_t1();
@@ -332,7 +332,7 @@ tests:
     description: Compute IR signal for known T1 value
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = inversion_recovery();
@@ -352,7 +352,7 @@ tests:
     description: Compute T2 decay signal for known T2 value
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mono_t2();
@@ -375,7 +375,7 @@ tests:
     description: Simulate inversion recovery curve with noise and fit
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = inversion_recovery();
@@ -403,7 +403,7 @@ tests:
     description: Simulate mono-exponential T2 decay with noise and fit
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mono_t2();
@@ -423,7 +423,7 @@ tests:
     description: Simulate Variable Flip Angle T1 mapping
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = vfa_t1();
@@ -448,7 +448,7 @@ tests:
       if [ ! -f "$NIIFILE" ]; then gunzip -k "${t1w}" 2>/dev/null || true; fi
       octave --no-gui --eval "
         warning('off', 'all');
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         niifile = '${t1w}';
         niifile = strrep(niifile, '.nii.gz', '.nii');
@@ -469,7 +469,7 @@ tests:
       if [ ! -f "$NIIFILE" ]; then gunzip -k "${t1w}" 2>/dev/null || true; fi
       octave --no-gui --eval "
         warning('off', 'all');
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         niifile = '${t1w}';
         niifile = strrep(niifile, '.nii.gz', '.nii');
@@ -488,7 +488,7 @@ tests:
     description: Test MT ratio formula with synthetic data
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mt_ratio();
@@ -510,7 +510,7 @@ tests:
     description: Configure DTI protocol with gradient directions
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = dti();
@@ -529,7 +529,7 @@ tests:
     description: Verify inversion recovery fitting parameter bounds
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = inversion_recovery();
@@ -546,7 +546,7 @@ tests:
     description: Verify mono_t2 fitting parameter bounds
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mono_t2();
@@ -565,7 +565,7 @@ tests:
     description: Verify inversion recovery model options
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = inversion_recovery();
@@ -585,7 +585,7 @@ tests:
     description: Verify mono_t2 model options including offset fitting
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mono_t2();
@@ -604,7 +604,7 @@ tests:
     description: Verify NODDI external toolbox is available
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         warning('off', 'all');
         if exist('SynthMeasWatsonSHCylNeworienFixed', 'file')
           disp('NODDI toolbox: Available');
@@ -619,7 +619,7 @@ tests:
     description: Verify NIfTI I/O toolbox is available
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         warning('off', 'all');
         if exist('load_nii', 'file')
           disp('NIfTI toolbox: Available');
@@ -638,7 +638,7 @@ tests:
     command: |
       octave --no-gui --eval "
         warning('off', 'all');
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         % Create mock fit results
         FitResults.T1 = rand(10,10,10) * 1000 + 500;
@@ -658,7 +658,7 @@ tests:
     command: |
       octave --no-gui --eval "
         warning('off', 'all');
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         % Create a simple NIfTI structure and save it
         nii = make_nii(rand(64,64,32) * 1500 + 500, [2 2 2]);
@@ -678,7 +678,7 @@ tests:
     description: Test qMRgenBatch to create processing script
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = inversion_recovery();
@@ -697,7 +697,7 @@ tests:
     description: Configure sensitivity analysis for inversion recovery
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = inversion_recovery();
@@ -718,7 +718,7 @@ tests:
     description: Verify qMT SPGR model configuration
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = qmt_spgr();
@@ -734,7 +734,7 @@ tests:
     description: Verify qMT bSSFP model configuration
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = qmt_bssfp();
@@ -752,7 +752,7 @@ tests:
     description: Verify B0 dual-echo method model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = b0_dem();
@@ -770,7 +770,7 @@ tests:
     description: Check noise_level model for noise estimation
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = noise_level();
@@ -788,7 +788,7 @@ tests:
     description: Check Marchenko-Pastur PCA denoising model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = denoising_mppca();
@@ -806,7 +806,7 @@ tests:
     description: Verify Macromolecular Tissue Volume model
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = mtv();
@@ -824,7 +824,7 @@ tests:
     description: Verify AMICO model for accelerated microstructure imaging
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         Model = amico();
@@ -842,7 +842,7 @@ tests:
     description: Test voxel extraction utility
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
         % Create test data structure
@@ -865,7 +865,7 @@ tests:
       if [ ! -f "$NIIFILE" ]; then gunzip -k "${t1w}" 2>/dev/null || true; fi
       octave --no-gui --eval "
         warning('off', 'all');
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         niifile = '${t1w}';
         niifile = strrep(niifile, '.nii.gz', '.nii');
@@ -884,7 +884,7 @@ tests:
     description: Complete inversion recovery simulation, fitting, and validation
     command: |
       octave --no-gui --eval "
-        addpath(genpath('/qMRLab-2.4.2'));
+        addpath(genpath('/opt/qmrlab'));
         pkg load struct; pkg load io; pkg load statistics; pkg load optim; pkg load image;
         warning('off', 'all');
 

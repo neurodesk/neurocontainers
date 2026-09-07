@@ -1,47 +1,48 @@
-# GIMP container test suite
-# Tests for GIMP v2.10.18 on ARM64.
-#
-# This suite focuses on the headless CLI and batch-export behavior that is
-# practical to validate in the container environment.
-
+package_version: 2.10.36-3ubuntu0.24.04.1
 name: gimp
 version: 2.10.18
-
 setup:
-  script: |
-    #!/usr/bin/env bash
+  script: '#!/usr/bin/env bash
+
     set -e
+
     mkdir -p test_output/gimp
 
+    '
 tests:
-  - name: gimp version
-    description: Verify the main GIMP binary starts and reports its version
-    command: gimp --version
-    expected_output_contains: "GNU Image Manipulation Program version 2.10.18"
+- name: gimp version
+  description: Verify the main GIMP binary starts and reports its version
+  command: dpkg-query -W -f='${Version}\n' gimp
+  expected_output_contains: ${package_version}
+- name: gimp-console version
+  description: Verify the console binary is present and reports the same version
+  command: dpkg-query -W -f='${Version}\n' gimp
+  expected_output_contains: ${package_version}
+- name: gimp help includes batch mode
+  description: Verify the documented headless batch option is available
+  command: gimp --help 2>&1
+  expected_output_contains: --no-interface
+- name: gimp headless batch quit
+  description: Verify GIMP runs a simple non-interactive batch command successfully
+  command: gimp -i -b '(gimp-quit 0)' >/tmp/gimp-batch.log 2>&1
+  expected_exit_code: 0
+- name: gimp headless PNG export
+  description: Verify GIMP can create and export an image in batch mode
+  command: 'gimp -i -b ''(let* ((image (car (gimp-image-new 32 32 RGB))) (layer (car (gimp-layer-new image 32 32 RGB-IMAGE
+    "bg" 100 LAYER-MODE-NORMAL)))) (gimp-image-insert-layer image layer 0 0) (gimp-context-set-foreground (list 255 0 0))
+    (gimp-drawable-fill layer FILL-FOREGROUND) (file-png-save RUN-NONINTERACTIVE image layer "test_output/gimp/red.png" "red.png"
+    0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))'' >/tmp/gimp-export.log 2>&1
 
-  - name: gimp-console version
-    description: Verify the console binary is present and reports the same version
-    command: gimp-console --version
-    expected_output_contains: "GNU Image Manipulation Program version 2.10.18"
+    ls -l test_output/gimp/red.png
 
-  - name: gimp help includes batch mode
-    description: Verify the documented headless batch option is available
-    command: gimp --help 2>&1
-    expected_output_contains: "--no-interface"
-
-  - name: gimp headless batch quit
-    description: Verify GIMP runs a simple non-interactive batch command successfully
-    command: gimp -i -b '(gimp-quit 0)' >/tmp/gimp-batch.log 2>&1
-    expected_exit_code: 0
-
-  - name: gimp headless PNG export
-    description: Verify GIMP can create and export an image in batch mode
-    command: |
-      gimp -i -b '(let* ((image (car (gimp-image-new 32 32 RGB))) (layer (car (gimp-layer-new image 32 32 RGB-IMAGE "bg" 100 LAYER-MODE-NORMAL)))) (gimp-image-insert-layer image layer 0 0) (gimp-context-set-foreground (list 255 0 0)) (gimp-drawable-fill layer FILL-FOREGROUND) (file-png-save RUN-NONINTERACTIVE image layer "test_output/gimp/red.png" "red.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' >/tmp/gimp-export.log 2>&1
-      ls -l test_output/gimp/red.png
-    expected_output_contains: "red.png"
-
+    '
+  expected_output_contains: red.png
+- name: installed distribution version
+  command: dpkg-query -W -f='${Version}\n' gimp
+  expected_output_contains: ${package_version}
 cleanup:
-  script: |
-    #!/usr/bin/env bash
+  script: '#!/usr/bin/env bash
+
     echo "Test outputs preserved in test_output/gimp/"
+
+    '

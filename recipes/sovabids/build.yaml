@@ -1,8 +1,37 @@
+variables:
+  mne_bids_pipeline_commit: "91c2e0677f4a015a35dad48c2faa5e47633ae497"
+  bidscoin_commit: "72fde8bb1534b72238d9b8c4cf53e44b09d73879"
+  sovabids_tag: v0.3.1-alpha
+
 name: sovabids
 version: 0.3.1a0
 
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  sources:
+  - id: sovabids
+    method: github_tags
+    repo: yjmantilla/sovabids
+    include_prereleases: true
+    target:
+      variable: sovabids_tag
+      value: tag
+      fulltest_variable: sovabids_tag
+  - id: bidscoin
+    method: github_commit
+    repo: yjmantilla/bidscoin
+    ref: sovabids
+    target:
+      variable: bidscoin_commit
+  - id: mne-bids-pipeline
+    method: github_commit
+    repo: mne-tools/mne-bids-pipeline
+    ref: main
+    target:
+      variable: mne_bids_pipeline_commit
 
 build:
   kind: neurodocker
@@ -47,8 +76,8 @@ build:
         pip_install: |
           bids_validator
           fastapi-jsonrpc
-          git+https://github.com/yjmantilla/bidscoin.git@sovabids
-          git+https://github.com/yjmantilla/sovabids.git@v0.3.1-alpha
+          git+https://github.com/yjmantilla/bidscoin.git@{{ context.bidscoin_commit }}
+          git+https://github.com/yjmantilla/sovabids.git@{{ context.sovabids_tag }}
     - run:
         - cp {{ get_file("vscode_deb") }} vscode.deb
         - apt install ./vscode.deb
@@ -58,7 +87,7 @@ build:
         DONT_PROMPT_WSL_INSTALL: "1"
     - workdir: /opt/
     - run:
-        - tar xz -f {{ get_file("mne_bids_pipeline_main_tar_gz") }}
+        - mkdir -p /opt/mne-bids-pipeline-main && tar xz -f {{ get_file("mne_bids_pipeline_main_tar_gz") }} --strip-components=1 -C /opt/mne-bids-pipeline-main
         - chmod a+rwx /opt/mne-bids-pipeline-main -R
     - copy: code /usr/local/sbin/code
     - run:
@@ -104,7 +133,7 @@ files:
   - name: vscode_deb
     url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
   - name: mne_bids_pipeline_main_tar_gz
-    url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz
+    url: https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.mne_bids_pipeline_commit }}.tar.gz
 
 categories:
   - electrophysiology

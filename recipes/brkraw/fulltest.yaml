@@ -44,7 +44,7 @@ tests:
   - name: brkraw version check
     description: Verify brkraw binary runs and reports correct version
     command: brkraw --version
-    expected_output_contains: "0.3.11"
+    expected_output_contains: "${version}"
 
   - name: brkraw help
     description: Display brkraw main help message

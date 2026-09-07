@@ -1,3 +1,7 @@
+variables:
+  hdbet_commit: "ae160681324d524db3578e4135bf781f8206e146"
+  upstream_commit: 69e1ad0c57fd2b16e04cabae038a16749965e069
+
 name: lstai
 version: 1.2.0
 copyright:
@@ -5,6 +9,23 @@ copyright:
     url: https://github.com/CompImg/LST-AI/blob/main/LICENSE
 architectures:
   - x86_64
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: CompImg/LST-AI
+    ref: HEAD
+    target:
+      variable: upstream_commit
+      fulltest_variable: upstream_commit
+  - id: hdbet
+    method: github_commit
+    repo: MIC-DKFZ/HD-BET
+    ref: HEAD
+    target:
+      variable: hdbet_commit
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -51,7 +72,7 @@ build:
         - bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
     - run:
         - /opt/miniforge3/bin/conda create -y -n lstai python=3.8
-        - git clone https://github.com/CompImg/LST-AI/ /opt/lstai
+        - git clone https://github.com/CompImg/LST-AI/ /opt/lstai && git -C /opt/lstai checkout {{ context.upstream_commit }}
     - environment:
         PATH: /opt/miniforge3/envs/lstai/bin:/opt/lstai/bin:${PATH}
     - run:
@@ -61,7 +82,7 @@ build:
     - run:
         - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
         - cd /opt/hdbet
-        - git checkout ae160681324d524db3578e4135bf781f8206e146
+        - git checkout {{ context.hdbet_commit }}
         - pip install SimpleITK --only-binary ":all:"
         - mkdir -p /opt/hd-bet_params
         - cp {{ get_file("0_model") }} /opt/hd-bet_params/0.model

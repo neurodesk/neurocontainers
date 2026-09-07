@@ -117,7 +117,7 @@ tests:
   - name: Version check
     description: Verify romeo binary runs and reports version
     command: romeo --version 2>&1
-    expected_output_contains: "v3.2.8"
+    expected_output_contains: "v${version}"
 
   - name: Help display
     description: Verify romeo shows help message with usage information

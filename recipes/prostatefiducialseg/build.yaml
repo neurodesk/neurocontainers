@@ -7,6 +7,11 @@ architectures:
 readme_url: https://raw.githubusercontent.com/astewartau/prostate/refs/heads/main/README.md
 
 variables:
+    openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+    openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+    openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+    openrecon_ismrmrd_version: "1.14.2"
+    upstream_commit: "44a4d75c129e41bfc3843d7704a9d660e2865e57"
     conda_version: "4.12.0"
     conda_download_url:
         try:
@@ -18,6 +23,42 @@ variables:
 files:
     - name: prostatefiducialseg.py
       filename: prostatefiducialseg.py
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: astewartau/prostate-fiducial-seg
+    ref: HEAD
+    target:
+      variable: upstream_commit
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+  local:
+  - macros/openrecon
 
 build:
     kind: neurodocker
@@ -76,7 +117,7 @@ build:
         - run:
               - git clone https://github.com/astewartau/prostate-fiducial-seg.git
               - cd /opt/prostate-fiducial-seg
-              - git checkout 44a4d75
+              - git checkout {{ context.upstream_commit }}
               - chmod +x predict3.py
         - environment:
               PATH: /opt/prostate-fiducial-seg:$PATH

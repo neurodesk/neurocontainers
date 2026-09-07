@@ -68,3 +68,4 @@ tests:
       echo "mipav startup reached native loader"
     expected_output_contains: "mipav startup reached native loader"
     timeout: 30
+upstream_version: 11.3.3

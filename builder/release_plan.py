@@ -100,6 +100,37 @@ def recipe_names_from_paths(paths: list[str]) -> list[str]:
     return sorted(recipes)
 
 
+def shared_recipe_paths(recipe: Mapping[str, object] | None) -> tuple[str, ...]:
+    """Return declared shared build inputs without evaluating recipe templates."""
+    if recipe is None:
+        return ()
+    paths: set[str] = set()
+    policy = recipe.get("auto_update")
+    if isinstance(policy, dict):
+        paths.update(policy.get("local", []))
+
+    def walk(node):
+        if isinstance(node, dict):
+            if isinstance(node.get("include"), str):
+                path = node["include"]
+                paths.add(path if path.startswith("macros/") else "macros/" + path)
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(recipe.get("build", {}))
+    for path in paths:
+        if not isinstance(path, str) or not path.startswith("macros/") or ".." in PurePosixPath(path).parts:
+            raise ValueError("shared recipe inputs must be paths under macros/")
+    return tuple(sorted(paths))
+
+
+def path_is_shared_input(path: str, recipe: Mapping[str, object] | None) -> bool:
+    return any(path == shared or path.startswith(shared.rstrip("/") + "/") for shared in shared_recipe_paths(recipe))
+
+
 def _changed_top_level_fields(
     base: Mapping[str, object], head: Mapping[str, object]
 ) -> set[str]:
@@ -123,7 +154,12 @@ def plan_recipe_changes(
     the already-published artifact instead of rebuilding those provenance files.
     """
     decisions: list[RecipeDecision] = []
-    for recipe in recipe_names_from_paths(changed_paths):
+    affected = set(recipe_names_from_paths(changed_paths))
+    affected.update(
+        name for name, recipe in head_recipes.items()
+        if any(path_is_shared_input(path, recipe) for path in changed_paths)
+    )
+    for recipe in sorted(affected):
         recipe_prefix = f"recipes/{recipe}/"
         relative_paths = {
             path.removeprefix(recipe_prefix)
@@ -139,6 +175,8 @@ def plan_recipe_changes(
             )
 
         candidate_reasons: list[str] = []
+        if any(path_is_shared_input(path, head) for path in changed_paths):
+            candidate_reasons.append("shared-build-input-changed")
         source_reasons: list[str] = []
         build_yaml_changed = "build.yaml" in relative_paths
         other_paths = relative_paths - {"build.yaml"} - KNOWN_NON_IMAGE_FILES

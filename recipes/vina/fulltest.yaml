@@ -1,62 +1,70 @@
-# AutoDock Vina container test suite
-# Minimal ARM64 verification for the Ubuntu-package-based vina image.
-
+package_version: 1.2.5-2build1
 name: vina
 version: 1.2.3
-
 test_data:
   output_dir: test_output
-
 setup:
-  script: |
-    #!/usr/bin/env bash
+  script: '#!/usr/bin/env bash
+
     set -e
+
     mkdir -p "${output_dir}"
-    cat > "${output_dir}/multi.pdbqt" <<'EOF'
+
+    cat > "${output_dir}/multi.pdbqt" <<''EOF''
+
     MODEL 1
+
     ATOM      1  C   UNL     1       0.000   0.000   0.000  0.00  0.00    +0.000 C
+
     ENDMDL
+
     MODEL 2
+
     ATOM      1  C   UNL     1       1.000   0.000   0.000  0.00  0.00    +0.000 C
+
     ENDMDL
+
     EOF
 
+    '
 tests:
-  - name: ARM64 runtime
-    description: Verify the container runs natively on arm64
-    command: uname -m
-    expected_output_contains: "aarch64"
+- name: ARM64 runtime
+  description: Verify the container runs natively on arm64
+  command: uname -m
+  expected_output_contains: aarch64
+- name: vina version
+  description: Verify vina is installed from the Ubuntu package set
+  command: vina --version
+  expected_output_contains: AutoDock Vina
+- name: vina help
+  description: Verify the main docking CLI is available
+  command: vina --help
+  expected_output_contains: --receptor
+- name: vina_split help
+  description: Verify vina_split is available
+  command: vina_split --help
+  expected_output_contains: Usage
+- name: autodock4 version
+  description: Verify autodock4 binary is present
+  command: autodock4 --version
+  ignore_exit_code: true
+  expected_output_contains: AutoDock
+- name: split multi-model pdbqt
+  description: Verify vina_split can split a simple multi-model PDBQT file
+  command: 'cd "${output_dir}"
 
-  - name: vina version
-    description: Verify vina is installed from the Ubuntu package set
-    command: vina --version
-    expected_output_contains: "AutoDock Vina"
+    vina_split --input multi.pdbqt
 
-  - name: vina help
-    description: Verify the main docking CLI is available
-    command: vina --help
-    expected_output_contains: "--receptor"
+    ls -1 multi_ligand_*.pdbqt
 
-  - name: vina_split help
-    description: Verify vina_split is available
-    command: vina_split --help
-    expected_output_contains: "Usage"
-
-  - name: autodock4 version
-    description: Verify autodock4 binary is present
-    command: autodock4 --version
-    ignore_exit_code: true
-    expected_output_contains: "AutoDock"
-
-  - name: split multi-model pdbqt
-    description: Verify vina_split can split a simple multi-model PDBQT file
-    command: |
-      cd "${output_dir}"
-      vina_split --input multi.pdbqt
-      ls -1 multi_ligand_*.pdbqt
-    expected_output_contains: "multi_ligand_1.pdbqt"
-
+    '
+  expected_output_contains: multi_ligand_1.pdbqt
+- name: installed distribution version
+  command: dpkg-query -W -f='${Version}\n' autodock-vina
+  expected_output_contains: ${package_version}
 cleanup:
-  script: |
-    #!/usr/bin/env bash
+  script: '#!/usr/bin/env bash
+
     echo "Test outputs preserved in ${output_dir}/"
+
+    '

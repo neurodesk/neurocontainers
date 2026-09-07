@@ -16,13 +16,86 @@ architectures:
 variables:
   # mri_synthseg and the small label/name .npy files live in the FreeSurfer
   # source tree.
-  freesurfer_raw_url: "https://raw.githubusercontent.com/freesurfer/freesurfer/v{{ context.version }}"
-  # The trained .h5 weights are git-annex objects in the FreeSurfer source tree.
-  # They are served over plain HTTP from the public annex remote documented at
-  # https://surfer.nmr.mgh.harvard.edu/fswiki/GitAnnex, which avoids pulling the
-  # ~9.5 GB FreeSurfer tarball just to extract ~0.6 GB of SynthSeg models.
-  freesurfer_annex_url: "https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/annex/objects"
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  upstream_version: 8.2.0
+  freesurfer_raw_url: https://raw.githubusercontent.com/freesurfer/freesurfer/v{{ context.upstream_version }}
+  freesurfer_annex_url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/annex/objects
   synthseg_home: /opt/freesurfer-synthseg
+  synthseg_1_0_url: https://raw.githubusercontent.com/freesurfer/freesurfer/v8.2.0/mri_synthseg/synthseg_1.0.h5
+  synthseg_1_0_sha256: 7d2e32d298fe38dc51ea38e6a8e8fc5c665d56b63cddb409e8b199535f8b5298
+  synthseg_2_0_url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/annex/objects/bee/241/SHA256E-s53079152--f190bfd742f450ef3ca2c9df9ed4d2e0232b3a74471da5e51b7770bacdf80c3e.0.h5/SHA256E-s53079152--f190bfd742f450ef3ca2c9df9ed4d2e0232b3a74471da5e51b7770bacdf80c3e.0.h5
+  synthseg_2_0_sha256: f190bfd742f450ef3ca2c9df9ed4d2e0232b3a74471da5e51b7770bacdf80c3e
+  synthseg_robust_2_0_url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/annex/objects/187/db4/SHA256E-s214606800--7bc30bf5c3d204f20c4a6cb5a283aedbcab6af1de927cda783f59b67d19cb01c.0.h5/SHA256E-s214606800--7bc30bf5c3d204f20c4a6cb5a283aedbcab6af1de927cda783f59b67d19cb01c.0.h5
+  synthseg_robust_2_0_sha256: 7bc30bf5c3d204f20c4a6cb5a283aedbcab6af1de927cda783f59b67d19cb01c
+  synthseg_parc_2_0_url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/annex/objects/c04/403/SHA256E-s53090840--83bb1de76fb6f173c6dacacd433f81209fc6abb1dbc179a930ec06ecabbeb684.0.h5/SHA256E-s53090840--83bb1de76fb6f173c6dacacd433f81209fc6abb1dbc179a930ec06ecabbeb684.0.h5
+  synthseg_parc_2_0_sha256: 83bb1de76fb6f173c6dacacd433f81209fc6abb1dbc179a930ec06ecabbeb684
+  synthseg_qc_2_0_url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/annex/objects/3ac/fe4/SHA256E-s49878004--fb92e37daa0842bdd8a03bc06a3b36b0d38810e31c714659cedd09119c0abfb7.0.h5/SHA256E-s49878004--fb92e37daa0842bdd8a03bc06a3b36b0d38810e31c714659cedd09119c0abfb7.0.h5
+  synthseg_qc_2_0_sha256: fb92e37daa0842bdd8a03bc06a3b36b0d38810e31c714659cedd09119c0abfb7
+  synthseg_photo_both_1_0_url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/annex/objects/2f7/609/SHA256E-s159121352--851ee7536cd3132d5e821ad76390bcd0a969651d3f9840dab9a6a5643fd5153f.0.h5/SHA256E-s159121352--851ee7536cd3132d5e821ad76390bcd0a969651d3f9840dab9a6a5643fd5153f.0.h5
+  synthseg_photo_both_1_0_sha256: 851ee7536cd3132d5e821ad76390bcd0a969651d3f9840dab9a6a5643fd5153f
+  synthseg_photo_single_1_0_url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/annex/objects/695/8ef/SHA256E-s159114824--b8da211a79638e5a6920ce3d15e82fd613a6c8479b8abb3e1b83b6452c601274.0.h5/SHA256E-s159114824--b8da211a79638e5a6920ce3d15e82fd613a6c8479b8abb3e1b83b6452c601274.0.h5
+  synthseg_photo_single_1_0_sha256: b8da211a79638e5a6920ce3d15e82fd613a6c8479b8abb3e1b83b6452c601274
+auto_update:
+  method: sources
+  local:
+  - macros/openrecon
+  sources:
+  - id: freesurfer
+    method: freesurfer_release
+    script: mri_synthseg/mri_synthseg
+    models:
+      synthseg_1_0: mri_synthseg/synthseg_1.0.h5
+      synthseg_2_0: mri_synthseg/synthseg_2.0.h5
+      synthseg_robust_2_0: mri_synthseg/synthseg_robust_2.0.h5
+      synthseg_parc_2_0: mri_synthseg/synthseg_parc_2.0.h5
+      synthseg_qc_2_0: mri_synthseg/synthseg_qc_2.0.h5
+      synthseg_photo_both_1_0: mri_synthseg/synthseg_photo_both_1.0.h5
+      synthseg_photo_single_1_0: mri_synthseg/synthseg_photo_single_1.0.h5
+    target:
+      file: mri_synthseg
+      variables:
+        upstream_version: version
+        synthseg_1_0_url: synthseg_1_0_url
+        synthseg_1_0_sha256: synthseg_1_0_sha256
+        synthseg_2_0_url: synthseg_2_0_url
+        synthseg_2_0_sha256: synthseg_2_0_sha256
+        synthseg_robust_2_0_url: synthseg_robust_2_0_url
+        synthseg_robust_2_0_sha256: synthseg_robust_2_0_sha256
+        synthseg_parc_2_0_url: synthseg_parc_2_0_url
+        synthseg_parc_2_0_sha256: synthseg_parc_2_0_sha256
+        synthseg_qc_2_0_url: synthseg_qc_2_0_url
+        synthseg_qc_2_0_sha256: synthseg_qc_2_0_sha256
+        synthseg_photo_both_1_0_url: synthseg_photo_both_1_0_url
+        synthseg_photo_both_1_0_sha256: synthseg_photo_both_1_0_sha256
+        synthseg_photo_single_1_0_url: synthseg_photo_single_1_0_url
+        synthseg_photo_single_1_0_sha256: synthseg_photo_single_1_0_sha256
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
 
 build:
   kind: neurodocker
@@ -146,27 +219,35 @@ files:
     filename: OpenReconREADME.md
 
   - name: mri_synthseg
-    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/mri_synthseg"
+    url: "https://raw.githubusercontent.com/freesurfer/freesurfer/v8.2.0/mri_synthseg/mri_synthseg"
+    sha256: f3c182cd100721e8ae4ae4e0661b6ac3c45e80453f716d668d53ca0fe189279b
   - name: FreeSurferColorLUT
     url: "{{ context.freesurfer_raw_url }}/distribution/FreeSurferColorLUT.txt"
 
   # Trained weights (git-annex objects; the path is md5(key)[0:3]/md5(key)[3:6]).
   - name: synthseg_1.0.h5
-    url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_1.0.h5"
+    url: "{{ context.synthseg_1_0_url }}"
+    sha256: '{{ context.synthseg_1_0_sha256 }}'
   - name: synthseg_2.0.h5
-    url: "{{ context.freesurfer_annex_url }}/bee/241/SHA256E-s53079152--f190bfd742f450ef3ca2c9df9ed4d2e0232b3a74471da5e51b7770bacdf80c3e.0.h5/SHA256E-s53079152--f190bfd742f450ef3ca2c9df9ed4d2e0232b3a74471da5e51b7770bacdf80c3e.0.h5"
+    url: "{{ context.synthseg_2_0_url }}"
+    sha256: '{{ context.synthseg_2_0_sha256 }}'
   - name: synthseg_robust_2.0.h5
-    url: "{{ context.freesurfer_annex_url }}/187/db4/SHA256E-s214606800--7bc30bf5c3d204f20c4a6cb5a283aedbcab6af1de927cda783f59b67d19cb01c.0.h5/SHA256E-s214606800--7bc30bf5c3d204f20c4a6cb5a283aedbcab6af1de927cda783f59b67d19cb01c.0.h5"
+    url: "{{ context.synthseg_robust_2_0_url }}"
+    sha256: '{{ context.synthseg_robust_2_0_sha256 }}'
   - name: synthseg_parc_2.0.h5
-    url: "{{ context.freesurfer_annex_url }}/c04/403/SHA256E-s53090840--83bb1de76fb6f173c6dacacd433f81209fc6abb1dbc179a930ec06ecabbeb684.0.h5/SHA256E-s53090840--83bb1de76fb6f173c6dacacd433f81209fc6abb1dbc179a930ec06ecabbeb684.0.h5"
+    url: "{{ context.synthseg_parc_2_0_url }}"
+    sha256: '{{ context.synthseg_parc_2_0_sha256 }}'
   - name: synthseg_qc_2.0.h5
-    url: "{{ context.freesurfer_annex_url }}/3ac/fe4/SHA256E-s49878004--fb92e37daa0842bdd8a03bc06a3b36b0d38810e31c714659cedd09119c0abfb7.0.h5/SHA256E-s49878004--fb92e37daa0842bdd8a03bc06a3b36b0d38810e31c714659cedd09119c0abfb7.0.h5"
+    url: "{{ context.synthseg_qc_2_0_url }}"
+    sha256: '{{ context.synthseg_qc_2_0_sha256 }}'
   - name: synthseg_photo_both_1.0.h5
-    url: "{{ context.freesurfer_annex_url }}/2f7/609/SHA256E-s159121352--851ee7536cd3132d5e821ad76390bcd0a969651d3f9840dab9a6a5643fd5153f.0.h5/SHA256E-s159121352--851ee7536cd3132d5e821ad76390bcd0a969651d3f9840dab9a6a5643fd5153f.0.h5"
+    url: "{{ context.synthseg_photo_both_1_0_url }}"
+    sha256: '{{ context.synthseg_photo_both_1_0_sha256 }}'
   - name: synthseg_photo_single_1.0.h5
-    url: "{{ context.freesurfer_annex_url }}/695/8ef/SHA256E-s159114824--b8da211a79638e5a6920ce3d15e82fd613a6c8479b8abb3e1b83b6452c601274.0.h5/SHA256E-s159114824--b8da211a79638e5a6920ce3d15e82fd613a6c8479b8abb3e1b83b6452c601274.0.h5"
+    url: "{{ context.synthseg_photo_single_1_0_url }}"
 
   # Label indices, structure names and topology classes.
+    sha256: '{{ context.synthseg_photo_single_1_0_sha256 }}'
   - name: synthseg_segmentation_labels.npy
     url: "{{ context.freesurfer_raw_url }}/mri_synthseg/synthseg_segmentation_labels.npy"
   - name: synthseg_segmentation_labels_2.0.npy

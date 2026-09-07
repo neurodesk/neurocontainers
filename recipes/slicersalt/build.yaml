@@ -6,6 +6,19 @@ version: "3.0.0"
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://data.kitware.com/api/v1/item?folderId=5898b7ef8d777f07219fcb14&limit=0
+    version_regex: SlicerSALT-(?P<version>\d+(?:\.\d+)+)-linux-amd64\.tar\.gz$
+    download_base: https://data.kitware.com/api/v1/
+    listing_format: girder
+    target:
+      file: download
+      variables:
+        upstream_version: version
 build:
   kind: neurodocker
 
@@ -46,15 +59,21 @@ build:
         - tar -xz -C /opt/ -f {{ get_file("download") }}
 
     - run:
-        - ln -s /opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/SlicerSALT-4.11/libgfortran.so /opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/SlicerSALT-4.11/libgfortran.so.3
-
+        - set -- /opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/lib/SlicerSALT-*; test "$#" -eq 1; test -d "$1"; ln -s
+          "$1" /opt/slicersalt-libs
+        - set -- /opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/lib/Teem-*; test "$#" -eq 1; test -d "$1"; ln -s "$1"
+          /opt/slicersalt-teem
+        - if [ -f /opt/slicersalt-libs/libgfortran.so ] && [ ! -e /opt/slicersalt-libs/libgfortran.so.3 ]; then ln -s libgfortran.so
+          /opt/slicersalt-libs/libgfortran.so.3; fi
+        - set -- /opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/share/SlicerSALT-*; test "$#" -eq 1; test -d "$1"; ln
+          -s "$1" /opt/slicersalt-share
     - environment:
-        LD_LIBRARY_PATH: /opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/SlicerSALT-4.11:/opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/QtPlugins:/opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/Teem-1.12.0
-        PATH: /usr/bin:/opt/SlicerSALT-{{ context.version }}-linux-amd64/bin:/opt/SlicerSALT-{{ context.version }}-linux-amd64
+        LD_LIBRARY_PATH: /opt/slicersalt-libs:/opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem
+        PATH: /usr/bin:/opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/bin:/opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64
 
 deploy:
   path:
-    - /opt/SlicerSALT-{{ context.version }}-linux-amd64/bin
+    - /opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/bin
   bins:
     - SlicerSALTApp-real:SlicerSALT
 
@@ -81,4 +100,7 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBI
 
 files:
   - name: download
-    url: https://data.kitware.com/api/v1/item/5f18b8fa9014a6d84e32ab6e/download
+    url: "https://data.kitware.com/api/v1/item/5f18b8fa9014a6d84e32ab6e/download"
+    sha256: b7d2caa70f36c772f11f6f634d4afc08ecba25723ad34b53eba2febd92ecb312
+variables:
+  upstream_version: 3.0.0

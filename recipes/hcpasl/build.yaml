@@ -33,6 +33,10 @@ files:
       pandas==2.2.3
       matplotlib==3.9.4
 
+auto_update:
+  method: github_tags
+  repo: physimals/hcp-asl
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04

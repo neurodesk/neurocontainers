@@ -49,6 +49,10 @@ readme: |-
   To run container outside of this environment: ml tinyrange/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: github_release
+  repo: tinyrange/tinyrange
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

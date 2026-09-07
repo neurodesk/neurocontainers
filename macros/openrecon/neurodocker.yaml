@@ -30,7 +30,7 @@ directives:
   - run:
       - git clone https://github.com/ismrmrd/ismrmrd.git
       - cd ismrmrd
-      - git checkout v1.14.2
+      - git checkout v{{ context.openrecon_ismrmrd_version | default("1.14.2") }}
       - cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - cmake --build build --parallel {{ parallel_jobs }}
       - cmake --install build
@@ -39,21 +39,24 @@ directives:
   - run:
       - git clone https://github.com/ismrmrd/siemens_to_ismrmrd.git
       - cd siemens_to_ismrmrd
+      - git checkout {{ context.openrecon_siemens_commit | default("055eefc09dfa77fbf11fff85979dea9ef2879ba5") }}
       - cmake -S . -B build -DBUILD_DYNAMIC=ON -DCMAKE_BUILD_TYPE=Release
       - cmake --build build --parallel {{ parallel_jobs }}
       - cmake --install build
       - ldconfig
 
   - run:
-      - python3 -m pip install $(python3 -m pip install --help | grep -q -- "--break-system-packages" && echo "--break-system-packages") --no-cache-dir h5py ismrmrd==1.14.2 "xsdata<24.4" matplotlib pydicom==3.0.1 pynetdicom nibabel scipy scikit-image
+      - python3 -m pip install $(python3 -m pip install --help | grep -q -- "--break-system-packages" && echo "--break-system-packages") --no-cache-dir h5py ismrmrd=={{ context.openrecon_ismrmrd_version | default("1.14.2") }} "xsdata<24.4" matplotlib pydicom==3.0.1 pynetdicom nibabel scipy scikit-image
 
   - run:
       - git clone https://github.com/ismrmrd/ismrmrd-python-tools.git
       - cd ismrmrd-python-tools
+      - git checkout {{ context.openrecon_python_tools_commit | default("17fe6fbf1bb645112e2ad0023eb4f42afb36421e") }}
       - python3 -m pip install $(python3 -m pip install --help | grep -q -- "--break-system-packages" && echo "--break-system-packages") --no-cache-dir .
 
   - run:
-      - git clone --branch fix/ismrmrd-compatibility https://github.com/astewartau/python-ismrmrd-server
+      - git clone https://github.com/astewartau/python-ismrmrd-server
+      - git -C python-ismrmrd-server checkout {{ context.openrecon_server_commit | default("33362f2139701fbf5ea855808a325eb59b7db2ae") }}
       - find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} \;
       - find /opt/code/python-ismrmrd-server -name "*.sh" | xargs dos2unix
     # replace 'invertcontrast' in main.py with 'default_replace_with_valid_name' to avoid running 

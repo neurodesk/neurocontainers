@@ -5,6 +5,10 @@ architectures:
 copyright:
   - license: Apache-2.0
     url: https://github.com/MIC-DKFZ/TractSeg/blob/master/LICENSE
+auto_update:
+  method: pypi
+  package: TractSeg
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -32,7 +36,7 @@ build:
     - run:
         - pip install packaging numpy
     - run:
-        - pip install TractSeg==2.9
+        - pip install TractSeg=={{ context.version }}
     - run:
         - pip install -q wheel scipy nilearn matplotlib scikit-image nibabel dipy fury joblib seaborn cython
     - run:

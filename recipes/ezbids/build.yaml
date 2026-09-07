@@ -14,7 +14,38 @@ architectures:
   - x86_64
 
 variables:
-  upstream_commit: 0ef4bb446129a71c69684c186048e87c0abbbd9b
+  bids_validator_commit: "2311270a7af5de0814661da0199594b4e2e09af4"
+  bids_specification_commit: "3537e9edbc81545614d3ee605c398361099b6977"
+  fsl_binaries_commit: "8174c8a9e6c9d12d8ec8b910f74ab79d28c448e5"
+  upstream_commit: "0ef4bb446129a71c69684c186048e87c0abbbd9b"
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: openneuropet/ezbids_docker
+    ref: HEAD
+    target:
+      variable: upstream_commit
+  - id: fsl-binaries
+    method: github_commit
+    repo: dlevitas/FSL_binaries
+    ref: HEAD
+    target:
+      variable: fsl_binaries_commit
+  - id: bids-specification
+    method: github_commit
+    repo: bids-standard/bids-specification
+    ref: HEAD
+    target:
+      variable: bids_specification_commit
+  - id: bids-validator
+    method: github_commit
+    repo: bids-standard/bids-validator
+    ref: HEAD
+    target:
+      variable: bids_validator_commit
 
 build:
   kind: neurodocker
@@ -86,7 +117,7 @@ build:
     # Install FSL binaries
     - run:
         - mkdir -p /usr/local/fsl
-        - git clone https://github.com/dlevitas/FSL_binaries /usr/local/fsl
+        - git clone https://github.com/dlevitas/FSL_binaries /usr/local/fsl && git -C /usr/local/fsl checkout {{ context.fsl_binaries_commit }}
         - rm -rf /usr/local/fsl/README.md
         - mkdir -p /usr/local/fsl/data/standard
         - mv /usr/local/fsl/bin/MNI152_T1_2mm_brain.nii.gz /usr/local/fsl/data/standard
@@ -124,11 +155,11 @@ build:
     # Clone bids-specification into ezbids directory (where ezBIDS expects it)
     - run:
         - cd /app/ezbids && git clone https://github.com/bids-standard/bids-specification
-        - cd /app/ezbids/bids-specification && git checkout 3537e9edbc81545614d3ee605c398361099b6977
+        - cd /app/ezbids/bids-specification && git checkout {{ context.bids_specification_commit }}
 
     # Clone bids-validator
     - run:
-        - git clone https://github.com/bids-standard/bids-validator /app/bids-validator
+        - git clone https://github.com/bids-standard/bids-validator /app/bids-validator && git -C /app/bids-validator checkout {{ context.bids_validator_commit }}
 
     # Install API dependencies
     - run:

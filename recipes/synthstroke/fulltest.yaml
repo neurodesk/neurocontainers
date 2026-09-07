@@ -1,0 +1,11 @@
+name: synthstroke
+version: 0.0.0
+tests:
+- name: SynthStroke launcher
+  command: synthstroke --help
+  expected_exit_code: 0
+  expected_output_contains: synthstroke
+- name: download launcher
+  command: command -v synthstroke-download
+  expected_exit_code: 0
+  expected_output_contains: synthstroke-download

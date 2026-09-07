@@ -9,12 +9,18 @@ The schema matches the Zod schema from https://github.com/neurodesk/neurocontain
 import base64
 import binascii
 import re
+import sys
 from pathlib import Path
 from typing import List, Dict, Union, Optional, Any, Literal
 
 import attrs
 import jinja2
 import yaml
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from builder.update_sources import validate_update_config
 
 
 # ============================================================================
@@ -73,7 +79,6 @@ INCLUDE_MACROS = [
     "macros/openrecon/neurodocker.yaml",  # Support both formats
 ]
 
-ALLOWED_AUTO_UPDATE_METHODS = ["github_release"]
 
 _jinja_env = jinja2.Environment()
 _ICON_DATA_URI_RE = re.compile(r"^data:image/[a-zA-Z0-9.+-]+;base64,(?P<data>.+)$")
@@ -487,6 +492,22 @@ class FileInfo:
     retry: Optional[int] = attrs.field(default=None)
     refresh: Optional[bool] = attrs.field(default=None)
     condition: Optional[str] = attrs.field(default=None)
+    sha256: Optional[str] = attrs.field(default=None)
+
+    @sha256.validator
+    def validate_sha256(self, attribute, value):
+        if value is None:
+            return
+        if self.url is None or self.filename is not None or self.contents is not None:
+            raise ValueError(f"declared file {self.name!r}: sha256 requires a URL source")
+        if not isinstance(value, str):
+            raise ValueError("sha256 must be a string")
+        if any(marker in value for marker in ("{{", "{%", "{#")):
+            validate_template_syntax(value, f"files.{self.name}.sha256")
+            return
+        from builder.cache import normalize_sha256
+
+        normalize_sha256(value)
 
 
 # ============================================================================
@@ -533,15 +554,24 @@ class Template:
 
 @attrs.define
 class AutoUpdate:
-    method: str = attrs.field()  # only 'github_release'
-    repo: str = attrs.field(validator=validate_non_empty_string)
+    method: str = attrs.field()
+    sources: Optional[List[Dict[str, Any]]] = attrs.field(default=None)
+    local: Optional[List[str]] = attrs.field(default=None)
+    repo: Optional[str] = attrs.field(default=None)
+    package: Optional[str] = attrs.field(default=None)
+    url: Optional[str] = attrs.field(default=None)
+    version_regex: Optional[str] = attrs.field(default=None)
+    version_scheme: Optional[str] = attrs.field(default=None)
+    include_prereleases: Optional[bool] = attrs.field(default=None)
+    assets: Optional[Dict[str, str]] = attrs.field(default=None)
+    tag_variable: Optional[str] = attrs.field(default=None)
+    mode: Optional[str] = attrs.field(default=None)
+    reason: Optional[str] = attrs.field(default=None)
 
-    @method.validator
-    def _validate_method(self, attribute, value):
-        if value not in ALLOWED_AUTO_UPDATE_METHODS:
-            raise ValueError(
-                f"auto_update.method '{value}' not supported. Must be one of: {ALLOWED_AUTO_UPDATE_METHODS}"
-            )
+    def __attrs_post_init__(self):
+        validate_update_config(
+            {key: value for key, value in attrs.asdict(self).items() if value is not None}
+        )
 
 
 # ============================================================================
@@ -1112,6 +1142,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
+        from builder.audit_updates import validate_update_policy
+
+        with open(args.file, encoding="utf-8") as handle:
+            validate_update_policy(yaml.safe_load(handle), recipe_path=Path(args.file))
         recipe = validate_recipe_file(args.file)
         print(f"✓ Recipe {recipe.name} v{recipe.version} is valid")
         if args.verbose:

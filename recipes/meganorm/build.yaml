@@ -16,6 +16,10 @@ variables:
   # system python, so no conda/deadsnakes layer is needed here.
   python_package: python3.12
 
+auto_update:
+  method: pypi
+  package: meganorm
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

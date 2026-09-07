@@ -8,9 +8,14 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: dockerhub
+  repo: junshenxu/nesvor
+  version_regex: ^v(?P<version>\d+(?:\.\d+)+)$
+
 build:
   kind: neurodocker
-  base-image: junshenxu/nesvor:v0.5.0
+  base-image: junshenxu/nesvor:v{{ context.version }}
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false

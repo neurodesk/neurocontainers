@@ -8,6 +8,19 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build?format=json&prefix=eeglab
+    version_regex: eeglab(?P<version>\d{4}\.\d+(?:\.\d+)?)_mcr(?P<runtime>\d{4}[ab])\.tar\.gz$
+    download_base: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/
+    target:
+      file: eeglab2020_0_mcr2020a_tar_gz
+      variables:
+        upstream_version: version
+        matlab_version: runtime
 build:
   kind: neurodocker
 
@@ -24,17 +37,19 @@ build:
 
     - template:
         name: matlabmcr
-        install_path: /opt/MCR
-        version: 2020a
-
-    - workdir: /opt/eeglab-2020.0/
+        install_path: "/opt/MCR"
+        version: "{{ context.matlab_version }}"
 
     - run:
-        - tar -xz -C /opt/eeglab-2020.0/ --strip-components 1 -f {{ get_file("eeglab2020_0_mcr2020a_tar_gz") }}
+      - ln -s /opt/MCR/{{ context.matlab_runtime_subdir }} /opt/matlab-runtime
+    - workdir: /opt/eeglab-{{ context.upstream_version }}/
+
+    - run:
+        - tar -xz -C /opt/eeglab-{{ context.upstream_version }}/ --strip-components 1 -f {{ get_file("eeglab2020_0_mcr2020a_tar_gz") }}
 
     - environment:
-        PATH: /opt/eeglab-2020.0/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-        XAPPLRESDIR: /opt/MCR/v98/x11/app-defaults
+        PATH: /opt/eeglab-{{ context.upstream_version }}/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        XAPPLRESDIR: /opt/matlab-runtime/x11/app-defaults
 
 deploy:
   bins:
@@ -74,4 +89,11 @@ gui_apps:
 
 files:
   - name: eeglab2020_0_mcr2020a_tar_gz
-    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/eeglab2020.0_mcr2020a.tar.gz
+    url: "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/eeglab2020.0_mcr2020a.tar.gz"
+    sha256: 3867cb4c01c4d4a0373cb7fbfc995fd2e8c0eda5c252ab89aca026227fb78d0f
+variables:
+  upstream_version: '2020.0'
+  matlab_version: 2020a
+  matlab_runtime_subdir: '{{ {''2018a'': ''v94'', ''2019b'': ''v97'', ''2020a'': ''v98'', ''2020b'': ''v99'', ''2021a'': ''v910'',
+    ''2021b'': ''v911'', ''2022a'': ''v912'', ''2022b'': ''v913'', ''2023a'': ''v914''}.get(context.matlab_version, ''R'' +
+    context.matlab_version) }}'

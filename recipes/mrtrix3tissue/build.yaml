@@ -8,6 +8,11 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: 3Tissue/MRtrix3Tissue
+  version_regex: ^3Tissue_v(?P<version>\d+\.\d+\.\d+)$
+
 build:
   kind: neurodocker
 

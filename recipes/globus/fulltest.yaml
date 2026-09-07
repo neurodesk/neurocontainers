@@ -9,7 +9,7 @@ name: globus
 globus_version: "3.2.8"
 version: "${globus_version}"
 
-globus_dir: /opt/globusconnectpersonal-${globus_version}
+globus_dir: /opt/globusconnectpersonal-${version}
 
 tests:
   # ==========================================================================
@@ -255,7 +255,7 @@ tests:
   - name: Version file exists
     description: Verify VERSION file exists and contains version
     command: "bash -lc 'cat ${globus_dir}/VERSION 2>&1'"
-    expected_output_contains: "${globus_version}"
+    expected_output_contains: "${version}"
 
   - name: README file exists
     description: Verify README file exists

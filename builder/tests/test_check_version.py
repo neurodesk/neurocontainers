@@ -114,8 +114,9 @@ def test_submit_bump_commits_recipe_and_fulltest_together(
         encoding="utf-8",
     )
     git_calls = []
+    monkeypatch.setattr(check_version.subprocess, "run", lambda *args, **kwargs: None)
 
-    monkeypatch.setattr(check_version, "pull_request_exists", lambda branch: False)
+    monkeypatch.setattr(check_version, "pull_request_state", lambda branch: None)
     monkeypatch.setattr(check_version, "remote_branch_exists", lambda branch: False)
     monkeypatch.setattr(check_version, "find_stale_update_issues", lambda path: [])
     monkeypatch.setattr(
@@ -179,9 +180,10 @@ def test_revision_rewrite_leaves_another_projects_pin_alone() -> None:
 
 
 def test_revision_rewrite_skips_a_recipe_that_pins_only_foreign_shas() -> None:
-    assert check_version.revisions_owned_by(
-        RECIPE_WITH_TWO_PINS, "unrelated/project"
-    ) == set()
+    assert (
+        check_version.revisions_owned_by(RECIPE_WITH_TWO_PINS, "unrelated/project")
+        == set()
+    )
 
     _, changed = check_version.rewrite_revision(
         RECIPE_WITH_TWO_PINS, "unrelated/project", "c" * 40
@@ -192,3 +194,203 @@ def test_revision_rewrite_skips_a_recipe_that_pins_only_foreign_shas() -> None:
 @pytest.mark.parametrize("repo", ["rordenlab/niimath", "RordenLab/NiiMath"])
 def test_revisions_owned_by_matches_case_insensitively(repo: str) -> None:
     assert check_version.revisions_owned_by(RECIPE_WITH_TWO_PINS, repo) == {"b" * 40}
+
+
+def write_update_recipe(root: Path, name: str, config: dict | None) -> None:
+    path = root / "recipes" / name
+    path.mkdir(parents=True)
+    data = {
+        "name": name,
+        "version": "1.0.0",
+        "build": {"directives": [{"run": "pip install demo=={{ context.version }}"}]},
+    }
+    if config is not None:
+        data["auto_update"] = config
+    (path / "build.yaml").write_text(yaml.safe_dump(data))
+    (path / "fulltest.yaml").write_text("name: demo\nversion: 1.0.0\ntests: []\n")
+
+
+def test_main_reports_missing_tracking_and_still_checks_other_recipes(
+    tmp_path, monkeypatch
+):
+    import json
+
+    write_update_recipe(tmp_path, "absent", None)
+    write_update_recipe(tmp_path, "tracked", {"method": "pypi", "package": "demo"})
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(check_version, "REPO", None)
+    monkeypatch.setattr(
+        check_version,
+        "latest_version",
+        lambda *args: SimpleNamespace(
+            version="1.1.0", tag="1.1.0", url="https://pypi.org/project/demo/1.1.0/"
+        ),
+    )
+    monkeypatch.setattr(
+        check_version.sys,
+        "argv",
+        ["check_version", "--dry-run", "--json", "report.json"],
+    )
+    assert check_version.main() == 1
+    rows = json.loads((tmp_path / "report.json").read_text())
+    assert [row["status"] for row in rows] == ["error", "would-open"]
+    assert "auto_update is required" in rows[0]["detail"]
+
+
+def test_main_reports_lookup_failure_instead_of_false_success(tmp_path, monkeypatch):
+    import json
+
+    write_update_recipe(tmp_path, "broken", {"method": "pypi", "package": "demo"})
+    monkeypatch.chdir(tmp_path)
+
+    def unavailable(*args):
+        raise check_version.requests.HTTPError("429 rate limited")
+
+    monkeypatch.setattr(check_version, "latest_version", unavailable)
+    monkeypatch.setattr(
+        check_version.sys,
+        "argv",
+        ["check_version", "--dry-run", "--json", "report.json"],
+    )
+    assert check_version.main() == 1
+    assert json.loads((tmp_path / "report.json").read_text())[0]["status"] == "error"
+
+
+def test_pr_limit_does_not_hide_existing_or_closed_prs(tmp_path, monkeypatch):
+    import json
+
+    for name in ("a-new", "b-open", "c-closed", "d-new"):
+        write_update_recipe(tmp_path, name, {"method": "pypi", "package": "demo"})
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(check_version, "REPO", "owner/containers")
+    monkeypatch.setattr(
+        check_version,
+        "latest_version",
+        lambda *args: SimpleNamespace(
+            version="2.0.0", tag="2.0.0", url="https://pypi.org/project/demo/2.0.0/"
+        ),
+    )
+    monkeypatch.setattr(
+        check_version,
+        "pull_request_state",
+        lambda branch: (
+            "open" if "b-open" in branch else "closed" if "c-closed" in branch else None
+        ),
+    )
+    monkeypatch.setattr(
+        check_version.sys,
+        "argv",
+        ["check_version", "--dry-run", "--max-prs", "1", "--json", "report.json"],
+    )
+    assert check_version.main() == 0
+    rows = json.loads((tmp_path / "report.json").read_text())
+    assert [row["status"] for row in rows] == [
+        "would-open",
+        "pr-open",
+        "pr-closed",
+        "deferred",
+    ]
+
+
+def test_version_comparison_does_not_promote_prerelease_to_stable():
+    assert check_version.newer("1.0.0-rc1", "1.0.0") is True
+
+
+def test_package_registry_bump_does_not_rewrite_helper_commits(tmp_path):
+    path = tmp_path / "build.yaml"
+    path.write_text(RECIPE_WITH_TWO_PINS)
+    updated, changes = check_version.prepare_bump(
+        str(path), "1.0.0", "1.1.0", "", "1.1.0"
+    )
+    assert updated is not None
+    assert "revision: " + "a" * 40 in updated
+    assert "revision: " + "b" * 40 in updated
+    assert len(changes) == 1
+
+
+def test_real_update_refuses_untracked_work_before_checkout(tmp_path, monkeypatch):
+    import subprocess
+
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    draft = tmp_path / "draft.txt"
+    draft.write_text("Uncommitted user work\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(check_version, "REPO", "org/recipes")
+    monkeypatch.setattr(check_version, "TOKEN", "test-token")
+    monkeypatch.delenv("AUTO_UPDATE_DRY_RUN", raising=False)
+    monkeypatch.setattr(check_version.sys, "argv", ["check_version"])
+    with pytest.raises(SystemExit) as error:
+        check_version.main()
+    assert error.value.code == 2
+    assert draft.read_text() == "Uncommitted user work\n"
+
+
+def test_empty_release_filter_is_an_error_for_monitored_packages(tmp_path, monkeypatch):
+    import json
+
+    write_update_recipe(
+        tmp_path,
+        "demo",
+        {
+            "method": "pypi",
+            "package": "demo",
+        },
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(check_version, "latest_version", lambda *args: None)
+    monkeypatch.setattr(
+        check_version.sys,
+        "argv",
+        ["check_version", "--dry-run", "--json", "report.json"],
+    )
+    assert check_version.main() == 1
+    row = json.loads((tmp_path / "report.json").read_text())[0]
+    assert row["status"] == "error"
+    assert "no stable version found upstream" in row["detail"]
+
+
+def test_recipe_bump_preserves_the_exact_upstream_tag_when_prefixes_change(tmp_path):
+    path = tmp_path / "build.yaml"
+    path.write_text(
+        "name: demo\nversion: 1.9.3\n"
+        "variables:\n  upstream_tag: '1.9.3'  # selected source\n  helper: 1.2.3\n"
+        "auto_update:\n  method: github_release\n  repo: org/demo\n"
+        "  tag_variable: upstream_tag\n"
+    )
+    updated, changes = check_version.prepare_bump(
+        str(path), "1.9.3", "1.9.6", "org/demo", "v1.9.6"
+    )
+    recipe = yaml.safe_load(updated)
+    assert recipe["version"] == "1.9.6"
+    assert recipe["variables"] == {"upstream_tag": "v1.9.6", "helper": "1.2.3"}
+    assert "# selected source" in updated
+    assert len(changes) == 2
+
+
+@pytest.mark.parametrize("tag", ["v2;exit", "$(exit)", "a b", "v2\nexit"])
+def test_raw_upstream_tag_cannot_introduce_shell_syntax(tag):
+    with pytest.raises(ValueError, match="safe for a source ref"):
+        check_version.rewrite_upstream_tag(
+            "variables:\n  upstream_tag: v1\n", "upstream_tag", tag
+        )
+
+
+def test_raw_tag_alias_cannot_rewrite_another_field():
+    text = "version: &version 1.9.3\nvariables:\n  upstream_tag: *version\n"
+    with pytest.raises(ValueError, match="without an alias"):
+        check_version.rewrite_upstream_tag(text, "upstream_tag", "v1.9.6")
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "&shared 1.9.3\n  helper_tag: *shared",
+        "!!str &shared 1.9.3\n  helper_tag: *shared",
+        ">-\n    1.9.3",
+        "|-\n    1.9.3",
+    ],
+)
+def test_raw_tag_rewrite_rejects_anchors_and_block_scalars(source):
+    text = f"variables:\n  upstream_tag: {source}\nauto_update: {{}}\n"
+    with pytest.raises(ValueError, match="plain or quoted scalar"):
+        check_version.rewrite_upstream_tag(text, "upstream_tag", "v1.9.6")

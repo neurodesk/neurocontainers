@@ -5,6 +5,11 @@ copyright:
     url: https://github.com/nipreps/petprep/blob/main/LICENSE
 architectures:
   - x86_64
+auto_update:
+  method: dockerhub
+  repo: nipreps/petprep
+  version_regex: ^(?P<version>\d+(?:\.\d+)+)$
+
 build:
   kind: neurodocker
   base-image: nipreps/petprep:{{ context.version }}

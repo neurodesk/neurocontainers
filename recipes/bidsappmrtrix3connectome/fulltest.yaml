@@ -41,7 +41,7 @@ tests:
   - name: BIDS App version check
     description: Verify mrtrix3_connectome.py reports version
     command: mrtrix3_connectome.py --version 2>&1
-    expected_output_contains: "0.5.3"
+    expected_output_contains: "${version}"
 
   - name: BIDS App help
     description: Verify mrtrix3_connectome.py shows help information

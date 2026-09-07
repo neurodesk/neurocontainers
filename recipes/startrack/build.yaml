@@ -9,10 +9,21 @@ architectures:
   - x86_64
 
 variables:
+  upstream_version: '20250920'
   matlab_runtime_version: 2023b
   matlab_runtime_root: /opt/MCR-{{ context.matlab_runtime_version }}/R{{ context.matlab_runtime_version }}
-  install_path: /opt/{{ context.name }}-{{ context.version }}
-
+  install_path: /opt/{{ context.name }}-{{ context.upstream_version }}
+auto_update:
+  method: sources
+  sources:
+  - id: binary
+    method: http_digest
+    url: https://www.dropbox.com/scl/fi/3iovmntgm129hzxarmjnm/ST_Linux_x86.zip?rlkey=xcz8y2mrcpeo1ehxtfd6exhbt&dl=1
+    target:
+      file: startrack_linux_zip
+      variables:
+        matlab_runtime_version: runtime
+    matlab_readme: ST_Linux_x86/readme.txt
 build:
   kind: neurodocker
   base-image: ubuntu:20.04
@@ -53,7 +64,8 @@ deploy:
 
 files:
   - name: startrack_linux_zip
-    url: https://www.dropbox.com/scl/fi/3iovmntgm129hzxarmjnm/ST_Linux_x86.zip?rlkey=xcz8y2mrcpeo1ehxtfd6exhbt&dl=1
+    url: "https://www.dropbox.com/scl/fi/3iovmntgm129hzxarmjnm/ST_Linux_x86.zip?rlkey=xcz8y2mrcpeo1ehxtfd6exhbt&dl=1"
+    sha256: 7a3b00fdc4e8e960e43679d1f2ca9aa935aae41ab39ff24fd2e17d65167e692e
   - name: startrack_wrapper
     contents: |
       #!/usr/bin/env bash

@@ -7,9 +7,24 @@ structured_readme:
   example: 'library(LESYMAP) '
   documentation: https://dorianps.github.io/LESYMAP/
   citation: 'Pustina, D., Avants, B., Faseyitan, O. K., Medaglia, J. D., & Coslett, H. B. (2018). Improved accuracy of lesion to symptom mapping with multivariate sparse canonical correlations. Neuropsychologia, 115, 154-166. https://doi.org/10.1016/j.neuropsychologia.2017.08.027 '
+variables:
+  software_version: 0.0.0.9221
+  base_image_tag: 20220701
+
+auto_update:
+  method: sources
+  sources:
+    - id: base_image_tag
+      method: dockerhub
+      repo: dorianps/lesymap
+      version_regex: '(?P<version>\d{8})'
+      target:
+        variable: base_image_tag
+        value: tag
+
 build:
   kind: neurodocker
-  base-image: dorianps/lesymap:20220701
+  base-image: dorianps/lesymap:{{ context.base_image_tag }}
   pkg-manager: apt
   directives:
     - deploy:

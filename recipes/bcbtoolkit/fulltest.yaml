@@ -1,0 +1,6 @@
+name: bcbtoolkit
+version: 0.0.0
+tests:
+  - name: BCB command line launchers
+    command: test -x /opt/BCBToolKit/jre/bin/java && test -r /opt/BCBToolKit/sources.jar && command -v run_disco.sh && command -v tractotron_cli.sh
+    expected_exit_code: 0

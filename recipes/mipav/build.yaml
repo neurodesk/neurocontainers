@@ -3,6 +3,18 @@ version: 11.3.3
 architectures:
   - x86_64
   - aarch64
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build?format=json&prefix=mipav
+    version_regex: mipav_unix_(?P<version>\d+_\d+_\d+)\.sh$
+    download_base: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/
+    target:
+      file: installer
+      variables:
+        artifact_version: version
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -10,19 +22,15 @@ build:
   directives:
     - workdir: /opt
     - install:
-        - fontconfig
-        - fonts-dejavu-core
-        - libfreetype6
-        - libgl1-mesa-glx
-        - libxrender1
-        - libxtst6
-        - libxi6
-        - xauth
-        - xvfb
-    - file:
-        name: installer
-        url: >-
-          https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/mipav_unix_11_3_3.sh
+      - fontconfig
+      - fonts-dejavu-core
+      - libfreetype6
+      - libgl1-mesa-glx
+      - libxrender1
+      - libxtst6
+      - libxi6
+      - xauth
+      - xvfb
     - run:
       - sh {{ get_file("installer") }} -q
     - environment:
@@ -57,3 +65,10 @@ readme: |-
   To run container outside of this environment: ml mipav/{{ context.version }}
 
   ----------------------------------
+variables:
+  upstream_version: 11.3.3
+  artifact_version: '11_3_3'
+files:
+- name: installer
+  url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/mipav_unix_11_3_3.sh
+  sha256: ce8dac81717a8d4b492030698f349cc3786f3175c6a1a2fccbcf7ca61e158021

@@ -1,3 +1,7 @@
+variables:
+  synthsr_commit: 04ab5548f4609c2b44ca51b3f4bc319b585dafa7
+  synthstrip_version: '1.8'
+
 name: syncro
 version: 0.1.1
 
@@ -8,10 +12,26 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: synthsr_commit
+    method: github_commit
+    repo: neurolabusc/py_synthsr
+    ref: HEAD
+    target:
+      variable: synthsr_commit
+  - id: synthstrip
+    method: dockerhub
+    repo: freesurfer/synthstrip
+    target:
+      variable: synthstrip_version
+
 build:
   kind: neurodocker
 
-  base-image: freesurfer/synthstrip:1.8
+  base-image: freesurfer/synthstrip:{{ context.synthstrip_version }}
   pkg-manager: apt
 
   directives:
@@ -32,6 +52,7 @@ build:
         
     - run:
         - git clone https://github.com/neurolabusc/py_synthsr
+        - git -C py_synthsr checkout {{ context.synthsr_commit }}
         - cd py_synthsr
         - cp {{ get_file("downloaded_file") }} models.zip
         - unzip -jo models.zip -d py_synthsr/models

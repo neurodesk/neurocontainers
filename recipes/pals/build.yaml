@@ -1,3 +1,6 @@
+variables:
+  upstream_commit: b3699e951ba929d5822bd98a8b65414f075f02a8
+
 name: pals
 version: 2.0.1
 
@@ -77,6 +80,17 @@ files:
           "template_directory": "/opt/pals-2.0.1/templates"
       }
  
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: npnl/PALS
+    ref: main
+    target:
+      variable: upstream_commit
+      fulltest_variable: upstream_commit
+
 build:
   kind: neurodocker
  
@@ -119,7 +133,7 @@ build:
     # ── PALS v2.0.1 ──────────────────────────────────────────────────────────
     - run:
         - /opt/miniconda/bin/pip install --no-cache-dir 'matplotlib>=3.5' 'nibabel>=3.2' 'numpy>=1.21' 'scipy>=1.7' 'pandas>=1.3' 'Pillow>=8.0'
-        - git clone --depth 1 --branch main https://github.com/npnl/PALS /opt/pals-2.0.1
+        - git clone https://github.com/npnl/PALS /opt/pals-2.0.1 && git -C /opt/pals-2.0.1 checkout {{ context.upstream_commit }}
         - grep -iv matplotlib /opt/pals-2.0.1/requirements.txt | /opt/miniconda/bin/pip install --no-cache-dir -r /dev/stdin
  
     - copy:

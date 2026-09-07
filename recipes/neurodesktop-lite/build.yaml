@@ -15,37 +15,339 @@ show_in_menu: false
 show_in_applist: false
 
 variables:
-  apptainer_version: "1.4.4"
-  firefox_version: "150.0.1"
-  code_server_version: "4.104.2"
+  apptainer_version: 1.4.4
+  firefox_version: 150.0.1
+  code_server_version: 4.104.2
   firefox_arch:
     try:
-      - value: linux-x86_64
-        condition: arch=="x86_64"
-      - value: linux-aarch64
-        condition: arch=="aarch64"
+    - value: linux-x86_64
+      condition: arch=="x86_64"
+    - value: linux-aarch64
+      condition: arch=="aarch64"
   code_server_arch:
     try:
-      - value: amd64
-        condition: arch=="x86_64"
-      - value: arm64
-        condition: arch=="aarch64"
+    - value: amd64
+      condition: arch=="x86_64"
+    - value: arm64
+      condition: arch=="aarch64"
   code_server_file:
     try:
-      - value: code_server_amd64
-        condition: arch=="x86_64"
-      - value: code_server_arm64
-        condition: arch=="aarch64"
+    - value: code_server_amd64
+      condition: arch=="x86_64"
+    - value: code_server_arm64
+      condition: arch=="aarch64"
   strace_file:
     try:
-      - value: strace_x86_64
-        condition: arch=="x86_64"
-      - value: strace_aarch64
-        condition: arch=="aarch64"
+    - value: strace_x86_64
+      condition: arch=="x86_64"
+    - value: strace_aarch64
+      condition: arch=="aarch64"
+  neurocommand_commit: b83cefc49f38e240b85d1a55e6fe95e4406e99b0
+  nf_neuro_commit: d21a678afd4343ab4c3cdf9f757e821bbfe68188
+  jupyterlab_slurm_commit: c34354f0aaa1b12f6243224bed631cf07c858409
+  codex_version: 0.153.4
+  claude_version: 2.1.263
+  opencode_version: 1.18.29
+  nextflow_version: 26.04.6
+  nf_test_version: 0.9.5
+  datalad_version: 1.6.2
+  nipype_version: 1.12.0
+  nbdev_version: 3.3.16
+  nf_core_version: 4.1.0
+  snakemake_version: 9.26.1
+  pydra_version: 1.0a7
+  nipoppy_version: 0.4.7
+  matplotlib_version: 3.11.1
+  datalad_container_version: 1.2.6
+  datalad_osf_version: 0.3.0
+  osfclient_version: 0.0.5
+  watermark_version: 2.6.0
+  ipyniivue_version: 2.4.4
+  jupyter_server_proxy_version: 4.5.0
+  jupyterlmod_version: 5.3.2
+  jupyterlab_git_version: 0.54.1
+  notebook_intelligence_version: 5.4.0
+  jupyterlab_rise_version: 0.43.1
+  jupyterlab_niivue_version: 0.2.5
+  jupyterlab_myst_version: 2.7.0
+  jupyter_sshd_proxy_version: 0.3.0
+  papermill_version: 2.7.0
+  ipycanvas_version: 0.14.3
+  jupyter_resource_usage_version: 1.3.0
+  jupyter_scheduler_version: 2.12.1
+  httpx_version: 0.28.1
+  ipywidgets_version: 8.1.9
+  ipyvolume_version: 0.6.3
+  jupyterlab_widgets_version: 3.0.17
+  nb_conda_kernels_version: 2.5.1
+  nbgitpuller_version: 1.3.0
+  xnat_version: 0.8.1
+  pytest_version: 9.1.1
+  requests_version: 2.34.2
+  chardet_version: 5.2.0
+  base_digest: sha256:58070ab2a012191ad517400edfef654c214621b69ec6d8668f6e1f5267db2d42
+  go_version: 1.23.6
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: apptainer
+    method: github_release
+    repo: apptainer/apptainer
+    target:
+      variable: apptainer_version
+      fulltest_variable: apptainer_version
+  - id: code-server
+    method: github_release
+    repo: coder/code-server
+    target:
+      variable: code_server_version
+  - id: firefox
+    method: webpage
+    url: https://product-details.mozilla.org/1.0/firefox_versions.json
+    version_regex: '"LATEST_FIREFOX_VERSION":\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: firefox_version
+  - id: neurocommand_commit
+    method: github_commit
+    repo: neurodesk/neurocommand
+    ref: main
+    target:
+      variable: neurocommand_commit
+  - id: nf_neuro_commit
+    method: github_commit
+    repo: nf-neuro/modules
+    ref: main
+    target:
+      variable: nf_neuro_commit
+  - id: jupyterlab_slurm_commit
+    method: github_commit
+    repo: NERSC/jupyterlab-slurm
+    ref: main
+    target:
+      variable: jupyterlab_slurm_commit
+  - id: codex
+    method: npm
+    package: '@openai/codex'
+    target:
+      variable: codex_version
+  - id: claude
+    method: npm
+    package: '@anthropic-ai/claude-code'
+    target:
+      variable: claude_version
+  - id: opencode
+    method: npm
+    package: opencode-ai
+    target:
+      variable: opencode_version
+  - id: nextflow
+    method: github_release
+    repo: nextflow-io/nextflow
+    target:
+      variable: nextflow_version
+  - id: nf_test
+    method: github_release
+    repo: askimed/nf-test
+    target:
+      variable: nf_test_version
+  - id: datalad
+    method: pypi
+    package: datalad
+    target:
+      variable: datalad_version
+  - id: nipype
+    method: pypi
+    package: nipype
+    target:
+      variable: nipype_version
+  - id: nbdev
+    method: pypi
+    package: nbdev
+    target:
+      variable: nbdev_version
+  - id: nf-core
+    method: pypi
+    package: nf-core
+    target:
+      variable: nf_core_version
+  - id: snakemake
+    method: pypi
+    package: snakemake
+    target:
+      variable: snakemake_version
+  - id: pydra
+    method: pypi
+    package: pydra
+    target:
+      variable: pydra_version
+  - id: nipoppy
+    method: pypi
+    package: nipoppy
+    target:
+      variable: nipoppy_version
+  - id: matplotlib
+    method: pypi
+    package: matplotlib
+    target:
+      variable: matplotlib_version
+  - id: datalad-container
+    method: pypi
+    package: datalad-container
+    target:
+      variable: datalad_container_version
+  - id: datalad-osf
+    method: pypi
+    package: datalad-osf
+    target:
+      variable: datalad_osf_version
+  - id: osfclient
+    method: pypi
+    package: osfclient
+    target:
+      variable: osfclient_version
+  - id: watermark
+    method: pypi
+    package: watermark
+    target:
+      variable: watermark_version
+  - id: ipyniivue
+    method: pypi
+    package: ipyniivue
+    target:
+      variable: ipyniivue_version
+  - id: jupyter-server-proxy
+    method: pypi
+    package: jupyter-server-proxy
+    target:
+      variable: jupyter_server_proxy_version
+  - id: jupyterlmod
+    method: pypi
+    package: jupyterlmod
+    target:
+      variable: jupyterlmod_version
+  - id: jupyterlab-git
+    method: pypi
+    package: jupyterlab-git
+    target:
+      variable: jupyterlab_git_version
+  - id: notebook_intelligence
+    method: pypi
+    package: notebook_intelligence
+    target:
+      variable: notebook_intelligence_version
+  - id: jupyterlab_rise
+    method: pypi
+    package: jupyterlab_rise
+    target:
+      variable: jupyterlab_rise_version
+  - id: jupyterlab-niivue
+    method: pypi
+    package: jupyterlab-niivue
+    target:
+      variable: jupyterlab_niivue_version
+  - id: jupyterlab_myst
+    method: pypi
+    package: jupyterlab_myst
+    target:
+      variable: jupyterlab_myst_version
+  - id: jupyter-sshd-proxy
+    method: pypi
+    package: jupyter-sshd-proxy
+    target:
+      variable: jupyter_sshd_proxy_version
+  - id: papermill
+    method: pypi
+    package: papermill
+    target:
+      variable: papermill_version
+  - id: ipycanvas
+    method: pypi
+    package: ipycanvas
+    target:
+      variable: ipycanvas_version
+  - id: jupyter-resource-usage
+    method: pypi
+    package: jupyter-resource-usage
+    target:
+      variable: jupyter_resource_usage_version
+  - id: jupyter_scheduler
+    method: pypi
+    package: jupyter_scheduler
+    target:
+      variable: jupyter_scheduler_version
+  - id: httpx
+    method: pypi
+    package: httpx
+    target:
+      variable: httpx_version
+  - id: ipywidgets
+    method: pypi
+    package: ipywidgets
+    target:
+      variable: ipywidgets_version
+      fulltest_variable: ipywidgets_version
+  - id: ipyvolume
+    method: pypi
+    package: ipyvolume
+    target:
+      variable: ipyvolume_version
+  - id: jupyterlab_widgets
+    method: pypi
+    package: jupyterlab_widgets
+    target:
+      variable: jupyterlab_widgets_version
+      fulltest_variable: jupyterlab_widgets_version
+  - id: nb-conda-kernels
+    method: webpage
+    url: https://api.anaconda.org/package/conda-forge/nb_conda_kernels
+    version_regex: '"latest_version":\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: nb_conda_kernels_version
+      fulltest_variable: nb_conda_kernels_version
+  - id: nbgitpuller
+    method: pypi
+    package: nbgitpuller
+    target:
+      variable: nbgitpuller_version
+  - id: xnat
+    method: pypi
+    package: xnat
+    target:
+      variable: xnat_version
+  - id: pytest
+    method: pypi
+    package: pytest
+    target:
+      variable: pytest_version
+  - id: requests
+    method: pypi
+    package: requests
+    target:
+      variable: requests_version
+  - id: chardet
+    method: pypi
+    package: chardet
+    version_regex: (?P<version>[0-5]\.\d+(?:\.\d+)*)
+    target:
+      variable: chardet_version
+  - id: base-image
+    method: oci_digest
+    image: quay.io/jupyter/base-notebook
+    tag: latest
+    target:
+      variable: base_digest
+  - id: go
+    method: github_tags
+    repo: golang/go
+    version_regex: go(?P<version>\d+\.\d+(?:\.\d+)?)
+    target:
+      variable: go_version
 
 build:
   kind: neurodocker
-  base-image: quay.io/jupyter/base-notebook:2026-03-23
+  base-image: quay.io/jupyter/base-notebook@{{ context.base_digest }}
   pkg-manager: apt
 
   directives:
@@ -99,6 +401,7 @@ build:
         - libpango1.0-dev
         - libpci3
         - libpng-dev
+        - libseccomp2
         - libssh2-1-dev
         - libssl-dev
         - libtool-bin
@@ -131,6 +434,7 @@ build:
         - rsync
         - s3fs
         - screen
+        - squashfs-tools
         - slurm-client
         - slurm-wlm-basic-plugins
         - slurmctld
@@ -182,12 +486,27 @@ build:
         - rm -rf /var/lib/apt/lists/* /root/.cache /home/${NB_USER}/.cache
       condition: arch=="x86_64"
 
+    - install:
+        - build-essential
+        - cryptsetup
+        - dh-apparmor
+        - fakeroot
+        - libseccomp-dev
+        - libsubid-dev
+        - pkg-config
+        - tzdata
+      condition: arch=="aarch64"
+
     - run:
-        - add-apt-repository -y ppa:apptainer/ppa
-        - apt-get update --yes
-        - apt-get install --yes --no-install-recommends apptainer
-        - apt-get clean
-        - rm -rf /var/lib/apt/lists/* /root/.cache /home/${NB_USER}/.cache
+        - mkdir -p /tmp/apptainer-source /opt/go
+        - tar -xzf {{ get_file("go_arm64") }} -C /opt/go --strip-components=1
+        - tar -xzf {{ get_file("apptainer_source") }} -C /tmp/apptainer-source --strip-components=1
+        - cd /tmp/apptainer-source
+        - export PATH=/opt/go/bin:$PATH
+        - ./mconfig --without-suid --prefix=/usr
+        - make -C builddir -j2
+        - make -C builddir install
+        - rm -rf /tmp/apptainer-source /opt/go
       condition: arch=="aarch64"
 
     - run:
@@ -211,10 +530,10 @@ build:
     - run:
         - mkdir -p "${NF_TEST_HOME}"
         - cp {{ get_file("nextflow_install") }} /tmp/get-nextflow.sh
-        - cd /tmp && bash < /tmp/get-nextflow.sh
+        - cd /tmp && NXF_VER={{ context.nextflow_version }} bash /tmp/get-nextflow.sh
         - mv /tmp/nextflow /usr/local/bin/nextflow
         - chmod 755 /usr/local/bin/nextflow
-        - bash {{ get_file("nf_test_install") }} 0.9.5
+        - bash {{ get_file("nf_test_install") }} {{ context.nf_test_version }}
         - cp -a "${HOME}/.nf-test/." "${NF_TEST_HOME}/"
         - printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'exec java -jar /opt/nf-test/nf-test.jar "$@"' > /usr/local/bin/nf-test
         - chmod 755 /usr/local/bin/nf-test
@@ -224,13 +543,13 @@ build:
         - rm -rf /root/.cache "${HOME}/.nf-test" /tmp/nf-test /tmp/nextflow /tmp/get-nextflow.sh
 
     - run:
-        - npm install -g @openai/codex
+        - npm install -g @openai/codex@{{ context.codex_version }}
         - rm -rf /root/.npm
-        - su - "${NB_USER}" -c 'bash {{ get_file("claude_install") }} stable'
+        - su - "${NB_USER}" -c 'bash {{ get_file("claude_install") }} {{ context.claude_version }}'
         - mkdir -p /opt/jovyan_defaults/.local/bin
         - if [ -x /home/jovyan/.local/bin/claude ]; then cp -L /home/jovyan/.local/bin/claude /opt/jovyan_defaults/.local/bin/claude; else cp -L /home/jovyan/.local/share/claude/versions/* /opt/jovyan_defaults/.local/bin/claude; fi
         - chmod +x /opt/jovyan_defaults/.local/bin/claude
-        - bash {{ get_file("opencode_install") }}
+        - bash {{ get_file("opencode_install") }} --version {{ context.opencode_version }}
         - mv /home/jovyan/.opencode/bin/opencode /usr/bin/opencode
         - rm -rf /home/${NB_USER}/.cache /home/${NB_USER}/.local
 
@@ -244,13 +563,13 @@ build:
     - user: ${NB_USER}
 
     - run:
-        - conda install -c conda-forge nb_conda_kernels
+        - conda install -c conda-forge nb_conda_kernels={{ context.nb_conda_kernels_version }}
         - conda clean --all -f -y
         - conda config --system --prepend envs_dirs '~/conda-environments'
         - rm -rf /home/${NB_USER}/.cache
 
     - run:
-        - /opt/conda/bin/pip install datalad nipype nbdev nf-core snakemake pydra==1.0a7 nipoppy matplotlib datalad-container datalad-osf osfclient watermark ipyniivue jupyter-server-proxy jupyterlmod jupyterlab-git notebook_intelligence jupyterlab_rise jupyterlab-niivue==0.2.5 jupyterlab_myst jupyter-sshd-proxy papermill ipycanvas jupyter-resource-usage jupyter_scheduler jupyterlab-slurm@git+https://github.com/NERSC/jupyterlab-slurm.git@main httpx ipywidgets==7.8.5 ipyvolume jupyterlab_widgets nbgitpuller xnat pytest "requests>=2.32.3" "chardet<6"
+        - /opt/conda/bin/pip install datalad=={{ context.datalad_version }} nipype=={{ context.nipype_version }} nbdev=={{ context.nbdev_version }} nf-core=={{ context.nf_core_version }} snakemake=={{ context.snakemake_version }} pydra=={{ context.pydra_version }} nipoppy=={{ context.nipoppy_version }} matplotlib=={{ context.matplotlib_version }} datalad-container=={{ context.datalad_container_version }} datalad-osf=={{ context.datalad_osf_version }} osfclient=={{ context.osfclient_version }} watermark=={{ context.watermark_version }} ipyniivue=={{ context.ipyniivue_version }} jupyter-server-proxy=={{ context.jupyter_server_proxy_version }} jupyterlmod=={{ context.jupyterlmod_version }} jupyterlab-git=={{ context.jupyterlab_git_version }} notebook_intelligence=={{ context.notebook_intelligence_version }} jupyterlab_rise=={{ context.jupyterlab_rise_version }} jupyterlab-niivue=={{ context.jupyterlab_niivue_version }} jupyterlab_myst=={{ context.jupyterlab_myst_version }} jupyter-sshd-proxy=={{ context.jupyter_sshd_proxy_version }} papermill=={{ context.papermill_version }} ipycanvas=={{ context.ipycanvas_version }} jupyter-resource-usage=={{ context.jupyter_resource_usage_version }} jupyter_scheduler=={{ context.jupyter_scheduler_version }} jupyterlab-slurm@git+https://github.com/NERSC/jupyterlab-slurm.git@{{ context.jupyterlab_slurm_commit }} httpx=={{ context.httpx_version }} ipywidgets=={{ context.ipywidgets_version }} ipyvolume=={{ context.ipyvolume_version }} jupyterlab_widgets=={{ context.jupyterlab_widgets_version }} nbgitpuller=={{ context.nbgitpuller_version }} xnat=={{ context.xnat_version }} pytest=={{ context.pytest_version }} requests=={{ context.requests_version }} chardet=={{ context.chardet_version }}
         - /opt/conda/bin/jupyter labextension disable @jupyterlab/apputils-extension:announcements
         - rm -rf /home/${NB_USER}/.cache
 
@@ -480,6 +799,13 @@ files:
     condition: arch=="aarch64"
     retry: 5
 
+  - name: go_arm64
+    url: https://dl.google.com/go/go{{ context.go_version }}.linux-arm64.tar.gz
+    condition: arch=="aarch64"
+  - name: apptainer_source
+    url: https://github.com/apptainer/apptainer/releases/download/v{{ context.apptainer_version }}/apptainer-{{ context.apptainer_version }}.tar.gz
+    condition: arch=="aarch64"
+
   - name: apptainer_deb
     url: https://github.com/apptainer/apptainer/releases/download/v{{ context.apptainer_version }}/apptainer_{{ context.apptainer_version }}_amd64.deb
     condition: arch=="x86_64"
@@ -510,7 +836,7 @@ files:
     retry: 5
 
   - name: nf_neuro_modules
-    url: https://github.com/nf-neuro/modules/archive/refs/heads/main.tar.gz
+    url: https://github.com/nf-neuro/modules/archive/{{ context.nf_neuro_commit }}.tar.gz
     retry: 5
 
   - name: claude_install
@@ -522,11 +848,11 @@ files:
     retry: 5
 
   - name: neurocommand
-    url: https://github.com/neurodesk/neurocommand/archive/refs/heads/main.tar.gz
+    url: https://github.com/neurodesk/neurocommand/archive/{{ context.neurocommand_commit }}.tar.gz
     retry: 5
 
   - name: webapps_json
-    url: https://raw.githubusercontent.com/neurodesk/neurocommand/main/neurodesk/webapps.json
+    url: https://raw.githubusercontent.com/neurodesk/neurocommand/{{ context.neurocommand_commit }}/neurodesk/webapps.json
     retry: 5
 
   - name: wrap_kernels

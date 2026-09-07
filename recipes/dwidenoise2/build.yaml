@@ -17,6 +17,10 @@ variables:
   mrtrix3_source_dir: /src/mrtrix3
   install_path: /opt/mrtrix3
 
+auto_update:
+  method: github_release
+  repo: Lestropie/dwidenoise2
+
 build:
   kind: neurodocker
   base-image: debian:bookworm-slim
@@ -106,6 +110,6 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAGVElE
 
 files:
   - name: dwidenoise2_source_tar_gz
-    url: https://github.com/Lestropie/dwidenoise2/archive/{{ context.upstream_commit }}.tar.gz
+    url: https://github.com/Lestropie/dwidenoise2/archive/refs/tags/{{ context.version }}.tar.gz
   - name: mrtrix3_source_tar_gz
     url: https://github.com/MRtrix3/mrtrix3/archive/{{ context.mrtrix3_commit }}.tar.gz

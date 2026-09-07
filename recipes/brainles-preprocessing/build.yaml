@@ -5,6 +5,10 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABOUlE
 architectures:
   - x86_64
 
+auto_update:
+  method: pypi
+  package: brainles-preprocessing
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04

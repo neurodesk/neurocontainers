@@ -1,7 +1,21 @@
+variables:
+  upstream_version: 0.2.11
+
 name: palmettobug
-version: 0.0.3 # https://github.com/immunecells/HARMONI
+version: "0.0.3.post1" # https://github.com/immunecells/HARMONI
 architectures:
   - x86_64
+auto_update:
+  method: sources
+  sources:
+  - id: palmettobug
+    method: pypi
+    package: palmettobug
+    target:
+      variable: upstream_version
+      value: version
+      fulltest_variable: upstream_version
+
 build:
   kind: neurodocker
 
@@ -14,16 +28,10 @@ build:
     - workdir: /opt
     - template:
           name: miniconda
-          conda_install: -c conda-forge python=3.9
+          conda_install: -c conda-forge python=3.11
           version: latest
     - run:
-        - cp {{ get_file("HARMONI_main_250424_zip") }} HARMONI-main-250424.zip
-        - unzip HARMONI-main-250424.zip
-        - rm -rf HARMONI-main-250424.zip
-        - cd HARMONI-main
-        - pip install .
-        - cd ..
-        - rm -rf HARMONI-main
+        - pip install --no-cache-dir "setuptools<81" palmettobug=={{ context.upstream_version }}
 
 
 deploy:
@@ -60,7 +68,3 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAddUlE
 gui_apps:
   - name: "palmettobugGUI"
     exec: "palmettobug"
-
-files:
-  - name: HARMONI_main_250424_zip
-    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/HARMONI-main-250424.zip

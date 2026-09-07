@@ -286,6 +286,10 @@ version: {version}
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: TODO/UPSTREAM_REPOSITORY
+
 copyright:
   - license: TODO
     url: TODO

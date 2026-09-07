@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: felenitaribeiro/deepRetinotopy_TheToolbox
+
 build:
   kind: neurodocker
 
@@ -45,9 +49,8 @@ build:
     - workdir: /opt
 
     - run:
-        - git clone https://github.com/felenitaribeiro/deepRetinotopy_TheToolbox.git
+        - git clone --branch v{{ context.version }} https://github.com/felenitaribeiro/deepRetinotopy_TheToolbox.git
         - cd deepRetinotopy_TheToolbox
-        - git checkout f2e3f83854813d57927232f64aa54b5dc04bb1f5
         - for file in osfstorage/models/v2/deepRetinotopy_visualCoord_LH_model5.pt osfstorage/models/v2/deepRetinotopy_pRFsize_LH_model4.pt osfstorage/models/v2/deepRetinotopy_visualCoord_RH_model1.pt osfstorage/models/v2/deepRetinotopy_pRFsize_RH_model5.pt; do path="models/$(basename "$file")"; mkdir -p models; chmod 777 models; osf -p ermbz fetch "$file" "$path"; echo "$file"; new_path=$(echo "$path" | sed -E 's/model[0-9]+/model/'); mv "$path" "$new_path"; echo "Renamed $path to $new_path"; done
 
     - run:

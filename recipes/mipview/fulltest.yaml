@@ -1,0 +1,9 @@
+name: mipview
+version: 0.1.4
+tests:
+- name: MipView launcher
+  command: command -v mipview
+  expected_output_contains: mipview
+- name: MipView version
+  command: python -c "from importlib.metadata import version; print(version('MipView'))"
+  expected_output_contains: ${version}

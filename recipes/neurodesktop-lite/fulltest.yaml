@@ -4,6 +4,10 @@
 
 name: neurodesktop-lite
 version: "20260428"
+apptainer_version: 1.4.4
+ipywidgets_version: 8.1.9
+jupyterlab_widgets_version: 3.0.17
+nb_conda_kernels_version: 2.5.1
 default_timeout: 120
 
 test_data:
@@ -214,6 +218,19 @@ tests:
       - "lab="
       - "server="
 
+  - name: Jupyter widget packages are compatible
+    description: Verify the resolved kernel and browser widget packages retain their tracked versions
+    command: |
+      /opt/conda/bin/python -c '
+      import importlib.metadata as metadata
+      for package in ("ipywidgets", "jupyterlab_widgets", "nb_conda_kernels"):
+          print(f"{package}={metadata.version(package)}")
+      '
+    expected_output_contains:
+      - "ipywidgets=${ipywidgets_version}"
+      - "jupyterlab_widgets=${jupyterlab_widgets_version}"
+      - "nb_conda_kernels=${nb_conda_kernels_version}"
+
   - name: Jupyter config files are installed
     description: Verify generated Jupyter config and Neurodesktop assets exist
     command: |
@@ -394,9 +411,9 @@ tests:
     expected_output_contains: "Code"
 
   - name: Apptainer version check
-    description: Verify Apptainer is installed in the desktop image
+    description: Verify the tracked Apptainer release is installed in the desktop image
     command: apptainer --version
-    expected_output_contains: "apptainer version"
+    expected_output_contains: "apptainer version ${apptainer_version}"
 
   - name: Nextflow launcher is installed
     description: Verify the Nextflow launcher is installed without requiring network bootstrap

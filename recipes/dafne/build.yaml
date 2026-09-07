@@ -46,6 +46,11 @@ files:
           lines.insert(insert_line, "from __future__ import annotations")
           path.write_text("\n".join(lines) + ("\n" if text.endswith("\n") else ""))
 
+auto_update:
+  method: pypi
+  package: dafne
+  include_prereleases: true
+
 build:
   kind: neurodocker
 

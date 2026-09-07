@@ -1,0 +1,7 @@
+name: prostatefiducialseg
+version: 7.0.0
+tests:
+- name: prediction launcher
+  command: command -v predict3.py
+  expected_exit_code: 0
+  expected_output_contains: predict3.py

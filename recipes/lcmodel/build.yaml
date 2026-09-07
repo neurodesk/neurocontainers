@@ -15,10 +15,11 @@ variables:
   mrs_basis_sets_commit: 646c6214f25e5d6758a9295bf9b41c3850264ae9
   testdata_url: https://zenodo.org/record/3904443/files/Spectra_hippocampus%28rat%29_TE02.rar?download=1
   manual_url: https://www.lcmodel.com/pub/LCModel/manual/manual.pdf
-
+  upstream_version: '6.3'
 files:
   - name: lcm_64_tar
-    url: "{{ context.lcm_64_url }}"
+    url: "https://www.lcmodel.com/pub/LCModel/programs/lcm-64.tar"
+    sha256: 2dbdca8ec89bc6de50b9aa723a1ebac8fabb7455dca12289821e5435f624b400
   - name: basis_3t_zip
     url: "{{ context.basis_3t_url }}"
   - name: basis_1_5t_zip
@@ -36,6 +37,19 @@ files:
   - name: manual_pdf
     url: "{{ context.manual_url }}"
 
+auto_update:
+  method: sources
+  sources:
+  - id: binary
+    method: http_digest
+    url: https://www.lcmodel.com/pub/LCModel/programs/lcm-64.tar
+    target:
+      file: lcm_64_tar
+  - id: basis-sets
+    method: github_commit
+    repo: mr-science-lab/mrs-basis-sets
+    target:
+      variable: mrs_basis_sets_commit
 build:
   kind: neurodocker
   base-image: ubuntu:16.04
@@ -53,12 +67,12 @@ build:
         - unzip
         - gv
         - unrar
-    - workdir: /opt/lcmodel-{{ context.version }}/
+    - workdir: /opt/lcmodel-{{ context.upstream_version }}/
     - run:
         - tar xf '{{ get_file("lcm_64_tar") }}'
         - gunzip -c lcm-core.tar.gz | tar xf -
         - rm -rf lcm-core.tar.gz
-    - workdir: /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets
+    - workdir: /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/basis-sets
     - run:
         - unzip '{{ get_file("basis_3t_zip") }}'
         - unzip '{{ get_file("basis_1_5t_zip") }}'
@@ -73,31 +87,31 @@ build:
     # exists - the file must stay EMPTY. The licence key that used to be shipped
     # here was deliberately removed in 9fe69805; do not add content back.
     - run:
-        - mkdir -p /opt/lcmodel-{{ context.version }}/.lcmodel
-        - touch /opt/lcmodel-{{ context.version }}/.lcmodel/license
+        - mkdir -p /opt/lcmodel-{{ context.upstream_version }}/.lcmodel
+        - touch /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/license
     - workdir: /opt/datasets
     - run:
         - unrar x '{{ get_file("testdata_rar") }}'
-        - cp '{{ get_file("manual_pdf") }}' /opt/lcmodel-{{ context.version }}/manual.pdf
+        - cp '{{ get_file("manual_pdf") }}' /opt/lcmodel-{{ context.upstream_version }}/manual.pdf
     - copy:
         - setup_lcmodel.sh
-        - /opt/lcmodel-{{ context.version }}/.lcmodel/bin/setup_lcmodel.sh
-    - workdir: /opt/lcmodel-{{ context.version }}/.lcmodel/profiles/1/control-defaults
+        - /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/bin/setup_lcmodel.sh
+    - workdir: /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/profiles/1/control-defaults
     - copy:
         - controlfiledefault
-        - /opt/lcmodel-{{ context.version }}/.lcmodel/profiles/1/control-defaults/controlfiledefault
+        - /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/profiles/1/control-defaults/controlfiledefault
     - copy:
         - gui-defaults
-        - /opt/lcmodel-{{ context.version }}/.lcmodel/profiles/1/gui-defaults
+        - /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/profiles/1/gui-defaults
     - run:
-        - chmod a+rwx /opt/lcmodel-{{ context.version }} -R
+        - chmod a+rwx /opt/lcmodel-{{ context.upstream_version }} -R
     - environment:
-        PATH: /opt/lcmodel-{{ context.version }}/.lcmodel/bin/:/opt/lcmodel-{{ context.version }}/.lcmodel/:$PATH
+        PATH: /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/bin/:/opt/lcmodel-{{ context.upstream_version }}/.lcmodel/:$PATH
 
 deploy:
   path:
-    - /opt/lcmodel-{{ context.version }}/.lcmodel/bin/
-    - /opt/lcmodel-{{ context.version }}/.lcmodel/
+    - /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/bin/
+    - /opt/lcmodel-{{ context.upstream_version }}/.lcmodel/
 
 readme: |-
   

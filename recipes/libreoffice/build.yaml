@@ -27,6 +27,11 @@ files:
     url: https://download.documentfoundation.org/libreoffice/stable/{{ context.version }}/deb/aarch64/LibreOffice_{{ context.version }}_Linux_aarch64_deb.tar.gz
     condition: arch == "aarch64"
 
+auto_update:
+  method: webpage
+  version_regex: href="(?P<version>\d+\.\d+\.\d+)/"
+  url: https://download.documentfoundation.org/libreoffice/stable/
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

@@ -5,7 +5,7 @@
 # It helps researchers visualize structural and functional connectivity patterns at
 # different levels in a quick, easy, and flexible way.
 #
-# This is a compiled MATLAB application (MCR R2018a / v94) that provides a GUI for
+# This is a compiled MATLAB application (MCR R${matlab_version} / v94) that provides a GUI for
 # brain network visualization. The tests focus on container integrity, MATLAB Runtime
 # components, file system structure, and basic invocation rather than full GUI testing.
 #
@@ -88,7 +88,7 @@ tests:
   - name: brainnetviewer wrapper content
     description: Verify wrapper script calls run_BrainNet.sh with MCR path
     command: cat /usr/bin/brainnetviewer
-    expected_output_contains: "/run_BrainNet.sh /opt/matlab/v94"
+    expected_output_contains: "/run_BrainNet.sh /opt/matlab-runtime"
 
   - name: brainnetviewer in PATH
     description: Verify brainnetviewer command is accessible via PATH
@@ -148,57 +148,57 @@ tests:
   # ==========================================================================
   - name: MCR directory exists
     description: Verify MATLAB Compiler Runtime is installed
-    command: bash -lc 'test -d /opt/matlab/v94 && echo "MCR v94 directory found"'
+    command: bash -lc 'test -d /opt/matlab-runtime && echo "MCR v94 directory found"'
     expected_output_contains: "MCR v94 directory found"
 
-  - name: MCR version is R2018a
-    description: Verify MCR version matches BrainNet requirements (R2018a)
-    command: "bash -lc 'cat /opt/matlab/v94/VersionInfo.xml'"
-    expected_output_contains: "R2018a"
+  - name: MCR version is R${matlab_version}
+    description: Verify MCR version matches BrainNet requirements (R${matlab_version})
+    command: "bash -lc 'cat /opt/matlab-runtime/VersionInfo.xml'"
+    expected_output_contains: "R${matlab_version}"
 
   - name: MCR version number 9.4
     description: Verify MCR version 9.4 is installed
-    command: "bash -lc 'cat /opt/matlab/v94/VersionInfo.xml'"
-    expected_output_contains: "9.4"
+    command: "bash -lc 'cat /opt/matlab-runtime/VersionInfo.xml'"
+    expected_output_contains: "R${matlab_version}"
 
   - name: MCR runtime libraries exist
     description: Verify MCR runtime library directory is present
-    command: bash -lc 'test -d /opt/matlab/v94/runtime/glnxa64 && echo "MCR runtime found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/runtime/glnxa64 && echo "MCR runtime found"'
     expected_output_contains: "MCR runtime found"
 
   - name: MCR bin libraries exist
     description: Verify MCR bin library directory is present
-    command: bash -lc 'test -d /opt/matlab/v94/bin/glnxa64 && echo "MCR bin found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/bin/glnxa64 && echo "MCR bin found"'
     expected_output_contains: "MCR bin found"
 
   - name: MCR system libraries exist
     description: Verify MCR system OS libraries are present
-    command: bash -lc 'test -d /opt/matlab/v94/sys/os/glnxa64 && echo "MCR sys/os found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/sys/os/glnxa64 && echo "MCR sys/os found"'
     expected_output_contains: "MCR sys/os found"
 
   - name: MCR OpenGL libraries exist
     description: Verify MCR OpenGL libraries directory is present
-    command: bash -lc 'test -d /opt/matlab/v94/sys/opengl/lib/glnxa64 && echo "OpenGL libs found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/sys/opengl/lib/glnxa64 && echo "OpenGL libs found"'
     expected_output_contains: "OpenGL libs found"
 
   - name: MCR toolbox directory exists
     description: Verify MCR toolbox directory is present
-    command: bash -lc 'test -d /opt/matlab/v94/toolbox && echo "MCR toolbox found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/toolbox && echo "MCR toolbox found"'
     expected_output_contains: "MCR toolbox found"
 
   - name: MCR Java runtime exists
     description: Verify MCR Java Runtime Environment is present
-    command: bash -lc 'test -d /opt/matlab/v94/java && echo "MCR Java found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/java && echo "MCR Java found"'
     expected_output_contains: "MCR Java found"
 
   - name: MCR resources directory exists
     description: Verify MCR resources directory is present
-    command: bash -lc 'test -d /opt/matlab/v94/resources && echo "MCR resources found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/resources && echo "MCR resources found"'
     expected_output_contains: "MCR resources found"
 
   - name: MCR extern directory exists
     description: Verify MCR extern directory is present
-    command: bash -lc 'test -d /opt/matlab/v94/extern && echo "MCR extern found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/extern && echo "MCR extern found"'
     expected_output_contains: "MCR extern found"
 
   # ==========================================================================
@@ -206,22 +206,22 @@ tests:
   # ==========================================================================
   - name: libmwmclmcrrt library exists
     description: Verify core MCR library is present
-    command: bash -lc 'ls /opt/matlab/v94/runtime/glnxa64/libmwmclmcrrt.so* 2>/dev/null | head -1 && echo "libmwmclmcrrt found"'
+    command: bash -lc 'ls /opt/matlab-runtime/runtime/glnxa64/libmwmclmcrrt.so* 2>/dev/null | head -1 && echo "libmwmclmcrrt found"'
     expected_output_contains: "libmwmclmcrrt found"
 
   - name: MCR has runtime shared libraries
     description: Verify MCR runtime has shared libraries
-    command: bash -lc 'ls /opt/matlab/v94/runtime/glnxa64/*.so* 2>/dev/null | wc -l'
+    command: bash -lc 'ls /opt/matlab-runtime/runtime/glnxa64/*.so* 2>/dev/null | wc -l'
     expected_exit_code: 0
 
   - name: MCR has bin shared libraries
     description: Verify MCR bin has shared libraries
-    command: bash -lc 'ls /opt/matlab/v94/bin/glnxa64/*.so* 2>/dev/null | wc -l'
+    command: bash -lc 'ls /opt/matlab-runtime/bin/glnxa64/*.so* 2>/dev/null | wc -l'
     expected_exit_code: 0
 
   - name: MCR runtime library count
     description: Verify MCR has runtime libraries present
-    command: "bash -lc 'count=$(ls -1 /opt/matlab/v94/runtime/glnxa64/ 2>/dev/null | wc -l)\nif [ \"$count\" -gt 2 ]; then echo \"MCR runtime has $count files\"; else echo \"MCR incomplete\"; fi'"
+    command: "bash -lc 'count=$(ls -1 /opt/matlab-runtime/runtime/glnxa64/ 2>/dev/null | wc -l)\nif [ \"$count\" -gt 2 ]; then echo \"MCR runtime has $count files\"; else echo \"MCR incomplete\"; fi'"
     expected_output_contains: "MCR runtime has"
 
   # ==========================================================================
@@ -275,12 +275,12 @@ tests:
   - name: readme.txt mentions MCR version
     description: Verify readme.txt mentions MCR version 9.4
     command: cat /readme.txt
-    expected_output_contains: "9.4"
+    expected_output_contains: "R${matlab_version}"
 
-  - name: readme.txt mentions R2018a
-    description: Verify readme.txt mentions MATLAB R2018a
+  - name: readme.txt mentions R${matlab_version}
+    description: Verify readme.txt mentions MATLAB R${matlab_version}
     command: cat /readme.txt
-    expected_output_contains: "R2018a"
+    expected_output_contains: "R${matlab_version}"
 
   - name: readme.txt has deployment info
     description: Verify readme.txt contains deployment information
@@ -292,17 +292,17 @@ tests:
   # ==========================================================================
   - name: MCR license file exists
     description: Verify MCR license file is present
-    command: bash -lc 'test -f /opt/matlab/v94/MCR_license.txt && echo "MCR license found"'
+    command: bash -lc 'test -f /opt/matlab-runtime/MCR_license.txt && echo "MCR license found"'
     expected_output_contains: "MCR license found"
 
   - name: MCR patents file exists
     description: Verify MCR patents file is present
-    command: bash -lc 'test -f /opt/matlab/v94/patents.txt && echo "MCR patents found"'
+    command: bash -lc 'test -f /opt/matlab-runtime/patents.txt && echo "MCR patents found"'
     expected_output_contains: "MCR patents found"
 
   - name: MCR trademarks file exists
     description: Verify MCR trademarks file is present
-    command: bash -lc 'test -f /opt/matlab/v94/trademarks.txt && echo "MCR trademarks found"'
+    command: bash -lc 'test -f /opt/matlab-runtime/trademarks.txt && echo "MCR trademarks found"'
     expected_output_contains: "MCR trademarks found"
 
   # ==========================================================================
@@ -334,12 +334,12 @@ tests:
   - name: brainnetviewer MCR path in LD_LIBRARY_PATH
     description: Verify MCR runtime path is included in library path
     command: timeout 10 brainnetviewer test 2>&1 || true
-    expected_output_contains: "/opt/matlab/v94/runtime/glnxa64"
+    expected_output_contains: "/opt/matlab-runtime/runtime/glnxa64"
 
   - name: brainnetviewer OpenGL path in LD_LIBRARY_PATH
     description: Verify OpenGL library path is included
     command: timeout 10 brainnetviewer test 2>&1 || true
-    expected_output_contains: "/opt/matlab/v94/sys/opengl/lib/glnxa64"
+    expected_output_contains: "/opt/matlab-runtime/sys/opengl/lib/glnxa64"
 
   # ==========================================================================
   # FILE SYSTEM ACCESS TESTS
@@ -470,22 +470,22 @@ tests:
   # ==========================================================================
   - name: MCR MATLAB toolbox exists
     description: Verify core MATLAB toolbox is present
-    command: bash -lc 'test -d /opt/matlab/v94/toolbox/matlab && echo "MATLAB toolbox found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/toolbox/matlab && echo "MATLAB toolbox found"'
     expected_output_contains: "MATLAB toolbox found"
 
   - name: MCR shared toolbox exists
     description: Verify shared toolbox directory is present
-    command: bash -lc 'test -d /opt/matlab/v94/toolbox/shared && echo "Shared toolbox found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/toolbox/shared && echo "Shared toolbox found"'
     expected_output_contains: "Shared toolbox found"
 
   - name: MCR cefclient exists
     description: Verify CEF client directory is present (for web rendering)
-    command: bash -lc 'test -d /opt/matlab/v94/cefclient && echo "CEF client found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/cefclient && echo "CEF client found"'
     expected_output_contains: "CEF client found"
 
   - name: MCR resources count
     description: Verify MCR resources directory has content
-    command: "bash -lc 'count=$(ls -1 /opt/matlab/v94/resources/ 2>/dev/null | wc -l)\necho \"MCR resources count: $count\"'"
+    command: "bash -lc 'count=$(ls -1 /opt/matlab-runtime/resources/ 2>/dev/null | wc -l)\necho \"MCR resources count: $count\"'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -624,3 +624,5 @@ cleanup:
 # - Volume overlay options
 # - Export to image (JPG, PNG, TIF, BMP, EPS)
 # - Save/Load configuration (.mat files)
+upstream_version: 1.7.20191031
+matlab_version: 2018a

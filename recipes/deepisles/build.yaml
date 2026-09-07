@@ -49,6 +49,10 @@ readme: |-
 
   ----------------------------------
 
+auto_update:
+  method: github_release
+  repo: ezequieldlrosa/DeepIsles
+
 build:
   kind: neurodocker
 
@@ -62,7 +66,7 @@ build:
         - workdir: /opt
 
         - run:
-            - git clone https://github.com/ezequieldlrosa/DeepIsles.git
+            - git clone --depth 1 --branch v{{ context.version }} https://github.com/ezequieldlrosa/DeepIsles.git
 
         - workdir: /opt/DeepIsles
 

@@ -49,6 +49,10 @@ structured_readme:
 
     Neuroimage 215 (2020): 116835.
     https://doi.org/10.1016/j.neuroimage.2020.116835
+auto_update:
+  method: pypi
+  package: dmri-amico
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -60,7 +64,7 @@ build:
         install_path: /opt/miniconda
         env_name: amico
         env_exists: "false"
-        pip_install: dmri-amico
+        pip_install: dmri-amico=={{ context.version }}
     - environment:
         PATH: /opt/miniconda/envs/amico/bin:/opt/miniconda/bin:$PATH
     - deploy:

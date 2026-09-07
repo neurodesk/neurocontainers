@@ -1,3 +1,7 @@
+variables:
+  install_version: "0.0.1"
+  upstream_commit: 9f64560efde8b58da6a87eed8eb6598f47cc4a3d
+
 name: deepsif
 version: 0.0.1
 
@@ -10,7 +14,7 @@ architectures:
 
 files:
   - name: main_tar_gz
-    url: https://github.com/bfinl/DeepSIF/archive/refs/heads/main.tar.gz
+    url: https://github.com/bfinl/DeepSIF/archive/{{ context.upstream_commit }}.tar.gz
   - name: cuda_keyring_1_0_1_all_deb
     url: https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/cuda-keyring_1.0-1_all.deb
 
@@ -21,7 +25,17 @@ files:
     contents: |
       #!/bin/bash
 
-      exec /opt/miniconda-4.7.12/envs/deepsif-{{ context.version }}/bin/python3 /opt/DeepSIF-main/forward/generate_tvb_data.py "$@"
+      exec /opt/miniconda-4.7.12/envs/deepsif-{{ context.install_version }}/bin/python3 /opt/DeepSIF-main/forward/generate_tvb_data.py "$@"
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: bfinl/DeepSIF
+    ref: main
+    target:
+      variable: upstream_commit
 
 build:
   kind: neurodocker
@@ -112,7 +126,7 @@ build:
     - workdir: /opt/
 
     - run:
-        - tar xz -f {{ get_file("main_tar_gz") }}
+        - mkdir -p /opt/DeepSIF-main && tar xz -f {{ get_file("main_tar_gz") }} --strip-components=1 -C /opt/DeepSIF-main
         - chmod a+rwx /opt/DeepSIF-main -R
 
     - environment:

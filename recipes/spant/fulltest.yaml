@@ -1,0 +1,6 @@
+name: spant
+version: 3.7.0
+tests:
+- name: spant package version
+  command: Rscript -e "library(spant); cat(as.character(packageVersion('spant')))"
+  expected_output_contains: ${version}

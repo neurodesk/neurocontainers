@@ -42,12 +42,12 @@ tests:
   - name: Version check
     description: Verify brainlife CLI binary runs and reports version
     command: bl --version
-    expected_output_contains: "1.7.0"
+    expected_output_contains: "${version}"
 
   - name: Version command
     description: Test bl version command
     command: bl version
-    expected_output_contains: "1.7.0"
+    expected_output_contains: "${version}"
 
   - name: Main help
     description: Verify main help displays all available commands

@@ -1,0 +1,6 @@
+name: openrefine
+version: 3.10.1
+tests:
+- name: OpenRefine version
+  command: openrefine --version
+  expected_output_contains: ${version}

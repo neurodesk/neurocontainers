@@ -12,6 +12,11 @@ architectures:
 variables:
   python_env: /opt/vertexwiser-python
 
+auto_update:
+  method: webpage
+  url: https://cran.r-project.org/web/packages/VertexWiseR/index.html
+  version_regex: <td>Version:</td>\s*<td>(?P<version>\d+(?:\.\d+)+)</td>
+
 build:
   kind: neurodocker
 
@@ -52,7 +57,7 @@ build:
         - python3 -m venv "{{ context.python_env }}"
         - "{{ context.python_env }}/bin/pip install --no-cache-dir --upgrade pip setuptools wheel"
         - "{{ context.python_env }}/bin/pip install --no-cache-dir brainstat==0.4.2 vtk==9.3.1 numpy==1.26.4 nilearn==0.12.0 netneurotools==0.2.5"
-        - R --slave -e "options(repos = c(CRAN = 'https://cloud.r-project.org'), Ncpus = max(1L, parallel::detectCores() - 1L)); install.packages('VertexWiseR', dependencies = c('Depends', 'Imports', 'LinkingTo'))"
+        - R --slave -e "options(repos = c(CRAN = 'https://cloud.r-project.org'), Ncpus = max(1L, parallel::detectCores() - 1L)); install.packages('remotes'); remotes::install_version('VertexWiseR', version = '{{ context.version }}', dependencies = c('Depends', 'Imports', 'LinkingTo'), upgrade = 'never')"
         - R --slave -e "library(VertexWiseR); stopifnot(as.character(packageVersion('VertexWiseR')) == '{{ context.version }}'); library(reticulate); stopifnot(grepl('{{ context.python_env }}/bin/python', py_config()[['python']], fixed = TRUE))"
         - "{{ context.python_env }}/bin/python -c \"import brainstat, nilearn, nibabel, vtk; print(vtk.vtkVersion.GetVTKVersion())\""
 

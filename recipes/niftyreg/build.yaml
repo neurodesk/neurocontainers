@@ -10,7 +10,18 @@ architectures:
   - aarch64
 
 variables:
-  revision: 8ad2f11507ddedb09ed74a9bd97377b70532ee75
+  install_version: "1.4.0"
+  revision: "8ad2f11507ddedb09ed74a9bd97377b70532ee75"
+
+auto_update:
+  method: sources
+  sources:
+  - id: revision
+    method: github_commit
+    repo: KCL-BMEIS/niftyreg
+    ref: HEAD
+    target:
+      variable: revision
 
 build:
   kind: neurodocker
@@ -37,10 +48,10 @@ build:
         - mkdir build
 
     - run:
-        - cmake -S src -B build -D CMAKE_INSTALL_PREFIX=/opt/niftyreg-{{ context.version }}
+        - cmake -S src -B build -D CMAKE_INSTALL_PREFIX=/opt/niftyreg-{{ context.install_version }}
       condition: arch == "x86_64"
     - run:
-        - cmake -S src -B build -D CMAKE_INSTALL_PREFIX=/opt/niftyreg-{{ context.version }} -D USE_SSE=OFF
+        - cmake -S src -B build -D CMAKE_INSTALL_PREFIX=/opt/niftyreg-{{ context.install_version }} -D USE_SSE=OFF
       condition: arch == "aarch64"
 
     - run:
@@ -49,8 +60,8 @@ build:
         - make install
 
     - environment:
-        PATH: /opt/niftyreg-{{ context.version }}/bin:${PATH}
-        TOOLBOX_PATH: /opt/niftyreg-{{ context.version }}/
+        PATH: /opt/niftyreg-{{ context.install_version }}/bin:${PATH}
+        TOOLBOX_PATH: /opt/niftyreg-{{ context.install_version }}/
 
     - deploy:
         path:

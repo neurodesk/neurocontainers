@@ -14,7 +14,7 @@ tests:
   - name: bids-manager package metadata
     description: Verify the pinned PyPI package is installed.
     command: python -c "import importlib.metadata as m; print(m.version('bids-manager'))"
-    expected_output_contains: "1.2.3"
+    expected_output_contains: "${version}"
 
   - name: bidsmgr GUI launcher help
     description: Verify the main launcher starts far enough to print CLI help.

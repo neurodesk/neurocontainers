@@ -18,12 +18,12 @@ tests:
   - name: apptainer version
     description: Verify the main apptainer binary runs and reports the packaged version
     command: apptainer --version
-    expected_output_contains: "apptainer version 1.4.4"
+    expected_output_contains: "apptainer version ${version}"
 
   - name: singularity alias version
     description: Verify the backward-compatible singularity alias is available
     command: singularity --version
-    expected_output_contains: "apptainer version 1.4.4"
+    expected_output_contains: "apptainer version ${version}"
 
   - name: apptainer help
     description: Verify the top-level help output is available

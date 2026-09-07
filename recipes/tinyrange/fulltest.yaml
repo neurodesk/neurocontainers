@@ -1,0 +1,6 @@
+name: tinyrange
+version: 0.4.0
+tests:
+- name: TinyRange help
+  command: tinyrange --help
+  expected_output_contains: tinyrange
