@@ -18,7 +18,7 @@
 #           Neuropsychologia, 115, 154-166.
 
 name: lesymap
-version: 0.0.0.9222
+version: 0.0.0.9222.post1
 software_version: 0.0.0.9221
 
 required_files:
