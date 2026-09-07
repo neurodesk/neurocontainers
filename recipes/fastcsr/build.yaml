@@ -1,5 +1,5 @@
 name: fastcsr
-version: "1.0"
+version: "1.0.post1"
 icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjE4IiBmaWxsPSIjMTYyMTNlIi8+PHBhdGggZD0iTTI1IDg1YzE4LTM4IDM2LTM4IDU0IDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2Y2Yzg1ZiIgc3Ryb2tlLXdpZHRoPSI4IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMzYgODBjMTItMjQgMjQtMjQgMzYgMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNGVjZGM0IiBzdHJva2Utd2lkdGg9IjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxjaXJjbGUgY3g9IjY0IiBjeT0iNDQiIHI9IjIwIiBmaWxsPSJub25lIiBzdHJva2U9IiNmN2ZmZjciIHN0cm9rZS13aWR0aD0iNyIvPjx0ZXh0IHg9IjY0IiB5PSIxMTQiIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjE5IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZjdmZmY3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5GYXN0Q1NSPC90ZXh0Pjwvc3ZnPg==
 
 architectures:
@@ -92,6 +92,7 @@ build:
     - environment:
         LD_LIBRARY_PATH: /usr/lib/jvm/java-11-openjdk-amd64/lib:/usr/lib/jvm/java-11-openjdk-amd64/lib/server
     - run:
+        - python3 -m pip install --upgrade pip==25.0.1 setuptools==75.3.2 wheel==0.45.1
         - pip3 install '{{ get_file("nighres_wheel") }}'
         - pip install nighres==1.5.0
         - pip install -U numpy
