@@ -15,6 +15,8 @@ from .adapters import (
 )
 from .config import default_config, resolve_recipe
 from .dockerfile import render_dockerfile
+from .image_contexts import read_contexts, stage_image, write_contexts
+from .ir import From
 from .recipe import compile_recipe, load_recipe, variant_specs
 from .release import build_date_for_recipe, release_data, release_version, write_github_release_outputs, write_release_file
 from .staging import materialize_plan
@@ -56,6 +58,13 @@ def write_build_files(
             http_cache_dir=output_root.parent / "httpcache",
             download=download,
         )
+    required = compiled.recipe["build"].get("convert-base-image", False)
+    contexts = ()
+    if stage and download and required:
+        reference = next(item.image for item in compiled.definition.directives if isinstance(item, From))
+        contexts = (stage_image(reference, compiled.architecture,
+                                output_root.parent / "httpcache" / "oci", build_dir),)
+    write_contexts(build_dir, compiled.architecture, contexts, required=required)
     return build_dir, dockerfile_path
 
 
@@ -184,6 +193,7 @@ def build_inputs(
         build_dir=build_dir,
         dockerfile_path=dockerfile_path,
         local_contexts=local_contexts(local_args or []),
+        image_contexts=read_contexts(build_dir),
     )
 
 
@@ -363,6 +373,13 @@ def cmd_login(args: argparse.Namespace) -> int:
     return subprocess.call(command)
 
 
+def cmd_context_args(args: argparse.Namespace) -> int:
+    arguments = [argument for context in read_contexts(args.build_dir) for argument in context.buildx_args()]
+    if arguments:
+        sys.stdout.buffer.write(("\0".join(arguments) + "\0").encode())
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="NeuroContainers builder")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -375,6 +392,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_recipe_args(stage)
     stage.add_argument("--download", action="store_true", help="Download URL-backed declared files")
     stage.set_defaults(func=cmd_stage)
+
+    contexts = subparsers.add_parser("staged-context-args", help="Emit buildx context arguments separated by NUL bytes")
+    contexts.add_argument("build_dir", type=Path)
+    contexts.set_defaults(func=cmd_context_args)
 
     release = subparsers.add_parser("release", help="Generate release JSON")
     add_common_recipe_args(release)

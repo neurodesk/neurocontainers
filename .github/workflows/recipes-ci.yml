@@ -119,8 +119,10 @@ jobs:
         run: |
           dockerfile=$(find "build/$CONTAINER" -maxdepth 1 -name '*.Dockerfile' -print -quit)
           test -n "$dockerfile"
+          python -m builder staged-context-args "build/$CONTAINER" > "$RUNNER_TEMP/image-context-args"
+          mapfile -d '' -t IMAGE_CONTEXT_ARGS < "$RUNNER_TEMP/image-context-args"
           docker buildx build "build/$CONTAINER" --load --file "$dockerfile" --tag "$IMAGE" \
-            --build-context "neurocontainer-cache=build/$CONTAINER/cache"
+            --build-context "neurocontainer-cache=build/$CONTAINER/cache" "${IMAGE_CONTEXT_ARGS[@]}"
       - name: Convert the freshly built image for runtime tests
         if: inputs.run-tests
         run: |

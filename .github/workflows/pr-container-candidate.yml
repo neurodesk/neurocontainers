@@ -175,9 +175,12 @@ jobs:
             --architecture "${ARCHITECTURE}" --variant "${VARIANT}"
           dockerfile="$(find "build/${CONTAINER}" -maxdepth 1 -iname '*.Dockerfile' -print -quit)"
           test -n "${dockerfile}"
+          python -m builder staged-context-args "build/${CONTAINER}" > "$RUNNER_TEMP/image-context-args"
+          mapfile -d '' -t IMAGE_CONTEXT_ARGS < "$RUNNER_TEMP/image-context-args"
           docker buildx build "build/${CONTAINER}" --load \
             --file "${dockerfile}" --tag "${CANDIDATE_TAG}" \
             --build-context "neurocontainer-cache=build/${CONTAINER}/cache" \
+            "${IMAGE_CONTEXT_ARGS[@]}" \
             --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
             --label "GITHUB_SHA=${HEAD_SHA}"
       - name: Create immutable candidate files

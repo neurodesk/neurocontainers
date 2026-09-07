@@ -427,6 +427,8 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
           IS_BLACKSMITH_RUNNER: ${{ contains(inputs.runner, 'blacksmith') }}
         run: |
+          python3 -m builder staged-context-args "build/${CONTAINER_NAME}" > "$RUNNER_TEMP/image-context-args"
+          mapfile -d '' -t IMAGE_CONTEXT_ARGS < "$RUNNER_TEMP/image-context-args"
           cd "./build/${CONTAINER_NAME}"
           CACHE_REF=ghcr.io/${GH_REGISTRY}/${CONTAINER_NAME}:buildcache
           CACHE_FROM_ARGS=()
@@ -453,6 +455,7 @@ jobs:
             --file "${DOCKERFILE}" \
             --tag "ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}" \
             --build-context "neurocontainer-cache=./cache" \
+            "${IMAGE_CONTEXT_ARGS[@]}" \
             "${CACHE_FROM_ARGS[@]}" \
             "${CACHE_TO_ARGS[@]}" \
             --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
