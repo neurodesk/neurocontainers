@@ -151,6 +151,7 @@ The source list supports the release providers above and these providers:
 | Method | Required source | Installed identity |
 | --- | --- | --- |
 | `github_commit` | `repo`, optional `ref` | Full commit SHA; optional `version_file` supplies version metadata from that commit |
+| `github_release_asset` | `repo`, exact `asset` filename | One release's tagged asset URL, version and verified SHA-256 |
 | `git_commit` | HTTPS `url`, full `ref` | Full commit SHA from an ordinary Git server |
 | `oci_digest` | `image`, `tag` | Immutable registry manifest or image-index digest |
 | `http_digest` | HTTPS `url` | SHA-256 of the downloaded bytes, including mutable snapshot URLs |
@@ -189,6 +190,28 @@ and SHA-256 together. The builder verifies both cached and newly downloaded
 bytes against that digest. Runtime versions can come from named filename groups
 or an exact `matlab_readme` member in the archive. Failed or ambiguous observations
 leave the recipe unchanged and fail the update check.
+
+For GitHub release binaries, select the release and its asset together:
+
+```yaml
+- id: application
+  method: github_release_asset
+  repo: example/tool
+  asset: tool-linux.zip
+  target:
+    file: tool_archive
+    variables:
+      upstream_version: version
+```
+
+This provider selects the highest suitable release using the same stable-version
+rules as `github_release`. It downloads the named asset from that exact tag and
+verifies its size and any published SHA-256. The declared file keeps an explicit
+tagged URL even when GitHub redirects downloads to a signed CDN URL. Each check
+reads the asset bytes again, so replacements under an unchanged release tag also
+produce an update. Missing, duplicate or incomplete assets fail the check. Do not
+combine an independent release selector with a `releases/latest` digest source;
+those selectors can resolve different releases.
 
 Snapshot hashing uses conditional HTTP requests when the server supplies an ETag
 or Last-Modified value. Only an explicit `304 Not Modified` reuses the previous

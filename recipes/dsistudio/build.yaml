@@ -11,23 +11,19 @@ architectures:
   - x86_64
 
 variables:
-  upstream_version: 2024.06.12
+  upstream_version: 2024.6.12
 
 auto_update:
   method: sources
   sources:
-    - id: release
-      method: github_release
-      repo: frankyeh/DSI-Studio
-      target:
-        variable: upstream_version
-        value: tag
-        fulltest_variable: upstream_version
     - id: archive
-      method: http_digest
-      url: https://github.com/frankyeh/DSI-Studio/releases/latest/download/dsi_studio_ubuntu2204_cpu.zip
+      method: github_release_asset
+      repo: frankyeh/DSI-Studio
+      asset: dsi_studio_ubuntu2204_cpu.zip
       target:
         file: dsi_studio_ubuntu2204_cpu_zip
+        variables:
+          upstream_version: version
 
 build:
   kind: neurodocker
@@ -92,5 +88,5 @@ gui_apps:
 
 files:
   - name: dsi_studio_ubuntu2204_cpu_zip
-    url: https://github.com/frankyeh/DSI-Studio/releases/download/{{ context.upstream_version }}/dsi_studio_ubuntu2204_cpu.zip
+    url: https://github.com/frankyeh/DSI-Studio/releases/download/2024.06.12/dsi_studio_ubuntu2204_cpu.zip
     sha256: 3bb5281a375b21744cf0fdcd096b198cec7ce5c2815ab73973b0a2074b12c338

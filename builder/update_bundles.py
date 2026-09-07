@@ -11,7 +11,7 @@ from urllib.parse import quote
 import requests
 from packaging.version import InvalidVersion, Version
 
-from .update_sources import configure_read_retries, latest_version
+from .update_sources import configure_read_retries, latest_version, validate_update_config
 
 
 GIRDER = "https://slicer-packages.kitware.com/api/v1"
@@ -19,7 +19,7 @@ ANNEX = "https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/a
 OBJECT_ID = re.compile(r"[0-9a-f]{24}")
 MODEL_KEY = re.compile(r"SHA256E-s(?P<size>\d+)--(?P<sha256>[0-9a-f]{64})(?:\.[A-Za-z0-9.]+)?")
 REPO_PATH = re.compile(r"[A-Za-z0-9_./-]+")
-BUNDLE_METHODS = frozenset({"slicer_release", "freesurfer_release"})
+BUNDLE_METHODS = frozenset({"slicer_release", "freesurfer_release", "github_release_asset"})
 
 
 def validate_bundle(config: dict) -> None:
@@ -40,6 +40,19 @@ def validate_bundle(config: dict) -> None:
             if not isinstance(prefix, str) or not re.fullmatch(r"[a-z][a-z0-9_]*", prefix):
                 raise ValueError("model metadata prefixes must be lowercase identifiers")
             _repo_path(path)
+    elif method == "github_release_asset":
+        allowed = {"method", "repo", "asset", "version_regex", "version_scheme", "include_prereleases"}
+        asset = config.get("asset")
+        if (
+            not isinstance(asset, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*", asset)
+            or asset in {"TODO", "TBD", "PLACEHOLDER"}
+        ):
+            raise ValueError("github_release_asset.asset must be an exact asset filename")
+        validate_update_config({
+            **{key: value for key, value in config.items() if key != "asset"},
+            "method": "github_release",
+        })
     else:
         raise ValueError(f"unsupported bundle method: {method!r}")
     if set(config) - allowed:
@@ -89,7 +102,7 @@ def _download(session: requests.Session, url: str, *, expected_sha256: str | Non
     if expected_size is not None and size != expected_size:
         raise ValueError("bundle download size disagrees with published metadata")
     if expected_sha256 is not None and digest != expected_sha256:
-        raise ValueError("bundle download SHA256 disagrees with git-annex key")
+        raise ValueError("bundle download SHA256 disagrees with published digest")
     if expected_sha512 is not None and sha512.hexdigest() != expected_sha512:
         raise ValueError("bundle download SHA512 disagrees with published metadata")
     return digest, size
@@ -181,6 +194,52 @@ def _freesurfer(config: dict, github_session: requests.Session, session: request
                              tag=release.tag, metadata=metadata)
 
 
+def _github_release_asset(config: dict, github_session: requests.Session, session: requests.Session):
+    from .update_observations import SourceObservation
+
+    release = latest_version({
+        **{key: value for key, value in config.items() if key != "asset"},
+        "method": "github_release",
+    }, github_session)
+    if release is None:
+        raise ValueError("GitHub repository has no suitable release")
+    repo, tag = config["repo"], quote(release.tag, safe="")
+    response = github_session.get(
+        f"https://api.github.com/repos/{repo}/releases/tags/{tag}", timeout=30
+    )
+    response.raise_for_status()
+    published = response.json()
+    if (
+        not isinstance(published, dict)
+        or published.get("tag_name") != release.tag
+        or published.get("draft")
+        or (published.get("prerelease") and not config.get("include_prereleases", False))
+    ):
+        raise ValueError("GitHub selected release changed before asset resolution")
+    assets = published.get("assets")
+    if not isinstance(assets, list) or not all(isinstance(asset, dict) for asset in assets):
+        raise ValueError("GitHub release assets must be an array of objects")
+    matches = [asset for asset in assets if asset.get("name") == config["asset"]]
+    if len(matches) != 1:
+        raise ValueError(f"expected one release asset named {config['asset']}, found {len(matches)}")
+    asset = matches[0]
+    size, published_digest = asset.get("size"), asset.get("digest")
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0 or asset.get("state") != "uploaded":
+        raise ValueError("GitHub asset must be uploaded with a valid size")
+    if published_digest is not None and (
+        not isinstance(published_digest, str)
+        or not re.fullmatch(r"sha256:[a-f0-9]{64}", published_digest)
+    ):
+        raise ValueError("GitHub asset has an invalid published SHA256 digest")
+    url = f"https://github.com/{repo}/releases/download/{tag}/{quote(config['asset'], safe='')}"
+    digest, size = _download(
+        session, url, expected_size=size,
+        expected_sha256=published_digest.removeprefix("sha256:") if published_digest else None,
+    )
+    return SourceObservation(value=url, url=release.url, version=release.version,
+                             tag=release.tag, metadata={"sha256": digest, "size": size})
+
+
 def observe_bundle(config: dict, github_session: requests.Session, current: str | None = None):
     """Resolve every coupled input before returning one immutable observation."""
     validate_bundle(config)
@@ -188,6 +247,8 @@ def observe_bundle(config: dict, github_session: requests.Session, current: str 
         configure_read_retries(session)
         if config["method"] == "slicer_release":
             return _slicer(config, session)
+        if config["method"] == "github_release_asset":
+            return _github_release_asset(config, github_session, session)
         return _freesurfer(config, github_session, session)
 
 

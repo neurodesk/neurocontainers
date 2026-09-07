@@ -64,7 +64,7 @@ def validate_sources_config(config: dict) -> None:
             raise ValueError(f"{name}: value must select value, version or tag")
         if "variable" in target and key in {"version", "original_version"}:
             raise ValueError("independent sources cannot target the container version")
-        if "file" in target and source["method"] not in {"http_digest", "artifact_listing", "slicer_release", "freesurfer_release"}:
+        if "file" in target and source["method"] not in {"http_digest", "artifact_listing", "slicer_release", "freesurfer_release", "github_release_asset"}:
             raise ValueError(f"{name}: a file target requires an artifact or digest source")
         if "variables" in target:
             if not isinstance(target["variables"], dict) or not all(
