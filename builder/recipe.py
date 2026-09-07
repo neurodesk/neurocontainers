@@ -259,7 +259,9 @@ def _default_template_command(pkg_manager: str) -> str:
             "    locales \\\n"
             "    unzip\n"
             "rm -rf /var/lib/apt/lists/*\n"
-            "sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen\n"
+            "if ! grep -qx 'en_US.UTF-8 UTF-8' /etc/locale.gen 2>/dev/null; then\n"
+            "  printf 'en_US.UTF-8 UTF-8\\n' >> /etc/locale.gen\n"
+            "fi\n"
             "dpkg-reconfigure --frontend=noninteractive locales\n"
             'update-locale LANG="en_US.UTF-8"\n'
             "chmod 777 /opt && chmod a+s /opt\n"
