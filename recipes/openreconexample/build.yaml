@@ -78,9 +78,6 @@ build:
         - run:
               - git clone https://github.com/Bostrix/FSL-BET2
               - git -C FSL-BET2 checkout {{ context.fsl_bet2_commit }}
-              - git -C FSL-BET2 checkout {{ context.fsl_bet2_commit }}
-              - git -C FSL-BET2 checkout {{ context.fsl_bet2_commit }}
-              - git -C FSL-BET2 checkout {{ context.fsl_bet2_commit }}
               - cd FSL-BET2
               - mkdir build
               - cd build

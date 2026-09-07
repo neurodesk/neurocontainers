@@ -326,7 +326,11 @@ def migrate_local(name: str, base_key: str, fsl_bet2: bool) -> None:
         variables["fsl_bet2_commit"] = "d5acd7fe09a34679aaac63f67f20409abf2ed3b9"
     text = ensure_variables(text, variables)
     text = replace_base(text, base[0], f"{base[0]}@{{{{ context.base_image_digest }}}}")
-    if fsl_bet2 and "git checkout {{ context.fsl_bet2_commit }}" not in text:
+    checkout = "git -C FSL-BET2 checkout {{ context.fsl_bet2_commit }}"
+    checkout_count = len(re.findall(r"(?m)^\s*- " + re.escape(checkout) + r"\s*$", text))
+    if fsl_bet2 and checkout_count > 1:
+        raise ValueError(f"{name}: duplicate FSL-BET2 checkout commands")
+    if fsl_bet2 and checkout_count == 0:
         before = "              - git clone https://github.com/Bostrix/FSL-BET2\n"
         if text.count(before) != 1:
             raise ValueError(f"{name}: unexpected FSL-BET2 clone command")
@@ -346,7 +350,15 @@ def migrate_local(name: str, base_key: str, fsl_bet2: bool) -> None:
             {"id": file_name, "name": file_name, "url": by_name[file_name]["url"]}
         )
     policy = local_policy(base, fsl_bet2, file_sources)
-    text = replace_top_level(text, "auto_update", policy)
+    existing = recipe.get("auto_update") or {}
+    if existing.get("method") == "sources":
+        expected = yaml.safe_load(policy)["auto_update"]["sources"]
+        actual = {source["id"]: source for source in existing.get("sources", [])}
+        for source in expected:
+            if actual.get(source["id"]) != source:
+                raise ValueError(f"{name}: unexpected existing source {source['id']}")
+    else:
+        text = replace_top_level(text, "auto_update", policy)
     path.write_text(text)
 
 
