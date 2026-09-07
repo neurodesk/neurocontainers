@@ -1,5 +1,5 @@
 name: mipav
-version: 11.3.3
+version: 11.3.3.post1
 
 test_data:
   output_dir: test_output/mipav
@@ -15,8 +15,8 @@ tests:
     command: command -v mipav
     expected_output_contains: "/usr/local/mipav/mipav"
 
-  - name: Bundled Java runtime available
-    description: Verify MIPAV ships its bundled Java runtime
+  - name: Native Java runtime available
+    description: Verify the installed MIPAV Java runtime executes on this architecture
     command: /usr/local/mipav/jre/bin/java -version 2>&1 | sed -n '1,3p'
     expected_output_contains: "OpenJDK Runtime Environment"
 

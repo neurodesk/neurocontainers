@@ -1,5 +1,5 @@
 name: mipav
-version: 11.3.3
+version: 11.3.3.post1
 architectures:
   - x86_64
   - aarch64
@@ -22,6 +22,7 @@ build:
   directives:
     - workdir: /opt
     - install:
+      - openjdk-11-jre
       - fontconfig
       - fonts-dejavu-core
       - libfreetype6
@@ -32,7 +33,10 @@ build:
       - xauth
       - xvfb
     - run:
-      - sh {{ get_file("installer") }} -q
+      - java_home=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
+      - INSTALL4J_DISABLE_BUNDLED_JRE=true INSTALL4J_JAVA_HOME_OVERRIDE="$java_home" sh {{ get_file("installer") }} -q
+      - rm -rf /usr/local/mipav/jre
+      - ln -s "$java_home" /usr/local/mipav/jre
     - environment:
         PATH: /usr/local/mipav:${PATH}
 deploy:
