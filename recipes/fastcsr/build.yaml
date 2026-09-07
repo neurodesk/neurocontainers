@@ -1,11 +1,16 @@
 name: fastcsr
-version: "1.0.post1"
+version: "1.0.post2"
 icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjE4IiBmaWxsPSIjMTYyMTNlIi8+PHBhdGggZD0iTTI1IDg1YzE4LTM4IDM2LTM4IDU0IDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2Y2Yzg1ZiIgc3Ryb2tlLXdpZHRoPSI4IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMzYgODBjMTItMjQgMjQtMjQgMzYgMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNGVjZGM0IiBzdHJva2Utd2lkdGg9IjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxjaXJjbGUgY3g9IjY0IiBjeT0iNDQiIHI9IjIwIiBmaWxsPSJub25lIiBzdHJva2U9IiNmN2ZmZjciIHN0cm9rZS13aWR0aD0iNyIvPjx0ZXh0IHg9IjY0IiB5PSIxMTQiIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjE5IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZjdmZmY3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5GYXN0Q1NSPC90ZXh0Pjwvc3ZnPg==
 
 architectures:
   - x86_64
 
 variables:
+  python_gdcm_version: 3.0.25
+  simpleitk_version: 2.4.1
+  pytorch_version: 1.10.2
+  torchvision_version: 0.11.3
+  torchaudio_version: 0.10.2
   upstream_commit: "b2bbc0e109f7c0f5667e7ee89611f1b320732cc8"
   fastcsr_repo: https://github.com/IndiLab/FastCSR.git
   freesurfer_version: 6.0.0
@@ -96,11 +101,12 @@ build:
         - pip3 install '{{ get_file("nighres_wheel") }}'
         - pip install nighres==1.5.0
         - pip install -U numpy
-        - pip install torch==1.9.1+cpu torchvision==0.10.1+cpu torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html
+        - pip install torch=={{ context.pytorch_version }}+cpu torchvision=={{ context.torchvision_version }}+cpu torchaudio=={{ context.torchaudio_version }}+cpu -f https://download.pytorch.org/whl/torch_stable.html
     - environment:
         SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL: "True"
     - run:
-        - pip install nnunet==1.7.1 antspyx sh
+        - pip install nnunet==1.7.1 python-gdcm=={{ context.python_gdcm_version }} SimpleITK=={{ context.simpleitk_version }} antspyx sh
+        - python3 -m pip check
     - workdir: /opt
     - run:
         - git clone {{ context.fastcsr_repo }} && git -C /opt/FastCSR checkout {{ context.upstream_commit }}
