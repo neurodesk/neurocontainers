@@ -56,6 +56,7 @@ NEW_METHOD_FIELDS = {
             "download_base",
             "version_scheme",
             "listing_format",
+            "rebase_root_relative_links",
             "matlab_readme",
         }
     ),
@@ -175,6 +176,8 @@ def validate_source(config: dict) -> None:
         base = _https_url(config.get("download_base"), "artifact_listing.download_base")
         if not base.endswith("/"):
             raise ValueError("artifact_listing.download_base must end with /")
+        if not isinstance(config.get("rebase_root_relative_links", False), bool):
+            raise ValueError("artifact_listing.rebase_root_relative_links must be boolean")
         regex = config.get("version_regex")
         if not isinstance(regex, str) or not regex or PLACEHOLDER.search(regex):
             raise ValueError(
@@ -480,15 +483,22 @@ def _version_key(value: str, scheme: str) -> object:
     return parsed
 
 
-def _artifact_url(base: str, href: str) -> str:
+def _artifact_url(base: str, href: str, *, rebase_root_relative_links: bool = False) -> str:
     decoded = unquote(href)
+    base_parts = urlsplit(base)
+    if (
+        rebase_root_relative_links
+        and decoded.startswith("/")
+        and not decoded.startswith("//")
+        and not urlsplit(decoded).path.startswith(base_parts.path)
+    ):
+        decoded = decoded[1:]
     parsed_href = urlsplit(decoded)
     if parsed_href.scheme or parsed_href.netloc or decoded.startswith(("/", "../")):
         candidate = urljoin(base, decoded)
     else:
         candidate = urljoin(base, quote(decoded, safe="/._~+-%"))
     _https_url(candidate, "artifact download URL")
-    base_parts = urlsplit(base)
     parts = urlsplit(candidate)
     if parts.netloc != base_parts.netloc or not parts.path.startswith(base_parts.path):
         raise ValueError("artifact link escapes download_base")
@@ -536,7 +546,10 @@ def _artifact_listing(
                 version,
                 matched_text,
                 groups,
-                _artifact_url(config["download_base"], href),
+                _artifact_url(
+                    config["download_base"], href,
+                    rebase_root_relative_links=config.get("rebase_root_relative_links", False),
+                ),
             )
         )
     if not candidates:

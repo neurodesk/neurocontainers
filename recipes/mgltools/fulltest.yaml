@@ -11,7 +11,7 @@
 # analyzing docking results, file format conversions
 
 name: mgltools
-version: 1.5.7
+version: 1.5.7.post1
 
 # Note: MGLTools uses Python 2.7 and specialized scripts
 # Most utilities are in /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/

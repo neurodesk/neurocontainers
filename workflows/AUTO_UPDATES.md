@@ -191,6 +191,12 @@ bytes against that digest. Runtime versions can come from named filename groups
 or an exact `matlab_readme` member in the archive. Failed or ambiguous observations
 leave the recipe unchanged and fail the update check.
 
+Some vendor pages publish root-relative download links that omit their project
+path. Set `rebase_root_relative_links: true` and include the project path in
+`download_base` to resolve those links within that project. Links already inside
+the configured base use normal URL resolution; external hosts and directory
+traversal still fail validation.
+
 For GitHub release binaries, select the release and its asset together:
 
 ```yaml

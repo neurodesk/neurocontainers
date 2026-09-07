@@ -550,6 +550,40 @@ def test_artifact_listing_reads_html_links(public_session: Mock) -> None:
     assert observed.version == "1.3"
 
 
+@pytest.mark.parametrize("prefix", ["", "/project"])
+def test_artifact_listing_rebases_misplaced_root_links_when_configured(
+    public_session: Mock, prefix: str,
+) -> None:
+    public_session.get.side_effect = [
+        response(
+            content=(f'<a href="{prefix}/download/12/">tool-1.2.zip</a>'
+                     f'<a href="{prefix}/download/15/">tool-1.3.zip</a>').encode(),
+            headers={"Content-Type": "text/html"},
+        ),
+        response(content=b"new", url="https://vendor.example/project/download/15/"),
+    ]
+    observed = update_observations.observe_source(
+        {
+            "method": "artifact_listing",
+            "url": "https://vendor.example/project/downloads/",
+            "download_base": "https://vendor.example/project/",
+            "rebase_root_relative_links": True,
+            "version_regex": r"tool-(?P<version>\d+\.\d+)\.zip",
+        },
+        Mock(),
+    )
+    assert observed.value == "https://vendor.example/project/download/15/"
+    assert observed.version == "1.3"
+
+
+@pytest.mark.parametrize("href", ["//other.example/tool.zip", "/../tool.zip", "/%2e%2e/tool.zip"])
+def test_rebased_artifact_links_cannot_escape_the_download_base(href: str) -> None:
+    with pytest.raises(ValueError, match="escapes download_base"):
+        update_observations._artifact_url(
+            "https://vendor.example/project/", href, rebase_root_relative_links=True
+        )
+
+
 def test_artifact_listing_can_match_anchor_text_and_compare_year_letter_versions(
     public_session: Mock,
 ) -> None:
