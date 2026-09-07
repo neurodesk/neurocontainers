@@ -24,6 +24,13 @@ on:
         required: true
         default: x86_64
         options: [x86_64, arm64, all]
+      x86-runner:
+        description: Runner pool for x86 builds in the NeuroDesk repository
+        type: choice
+        default: neurodesk-syd-arcrunner-neurocontainers
+        options:
+          - neurodesk-syd-arcrunner-neurocontainers
+          - blacksmith-8vcpu-ubuntu-2404
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -57,7 +64,7 @@ jobs:
   verify:
     name: ${{ matrix.container }} | ${{ matrix.architecture }}
     needs: prepare-matrix
-    runs-on: ${{ github.repository == 'neurodesk/neurocontainers' && (matrix.architecture == 'aarch64' && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'neurodesk-syd-arcrunner-neurocontainers') || (matrix.architecture == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-22.04') }}
+    runs-on: ${{ github.repository == 'neurodesk/neurocontainers' && (matrix.architecture == 'aarch64' && 'blacksmith-8vcpu-ubuntu-2404-arm' || inputs.x86-runner) || (matrix.architecture == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-22.04') }}
     timeout-minutes: 360
     strategy:
       fail-fast: false
@@ -105,6 +112,9 @@ jobs:
           python builder/validation.py "recipes/$RECIPE/build.yaml"
           python -m builder stage "$RECIPE" --recreate --download \
             --architecture "$ARCHITECTURE" --variant "$VARIANT"
+      - name: Set up Blacksmith Docker builder
+        if: github.repository == 'neurodesk/neurocontainers' && (matrix.architecture == 'aarch64' || inputs.x86-runner == 'blacksmith-8vcpu-ubuntu-2404')
+        uses: useblacksmith/setup-docker-builder@v1
       - name: Build the selected container
         run: |
           dockerfile=$(find "build/$CONTAINER" -maxdepth 1 -name '*.Dockerfile' -print -quit)

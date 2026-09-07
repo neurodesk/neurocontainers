@@ -11,8 +11,12 @@ setup:
 tests:
 - name: DataLad version check
   description: Verify the datalad CLI version matches the shipped runtime
-  command: datalad --version
-  expected_output_contains: datalad 1.1.5
+  command: |
+    reported="$(datalad --version)"
+    expected="${package_version}"
+    expected="${expected#*:}"
+    printf '%s\n' "$reported"
+    test "$reported" = "datalad ${expected%-*}"
 - name: DataLad help output
   description: Verify the main help text renders
   command: datalad --help 2>&1 | head -20
