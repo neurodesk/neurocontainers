@@ -18,7 +18,8 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 
 name: dicomtools
-version: "1.0.0.post1"
+version: "1.0.0.post2"
+dcm2niix_tag: v1.0.20260724
 
 required_files:
   - dataset: ds000001
@@ -56,10 +57,10 @@ tests:
     command: dcm2niix --version 2>&1 || true
     expected_output_contains: "dcm2niiX"
 
-  - name: dcm2niix version v1.0.20241211
+  - name: dcm2niix tracked source version
     description: Verify dcm2niix version matches expected
     command: dcm2niix --version 2>&1 || true
-    expected_output_contains: "v1.0.20241211"
+    expected_output_contains: "${dcm2niix_tag}"
 
   - name: dcm2niix help display
     description: Verify dcm2niix shows usage information
@@ -79,7 +80,7 @@ tests:
   - name: dcm2niix compression option
     description: Verify gzip compression option exists
     command: dcm2niix 2>&1
-    expected_output_contains: "-z : gz compress"
+    expected_output_contains: "-z : compress images"
 
   - name: dcm2niix output directory option
     description: Verify output directory option exists
@@ -249,9 +250,11 @@ tests:
     expected_output_contains: "dcmtk: dcmdump"
 
   - name: dcmdump DCMTK version
-    description: Verify DCMTK version 3.6.8
-    command: dcmdump --version 2>&1
-    expected_output_contains: "v3.6.8"
+    description: Verify the executable version matches the installed Ubuntu package
+    command: |
+      expected=$(dpkg-query -W -f='${Version}' dcmtk | sed 's/^[0-9]*://; s/-.*//') &&
+      test -n "$expected" &&
+      dcmdump --version 2>&1 | grep -F "dcmdump v$expected "
 
   - name: dcmdump help display
     description: Verify dcmdump shows help information
@@ -611,9 +614,11 @@ tests:
     expected_output_contains: "MedCon"
 
   - name: medcon version number
-    description: Verify medcon version 0.24.0
-    command: medcon --version 2>&1 || true
-    expected_output_contains: "0.24.0"
+    description: Verify the executable version matches the installed Ubuntu package
+    command: |
+      expected=$(dpkg-query -W -f='${Version}' medcon | sed 's/^[0-9]*://; s/-.*//') &&
+      test -n "$expected" &&
+      medcon --version 2>&1 | grep -F "$expected"
 
   - name: medcon help display
     description: Verify medcon shows help information
@@ -997,14 +1002,13 @@ tests:
     expected_exit_code: 0
 
   - name: All dcmtk tools version consistency
-    description: Verify all DCMTK tools report same version
+    description: Verify all DCMTK tools match the installed package version
     command: |
-      dcmdump --version 2>&1 | grep "v3.6.8" && \
-      dcm2xml --version 2>&1 | grep "v3.6.8" && \
-      dcm2json --version 2>&1 | grep "v3.6.8" && \
-      dcmconv --version 2>&1 | grep "v3.6.8" && \
-      echo "All DCMTK tools are v3.6.8"
-    expected_output_contains: "All DCMTK tools are v3.6.8"
+      expected=$(dpkg-query -W -f='${Version}' dcmtk | sed 's/^[0-9]*://; s/-.*//')
+      test -n "$expected" || exit 1
+      for tool in dcmdump dcm2xml dcm2json dcmconv; do
+        "$tool" --version 2>&1 | grep -F "$tool v$expected " || exit 1
+      done
 
   - name: Combined dcm2niix options stress test
     description: Test dcm2niix with many options combined

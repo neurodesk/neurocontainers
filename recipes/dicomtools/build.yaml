@@ -2,7 +2,7 @@ variables:
   dcm2niix_tag: v1.0.20260724
 
 name: dicomtools
-version: "1.0.0.post1"
+version: "1.0.0.post2"
 
 copyright:
   - name: dcmtk license
@@ -23,6 +23,7 @@ auto_update:
     target:
       variable: dcm2niix_tag
       value: tag
+      fulltest_variable: dcm2niix_tag
 
 build:
   kind: neurodocker
@@ -38,6 +39,7 @@ build:
         - libgtk2.0-0
         - dcmtk
         - xmedcon
+        - medcon
         - pigz
         - libxcb-cursor0
 
@@ -49,6 +51,8 @@ build:
 deploy:
   bins:
     - xmedcon
+    - medcon
+    - dcm2niix
 
 readme: |-
   ----------------------------------
