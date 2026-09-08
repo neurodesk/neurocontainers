@@ -1,6 +1,6 @@
 package_version: 0.6.4-1
 name: sigviewer
-version: 0.6.4
+version: 0.6.4.post1
 environment:
   QT_QPA_PLATFORM: offscreen
 test_data:

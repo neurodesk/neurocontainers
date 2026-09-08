@@ -1,8 +1,9 @@
 variables:
+  debian_security_snapshot: 20260901T000000Z
   package_version: 0.6.4-1
 
 name: sigviewer
-version: 0.6.4
+version: 0.6.4.post1
 
 copyright:
   - license: GPL-3.0
@@ -26,7 +27,8 @@ auto_update:
 
 build:
   kind: neurodocker
-  base-image: neurodebian:bullseye
+  base-image: debian:bullseye
+  add-default-template: false
 
   pkg-manager: apt
 
@@ -34,8 +36,20 @@ build:
     - environment:
         DEBIAN_FRONTEND: noninteractive
 
+    - run:
+        - mkdir -p /tmp/debian-ca-certificates /etc/ssl/certs
+        - dpkg-deb --extract {{ get_file("debian_ca_certificates") }} /tmp/debian-ca-certificates
+        - cat /tmp/debian-ca-certificates/usr/share/ca-certificates/mozilla/*.crt > /etc/ssl/certs/ca-certificates.crt
+        - rm -rf /tmp/debian-ca-certificates
+        - sed -i 's|^deb http://deb.debian.org/debian-security |deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/ |; s|http://|https://|g' /etc/apt/sources.list
+
     - install:
         - "sigviewer={{ context.package_version }}"
+
+files:
+- name: debian_ca_certificates
+  url: https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/pool/updates/main/c/ca-certificates/ca-certificates_20250419~deb12u1~deb11u1_all.deb
+  sha256: a588acf469f96e272fe3e83225f68ddcda72a95e2dd139086d5edc165d3939e3
 
 deploy:
   bins:
