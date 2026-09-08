@@ -1,8 +1,10 @@
 variables:
   upstream_commit: 1eb71b642bcd3b6c92dbf65e4b69c8cf52847205
+  antspyx_version: "0.6.3"
+  antspynet_version: "0.3.2"
 
 name: gouhfi
-version: 0.0.1
+version: 0.0.1.post1
 architectures:
   - x86_64
   - aarch64
@@ -33,6 +35,19 @@ auto_update:
     ref: HEAD
     target:
       variable: upstream_commit
+      fulltest_variable: upstream_commit
+  - id: antspyx
+    method: pypi
+    package: antspyx
+    target:
+      variable: antspyx_version
+      fulltest_variable: antspyx_version
+  - id: antspynet
+    method: pypi
+    package: antspynet
+    target:
+      variable: antspynet_version
+      fulltest_variable: antspynet_version
 
 build:
   kind: neurodocker
@@ -43,11 +58,13 @@ build:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
-        conda_install: python=3.10
+        conda_install: python=3.10 libstdcxx-ng>=13 libgcc-ng>=13
     - install:
         - git
         - unzip
         - build-essential
+        - libpng-dev
+        - zlib1g-dev
     - condition: arch=="x86_64"
       run:
         - bash -c "source activate base && python -m pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118"
@@ -58,8 +75,8 @@ build:
         - cd /opt
         - git clone https://github.com/mafortin/GOUHFI.git && git -C /opt/GOUHFI checkout {{ context.upstream_commit }}
         - cd GOUHFI
-        - pip install antspyx==0.4.2 antspynet==0.3.1
-        - pip install -e .
+        - CMAKE_BUILD_PARALLEL_LEVEL=2 j=2 python -m pip install --no-cache-dir 'antspyx=={{ context.antspyx_version }}' 'antspynet=={{ context.antspynet_version }}' -e .
+        - python -m pip check
     - file:
         name: GOUHFI.zip
         url: https://zenodo.org/records/15255556/files/GOUHFI.zip?download=1
@@ -72,7 +89,7 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAACXBI
 
 readme: |-
   ----------------------------------
-  ## gouhfi/0.0.1 ##
+  ## gouhfi/{{ context.version }} ##
 
   GOUHFI is a fully automatic, contrast- and resolution-agnostic, DL-based brain segmentation tool optimized for Ultra-High Field MRI (UHF-MRI)
 
@@ -84,7 +101,7 @@ readme: |-
   run_brain_extraction -i $GOUHFI_HOME/test_data/input-images-raw/ -o .
 
   # run_gouhfi -i /path/to/input_data -o /path/to/output_dir [--np N] [--folds "0 1 2 3 4"] [--reorder_labels] [--cpu]
-  run_goufhi -i $GOUHFI_HOME/test_data/input-images-lia-brain-extracted/single-sub/ -o .
+  run_gouhfi -i $GOUHFI_HOME/test_data/input-images-lia-brain-extracted/single-sub/ -o .
   ```
 
   More documentation can be found here: https://github.com/mafortin/GOUHFI
@@ -100,7 +117,7 @@ readme: |-
   }
   ```
 
-  To run container outside of this environment: ml gouhfi/0.0.1
+  To run container outside of this environment: ml gouhfi/{{ context.version }}
 
   ----------------------------------
 copyright:

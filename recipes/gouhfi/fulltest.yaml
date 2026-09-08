@@ -1,5 +1,8 @@
 name: gouhfi
-version: 0.0.1
+version: 0.0.1.post1
+upstream_commit: 1eb71b642bcd3b6c92dbf65e4b69c8cf52847205
+antspyx_version: "0.6.3"
+antspynet_version: "0.3.2"
 default_timeout: 300
 
 env:
@@ -30,9 +33,39 @@ tests:
   - name: GOUHFI project metadata is bundled
     command: "test -s /opt/GOUHFI/pyproject.toml"
     expected_exit_code: 0
-  - name: GOUHFI setup script is bundled
-    command: "test -s /opt/GOUHFI/setup.py"
-    expected_exit_code: 0
+  - name: Installed dependency compatibility
+    command: "python -m pip check"
+    expected_output_contains: "No broken requirements found"
+  - name: GOUHFI source commit matches the recipe
+    command: "git -c safe.directory=/opt/GOUHFI -C /opt/GOUHFI rev-parse HEAD"
+    expected_output_contains: "${upstream_commit}"
+  - name: ANTsPy version matches the tracked dependency
+    command: "python -c \"from importlib.metadata import version; print(version('antspyx'))\""
+    expected_output_contains: "${antspyx_version}"
+  - name: ANTsPyNet version matches the tracked dependency
+    command: "python -c \"from importlib.metadata import version; print(version('antspynet'))\""
+    expected_output_contains: "${antspynet_version}"
+  - name: ANTsPy image processing and PNG round trip
+    command: |
+      python - <<'PYTHON'
+      import tempfile
+      from pathlib import Path
+      import ants
+      import numpy as np
+
+      pixels = (np.indices((16, 16)).sum(axis=0) % 8).astype("uint8")
+      image = ants.from_numpy(pixels)
+      with tempfile.TemporaryDirectory() as directory:
+          path = str(Path(directory) / "image.png")
+          ants.image_write(image, path)
+          restored = ants.image_read(path)
+          np.testing.assert_array_equal(restored.numpy(), pixels)
+      smoothed = ants.smooth_image(image.clone("float"), sigma=1)
+      assert np.isfinite(smoothed.numpy()).all()
+      assert np.ptp(smoothed.numpy()) > 0
+      print("ANTsPy image processing and PNG round trip succeeded")
+      PYTHON
+    expected_output_contains: "ANTsPy image processing and PNG round trip succeeded"
   - name: Example raw NIfTI image is bundled
     command: "test -s /opt/GOUHFI/test_data/input-images-raw/sub004-t1w-07iso_0000.nii.gz"
     expected_exit_code: 0
