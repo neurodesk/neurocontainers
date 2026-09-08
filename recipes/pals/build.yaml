@@ -71,6 +71,9 @@ readme: |
   https://github.com/npnl/PALS
 
 files:
+  - name: miniconda.sh
+    url: https://repo.anaconda.com/miniconda/Miniconda3-py310_25.5.1-0-Linux-x86_64.sh
+    sha256: aa8cbd6aa7ef85d0528616d2dffce8bd0b51924e7ddd18734ede6c1c63c462d0
   - name: presets.json
     contents: |
       {
@@ -117,8 +120,9 @@ build:
  
     # ── Miniconda (manual install to avoid conda tos bug) ────────────────────
     - run:
-        - curl -fsSL -o /tmp/miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-py310_23.3.1-0-Linux-x86_64.sh
+        - cp {{ get_file("miniconda.sh") }} /tmp/miniconda.sh
         - bash /tmp/miniconda.sh -b -p /opt/miniconda
+        - /opt/miniconda/bin/conda tos accept
         - rm -f /tmp/miniconda.sh
         - /opt/miniconda/bin/conda config --system --prepend channels conda-forge
         - /opt/miniconda/bin/conda config --set channel_priority strict

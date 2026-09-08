@@ -40,9 +40,12 @@ build:
     - workdir: /bet2/build
     - run:
       - cmake .. && make
-    - template:
-        name: dcm2niix
-        version: '{{ context.dcm2niix_version }}'
+    - run:
+        - mkdir -p /opt/dcm2niix-{{ context.dcm2niix_version }}
+        - unzip {{ get_file("dcm2niix.zip") }} -d /opt/dcm2niix-{{ context.dcm2niix_version }}
+        - chmod 755 /opt/dcm2niix-{{ context.dcm2niix_version }}/dcm2niix
+    - environment:
+        PATH: /opt/dcm2niix-{{ context.dcm2niix_version }}:$PATH
     - workdir: /
     - run:
       - cp {{ get_file("miniconda") }} /Miniconda2-4.6.14-Linux-x86_64.sh
@@ -116,6 +119,8 @@ variables:
   bet2_revision: adec315977486917d995ae2d1449f3efc616e2bc
   dcm2niix_version: "v1.0.20260724"
 files:
+- name: dcm2niix.zip
+  url: https://github.com/rordenlab/dcm2niix/releases/download/{{ context.dcm2niix_version }}/dcm2niix_lnx.zip
 - name: source
   url: https://www.neuroimaging.at/media/qsm/TGVQSM-plus.zip
   sha256: 70e6457c01346444d43c6ad31f5b03df10411aaaa9f50db5c13e9b3d1dd1594c

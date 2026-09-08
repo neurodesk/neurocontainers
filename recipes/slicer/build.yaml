@@ -65,13 +65,14 @@ build:
 
     - template:
         name: miniconda
-        version: latest
-        mamba: "true"
-        conda_opts: "--override-channels -c pytorch -c nvidia -c defaults"
-        conda_install: python=3.10 pytorch torchvision torchaudio pytorch-cuda=11.6
+        version: py310_25.5.1-0
+        install_path: /opt/miniconda-latest
+        conda_install: python=3.10
 
     - run:
+        - python -m pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
         - pip install --no-cache-dir monailabel==0.8.5
+        - python -m pip check
 
     - run:
         - tar -xz -C /opt/ -f {{ get_file("download") }}

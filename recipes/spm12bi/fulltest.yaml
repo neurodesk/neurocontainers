@@ -6,7 +6,7 @@ test_data:
   output_dir: test_output
 
 env_setup: |
-  export PATH=/opt/spm12:/opt/miniconda-py38_23.11.0-2/bin:$PATH
+  export PATH=/opt/spm12:/opt/miniconda-py310_25.5.1-0/bin:$PATH
   export LD_LIBRARY_PATH=/opt/matlab-runtime/runtime/glnxa64:/opt/matlab-runtime/bin/glnxa64:/opt/matlab-runtime/sys/os/glnxa64:/opt/matlab-runtime/sys/opengl/lib/glnxa64:/opt/matlab-runtime/extern/bin/glnxa64:$LD_LIBRARY_PATH
   export MCR_INHIBIT_CTF_LOCK=1
   export SPM_HTML_BROWSER=0
