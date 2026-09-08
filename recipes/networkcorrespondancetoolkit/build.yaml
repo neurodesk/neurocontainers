@@ -1,5 +1,5 @@
 name: networkcorrespondancetoolkit
-version: 0.3.3.post1
+version: 0.3.3.post2
 
 copyright:
   - license: MIT
@@ -20,7 +20,7 @@ structured_readme:
     # the path to the example data
     print(example.example_nii)
     ref_params = cnc.compute_overlap_with_atlases.DataParams(example.example_config, example.example_nii)
-    cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"~/NCTexample/example_results")
+    cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"./NCTexample/example_results")
   documentation: https://github.com/rubykong/cbig_network_correspondence
   citation: "Kong, R., Spreng, R. N., Xue, A., Betzel, R. F., Cohen, J. R., Damoiseaux, J. S., De Brigard, F., Eickhoff, S. B., Fornito, A., Gratton, C., Gordon, E. M., Holmes, A. J., Laird, A. R., Larson-Prior, L., Nickerson, L. D., Pinho, A. L., Razi, A., Sadaghiani, S., Shine, J. M.,…Uddin, L. Q. (2025). A network correspondence toolbox for quantitative evaluation of novel neuroimaging results. Nat Commun, 16(1), 2930. https://doi.org/10.1038/s41467-025-58176-9 "
 
@@ -41,7 +41,7 @@ readme: |-
   # the path to the example data
   print(example.example_nii)
   ref_params = cnc.compute_overlap_with_atlases.DataParams(example.example_config, example.example_nii)
-  cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"~/NCTexample/example_results")
+  cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"./NCTexample/example_results")
   ```
 
   More documentation can be found here: https://github.com/rubykong/cbig_network_correspondence
@@ -57,6 +57,7 @@ readme: |-
 
 variables:
   upstream_version: 0.3.3
+  data_commit: 0675b0df7fedc98d95c06c90da58b754a3cbfd49
 
 auto_update:
   method: sources
@@ -67,6 +68,13 @@ auto_update:
       target:
         variable: upstream_version
         fulltest_variable: upstream_version
+    - id: data
+      method: github_commit
+      repo: rubykong/cbig_network_correspondence_data
+      ref: master
+      target:
+        variable: data_commit
+        fulltest_variable: data_commit
     - id: environment
       method: http_digest
       url: https://raw.githubusercontent.com/rubykong/cbig_network_correspondence/refs/heads/master/NCT_env.yml
@@ -130,6 +138,13 @@ build:
     - run:
         - python3 -m pip install --no-cache-dir cbig_network_correspondence=={{ context.upstream_version }}
 
+    - run:
+        - nct_dir=$(python3 -c 'import importlib.util,pathlib; print(pathlib.Path(importlib.util.find_spec("cbig_network_correspondence").origin).parent)')
+        - mkdir -p "$nct_dir/data"
+        - tar -xzf {{ get_file("nct_data") }} -C "$nct_dir/data" --strip-components=1
+        - python3 {{ get_file("prepare_data.py") }} {{ context.data_commit }}
+        - chmod -R a+rX "$nct_dir"
+
     - deploy:
         bins:
           - python3
@@ -142,7 +157,7 @@ build:
           import cbig_network_correspondence as cnc
           import os
 
-          os.makedirs(os.path.expanduser('~/NCTexample/example_results'), exist_ok=True)
+          os.makedirs('./NCTexample/example_results', exist_ok=True)
 
           atlas_names_list = ["EG17","MG360J12"]
           example = cnc.load_example
@@ -151,12 +166,16 @@ build:
           # the path to the example data
           print(example.example_nii)
           ref_params = cnc.compute_overlap_with_atlases.DataParams(example.example_config, example.example_nii)
-          cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"~/NCTexample/example_results")
+          cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"./NCTexample/example_results")
 
           print("NCT test ran successfully")
 
 
 files:
+  - name: prepare_data.py
+    filename: prepare_data.py
+  - name: nct_data
+    url: https://github.com/rubykong/cbig_network_correspondence_data/archive/{{ context.data_commit }}.tar.gz
   - name: environment.yml
     url: https://raw.githubusercontent.com/rubykong/cbig_network_correspondence/refs/heads/master/NCT_env.yml
     sha256: fa5d943cd48ea097445c94bea89e133f7f0114032ad1d20e3911802fbd372230
