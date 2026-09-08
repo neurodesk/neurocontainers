@@ -1,5 +1,9 @@
+variables:
+  upstream_version: 1.8.5
+  traits_version: 6.4.3
+
 name: nipype
-version: 1.8.5
+version: 1.8.5.post1
 
 copyright:
   - license: Apache-2.0
@@ -9,8 +13,20 @@ architectures:
   - x86_64
 
 auto_update:
-  method: github_release
-  repo: nipy/nipype
+  method: sources
+  sources:
+    - id: nipype
+      method: github_release
+      repo: nipy/nipype
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: traits
+      method: pypi
+      package: traits
+      version_regex: '^(?P<version>6[.][0-9]+[.][0-9]+)$'
+      target:
+        variable: traits_version
 
 build:
   kind: neurodocker
@@ -61,8 +77,8 @@ build:
 
     - template:
         name: miniconda
-        conda_install: python=3.9 nipype={{ context.version }} traits scipy scikit-learn scikit-image jupyter nb_conda_kernels h5py seaborn numpy
-        pip_install: osfclient pybids
+        conda_install: python=3.9 nipype={{ context.upstream_version }} traits={{ context.traits_version }} scipy scikit-learn scikit-image jupyter nb_conda_kernels h5py seaborn numpy
+        pip_install: osfclient pybids "traits=={{ context.traits_version }}"
         version: py39_24.7.1-0
         install_path: /opt/miniconda-latest
 

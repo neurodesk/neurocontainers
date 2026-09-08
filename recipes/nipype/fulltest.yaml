@@ -1,11 +1,12 @@
 # nipype container test suite
-# Tests for nipype v1.8.3 - Neuroimaging pipeline framework
+# Tests for Nipype - Neuroimaging pipeline framework
 #
 # Nipype provides a uniform interface to neuroimaging software packages
 # and facilitates interaction between these packages within a single workflow.
 
 name: nipype
-version: 1.8.5
+version: 1.8.5.post1
+upstream_version: 1.8.5
 
 required_files:
   - dataset: ds000001
@@ -40,7 +41,7 @@ tests:
   - name: Nipype version check
     description: Verify nipype module imports and reports version
     command: python -c "import nipype; print('nipype version:', nipype.__version__)"
-    expected_output_contains: "${version}"
+    expected_output_contains: "${upstream_version}"
     expected_exit_code: 0
 
   - name: Import nipype.pipeline
