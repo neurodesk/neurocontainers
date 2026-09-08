@@ -1,0 +1,139 @@
+# epirecon container test suite
+# Focused verification for the OpenRecon runtime and Cartesian EPI FFT reconstruction.
+
+name: epirecon
+version: 0.0.2
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: OpenRecon server help
+    description: Verify the python-ismrmrd server entrypoint starts correctly
+    script: |
+      python /opt/code/python-ismrmrd-server/main.py -h 2>&1 | sed -n '1,20p' | grep 'Example server for MRD streaming format'
+
+  - name: OpenRecon label is present and describes epirecon
+    description: Verify the packaged OpenRecon label is readable and offers the epirecon config
+    script: |
+      python - <<'PY'
+      import json
+      from pathlib import Path
+
+      label = Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json")
+      data = json.loads(label.read_text())
+      assert data["general"]["id"] == "epirecon"
+      parameters = {item["id"]: item for item in data["parameters"]}
+      assert "config" in parameters
+      assert {value["id"] for value in parameters["config"]["values"]} == {"epirecon"}
+      assert "orientationflipslice" in parameters
+      print(label)
+      PY
+
+  - name: epirecon module imports with its runtime dependencies
+    description: Verify the reconstruction module imports cleanly from the FIRE dispatch path
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import ismrmrd, numpy, constants, mrdhelper, epirecon; print(epirecon.__file__)" | grep -x '/opt/code/python-ismrmrd-server/epirecon.py'
+
+  - name: Cartesian FFT reconstruction locates a point source
+    description: Verify reconstruct_coil_images and combine_coils_sos recover a known k-space point source at the expected voxel
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import numpy as np
+      import epirecon
+
+      partitions, lines, samples = 2, 6, 8
+      target = (1, 3, 5)
+
+      point_volume = np.zeros((partitions, lines, samples), dtype=np.complex64)
+      point_volume[target] = 1.0
+
+      # The exact inverse of reconstruct_coil_images's ifftshift -> ifftn ->
+      # fftshift chain, so this is the k-space of a single point source at
+      # 'target' with no assumptions about fftshift's centering convention.
+      axes = (0, 1, 2)
+      kspace = np.fft.fftshift(
+          np.fft.fftn(np.fft.ifftshift(point_volume, axes=axes), axes=axes), axes=axes
+      )
+      kspace = kspace[np.newaxis, ...].astype(np.complex64)
+
+      coil_images = epirecon.reconstruct_coil_images(kspace)
+      cropped = epirecon.crop_readout_oversampling(coil_images, samples)
+      volume = epirecon.combine_coils_sos(cropped)
+
+      peak = np.unravel_index(np.argmax(volume), volume.shape)
+      assert peak == target, (peak, target)
+      print("recovered point source at", peak)
+      PY
+
+  - name: Emitted geometry matches the native reconstruction display frame
+    description: Verify the shipped container reproduces the reference slice position
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import numpy as np
+      import epirecon
+
+      # A right-handed target frame is what keeps the scanner drawing our
+      # volume from the same side as the native reconstruction.
+      slices, rows, columns = (
+          np.asarray(target, dtype=float)
+          for target in epirecon.DISPLAY_FRAME_TARGETS
+      )
+      handedness = float(np.dot(np.cross(columns, rows), slices))
+      assert handedness > 0.0, handedness
+
+      # The native reference series holds 128 slices over 220 mm centred at
+      # isocenter and displays frame 48 at SP F28.4.
+      position = epirecon._frame_position(
+          center_position=(0.0, 0.0, 0.0),
+          slice_dir=(0.0, 0.0, 1.0),
+          frame_index=47,
+          slice_count=128,
+          slice_spacing_mm=220.0 / 128.0,
+      )
+      label = epirecon._slice_position_label(position)
+      assert label == "F28.4", label
+
+      # The frame-stacking compensation must reverse the frames alone.
+      # Reversing slice_dir with them would cancel, because ICE positions the
+      # frames from that vector.
+      volume = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+      compensated, content_dir, reversed_frames = (
+          epirecon._compensate_ice_frame_stacking(
+              volume, np.array([0.0, 0.0, 1.0])
+          )
+      )
+      assert epirecon.ICE_STACKS_FRAMES_AGAINST_SLICE_DIR is True
+      assert reversed_frames is True
+      np.testing.assert_array_equal(compensated, volume[::-1])
+      np.testing.assert_allclose(content_dir, [0.0, 0.0, -1.0])
+
+      # The reversal makes the emitted pixels disagree with the emitted
+      # slice_dir, so the container must ship the declaration that lets a
+      # header-driven consumer undo it, and mrd2nifti must honour it.
+      import importlib.util
+
+      spec = importlib.util.spec_from_file_location(
+          "mrd2nifti", "/opt/code/python-ismrmrd-server/mrd2nifti.py"
+      )
+      mrd2nifti = importlib.util.module_from_spec(spec)
+      spec.loader.exec_module(mrd2nifti)
+      assert (
+          mrd2nifti.FRAME_ORDER_REVERSED_ATTRIBUTE
+          == epirecon.OUTPUT_FRAME_ORDER_REVERSED_ATTRIBUTE
+      ), mrd2nifti.FRAME_ORDER_REVERSED_ATTRIBUTE
+      print("display frame handedness:", handedness, "frame 48/128:", label)
+      PY
+
+  - name: Helper scripts render help
+    description: Verify conversion helper scripts start and expose command line help
+    script: |
+      python /opt/code/python-ismrmrd-server/twix2mrd.py -h 2>&1 | grep 'usage:'
+      python /opt/code/python-ismrmrd-server/siemens_twix2mrd.py -h 2>&1 | grep 'usage:'
+      python /opt/code/python-ismrmrd-server/mrd2nifti.py -h 2>&1 | grep 'usage:'
