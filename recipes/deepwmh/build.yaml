@@ -260,7 +260,7 @@ build:
         RESULTS_FOLDER: "{{ context.model_dir }}"
 
     # Thin convenience wrapper: DeepWMH_predict with the bundled model
-    # pre-selected, and a --help that describes deepwmh rather than reprinting
+    # preselected, and a --help that describes deepwmh rather than reprinting
     # DeepWMH_predict's usage (which names the wrong program and lists -m as
     # required, contradicting every example in the readme).
     - run:
@@ -452,7 +452,7 @@ files:
   - name: deepwmh_wrapper
     contents: |
       #!/bin/bash
-      # Thin wrapper: DeepWMH_predict with the bundled model pre-selected.
+      # Thin wrapper: DeepWMH_predict with the bundled model preselected.
       #
       # -h/--help is intercepted because DeepWMH_predict's own usage calls the
       # program DeepWMH_predict and lists "-m TRAINED_MODEL" as required, which
