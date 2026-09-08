@@ -265,6 +265,7 @@ const (
 	nodeDirectory nodeKind = iota + 1
 	nodeRegular
 	nodeSymlink
+	nodeHardlink
 )
 
 type node struct {
@@ -292,10 +293,9 @@ type node struct {
 	fileBlocks   []uint32
 
 	// For OCI-layer sourced regular files.
-	sourceKey    string
-	sourceLayer  int
-	sourceSeq    int
-	sourceOrigin bool
+	sourceLayer    int
+	sourceSeq      int
+	hardlinkTarget *node
 
 	dirLen       int
 	dirStartRel  uint64
@@ -1526,181 +1526,240 @@ func readFetchResult(fetchDir string) (*fetchResult, error) {
 }
 
 func buildTreeAndWriteDataFromLayers(ws *writeState, layers []LayerSource, cfg OCIImageConfig) (*node, []*node, error) {
-	root := &node{
-		name:  "",
-		kind:  nodeDirectory,
-		mode:  0o755 | os.ModeDir,
-		mtime: toUnix32(time.Now()),
+	nodeByPath := map[string]*node{"": {kind: nodeDirectory, mode: 0o755 | os.ModeDir, mtime: toUnix32(time.Now())}}
+	for layerIndex, layer := range layers {
+		entries, err := readLayerEntries(layer)
+		if err != nil {
+			return nil, nil, err
+		}
+		// Whiteouts remove lower-layer entries regardless of their position in the tar.
+		for _, entry := range entries {
+			base, dir := path.Base(entry.rel), path.Dir(entry.rel)
+			if dir == "." {
+				dir = ""
+			}
+			if base == ".wh..wh..opq" {
+				removeLayerSubtree(nodeByPath, dir, false)
+			} else if strings.HasPrefix(base, ".wh.") {
+				removeLayerSubtree(nodeByPath, path.Join(dir, strings.TrimPrefix(base, ".wh.")), true)
+			}
+		}
+		pending := make(map[string][]*node)
+		var hardlinks []*node
+		for _, entry := range entries {
+			hdr, rel := entry.header, entry.rel
+			if strings.HasPrefix(path.Base(rel), ".wh.") {
+				continue
+			}
+			n := &node{name: path.Base(rel), mode: os.FileMode(hdr.Mode), mtime: toUnix32(hdr.ModTime), uid: tarID(hdr.Uid), gid: tarID(hdr.Gid)}
+			switch hdr.Typeflag {
+			case tar.TypeDir:
+				n.kind, n.mode = nodeDirectory, n.mode|os.ModeDir
+			case tar.TypeReg, tar.TypeRegA:
+				n.kind, n.size = nodeRegular, uint64(hdr.Size)
+				n.sourceLayer, n.sourceSeq = layerIndex, entry.sequence
+			case tar.TypeSymlink:
+				n.kind, n.link = nodeSymlink, hdr.Linkname
+				n.mode = os.ModeSymlink | os.FileMode(hdr.Mode&0o777)
+				if n.mode.Perm() == 0 {
+					n.mode |= 0o777
+				}
+			case tar.TypeLink:
+				target, err := cleanRelPath(hdr.Linkname)
+				if err != nil || target == "" {
+					return nil, nil, fmt.Errorf("invalid hardlink %q -> %q in %s", rel, hdr.Linkname, layer.Name)
+				}
+				n.kind, n.link = nodeHardlink, target
+				if targetNode := nodeByPath[target]; targetNode != nil {
+					n.hardlinkTarget = targetNode
+				} else {
+					pending[target] = append(pending[target], n)
+				}
+				hardlinks = append(hardlinks, n)
+			default:
+				continue
+			}
+			ensureLayerParents(nodeByPath, path.Dir(rel), hdr.ModTime)
+			if old := nodeByPath[rel]; old != nil && old.kind == nodeDirectory && n.kind != nodeDirectory {
+				removeLayerSubtree(nodeByPath, rel, true)
+			}
+			nodeByPath[rel] = n
+			for _, link := range pending[rel] {
+				link.hardlinkTarget = n
+			}
+			delete(pending, rel)
+		}
+		for _, n := range hardlinks {
+			if err := resolveLayerHardlink(n, make(map[*node]bool)); err != nil {
+				return nil, nil, fmt.Errorf("hardlink in %s: %w", layer.Name, err)
+			}
+		}
 	}
-	nodeByPath := map[string]*node{"": root}
-	ownerByPath := map[string]int{"": len(layers)}
 
-	whiteoutPath := make(map[string]int)
-	opaqueDir := make(map[string]int)
-
+	// Only final references request data. An alias keeps the original layer/entry
+	// identity even after its target pathname is replaced or removed.
+	wanted := make([]map[int][]*node, len(layers))
+	for _, n := range nodeByPath {
+		if n.kind != nodeRegular {
+			continue
+		}
+		if wanted[n.sourceLayer] == nil {
+			wanted[n.sourceLayer] = make(map[int][]*node)
+		}
+		wanted[n.sourceLayer][n.sourceSeq] = append(wanted[n.sourceLayer][n.sourceSeq], n)
+	}
 	buf := make([]byte, squashBlockSize)
 	compressor, err := newDataBlockCompressor()
 	if err != nil {
 		return nil, nil, err
 	}
-
-	for layerIndex := len(layers) - 1; layerIndex >= 0; layerIndex-- {
-		layer := layers[layerIndex]
-		rc, err := openLayerStream(layer)
+	for i, layer := range layers {
+		if len(wanted[i]) == 0 {
+			continue
+		}
+		err := writeLayerPayloads(ws, layer, wanted[i], compressor, buf)
 		if err != nil {
 			return nil, nil, err
 		}
-
-		tr := tar.NewReader(rc)
-		for {
-			hdr, err := tr.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				rc.Close()
-				return nil, nil, fmt.Errorf("read tar header from %s: %w", layer.Name, err)
-			}
-
-			rel, err := cleanRelPath(hdr.Name)
-			if err != nil {
-				rc.Close()
-				return nil, nil, fmt.Errorf("invalid path %q in %s: %w", hdr.Name, layer.Name, err)
-			}
-			if rel == "" {
-				continue
-			}
-
-			base := path.Base(rel)
-			dir := path.Dir(rel)
-			if dir == "." {
-				dir = ""
-			}
-
-			if base == ".wh..wh..opq" {
-				ensureDirAtLayer(nodeByPath, ownerByPath, dir, hdr.ModTime, layerIndex)
-				removeOwnedChildren(nodeByPath, ownerByPath, dir, layerIndex)
-				setLayerMarker(opaqueDir, dir, layerIndex)
-				continue
-			}
-
-			if strings.HasPrefix(base, ".wh.") {
-				victim := path.Join(dir, strings.TrimPrefix(base, ".wh."))
-				removeOwnedSubtree(nodeByPath, ownerByPath, victim, layerIndex)
-				setLayerMarker(whiteoutPath, victim, layerIndex)
-				continue
-			}
-
-			if pathBlockedByHigherLayers(rel, layerIndex, nodeByPath, ownerByPath, whiteoutPath, opaqueDir) {
-				continue
-			}
-
-			ensureDirAtLayer(nodeByPath, ownerByPath, dir, hdr.ModTime, layerIndex)
-
-			switch hdr.Typeflag {
-			case tar.TypeDir:
-				n := &node{
-					name:  path.Base(rel),
-					kind:  nodeDirectory,
-					mode:  os.FileMode(hdr.Mode) | os.ModeDir,
-					mtime: toUnix32(hdr.ModTime),
-					uid:   tarID(hdr.Uid),
-					gid:   tarID(hdr.Gid),
-				}
-				setNodeAtLayer(nodeByPath, ownerByPath, rel, n, layerIndex)
-
-			case tar.TypeReg, tar.TypeRegA:
-				if hdr.Size < 0 {
-					rc.Close()
-					return nil, nil, fmt.Errorf("negative file size for %s in %s", rel, layer.Name)
-				}
-
-				startRel := ws.relPos
-				blocks := make([]uint32, 0, int((hdr.Size+int64(squashBlockSize)-1)/int64(squashBlockSize)))
-				remaining := uint64(hdr.Size)
-				for remaining > 0 {
-					chunk := len(buf)
-					if remaining < uint64(chunk) {
-						chunk = int(remaining)
-					}
-					nr, err := io.ReadFull(tr, buf[:chunk])
-					if err != nil {
-						rc.Close()
-						return nil, nil, fmt.Errorf("read file payload for %s from %s: %w", rel, layer.Name, err)
-					}
-					enc, err := writeDataBlock(ws, compressor, buf[:nr])
-					if err != nil {
-						rc.Close()
-						return nil, nil, fmt.Errorf("write file payload for %s: %w", rel, err)
-					}
-					blocks = append(blocks, enc)
-					remaining -= uint64(nr)
-				}
-
-				n := &node{
-					name:         path.Base(rel),
-					kind:         nodeRegular,
-					mode:         os.FileMode(hdr.Mode),
-					mtime:        toUnix32(hdr.ModTime),
-					uid:          tarID(hdr.Uid),
-					gid:          tarID(hdr.Gid),
-					size:         uint64(hdr.Size),
-					fileStartRel: startRel,
-					fileBlocks:   blocks,
-				}
-				setNodeAtLayer(nodeByPath, ownerByPath, rel, n, layerIndex)
-
-			case tar.TypeSymlink:
-				linkMode := os.FileMode(hdr.Mode & 0o777)
-				if linkMode == 0 {
-					linkMode = 0o777
-				}
-				n := &node{
-					name:  path.Base(rel),
-					kind:  nodeSymlink,
-					mode:  os.ModeSymlink | linkMode,
-					mtime: toUnix32(hdr.ModTime),
-					uid:   tarID(hdr.Uid),
-					gid:   tarID(hdr.Gid),
-					link:  hdr.Linkname,
-				}
-				setNodeAtLayer(nodeByPath, ownerByPath, rel, n, layerIndex)
-
-			case tar.TypeLink:
-				target := resolveHardlinkTarget(nodeByPath, rel, hdr.Linkname)
-				targetNode := nodeByPath[target]
-				if targetNode == nil || targetNode.kind != nodeRegular {
-					rc.Close()
-					return nil, nil, fmt.Errorf("invalid hardlink %q -> %q in %s", rel, hdr.Linkname, layer.Name)
-				}
-				n := &node{
-					name:         path.Base(rel),
-					kind:         nodeRegular,
-					mode:         os.FileMode(hdr.Mode),
-					mtime:        toUnix32(hdr.ModTime),
-					uid:          tarID(hdr.Uid),
-					gid:          tarID(hdr.Gid),
-					size:         targetNode.size,
-					fileStartRel: targetNode.fileStartRel,
-					fileBlocks:   append([]uint32(nil), targetNode.fileBlocks...),
-				}
-				setNodeAtLayer(nodeByPath, ownerByPath, rel, n, layerIndex)
-
-			default:
-				continue
-			}
-		}
-
-		if err := rc.Close(); err != nil {
-			return nil, nil, fmt.Errorf("close layer %s: %w", layer.Name, err)
-		}
 	}
-
-	if err := addOCICompatibilityFiles(ws, nodeByPath, ownerByPath, cfg); err != nil {
+	if err := addOCICompatibilityFiles(ws, nodeByPath, cfg); err != nil {
 		return nil, nil, err
 	}
-
 	return finalizeNodeTree(nodeByPath)
+}
+
+type layerEntry struct {
+	header   *tar.Header
+	rel      string
+	sequence int
+}
+
+func readLayerEntries(layer LayerSource) ([]layerEntry, error) {
+	rc, err := openLayerStream(layer)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	var entries []layerEntry
+	tr := tar.NewReader(rc)
+	for sequence := 0; ; sequence++ {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return entries, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("read tar header from %s: %w", layer.Name, err)
+		}
+		rel, err := cleanRelPath(hdr.Name)
+		if err != nil {
+			return nil, fmt.Errorf("invalid path %q in %s: %w", hdr.Name, layer.Name, err)
+		}
+		if rel != "" {
+			entries = append(entries, layerEntry{hdr, rel, sequence})
+		}
+	}
+}
+
+func removeLayerSubtree(nodes map[string]*node, rel string, includeRoot bool) {
+	prefix := rel + "/"
+	if rel == "" {
+		prefix = ""
+	}
+	for name := range nodes {
+		if name != "" && ((includeRoot && name == rel) || strings.HasPrefix(name, prefix)) {
+			delete(nodes, name)
+		}
+	}
+}
+
+func ensureLayerParents(nodes map[string]*node, dir string, mtime time.Time) {
+	if dir == "." || dir == "" {
+		return
+	}
+	ensureLayerParents(nodes, path.Dir(dir), mtime)
+	if n := nodes[dir]; n == nil || n.kind != nodeDirectory {
+		nodes[dir] = &node{name: path.Base(dir), kind: nodeDirectory, mode: 0o755 | os.ModeDir, mtime: toUnix32(mtime)}
+	}
+}
+
+func resolveLayerHardlink(n *node, visiting map[*node]bool) error {
+	if n.kind != nodeHardlink {
+		return nil
+	}
+	if visiting[n] {
+		return fmt.Errorf("cyclic hardlink %q", n.name)
+	}
+	if n.hardlinkTarget == nil {
+		return fmt.Errorf("missing hardlink target %q for %q", n.link, n.name)
+	}
+	visiting[n] = true
+	target := n.hardlinkTarget
+	if err := resolveLayerHardlink(target, visiting); err != nil {
+		return err
+	}
+	if target.kind != nodeRegular && target.kind != nodeSymlink {
+		return fmt.Errorf("invalid hardlink target %q for %q", n.link, n.name)
+	}
+	name := n.name
+	*n = *target
+	n.name = name
+	delete(visiting, n)
+	return nil
+}
+
+func writeLayerPayloads(ws *writeState, layer LayerSource, wanted map[int][]*node, compressor *dataBlockCompressor, buf []byte) error {
+	rc, err := openLayerStream(layer)
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	tr := tar.NewReader(rc)
+	for sequence := 0; ; sequence++ {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read tar header from %s: %w", layer.Name, err)
+		}
+		nodes := wanted[sequence]
+		if len(nodes) == 0 {
+			continue
+		}
+		n := nodes[0]
+		if (hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA) || hdr.Size != int64(n.size) {
+			return fmt.Errorf("layer %s changed between metadata and payload reads", layer.Name)
+		}
+		n.fileStartRel = ws.relPos
+		remaining := n.size
+		for remaining > 0 {
+			chunk := uint64(len(buf))
+			if remaining < chunk {
+				chunk = remaining
+			}
+			nr, err := io.ReadFull(tr, buf[:chunk])
+			if err != nil {
+				return fmt.Errorf("read file payload for %s from %s: %w", hdr.Name, layer.Name, err)
+			}
+			encoded, err := writeDataBlock(ws, compressor, buf[:nr])
+			if err != nil {
+				return fmt.Errorf("write file payload for %s: %w", hdr.Name, err)
+			}
+			n.fileBlocks = append(n.fileBlocks, encoded)
+			remaining -= uint64(nr)
+		}
+		for _, alias := range nodes[1:] {
+			alias.fileStartRel, alias.fileBlocks = n.fileStartRel, n.fileBlocks
+		}
+		delete(wanted, sequence)
+		if len(wanted) == 0 {
+			return nil
+		}
+	}
+	if len(wanted) != 0 {
+		return fmt.Errorf("missing requested file payload in layer %s", layer.Name)
+	}
+	return nil
 }
 
 func finalizeNodeTree(nodeByPath map[string]*node) (*node, []*node, error) {
@@ -1761,33 +1820,32 @@ func finalizeNodeTree(nodeByPath map[string]*node) (*node, []*node, error) {
 	return root, all, nil
 }
 
-func addOCICompatibilityFiles(ws *writeState, nodeByPath map[string]*node, ownerByPath map[string]int, cfg OCIImageConfig) error {
-	metaLayer := int(^uint(0) >> 1)
+func addOCICompatibilityFiles(ws *writeState, nodeByPath map[string]*node, cfg OCIImageConfig) error {
 	now := toUnix32(time.Now())
-	ensureSyntheticDir(nodeByPath, ownerByPath, ".singularity.d", now, metaLayer)
-	ensureSyntheticDir(nodeByPath, ownerByPath, ".singularity.d/env", now, metaLayer)
+	ensureSyntheticDir(nodeByPath, ".singularity.d", now)
+	ensureSyntheticDir(nodeByPath, ".singularity.d/env", now)
 
 	env := renderOCIEnvironment(cfg.Config)
 	if env != "" {
-		if err := addSyntheticFile(ws, nodeByPath, ownerByPath, ".singularity.d/env/10-docker2singularity.sh", []byte(env), 0o644, now, metaLayer); err != nil {
+		if err := addSyntheticFile(ws, nodeByPath, ".singularity.d/env/10-docker2singularity.sh", []byte(env), 0o644, now); err != nil {
 			return err
 		}
 	}
-	if err := addSyntheticFile(ws, nodeByPath, ownerByPath, ".singularity.d/env/90-environment.sh", []byte(apptainerEnvironmentTemplate), 0o644, now, metaLayer); err != nil {
+	if err := addSyntheticFile(ws, nodeByPath, ".singularity.d/env/90-environment.sh", []byte(apptainerEnvironmentTemplate), 0o644, now); err != nil {
 		return err
 	}
 
 	runscript := renderOCIRunscript(cfg.Config)
 	if runscript != "" {
-		if err := addSyntheticFile(ws, nodeByPath, ownerByPath, ".singularity.d/runscript", []byte(runscript), 0o755, now, metaLayer); err != nil {
+		if err := addSyntheticFile(ws, nodeByPath, ".singularity.d/runscript", []byte(runscript), 0o755, now); err != nil {
 			return err
 		}
 	}
-	if err := addSyntheticFile(ws, nodeByPath, ownerByPath, ".singularity.d/startscript", []byte(apptainerStartscriptTemplate), 0o755, now, metaLayer); err != nil {
+	if err := addSyntheticFile(ws, nodeByPath, ".singularity.d/startscript", []byte(apptainerStartscriptTemplate), 0o755, now); err != nil {
 		return err
 	}
 	if source := renderDefinitionFile(cfg); source != "" {
-		if err := addSyntheticFile(ws, nodeByPath, ownerByPath, ".singularity.d/Singularity", []byte(source), 0o644, now, metaLayer); err != nil {
+		if err := addSyntheticFile(ws, nodeByPath, ".singularity.d/Singularity", []byte(source), 0o644, now); err != nil {
 			return err
 		}
 	}
@@ -1798,7 +1856,7 @@ func addOCICompatibilityFiles(ws *writeState, nodeByPath map[string]*node, owner
 		if err != nil {
 			return fmt.Errorf("encode OCI labels: %w", err)
 		}
-		if err := addSyntheticFile(ws, nodeByPath, ownerByPath, ".singularity.d/labels.json", data, 0o644, now, metaLayer); err != nil {
+		if err := addSyntheticFile(ws, nodeByPath, ".singularity.d/labels.json", data, 0o644, now); err != nil {
 			return err
 		}
 	}
@@ -1806,7 +1864,7 @@ func addOCICompatibilityFiles(ws *writeState, nodeByPath map[string]*node, owner
 	return nil
 }
 
-func ensureSyntheticDir(nodeByPath map[string]*node, ownerByPath map[string]int, rel string, mtime uint32, layer int) *node {
+func ensureSyntheticDir(nodeByPath map[string]*node, rel string, mtime uint32) *node {
 	rel = strings.Trim(strings.TrimPrefix(path.Clean("/"+rel), "/"), "/")
 	if rel == "" {
 		return nodeByPath[""]
@@ -1815,7 +1873,7 @@ func ensureSyntheticDir(nodeByPath map[string]*node, ownerByPath map[string]int,
 	if parentRel == "." {
 		parentRel = ""
 	}
-	ensureSyntheticDir(nodeByPath, ownerByPath, parentRel, mtime, layer)
+	ensureSyntheticDir(nodeByPath, parentRel, mtime)
 	if n := nodeByPath[rel]; n != nil && n.kind == nodeDirectory {
 		return n
 	}
@@ -1826,11 +1884,10 @@ func ensureSyntheticDir(nodeByPath map[string]*node, ownerByPath map[string]int,
 		mtime: mtime,
 	}
 	nodeByPath[rel] = n
-	ownerByPath[rel] = layer
 	return n
 }
 
-func addSyntheticFile(ws *writeState, nodeByPath map[string]*node, ownerByPath map[string]int, rel string, data []byte, mode os.FileMode, mtime uint32, layer int) error {
+func addSyntheticFile(ws *writeState, nodeByPath map[string]*node, rel string, data []byte, mode os.FileMode, mtime uint32) error {
 	rel = strings.Trim(strings.TrimPrefix(path.Clean("/"+rel), "/"), "/")
 	if rel == "" {
 		return fmt.Errorf("synthetic file path cannot be empty")
@@ -1839,7 +1896,7 @@ func addSyntheticFile(ws *writeState, nodeByPath map[string]*node, ownerByPath m
 	if parentRel == "." {
 		parentRel = ""
 	}
-	ensureSyntheticDir(nodeByPath, ownerByPath, parentRel, mtime, layer)
+	ensureSyntheticDir(nodeByPath, parentRel, mtime)
 
 	startRel := ws.relPos
 	originalSize := len(data)
@@ -1870,7 +1927,6 @@ func addSyntheticFile(ws *writeState, nodeByPath map[string]*node, ownerByPath m
 		fileStartRel: startRel,
 		fileBlocks:   blocks,
 	}
-	ownerByPath[rel] = layer
 	return nil
 }
 
@@ -2072,215 +2128,6 @@ func tarID(id int) uint32 {
 		return 0
 	}
 	return uint32(id)
-}
-
-func setLayerMarker(markers map[string]int, rel string, layer int) {
-	rel = normalizeHardlinkPath(rel)
-	if prev, ok := markers[rel]; ok && prev >= layer {
-		return
-	}
-	markers[rel] = layer
-}
-
-func pathBlockedByHigherLayers(rel string, layer int, nodeByPath map[string]*node, ownerByPath, whiteoutPath, opaqueDir map[string]int) bool {
-	if rel == "" {
-		return false
-	}
-
-	if owner, ok := ownerByPath[rel]; ok && owner > layer {
-		return true
-	}
-
-	if rootOpaque, ok := opaqueDir[""]; ok && rootOpaque > layer {
-		return true
-	}
-
-	cur := rel
-	for {
-		if markLayer, ok := whiteoutPath[cur]; ok && markLayer > layer {
-			return true
-		}
-
-		parent := path.Dir(cur)
-		if parent == "." {
-			parent = ""
-		}
-		if parent == cur {
-			break
-		}
-		if parent != "" {
-			if owner, ok := ownerByPath[parent]; ok && owner > layer {
-				p := nodeByPath[parent]
-				if p != nil && p.kind != nodeDirectory {
-					return true
-				}
-			}
-		}
-		if parent == "" {
-			break
-		}
-		cur = parent
-	}
-
-	cur = path.Dir(rel)
-	if cur == "." {
-		cur = ""
-	}
-	for cur != "" {
-		if markLayer, ok := opaqueDir[cur]; ok && markLayer > layer {
-			return true
-		}
-		parent := path.Dir(cur)
-		if parent == "." {
-			parent = ""
-		}
-		if parent == cur {
-			break
-		}
-		cur = parent
-	}
-
-	return false
-}
-
-func ensureDirAtLayer(nodeByPath map[string]*node, ownerByPath map[string]int, rel string, mtime time.Time, layer int) {
-	rel = normalizeHardlinkPath(rel)
-	if rel == "" {
-		return
-	}
-
-	parts := strings.Split(rel, "/")
-	cur := ""
-	for _, part := range parts {
-		if part == "" {
-			continue
-		}
-		if cur == "" {
-			cur = part
-		} else {
-			cur = cur + "/" + part
-		}
-
-		existing := nodeByPath[cur]
-		existingLayer := ownerByPath[cur]
-		if existing != nil && existingLayer > layer {
-			if existing.kind != nodeDirectory {
-				return
-			}
-			continue
-		}
-
-		if existing != nil && existingLayer == layer {
-			if existing.kind == nodeDirectory {
-				continue
-			}
-			removeOwnedSubtree(nodeByPath, ownerByPath, cur, layer)
-			existing = nil
-		}
-
-		if existing == nil {
-			nodeByPath[cur] = &node{
-				name:  part,
-				kind:  nodeDirectory,
-				mode:  0o755 | os.ModeDir,
-				mtime: toUnix32(mtime),
-			}
-			ownerByPath[cur] = layer
-		}
-	}
-}
-
-func setNodeAtLayer(nodeByPath map[string]*node, ownerByPath map[string]int, rel string, n *node, layer int) {
-	rel = normalizeHardlinkPath(rel)
-	if rel == "" {
-		return
-	}
-
-	if existingLayer, ok := ownerByPath[rel]; ok {
-		if existingLayer > layer {
-			return
-		}
-		if existingLayer == layer {
-			removeOwnedSubtree(nodeByPath, ownerByPath, rel, layer)
-		} else {
-			delete(nodeByPath, rel)
-			delete(ownerByPath, rel)
-		}
-	}
-
-	nodeByPath[rel] = n
-	ownerByPath[rel] = layer
-}
-
-func removeOwnedChildren(nodeByPath map[string]*node, ownerByPath map[string]int, dir string, layer int) {
-	dir = normalizeHardlinkPath(dir)
-	if dir == "" {
-		for p, own := range ownerByPath {
-			if p == "" || own != layer {
-				continue
-			}
-			delete(ownerByPath, p)
-			delete(nodeByPath, p)
-		}
-		return
-	}
-
-	prefix := dir + "/"
-	for p, own := range ownerByPath {
-		if own != layer {
-			continue
-		}
-		if strings.HasPrefix(p, prefix) {
-			delete(ownerByPath, p)
-			delete(nodeByPath, p)
-		}
-	}
-}
-
-func removeOwnedSubtree(nodeByPath map[string]*node, ownerByPath map[string]int, rel string, layer int) {
-	rel = normalizeHardlinkPath(rel)
-	if rel == "" {
-		return
-	}
-
-	if own, ok := ownerByPath[rel]; ok && own == layer {
-		delete(ownerByPath, rel)
-		delete(nodeByPath, rel)
-	}
-
-	prefix := rel + "/"
-	for p, own := range ownerByPath {
-		if own != layer {
-			continue
-		}
-		if strings.HasPrefix(p, prefix) {
-			delete(ownerByPath, p)
-			delete(nodeByPath, p)
-		}
-	}
-}
-
-func resolveHardlinkTarget(nodeByPath map[string]*node, relPath, linkname string) string {
-	cand := normalizeHardlinkPath(linkname)
-	if _, ok := nodeByPath[cand]; ok {
-		return cand
-	}
-	dir := path.Dir(relPath)
-	if dir == "." {
-		dir = ""
-	}
-	joined := normalizeHardlinkPath(path.Join(dir, linkname))
-	return joined
-}
-
-func normalizeHardlinkPath(p string) string {
-	p = strings.TrimSpace(p)
-	p = strings.TrimPrefix(p, "/")
-	p = path.Clean(p)
-	if p == "." {
-		return ""
-	}
-	return p
 }
 
 func cleanRelPath(name string) (string, error) {
