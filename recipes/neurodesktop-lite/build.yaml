@@ -1,5 +1,5 @@
 name: neurodesktop-lite
-version: "20260428.post1"
+version: "20260428.post2"
 
 copyright:
   - license: MIT
@@ -137,6 +137,7 @@ auto_update:
     package: '@anthropic-ai/claude-code'
     target:
       variable: claude_version
+      fulltest_variable: claude_version
   - id: opencode
     method: npm
     package: opencode-ai
@@ -543,9 +544,11 @@ build:
     - run:
         - npm install -g @openai/codex@{{ context.codex_version }}
         - rm -rf /root/.npm
-        - su - "${NB_USER}" -c 'bash {{ get_file("claude_install") }} {{ context.claude_version }}'
+        - install -d -o ${NB_UID} -g ${NB_GID} /tmp/claude-install
+        - su - "${NB_USER}" -c 'HOME=/tmp/claude-install XDG_CACHE_HOME=/tmp/claude-install/.cache bash {{ get_file("claude_install") }} {{ context.claude_version }}'
         - mkdir -p /opt/jovyan_defaults/.local/bin
-        - if [ -x /home/jovyan/.local/bin/claude ]; then cp -L /home/jovyan/.local/bin/claude /opt/jovyan_defaults/.local/bin/claude; else cp -L /home/jovyan/.local/share/claude/versions/* /opt/jovyan_defaults/.local/bin/claude; fi
+        - cp -L /tmp/claude-install/.local/bin/claude /opt/jovyan_defaults/.local/bin/claude
+        - rm -rf /tmp/claude-install
         - chmod +x /opt/jovyan_defaults/.local/bin/claude
         - bash {{ get_file("opencode_install") }} --version {{ context.opencode_version }}
         - mv /home/jovyan/.opencode/bin/opencode /usr/bin/opencode

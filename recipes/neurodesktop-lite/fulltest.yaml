@@ -1,9 +1,10 @@
 # neurodesktop-lite container test suite
-# Tests for neurodesktop-lite 20260428.post1 - native Glass LXDE desktop with
+# Tests for neurodesktop-lite 20260428.post2 - native Glass LXDE desktop with
 # on-demand JupyterLab, CVMFS-backed NeuroDesk tooling, and workflow utilities.
 
 name: neurodesktop-lite
-version: "20260428.post1"
+version: "20260428.post2"
+claude_version: 2.1.263
 apptainer_version: 1.4.4
 ipywidgets_version: 8.1.9
 jupyterlab_widgets_version: 3.0.17
@@ -28,6 +29,11 @@ setup:
     mkdir -p "${output_dir}"
 
 tests:
+  - name: Claude binary is available without a home directory
+    description: Verify the installed native executable survives removal of the build user home.
+    command: HOME=/proc/neurodesktop-no-home /opt/jovyan_defaults/.local/bin/claude --version
+    expected_output_contains: "${claude_version}"
+
   # ==========================================================================
   # LAUNCHERS AND CORE ENTRYPOINTS
   # ==========================================================================
