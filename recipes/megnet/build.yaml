@@ -1,18 +1,30 @@
 variables:
+  meegkit_version: 0.2.0
+  pyqt5_version: 5.15.11
   upstream_commit: 113d1054b8700b362a86b8e495045c2b78a46bb1
 
 name: megnet
-version: 1.0.1
+version: 1.0.1.post1
 architectures:
   - x86_64
 structured_readme:
   description: MEGNET pipelines for MEG (MEGIN and KIT) data analysis
-  example: python xxx.py config_file
+  example: megnet main_MEGNET_preprocess_tasks.py --config_file /data/config.yaml
   documentation: https://github.com/miao-cao/MEGNET_pipeline.git
   citation: ""
 auto_update:
   method: sources
   sources:
+  - id: pyqt5
+    method: pypi
+    package: PyQt5
+    target:
+      variable: pyqt5_version
+  - id: meegkit
+    method: pypi
+    package: meegkit
+    target:
+      variable: meegkit_version
   - id: upstream
     method: github_commit
     repo: miao-cao/MEGNET_pipeline
@@ -34,9 +46,17 @@ build:
         pip_install: tabulate pyyaml easydict
         conda_opts: "-c conda-forge"
         installed: false
-    - install: git
+    - install: git libgl1 libglib2.0-0t64 libxkbcommon-x11-0
+    - run:
+        - python -m pip install --no-cache-dir meegkit=={{ context.meegkit_version }} PyQt5=={{ context.pyqt5_version }}
+        - python -m pip check
     - run:
         - git clone https://github.com/miao-cao/MEGNET_pipeline.git && git -C /MEGNET_pipeline checkout {{ context.upstream_commit }}
+    - copy:
+        - megnet
+        - /usr/local/bin/megnet
+    - run:
+        - chmod +x /usr/local/bin/megnet
     - deploy:
         path: []
         bins:
@@ -52,7 +72,8 @@ readme: |-
 
   Example:
   ```
-  python xxx.py config_file
+  megnet --help
+  megnet main_MEGNET_preprocess_tasks.py --config_file /data/config.yaml
   ```
 
   More documentation can be found here: https://github.com/miao-cao/MEGNET_pipeline.git
@@ -65,6 +86,10 @@ readme: |-
   To run container outside of this environment: ml megnet/{{ context.version }}
 
   ----------------------------------
+files:
+  - name: megnet
+    filename: megnet
+
 copyright:
   - license: MIT
     url: https://opensource.org/license/mit/

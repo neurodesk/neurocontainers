@@ -1,11 +1,24 @@
 name: megnet
-version: 1.0.1
+version: 1.0.1.post1
 tests:
 - name: source revision
-  command: git -C /MEGNET_pipeline rev-parse HEAD
+  command: git -c safe.directory=/MEGNET_pipeline -C /MEGNET_pipeline rev-parse HEAD
   expected_exit_code: 0
   expected_output_contains: ${upstream_commit}
 - name: MEG analysis imports
-  command: python -c 'import mne, mne_bids, mne_connectivity'
+  command: |
+    export NUMBA_CACHE_DIR=$(mktemp -d)
+    trap 'rm -rf "$NUMBA_CACHE_DIR"' EXIT
+    python -c 'import mne, mne_bids, mne_connectivity'
   expected_exit_code: 0
+- name: launcher lists bundled pipelines
+  command: megnet --help
+  expected_output_contains: main_MEGNET_preprocess_tasks.py
+- name: task pipeline accepts command line arguments
+  command: megnet main_MEGNET_preprocess_tasks.py --help
+  expected_output_contains: --config_file
+- name: unknown pipeline is rejected
+  command: megnet main_nonexistent.py
+  expected_exit_code: 2
+  expected_output_contains: Unknown MEGNET pipeline
 upstream_commit: 113d1054b8700b362a86b8e495045c2b78a46bb1
