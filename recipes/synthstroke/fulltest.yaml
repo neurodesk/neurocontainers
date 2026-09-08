@@ -4,7 +4,7 @@ tests:
 - name: SynthStroke launcher
   command: synthstroke --help
   expected_exit_code: 0
-  expected_output_contains: synthstroke
+  expected_output_contains: --input
 - name: download launcher
   command: command -v synthstroke-download
   expected_exit_code: 0
