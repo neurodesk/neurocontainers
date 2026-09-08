@@ -22,6 +22,7 @@ auto_update:
     repo: rordenlab/dcm2niix
     target:
       variable: dcm2niix_version
+      fulltest_variable: dcm2niix_version
       value: tag
 build:
   kind: neurodocker
@@ -50,7 +51,7 @@ build:
     - run:
       - cp {{ get_file("miniconda") }} /Miniconda2-4.6.14-Linux-x86_64.sh
     - environment:
-        PATH: /miniconda2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        PATH: /miniconda2/bin:$PATH
     - run:
       - bash Miniconda2-4.6.14-Linux-x86_64.sh -b -p /miniconda2/
       - /miniconda2/bin/conda install -c anaconda cython==0.29.14
