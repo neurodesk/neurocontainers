@@ -14,7 +14,8 @@
 # For full TractSeg testing, diffusion data with bvals/bvecs is required.
 
 name: tractseg
-version: '2.9'
+version: 2.9.post1
+upstream_version: "2.9"
 
 required_files:
   - dataset: ds000001
@@ -41,9 +42,6 @@ setup:
     #!/usr/bin/env bash
     set -e
     mkdir -p test_output
-    # Create TractSeg config directory
-    mkdir -p ~/.tractseg
-    echo "weights_dir=/opt/miniconda/share/TractSeg/weights" > ~/.tractseg/config.txt
 
 tests:
   # ==========================================================================
@@ -52,7 +50,7 @@ tests:
   - name: TractSeg version check
     description: Verify TractSeg binary runs and reports version
     command: TractSeg --version
-    expected_output_contains: "${version}"
+    expected_output_contains: "${upstream_version}"
 
   - name: TractSeg help output
     description: Verify TractSeg help is accessible
@@ -781,6 +779,23 @@ tests:
     description: Verify Tractometry fails with missing arguments
     command: Tractometry 2>&1 | head -5
     expected_exit_code: 0
+
+  - name: Pretrained models resolve without home or network access
+    command: |
+      HOME=/proc/tractseg-no-home python - <<'PYTHON'
+      import runpy
+      import shutil
+      import requests
+      from tractseg.libs.system_config import SystemConfig
+
+      assert SystemConfig.WEIGHTS_DIR == "/opt/miniconda/share/TractSeg/weights"
+      def reject_download(*args, **kwargs):
+          raise AssertionError("A required pretrained model is missing")
+      requests.get = reject_download
+      runpy.run_path(shutil.which("download_all_pretrained_weights"), run_name="__main__")
+      print("All pretrained models resolve without home or network access")
+      PYTHON
+    expected_output_contains: All pretrained models resolve without home or network access
 
 cleanup:
   script: |
