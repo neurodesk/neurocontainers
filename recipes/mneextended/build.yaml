@@ -1,11 +1,14 @@
 variables:
   debian_security_snapshot: 20260901T000000Z
-  mne_version: 1.1.0
+  mne_version: 1.12.1
+  autoreject_version: 0.5.0
+  mne_bids_version: 0.19.0
+  mnelab_version: 1.5.4
   vscode_version: "1.136.1"
-  pipeline_commit: a792f818dda95bfe63e0ab0f0011d54c9818f1ad
+  pipeline_commit: ab27777abf79c62bdfd4914dd180957f580f1bbe
 
 name: mneextended
-version: 1.1.0.post1
+version: 1.1.0.post2
 
 architectures:
   - x86_64
@@ -21,10 +24,32 @@ auto_update:
     target:
       variable: mne_version
       fulltest_variable: mne_version
+  - id: autoreject
+    method: webpage
+    url: https://api.anaconda.org/package/conda-forge/autoreject
+    version_regex: '"latest_version":\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: autoreject_version
+      fulltest_variable: autoreject_version
+  - id: mne-bids
+    method: webpage
+    url: https://api.anaconda.org/package/conda-forge/mne-bids
+    version_regex: '"latest_version":\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: mne_bids_version
+      fulltest_variable: mne_bids_version
+  - id: mnelab
+    method: webpage
+    url: https://api.anaconda.org/package/conda-forge/mnelab
+    version_regex: '"latest_version":\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: mnelab_version
+      fulltest_variable: mnelab_version
   - id: vscode
     method: webpage
     target:
       variable: vscode_version
+      fulltest_variable: vscode_version
     url: https://update.code.visualstudio.com/api/update/linux-x64/stable/latest
     version_regex: '"productVersion":\s*"(?P<version>\d+(?:\.\d+)+)"'
   - id: mne-bids-pipeline
@@ -33,6 +58,7 @@ auto_update:
     ref: main
     target:
       variable: pipeline_commit
+      fulltest_variable: pipeline_commit
 
 build:
   kind: neurodocker
@@ -103,6 +129,7 @@ build:
         yaml_file: /opt/mne-extended.yml
     - run:
         - /opt/miniconda/envs/mne-extended/bin/python -c "import autoreject; import mne; import mne_bids; import mnelab"
+        - /opt/miniconda/envs/mne-extended/bin/python -m pip check
         - cp {{ get_file("vscode_deb") }} vscode.deb
         - apt install ./vscode.deb
         - rm -rf ./vscode.deb
@@ -114,6 +141,8 @@ build:
         - mkdir -p /opt/mne-bids-pipeline
 
         - tar xz -f {{ get_file("mne_bids_pipeline_tar_gz") }} --strip-components=1 -C /opt/mne-bids-pipeline
+        - /opt/miniconda/envs/mne-extended/bin/python -m pip install --no-cache-dir 'mne=={{ context.mne_version }}' 'autoreject=={{ context.autoreject_version }}' 'mne-bids=={{ context.mne_bids_version }}' 'mnelab=={{ context.mnelab_version }}' /opt/mne-bids-pipeline
+        - /opt/miniconda/envs/mne-extended/bin/python -m pip check
         - chmod a+rwx /opt/mne-bids-pipeline -R
     - copy: code /usr/local/sbin/code
     - run:
@@ -121,6 +150,7 @@ build:
         - chmod a+rwx /opt/vscode-extensions -R
     - environment:
         XDG_RUNTIME_DIR: /neurodesktop-storage
+        NUMBA_CACHE_DIR: /tmp/numba-mneextended
         RUNLEVEL: "3"
     - user: neuro
 
@@ -148,7 +178,7 @@ readme: |-
 
   To use the MNE BIDS Pipeline (https://mne.tools/mne-bids-pipeline/)
   ```
-  python /opt/mne-bids-pipeline/run.py --config=/path/to/your/custom_config.py
+  mne_bids_pipeline --config=/path/to/your/custom_config.py
   ```
 
   To run applications outside of this container: ml mneextended/{{ context.version }}
@@ -181,8 +211,8 @@ files:
       - setuptools<81
       - mne={{ context.mne_version }}
       - jupyter
-      - mne-bids
-      - mnelab
+      - mne-bids={{ context.mne_bids_version }}
+      - mnelab={{ context.mnelab_version }}
       - nb_conda_kernels
       - pytables
       - h5py
@@ -195,9 +225,9 @@ files:
       - pyxdf
       - pyEDFlib
       - neurokit2
-      - autoreject
+      - autoreject={{ context.autoreject_version }}
       - coloredlogs
-      - pandas
+      - pandas<3
       - openpyxl
       - json_tricks
       - fire

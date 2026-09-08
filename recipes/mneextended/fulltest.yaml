@@ -1,6 +1,11 @@
-mne_version: 1.1.0
+mne_version: 1.12.1
+autoreject_version: 0.5.0
+mne_bids_version: 0.19.0
+mnelab_version: 1.5.4
+vscode_version: "1.136.1"
+pipeline_commit: ab27777abf79c62bdfd4914dd180957f580f1bbe
 name: mneextended
-version: 1.1.0.post1
+version: 1.1.0.post2
 default_timeout: 60
 tests:
 - name: Python imports mne
@@ -283,7 +288,7 @@ tests:
   command: test -d /opt/mne-bids-pipeline
   expected_exit_code: 0
 - name: MNE BIDS pipeline runner exists
-  command: test -f /opt/mne-bids-pipeline/run.py
+  command: test -x /opt/miniconda/envs/mne-extended/bin/mne_bids_pipeline
   expected_exit_code: 0
 - name: MNE BIDS pipeline is readable
   command: test -z "$(find /opt/mne-bids-pipeline -type f ! -readable -print -quit)"
@@ -318,9 +323,9 @@ tests:
 - name: OpenGL runtime is linked
   command: ldconfig -p | grep -q libGL.so
   expected_exit_code: 0
-- name: MNE BIDS pipeline runner compiles
-  command: /opt/miniconda/envs/mne-extended/bin/python -c 'import ast, pathlib; ast.parse(pathlib.Path("/opt/mne-bids-pipeline/run.py").read_text())'
-  expected_exit_code: 0
+- name: MNE BIDS pipeline displays help
+  command: /opt/miniconda/envs/mne-extended/bin/mne_bids_pipeline --help
+  expected_output_contains: --create-config
 - name: XDG runtime directory is configured
   command: test "$XDG_RUNTIME_DIR" = /neurodesktop-storage
   expected_exit_code: 0
@@ -339,3 +344,76 @@ tests:
 - name: MNE selected version
   command: /opt/miniconda/envs/mne-extended/bin/python -c 'import mne; print(mne.__version__)'
   expected_output_contains: ${mne_version}
+- name: autoreject selected version
+  command: /opt/miniconda/envs/mne-extended/bin/python -c 'from importlib.metadata import version; print(version("autoreject"))'
+  expected_output_contains: ${autoreject_version}
+- name: mne-bids selected version
+  command: /opt/miniconda/envs/mne-extended/bin/python -c 'from importlib.metadata import version; print(version("mne-bids"))'
+  expected_output_contains: ${mne_bids_version}
+- name: mnelab selected version
+  command: /opt/miniconda/envs/mne-extended/bin/python -c 'from importlib.metadata import version; print(version("mnelab"))'
+  expected_output_contains: ${mnelab_version}
+- name: Installed Python dependencies are compatible
+  command: /opt/miniconda/envs/mne-extended/bin/python -m pip check
+  expected_output_contains: No broken requirements found
+- name: MNE BIDS pipeline source matches the tracked commit
+  command: cat /opt/mne-bids-pipeline/.git_archival.txt
+  expected_output_contains: ${pipeline_commit}
+- name: MNE BIDS pipeline creates a usable configuration
+  command: |
+    /opt/miniconda/envs/mne-extended/bin/python - <<'PYTHON'
+    import ast
+    from pathlib import Path
+    import subprocess
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as directory:
+        config = Path(directory) / "config.py"
+        subprocess.run([
+            "/opt/miniconda/envs/mne-extended/bin/mne_bids_pipeline",
+            "--create-config", str(config),
+        ], check=True)
+        source = config.read_text()
+        ast.parse(source)
+        assert "bids_root" in source and "ch_types" in source
+    print("Pipeline configuration generated")
+    PYTHON
+  expected_output_contains: Pipeline configuration generated
+- name: MNE and AutoReject estimate an EEG rejection threshold
+  command: |
+    /opt/miniconda/envs/mne-extended/bin/python - <<'PYTHON'
+    import autoreject
+    import mne
+    import numpy as np
+
+    rng = np.random.default_rng(42)
+    info = mne.create_info(["Fz", "Cz", "Pz", "Oz"], 100, "eeg")
+    epochs = mne.EpochsArray(rng.normal(scale=1e-6, size=(20, 4, 100)), info, verbose=False)
+    threshold = autoreject.get_rejection_threshold(epochs, cv=3, random_state=42, verbose=False)
+    assert np.isfinite(threshold["eeg"]) and threshold["eeg"] > 0
+    print("EEG rejection threshold estimated")
+    PYTHON
+  expected_output_contains: EEG rejection threshold estimated
+- name: MNE BIDS BrainVision round trip preserves EEG data
+  command: |
+    /opt/miniconda/envs/mne-extended/bin/python - <<'PYTHON'
+    import tempfile
+    import mne
+    from mne_bids import BIDSPath, read_raw_bids, write_raw_bids
+    import numpy as np
+
+    times = np.arange(1000) / 100
+    data = np.array([np.sin(2 * np.pi * 10 * times), np.cos(2 * np.pi * 5 * times)]) * 1e-6
+    raw = mne.io.RawArray(data, mne.create_info(["Fz", "Cz"], 100, "eeg"), verbose=False)
+    with tempfile.TemporaryDirectory() as directory:
+        path = BIDSPath(subject="01", task="rest", root=directory, datatype="eeg")
+        write_raw_bids(raw, path, format="BrainVision", allow_preload=True, overwrite=True, verbose=False)
+        restored = read_raw_bids(path, verbose=False)
+        np.testing.assert_allclose(restored.get_data(), data, atol=1e-12)
+        assert restored.ch_names == raw.ch_names
+    print("BIDS EEG round trip succeeded")
+    PYTHON
+  expected_output_contains: BIDS EEG round trip succeeded
+- name: VS Code wrapper forwards arguments without a home directory
+  command: HOME=/proc/mneextended-no-home code --version
+  expected_output_contains: ${vscode_version}
