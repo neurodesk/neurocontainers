@@ -1,5 +1,5 @@
 # neurodock container test suite
-# Tests for neurodock v1.0.0 - PyDesigner dMRI/DKI processing pipeline
+# Tests for neurodock - PyDesigner dMRI/DKI processing pipeline
 #
 # NeuroDock includes:
 #   - PyDesigner: Pythonic DESIGNER pipeline for DTI/DKI processing
@@ -13,7 +13,8 @@
 #   for Diffusion Tensor and Diffusional Kurtosis Imaging. bioRxiv 2021.10.20.465189
 
 name: neurodock
-version: 1.0.0
+version: 1.0.0.post1
+upstream_version: 1.0.0
 
 required_files:
   - dataset: ds000001
@@ -45,7 +46,7 @@ tests:
   - name: PyDesigner version check
     description: Verify pydesigner binary runs and reports version
     command: pydesigner --version 2>&1
-    expected_output_contains: "v${version}"
+    expected_output_contains: "v${upstream_version}"
 
   - name: PyDesigner help
     description: Display pydesigner help message
