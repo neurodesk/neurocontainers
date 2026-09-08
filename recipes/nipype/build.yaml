@@ -63,7 +63,8 @@ build:
         name: miniconda
         conda_install: python=3.9 nipype={{ context.version }} traits scipy scikit-learn scikit-image jupyter nb_conda_kernels h5py seaborn numpy
         pip_install: osfclient pybids
-        version: latest
+        version: py39_24.7.1-0
+        install_path: /opt/miniconda-latest
 
     - install:
         - xdg-utils

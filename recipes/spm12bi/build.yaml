@@ -52,11 +52,11 @@ build:
         - chmod +x /opt/spm12/*
     - template:
         name: miniconda
-        version: py38_23.11.0-2
+        version: py310_25.5.1-0
         mamba: "true"
-        conda_install: python=3.8 traits nipype numpy scipy h5py scikit-image
+        conda_install: python=3.10 traits nipype numpy scipy h5py scikit-image
     - environment:
-        PATH: /opt/spm12:/opt/miniconda-py38_23.11.0-2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        PATH: /opt/spm12:/opt/miniconda-py310_25.5.1-0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         XAPPLRESDIR: /opt/matlab-runtime/x11/app-defaults
 
 deploy:

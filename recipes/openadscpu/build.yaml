@@ -127,6 +127,8 @@ build:
         - pip install nibabel==5.3.2 scikit-learn==1.7.2 surfa==0.6.3 shap==0.50.0
         - git clone https://github.com/farialab/OpenADS /opt/openads && git -C /opt/openads checkout {{ context.upstream_commit }}
         - pip install /opt/openads --no-deps
+        - git -C /opt/openads rev-parse HEAD > /opt/openads/source-revision
+        - chmod 644 /opt/openads/source-revision
         - rm -rf /opt/openads/.git
         - ln -s /opt/openads/scripts /opt/miniconda-latest/lib/python3.11/scripts
         - ln -s /opt/openads/assets /opt/miniconda-latest/lib/python3.11/assets

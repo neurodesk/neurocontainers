@@ -36,7 +36,7 @@ build:
         - cp {{ get_file("mri_synthstrip") }} /usr/bin/mri_synthstrip
         - cp {{ get_file("synthstrip_model") }} /freesurfer/models/synthstrip.1.pt
         - cp {{ get_file("synthstrip_nocsf_model") }} /freesurfer/models/synthstrip.nocsf.1.pt
-        - chmod +x /usr/bin/mri_synthstrip
+        - chmod 755 /usr/bin/mri_synthstrip
 
     - run:
         - printf '#!/bin/bash\nls -la' > /usr/bin/ll

@@ -187,7 +187,8 @@ build:
   directives:
     - template:
         name: miniconda
-        version: latest
+        version: py310_25.5.1-0
+        install_path: /opt/miniconda-latest
         conda_install: python=3.10
         pip_install: monai torch nibabel numpy scikit-image tqdm wandb cornucopia huggingface_hub safetensors scipy einops
     - install: git libgl1 curl ca-certificates

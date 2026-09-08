@@ -60,7 +60,7 @@ build:
   pkg-manager: apt
 
   directives:
-    - install: git
+    - install: git libgl1
 
     - group:
         - workdir: /opt
