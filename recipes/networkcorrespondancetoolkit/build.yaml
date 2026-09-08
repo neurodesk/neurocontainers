@@ -1,5 +1,5 @@
 name: networkcorrespondancetoolkit
-version: 0.3.3
+version: 0.3.3.post1
 
 copyright:
   - license: MIT
@@ -55,9 +55,23 @@ readme: |-
 
   ----------------------------------
 
+variables:
+  upstream_version: 0.3.3
+
 auto_update:
-  method: pypi
-  package: cbig_network_correspondence
+  method: sources
+  sources:
+    - id: upstream
+      method: pypi
+      package: cbig_network_correspondence
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: environment
+      method: http_digest
+      url: https://raw.githubusercontent.com/rubykong/cbig_network_correspondence/refs/heads/master/NCT_env.yml
+      target:
+        file: environment.yml
 
 build:
   kind: neurodocker
@@ -66,9 +80,6 @@ build:
   pkg-manager: apt
 
   directives:
-    - file:
-        name: environment.yml
-        url: https://raw.githubusercontent.com/rubykong/cbig_network_correspondence/refs/heads/master/NCT_env.yml
 
     - variables:
         install_path: /opt/miniconda
@@ -79,9 +90,6 @@ build:
         CONDA_DIR: "{{ local.install_path }}"
         PATH: "{{ local.install_path }}/bin:$PATH"
 
-    - file:
-        name: miniconda.sh
-        url: https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
 
     - run:
         - export PATH="{{ local.install_path }}/bin:$PATH"
@@ -90,8 +98,7 @@ build:
         # Accept the license agreement
         - conda tos accept
 
-        # Update conda and set channels
-        - conda update -yq -nbase conda
+        # Set channels
         - conda config --system --prepend channels conda-forge
 
         # strict channel priority breaks this recipe.
@@ -102,7 +109,9 @@ build:
         - conda config --system --set show_channel_urls true
 
         # Create the environment from the environment.yml file
-        - conda env create -f {{ get_file("environment.yml") }}
+        - cp {{ get_file("environment.yml") }} /tmp/NCT_env.yml
+        - PIP_DEFAULT_TIMEOUT=300 conda env create -f /tmp/NCT_env.yml
+        - rm /tmp/NCT_env.yml
         - conda init bash
 
         # Clean up
@@ -119,7 +128,7 @@ build:
     - install: libx11-6 libgl1 libxext6 libsm6 libxrender1 git
 
     - run:
-        - python3 -m pip install --no-cache-dir cbig_network_correspondence=={{ context.version }}
+        - python3 -m pip install --no-cache-dir cbig_network_correspondence=={{ context.upstream_version }}
 
     - deploy:
         bins:
@@ -146,6 +155,14 @@ build:
 
           print("NCT test ran successfully")
 
+
+files:
+  - name: environment.yml
+    url: https://raw.githubusercontent.com/rubykong/cbig_network_correspondence/refs/heads/master/NCT_env.yml
+    sha256: fa5d943cd48ea097445c94bea89e133f7f0114032ad1d20e3911802fbd372230
+  - name: miniconda.sh
+    url: https://repo.anaconda.com/miniconda/Miniconda3-py310_25.5.1-0-Linux-x86_64.sh
+    sha256: aa8cbd6aa7ef85d0528616d2dffce8bd0b51924e7ddd18734ede6c1c63c462d0
 
 categories:
   - image registration

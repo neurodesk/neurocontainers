@@ -14,7 +14,8 @@
 #   https://doi.org/10.1038/s41467-025-58176-9
 
 name: networkcorrespondancetoolkit
-version: 0.3.3
+version: 0.3.3.post1
+upstream_version: 0.3.3
 
 required_files:
   - dataset: ds000001
