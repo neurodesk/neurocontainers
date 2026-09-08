@@ -223,66 +223,20 @@ readme: |-
   ----------------------------------
   ## openmsk/{{ context.version }} ##
 
-  OpenMSK packages the KneePipeline knee MRI toolbox as a Siemens OpenRecon
-  image-to-image module for DESS knee MRI. The OpenRecon path receives MRD
-  images from the scanner, builds a two-echo RSS NIfTI, runs KneePipeline, and
-  returns bone/cartilage/meniscus segmentation with geometry copied from the
-  source images.
+  OpenMSK runs KneePipeline through Siemens OpenRecon for DESS knee MRI,
+  returning bone, cartilage, and meniscus segmentation in the source geometry.
+  Subregion segmentation, T2 maps, and metrics reports are returned when
+  generated. Enable `computethickness` for optional mesh and thickness analysis.
 
-  This OpenRecon workflow was tested using the Siemens DESS WIP
-  `wip_dess_CS_260902` on a MAGNETOM 3.0T X60 running Numaris/X VA61A-092T.
-  The protocol exports are stored in this repository and available from
-  GitHub: [PDF](https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/openmsk/wip_dess_CS_260902.pdf)
-  and [.pro](https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/openmsk/wip_dess_CS_260902.pro).
-  The `.pro` file includes the saved OpenRecon algorithm selection and OpenMSK
-  parameters used for the test.
+  Models: `goyal_sagittal`, `goyal_coronal`, `goyal_axial`, and `nnunet_knee`.
 
-  The wrapper preserves both DESS echo groups and synthesizes a
-  minimal two-echo DICOM series with TR/TE/flip and DOSMA-compatible GL/TG
-  adapter fields. This lets KneePipeline's DESS loader run its analytical T2
-  step from OpenRecon MRD input. The GL/TG adapter fields are not documented
-  Siemens qDESS private attributes. For `sequenceName`, `sequenceName_fid`,
-  and `sequenceName_SE`,
-  segmentation uses the voxelwise root-sum-of-squares of `_fid` and `_SE`,
-  fitting uses the echoes separately, and the corrected second echo time is
-  computed as `TE2 = 2 * TR - TE1`. Equal-sized `set=0`
-  and `set=1` groups within one series are handled as an unnamed two-echo
-  fallback, with the detected grouping, routing, counts, and timing reported to
-  LogViewer. TR, TE1, and flip angle come from MRD sequence parameters when
-  available, TE2 is computed, and GL/TG use built-in defaults when absent from
-  metadata and legacy saved-protocol settings. Source volumes returned by
-  `sendoriginal` retain separate scanner series and source names. The pyMSKT
-  right-knee registration reference is
-  packaged at build time, so subregion and T2-statistics post-processing does
-  not require runtime GitHub access. If subregion generation still fails while
-  thickness is disabled, global cartilage-compartment T2 statistics are
-  computed from the remapped all-label segmentation. It mirrors
-  KneePipeline's split steps: it runs mesh
-  generation/cartilage thickness when requested, runs DESS T2 mapping when
-  KneePipeline identifies DESS input, and returns subregion segmentation,
-  T2 maps, and a burned-in metrics report image series whenever those artifacts
-  are written. The same metrics are copied into output metadata comments.
-  The packaged segmentation models are `goyal_sagittal`, `goyal_coronal`,
-  `goyal_axial`, and `nnunet_knee`. Legacy saved protocols that request
-  `acl_qdess_bone_july_2024` use the identical `goyal_sagittal` checkpoint.
-  Optional mesh/thickness analysis can run
-  after segmentation when the `computethickness` OpenRecon option is enabled.
-  The `nnunet_knee` path is packaged with single preprocessing/export worker
-  defaults for scanner-side memory stability.
-  Returned segmentation and subregion series use the upstream DOSMA/OpenMSK
-  labels: 1 patellar cartilage, 2 femoral cartilage, 3 medial tibial
-  cartilage, 4 lateral tibial cartilage, 5 medial meniscus, 6 lateral
-  meniscus, 7 femur, 8 tibia, and 9 patella. Canonical labels used by the
-  modular mesh, thickness, T2, and NSM steps remain internal and are never
-  exposed in the returned segmentation series. Femoral-cartilage subregion
-  labels 11 through 15 retain their upstream values.
-  Legacy `runnsm` and `runbscore` protocol parameters are accepted for scanner
-  conversion compatibility but ignored because gated ShapeMedKnee assets are not
-  packaged. Legacy DESS acquisition fallback parameters are also accepted but
-  hidden from the OpenRecon GUI.
+  Tested with Siemens DESS WIP `wip_dess_CS_260902` on a MAGNETOM 3.0T X60
+  running Numaris/X VA61A-092T. Protocol: [PDF](https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/openmsk/wip_dess_CS_260902.pdf)
+  / [.pro](https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/openmsk/wip_dess_CS_260902.pro).
+  See the [OpenRecon guide](https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/openmsk/OpenReconREADME.md)
+  for setup, output labels, T2 assumptions, and compatibility details.
 
-  Direct DICOM usage can produce the full output set, including T2, when the
-  input contains the DESS timing and spoiler metadata expected by DOSMA:
+  Direct DICOM usage (T2 requires DESS timing and spoiler metadata expected by DOSMA):
 
   ```bash
   ml openmsk/{{ context.version }}
