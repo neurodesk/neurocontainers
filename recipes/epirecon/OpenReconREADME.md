@@ -1,9 +1,8 @@
 # Cartesian 3D EPI OpenRecon
 
 `epirecon` reconstructs a fully-sampled 3D EPI volume from ISMRMRD raw data.
-Cartesian k-space needs neither a gridding kernel nor a density compensation
-function, since every readout already lands on a regular grid: reconstruction
-is a per-coil 3D FFT followed by root-sum-of-squares coil combination. See
+Every readout already lands on a regular grid, so reconstruction is a per-coil
+3D FFT followed by root-sum-of-squares coil combination. See
 `reconstruct_epi_data.py` for the offline prototype this module streams the
 same algorithm from.
 

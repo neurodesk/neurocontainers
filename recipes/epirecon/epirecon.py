@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """OpenRecon module for a fully-sampled Cartesian 3D EPI reconstruction.
 
-Cartesian k-space needs neither a gridding kernel nor a density compensation
-function: every readout already lands on a regular grid, so reconstruction is
-a per-coil 3D FFT followed by root-sum-of-squares coil combination. See
+Every readout already lands on a regular grid, so reconstruction is a per-coil
+3D FFT followed by root-sum-of-squares coil combination. See
 ``reconstruct_epi_data.py`` for the offline prototype this module streams the
 same algorithm from.
 """

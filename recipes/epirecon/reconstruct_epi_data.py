@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Standalone prototype for a fully-sampled Cartesian 3D EPI reconstruction.
 
-Adapted from the TPI_gridding_N256_AC_coil_compression_kb.py workflow, but
-Cartesian k-space needs neither a gridding kernel nor a density compensation
-function: every readout already lands on a regular grid, so reconstruction is
-a per-coil 3D FFT followed by root-sum-of-squares coil combination.
+Every readout already lands on a regular grid, so reconstruction is a per-coil
+3D FFT followed by root-sum-of-squares coil combination.
 """
 
 from pathlib import Path
