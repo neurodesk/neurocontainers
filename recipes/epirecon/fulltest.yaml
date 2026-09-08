@@ -2,7 +2,7 @@
 # Focused verification for the OpenRecon runtime and Cartesian EPI FFT reconstruction.
 
 name: epirecon
-version: 0.0.2
+version: 0.0.3
 
 test_data:
   output_dir: test_output
