@@ -119,7 +119,13 @@ build:
 
     - copy: dependencies.R /opt/dependencies.R
 
+    - environment:
+        JAVA_HOME: /usr/lib/jvm/default-java
+
     - run:
+        - test -f "$JAVA_HOME/lib/server/libjvm.so"
+        - printf '%s\n' "$JAVA_HOME/lib/server" > /etc/ld.so.conf.d/jidt-java.conf
+        - ldconfig
         - R CMD javareconf
         - Rscript /opt/dependencies.R
 
