@@ -31,6 +31,9 @@ build:
   directives:
     - install:
       - build-essential
+      - zlib1g-dev
+      - libopenjp2-7-dev
+      - pkg-config
       - cmake
       - git
       - unzip
@@ -43,8 +46,13 @@ build:
       - cmake .. && make
     - run:
         - mkdir -p /opt/dcm2niix-{{ context.dcm2niix_version }}
-        - unzip {{ get_file("dcm2niix.zip") }} -d /opt/dcm2niix-{{ context.dcm2niix_version }}
-        - chmod 755 /opt/dcm2niix-{{ context.dcm2niix_version }}/dcm2niix
+        - mkdir -p /tmp/dcm2niix/build
+        - tar -xzf {{ get_file("dcm2niix_source") }} -C /tmp/dcm2niix --strip-components=1
+        - cd /tmp/dcm2niix/build
+        - cmake -DZLIB_IMPLEMENTATION=System -DUSE_OPENJPEG=System ..
+        - make -j2
+        - install -m755 bin/dcm2niix /opt/dcm2niix-{{ context.dcm2niix_version }}/dcm2niix
+        - cd / && rm -rf /tmp/dcm2niix
     - environment:
         PATH: /opt/dcm2niix-{{ context.dcm2niix_version }}:$PATH
     - workdir: /
@@ -120,8 +128,8 @@ variables:
   bet2_revision: adec315977486917d995ae2d1449f3efc616e2bc
   dcm2niix_version: "v1.0.20260724"
 files:
-- name: dcm2niix.zip
-  url: https://github.com/rordenlab/dcm2niix/releases/download/{{ context.dcm2niix_version }}/dcm2niix_lnx.zip
+- name: dcm2niix_source
+  url: https://github.com/rordenlab/dcm2niix/archive/refs/tags/{{ context.dcm2niix_version }}.tar.gz
 - name: source
   url: https://www.neuroimaging.at/media/qsm/TGVQSM-plus.zip
   sha256: 70e6457c01346444d43c6ad31f5b03df10411aaaa9f50db5c13e9b3d1dd1594c
