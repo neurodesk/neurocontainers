@@ -1,6 +1,6 @@
 # this template file builds cat12, new versions here: https://github.com/ChristianGaser/cat12/releases
 name: cat12
-version: "26.0.rc3"
+version: "26.0.rc3.post1"
 
 copyright:
   - license: GPL-2.0
@@ -13,6 +13,7 @@ architectures:
   - x86_64
 
 variables:
+  upstream_version: "26.0.rc3"
   matlab_version: 2023b
   matlab_runtime_version: R2023b
   matlab_mcr_root: "/opt/mcr/{{ context.matlab_runtime_version }}"
@@ -20,11 +21,17 @@ variables:
 
 files:
   - name: cat12.zip
-    url: https://github.com/ChristianGaser/cat12/releases/download/{{ context.version }}/cat-standalone-Linux.zip
+    url: https://github.com/ChristianGaser/cat12/releases/download/{{ context.upstream_version }}/cat-standalone-Linux.zip
 
 auto_update:
-  method: github_release
-  repo: ChristianGaser/cat12
+  method: sources
+  sources:
+    - id: cat12
+      method: github_release
+      repo: ChristianGaser/cat12
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
 
 build:
   kind: neurodocker
@@ -41,8 +48,16 @@ build:
     - template:
         name: miniconda
         version: latest
+        env_name: cat12
+        env_exists: "false"
         conda_install: "python=3.9 traits nipype numpy scipy h5py scikit-image"
         pip_install: "osfclient"
+
+    - environment:
+        PATH: /opt/miniconda-latest/envs/cat12/bin:$PATH
+
+    - run:
+        - python -c "from nipype.interfaces.cat12 import CAT12Segment; from nipype.interfaces.spm import SPMCommand; print('Nipype CAT12 and SPM interfaces import')"
 
     - group:
         # Based on: https://github.com/ReproNim/neurodocker/blob/91e3247ffb0d176f77c3ac3b3837acf8f252fd06/neurodocker/templates/cat12.yaml

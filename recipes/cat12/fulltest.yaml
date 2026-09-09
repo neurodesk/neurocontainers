@@ -13,7 +13,8 @@
 # the container setup and basic functionality.
 
 name: cat12
-version: "26.0.rc3"
+version: "26.0.rc3.post1"
+upstream_version: "26.0.rc3"
 
 # Container paths
 container_paths:
@@ -389,28 +390,13 @@ tests:
   # ==========================================================================
   - name: Python nipype CAT12 interface check
     description: Verify nipype CAT12 interface is accessible
-    command: |
-      python3 -c "
-      try:
-          import nipype.interfaces.cat12 as cat12
-          print('nipype.interfaces.cat12 available')
-          print('CAT12Segment:', hasattr(cat12, 'CAT12Segment'))
-      except ImportError as e:
-          print('nipype cat12 import check:', str(e))
-      " 2>&1 || echo "Python nipype check complete"
-    expected_exit_code: 0
+    command: python3 -c "from nipype.interfaces.cat12 import CAT12Segment; print('CAT12Segment available')"
+    expected_output_contains: "CAT12Segment available"
 
   - name: Python nipype SPM interface check
     description: Verify nipype SPM interface is accessible
-    command: |
-      python3 -c "
-      try:
-          import nipype.interfaces.spm as spm
-          print('nipype.interfaces.spm available')
-      except ImportError as e:
-          print('nipype spm import check:', str(e))
-      " 2>&1 || echo "Python nipype check complete"
-    expected_exit_code: 0
+    command: python3 -c "from nipype.interfaces.spm import SPMCommand; print('SPMCommand available')"
+    expected_output_contains: "SPMCommand available"
 
   # ==========================================================================
   # FULL SEGMENTATION WITH SURFACES (OPTIONAL - VERY LONG)
