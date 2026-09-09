@@ -14,12 +14,12 @@ variables:
     upstream_commit: "3354f6cc3cf750ada5bd3e25bd0ab6e1712662ab"
     onnxruntime_version: "1.23.2"
     onnxruntime_gpu_version: "1.23.2"
-    conda_version: "4.12.0"
+    conda_version: "25.5.1-0"
     conda_download_url:
         try:
-            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py39_{{ context.conda_version }}-Linux-x86_64.sh"
+            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py310_{{ context.conda_version }}-Linux-x86_64.sh"
               condition: arch=="x86_64"
-            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py39_{{ context.conda_version }}-Linux-aarch64.sh"
+            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py310_{{ context.conda_version }}-Linux-aarch64.sh"
               condition: arch=="aarch64"
 
 files:
@@ -128,19 +128,7 @@ build:
               - bash {{ get_file("miniconda.sh") }} -b -p /opt/miniconda-{{ context.conda_version }}
         - environment:
               PATH: /opt/miniconda-{{ context.conda_version }}/bin:$PATH
-        - run:
-              - conda config --system --prepend channels conda-forge
-              - conda config --system --set channel_priority strict
-              - conda clean --all --yes
-
-        # install mamba to speed up installs
-        - run:
-              - conda install mamba
-              - mamba clean --all --yes
-
-        - run:
-              - mamba install -y --name base "python=3.10"
-              - mamba clean --all --yes
+        - run: python -c "import sys; assert sys.version_info[:2] == (3, 10)"
 
         # install large pip packages
         - run:
