@@ -293,6 +293,24 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     verified = one_pr_release.verify_candidate(candidate_dir, "abc123", 42)
     assert verified["recipe"] == "demo"
 
+    manifest["recipe_fingerprint"] = "0" * 64
+    (candidate_dir / "manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        one_pr_release,
+        "recipe_changes_since_merge_are_source_only",
+        lambda recipe, merge_sha: recipe == "demo" and merge_sha == "merge123",
+    )
+    verified = one_pr_release.verify_candidate(
+        candidate_dir, "abc123", 42, "merge123"
+    )
+    assert verified["recipe"] == "demo"
+    manifest["recipe_fingerprint"] = one_pr_release.recipe_fingerprint("demo")
+    (candidate_dir / "manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
     manifest["image_name"] = "forged_image"
     (candidate_dir / "manifest.json").write_text(
         json.dumps(manifest), encoding="utf-8"
