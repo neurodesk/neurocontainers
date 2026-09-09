@@ -50,6 +50,7 @@ source:
       repo: https://github.com/MRtrix3/mrtrix3.git
       install_path: /opt/mrtrix3-{{ self.version }}
       build_processes: '1'
+      configure_options: -nogui
   dependencies:
     apt:
     - ca-certificates
@@ -87,7 +88,7 @@ source:
 
       {% endif -%}
 
-      python3 configure -nogui
+      python3 configure {{ self.configure_options }}
 
       echo "Compiling MRtrix3 ..."
 

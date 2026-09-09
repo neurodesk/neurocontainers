@@ -122,6 +122,19 @@ def test_mrtrix_template_preserves_existing_library_search_path(method) -> None:
     assert result.stdout.strip() == "/opt/mrtrix3-3.0.4/lib:/existing/libraries"
 
 
+@pytest.mark.parametrize("options", [None, "", "-nogui -debug"])
+def test_mrtrix_source_template_configure_options(options) -> None:
+    directives = []
+    arguments = {"version": "3.0.4", "method": "source"}
+    if options is not None:
+        arguments["configure_options"] = options
+    apply_builtin_template("mrtrix3", arguments, "apt", directives.append)
+    command = "\n".join(item.command for item in directives if isinstance(item, Run))
+    configure = next(line for line in command.splitlines() if "python3 configure" in line)
+    expected = "-nogui" if options is None else options
+    assert shlex.split(configure) == ["python3", "configure", *shlex.split(expected)]
+
+
 @pytest.mark.parametrize("version", ["6.0.6", "6.0.7.99", "7.0.0"])
 def test_fsl_template_installs_new_versions_without_a_url_table_entry(version) -> None:
     directives = []
