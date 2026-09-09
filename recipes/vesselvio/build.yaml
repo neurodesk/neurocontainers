@@ -66,6 +66,10 @@ build:
         - python -m pip install --no-deps --no-build-isolation --no-binary=PyMCubes,imageio-ffmpeg imageio-ffmpeg==0.4.9 geomdl==5.3.1 PyExcelerate==0.10.0 PyMCubes==0.1.6
         - python -m pip check
         - conda clean --all --yes
+    - environment:
+        SKIMAGE_DATADIR: /opt/scikit-image-data
+    - run:
+        - python -c 'import skimage'
     - run:
         - mkdir -p /opt/vesselvio-{{ context.upstream_version }}
         - tar -xzf {{ get_file("vesselvio_source") }} -C /opt/vesselvio-{{ context.upstream_version }} --strip-components=1

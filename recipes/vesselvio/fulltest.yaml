@@ -13,8 +13,7 @@ version: 1.1.2.post1
 upstream_version: 1.1.2
 
 test_data:
-  sample_vertices: /opt/vesselvio-${upstream_version}/sample_data/demo_csv/vertices.csv
-  sample_edges: /opt/vesselvio-${upstream_version}/sample_data/demo_csv/edges.csv
+  sample_volume: /opt/vesselvio-${upstream_version}/library/volumes/Demo Volume.nii
   output_dir: test_output
 
 setup:
@@ -426,25 +425,26 @@ tests:
   # ==========================================================================
   # SAMPLE DATA VERIFICATION
   # ==========================================================================
-  - name: Sample vertices CSV exists
-    description: Verify sample vertices CSV file exists
-    command: ls -la /opt/vesselvio-${upstream_version}/sample_data/demo_csv/vertices.csv
-    expected_output_contains: "vertices.csv"
+  - name: Bundled demo volume exists
+    description: Verify the sample volume shipped in the upstream release is readable.
+    command: test -r '${sample_volume}' && echo 'Demo volume is readable'
+    expected_output_contains: "Demo volume is readable"
 
-  - name: Sample edges CSV exists
-    description: Verify sample edges CSV file exists
-    command: ls -la /opt/vesselvio-${upstream_version}/sample_data/demo_csv/edges.csv
-    expected_output_contains: "edges.csv"
-
-  - name: Load sample vertices with Pandas
-    description: Test loading sample vertices CSV data
-    command: python -c "import pandas as pd; df = pd.read_csv('/opt/vesselvio-${upstream_version}/sample_data/demo_csv/vertices.csv', delimiter=';'); print('Vertices shape:', df.shape); print('Columns:', list(df.columns))"
-    expected_output_contains: "Vertices shape:"
-
-  - name: Load sample edges with Pandas
-    description: Test loading sample edges CSV data
-    command: python -c "import pandas as pd; df = pd.read_csv('/opt/vesselvio-${upstream_version}/sample_data/demo_csv/edges.csv', delimiter=';'); print('Edges shape:', df.shape)"
-    expected_output_contains: "Edges shape:"
+  - name: Load bundled vascular volume
+    description: Read the real bundled NIfTI volume and verify its foreground and background voxels.
+    command: |
+      python - <<'PYVOLUME'
+      import nibabel as nib
+      import numpy as np
+      image = nib.load('${sample_volume}')
+      volume = image.get_fdata()
+      assert volume.ndim == 3
+      assert np.isfinite(volume).all()
+      assert np.count_nonzero(volume) > 0
+      assert np.count_nonzero(volume) < volume.size
+      print('Bundled volume loaded:', volume.shape)
+      PYVOLUME
+    expected_output_contains: "Bundled volume loaded:"
 
   # ==========================================================================
   # SCIENTIFIC COMPUTING OPERATIONS
