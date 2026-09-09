@@ -2,7 +2,7 @@ variables:
   upstream_commit: 720d36b0cffcc1be42417a538153fde99b2ad4f2
 
 name: fatsegnet
-version: 1.0.gpu
+version: 1.0.gpu.post1
 
 architectures:
   - x86_64
@@ -21,8 +21,28 @@ build:
   kind: neurodocker
   base-image: tensorflow/tensorflow:1.6.0-gpu-py3
   pkg-manager: apt
+  add-default-template: false
 
   directives:
+    - environment:
+        LANG: C.UTF-8
+        LC_ALL: C.UTF-8
+        DEBIAN_FRONTEND: noninteractive
+        CUDA_CACHE_MAXSIZE: "2147483647"
+        CUDA_CACHE_PATH: /tmp/fatsegnet-cuda-cache
+    - run: rm -f /etc/apt/sources.list.d/cuda.list /etc/apt/sources.list.d/nvidia-ml.list
+    - file:
+        name: fatsegnet-entrypoint
+        executable: true
+        contents: |
+          #!/usr/bin/env bash
+          set -e
+          if [ "$#" -gt 0 ]; then
+            exec "$@"
+          fi
+          exec /bin/bash
+    - run: install -m 755 {{ get_file("fatsegnet-entrypoint") }} /usr/local/bin/fatsegnet-entrypoint
+    - entrypoint: /usr/local/bin/fatsegnet-entrypoint
     - run:
         - printf '#!/bin/bash\nls -la' > /usr/bin/ll
         - chmod +x /usr/bin/ll
@@ -41,12 +61,9 @@ build:
 
     - run:
         - mv tool /tool
-        - pip3 --no-cache-dir install pandas==0.21.0 scikit-learn==0.19.1 scipy==1.1. scikit-image==0.15.0 SimpleITK==1.1.0 nibabel==2.2.1 keras==2.2.4 numpy==1.15.4
+        - pip3 --no-cache-dir install pandas==0.21.0 scikit-learn==0.19.1 scipy==1.1.0 scikit-image==0.15.0 SimpleITK==1.1.0 nibabel==2.2.1 keras==2.2.4 numpy==1.15.4
 
     - workdir: /tool
-
-    - run:
-        - bash /tool/bash_profile
 
     - copy: README.md /README.md
 
