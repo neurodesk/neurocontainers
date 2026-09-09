@@ -1,5 +1,6 @@
 name: mrsiproc
-version: 0.2.0
+version: 0.2.0.post1
+hdbet_version: "1.1"
 
 env_setup: |
   export LD_LIBRARY_PATH=/opt/MATLAB_Runtime_R2021b/v911/runtime/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/bin/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/os/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/opengl/lib/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/extern/bin/glnxa64:$LD_LIBRARY_PATH
@@ -53,3 +54,25 @@ tests:
     description: Verify Julia starts with the bundled depot
     command: julia -e 'println("julia works")'
     expected_output_contains: "julia works"
+
+  - name: HD-BET version matches bundled model generation
+    command: python -c "from importlib.metadata import version; print(version('hd-bet'))"
+    expected_output_contains: ${hdbet_version}
+
+  - name: all brain extraction models match the installed network
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+      import torch
+      from HD_BET.config import config
+      from HD_BET.paths import folder_with_parameter_files
+
+      settings = config()
+      network, _ = settings.get_network(settings.val_use_train_mode, None)
+      for index in range(5):
+          weights = torch.load(Path(folder_with_parameter_files) / f'{index}.model', map_location='cpu', weights_only=True)
+          network.load_state_dict(weights, strict=True)
+      print('all five brain extraction models loaded')
+      PY
+    expected_output_contains: all five brain extraction models loaded
+    timeout: 300
