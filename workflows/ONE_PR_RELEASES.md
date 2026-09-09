@@ -69,11 +69,25 @@ second build.
 
 The planner reads the base and head `build.yaml` files as YAML data. It does not
 render Jinja or execute any code from the pull request. Changes that affect only
-`auto_update`, semantically unchanged YAML, or `fulltest.yaml` are currently
+`auto_update`, documentation (`readme`, `readme_url`, `structured_readme`), literal
+`categories`, semantically unchanged YAML, or `fulltest.yaml` are currently
 classified as source-only: they are validated, but the existing container is
 preserved and no candidate is built or promoted. This is a behavioural release
 projection, not a claim that rebuilding would produce byte-identical images;
 the current image still embeds the raw `build.yaml` and README.
+
+Documentation may use simple context substitutions such as
+`{{ context.version }}`. More complex templates remain candidate-required because
+rendering can have side effects. Documentation inside an existing image remains
+the version shipped with that image; updated documentation is available in the
+recipe source until the next image release.
+
+The apps.json workflow also runs on recipe definition changes. It reads literal
+categories from the current source recipe (including the source recorded for
+named variants), replacing the historical category union in the catalog. It
+preserves all published app identities and build dates and does not rewrite
+release JSON or publish images. Missing recipes and templated categories retain
+the categories from release metadata.
 
 Every other recipe definition change is deliberately fail-closed and requires
 a candidate. A changed recipe-local file such as `install.sh` also requires a

@@ -122,6 +122,32 @@ def test_detect_recipes_allows_pr_without_recipes(tmp_path: Path, monkeypatch) -
     assert one_pr_release.detect_recipes("base", "head") == []
 
 
+def test_detect_from_git_preserves_metadata_only_release(tmp_path: Path, monkeypatch) -> None:
+    """PR detection and post-merge promotion use the same non-image verdict."""
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    recipe_dir = write_recipe(tmp_path)
+    helper = recipe_dir / "config.txt"
+    helper.write_text("original")
+    git("add", ".")
+    git("commit", "-m", "Initial recipe")
+    base = git("rev-parse", "HEAD")
+
+    path = recipe_dir / "build.yaml"
+    recipe = yaml.safe_load(path.read_text())
+    recipe.update(readme="Updated help", categories=["workflows"], auto_update={})
+    path.write_text(yaml.safe_dump(recipe) + "# Clarified documentation\n")
+    git("commit", "-am", "Update documentation and catalog")
+    assert one_pr_release.detect_recipes(base, "HEAD") == []
+
+    helper.write_text("new runtime configuration")
+    git("commit", "-am", "Update staged input")
+    assert one_pr_release.detect_recipes(base, "HEAD") == ["demo"]
+
+
 def test_detect_recipes_rejects_mixed_pr(tmp_path: Path, monkeypatch) -> None:
     """Mixed automation and recipe changes cannot cross the trust boundary."""
     recipe_dir = write_recipe(tmp_path)
