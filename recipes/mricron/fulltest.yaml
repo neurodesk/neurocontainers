@@ -747,14 +747,6 @@ tests:
     command: timeout 10s xvfb-run -a MRIcron ${t1w}
     expected_exit_code: 124
 
-  # ==========================================================================
-  # UPDATE CHECK (network dependent)
-  # ==========================================================================
-  - name: dcm2niix update check format
-    description: Test update check option format (may require network)
-    command: dcm2niix -u 2>&1 | head -5
-    expected_output_contains: "dcm2niiX"
-
 cleanup:
   script: |
     #!/usr/bin/env bash
