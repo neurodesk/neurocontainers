@@ -79,7 +79,7 @@ tests:
   # ==========================================================================
   - name: dcm2niix version check
     description: Verify dcm2niix binary runs and reports version
-    command: dcm2niix -v n 2>&1 | head -1
+    command: dcm2niix -h
     expected_output_contains: "dcm2niiX version"
 
   - name: dcm2niix help
