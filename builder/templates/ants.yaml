@@ -31,7 +31,7 @@ binaries:
 
       {% if self.urls[self.version].endswith(''.zip'') -%}
 
-      curl -fsSL -o ants.zip {{ self.urls[self.version] }}
+      curl -fsSL --retry 5 --retry-delay 5 -o ants.zip {{ self.urls[self.version] }}
 
       unzip ants.zip -d /opt
 
@@ -43,9 +43,11 @@ binaries:
 
       mkdir -p {{ self.install_path }}
 
-      curl -fsSL {{ self.urls[self.version] }} \
+      curl -fsSL --retry 5 --retry-delay 5 -o ants.tar.gz {{ self.urls[self.version] }}
 
-      | tar -xz -C {{ self.install_path }} --strip-components 1
+      tar -xzf ants.tar.gz -C {{ self.install_path }} --strip-components 1
+
+      rm ants.tar.gz
 
       {% endif -%}
 
