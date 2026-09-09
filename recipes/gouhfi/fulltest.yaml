@@ -1,8 +1,9 @@
 name: gouhfi
-version: 0.0.1.post1
+version: 0.0.1.post2
 upstream_commit: 1eb71b642bcd3b6c92dbf65e4b69c8cf52847205
 antspyx_version: "0.6.3"
 antspynet_version: "0.3.2"
+model_commit: f960cce2857f67f682b7382f67be3efd17182029
 default_timeout: 300
 
 env:
@@ -297,6 +298,63 @@ tests:
   - name: misc/segmentation_labels_gouhfi.npy asset is nonempty
     command: "test -s /opt/GOUHFI/misc/segmentation_labels_gouhfi.npy"
     expected_exit_code: 0
+  - name: Default and original pipelines have their configured models
+    command: |
+      python - <<'PYTHON'
+      import json
+      from pathlib import Path
+      from run_inference.gouhfi_inference_postpro_reo import MODEL_SEG, MODEL_PARC, MODEL_V1
+
+      root = Path("/opt/GOUHFI/trained_model")
+      for model in (MODEL_SEG, MODEL_PARC, MODEL_V1):
+          folder = root / model.dataset_dir_name / f"{model.trainer}__{model.plan}__{model.config}"
+          plans = json.loads((folder / "plans.json").read_text())
+          assert model.config in plans["configurations"], model.name
+          assert (folder / "crossval_results_folds_0_1_2_3_4" / "postprocessing.pkl").is_file(), model.name
+          for fold in range(5):
+              checkpoint = folder / f"fold_{fold}" / "checkpoint_best.pth"
+              assert checkpoint.stat().st_size > 0, checkpoint
+          print(f"Configured model available: {model.name}")
+      PYTHON
+    expected_output_contains:
+      - "Configured model available: gouhfi_2p0_seg"
+      - "Configured model available: gouhfi_2p0_parc"
+      - "Configured model available: v1"
+  - name: Pretrained model families perform CPU inference
+    command: |
+      python - <<'PYTHON'
+      import gc
+      from pathlib import Path
+      import torch
+      from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
+      from run_inference.gouhfi_inference_postpro_reo import MODEL_SEG, MODEL_PARC, MODEL_V1
+
+      torch.set_num_threads(2)
+      root = Path("/opt/GOUHFI/trained_model")
+      for model in (MODEL_SEG, MODEL_PARC, MODEL_V1):
+          folder = root / model.dataset_dir_name / f"{model.trainer}__{model.plan}__{model.config}"
+          predictor = nnUNetPredictor(device=torch.device("cpu"), use_mirroring=False,
+                                     perform_everything_on_device=False, allow_tqdm=False)
+          predictor.initialize_from_trained_model_folder(str(folder), use_folds=(0,),
+                                                         checkpoint_name="checkpoint_best.pth")
+          predictor.network.load_state_dict(predictor.list_of_parameters[0])
+          predictor.network.eval()
+          with torch.inference_mode():
+              prediction = predictor.network(torch.zeros(1, 1, 64, 64, 64))
+          assert torch.isfinite(prediction).all(), model.name
+          assert prediction.shape[1] == predictor.label_manager.num_segmentation_heads
+          print(f"CPU inference succeeded: {model.name}", flush=True)
+          del predictor, prediction
+          gc.collect()
+      PYTHON
+    timeout: 600
+    expected_output_contains:
+      - "CPU inference succeeded: gouhfi_2p0_seg"
+      - "CPU inference succeeded: gouhfi_2p0_parc"
+      - "CPU inference succeeded: v1"
+  - name: Pretrained model source matches the tracked commit
+    command: cat /opt/GOUHFI/trained_model/.neurocontainers-model-commit
+    expected_output_contains: "${model_commit}"
   - name: Fold 0 checkpoint is bundled
     command: "test -s /opt/GOUHFI/trained_model/Dataset014_gouhfi/nnUNetTrainer_NoDA_500epochs_AdamW__nnUNetResEncL__3d_fullres/fold_0/checkpoint_best.pth"
     expected_exit_code: 0
