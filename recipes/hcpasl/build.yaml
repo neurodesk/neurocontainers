@@ -61,7 +61,11 @@ build:
         name: freesurfer
         version: "{{ context.freesurfer_version }}"
 
+    - environment:
+        PATH: /opt/miniconda/bin:$PATH
+
     - run:
+        - python -c "import sys; assert sys.version_info[:2] == (3, 11)"
         - python -m pip install --no-cache-dir "pip==26.1.1" "setuptools==82.0.1" "wheel==0.47.0"
         - python -m pip install --no-cache-dir "cython==3.0.12" "numpy==1.26.4"
         - python -m pip install --no-cache-dir --no-build-isolation -r {{ get_file("hcp_asl_requirements") }}
