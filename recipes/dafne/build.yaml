@@ -51,25 +51,38 @@ files:
 
   - name: patch_dafne_dl_annotations.py
     contents: |-
-      from pathlib import Path
       import ast
+      import importlib.util
+      from pathlib import Path
 
-      root = Path("/opt/miniconda-py38_22.11.1-1/lib/python3.8/site-packages/dafne_dl")
-      for path in root.rglob("*.py"):
-          text = path.read_text()
-          if "from __future__ import annotations" in text.splitlines()[:20]:
-              continue
-          tree = ast.parse(text)
-          insert_line = 0
-          if (
-              tree.body
-              and isinstance(tree.body[0], ast.Expr)
-              and isinstance(tree.body[0].value, ast.Str)
-          ):
-              insert_line = tree.body[0].end_lineno or 0
-          lines = text.splitlines()
-          lines.insert(insert_line, "from __future__ import annotations")
-          path.write_text("\n".join(lines) + ("\n" if text.endswith("\n") else ""))
+      spec = importlib.util.find_spec("dafne_dl")
+      if spec is None or spec.submodule_search_locations is None:
+          raise RuntimeError("Could not locate the installed dafne_dl package")
+
+      scanned = 0
+      patched = 0
+      for package_dir in spec.submodule_search_locations:
+          for path in Path(package_dir).rglob("*.py"):
+              scanned += 1
+              text = path.read_text()
+              if "from __future__ import annotations" in text.splitlines()[:20]:
+                  continue
+              tree = ast.parse(text)
+              insert_line = 0
+              if (
+                  tree.body
+                  and isinstance(tree.body[0], ast.Expr)
+                  and isinstance(tree.body[0].value, ast.Str)
+              ):
+                  insert_line = tree.body[0].end_lineno or 0
+              lines = text.splitlines()
+              lines.insert(insert_line, "from __future__ import annotations")
+              path.write_text("\n".join(lines) + ("\n" if text.endswith("\n") else ""))
+              patched += 1
+
+      if scanned == 0:
+          raise RuntimeError("The installed dafne_dl package contains no Python files")
+      print("Added deferred annotations to {} of {} dafne_dl files".format(patched, scanned))
 
 auto_update:
   method: sources
