@@ -38,6 +38,22 @@ tests:
   # ==========================================================================
   # VERSION AND HELP CHECKS
   # ==========================================================================
+  - name: FastSurfer commands are exported as wrapper names
+    description: Verify Transparent Singularity can expose both launchers in the user session
+    command: |
+      for command in run_fastsurfer.sh long_fastsurfer.sh; do
+        echo "${DEPLOY_BINS}" | tr ':' '\n' | grep -qx -- "${command}" || {
+          echo "NOT EXPORTED: ${command}"
+          exit 1
+        }
+        command -v "${command}" > /dev/null || {
+          echo "EXPORTED BUT MISSING: ${command}"
+          exit 1
+        }
+      done
+      echo "FastSurfer wrapper commands are exportable"
+    expected_output_contains: "FastSurfer wrapper commands are exportable"
+
   - name: FastSurfer version check
     description: Verify FastSurfer reports correct version
     command: run_fastsurfer.sh --version
