@@ -782,9 +782,8 @@ tests:
 
   - name: Pretrained models resolve without home or network access
     command: |
-      HOME=/proc/tractseg-no-home python - <<'PYTHON'
+      HOME=/proc/tractseg-no-home /opt/miniconda/bin/python - <<'PYTHON'
       import runpy
-      import shutil
       import requests
       from tractseg.libs.system_config import SystemConfig
 
@@ -792,7 +791,7 @@ tests:
       def reject_download(*args, **kwargs):
           raise AssertionError("A required pretrained model is missing")
       requests.get = reject_download
-      runpy.run_path(shutil.which("download_all_pretrained_weights"), run_name="__main__")
+      runpy.run_path("/opt/miniconda/bin/download_all_pretrained_weights", run_name="__main__")
       print("All pretrained models resolve without home or network access")
       PYTHON
     expected_output_contains: All pretrained models resolve without home or network access
