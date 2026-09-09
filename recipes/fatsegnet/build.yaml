@@ -1,8 +1,9 @@
 variables:
   upstream_commit: 720d36b0cffcc1be42417a538153fde99b2ad4f2
+  imageio_version: "2.9.0"
 
 name: fatsegnet
-version: 1.0.gpu.post1
+version: 1.0.gpu.post2
 
 architectures:
   - x86_64
@@ -16,6 +17,14 @@ auto_update:
     ref: HEAD
     target:
       variable: upstream_commit
+  - id: imageio
+    method: pypi
+    package: imageio
+    # ImageIO 2.10+ uses Python 3.6 syntax despite declaring Python >=3.5.
+    version_regex: '^(?P<version>2\.9\.\d+)$'
+    target:
+      variable: imageio_version
+      fulltest_variable: imageio_version
 
 build:
   kind: neurodocker
@@ -61,7 +70,23 @@ build:
 
     - run:
         - mv tool /tool
-        - pip3 --no-cache-dir install pandas==0.21.0 scikit-learn==0.19.1 scipy==1.1.0 scikit-image==0.15.0 SimpleITK==1.1.0 nibabel==2.2.1 keras==2.2.4 numpy==1.15.4
+        - pip3 --no-cache-dir install pandas==0.21.0 scikit-learn==0.19.1 scipy==1.1.0 scikit-image==0.15.0 SimpleITK==1.1.0 nibabel==2.2.1 keras==2.2.4 numpy==1.15.4 imageio=={{ context.imageio_version }}
+
+    - file:
+        name: patch_launcher.py
+        contents: |
+          from pathlib import Path
+
+          launcher = Path("/tool/run_FatSegNet.py")
+          source = launcher.read_text()
+          pipeline_import = "from Code.adipose_pipeline import run_adipose_pipeline\n"
+          entrypoint = "def run_fatsegnet(args,FLAGS):\n"
+          if source.count(pipeline_import) != 1 or source.count(entrypoint) != 1:
+              raise RuntimeError("FatSegNet launcher changed; review deferred GPU initialization")
+          source = source.replace(pipeline_import, "")
+          source = source.replace(entrypoint, entrypoint + "    " + pipeline_import)
+          launcher.write_text(source)
+    - run: python3 {{ get_file("patch_launcher.py") }}
 
     - workdir: /tool
 
