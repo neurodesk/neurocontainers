@@ -22,7 +22,12 @@ back into MRD image messages.
 
 - The OpenRecon label exposes only `config`; model paths and postprocessing are
   fixed in the wrapper.
-- The runtime uses the models staged under `/opt/models/*.pth`.
+- The runtime uses the four published SeedSeg ONNX models staged under
+  `/opt/models/*.onnx`. Each download is checked against its SHA-256 digest.
+- `predict3.py` retains the OpenRecon command interface and output filenames
+  while using preprocessing and marker selection from the tracked SeedSeg source.
+- CUDA inference is available on x86_64; `--device cpu` also works on both
+  supported architectures.
 - Returned images preserve source geometry and add an example ROI metadata
   field.
 

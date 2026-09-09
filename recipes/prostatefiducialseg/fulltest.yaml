@@ -1,7 +1,55 @@
 name: prostatefiducialseg
-version: 7.0.0
+version: 7.0.0.post1
+upstream_commit: 3354f6cc3cf750ada5bd3e25bd0ab6e1712662ab
 tests:
 - name: prediction launcher
-  command: command -v predict3.py
-  expected_exit_code: 0
-  expected_output_contains: predict3.py
+  command: predict3.py --help
+  expected_output_contains: Published ONNX model
+- name: installed SeedSeg source
+  command: git -C /opt/seedseg rev-parse HEAD
+  expected_output_contains: ${upstream_commit}
+- name: published model ensemble inference
+  description: Run all four published models and check OpenRecon outputs on an odd-sized volume.
+  command: |
+    python - <<'PY'
+    import glob
+    import pathlib
+    import subprocess
+    import tempfile
+    import nibabel as nib
+    import numpy as np
+    import torchio as tio
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = pathlib.Path(directory)
+        source = root / 'input.nii.gz'
+        data = np.random.default_rng(7).normal(100, 20, (29, 30, 31)).astype(np.float32)
+        affine = np.diag([1.2, 1.3, 1.4, 1.])
+        nib.save(nib.Nifti1Image(data, affine), source)
+        padded = tio.CropOrPad((32, 32, 32))(tio.ScalarImage(source))
+        restored = tio.CropOrPad(data.shape)(padded)
+        np.testing.assert_array_equal(restored.data[0].numpy(), data)
+        np.testing.assert_allclose(restored.affine, affine)
+        models = sorted(glob.glob('/opt/models/*.onnx'))
+        assert len(models) == 4, models
+        subprocess.run(['predict3.py', '-i', str(source), '-m', *models,
+                        '-o', str(root), '--device', 'cpu', '--threads', '2'], check=True)
+        probabilities = []
+        for index in range(3):
+            image = nib.load(root / f'consensus_prob_class{index}.nii.gz')
+            assert image.shape == data.shape
+            np.testing.assert_allclose(image.affine, affine)
+            probability = image.get_fdata()
+            assert np.isfinite(probability).all()
+            assert probability.min() >= 0 and probability.max() <= 1
+            probabilities.append(probability)
+        np.testing.assert_allclose(sum(probabilities), 1, atol=1e-5)
+        for name, labels in [('consensus_top3_seeds.nii.gz', [0, 1]),
+                             ('consensus_argmax_segmentation.nii.gz', [0, 1, 2])]:
+            image = nib.load(root / name)
+            assert image.shape == data.shape
+            np.testing.assert_allclose(image.affine, affine)
+            assert np.isin(image.get_fdata(), labels).all()
+        print('Four published models produced valid OpenRecon segmentations')
+    PY
+  expected_output_contains: Four published models produced valid OpenRecon segmentations
