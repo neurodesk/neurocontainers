@@ -1,8 +1,11 @@
 variables:
   upstream_commit: 6511b37b3165968387687fe980e407e7ecda68c0
+  libtorch_version: 1.5.0
+  rustup_version: 1.29.1
+  rust_toolchain: nightly-2022-07-06
 
 name: delphi
-version: 0.0.2
+version: 0.0.2.post1
 
 architectures:
   - x86_64
@@ -22,10 +25,17 @@ build:
   kind: neurodocker
   base-image: docker.io/tensorflow/tensorflow:1.15.0-gpu-py3
   pkg-manager: apt
+  add-default-template: false
 
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
+        LANG: C.UTF-8
+        LC_ALL: C.UTF-8
+
+    - run:
+        - rm -f /etc/apt/sources.list.d/cuda.list
+        - dpkg -i {{ get_file("cuda_keyring") }}
 
     - run:
         - pip install -U "ray[debug]==0.8.0"
@@ -34,9 +44,6 @@ build:
         - pip install argparse
         - pip install nibabel
         - pip install matplotlib
-
-    - run:
-        - apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
 
     - install:
         - wget
@@ -48,6 +55,7 @@ build:
         - clang
         - llvm
         - dpkg
+        - unzip
 
     - run:
         - tar -xz --strip-components=1 -C /usr/local/ -f {{ get_file("cmake_3_22_2_linux_x86_64_tar_gz") }}
@@ -58,32 +66,32 @@ build:
     - environment:
         RUSTUP_HOME: /usr/local/rustup
         CARGO_HOME: /usr/local/cargo
-        PATH: \$PATH:/usr/local/cargo/bin
+        PATH: $PATH:/usr/local/cargo/bin
 
     - run:
-        - cp {{ get_file("sh_rustup_rs") }} rustup-init.sh
+        - '{{ get_file("rustup_init") }} -y --default-toolchain none'
 
     - run:
-        - bash ./rustup-init.sh -y
+        - rustup toolchain install {{ context.rust_toolchain }} --no-self-update
 
     - run:
-        - rustup install nightly
-
-    - run:
-        - rustup default nightly
+        - rustup default {{ context.rust_toolchain }}
 
     - run:
         - git clone https://github.com/yexincheng/delphi.git /opt/encryption && git -C /opt/encryption checkout {{ context.upstream_commit }}
 
-    - workdir: /opt/encryption
-
-    - run:
-        - git pull
-
     - workdir: /opt/encryption/rust
 
     - run:
-        - cargo +nightly build --release
+        - unzip -q {{ get_file("libtorch") }} -d /opt
+
+    - environment:
+        LIBTORCH: /opt/libtorch
+        LD_LIBRARY_PATH: /opt/libtorch/lib:$LD_LIBRARY_PATH
+
+    - run:
+        - cp {{ get_file("cargo_lock") }} Cargo.lock
+        - cargo +{{ context.rust_toolchain }} build --release --locked
 
     - workdir: /opt/encryption
 
@@ -120,7 +128,18 @@ readme: |
   ----------------------------------
 
 files:
+  - name: cuda_keyring
+    url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-keyring_1.1-1_all.deb
+    sha256: d930f8f818423185b09e02c8e9695c849baa3f403b9cafa1ab417650bef44e94
   - name: cmake_3_22_2_linux_x86_64_tar_gz
     url: https://github.com/Kitware/CMake/releases/download/v3.22.2/cmake-3.22.2-linux-x86_64.tar.gz
-  - name: sh_rustup_rs
-    url: https://sh.rustup.rs
+    sha256: 38b3befdee8fd2bac06954e2a77cb3072e6833c69d8cc013c0a3b26f1cfdfe37
+  - name: rustup_init
+    url: https://static.rust-lang.org/rustup/archive/{{ context.rustup_version }}/x86_64-unknown-linux-gnu/rustup-init
+    sha256: dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
+    executable: true
+  - name: cargo_lock
+    filename: Cargo.lock
+  - name: libtorch
+    url: https://download-r2.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-{{ context.libtorch_version }}%2Bcpu.zip
+    sha256: 3e438237a08099a4bf014335cd0da88708da3a1678aec12a46c67305792b5fa4

@@ -1,11 +1,15 @@
 name: delphi
-version: 0.0.2
+version: 0.0.2.post1
 tests:
 - name: source revision
-  command: git -C /opt/encryption rev-parse HEAD
+  command: git -c safe.directory=/opt/encryption -C /opt/encryption rev-parse HEAD
   expected_exit_code: 0
   expected_output_contains: ${upstream_commit}
 - name: Python dependencies
   command: python -c 'import nibabel, pandas, ray'
   expected_exit_code: 0
+- name: Rust inference CLI
+  command: /opt/encryption/rust/target/release/minionn-inference --help
+  expected_exit_code: 0
+  expected_output_contains: "USAGE:"
 upstream_commit: 6511b37b3165968387687fe980e407e7ecda68c0
