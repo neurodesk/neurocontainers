@@ -72,6 +72,16 @@ auto_update:
     - id: functional_atlas
       method: zenodo
       record: "5118030"
+      required_files:
+        - melodic_IC.nii.gz
+        - vascular_mask.nii.gz
+        - EPI_template.nii.gz
+        - EPI_brain_mask.nii.gz
+        - EPI_WM_mask.nii.gz
+        - EPI_CSF_mask.nii.gz
+        - EPI_vascular_mask.nii.gz
+        - EPI_labels.nii.gz
+        - melodic_IC_resampled.nii.gz
       target:
         variable: atlas_record
 

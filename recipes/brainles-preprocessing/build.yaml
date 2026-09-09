@@ -21,6 +21,7 @@ auto_update:
     - id: hdbet-models
       method: zenodo
       record: "2540695"
+      required_files: [0.model, 1.model, 2.model, 3.model, 4.model]
       target:
         variable: hdbet_record
 

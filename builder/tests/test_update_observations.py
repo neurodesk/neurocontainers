@@ -155,15 +155,17 @@ def test_github_commit_rejects_unsafe_version_file_path(path: str) -> None:
         )
 
 
+@pytest.mark.parametrize("metadata", [{"version": "v1.4"}, {}])
 def test_zenodo_observation_uses_public_session_and_latest_record(
     monkeypatch: pytest.MonkeyPatch,
+    metadata: dict,
 ) -> None:
     session = Mock()
     session.get.return_value = response(
         data={
             "id": 21929873,
             "files": [{"key": "model.pth"}],
-            "metadata": {"version": "v1.4"},
+            "metadata": metadata,
         }
     )
     factory = Mock()
@@ -179,7 +181,7 @@ def test_zenodo_observation_uses_public_session_and_latest_record(
     assert observed == update_observations.SourceObservation(
         "21929873",
         "https://zenodo.org/records/21929873",
-        metadata={"version": "1.4"},
+        metadata={"version": "1.4"} if metadata else {},
     )
     session.get.assert_called_once_with(
         "https://zenodo.org/api/records/19976940/versions/latest", timeout=30
@@ -208,6 +210,37 @@ def test_zenodo_rejects_incomplete_record_payload(
     with pytest.raises(ValueError, match="Zenodo"):
         update_observations.observe_source(
             {"method": "zenodo", "record": "1"}, Mock()
+        )
+
+
+def test_zenodo_selects_latest_compatible_asset_layout(public_session: Mock) -> None:
+    latest = {"id": 4, "files": [{"key": "new-model.zip"}], "metadata": {}}
+    compatible = {"id": 3, "files": [{"key": "0.model"}], "metadata": {}}
+    next_page = "https://zenodo.org/api/records/1/versions?page=2"
+    public_session.get.side_effect = [
+        response(data=latest),
+        response(data={"hits": {"hits": [latest]}, "links": {"next": next_page}}),
+        response(data={"hits": {"hits": [compatible]}, "links": {}}),
+    ]
+
+    observed = update_observations.observe_source(
+        {"method": "zenodo", "record": "1", "required_files": ["0.model"]}, Mock()
+    )
+
+    assert observed.value == "3"
+    assert observed.metadata == {}
+    assert public_session.get.call_args.args == (next_page,)
+
+
+def test_zenodo_rejects_unavailable_asset_layout(public_session: Mock) -> None:
+    record = {"id": 4, "files": [{"key": "new-model.zip"}], "metadata": {}}
+    public_session.get.side_effect = [
+        response(data=record),
+        response(data={"hits": {"hits": [record]}, "links": {}}),
+    ]
+    with pytest.raises(ValueError, match="required files"):
+        update_observations.observe_source(
+            {"method": "zenodo", "record": "1", "required_files": ["0.model"]}, Mock()
         )
 
 

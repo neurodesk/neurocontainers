@@ -158,7 +158,7 @@ The source list supports the release providers above and these providers:
 | `artifact_listing` | `url`, `download_base`, `version_regex` | Published artifact URL and computed SHA-256 |
 | `apt` | `package`, `urls` | Package version from the selected distribution's `Packages.gz` or `Packages.xz` indexes |
 | `libreoffice_release` | Official stable release and source listings | Released four-part build and matching archived SHA-256s for both Linux architectures |
-| `zenodo` | Published `record` ID | Latest published record in that record's version family |
+| `zenodo` | Published `record` ID; optional `required_files` list | Latest published record in that record's version family containing every required file |
 | `slicer_release` | See Slicer recipes | Slicer binary and extension from the same build revision |
 | `freesurfer_release` | See SynthSeg recipe | FreeSurfer release and its corresponding model bundle |
 
@@ -171,6 +171,12 @@ Declared files use the permanent `downloadarchive.documentfoundation.org`
 URLs and those digest variables. Missing architectures, ambiguous builds, or
 checksum differences fail the observation before any recipe edits. Release
 candidates in the archive listing are never used to discover updates.
+
+Zenodo records need no version label when only their record ID is tracked.
+Use `required_files` when an installer needs a specific asset layout. The
+provider searches published versions from newest to oldest and selects one
+containing every listed filename. Version metadata is still required when a
+target explicitly binds it, as MuscleMap does.
 
 A `target.variable` receives the observed identity by default. Set `value: tag`
 for exact release tags or `value: version` for parsed release versions.
