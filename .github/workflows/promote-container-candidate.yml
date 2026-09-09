@@ -287,10 +287,12 @@ jobs:
       - name: Verify candidate against merged recipes and checksums
         env:
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         run: |
           python tools/one_pr_release.py verify --bundle promotion-bundle \
-            --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}" \
+            --head-sha "${HEAD_SHA}" --merge-sha "${MERGE_SHA}" \
+            --pr-number "${PR_NUMBER}" \
             --output verified-manifests.json
       - name: Prepare trusted promotion metadata
         env:
@@ -655,6 +657,7 @@ jobs:
       - name: Commit generated release metadata directly to main
         env:
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
           RELEASE_TOKEN: ${{ steps.metadata-token.outputs.token }}
         run: |
@@ -681,7 +684,8 @@ jobs:
             python tools/one_pr_release.py verify-metadata \
               --bundle promotion-metadata/release-previews \
               --manifests verified-manifests.json \
-              --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}"
+              --head-sha "${HEAD_SHA}" --merge-sha "${MERGE_SHA}" \
+              --pr-number "${PR_NUMBER}"
             if git -c http.https://github.com/.extraheader="${git_auth_header}" \
                 push origin HEAD:main; then
               exit 0

@@ -607,7 +607,10 @@ def load_candidate_manifest(candidate_dir: Path) -> dict[str, Any]:
 
 
 def verify_candidate(
-    candidate_dir: Path, expected_head_sha: str, expected_pr_number: int | None = None
+    candidate_dir: Path,
+    expected_head_sha: str,
+    expected_pr_number: int | None = None,
+    expected_merge_sha: str | None = None,
 ) -> dict[str, Any]:
     """Verify a candidate against its PR identity and the merged recipe."""
     manifest = load_candidate_manifest(candidate_dir)
@@ -639,7 +642,12 @@ def verify_candidate(
         raise RuntimeError(f"Candidate head SHA mismatch for {container}")
     if expected_pr_number is not None and manifest["pr_number"] != expected_pr_number:
         raise RuntimeError(f"Candidate PR number mismatch for {container}")
-    if manifest["recipe_fingerprint"] != recipe_fingerprint(recipe):
+    fingerprint_changed = manifest["recipe_fingerprint"] != recipe_fingerprint(recipe)
+    source_only_change = (
+        expected_merge_sha is not None
+        and recipe_changes_since_merge_are_source_only(recipe, expected_merge_sha)
+    )
+    if fingerprint_changed and not source_only_change:
         raise RuntimeError(f"Merged recipe differs from tested candidate: {container}")
 
     expected_release_json = f"{expected_info['version']}.json"
@@ -696,7 +704,7 @@ def verify_candidate(
 def command_verify(args: argparse.Namespace) -> None:
     """Verify all candidate directories and write their trusted manifests."""
     manifests = [
-        verify_candidate(path.parent, args.head_sha, args.pr_number)
+        verify_candidate(path.parent, args.head_sha, args.pr_number, args.merge_sha)
         for path in sorted(Path(args.bundle).glob("*/manifest.json"))
     ]
     if not manifests:
@@ -879,6 +887,7 @@ def parser() -> argparse.ArgumentParser:
     verify = subparsers.add_parser("verify")
     verify.add_argument("--bundle", required=True)
     verify.add_argument("--head-sha", required=True)
+    verify.add_argument("--merge-sha", required=True)
     verify.add_argument("--pr-number", required=True, type=int)
     verify.add_argument("--output", required=True)
     verify.set_defaults(func=command_verify)
