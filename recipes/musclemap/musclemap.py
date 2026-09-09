@@ -30,7 +30,6 @@ mmMetricsSegmentationPath = "/tmp/musclemap_input_dseg_metrics.nii.gz"
 mmMetricsOutputDir = "/tmp/musclemap_metrics"
 mmMetricsMethod = "average"
 muscleMapWholebodyModelVersionEnv = "MUSCLEMAP_WHOLEBODY_MODEL_VERSION"
-muscleMapRegionalModelVersionEnv = "MUSCLEMAP_REGIONAL_MODEL_VERSION"
 metricsSeriesIndex = 120
 muscleMapDisplayLabel = "Musclemap"
 muscleMapImageTypeToken = "MUSCLEMAP"
@@ -3332,7 +3331,7 @@ def _resolve_musclemap_model_version(region):
     environment_name = (
         muscleMapWholebodyModelVersionEnv
         if region == "wholebody"
-        else muscleMapRegionalModelVersionEnv
+        else "MUSCLEMAP_" + region.upper() + "_MODEL_VERSION"
     )
     model_version = os.environ.get(environment_name, "").strip()
     if not model_version:

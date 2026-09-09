@@ -12,13 +12,13 @@ setup:
 tests:
   - name: JIDT distribution exists
     description: Verify the JIDT distribution was unpacked under /opt
-    command: test -f /opt/jidt-1.6/infodynamics-dist-1.6/infodynamics.jar
+    command: test -f /opt/jidt-${version}/infodynamics-dist-${version}/infodynamics.jar
     expected_exit_code: 0
 
   - name: Python demo runs
     description: Exercise the JIDT Python bridge demo
     command: >-
-      bash -lc 'cd /opt/jidt-1.6/infodynamics-dist-1.6/demos/python && python3 example2TeMultidimBinaryData.py'
+      bash -lc 'cd /opt/jidt-${version}/infodynamics-dist-${version}/demos/python && python3 example2TeMultidimBinaryData.py'
     expected_exit_code: 0
 
   - name: rJava loads
@@ -29,11 +29,11 @@ tests:
   - name: R demo runs
     description: Exercise the JIDT R demo through rJava
     command: >-
-      bash -lc 'cd /opt/jidt-1.6/infodynamics-dist-1.6/demos/r && Rscript example1TeBinaryData.r'
+      bash -lc 'cd /opt/jidt-${version}/infodynamics-dist-${version}/demos/r && Rscript example1TeBinaryData.r'
     expected_exit_code: 0
 
   - name: Java runtime can load JIDT jar
     description: Verify the Java runtime can load a JIDT class from the distribution jar
     command: >-
-      javap -classpath /opt/jidt-1.6/infodynamics-dist-1.6/infodynamics.jar infodynamics.measures.discrete.TransferEntropyCalculatorDiscrete
+      javap -classpath /opt/jidt-${version}/infodynamics-dist-${version}/infodynamics.jar infodynamics.measures.discrete.TransferEntropyCalculatorDiscrete
     expected_output_contains: "TransferEntropyCalculatorDiscrete"

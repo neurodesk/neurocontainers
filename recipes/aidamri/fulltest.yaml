@@ -6,7 +6,7 @@ test_data:
 
 env_setup: |
   export FSLDIR=/opt/fsl-5.0.11
-  export PATH=/opt/aidamri-2.0:/opt/aidamri-2.0/bin:/opt/aidamri-2.0/NiftyReg/bin:/opt/fsl-5.0.11/bin:/opt/miniconda-4.7.12.1/bin:$PATH
+  export PATH=/opt/aidamri-${version}:/opt/aidamri-${version}/bin:/opt/aidamri-${version}/NiftyReg/bin:/opt/fsl-5.0.11/bin:/opt/miniconda-4.7.12.1/bin:$PATH
 
 setup:
   script: |
@@ -16,7 +16,7 @@ setup:
 tests:
   - name: AIDAmri source tree exists
     description: Verify the current AIDAmri version was unpacked under /opt
-    command: test -d /opt/aidamri-2.0/bin
+    command: test -d /opt/aidamri-${version}/bin
     expected_exit_code: 0
 
   - name: Miniconda Python dependencies import
@@ -28,7 +28,7 @@ tests:
   - name: AIDAmri batch processor help
     description: Verify the main AIDAmri batch processing script starts
     command: >-
-      /opt/miniconda-4.7.12.1/bin/python /opt/aidamri-2.0/bin/batchProc.py --help
+      /opt/miniconda-4.7.12.1/bin/python /opt/aidamri-${version}/bin/batchProc.py --help
     expected_output_contains: "Batch processing of all data"
 
   - name: NiftyReg tools available
@@ -45,5 +45,5 @@ tests:
   - name: Deploy path excludes macOS and lock files
     description: Guard against hidden editor files being exposed as deploy entries
     command: >-
-      bash -lc "find /opt/aidamri-2.0/bin -name '.DS_Store' -o -name '.~lock.*' | wc -l"
+      bash -lc "find /opt/aidamri-${version}/bin -name '.DS_Store' -o -name '.~lock.*' | wc -l"
     expected_output_contains: "0"

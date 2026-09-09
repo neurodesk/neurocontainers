@@ -8,6 +8,11 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: 3Tissue/MRtrix3Tissue
+  version_regex: ^3Tissue_v(?P<version>\d+\.\d+\.\d+)$
+
 build:
   kind: neurodocker
 
@@ -15,6 +20,12 @@ build:
   pkg-manager: apt
 
   directives:
+    - install:
+        - qtbase5-dev
+        - libqt5opengl5-dev
+        - libqt5svg5-dev
+    - environment:
+        QT_SELECT: qt5
     - template:
         name: mrtrix3
         version: "3Tissue_v{{ context.version }}"
@@ -22,6 +33,7 @@ build:
         repo: https://github.com/3Tissue/MRtrix3Tissue.git
         install_path: /opt/mrtrix3tissue-{{ context.version }}
         build_processes: "1"
+        configure_options: ""
 
 deploy:
   path:

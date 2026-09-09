@@ -31,6 +31,10 @@ variables:
   napari_nninteractive_version: 2.5.3
   nninteractive_version: 2.5.1
 
+auto_update:
+  method: pypi
+  package: napari
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

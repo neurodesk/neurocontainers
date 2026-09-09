@@ -9,9 +9,10 @@ architectures:
   - x86_64
 
 variables:
-  relion_version: "{{ context.version.split('.sm')[0] }}"
-  compute_capability: "{{ context.version.split('.sm')[1] }}"
-  relion_commit: ec417f5b36ce847c003723a51267116dc0a0c7ee
+  install_version: "4.0.1.sm75"
+  relion_version: "4.0.1"
+  compute_capability: "75"
+  relion_commit: "ec417f5b36ce847c003723a51267116dc0a0c7ee"
   ctffind_version: 4.1.14
   motioncor2_version: 1.6.4
   cuda_version: "11.8"
@@ -19,6 +20,16 @@ variables:
   cuda_repo_deb: cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb
   go_version: 1.17.2
   singularity_version: 3.9.3
+
+auto_update:
+  method: sources
+  sources:
+  - id: relion
+    method: github_commit
+    repo: 3dem/relion
+    ref: HEAD
+    target:
+      variable: relion_commit
 
 build:
   kind: neurodocker
@@ -65,7 +76,7 @@ build:
     - run:
         - mkdir -p relion
         - tar -xzf {{ get_file("relion_source") }} --strip-components=1 -C relion
-        - cd relion && mkdir build && cd build && cmake -DCUDA_ARCH={{ context.compute_capability }} -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-{{ context.cuda_version }} -DCMAKE_INSTALL_PREFIX=/opt/relion-{{ context.version }}/ -DFORCE_OWN_FLTK=ON .. && make && make install
+        - cd relion && mkdir build && cd build && cmake -DCUDA_ARCH={{ context.compute_capability }} -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-{{ context.cuda_version }} -DCMAKE_INSTALL_PREFIX=/opt/relion-{{ context.install_version }}/ -DFORCE_OWN_FLTK=ON .. && make && make install
 
     - run:
         - cp {{ get_file("ctffind_archive") }} ctffind-{{ context.ctffind_version }}.tar.gz
@@ -82,16 +93,16 @@ build:
         - unzip MotionCor2_{{ context.motioncor2_version }}.zip -d /opt/motioncor2-{{ context.motioncor2_version }}/bin/
         - rm -f MotionCor2_{{ context.motioncor2_version }}.zip
 
-    - copy: load_topaz.sh /opt/relion-{{ context.version }}/load_topaz.sh
+    - copy: load_topaz.sh /opt/relion-{{ context.install_version }}/load_topaz.sh
 
     - run:
-        - chmod +x /opt/relion-{{ context.version }}/load_topaz.sh
+        - chmod +x /opt/relion-{{ context.install_version }}/load_topaz.sh
 
     - environment:
         RELION_CTFFIND_EXECUTABLE: /opt/ctffind-{{ context.ctffind_version }}/bin/ctffind
         RELION_MOTIONCOR2_EXECUTABLE: /opt/motioncor2-{{ context.motioncor2_version }}/bin/MotionCor2_{{ context.motioncor2_version }}_Cuda118_Mar312023
-        RELION_TOPAZ_EXECUTABLE: /opt/relion-{{ context.version }}/load_topaz.sh
-        PATH: $PATH:/opt/relion-{{ context.version }}/bin
+        RELION_TOPAZ_EXECUTABLE: /opt/relion-{{ context.install_version }}/load_topaz.sh
+        PATH: $PATH:/opt/relion-{{ context.install_version }}/bin
 
     - run:
         - export GOPATH=/tmp/go && cp {{ get_file("go_archive") }} go{{ context.go_version }}.linux-amd64.tar.gz
@@ -123,7 +134,7 @@ build:
 
 deploy:
   path:
-    - /opt/relion-{{ context.version }}/bin/
+    - /opt/relion-{{ context.install_version }}/bin/
 
 categories:
   - cryo EM

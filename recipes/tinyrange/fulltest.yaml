@@ -1,0 +1,9 @@
+name: tinyrange
+version: 0.4.0
+tests:
+- name: TinyRange help
+  command: tinyrange --help
+  expected_output_contains: tinyrange
+- name: Native QEMU runtime
+  command: /opt/tinyrange/tinyqemu/qemu-system-$(uname -m) --version
+  expected_output_contains: QEMU emulator version

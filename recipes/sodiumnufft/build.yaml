@@ -19,16 +19,71 @@ files:
     filename: mrd2nifti.py
   - name: sodium_trajectory_n50
     url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/23Na_n50_trajectory.h5
+    sha256: f656853f4bd2bd47e51314203df13791b3dff71cfd1e725fcc06973cb4b00e6e
   - name: sodium_trajectory_n28
     url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/23Na_n28_trajectory.h5
+    sha256: 6281acf3ceced7c6251d90a45b9a6d8b50ff8135f12bf64dc7375a12bb79b8c6
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
 
+variables:
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+
+auto_update:
+  method: sources
+  local:
+  - macros/openrecon
+  sources:
+  - id: base_image
+    method: oci_digest
+    image: ubuntu
+    tag: '22.04'
+    target:
+      variable: base_image_digest
+  - id: sodium_trajectory_n50
+    method: http_digest
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/23Na_n50_trajectory.h5
+    target:
+      file: sodium_trajectory_n50
+  - id: sodium_trajectory_n28
+    method: http_digest
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/23Na_n28_trajectory.h5
+    target:
+      file: sodium_trajectory_n28
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+
 build:
   kind: neurodocker
-  base-image: ubuntu:22.04
+  base-image: ubuntu:22.04@{{ context.base_image_digest }}
   pkg-manager: apt
 
   directives:

@@ -9,6 +9,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "Validating all YAML recipes..."
 
+python3 -m builder.audit_updates --recipes "$REPO_ROOT/recipes"
+
 total_recipes=0
 valid_recipes=0
 invalid_recipes=0

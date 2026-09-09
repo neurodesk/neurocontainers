@@ -26,6 +26,8 @@ from builder.release_plan import (
     ReleasePlan,
     plan_recipe_changes,
     recipe_names_from_paths,
+    path_is_shared_input,
+    shared_recipe_paths,
 )
 from builder.variants import concrete_variant_specs
 
@@ -115,6 +117,19 @@ def recipe_fingerprint(recipe: str) -> str:
         digest.update(b"\0")
         digest.update(path.read_bytes())
         digest.update(b"\0")
+    data = yaml.safe_load((recipe_dir / "build.yaml").read_text())
+    for shared in shared_recipe_paths(data):
+        source = REPO_ROOT / shared
+        files = sorted(source.rglob("*")) if source.is_dir() else [source]
+        for path in files:
+            if path.is_dir():
+                continue
+            if not path.resolve().is_relative_to(REPO_ROOT.resolve()):
+                raise RuntimeError(f"Shared build input escapes the repository: {path}")
+            digest.update(path.relative_to(REPO_ROOT).as_posix().encode())
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -145,16 +160,22 @@ def release_plan(base: str, head: str) -> ReleasePlan:
     """Plan recipe work from Git trees using trusted, non-rendering policy."""
     paths = changed_files(base, head)
     names = recipe_names_from_paths(paths)
+    if any(path.startswith("macros/") for path in paths):
+        tree = run_git("ls-tree", "-r", "--name-only", head, "--", "recipes")
+        names = sorted(set(names) | {path.split("/")[1] for path in tree.splitlines() if re.fullmatch(r"recipes/[^/]+/build.yaml", path)})
+    base_recipes = {recipe: load_recipe_at(base, recipe) for recipe in names}
+    head_recipes = {recipe: load_recipe_at(head, recipe) for recipe in names}
     plan = plan_recipe_changes(
         paths,
-        {recipe: load_recipe_at(base, recipe) for recipe in names},
-        {recipe: load_recipe_at(head, recipe) for recipe in names},
+        base_recipes,
+        head_recipes,
     )
     if not plan.candidate_recipes:
         return plan
 
     allowed = tuple(f"recipes/{recipe}/" for recipe in plan.changed_recipes)
-    unrelated = [path for path in paths if not path.startswith(allowed)]
+    unrelated = [path for path in paths if not path.startswith(allowed)
+                 and not any(path_is_shared_input(path, head_recipes[name]) for name in plan.candidate_recipes)]
     if unrelated:
         raise RuntimeError(
             "Automated releases require a recipe-only PR. Unrelated paths: "
@@ -173,6 +194,7 @@ def detect_recipes(base: str, head: str) -> list[str]:
 
 def build_date(recipe: str, revision: str = "HEAD") -> str:
     """Return the last build.yaml commit date in release-tag format."""
+    data = load_recipe_at(revision, recipe)
     value = run_git(
         "log",
         "-1",
@@ -181,6 +203,7 @@ def build_date(recipe: str, revision: str = "HEAD") -> str:
         revision,
         "--",
         f"recipes/{recipe}/build.yaml",
+        *shared_recipe_paths(data),
     )
     if not value:
         raise RuntimeError(f"Could not determine build date for {recipe}")

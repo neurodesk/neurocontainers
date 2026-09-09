@@ -57,7 +57,7 @@ tests:
   - name: OpenRecon GPU declaration matches PyTorch
     description: Verify the staged OpenRecon label matches the installed PyTorch build
     command: |
-      /opt/spinalcordtoolbox-${version}/python/envs/venv_sct/bin/python - <<'PY'
+      /opt/spinalcordtoolbox-${install_version}/python/envs/venv_sct/bin/python - <<'PY'
       import json
       from pathlib import Path
 
@@ -819,3 +819,5 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
+
+install_version: 7.3.3

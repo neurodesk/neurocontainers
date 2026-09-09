@@ -4,6 +4,20 @@ version: v10.004
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build?format=json&prefix=samsrf
+    version_regex: samsrf_(?P<version>v\d+(?:\.\d+)+)\.zip$
+    download_base: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/
+    target:
+      file: samsrf_v10_004_zip
+      variables:
+        upstream_version: version
+        matlab_version: runtime
+    matlab_readme: samsrf/readme.txt
 build:
   kind: neurodocker
 
@@ -14,29 +28,32 @@ build:
     - template:
         name: matlabmcr
         method: binaries
-        version: 2023b
+        version: "{{ context.matlab_version }}"
 
+        install_path: /opt/MCR
+    - run:
+      - ln -s /opt/MCR/{{ context.matlab_runtime_subdir }} /opt/matlab-runtime
     - install:
         - wget
         - openjdk-8-jre
         - dbus-x11
         - libgbm-dev
 
-    - workdir: /opt/samsrfx-v10.004/
+    - workdir: /opt/samsrfx-{{ context.upstream_version }}/
 
     - run:
-        - cp {{ get_file("samsrf_v10_004_zip") }} /opt/samsrfx-v10.004//samsrf_v10.004.zip
-        - unzip -q samsrf_v10.004.zip -d /opt/samsrfx-v10.004/
-        - chmod a+x /opt/samsrfx-v10.004/samsrf/SamSrfX
+        - cp {{ get_file("samsrf_v10_004_zip") }} /opt/samsrfx-{{ context.upstream_version }}//samsrf_v10.004.zip
+        - unzip -q samsrf_v10.004.zip -d /opt/samsrfx-{{ context.upstream_version }}/
+        - chmod a+x /opt/samsrfx-{{ context.upstream_version }}/samsrf/SamSrfX
         - rm -f samsrf_v10.004.zip
 
     - run:
-        - echo 'cd /opt/samsrfx-v10.004/samsrf' > samsrfx
-        - echo './run_SamSrfX.sh /opt/MCR-2023b/R2023b/' >> samsrfx
+        - echo 'cd /opt/samsrfx-{{ context.upstream_version }}/samsrf' > samsrfx
+        - echo './run_SamSrfX.sh /opt/matlab-runtime/' >> samsrfx
         - chmod a+x samsrfx
 
     - environment:
-        PATH: $PATH:/opt/samsrfx-v10.004/
+        PATH: $PATH:/opt/samsrfx-{{ context.upstream_version }}/
 
 deploy:
   bins:
@@ -68,4 +85,11 @@ gui_apps:
 
 files:
   - name: samsrf_v10_004_zip
-    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/samsrf_v10.004.zip
+    url: "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/samsrf_v10.004.zip"
+    sha256: 72100c666814adcfd764976a08d3f6d33b9e8220526ee9f479658597cf5d0bee
+variables:
+  upstream_version: v10.004
+  matlab_version: 2023b
+  matlab_runtime_subdir: '{{ {''2018a'': ''v94'', ''2019b'': ''v97'', ''2020a'': ''v98'', ''2020b'': ''v99'', ''2021a'': ''v910'',
+    ''2021b'': ''v911'', ''2022a'': ''v912'', ''2022b'': ''v913'', ''2023a'': ''v914''}.get(context.matlab_version, ''R'' +
+    context.matlab_version) }}'

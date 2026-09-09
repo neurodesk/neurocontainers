@@ -31,12 +31,12 @@ tests:
   - name: Version check
     description: Verify QuPath binary runs and reports version
     command: QuPath --version 2>&1
-    expected_output_contains: "QuPath v0.7.0"
+    expected_output_contains: "QuPath v${version}"
 
   - name: Version detailed info
     description: Check detailed version information including build time
     command: QuPath --version 2>&1
-    expected_output_contains: "Version: 0.7.0"
+    expected_output_contains: "Version: ${version}"
 
   - name: Cellpose version check
     description: Verify the bundled Cellpose 3 environment is available
@@ -306,7 +306,7 @@ tests:
   - name: Script inline version access
     description: Access QuPath version via script
     command: QuPath script --cmd "println qupath.lib.gui.QuPathGUI.getVersion()" 2>&1
-    expected_output_contains: "0.7.0"
+    expected_output_contains: "${version}"
 
   - name: Script inline multiline
     description: Execute multiline Groovy script

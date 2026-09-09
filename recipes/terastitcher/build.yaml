@@ -4,6 +4,18 @@ version: 1.11.10
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build?format=json&prefix=TeraStitcher
+    version_regex: TeraStitcher-portable-(?P<version>\d+(?:\.\d+)+)-Linux\.tar\.gz$
+    download_base: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/
+    target:
+      file: TeraStitcher_portable_1_11_10_Linux_tar_gz
+      variables:
+        upstream_version: version
 build:
   kind: neurodocker
   base-image: fedora:35
@@ -13,19 +25,19 @@ build:
     - environment:
         DEBIAN_FRONTEND: noninteractive
 
-    - workdir: /opt/terastitcher-{{ context.version }}
+    - workdir: /opt/terastitcher-{{ context.upstream_version }}
 
     - run:
-        - tar -xz -C /opt/terastitcher-{{ context.version }} --strip-components 1 -f {{ get_file("TeraStitcher_portable_1_11_10_Linux_tar_gz") }}
+        - tar -xz -C /opt/terastitcher-{{ context.upstream_version }} --strip-components 1 -f {{ get_file("TeraStitcher_portable_1_11_10_Linux_tar_gz") }}
         - chmod a+rx /opt
-        - chmod -R a+rX /opt/terastitcher-{{ context.version }}
+        - chmod -R a+rX /opt/terastitcher-{{ context.upstream_version }}
 
     - environment:
-        PATH: $PATH:/opt/terastitcher-{{ context.version }}
+        PATH: $PATH:/opt/terastitcher-{{ context.upstream_version }}
 
 deploy:
   path:
-    - /opt/terastitcher-{{ context.version }}
+    - /opt/terastitcher-{{ context.upstream_version }}
 
 categories:
   - visualization
@@ -48,4 +60,7 @@ readme: |
 
 files:
   - name: TeraStitcher_portable_1_11_10_Linux_tar_gz
-    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TeraStitcher-portable-1.11.10-Linux.tar.gz
+    url: "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TeraStitcher-portable-1.11.10-Linux.tar.gz"
+    sha256: 858d8be2d03250ba46e8f924b81780690f5cc58ea42fd46431bae92778d83033
+variables:
+  upstream_version: 1.11.10

@@ -10,9 +10,10 @@ architectures:
   - x86_64
  
 variables:
-  upstream_commit: ab3a7944a6824f7147d5621af79d637c1ff241c1
-  install_path: /opt/deepdisco-{{ context.version }}
-  venv_path: /opt/deepdisco-{{ context.version }}/venv
+  install_version: "20251008"
+  upstream_commit: "ab3a7944a6824f7147d5621af79d637c1ff241c1"
+  install_path: /opt/deepdisco-{{ context.install_version }}
+  venv_path: /opt/deepdisco-{{ context.install_version }}/venv
   pip_version: 26.1.1
   setuptools_version: 82.0.1
   wheel_version: 0.47.0
@@ -24,6 +25,16 @@ variables:
   pyside6_version: 6.11.1
   torchio_version: 1.2.0
  
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: annamatsulevits/DeepDisco
+    ref: HEAD
+    target:
+      variable: upstream_commit
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

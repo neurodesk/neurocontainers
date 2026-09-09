@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import platform
 import shlex
@@ -15,11 +16,11 @@ from typing import Any
 import yaml
 
 from .ir import Copy, Definition, Entrypoint, Env, From, Install, Run, RunWithMounts, User, Workdir
-from .staging import CopySource, StagingPlan, declared_file_from_mapping
+from .staging import CopySource, DeclaredFile, StagingPlan, declared_file_from_mapping
 from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
-from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT, sha256_text
+from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT, download_cache_key
 from .config import ARCHITECTURE_ALIASES, canonical_architecture
 from .variants import concrete_variant_specs, forced_variant_spec, variant_specs
 
@@ -259,8 +260,10 @@ def _default_template_command(pkg_manager: str) -> str:
             "    locales \\\n"
             "    unzip\n"
             "rm -rf /var/lib/apt/lists/*\n"
-            "sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen\n"
-            "dpkg-reconfigure --frontend=noninteractive locales\n"
+            "if ! grep -qx 'en_US.UTF-8 UTF-8' /etc/locale.gen 2>/dev/null; then\n"
+            "  printf 'en_US.UTF-8 UTF-8\\n' >> /etc/locale.gen;\n"
+            "fi\n"
+            "locale-gen en_US.UTF-8\n"
             'update-locale LANG="en_US.UTF-8"\n'
             "chmod 777 /opt && chmod a+s /opt\n"
             "mkdir -p /neurodocker\n"
@@ -428,14 +431,17 @@ def compile_recipe(
         name = renderer.render_string(str(mapping["name"]), context)
         rendered = dict(mapping)
         rendered["name"] = name
-        for key in ("filename", "url", "contents"):
+        for key in ("filename", "url", "contents", "sha256"):
             if key in rendered and rendered[key] is not None:
                 rendered[key] = renderer.render_value(rendered[key], context)
         file = declared_file_from_mapping(name, rendered)
         plan.add_file(file)
         context.file_paths[name] = file.guest_filename or name
         if file.url is not None:
-            context.file_sources[name] = str(Path.home() / ".cache" / "neurocontainers" / sha256_text(file.url))
+            context.file_sources[name] = str(
+                Path.home() / ".cache" / "neurocontainers"
+                / download_cache_key(file.url, file.sha256)
+            )
         elif file.filename is not None:
             source = Path(file.filename)
             if not source.is_absolute():
@@ -603,10 +609,19 @@ def compile_recipe(
                 params.setdefault("arch", "x86_64" if context.arch == "x86_64" else "aarch64")
                 apply_builtin_template(name, params, pkg_manager, definition.add)
             elif "boutique" in directive:
-                boutique_data = directive["boutique"]
+                boutique_data = renderer.render_value(directive["boutique"], context)
                 if not isinstance(boutique_data, dict):
                     raise ValueError("Boutique directive must be a mapping")
                 filename = f"{boutique_data.get('name', 'tool')}.json"
+                plan.add_file(
+                    DeclaredFile(
+                        name=filename,
+                        contents=json.dumps(boutique_data, indent=2) + "\n",
+                    )
+                )
+                plan.copy_sources.append(
+                    CopySource(source=filename, declared_name=filename)
+                )
                 definition.add(Run("mkdir -p /boutique"))
                 definition.add(Copy((filename,), f"/boutique/{filename}"))
             elif "test" in directive:

@@ -22,7 +22,7 @@
 # https://eeglab.org/
 
 name: eeglab
-version: "2020.0"
+version: "2020.0.post1"
 
 required_files:
   - dataset: ds000001
@@ -48,32 +48,32 @@ tests:
   # ==========================================================================
   - name: EEGLAB binary exists
     description: Verify EEGLAB binary is present in expected location
-    command: bash -lc 'test -f /opt/eeglab-2020.0/EEGLAB && echo "EEGLAB binary found"'
+    command: bash -lc 'test -f /opt/eeglab-${upstream_version}/EEGLAB && echo "EEGLAB binary found"'
     expected_output_contains: "EEGLAB binary found"
 
   - name: EEGLAB binary is executable
     description: Verify EEGLAB binary has execute permissions
-    command: bash -lc 'test -x /opt/eeglab-2020.0/EEGLAB && echo "EEGLAB is executable"'
+    command: bash -lc 'test -x /opt/eeglab-${upstream_version}/EEGLAB && echo "EEGLAB is executable"'
     expected_output_contains: "EEGLAB is executable"
 
   - name: EEGLAB in PATH
     description: Verify EEGLAB command is accessible via PATH
     command: which EEGLAB
-    expected_output_contains: "/opt/eeglab-2020.0/"
+    expected_output_contains: "/opt/eeglab-${upstream_version}/"
 
   - name: EEGLAB binary is ELF executable
     description: Verify EEGLAB binary is a valid Linux ELF executable
-    command: "bash -lc 'od -c -N 4 /opt/eeglab-2020.0/EEGLAB | head -1'"
+    command: "bash -lc 'od -c -N 4 /opt/eeglab-${upstream_version}/EEGLAB | head -1'"
     expected_output_contains: "E   L   F"
 
   - name: EEGLAB run script exists
     description: Verify run_EEGLAB.sh wrapper script is present
-    command: bash -lc 'test -f /opt/eeglab-2020.0/run_EEGLAB.sh && echo "Run script found"'
+    command: bash -lc 'test -f /opt/eeglab-${upstream_version}/run_EEGLAB.sh && echo "Run script found"'
     expected_output_contains: "Run script found"
 
   - name: EEGLAB run script is executable
     description: Verify run_EEGLAB.sh has execute permissions
-    command: bash -lc 'test -x /opt/eeglab-2020.0/run_EEGLAB.sh && echo "Run script executable"'
+    command: bash -lc 'test -x /opt/eeglab-${upstream_version}/run_EEGLAB.sh && echo "Run script executable"'
     expected_output_contains: "Run script executable"
 
   # ==========================================================================
@@ -81,52 +81,52 @@ tests:
   # ==========================================================================
   - name: MCR directory exists
     description: Verify MATLAB Compiler Runtime is installed
-    command: bash -lc 'test -d /opt/MCR/v98 && echo "MCR v98 directory found"'
+    command: bash -lc 'test -d /opt/matlab-runtime && echo "MCR v98 directory found"'
     expected_output_contains: "MCR v98 directory found"
 
-  - name: MCR version is R2020a
-    description: Verify MCR version matches EEGLAB requirements (R2020a)
-    command: "bash -lc 'cat /opt/MCR/v98/VersionInfo.xml'"
-    expected_output_contains: "R2020a"
+  - name: MCR version is R${matlab_version}
+    description: Verify MCR version matches EEGLAB requirements (R${matlab_version})
+    command: "bash -lc 'cat /opt/matlab-runtime/VersionInfo.xml'"
+    expected_output_contains: "R${matlab_version}"
 
   - name: MCR version number
     description: Verify MCR version 9.8 is installed
-    command: "bash -lc 'cat /opt/MCR/v98/VersionInfo.xml'"
-    expected_output_contains: "9.8"
+    command: "bash -lc 'cat /opt/matlab-runtime/VersionInfo.xml'"
+    expected_output_contains: "R${matlab_version}"
 
   - name: MCR runtime libraries exist
     description: Verify MCR runtime library directory is present
-    command: bash -lc 'test -d /opt/MCR/v98/runtime/glnxa64 && echo "MCR runtime found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/runtime/glnxa64 && echo "MCR runtime found"'
     expected_output_contains: "MCR runtime found"
 
   - name: MCR bin libraries exist
     description: Verify MCR bin library directory is present
-    command: bash -lc 'test -d /opt/MCR/v98/bin/glnxa64 && echo "MCR bin found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/bin/glnxa64 && echo "MCR bin found"'
     expected_output_contains: "MCR bin found"
 
   - name: MCR system libraries exist
     description: Verify MCR system OS libraries are present
-    command: bash -lc 'test -d /opt/MCR/v98/sys/os/glnxa64 && echo "MCR sys/os found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/sys/os/glnxa64 && echo "MCR sys/os found"'
     expected_output_contains: "MCR sys/os found"
 
   - name: MCR Java runtime exists
     description: Verify MCR Java Runtime Environment is present
-    command: bash -lc 'test -d /opt/MCR/v98/sys/java/jre/glnxa64/jre && echo "MCR JRE found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/sys/java/jre/glnxa64/jre && echo "MCR JRE found"'
     expected_output_contains: "MCR JRE found"
 
   - name: MCR toolbox directory exists
     description: Verify MCR toolbox directory is present
-    command: bash -lc 'test -d /opt/MCR/v98/toolbox && echo "MCR toolbox found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/toolbox && echo "MCR toolbox found"'
     expected_output_contains: "MCR toolbox found"
 
   - name: MCR MATLAB core toolbox exists
     description: Verify core MATLAB toolbox is installed
-    command: bash -lc 'test -d /opt/MCR/v98/toolbox/matlab && echo "MATLAB toolbox found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/toolbox/matlab && echo "MATLAB toolbox found"'
     expected_output_contains: "MATLAB toolbox found"
 
   - name: MCR signal processing toolbox
     description: Check if signal processing toolbox components are present
-    command: bash -lc 'ls -d /opt/MCR/v98/toolbox/shared/signal* 2>/dev/null && echo "Signal processing found" || echo "Signal processing not separate"'
+    command: bash -lc 'ls -d /opt/matlab-runtime/toolbox/shared/signal* 2>/dev/null && echo "Signal processing found" || echo "Signal processing not separate"'
     expected_exit_code: 0
 
   # ==========================================================================
@@ -135,27 +135,57 @@ tests:
   - name: PATH includes EEGLAB directory
     description: Verify PATH environment variable includes EEGLAB
     command: echo $PATH
-    expected_output_contains: "/opt/eeglab-2020.0/"
+    expected_output_contains: "/opt/eeglab-${upstream_version}/"
 
   - name: LD_LIBRARY_PATH includes MCR runtime
     description: Verify LD_LIBRARY_PATH includes MCR runtime libraries
-    command: echo $LD_LIBRARY_PATH
-    expected_output_contains: "/opt/MCR/v98/runtime/glnxa64"
+    command: |
+      expected=$(readlink -f /opt/matlab-runtime/runtime/glnxa64)
+      test -d "$expected" || exit 1
+      IFS=:
+      for directory in $LD_LIBRARY_PATH; do
+        if [ "$(readlink -f "$directory")" = "$expected" ]; then
+          echo "MCR library directory available"
+          exit 0
+        fi
+      done
+      exit 1
+    expected_output_contains: "MCR library directory available"
 
   - name: LD_LIBRARY_PATH includes MCR bin
     description: Verify LD_LIBRARY_PATH includes MCR bin libraries
-    command: echo $LD_LIBRARY_PATH
-    expected_output_contains: "/opt/MCR/v98/bin/glnxa64"
+    command: |
+      expected=$(readlink -f /opt/matlab-runtime/bin/glnxa64)
+      test -d "$expected" || exit 1
+      IFS=:
+      for directory in $LD_LIBRARY_PATH; do
+        if [ "$(readlink -f "$directory")" = "$expected" ]; then
+          echo "MCR library directory available"
+          exit 0
+        fi
+      done
+      exit 1
+    expected_output_contains: "MCR library directory available"
 
   - name: LD_LIBRARY_PATH includes MCR sys/os
     description: Verify LD_LIBRARY_PATH includes MCR system libraries
-    command: echo $LD_LIBRARY_PATH
-    expected_output_contains: "/opt/MCR/v98/sys/os/glnxa64"
+    command: |
+      expected=$(readlink -f /opt/matlab-runtime/sys/os/glnxa64)
+      test -d "$expected" || exit 1
+      IFS=:
+      for directory in $LD_LIBRARY_PATH; do
+        if [ "$(readlink -f "$directory")" = "$expected" ]; then
+          echo "MCR library directory available"
+          exit 0
+        fi
+      done
+      exit 1
+    expected_output_contains: "MCR library directory available"
 
   - name: XAPPLRESDIR set correctly
     description: Verify X11 application resources directory is set
     command: echo $XAPPLRESDIR
-    expected_output_contains: "/opt/MCR/v98"
+    expected_output_contains: "/opt/matlab-runtime"
 
   - name: DEPLOY_BINS indicates EEGLAB
     description: Verify DEPLOY_BINS environment variable is set
@@ -192,37 +222,37 @@ tests:
 
   - name: EEGLAB license file exists
     description: Verify EEGLAB license file is present
-    command: bash -lc 'test -f /opt/eeglab-2020.0/eeglablicense.txt && echo "License found"'
+    command: bash -lc 'test -f /opt/eeglab-${upstream_version}/eeglablicense.txt && echo "License found"'
     expected_output_contains: "License found"
 
   - name: EEGLAB license is BSD
     description: Verify EEGLAB is released under BSD license
-    command: "bash -lc 'cat /opt/eeglab-2020.0/eeglablicense.txt'"
+    command: "bash -lc 'cat /opt/eeglab-${upstream_version}/eeglablicense.txt'"
     expected_output_contains: "Redistribution"
 
   - name: EEGLAB readme file exists
     description: Verify EEGLAB readme.txt is present
-    command: bash -lc 'test -f /opt/eeglab-2020.0/readme.txt && echo "EEGLAB readme found"'
+    command: bash -lc 'test -f /opt/eeglab-${upstream_version}/readme.txt && echo "EEGLAB readme found"'
     expected_output_contains: "EEGLAB readme found"
 
   - name: EEGLAB readme mentions MCR requirements
     description: Verify readme mentions MATLAB Runtime requirements
-    command: "bash -lc 'cat /opt/eeglab-2020.0/readme.txt'"
+    command: "bash -lc 'cat /opt/eeglab-${upstream_version}/readme.txt'"
     expected_output_contains: "MATLAB Runtime"
 
   - name: EEGLAB readme mentions version 9.8
-    description: Verify readme specifies MCR version 9.8 (R2020a)
-    command: "bash -lc 'cat /opt/eeglab-2020.0/readme.txt'"
-    expected_output_contains: "9.8"
+    description: Verify readme specifies MCR version 9.8 (R${matlab_version})
+    command: "bash -lc 'cat /opt/eeglab-${upstream_version}/readme.txt'"
+    expected_output_contains: "R${matlab_version}"
 
   - name: MCR license file exists
     description: Verify MCR license file is present
-    command: bash -lc 'test -f /opt/MCR/v98/MCR_license.txt && echo "MCR license found"'
+    command: bash -lc 'test -f /opt/matlab-runtime/MCR_license.txt && echo "MCR license found"'
     expected_output_contains: "MCR license found"
 
   - name: MCR patents file exists
     description: Verify MCR patents file is present
-    command: bash -lc 'test -f /opt/MCR/v98/patents.txt && echo "MCR patents found"'
+    command: bash -lc 'test -f /opt/matlab-runtime/patents.txt && echo "MCR patents found"'
     expected_output_contains: "MCR patents found"
 
   # ==========================================================================
@@ -230,12 +260,12 @@ tests:
   # ==========================================================================
   - name: EEGLAB splash image exists
     description: Verify EEGLAB splash screen image is present
-    command: bash -lc 'test -f /opt/eeglab-2020.0/splash.png && echo "Splash image found"'
+    command: bash -lc 'test -f /opt/eeglab-${upstream_version}/splash.png && echo "Splash image found"'
     expected_output_contains: "Splash image found"
 
   - name: Splash image is valid image
     description: Verify splash.png exists and has valid image header (actually JPEG)
-    command: bash -lc 'test -f /opt/eeglab-2020.0/splash.png && echo "Splash image file exists"'
+    command: bash -lc 'test -f /opt/eeglab-${upstream_version}/splash.png && echo "Splash image file exists"'
     expected_output_contains: "Splash image file exists"
 
   # ==========================================================================
@@ -243,17 +273,17 @@ tests:
   # ==========================================================================
   - name: libmwmclmcrrt library exists
     description: Verify core MCR library is present
-    command: bash -lc 'ls /opt/MCR/v98/runtime/glnxa64/libmwmclmcrrt.so* 2>/dev/null | head -1 | xargs test -f && echo "libmwmclmcrrt found"'
+    command: bash -lc 'ls /opt/matlab-runtime/runtime/glnxa64/libmwmclmcrrt.so* 2>/dev/null | head -1 | xargs test -f && echo "libmwmclmcrrt found"'
     expected_output_contains: "libmwmclmcrrt found"
 
   - name: MCR libmwcpp_shared exists
     description: Verify MCR C++ shared library is present
-    command: bash -lc 'ls /opt/MCR/v98/bin/glnxa64/libmwcpp_shared.so* 2>/dev/null | head -1 | xargs test -f && echo "libmwcpp_shared found"'
+    command: bash -lc 'ls /opt/matlab-runtime/bin/glnxa64/libmwcpp_shared.so* 2>/dev/null | head -1 | xargs test -f && echo "libmwcpp_shared found"'
     expected_output_contains: "libmwcpp_shared found"
 
   - name: MCR OpenGL libraries exist
     description: Verify MCR OpenGL libraries directory is present
-    command: bash -lc 'test -d /opt/MCR/v98/sys/opengl/lib/glnxa64 && echo "OpenGL libs found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/sys/opengl/lib/glnxa64 && echo "OpenGL libs found"'
     expected_output_contains: "OpenGL libs found"
 
   # ==========================================================================
@@ -340,27 +370,27 @@ tests:
   # ==========================================================================
   - name: MCR compiler toolbox exists
     description: Verify MATLAB compiler toolbox is present
-    command: bash -lc 'test -d /opt/MCR/v98/toolbox/compiler && echo "Compiler toolbox found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/toolbox/compiler && echo "Compiler toolbox found"'
     expected_output_contains: "Compiler toolbox found"
 
   - name: MCR images toolbox exists
     description: Verify image processing toolbox components are present
-    command: bash -lc 'test -d /opt/MCR/v98/toolbox/images && echo "Images toolbox found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/toolbox/images && echo "Images toolbox found"'
     expected_output_contains: "Images toolbox found"
 
   - name: MCR shared toolbox exists
     description: Verify shared toolbox directory is present
-    command: bash -lc 'test -d /opt/MCR/v98/toolbox/shared && echo "Shared toolbox found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/toolbox/shared && echo "Shared toolbox found"'
     expected_output_contains: "Shared toolbox found"
 
   - name: MCR parallel toolbox exists
     description: Verify parallel computing toolbox components are present
-    command: bash -lc 'test -d /opt/MCR/v98/toolbox/parallel && echo "Parallel toolbox found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/toolbox/parallel && echo "Parallel toolbox found"'
     expected_output_contains: "Parallel toolbox found"
 
   - name: MCR statistics functions available
     description: Check for statistics-related toolbox components
-    command: bash -lc 'ls -d /opt/MCR/v98/toolbox/shared/statslib* 2>/dev/null && echo "Stats lib found" || ls /opt/MCR/v98/toolbox/shared/ | grep -i stat || echo "Stats in shared"'
+    command: bash -lc 'ls -d /opt/matlab-runtime/toolbox/shared/statslib* 2>/dev/null && echo "Stats lib found" || ls /opt/matlab-runtime/toolbox/shared/ | grep -i stat || echo "Stats in shared"'
     expected_exit_code: 0
 
   # ==========================================================================
@@ -368,27 +398,27 @@ tests:
   # ==========================================================================
   - name: Run script sets MCRROOT
     description: Verify run_EEGLAB.sh configures MCRROOT
-    command: "bash -lc 'cat /opt/eeglab-2020.0/run_EEGLAB.sh'"
+    command: "bash -lc 'cat /opt/eeglab-${upstream_version}/run_EEGLAB.sh'"
     expected_output_contains: "MCRROOT"
 
   - name: Run script sets LD_LIBRARY_PATH
     description: Verify run_EEGLAB.sh configures LD_LIBRARY_PATH
-    command: "bash -lc 'cat /opt/eeglab-2020.0/run_EEGLAB.sh'"
+    command: "bash -lc 'cat /opt/eeglab-${upstream_version}/run_EEGLAB.sh'"
     expected_output_contains: "LD_LIBRARY_PATH"
 
   - name: Run script includes runtime path
     description: Verify run_EEGLAB.sh includes runtime/glnxa64 path
-    command: "bash -lc 'cat /opt/eeglab-2020.0/run_EEGLAB.sh'"
+    command: "bash -lc 'cat /opt/eeglab-${upstream_version}/run_EEGLAB.sh'"
     expected_output_contains: "runtime/glnxa64"
 
   - name: Run script includes bin path
     description: Verify run_EEGLAB.sh includes bin/glnxa64 path
-    command: "bash -lc 'cat /opt/eeglab-2020.0/run_EEGLAB.sh'"
+    command: "bash -lc 'cat /opt/eeglab-${upstream_version}/run_EEGLAB.sh'"
     expected_output_contains: "bin/glnxa64"
 
   - name: Run script includes OpenGL path
     description: Verify run_EEGLAB.sh includes OpenGL library path
-    command: "bash -lc 'cat /opt/eeglab-2020.0/run_EEGLAB.sh'"
+    command: "bash -lc 'cat /opt/eeglab-${upstream_version}/run_EEGLAB.sh'"
     expected_output_contains: "opengl"
 
   # ==========================================================================
@@ -419,13 +449,13 @@ tests:
   # ==========================================================================
   - name: EEGLAB binary has reasonable size
     description: Verify EEGLAB binary size is greater than 100MB (compiled application)
-    command: "bash -lc 'size=$(stat -c%s /opt/eeglab-2020.0/EEGLAB 2>/dev/null || stat -f%z /opt/eeglab-2020.0/EEGLAB 2>/dev/null)\nif [ \"$size\" -gt 100000000 ]; then echo \"Binary size OK: $size bytes\"; else echo \"Binary too small\"; fi'"
+    command: "bash -lc 'size=$(stat -c%s /opt/eeglab-${upstream_version}/EEGLAB 2>/dev/null || stat -f%z /opt/eeglab-${upstream_version}/EEGLAB 2>/dev/null)\nif [ \"$size\" -gt 100000000 ]; then echo \"Binary size OK: $size bytes\"; else echo \"Binary too small\"; fi'"
     expected_output_contains: "Binary size OK"
 
   - name: MCR installation has significant size
     description: Verify MCR installation is substantial (multiple GB expected)
     command: |
-      bash -lc 'count=$(find /opt/MCR/v98/ -name '\''*.so*'\'' 2>/dev/null | wc -l)
+      bash -lc 'count=$(find /opt/matlab-runtime/ -name '\''*.so*'\'' 2>/dev/null | wc -l)
       if [ "$count" -gt 50 ]; then echo "MCR runtime has $count libraries"; else echo "MCR incomplete: $count"; fi'
     expected_output_contains: "MCR runtime has"
 
@@ -434,12 +464,12 @@ tests:
   # ==========================================================================
   - name: Java binary exists in MCR
     description: Verify Java binary is present in MCR
-    command: bash -lc 'test -f /opt/MCR/v98/sys/java/jre/glnxa64/jre/bin/java && echo "Java binary found"'
+    command: bash -lc 'test -f /opt/matlab-runtime/sys/java/jre/glnxa64/jre/bin/java && echo "Java binary found"'
     expected_output_contains: "Java binary found"
 
   - name: Java libraries exist
     description: Verify Java library directory exists
-    command: bash -lc 'test -d /opt/MCR/v98/sys/java/jre/glnxa64/jre/lib && echo "Java libs found"'
+    command: bash -lc 'test -d /opt/matlab-runtime/sys/java/jre/glnxa64/jre/lib && echo "Java libs found"'
     expected_output_contains: "Java libs found"
 
   # ==========================================================================
@@ -461,3 +491,5 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output/eeglab
     echo "Test outputs preserved in test_output/eeglab/"
+upstream_version: '2020.0'
+matlab_version: 2020a

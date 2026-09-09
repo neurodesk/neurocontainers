@@ -1,20 +1,153 @@
+variables:
+  bids_validator_version: 1.14.7.post0
+  fastapi_version: 0.99.1
+  numpy_version: "1.26.4"
+  pandas_version: "1.5.3"
+  scipy_version: "1.11.4"
+  mne_version: "1.6.1"
+  mne_bids_version: "0.14"
+  pybv_version: "0.7.5"
+  fastapi_jsonrpc_version: "2.5.1"
+  pydantic_version: "1.10.12"
+  pydicom_version: "2.4.4"
+  flask_version: "3.0.3"
+  uvicorn_version: "0.30.6"
+  httpx_version: "0.27.2"
+  mne_bids_pipeline_commit: "91c2e0677f4a015a35dad48c2faa5e47633ae497"
+  bidscoin_commit: "72fde8bb1534b72238d9b8c4cf53e44b09d73879"
+  sovabids_tag: v0.3.1-alpha
+
 name: sovabids
-version: 0.3.1a0
+version: 0.3.1a0.post1
 
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: sovabids
+    method: github_tags
+    repo: yjmantilla/sovabids
+    include_prereleases: true
+    target:
+      variable: sovabids_tag
+      value: tag
+      fulltest_variable: sovabids_tag
+  - id: bidscoin
+    method: github_commit
+    repo: yjmantilla/bidscoin
+    ref: sovabids
+    target:
+      variable: bidscoin_commit
+  - id: mne-bids-pipeline
+    method: github_commit
+    repo: mne-tools/mne-bids-pipeline
+    ref: main
+    target:
+      variable: mne_bids_pipeline_commit
+
+  - id: numpy
+    method: pypi
+    package: numpy
+    version_regex: ^(?P<version>1\.26\.\d+)$
+    target:
+      variable: numpy_version
+  - id: pandas
+    method: pypi
+    package: pandas
+    version_regex: ^(?P<version>1\.5\.\d+)$
+    target:
+      variable: pandas_version
+  - id: scipy
+    method: pypi
+    package: scipy
+    version_regex: ^(?P<version>1\.11\.\d+)$
+    target:
+      variable: scipy_version
+  - id: mne
+    method: pypi
+    package: mne
+    version_regex: ^(?P<version>1\.6\.\d+)$
+    target:
+      variable: mne_version
+  - id: mne-bids
+    method: pypi
+    package: mne-bids
+    version_regex: ^(?P<version>0\.14(?:\.\d+)?)$
+    target:
+      variable: mne_bids_version
+  - id: pybv
+    method: pypi
+    package: pybv
+    version_regex: ^(?P<version>0\.7\.\d+)$
+    target:
+      variable: pybv_version
+  - id: fastapi-jsonrpc
+    method: pypi
+    package: fastapi-jsonrpc
+    version_regex: ^(?P<version>2\.5\.\d+)$
+    target:
+      variable: fastapi_jsonrpc_version
+  - id: pydantic
+    method: pypi
+    package: pydantic
+    version_regex: ^(?P<version>1\.10\.(?:[0-9]|1[0-2]))$
+    target:
+      variable: pydantic_version
+  - id: pydicom
+    method: pypi
+    package: pydicom
+    version_regex: ^(?P<version>2\.4\.\d+)$
+    target:
+      variable: pydicom_version
+  - id: flask
+    method: pypi
+    package: flask
+    version_regex: ^(?P<version>3\.0\.\d+)$
+    target:
+      variable: flask_version
+  - id: uvicorn
+    method: pypi
+    package: uvicorn
+    version_regex: ^(?P<version>0\.30\.\d+)$
+    target:
+      variable: uvicorn_version
+  - id: httpx
+    method: pypi
+    package: httpx
+    version_regex: ^(?P<version>0\.27\.\d+)$
+    target:
+      variable: httpx_version
+  - id: fastapi
+    method: pypi
+    package: fastapi
+    version_regex: ^(?P<version>0\.99\.\d+)$
+    target:
+      variable: fastapi_version
+
+  - id: vscode
+    method: http_digest
+    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+    target:
+      file: vscode_deb
+
+  - id: bids-validator
+    method: pypi
+    package: bids-validator
+    target:
+      variable: bids_validator_version
+
 build:
   kind: neurodocker
-  base-image: debian:9
+  base-image: ubuntu:22.04
   pkg-manager: apt
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
     - install:
-        - midori
         - xdg-utils
-        - python-pyqt5
+        - python3-pyqt5
         - unzip
         - git
         - apt-transport-https
@@ -41,24 +174,38 @@ build:
     - copy: sovabids.yml /opt/sovabids.yml
     - template:
         name: miniconda
-        version: 4.7.12
+        version: py310_25.5.1-0
+        install_path: /opt/miniconda
         env_name: sovabids
         yaml_file: /opt/sovabids.yml
         pip_install: |
-          bids_validator
-          fastapi-jsonrpc
-          git+https://github.com/yjmantilla/bidscoin.git@sovabids
-          git+https://github.com/yjmantilla/sovabids.git@v0.3.1-alpha
+          bids_validator=={{ context.bids_validator_version }}
+          fastapi=={{ context.fastapi_version }}
+          numpy=={{ context.numpy_version }}
+          pandas=={{ context.pandas_version }}
+          scipy=={{ context.scipy_version }}
+          mne=={{ context.mne_version }}
+          mne-bids=={{ context.mne_bids_version }}
+          pybv=={{ context.pybv_version }}
+          fastapi-jsonrpc=={{ context.fastapi_jsonrpc_version }}
+          pydantic=={{ context.pydantic_version }}
+          pydicom=={{ context.pydicom_version }}
+          flask=={{ context.flask_version }}
+          uvicorn=={{ context.uvicorn_version }}
+          httpx=={{ context.httpx_version }}
+          git+https://github.com/yjmantilla/bidscoin.git@{{ context.bidscoin_commit }}
+          git+https://github.com/yjmantilla/sovabids.git@{{ context.sovabids_tag }}
     - run:
+        - /opt/miniconda/envs/sovabids/bin/python -m pip check
         - cp {{ get_file("vscode_deb") }} vscode.deb
-        - apt install ./vscode.deb
+        - apt install --yes ./vscode.deb
         - rm -rf ./vscode.deb
-        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.vscode-pylance && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-keymap && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-renderers
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --no-sandbox --install-extension ms-python.python && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --no-sandbox --install-extension ms-python.vscode-pylance && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --no-sandbox --install-extension ms-toolsai.jupyter && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --no-sandbox --install-extension ms-toolsai.jupyter-keymap && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --no-sandbox --install-extension ms-toolsai.jupyter-renderers
     - environment:
         DONT_PROMPT_WSL_INSTALL: "1"
     - workdir: /opt/
     - run:
-        - tar xz -f {{ get_file("mne_bids_pipeline_main_tar_gz") }}
+        - mkdir -p /opt/mne-bids-pipeline-main && tar xz -f {{ get_file("mne_bids_pipeline_main_tar_gz") }} --strip-components=1 -C /opt/mne-bids-pipeline-main
         - chmod a+rwx /opt/mne-bids-pipeline-main -R
     - copy: code /usr/local/sbin/code
     - run:
@@ -83,7 +230,7 @@ readme: |-
   
   Example:
   ```
-  source /opt/miniconda-4.7.12/etc/profile.d/conda.sh
+  source /opt/miniconda/etc/profile.d/conda.sh
   conda activate sovabids
   python
   >>from sovabids.heuristics import from_io_example
@@ -103,8 +250,9 @@ files:
     filename: code
   - name: vscode_deb
     url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+    sha256: 2493226f723f66c8e83b9d806e3fbe83dcc43f381ece51eaa03d88889542b0c0
   - name: mne_bids_pipeline_main_tar_gz
-    url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz
+    url: https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.mne_bids_pipeline_commit }}.tar.gz
 
 categories:
   - electrophysiology

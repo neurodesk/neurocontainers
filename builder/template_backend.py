@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -13,6 +14,7 @@ from .ir import Env, Install, Run
 
 _TEMPLATE_DIR = Path(__file__).with_name("templates")
 _JINJA = jinja2.Environment()
+_JINJA.filters["shellwords"] = shlex.split
 
 
 def _raise_template_error(message: str) -> None:

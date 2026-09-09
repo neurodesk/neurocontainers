@@ -10,11 +10,8 @@ from .ir import Copy, Definition, Directive, Entrypoint, Env, From, Install, Lit
 
 def _indent_run_instruction(string: str, indent: int = 4) -> str:
     out: list[str] = []
-    lines = string.splitlines()
+    lines = [line.rstrip() for line in string.splitlines() if line.strip()]
     for index, line in enumerate(lines):
-        line = line.rstrip()
-        if not line:
-            continue
         is_last_line = index == len(lines) - 1
         already_cont = line.startswith(("&&", "&", "||", "|", "fi"))
         is_comment = line.startswith("#")
@@ -106,10 +103,10 @@ def render_directive(directive: Directive, pkg_manager: str = "apt") -> list[str
         command = _indent_run_instruction(_install_command(pkg_manager, directive.packages, directive.opts))
         return [_indent_run_instruction(f"RUN {command}")]
     if isinstance(directive, Run):
-        return [_indent_run_instruction(f"RUN {directive.command}")]
+        return [_indent_run_instruction(f"RUN {directive.command.strip()}")]
     if isinstance(directive, RunWithMounts):
         prefix = " ".join(directive.mounts)
-        return [_indent_run_instruction(f"RUN {prefix}{directive.command}")]
+        return [_indent_run_instruction(f"RUN {prefix} {directive.command.strip()}")]
     if isinstance(directive, Copy):
         if not directive.sources:
             raise ValueError("COPY requires at least one source")
@@ -144,7 +141,7 @@ def _instruction_records(directive: Directive, pkg_manager: str = "apt") -> list
     if isinstance(directive, Run):
         return [{"name": "run", "kwds": {"command": directive.command}}]
     if isinstance(directive, RunWithMounts):
-        command = " ".join(directive.mounts) + directive.command
+        command = " ".join((*directive.mounts, directive.command.strip()))
         return [{"name": "run", "kwds": {"command": command}}]
     if isinstance(directive, Copy):
         source = [*directive.sources, directive.destination]

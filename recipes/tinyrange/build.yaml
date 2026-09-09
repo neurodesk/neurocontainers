@@ -49,6 +49,10 @@ readme: |-
   To run container outside of this environment: ml tinyrange/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: github_release
+  repo: tinyrange/tinyrange
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -60,7 +64,7 @@ build:
     - run:
         - cp {{ get_file(context.tinyrange_archive) }} /tmp/tinyrange.zip
         - unzip -q /tmp/tinyrange.zip -d /opt
-        - chmod +x /opt/tinyrange/tinyrange /opt/tinyrange/tinyqemu/tinyrange_qemu /opt/tinyrange/tinyqemu/qemu-system-aarch64
+        - chmod +x /opt/tinyrange/tinyrange /opt/tinyrange/tinyqemu/tinyrange_qemu /opt/tinyrange/tinyqemu/qemu-system-{{ context.arch }}
         - ln -sfn /opt/tinyrange/tinyrange /usr/local/bin/tinyrange
         - rm -f /tmp/tinyrange.zip
     - deploy:

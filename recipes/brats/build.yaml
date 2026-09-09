@@ -18,6 +18,10 @@ variables:
   # exist here.
   apptainer_version: 1.4.4
 
+auto_update:
+  method: pypi
+  package: brats
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -72,7 +76,7 @@ build:
     - run:
         - python3 -m venv "${VENV}"
         - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
-        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "brats==0.1.8"
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "brats=={{ context.version }}"
         - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import brats; print('brats', md.version('brats'))"
         # The singularity backend must be importable: it imports docker as well,
         # so a partial install would only surface when a user tried to run.

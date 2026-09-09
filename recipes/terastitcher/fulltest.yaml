@@ -12,7 +12,7 @@ setup:
 tests:
   - name: TeraStitcher install tree exists
     description: Verify the portable TeraStitcher distribution was unpacked under /opt
-    command: test -x /opt/terastitcher-1.11.10/terastitcher
+    command: test -x /opt/terastitcher-${upstream_version}/terastitcher
     expected_exit_code: 0
 
   - name: terastitcher help renders
@@ -29,3 +29,4 @@ tests:
     description: Verify the metadata generator CLI is available
     command: mdatagenerator --help 2>&1 | sed -n '1,20p'
     expected_output_contains: "mdatagenerator"
+upstream_version: 1.11.10

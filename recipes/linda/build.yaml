@@ -21,9 +21,23 @@ structured_readme:
         --outdir /custom/output/directory
   documentation: https://github.com/dorianps/LINDA
   citation: "Pustina, D., Coslett, H. B., Turkeltaub, P. E., Tustison, N., Schwartz, M. F., & Avants, B. (2016). Automated segmentation of chronic stroke lesions using LINDA: Lesion identification with neighborhood data analysis. Hum Brain Mapp, 37(4), 1405-1421. https://doi.org/10.1002/hbm.23110 "
+variables:
+  software_version: 0.5.1
+  base_image_digest: sha256:abe94d551bf6f7f2937f04a2bb5a1b3b7cd25a0f6e2cf684602ea9fa397c78a3
+
+auto_update:
+  method: sources
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: dorianps/linda
+      tag: latest
+      target:
+        variable: base_image_digest
+
 build:
   kind: neurodocker
-  base-image: dorianps/linda
+  base-image: dorianps/linda:latest@{{ context.base_image_digest }}
   pkg-manager: apt
   directives:
     - deploy:

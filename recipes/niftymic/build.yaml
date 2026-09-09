@@ -8,9 +8,14 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: dockerhub
+  repo: renbem/niftymic
+  version_regex: ^v(?P<version>\d+(?:\.\d+)+)$
+
 build:
   kind: neurodocker
-  base-image: renbem/niftymic:v0.9
+  base-image: renbem/niftymic:v{{ context.version }}
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false

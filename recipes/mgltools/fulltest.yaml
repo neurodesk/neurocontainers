@@ -11,7 +11,7 @@
 # analyzing docking results, file format conversions
 
 name: mgltools
-version: 1.5.7
+version: 1.5.7.post2
 
 # Note: MGLTools uses Python 2.7 and specialized scripts
 # Most utilities are in /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/
@@ -245,9 +245,8 @@ tests:
 
   - name: write_each_cluster_LE_conf.py help
     description: Test write_each_cluster_LE_conf.py shows usage
-    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_each_cluster_LE_conf.py 2>&1'"
-    ignore_exit_code: true
-    expected_output_contains: "write_each_cluster_LE_conf"
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_each_cluster_LE_conf.py -h 2>&1'"
+    expected_output_contains: "lowest-energy conformation in each cluster"
 
   - name: write_all_complexes.py help
     description: Test write_all_complexes.py shows usage
@@ -469,8 +468,7 @@ tests:
 
   - name: energy_average_maps.py help
     description: Test energy map averaging utility
-    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/energy_average_maps.py 2>&1'"
-    ignore_exit_code: true
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/energy_average_maps.py -h 2>&1'"
     expected_output_contains: "energy_average_maps"
 
   # ==========================================================================
@@ -520,3 +518,4 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
+upstream_version: 1.5.7

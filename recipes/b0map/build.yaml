@@ -10,9 +10,59 @@ files:
     - name: OpenReconLabel.json
       filename: OpenReconLabel.json
 
+variables:
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+  fsl_bet2_commit: d5acd7fe09a34679aaac63f67f20409abf2ed3b9
+
+auto_update:
+  method: sources
+  local:
+  - macros/openrecon
+  sources:
+  - id: base_image
+    method: oci_digest
+    image: ubuntu
+    tag: '22.04'
+    target:
+      variable: base_image_digest
+  - id: fsl_bet2
+    method: github_commit
+    repo: Bostrix/FSL-BET2
+    ref: HEAD
+    target:
+      variable: fsl_bet2_commit
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+
 build:
     kind: neurodocker
-    base-image: ubuntu:22.04
+    base-image: ubuntu:22.04@{{ context.base_image_digest }}
     pkg-manager: apt
 
     directives:
@@ -30,6 +80,7 @@ build:
         - workdir: /opt/code
         - run:
               - git clone https://github.com/Bostrix/FSL-BET2
+              - git -C FSL-BET2 checkout {{ context.fsl_bet2_commit }}
               - cd FSL-BET2
               - mkdir build
               - cd build

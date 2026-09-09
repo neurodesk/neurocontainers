@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: npm
+  package: brainlife
+
 build:
   kind: neurodocker
 
@@ -30,7 +34,7 @@ build:
 
     - run:
         - npm install -g npm@10.2.4
-        - npm install -g brainlife
+        - npm install -g brainlife@{{ context.version }}
 
     - environment:
         PATH: /usr/local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin

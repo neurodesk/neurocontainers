@@ -7,9 +7,14 @@ structured_readme:
   example: "ExploreASL /path/to/dataset 0 1"
   documentation: https://exploreasl.github.io/Documentation/1.11.0/
   citation: "Mutsaerts, H., & Petr, J. (2023). ExploreASL/ExploreASL: ExploreASL v1.10.1 (v1.11.0). Zenodo. https://doi.org/10.5281/zenodo.8326499"
+auto_update:
+  method: dockerhub
+  repo: exploreasl/xasl
+  version_regex: ^(?P<version>[0-9]+\.[0-9]+\.[0-9]+)$
+
 build:
   kind: neurodocker
-  base-image: exploreasl/xasl:1.11.0
+  base-image: exploreasl/xasl:{{ context.version }}
   pkg-manager: apt
   directives:
     - run:

@@ -1,0 +1,88 @@
+name: lstai
+version: 1.2.0.post1
+upstream_version: 1.1.0
+upstream_tag: v1.1.0
+hdbet_version: '1.1'
+env:
+  HOME: /nonexistent
+  OMP_NUM_THREADS: '2'
+  TF_NUM_INTRAOP_THREADS: '2'
+  TF_NUM_INTEROP_THREADS: '1'
+tests:
+  - name: LST launcher imports the inference stack
+    command: lst --help
+    expected_output_contains: --segment_only
+  - name: installed stable source tag
+    command: git -c safe.directory=/opt/lstai -C /opt/lstai describe --tags --exact-match
+    expected_output_contains: ${upstream_tag}
+  - name: HD-BET supports LST brain extraction arguments
+    command: hd-bet --help
+    expected_output_contains: -tta
+  - name: compatible HD-BET version
+    command: python -c "from importlib.metadata import version; print(version('hd-bet'))"
+    expected_output_contains: ${hdbet_version}
+  - name: Python dependency consistency
+    command: pip check
+    expected_output_contains: No broken requirements found
+  - name: models and atlas are available without a home directory
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+      import nibabel as nib
+      from HD_BET.paths import folder_with_parameter_files
+      from LST_AI.utils import download_data
+
+      root = Path('/opt/lstai/LST_AI')
+      download_data(str(root))
+      assert Path(folder_with_parameter_files) == Path('/opt/hd-bet_params')
+      for index in range(5):
+          assert (Path(folder_with_parameter_files) / f'{index}.model').stat().st_size > 0
+      for suffix in ('t1', 't1bet', 'msmask'):
+          atlas = nib.load(root / 'atlas' / f'sub-mni152_space-mni_{suffix}.nii.gz')
+          assert atlas.ndim == 3 and all(size > 1 for size in atlas.shape)
+      print('models and atlas ready')
+      PY
+    expected_output_contains: models and atlas ready
+  - name: greedy registration executable
+    command: greedy -version
+    expected_output_contains: Greedy
+  - name: DICOM converter executable
+    command: dcm2niix --version
+    expected_exit_code: 3
+    expected_output_contains: dcm2niiX
+  - name: all lesion models load with the installed inference engine
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+      import numpy as np
+      import tensorflow as tf
+      from LST_AI.custom_tf import load_custom_model
+
+      for suffix in ('A', 'B', 'C'):
+          path = Path('/opt/lstai/LST_AI/model') / f'UNet3D_MS_final_mdl{suffix}.h5'
+          model = load_custom_model(str(path), compile=False)
+          assert model.input_shape == (None, 192, 192, 192, 2)
+          assert model.weights and all(np.isfinite(weight.numpy()).all() for weight in model.weights)
+          del model
+          tf.keras.backend.clear_session()
+      print('all three lesion models loaded')
+      PY
+    expected_output_contains: all three lesion models loaded
+    timeout: 300
+  - name: all brain extraction models match the installed network
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+      import torch
+      from HD_BET.config import config
+      from HD_BET.paths import folder_with_parameter_files
+
+      settings = config()
+      network, _ = settings.get_network(settings.val_use_train_mode, None)
+      for index in range(5):
+          weights = torch.load(Path(folder_with_parameter_files) / f'{index}.model', map_location='cpu', weights_only=True)
+          network.load_state_dict(weights, strict=True)
+      print('all five brain extraction models loaded')
+      PY
+    expected_output_contains: all five brain extraction models loaded
+    timeout: 300

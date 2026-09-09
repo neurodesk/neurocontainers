@@ -1,15 +1,57 @@
+variables:
+  upstream_commit: 720d36b0cffcc1be42417a538153fde99b2ad4f2
+  imageio_version: "2.9.0"
+
 name: fatsegnet
-version: 1.0.gpu
+version: 1.0.gpu.post2
 
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: Deep-MI/FatSegNet
+    ref: HEAD
+    target:
+      variable: upstream_commit
+  - id: imageio
+    method: pypi
+    package: imageio
+    # ImageIO 2.10+ uses Python 3.6 syntax despite declaring Python >=3.5.
+    version_regex: '^(?P<version>2\.9\.\d+)$'
+    target:
+      variable: imageio_version
+      fulltest_variable: imageio_version
 
 build:
   kind: neurodocker
   base-image: tensorflow/tensorflow:1.6.0-gpu-py3
   pkg-manager: apt
+  add-default-template: false
 
   directives:
+    - environment:
+        LANG: C.UTF-8
+        LC_ALL: C.UTF-8
+        DEBIAN_FRONTEND: noninteractive
+        CUDA_CACHE_MAXSIZE: "2147483647"
+        CUDA_CACHE_PATH: /tmp/fatsegnet-cuda-cache
+    - run: rm -f /etc/apt/sources.list.d/cuda.list /etc/apt/sources.list.d/nvidia-ml.list
+    - file:
+        name: fatsegnet-entrypoint
+        executable: true
+        contents: |
+          #!/usr/bin/env bash
+          set -e
+          if [ "$#" -gt 0 ]; then
+            exec "$@"
+          fi
+          exec /bin/bash
+    - run: install -m 755 {{ get_file("fatsegnet-entrypoint") }} /usr/local/bin/fatsegnet-entrypoint
+    - entrypoint: /usr/local/bin/fatsegnet-entrypoint
     - run:
         - printf '#!/bin/bash\nls -la' > /usr/bin/ll
         - chmod +x /usr/bin/ll
@@ -22,18 +64,31 @@ build:
     - workdir: /opt
 
     - run:
-        - git clone https://github.com/Deep-MI/FatSegNet.git
+        - git clone https://github.com/Deep-MI/FatSegNet.git && git -C /opt/FatSegNet checkout {{ context.upstream_commit }}
 
     - workdir: /opt/FatSegNet
 
     - run:
         - mv tool /tool
-        - pip3 --no-cache-dir install pandas==0.21.0 scikit-learn==0.19.1 scipy==1.1. scikit-image==0.15.0 SimpleITK==1.1.0 nibabel==2.2.1 keras==2.2.4 numpy==1.15.4
+        - pip3 --no-cache-dir install pandas==0.21.0 scikit-learn==0.19.1 scipy==1.1.0 scikit-image==0.15.0 SimpleITK==1.1.0 nibabel==2.2.1 keras==2.2.4 numpy==1.15.4 imageio=={{ context.imageio_version }}
+
+    - file:
+        name: patch_launcher.py
+        contents: |
+          from pathlib import Path
+
+          launcher = Path("/tool/run_FatSegNet.py")
+          source = launcher.read_text()
+          pipeline_import = "from Code.adipose_pipeline import run_adipose_pipeline\n"
+          entrypoint = "def run_fatsegnet(args,FLAGS):\n"
+          if source.count(pipeline_import) != 1 or source.count(entrypoint) != 1:
+              raise RuntimeError("FatSegNet launcher changed; review deferred GPU initialization")
+          source = source.replace(pipeline_import, "")
+          source = source.replace(entrypoint, entrypoint + "    " + pipeline_import)
+          launcher.write_text(source)
+    - run: python3 {{ get_file("patch_launcher.py") }}
 
     - workdir: /tool
-
-    - run:
-        - bash /tool/bash_profile
 
     - copy: README.md /README.md
 

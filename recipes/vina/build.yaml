@@ -1,3 +1,6 @@
+variables:
+  package_version: 1.2.5-2build1
+
 name: vina
 version: 1.2.3
 
@@ -8,6 +11,20 @@ copyright:
 architectures:
   - x86_64
   - aarch64
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: autodock-vina
+    method: apt
+    package: autodock-vina
+    urls:
+    - https://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+    - https://archive.ubuntu.com/ubuntu/dists/noble-updates/universe/binary-amd64/Packages.gz
+    target:
+      variable: package_version
+      fulltest_variable: package_version
 
 build:
   kind: neurodocker
@@ -21,7 +38,7 @@ build:
 
     - install:
         - autodock
-        - autodock-vina
+        - "autodock-vina={{ context.package_version }}"
         - ca-certificates
 
     - copy: test.sh /test.sh

@@ -22,12 +22,90 @@ structured_readme:
   documentation: https://github.com/BrainLesion/
   citation: 'Kofler, F., Rosier, M., Astaraki, M., Möller, H., Mekki, I. I., Buchner, J. A., Schmick, A., Pfiffer, A., Oswald, E., Zimmer, L., Rosa, E. de la, Pati, S., Canisius, J., Piffer, A., Baid, U., Valizadeh, M., Linardos, A., Peeken, J. C., Shit, S., … Menze, B. (2025). BrainLesion Suite: A Flexible and User-Friendly Framework for Modular Brain Lesion Image Analysis arXiv preprint arXiv:2507.09036'
 variables:
-  # Version of the registration atlases baked into the image. The record id is
-  # a Zenodo concept DOI, which always resolves to the newest release, so
-  # without this the build silently takes whatever is current that day. Bumping
-  # it is a deliberate act; see pin_atlases.py for why a rebuild is the only
-  # way a container gets newer atlases.
-  atlas_version: "2.0.0"
+  atlas_version: 2.0.0
+  loguru_version: 0.7.3
+  panoptica_version: 2.1.6
+  deep_quality_estimation_version: 0.0.3
+  petu_version: 0.0.7
+  gliomoda_version: 0.0.4
+  antspyx_version: 0.6.3
+  auxiliary_version: 0.3.1
+  brainles_hd_bet_version: 0.0.11
+  ttictoc_version: 0.5.6
+  typer_version: 0.15.4
+  tqdm_version: 4.67.1
+  brainles_aurora_version: 0.2.7
+  brainles_preprocessing_version: 0.6.10
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: loguru
+    method: pypi
+    package: loguru
+    target:
+      variable: loguru_version
+  - id: panoptica
+    method: pypi
+    package: panoptica
+    target:
+      variable: panoptica_version
+  - id: deep_quality_estimation
+    method: pypi
+    package: deep_quality_estimation
+    target:
+      variable: deep_quality_estimation_version
+  - id: petu
+    method: pypi
+    package: petu
+    target:
+      variable: petu_version
+  - id: gliomoda
+    method: pypi
+    package: gliomoda
+    target:
+      variable: gliomoda_version
+  - id: antspyx
+    method: pypi
+    package: antspyx
+    target:
+      variable: antspyx_version
+  - id: auxiliary
+    method: pypi
+    package: auxiliary
+    target:
+      variable: auxiliary_version
+  - id: brainles_hd_bet
+    method: pypi
+    package: brainles_hd_bet
+    target:
+      variable: brainles_hd_bet_version
+  - id: ttictoc
+    method: pypi
+    package: ttictoc
+    target:
+      variable: ttictoc_version
+  - id: typer
+    method: pypi
+    package: typer
+    target:
+      variable: typer_version
+  - id: tqdm
+    method: pypi
+    package: tqdm
+    target:
+      variable: tqdm_version
+  - id: brainles-aurora
+    method: pypi
+    package: brainles-aurora
+    target:
+      variable: brainles_aurora_version
+  - id: brainles-preprocessing
+    method: pypi
+    package: brainles-preprocessing
+    target:
+      variable: brainles_preprocessing_version
 
 build:
   kind: neurodocker
@@ -38,9 +116,9 @@ build:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
-        pip_install: loguru==0.7.3 panoptica==2.1.6 deep_quality_estimation==0.0.3 petu==0.0.7 gliomoda==0.0.4 antspyx==0.6.3 auxiliary==0.3.1 brainles_hd_bet==0.0.11 ttictoc==0.5.6 typer==0.15.4 tqdm==4.67.1
+        pip_install: loguru=={{ context.loguru_version }} panoptica=={{ context.panoptica_version }} deep_quality_estimation=={{ context.deep_quality_estimation_version }} petu=={{ context.petu_version }} gliomoda=={{ context.gliomoda_version }} antspyx=={{ context.antspyx_version }} auxiliary=={{ context.auxiliary_version }} brainles_hd_bet=={{ context.brainles_hd_bet_version }} ttictoc=={{ context.ttictoc_version }} typer=={{ context.typer_version }} tqdm=={{ context.tqdm_version }}
     - run:
-        - python -m pip install --no-cache-dir --no-deps brainles-aurora==0.2.7 brainles-preprocessing==0.6.10
+        - python -m pip install --no-cache-dir --no-deps brainles-aurora=={{ context.brainles_aurora_version }} brainles-preprocessing=={{ context.brainles_preprocessing_version }}
         - python {{ get_file("fix_aurora_import") }}
         - python {{ get_file("fix_preprocessor_cli") }}
         # The `hd-bet` command imports a helper its own package never defines,

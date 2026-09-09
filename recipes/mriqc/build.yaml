@@ -8,9 +8,14 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: dockerhub
+  repo: nipreps/mriqc
+  version_regex: ^(?P<version>\d+(?:\.\d+)+)$
+
 build:
   kind: neurodocker
-  base-image: nipreps/mriqc:24.0.2
+  base-image: nipreps/mriqc:{{ context.version }}
   pkg-manager: apt
   directives: []
 

@@ -1,3 +1,7 @@
+irkernel_version: 1.3.2
+
+r_version: 4.5.3
+
 name: irkernel
 version: 4.4.3
 
@@ -12,17 +16,17 @@ setup:
 
 tests:
   - name: R version
-    description: Verify the packaged R runtime reports the ARM64 platform
-    command: R --version
-    expected_output_contains:
-      - "R version 4.5.3"
-      - "Platform: aarch64-conda-linux-gnu"
+    description: Verify the packaged R version and container architecture
+    command: >
+      R --version &&
+      Rscript -e 'stopifnot(R.version$arch == Sys.info()[["machine"]])'
+    expected_output_contains: "R version ${r_version}"
     expected_exit_code: 0
 
   - name: IRkernel package
     description: Verify the IRkernel R package loads and reports its version
     command: R -q -e "library(IRkernel); cat(as.character(packageVersion('IRkernel')), '\n')"
-    expected_output_contains: "1.3.2"
+    expected_output_contains: "${irkernel_version}"
     expected_exit_code: 0
 
   - name: Jupyter kernelspecs

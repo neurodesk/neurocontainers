@@ -1,0 +1,6 @@
+name: qsmbly
+version: 0.11.1
+tests:
+- name: QSMbly launcher and WebAssembly assets
+  command: command -v qsmbly && test -s /opt/qsmbly/dist/index.html && test -s /opt/qsmbly/dist/wasm/qsm_wasm_bg.wasm
+  expected_output_contains: qsmbly

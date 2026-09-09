@@ -6,6 +6,10 @@ copyright:
 architectures:
   - x86_64
   - aarch64
+auto_update:
+  method: pypi
+  package: spm-python
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

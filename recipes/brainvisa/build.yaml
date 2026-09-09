@@ -79,6 +79,11 @@ files:
 
       exec "${real_binary}" "$@"
 
+auto_update:
+  method: webpage
+  version_regex: '"name"\s*:\s*"brainvisa"[^}]*"version"\s*:\s*"(?P<version>\d+\.\d+\.\d+)"'
+  url: https://brainvisa.info/neuro-forge/linux-64/repodata.json
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

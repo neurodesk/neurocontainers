@@ -1,3 +1,8 @@
+variables:
+  model_commit: ea055aec0f55baa15d984c4fe92035aaa21c7b5c
+  hdbet_commit: ae160681324d524db3578e4135bf781f8206e146
+  nnunetv2_version: 2.8.1
+
 name: flames
 version: 1.0.0
 copyright:
@@ -5,6 +10,28 @@ copyright:
     url: https://huggingface.co/spaces/FrancescoLR/FLAMeS/tree/main
 architectures:
   - x86_64
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: flames-model
+    method: git_commit
+    url: https://huggingface.co/FrancescoLR/FLAMeS-model
+    ref: refs/heads/main
+    target:
+      variable: model_commit
+  - id: hdbet
+    method: github_commit
+    repo: MIC-DKFZ/HD-BET
+    ref: HEAD
+    target:
+      variable: hdbet_commit
+  - id: nnunetv2
+    method: pypi
+    package: nnunetv2
+    target:
+      variable: nnunetv2_version
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -17,7 +44,7 @@ build:
     # --- FLAMeS nnU-Netv2 model weights (Dataset004_WML) ---
     - file:
         name: flames_model_zip
-        url: https://huggingface.co/FrancescoLR/FLAMeS-model/resolve/main/Dataset004_WML.zip
+        url: https://huggingface.co/FrancescoLR/FLAMeS-model/resolve/{{ context.model_commit }}/Dataset004_WML.zip
     # --- HD-BET pretrained parameters (used for optional skull-stripping) ---
     - file:
         name: 0_model
@@ -57,7 +84,7 @@ build:
     # --- python deps: CPU torch + nnU-Netv2 + IO libs ---
     - run:
         - pip install --timeout 600 torch torchvision --index-url https://download.pytorch.org/whl/cpu
-        - pip install --timeout 600 nnunetv2 nibabel "scipy>=1.9.0" matplotlib "numpy<2"
+        - pip install --timeout 600 nnunetv2=={{ context.nnunetv2_version }} nibabel "scipy>=1.9.0" matplotlib "numpy<2"
     # --- install model weights ---
     - run:
         - mkdir -p /opt/flames/model
@@ -68,7 +95,7 @@ build:
     - run:
         - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
         - cd /opt/hdbet
-        - git checkout ae160681324d524db3578e4135bf781f8206e146
+        - git checkout {{ context.hdbet_commit }}
         - pip install SimpleITK --only-binary ":all:"
         - mkdir -p /opt/hd-bet_params
         - cp {{ get_file("0_model") }} /opt/hd-bet_params/0.model

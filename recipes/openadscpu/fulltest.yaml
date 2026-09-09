@@ -1,0 +1,12 @@
+name: openadscpu
+version: 1.0.0
+tests:
+- name: OpenADS launcher
+  command: command -v ads
+  expected_exit_code: 0
+  expected_output_contains: ads
+- name: source revision
+  command: cat /opt/openads/source-revision
+  expected_exit_code: 0
+  expected_output_contains: ${upstream_commit}
+upstream_commit: 6c378d1ae36278c9351c247e00286f19e0a893ac

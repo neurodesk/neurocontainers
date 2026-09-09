@@ -2,9 +2,14 @@ diff --git a/scripts/mm_util.py b/scripts/mm_util.py
 index 839f812..7491f53 100644
 --- a/scripts/mm_util.py
 +++ b/scripts/mm_util.py
-@@ -68,0 +69,15 @@
+@@ -68,0 +69,20 @@
 +_CONTAINER_MODEL_VERSION_ENV = {
 +    "wholebody": "MUSCLEMAP_WHOLEBODY_MODEL_VERSION",
++    "abdomen": "MUSCLEMAP_ABDOMEN_MODEL_VERSION",
++    "forearm": "MUSCLEMAP_FOREARM_MODEL_VERSION",
++    "leg": "MUSCLEMAP_LEG_MODEL_VERSION",
++    "pelvis": "MUSCLEMAP_PELVIS_MODEL_VERSION",
++    "thigh": "MUSCLEMAP_THIGH_MODEL_VERSION",
 +}
 +
 +
@@ -18,5 +23,5 @@ index 839f812..7491f53 100644
 +    return os.environ.get(environment_name, version)
 +
 +
-@@ -172,0 +188 @@
+@@ -172,0 +193 @@
 +    version = _resolve_container_model_version(region, version)

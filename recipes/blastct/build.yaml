@@ -1,3 +1,6 @@
+variables:
+  upstream_commit: 613acbc1b6be455a44a9e6741eb899fbf082e6fd
+
 name: blastct
 version: 2.0.0
 copyright:
@@ -60,6 +63,16 @@ readme: |-
   To run container outside of this environment: ml blastct/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: biomedia-mira/blast-ct
+    ref: HEAD
+    target:
+      variable: upstream_commit
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -75,7 +88,7 @@ build:
         pip_install: scipy numpy pandas SimpleITK==2.4.1 "torch>=1.9" tensorboard
         install_path: /opt/miniconda
     - run:
-        - conda run -n blastct pip install --no-deps git+https://github.com/biomedia-mira/blast-ct.git
+        - conda run -n blastct pip install --no-deps git+https://github.com/biomedia-mira/blast-ct.git@{{ context.upstream_commit }}
     - deploy:
         bins:
           - python3

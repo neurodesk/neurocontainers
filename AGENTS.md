@@ -1,7 +1,7 @@
 # AGENTS.md - NeuroContainers Development Guide
 
 ## Does and Don't
-- always use {{ context.version }} instead of the hardcoded version number
+- Use `{{ context.version }}` for the container release. Bind installed software versions, source commits and artifact digests to explicit recipe variables so dependency updates can advance independently.
 - always use `{{ get_file("filename") }}` to reference declared files in run directives instead of using `wget` or `curl` directly
 - the home directory will not be available during container runtime! Files cannot be stored under /home if they are needed during runtime!
 - make sure that every build.yaml recipe has a base64 encoded icon - first try to find the official icon, if none exist make one up based on the tool description.
@@ -180,13 +180,18 @@ match the recipe directory and `version:` must match `build.yaml`. Bump both
 together; an older release is never substituted for a version that has not been
 built yet. Where a test needs the version — a `--version` string, an install
 path — write `${version}` instead of spelling it out, so the assertion follows
-the recipe:
+the recipe when the installed version follows the container version:
 
 ```yaml
 - name: reports its version
   command: toolname --version
   expected_output_contains: "${version}"
 ```
+
+For independent source versions, declare a scalar such as `upstream_version:` in
+the fulltest, use `${upstream_version}` in software assertions, and bind the source
+target's `fulltest_variable` to that scalar. The suite's `version:` still identifies
+the container release.
 
 Do not add a `container:` key. The artifact under test is resolved from
 `releases/<name>/<version>.json`, so a hardcoded SIF name only ever goes stale;
@@ -250,9 +255,18 @@ The validation schema matches the Zod schema from `neurocontainers-ui`.
 2. Edit `recipes/<toolname>/build.yaml` with build instructions, and replace the
    `TODO` placeholders. Add `categories:` and `icon:` — `sf-init` omits both and
    validation fails without them.
-3. Create `recipes/<toolname>/fulltest.yaml` with focused runtime smoke tests
-4. Validate: `python -m builder generate <toolname> --recreate`
-5. Build and test: `sf-build <toolname>` then `sf-test <toolname>`, or `sf-login <toolname>` for interactive debugging
+3. Configure `auto_update` with explicit targets for the installed software and
+   shared dependencies. Bind source variables in install commands or declared
+   downloads; keep container release numbering independent. For rolling sources,
+   pin and track full commits or artifact digests. Locally maintained recipes use
+   a `sources` policy with `local` repository inputs. Every recipe must pass
+   `python -m builder.audit_updates`; manual and notification-only policies fail.
+   Read [automatic update policies](workflows/AUTO_UPDATES.md) when selecting a
+   provider, tracking compiled artifacts or adding shared macros. OpenRecon
+   consumers must include its four shared dependency sources.
+4. Create `recipes/<toolname>/fulltest.yaml` with focused runtime smoke tests
+5. Validate: `python -m builder generate <toolname> --recreate`
+6. Build and test: `sf-build <toolname>` then `sf-test <toolname>`, or `sf-login <toolname>` for interactive debugging
 
 ### Update a Container Version
 1. Update `version` field in `build.yaml`

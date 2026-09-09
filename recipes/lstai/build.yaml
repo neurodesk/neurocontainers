@@ -1,112 +1,112 @@
+variables:
+  upstream_version: 1.1.0
+  upstream_tag: v1.1.0
+  hdbet_version: '1.1'
+
 name: lstai
-version: 1.2.0
+version: 1.2.0.post1
 copyright:
   - license: MIT
     url: https://github.com/CompImg/LST-AI/blob/main/LICENSE
 architectures:
   - x86_64
+auto_update:
+  method: sources
+  sources:
+    - id: upstream
+      method: github_release_asset
+      repo: CompImg/LST-AI
+      asset: lst_data.zip
+      version_regex: 'v(?P<version>\d+\.\d+\.\d+)'
+      target:
+        file: lst_data_zip
+        variables:
+          upstream_version: version
+          upstream_tag: tag
+    # LST 1.x calls HD-BET's v1 CLI and uses its five original model folds.
+    - id: hdbet
+      method: pypi
+      package: hd-bet
+      version_regex: '(?P<version>1\.\d+(?:\.\d+)?)'
+      target:
+        variable: hdbet_version
+        fulltest_variable: hdbet_version
+    - id: dcm2niix
+      method: github_release_asset
+      repo: rordenlab/dcm2niix
+      asset: dcm2niix_lnx.zip
+      target:
+        file: dcm2niix_lnx_zip
+
 build:
   kind: neurodocker
-  base-image: ubuntu:24.04
+  base-image: ubuntu:22.04
   pkg-manager: apt
   directives:
-    - file:
-        name: Miniforge3_Linux_x86_64_sh
-        url: https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
-    - file:
-        name: 0_model
-        url: https://zenodo.org/record/2540695/files/0.model?download=1
-    - file:
-        name: 1_model
-        url: https://zenodo.org/record/2540695/files/1.model?download=1
-    - file:
-        name: 2_model
-        url: https://zenodo.org/record/2540695/files/2.model?download=1
-    - file:
-        name: 3_model
-        url: https://zenodo.org/record/2540695/files/3.model?download=1
-    - file:
-        name: 4_model
-        url: https://zenodo.org/record/2540695/files/4.model?download=1
-    - file:
-        name: greedy
-        url: https://github.com/CompImg/LST-AI/releases/download/v1.0.0/greedy
-    - file:
-        name: lst_data_zip
-        url: https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
-    - file:
-        name: dcm2niix_lnx_zip
-        url: https://github.com/rordenlab/dcm2niix/releases/download/v1.0.20240202/dcm2niix_lnx.zip
-    - deploy:
-        path:
-          - /opt/miniforge3/envs/lstai/bin/
-          - /opt/lstai/bin
-        bins:
-          - lst
-          - hd-bet
-    - install: wget python3-pip git python3 unzip
-    - workdir: /opt
+    - install: ca-certificates git python3 python3-venv unzip libgomp1
     - run:
-        - cp {{ get_file("Miniforge3_Linux_x86_64_sh") }} Miniforge3-Linux-x86_64.sh
-        - bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
-    - run:
-        - /opt/miniforge3/bin/conda create -y -n lstai python=3.8
-        - git clone https://github.com/CompImg/LST-AI/ /opt/lstai
+        - python3 -m venv /opt/venv
     - environment:
-        PATH: /opt/miniforge3/envs/lstai/bin:/opt/lstai/bin:${PATH}
+        PATH: /opt/venv/bin:/opt/lstai/LST_AI/binaries:/opt/dcm2niix:${PATH}
     - run:
-        - pip install --timeout 300 torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
-        - pip install --timeout 300 "numpy<1.24.4" pillow "scipy>=1.9.0" "scikit-image>=0.21.0" tensorflow==2.13.1 nibabel requests
-        - pip install --no-deps -e /opt/lstai
+        - git clone --depth 1 --branch {{ context.upstream_tag }} https://github.com/CompImg/LST-AI.git /opt/lstai
+        - pip install --no-cache-dir --timeout 300 torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
+        - pip install --no-cache-dir --timeout 300 'numpy<1.24.4' tensorflow==2.13.1 'hd-bet=={{ context.hdbet_version }}' -e /opt/lstai
+        - pip check
     - run:
-        - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
-        - cd /opt/hdbet
-        - git checkout ae160681324d524db3578e4135bf781f8206e146
-        - pip install SimpleITK --only-binary ":all:"
         - mkdir -p /opt/hd-bet_params
         - cp {{ get_file("0_model") }} /opt/hd-bet_params/0.model
         - cp {{ get_file("1_model") }} /opt/hd-bet_params/1.model
         - cp {{ get_file("2_model") }} /opt/hd-bet_params/2.model
         - cp {{ get_file("3_model") }} /opt/hd-bet_params/3.model
         - cp {{ get_file("4_model") }} /opt/hd-bet_params/4.model
-        - sed -i "s|os.path.join(os.path.expanduser('~'), 'hd-bet_params')|'/opt/hd-bet_params'|" /opt/hdbet/HD_BET/paths.py
-        - pip install -e /opt/hdbet
-    - run:
-        - cp {{ get_file("greedy") }} greedy
-        - chmod +x greedy
-        - mkdir -p /opt/lstai/bin
-        - mv greedy /opt/lstai/bin
-    - run:
-        - cp {{ get_file("lst_data_zip") }} lst_data.zip
-        - unzip lst_data.zip -d /opt/lstai/LST_AI
-    - run:
-        - cp {{ get_file("dcm2niix_lnx_zip") }} dcm2niix_lnx.zip
-        - unzip dcm2niix_lnx.zip -d /opt/dcm2niix
+        - python {{ get_file("configure_hdbet.py") }}
+        - unzip {{ get_file("lst_data_zip") }} -d /opt/lstai/LST_AI
+        - chmod a+x /opt/lstai/LST_AI/binaries/greedy
+        - cp {{ get_file("lst") }} /opt/venv/bin/lst
+        - chmod a+x /opt/venv/bin/lst
+        - unzip {{ get_file("dcm2niix_lnx_zip") }} -d /opt/dcm2niix
         - chmod a+x /opt/dcm2niix/dcm2niix
-        - rm dcm2niix_lnx.zip
-    - environment:
-        PATH: $PATH:/opt/dcm2niix
-    - run:
-        - pip install osfclient
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
-    - test:
-            name: Test LST-AI
-            script: |
-              #!/bin/bash
-              set -e
-              osf -p x62zy fetch archive.zip /tmp/archive.zip
-              unzip /tmp/archive.zip -d /tmp/osfdata
-              rm -f /tmp/archive.zip
-              mkdir -p /tmp/t1_out /tmp/flair_out
-              dcm2niix -z y -f "t1" -o /tmp/t1_out /tmp/osfdata/archive/ST000001/SE000005/
-              dcm2niix -z y -f "flair" -o /tmp/flair_out /tmp/osfdata/archive/ST000001/SE000006/
-              lst --t1 /tmp/t1_out/t1.nii.gz \
-                  --flair /tmp/flair_out/flair.nii.gz \
-                  --output /tmp/lstai_output --device cpu --segment_only --fast-mode
-              ls -la /tmp/lstai_output/
-              cat /tmp/lstai_output/lesion_stats.csv
+
+deploy:
+  path:
+    - /opt/venv/bin
+    - /opt/lstai/LST_AI/binaries
+    - /opt/dcm2niix
+  bins:
+    - lst
+    - hd-bet
+
+files:
+  - name: lst
+    filename: lst
+  - name: configure_hdbet.py
+    filename: configure_hdbet.py
+  - name: lst_data_zip
+    url: https://github.com/CompImg/LST-AI/releases/download/v1.1.0/lst_data.zip
+    sha256: c2409747ee6c3cb474c004d77812227a276e7ee4caa0648984a30d9cf5bd3ee3
+  - name: dcm2niix_lnx_zip
+    url: https://github.com/rordenlab/dcm2niix/releases/download/v1.0.20240202/dcm2niix_lnx.zip
+    sha256: 269debc463857a999a9b48f677218dae287b58f5300f161d7fad284116a6321b
+  - name: 0_model
+    url: https://zenodo.org/record/2540695/files/0.model?download=1
+    sha256: 6f75233753c4750672815e2b7a86db754995ae44b8f1cd77bccfc37becd2d83c
+  - name: 1_model
+    url: https://zenodo.org/record/2540695/files/1.model?download=1
+    sha256: 5fcd430c271bb5e13ea8d44f3d303b2dfafa4d0845c1aec6c5a7375f6d727189
+  - name: 2_model
+    url: https://zenodo.org/record/2540695/files/2.model?download=1
+    sha256: 558ede4acb35537585219ece9c6b4b627dd3c019c6865daed0dfc80781dd94e9
+  - name: 3_model
+    url: https://zenodo.org/record/2540695/files/3.model?download=1
+    sha256: 57bf67a58c9e925b13d5b9ae6d6bb648deaf759f6d0af2ccad67651d7a2a93db
+  - name: 4_model
+    url: https://zenodo.org/record/2540695/files/4.model?download=1
+    sha256: 567689e4dff87debe357b30e4414c412485207657d1e99c33bf0bf587d28bf32
+
 categories:
   - image segmentation
   - machine learning
@@ -115,7 +115,8 @@ readme: |-
   ----------------------------------
   ## lstai/{{ context.version }} ##
 
-  LST-AI: A deep learning ensemble for accurate MS lesion segmentation.
+  LST-AI {{ context.upstream_version }}: A deep learning ensemble for accurate MS lesion segmentation.
+  This CPU build includes the release-matched atlas and pretrained models for offline inference.
 
   Example:
   ```

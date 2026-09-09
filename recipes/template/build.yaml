@@ -11,9 +11,23 @@ copyright:
 
 architectures:
 - x86_64
+variables:
+  base_image_digest: sha256:bc694492031b8ec54b86f338766ccbc0353f961669de65b1ad53857d6c275158
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: neurodebian
+      tag: "bookworm-non-free"
+      target:
+        variable: base_image_digest
+
 build:
   kind: neurodocker
-  base-image: neurodebian:bookworm-non-free
+  base-image: neurodebian:bookworm-non-free@{{ context.base_image_digest }}
   pkg-manager: apt
   directives:
   - install:

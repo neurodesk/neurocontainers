@@ -1,17 +1,92 @@
+variables:
+  debian_security_snapshot: 20260901T000000Z
+  mne_version: 1.12.1
+  autoreject_version: 0.5.0
+  mne_bids_version: 0.19.0
+  mnelab_version: 1.5.4
+  vscode_version: "1.136.1"
+  pipeline_commit: ab27777abf79c62bdfd4914dd180957f580f1bbe
+
 name: mneextended
-version: 1.1.0
+version: 1.1.0.post2
 
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: mne
+    method: webpage
+    url: https://api.anaconda.org/package/conda-forge/mne
+    version_regex: '"latest_version":\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: mne_version
+      fulltest_variable: mne_version
+  - id: autoreject
+    method: webpage
+    url: https://api.anaconda.org/package/conda-forge/autoreject
+    version_regex: '"latest_version":\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: autoreject_version
+      fulltest_variable: autoreject_version
+  - id: mne-bids
+    method: webpage
+    url: https://api.anaconda.org/package/conda-forge/mne-bids
+    version_regex: '"latest_version":\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: mne_bids_version
+      fulltest_variable: mne_bids_version
+  - id: mnelab
+    method: webpage
+    url: https://api.anaconda.org/package/conda-forge/mnelab
+    version_regex: '"latest_version":\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: mnelab_version
+      fulltest_variable: mnelab_version
+  - id: vscode
+    method: webpage
+    target:
+      variable: vscode_version
+      fulltest_variable: vscode_version
+    url: https://update.code.visualstudio.com/api/update/linux-x64/stable/latest
+    version_regex: '"productVersion":\s*"(?P<version>\d+(?:\.\d+)+)"'
+  - id: mne-bids-pipeline
+    method: github_commit
+    repo: mne-tools/mne-bids-pipeline
+    ref: main
+    target:
+      variable: pipeline_commit
+      fulltest_variable: pipeline_commit
 
 build:
   kind: neurodocker
   base-image: debian:bullseye
   pkg-manager: apt
+  add-default-template: false
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
+        LANG: en_US.UTF-8
+        LC_ALL: en_US.UTF-8
+        TZ: UTC
+    - run:
+        - mkdir -p /tmp/debian-ca-certificates /etc/ssl/certs
+        - dpkg-deb --extract {{ get_file("debian_ca_certificates") }} /tmp/debian-ca-certificates
+        - cat /tmp/debian-ca-certificates/usr/share/ca-certificates/mozilla/*.crt > /etc/ssl/certs/ca-certificates.crt
+        - rm -rf /tmp/debian-ca-certificates
+        - sed -i 's|^deb http://deb.debian.org/debian-security |deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/ |; s|http://|https://|g' /etc/apt/sources.list
+
+    - copy: container_entrypoint /usr/local/bin/container-entrypoint
+
+    - entrypoint: /usr/local/bin/container-entrypoint
+
     - install:
+        - apt-utils
+        - bzip2
+        - locales
+        - tzdata
         - xdg-utils
         - unzip
         - git
@@ -35,7 +110,16 @@ build:
         - libgl1-mesa-dri
         - mesa-utils
         - libgl1-mesa-glx
-    - copy: mne-extended.yml /opt/mne-extended.yml
+    - run:
+        - sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+        - locale-gen en_US.UTF-8
+        - update-locale LANG=en_US.UTF-8
+        - ln -snf /usr/share/zoneinfo/UTC /etc/localtime
+        - echo UTC > /etc/timezone
+        - chmod 777 /opt
+
+    - run:
+        - cp {{ get_file("mne_extended_yml") }} /opt/mne-extended.yml
     - template:
         name: miniconda
         version: py310_25.5.1-0
@@ -45,6 +129,7 @@ build:
         yaml_file: /opt/mne-extended.yml
     - run:
         - /opt/miniconda/envs/mne-extended/bin/python -c "import autoreject; import mne; import mne_bids; import mnelab"
+        - /opt/miniconda/envs/mne-extended/bin/python -m pip check
         - cp {{ get_file("vscode_deb") }} vscode.deb
         - apt install ./vscode.deb
         - rm -rf ./vscode.deb
@@ -54,8 +139,10 @@ build:
     - workdir: /opt/
     - run:
         - mkdir -p /opt/mne-bids-pipeline
-        - echo "d23a78551dccfef70e295626f07ceab76d33a8b666d1a8938b6f7b6a8b2e5e3d  {{ get_file("mne_bids_pipeline_tar_gz") }}" | sha256sum -c -
+
         - tar xz -f {{ get_file("mne_bids_pipeline_tar_gz") }} --strip-components=1 -C /opt/mne-bids-pipeline
+        - /opt/miniconda/envs/mne-extended/bin/python -m pip install --no-cache-dir 'mne=={{ context.mne_version }}' 'autoreject=={{ context.autoreject_version }}' 'mne-bids=={{ context.mne_bids_version }}' 'mnelab=={{ context.mnelab_version }}' /opt/mne-bids-pipeline
+        - /opt/miniconda/envs/mne-extended/bin/python -m pip check
         - chmod a+rwx /opt/mne-bids-pipeline -R
     - copy: code /usr/local/sbin/code
     - run:
@@ -63,6 +150,7 @@ build:
         - chmod a+rwx /opt/vscode-extensions -R
     - environment:
         XDG_RUNTIME_DIR: /neurodesktop-storage
+        NUMBA_CACHE_DIR: /tmp/numba-mneextended
         RUNLEVEL: "3"
     - user: neuro
 
@@ -71,42 +159,96 @@ deploy:
     - code
 
 readme: |-
-  
+
   ----------------------------------
   ## mneextended/{{ context.version }} ##
-  Python MNE environment with VScode 
-  
-  This environment contains MNE Python and some additional tools with dependencies (MNE BIDS Pipeline, MNE-connectivity, MNE-icalabel, Neurokit2)   
-  
+  Python MNE environment with VScode
+
+  This environment contains MNE Python and some additional tools with dependencies (MNE BIDS Pipeline, MNE-connectivity, MNE-icalabel, Neurokit2)
+
   Example:
   ```
   source /opt/miniconda/etc/profile.d/conda.sh
-  conda activate mne-extended 
+  conda activate mne-extended
   ```
-  
+
   More documentation can be found here: https://mne.tools/stable/index.html
   To cite MNE Python see here: https://mne.tools/stable/overview/cite.html
-  
-  
+
+
   To use the MNE BIDS Pipeline (https://mne.tools/mne-bids-pipeline/)
   ```
-  python /opt/mne-bids-pipeline/run.py --config=/path/to/your/custom_config.py
+  mne_bids_pipeline --config=/path/to/your/custom_config.py
   ```
-  
+
   To run applications outside of this container: ml mneextended/{{ context.version }}
   Note the use of the module system does not currently interface with MNE and conda environments in this container
-  
+
   ----------------------------------
 
 files:
-  - name: mne_extended_yml
-    filename: mne-extended.yml
-  - name: code
-    filename: code
-  - name: vscode_deb
-    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
-  - name: mne_bids_pipeline_tar_gz
-    url: https://github.com/mne-tools/mne-bids-pipeline/archive/a792f818dda95bfe63e0ab0f0011d54c9818f1ad.tar.gz
+- name: container_entrypoint
+  executable: true
+  contents: |
+    #!/bin/sh
+    set -e
+    export USER="${USER:-$(id -un)}"
+    if [ "$#" -eq 0 ]; then
+      set -- /bin/bash
+    fi
+    exec "$@"
+- name: debian_ca_certificates
+  url: https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/pool/updates/main/c/ca-certificates/ca-certificates_20250419~deb12u1~deb11u1_all.deb
+  sha256: a588acf469f96e272fe3e83225f68ddcda72a95e2dd139086d5edc165d3939e3
+- name: mne_extended_yml
+  contents: |
+    name: mne-extended
+    channels:
+      - conda-forge
+
+    dependencies:
+      - python=3.12
+      - setuptools<81
+      - mne={{ context.mne_version }}
+      - jupyter
+      - mne-bids={{ context.mne_bids_version }}
+      - mnelab={{ context.mnelab_version }}
+      - nb_conda_kernels
+      - pytables
+      - h5py
+      - h5io
+      - pymatreader
+      - seaborn
+      - statsmodels
+      - pybv
+      - scikit-learn
+      - pyxdf
+      - pyEDFlib
+      - neurokit2
+      - autoreject={{ context.autoreject_version }}
+      - coloredlogs
+      - pandas<3
+      - openpyxl
+      - json_tricks
+      - fire
+      - typing_extensions
+      - python-picard
+      - dask
+      - distributed
+      - psutil
+      - joblib
+      - jupyter-server-proxy
+      - pyqt
+      - pyvista
+      - pyvistaqt
+      - hdf5
+      - mne-icalabel
+- name: code
+  filename: code
+- name: vscode_deb
+  url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-x64/stable
+- name: mne_bids_pipeline_tar_gz
+  url: https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.pipeline_commit }}.tar.gz
 
 categories:
   - electrophysiology

@@ -144,3 +144,19 @@ def test_unclassified_field_fails_closed_to_candidate() -> None:
 
     assert plan.candidate_recipes == ["demo"]
     assert plan.decisions[0].reasons == ("unclassified-field",)
+
+
+def test_shared_macro_rebuilds_all_consumers_without_recipe_edits():
+    dependent = recipe(build={"directives": [{"include": "macros/shared/tool.yaml"}]})
+    unrelated = recipe()
+    data = {"first": dependent, "second": dependent, "other": unrelated}
+    plan = plan_recipe_changes(["macros/shared/tool.yaml"], data, data)
+    assert plan.candidate_recipes == ["first", "second"]
+    assert all(d.reasons == ("shared-build-input-changed",) for d in plan.decisions)
+
+
+def test_shared_watch_uses_path_boundaries():
+    watched = recipe(auto_update={"method": "sources", "local": ["macros/shared"]})
+    data = {"demo": watched}
+    assert not plan_recipe_changes(["macros/shared-other/code.py"], data, data).decisions
+    assert plan_recipe_changes(["macros/shared/code.py"], data, data).candidate_recipes == ["demo"]

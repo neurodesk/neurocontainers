@@ -19,10 +19,6 @@ MODEL_SPECS = {
             "contrast_agnostic_wholebody_model.pth",
             "contrast_agnostic_wholebody_model.json",
         ),
-        "checksums": (
-            "910b722aeb641c380404c99ec6d1af97",
-            "b586ac488b2e40a4e8624a9a1c52d6b5",
-        ),
         "out_channels": 114,
         "num_res_units": 2,
         "label_count": 113,
@@ -31,10 +27,6 @@ MODEL_SPECS = {
         "filenames": (
             "contrast_agnostic_abdomen_model.pth",
             "contrast_agnostic_abdomen_model.json",
-        ),
-        "checksums": (
-            "25d777a05b00a8106bec6acb034c212c",
-            "35e0efb873497ad063fee30fdd4ea69b",
         ),
         "out_channels": 9,
         "num_res_units": 2,
@@ -45,10 +37,6 @@ MODEL_SPECS = {
             "contrast_agnostic_forearm_model.pth",
             "contrast_agnostic_forearm_model.json",
         ),
-        "checksums": (
-            "aee13b1f942328cf787679a83fb88137",
-            "f80881b5372b0bba403f2f94f1a68e0b",
-        ),
         "out_channels": 6,
         "num_res_units": 1,
         "label_count": 5,
@@ -57,10 +45,6 @@ MODEL_SPECS = {
         "filenames": (
             "contrast_agnostic_leg_model.pth",
             "contrast_agnostic_leg_model.json",
-        ),
-        "checksums": (
-            "a293a5fed25a2b298c9fe58a0bfda5f1",
-            "9da4d3ae4857a015f615649646e34bd1",
         ),
         "out_channels": 15,
         "num_res_units": 2,
@@ -71,10 +55,6 @@ MODEL_SPECS = {
             "contrast_agnostic_pelvis_model.pth",
             "contrast_agnostic_pelvis_model.json",
         ),
-        "checksums": (
-            "1a085c3c1cee45e8d48120c8805d28f2",
-            "c8cba0118c5dfa5f870ff138187c1c55",
-        ),
         "out_channels": 14,
         "num_res_units": 2,
         "label_count": 13,
@@ -84,28 +64,13 @@ MODEL_SPECS = {
             "contrast_agnostic_thigh_model.pth",
             "contrast_agnostic_thigh_model.json",
         ),
-        "checksums": (
-            "4e570b2cab9125dfe53cf20b86398581",
-            "1f820178021a866103e901d7bfa0af68",
-        ),
         "out_channels": 29,
         "num_res_units": 2,
         "label_count": 28,
     },
 }
 
-TEMPLATE_CHECKSUMS = {
-    "abdomen_template.nii.gz": "c2c7828b0bbbe2f5dcd78bc3454be573",
-    "abdomen_template_dseg.nii.gz": "ca685cd35cf8212b52abca177571455c",
-    "abdomen_template_dseg_label-1.nii.gz": "7e712776154de9d4e7c1317f53193ca1",
-    "abdomen_template_dseg_label-2.nii.gz": "89281562711639604b8bd9ebacc06f52",
-    "abdomen_template_dseg_label-3.nii.gz": "b8d91d68d12f1166c70529e7e60ca620",
-    "abdomen_template_dseg_label-4.nii.gz": "7350c21220e42f9837f0527681f1a97a",
-    "abdomen_template_dseg_label-5.nii.gz": "66342aaf7ed11ee733c1aa86a4a7f71f",
-    "abdomen_template_dseg_label-6.nii.gz": "d852b3cc640af8f6c413fbd0556629f6",
-    "abdomen_template_dseg_label-7.nii.gz": "1fa85278c89cd3913357d42fc34ea943",
-    "abdomen_template_dseg_label-8.nii.gz": "f8bde003ca64c8198ac513780068347b",
-}
+TEMPLATE_FILENAMES = ('abdomen_template.nii.gz', 'abdomen_template_dseg.nii.gz', 'abdomen_template_dseg_label-1.nii.gz', 'abdomen_template_dseg_label-2.nii.gz', 'abdomen_template_dseg_label-3.nii.gz', 'abdomen_template_dseg_label-4.nii.gz', 'abdomen_template_dseg_label-5.nii.gz', 'abdomen_template_dseg_label-6.nii.gz', 'abdomen_template_dseg_label-7.nii.gz', 'abdomen_template_dseg_label-8.nii.gz')
 
 
 def md5sum(path: Path) -> str:
@@ -121,6 +86,17 @@ def require_environment(name: str) -> str:
     if not value:
         raise AssertionError(f"required environment variable is unset: {name}")
     return value
+
+
+def record_checksums(root: Path, region: str) -> dict[str, str]:
+    record = json.loads((root / "records" / (region + ".json")).read_text())
+    checksums = {}
+    for file in record["files"]:
+        algorithm, separator, checksum = file["checksum"].partition(":")
+        if algorithm != "md5" or not separator or len(checksum) != 32:
+            raise AssertionError("unsupported checksum in published model record")
+        checksums[file["key"]] = checksum
+    return checksums
 
 
 def verify_file(path: Path, expected_checksum: str) -> None:
@@ -143,8 +119,9 @@ def verify_model(
     weight_name, config_name = spec["filenames"]
     weight_path = model_dir / weight_name
     config_path = model_dir / config_name
-    verify_file(weight_path, spec["checksums"][0])
-    verify_file(config_path, spec["checksums"][1])
+    checksums = record_checksums(root, region)
+    verify_file(weight_path, checksums[weight_name])
+    verify_file(config_path, checksums[config_name])
 
     config = json.loads(config_path.read_text(encoding="utf-8"))
     model = config["model"]
@@ -192,7 +169,7 @@ def verify_install(
     verify_runtime_defaults: bool = True,
 ) -> None:
     wholebody_version = require_environment("MUSCLEMAP_WHOLEBODY_MODEL_VERSION")
-    regional_version = require_environment("MUSCLEMAP_REGIONAL_MODEL_VERSION")
+    regional_versions = {region: require_environment("MUSCLEMAP_" + region.upper() + "_MODEL_VERSION") for region in MODEL_SPECS if region != "wholebody"}
     software_version = require_environment("MUSCLEMAP_SOFTWARE_VERSION")
 
     installed_version = (root / "version.txt").read_text(encoding="utf-8").strip()
@@ -204,7 +181,7 @@ def verify_install(
     wholebody_weight = None
     wholebody_config = None
     for region, spec in MODEL_SPECS.items():
-        version = wholebody_version if region == "wholebody" else regional_version
+        version = wholebody_version if region == "wholebody" else regional_versions[region]
         weight_path, config = verify_model(root, region, spec, version)
         if region == "wholebody":
             wholebody_weight = weight_path
@@ -218,14 +195,15 @@ def verify_install(
         raise AssertionError("whole-body v1.4 label values are incomplete")
 
     template_dir = root / "scripts" / "templates" / "abdomen"
-    for filename, checksum in TEMPLATE_CHECKSUMS.items():
-        verify_file(template_dir / filename, checksum)
+    checksums = record_checksums(root, "abdomen_template")
+    for filename in TEMPLATE_FILENAMES:
+        verify_file(template_dir / filename, checksums[filename])
 
     if verify_runtime_defaults:
         sys.path.insert(0, str(root))
         mm_util = importlib.import_module("scripts.mm_util")
         for region in MODEL_SPECS:
-            expected_version = wholebody_version if region == "wholebody" else regional_version
+            expected_version = wholebody_version if region == "wholebody" else regional_versions[region]
             actual_version = mm_util._resolve_container_model_version(region, "latest")
             if actual_version != expected_version:
                 raise AssertionError(

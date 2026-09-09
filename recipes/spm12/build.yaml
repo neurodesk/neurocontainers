@@ -8,6 +8,19 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/
+    version_regex: spm12_r(?P<version>\d+)_Linux_R(?P<runtime>\d{4}[ab])\.zip$
+    download_base: https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/
+    target:
+      file: spm12_r7771_Linux_R2019b_zip
+      variables:
+        spm_revision: version
+        matlab_version: runtime
 build:
   kind: neurodocker
 
@@ -23,20 +36,22 @@ build:
         - dbus-x11
 
     - environment:
-        MATLAB_VERSION: R2019b
+        MATLAB_VERSION: "R{{ context.matlab_version }}"
         MCR_UPDATE: "9"
-        MCR_VERSION: v97
+        MCR_VERSION: "{{ context.matlab_runtime_subdir }}"
 
     - template:
         name: matlabmcr
-        install_path: /opt/mcr
-        version: 2019b
+        install_path: "/opt/mcr"
+        version: "{{ context.matlab_version }}"
         ncurses_package: libncurses5
 
+    - run:
+      - ln -s /opt/mcr/{{ context.matlab_runtime_subdir }} /opt/matlab-runtime
     - environment:
         MCR_INHIBIT_CTF_LOCK: "1"
         SPM_HTML_BROWSER: "0"
-        SPM_REVISION: r7771
+        SPM_REVISION: "r{{ context.spm_revision }}"
         SPM_VERSION: "12"
 
     - run:
@@ -45,7 +60,7 @@ build:
         - rm -f /opt/spm12_r7771_Linux_R2019b.zip
 
     - environment:
-        LD_LIBRARY_PATH: /opt/mcr/v97/runtime/glnxa64:/opt/mcr/v97/bin/glnxa64:/opt/mcr/v97/sys/os/glnxa64:/opt/mcr/v97/sys/opengl/lib/glnxa64:/opt/mcr/v97/extern/bin/glnxa64
+        LD_LIBRARY_PATH: /opt/matlab-runtime/runtime/glnxa64:/opt/matlab-runtime/bin/glnxa64:/opt/matlab-runtime/sys/os/glnxa64:/opt/matlab-runtime/sys/opengl/lib/glnxa64:/opt/matlab-runtime/extern/bin/glnxa64
 
     - run:
         - /opt/spm12/spm12 function exit
@@ -58,9 +73,9 @@ build:
 
     - environment:
         DEPLOY_ENV_FORCE_SPMMCR: "1"
-        DEPLOY_ENV_SPMMCRCMD: run_spm12.sh /opt/mcr/v97/ script
+        DEPLOY_ENV_SPMMCRCMD: run_spm12.sh /opt/matlab-runtime/ script
         PATH: $PATH:/opt/spm12:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-        XAPPLRESDIR: /opt/mcr/v97/x11/app-defaults
+        XAPPLRESDIR: /opt/matlab-runtime/x11/app-defaults
 
 deploy:
   bins:
@@ -74,7 +89,7 @@ readme: |-
 
   Example:
   ```
-  run_spm12.sh /opt/mcr/v97/
+  run_spm12.sh /opt/matlab-runtime/
   ```
 
   Example with nipype:
@@ -90,7 +105,7 @@ readme: |-
   ```
   import nipype.interfaces.spm as spm
 
-  matlab_cmd = 'run_spm12.sh /opt/mcr/v97/ script'
+  matlab_cmd = 'run_spm12.sh /opt/matlab-runtime/ script'
   spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)
 
   norm12 = spm.Normalize12()
@@ -113,8 +128,16 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAgl0lE
 
 gui_apps:
   - name: "spm12GUI"
-    exec: "bash run_spm12.sh /opt/mcr/v97/"
+    exec: "bash run_spm12.sh /opt/matlab-runtime/"
 
 files:
   - name: spm12_r7771_Linux_R2019b_zip
-    url: https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7771_Linux_R2019b.zip
+    url: "https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7771_Linux_R2019b.zip"
+    sha256: 1e0000c8c035edce5513bcf89324672595a534c387bedcc8d24b4aff040acb08
+variables:
+  upstream_version: r7771
+  matlab_version: 2019b
+  matlab_runtime_subdir: '{{ {''2018a'': ''v94'', ''2019b'': ''v97'', ''2020a'': ''v98'', ''2020b'': ''v99'', ''2021a'': ''v910'',
+    ''2021b'': ''v911'', ''2022a'': ''v912'', ''2022b'': ''v913'', ''2023a'': ''v914''}.get(context.matlab_version, ''R'' +
+    context.matlab_version) }}'
+  spm_revision: '7771'

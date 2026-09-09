@@ -14,8 +14,9 @@ def test_release_shape_matches_current_contract() -> None:
     )
     data = release_data(compiled.name, compiled.version, compiled.recipe, "20260102")
     assert data["categories"] == ["data organisation"]
-    assert data["apps"]["dcm2niix v1.0.20240202"]["version"] == "20260102"
-    assert data["apps"]["dcm2niix v1.0.20240202"]["exec"] == ""
+    app = data["apps"][f"{compiled.name} {compiled.version}"]
+    assert app["version"] == "20260102"
+    assert app["exec"] == ""
 
 
 def test_release_renders_gui_app_exec_from_recipe_context() -> None:
@@ -26,7 +27,7 @@ def test_release_renders_gui_app_exec_from_recipe_context() -> None:
         include_dirs=config.include_dirs,
     )
     data = release_data(compiled.name, compiled.version, compiled.recipe, "20260519")
-    exec_command = data["apps"]["cat12GUI-cat12 26.0.rc3"]["exec"]
+    exec_command = data["apps"][f"cat12GUI-{compiled.name} {compiled.version}"]["exec"]
 
     assert exec_command == "bash run_spm25.sh /opt/mcr/R2023b/"
     assert "{{" not in exec_command

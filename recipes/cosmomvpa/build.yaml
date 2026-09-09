@@ -1,9 +1,23 @@
+variables:
+  install_version: "1.1.0"
+  upstream_commit: fe5acaf3034dbaac6f1a05cc00e969cae8db760b
+
 name: cosmomvpa
-version: 1.1.0
+version: "1.1.0.post1"
 
 architectures:
   - x86_64
   - aarch64
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: CoSMoMVPA/CoSMoMVPA
+    ref: HEAD
+    target:
+      variable: upstream_commit
 
 build:
   kind: neurodocker
@@ -28,17 +42,17 @@ build:
         - fonts-freefont-otf
         - units
 
-    - workdir: /opt/{{ context.name }}-{{ context.version }}
+    - workdir: /opt/cosmomvpa-{{ context.install_version }}
 
     - run:
-        - git clone https://github.com/CoSMoMVPA/CoSMoMVPA.git
+        - git clone https://github.com/CoSMoMVPA/CoSMoMVPA.git && git -C CoSMoMVPA checkout {{ context.upstream_commit }}
 
     - run:
         - make -C CoSMoMVPA install
 
     - copy: 
         - setup_cosmomvpa.m
-        - /opt/{{ context.name }}-{{ context.version }}/setup_cosmomvpa.m
+        - /opt/cosmomvpa-{{ context.install_version }}/setup_cosmomvpa.m
 
     - run:
         - octave --no-gui setup_cosmomvpa.m

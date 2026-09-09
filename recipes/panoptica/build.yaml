@@ -4,6 +4,10 @@ version: 2.1.7
 architectures:
   - x86_64
 
+auto_update:
+  method: pypi
+  package: panoptica
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04

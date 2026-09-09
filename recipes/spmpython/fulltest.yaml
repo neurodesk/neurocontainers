@@ -65,7 +65,7 @@ tests:
   - name: SPM version check
     description: Verify SPM-Python version
     command: python -c "import spm; print(spm.__version__)"
-    expected_output_contains: "25.1.2.post1"
+    expected_output_contains: "${version}"
 
   - name: Import numpy
     description: Test numpy import and version

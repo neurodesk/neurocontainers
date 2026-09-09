@@ -8,6 +8,14 @@ copyright:
 architectures:
   - x86_64
 
+variables:
+  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+  twixtools_version: "0.24"
+  openrecon_ismrmrd_version: "1.14.2"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+
 files:
   - name: epirecon.py
     filename: epirecon.py
@@ -22,9 +30,51 @@ files:
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
 
+auto_update:
+  method: sources
+  local:
+    - macros/openrecon
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: ubuntu
+      tag: "22.04"
+      target:
+        variable: base_image_digest
+    - id: twixtools
+      method: pypi
+      package: twixtools
+      target:
+        variable: twixtools_version
+        fulltest_variable: twixtools_version
+    - id: openrecon_ismrmrd
+      method: github_release
+      repo: ismrmrd/ismrmrd
+      target:
+        variable: openrecon_ismrmrd_version
+        value: version
+    - id: openrecon_siemens
+      method: github_commit
+      repo: ismrmrd/siemens_to_ismrmrd
+      ref: HEAD
+      target:
+        variable: openrecon_siemens_commit
+    - id: openrecon_python_tools
+      method: github_commit
+      repo: ismrmrd/ismrmrd-python-tools
+      ref: HEAD
+      target:
+        variable: openrecon_python_tools_commit
+    - id: openrecon_server
+      method: github_commit
+      repo: astewartau/python-ismrmrd-server
+      ref: fix/ismrmrd-compatibility
+      target:
+        variable: openrecon_server_commit
+
 build:
   kind: neurodocker
-  base-image: ubuntu:22.04
+  base-image: ubuntu:22.04@{{ context.base_image_digest }}
   pkg-manager: apt
 
   directives:
@@ -41,7 +91,7 @@ build:
     - run:
         - ldconfig
     - run:
-        - pip3 install --no-cache-dir twixtools==0.24
+        - pip3 install --no-cache-dir twixtools=={{ context.twixtools_version }}
     - workdir: /opt/epirecon
     - run:
         - cp {{ get_file("epirecon.py") }} /opt/code/python-ismrmrd-server/epirecon.py

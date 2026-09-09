@@ -18,11 +18,14 @@ variables:
   # concrete argument types, so every process paid ~40 s of JIT before doing ~1 s
   # of work. The sysimage below bakes that compilation into the image once.
   #
-  # The build machine is not the run machine: these containers ship to CVMFS and
-  # run on whatever CPU the site has. PackageCompiler defaults to a native target,
-  # which would produce an image that is illegal on older hardware, so pin the
-  # same multiversioned target Julia uses for its own x86_64 binaries.
-  sysimage_cpu_target: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1);x86-64-v4,-rdrnd,base(1)"
+  # HostCPUFeatures freezes SIMD capabilities during package precompilation.
+  # Use the same portable target for packages, workload tracing and the sysimage
+  # so native AVX-512 intrinsics cannot leak into its baseline machine code.
+  sysimage_cpu_target: generic
+
+auto_update:
+  method: github_release
+  repo: korbinian90/CLEARSWI.jl
 
 build:
   kind: neurodocker
@@ -46,6 +49,7 @@ build:
     - environment:
         PATH: "{{ context.julia_root }}/bin:/opt/clearswi/bin:$PATH"
         JULIA_DEPOT_PATH: /opt/julia_depot
+        JULIA_CPU_TARGET: "{{ context.sysimage_cpu_target }}"
 
     - copy:
         - install_packages.jl
@@ -71,8 +75,8 @@ build:
     # /.reproenv.json, which leaves invalid JSON behind in the image.
     - run:
         - tar -xzf {{ get_file("julia_linux_x86_64_tar_gz") }} -C /opt
-        - julia /opt/install_packages.jl
-        - julia --startup-file=no /opt/build_sysimage.jl
+        - julia --startup-file=no --cpu-target={{ context.sysimage_cpu_target }} /opt/install_packages.jl
+        - julia --startup-file=no --cpu-target={{ context.sysimage_cpu_target }} /opt/build_sysimage.jl
         - rm -f /opt/build_sysimage.jl /opt/precompile_workload.jl
 
     # The Julia entry script is named "clearswi" (no extension) because ArgParse
@@ -106,7 +110,8 @@ files:
 
   - name: install_packages.jl
     contents: |
-      using Pkg
+      using Pkg, TOML
+      ENV["JULIA_PKG_PRECOMPILE_AUTO"] = "0"
       # ArgParse and QuantitativeSusceptibilityMappingTGV are loaded by name in
       # the launcher, so both have to be direct dependencies of this environment.
       # TGV backs the --qsm option: MriResearchTools dispatches to it through a
@@ -117,6 +122,18 @@ files:
           PackageSpec(name="QuantitativeSusceptibilityMappingTGV", version="{{ context.tgv_version }}"),
           PackageSpec(name="PackageCompiler", version="{{ context.packagecompiler_version }}"),
       ])
+      # PackageCompiler starts native-target Julia subprocesses internally.
+      # Persist HostCPUFeatures' supported preference before any precompilation
+      # so those subprocesses also generate portable SIMD instructions.
+      project_file = Base.active_project()
+      project = TOML.parsefile(project_file)
+      get!(project, "extras", Dict{String,Any}())["HostCPUFeatures"] =
+          "3e5b6fbb-0976-4d2c-9146-d79de83f2fb0"
+      get!(project, "preferences", Dict{String,Any}())["HostCPUFeatures"] =
+          Dict("cpu_target" => "{{ context.sysimage_cpu_target }}")
+      open(project_file, "w") do io
+          TOML.print(io, project)
+      end
       Pkg.precompile()
       # Warm the cache for the launcher's exact load sequence.
       using CLEARSWI, QuantitativeSusceptibilityMappingTGV, ArgParse

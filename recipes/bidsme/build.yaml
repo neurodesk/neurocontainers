@@ -1,5 +1,5 @@
 name: bidsme
-version: 1.9.3
+version: 1.9.3.post1
 architectures:
   - x86_64
   - aarch64
@@ -12,6 +12,29 @@ structured_readme:
     bidsme
   documentation: https://github.com/CyclotronResearchCentre/bidsme/blob/dev/doc/cli-interface.md
   citation: ''
+auto_update:
+  method: sources
+  sources:
+    - id: bidsme
+      method: github_release
+      repo: CyclotronResearchCentre/bidsme
+      target:
+        variable: upstream_tag
+        value: tag
+        variables:
+          upstream_version: version
+    - id: dcm2niix
+      method: pypi
+      package: dcm2niix
+      target:
+        variable: dcm2niix_version
+        fulltest_variable: dcm2niix_version
+
+variables:
+  upstream_tag: '1.9.3'
+  upstream_version: '1.9.3'
+  dcm2niix_version: '1.0.20260724'
+
 build:
   kind: neurodocker
   base-image: python:3.11-slim-bookworm
@@ -21,14 +44,13 @@ build:
         MPLCONFIGDIR: ~/.config/matplotlib-bidsme
     - install:
         - ca-certificates
-        - dcm2niix
         - git
         - tk
     - workdir: /opt
     - run:
-        - git clone --depth 1 --branch {{ context.version }} https://github.com/CyclotronResearchCentre/bidsme.git
+        - git clone --depth 1 --branch {{ context.upstream_tag }} https://github.com/CyclotronResearchCentre/bidsme.git
         - cd /opt/bidsme
-        - python -m pip install --no-cache-dir .[all]
+        - python -m pip install --no-cache-dir .[all] dcm2niix=={{ context.dcm2niix_version }}
     - test:
         name: testScript
         script: |-

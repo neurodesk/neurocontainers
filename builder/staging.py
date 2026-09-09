@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import shutil
 
-from .cache import HttpCache, get_guest_filename, link_or_copy, sha256_text
+from .cache import HttpCache, get_guest_filename, link_or_copy, normalize_sha256, sha256_text
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class DeclaredFile:
     executable: bool = False
     guest_filename: str | None = None
     retry: int | None = None
+    sha256: str | None = None
 
 
 @dataclass
@@ -53,6 +54,18 @@ def disambiguated_cache_name(cache_dir: Path, preferred: str, source: Path) -> s
     return f"{stem}_{sha256_text(str(source))[:12]}{suffix}"
 
 
+def _stage_file(source: Path, target: Path, *, executable: bool) -> None:
+    source_mode = source.stat().st_mode & 0o777
+    mode = 0o755 if executable or source_mode & 0o111 else 0o644
+    if source_mode == mode:
+        link_or_copy(source, target)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.unlink(missing_ok=True)
+        shutil.copyfile(source, target)
+        target.chmod(mode)
+
+
 def materialize_plan(
     plan: StagingPlan,
     recipe_dir: Path,
@@ -71,9 +84,9 @@ def materialize_plan(
         if file.contents is not None:
             target = cache_dir / preferred
             target.parent.mkdir(parents=True, exist_ok=True)
+            target.unlink(missing_ok=True)
             target.write_text(file.contents)
-            if file.executable:
-                target.chmod(0o755)
+            target.chmod(0o755 if file.executable else 0o644)
             materialized[file.name] = target
             continue
 
@@ -85,9 +98,7 @@ def materialize_plan(
                 raise FileNotFoundError(f"declared file not found: {source}")
             name = disambiguated_cache_name(cache_dir, preferred, source)
             target = cache_dir / name
-            link_or_copy(source, target)
-            if file.executable:
-                target.chmod(0o755)
+            _stage_file(source, target, executable=file.executable)
             materialized[file.name] = target
             continue
 
@@ -97,17 +108,18 @@ def materialize_plan(
                 download=download,
                 file_name=file.name,
                 retry=file.retry,
+                sha256=file.sha256,
             )
             if not source.exists():
                 target = cache_dir / preferred
                 target.parent.mkdir(parents=True, exist_ok=True)
+                target.unlink(missing_ok=True)
                 target.touch()
+                target.chmod(0o755 if file.executable else 0o644)
             else:
                 name = disambiguated_cache_name(cache_dir, preferred, source)
                 target = cache_dir / name
-                link_or_copy(source, target)
-            if file.executable:
-                target.chmod(0o755)
+                _stage_file(source, target, executable=file.executable)
             materialized[file.name] = target
             continue
 
@@ -149,6 +161,11 @@ def declared_file_from_mapping(name: str, mapping: dict[str, object]) -> Declare
     contents = mapping.get("contents")
     executable = bool(mapping.get("executable", False))
     retry = mapping.get("retry")
+    sha256 = mapping.get("sha256")
+    if sha256 is not None:
+        if url is None or filename is not None or contents is not None:
+            raise ValueError(f"declared file {name!r}: sha256 requires a URL source")
+        sha256 = normalize_sha256(sha256)
     url_str = str(url) if url is not None else None
     guest_filename = get_guest_filename(name, url_str)
     return DeclaredFile(
@@ -159,4 +176,5 @@ def declared_file_from_mapping(name: str, mapping: dict[str, object]) -> Declare
         executable=executable,
         guest_filename=guest_filename,
         retry=int(retry) if retry is not None else None,
+        sha256=sha256,
     )

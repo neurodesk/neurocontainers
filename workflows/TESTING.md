@@ -65,19 +65,23 @@ This manually triggered workflow validates every recipe that has a published rel
 
 ### On-Demand Recipe Matrix – `.github/workflows/recipes-ci.yml`
 
-This manually triggered workflow supports large-scale or architecture-specific validation runs.
+This workflow builds recipes from the selected branch and runs their runtime tests against the new images. It has read-only repository permissions and retains test results without publishing containers.
 
-1. **Inputs** allow maintainers to choose architecture (`x86_64` or `arm64`), toggle a debug mode (limits to the `niimath` recipe), and decide whether to execute container tests (`run-tests` toggle).
-2. **`build-builder-sif` job** builds the reusable `builder.sif` artifact:
-   - Installs Apptainer on the GitHub-hosted runner.
-  - Installs the repo as a Python package to expose `sf-*` entry points.
-  - Runs `sf-make builder --ignore-architectures --architecture <arch>` and uploads the resulting SIF under `sifs/`.
-3. **`prepare-matrix` job** walks `recipes/*/build.yaml` (skipping the `builder` recipe) to produce the matrix of recipe names. In debug mode the list is reduced to speed iteration.
-4. **`build-or-test-recipe` job** runs per recipe:
-   - Downloads the cached `builder.sif`, prepares a writable `/mnt/tmp`, and uses Apptainer + `sf-make` inside the SIF to build the target recipe SIF.
-   - When `run-tests` is true, the job invokes the shared runner so the same reporting logic generates JSON, Markdown comments, and detailed reports. Because the freshly built SIF resides in the workspace, the runner uses the `--location local` resolution path instead of downloading.
+- `recipes` selects comma-separated recipe names. When empty, `debug=true` selects `niimath` and `debug=false` selects every recipe.
+- `architecture` accepts `x86_64`, `arm64`, or `all`. The matrix includes each selected recipe's declared architectures and variants.
+- `run-tests` defaults to `true`. Setting it to `false` runs validation, staging, and Docker builds only.
+- `x86-runner` selects the existing ARC or Blacksmith pool in the NeuroDesk repository. ARM builds use the Blacksmith ARM pool. Forks use GitHub-hosted runners.
 
-The workflow defaults to `debug=true` and `run-tests=false`, so full container testing is opt-in; maintainers enable testing when they need deeper validation across many recipes or architectures.
+The `prepare-matrix` job expands the selection with `workflows.recipe_ci`. Each `verify` job installs the builder from the checkout, stages declared downloads, and builds a Docker image. With runtime tests enabled, the job converts that image to a SIF and runs deploy checks plus `recipes/<name>/fulltest.yaml` through `workflows.release_test_runner`. A failed check fails the job. JSON results and diagnostic logs are retained for seven days.
+
+For example, to build and test QSMxT and every declared DataLad variant on a branch:
+
+```bash
+gh workflow run recipes-ci.yml --ref <branch> \
+  -f recipes=qsmxt,datalad -f architecture=all -f run-tests=true
+```
+
+A dispatch is limited to 256 concrete builds. For the full collection, dispatch each architecture separately or split the recipe list into batches.
 
 ### Builder Linting – `.github/workflows/test-builder.yml`
 
@@ -109,11 +113,17 @@ before a recipe is synchronized into the OpenRecon packaging repository.
      --runtime apptainer \
      --verbose
    ```
-3. **Recipe-focused check** (simulates `recipes-ci` when `run-tests=true`):
+3. **Recipe-focused check** (matches the Recipes CI runtime step):
    ```bash
-   sf-test-remote <name> --version <version> --location local --runtime apptainer --cleanup
+   python -m workflows.release_test_runner \
+     --recipe <name> --version <version> \
+     --release-file releases/<name>/<version>.json \
+     --candidate-container <path-to-newly-built.simg> \
+     --test-config recipes/<name>/fulltest.yaml \
+     --results-path check/<name>/test-results.json \
+     --output-dir check/<name>/test-output --repo-root . --verbose
    ```
-   Make sure the corresponding `sifs/<name>_<version>.sif` exists, e.g. by running `sf-make <name>` first.
+   Build the candidate first. The explicit candidate path allows testing before release metadata exists.
 4. **Full local matrix**: `python workflows/full_container_test.py --recipes <name>[,<name>...]` reproduces the `full-container-test.yml` job through the shared `ContainerTestRunner` pipeline.
 
 ## Outputs, Reporting, and Cleanup

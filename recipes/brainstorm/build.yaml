@@ -1,5 +1,5 @@
 name: brainstorm
-version: "3.211130"
+version: "3.211130.post1"
 
 copyright:
   - license: GPL-3.0
@@ -8,6 +8,19 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build?format=json&prefix=brainstorm
+    version_regex: brainstorm(?P<version>\d+\.\d+)_mcr(?P<runtime>\d{4}[ab])\.tar\.gz$
+    download_base: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/
+    target:
+      file: brainstorm3_211130_mcr2020a_tar_gz
+      variables:
+        upstream_version: version
+        matlab_version: runtime
 build:
   kind: neurodocker
 
@@ -24,22 +37,25 @@ build:
 
     - template:
         name: matlabmcr
-        install_path: /opt/MCR
-        version: 2020a
-
-    - workdir: /opt/brainstorm-3.211130/
+        install_path: "/opt/MCR"
+        version: "{{ context.matlab_version }}"
+        ncurses_package: libncurses5
 
     - run:
-        - tar -xz -C /opt/brainstorm-3.211130/ --strip-components 1 -f {{ get_file("brainstorm3_211130_mcr2020a_tar_gz") }}
+      - ln -s /opt/MCR/{{ context.matlab_runtime_subdir }} /opt/matlab-runtime
+    - workdir: /opt/brainstorm-{{ context.upstream_version }}/
+
+    - run:
+        - tar -xz -C /opt/brainstorm-{{ context.upstream_version }}/ --strip-components 1 -f {{ get_file("brainstorm3_211130_mcr2020a_tar_gz") }}
 
     - environment:
-        PATH: /opt/brainstorm-3.211130/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+        PATH: /opt/brainstorm-{{ context.upstream_version }}/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
 
 deploy:
   bins:
     - brainstorm3.command
   path:
-    - /opt/brainstorm-3.211130/
+    - /opt/brainstorm-{{ context.upstream_version }}/
 
 readme: |-
   ----------------------------------
@@ -48,7 +64,7 @@ readme: |-
 
   Example:
   ```
-  brainstorm3.command /opt/MCR/v98
+  brainstorm3.command /opt/matlab-runtime
   ```
 
   More documentation can be found here: https://neuroimage.usc.edu/brainstorm/Introduction
@@ -63,8 +79,15 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAAkCAYAAAA5DDySAAAACXBI
 
 gui_apps:
   - name: "brainstormGUI"
-    exec: "brainstorm3.command /opt/MCR/v98/"
+    exec: "brainstorm3.command /opt/matlab-runtime/"
 
 files:
   - name: brainstorm3_211130_mcr2020a_tar_gz
-    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/brainstorm3.211130_mcr2020a.tar.gz
+    url: "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/brainstorm3.211130_mcr2020a.tar.gz"
+    sha256: 3450d440579a4029b59ff122573b7a4e439920345f1559f17443d5fd8a8f2c9b
+variables:
+  upstream_version: '3.211130'
+  matlab_version: 2020a
+  matlab_runtime_subdir: '{{ {''2018a'': ''v94'', ''2019b'': ''v97'', ''2020a'': ''v98'', ''2020b'': ''v99'', ''2021a'': ''v910'',
+    ''2021b'': ''v911'', ''2022a'': ''v912'', ''2022b'': ''v913'', ''2023a'': ''v914''}.get(context.matlab_version, ''R'' +
+    context.matlab_version) }}'

@@ -18,6 +18,11 @@ variables:
       - value: openjdk_20_0_1_linux_aarch64_bin_tar_gz
         condition: arch == "aarch64"
 
+auto_update:
+  method: webpage
+  url: https://api.github.com/repos/nighres/nighres/branches?per_page=100
+  version_regex: '"name"\s*:\s*"release-(?P<version>\d+\.\d+\.\d+)"'
+
 build:
   kind: neurodocker
 
@@ -63,9 +68,8 @@ build:
     - workdir: /opt
 
     - run:
-        - git clone https://github.com/nighres/nighres.git
+        - git clone --branch release-{{ context.version }} https://github.com/nighres/nighres.git
         - cd nighres
-        - "git checkout release-{{ context.version }}"
         - ./build.sh
         - pip install --no-deps .
         - python -c "import nighres, nighresjava"

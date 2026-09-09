@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: pypi
+  package: radtract
+
 build:
   kind: neurodocker
 
@@ -32,7 +36,7 @@ build:
         - pip install --upgrade pip setuptools wheel
         - pip install --no-cache-dir numpy pykwalify pywavelets scipy six SimpleITK versioneer
         - pip install --no-cache-dir git+https://github.com/AIM-Harvard/pyradiomics.git@v3.1.0
-        - pip install --no-cache-dir radtract==0.2.3
+        - pip install --no-cache-dir radtract=={{ context.version }}
 
 deploy:
   bins:

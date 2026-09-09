@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: pypi
+  package: brkraw
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04

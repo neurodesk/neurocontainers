@@ -1,0 +1,37 @@
+#!/bin/sh
+set -eu
+
+pipeline_dir=/MEGNET_pipeline/code
+case "${1:---help}" in
+  -h|--help)
+    printf 'Usage: megnet PIPELINE.py [pipeline arguments]\n\nAvailable pipelines:\n'
+    for pipeline in "$pipeline_dir"/main_*.py; do
+      printf '  %s\n' "${pipeline##*/}"
+    done
+    printf '\nUse megnet PIPELINE.py --help for that pipeline\047s options.\n'
+    exit 0
+    ;;
+  */*)
+    printf 'Choose a bundled pipeline filename; see megnet --help.\n' >&2
+    exit 2
+    ;;
+  main_*.py)
+    if [ ! -f "$pipeline_dir/$1" ]; then
+      printf 'Unknown MEGNET pipeline: %s\n' "$1" >&2
+      exit 2
+    fi
+    ;;
+  *)
+    printf 'Unknown MEGNET pipeline: %s; see megnet --help.\n' "$1" >&2
+    exit 2
+    ;;
+esac
+
+pipeline=$1
+shift
+cache_root="${TMPDIR:-/tmp}/megnet-$(id -u)"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$cache_root/cache}"
+export NUMBA_CACHE_DIR="${NUMBA_CACHE_DIR:-$cache_root/numba}"
+export MPLCONFIGDIR="${MPLCONFIGDIR:-$cache_root/matplotlib}"
+mkdir -p "$XDG_CACHE_HOME" "$NUMBA_CACHE_DIR" "$MPLCONFIGDIR"
+exec /opt/miniconda/bin/python "$pipeline_dir/$pipeline" "$@"

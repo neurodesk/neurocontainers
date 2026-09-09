@@ -1,15 +1,32 @@
 import argparse
-import glob
+import json
 import os
 import re
 import subprocess
 import traceback
+import sys
+from collections import Counter
+from pathlib import Path
+from urllib.parse import quote
 
 import requests
 import yaml
 from packaging import version
 
-DEBUG = True  # change it to true if wanna see detailed process
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from builder.update_assets import rewrite_release_assets
+from builder.audit_updates import validate_update_policy
+from builder.update_plan import plan_sources
+from builder.update_sources import (
+    SAFE_SOURCE_REF,
+    UpstreamRelease,
+    configure_read_retries,
+    latest_version,
+)
+
+DEBUG = os.getenv("AUTO_UPDATE_DEBUG") == "1"
 
 
 def dbg(*args):
@@ -20,64 +37,10 @@ def dbg(*args):
 TOKEN = os.getenv("GITHUB_TOKEN")
 REPO = os.getenv("GITHUB_REPOSITORY")
 session = requests.Session()
+configure_read_retries(session)
 session.headers.update({"Accept": "application/vnd.github+json"})
 if TOKEN:
     session.headers.update({"Authorization": f"Bearer {TOKEN}"})
-    print("GITHUB_TOKEN set status: YES")
-else:
-    print("GITHUB_TOKEN set status: NO")
-
-print(f"GITHUB_REPOSITORY={REPO}")
-
-
-def latest_stable(repo):
-    dbg(f"Query releases for {repo}")
-    try:
-        response = session.get(
-            f"https://api.github.com/repos/{repo}/releases", timeout=20
-        )
-        dbg("GET releases status:", response.status_code)
-        if response.status_code == 200:
-            for rel in response.json():
-                dbg(
-                    "  release:",
-                    {
-                        "tag": rel.get("tag_name"),
-                        "draft": rel.get("draft"),
-                        "pre": rel.get("prerelease"),
-                    },
-                )
-                if not rel.get("draft") and not rel.get("prerelease"):
-                    tag = rel.get("tag_name") or rel.get("name")
-                    dbg("  picked stable release tag:", tag)
-                    return tag
-        elif response.status_code == 404:
-            dbg("No releases endpoint (404), will fallback to tags.")
-        else:
-            dbg("Releases request unexpected:", response.text[:300])
-    except Exception as e:
-        dbg("Releases request error:", e)
-        dbg(traceback.format_exc())
-
-    # fallback: tags
-    dbg(f"Fallback to tags for {repo}")
-    try:
-        response = session.get(f"https://api.github.com/repos/{repo}/tags", timeout=20)
-        dbg("GET tags status:", response.status_code)
-        if response.status_code == 200:
-            data = response.json()
-            if data:
-                dbg("Top tag:", data[0].get("name"))
-                return data[0]["name"]
-            else:
-                dbg("No tags found.")
-        else:
-            dbg("Tags request unexpected:", response.text[:300])
-    except Exception as e:
-        dbg("Tags request error:", e)
-        dbg(traceback.format_exc())
-
-    return None
 
 
 # return true if have newer version,false if is up to date and none if need manual check
@@ -87,7 +50,6 @@ def newer(current_version, upstream_version):
         ver_str = ver_str.lstrip("vV")
         ver_str = ver_str.replace("_", ".")
         ver_str = ver_str.split("+", 1)[0]  # +meta
-        ver_str = ver_str.split("-", 1)[0]  # -suffix
         return ver_str
 
     clean_current, clean_upstream = clean(current_version), clean(upstream_version)
@@ -133,7 +95,8 @@ def resolve_tag_commit(repo, tag):
     """Resolve a tag to the commit it points at, dereferencing annotated tags."""
     try:
         response = session.get(
-            f"https://api.github.com/repos/{repo}/git/ref/tags/{tag}", timeout=20
+            f"https://api.github.com/repos/{repo}/git/ref/tags/{quote(tag, safe='')}",
+            timeout=20,
         )
         dbg("GET tag ref status:", response.status_code)
         if response.status_code != 200:
@@ -251,6 +214,8 @@ def revisions_owned_by(text, repo):
     the sha and the repo URL have to be siblings in the same YAML mapping -- so
     it is decided on the parsed document.
     """
+    if not repo:
+        return set()
     try:
         with_repo = set()
 
@@ -296,81 +261,6 @@ def rewrite_revision(text, repo, new_sha):
     return REVISION_LINE.sub(replace, text), changed
 
 
-def issue_exists(fp):
-    if not REPO:
-        dbg("Skip issue_exists: REPO is not set.")
-        return False
-    # The fingerprint is only ever written into the issue body, so searching
-    # in:title never matches and every recurring failure opens a fresh issue.
-    q = f'repo:{REPO} in:body "{fp}" state:open'
-    dbg("Search issues query:", q)
-    try:
-        response = session.get(
-            "https://api.github.com/search/issues", params={"q": q}, timeout=20
-        )
-        dbg("Search issues status:", response.status_code)
-        if response.status_code == 200:
-            count = response.json().get("total_count", 0)
-            dbg("Open issues with fp count:", count)
-            return count > 0
-        else:
-            dbg("Search issues unexpected:", response.text[:300])
-            return False
-    except Exception as e:
-        dbg("Search issues error:", e)
-        dbg(traceback.format_exc())
-        return False
-
-
-DRY_RUN = False
-
-
-def open_issue(title, body, labels=None):
-    if labels is None:
-        labels = ["auto-update"]
-    if DRY_RUN:
-        print(f"=== dry run: would open issue === {title}")
-        return
-    if not REPO:
-        print("GITHUB_REPOSITORY not set; skip creating issue.")
-        return
-    print("=== opening issue ===")
-    print("Title:", title)
-    print("Body:\n", body)
-    print("Labels:", labels)
-    print("========================")
-    response = session.post(
-        f"https://api.github.com/repos/{REPO}/issues",
-        json={"title": title, "body": body, "labels": labels},
-        timeout=20,
-    )
-    response.raise_for_status()
-
-
-def open_invalid_recipe_issue(path, name, reason, extra=None, labels=None):
-    if labels is None:
-        labels = ["auto-update", "invalid-recipe"]
-    extra = extra or {}
-
-    fp = f"{path} :: {reason}"
-    if issue_exists(fp):
-        print(f"duplicate invalid-recipe issue already open for: {fp}")
-        return
-
-    title = f"[invalid] {name}: {reason}"
-    body = (
-        f"- Recipe: {path}\n"
-        f"- Name: {name}\n"
-        f"- Reason: {reason}\n"
-        + "".join(f"- {k}: {v}\n" for k, v in extra.items())
-        + f"\nFingerprint: {fp}"
-    )
-    try:
-        open_issue(title, body, labels=labels)
-    except Exception as e:
-        print(f"Failed to open invalid-recipe issue for {path}: {e}")
-
-
 def find_stale_update_issues(path):
     """Legacy 'may update to' issues for this recipe, so the PR can close them."""
     if not REPO:
@@ -400,9 +290,7 @@ def find_stale_update_issues(path):
 
 def git(*cmd, check=True):
     print("+ git", " ".join(cmd))
-    result = subprocess.run(
-        ["git", *cmd], check=False, capture_output=True, text=True
-    )
+    result = subprocess.run(["git", *cmd], check=False, capture_output=True, text=True)
     if result.stdout.strip():
         print(result.stdout.strip())
     if result.stderr.strip():
@@ -417,23 +305,45 @@ def remote_branch_exists(branch):
     return result.returncode == 0
 
 
-def pull_request_exists(branch):
+def pull_request_state(branch):
     if not REPO:
-        return False
+        return None
     owner = REPO.split("/", 1)[0]
-    try:
+    response = session.get(
+        f"https://api.github.com/repos/{REPO}/pulls",
+        params={"state": "all", "head": f"{owner}:{branch}", "per_page": 100},
+        timeout=20,
+    )
+    response.raise_for_status()
+    pulls = response.json()
+    if any(pr["state"] == "open" for pr in pulls):
+        return "open"
+    if any(pr.get("merged_at") for pr in pulls):
+        return "merged"
+    return "closed" if pulls else None
+
+
+def open_update_branches():
+    """Read open branches once so moving source heads cannot flood the PR queue."""
+    branches = set()
+    page = 1
+    while True:
         response = session.get(
             f"https://api.github.com/repos/{REPO}/pulls",
-            params={"state": "all", "head": f"{owner}:{branch}"},
+            params={"state": "open", "per_page": 100, "page": page},
             timeout=20,
         )
-        if response.status_code != 200:
-            dbg("List pulls unexpected:", response.text[:300])
-            return False
-        return bool(response.json())
-    except Exception as e:
-        dbg("List pulls error:", e)
-        return False
+        response.raise_for_status()
+        pulls = response.json()
+        for pull in pulls:
+            head = pull.get("head") or {}
+            if (head.get("repo") or {}).get("full_name") == REPO:
+                branch = head.get("ref", "")
+                if branch.startswith("auto-update/"):
+                    branches.add(branch)
+        if len(pulls) < 100:
+            return branches
+        page += 1
 
 
 def open_pull_request(branch, base, title, body, labels=None):
@@ -457,6 +367,36 @@ def open_pull_request(branch, base, title, body, labels=None):
     return pr
 
 
+def rewrite_upstream_tag(text, variable, tag):
+    if not SAFE_SOURCE_REF.fullmatch(tag):
+        raise ValueError("upstream tag is not safe for a source ref variable")
+    document = yaml.compose(text)
+    variables = next(
+        (value for key, value in document.value if key.value == "variables"), None
+    )
+    if not isinstance(variables, yaml.MappingNode):
+        raise ValueError("auto_update.tag_variable requires recipe variables")
+    matches = [(key, value) for key, value in variables.value if key.value == variable]
+    if len(matches) != 1:
+        raise ValueError(f"expected one variables.{variable} source ref")
+    key, value = matches[0]
+    if (
+        not isinstance(value, yaml.ScalarNode)
+        or value.style not in {None, "'", '"'}
+        or value.start_mark.index < key.end_mark.index
+        or "&" in text[value.start_mark.index : value.end_mark.index]
+    ):
+        raise ValueError(
+            f"variables.{variable} must be a plain or quoted scalar without an alias or anchor"
+        )
+    updated = (
+        text[: value.start_mark.index] + json.dumps(tag) + text[value.end_mark.index :]
+    )
+    if yaml.safe_load(updated)["variables"][variable] != tag:
+        raise ValueError(f"variables.{variable} did not retain the selected source ref")
+    return updated
+
+
 def prepare_bump(path, current_version, new_version, repo, tag):
     """Compute the updated recipe text. Returns (text, changelog) or (None, reason)."""
     with open(path, encoding="utf-8") as f:
@@ -474,7 +414,10 @@ def prepare_bump(path, current_version, new_version, repo, tag):
     if revisions_owned_by(updated, repo):
         commit = resolve_tag_commit(repo, tag)
         if not commit:
-            return None, f"recipe pins a commit revision but tag {tag} could not be resolved"
+            return (
+                None,
+                f"recipe pins a commit revision but tag {tag} could not be resolved",
+            )
         updated, revision_changes = rewrite_revision(updated, repo, commit)
         if not revision_changes:
             return None, (
@@ -484,19 +427,40 @@ def prepare_bump(path, current_version, new_version, repo, tag):
         for old_sha, new_sha in revision_changes:
             changes.append(f"`revision`: `{old_sha}` → `{new_sha}`")
 
+    config = yaml.safe_load(updated).get("auto_update", {})
+    if tag_variable := config.get("tag_variable"):
+        updated = rewrite_upstream_tag(updated, tag_variable, tag)
+        changes.append(f"`variables.{tag_variable}`: `{tag}`")
+    updated, asset_changes = rewrite_release_assets(
+        updated, config, repo, tag, new_version, session
+    )
+    changes.extend(asset_changes)
+
     if updated == original:
         return None, "no textual change"
     return updated, changes
 
 
-def submit_bump(path, name, current_version, new_version, repo, tag, base_branch, dry_run):
-    branch = f"auto-update/{name}-{new_version}"
+def submit_bump(
+    path,
+    name,
+    current_version,
+    new_version,
+    repo,
+    tag,
+    base_branch,
+    dry_run,
+    release_url=None,
+    plan=None,
+):
+    branch = plan.branch if plan else f"auto-update/{name}-{new_version}"
 
     orphan_branch = False
     if not dry_run:
-        if pull_request_exists(branch):
-            print(f"a pull request already exists for {branch}; skipping.")
-            return "exists"
+        state = pull_request_state(branch)
+        if state:
+            print(f"{branch}: existing pull request is {state}.")
+            return state
         if remote_branch_exists(branch):
             # Pushed, but the pull request call never succeeded. Skipping here
             # would strand the recipe: the branch keeps the bump from being
@@ -504,14 +468,20 @@ def submit_bump(path, name, current_version, new_version, repo, tag, base_branch
             print(f"branch {branch} exists with no pull request; opening one for it.")
             orphan_branch = True
 
-    updated, result = prepare_bump(path, current_version, new_version, repo, tag)
+    if plan:
+        updated, result = plan.patches[0].after, list(plan.changes)
+    else:
+        updated, result = prepare_bump(path, current_version, new_version, repo, tag)
     if updated is None:
         print(f"cannot auto-bump {path}: {result}")
         return None
     changes = result
 
     try:
-        fulltest_bump = prepare_fulltest_bump(path, new_version)
+        fulltest_bump = (
+            (str(plan.patches[1].path), plan.patches[1].after, current_version)
+            if plan else prepare_fulltest_bump(path, new_version)
+        )
     except ValueError as e:
         print(f"cannot auto-bump {path}: {e}")
         return None
@@ -532,8 +502,7 @@ def submit_bump(path, name, current_version, new_version, repo, tag, base_branch
         "Automated version bump generated by `builder/check_version.py`.",
         "",
         f"- Recipe: `{path}`",
-        f"- Upstream repo: https://github.com/{repo}",
-        f"- Upstream release: https://github.com/{repo}/releases/tag/{tag}",
+        f"- Upstream release: {release_url or f'https://github.com/{repo}/releases/tag/{tag}'}",
         "",
         "### Changes",
         *[f"- {change}" for change in changes],
@@ -554,6 +523,8 @@ def submit_bump(path, name, current_version, new_version, repo, tag, base_branch
 
     git("checkout", "-B", branch, base_branch)
     try:
+        if plan:
+            plan.apply()
         with open(path, "w", encoding="utf-8") as f:
             f.write(updated)
         changed_paths = [path]
@@ -561,6 +532,18 @@ def submit_bump(path, name, current_version, new_version, repo, tag, base_branch
             with open(fulltest_path, "w", encoding="utf-8") as f:
                 f.write(fulltest_updated)
             changed_paths.append(fulltest_path)
+        subprocess.run([sys.executable, "builder/validation.py", path], check=True)
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "builder",
+                "generate",
+                os.path.dirname(path),
+                "--recreate",
+            ],
+            check=True,
+        )
         git("add", "--", *changed_paths)
         git("commit", "-m", title)
         git("push", "origin", branch)
@@ -571,164 +554,206 @@ def submit_bump(path, name, current_version, new_version, repo, tag, base_branch
     return "opened"
 
 
-def open_manual_issue(path, name, current_version, tag, repo, note):
-    fp = f"{path} -> {tag} (manual-verify)"
-    print("Fingerprint:", fp)
-    if issue_exists(fp):
-        print("duplicate issue already open for this fingerprint (manual verify).")
-        return
-    title = f"[manual] Verify upstream version for {name}: current={current_version}, upstream_tag={tag}"
-    body = (
-        f"- Recipe: {path}\n"
-        f"- Current version: {current_version}\n"
-        f"- Upstream tag: {tag}\n"
-        f"- Repo: {repo}\n\n"
-        f"{note}\n\n"
-        f"Fingerprint: {fp}"
-    )
-    try:
-        open_issue(title, body, labels=["auto-update", "manual-review"])
-    except Exception as e:
-        print(f"Failed to open manual-review issue for {path}: {e}")
+def write_report(rows, report_path=None):
+    if report_path:
+        Path(report_path).write_text(json.dumps(rows, indent=2) + "\n")
+    counts = Counter(row["status"] for row in rows)
+    lines = [
+        "## Recipe update results",
+        "",
+        f"Recipes checked: {len(rows)}",
+        "",
+        ", ".join(f"{key}: {count}" for key, count in sorted(counts.items())),
+        "",
+        "| Recipe | Current | Upstream | Result | Detail |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for row in rows:
+        cells = [
+            row.get(key, "")
+            for key in ("recipe", "current", "upstream", "status", "detail")
+        ]
+        lines.append(
+            "| "
+            + " | ".join(
+                str(cell).replace("|", "\\|").replace("\n", " ") for cell in cells
+            )
+            + " |"
+        )
+    report = "\n".join(lines) + "\n"
+    print(report)
+    if summary_path := os.getenv("GITHUB_STEP_SUMMARY"):
+        with open(summary_path, "a", encoding="utf-8") as handle:
+            handle.write(report)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Check recipes with an auto_update block against upstream releases "
-        "and open a version-bump pull request when one is available."
+        description="Check every recipe's update policy and propose available updates."
     )
+    parser.add_argument("recipes", nargs="*", help="Optional recipe names to check")
     parser.add_argument(
         "--dry-run",
         action="store_true",
         default=os.getenv("AUTO_UPDATE_DRY_RUN") == "1",
-        help="report what would change without touching git or the GitHub API",
     )
     parser.add_argument(
         "--max-prs",
         type=int,
         default=int(os.getenv("AUTO_UPDATE_MAX_PRS") or 5),
-        help="stop after opening this many pull requests in one run (0 = no limit). "
-        "Every bump PR triggers a full container build, so a backlog is worked "
-        "through over several weekly runs rather than all at once.",
+        help="Maximum new PRs per run; 0 means unlimited. Existing PRs do not consume the limit.",
     )
+    parser.add_argument("--json", help="Write per-recipe results to this file")
     args = parser.parse_args()
-    global DRY_RUN
-    DRY_RUN = dry_run = args.dry_run
-    opened = 0
-    deferred = []
-
-    base_branch = "main"
-    if not dry_run:
+    if args.max_prs < 0:
+        parser.error("--max-prs must be nonnegative")
+    base_branch = os.getenv("GITHUB_BASE_BRANCH", "main")
+    if not args.dry_run:
+        if not REPO or not TOKEN:
+            parser.error(
+                "GITHUB_REPOSITORY and GITHUB_TOKEN are required; use --dry-run locally"
+            )
+        if git("status", "--porcelain").stdout.strip():
+            parser.error(
+                "the updater requires a clean checkout; use --dry-run to inspect local changes"
+            )
         head = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-        # A detached checkout reports "HEAD", which is not a branch the pull
-        # request API will accept as a base.
-        base_branch = head if head and head != "HEAD" else "main"
-    print(f"Base branch: {base_branch} (dry_run={dry_run})")
-
-    files = glob.glob("recipes/**/*.y*ml", recursive=True)
-    print("Files matched:", len(files))
-    for path in files:
+        base_branch = head if head and head != "HEAD" else base_branch
+    rows = []
+    candidates = []
+    cache = {}
+    paths = sorted(Path("recipes").glob("*/build.y*ml"))
+    if args.recipes:
+        unknown = set(args.recipes) - {path.parent.name for path in paths}
+        if unknown:
+            parser.error(f"unknown recipes: {', '.join(sorted(unknown))}")
+        paths = [path for path in paths if path.parent.name in args.recipes]
+    for path in paths:
+        row = {
+            "recipe": path.parent.name,
+            "current": "",
+            "upstream": "",
+            "status": "error",
+            "detail": "",
+        }
+        rows.append(row)
         try:
-            with open(path, encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-        except Exception:
-            print("YAML load error")
-            continue
-        if not isinstance(data, dict):
-            continue
-        name = data.get("name", os.path.basename(path))
-        au = data.get("auto_update")
-        if not isinstance(au, dict):
-            continue
+            data = yaml.safe_load(path.read_text())
+            if not isinstance(data, dict):
+                raise ValueError("recipe must be a YAML mapping")
+            row["current"] = str(data.get("version", ""))
+            validate_update_policy(data, recipe_path=path)
+            config = data["auto_update"]
+            if config["method"] == "sources":
+                plan = plan_sources(path, session)
+                if plan is None:
+                    row.update(status="current" if config.get("sources") else "repository", detail="Repository changes trigger candidate builds." if "local" in config else "")
+                else:
+                    release = UpstreamRelease(plan.next_version, plan.fingerprint, ", ".join(plan.upstream_urls))
+                    row.update(status="available", upstream=plan.next_version, detail="; ".join(plan.changes))
+                    candidates.append((path, data, release, plan.next_version, row, plan))
+                print(f"{row['recipe']}: {row['status']} {row['detail']}", flush=True)
+                continue
+            if config["method"] == "manual":
+                row.update(status="manual", detail=config["reason"])
+                continue
+            key = json.dumps(config, sort_keys=True)
+            if key not in cache:
+                try:
+                    cache[key] = latest_version(config, session)
+                except (requests.RequestException, ValueError) as exc:
+                    cache[key] = exc
+            release = cache[key]
+            if isinstance(release, Exception):
+                raise release
+            if release is None:
+                raise ValueError(
+                    "no stable version found upstream; check source and version filter"
+                )
+            row["upstream"] = release.version
+            row["tag"] = release.tag
+            row["url"] = release.url
+            if config.get("mode") == "notify":
+                row.update(status="needs-recipe-change", detail=config["reason"])
+                continue
+            comparison = newer(row["current"], release.version)
+            if comparison is None:
+                raise ValueError(
+                    "cannot compare the recipe version with the upstream version"
+                )
+            if not comparison:
+                row["status"] = "current"
+                continue
+            new_version = tag_to_recipe_version(release.version, row["current"])
+            if not new_version:
+                raise ValueError("upstream version is not safe for a recipe bump")
+            row["status"] = "available"
+            candidates.append((path, data, release, new_version, row, None))
+        except Exception as exc:
+            row.update(status="error", detail=f"{type(exc).__name__}: {exc}")
+        print(f"{row['recipe']}: {row['status']} {row['detail']}", flush=True)
 
-        method = au.get("method")
-        repo = au.get("repo")
-        if method != "github_release":
-            open_invalid_recipe_issue(
-                path, name, "unsupported auto_update.method", {"method": repr(method)}
-            )
-            continue
-        if not repo:
-            open_invalid_recipe_issue(path, name, "auto_update.repo missing")
-            continue
-
-        cur = str(data.get("version", "")).strip()
-        if not cur:
-            open_invalid_recipe_issue(path, name, "version missing")
-            continue
-        print(f"Handling file: {path}")
-        print(f"Check: name={name}, current_version={cur}, upstream_repo={repo}")
-        up = latest_stable(repo)
-        print("Upstream tag got:", up)
-        if not up:
-            print("no upstream tag/release")
-            continue
-        cmp = newer(cur, up)
-
-        if cmp is None:
-            open_manual_issue(
-                path,
-                name,
-                cur,
-                up,
-                repo,
-                "Packaging cannot parse one/both versions after cleaning. "
-                "Please verify manually.",
-            )
-            continue
-
-        if not cmp:
-            print("current version is Up-to-date.")
-            continue
-
-        new_version = tag_to_recipe_version(up, cur)
-        if not new_version:
-            open_manual_issue(
-                path,
-                name,
-                cur,
-                up,
-                repo,
-                "The upstream tag does not map cleanly onto a recipe version, so no "
-                "pull request was opened. Please bump the recipe manually.",
-            )
-            continue
-
-        if args.max_prs and opened >= args.max_prs:
-            deferred.append(f"{name} {cur} -> {new_version}")
-            print(f"reached --max-prs={args.max_prs}; deferring {name} to a later run.")
-            continue
-
+    opened = 0
+    open_branches = None
+    for path, data, release, new_version, row, plan in candidates:
         try:
-            submitted = submit_bump(
-                path, name, cur, new_version, repo, up, base_branch, dry_run
+            branch = plan.branch if plan else f"auto-update/{path.parent.name}-{new_version}"
+            if REPO:
+                if plan:
+                    if open_branches is None:
+                        open_branches = open_update_branches()
+                    prefix = f"auto-update/{path.parent.name}-{new_version}-"
+                    existing = next((item for item in sorted(open_branches) if item.startswith(prefix)), None)
+                    if existing:
+                        row.update(status="pr-open", detail=existing)
+                        continue
+                state = pull_request_state(branch)
+                if state:
+                    row.update(
+                        status=f"pr-{state}",
+                        detail=(
+                            "Closed without merging; reopen the PR to retry this version."
+                            if state == "closed"
+                            else branch
+                        ),
+                    )
+                    continue
+            if args.max_prs and opened >= args.max_prs:
+                row.update(
+                    status="deferred",
+                    detail="New PR limit reached; retried on the next run.",
+                )
+                continue
+            result = submit_bump(
+                str(path),
+                path.parent.name,
+                row["current"],
+                new_version,
+                (
+                    data["auto_update"]["repo"]
+                    if data["auto_update"]["method"].startswith("github_")
+                    else ""
+                ),
+                release.tag,
+                base_branch,
+                args.dry_run,
+                release_url=release.url,
+                **({"plan": plan} if plan else {}),
             )
-        except Exception as e:
-            print(f"Failed to open bump PR for {path}: {e}")
-            print(traceback.format_exc())
-            submitted = None
-
-        if submitted == "opened":
-            opened += 1
-
-        if submitted is None and not dry_run:
-            open_manual_issue(
-                path,
-                name,
-                cur,
-                up,
-                repo,
-                "An automatic version-bump pull request could not be created. "
-                "Please bump the recipe manually.",
-            )
-
-
-    print(f"\nPull requests opened this run: {opened}")
-    if deferred:
-        print(f"Deferred to a later run ({len(deferred)}):")
-        for item in deferred:
-            print(" -", item)
+            if result is None:
+                raise ValueError(
+                    "could not prepare the recipe/fulltest bump; inspect the updater log"
+                )
+            if result == "opened":
+                opened += 1
+                row["status"] = "would-open" if args.dry_run else "opened"
+            else:
+                row["status"] = f"pr-{result}"
+        except Exception as exc:
+            row.update(status="error", detail=f"{type(exc).__name__}: {exc}")
+    write_report(rows, args.json)
+    return int(not rows or any(row["status"] == "error" for row in rows))
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

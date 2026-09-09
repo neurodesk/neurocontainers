@@ -8,13 +8,13 @@
 # Test execution:
 #   - For 'command:' tests: run directly in container
 #   - For 'script:' tests: save as .m file and run via:
-#     /opt/fieldtrip-20220617/run_fieldtrip.sh /opt/MCR/v99 <script.m>
+#     /opt/fieldtrip-${upstream_version}/run_fieldtrip.sh /opt/matlab-runtime <script.m>
 #
 # Citation: Oostenveld et al. (2011) FieldTrip: Open Source Software for Advanced
 # Analysis of MEG, EEG, and Invasive Electrophysiological Data. doi:10.1155/2011/156869
 
 name: fieldtrip
-version: "20220617"
+version: "20220617.post1"
 
 # FieldTrip works with MEG/EEG data, not NIfTI. Tests use simulated data.
 # Scripts are MATLAB code to be saved as .m files and executed via the compiled runtime.
@@ -24,8 +24,8 @@ test_data:
 
 # Execution context for MATLAB scripts
 matlab_runtime:
-  path: /opt/MCR/v99
-  runner: /opt/fieldtrip-20220617/run_fieldtrip.sh
+  path: /opt/matlab-runtime
+  runner: /opt/fieldtrip-${upstream_version}/run_fieldtrip.sh
 
 setup:
   script: |
@@ -40,7 +40,7 @@ tests:
   # ==========================================================================
   - name: FieldTrip help message
     description: Verify FieldTrip binary runs and shows usage information
-    command: bash -lc '/opt/fieldtrip-20220617/run_fieldtrip.sh /opt/MCR/v99 2>&1 | head -5'
+    command: bash -lc '/opt/fieldtrip-${upstream_version}/run_fieldtrip.sh /opt/matlab-runtime 2>&1 | head -5'
     expected_output_contains: "You should start the compiled FieldTrip application"
 
   - name: FieldTrip ft_defaults initialization
@@ -1050,3 +1050,5 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output test_scripts
     echo "Test outputs preserved in test_output/ and test_scripts/"
+upstream_version: '20220617'
+matlab_version: 2020b

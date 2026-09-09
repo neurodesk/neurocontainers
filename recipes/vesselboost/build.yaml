@@ -6,6 +6,10 @@ copyright:
 architectures:
   - x86_64
 variables:
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
   vesselboost_branch: master
   vesselboost_source_version: v2.0.2
   vesselboost_archive_url: "https://github.com/KMarshallX/VesselBoost/archive/refs/tags/{{ context.vesselboost_source_version }}.zip"
@@ -27,6 +31,42 @@ files:
     url: "{{ context.omelette2_0429_url }}"
   - name: t2s_mod_ep1k2_0728
     url: "{{ context.t2s_mod_ep1k2_0728_url }}"
+auto_update:
+  method: sources
+  sources:
+  - id: vesselboost
+    method: github_release
+    repo: KMarshallX/VesselBoost
+    target:
+      variable: vesselboost_source_version
+      value: tag
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+  local:
+  - macros/openrecon
+
 build:
   kind: neurodocker
   base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime

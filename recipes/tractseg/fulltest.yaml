@@ -14,7 +14,8 @@
 # For full TractSeg testing, diffusion data with bvals/bvecs is required.
 
 name: tractseg
-version: '2.9'
+version: 2.9.post2
+upstream_version: "2.9"
 
 required_files:
   - dataset: ds000001
@@ -41,9 +42,6 @@ setup:
     #!/usr/bin/env bash
     set -e
     mkdir -p test_output
-    # Create TractSeg config directory
-    mkdir -p ~/.tractseg
-    echo "weights_dir=/opt/miniconda/share/TractSeg/weights" > ~/.tractseg/config.txt
 
 tests:
   # ==========================================================================
@@ -52,7 +50,7 @@ tests:
   - name: TractSeg version check
     description: Verify TractSeg binary runs and reports version
     command: TractSeg --version
-    expected_output_contains: "2.9"
+    expected_output_contains: "${upstream_version}"
 
   - name: TractSeg help output
     description: Verify TractSeg help is accessible
@@ -278,24 +276,32 @@ tests:
   # MRTRIX3 TOOLS - FILTERING
   # ==========================================================================
   - name: mrfilter smooth
-    description: Gaussian smoothing with MRtrix (container bug - libfftw3.so.3 missing)
+    description: Gaussian smoothing with MRtrix
     command: mrfilter ${t1w} smooth -stdev 2 test_output/t1w_smooth_mrtrix.nii.gz -force
-    expected_exit_code: 127
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_mrtrix.nii.gz
 
   - name: mrfilter median
-    description: Median filtering (container bug - libfftw3.so.3 missing)
+    description: Median filtering
     command: mrfilter ${t1w} median test_output/t1w_median_mrtrix.nii.gz -force
-    expected_exit_code: 127
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_median_mrtrix.nii.gz
 
   - name: mrfilter gradient
-    description: Gradient magnitude (container bug - libfftw3.so.3 missing)
+    description: Spatial gradient
     command: mrfilter ${t1w} gradient test_output/t1w_gradient.nii.gz -force
-    expected_exit_code: 127
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_gradient.nii.gz
 
   - name: mrfilter normalise
-    description: Intensity normalisation (container bug - libfftw3.so.3 missing)
+    description: Intensity normalisation
     command: mrfilter ${t1w} normalise test_output/t1w_normalise.nii.gz -force
-    expected_exit_code: 127
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_normalise.nii.gz
 
   # ==========================================================================
   # MRTRIX3 TOOLS - MASK OPERATIONS
@@ -685,38 +691,38 @@ tests:
   # ==========================================================================
   - name: Python nibabel import
     description: Verify nibabel is importable
-    command: python -c "import nibabel; print(nibabel.__version__)"
+    command: /opt/miniconda/bin/python -c "import nibabel; print(nibabel.__version__)"
     expected_exit_code: 0
 
   - name: Python numpy import
     description: Verify numpy is importable
-    command: python -c "import numpy; print(numpy.__version__)"
+    command: /opt/miniconda/bin/python -c "import numpy; print(numpy.__version__)"
     expected_exit_code: 0
 
   - name: Python scipy import
     description: Verify scipy is importable
-    command: python -c "import scipy; print(scipy.__version__)"
+    command: /opt/miniconda/bin/python -c "import scipy; print(scipy.__version__)"
     expected_exit_code: 0
 
   - name: Python torch import
-    description: Verify PyTorch is importable (not installed in container)
-    command: python -c "import torch; print(torch.__version__)"
-    expected_exit_code: 1
+    description: Verify PyTorch is importable
+    command: /opt/miniconda/bin/python -c "import torch; print(torch.__version__)"
+    expected_exit_code: 0
 
   - name: Python dipy import
-    description: Verify DIPY is importable (not installed as Python module, CLI tools only)
-    command: python -c "import dipy; print(dipy.__version__)"
-    expected_exit_code: 1
+    description: Verify DIPY is importable
+    command: /opt/miniconda/bin/python -c "import dipy; print(dipy.__version__)"
+    expected_exit_code: 0
 
   - name: Python fury import
-    description: Verify FURY visualization library (not installed in container)
-    command: python -c "import fury; print(fury.__version__)"
-    expected_exit_code: 1
+    description: Verify FURY visualization library
+    command: /opt/miniconda/bin/python -c "import fury; print(fury.__version__)"
+    expected_exit_code: 0
 
   - name: Python nilearn import
-    description: Verify nilearn is importable (not installed in container)
-    command: python -c "import nilearn; print(nilearn.__version__)"
-    expected_exit_code: 1
+    description: Verify nilearn is importable
+    command: /opt/miniconda/bin/python -c "import nilearn; print(nilearn.__version__)"
+    expected_exit_code: 0
 
   # ==========================================================================
   # TRACTSEG WEIGHTS VERIFICATION
@@ -754,11 +760,13 @@ tests:
       - output_exists: ${output_dir}/pipeline_brain_refined.nii.gz
 
   - name: Preprocessing pipeline T1w
-    description: Standard T1w preprocessing chain (mrfilter fails - libfftw3.so.3 missing)
+    description: Standard T1w preprocessing chain
     command: |
       bet ${t1w} test_output/preproc_brain -m -f 0.4 && \
       mrfilter test_output/preproc_brain.nii.gz normalise test_output/preproc_brain_norm.nii.gz -force
-    expected_exit_code: 127
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/preproc_brain_norm.nii.gz
 
   - name: Quality metrics calculation
     description: Calculate SNR-like metrics
@@ -781,6 +789,22 @@ tests:
     description: Verify Tractometry fails with missing arguments
     command: Tractometry 2>&1 | head -5
     expected_exit_code: 0
+
+  - name: Pretrained models resolve without home or network access
+    command: |
+      HOME=/proc/tractseg-no-home /opt/miniconda/bin/python - <<'PYTHON'
+      import runpy
+      import requests
+      from tractseg.libs.system_config import SystemConfig
+
+      assert SystemConfig.WEIGHTS_DIR == "/opt/miniconda/share/TractSeg/weights"
+      def reject_download(*args, **kwargs):
+          raise AssertionError("A required pretrained model is missing")
+      requests.get = reject_download
+      runpy.run_path("/opt/miniconda/bin/download_all_pretrained_weights", run_name="__main__")
+      print("All pretrained models resolve without home or network access")
+      PYTHON
+    expected_output_contains: All pretrained models resolve without home or network access
 
 cleanup:
   script: |

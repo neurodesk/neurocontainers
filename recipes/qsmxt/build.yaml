@@ -9,6 +9,11 @@ architectures:
   - x86_64
 
 variables:
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  upstream_version: "9.16.0"
   model_revision: e7c66cece159dc163885afd6165f582769dc5f29
   qsmxt_tarball:
     try:
@@ -16,6 +21,44 @@ variables:
         condition: arch == "x86_64"
       - value: qsmxt_aarch64_tar_gz
         condition: arch == "aarch64"
+
+auto_update:
+  method: sources
+  sources:
+  - id: qsmxt
+    method: github_release
+    repo: QSMxT/QSMxT
+    version_regex: v?(?P<version>\d+\.\d+\.\d+)
+    target:
+      variable: upstream_version
+      value: version
+      fulltest_variable: upstream_version
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+  local:
+  - macros/openrecon
 
 build:
   kind: neurodocker
@@ -120,7 +163,7 @@ categories:
   - workflows
 
 structured_readme:
-  description: QSMxT is an end-to-end software toolbox for Quantitative Susceptibility Mapping (QSM), rebuilt in Rust as a single self-contained binary. This container packages upstream QSMxT {{ context.version }}. It reconstructs QSM from BIDS datasets, converts DICOMs to BIDS, and provides an interactive TUI.
+  description: QSMxT is an end-to-end software toolbox for Quantitative Susceptibility Mapping (QSM), rebuilt in Rust as a single self-contained binary. This container packages upstream QSMxT {{ context.upstream_version }}. It reconstructs QSM from BIDS datasets, converts DICOMs to BIDS, and provides an interactive TUI.
   example: |-
     ml qsmxt/{{ context.version }}
 
@@ -139,7 +182,7 @@ readme: |-
   ## qsmxt/{{ context.version }} ##
 
   QSMxT is an end-to-end software toolbox for Quantitative Susceptibility Mapping
-  (QSM). This container packages upstream QSMxT {{ context.version }}.
+  (QSM). This container packages upstream QSMxT {{ context.upstream_version }}.
   Version 9 is a ground-up reimplementation in Rust: a single
   self-contained binary that reconstructs QSM from BIDS datasets, converts DICOMs
   to BIDS, and includes an interactive TUI. A pinned dcm2niix is bundled.
@@ -177,9 +220,9 @@ files:
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
   - name: qsmxt_x86_64_tar_gz
-    url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.version }}/qsmxt-v{{ context.version }}-x86_64-unknown-linux-gnu.tar.gz
+    url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.upstream_version }}/qsmxt-v{{ context.upstream_version }}-x86_64-unknown-linux-gnu.tar.gz
   - name: qsmxt_aarch64_tar_gz
-    url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.version }}/qsmxt-v{{ context.version }}-aarch64-unknown-linux-gnu.tar.gz
+    url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.upstream_version }}/qsmxt-v{{ context.upstream_version }}-aarch64-unknown-linux-gnu.tar.gz
   - name: models.sha256
     filename: models.sha256
   - name: bfrnet.onnx

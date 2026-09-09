@@ -1,13 +1,17 @@
 name: Auto Update Recipes
 on:
   schedule:
-    - cron: "0 3 * * 1"   # every Monday
+    - cron: "0 3 * * *"   # daily, bounded by --max-prs
   workflow_dispatch:
     inputs:
       dry_run:
         description: "Report available updates without opening pull requests"
         type: boolean
         default: false
+
+concurrency:
+  group: auto-update-recipes
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -20,7 +24,17 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
+      - name: Check automation credentials
+        if: ${{ !inputs.dry_run }}
+        env:
+          AUTOMATION_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+        run: |
+          if [ -z "$AUTOMATION_TOKEN" ]; then
+            echo "::error::NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION is required so update PRs trigger container CI."
+            exit 1
+          fi
       - uses: actions/checkout@v5
         with:
           # A PAT is used so the version-bump pull requests trigger the recipe CI
@@ -29,8 +43,15 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+      - name: Restore HTTP observation cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/neurocontainers-update-http
+          key: update-http-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            update-http-${{ runner.os }}-
       - name: Install deps
-        run: pip install --upgrade pip pyyaml requests packaging
+        run: pip install -e .
       - name: Configure git
         run: |
           git config --local user.name "github-actions[bot]"
@@ -38,5 +59,14 @@ jobs:
       - name: Run updater
         env:
           GITHUB_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION || secrets.GITHUB_TOKEN }}
+          GITHUB_BASE_BRANCH: ${{ github.event.repository.default_branch }}
           AUTO_UPDATE_DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
-        run: python builder/check_version.py
+          AUTO_UPDATE_HTTP_CACHE: ${{ runner.temp }}/neurocontainers-update-http
+        run: python -m builder.check_version --json update-results.json
+      - name: Upload update results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recipe-update-results
+          path: update-results.json
+          if-no-files-found: warn

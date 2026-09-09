@@ -45,7 +45,7 @@ tests:
   - name: fmriprep version check
     description: Verify fmriprep binary runs and reports version
     command: fmriprep --version 2>&1
-    expected_output_contains: "fMRIPrep v25.2.5"
+    expected_output_contains: "fMRIPrep v${version}"
 
   - name: fmriprep help
     description: Verify fmriprep help is accessible
@@ -55,7 +55,7 @@ tests:
   - name: fmriprep BIDS validation skip test
     description: Test fmriprep can parse BIDS dataset with validation skip
     command: fmriprep ${bids_dir} test_output/fmriprep_out participant --participant-label 01 --skip-bids-validation --version 2>&1
-    expected_output_contains: "fMRIPrep v25.2.5"
+    expected_output_contains: "fMRIPrep v${version}"
 
   # ==========================================================================
   # ANTs TOOLS - BIAS FIELD CORRECTION

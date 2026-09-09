@@ -13,6 +13,10 @@ architectures:
 variables:
   install_dir: /opt/modsort
 
+auto_update:
+  method: github_release
+  repo: BrainLesion/modsort
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

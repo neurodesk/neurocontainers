@@ -1,0 +1,8 @@
+name: builder
+version: "0.2"
+
+tests:
+  - name: sf-make launcher available
+    description: Verify the packaged BuildKit and Apptainer build launcher is deployed.
+    command: command -v sf-make
+    expected_output_contains: sf-make

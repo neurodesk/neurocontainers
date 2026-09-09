@@ -1,10 +1,10 @@
 # mricron container test suite
-# Tests for mricron v1.0.20190902 - DICOM/NIfTI viewer and converter
+# Tests for MRIcron and dcm2niix - DICOM/NIfTI viewer and converter
 #
 # MRIcron package includes:
 #   - dcm2niix: DICOM to NIfTI converter (primary CLI tool)
 #   - MRIcron: GUI viewer (requires X11 display)
-#   - pigz_mricron: Parallel gzip compression
+#   - pigz_mricron: Compatibility name for parallel gzip compression
 #   - Brain templates and lookup tables
 #
 # Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
@@ -19,7 +19,11 @@
 # Documentation: https://www.nitrc.org/plugins/mwiki/index.php/mricrogl:MainPage
 
 name: mricron
-version: 1.0.20190902
+version: 1.2.20211006
+mricron_amd64_version: 1.2.20211006+dfsg-5
+mricron_arm64_version: 1.2.20211006+dfsg-5
+dcm2niix_amd64_version: 1.0.20220720-1build1
+dcm2niix_arm64_version: 1.0.20220720-1build1
 
 required_files:
   - dataset: ds000001
@@ -47,9 +51,51 @@ tests:
   # BASIC FUNCTIONALITY - Version and Help
   # ==========================================================================
   - name: dcm2niix version check
-    description: Verify dcm2niix binary runs and reports version
-    command: dcm2niix --version 2>&1 | head -2
-    expected_output_contains: "v1.0.20190902"
+    description: Verify dcm2niix reports the upstream version encoded in its tracked package
+    command: |
+      expected=$(dpkg-query -W -f='${Version}' dcm2niix | sed 's/[+-].*//')
+      output=$(dcm2niix --version 2>&1 || true)
+      if ! printf '%s\n' "$output" | grep -Fq "v${expected}"; then
+        printf '%s\n' "$output"
+        exit 1
+      fi
+      echo "version matches package"
+    expected_output_contains: "version matches package"
+
+  - name: installed package versions
+    description: Verify the installed packages match the automatically tracked versions
+    command: |
+      case "$(dpkg --print-architecture)" in
+        amd64)
+          mricron_expected="${mricron_amd64_version}"
+          dcm2niix_expected="${dcm2niix_amd64_version}"
+          ;;
+        arm64)
+          mricron_expected="${mricron_arm64_version}"
+          dcm2niix_expected="${dcm2niix_arm64_version}"
+          ;;
+        *) exit 1 ;;
+      esac
+      test "$(dpkg-query -W -f='${Version}' mricron)" = "$mricron_expected" || exit 1
+      test "$(dpkg-query -W -f='${Version}' dcm2niix)" = "$dcm2niix_expected" || exit 1
+      echo "Installed package versions match this architecture"
+    expected_output_contains: "Installed package versions match this architecture"
+
+  - name: native executable architectures
+    description: Verify MRIcron and dcm2niix executables match the container architecture
+    command: |
+      case "$(dpkg --print-architecture)" in
+        amd64) expected='x86-64' ;;
+        arm64) expected='ARM aarch64' ;;
+        *) exit 1 ;;
+      esac
+      count=$(file /usr/lib/mricron/mricron /usr/bin/dcm2niix | grep -Fc "$expected")
+      if [ "$count" -ne 2 ]; then
+        file /usr/lib/mricron/mricron /usr/bin/dcm2niix
+        exit 1
+      fi
+      echo "native executables"
+    expected_output_contains: "native executables"
 
   - name: dcm2niix help
     description: Verify dcm2niix help is accessible
@@ -679,9 +725,9 @@ tests:
     expected_output_contains: "executable"
 
   - name: MRIcron icon exists
-    description: Check MRIcron SVG icon is present
-    command: "bash -lc 'ls -la /opt/mricron/Resources/mricron.svg'"
-    expected_output_contains: "mricron.svg"
+    description: Check the packaged MRIcron application icon is present
+    command: "bash -lc 'ls -la /usr/share/pixmaps/mricron.xpm'"
+    expected_output_contains: "mricron.xpm"
 
   # ==========================================================================
   # PATH AND ENVIRONMENT VALIDATION
@@ -708,20 +754,12 @@ tests:
     expected_output_contains: "mricron path present"
 
   # ==========================================================================
-  # RENDER RESOURCES VALIDATION
+  # GUI RUNTIME VALIDATION
   # ==========================================================================
-  - name: Render resources exist
-    description: Check render resources directory exists
-    command: bash -lc 'test -d /opt/mricron/Resources/render/ && echo "render directory exists"'
-    expected_output_contains: "render directory exists"
-
-  # ==========================================================================
-  # UPDATE CHECK (network dependent)
-  # ==========================================================================
-  - name: dcm2niix update check format
-    description: Test update check option format (may require network)
-    command: dcm2niix -u 2>&1 | head -5
-    expected_output_contains: "dcm2niiX"
+  - name: MRIcron opens an image
+    description: Verify the GUI starts and remains running after loading a NIfTI image
+    command: timeout 10s xvfb-run -a MRIcron ${t1w}
+    expected_exit_code: 124
 
 cleanup:
   script: |

@@ -1,3 +1,6 @@
+variables:
+  upstream_commit: 6c378d1ae36278c9351c247e00286f19e0a893ac
+
 name: openadscpu
 version: 1.0.0
 copyright:
@@ -96,6 +99,17 @@ readme: |-
   To run container outside of this environment: ml openadscpu/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: farialab/OpenADS
+    ref: HEAD
+    target:
+      variable: upstream_commit
+      fulltest_variable: upstream_commit
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -111,8 +125,10 @@ build:
         - pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
         - pip install numpy==2.0.1 antspyx==0.5.4 pandas==2.2.3 matplotlib==3.9.2 scikit-image==0.24.0 scipy==1.13.1 pyyaml==6.0.2 tqdm==4.67.1
         - pip install nibabel==5.3.2 scikit-learn==1.7.2 surfa==0.6.3 shap==0.50.0
-        - git clone https://github.com/farialab/OpenADS /opt/openads
+        - git clone https://github.com/farialab/OpenADS /opt/openads && git -C /opt/openads checkout {{ context.upstream_commit }}
         - pip install /opt/openads --no-deps
+        - git -C /opt/openads rev-parse HEAD > /opt/openads/source-revision
+        - chmod 644 /opt/openads/source-revision
         - rm -rf /opt/openads/.git
         - ln -s /opt/openads/scripts /opt/miniconda-latest/lib/python3.11/scripts
         - ln -s /opt/openads/assets /opt/miniconda-latest/lib/python3.11/assets

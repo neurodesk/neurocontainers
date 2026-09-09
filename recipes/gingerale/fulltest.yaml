@@ -21,7 +21,7 @@
 #   - Turkeltaub PE et al. (2012) Hum Brain Mapp 33:1-13
 
 name: gingerale
-version: 3.0.2
+version: 3.0.2.post1
 
 test_data:
   output_dir: test_output
@@ -204,6 +204,19 @@ setup:
     15 -5 52
     EOFMIN
 
+    # Cluster inference needs several independent studies with overlapping foci.
+    {
+      echo '// Reference=Talairach'
+      for study in $(seq 1 20); do
+        printf '\n// Synthetic experiment %s\n// Subjects=%s\n' "$study" "$((14 + study))"
+        for center in '-38 -20 52' '38 -20 52' '0 -8 54'; do
+          set -- $center
+          offset=$((study - 1))
+          printf '%s %s %s\n' "$(( $1 + offset % 5 - 2 ))" "$(( $2 + (offset * 3) % 5 - 2 ))" "$(( $3 + (offset * 7) % 5 - 2 ))"
+        done
+      done
+    } > test_output/gingerale/foci/cluster_synthetic.txt
+
     # Create a foci file with single experiment for edge case testing
     cat > test_output/gingerale/foci/single_exp_tal.txt << 'EOFSINGLE'
     // Reference=Talairach
@@ -333,10 +346,11 @@ tests:
   # THRESHOLDING METHODS - CLUSTER-LEVEL INFERENCE
   # ==========================================================================
   - name: ALE with cluster-level inference
-    description: Apply cluster-level FWE correction with forming threshold
-    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \\\n  test_output/gingerale/foci/minimal_tal.txt \\\n  -ale=test_output/gingerale/ale_results/minimal_clust_ALE \\\n  -thresh=test_output/gingerale/ale_results/minimal_clust_thresh \\\n  -perm=100 \\\n  -p=0.001 \\\n  -clust=0.05 \\\n  2>&1'"
+    description: Apply cluster-level FWE correction to a synthetic set of overlapping studies
+    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \\\n  test_output/gingerale/foci/cluster_synthetic.txt \\\n  -ale=test_output/gingerale/ale_results/cluster_ALE \\\n  -thresh=test_output/gingerale/ale_results/cluster_thresh \\\n  -perm=100 \\\n  -p=0.001 \\\n  -clust=0.05 \\\n  2>&1'"
+    timeout: 300
     validate:
-      - output_exists: ${output_dir}/gingerale/ale_results/minimal_clust_ALE.nii
+      - output_exists: ${output_dir}/gingerale/ale_results/cluster_ALE.nii
 
   # ==========================================================================
   # THRESHOLDING METHODS - PERMUTATION-BASED (FWE)
@@ -560,3 +574,4 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output/gingerale
     echo "Test outputs preserved in test_output/gingerale/"
+upstream_version: 3.0.2

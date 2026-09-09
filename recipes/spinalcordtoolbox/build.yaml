@@ -15,7 +15,49 @@ variants:
     options:
       gpu: true
 variables:
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  install_version: "7.3.3"
   upstream_version: "7.3"
+auto_update:
+  method: sources
+  sources:
+  - id: sct
+    method: github_release
+    repo: spinalcordtoolbox/spinalcordtoolbox
+    target:
+      variable: upstream_version
+      value: version
+      fulltest_variable: upstream_version
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+  local:
+  - macros/openrecon
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -39,28 +81,28 @@ build:
     - include: macros/openrecon/neurodocker.yaml
     - run:
         - tar -xz -C /opt/ -f {{ get_file("downloaded_tar_file") }}
-        - mv /opt/spinalcordtoolbox-{{ context.upstream_version }} /opt/spinalcordtoolbox-{{ context.version }}
-    - workdir: /opt/spinalcordtoolbox-{{ context.version }}
+        - mv /opt/spinalcordtoolbox-{{ context.upstream_version }} /opt/spinalcordtoolbox-{{ context.install_version }}
+    - workdir: /opt/spinalcordtoolbox-{{ context.install_version }}
     - run:
-        - chmod a+rwx /opt/spinalcordtoolbox-{{ context.version }}/ -R
+        - chmod a+rwx /opt/spinalcordtoolbox-{{ context.install_version }}/ -R
     - user: spinalcordtoolbox
     - condition: not context.options.gpu
       run:
         - ./install_sct -i -y -c
-        - rm -rf /home/spinalcordtoolbox/.cache /opt/spinalcordtoolbox-{{ context.version }}/python/pkgs
+        - rm -rf /home/spinalcordtoolbox/.cache /opt/spinalcordtoolbox-{{ context.install_version }}/python/pkgs
     - condition: context.options.gpu
       run:
         - ./install_sct -i -y -g -c
-        - rm -rf /home/spinalcordtoolbox/.cache /opt/spinalcordtoolbox-{{ context.version }}/python/pkgs
+        - rm -rf /home/spinalcordtoolbox/.cache /opt/spinalcordtoolbox-{{ context.install_version }}/python/pkgs
     - environment:
-        PATH: /opt/spinalcordtoolbox-{{ context.version }}/bin/:$PATH
-        SCT_DIR: /opt/spinalcordtoolbox-{{ context.version }}
+        PATH: /opt/spinalcordtoolbox-{{ context.install_version }}/bin/:$PATH
+        SCT_DIR: /opt/spinalcordtoolbox-{{ context.install_version }}
     - condition: context.options.gpu
       environment:
         SCT_USE_GPU: "1"
     - condition: context.options.gpu
       run:
-        - /opt/spinalcordtoolbox-{{ context.version }}/python/envs/venv_sct/bin/python -c 'import os, torch; assert torch.version.cuda; assert os.environ.get("SCT_USE_GPU") == "1"; print(torch.__version__, torch.version.cuda)'
+        - /opt/spinalcordtoolbox-{{ context.install_version }}/python/envs/venv_sct/bin/python -c 'import os, torch; assert torch.version.cuda; assert os.environ.get("SCT_USE_GPU") == "1"; print(torch.__version__, torch.version.cuda)'
     - run:
         - sct_deepseg spinalcord -install
         - sct_deepseg sc_epi -install
@@ -89,7 +131,7 @@ build:
           bins:
             - sct_deepseg
           path:
-            - /opt/spinalcordtoolbox-{{ context.version }}/bin/
+            - /opt/spinalcordtoolbox-{{ context.install_version }}/bin/
 readme: |-
   ----------------------------------
   ## {{ context.name }}/{{ context.version }} ##

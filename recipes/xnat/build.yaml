@@ -5,6 +5,11 @@ architectures:
   - x86_64
   - aarch64
 
+auto_update:
+  method: webpage
+  url: https://api.bitbucket.org/2.0/repositories/xnatdev/xnat-web/downloads?pagelen=100
+  version_regex: xnat-web-(?P<version>\d+(?:\.\d+)+)\.war
+
 build:
   kind: neurodocker
 
@@ -13,6 +18,14 @@ build:
 
   directives:
     - install: tomcat9 postgresql openjdk-8-jre-headless wget sudo
+
+    - run: ln -sfn "$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")" /opt/java
+
+    - environment:
+        JAVA_HOME: /opt/java
+        JRE_HOME: /opt/java
+
+    - run: /usr/share/tomcat9/bin/version.sh
 
     # Configure Tomcat
     - group:

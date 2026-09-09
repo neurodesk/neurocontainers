@@ -1,5 +1,5 @@
 name: dafne
-version: 1.8a4
+version: 1.8a4.post2
 
 copyright:
   - license: GPL-3.0
@@ -10,41 +10,98 @@ architectures:
   - aarch64
 
 variables:
+  upstream_version: 1.8a4
+  radiomics_version: 3.1.0
   conda_install:
     try:
       - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3"
         condition: arch=="x86_64"
-      - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3 pyqt=5.15 vtk"
+      - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3 pyqt=5.15 vtk h5py=3.11.0"
         condition: arch=="aarch64"
   pip_install:
     try:
-      - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics==3.1.0 protobuf==3.20.3 dafne=={{ context.version }}"
+      - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics=={{ context.radiomics_version }} protobuf==3.20.3 dafne=={{ context.upstream_version }}"
         condition: arch=="x86_64"
-      - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics==3.1.0 protobuf==3.20.3 dafne=={{ context.version }}"
+      - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics=={{ context.radiomics_version }} protobuf==3.20.3 dafne=={{ context.upstream_version }}"
         condition: arch=="aarch64"
 
 files:
+  - name: register_conda_metadata.py
+    filename: register_conda_metadata.py
+  - name: radiomics_source
+    url: https://github.com/AIM-Harvard/pyradiomics/archive/refs/tags/v{{ context.radiomics_version }}.tar.gz
+  - name: patch_radiomics_metadata.py
+    contents: |
+      from pathlib import Path
+      import sys
+      import versioneer
+
+      expected = sys.argv[1]
+      actual = versioneer.get_version().lstrip("v")
+      if actual != expected:
+          raise RuntimeError("PyRadiomics source version {} != {}".format(actual, expected))
+      project = Path("pyproject.toml")
+      text = project.read_text()
+      incorrect = 'version = "3.0.1a1"'
+      correct = 'version = "{}"'.format(expected)
+      if text.count(incorrect) == 1:
+          project.write_text(text.replace(incorrect, 'dynamic = ["version"]'))
+      elif text.count(correct) != 1 and 'dynamic = ["version"]' not in text:
+          raise RuntimeError("PyRadiomics packaging changed; review the version metadata repair")
+
   - name: patch_dafne_dl_annotations.py
     contents: |-
-      from pathlib import Path
       import ast
+      import importlib.util
+      from pathlib import Path
 
-      root = Path("/opt/miniconda-py38_22.11.1-1/lib/python3.8/site-packages/dafne_dl")
-      for path in root.rglob("*.py"):
-          text = path.read_text()
-          if "from __future__ import annotations" in text.splitlines()[:20]:
-              continue
-          tree = ast.parse(text)
-          insert_line = 0
-          if (
-              tree.body
-              and isinstance(tree.body[0], ast.Expr)
-              and isinstance(tree.body[0].value, ast.Str)
-          ):
-              insert_line = tree.body[0].end_lineno or 0
-          lines = text.splitlines()
-          lines.insert(insert_line, "from __future__ import annotations")
-          path.write_text("\n".join(lines) + ("\n" if text.endswith("\n") else ""))
+      spec = importlib.util.find_spec("dafne_dl")
+      if spec is None or spec.submodule_search_locations is None:
+          raise RuntimeError("Could not locate the installed dafne_dl package")
+
+      scanned = 0
+      patched = 0
+      for package_dir in spec.submodule_search_locations:
+          for path in Path(package_dir).rglob("*.py"):
+              scanned += 1
+              text = path.read_text()
+              if "from __future__ import annotations" in text.splitlines()[:20]:
+                  continue
+              tree = ast.parse(text)
+              insert_line = 0
+              if (
+                  tree.body
+                  and isinstance(tree.body[0], ast.Expr)
+                  and isinstance(tree.body[0].value, ast.Str)
+              ):
+                  insert_line = tree.body[0].end_lineno or 0
+              lines = text.splitlines()
+              lines.insert(insert_line, "from __future__ import annotations")
+              path.write_text("\n".join(lines) + ("\n" if text.endswith("\n") else ""))
+              patched += 1
+
+      if scanned == 0:
+          raise RuntimeError("The installed dafne_dl package contains no Python files")
+      print("Added deferred annotations to {} of {} dafne_dl files".format(patched, scanned))
+
+auto_update:
+  method: sources
+  sources:
+    - id: dafne
+      method: pypi
+      package: dafne
+      include_prereleases: true
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: pyradiomics
+      method: github_release
+      repo: AIM-Harvard/pyradiomics
+      # Later release families require a newer Python than DAFNE's supported stack.
+      version_regex: '^v?(?P<version>3\.1\.\d+)$'
+      target:
+        variable: radiomics_version
+        fulltest_variable: radiomics_version
 
 build:
   kind: neurodocker
@@ -86,9 +143,21 @@ build:
     - template:
         name: miniconda
         conda_install: "{{ context.conda_install }}"
-        mamba: "true"
-        pip_install: "{{ context.pip_install }}"
-        version: py38_22.11.1-1
+        version: py38_23.11.0-2
+
+    - run: python {{ get_file("register_conda_metadata.py") }}
+      condition: arch=="aarch64"
+
+    - run:
+        - mkdir -p /tmp/pyradiomics-source
+        - tar -xzf {{ get_file("radiomics_source") }} -C /tmp/pyradiomics-source --strip-components=1
+        - cd /tmp/pyradiomics-source
+        - PYTHONPATH=. python {{ get_file("patch_radiomics_metadata.py") }} {{ context.radiomics_version }}
+        - PYTHONPATH=. python -m pip install --no-cache-dir --no-build-isolation --no-deps .
+        - rm -rf /tmp/pyradiomics-source
+      condition: arch=="aarch64"
+
+    - run: python -m pip install --no-cache-dir --only-binary=PyQt5,vtk,h5py {{ context.pip_install }}
 
     - environment:
         HOME: /tmp

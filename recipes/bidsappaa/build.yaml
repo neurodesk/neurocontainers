@@ -1,21 +1,38 @@
 name: bidsappaa
-version: 0.2.0
+version: 0.2.0.post2
 
 # https://hub.docker.com/r/bids/aa/tags
 
 architectures:
   - x86_64
 
+variables:
+  image_tag: v0.2.0
+
+auto_update:
+  method: sources
+  sources:
+    - id: upstream
+      method: dockerhub
+      repo: bids/aa
+      version_regex: ^v(?P<version>[0-9]+\.[0-9]+\.[0-9]+)$
+      target:
+        variable: image_tag
+        value: tag
+
 build:
   kind: neurodocker
 
-  base-image: bids/aa:v0.2.0
+  base-image: bids/aa:{{ context.image_tag }}
+  convert-base-image: true
   pkg-manager: apt
 
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
         PATH: ${PATH}:/opt/bin
+    - install:
+        - python
     - run:
         - chmod +x /opt/automaticanalysis5/run_automaticanalysis.sh
     - entrypoint: bash

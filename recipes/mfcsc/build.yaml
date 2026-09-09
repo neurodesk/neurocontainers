@@ -1,5 +1,5 @@
 name: mfcsc
-version: "1.1"
+version: "1.1.post1"
 
 copyright:
   - license: MIT
@@ -8,6 +8,14 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: binary
+    method: http_digest
+    url: https://www.dropbox.com/s/rc8rysdwqxgxcfn/mfcsc?dl=1
+    target:
+      file: mfcsc_binary
 build:
   kind: neurodocker
   base-image: ubuntu:18.04
@@ -21,18 +29,19 @@ build:
         - dbus-x11
     - template:
         name: matlabmcr
+        ncurses_package: libncurses5
         version: 2020a
         install_path: /opt/MCR
-    - workdir: /opt/mfcsc-{{ context.version }}/
+    - workdir: /opt/mfcsc-{{ context.upstream_version }}/
     - run:
         - cp {{ get_file("mfcsc_binary") }} mfcsc
         - od -An -tx1 -N4 mfcsc | grep -q '7f 45 4c 46'
     - environment:
         XAPPLRESDIR: /opt/MCR/v98/x11/app-defaults
     - run:
-        - chmod a+x /opt/mfcsc-{{ context.version }}/*
+        - chmod a+x /opt/mfcsc-{{ context.upstream_version }}/*
     - environment:
-        PATH: /opt/mfcsc-{{ context.version }}/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        PATH: /opt/mfcsc-{{ context.upstream_version }}/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     - copy:
         - app_test.sh
         - /neurodesk/app_test.sh
@@ -83,6 +92,9 @@ categories:
 
 files:
   - name: mfcsc_binary
-    url: https://www.dropbox.com/s/rc8rysdwqxgxcfn/mfcsc?dl=1
+    url: "https://www.dropbox.com/s/rc8rysdwqxgxcfn/mfcsc?dl=1"
 
+    sha256: 818089ff79557fdeace9ca5f8528ab6f91ca64bf7c16dc441ec358335691dc73
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABP0lEQVR42u3azRHCIBCG4ZRhEx5swCYswZMNWYnFOY4zOrkbQuDbH+J72KM/+2SBBTI9X+/PP8cEAAAAAAAAAAAAAAAAAACgiOP1YfqHD6dLPoA56aVQJb0U4QCl5BUIpeQVCAB4AJzvt+ZIDVCTfA9CTfK9CFSAN0DNd+4aoAQxZAWsIayV+FLitQjDdIIt43+YTnBLtCa+i81Q79MfFqBnGUwPUGp1tyTXChGyCqz1/T1PteazylVh8uz8FMNG3Re4ACjnjyEBlBEKYL37i9gdUgHZToC8T4gAyHgK7HlKLOkEPdvXX3NC+F4gEiDNZigCINVu0KMKLH7DDEA9Ic5jPTWAxepgeRYoB1D3B9anwQBEAGS6EXK7F2hB8LgTpAKYAwCgDzC9GLHoBHlPEAAAAAAAAAAAAAAAAABQxRdgu/0O6G9E3wAAAABJRU5ErkJggg==
+variables:
+  upstream_version: '1.1'

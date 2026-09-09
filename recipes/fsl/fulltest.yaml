@@ -7,7 +7,8 @@
 #   - BOLD: 4D functional data
 
 name: fsl
-version: 6.0.7.22
+version: 6.0.7.22.post1
+fsl_version: "6.0.7.22"
 
 required_files:
   - dataset: ds000001
@@ -29,13 +30,17 @@ setup:
     mkdir -p test_output
 
 tests:
+  - name: ASL extension imports and option parsing
+    command: >-
+      fslpython -c 'import maskslic, oxasl, oxasl_ve, oxasl_mp, regtricks; from oxasl.options import AslOptionParser; from oxasl_mp.api import Options; assert Options().groups(AslOptionParser()); print("ASL extensions ready")'
+    expected_output_contains: ASL extensions ready
   # ==========================================================================
   # BASIC FUNCTIONALITY AND VERSION CHECKS
   # ==========================================================================
   - name: FSL version check
     description: Verify FSL is installed and report version
     command: fslversion
-    expected_output_contains: "6.0"
+    expected_output_contains: "${fsl_version}"
 
   - name: fslmaths usage
     description: Verify fslmaths binary runs

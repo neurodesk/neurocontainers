@@ -5,6 +5,11 @@ copyright:
     url: https://github.com/nipreps/fmriprep/blob/master/LICENSE
 architectures:
   - x86_64
+auto_update:
+  method: dockerhub
+  repo: nipreps/fmriprep
+  version_regex: ^(?P<version>[0-9]+\.[0-9]+\.[0-9]+)$
+
 build:
   kind: neurodocker
   base-image: nipreps/fmriprep:{{ context.version }}

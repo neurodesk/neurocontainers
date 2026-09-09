@@ -17,6 +17,10 @@ variables:
   weights_version: "1.0.2"
   venv: /opt/gliomoda-0.0.4
 
+auto_update:
+  method: pypi
+  package: gliomoda
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -51,7 +55,7 @@ build:
         # than letting the resolver choose a different one on a rebuild.
         - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir
           --extra-index-url https://download.pytorch.org/whl/cu124 torch
-        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "gliomoda==0.0.4"
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "gliomoda=={{ context.version }}"
         # Import at build time so a broken resolve fails here rather than on
         # first use; read the version from distribution metadata because these
         # packages do not all define __version__.

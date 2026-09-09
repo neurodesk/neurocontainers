@@ -1,5 +1,5 @@
 name: brainnetviewer
-version: 1.7.20191031
+version: 1.7.20191031.post1
 
 copyright:
   - license: GPL-3.0-only
@@ -8,6 +8,19 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://www.nitrc.org/frs/?group_id=504
+    version_regex: BrainNetViewer(?P<version>\d{8})_sd_Linux_x64_compiled(?P<runtime>\d{4}[ab])\.zip$
+    download_base: https://www.nitrc.org/frs/
+    target:
+      file: brainnetviewer_zip
+      variables:
+        artifact_date: version
+        matlab_version: runtime
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -15,43 +28,35 @@ build:
 
   directives:
     - install:
-        - openjdk-17-jdk
-        - bash
-        - ca-certificates
-        - unzip
-        - libxext6
-        - libxt6
-        - libxmu6
-        - libxrender1
-        - libxcomposite1
-        - libxrandr2
-        - libxss1
-        - libasound2
-
+      - openjdk-17-jdk
+      - bash
+      - ca-certificates
+      - file
+      - unzip
+      - libxext6
+      - libxt6
+      - libxmu6
+      - libxrender1
+      - libxcomposite1
+      - libxrandr2
+      - libxss1
+      - libasound2
+    - template:
+        name: matlabmcr
+        version: "{{ context.matlab_version }}"
+        install_path: "/opt/matlab"
     - run:
-        - mkdir -p /tmp/mcr /opt/matlab
-        - cp {{ get_file("mcr_installer") }} /tmp/MCR_R2018a_glnxa64_installer.zip
-        - unzip -q /tmp/MCR_R2018a_glnxa64_installer.zip -d /tmp/mcr
-        - /tmp/mcr/install -destinationFolder /opt/matlab -mode silent -agreeToLicense yes
-        - rm -rf /tmp/mcr /tmp/MCR_R2018a_glnxa64_installer.zip
-
+      - ln -s /opt/matlab/{{ context.matlab_runtime_subdir }} /opt/matlab-runtime
     - run:
-        - cp {{ get_file("brainnetviewer_zip") }} /tmp/BrainNetViewer20191031_sd_Linux_x64_compiled2018a.zip
-        - unzip -q /tmp/BrainNetViewer20191031_sd_Linux_x64_compiled2018a.zip -d /
-        - rm /tmp/BrainNetViewer20191031_sd_Linux_x64_compiled2018a.zip
-
+      - unzip -q {{ get_file("brainnetviewer_zip") }} -d /
     - run:
-        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
-        - chmod +x /usr/bin/ll
-        - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
-
+      - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+      - chmod +x /usr/bin/ll
+      - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
     - copy: brainnetviewer /usr/bin/brainnetviewer
-
     - run:
-        - chmod +x /usr/bin/brainnetviewer
-
+      - chmod +x /usr/bin/brainnetviewer
     - entrypoint: /usr/bin/brainnetviewer
-
 deploy:
   bins:
     - brainnetviewer
@@ -72,10 +77,20 @@ readme: |-
   Example: `brainnetviewer`
   License: GNU General Public License Version 3 (GPL-3.0)
 
+  Citation: Xia M, Wang J, He Y (2013). BrainNet Viewer: A Network Visualization Tool
+  for Human Brain Connectomics. PLoS ONE 8(7): e68910.
+  https://doi.org/10.1371/journal.pone.0068910
+
   ----------------------------------
 
 files:
   - name: brainnetviewer_zip
     url: https://www.nitrc.org/frs/download.php/11585/BrainNetViewer20191031_sd_Linux_x64_compiled2018a.zip
-  - name: mcr_installer
-    url: https://ssd.mathworks.com/supportfiles/downloads/R2018a/deployment_files/R2018a/installers/glnxa64/MCR_R2018a_glnxa64_installer.zip
+    sha256: 3cd6a0c92a8ec69a014c7aadf36cea7f7131ddc591742e57243318300f8644aa
+variables:
+  upstream_version: 1.7.20191031
+  matlab_version: 2018a
+  matlab_runtime_subdir: '{{ {''2018a'': ''v94'', ''2019b'': ''v97'', ''2020a'': ''v98'', ''2020b'': ''v99'', ''2021a'': ''v910'',
+    ''2021b'': ''v911'', ''2022a'': ''v912'', ''2022b'': ''v913'', ''2023a'': ''v914''}.get(context.matlab_version, ''R'' +
+    context.matlab_version) }}'
+  artifact_date: '20191031'

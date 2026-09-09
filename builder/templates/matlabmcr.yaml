@@ -16,6 +16,7 @@ binaries:
     2020b: https://ssd.mathworks.com/supportfiles/downloads/R2020b/Release/8/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2020b_Update_8_glnxa64.zip
     2020a: https://ssd.mathworks.com/supportfiles/downloads/R2020a/Release/7/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2020a_Update_7_glnxa64.zip
     2019b: https://ssd.mathworks.com/supportfiles/downloads/R2019b/Release/9/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2019b_Update_9_glnxa64.zip
+    2018a: https://ssd.mathworks.com/supportfiles/downloads/R2018a/deployment_files/R2018a/installers/glnxa64/MCR_R2018a_glnxa64_installer.zip
     2017b: https://ssd.mathworks.com/supportfiles/downloads/R2017b/deployment_files/R2017b/installers/glnxa64/MCR_R2017b_glnxa64_installer.zip
     2014a: https://ssd.mathworks.com/supportfiles/downloads/R2014a/deployment_files/R2014a/installers/glnxa64/MCR_R2014a_glnxa64_installer.zip
     2014b: https://ssd.mathworks.com/supportfiles/downloads/R2014b/deployment_files/R2014b/installers/glnxa64/MCR_R2014b_glnxa64_installer.zip
@@ -77,7 +78,9 @@ binaries:
         {{ self.install_path }}/{{ versionTovXX[self.version] }}
 
         '
-  - run: 'export TMPDIR="$(mktemp -d)"
+  - run: '{% if self.version not in self.urls %}{{ raise("Unsupported MATLAB Runtime release: " ~ self.version) }}{% endif %}
+
+      export TMPDIR="$(mktemp -d)"
 
       {{ self.install_dependencies() }}
 

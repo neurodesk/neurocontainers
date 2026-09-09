@@ -1,5 +1,11 @@
+variables:
+  numpy_version: 1.26.4
+  tensorflow_version: 2.21.0
+  synthsr_commit: 04ab5548f4609c2b44ca51b3f4bc319b585dafa7
+  synthstrip_version: '1.8'
+
 name: syncro
-version: 0.1.1
+version: 0.1.1.post1
 
 copyright:
   - license: BSD-2-Clause
@@ -8,10 +14,37 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: numpy
+    method: pypi
+    package: numpy
+    version_regex: '^(?P<version>1[.][0-9]+[.][0-9]+)$'
+    target:
+      variable: numpy_version
+  - id: tensorflow
+    method: pypi
+    package: tensorflow
+    target:
+      variable: tensorflow_version
+  - id: synthsr_commit
+    method: github_commit
+    repo: neurolabusc/py_synthsr
+    ref: HEAD
+    target:
+      variable: synthsr_commit
+  - id: synthstrip
+    method: dockerhub
+    repo: freesurfer/synthstrip
+    target:
+      variable: synthstrip_version
+
 build:
   kind: neurodocker
 
-  base-image: freesurfer/synthstrip:1.8
+  base-image: freesurfer/synthstrip:{{ context.synthstrip_version }}
   pkg-manager: apt
 
   directives:
@@ -27,17 +60,19 @@ build:
         PATH: /opt/:$PATH
 
     - run: 
-        - pip install scipy antspyx
+        - pip install "numpy=={{ context.numpy_version }}" scipy antspyx
         - cp {{ get_file("MNI152_T1_1mm_brain_nii_gz") }} MNI152_T1_1mm_brain.nii.gz
         
     - run:
         - git clone https://github.com/neurolabusc/py_synthsr
+        - git -C py_synthsr checkout {{ context.synthsr_commit }}
         - cd py_synthsr
         - cp {{ get_file("downloaded_file") }} models.zip
         - unzip -jo models.zip -d py_synthsr/models
         - mv py_synthsr/models/* /freesurfer/models
         - rm models.zip
-        - pip install .
+        - pip install . "numpy=={{ context.numpy_version }}" "tensorflow=={{ context.tensorflow_version }}"
+        - pip check
 
     - copy: SYNcro.py /opt/
 

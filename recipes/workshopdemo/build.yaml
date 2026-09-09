@@ -14,9 +14,23 @@ structured_readme:
   example: hello
   documentation: https://github.com/neurodesk/neurocontainers
   citation: Brainhack 2025
+variables:
+  base_image_digest: sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: ubuntu
+      tag: "24.04"
+      target:
+        variable: base_image_digest
+
 build:
   kind: neurodocker
-  base-image: ubuntu:24.04
+  base-image: ubuntu:24.04@{{ context.base_image_digest }}
   pkg-manager: apt
   directives:
     - install: hello

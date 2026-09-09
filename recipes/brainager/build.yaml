@@ -1,11 +1,24 @@
+variables:
+  upstream_commit: 3f53965001a992bf54cea46382e10c5b96c40a15
+
 name: brainager
-version: 2.1.0
+version: "2.1.0.post1"
 
 copyright:
   - license: LGPL-3.0
     url: https://github.com/james-cole/brainageR?tab=LGPL-3.0-1-ov-file#readme
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: james-cole/brainageR
+    ref: HEAD
+    target:
+      variable: upstream_commit
 
 build:
   kind: neurodocker
@@ -23,6 +36,7 @@ build:
         - python3-pip
         - git
         - r-base
+        - r-cran-caret
         - build-essential
         - gfortran
         - libblas-dev
@@ -67,7 +81,7 @@ build:
     - workdir: /opt
 
     - run:
-        - git clone https://github.com/james-cole/brainageR
+        - git clone https://github.com/james-cole/brainageR && git -C /opt/brainageR checkout {{ context.upstream_commit }}
         - rm -rf /opt/brainageR/.git
         - rm -rf /opt/brainageR/templates
         - cp {{ get_file("brainager_neurodesk_zip") }} brainager_neurodesk.zip

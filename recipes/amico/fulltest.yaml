@@ -28,7 +28,8 @@
 # utility functions, and synthetic signal generation.
 
 name: amico
-version: 2.1.0
+version: 2.1.0.post1
+upstream_version: 2.1.0
 
 required_files:
   - dataset: ds000001
@@ -71,12 +72,12 @@ tests:
   - name: AMICO version check
     description: Verify AMICO version
     command: python -c "import amico; print('AMICO version:', amico.__version__)"
-    expected_output_contains: "2.1.0"
+    expected_output_contains: "${upstream_version}"
 
   - name: AMICO README check
     description: Verify AMICO README contains expected information
     command: cat /README.md
-    expected_output_contains: "amico/2.1.0"
+    expected_output_contains: "amico/${version}"
 
   # ==========================================================================
   # SUBMODULE IMPORTS

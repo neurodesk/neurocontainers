@@ -1,2 +1,6 @@
-#!/usr/bin/env sh
-/usr/bin/code --extensions-dir=/opt/vscode-extensions
+#!/bin/sh
+set -e
+
+config_root="${XDG_CONFIG_HOME:-${TMPDIR:-/tmp}/mneextended-config-$(id -u)}"
+mkdir -p "$config_root/Code"
+exec /usr/bin/code --extensions-dir=/opt/vscode-extensions --user-data-dir="$config_root/Code" "$@"

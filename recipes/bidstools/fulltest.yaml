@@ -1,7 +1,9 @@
-# Focused ARM64 verification for the packaged DICOM/BIDS utilities.
+# Focused verification for the packaged DICOM/BIDS utilities.
 
 name: bidstools
-version: 1.0.4
+version: 1.0.4.post1
+heudiconv_version: 1.5.0
+traits_version: 7.1.0
 
 setup:
   script: |
@@ -10,13 +12,12 @@ setup:
     mkdir -p test_output/bidstools
 
 tests:
-  - name: Architecture is aarch64
-    description: Verify the container is running on ARM64
-    command: uname -m
-    expected_output_contains: aarch64
+  - name: Supported architecture
+    description: Verify the runtime uses one of the declared architectures
+    command: uname -m | grep -E '^(x86_64|aarch64)$'
 
   - name: Bru2 binary installed
-    description: Verify the ARM64-built Bru2 binary is present
+    description: Verify the packaged Bru2 binary is present
     command: test -x /opt/bru2/Bru2 && echo ok
     expected_output_contains: ok
 
@@ -31,9 +32,11 @@ tests:
     expected_output_contains: ok
 
   - name: dcm2niix version check
-    description: Verify the pinned ARM64 dcm2niix build reports the expected version
-    command: dcm2niix --version 2>&1 || true
-    expected_output_contains: v1.0.20250505
+    description: Verify the binary reports the version embedded in its pinned source
+    command: |
+      expected=$(awk '/^#define kDCMdate / {gsub(/"/, "", $3); print $3}' /opt/dcm2niix-latest/share/nii_dicom.h) &&
+      test -n "$expected" &&
+      dcm2niix --version 2>&1 | grep -F "$expected"
 
   - name: dcmdump available
     description: Verify dcmtk is installed
@@ -53,12 +56,12 @@ tests:
   - name: heudiconv package version
     description: Verify the packaged heudiconv version
     command: python -c 'import heudiconv; print(heudiconv.__version__)'
-    expected_output_contains: "1.3.4"
+    expected_output_contains: "${heudiconv_version}"
 
   - name: traits package version
     description: Verify the packaged traits version
     command: python -c 'import traits; print(traits.__version__)'
-    expected_output_contains: "7.1.0"
+    expected_output_contains: "${traits_version}"
 
   - name: xmedcon available
     description: Verify xmedcon is installed

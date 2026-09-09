@@ -1,16 +1,22 @@
 name: fastcsr
-version: "1.0"
+version: "1.0.post3"
 icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjE4IiBmaWxsPSIjMTYyMTNlIi8+PHBhdGggZD0iTTI1IDg1YzE4LTM4IDM2LTM4IDU0IDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2Y2Yzg1ZiIgc3Ryb2tlLXdpZHRoPSI4IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMzYgODBjMTItMjQgMjQtMjQgMzYgMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNGVjZGM0IiBzdHJva2Utd2lkdGg9IjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxjaXJjbGUgY3g9IjY0IiBjeT0iNDQiIHI9IjIwIiBmaWxsPSJub25lIiBzdHJva2U9IiNmN2ZmZjciIHN0cm9rZS13aWR0aD0iNyIvPjx0ZXh0IHg9IjY0IiB5PSIxMTQiIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjE5IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZjdmZmY3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5GYXN0Q1NSPC90ZXh0Pjwvc3ZnPg==
 
 architectures:
   - x86_64
 
 variables:
+  python_gdcm_version: 3.0.25
+  simpleitk_version: 2.4.1
+  pytorch_version: 1.10.2
+  torchvision_version: 0.11.3
+  torchaudio_version: 0.10.2
+  upstream_commit: "b2bbc0e109f7c0f5667e7ee89611f1b320732cc8"
   fastcsr_repo: https://github.com/IndiLab/FastCSR.git
   freesurfer_version: 6.0.0
   freesurfer_home: /opt/freesurfer-{{ context.freesurfer_version }}
   freesurfer_url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/6.0.0/freesurfer-Linux-centos6_x86_64-stable-pub-v6.0.0.tar.gz
-  nighres_wheel_url: https://raw.githubusercontent.com/IndiLab/FastCSR/main/docker/nighres-1.5.0-cp38-cp38-linux_x86_64.whl
+  nighres_wheel_url: https://raw.githubusercontent.com/IndiLab/FastCSR/{{ context.upstream_commit }}/docker/nighres-1.5.0-cp38-cp38-linux_x86_64.whl
   model_zip_url: "https://drive.usercontent.google.com/download?id=1qATJ2PT8e6RhBnfJviU6qTtBicVO9_Qr&export=download&authuser=0&confirm=t&uuid=ba0ee838-2af9-48be-8a27-39e5475e4802&at=APZUnTWLoGPK9o4jOoHb5vxdbqCf:1698212871026"
   data_zip_url: "https://drive.usercontent.google.com/download?id=1Ypw25hbpCloQzlbWhg1XWB-HuxIVlHH7&export=download&authuser=0&confirm=t&uuid=e00becd7-c885-4748-8099-04f472d7ccdd&at=APZUnTX9F-JDE6TLLHxD2NuSF0pA:1698212916237"
 
@@ -23,6 +29,16 @@ files:
     url: "{{ context.model_zip_url }}"
   - name: data_zip
     url: "{{ context.data_zip_url }}"
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: IndiLab/FastCSR
+    ref: HEAD
+    target:
+      variable: upstream_commit
 
 build:
   kind: neurodocker
@@ -53,6 +69,7 @@ build:
         - vim-common
         - libjpeg62-dev
         - python3-pip
+        - python3-cairo
     - environment:
         OS: Linux
         PATH: "{{ context.freesurfer_home }}/bin:{{ context.freesurfer_home }}/fsfast/bin:{{ context.freesurfer_home }}/tktools:{{ context.freesurfer_home }}/mni/bin:$PATH"
@@ -81,17 +98,23 @@ build:
     - environment:
         LD_LIBRARY_PATH: /usr/lib/jvm/java-11-openjdk-amd64/lib:/usr/lib/jvm/java-11-openjdk-amd64/lib/server
     - run:
-        - pip3 install '{{ get_file("nighres_wheel") }}'
-        - pip install nighres==1.5.0
+        - python3 -m pip install --upgrade pip==25.0.1 setuptools==75.3.2 wheel==0.45.1
+        - python3 -m wheel unpack '{{ get_file("nighres_wheel") }}' --dest /tmp/nighres-wheel
+        - >-
+          sed -i 's/^Tag: cp38_cp38-none-linux_x86_64$/Tag: cp38-cp38-linux_x86_64/' /tmp/nighres-wheel/nighres-1.5.0/nighres-1.5.0.dist-info/WHEEL
+        - python3 -m wheel pack /tmp/nighres-wheel/nighres-1.5.0 --dest /tmp/nighres-wheel
+        - pip3 install /tmp/nighres-wheel/nighres-1.5.0-cp38-cp38-linux_x86_64.whl
+        - rm -rf /tmp/nighres-wheel
         - pip install -U numpy
-        - pip install torch==1.9.1+cpu torchvision==0.10.1+cpu torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html
+        - pip install torch=={{ context.pytorch_version }}+cpu torchvision=={{ context.torchvision_version }}+cpu torchaudio=={{ context.torchaudio_version }}+cpu -f https://download.pytorch.org/whl/torch_stable.html
     - environment:
         SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL: "True"
     - run:
-        - pip install nnunet==1.7.1 antspyx sh
+        - pip install nnunet==1.7.1 python-gdcm=={{ context.python_gdcm_version }} SimpleITK=={{ context.simpleitk_version }} antspyx sh
+        - python3 -m pip check
     - workdir: /opt
     - run:
-        - git clone {{ context.fastcsr_repo }}
+        - git clone {{ context.fastcsr_repo }} && git -C /opt/FastCSR checkout {{ context.upstream_commit }}
     - workdir: /opt/FastCSR/
     - run:
         - unzip '{{ get_file("model_zip") }}'

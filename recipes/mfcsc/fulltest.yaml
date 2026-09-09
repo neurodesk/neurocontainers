@@ -15,7 +15,7 @@
 # for testing purposes.
 
 name: mfcsc
-version: "1.1"
+version: "1.1.post1"
 
 # Input requirements:
 # - FC_SC_LIST: Tab-separated file with FC files (col1) and matching SC files (col2)
@@ -436,3 +436,4 @@ cleanup:
     echo ""
     echo "Output directories created:"
     ls -d test_output/mfcsc/output_* 2>/dev/null || echo "No output directories found"
+upstream_version: '1.1'

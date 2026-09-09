@@ -1,23 +1,116 @@
 name: prostatefiducialseg
-version: 7.0.0
+version: 7.0.0.post1
 architectures:
     - x86_64
     - aarch64
 
-readme_url: https://raw.githubusercontent.com/astewartau/prostate/refs/heads/main/README.md
+readme_url: https://raw.githubusercontent.com/astewartau/seedseg/{{ context.upstream_commit }}/README.md
 
 variables:
-    conda_version: "4.12.0"
+    openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+    openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+    openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+    openrecon_ismrmrd_version: "1.14.2"
+    upstream_commit: "3354f6cc3cf750ada5bd3e25bd0ab6e1712662ab"
+    onnxruntime_version: "1.23.2"
+    onnxruntime_gpu_version: "1.23.2"
+    conda_version: "25.5.1-0"
     conda_download_url:
         try:
-            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py39_{{ context.conda_version }}-Linux-x86_64.sh"
+            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py310_{{ context.conda_version }}-Linux-x86_64.sh"
               condition: arch=="x86_64"
-            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py39_{{ context.conda_version }}-Linux-aarch64.sh"
+            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py310_{{ context.conda_version }}-Linux-aarch64.sh"
               condition: arch=="aarch64"
 
 files:
     - name: prostatefiducialseg.py
       filename: prostatefiducialseg.py
+
+    - name: predict3.py
+      filename: predict3.py
+    - name: miniconda.sh
+      url: "{{ context.conda_download_url }}"
+    - name: seedseg-model-seed456.onnx
+      url: https://osf.io/download/kqw4n/
+      sha256: 2aa00094e01e978f3d85a882a97f9a1ef59da32341db4aaaf46c0c5388424ae7
+    - name: seedseg-model-seed789.onnx
+      url: https://osf.io/download/uf8z7/
+      sha256: e0cf5de01f36b1507e99910a92071bb888166aff4c5c90b902f04105ad8956c5
+    - name: seedseg-model-seed42.onnx
+      url: https://osf.io/download/gp7jh/
+      sha256: 7dc1ef1875b7027c56950cc3c35f1ffa8d67f7190a49df49811105cd639b784d
+    - name: seedseg-model-seed123.onnx
+      url: https://osf.io/download/svmjp/
+      sha256: bfe4fe9140383e87a6c0c4cb2a6e9a84c3435f1413fd3644273bd9f1a0c3bdee
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: astewartau/seedseg
+    ref: main
+    target:
+      variable: upstream_commit
+      fulltest_variable: upstream_commit
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+  - id: seedseg-model-seed456
+    method: http_digest
+    url: https://osf.io/download/kqw4n/
+    target:
+      file: seedseg-model-seed456.onnx
+  - id: seedseg-model-seed789
+    method: http_digest
+    url: https://osf.io/download/uf8z7/
+    target:
+      file: seedseg-model-seed789.onnx
+  - id: seedseg-model-seed42
+    method: http_digest
+    url: https://osf.io/download/gp7jh/
+    target:
+      file: seedseg-model-seed42.onnx
+  - id: seedseg-model-seed123
+    method: http_digest
+    url: https://osf.io/download/svmjp/
+    target:
+      file: seedseg-model-seed123.onnx
+  - id: onnxruntime
+    method: pypi
+    package: onnxruntime
+    version_regex: '^(?P<version>1[.](?:[0-9]|1[0-9]|2[0-3])[.][0-9]+)$'
+    target:
+      variable: onnxruntime_version
+  - id: onnxruntime_gpu
+    method: pypi
+    package: onnxruntime-gpu
+    version_regex: '^(?P<version>1[.](?:[0-9]|1[0-9]|2[0-3])[.][0-9]+)$'
+    target:
+      variable: onnxruntime_gpu_version
+  local:
+  - macros/openrecon
 
 build:
     kind: neurodocker
@@ -32,24 +125,10 @@ build:
         # Miniconda installer
         - workdir: /tmp 
         - run:
-              - curl -fsSL -o miniconda.sh {{ context.conda_download_url }}
-              - bash miniconda.sh -b -p /opt/miniconda-{{ context.conda_version }}
-              - rm miniconda.sh
+              - bash {{ get_file("miniconda.sh") }} -b -p /opt/miniconda-{{ context.conda_version }}
         - environment:
               PATH: /opt/miniconda-{{ context.conda_version }}/bin:$PATH
-        - run:
-              - conda config --system --prepend channels conda-forge
-              - conda config --system --set channel_priority strict
-              - conda clean --all --yes
-
-        # install mamba to speed up installs
-        - run:
-              - conda install mamba
-              - mamba clean --all --yes
-
-        - run:
-              - mamba install -y --name base "python=3.10"
-              - mamba clean --all --yes
+        - run: python -c "import sys; assert sys.version_info[:2] == (3, 10)"
 
         # install large pip packages
         - run:
@@ -61,25 +140,32 @@ build:
 
         # install small pip packages
         - run:
-              - pip install SimpleITK nibabel osfclient pandas scikit-learn
+              - pip install SimpleITK nibabel pandas scikit-learn
+        # Python 3.10 wheels are available through ONNX Runtime 1.23.
+        - run: pip install "onnxruntime-gpu=={{ context.onnxruntime_gpu_version }}"
+          condition: arch=="x86_64"
+        - run: pip install "onnxruntime=={{ context.onnxruntime_version }}"
+          condition: arch=="aarch64"
 
         # download model
         - workdir: /opt
         - run:
               - mkdir -p /opt/models
-              - osf -p f7hjv fetch T1-20251101-053414-6-best.pth /opt/models/model1.pth
-              - osf -p f7hjv fetch T1-20251101-055736-7-best.pth /opt/models/model2.pth
-              - osf -p f7hjv fetch T1-20251101-065123-8-best.pth /opt/models/model3.pth
+              - cp {{ get_file("seedseg-model-seed456.onnx") }} /opt/models/seedseg-model-seed456.onnx
+              - cp {{ get_file("seedseg-model-seed789.onnx") }} /opt/models/seedseg-model-seed789.onnx
+              - cp {{ get_file("seedseg-model-seed42.onnx") }} /opt/models/seedseg-model-seed42.onnx
+              - cp {{ get_file("seedseg-model-seed123.onnx") }} /opt/models/seedseg-model-seed123.onnx
 
         # clone prostate segmentation repository
         - workdir: /opt
         - run:
-              - git clone https://github.com/astewartau/prostate-fiducial-seg.git
-              - cd /opt/prostate-fiducial-seg
-              - git checkout 44a4d75
-              - chmod +x predict3.py
+              - git clone https://github.com/astewartau/seedseg.git /opt/seedseg
+              - cd /opt/seedseg
+              - git checkout {{ context.upstream_commit }}
+        - copy: predict3.py /opt/seedseg/predict3.py
+        - run: chmod +x /opt/seedseg/predict3.py
         - environment:
-              PATH: /opt/prostate-fiducial-seg:$PATH
+              PATH: /opt/seedseg:$PATH
         - copy: prostatefiducialseg.py /opt/code/python-ismrmrd-server/prostatefiducialseg.py 
 
 deploy:

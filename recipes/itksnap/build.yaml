@@ -10,6 +10,11 @@ structured_readme:
   example: itksnap
   documentation: http://www.itksnap.org/pmwiki/pmwiki.php
   citation: 'Paul A. Yushkevich, Joseph Piven, Heather Cody Hazlett, Rachel Gimpel Smith, Sean Ho, James C. Gee, and Guido Gerig. User-guided 3D active contour segmentation of anatomical structures: Significantly improved efficiency and reliability. Neuroimage 2006 Jul 1;31(3):1116-28.'
+auto_update:
+  method: webpage
+  url: https://www.itksnap.org/pmwiki/pmwiki.php?n=Main.Downloads
+  version_regex: <h3>ITK-SNAP (?P<version>\d+\.\d+\.\d+) \(LATEST RELEASE\)</h3>
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

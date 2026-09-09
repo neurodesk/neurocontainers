@@ -9,10 +9,23 @@ copyright:
   - license: MIT
     url: https://opensource.org/license/mit/
 
+variables:
+  base_image_digest: sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: moby/buildkit
+      tag: "latest"
+      target:
+        variable: base_image_digest
+
 build:
   kind: neurodocker
-  base-image: moby/buildkit:latest
-
+  base-image: moby/buildkit:latest@{{ context.base_image_digest }}
   # required since the package has a Alpine base.
   pkg-manager: apt # required so NeuroDocker doesn't complain. Technically incorrect
   add-default-template: false

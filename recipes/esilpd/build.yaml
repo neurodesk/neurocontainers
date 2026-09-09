@@ -1,5 +1,11 @@
+variables:
+  # Final Bullseye security snapshot for the CUDA 11.5 environment.
+  debian_security_snapshot: 20260901T000000Z
+  vscode_version: "1.136.1"
+  mne_bids_pipeline_commit: 91c2e0677f4a015a35dad48c2faa5e47633ae497
+
 name: esilpd
-version: 0.0.1
+version: 0.0.1.post1
 
 copyright:
   - license: BSD-3-Clause
@@ -8,17 +14,53 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: vscode
+    method: webpage
+    target:
+      variable: vscode_version
+    url: https://update.code.visualstudio.com/api/update/linux-x64/stable/latest
+    version_regex: '"productVersion":\s*"(?P<version>\d+(?:\.\d+)+)"'
+  - id: mne-bids-pipeline
+    method: github_commit
+    repo: mne-tools/mne-bids-pipeline
+    ref: main
+    target:
+      variable: mne_bids_pipeline_commit
+
 build:
   kind: neurodocker
 
   base-image: debian:11
   pkg-manager: apt
+  add-default-template: false
 
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
+        LANG: en_US.UTF-8
+        LC_ALL: en_US.UTF-8
+        TZ: UTC
+
+    - run:
+        - mkdir -p /tmp/debian-ca-certificates /etc/ssl/certs
+        - dpkg-deb --extract {{ get_file("debian_ca_certificates") }} /tmp/debian-ca-certificates
+        - cat /tmp/debian-ca-certificates/usr/share/ca-certificates/mozilla/*.crt > /etc/ssl/certs/ca-certificates.crt
+        - rm -rf /tmp/debian-ca-certificates
+        - sed -i 's|^deb http://deb.debian.org/debian-security |deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/ |; s|http://|https://|g' /etc/apt/sources.list
+
+    - copy: container_entrypoint /usr/local/bin/container-entrypoint
+
+    - entrypoint: /usr/local/bin/container-entrypoint
 
     - install:
+        - apt-utils
+        - bzip2
+        - locales
+        - tzdata
         - midori
         - xdg-utils
         - software-properties-common
@@ -50,6 +92,13 @@ build:
         - mesa-utils
         - libgl1-mesa-glx
         - binutils
+
+    - run:
+        - sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+        - locale-gen en_US.UTF-8
+        - update-locale LANG=en_US.UTF-8
+        - ln -snf /usr/share/zoneinfo/UTC /etc/localtime
+        - echo UTC > /etc/timezone
 
     - run:
         - strings /usr/lib/x86_64-linux-gnu/libstdc++.so.6 | grep GLIBCXX
@@ -111,7 +160,7 @@ build:
     - workdir: /opt/
 
     - run:
-        - tar xz -f {{ get_file("main_tar_gz") }}
+        - mkdir -p mne-bids-pipeline-main && tar xz --strip-components=1 -C mne-bids-pipeline-main -f {{ get_file("main_tar_gz") }}
         - chmod a+rwx /opt/mne-bids-pipeline-main -R
 
     - environment:
@@ -163,8 +212,21 @@ readme: |
   ----------------------------------"
 
 files:
+  - name: container_entrypoint
+    executable: true
+    contents: |
+      #!/bin/sh
+      set -e
+      export USER="${USER:-$(id -un)}"
+      if [ "$#" -eq 0 ]; then
+        set -- /bin/bash
+      fi
+      exec "$@"
+  - name: debian_ca_certificates
+    url: https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/pool/updates/main/c/ca-certificates/ca-certificates_20250419~deb12u1~deb11u1_all.deb
+    sha256: a588acf469f96e272fe3e83225f68ddcda72a95e2dd139086d5edc165d3939e3
   - name: main_tar_gz
-    url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz
+    url: https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.mne_bids_pipeline_commit }}.tar.gz
   - name: cuda_keyring_1_0_1_all_deb
     url: https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/cuda-keyring_1.0-1_all.deb
 
@@ -172,7 +234,7 @@ files:
     url: https://developer.download.nvidia.com/compute/redist/cudnn/v8.3.0/cudnn-11.5-linux-x64-v8.3.0.98.tgz
 
   - name: download
-    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+    url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-x64/stable
   - name: code
     contents: |-
       #!/usr/bin/env sh

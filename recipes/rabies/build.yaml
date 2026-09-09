@@ -1,5 +1,5 @@
 name: rabies
-version: 0.5.3
+version: 0.5.3.post1
 
 copyright:
   - name: ACADEMIC PUBLIC LICENSE (Non-Commercial Use)
@@ -55,6 +55,55 @@ readme: |
   **License:** Academic and educational use only. Commercial use requires separate license from CoBrALab.
 
   To run container outside of this environment: ml rabies/{{context.version}}
+
+variables:
+  upstream_version: "0.5.3"
+  atlas_record: "5118030"
+
+auto_update:
+  method: sources
+  sources:
+    - id: rabies
+      method: github_release
+      repo: CoBrALab/RABIES
+      target:
+        variable: upstream_version
+        value: version
+    - id: functional_atlas
+      method: zenodo
+      record: "5118030"
+      required_files:
+        - melodic_IC.nii.gz
+        - vascular_mask.nii.gz
+        - EPI_template.nii.gz
+        - EPI_brain_mask.nii.gz
+        - EPI_WM_mask.nii.gz
+        - EPI_CSF_mask.nii.gz
+        - EPI_vascular_mask.nii.gz
+        - EPI_labels.nii.gz
+        - melodic_IC_resampled.nii.gz
+      target:
+        variable: atlas_record
+
+files:
+  - name: melodic_IC.nii.gz
+    url: https://zenodo.org/records/{{ context.atlas_record }}/files/melodic_IC.nii.gz
+  - name: vascular_mask.nii.gz
+    url: https://zenodo.org/records/{{ context.atlas_record }}/files/vascular_mask.nii.gz
+  - name: EPI_template.nii.gz
+    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_template.nii.gz
+  - name: EPI_brain_mask.nii.gz
+    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_brain_mask.nii.gz
+  - name: EPI_WM_mask.nii.gz
+    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_WM_mask.nii.gz
+  - name: EPI_CSF_mask.nii.gz
+    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_CSF_mask.nii.gz
+  - name: EPI_vascular_mask.nii.gz
+    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_vascular_mask.nii.gz
+  - name: EPI_labels.nii.gz
+    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_labels.nii.gz
+  - name: melodic_IC_resampled.nii.gz
+    url: https://zenodo.org/records/{{ context.atlas_record }}/files/melodic_IC_resampled.nii.gz
 
 build:
   kind: neurodocker
@@ -146,7 +195,7 @@ build:
         - install: git
 
         - run:
-            - git clone --recursive --depth 1 --branch {{ context.version }} https://github.com/CoBrALab/RABIES.git RABIES
+            - git clone --recursive --depth 1 --branch {{ context.upstream_version }} https://github.com/CoBrALab/RABIES.git RABIES
             - "(cd / && patch -p0) < {{ local.install_dir }}/RABIES/patch/nu_estimate_np_and_em.diff"
 
     # Install ANTs
@@ -185,7 +234,26 @@ build:
             MPLBACKEND: agg
 
         - run:
-            - micromamba run -n base install_DSURQE.sh $XDG_DATA_HOME/rabies
+            - sed '/^curl .*zenodo\.org/d' "{{ local.install_dir }}/RABIES/scripts/install_DSURQE.sh" > /tmp/install_DSURQE.sh
+            - micromamba run -n base bash /tmp/install_DSURQE.sh "$XDG_DATA_HOME/rabies"
+            - cp {{ get_file("melodic_IC.nii.gz") }} "$XDG_DATA_HOME/rabies/melodic_IC.nii.gz"
+            - cp {{ get_file("vascular_mask.nii.gz") }} "$XDG_DATA_HOME/rabies/vascular_mask.nii.gz"
+            - cp {{ get_file("EPI_template.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_template.nii.gz"
+            - cp {{ get_file("EPI_brain_mask.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_brain_mask.nii.gz"
+            - cp {{ get_file("EPI_WM_mask.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_WM_mask.nii.gz"
+            - cp {{ get_file("EPI_CSF_mask.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_CSF_mask.nii.gz"
+            - cp {{ get_file("EPI_vascular_mask.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_vascular_mask.nii.gz"
+            - cp {{ get_file("EPI_labels.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_labels.nii.gz"
+            - cp {{ get_file("melodic_IC_resampled.nii.gz") }} "$XDG_DATA_HOME/rabies/melodic_IC_resampled.nii.gz"
+            - >-
+              micromamba run -n base python -c
+              'import os, pathlib, nibabel as nib;
+              root = pathlib.Path(os.environ["XDG_DATA_HOME"]) / "rabies";
+              images = list(root.glob("*.nii.gz"));
+              assert len(images) >= 12;
+              assert all(nib.load(str(path)).get_fdata().size > 0 for path in images);
+              print("Validated", len(images), "atlas images")'
+            - rm /tmp/install_DSURQE.sh
 
     - deploy:
         bins:

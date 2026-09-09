@@ -7,7 +7,7 @@ tests:
       set -eu
       command -v run.py
       test -x /BrainSuite/run.py
-      run.py --help 2>&1 | grep "BrainSuite23a BIDS-App"
+      run.py --help 2>&1 | grep "BrainSuite${version} BIDS-App"
 
   - name: BrainSuite tool directories are present
     script: |

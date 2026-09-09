@@ -63,7 +63,7 @@ tests:
       set -euo pipefail
       command -v qsmxt | grep -x /opt/qsmxt/qsmxt
       command -v dcm2niix | grep -x /opt/qsmxt/dcm2niix
-      qsmxt --version
+      qsmxt --version | grep -F '${upstream_version}'
       qsmxt --help >/dev/null
       qsmxt run --help >/dev/null
       dcm2niix --version > "${output_dir}/dcm2niix-version.txt" 2>&1 || [ "$?" -eq 3 ]
@@ -406,3 +406,5 @@ tests:
       assert second_meta["SOPInstanceUID"] != first_meta["SOPInstanceUID"]
       print("sent derived images:", len(connection.sent_batches[0]))
       PY
+
+upstream_version: 9.16.0

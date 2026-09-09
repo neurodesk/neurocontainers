@@ -43,6 +43,17 @@ def test_candidate_workflow_builds_every_declared_variant() -> None:
     assert "--architecture x86_64" not in candidate_workflow
 
 
+def test_candidate_workflow_skips_mixed_prs_without_hiding_other_detection_errors() -> None:
+    candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
+
+    assert "Automated releases require a recipe-only PR." in candidate_workflow
+    assert 'echo "recipes=[]" >> "$GITHUB_OUTPUT"' in candidate_workflow
+    assert 'echo "targets=[]" >> "$GITHUB_OUTPUT"' in candidate_workflow
+    assert 'echo "changed_recipes=[]" >> "$GITHUB_OUTPUT"' in candidate_workflow
+    assert 'echo "source_only_recipes=[]" >> "$GITHUB_OUTPUT"' in candidate_workflow
+    assert 'exit "$status"' in candidate_workflow
+
+
 def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> None:
     candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
     reporter = Path(".github/workflows/report-container-candidate.yml").read_text()

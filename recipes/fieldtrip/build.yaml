@@ -1,5 +1,5 @@
 name: fieldtrip
-version: "20220617"
+version: "20220617.post1"
 
 copyright:
   - license: GPL-3.0
@@ -8,6 +8,19 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build?format=json&prefix=fieldtrip
+    version_regex: fieldtrip(?P<version>\d{8})_mcr(?P<runtime>\d{4}[ab])\.tar\.gz$
+    download_base: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/
+    target:
+      file: fieldtrip_1
+      variables:
+        upstream_version: version
+        matlab_version: runtime
 build:
   kind: neurodocker
 
@@ -24,17 +37,20 @@ build:
 
     - template:
         name: matlabmcr
-        install_path: /opt/MCR
-        version: 2020b
-
-    - workdir: /opt/fieldtrip-{{ context.version }}/
+        ncurses_package: libncurses5
+        install_path: "/opt/MCR"
+        version: "{{ context.matlab_version }}"
 
     - run:
-        - tar -xz -C /opt/fieldtrip-{{ context.version }}/ --strip-components 1 -f {{ get_file("fieldtrip_1") }}
-        - chmod +x /opt/fieldtrip-{{ context.version }}/*
+      - ln -s /opt/MCR/{{ context.matlab_runtime_subdir }} /opt/matlab-runtime
+    - workdir: /opt/fieldtrip-{{ context.upstream_version }}/
+
+    - run:
+        - tar -xz -C /opt/fieldtrip-{{ context.upstream_version }}/ --strip-components 1 -f {{ get_file("fieldtrip_1") }}
+        - chmod +x /opt/fieldtrip-{{ context.upstream_version }}/*
 
     - environment:
-        PATH: /opt/fieldtrip-{{ context.version }}/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+        PATH: /opt/fieldtrip-{{ context.upstream_version }}/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
 
 deploy:
   bins:
@@ -47,7 +63,7 @@ readme: |-
 
   Example:
   ```
-  run_fieldtrip.sh /opt/MCR/v99 yourscript.m
+  run_fieldtrip.sh /opt/matlab-runtime yourscript.m
   ```
 
   More documentation can be found here: https://www.fieldtriptoolbox.org/tutorial/
@@ -64,4 +80,11 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEsAAAArCAYAAAAwunWwAAAAGXRF
 
 files:
   - name: fieldtrip_1
-    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/fieldtrip{{ context.version }}_mcr2020b.tar.gz
+    url: "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/fieldtrip20220617_mcr2020b.tar.gz"
+    sha256: b4054496b2fad633ce2d5b1e9849a187cd12e964d235c9dab55dafb746ed3f06
+variables:
+  upstream_version: '20220617'
+  matlab_version: 2020b
+  matlab_runtime_subdir: '{{ {''2018a'': ''v94'', ''2019b'': ''v97'', ''2020a'': ''v98'', ''2020b'': ''v99'', ''2021a'': ''v910'',
+    ''2021b'': ''v911'', ''2022a'': ''v912'', ''2022b'': ''v913'', ''2023a'': ''v914''}.get(context.matlab_version, ''R'' +
+    context.matlab_version) }}'

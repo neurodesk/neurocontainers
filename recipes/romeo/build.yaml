@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: korbinian90/ROMEO
+
 build:
   kind: neurodocker
 
@@ -19,17 +23,17 @@ build:
         - curl
         - ca-certificates
 
-    - workdir: /opt/romeo-3.2.8/
+    - workdir: /opt/romeo-{{ context.version }}/
 
     - run:
-        - tar -xz -C /opt/romeo-3.2.8/ --strip-components 1 -f {{ get_file("romeo_linux_3_2_8_tar_gz") }}
+        - tar -xz -C /opt/romeo-{{ context.version }}/ --strip-components 1 -f {{ get_file("romeo_linux_3_2_8_tar_gz") }}
 
     - environment:
-        PATH: /opt/romeo-3.2.8/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+        PATH: /opt/romeo-{{ context.version }}/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
 
 deploy:
   path:
-    - /opt/romeo-3.2.8/bin
+    - /opt/romeo-{{ context.version }}/bin
 
 readme: |
   ----------------------------------
@@ -70,4 +74,4 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBI
 
 files:
   - name: romeo_linux_3_2_8_tar_gz
-    url: https://github.com/korbinian90/ROMEO/releases/download/v3.2.8/romeo_linux_3.2.8.tar.gz
+    url: https://github.com/korbinian90/ROMEO/releases/download/v{{ context.version }}/romeo_linux_{{ context.version }}.tar.gz

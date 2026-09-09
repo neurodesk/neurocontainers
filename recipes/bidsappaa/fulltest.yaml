@@ -21,7 +21,7 @@
 #   and parallel processing using Matlab and XML. Frontiers in Neuroinformatics 8:90.
 
 name: bidsappaa
-version: 0.2.0
+version: 0.2.0.post2
 
 required_files:
   - dataset: ds000001

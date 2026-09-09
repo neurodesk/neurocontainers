@@ -49,7 +49,7 @@ tests:
   - name: dcm2bids version check
     description: Verify dcm2bids reports correct version
     command: dcm2bids --version 2>&1
-    expected_output_contains: "3.2.0"
+    expected_output_contains: "${version}"
 
   - name: dcm2bids BIDS version check
     description: Verify dcm2bids reports BIDS specification version

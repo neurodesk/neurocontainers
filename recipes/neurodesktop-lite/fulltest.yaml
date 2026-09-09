@@ -1,9 +1,16 @@
 # neurodesktop-lite container test suite
-# Tests for neurodesktop-lite 20260428 - native Glass LXDE desktop with
+# Tests for neurodesktop-lite 20260428.post2 - native Glass LXDE desktop with
 # on-demand JupyterLab, CVMFS-backed NeuroDesk tooling, and workflow utilities.
 
 name: neurodesktop-lite
-version: "20260428"
+version: "20260428.post2"
+claude_version: 2.1.263
+apptainer_version: 1.4.4
+ipywidgets_version: 8.1.9
+jupyterlab_widgets_version: 3.0.17
+nb_conda_kernels_version: 2.5.1
+nextflow_tag: v26.04.6
+nf_test_version: 0.9.5
 default_timeout: 120
 
 test_data:
@@ -22,6 +29,11 @@ setup:
     mkdir -p "${output_dir}"
 
 tests:
+  - name: Claude binary is available without a home directory
+    description: Verify the installed native executable survives removal of the build user home.
+    command: HOME=/proc/neurodesktop-no-home /opt/jovyan_defaults/.local/bin/claude --version
+    expected_output_contains: "${claude_version}"
+
   # ==========================================================================
   # LAUNCHERS AND CORE ENTRYPOINTS
   # ==========================================================================
@@ -214,6 +226,19 @@ tests:
       - "lab="
       - "server="
 
+  - name: Jupyter widget packages are compatible
+    description: Verify the resolved kernel and browser widget packages retain their tracked versions
+    command: |
+      /opt/conda/bin/python -c '
+      import importlib.metadata as metadata
+      for package in ("ipywidgets", "jupyterlab_widgets", "nb_conda_kernels"):
+          print(f"{package}={metadata.version(package)}")
+      '
+    expected_output_contains:
+      - "ipywidgets=${ipywidgets_version}"
+      - "jupyterlab_widgets=${jupyterlab_widgets_version}"
+      - "nb_conda_kernels=${nb_conda_kernels_version}"
+
   - name: Jupyter config files are installed
     description: Verify generated Jupyter config and Neurodesktop assets exist
     command: |
@@ -394,27 +419,79 @@ tests:
     expected_output_contains: "Code"
 
   - name: Apptainer version check
-    description: Verify Apptainer is installed in the desktop image
+    description: Verify the tracked Apptainer release is installed in the desktop image
     command: apptainer --version
-    expected_output_contains: "apptainer version"
+    expected_output_contains: "apptainer version ${apptainer_version}"
 
-  - name: Nextflow launcher is installed
-    description: Verify the Nextflow launcher is installed without requiring network bootstrap
+  - name: Nextflow version check
+    description: Verify the tracked standalone release starts with an empty offline cache
     command: |
-      bash -lc '
-        set -euo pipefail
-        command -v nextflow
-        test -x "$(command -v nextflow)"
-        head -1 "$(command -v nextflow)" | grep -q "bash"
-        echo "nextflow-launcher-ok"
-      '
-    expected_output_contains: "nextflow-launcher-ok"
+      set -euo pipefail
+      scratch=$(mktemp -d)
+      trap 'rm -rf "$scratch"' EXIT
+      export NXF_HOME="$scratch/.nextflow" NXF_OFFLINE=true NXF_DISABLE_CHECK_LATEST=true
+      expected_tag="${nextflow_tag}"
+      nextflow -version | tee "$scratch/version.txt"
+      grep -F "version ${expected_tag#v}" "$scratch/version.txt"
+      echo "nextflow-version-ok"
+    expected_output_contains: "nextflow-version-ok"
 
   - name: nf-test version check
-    description: Verify nf-test wrapper is installed and runnable
+    description: Verify the tracked nf-test release can start its Nextflow runtime
     timeout: 180
-    command: nf-test version 2>&1
-    expected_output_contains: "nf-test 0.9.5"
+    command: |
+      set -euo pipefail
+      scratch=$(mktemp -d)
+      trap 'rm -rf "$scratch"' EXIT
+      export NXF_HOME="$scratch/.nextflow" NXF_OFFLINE=true NXF_DISABLE_CHECK_LATEST=true
+      expected_tag="${nextflow_tag}"
+      nf-test version 2>&1 | tee "$scratch/version.txt"
+      grep -F "version ${expected_tag#v}" "$scratch/version.txt"
+    expected_output_contains: "nf-test ${nf_test_version}"
+
+  - name: nf-test runs a local Nextflow workflow
+    description: Execute a real task and validate its output with no pre-existing Nextflow cache
+    timeout: 180
+    command: |
+      set -euo pipefail
+      scratch=$(mktemp -d)
+      trap 'rm -rf "$scratch"' EXIT
+      export NXF_HOME="$scratch/.nextflow" NXF_OFFLINE=true NXF_DISABLE_CHECK_LATEST=true
+      export NFT_JAVA_ARGS=-Xmx1g NXF_OPTS=-Xmx1g
+      cd "$scratch"
+      cat > main.nf <<'NF'
+      process WRITE_MESSAGE {
+          output:
+          path 'message.txt'
+          script:
+          """
+          printf 'neurodesktop-workflow-ok\\n' > message.txt
+          """
+      }
+      workflow SMOKE {
+          main:
+          WRITE_MESSAGE()
+          emit:
+          message = WRITE_MESSAGE.out
+      }
+      NF
+      cat > main.nf.test <<'TEST'
+      nextflow_workflow {
+          name "Local workflow"
+          script "./main.nf"
+          workflow "SMOKE"
+          test("writes the expected output") {
+              then {
+                  assert workflow.success
+                  assert workflow.trace.succeeded().size() == 1
+                  assert workflow.out.message.size() == 1
+                  assert path(workflow.out.message[0]).text.trim() == "neurodesktop-workflow-ok"
+              }
+          }
+      }
+      TEST
+      nf-test test main.nf.test
+    expected_output_contains: "SUCCESS"
 
   - name: Python workflow packages are installed
     description: Verify key Python workflow/Jupyter packages are installed

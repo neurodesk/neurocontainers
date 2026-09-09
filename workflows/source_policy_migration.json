@@ -1,0 +1,1248 @@
+{
+  "batchheudiconv": {
+    "variables": {
+      "upstream_commit": "80f3d6455470a94f595c70fc99ac96b5e5f45b1a"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "kytk/batch-heudiconv",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone --depth 1 https://github.com/kytk/batch-heudiconv.git /opt/batch-heudiconv",
+        "git clone https://github.com/kytk/batch-heudiconv.git /opt/batch-heudiconv && git -C /opt/batch-heudiconv checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "blastct": {
+    "variables": {
+      "upstream_commit": "613acbc1b6be455a44a9e6741eb899fbf082e6fd"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "biomedia-mira/blast-ct",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git+https://github.com/biomedia-mira/blast-ct.git",
+        "git+https://github.com/biomedia-mira/blast-ct.git@{{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "braid": {
+    "variables": {
+      "upstream_commit": "fb589591de78c3c82417d2c72470b640d4f7a1e5",
+      "model_commit": "7d1fa721f1e54925d4110f76eeae9f7a02f9c5e4"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "MASILab/BRAID",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      },
+      {
+        "id": "models",
+        "method": "git_commit",
+        "url": "https://huggingface.co/chenyugoal/braid-v1.0",
+        "ref": "HEAD",
+        "target": {
+          "variable": "model_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "tar xzf {{ get_file(\"braid_tar_gz\") }} --strip-components=1 -C /opt/BRAID",
+        "git clone https://github.com/MASILab/BRAID.git /opt/BRAID && git -C /opt/BRAID checkout {{ context.upstream_commit }}"
+      ],
+      [
+        "git clone https://huggingface.co/chenyugoal/braid-v1.0 /opt/braid-v1.0",
+        "git clone https://huggingface.co/chenyugoal/braid-v1.0 /opt/braid-v1.0 && git -C /opt/braid-v1.0 checkout {{ context.model_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [
+      [
+        "assert m.version(\"braid\") == \"${version}\"",
+        "assert m.distribution(\"braid\").entry_points"
+      ]
+    ],
+    "suite_scalars": {},
+    "remove_commands": [
+      "echo \"090f9a99c8a256bc63645e751693ebc677fdabfab08d8cb5871834fbe8877200  {{ get_file(\"braid_tar_gz\") }}\" | sha256sum -c -"
+    ],
+    "remove_files": [
+      "braid_tar_gz"
+    ]
+  },
+  "brainager": {
+    "variables": {
+      "upstream_commit": "3f53965001a992bf54cea46382e10c5b96c40a15"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "james-cole/brainageR",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/james-cole/brainageR",
+        "git clone https://github.com/james-cole/brainageR && git -C /opt/brainageR checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "civet": {
+    "variables": {
+      "upstream_commit": "5ef98b0fb36d2ceac0f69a359e8cb16bead360fb",
+      "install_version": "2.1.1"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "aces/CIVET_Full_Project",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone git@github.com:aces/CIVET_Full_Project.git",
+        "git clone https://github.com/aces/CIVET_Full_Project.git && git -C /CIVET_Full_Project checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [
+      [
+        "${version}",
+        "${install_version}"
+      ]
+    ],
+    "suite_scalars": {
+      "install_version": "2.1.1"
+    },
+    "freeze_install_version": true
+  },
+  "cosmomvpa": {
+    "variables": {
+      "upstream_commit": "fe5acaf3034dbaac6f1a05cc00e969cae8db760b",
+      "install_version": "1.1.0"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "CoSMoMVPA/CoSMoMVPA",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/CoSMoMVPA/CoSMoMVPA.git",
+        "git clone https://github.com/CoSMoMVPA/CoSMoMVPA.git && git -C CoSMoMVPA checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "freeze_install_version": true
+  },
+  "deepdisco": {
+    "variables": {
+      "upstream_commit": "ab3a7944a6824f7147d5621af79d637c1ff241c1",
+      "install_version": "20251008"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "annamatsulevits/DeepDisco",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "freeze_install_version": true
+  },
+  "deepsif": {
+    "variables": {
+      "upstream_commit": "9f64560efde8b58da6a87eed8eb6598f47cc4a3d",
+      "install_version": "0.0.1"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "bfinl/DeepSIF",
+        "ref": "main",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "https://github.com/bfinl/DeepSIF/archive/refs/heads/main.tar.gz",
+        "https://github.com/bfinl/DeepSIF/archive/{{ context.upstream_commit }}.tar.gz"
+      ],
+      [
+        "tar xz -f {{ get_file(\"main_tar_gz\") }}",
+        "mkdir -p /opt/DeepSIF-main && tar xz -f {{ get_file(\"main_tar_gz\") }} --strip-components=1 -C /opt/DeepSIF-main"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "freeze_install_version": true
+  },
+  "delphi": {
+    "variables": {
+      "upstream_commit": "6511b37b3165968387687fe980e407e7ecda68c0"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "yexincheng/delphi",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit",
+          "fulltest_variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/yexincheng/delphi.git /opt/encryption",
+        "git clone https://github.com/yexincheng/delphi.git /opt/encryption && git -C /opt/encryption checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "new_suite": {
+      "name": "delphi",
+      "version": "0.0.2",
+      "tests": [
+        {
+          "name": "source revision",
+          "command": "git -C /opt/encryption rev-parse HEAD",
+          "expected_exit_code": 0,
+          "expected_output_contains": "${upstream_commit}"
+        },
+        {
+          "name": "Python dependencies",
+          "command": "python -c 'import nibabel, pandas, ray'",
+          "expected_exit_code": 0
+        }
+      ],
+      "upstream_commit": "6511b37b3165968387687fe980e407e7ecda68c0"
+    }
+  },
+  "eharmonize": {
+    "variables": {
+      "upstream_commit": "15e981551693a479753b29ce39f2745420c1facf"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "ahzhu/eharmonize",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/ahzhu/eharmonize.git",
+        "git clone https://github.com/ahzhu/eharmonize.git && git -C eharmonize checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "ezbids": {
+    "variables": {
+      "upstream_commit": "0ef4bb446129a71c69684c186048e87c0abbbd9b",
+      "fsl_binaries_commit": "8174c8a9e6c9d12d8ec8b910f74ab79d28c448e5",
+      "bids_specification_commit": "3537e9edbc81545614d3ee605c398361099b6977",
+      "bids_validator_commit": "2311270a7af5de0814661da0199594b4e2e09af4"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "openneuropet/ezbids_docker",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      },
+      {
+        "id": "fsl-binaries",
+        "method": "github_commit",
+        "repo": "dlevitas/FSL_binaries",
+        "ref": "HEAD",
+        "target": {
+          "variable": "fsl_binaries_commit"
+        }
+      },
+      {
+        "id": "bids-specification",
+        "method": "github_commit",
+        "repo": "bids-standard/bids-specification",
+        "ref": "HEAD",
+        "target": {
+          "variable": "bids_specification_commit"
+        }
+      },
+      {
+        "id": "bids-validator",
+        "method": "github_commit",
+        "repo": "bids-standard/bids-validator",
+        "ref": "HEAD",
+        "target": {
+          "variable": "bids_validator_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/dlevitas/FSL_binaries /usr/local/fsl",
+        "git clone https://github.com/dlevitas/FSL_binaries /usr/local/fsl && git -C /usr/local/fsl checkout {{ context.fsl_binaries_commit }}"
+      ],
+      [
+        "git checkout 3537e9edbc81545614d3ee605c398361099b6977",
+        "git checkout {{ context.bids_specification_commit }}"
+      ],
+      [
+        "git clone https://github.com/bids-standard/bids-validator /app/bids-validator",
+        "git clone https://github.com/bids-standard/bids-validator /app/bids-validator && git -C /app/bids-validator checkout {{ context.bids_validator_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "fastcsr": {
+    "variables": {
+      "upstream_commit": "b2bbc0e109f7c0f5667e7ee89611f1b320732cc8"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "IndiLab/FastCSR",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone {{ context.fastcsr_repo }}",
+        "git clone {{ context.fastcsr_repo }} && git -C /opt/FastCSR checkout {{ context.upstream_commit }}"
+      ],
+      [
+        "https://raw.githubusercontent.com/IndiLab/FastCSR/main/docker/",
+        "https://raw.githubusercontent.com/IndiLab/FastCSR/{{ context.upstream_commit }}/docker/"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "fatsegnet": {
+    "variables": {
+      "upstream_commit": "720d36b0cffcc1be42417a538153fde99b2ad4f2"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "Deep-MI/FatSegNet",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/Deep-MI/FatSegNet.git",
+        "git clone https://github.com/Deep-MI/FatSegNet.git && git -C /opt/FatSegNet checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "gouhfi": {
+    "variables": {
+      "upstream_commit": "1eb71b642bcd3b6c92dbf65e4b69c8cf52847205"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "mafortin/GOUHFI",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/mafortin/GOUHFI.git",
+        "git clone https://github.com/mafortin/GOUHFI.git && git -C /opt/GOUHFI checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "hypermapp3r": {
+    "variables": {
+      "hypermapper_commit": "00c0b7693c2be27b9aaf6ff43f8547beee313b96",
+      "keras_contrib_commit": "3fc5ef709e061416f4bc8a92ca3750c824b5d2b0"
+    },
+    "sources": [
+      {
+        "id": "hypermapper",
+        "method": "github_commit",
+        "repo": "AICONSlab/HyperMapp3r",
+        "ref": "HEAD",
+        "target": {
+          "variable": "hypermapper_commit"
+        }
+      },
+      {
+        "id": "keras-contrib",
+        "method": "github_commit",
+        "repo": "keras-team/keras-contrib",
+        "ref": "HEAD",
+        "target": {
+          "variable": "keras_contrib_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "keras-contrib.git@3fc5ef709e061416f4bc8a92ca3750c824b5d2b0",
+        "keras-contrib.git@{{ context.keras_contrib_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "lesionquantificationtoolkit": {
+    "variables": {
+      "upstream_commit": "ab5801bd5ef2d5a9c3c6d75c332d0ef2fa6968b8"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "jdwor/LQT",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "R CMD INSTALL {{ get_file(\"lqt_tar_gz\") }}",
+        "git clone https://github.com/jdwor/LQT.git /opt/LQT && git -C /opt/LQT checkout {{ context.upstream_commit }} && R CMD INSTALL /opt/LQT"
+      ],
+      [
+        "stopifnot(as.character(packageVersion(\"LQT\")) == \"{{ context.version }}\")",
+        "stopifnot(length(getNamespaceExports(\"LQT\")) > 0)"
+      ],
+      [
+        "r-base r-base-dev libgsl-dev",
+        "r-base r-base-dev libgsl-dev git ca-certificates"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [
+      [
+        "stopifnot(as.character(packageVersion(\"LQT\")) == \"${version}\")",
+        "stopifnot(length(getNamespaceExports(\"LQT\")) > 0)"
+      ]
+    ],
+    "suite_scalars": {},
+    "remove_commands": [
+      "echo \"fc343b31b9c113817f70c5c93d4a20d5ae194988c6d40ad00718fac1dd4975c3  {{ get_file(\"lqt_tar_gz\") }}\" | sha256sum -c -"
+    ],
+    "remove_files": [
+      "lqt_tar_gz"
+    ]
+  },
+  "lqt": {
+    "variables": {
+      "upstream_commit": "ab5801bd5ef2d5a9c3c6d75c332d0ef2fa6968b8"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "jdwor/LQT",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "remotes::install_github('jdwor/LQT',",
+        "remotes::install_github('jdwor/LQT@{{ context.upstream_commit }}',"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "lstai": {
+    "variables": {
+      "upstream_commit": "69e1ad0c57fd2b16e04cabae038a16749965e069",
+      "hdbet_commit": "ae160681324d524db3578e4135bf781f8206e146"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "CompImg/LST-AI",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit",
+          "fulltest_variable": "upstream_commit"
+        }
+      },
+      {
+        "id": "hdbet",
+        "method": "github_commit",
+        "repo": "MIC-DKFZ/HD-BET",
+        "ref": "HEAD",
+        "target": {
+          "variable": "hdbet_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/CompImg/LST-AI/ /opt/lstai",
+        "git clone https://github.com/CompImg/LST-AI/ /opt/lstai && git -C /opt/lstai checkout {{ context.upstream_commit }}"
+      ],
+      [
+        "git checkout ae160681324d524db3578e4135bf781f8206e146",
+        "git checkout {{ context.hdbet_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "new_suite": {
+      "name": "lstai",
+      "version": "1.2.0",
+      "tests": [
+        {
+          "name": "LST launcher",
+          "command": "command -v lst",
+          "expected_exit_code": 0,
+          "expected_output_contains": "lst"
+        },
+        {
+          "name": "source revision",
+          "command": "git -C /opt/lstai rev-parse HEAD",
+          "expected_exit_code": 0,
+          "expected_output_contains": "${upstream_commit}"
+        }
+      ],
+      "upstream_commit": "69e1ad0c57fd2b16e04cabae038a16749965e069"
+    }
+  },
+  "megnet": {
+    "variables": {
+      "upstream_commit": "113d1054b8700b362a86b8e495045c2b78a46bb1"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "miao-cao/MEGNET_pipeline",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit",
+          "fulltest_variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/miao-cao/MEGNET_pipeline.git",
+        "git clone https://github.com/miao-cao/MEGNET_pipeline.git && git -C /MEGNET_pipeline checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "new_suite": {
+      "name": "megnet",
+      "version": "1.0.1",
+      "tests": [
+        {
+          "name": "source revision",
+          "command": "git -C /MEGNET_pipeline rev-parse HEAD",
+          "expected_exit_code": 0,
+          "expected_output_contains": "${upstream_commit}"
+        },
+        {
+          "name": "MEG analysis imports",
+          "command": "python -c 'import mne, mne_bids, mne_connectivity'",
+          "expected_exit_code": 0
+        }
+      ],
+      "upstream_commit": "113d1054b8700b362a86b8e495045c2b78a46bb1"
+    }
+  },
+  "metabody": {
+    "variables": {
+      "upstream_commit": "9e55ef71c2124ef322fdb942af2627432bebd266"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "thomshaw92/BodyLocaliser",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone --branch 1.0.0 https://github.com/thomshaw92/BodyLocaliser.git /opt/code/BodyLocaliser",
+        "git clone https://github.com/thomshaw92/BodyLocaliser.git /opt/code/BodyLocaliser && git -C /opt/code/BodyLocaliser checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "local": [
+      "macros/openrecon"
+    ]
+  },
+  "mimosa": {
+    "variables": {
+      "upstream_commit": "f88183050862becbf53769b1866c48dcf8840efe"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "avalcarcel9/mimosa",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/avalcarcel9/mimosa.git /tmp/mimosa",
+        "git clone https://github.com/avalcarcel9/mimosa.git /tmp/mimosa && git -C /tmp/mimosa checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "mrsimetabolicconnectome": {
+    "variables": {
+      "upstream_commit": "20b82a12a75e690f559c91b948d839d2ebd2d23b"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "MRSI-Psychosis-UP/MRSI-Metabolic-Connectome",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/MRSI-Psychosis-UP/MRSI-Metabolic-Connectome.git",
+        "git clone https://github.com/MRSI-Psychosis-UP/MRSI-Metabolic-Connectome.git && git -C MRSI-Metabolic-Connectome checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "mrsiproc": {
+    "variables": {
+      "mrsi_pipeline_commit": "916b28dbb1828573173c5404dea2555389a610f6",
+      "hdbet_commit": "678e44d546a84de0f2a7fc245f176b82b7d912fd"
+    },
+    "sources": [
+      {
+        "id": "mrsi-pipeline",
+        "method": "github_commit",
+        "repo": "korbinian90/mrsi_pipeline_neurodesk",
+        "ref": "HEAD",
+        "target": {
+          "variable": "mrsi_pipeline_commit"
+        }
+      },
+      {
+        "id": "hdbet",
+        "method": "github_commit",
+        "repo": "MIC-DKFZ/HD-BET",
+        "ref": "HEAD",
+        "target": {
+          "variable": "hdbet_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/MIC-DKFZ/HD-BET",
+        "git clone https://github.com/MIC-DKFZ/HD-BET && git -C HD-BET checkout {{ context.hdbet_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "mrtrix3src": {
+    "variables": {
+      "upstream_commit": "6735cfa33db19b38464a67638e6bd4e1f67c0e34",
+      "install_version": "latest"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "MRtrix3/mrtrix3",
+        "ref": "master",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "wget https://github.com/MRtrix3/mrtrix3/archive/refs/heads/master.zip && unzip ./master.zip && mv mrtrix3-master mrtrix3-{{ context.version }} && rm master.zip",
+        "mkdir -p mrtrix3-{{ context.version }} && tar -xzf {{ get_file(\"mrtrix3_source\") }} --strip-components=1 -C mrtrix3-{{ context.version }}"
+      ]
+    ],
+    "files": [
+      {
+        "name": "mrtrix3_source",
+        "url": "https://github.com/MRtrix3/mrtrix3/archive/{{ context.upstream_commit }}.tar.gz"
+      }
+    ],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "freeze_install_version": true
+  },
+  "niftyreg": {
+    "variables": {
+      "revision": "8ad2f11507ddedb09ed74a9bd97377b70532ee75",
+      "install_version": "1.4.0"
+    },
+    "sources": [
+      {
+        "id": "revision",
+        "method": "github_commit",
+        "repo": "KCL-BMEIS/niftyreg",
+        "ref": "HEAD",
+        "target": {
+          "variable": "revision"
+        }
+      }
+    ],
+    "replacements": [],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "freeze_install_version": true
+  },
+  "openadscpu": {
+    "variables": {
+      "upstream_commit": "6c378d1ae36278c9351c247e00286f19e0a893ac"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "farialab/OpenADS",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit",
+          "fulltest_variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/farialab/OpenADS /opt/openads",
+        "git clone https://github.com/farialab/OpenADS /opt/openads && git -C /opt/openads checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "new_suite": {
+      "name": "openadscpu",
+      "version": "1.0.0",
+      "tests": [
+        {
+          "name": "OpenADS launcher",
+          "command": "command -v ads",
+          "expected_exit_code": 0,
+          "expected_output_contains": "ads"
+        },
+        {
+          "name": "source revision",
+          "command": "git -C /opt/openads rev-parse HEAD",
+          "expected_exit_code": 0,
+          "expected_output_contains": "${upstream_commit}"
+        }
+      ],
+      "upstream_commit": "6c378d1ae36278c9351c247e00286f19e0a893ac"
+    }
+  },
+  "palmettobug": {
+    "variables": {
+      "upstream_version": "0.2.11"
+    },
+    "sources": [
+      {
+        "id": "palmettobug",
+        "method": "pypi",
+        "package": "palmettobug",
+        "target": {
+          "variable": "upstream_version",
+          "value": "version",
+          "fulltest_variable": "upstream_version"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "python=3.9",
+        "python=3.11"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [
+      [
+        "Python 3.9",
+        "Python 3.11"
+      ],
+      [
+        "tests:\n",
+        "tests:\n  - name: PalmettoBUG software version and launcher\n    description: Verify the selected upstream distribution exposes its GUI command.\n    command: >-\n      python3 -c 'import importlib.metadata as m; import palmettobug;\n      d = m.distribution(\"palmettobug\");\n      assert d.version == \"${upstream_version}\";\n      assert any(e.name == \"palmettobug\" for e in d.entry_points)'\n    expected_exit_code: 0\n\n"
+      ],
+      [
+        "\"bash -lc 'ls /opt/miniconda-latest/lib/python3.9/site-packages/palmettobug/'\"",
+        ">\n      python3 -c 'import importlib.util; from pathlib import Path;\n      p = Path(importlib.util.find_spec(\"palmettobug\").origin).parent;\n      assert (p / \"Executable.py\").is_file(); print(\"Executable.py\")'"
+      ]
+    ],
+    "suite_scalars": {
+      "upstream_version": "0.2.11"
+    },
+    "container_version": "0.0.3.post1",
+    "replace_run_group": {
+      "contains": "cp {{ get_file(\"HARMONI_main_250424_zip\") }} HARMONI-main-250424.zip",
+      "commands": [
+        "pip install --no-cache-dir \"setuptools<81\" palmettobug=={{ context.upstream_version }}"
+      ]
+    },
+    "remove_files": [
+      "HARMONI_main_250424_zip"
+    ],
+    "evidence": {
+      "old_software_version": "0.1.9",
+      "old_sha256": "625d6f1b424d2733541b25e727a93a6491bc98ede02a081153a3d8067ecabdea",
+      "reason": "The dated archive embeds palmettobug 0.1.9 and identifies BenCaiello/PalmettoBUG as upstream. The maintained release registry has no 0.1.9 release. Migrate explicitly to official 0.2.11 with supported Python 3.11."
+    }
+  },
+  "pals": {
+    "variables": {
+      "upstream_commit": "b3699e951ba929d5822bd98a8b65414f075f02a8"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "npnl/PALS",
+        "ref": "main",
+        "target": {
+          "variable": "upstream_commit",
+          "fulltest_variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone --depth 1 --branch main https://github.com/npnl/PALS /opt/pals-2.0.1",
+        "git clone https://github.com/npnl/PALS /opt/pals-2.0.1 && git -C /opt/pals-2.0.1 checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "new_suite": {
+      "name": "pals",
+      "version": "2.0.1",
+      "tests": [
+        {
+          "name": "source revision",
+          "command": "git -C /opt/pals-2.0.1 rev-parse HEAD",
+          "expected_exit_code": 0,
+          "expected_output_contains": "${upstream_commit}"
+        },
+        {
+          "name": "FSL launcher",
+          "command": "command -v flirt",
+          "expected_exit_code": 0,
+          "expected_output_contains": "flirt"
+        }
+      ],
+      "upstream_commit": "b3699e951ba929d5822bd98a8b65414f075f02a8"
+    }
+  },
+  "prostatefiducialseg": {
+    "variables": {
+      "upstream_commit": "44a4d75c129e41bfc3843d7704a9d660e2865e57"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "astewartau/prostate-fiducial-seg",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git checkout 44a4d75",
+        "git checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "new_suite": {
+      "name": "prostatefiducialseg",
+      "version": "7.0.0",
+      "tests": [
+        {
+          "name": "prediction launcher",
+          "command": "command -v predict3.py",
+          "expected_exit_code": 0,
+          "expected_output_contains": "predict3.py"
+        }
+      ]
+    },
+    "local": [
+      "macros/openrecon"
+    ]
+  },
+  "relion": {
+    "variables": {
+      "relion_commit": "ec417f5b36ce847c003723a51267116dc0a0c7ee",
+      "relion_version": "4.0.1",
+      "compute_capability": "75",
+      "install_version": "4.0.1.sm75"
+    },
+    "sources": [
+      {
+        "id": "relion",
+        "method": "github_commit",
+        "repo": "3dem/relion",
+        "ref": "HEAD",
+        "target": {
+          "variable": "relion_commit"
+        }
+      }
+    ],
+    "replacements": [],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "freeze_install_version": true
+  },
+  "soopct": {
+    "variables": {
+      "upstream_commit": "9c9d56da66590e9daf6943ee91a18b3d72312c02"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "rordenlab/soop-ct",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/rordenlab/soop-ct.git",
+        "git clone https://github.com/rordenlab/soop-ct.git && git -C soop-ct checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  },
+  "sovabids": {
+    "variables": {
+      "sovabids_tag": "v0.3.1-alpha",
+      "bidscoin_commit": "72fde8bb1534b72238d9b8c4cf53e44b09d73879",
+      "mne_bids_pipeline_commit": "91c2e0677f4a015a35dad48c2faa5e47633ae497"
+    },
+    "sources": [
+      {
+        "id": "sovabids",
+        "method": "github_tags",
+        "repo": "yjmantilla/sovabids",
+        "include_prereleases": true,
+        "target": {
+          "variable": "sovabids_tag",
+          "value": "tag",
+          "fulltest_variable": "sovabids_tag"
+        }
+      },
+      {
+        "id": "bidscoin",
+        "method": "github_commit",
+        "repo": "yjmantilla/bidscoin",
+        "ref": "sovabids",
+        "target": {
+          "variable": "bidscoin_commit"
+        }
+      },
+      {
+        "id": "mne-bids-pipeline",
+        "method": "github_commit",
+        "repo": "mne-tools/mne-bids-pipeline",
+        "ref": "main",
+        "target": {
+          "variable": "mne_bids_pipeline_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "sovabids.git@v0.3.1-alpha",
+        "sovabids.git@{{ context.sovabids_tag }}"
+      ],
+      [
+        "bidscoin.git@sovabids",
+        "bidscoin.git@{{ context.bidscoin_commit }}"
+      ],
+      [
+        "https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz",
+        "https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.mne_bids_pipeline_commit }}.tar.gz"
+      ],
+      [
+        "tar xz -f {{ get_file(\"mne_bids_pipeline_main_tar_gz\") }}",
+        "mkdir -p /opt/mne-bids-pipeline-main && tar xz -f {{ get_file(\"mne_bids_pipeline_main_tar_gz\") }} --strip-components=1 -C /opt/mne-bids-pipeline-main"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [
+      [
+        "expected_output_contains: \"v0.3.1-alpha\"",
+        "expected_output_contains: \"${sovabids_tag}\""
+      ]
+    ],
+    "suite_scalars": {
+      "sovabids_tag": "v0.3.1-alpha"
+    }
+  },
+  "spinalcordtoolbox": {
+    "variables": {
+      "install_version": "7.3.3"
+    },
+    "sources": [
+      {
+        "id": "sct",
+        "method": "github_release",
+        "repo": "spinalcordtoolbox/spinalcordtoolbox",
+        "target": {
+          "variable": "upstream_version",
+          "value": "version",
+          "fulltest_variable": "upstream_version"
+        }
+      }
+    ],
+    "replacements": [],
+    "files": [],
+    "suite_replacements": [
+      [
+        "${version}",
+        "${install_version}"
+      ]
+    ],
+    "suite_scalars": {
+      "install_version": "7.3.3"
+    },
+    "freeze_install_version": true,
+    "local": [
+      "macros/openrecon"
+    ]
+  },
+  "synthstroke": {
+    "variables": {
+      "upstream_commit": "f627b57b8f9291bfa870cb54cb21ddbeb4941d39"
+    },
+    "sources": [
+      {
+        "id": "upstream",
+        "method": "github_commit",
+        "repo": "liamchalcroft/SynthStroke",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://github.com/liamchalcroft/SynthStroke.git /opt/synthstroke",
+        "git clone https://github.com/liamchalcroft/SynthStroke.git /opt/synthstroke && git -C /opt/synthstroke checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "new_suite": {
+      "name": "synthstroke",
+      "version": "0.0.0",
+      "tests": [
+        {
+          "name": "SynthStroke launcher",
+          "command": "synthstroke --help",
+          "expected_exit_code": 0,
+          "expected_output_contains": "synthstroke"
+        },
+        {
+          "name": "download launcher",
+          "command": "command -v synthstroke-download",
+          "expected_exit_code": 0,
+          "expected_output_contains": "synthstroke-download"
+        }
+      ]
+    }
+  },
+  "vesselboost": {
+    "variables": {},
+    "sources": [
+      {
+        "id": "vesselboost",
+        "method": "github_release",
+        "repo": "KMarshallX/VesselBoost",
+        "target": {
+          "variable": "vesselboost_source_version",
+          "value": "tag"
+        }
+      }
+    ],
+    "replacements": [],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {},
+    "local": [
+      "macros/openrecon"
+    ]
+  },
+  "wftfi": {
+    "variables": {
+      "upstream_commit": "ec5a62cf2ffb347c752293e6234b7c89cebe711d"
+    },
+    "sources": [
+      {
+        "id": "wftfi",
+        "method": "git_commit",
+        "url": "https://gitlab.com/thomshaw92/wftfi.git",
+        "ref": "HEAD",
+        "target": {
+          "variable": "upstream_commit"
+        }
+      }
+    ],
+    "replacements": [
+      [
+        "git clone https://gitlab.com/thomshaw92/wftfi.git",
+        "git clone https://gitlab.com/thomshaw92/wftfi.git && git -C wftfi checkout {{ context.upstream_commit }}"
+      ]
+    ],
+    "files": [],
+    "suite_replacements": [],
+    "suite_scalars": {}
+  }
+}

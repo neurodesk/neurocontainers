@@ -1,5 +1,8 @@
+variables:
+  dcm2niix_tag: v1.0.20260724
+
 name: dicomtools
-version: 1.0.0
+version: "1.0.0.post2"
 
 copyright:
   - name: dcmtk license
@@ -10,10 +13,22 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: dcm2niix
+    method: github_release
+    repo: rordenlab/dcm2niix
+    target:
+      variable: dcm2niix_tag
+      value: tag
+      fulltest_variable: dcm2niix_tag
+
 build:
   kind: neurodocker
 
-  base-image: ubuntu:24.10
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
@@ -24,17 +39,20 @@ build:
         - libgtk2.0-0
         - dcmtk
         - xmedcon
+        - medcon
         - pigz
         - libxcb-cursor0
 
     - template:
         name: dcm2niix
         method: source
-        version: latest
+        version: "{{ context.dcm2niix_tag }}"
 
 deploy:
   bins:
     - xmedcon
+    - medcon
+    - dcm2niix
 
 readme: |-
   ----------------------------------

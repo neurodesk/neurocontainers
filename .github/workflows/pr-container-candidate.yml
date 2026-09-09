@@ -48,7 +48,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install detection and validation dependencies
-        run: pip install 'attrs>=23.0.0' 'pyyaml>=6.0.2' jinja2 jsonschema==4.23.0
+        run: pip install 'attrs>=23.0.0' 'pyyaml>=6.0.2' jinja2 jsonschema==4.23.0 packaging requests
       - name: Detect recipe-only changes
         id: detect
         working-directory: source
@@ -58,8 +58,24 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           git fetch "https://github.com/${BASE_REPOSITORY}.git" "${BASE_SHA}"
-          python ../trusted/tools/one_pr_release.py --repo-root . detect \
-            --base "${BASE_SHA}" --head "${HEAD_SHA}"
+          set +e
+          detection="$(python ../trusted/tools/one_pr_release.py --repo-root . detect \
+            --base "${BASE_SHA}" --head "${HEAD_SHA}" 2>&1)"
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            if grep -Fq "Automated releases require a recipe-only PR." <<< "$detection"; then
+              echo "This PR changes recipes and other repository code; skipping automatic container candidates."
+              echo "recipes=[]" >> "$GITHUB_OUTPUT"
+              echo "targets=[]" >> "$GITHUB_OUTPUT"
+              echo "changed_recipes=[]" >> "$GITHUB_OUTPUT"
+              echo "source_only_recipes=[]" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            printf '%s\n' "$detection" >&2
+            exit "$status"
+          fi
+          printf '%s\n' "$detection"
       - name: Validate changed recipes and OpenRecon metadata
         # During the rollout PR, trusted base code does not emit the new output
         # yet. Treat a missing output as no work so this workflow can land before
@@ -170,9 +186,12 @@ jobs:
             --architecture "${ARCHITECTURE}" --variant "${VARIANT}"
           dockerfile="$(find "build/${CONTAINER}" -maxdepth 1 -iname '*.Dockerfile' -print -quit)"
           test -n "${dockerfile}"
+          python -m builder staged-context-args "build/${CONTAINER}" > "$RUNNER_TEMP/image-context-args"
+          mapfile -d '' -t IMAGE_CONTEXT_ARGS < "$RUNNER_TEMP/image-context-args"
           docker buildx build "build/${CONTAINER}" --load \
             --file "${dockerfile}" --tag "${CANDIDATE_TAG}" \
             --build-context "neurocontainer-cache=build/${CONTAINER}/cache" \
+            "${IMAGE_CONTEXT_ARGS[@]}" \
             --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
             --label "GITHUB_SHA=${HEAD_SHA}"
       - name: Create immutable candidate files

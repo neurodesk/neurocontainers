@@ -4,7 +4,9 @@
 # network access or model downloads.
 
 name: dafne
-version: 1.8a4
+version: 1.8a4.post2
+upstream_version: 1.8a4
+radiomics_version: 3.1.0
 
 default_timeout: 120
 
@@ -23,7 +25,7 @@ tests:
 
       print(version("dafne"))
       PY
-    expected_output_contains: "1.8a4"
+    expected_output_contains: "${upstream_version}"
 
   - name: DAFNE Python imports
     description: Verify DAFNE and its main runtime dependencies import together
@@ -40,7 +42,7 @@ tests:
       print("SimpleITK", SimpleITK.__version__)
       PY
     expected_output_contains:
-      - "dafne 1.8-alpha4"
+      - "dafne"
       - "numpy 1.24.3"
       - "SimpleITK"
 
@@ -81,17 +83,32 @@ tests:
       - "image-size (10, 9, 8)"
       - "mask-sum 64"
 
-  - name: PyRadiomics feature extractor creation
-    description: Verify PyRadiomics can instantiate its feature extraction machinery
+  - name: PyRadiomics compiled feature extraction
+    description: Verify the installed release metadata and native shape and texture extensions.
     command: |
       python - <<'PY'
+      from importlib.metadata import version
+      import numpy as np
+      import SimpleITK as sitk
+      import radiomics
       from radiomics import featureextractor
 
+      assert version("pyradiomics") == "${radiomics_version}"
+      assert radiomics.__version__.lstrip("v") == "${radiomics_version}"
+      data = np.zeros((8, 8, 8), dtype=np.float32)
+      data[2:6, 2:6, 2:6] = 4
+      image = sitk.GetImageFromArray(data)
+      mask = sitk.GetImageFromArray((data > 0).astype(np.uint8))
       extractor = featureextractor.RadiomicsFeatureExtractor()
-      print("enabled-image-types", sorted(extractor.enabledImagetypes))
-      print("enabled-features", sorted(extractor.enabledFeatures)[:3])
+      extractor.disableAllFeatures()
+      extractor.enableFeaturesByName(firstorder=["Mean"], shape=["VoxelVolume"], glcm=["Contrast"])
+      features = extractor.execute(image, mask)
+      assert features["original_firstorder_Mean"] == 4
+      assert features["original_shape_VoxelVolume"] == 64
+      assert features["original_glcm_Contrast"] == 0
+      print("PyRadiomics native extraction OK")
       PY
-    expected_output_contains: "enabled-image-types"
+    expected_output_contains: "PyRadiomics native extraction OK"
 
   - name: DAFNE GUI modules import
     description: Verify GUI startup imports reach DAFNE UI modules under a virtual display
@@ -108,7 +125,7 @@ tests:
     description: Verify the PyQt xcb platform plugin has all system libraries needed for Xvfb startup
     command: |
       set -euo pipefail
-      plugin="$(find /opt/miniconda-py38_22.11.1-1 -path '*/platforms/libqxcb.so' | head -1)"
+      plugin="$(python -c 'from PyQt5.QtCore import QLibraryInfo; print(QLibraryInfo.location(QLibraryInfo.PluginsPath) + "/platforms/libqxcb.so")')"
       test -n "$plugin"
       ldd "$plugin" | tee /tmp/dafne-libqxcb-ldd.txt
       if grep -F "not found" /tmp/dafne-libqxcb-ldd.txt; then
@@ -169,3 +186,15 @@ tests:
       sed -n '1,40p' "$log"
     expected_output_contains: "dafne startup status"
     timeout: 60
+
+  - name: native GUI libraries expose matching package metadata
+    command: |
+      python - <<'PY'
+      from importlib.metadata import version
+      from PyQt5.QtCore import PYQT_VERSION_STR
+      from vtkmodules.vtkCommonCore import vtkVersion
+      assert version('PyQt5') == PYQT_VERSION_STR
+      assert version('vtk') == vtkVersion.GetVTKVersion()
+      print('native package metadata matches')
+      PY
+    expected_output_contains: native package metadata matches

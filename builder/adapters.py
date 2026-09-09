@@ -6,6 +6,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from .image_contexts import ImageContext
+
 
 def platform_for_architecture(architecture: str) -> str:
     if architecture == "x86_64":
@@ -24,6 +26,7 @@ class BuildInputs:
     build_dir: Path
     dockerfile_path: Path
     local_contexts: tuple[tuple[str, Path], ...] = ()
+    image_contexts: tuple[ImageContext, ...] = ()
 
 
 class DockerAdapter:
@@ -46,6 +49,8 @@ class DockerAdapter:
             if key == "neurocontainer-cache":
                 raise ValueError("local context name 'neurocontainer-cache' is reserved")
             command.extend(["--build-context", f"{key}={path}"])
+        for context in inputs.image_contexts:
+            command.extend(context.buildx_args())
         command.append(str(inputs.build_dir))
         return command
 
@@ -84,6 +89,8 @@ class BuildKitAdapter:
             if key == "neurocontainer-cache":
                 raise ValueError("local context name 'neurocontainer-cache' is reserved")
             command.extend(["--local", f"{key}={path}"])
+        for index, context in enumerate(inputs.image_contexts):
+            command.extend(context.buildctl_args(f"base-image-{index}"))
         return command
 
     def run(self, inputs: BuildInputs, output_tar: Path, *, dry_run: bool = False) -> list[str]:

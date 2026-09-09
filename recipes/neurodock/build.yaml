@@ -1,5 +1,8 @@
 name: neurodock
-version: 1.0.0
+version: 1.0.0.post1
+
+variables:
+  upstream_version: 1.0.0
 
 copyright:
   - name: neurodock license
@@ -8,10 +11,22 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+    - id: neurodock
+      method: dockerhub
+      repo: dmri/neurodock
+      version_regex: ^v(?P<version>\d+(?:\.\d+)+)$
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+
 build:
   kind: neurodocker
-  base-image: dmri/neurodock:v1.0.0
+  base-image: dmri/neurodock:v{{ context.upstream_version }}
   pkg-manager: apt
+  add-default-template: false
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive

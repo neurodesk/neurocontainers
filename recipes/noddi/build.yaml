@@ -5,8 +5,12 @@ architectures:
 
 variables:
   noddi_source_revision: 332c4ff5665e617e764a54efc7c25ccb23c0bb0f
-  matlab_runtime_root: /usr/local/MATLAB/v99
-
+  matlab_runtime_root: /opt/matlab-runtime
+  upstream_version: '1.0'
+  matlab_version: 2020b
+  matlab_runtime_subdir: '{{ {''2018a'': ''v94'', ''2019b'': ''v97'', ''2020a'': ''v98'', ''2020b'': ''v99'', ''2021a'': ''v910'',
+    ''2021b'': ''v911'', ''2022a'': ''v912'', ''2022b'': ''v913'', ''2023a'': ''v914''}.get(context.matlab_version, ''R'' +
+    context.matlab_version) }}'
 readme: |-
   ----------------------------------
   ## noddi/{{ context.version }} ##
@@ -53,7 +57,8 @@ readme: |-
 
 files:
   - name: noddi_source
-    url: https://github.com/CyclotronResearchCentre/NODDI_singularity/archive/{{ context.noddi_source_revision }}.zip
+    url: "https://github.com/CyclotronResearchCentre/NODDI_singularity/archive/refs/heads/main.zip"
+    sha256: 93c6ad0b27bebfe2ec03655a98f4a13f322f0a76fbef549d4888ea3e84702cc0
   - name: noddi_wrapper
     contents: |
       #!/usr/bin/env bash
@@ -88,6 +93,17 @@ files:
       fi
       exec bash /opt/ss_noddi/run_ss_noddi.sh "${MCRROOT:-{{ context.matlab_runtime_root }}}" "$@"
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: http_digest
+    url: https://github.com/CyclotronResearchCentre/NODDI_singularity/archive/refs/heads/main.zip
+    matlab_readme: NODDI_singularity-main/ss_noddi_App/readme.txt
+    target:
+      file: noddi_source
+      variables:
+        matlab_version: runtime
 build:
   kind: neurodocker
   base-image: ubuntu:20.04
@@ -98,8 +114,10 @@ build:
     - template:
         name: matlabmcr
         curl_opts: "-fsSL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 3600"
-        install_path: /usr/local/MATLAB
-        version: 2020b
+        install_path: "/usr/local/MATLAB"
+        version: "{{ context.matlab_version }}"
+    - run:
+      - ln -s /usr/local/MATLAB/{{ context.matlab_runtime_subdir }} /opt/matlab-runtime
     - run:
         - mkdir -p /In_fold
         - mkdir -p /Out_fold
@@ -108,7 +126,7 @@ build:
     - run:
         - mkdir -p /opt/ss_noddi
         - unzip -q {{ get_file("noddi_source") }} -d /opt/ss_noddi_tmp
-        - cp -r /opt/ss_noddi_tmp/NODDI_singularity-{{ context.noddi_source_revision }}/ss_noddi_App/* /opt/ss_noddi/
+        - cp -r /opt/ss_noddi_tmp/NODDI_singularity-main/ss_noddi_App/* /opt/ss_noddi/
         - rm -rf /opt/ss_noddi_tmp
         - chmod +x /opt/ss_noddi/run_ss_noddi.sh
         - chmod +x /opt/ss_noddi/ss_noddi

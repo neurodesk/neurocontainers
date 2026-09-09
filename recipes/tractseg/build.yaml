@@ -1,10 +1,44 @@
+variables:
+  upstream_version: "2.9"
+
 name: tractseg
-version: '2.9'
+version: 2.9.post2
 architectures:
   - x86_64
 copyright:
   - license: Apache-2.0
     url: https://github.com/MIC-DKFZ/TractSeg/blob/master/LICENSE
+auto_update:
+  method: sources
+  sources:
+    - id: tractseg
+      method: pypi
+      package: TractSeg
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+
+files:
+  - name: pretrained_weights_tract_segmentation_xtract_v1.npz
+    url: https://zenodo.org/records/3634539/files/best_weights_ep266.npz?download=1
+  - name: pretrained_weights_tract_segmentation_v3.npz
+    url: https://zenodo.org/records/3518348/files/best_weights_ep220.npz?download=1
+  - name: pretrained_weights_endings_segmentation_v4.npz
+    url: https://zenodo.org/records/3518331/files/best_weights_ep143.npz?download=1
+  - name: pretrained_weights_dm_regression_xtract_v1.npz
+    url: https://zenodo.org/records/3634549/files/best_weights_ep207.npz?download=1
+  - name: pretrained_weights_dm_regression_v2.npz
+    url: https://zenodo.org/records/3518346/files/best_weights_ep199.npz?download=1
+  - name: pretrained_weights_peak_regression_part1_v2.npz
+    url: https://zenodo.org/records/3239216/files/best_weights_ep62.npz?download=1
+  - name: pretrained_weights_peak_regression_part2_v2.npz
+    url: https://zenodo.org/api/records/3239220/files/best_weights_ep130.npz/content
+    sha256: ce4a486d11a57a638028de26cd2e5a5468623693d704ef38465059ea76995789
+  - name: pretrained_weights_peak_regression_part3_v2.npz
+    url: https://zenodo.org/records/3239221/files/best_weights_ep91.npz?download=1
+  - name: pretrained_weights_peak_regression_part4_v2.npz
+    url: https://zenodo.org/records/3239222/files/best_weights_ep148.npz?download=1
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -13,6 +47,7 @@ build:
     - template:
         name: mrtrix3
         version: 3.0.4
+        libtiff_package: libtiff5
     - template:
         name: miniconda
         version: py37_23.1.0-1
@@ -32,18 +67,28 @@ build:
     - run:
         - pip install packaging numpy
     - run:
-        - pip install TractSeg==2.9
+        - pip install TractSeg=={{ context.upstream_version }}
     - run:
         - pip install -q wheel scipy nilearn matplotlib scikit-image nibabel dipy fury joblib seaborn cython
     - run:
         - pip install -q torch==1.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+    - environment:
+        TRACTSEG_WEIGHTS_DIR: /opt/miniconda/share/TractSeg/weights
     - run:
-        - mkdir -p ~/.tractseg && echo "weights_dir=/opt/miniconda/share/TractSeg/weights" > ~/.tractseg/config.txt
-    - run:
-        - download_all_pretrained_weights
+        - mkdir -p "$TRACTSEG_WEIGHTS_DIR"
+        - install -m 0644 {{ get_file("pretrained_weights_tract_segmentation_xtract_v1.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_tract_segmentation_xtract_v1.npz"
+        - install -m 0644 {{ get_file("pretrained_weights_tract_segmentation_v3.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_tract_segmentation_v3.npz"
+        - install -m 0644 {{ get_file("pretrained_weights_endings_segmentation_v4.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_endings_segmentation_v4.npz"
+        - install -m 0644 {{ get_file("pretrained_weights_dm_regression_xtract_v1.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_dm_regression_xtract_v1.npz"
+        - install -m 0644 {{ get_file("pretrained_weights_dm_regression_v2.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_dm_regression_v2.npz"
+        - install -m 0644 {{ get_file("pretrained_weights_peak_regression_part1_v2.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_peak_regression_part1_v2.npz"
+        - install -m 0644 {{ get_file("pretrained_weights_peak_regression_part2_v2.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_peak_regression_part2_v2.npz"
+        - install -m 0644 {{ get_file("pretrained_weights_peak_regression_part3_v2.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_peak_regression_part3_v2.npz"
+        - install -m 0644 {{ get_file("pretrained_weights_peak_regression_part4_v2.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_peak_regression_part4_v2.npz"
     - template:
         name: fsl
         version: 6.0.7.16
+        libtiff_package: libtiff5
     - user: jovyan
     - deploy:
         bins:
@@ -57,13 +102,12 @@ structured_readme:
   citation: 'Wasserthal, Jakob, Peter Neher, and Klaus H. Maier-Hein. “TractSeg - Fast and Accurate White Matter Tract Segmentation.” NeuroImage 183 (2018): 239–53. https://doi.org/10.1016/j.neuroimage.2018.07.070.'
 readme: |-
   ----------------------------------
-  ## tractseg/2.9 ##
+  ## tractseg/{{ context.version }} ##
 
   Tool for fast and accurate white matter bundle segmentation from Diffusion MRI. It can create bundle segmentations, segmentations of the endregions of bundles and Tract Orientation Maps (TOMs). Moreover, it can do tracking on the TOMs creating bundle-specific tractogram and do Tractometry analysis on those.
 
   Example:
   ```
-  mkdir -p ~/.tractseg && echo "weights_dir=/opt/miniconda/share/TractSeg/weights" > ~/.tractseg/config.txt
   TractSeg -i Diffusion.nii.gz --raw_diffusion_input
   ```
 
@@ -74,7 +118,7 @@ readme: |-
   Wasserthal, Jakob, Peter Neher, and Klaus H. Maier-Hein. “TractSeg - Fast and Accurate White Matter Tract Segmentation.” NeuroImage 183 (2018): 239–53. https://doi.org/10.1016/j.neuroimage.2018.07.070.
   ```
 
-  To run container outside of this environment: ml tractseg/2.9
+  To run container outside of this environment: ml tractseg/{{ context.version }}
 
   ----------------------------------
 categories:

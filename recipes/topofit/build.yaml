@@ -15,12 +15,63 @@ architectures:
   - x86_64
 
 variables:
-  brainnet_version: "0.2"
-  brainsynth_version: "0.1"
-  cortech_version: "0.1"
-  brainnet_wheel_url: "https://github.com/simnibs/brainnet/releases/download/v{{ context.brainnet_version }}/brainnet-{{ context.brainnet_version }}-py3-none-any.whl"
-  brainsynth_wheel_url: "https://github.com/simnibs/brainsynth/releases/download/v{{ context.brainsynth_version }}/brainsynth-{{ context.brainsynth_version }}-py3-none-any.whl"
-  cortech_wheel_url: "https://github.com/simnibs/cortech/releases/download/v{{ context.cortech_version }}/cortech-{{ context.cortech_version }}-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl"
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  brainnet_version: '0.2'
+  brainsynth_version: '0.1'
+  cortech_version: '0.1'
+  brainnet_wheel_url: https://github.com/simnibs/brainnet/releases/download/v{{ context.brainnet_version }}/brainnet-{{ context.brainnet_version
+    }}-py3-none-any.whl
+  brainsynth_wheel_url: https://github.com/simnibs/brainsynth/releases/download/v{{ context.brainsynth_version }}/brainsynth-{{ context.brainsynth_version
+    }}-py3-none-any.whl
+  cortech_wheel_url: https://github.com/simnibs/cortech/releases/download/v{{ context.cortech_version }}/cortech-{{ context.cortech_version }}-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+
+auto_update:
+  method: sources
+  local:
+  - macros/openrecon
+  sources:
+  - id: brainnet
+    method: github_release
+    repo: simnibs/brainnet
+    target:
+      variable: brainnet_version
+  - id: brainsynth
+    method: github_release
+    repo: simnibs/brainsynth
+    target:
+      variable: brainsynth_version
+  - id: cortech
+    method: github_release
+    repo: simnibs/cortech
+    target:
+      variable: cortech_version
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
 
 build:
   kind: neurodocker

@@ -1,5 +1,5 @@
 name: dsistudio
-version: 2024.06.12
+version: 2024.06.12.post1
 
 copyright:
   - license: CC-BY-NC-SA-4.0
@@ -9,6 +9,21 @@ copyright:
     
 architectures:
   - x86_64
+
+variables:
+  upstream_version: 2024.6.12
+
+auto_update:
+  method: sources
+  sources:
+    - id: archive
+      method: github_release_asset
+      repo: frankyeh/DSI-Studio
+      asset: dsi_studio_ubuntu2204_cpu.zip
+      target:
+        file: dsi_studio_ubuntu2204_cpu_zip
+        variables:
+          upstream_version: version
 
 build:
   kind: neurodocker
@@ -29,10 +44,10 @@ build:
     - workdir: /opt
 
     - run:
-        - cp {{ get_file("dsi_studio_ubuntu2204_zip") }} dsi_studio_ubuntu2204.zip
-        - unzip dsi_studio_ubuntu2204.zip
+        - cp {{ get_file("dsi_studio_ubuntu2204_cpu_zip") }} dsi_studio_ubuntu2204_cpu.zip
+        - unzip dsi_studio_ubuntu2204_cpu.zip
         - chmod a+rwx dsi-studio -R
-        - rm dsi_studio_ubuntu2204.zip
+        - rm dsi_studio_ubuntu2204_cpu.zip
 
     - environment:
         PATH: $PATH:/opt/dsi-studio
@@ -46,6 +61,8 @@ readme: |-
   ----------------------------------
   ## dsistudio/{{ context.version }} ##
   DSI Studio is a tractography software tool that maps brain connections and correlates findings with neuropsychological disorders. It is a collective implementation of several diffusion MRI methods, including diffusion tensor imaging (DTI), generalized q-sampling imaging (GQI), q-space diffeomorphic reconstruction (QSDR), diffusion MRI connectometry, and generalized deterministic fiber tracking.
+
+  This container uses the CPU build, so registration and tractography run without a CUDA driver.
 
   Example:
   ```
@@ -70,5 +87,6 @@ gui_apps:
     exec: "dsi_studio"
 
 files:
-  - name: dsi_studio_ubuntu2204_zip
-    url: https://github.com/frankyeh/DSI-Studio/releases/download/2024.06.12/dsi_studio_ubuntu2204.zip
+  - name: dsi_studio_ubuntu2204_cpu_zip
+    url: https://github.com/frankyeh/DSI-Studio/releases/download/2024.06.12/dsi_studio_ubuntu2204_cpu.zip
+    sha256: 3bb5281a375b21744cf0fdcd096b198cec7ce5c2815ab73973b0a2074b12c338

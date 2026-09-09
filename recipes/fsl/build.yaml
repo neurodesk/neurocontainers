@@ -1,7 +1,11 @@
 name: fsl
 # check for latest version: https://fsl.fmrib.ox.ac.uk/fsl/docs/development/history/index.html
 # check or add latest version is in neurodocker https://github.com/ReproNim/neurodocker/blob/master/neurodocker/templates/fsl.yaml
-version: 6.0.7.22
+version: 6.0.7.22.post1
+
+variables:
+  fsl_version: "6.0.7.22"
+  oxasl_mp_commit: 1986a97cb190471b3938f64d6ef45ef3bf567791
 
 copyright:
   - name: fsl license
@@ -27,6 +31,23 @@ options:
 
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  sources:
+    - id: fsl
+      method: webpage
+      version_regex: '"latest"\s*:\s*"(?P<version>\d+(?:\.\d+)+)"'
+      url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/manifest.json
+      target:
+        variable: fsl_version
+        fulltest_variable: fsl_version
+    - id: oxasl-mp
+      method: github_commit
+      repo: physimals/oxasl_mp
+      ref: master
+      target:
+        variable: oxasl_mp_commit
 
 build:
   kind: neurodocker
@@ -54,7 +75,7 @@ build:
 
     - template:
         name: fsl
-        version: "{{ context.original_version }}"
+        version: "{{ context.fsl_version }}"
 
     - environment:
         FSLOUTPUTTYPE: NIFTI_GZ
@@ -79,8 +100,8 @@ build:
 
     - environment:
         PATH: "/opt/ICA-AROMA/:$PATH"
-        LD_LIBRARY_PATH: "/opt/fsl-{{ context.original_version }}/lib"
-        DEPLOY_ENV_FSLDIR: "BASEPATH/opt/fsl-{{ context.original_version }}"
+        LD_LIBRARY_PATH: "/opt/fsl-{{ context.fsl_version }}/lib"
+        DEPLOY_ENV_FSLDIR: "BASEPATH/opt/fsl-{{ context.fsl_version }}"
         # This will add: setenv FSLDIR "/cvmfs/neurodesk.ardc.edu.au/containers/fsl_*/fsl_*simg/opt/fsl-*" to the module load command or 
         # in LUA: setenv("FSLDIR", "/cvmfs/neurodesk.ardc.edu.au/containers/fsl_6.0.7.18_20250928/fsl_6.0.7.18_20250928.simg/opt/fsl-6.0.7.18")
 
@@ -104,16 +125,18 @@ build:
         - rm /opt/fsl_course_data/*/*.tar.gz
 
     - run:
+        - fslpython -m ensurepip --upgrade
         - fslpython -m pip install Cython
         - fslpython -m pip install --no-build-isolation maskslic
-        - fslpython -m pip install oxasl oxasl_ve oxasl_mp regtricks
+        - fslpython -m pip install oxasl oxasl_ve regtricks "oxasl_mp @ git+https://github.com/physimals/oxasl_mp.git@{{ context.oxasl_mp_commit }}"
+        - fslpython -c "import maskslic, oxasl, oxasl_ve, oxasl_mp, regtricks"
         - rm -rf /root/.cache
 
     - copy:
         - eddy
-        - /opt/fsl-{{ context.original_version }}/bin/eddy
+        - /opt/fsl-{{ context.fsl_version }}/bin/eddy
     - run:
-        - chmod +x /opt/fsl-{{ context.original_version }}/bin/eddy
+        - chmod +x /opt/fsl-{{ context.fsl_version }}/bin/eddy
 
     # doesn't work yet
     # - run:
@@ -128,7 +151,7 @@ build:
 
 deploy:
   path:
-    - /opt/{{ context.name }}-{{ context.original_version }}/bin
+    - /opt/{{ context.name }}-{{ context.fsl_version }}/bin
     - /opt/ICA-AROMA/
 
 files:

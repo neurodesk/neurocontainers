@@ -57,8 +57,9 @@ tests:
 
   - name: Container labels check
     description: Verify Apptainer metadata labels were embedded during local conversion
-    command: cat /.singularity.d/labels.json
-    expected_output_contains: "\"org.label-schema.build-arch\": \"arm64\""
+    command: >-
+      python3 -c 'import json, platform; labels = json.load(open("/.singularity.d/labels.json")); expected = {"x86_64": "amd64", "aarch64": "arm64"}[platform.machine()]; assert labels["org.label-schema.build-arch"] == expected; print("Container architecture matches runtime")'
+    expected_output_contains: "Container architecture matches runtime"
 
   # ==========================================================================
   # GLMSINGLE MODULE IMPORTS
