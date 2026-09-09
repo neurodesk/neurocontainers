@@ -13,6 +13,7 @@
 # Note: Slicer CLI modules are invoked via: Slicer --launch <CLI_MODULE> [args]
 # CLI modules are located at: /opt/Slicer-${upstream_version}-linux-amd64/lib/Slicer-${slicer_abi}/cli-modules/
 
+monailabel_version: 0.8.5
 name: slicer
 version: 5.10.0
 
@@ -37,6 +38,13 @@ setup:
     mkdir -p test_output
 
 tests:
+  - name: MONAI Label server version
+    command: python -c 'from importlib.metadata import version; print(version("monailabel"))'
+    expected_output_contains: ${monailabel_version}
+  - name: MONAI Label server launcher
+    command: monailabel --help
+    expected_output_contains: start_server
+
   # ==========================================================================
   # BASIC FUNCTIONALITY
   # ==========================================================================
