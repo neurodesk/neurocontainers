@@ -1,6 +1,7 @@
 name: gouhfi
-version: 0.0.1.post2
+version: 0.0.1.post3
 upstream_commit: 1eb71b642bcd3b6c92dbf65e4b69c8cf52847205
+torch_version: "2.7.1"
 antspyx_version: "0.6.3"
 antspynet_version: "0.3.2"
 model_commit: f960cce2857f67f682b7382f67be3efd17182029
@@ -13,6 +14,19 @@ env:
   nnUNet_results: /opt/GOUHFI/trained_model
 
 tests:
+  - name: PyTorch release and CUDA runtime
+    command: |
+      python - <<'PY'
+      import platform
+      import torch
+      assert torch.__version__.split("+")[0] == "${torch_version}"
+      expected_cuda = "12.8" if platform.machine() == "aarch64" else "11.8"
+      assert torch.version.cuda == expected_cuda, torch.version.cuda
+      result = torch.arange(6, dtype=torch.float32).reshape(2, 3) @ torch.ones((3, 1))
+      assert result.tolist() == [[3.0], [12.0]]
+      print("PyTorch release, CUDA runtime, and CPU operations OK")
+      PY
+    expected_output_contains: PyTorch release, CUDA runtime, and CPU operations OK
   - name: Python reports version
     command: "python --version"
     expected_exit_code: 0

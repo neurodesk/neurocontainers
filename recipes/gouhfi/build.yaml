@@ -1,11 +1,12 @@
 variables:
   upstream_commit: 1eb71b642bcd3b6c92dbf65e4b69c8cf52847205
+  torch_version: "2.7.1"
   antspyx_version: "0.6.3"
   antspynet_version: "0.3.2"
   model_commit: f960cce2857f67f682b7382f67be3efd17182029
 
 name: gouhfi
-version: 0.0.1.post2
+version: 0.0.1.post3
 architectures:
   - x86_64
   - aarch64
@@ -36,6 +37,14 @@ auto_update:
     target:
       variable: upstream_commit
       fulltest_variable: upstream_commit
+  - id: torch
+    method: pypi
+    package: torch
+    # CUDA 11.8 wheels used on x86 end at the PyTorch 2.7 release family.
+    version_regex: '^(?P<version>2\.7\.\d+)$'
+    target:
+      variable: torch_version
+      fulltest_variable: torch_version
   - id: antspyx
     method: pypi
     package: antspyx
@@ -75,10 +84,10 @@ build:
         - zlib1g-dev
     - condition: arch=="x86_64"
       run:
-        - bash -c "source activate base && python -m pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118"
+        - bash -c "source activate base && python -m pip install --no-cache-dir torch=={{ context.torch_version }} torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118"
     - condition: arch=="aarch64"
       run:
-        - bash -c "source activate base && python -m pip install --no-cache-dir torch torchvision torchaudio"
+        - bash -c "source activate base && python -m pip install --no-cache-dir torch=={{ context.torch_version }} torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128"
     - run:
         - cd /opt
         - git clone https://github.com/mafortin/GOUHFI.git && git -C /opt/GOUHFI checkout {{ context.upstream_commit }}
