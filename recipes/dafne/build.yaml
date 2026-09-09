@@ -41,9 +41,11 @@ files:
       project = Path("pyproject.toml")
       text = project.read_text()
       incorrect = 'version = "3.0.1a1"'
-      if text.count(incorrect) != 1:
+      correct = 'version = "{}"'.format(expected)
+      if text.count(incorrect) == 1:
+          project.write_text(text.replace(incorrect, 'dynamic = ["version"]'))
+      elif text.count(correct) != 1 and 'dynamic = ["version"]' not in text:
           raise RuntimeError("PyRadiomics packaging changed; review the version metadata repair")
-      project.write_text(text.replace(incorrect, 'dynamic = ["version"]'))
 
   - name: patch_dafne_dl_annotations.py
     contents: |-
