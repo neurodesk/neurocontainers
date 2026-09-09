@@ -1,5 +1,5 @@
 # sovabids container test suite
-# Tests for sovabids v0.3.1a0 - Automated EEG to BIDS conversion
+# Tests for sovabids v0.3.1a0.post1 - Automated EEG to BIDS conversion
 #
 # sovabids is a Python package for converting EEG data to BIDS format.
 # It uses MNE-Python and MNE-BIDS for reading and writing EEG data.
@@ -8,10 +8,10 @@
 # Documentation: https://sovabids.readthedocs.io/
 
 name: sovabids
-version: 0.3.1a0
+version: 0.3.1a0.post1
 
 # Environment activation command for all tests
-env_setup: source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate sovabids
+env_setup: source /opt/miniconda/etc/profile.d/conda.sh && conda activate sovabids
 
 test_data:
   output_dir: test_output
@@ -23,6 +23,29 @@ setup:
     mkdir -p test_output
 
 tests:
+  - name: JSON-RPC loads a rules file
+    description: Exercise the installed FastAPI endpoint and return the parsed conversion rules.
+    command: |
+      python - <<'PY'
+      import json,tempfile
+      from pathlib import Path
+      from fastapi.testclient import TestClient
+      from sovabids.sovarpc import app
+      with tempfile.TemporaryDirectory() as d:
+       p=Path(d)/'rules.json'; rules={'entities':{'task':'rest'},'suffix':'eeg'};p.write_text(json.dumps(rules))
+       with TestClient(app) as client:
+        r=client.post('/api/sovabids',json={'jsonrpc':'2.0','id':1,'method':'load_rules','params':{'rules_path':str(p)}})
+        assert r.status_code==200,r.text
+        assert r.json().get('result')==rules,r.text
+       print('SovaBIDS JSON-RPC rules roundtrip passed')
+      PY
+    expected_output_contains: "SovaBIDS JSON-RPC rules roundtrip passed"
+
+  - name: VS Code launcher forwards command arguments
+    description: Verify the deployed editor reports its version without opening a GUI or requiring a home directory.
+    command: HOME=/proc/sovabids-no-home code --no-sandbox --user-data-dir "${output_dir}/vscode" --version
+    expected_output_contains: "x64"
+
   # ==========================================================================
   # BASIC FUNCTIONALITY AND VERSION CHECKS
   # ==========================================================================
