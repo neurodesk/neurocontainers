@@ -2,7 +2,7 @@
 # Focused verification for OpenRecon runtime packaging and lightweight entrypoints.
 
 name: openmsk
-version: 0.1.9
+version: 0.2.0
 
 test_data:
   output_dir: test_output
@@ -35,15 +35,167 @@ tests:
       readme = Path("/opt/code/python-ismrmrd-server/OpenReconREADME.md")
       data = json.loads(label.read_text())
       parameters = {parameter["id"] for parameter in data["parameters"]}
-      assert {"sendoriginal", "segmodel", "computethickness"} <= parameters
-      assert "OpenMSK" in readme.read_text()
+      segmodel = next(parameter for parameter in data["parameters"] if parameter["id"] == "segmodel")
+      assert parameters == {"config", "sendoriginal", "segmodel", "computethickness"}
+      assert data["parameters"][0]["values"][0]["name"]["en"] == "DESS"
+      assert segmodel["default"] == "goyal_sagittal"
+      assert [value["id"] for value in segmodel["values"]] == [
+          "goyal_sagittal",
+          "goyal_coronal",
+          "goyal_axial",
+          "nnunet_knee",
+      ]
+      assert "acl_qdess_bone_july_2024" not in label.read_text()
+      assert "qDESS" not in label.read_text()
+      readme_text = readme.read_text()
+      assert "## Segmentation models" in readme_text
+      assert "342 training volumes" in readme_text
       print(label)
       PY
 
   - name: OpenMSK module imports
     description: Verify the OpenRecon module imports with its runtime dependencies
     script: |
-      test "$(PYTHONPATH=/opt/code/python-ismrmrd-server python3 -c "import openmsk, ismrmrd, nibabel, numpy; print(openmsk.OPENMSK_VERSION)")" = "${OPENMSK_VERSION}"
+      PYTHONPATH=/opt/code/python-ismrmrd-server python3 - <<'PY'
+      import os
+
+      import openmsk
+      import ismrmrd
+      import nibabel
+      import numpy
+
+      assert openmsk.OPENMSK_VERSION == os.environ["OPENMSK_VERSION"]
+      assert openmsk.UPSTREAM_LABELS == {
+          0: "background",
+          1: "patellar_cartilage",
+          2: "femoral_cartilage",
+          3: "medial_tibial_cartilage",
+          4: "lateral_tibial_cartilage",
+          5: "medial_meniscus",
+          6: "lateral_meniscus",
+          7: "femur",
+          8: "tibia",
+          9: "patella",
+      }
+      PY
+
+  - name: shared CUDA runtime
+    description: Verify PyTorch uses the base CUDA stack without duplicate NVIDIA wheels
+    script: |
+      python - <<'PY'
+      from importlib.metadata import PackageNotFoundError, version
+      from pathlib import Path
+      import subprocess
+      import sys
+
+      import torch
+      import torchvision
+      from torchvision.ops import nms
+
+      assert torch.__version__ == "2.2.2+cu118"
+      assert torchvision.__version__ == "0.17.2+cu118"
+      assert torch.version.cuda == "11.8"
+      assert version("nvidia-nccl-cu11") == "2.19.3"
+      for package in (
+          "nvidia-cublas-cu11",
+          "nvidia-cuda-cupti-cu11",
+          "nvidia-cuda-nvrtc-cu11",
+          "nvidia-cuda-runtime-cu11",
+          "nvidia-cudnn-cu11",
+          "nvidia-cufft-cu11",
+          "nvidia-curand-cu11",
+          "nvidia-cusolver-cu11",
+          "nvidia-cusparse-cu11",
+          "nvidia-nvtx-cu11",
+          "triton",
+      ):
+          try:
+              version(package)
+          except PackageNotFoundError:
+              continue
+          raise AssertionError(f"duplicate CUDA dependency is installed: {package}")
+
+      torch_cuda = Path(torch.__file__).resolve().parent / "lib" / "libtorch_cuda.so"
+      linked = subprocess.run(
+          ["ldd", str(torch_cuda)],
+          check=True,
+          capture_output=True,
+          text=True,
+      ).stdout
+      assert "not found" not in linked, linked
+      boxes = torch.tensor([[0.0, 0.0, 1.0, 1.0], [0.0, 0.0, 2.0, 2.0]])
+      scores = torch.tensor([0.9, 0.8])
+      assert nms(boxes, scores, 0.5).tolist() == [0, 1]
+
+      sys.path.insert(0, "/opt/KneePipeline/DEPENDENCIES/nnunet_knee_inference")
+      from scripts.inference import KneeSegmentationInference
+      print(KneeSegmentationInference.__name__)
+      PY
+
+  - name: offline pymskt reference image
+    description: Verify the minimal pyMSKT install performs offline subregion generation
+    script: |
+      python - <<'PY'
+      from importlib.metadata import PackageNotFoundError, version
+      from pathlib import Path
+      import inspect
+
+      import numpy as np
+      import pymskt
+      import SimpleITK as sitk
+      from pymskt.image.cartilage_processing import (
+          get_aligned_cartilage_subregions,
+          get_knee_segmentation_with_femur_subregions,
+      )
+      from pymskt.mesh import BoneMesh
+
+      reference = Path(pymskt.__file__).resolve().parent / "data" / "right_knee_example.nrrd"
+      assert reference.is_file(), reference
+      default_reference = inspect.signature(
+          get_aligned_cartilage_subregions
+      ).parameters["reference_image_input"].default
+      assert Path(default_reference).resolve() == reference.resolve()
+      image = sitk.ReadImage(str(reference))
+      assert image.GetSize() == (384, 384, 160)
+      for package in ("itk-core", "itk-filtering", "itkwidgets", "pyfocusr"):
+          try:
+              version(package)
+          except PackageNotFoundError:
+              continue
+          raise AssertionError(f"unused pyMSKT dependency is installed: {package}")
+      assert version("cycpd") == "0.28"
+
+      source = sitk.GetArrayFromImage(image)
+      canonical = np.zeros_like(source)
+      for source_label, canonical_label in {
+          5: 1,
+          6: 2,
+          1: 4,
+          2: 5,
+          3: 6,
+      }.items():
+          canonical[source == source_label] = canonical_label
+      segmentation = sitk.GetImageFromArray(canonical)
+      segmentation.CopyInformation(image)
+      subregions = get_knee_segmentation_with_femur_subregions(
+          segmentation,
+          fem_cart_label_idx=4,
+          femur_label=1,
+          med_tibia_label=5,
+          lat_tibia_label=6,
+          tibia_label=2,
+          ref_image_reg_percent_sampling=0.01,
+      )
+      subregion_labels = set(np.unique(sitk.GetArrayFromImage(subregions)))
+      assert {11, 12, 13, 14, 15} <= subregion_labels
+      mesh = BoneMesh(
+          seg_image=segmentation,
+          label_idx=1,
+          list_cartilage_labels=[4],
+          bone="femur",
+      )
+      print(reference, type(mesh).__name__, sorted(subregion_labels))
+      PY
 
   - name: Helper scripts render help
     description: Verify conversion helper scripts start and expose command line help

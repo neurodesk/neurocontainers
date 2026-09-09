@@ -231,8 +231,11 @@ readme: |-
   ```
 
   A CUDA GPU is used automatically when available; pass `--cpu` to force CPU
-  inference. Label indices in the output follow the FreeSurfer convention and
-  can be looked up in `$FREESURFER_HOME/FreeSurferColorLUT.txt`.
+  inference. The OpenRecon configuration defaults to CPU inference and enables
+  automatic cropping; scanner operators can opt into GPU inference when enough
+  GPU memory is available. Label indices in the output follow the FreeSurfer
+  convention and can be looked up in
+  `$FREESURFER_HOME/FreeSurferColorLUT.txt`.
 
   This container also ships an OpenRecon MRD wrapper so SynthSeg can run inline
   on a Siemens scanner. See `recipes/synthseg/OpenReconREADME.md` for the

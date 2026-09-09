@@ -1,0 +1,220 @@
+name: brainles-preprocessing
+version: 0.6.10
+
+tests:
+  - name: package imports
+    command: python -c "import brainles_preprocessing; print('import ok')"
+    expected_output_contains: "import ok"
+
+  - name: reports the packaged version
+    command: python -c "import importlib.metadata as md; print(md.version('brainles-preprocessing'))"
+    expected_output_contains: "${version}"
+
+  - name: the preprocessor entry points import
+    command: python -c "from brainles_preprocessing.preprocessor import Preprocessor, AtlasCentricPreprocessor; print('preprocessors ok')"
+    expected_output_contains: "preprocessors ok"
+
+  - name: the preprocessor console script runs
+    description: >-
+      As shipped, cli.py annotates output_dir as `str | Path`. Typer cannot
+      build a parameter from a union type and raises at import, so every
+      invocation failed -- including --help. The recipe patches the annotation.
+      The previous test only ran `command -v preprocessor`, which passes on a
+      script that cannot start, so the broken CLI shipped and was exported.
+    command: env NO_COLOR=1 TERM=dumb COLUMNS=200 preprocessor --help
+    expected_output_contains: "output_dir"
+
+  - name: the hd-bet console script runs
+    description: >-
+      As shipped, brainles_hd_bet 0.0.11's hd_bet.py imports maybe_mkdir_p
+      from brainles_hd_bet.utils, which does not define it, so every
+      invocation of the exported hd-bet command failed on ImportError --
+      --help included. The recipe appends the missing one-line helper. Same
+      lesson as the preprocessor script: `command -v` passes on a script that
+      cannot start. The -mode/-device/-tta flags asserted here are also the
+      only supported CPU brain-extraction route, since `preprocessor` cannot
+      configure its extractor.
+    command: env NO_COLOR=1 TERM=dumb COLUMNS=200 hd-bet --help
+    expected_output_contains: "-mode"
+
+  - name: the preprocessor atlas default is not a label
+    description: >-
+      input_atlas defaulted to the string "SRI24 BraTS atlas", which is a name,
+      not a path, and the body only guards with `if input_atlas is not None` --
+      so the default was passed through as atlas_image_path and registration
+      failed on a missing file. None lets it fall through to the bundled atlas.
+    command: |
+      python -c "
+      import inspect
+      from brainles_preprocessing import cli
+      print('input_atlas default:', repr(inspect.signature(cli.main).parameters['input_atlas'].default))
+      "
+    expected_output_contains: "input_atlas default: None"
+
+  - name: the SRI24 atlas is bundled
+    description: >-
+      Atlases are fetched into a directory inside the installed package, which
+      is read-only at run time, so without baking them the first atlas
+      registration fails with Errno 30. This is also the only SRI24 template in
+      the stack, and petu and gliomoda reject anything not on that grid.
+    command: |
+      python -c "
+      import pathlib, brainles_preprocessing as m
+      d = pathlib.Path(m.__file__).parent / 'registration' / 'atlases'
+      # rglob: the files live in a version-stamped subfolder, which is
+      # what upstream's resolver globs for
+      names = sorted(p.name for p in d.rglob('*.nii*')) if d.is_dir() else []
+      print('atlases', names)
+      "
+    expected_output_contains: "brats_sri24.nii"
+
+  - name: the atlas resolves without touching the network
+    description: >-
+      Proves the baked copy is actually the one upstream finds, rather than a
+      file that happens to sit nearby.
+    command: |
+      python -c "
+      from brainles_preprocessing.utils.zenodo import fetch_atlases
+      from brainles_preprocessing.constants import Atlas
+      p = fetch_atlases() / Atlas.BRATS_SRI24.value
+      print('resolved', p.is_file(), p.name)
+      "
+    expected_output_contains: "resolved True brats_sri24.nii"
+
+  - name: the SynthStrip weights are bundled
+    description: Same read-only problem as the atlases; SynthStrip is one of the brain extractors.
+    command: |
+      python -c "
+      import pathlib, brainles_preprocessing as m
+      d = pathlib.Path(m.__file__).parent / 'brain_extraction' / 'weights'
+      n = len(list(d.rglob('*.pt'))) if d.is_dir() else 0
+      print('synthstrip-weights', 'ok' if n else 'MISSING', n)
+      "
+    expected_output_contains: "synthstrip-weights ok"
+
+  - name: SynthStrip extracts a brain on CPU
+    description: >-
+      The weights are baked and the extra is installed, but upstream's
+      extract() defaulted to device="cuda" and raised RuntimeError on a
+      CPU-only node -- which is what Neurodesk mostly runs -- from
+      model.to(device), before any work happened. Importing the class and
+      counting .pt files both pass against a container where SynthStrip can
+      never run, so this runs it. No device argument is passed on purpose:
+      that is the assertion, since the patched default is what turns a
+      guaranteed crash into a working call. A crude head-like phantom is
+      enough; what is being checked is that inference runs and returns a
+      non-empty binary mask, not that the mask is anatomically right.
+    command: |
+      python -c "
+      import numpy as np, nibabel as nib, tempfile, pathlib
+      from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor
+      d = pathlib.Path(tempfile.mkdtemp())
+      g = np.mgrid[:96, :96, :96].astype(float)
+      r = np.sqrt(((g - 48) ** 2).sum(0))
+      vol = np.where(r < 34, 800.0, 0.0) + np.where((r >= 34) & (r < 40), 300.0, 0.0)
+      nib.save(nib.Nifti1Image(vol.astype(np.float32), np.eye(4)), d / 'in.nii.gz')
+      SynthStripExtractor().extract(
+          input_image_path=str(d / 'in.nii.gz'),
+          masked_image_path=str(d / 'brain.nii.gz'),
+          brain_mask_path=str(d / 'mask.nii.gz'),
+          num_threads=2,
+      )
+      m = np.asanyarray(nib.load(d / 'mask.nii.gz').dataobj)
+      assert (m > 0).sum() > 0, 'empty mask'
+      assert set(np.unique(m)) <= {0, 1}, np.unique(m)
+      print('synthstrip-cpu-run ok', int((m > 0).sum()), 'voxels')
+      "
+    expected_output_contains: "synthstrip-cpu-run ok"
+    # Model load plus inference does not fit the suite's default 120 s budget,
+    # and a timeout kill is indistinguishable from a real failure in the report
+    # the runner produces. Under a minute against the candidate SIF on a quiet
+    # node, and 2 m 51 s reproducing it on a contended laptop with the same
+    # package versions -- so this is slack for a loaded runner, not the
+    # expected cost. Both runs segmented the same 176784 voxels.
+    timeout: 600
+
+  - name: the SynthStrip extractor imports
+    description: >-
+      The weights were baked but brain_extraction/synthstrip.py imports
+      nipreps.synthstrip, which lives behind the package's `synthstrip` extra
+      and was not installed -- so the extractor could not be constructed and
+      the baked weights were dead payload. The recipe installs the extra.
+    command: python -c "from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor; print('synthstrip extractor ok')"
+    expected_output_contains: "synthstrip extractor ok"
+
+  - name: runs outside HOME
+    description: $HOME does not exist at container runtime.
+    command: env HOME=/nonexistent python -c "import brainles_preprocessing; print('no-home ok')"
+    expected_output_contains: "no-home ok"
+
+  - name: HD-BET weights are bundled
+    description: >-
+      HDBetExtractor is the only brain extractor this package has, and
+      brainles_hd_bet writes its weights into its own package directory, which
+      is read-only at run time. Without them the brain-extraction stage fails
+      and the container cannot produce the skull-stripped input its atlas
+      registration exists to consume.
+    command: |
+      python -c "
+      import pathlib
+      from brainles_hd_bet.utils import folder_with_parameter_files as d
+      folds = sorted(p.name for p in pathlib.Path(d).glob('*.model'))
+      print('hd-bet-folds', len(folds), folds)
+      "
+    expected_output_contains: "hd-bet-folds 5"
+
+  - name: brain extraction is configurable from the CLI
+    description: >-
+      As shipped, the CLI passed no brain_extractor, so the preprocessor
+      substituted HDBetExtractor's own defaults -- mode="accurate", device=0,
+      do_tta=True, which is 40 forward passes. On a CPU-only node a measured
+      run reached brain extraction in 157 s and produced no mask in the
+      following 1643 s, while hd-bet at mode=fast/device=cpu/no-tta did the
+      same extraction in 934 s: the advertised one-shot command could not ask
+      for what the image's other command does in 15 minutes. Checked against
+      click's parsed option set rather than the rendered help, which typer
+      lays out as a rich table and truncates at whatever width it guessed, and
+      the forwarding is exercised because a flag that parses and changes
+      nothing is the defect this replaced.
+    command: |
+      python -c "
+      import typer, typer.main
+      from brainles_preprocessing.brain_extraction.brain_extractor import HDBetExtractor
+      from brainles_preprocessing.cli import app, _ProfiledHDBetExtractor as E
+
+      cmd = typer.main.get_command(app)
+      opts = {o for p in cmd.params for o in p.opts + p.secondary_opts}
+      wanted = ('--bet-mode', '--bet-device', '--bet-tta', '--no-bet-tta')
+      missing = [f for f in wanted if f not in opts]
+      assert not missing, 'missing %s, have %s' % (missing, sorted(opts))
+
+      seen = {}
+      HDBetExtractor.extract = lambda self, *a, **k: seen.update(k)
+
+      # The CPU profile has to arrive at HD-BET intact.
+      E(mode='fast', device='cpu', do_tta=False).extract()
+      assert seen == {'mode': 'fast', 'device': 'cpu', 'do_tta': False}, seen
+
+      # And upstream's GPU defaults must be untouched, so a GPU run behaves as
+      # it did before. device is an int because net.cuda('0') raises.
+      seen.clear()
+      E().extract()
+      assert seen == {'mode': 'accurate', 'device': 0, 'do_tta': True}, seen
+
+      # A bad value is a usage error up front, not an exception 157 s into the
+      # run, which is where upstream checks the mode and never checks device.
+      for bad in ({'mode': 'fst'}, {'device': 'cuda'}):
+          try:
+              E(**bad)
+          except typer.BadParameter:
+              pass
+          else:
+              raise AssertionError('accepted %r' % bad)
+      print('bet-profile-configurable')
+      "
+    expected_output_contains: "bet-profile-configurable"
+
+  - name: the brain extractor imports
+    description: Guards the path from brainles_preprocessing through to brainles_hd_bet.
+    command: python -c "from brainles_preprocessing.brain_extraction import HDBetExtractor; print('hdbet extractor ok')"
+    expected_output_contains: "hdbet extractor ok"

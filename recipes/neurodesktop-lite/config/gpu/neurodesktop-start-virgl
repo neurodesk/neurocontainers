@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+socket=${NEURODESKTOP_VTEST_SOCKET:-/tmp/.virgl_test}
+
+if [ -S "$socket" ]; then
+    exit 0
+fi
+if [ ! -e /dev/dri/renderD128 ]; then
+    exit 1
+fi
+
+sudo -n systemctl start neurodesktop-virgl.service
+
+attempt=0
+while [ ! -S "$socket" ]; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 100 ]; then
+        echo "neurodesktop: VirGL bridge did not create $socket" >&2
+        exit 1
+    fi
+    sleep 0.05
+done

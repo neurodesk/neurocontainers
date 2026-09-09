@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.11.0
+version: 9.16.0
 
 test_data:
   output_dir: test_output
@@ -26,6 +26,22 @@ setup:
         raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
     if nprocs_index + 1 >= len(sys.argv) or sys.argv[nprocs_index + 1] != "24":
         raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
+    for flag, expected in (
+        ("--qsm-algorithm", "hdqsm"),
+        ("--unwrapping-algorithm", "romeo"),
+        ("--bf-algorithm", "ismv"),
+    ):
+        try:
+            flag_index = sys.argv.index(flag)
+        except ValueError:
+            raise SystemExit(f"qsmxt OpenRecon should pass {flag} {expected}")
+        if flag_index + 1 >= len(sys.argv) or sys.argv[flag_index + 1] != expected:
+            raise SystemExit(f"qsmxt OpenRecon should pass {flag} {expected}")
+    if "--mask" in sys.argv:
+        mask_index = sys.argv.index("--mask")
+        expected_mask = "magnitude,bet:0.5,close:1,fill-holes:0"
+        if mask_index + 1 >= len(sys.argv) or sys.argv[mask_index + 1] != expected_mask:
+            raise SystemExit(f"qsmxt OpenRecon should pass --mask {expected_mask}")
 
     bids = Path(sys.argv[2])
     output = Path(sys.argv[3])
@@ -33,7 +49,7 @@ setup:
     image = nib.load(str(phase))
     data = np.zeros(image.shape, dtype=np.float32) + 1.5
     name = phase.name.replace("_echo-1_part-phase_MEGRE.nii.gz", "_Chimap.nii")
-    destination = output / "derivatives" / "qsmxt.rs" / "sub-01" / "anat" / name
+    destination = output / "derivatives" / "qsmxt" / "sub-01" / "anat" / name
     destination.parent.mkdir(parents=True, exist_ok=True)
     nib.save(nib.Nifti1Image(data, image.affine), str(destination))
     print(destination)
@@ -52,6 +68,82 @@ tests:
       qsmxt run --help >/dev/null
       dcm2niix --version > "${output_dir}/dcm2niix-version.txt" 2>&1 || [ "$?" -eq 3 ]
       grep -i dcm2niix "${output_dir}/dcm2niix-version.txt"
+
+  - name: QSMxT release version
+    command: qsmxt --version
+    expected_output_contains: "${version}"
+
+  - name: OpenRecon algorithm coverage
+    description: Compare GUI algorithm choices with the installed QSMxT CLI
+    script: |
+      set -euo pipefail
+      python - <<'PYCODE'
+      import json
+      import os
+      import re
+      import subprocess
+      from pathlib import Path
+
+      label = json.loads(Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json").read_text())
+      parameters = {item["id"]: item for item in label["parameters"]}
+      help_text = subprocess.check_output(["qsmxt", "run", "--help"], text=True)
+      for parameter, flag in (
+          ("qsmalgorithm", "qsm-algorithm"),
+          ("unwrappingalgorithm", "unwrapping-algorithm"),
+          ("bfalgorithm", "bf-algorithm"),
+      ):
+          section = help_text.split(f"--{flag} <", 1)[1].split("\n      --", 1)[0]
+          inline = re.search(r"\[possible values: ([^]]+)\]", section)
+          supported = (
+              set(inline.group(1).split(", ")) if inline
+              else set(re.findall(r"^          - ([a-z0-9-]+)", section, re.MULTILINE))
+          )
+          exposed = {value["id"] for value in parameters[parameter]["values"]} - {"default"}
+          assert supported, f"Cannot read choices for {flag}"
+          assert exposed == supported, f"{flag}: missing={supported - exposed}, unsupported={exposed - supported}"
+          print(f"{flag}: all {len(supported)} algorithms exposed")
+      cache = Path(os.environ["QSM_MODEL_CACHE"])
+      cache.mkdir(parents=True, exist_ok=True)
+      import tempfile
+      with tempfile.TemporaryFile(dir=cache) as probe:
+          probe.write(b"writable model cache")
+      assert not str(cache).startswith("/home/")
+      PYCODE
+
+  - name: Bundled neural-network weights and offline inference
+    description: Verify every model checksum and run xQSM using the packaged weights
+    script: |
+      set -euo pipefail
+      cd /opt/qsmxt/models
+      sha256sum -c models.sha256
+      python - <<'PYCODE'
+      import os
+      import subprocess
+      import tempfile
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+
+      assert os.environ["QSM_MODEL_DIR"] == "/opt/qsmxt/models"
+      with tempfile.TemporaryDirectory() as directory:
+          root = Path(directory)
+          x, y, z = np.indices((16, 16, 16))
+          radius = (x - 7.5)**2 + (y - 7.5)**2 + (z - 7.5)**2
+          field = (0.01 * np.exp(-radius / 20)).astype(np.float32)
+          mask = (radius < 40).astype(np.uint8)
+          for name, data in (("field", field), ("mask", mask)):
+              nib.save(nib.Nifti1Image(data, np.eye(4)), root / f"{name}.nii.gz")
+          subprocess.run([
+              "qsmxt", "invert", "xqsm", str(root / "field.nii.gz"),
+              "--mask", str(root / "mask.nii.gz"),
+              "--output", str(root / "chi.nii.gz"),
+          ], check=True)
+          result = nib.load(root / "chi.nii.gz").get_fdata()
+          assert result.shape == field.shape
+          assert np.isfinite(result).all() and np.ptp(result) > 0
+          print("xQSM produced a finite, nonconstant susceptibility map")
+      PYCODE
 
   - name: OpenRecon server entrypoints
     description: Verify the OpenRecon server and deployed qsmxt module are present
@@ -81,12 +173,43 @@ tests:
           "config",
           "sendoutputs",
           "sendoriginal",
+          "pipelinepreset",
           "qsmalgorithm",
           "unwrappingalgorithm",
           "bfalgorithm",
           "maskpreset",
       }
       assert expected <= parameter_ids
+      parameters = {parameter["id"]: parameter for parameter in data["parameters"]}
+      pipeline_preset = parameters["pipelinepreset"]
+      assert pipeline_preset["type"] == "choice"
+      assert pipeline_preset["default"] == "custom"
+      import sys
+      sys.path.insert(0, "/opt/code/python-ismrmrd-server")
+      import qsmxt
+      assert {value["id"] for value in pipeline_preset["values"]} == {
+          "custom", *qsmxt.ALGORITHM_PIPELINE_PRESETS,
+      }
+      assert parameters["qsmalgorithm"]["default"] == "hdqsm"
+      assert "whqsm" in {
+          value["id"] for value in parameters["qsmalgorithm"]["values"]
+      }
+      assert parameters["unwrappingalgorithm"]["default"] == "romeo"
+      assert parameters["bfalgorithm"]["default"] == "ismv"
+      if "inputseries" in parameters:
+          assert parameters["inputseries"]["default"] == "distortion-corrected"
+          assert [
+              value["id"] for value in parameters["inputseries"]["values"]
+          ] == [
+              "distortion-corrected",
+              "non-distortion-corrected",
+              "both",
+          ]
+      if "maskcleanup" in parameter_ids:
+          assert parameters["maskpreset"]["default"] == "bet"
+          assert parameters["maskinginput"]["default"] == "magnitude"
+          assert parameters["betfractionalintensity"]["default"] == 0.5
+          assert parameters["maskcleanup"]["default"] == "close-fill"
       send_original = next(parameter for parameter in data["parameters"] if parameter["id"] == "sendoriginal")
       assert send_original["default"] is False
       assert "minip" not in parameter_ids
@@ -115,6 +238,9 @@ tests:
       assert display.tolist() == [[[1048, 2048, 3048]]]
       assert meta["scale"] == 100000.0
       assert meta["offset"] == 2048.0
+      assert meta["rescale_slope"] == 0.00001
+      assert meta["rescale_intercept"] == -0.02048
+      assert meta["padding_value"] == 0
       assert meta["formula"] == "ppm = (display - 2048) / 100000"
       assert qsmxt.DEFAULT_QSMXT_BINARY == "/opt/qsmxt/qsmxt"
       print(qsmxt.__file__)
@@ -231,6 +357,41 @@ tests:
       assert first_meta["QSMxTOutput"] == "qsm"
       assert first_meta["ImageType"] == "DERIVED\\PRIMARY\\M\\QSMXT_CHIMAP"
       assert first_meta["QSMxTDisplayFormula"] == "ppm = (display - 2048) / 1000"
+      assert first_meta["DataRole"] == ["Image", "Quantitative"]
+      assert first_meta["PixelPaddingValue"] == "0"
+      window_domain = first_meta.get("QSMxTWindowDomain")
+      if window_domain == "ppb":
+          assert float(first_meta["RescaleSlope"]) == 1.0
+          assert float(first_meta["RescaleIntercept"]) == -2048.0
+          assert first_meta["RescaleType"] == "US"
+          assert float(first_meta["WindowCenter"]) == 1500.0
+          assert float(first_meta["WindowWidth"]) == 1000.0
+          assert float(first_meta["QSMxTPhysicalWindowCenter"]) == 1.5
+          assert float(first_meta["QSMxTPhysicalWindowWidth"]) == 1.0
+      elif window_domain == "stored":
+          assert float(first_meta["RescaleSlope"]) == 0.001
+          assert float(first_meta["RescaleIntercept"]) == -2.048
+          assert first_meta["RescaleType"] == "US"
+          assert first_meta["PixelPaddingRangeLimit"] == "0"
+          assert float(first_meta["WindowCenter"]) == 3548.0
+          assert float(first_meta["WindowWidth"]) == 1000.0
+          assert float(first_meta["QSMxTPhysicalWindowCenter"]) == 1.5
+          assert float(first_meta["QSMxTPhysicalWindowWidth"]) == 1.0
+      elif "WindowCenter" in first_meta:
+          assert float(first_meta["RescaleSlope"]) == 0.001
+          assert float(first_meta["RescaleIntercept"]) == -2.048
+          assert first_meta["RescaleType"] == "US"
+          assert float(first_meta["WindowCenter"]) == 1.5
+          assert float(first_meta["WindowWidth"]) == 1.0
+      else:
+          assert float(first_meta["RescaleSlope"]) == 0.001
+          assert float(first_meta["RescaleIntercept"]) == -2.048
+          assert first_meta["RescaleType"] == "US"
+          assert window_domain == "physical"
+          assert "WindowWidth" not in first_meta
+          assert "VOILUTFunction" not in first_meta
+          assert float(first_meta["QSMxTPhysicalWindowCenter"]) == 1.5
+          assert float(first_meta["QSMxTPhysicalWindowWidth"]) == 1.0
       assert first_meta["slice_count"] == "2"
       assert first_meta["NumberOfSlices"] == "2"
       assert first_meta["ImagesInAcquisition"] == "2"

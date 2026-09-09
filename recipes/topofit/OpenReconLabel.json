@@ -1,0 +1,173 @@
+{
+  "general": {
+    "name": { "en": "topofit" },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": { "en": "Fast research-only cortical surface reconstruction with BrainNet TopoFit." },
+    "id": "topofit",
+    "regulatory_information": {
+      "device_trade_name": "topofit",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "Erlangen, Germany",
+      "made_in": "DE",
+      "manufacture_date": "2026/09/02",
+      "material_number": "topofit_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "00860000171212",
+      "udi": "(01)00860000171212(21)VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "safety_advices": "Research use only. The output is not motion-cleared and must not be used directly for slice prescription.",
+      "special_operating_instructions": "OpenRecon TopoFit cortical surface workflow",
+      "additional_relevant_information": "The scanner receives a source-grid QC overlay. Surface files remain in the run workspace for downstream research analysis."
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": true,
+    "min_count_required_gpus": 1,
+    "min_required_gpu_memory": 10048,
+    "min_required_memory": 20048,
+    "min_count_required_cpu_cores": 8,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": { "en": "config" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "topofit",
+          "name": { "en": "topofit" }
+        }
+      ],
+      "default": "topofit",
+      "information": { "en": "Select the TopoFit MRD server configuration." }
+    },
+    {
+      "id": "sendoriginal",
+      "label": { "en": "Keep original images" },
+      "type": "boolean",
+      "default": true,
+      "information": { "en": "Return a restamped copy of the selected anatomical input before the TopoFit QC series." }
+    },
+    {
+      "id": "tfdevice",
+      "label": { "en": "Inference device" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "cuda",
+          "name": { "en": "GPU (CUDA)" }
+        },
+        {
+          "id": "cpu",
+          "name": { "en": "CPU" }
+        }
+      ],
+      "default": "cuda",
+      "information": { "en": "Use the reconstruction GPU for the fastest inference. CPU is intended for compatibility testing." }
+    },
+    {
+      "id": "tfmodel",
+      "label": { "en": "TopoFit model" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "t1w_1mm",
+          "name": { "en": "T1w 1 mm" }
+        },
+        {
+          "id": "synth_random",
+          "name": { "en": "Synthetic random resolution" }
+        },
+        {
+          "id": "synth_1mm",
+          "name": { "en": "Synthetic 1 mm" }
+        }
+      ],
+      "default": "t1w_1mm",
+      "information": { "en": "Choose the pretrained BrainNet model. T1w 1 mm is the default for an MPRAGE." }
+    },
+    {
+      "id": "tfconform",
+      "label": { "en": "Conform input" },
+      "type": "boolean",
+      "default": true,
+      "information": { "en": "Resample the input internally to the 1 mm RAS geometry expected by TopoFit while writing QC back on the source grid." }
+    },
+    {
+      "id": "tfflatpatches",
+      "label": { "en": "Find cortical patches" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Find ranked, non-overlapping cortical patches with visible IDs and normals. Default: up to three per hemisphere at 50% depth. Automatic candidates are not lesion ROIs or matched controls." }
+    },
+    {
+      "id": "tfpatchcount", "label": { "en": "Maximum patches per hemisphere" },
+      "type": "int", "minimum": 1, "maximum": 10, "default": 3,
+      "information": { "en": "Return up to this many distinct patches in each selected hemisphere. Fewer are returned when quality criteria cannot be met." }
+    },
+    {
+      "id": "tfpatchradius", "label": { "en": "Cortical patch radius" },
+      "type": "double", "minimum": 5.0, "maximum": 20.0, "default": 10.0,
+      "unit": { "en": "mm" },
+      "information": { "en": "Grow neighborhoods along cortical mesh edges, not by straight-line distance through the brain." }
+    },
+    {
+      "id": "tfpatchhemisphere", "label": { "en": "Patch hemisphere" },
+      "type": "choice", "default": "both",
+      "values": [
+        { "id": "both", "name": { "en": "Both" } },
+        { "id": "lh", "name": { "en": "Left" } },
+        { "id": "rh", "name": { "en": "Right" } }
+      ],
+      "information": { "en": "Restrict cortical patch search to the selected hemisphere. Surface reconstruction remains bilateral." }
+    },
+    {
+      "id": "tfpatchregion", "label": { "en": "Patch search region" },
+      "type": "choice", "default": "cortex",
+      "values": [
+        { "id": "cortex", "name": { "en": "Whole eligible cortex" } },
+        { "id": "roi", "name": { "en": "Native-space ROI" } }
+      ],
+      "information": { "en": "ROI mode requires a supplied NIfTI mask on the source image grid. It never falls back to whole-brain search." }
+    },
+    {
+      "id": "tfpatchroi", "label": { "en": "Native-space ROI path" },
+      "type": "string", "default": "",
+      "information": { "en": "Container-visible path to a NIfTI mask, for example /data/roi.nii.gz. Used only in ROI mode. The mask must already be registered to the input image." }
+    },
+    {
+      "id": "tfsulcalmiddepth",
+      "label": { "en": "Find sulcal mid-depth voxels" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Classify concave pial regions by signed mean curvature and write the source-grid voxels intersected at 50% cortical depth." }
+    },
+    {
+      "id": "tfsulcalthreshold",
+      "label": { "en": "Sulcal curvature threshold" },
+      "type": "double",
+      "minimum": 0.1,
+      "maximum": 1.0,
+      "default": 0.1,
+      "information": { "en": "Set the minimum magnitude of negative, concave mean curvature used to classify sulcal vertices." }
+    },
+    {
+      "id": "tfoverlaythickness",
+      "label": { "en": "Surface thickness" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 3,
+      "default": 1,
+      "unit": { "en": "vox" },
+      "information": { "en": "Set the in-plane dilation radius in voxels. Zero draws the undilated projected vertices; one retains the previous width." }
+    }
+  ]
+}

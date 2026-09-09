@@ -21,7 +21,6 @@ on:
         options:
         - "neurodesk-syd2-arcrunner-neurocontainers"
         - "neurodesk-syd-arcrunner-neurocontainers"
-        - "neurodesk-arcrunner-neurocontainers"
         - "blacksmith-8vcpu-ubuntu-2404"
         - "blacksmith-8vcpu-ubuntu-2404-arm"
         - "ubuntu-22.04"
@@ -99,9 +98,6 @@ jobs:
         # Map the dispatch choice to a JSON-encoded payload for
         # build-app.yml's fromJSON(inputs.runner) -> runs-on.
         case "$CHOICE" in
-          "neurodesk-arcrunner-neurocontainers")
-            runner='"neurodesk-arcrunner-neurocontainers"'
-            ;;
           "neurodesk-syd-arcrunner-neurocontainers")
             runner='"neurodesk-syd-arcrunner-neurocontainers"'
             ;;

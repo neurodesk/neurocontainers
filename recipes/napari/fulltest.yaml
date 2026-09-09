@@ -1,0 +1,50 @@
+name: napari
+version: 0.8.0
+default_timeout: 120
+
+tests:
+  - name: napari launchers are available
+    description: Verify napari, both bundled plugin launchers, and the nnInteractive service tools are exposed.
+    command: |
+      command -v napari
+      command -v napari-voxtell
+      command -v napari-nninteractive
+      command -v nninteractive-available-models
+      command -v nninteractive-download-model
+      command -v nninteractive-server
+    expected_output_contains: "nninteractive-server"
+
+  - name: napari reports its version
+    description: Verify the main runtime launcher starts without opening the GUI.
+    command: napari --version
+    expected_output_contains: "${version}"
+
+  - name: segmentation plugins are installed and discoverable
+    description: Verify both segmentation packages import and publish napari manifests.
+    command: |
+      export QT_QPA_PLATFORM=offscreen
+      python - <<'PY'
+      from importlib.metadata import entry_points
+      from qtpy.QtWidgets import QApplication
+
+      app = QApplication.instance() or QApplication([])
+      import napari
+      import nnInteractive
+      import voxtell
+      from napari_nninteractive import nnInteractiveWidget
+      from napari_voxtell import VoxtellWidget
+
+      manifests = {entry_point.name for entry_point in entry_points(group="napari.manifest")}
+      required = {"napari-nninteractive", "napari-voxtell"}
+      missing = required - manifests
+      assert not missing, f"Missing napari plugin manifests: {sorted(missing)}"
+
+      viewer = napari.Viewer(show=False)
+      widgets = [nnInteractiveWidget(viewer), VoxtellWidget(viewer)]
+      assert all(widget is not None for widget in widgets)
+      for widget in widgets:
+          widget.close()
+      viewer.close()
+      print("VoxTell and nnInteractive napari plugins are installed")
+      PY
+    expected_output_contains: "VoxTell and nnInteractive napari plugins are installed"

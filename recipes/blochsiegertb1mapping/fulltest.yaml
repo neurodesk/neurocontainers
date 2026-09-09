@@ -1,5 +1,5 @@
 name: blochsiegertb1mapping
-version: 1.0.5
+version: 1.0.11
 default_timeout: 120
 tests:
 - name: Bloch-Siegert OpenRecon workflow unit smoke test
@@ -64,6 +64,8 @@ tests:
         meta["ImageType"] = (
             "ORIGINAL\\PRIMARY\\M" if kind == "magnitude" else "ORIGINAL\\PRIMARY\\P"
         )
+        meta["RescaleSlope"] = "2"
+        meta["RescaleIntercept"] = "-4096"
         image.attribute_string = meta.serialize()
         return image
 
@@ -78,11 +80,18 @@ tests:
         ]
         return magnitude + phase
 
-    one_tx_phase = [0.1, 0.1, 0.1, 0.1, 0.2, 0.8, 0.4, 0.3, 0.3, 0.3]
+    # The scanner DICOM phase convention gives -0.3 radians for this BSp
+    # combination; the BSp-only polarity correction must recover +0.3.
+    one_tx_phase = [
+        0.1, 0.1, 0.1,
+        0.1, 0.2, 0.2, 0.4,
+        -0.6,
+        0.3, 0.3, 0.3,
+    ]
     one_tx_images = make_dataset(one_tx_phase)
     settings = module._settings_from_config({"parameters": {}})
     one_tx = module.compute_bloch_siegert_maps(one_tx_images, settings)
-    assert one_tx["nframe"] == 10
+    assert one_tx["nframe"] == 11
     assert one_tx["ntx"] == 1
     assert one_tx["slice_count"] == 1
     assert one_tx["b1"].shape == (1, 1, 8, 8)
@@ -101,7 +110,7 @@ tests:
         expected_b1 / math.sqrt(2.0),
         atol=1e-5,
     )
-    assert np.allclose(one_tx["phsc"][0, 0, 3, 3], 0.8, atol=1e-5)
+    assert np.allclose(one_tx["phsc"][0, 0, 3, 3], -0.6, atol=1e-5)
     assert np.allclose(
         one_tx["b0"][0, 3, 3],
         0.2 * 1000.0 / (2.0 * math.pi),
@@ -109,7 +118,7 @@ tests:
     )
     assert np.allclose(one_tx["bsp"][0, 0, 0, 0], 0.3, atol=1e-5)
     assert np.allclose(one_tx["b1"][0, 0, 0, 0], expected_b1, atol=1e-5)
-    assert np.allclose(one_tx["phsc"][0, 0, 0, 0], 0.8, atol=1e-5)
+    assert np.allclose(one_tx["phsc"][0, 0, 0, 0], -0.6, atol=1e-5)
     assert np.allclose(
         one_tx["b0"][0, 0, 0],
         0.2 * 1000.0 / (2.0 * math.pi),
@@ -117,6 +126,27 @@ tests:
     )
     assert int(one_tx["mask"][0, 3, 3]) == 1
     assert int(one_tx["mask"][0, 0, 0]) == 0
+
+    small_negative_phase = list(one_tx_phase)
+    small_negative_phase[5] = 0.6
+    small_negative = module.compute_bloch_siegert_maps(
+        make_dataset(small_negative_phase),
+        settings,
+    )
+    assert np.allclose(small_negative["bsp"][0, 0, 3, 3], -0.1, atol=1e-5)
+    assert np.allclose(small_negative["b1"][0, 0, 3, 3], 0.0, atol=1e-5)
+
+    wrapped_negative_phase = list(one_tx_phase)
+    wrapped_negative_phase[5] = 1.0
+    wrapped_negative = module.compute_bloch_siegert_maps(
+        make_dataset(wrapped_negative_phase),
+        settings,
+    )
+    assert np.allclose(
+        wrapped_negative["bsp"][0, 0, 3, 3],
+        2.0 * math.pi - 0.5,
+        atol=1e-5,
+    )
 
     converted_dicom_like_images = []
     for image in one_tx_images:
@@ -129,8 +159,8 @@ tests:
     fallback_magnitude, fallback_phase = module._split_magnitude_phase_images(
         converted_dicom_like_images
     )
-    assert len(fallback_magnitude) == 10
-    assert len(fallback_phase) == 10
+    assert len(fallback_magnitude) == 11
+    assert len(fallback_phase) == 11
     fallback_result = module.compute_bloch_siegert_maps(
         converted_dicom_like_images,
         settings,
@@ -157,19 +187,70 @@ tests:
     volume_result = module.compute_bloch_siegert_maps(volume_frame_images, settings)
     assert volume_result["b1"].shape == (1, 3, 8, 8)
     assert volume_result["b0"].shape == (3, 8, 8)
+    volume_result["b1"][0, 0, :, :] = 1.0
+    volume_result["b1"][0, 1, :, :] = 2.0
+    volume_result["b1"][0, 2, :, :] = 5.0
     volume_outputs = module.build_output_images(volume_result, settings, volume_frame_images)
     assert np.asarray(volume_outputs[0].data).shape == (1, 3, 8, 8)
     assert list(volume_outputs[0].getHead().matrix_size) == [8, 8, 3]
+    volume_b1_pixels = np.asarray(volume_outputs[0].data)[0]
+    assert int(np.min(volume_b1_pixels)) == 0
+    assert int(np.max(volume_b1_pixels)) == 4095
+    assert int(volume_b1_pixels[0, 0, 0]) == 0
+    assert int(volume_b1_pixels[1, 0, 0]) == round(4095.0 / 4.0)
+    assert int(volume_b1_pixels[2, 0, 0]) == 4095
+    volume_b1_meta = ismrmrd.Meta.deserialize(volume_outputs[0].attribute_string)
+    assert float(first(volume_b1_meta.get("BlochSiegertDisplayInputMin"))) == 1.0
+    assert float(first(volume_b1_meta.get("BlochSiegertDisplayInputMax"))) == 5.0
+    assert np.isclose(
+        float(first(volume_b1_meta.get("RescaleSlope"))),
+        4.0 / 4095.0,
+    )
+    assert float(first(volume_b1_meta.get("RescaleIntercept"))) == 1.0
+    assert float(first(volume_b1_meta.get("WindowCenter"))) == 3.0
+    assert float(first(volume_b1_meta.get("WindowWidth"))) == 4.0
     module._validate_output_images(volume_outputs, volume_frame_images)
 
-    outputs = module.build_output_images(one_tx, settings, one_tx_images)
-    assert [int(image.image_series_index) for image in outputs] == [101, 120, 140, 160]
+    display_one_tx = dict(one_tx)
+    display_one_tx["b1"] = one_tx["b1"].copy()
+    display_one_tx["b1"][0, 0, 0, 0] = 0.0
+    display_one_tx["b1"][0, 0, 7, 7] = 8.0
+    display_one_tx["bsp"] = one_tx["bsp"].copy()
+    display_one_tx["bsp"][0, 0, 0, 0] = 0.0
+    display_one_tx["bsp"][0, 0, 3, 3] = -0.1
+    display_one_tx["bsp"][0, 0, 7, 7] = math.pi
+    display_one_tx["phsc"] = one_tx["phsc"].copy()
+    display_one_tx["phsc"][0, 0, 0, 0] = -1.0
+    display_one_tx["phsc"][0, 0, 7, 7] = 1.0
+    display_one_tx["b0"] = one_tx["b0"].copy()
+    display_one_tx["b0"][0, 0, 0] = -100.0
+    display_one_tx["b0"][0, 7, 7] = 100.0
+    display_settings = dict(settings, sendmask=True)
+    outputs = module.build_output_images(
+        display_one_tx,
+        display_settings,
+        one_tx_images,
+    )
+    assert [int(image.image_series_index) for image in outputs] == [
+        101, 120, 140, 160, 161,
+    ]
     module._validate_output_images(outputs, one_tx_images)
+    for image in outputs:
+        pixels = np.asarray(image.data)
+        assert pixels.dtype == np.uint16
+        assert int(np.min(pixels)) == 0
+        assert int(np.max(pixels)) == 4095
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        assert first(meta.get("BlochSiegertDisplayMin")) == "0"
+        assert first(meta.get("BlochSiegertDisplayMax")) == "4095"
+        assert first(meta.get("RescaleSlope")) != "2"
+        assert first(meta.get("RescaleIntercept")) != "-4096"
+
     b1_pixels = np.asarray(outputs[0].data)
     assert b1_pixels.dtype == np.uint16
-    assert int(b1_pixels[0, 0, 3, 3]) == round(expected_b1 * 100.0)
-    assert int(np.min(b1_pixels)) == round(expected_b1 * 100.0)
-    assert int(np.max(b1_pixels)) <= 4095
+    assert int(b1_pixels[0, 0, 3, 3]) == round(expected_b1 * 4095.0 / 8.0)
+    assert int(np.min(b1_pixels)) == 0
+    assert int(np.max(b1_pixels)) == 4095
     first_meta = ismrmrd.Meta.deserialize(outputs[0].attribute_string)
     assert first(first_meta.get("SeriesDescription")) == "bss_source-b1"
     assert first(first_meta.get("BlochSiegertOutput")) == "BlochSiegertB1Map"
@@ -178,58 +259,71 @@ tests:
     assert first(first_meta.get("SequenceDescriptionAdditional")) == "openrecon"
     assert first(first_meta.get("IceMiniHead")) is None
     assert first(first_meta.get("ImageTypeValue3")) is None
-    assert first(first_meta.get("BlochSiegertDisplayScale")) == "100"
-    assert first(first_meta.get("BlochSiegertDisplayFormula")) == "uT = display / 100"
+    assert np.isclose(
+        float(first(first_meta.get("BlochSiegertDisplayScale"))),
+        4095.0 / 8.0,
+    )
+    assert first(first_meta.get("BlochSiegertDisplayInputMin")) == "0"
+    assert first(first_meta.get("BlochSiegertDisplayInputMax")) == "8"
+    assert first(first_meta.get("BlochSiegertDisplayMin")) == "0"
     assert first(first_meta.get("BlochSiegertDisplayMax")) == "4095"
-    assert first(first_meta.get("RescaleSlope")) == "0.01"
+    b1_rescale_slope = float(first(first_meta.get("RescaleSlope")))
+    assert np.isclose(b1_rescale_slope, 8.0 / 4095.0)
     assert first(first_meta.get("RescaleIntercept")) == "0"
+    b1_formula = first(first_meta.get("BlochSiegertDisplayFormula"))
+    assert b1_formula == (
+        f"uT = display * {module._format_display_number(8.0 / 4095.0)} + 0"
+    )
     assert first(first_meta.get("ImageComments")) == (
-        "bss_source-b1; scanner display uint16 0-4095; uT = display / 100"
+        f"bss_source-b1; scanner display uint16 0-4095; {b1_formula}"
     )
     assert first(first_meta.get("ImageComment")) == first(first_meta.get("ImageComments"))
-
-    clipped_result = dict(one_tx)
-    clipped_result["b1"] = one_tx["b1"].copy()
-    clipped_result["b1"][0, 0, 3, 3] = 50.0
-    clipped_b1 = module.build_output_images(
-        clipped_result,
-        {"sendb1": True, "sendbsp": False, "sendphsc": False, "sendb0": False},
-        one_tx_images,
+    assert float(first(first_meta.get("WindowCenter"))) == 4.0
+    assert float(first(first_meta.get("WindowWidth"))) == 8.0
+    restored_b1 = b1_pixels.astype(np.float64) * b1_rescale_slope
+    assert np.isclose(
+        restored_b1[0, 0, 3, 3],
+        expected_b1,
+        atol=b1_rescale_slope / 2.0,
     )
-    assert int(np.asarray(clipped_b1[0].data)[0, 0, 3, 3]) == 4095
-    module._validate_output_images(clipped_b1, one_tx_images)
     phase_meta = ismrmrd.Meta.deserialize(outputs[2].attribute_string)
     assert first(phase_meta.get("BlochSiegertOutput")) == "BlochSiegertTransmitPhase"
     assert first(phase_meta.get("BlochSiegertUnits")) == "degrees"
-    assert first(phase_meta.get("BlochSiegertDisplayScale")) == "10"
-    assert first(phase_meta.get("BlochSiegertDisplayFormula")) == "degrees = display / 10"
     assert first(phase_meta.get("BlochSiegertDisplayConversion")) == "radians to degrees"
-    assert first(phase_meta.get("ImageComments")) == (
-        "bss_source-phsc; phase converted from radians to degrees and multiplied "
-        "by 10; degrees = display / 10"
-    )
+    assert "scanner display uint16 0-4095" in first(phase_meta.get("ImageComments"))
     assert first(phase_meta.get("ImageComment")) == first(phase_meta.get("ImageComments"))
-    assert np.allclose(
-        np.asarray(outputs[1].data)[0, 0, 3, 3],
-        math.degrees(0.3) * 10.0,
-        atol=1e-4,
-    )
-    assert np.allclose(
-        np.asarray(outputs[2].data)[0, 0, 3, 3],
-        math.degrees(0.8) * 10.0,
-        atol=1e-4,
-    )
 
-    eight_tx_phase = [0.1] * 38
+    expected_ranges = [
+        (outputs[1], math.degrees(-0.1), 180.0, math.degrees(-0.1)),
+        (outputs[2], math.degrees(-1.0), math.degrees(1.0), math.degrees(-0.6)),
+        (outputs[3], -100.0, 100.0, float(one_tx["b0"][0, 3, 3])),
+        (outputs[4], 0.0, 1.0, 1.0),
+    ]
+    for image, physical_min, physical_max, expected_value in expected_ranges:
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        slope = float(first(meta.get("RescaleSlope")))
+        intercept = float(first(meta.get("RescaleIntercept")))
+        assert np.isclose(slope, (physical_max - physical_min) / 4095.0)
+        assert np.isclose(intercept, physical_min)
+        restored = np.asarray(image.data, dtype=np.float64) * slope + intercept
+        assert np.isclose(
+            restored[0, 0, 3, 3],
+            expected_value,
+            atol=slope / 2.0,
+        )
+
+    eight_tx_phase = [0.1] * 46
     for tx_index in range(8):
         eight_tx_phase[3 + 4 * tx_index] = 0.1
         eight_tx_phase[4 + 4 * tx_index] = 0.2
-        eight_tx_phase[5 + 4 * tx_index] = 0.8 + 0.01 * tx_index
+        eight_tx_phase[5 + 4 * tx_index] = 0.2 - 0.01 * tx_index
         eight_tx_phase[6 + 4 * tx_index] = 0.4
-    eight_tx_phase[35:38] = [0.3, 0.3, 0.3]
+    eight_tx_phsc = [-0.8 + 0.1 * tx_index for tx_index in range(8)]
+    eight_tx_phase[35:43] = eight_tx_phsc
+    eight_tx_phase[43:46] = [0.3, 0.3, 0.3]
     eight_tx_images = make_dataset(eight_tx_phase, series_name="bss_8tx")
     eight_tx = module.compute_bloch_siegert_maps(eight_tx_images, settings)
-    assert eight_tx["nframe"] == 38
+    assert eight_tx["nframe"] == 46
     assert eight_tx["ntx"] == 8
     assert eight_tx["b1"].shape == (8, 1, 8, 8)
     assert eight_tx["bsp"].shape == (8, 1, 8, 8)
@@ -241,7 +335,7 @@ tests:
     )
     assert np.allclose(
         eight_tx["phsc"][:, 0, 3, 3],
-        [0.80 + 0.01 * i for i in range(8)],
+        eight_tx_phsc,
         atol=1e-5,
     )
     b1_only = module.build_output_images(
@@ -254,7 +348,7 @@ tests:
     assert first(ismrmrd.Meta.deserialize(b1_only[-1].attribute_string).get("SeriesDescription")) == "bss_8tx-b1-tx08"
     module._validate_output_images(b1_only, eight_tx_images)
 
-    forty_slice_phase = eight_tx_phase + [0.1] * 8
+    forty_slice_phase = list(eight_tx_phase)
     forty_slice_magnitude = []
     forty_slice_phase_images = []
     for slice_index in range(40):
@@ -280,7 +374,7 @@ tests:
     forty_slice_images = forty_slice_magnitude + forty_slice_phase_images
     forty_slice = module.compute_bloch_siegert_maps(forty_slice_images, settings)
     assert forty_slice["slice_count"] == 40
-    assert forty_slice["nframe"] == 38
+    assert forty_slice["nframe"] == 46
     assert forty_slice["ntx"] == 8
     assert forty_slice["b1"].shape == (8, 40, 8, 8)
     forty_slice_b1 = module.build_output_images(

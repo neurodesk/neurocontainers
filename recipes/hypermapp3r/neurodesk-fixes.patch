@@ -1,0 +1,77 @@
+Neurodesk fixes for HyperMapp3r at commit 00c0b7693c2be27b9aaf6ff43f8547beee313b96.
+Applied by build.yaml with `git apply` right after the pinned checkout; text
+before the first diff header is ignored by git apply.
+
+Three surgical fixes for defects found in the 2026-08 Neurodesk container
+review of hypermapp3r/0.1.0; all three verified against upstream master and
+worth offering upstream:
+
+1. utils/endstatement.py -- seg_wmh exited 1 on every successful run under
+   apptainer. The passwd GECOS field is empty for the runtime user, so the
+   code falls back to os.environ['USER'], and `singularity exec --cleanenv`
+   strips USER: KeyError after the prediction is already written. Use
+   .get() with the passwd username as default.
+
+2. stats/summary_wmh_vols.py -- the subcommand crashed unconditionally with
+   IndexError: wmh_abb has one element but the cols line indexes two. The
+   line is an unedited copy-paste from the sibling hippocampus module.
+
+3. segment/hypermapper.py -- copy_orient() hardcodes `-type uchar`, correct
+   for the binary mask but destructive for the MC-dropout probability map:
+   whenever the input is not already RPI/LPI (i.e. most real data) the
+   published *_wmh_prob.nii.gz was silently quantised to {0,1}. Give
+   copy_orient a dtype argument and publish the probability map as float.
+
+diff --git a/hypermapper/segment/hypermapper.py b/hypermapper/segment/hypermapper.py
+index 1819e34..4c7b318 100755
+--- a/hypermapper/segment/hypermapper.py
++++ b/hypermapper/segment/hypermapper.py
+@@ -241,11 +241,11 @@ def resample_like(img, ref, out, interp=0):
+     c3.inputs.out_file = out
+     c3.run()
+ 
+-def copy_orient(in_img_file, ref_img_file, out_img_file):
++def copy_orient(in_img_file, ref_img_file, out_img_file, dtype="uchar"):
+     print("\n copy orientation ...")
+     c3 = C3d()
+     c3.inputs.in_file = ref_img_file
+-    c3.inputs.args = "%s -copy-transform -type uchar" % in_img_file
++    c3.inputs.args = "%s -copy-transform -type %s" % (in_img_file, dtype)
+     c3.inputs.out_file = out_img_file
+     c3.run()
+ 
+@@ -432,7 +432,7 @@ def main(args):
+             nib.save(pred_res_th, prediction_std_orient)
+             copy_orient(pred_name, t1, prediction)
+ 
+-            copy_orient(pred_prob_name, t1, prediction_prob)
++            copy_orient(pred_prob_name, t1, prediction_prob, dtype="float")
+         else:
+             nib.save(pred_res_th, prediction)
+             nib.save(pred_res, prediction_prob)
+diff --git a/hypermapper/stats/summary_wmh_vols.py b/hypermapper/stats/summary_wmh_vols.py
+index 489aee9..29aa663 100755
+--- a/hypermapper/stats/summary_wmh_vols.py
++++ b/hypermapper/stats/summary_wmh_vols.py
+@@ -65,7 +65,7 @@ def main(args):
+         else:
+             print(subjs_dirs[i], ' is missing')
+ 
+-    cols = ['%s_Volume' % wmh_abb[0], '%s_Volume' % wmh_abb[1]]
++    cols = ['%s_Volume' % a for a in wmh_abb]
+ 
+     df = pd.DataFrame(volume, index=subjs_dirs, columns=cols)
+     df.index.name = 'Subjects'
+diff --git a/hypermapper/utils/endstatement.py b/hypermapper/utils/endstatement.py
+index 5d11143..9b2dedd 100755
+--- a/hypermapper/utils/endstatement.py
++++ b/hypermapper/utils/endstatement.py
+@@ -21,7 +21,7 @@ def main(task=None, timediff=None):
+         user = name.split(" ")[0]
+         user = user.replace(',', '').strip()
+     else:
+-        user = os.environ['USER']
++        user = os.environ.get('USER', pwd.getpwuid(os.getuid()).pw_name)
+ 
+     if 6 < datetime.now().hour < 12:
+         timeday = 'morning'

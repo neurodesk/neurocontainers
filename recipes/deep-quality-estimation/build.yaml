@@ -1,0 +1,342 @@
+name: deep-quality-estimation
+version: 0.0.3
+
+description: Deep Quality Estimation rates BraTS glioma segmentation quality on a one to six star scale.
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BrainLesion/deep_quality_estimation/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  venv: /opt/deep-quality-estimation-0.0.3
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        VENV: "{{ context.venv }}"
+        # These default under $HOME, which does not exist at container runtime.
+        MPLCONFIGDIR: /tmp/mpl-deep-quality-estimation
+        XDG_CACHE_HOME: /tmp/cache-deep-quality-estimation
+        PYTHONNOUSERSITE: "1"
+        PATH: "{{ context.venv }}/bin:$PATH"
+
+    - install:
+        - ca-certificates
+        - fonts-dejavu-core
+        - libgl1
+        - libglib2.0-0t64
+        - libgomp1
+        - python3
+        - python3-pip
+        - python3-venv
+
+    - run:
+        - python3 -m venv "${VENV}"
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        # CUDA wheels: these are GPU inference tools and the default index
+        # already resolves to CUDA builds, so pin the index explicitly rather
+        # than letting the resolver choose a different one on a rebuild.
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir
+          --extra-index-url https://download.pytorch.org/whl/cu124 torch
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "deep_quality_estimation==0.0.3"
+        # Import at build time so a broken resolve fails here rather than on
+        # first use; read the version from distribution metadata because these
+        # packages do not all define __version__.
+        - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import deep_quality_estimation; print('deep-quality-estimation', md.version('deep-quality-estimation'))"
+        # Upstream ships no console_scripts, so the container provides one: a thin
+        # argparse front-end over the documented Python API. It adds no logic of
+        # its own beyond argument validation.
+        - install -m 0755 {{ get_file("deep-quality-estimation") }} /usr/local/bin/deep-quality-estimation
+        - . "${VENV}/bin/activate" && deep-quality-estimation --help > /dev/null && echo "deep-quality-estimation CLI ok"
+        # The help text carries the atlas-space requirement and the label table,
+        # which are the two things upstream marks as most important.
+        - . "${VENV}/bin/activate" && deep-quality-estimation --help | grep -q 'atlas space' && echo "input requirements documented"
+        # python itself is deliberately not exported (see deploy), so give the
+        # library a named interpreter rather than no route in at all.
+        - install -m 0755 {{ get_file("dqe_python_helper") }} /usr/local/bin/dqe-python
+        - dqe-python -c "import deep_quality_estimation; print('dqe-python ok')"
+        - chmod -R a+rX "${VENV}"
+        - rm -rf /root/.cache/pip /tmp/mpl-deep-quality-estimation /tmp/cache-deep-quality-estimation
+
+    - workdir: /opt
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+files:
+  - name: deep-quality-estimation
+    contents: |
+      #!{{ context.venv }}/bin/python3
+      """Command line front-end for Deep Quality Estimation.
+
+      Upstream ships no console_scripts; this wraps deep_quality_estimation.DQE.predict,
+      which returns a mean score plus one score per anatomical view.
+      """
+      import argparse
+      import json
+      import os
+      import sys
+
+      EPILOG = """\
+      Inputs must be in atlas space (240x240x155 at 1 mm), skull-stripped and
+      co-registered, and the segmentation must use BraTS labels:
+
+        1  necrotic / non-enhancing tumour core
+        2  peritumoral edema
+        3  GD-enhancing tumour (the legacy label 4 is also accepted)
+
+      The model is biased to overestimate segmentation quality. It reads three
+      slices through the segmentation's own centre of mass, so it does not see
+      over-segmentation, scattered false positives, or a mask placed on the wrong
+      anatomy. Treat a score below 4.5 as a real signal and anything above it as
+      weak evidence.
+      """
+
+
+      def _fail(message):
+          sys.stderr.write("error: %s\n" % message)
+          raise SystemExit(1)
+
+
+      def _validate(paths):
+          """Check the five volumes before torch is imported.
+
+          DQE reports a single number, so bad input does not look like a failure,
+          it looks like a score. A segmentation misaligned with the images is
+          rated silently; a shape mismatch or a trailing singleton dimension
+          fails deep inside a MONAI transform with a message naming neither the
+          file nor the problem.
+          """
+          import nibabel as nib
+          import numpy as np
+
+          missing = [path for path in paths.values() if not os.path.isfile(path)]
+          if missing:
+              _fail("input file not found: %s" % ", ".join(missing))
+
+          loaded = {}
+          for key, path in paths.items():
+              try:
+                  loaded[key] = nib.load(path)
+              except Exception as exc:
+                  _fail("%s: cannot read %s (%s)" % (key, path, exc))
+
+          for key, img in loaded.items():
+              if len(img.shape) != 3:
+                  _fail(
+                      "%s: expected a 3D volume, got shape %s in %s. Many pipelines "
+                      "emit (X, Y, Z, 1); squeeze the trailing dimension first."
+                      % (key, tuple(img.shape), paths[key])
+                  )
+
+          reference = loaded["segmentation"]
+          for key, img in loaded.items():
+              if img.shape != reference.shape:
+                  _fail(
+                      "%s has shape %s but the segmentation has %s; all five "
+                      "volumes must be on the same grid"
+                      % (key, tuple(img.shape), tuple(reference.shape))
+                  )
+
+          for key, img in loaded.items():
+              if not np.allclose(img.affine, reference.affine, atol=1e-4):
+                  sys.stderr.write(
+                      "warning: %s has a different affine from the segmentation. "
+                      "A score is still produced, but a misaligned segmentation is "
+                      "rated silently and the number does not mean anything.\n" % key
+                  )
+                  break
+
+          if not np.any(np.asanyarray(reference.dataobj)):
+              _fail("segmentation contains no labelled voxels: %s"
+                    % paths["segmentation"])
+
+
+      def main(argv=None):
+          p = argparse.ArgumentParser(
+              prog="deep-quality-estimation",
+              description="Rate a BraTS glioma segmentation from 1 to 6 stars.",
+              epilog=EPILOG,
+              formatter_class=argparse.RawDescriptionHelpFormatter,
+          )
+          p.add_argument("-t1c", "--t1c", required=True, help="T1 contrast-enhanced image (NIfTI)")
+          p.add_argument("-t1", "--t1", required=True, help="T1 image (NIfTI)")
+          p.add_argument("-t2", "--t2", required=True, help="T2 image (NIfTI)")
+          p.add_argument("-fla", "--flair", required=True, help="FLAIR image (NIfTI)")
+          p.add_argument("-s", "--segmentation", required=True,
+                         help="Segmentation to rate, in BraTS label style (NIfTI)")
+          p.add_argument("--device", default=None,
+                         help="Torch device, e.g. cuda or cpu "
+                              "(default: cuda when one is available, otherwise cpu)")
+          p.add_argument("--cuda-devices", default="0",
+                         help='Visible CUDA devices, e.g. "0" or "0,1" (default: 0)')
+          p.add_argument("--json", action="store_true",
+                         help="Emit the scores as JSON instead of plain text")
+          p.add_argument("-o", "--output",
+                         help="Also write the result to this file")
+          p.add_argument("--verbose", action="store_true",
+                         help="Show the library's own log output, including the "
+                              "device actually used (upstream disables it)")
+          a = p.parse_args(argv)
+
+          if a.output:
+              # Checked up front like the inputs: a bad output path otherwise
+              # costs a full inference before failing with a raw traceback.
+              parent = os.path.dirname(os.path.abspath(a.output))
+              if not os.path.isdir(parent):
+                  _fail("output directory does not exist: %s" % parent)
+              if not os.access(parent, os.W_OK):
+                  _fail("output directory is not writable: %s" % parent)
+
+          _validate({
+              "t1c": a.t1c, "t1": a.t1, "t2": a.t2,
+              "flair": a.flair, "segmentation": a.segmentation,
+          })
+
+          from deep_quality_estimation import DQE
+
+          if a.verbose:
+              # Upstream's __init__ calls logger.disable("deep_quality_estimation")
+              # at import time, so this enable must come after the import above --
+              # the other way round, the import's disable undoes it and the flag
+              # is a silent no-op.
+              from loguru import logger
+              logger.enable("deep_quality_estimation")
+
+          dqe = DQE(device=a.device, cuda_devices=a.cuda_devices)
+          mean_score, view_scores = dqe.predict(
+              t1c=a.t1c, t1=a.t1, t2=a.t2, flair=a.flair, segmentation=a.segmentation,
+          )
+          views = {getattr(k, "name", str(k)): v for k, v in view_scores.items()}
+
+          if a.json:
+              text = json.dumps({"mean_score": mean_score, "view_scores": views}, indent=2)
+          else:
+              lines = ["mean score: %s" % mean_score]
+              lines += ["  %s: %s" % (name, score) for name, score in views.items()]
+              text = "\n".join(lines)
+
+          print(text)
+          if a.output:
+              with open(a.output, "w") as handle:
+                  handle.write(text + "\n")
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
+
+  - name: dqe_python_helper
+    contents: |
+      #!/usr/bin/env bash
+      # Run python from inside this container.
+      #
+      # deep_quality_estimation is installed in the container's environment, not
+      # on the host, so "import deep_quality_estimation" only works with this
+      # interpreter. The container does not put python on your PATH, because
+      # doing so silently replaced the host interpreter for the rest of the shell.
+      exec {{ context.venv }}/bin/python3 "$@"
+
+deploy:
+  # Named individually rather than exporting the venv bin directory, which also
+  # put python, python3, python3.12, pip3.12 and torchrun on the user's PATH, so
+  # loading this module silently replaced the host interpreter for the rest of
+  # the shell. The CLI does not need it: its shebang points into the venv.
+  bins:
+    - deep-quality-estimation
+    - dqe-python
+
+categories:
+  - quality control
+  - image segmentation
+  - machine learning
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAeklEQVR42u3Xyw1AQBQFUHWpQAXKUI6lpTIUpQFWk0wmISEYxjnJXb2Ed+MXVQUAQLnmqVlCcsz7YVxCDi+9dYK75/HChwvEB0zzxDxeOM2p2yZH9kpcciVeX6LY5T/3DHzyLVTEdwAAPzC5UrfdbhRQQIHSCwAA/MgKWY2zKnhE7AQAAAAASUVORK5CYII=
+
+readme: |-
+  ----------------------------------
+  ## deep-quality-estimation/{{ context.version }} ##
+
+  Deep Quality Estimation rates BraTS glioma segmentation quality on a one to
+  six star scale.
+
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
+
+  ### Example
+
+  ```
+  deep-quality-estimation -t1c t1c.nii.gz -t1 t1.nii.gz -t2 t2.nii.gz \
+      -fla flair.nii.gz -s seg.nii.gz
+
+  # from python, using this container's interpreter:
+  dqe-python -c 'from deep_quality_estimation import DQE'
+  ```
+
+  `python` is deliberately not exported: putting this environment's bin
+  directory on your PATH replaced the host interpreter for the rest of the
+  shell. Use `dqe-python`.
+
+  `--json` emits machine-readable output, `-o/--output` also writes the result
+  to a file, and `--verbose` shows the library's own log output including which
+  device was selected.
+
+  ### Input requirements
+
+  Upstream marks this as **IMPORTANT**: the images must be in **atlas space**
+  (240x240x155 at 1 mm), skull-stripped and co-registered, and the segmentation
+  must use BraTS labels:
+
+  ```
+  1  necrotic / non-enhancing tumour core
+  2  peritumoral edema
+  3  GD-enhancing tumour (the legacy label 4 is also accepted)
+  ```
+
+  The CLI checks what it can before loading the model: that the files exist and
+  are readable, that all five volumes are 3D and share a grid, and that the
+  segmentation has at least one labelled voxel. A differing affine is reported
+  as a warning rather than an error, because it cannot be distinguished from
+  benign rounding -- but a segmentation misaligned with its images is still
+  rated silently, and that number does not mean anything.
+
+  ### How to read the score
+
+  Upstream marks this as a **CAUTION**: the model is biased to overestimate
+  segmentation quality. It reads only three slices, taken through the
+  segmentation's own centre of mass, so damage outside those planes is never
+  seen and a rigid shift carries the sampling window along with the mask.
+
+  Measured on real data, it does **not** register over-segmentation (dilating a
+  mask raised the score), scattered false positives (invisible), or a mask
+  placed 25 mm off the lesion (under 0.3 stars). It does register label-class
+  confusion, strongly. Observed scores on genuine segmentations span roughly
+  4.8 to 5.4, so treat below 4.5 as a real signal and anything above it as weak
+  evidence, and do not use the score alone to rank segmentations.
+
+  ### Device
+
+  DQE auto-detects CUDA and falls back to CPU, so no flag is needed on a
+  CPU-only node. Use `--device cpu` to force CPU on a machine that has a GPU.
+  A rating takes roughly 30-60 s on 4 CPUs.
+
+  ### Notes
+
+  Upstream ships no console_scripts, so this container adds a thin
+  `deep-quality-estimation` CLI over the documented Python API
+  (`from deep_quality_estimation import DQE`).
+
+  The trained weights ship inside the wheel at
+  deep_quality_estimation/weights/dqe_weights.pth, so nothing is downloaded and
+  inference works offline.
+
+  More documentation can be found here:
+  https://github.com/BrainLesion/deep_quality_estimation

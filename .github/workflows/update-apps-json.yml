@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - "releases/**/*.json"
+      - "recipes/**/build.yaml"
   workflow_dispatch:
 
 # Serialize runs so quick release bursts force-push the branch in order; each
@@ -36,7 +37,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install icon conversion dependencies
-        run: python -m pip install cairosvg
+        run: python -m pip install cairosvg pyyaml
 
       - name: Generate apps.json
         run: |

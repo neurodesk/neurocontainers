@@ -8,12 +8,15 @@ recipes. They are NOT a full functional test suite for the wrapper.
 import ast
 import base64
 import json
+import os
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 
 RECIPE_DIR = Path(__file__).resolve().parent
 WRAPPER_PATH = RECIPE_DIR / "openreconi2iexample.py"
+DICOM_CONVERTER_PATH = RECIPE_DIR / "dicom2mrd.py"
 
 
 def _load_runtime_helpers_for_test(function_names, assignments=()):
@@ -47,6 +50,24 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
         namespace,
     )
     return namespace
+
+
+def _load_dicom_converter_helper_for_test(function_name, namespace):
+    tree = ast.parse(DICOM_CONVERTER_PATH.read_text())
+    helper_node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == function_name
+    )
+    exec(
+        compile(
+            ast.Module(body=[helper_node], type_ignores=[]),
+            str(DICOM_CONVERTER_PATH),
+            "exec",
+        ),
+        namespace,
+    )
+    return namespace[function_name]
 
 
 def _meta_with_image_type_value3(value="M"):
@@ -138,3 +159,27 @@ def test_inversion_defaults_on_and_can_be_explicitly_disabled():
     assert send_invert_enabled("openreconi2iexample") is True
     assert send_invert_enabled({"parameters": {"invert": False}}) is False
     assert send_invert_enabled({"parameters": {"invert": True}}) is True
+
+
+def test_dicom_conversion_replaces_existing_output_file(tmp_path):
+    output_path = tmp_path / "input_data.h5"
+    output_path.write_bytes(b"old conversion")
+
+    class FakeDataset:
+        def __init__(self, path, group):
+            assert not Path(path).exists()
+            self.path = path
+            self.group = group
+
+    create_output_dataset = _load_dicom_converter_helper_for_test(
+        "_create_output_dataset",
+        {
+            "os": os,
+            "ismrmrd": SimpleNamespace(Dataset=FakeDataset),
+        },
+    )
+
+    dataset = create_output_dataset(str(output_path), "dataset")
+
+    assert dataset.path == str(output_path)
+    assert dataset.group == "dataset"

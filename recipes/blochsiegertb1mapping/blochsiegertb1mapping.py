@@ -25,8 +25,7 @@ PRE_DUMMY = 2
 POST_DUMMY = 2
 ECHOES_PER_TX = 4
 KBS_SCALE = 0.044 / 6.0
-B1_DISPLAY_SCALE = 100.0
-PHASE_DISPLAY_SCALE = 10.0
+SCANNER_DISPLAY_MIN = 0
 SCANNER_DISPLAY_MAX = 4095
 
 B1_SERIES_INDEX_START = 101
@@ -132,6 +131,7 @@ def compute_bloch_siegert_maps(input_images, settings=None):
                 phase_group[:nframe],
                 ntx,
                 settings,
+                slice_index,
             )
         )
 
@@ -251,29 +251,89 @@ def build_output_images(result, settings=None, input_images=None):
     return outputs
 
 
-def _compute_slice_maps(magnitude_images, phase_images, ntx, settings):
+def _diagnostic_quantiles(values):
+    values = np.asarray(values, dtype=np.float64)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return float("nan"), float("nan"), float("nan")
+    return tuple(float(value) for value in np.percentile(finite, [5, 50, 95]))
+
+
+def _phase_input_domain(data_min, data_max, phase_wrap):
+    tolerance = 0.01
+    if data_min >= -math.pi - tolerance and data_max <= math.pi + tolerance:
+        return "radians_candidate"
+    if phase_wrap <= 0:
+        return "native_values"
+    if data_min >= -tolerance and data_max <= phase_wrap + tolerance:
+        return "unsigned_counts_candidate"
+    if data_min >= -phase_wrap - tolerance and data_max <= phase_wrap + tolerance:
+        return "signed_or_rescaled_counts_candidate"
+    return "unknown"
+
+
+def _format_frame_indices(indices):
+    return "[" + ",".join(str(int(index + 1)) for index in indices) + "]"
+
+
+def _compute_slice_maps(magnitude_images, phase_images, ntx, settings, slice_index):
     magnitude_stack = np.stack([_image_volume_data(image) for image in magnitude_images])
     phase_stack = np.stack([_image_volume_data(image) for image in phase_images])
 
+    magnitude_nonfinite = int(np.count_nonzero(~np.isfinite(magnitude_stack)))
+    phase_nonfinite = int(np.count_nonzero(~np.isfinite(phase_stack)))
     magnitude_stack = np.nan_to_num(magnitude_stack.astype(np.float32), copy=False)
-    phase_stack = np.nan_to_num(phase_stack.astype(np.float32), copy=False)
-    phase_stack = _phase_to_radians(
-        phase_stack,
-        _setting_float(settings, "phasewrap", default=PHASE_WRAP),
+    mask = _bloch_siegert_mask(magnitude_stack, ntx)
+
+    raw_phase_finite = phase_stack[np.isfinite(phase_stack)]
+    if raw_phase_finite.size:
+        raw_phase_min = float(np.min(raw_phase_finite))
+        raw_phase_max = float(np.max(raw_phase_finite))
+    else:
+        raw_phase_min = 0.0
+        raw_phase_max = 0.0
+    raw_phase_quantiles = _diagnostic_quantiles(raw_phase_finite)
+    masked_raw_phase_quantiles = _diagnostic_quantiles(phase_stack[:, mask])
+    phase_wrap = _setting_float(settings, "phasewrap", default=PHASE_WRAP)
+    phase_source_meta = _meta_from_image(phase_images[0])
+    logging.info(
+        "Bloch-Siegert phase input diagnostics: slice=%d raw=[%.6g,%.6g] "
+        "raw_q05_50_95=[%.6g,%.6g,%.6g] "
+        "masked_raw_q05_50_95=[%.6g,%.6g,%.6g] domain=%s "
+        "phasewrap=%.6g source_slope=%s source_intercept=%s",
+        slice_index + 1,
+        raw_phase_min,
+        raw_phase_max,
+        *raw_phase_quantiles,
+        *masked_raw_phase_quantiles,
+        _phase_input_domain(raw_phase_min, raw_phase_max, phase_wrap),
+        phase_wrap,
+        _meta_text(phase_source_meta, "RescaleSlope") or "missing",
+        _meta_text(phase_source_meta, "RescaleIntercept") or "missing",
     )
 
-    mask = _bloch_siegert_mask(magnitude_stack, ntx)
+    phase_stack = np.nan_to_num(phase_stack.astype(np.float32), copy=False)
+    phase_stack = _phase_to_radians(phase_stack, phase_wrap)
+
     complex_phase = np.exp(1j * phase_stack)
 
     # MATLAB uses 1-based frames 1:3 as the pre-reference, followed by
-    # B/C/A/D for each Tx channel, then three post-reference frames.
+    # B/C/A/D for each Tx channel, one dedicated phase frame per Tx channel,
+    # then three post-reference frames.
     pre_reference = np.mean(complex_phase[: PRE_DUMMY + 1], axis=0)
     tx_indices = np.arange(ntx) * ECHOES_PER_TX
-    phase_a = complex_phase[PRE_DUMMY + 3 + tx_indices]
-    phase_b = complex_phase[PRE_DUMMY + 1 + tx_indices]
-    phase_c = complex_phase[PRE_DUMMY + 2 + tx_indices]
-    phase_d = complex_phase[PRE_DUMMY + 4 + tx_indices]
-    bsp = np.angle(
+    phase_a_indices = PRE_DUMMY + 3 + tx_indices
+    phase_b_indices = PRE_DUMMY + 1 + tx_indices
+    phase_c_indices = PRE_DUMMY + 2 + tx_indices
+    phase_d_indices = PRE_DUMMY + 4 + tx_indices
+    phase_a = complex_phase[phase_a_indices]
+    phase_b = complex_phase[phase_b_indices]
+    phase_c = complex_phase[phase_c_indices]
+    phase_d = complex_phase[phase_d_indices]
+    # Scanner DICOM phase has the opposite BSp polarity to the positive phase
+    # convention used by the MATLAB-derived B1 calculation. Correct that
+    # polarity before applying the negative branch-cut unwrap.
+    raw_bsp = -np.angle(
         phase_a
         * np.conj(phase_b)
         * pre_reference
@@ -281,17 +341,124 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings):
         * pre_reference
         * np.conj(phase_d)
     ).astype(np.float32)
-    bsp[bsp < math.radians(-25.0/180)] += 2 * math.pi
-    bsp[bsp < 0] = 0
+    wrap_threshold = math.radians(-25.0)
+    wrap_mask = raw_bsp < wrap_threshold
+    bsp = raw_bsp.copy()
+    bsp[wrap_mask] += 2 * math.pi
 
     pulse_width = _setting_float(settings, "bspulsewidthms", default=BSS_PULSE_WIDTH_MS)
     kbs = KBS_SCALE * pulse_width
     if kbs <= 0:
         raise ValueError(f"bspulsewidthms must be positive, got {pulse_width}")
-    b1 = np.sqrt(bsp / kbs)
-    phsc = np.angle(phase_a).astype(np.float32)
+    bsp_for_b1 = np.maximum(bsp, 0.0)
+    b1 = np.sqrt(bsp_for_b1 / kbs)
 
-    post_start = ECHOES_PER_TX * ntx + PRE_DUMMY + 1
+    tx_phase_start = ECHOES_PER_TX * ntx + PRE_DUMMY + 1
+    tx_phase_stop = tx_phase_start + ntx
+    post_start = tx_phase_stop
+    if slice_index == 0:
+        logging.info(
+            "Bloch-Siegert frame layout (1-based): pre=1-%d B=%s C=%s A=%s "
+            "D=%s tx_phase=%d-%d post=%d-%d",
+            PRE_DUMMY + 1,
+            _format_frame_indices(phase_b_indices),
+            _format_frame_indices(phase_c_indices),
+            _format_frame_indices(phase_a_indices),
+            _format_frame_indices(phase_d_indices),
+            tx_phase_start + 1,
+            tx_phase_stop,
+            post_start + 1,
+            post_start + POST_DUMMY + 1,
+        )
+
+    logging.info(
+        "Bloch-Siegert input diagnostics: slice=%d magnitude_nonfinite=%d "
+        "phase_nonfinite=%d mask_foreground=%d/%d mask_applied_to_maps=false",
+        slice_index + 1,
+        magnitude_nonfinite,
+        phase_nonfinite,
+        int(np.count_nonzero(mask)),
+        int(mask.size),
+    )
+    pre_degrees = np.degrees(np.angle(pre_reference))
+    pre_phase_quantiles = _diagnostic_quantiles(pre_degrees[mask])
+    pre_coherence_quantiles = _diagnostic_quantiles(np.abs(pre_reference)[mask])
+    logging.info(
+        "Bloch-Siegert masked pre-reference diagnostics: slice=%d voxels=%d "
+        "phase_deg_q05_50_95=[%.3f,%.3f,%.3f] "
+        "coherence_q05_50_95=[%.6g,%.6g,%.6g]",
+        slice_index + 1,
+        int(np.count_nonzero(mask)),
+        *pre_phase_quantiles,
+        *pre_coherence_quantiles,
+    )
+    for tx_index in range(ntx):
+        raw_degrees = np.degrees(raw_bsp[tx_index])
+        bsp_degrees = np.degrees(bsp[tx_index])
+        negative_for_b1 = bsp[tx_index] < 0
+        logging.info(
+            "Bloch-Siegert BSp diagnostics: slice=%d tx=%d voxels=%d "
+            "raw_deg=[%.3f,%.3f] dicom_polarity_corrected=true wrapped=%d "
+            "retained_negative=%d phase_zero=%d b1_clamped=%d "
+            "b1_uT=[%.6g,%.6g]",
+            slice_index + 1,
+            tx_index + 1,
+            int(bsp[tx_index].size),
+            float(np.min(raw_degrees)),
+            float(np.max(raw_degrees)),
+            int(np.count_nonzero(wrap_mask[tx_index])),
+            int(np.count_nonzero(negative_for_b1)),
+            int(np.count_nonzero(bsp_degrees == 0)),
+            int(np.count_nonzero(negative_for_b1)),
+            float(np.min(b1[tx_index])),
+            float(np.max(b1[tx_index])),
+        )
+        phase_b_quantiles = _diagnostic_quantiles(
+            np.degrees(np.angle(phase_b[tx_index]))[mask]
+        )
+        phase_c_quantiles = _diagnostic_quantiles(
+            np.degrees(np.angle(phase_c[tx_index]))[mask]
+        )
+        phase_a_quantiles = _diagnostic_quantiles(
+            np.degrees(np.angle(phase_a[tx_index]))[mask]
+        )
+        phase_d_quantiles = _diagnostic_quantiles(
+            np.degrees(np.angle(phase_d[tx_index]))[mask]
+        )
+        logging.info(
+            "Bloch-Siegert masked phase-term diagnostics: slice=%d tx=%d "
+            "B_deg_q05_50_95=[%.3f,%.3f,%.3f] "
+            "C_deg_q05_50_95=[%.3f,%.3f,%.3f] "
+            "A_deg_q05_50_95=[%.3f,%.3f,%.3f] "
+            "D_deg_q05_50_95=[%.3f,%.3f,%.3f]",
+            slice_index + 1,
+            tx_index + 1,
+            *phase_b_quantiles,
+            *phase_c_quantiles,
+            *phase_a_quantiles,
+            *phase_d_quantiles,
+        )
+        raw_bsp_quantiles = _diagnostic_quantiles(raw_degrees[mask])
+        output_bsp_quantiles = _diagnostic_quantiles(bsp_degrees[mask])
+        logging.info(
+            "Bloch-Siegert masked BSp diagnostics: slice=%d tx=%d voxels=%d "
+            "raw_deg_q05_50_95=[%.3f,%.3f,%.3f] "
+            "output_deg_q05_50_95=[%.3f,%.3f,%.3f] wrapped=%d "
+            "retained_negative_inside=%d retained_negative_outside=%d "
+            "phase_zero_inside=%d",
+            slice_index + 1,
+            tx_index + 1,
+            int(np.count_nonzero(mask)),
+            *raw_bsp_quantiles,
+            *output_bsp_quantiles,
+            int(np.count_nonzero(wrap_mask[tx_index] & mask)),
+            int(np.count_nonzero(negative_for_b1 & mask)),
+            int(np.count_nonzero(negative_for_b1 & ~mask)),
+            int(np.count_nonzero((bsp_degrees == 0) & mask)),
+        )
+
+    phsc = np.angle(complex_phase[tx_phase_start:tx_phase_stop]).astype(np.float32)
+
     post_reference = np.mean(
         complex_phase[post_start : post_start + POST_DUMMY + 1],
         axis=0,
@@ -373,7 +540,7 @@ def _fallback_split_magnitude_phase_series(images):
 
     series_groups = sorted(series_groups, key=_series_group_sort_key)
     frame_count = len(series_groups[0])
-    if frame_count < 10:
+    if frame_count < 11:
         return images, []
     return series_groups[0], series_groups[1]
 
@@ -445,7 +612,7 @@ def _group_frames_by_slice(images):
         ("slice", _slice_group_key),
     ):
         groups = _groups_from_key(indexed, key_func)
-        if groups and all(len(group) >= 10 for group in groups):
+        if groups and all(len(group) >= 11 for group in groups):
             candidates.append((name, groups))
 
     chunked = _chunked_frame_groups(indexed)
@@ -454,8 +621,8 @@ def _group_frames_by_slice(images):
 
     if not candidates:
         raise ValueError(
-            "Bloch-Siegert mapping requires at least 10 frames per slice "
-            "(1Tx) or 38 frames per slice (8Tx)"
+            "Bloch-Siegert mapping requires at least 11 frames per slice "
+            "(1Tx) or 46 frames per slice (8Tx)"
         )
 
     def score(candidate):
@@ -466,7 +633,7 @@ def _group_frames_by_slice(images):
             and len(groups) > 1
             and len(group_sizes) == 1
         )
-        exact = sum(1 for group in groups if len(group) in (10, 38))
+        exact = sum(1 for group in groups if len(group) in (11, 46))
         return (
             informative_geometry,
             exact,
@@ -515,10 +682,10 @@ def _slice_group_key(image):
 
 def _chunked_frame_groups(indexed_images):
     total = len(indexed_images)
-    if total >= 38 and total % 38 == 0:
-        chunk_size = 38
-    elif total >= 10 and total % 10 == 0:
-        chunk_size = 10
+    if total >= 46 and total % 46 == 0:
+        chunk_size = 46
+    elif total >= 11 and total % 11 == 0:
+        chunk_size = 11
     else:
         return []
     return [
@@ -563,7 +730,7 @@ def _pair_slice_groups(magnitude_groups, phase_groups):
     for index, (magnitude_group, phase_group) in enumerate(
         zip(magnitude_groups, phase_groups)
     ):
-        if len(magnitude_group) < 10 or len(phase_group) < 10:
+        if len(magnitude_group) < 11 or len(phase_group) < 11:
             raise ValueError(
                 f"Slice {index} has too few frames: {len(magnitude_group)} "
                 f"magnitude, {len(phase_group)} phase"
@@ -577,15 +744,16 @@ def _sequence_shape(frame_count):
     ntx = 8 if frame_count > 25 else 1
     required_frames = (
         ECHOES_PER_TX * ntx
+        + ntx
         + (PRE_DUMMY + 1)
         + (POST_DUMMY + 1)
     )
     if frame_count >= required_frames:
         return required_frames, ntx
     if frame_count > 25:
-        expected = "38 frames for 8Tx"
+        expected = "46 frames for 8Tx"
     else:
-        expected = "10 frames for 1Tx"
+        expected = "11 frames for 1Tx"
     raise ValueError(
         f"Bloch-Siegert mapping requires {expected}, got {frame_count}"
     )
@@ -612,6 +780,74 @@ def _image_volume_data(image):
     return data
 
 
+def _format_display_number(value):
+    number = float(value)
+    if number == 0.0:
+        return "0"
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.12g}"
+
+
+def _scale_volume_to_display_range(volume, units):
+    values = np.asarray(volume, dtype=np.float32)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        display = np.zeros(values.shape, dtype=np.uint16)
+        return display, {
+            "input_min": 0.0,
+            "input_max": 0.0,
+            "scale": 1.0,
+            "display_min": SCANNER_DISPLAY_MIN,
+            "display_max": SCANNER_DISPLAY_MIN,
+            "rescale_slope": 1.0,
+            "rescale_intercept": 0.0,
+            "formula": f"{units} = display",
+        }
+
+    input_min = float(np.min(finite))
+    input_max = float(np.max(finite))
+    input_range = input_max - input_min
+    if input_range <= 0.0 or not np.isfinite(input_range):
+        display = np.zeros(values.shape, dtype=np.uint16)
+        intercept_text = _format_display_number(input_min)
+        return display, {
+            "input_min": input_min,
+            "input_max": input_max,
+            "scale": 1.0,
+            "display_min": SCANNER_DISPLAY_MIN,
+            "display_max": SCANNER_DISPLAY_MIN,
+            "rescale_slope": 1.0,
+            "rescale_intercept": input_min,
+            "formula": f"{units} = display + {intercept_text}",
+        }
+
+    display_range = float(SCANNER_DISPLAY_MAX - SCANNER_DISPLAY_MIN)
+    scale = display_range / input_range
+    rescale_slope = input_range / display_range
+    cleaned = np.nan_to_num(
+        values,
+        nan=input_min,
+        posinf=input_max,
+        neginf=input_min,
+    )
+    display = np.rint((cleaned - input_min) * scale + SCANNER_DISPLAY_MIN)
+    display = np.clip(display, SCANNER_DISPLAY_MIN, SCANNER_DISPLAY_MAX)
+    display = display.astype(np.uint16, copy=False)
+    slope_text = _format_display_number(rescale_slope)
+    intercept_text = _format_display_number(input_min)
+    return display, {
+        "input_min": input_min,
+        "input_max": input_max,
+        "scale": scale,
+        "display_min": int(np.min(display)) if display.size else SCANNER_DISPLAY_MIN,
+        "display_max": int(np.max(display)) if display.size else SCANNER_DISPLAY_MIN,
+        "rescale_slope": rescale_slope,
+        "rescale_intercept": input_min,
+        "formula": f"{units} = display * {slope_text} + {intercept_text}",
+    }
+
+
 def _map_to_mrd_image(
     volume,
     anchor_image,
@@ -629,36 +865,24 @@ def _map_to_mrd_image(
     if volume.ndim != 3:
         raise ValueError(f"Output map volume must be 3D, got shape {volume.shape}")
 
-    display_scale = None
-    display_formula = None
-    display_comment = None
-    if image_type_token == "BSSB1":
-        cleaned = np.nan_to_num(volume, nan=0.0, posinf=0.0, neginf=0.0)
-        output_data = np.clip(
-            np.rint(cleaned * B1_DISPLAY_SCALE),
-            0,
-            SCANNER_DISPLAY_MAX,
-        ).astype(np.uint16)
-        display_scale = B1_DISPLAY_SCALE
-        display_formula = f"{units} = display / {B1_DISPLAY_SCALE:g}"
-        display_comment = (
-            f"scanner display uint16 0-{SCANNER_DISPLAY_MAX}; {display_formula}"
-        )
-    elif image_type_token in {"BSSBSP", "BSSPHSC"}:
-        cleaned = np.nan_to_num(volume, nan=0.0, posinf=0.0, neginf=0.0)
-        output_data = (
-            np.degrees(cleaned) * PHASE_DISPLAY_SCALE
-        ).astype(np.float32)
-        display_scale = PHASE_DISPLAY_SCALE
-        display_formula = f"{units} = display / {PHASE_DISPLAY_SCALE:g}"
-        display_comment = (
-            "phase converted from radians to degrees and multiplied by "
-            f"{PHASE_DISPLAY_SCALE:g}; {display_formula}"
-        )
-    elif image_type_token == "BSSMASK":
-        output_data = volume.astype(np.uint16, copy=False)
+    if image_type_token in {"BSSBSP", "BSSPHSC"}:
+        physical_volume = np.degrees(volume)
+        conversion_comment = "phase converted from radians to degrees; "
     else:
-        output_data = volume.astype(np.float32, copy=False)
+        physical_volume = volume
+        conversion_comment = ""
+
+    output_data, display_meta = _scale_volume_to_display_range(
+        physical_volume,
+        units,
+    )
+    display_meta["comment"] = (
+        conversion_comment
+        + f"scanner display uint16 {SCANNER_DISPLAY_MIN}-{SCANNER_DISPLAY_MAX}; "
+        + display_meta["formula"]
+    )
+    if conversion_comment:
+        display_meta["conversion"] = "radians to degrees"
     output = ismrmrd.Image.from_array(output_data, transpose=False)
 
     header = anchor_image.getHead()
@@ -693,11 +917,30 @@ def _map_to_mrd_image(
     output.setHead(header)
     output.image_series_index = int(series_index)
 
-    center, width = _window_center_width(output_data)
+    # DICOM applies RescaleSlope/RescaleIntercept before WindowCenter/WindowWidth,
+    # so window values must use physical units rather than normalized pixels.
+    center, width = _window_center_width(physical_volume)
     if window_center is not None:
         center = window_center
     if window_width is not None:
         width = window_width
+    logging.info(
+        "Bloch-Siegert output scaling: series=%d type=%s tx=%s units=%s "
+        "physical=[%s,%s] display=[%d,%d] slope=%s intercept=%s "
+        "window=[%.6g,%.6g]",
+        series_index,
+        image_type_token,
+        "-" if tx_index is None else str(tx_index + 1),
+        units,
+        _format_display_number(display_meta["input_min"]),
+        _format_display_number(display_meta["input_max"]),
+        display_meta["display_min"],
+        display_meta["display_max"],
+        _format_display_number(display_meta["rescale_slope"]),
+        _format_display_number(display_meta["rescale_intercept"]),
+        center,
+        width,
+    )
     output.attribute_string = _output_meta(
         anchor_image,
         header,
@@ -710,9 +953,7 @@ def _map_to_mrd_image(
         center,
         width,
         tx_index,
-        display_scale,
-        display_formula,
-        display_comment,
+        display_meta,
     ).serialize()
     return output
 
@@ -729,9 +970,7 @@ def _output_meta(
     window_center,
     window_width,
     tx_index=None,
-    display_scale=None,
-    display_formula=None,
-    display_comment=None,
+    display_meta=None,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -753,20 +992,29 @@ def _output_meta(
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
     image_comment = series_name
-    if display_scale is not None:
-        scale_text = f"{float(display_scale):g}"
-        image_comment = f"{series_name}; {display_comment}"
+    if display_meta is not None:
+        scale_text = _format_display_number(display_meta["scale"])
+        image_comment = f"{series_name}; {display_meta['comment']}"
         meta["BlochSiegertDisplayScale"] = scale_text
-        meta["BlochSiegertDisplayFormula"] = display_formula
-        if image_type_token == "BSSB1":
-            meta["BlochSiegertDisplayMax"] = str(SCANNER_DISPLAY_MAX)
-            # The DICOM writer maps these MRD image attributes to
-            # (0028,1053) Rescale Slope and (0028,1052) Rescale Intercept.
-            # B1 pixels are stored as uT * 100, so this restores uT values.
-            meta["RescaleSlope"] = "0.01"
-            meta["RescaleIntercept"] = "0"
-        else:
-            meta["BlochSiegertDisplayConversion"] = "radians to degrees"
+        meta["BlochSiegertDisplayFormula"] = display_meta["formula"]
+        meta["BlochSiegertDisplayInputMin"] = _format_display_number(
+            display_meta["input_min"]
+        )
+        meta["BlochSiegertDisplayInputMax"] = _format_display_number(
+            display_meta["input_max"]
+        )
+        meta["BlochSiegertDisplayMin"] = str(display_meta["display_min"])
+        meta["BlochSiegertDisplayMax"] = str(display_meta["display_max"])
+        # The DICOM writer maps these MRD image attributes to
+        # (0028,1053) Rescale Slope and (0028,1052) Rescale Intercept.
+        meta["RescaleSlope"] = _format_display_number(
+            display_meta["rescale_slope"]
+        )
+        meta["RescaleIntercept"] = _format_display_number(
+            display_meta["rescale_intercept"]
+        )
+        if "conversion" in display_meta:
+            meta["BlochSiegertDisplayConversion"] = display_meta["conversion"]
     meta["ImageComments"] = image_comment
     meta["ImageComment"] = image_comment
     meta["SeriesNumberRangeNameUID"] = _derived_series_grouping(
@@ -960,23 +1208,44 @@ def _validate_output_images(output_images, input_images):
             errors.append(f"image {index} has image_index {header.image_index}, expected >= 1")
         if int(header.slice) != 0:
             errors.append(f"image {index} has slice {header.slice}, expected 0")
-        if image_type_token == "BSSB1":
-            data = np.asarray(image.data)
-            if data.dtype != np.uint16:
-                errors.append(f"image {index} B1 data is not uint16")
-            if data.size and int(np.max(data)) > SCANNER_DISPLAY_MAX:
-                errors.append(
-                    f"image {index} B1 data exceeds {SCANNER_DISPLAY_MAX}"
-                )
-            expected_formula = f"uT = display / {B1_DISPLAY_SCALE:g}"
-            if expected_formula not in _meta_text(meta, "ImageComments"):
-                errors.append(
-                    f"image {index} B1 ImageComments is missing {expected_formula!r}"
-                )
+        data = np.asarray(image.data)
+        if data.dtype != np.uint16:
+            errors.append(f"image {index} {image_type_token} data is not uint16")
+        data_min = int(np.min(data)) if data.size else SCANNER_DISPLAY_MIN
+        data_max = int(np.max(data)) if data.size else SCANNER_DISPLAY_MIN
+        if data_min < SCANNER_DISPLAY_MIN or data_max > SCANNER_DISPLAY_MAX:
+            errors.append(f"image {index} {image_type_token} data is outside 0..4095")
+        if data_min != data_max and (
+            data_min != SCANNER_DISPLAY_MIN or data_max != SCANNER_DISPLAY_MAX
+        ):
+            errors.append(
+                f"image {index} nonconstant {image_type_token} data does not use 0..4095"
+            )
+        formula = _meta_text(meta, "BlochSiegertDisplayFormula")
+        if not formula or formula not in _meta_text(meta, "ImageComments"):
+            errors.append(
+                f"image {index} {image_type_token} ImageComments is missing "
+                "its inverse formula"
+            )
+        if _meta_int(meta, "BlochSiegertDisplayMin") != data_min:
+            errors.append(
+                f"image {index} {image_type_token} display minimum metadata is wrong"
+            )
+        if _meta_int(meta, "BlochSiegertDisplayMax") != data_max:
+            errors.append(
+                f"image {index} {image_type_token} display maximum metadata is wrong"
+            )
+        for key in (
+            "BlochSiegertDisplayInputMin",
+            "BlochSiegertDisplayInputMax",
+            "RescaleSlope",
+            "RescaleIntercept",
+        ):
+            if not _meta_text(meta, key):
+                errors.append(f"image {index} {image_type_token} output is missing {key}")
         if image_type_token in {"BSSBSP", "BSSPHSC"}:
-            expected_formula = f"degrees = display / {PHASE_DISPLAY_SCALE:g}"
             comments = _meta_text(meta, "ImageComments")
-            if expected_formula not in comments or "radians to degrees" not in comments:
+            if "radians to degrees" not in comments:
                 errors.append(
                     f"image {index} phase ImageComments is missing its conversion"
                 )

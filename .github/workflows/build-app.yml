@@ -1321,11 +1321,17 @@ jobs:
         echo "✅ Pull request created for ${CONTAINER_NAME} ${CONTAINER_VERSION}: ${PR_URL}"
     - name: Detect OpenReconLabel.json
       id: detect_openrecon
-      if: steps.generate.outputs.container_name && env.ARCHITECTURE == 'x86_64' && env.VARIANT == ''
+      if: steps.generate.outputs.container_name && env.ARCHITECTURE == 'x86_64'
       env:
+        APPLICATION: ${{ inputs.application }}
+        VARIANT: ${{ inputs.variant }}
         CONTAINER_NAME: ${{ steps.generate.outputs.container_name }}
       run: |
-        SOURCE_LABEL_FILE="recipes/${CONTAINER_NAME}/OpenReconLabel.json"
+        LABEL_SUFFIX=""
+        if [ -n "${VARIANT}" ]; then
+          LABEL_SUFFIX=".${VARIANT}"
+        fi
+        SOURCE_LABEL_FILE="recipes/${APPLICATION}/OpenReconLabel${LABEL_SUFFIX}.json"
         if [ -f "$SOURCE_LABEL_FILE" ]; then
           echo "has_openrecon_label=true" >> "$GITHUB_OUTPUT"
           echo "Found OpenRecon label: $SOURCE_LABEL_FILE"
@@ -1338,13 +1344,15 @@ jobs:
       if: steps.detect_openrecon.outputs.has_openrecon_label == 'true'
       env:
         GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
-        CONTAINER_NAME: ${{ steps.generate.outputs.container_name }}
+        APPLICATION: ${{ inputs.application }}
+        VARIANT: ${{ inputs.variant }}
         CONTAINER_VERSION: ${{ steps.generate.outputs.container_version }}
       run: |
         set -euo pipefail
         gh auth setup-git
         python tools/sync_openrecon.py \
-          --recipe "${CONTAINER_NAME}" --version "${CONTAINER_VERSION}" \
+          --recipe "${APPLICATION}" --variant "${VARIANT}" \
+          --version "${CONTAINER_VERSION}" \
           --dispatch-unchanged
     - name: Generate job output
       run: |

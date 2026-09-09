@@ -1,0 +1,151 @@
+name: enigma-pd-wml
+version: 1.1.1
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/UCL/Enigma-PD-WML/blob/main/LICENSE
+  - name: FSL License (free for non-commercial use)
+    url: https://fsl.fmrib.ox.ac.uk/fsl/docs/#/license
+
+architectures:
+  - x86_64
+
+variables:
+  fsl_env: enigma_pd_wml_env
+  miniforge_version: 26.1.1-3
+
+build:
+  kind: neurodocker
+  base-image: cvriend/pgs:latest
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - bc
+        - dc
+        - parallel
+        - tree
+        - wget
+        - zip
+
+    # Miniforge provides the conda used to install FSL (the UNet-pgs python
+    # install from the base image is kept separate and untouched).
+    - run:
+        - bash {{ get_file("miniforge_installer") }} -b -p /conda
+
+    - environment:
+        PATH: $PATH:/conda/bin
+
+    - workdir: /opt/enigma-pd-wml-src
+
+    - run:
+        - tar -xzf {{ get_file("enigma_pd_wml_source") }} -C /opt/enigma-pd-wml-src --strip-components=1
+        - /conda/bin/conda env create --file /opt/enigma-pd-wml-src/environment.yml
+        - /conda/bin/conda clean --all --yes
+
+    - environment:
+        FSLENV: "{{ context.fsl_env }}"
+        FSLDIR: /conda/envs/{{ context.fsl_env }}
+        PATH: /conda/envs/{{ context.fsl_env }}/share/fsl/bin:$PATH
+
+    # The pipeline scripts hardcode absolute paths (/analysis_script.sh,
+    # /MAKE_HTML.sh, /png_generator.py, /qc_guide_images), so keep the
+    # upstream layout at the image root.
+    - workdir: /
+    - run:
+        - cp -a /opt/enigma-pd-wml-src/src/. /
+        - chmod +x /analysis_script.sh /MAKE_HTML.sh
+        - mkdir -p /data
+        - rm -rf /opt/enigma-pd-wml-src
+
+    - copy:
+        - enigma-pd-wml
+        - /usr/local/bin/enigma-pd-wml
+
+    - run:
+        - chmod +x /usr/local/bin/enigma-pd-wml
+
+deploy:
+  bins:
+    - enigma-pd-wml
+
+files:
+  - name: miniforge_installer
+    url: https://github.com/conda-forge/miniforge/releases/download/{{ context.miniforge_version }}/Miniforge3-{{ context.miniforge_version }}-Linux-x86_64.sh
+  - name: enigma_pd_wml_source
+    url: https://github.com/UCL/Enigma-PD-WML/archive/refs/tags/v{{ context.version }}.tar.gz
+  - name: enigma-pd-wml
+    contents: |-
+      #!/usr/bin/env bash
+      # Wrapper around the Enigma-PD-WML pipeline entrypoint.
+      # The pipeline always reads and writes the BIDS dataset mounted at /data.
+      set -euo pipefail
+
+      if [ ! -d /data ] || [ -z "$(ls -A /data 2>/dev/null)" ]; then
+        echo "ERROR: no data found at /data inside the container." >&2
+        echo "Bind your top-level BIDS directory to /data, e.g." >&2
+        echo "  singularity run -B \"\${PWD}\":/data enigma-pd-wml_{{ context.version }}.simg enigma-pd-wml" >&2
+        exit 1
+      fi
+
+      exec /analysis_script.sh "$@"
+
+categories:
+  - image segmentation
+  - structural imaging
+
+icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAfkklEQVR42u19aZBc13Xed86973X39KzYZwY7QIIACXABSIqMTUqURIqRHUtVHisqiqRkp2KVK1HFjq1yqlIG4KQqLkllpxSXrES2ZJFCIgtxLFdZpkjJJMFE3ERwAUGQxEKQwGCAAQj0bL299+49+XFf9wwwWw+A7nktzqtqDAn0dL93z/7dc75LuNyrr09h7w8sQAIAuHunXll+bzNZ3CmCWwj2ZivSQ8S9EBEAhIVrLpeAiETsKSYaEPArRHhZGM/2p9a8iX27o/hthL7fYOzday7nSy5DKDsZ2CUVwa/c/vmtwvgcRO4n4FpilSIiiFhAxP1cuC77ImKACEQMEYFYUxbgMIgeI4vv9e//69erioBdBOy29VOAvj5V0bRVtz10rwj/AUHuIeWzWAOxBhDrvAIJAUQLln8VPAFEICSAEIiZWIFYQUxgBfQkkf3qyRcfeeJSGV1FBRi3+pU7PncDSH+FiO8nIlgTAiIRCLwg8EYqBCyINCvPeQaxj0GiL/e/9L2Dc/EGXJPVY7cFSHq3P7wL5O1nVveLDa2NQhPHKg0QLwi/MVEBIHZrDrFRaMSGllndD/L2925/eJcLz7utk92VeIDYnaze/kC3kP4Oaf8+G5UBgQFBLcgiUX7BgKBYpyBR8DhJ9IUT+/ecni0kTK8Ad9+tsW9ftPKmB26F7/89k+q2UTkCkVqw9ASrgYhhndJWzGkEwa/1v7rn5xVZ1h4C+vpUVfie/ziBKsLXC8JPeHgg0jYqRwTqhuc/vvKmB27Fvn3RdOFgsgLs3MnYu9es3P7Z2+D5jxOhS0xkYuE3eeicw6u5a0ctJjJE6ILnP75y+2dvw969Bjt38mwhgAHIuhv+5bIwkz5AxMuc8Jst3tP4kwkAsTEuESfFItMtXPUnkZqsDNP9XoLzAlJaidizXrG07fjB75+NZV6tDi6x6j4C9kqY9h9l1ssmuP3msXCxEBsBNs57WIF1CirVAvbSAAiqdRFokpUTosIQxASAiWBKY5AogERB/DkMYj2uEM2gDAQlJoxYp5aFaf9RAPfFMp7CA8TZ4sodn9vJOrPLhqXmED6Rq4xtBNgIUB50pgOqdTF0thOqpRMq3QbyfJDynEdgnixEYkCc0og1kDCADfIwhSFE+SFEY+dhCjlIGLgqTOnqd8d/JNgTSMReWtuouKv/pe/tnlgZUDXu795te3Y8sInZex3WVjJ9SrTgrYWYEGAF3boIflcvdMdy6NbFIO3HD28dOBlD06BY8MROISrvMeH448aun0hVlUVMBFsYRjgyiCA3gGhkEGJC5xVYJV0RBICA2Vgbbh14ac/bFZk7C99dcQf8dSblWbHGIXtJFbyBRBHYzyC1dB385euhs4tAOuX+zUaQsDxlbIcIwBq2NIryuXcBCFS6Daml6xyUPcHFiw0BM/4ZKtsJ1bYE6e5NMIVhBOdPoHT2GGxpbNwrJDM0EASWSXkC83UA943LPHYHvdsf+ghr70kxoQESmPTFwhMTgFNZpJdfg9SyDeB0qyt/TRQnebNk8SIg7SO8cBLDrz8BQOB1rUTH1vucF5ixAhBnS4Sq5dugiPBCP0oDbyEauwBSKvYIiVQEQ8pTNgrvObX/kafQ16f0+PrKH1W8Y+IcPxEkCkGskO7ZgszK68GpLMRE40kaUYxG1/qZDPLS7j8r4WIO1YXYCDARSGmkVlwDf8lalAePoNj/BmyQByk/XsgEKUIcAYnkjwA8Vc0BVt/2hS1W5ADEJgvPr1h9FMBftBIta2+BynY5Vz3RXc8tIXIeIHcKI4eech6gswftW+6pwQNM/5kgAikfNsij2H8QpdNvu63c5HkDAbFlom0nXvzOIQYAY83DrHwFEZMoq4/denb9rWi7/h6olg5n8WKTBdbE9yJRGaR9ZDfcjvYt94C8tLvfJN2riGHlK2PNwwDAW7b0+RD5JGwUdx8kxeUHUOk2tN/wMaRXXg8xoVOIJKN0FY8VluF19aJj2yfgdfXGCSklp8PERoDIJ7ds6fM5n2rfQEQbrQNOOCnC97p60b7tXuj25eML2CwQbfwM5KXRvuUeZGIFTsjF1hoQ0cZ8qn0DWw7vYvZSrlhOwMKFJaRXXIP26z8KUl7yXOicvIGBmBDZDbejdePtyVECsZbZS1kO79IWcrsiQbW5c76F330dshs/5BYrTq7Q1BtQgA0KSHVfBwAYO/r8OAA1f/clIIGF3M4gXC8icD1883U/DIkCpLs3jQt/IoAzB6NLpLoQQ8ISUt3XoXXjh1wJOZ+KTUJO5rieIeiNi3+av8UpIrVkDbIb75izm2QiKCaIAGEkMCJQTGCm5OUFYRHpns3Irt0OG5TmUQnILZigl4m5N27dpvkp9QLo9mXIbrjdWcYcambFhFJokBsLoJjQ1eajxdcYzocYK4YJVAKGDYpI925GpmeTS27nRwlIxIKYe/W8Dm1YC9YptF77SyCdmhMQo5gwUgixaWU7Pv+xjdi+cRGWtKeRL0d4470hfP+Zd/HUa2fQ3uLBJgmIifGN7IbbYQrDCEfOgbQ3P2CRiMxfixcRxIRoveYOB/CEpZqhXGbCWCnC9o2L8a0v3YGO7HhS1ZH10LMog4/f3I1de17DI0++g44WD8YmCZJ195LdeAeGD/w43oamefJJ8xYPy24nb+m62BVyzYmeMYLWtMbX/tV2dGQ9hJGFFXFhTYDICKwIdj5wI25c14VC2YAThhyKCaGynWhZfSMkCuctH+B5qkNBfgaZVdvmPDrGRCiUnfWvXpqFsQJPM5io2sGlFaGCatx7Sw+KQVTtAUlUZRAFSK3YCN2xfN5QTp6vnb1M9yaobBdgwuZvwryCUECs0bJ627ztGvK8JH6pLFLLr3H9d3OMQlYELSmN/UfP48S5PBTTlCGgYvFPvDyAjK9hbXIhY6+jG15nz7ygnjwfsS+94hpwOovLkYoIoJRLAn//L/djOB9OGQKYCLv3vIbXjufQklLJqgSmAAwzPdfNS0qmG2395GeQWrbhimKetS4J3H/0PD77lWdmLQMTVQFMExK9zm7o9qWIhs82tCzUjX7Q1JI14HTrFbs7YwXtLR7eOTOGL397PzqzPrIZjTC0eH+kDGagPevB2ibp5SeF9NJ1GBs+8wvsAQjwF6+6ah9nrCDtKWR8hcgIcqMBmB0WILGnaJrtYxvB6+wBeRmggRVB44KONeB0G3T7squ6GWJFYKyACPA0QRHBWGke4V+0Pll4V3l9kqEAMfzpdaxw0zl1SslFEj+iMSs24Hf1NrQk5Ea6Oa996Qe35q8pDBjotsWuo7hBSWDjFIAZKtM+PqC5cE0dBlJZ5yUbtE6NUQATQWe6XEt30hs7Mc/IoE7B6+xu2Dpxo1xbuudaN4AhsiDoGfs0LNLdjVsrboT1q9bF8Jesran2J3J7/Vq5l2JK1k5eg9YrVeN6JRsHiK0/E2v0TB0wFSi3FBiUQ4MoLuMUEXyPkfY1mHBlqF6trS9SocqYv2Qw3X0tyueO190L6Lpv/KRb3XDEDLt+igmFskEYWaxdnsWN6xbh2t42CIDTF4p45dgFHBkYQWTk8qBdceOu3gaD8DBPC1JJRPA3Gpgcw1wgkDdPSmAiqOwi6I7lCHMDdYWGdb13ulLL3QTvdNavmDBSDHFNTzt++/5r8PGbe9Cavvi2Iit48e338a0fH8EzBwfRlplDmxcBEhDSN4XgVkFwiEGeTM2XZgHKAOl1EQpPeY5IZb6iDzNSS9cizJ1q4hyAFVJL1k5b0qi4tWvHxsX4mz+8C5++YzVa0xrWOnSv8tJMuHPzUnznd+/Eg/esx0ghhKql4ZMACQFvvYG33kCCWfrG4/erxRaprdH8KUC8b+J39YLTbeN0N02lACZy9Cyti6YsaYiAcmixvCONb/6bD6GjxUNkJGZwcclf5VXB/Y0V7HrgRnx42/LZlSAWpl5mkboxgoRUmzAJkDLBW2fhbzKQ8uWvEk1oW2emueVzYkFeGl7HirqWhFzPRMbv6pm2nFFMyJdC/Povr0FXq4/ICLSiaWVU6f0HgN+8d2OV7GP6eA6oVkFqewSYOc49ESBlwNtk4K2yc1aCSiVjRJAvRRgphBgthAgjAc+xqvEX9aKe/Wy6njHM61g+rZSsBXytcMd1S2ueAKtY/NY1XVjemUFuLICnafJXWIA0kLolAvvOE1zWk1ogdWMEO+bBDNeWFDIRImMxXAqxpD2FrWu7kE1pGCs4enoEp84X4SlCS/x3s+0Q6rYlYC9Tt5JQ1w/SbHXuv9FjUATAOMGpxQIJLjOOV5JCzylS6VkPEs38WcyEUmDQlvbwO5/chE/duRo9izLVfx/KB3j6wCC++dhhHB0YQVtmlorGWrCXgW5bguD8ibqAQ1yvvW3duhjsZabd+WMGgsjgubfOzezOL9n/B4DX38thcKgIX/PFv8fOdfubDLy19vKFf2lS2ClI3TJzUkgEBKFFe4uHb//enfidX9mEnkUZ15cgrk29M+vjU3eswt/84V24ecNijBWj2ZNZZngdy+pWBnK9uGhm2/kzVpBNe/jf//c95MYCaEXVJHC691c+7ttPHJ0cNmLhe6ssvEryRldnhSQA9AoL//rpk0ICIYgM/vNDN2Prmk4Eka2y0jG5uC8ChMaio8XDf/3XO9DZ6iOM7MwO0lro1iWA0k2kAEpBtXTOqLUiQMpjDA6X8MU/fx7DhbCaBF5aBlbiv2LCrj2v4ekDgxcDQuSEpDoFqRvrUL7Fn+9tjD3LJcrFDBTKEbau7cLHbloBYwW+5kmCJQI8xYiMoHdxC37ltpUYK83gBYggYsCZthm9abIUwFqwSkFl2maN/yZu7nzp6Hl85k+ewd89dwJjpWhSGRhZwbNvnsMX/uxZPPrkO5PRQAtwysVq8iYy4dYht9ga5xYT8gGC814rujIg1FbuWRGsXNIyO6A1h/Wc/yQwjv8qs8hlrjUweRkraM94OH5mDP/+W/uxdvlbc4OCK4K5JYLqlCuq22upCqCA9K0his/47rsUIOJK2DO5IgRSE9UeE6H//UJtJaFS0C2dCHMDTVAFiIBTWUePViOCZawg4yu0pBROXyji3cETtW0GMSAlILXNQK+Ikz6uf4XBaSC9I0TxZ4572AJoSWm8/m4OP331DO69uRtBZOEpnkQ2Hln396fOF/APL/ajNa1r2tvgdGuTlIEi0Jn2Od+sjRv6nLDVRaTcInHzp0wB1qy18DaaK8/455IPRIBaIkhtjVB6VYN8QCDwtcJ/fOQVdC/KYOuaznGS3tjNMxE8xRguhPh3/+MlDI0FaM3UoAAirpuqDgpQlzLwSjhwRJyVR8a9jJXJcbIihMVOCGj0dHUlKVxv4a93nkfglHekEOI3//RZfOMf3sbAheJFVcBQPsAPnzuJz/zJM3jl2PnahF/pFFLasfhd5XJQ10MBVLazvvvYFuAWQfrW0LEaz8d4fYwR+Nsi2KJGNMiwys0pFIMIX/nbN/DtnxzFNb3tUyKBs4JAkyqBdpBOQ6Kryyqi6wIC1HMSs7Lwqyw463KAeWM3jLEIb72FGWTHCCYCpQhdrT5KocFLh89XPVjKU2hvcXnD3HsaJpx4klgPIAJiD+Rn6k/nSnPo8GkE/HxpGBOBIkI2ravnSohc5sDKhHWVQhngq0dLz1ddAZQPTrXU98xgAmyBktFfSoBMcy8yYXLJWrn8+63junK9Tjatu/ctJIeJvTH3Up91TeapIHU69/wDcS8fGAVYuBY8QGIsb8EDTHMAYx3J7aRMQJiAxReXBDYGhaSEK0A82nS5vHeVXroZp4Hi0k9K5Fq9aP45H22hMSNj9eATvPq7gVEZtjgClWl3J9DUcMMc03yXA4MgcmWOVhTvCdDUtfMHKQQQQaISbHHEnWV4FasBXa95AMyB8LlYNgiNxfoVrVizrBUC4PxICW+eHIaxUjts+ot8EdeFRawuu4G2NDZHwucO/O6nNuPOzUuRjaeCjBW8/m4Of/Gjw3jilQF0tPhTbgp9EDwAEcOUCzGvIiU8CRSBDQqz3uhEwuf/9eVfwsdv7kY2rasNlIoJN61fhP/+bz+Ehz+6ASPFCYMg8W6c5MkZhcwjCljjfRCND7zMbUBEqgdOiA2bQAEIsEFxxjg1mfDZNUfKhK3TiheYkvQ5btmWaJ6PCKnhPiqJbWQEo4UQI4UQQWjnPCDi1rQpykBCVByZcUdwOsJnmiJEzEj6nPAQQORoa4fyAdpaPNx1w3J8ZNsK9C5pwWghRCmokcWcCKY4UhcoWNeD/NiWxmBNOT6uXZoLsqWrV7JHxvEaf/nXr8cntvdgeacbEhkrRXjuzXP4sx++iWOnRxyXscw8IBIVhpukI4gZNizCFkenLVmmI3yWKXoFZyR9pjnG6+IMcVpqeM9cFEZce/vXv3grHv7oBizvzFTzm9a0xsdv7sajv//P0N3VgnJkppdtfKxOPUrA+iGB1sAUh6cdapxM+BxUQ0BlkSohYDrSZxHADs8tBzDnaeZEjQGb41lHwKrNIAzYPE/qR1RMGC1GuPeWHtxx3VKExg2JVAdE4KaIFrel8Fuf2IhC2Uw/G8AKtpx3iXUdhkS5XvBYOPL+jIt9MeHz/8NPXjmNfCmqLpKxglffuYDf/m/P47v/dAztl2IBAiCaS2IK2CEGqRnMlgU2T7B5cq1mNXYJXzqIQgSE1mLrui5YkUmzAgRnAFYEN6zpRErx1CmTCIgVorHzdSkB6wYE1XrTVcLn06P44p8/Py0Q1Jn1pwSCqlCwzOyKSQP2AsGOEqCmoROV8TEwc46hOs3MnqDyndHkkCECeMx4/XjOKTMsRMaVQOCqIN9jHHxvCGVj0crTdNGLIBw5V7dSty5AEJSGKQ7B5HPQ7UtnxLCNFaR9hTQp9L9fwDtnxiZBwZOEL25qNzyuoBYJ9Co7c28gO+sXg9gDzCxUe2GWbqP4++0ooXxAOW8hFz9TW0bjiZcH8Nxb53DHdUvHW9/jKsj3GOdHy/irHx9FS0pNjXTG0Ho0fBakdJM1hBiDaORcTfCljXvlfI/R3uKhvcVDxtcuzs84Qw+UD2iY8wTyp0/eRABzgca9xSyIqxnh6ecMYsIpCYHSfg1bpqlXMQZ+vvTNn+O7/3QMg0PFangbK0X4ySun8eDXfobTuQJSWk2WbdwKbvI5mCA/J3g9ISRRjCB3CumezXObCZiLlnMsiOc8pO8I3WjYpW47nh4yQ1wblK5ci5cdYejF9uLPq9DHhUDxeQ8mNz1phIjzYoVyhF17XsNf/ONhbF7ZAcWEd8+O4fiZMXiKZy4BiRHkBhx9fFMpQKy90dh5mOIwuKWjPkRHsTXa2Bozvxw6gZjx3IA0YN5n17enZxkcrZSCBrDvE7B0irOgFVB6OfY66Zk/r6IEnVkfo4UQzxwcBAD4mtEWt4dPL3xHFBXkBkCsmowfYAJNXHD+RF0foJrk5QmlFzyXGE7E5QmwOZpbSz0B5tLfiZWt9KpG2M+gVG1TyJVJJ60IbXF48z2GnWri6VIDGhmEKQzVjRugvgoQlzDl99+r/xm5VUsnlPdrl5RVMm7j/r7mJxVn5XY49hoqpopJA+HbCuExnjHfmLFxJOY7qM0WCOVz79aVIq7+PYFKwxSGEA6fqT8sLAClgOgso/xqrATKdevYkbj+lznkFiXADLtpH/KB8BgjeFs5t19vdJsVbGkMQe5U3Q+Q4kYA8KUzRxqzJ1ApD99hlF/ToJRAhhn2MiaHRQBznsFpQfgeo1RRKmkAZbzSKJ89BgmKqPdRclx//nsP4dAAwqGBxhyHFnuC8B2F8LiCGabLYwwhQEYI0RlG+aB2HoQaQxFry3mUzhxpyGYaN6pztjjwVuMaNwQgT1B+VSM8oeZO+lzJKYYJxec8V1Vwo6zfQ/nMEdhyHo048JgbcwpGg73ARLj/SjqHbfxqVNcRM2wpj9LgkYZtpXMj+6eLA2+h4V0cVJ/2/Mtq75qNG1j5KA8egS01xvobGAIEpH2EuQEE546DvOY9Omaq9q4rVgQRQHkw+RyKp9/+BT06NjadwskD8Lp6MLe6LDlXbizAiq4Mbrt2SRXWPXZ6FC0pDa0uf2SdiFE8eQASFEFe6hdQAaqbG0MonHgN2Q23Q8LSvJyYjSs4qvb3Pr0Fn7lrLZZ3pgEA+VKEJ14ewFf/zxsYGnONLXOSnQjISyE4+w7K5443VPiNHw6NH7Z0+m2EF/pBOtUUoaAyv/DFf34tvvQvrsPyznS1cymb1vj0navxtd/agchcBmVJDPrk3325vpB5YqaDRUDEGDv6fFzqKCT8JDcEkcXyrjQe+PD6Kn3tRP7fyFjcuXkpbt+0BPlSVNtpJglZi/nxv3Gf29jR5+tCfdYUl1iQl0Lx5IHYG85PYszzd0Kmj/BCP4onD4D9TGKVQMRt3w7mStjz9DvV6eVKCCACtGI8++Y5vPD2+8jWwvwpFuRlEF7oR+HkgYbH/fmrAqZQgsLJ18F+BqkV18YceJzI5K+9xcM3//EwRDBtEqgVzV7ZxIRP0cggxg7/rC6t3s2hABMaSMeOPg9OZeEtWgUJi4mtDBQT/vTvDuF/Pn0cm1d1TCoDZ60A4krIhkWMvrkPNgrq1uvXNAoAIhBrjB3+Gdq2fAS6bWliPQEAdLX6GC1e3N3TmXWTy7MKnxUkCpzww2IiJqc4EUGWGTYKMHroKUSj50BeBkk9Zn6q7p5ZmzzEgrQHMRFGDj3pnjEhY3OcCDiu4hpjJXBwcTrRiWHN3T1iQTqFaCyHkYM/QTT6fpLwD2FQQo7mjpVATITRt/ahNPCWy44rK96UpZ6AvDSikUGMvvFTRPlcXO7ZpIAcxGLtKXLxVpISDkh7yB99HvkjDidwiZJtKsEDFKOeb2Hk4E8hJmroJs9sd0jEEGtPMQin3FZWQswsPjhi4uKZ0qgLCc3gDeLyFmKRP/Is8kdfcAktJwnwigEMwimG4A0iAoQkee4zhXDkLIZf+zFKp94EsZ5QNknyrJ6c1Ye5Uxg+8Jhr69J+8hRXSJzM8QYz6AUIAe6PBFqTB4hB/tgLGD30JExh2OUGpOKwIPMO6QLOY0kUIH/sBYwcehKmODpv8G4tGgAhMOgFzdZ7xlBYBnEqkfvzE+JpkDuFcOQs/CVr0LJ6GzjTDpjIna7dAIbSi+9JANYg7UOiAMUTB1A6/TZskAepVDyZJEmlnGNrw7Ky3jM6Wx45NpxJH1VKX29tZBPLH1yNrYLymSMIh04jtWQt/KXroNsWAyIQE44veo3cOzX3jVWETuxqeFawpVGUTr+L4NxxRKPn3bk+lRIvuamKZVZsTHg0Wx45pg8d2hv07njoR2B9PUxoQQnu0IiFS14KEpZR7H8dpTOH4S9ZDX/RKngdK6obK2Kj+JiVabh2RdzYOuL3TiIAvnhIk5R227UmRDhyFmGuH+Vz78KWRp0nqGzoJD9JtWDNsNGPDh3aGxAArL7tC1usyAGI5abiviYGxDrLB6CzXdCd3fDal8XHrqed0GLBiJhx+UZlRPmcQ8O0D5Xtiqc/XXuWY+Z0p1rbqAyTzyEaHkQ4PIhw5CxgTawUCU1KZ2p6J7ZMtO3Ei985ROjrU9i716zc8eBTrPwP2yg0ICg00xVbtpjIzdIRg1MtUC2d0K2LoFo6odKt7kBLwCkGsevAgSNihhjYsAyIhQ1LsKU8TMGRXET5CzDlPGBCgBWINWo+8jxZojesPWVN8HT/S49+BH1942OnIvTHAny4KbnvK6GBdXWSVsISwtwAwgv91Q0n0i45U5mOS5I0ckwkpTGICSE2gkTBeGnHynkFLzN+dEszopPVw6vojy/pmt/JwG7bu+PBx5Xy721KLzAbv35VaAKxl5aPFHvGeP6L6JLfRVN2ME9l/cYET5x66dH7KjJ3Cd/Oynvsl6yYEFQLmUqTeIaJ1krkXL/2QNqf8HL/D1KYdGZtc8X3GeI+yIoJBfZLE2XurHzfPkFfnxr96ffPtXffwKzTHxETmURXBAvXXAzBsJdWYoL/dOqlPX+Lvj6Fb3zDTlEA9ylgr12546HHWfkft1E5ApFeWMGmFn7EOqWtCX7S/9Ij9wF9DOw10zSE7BUA8ErBg9ZGZ0l5GgKzsIrNG/dJedra6KxXCh6cKOPpOoIsdu6k4we/Pwhb/lURyZFSakEJmlX4SolIDrb8q8cPfn8QO3fSpcxGUxd9FWzgpgduhec/TkRdYsKFcNBEbp+Up0UkhzC4r//VPT+vyLT24em779bYty9aedMDt8L3/55Jdcc5gWruk/J+we1exLBOaSvmNILg1/pf3fPziiwxp6bQffsi9PWp/lf3/JxNsF1M+Dh7ae2gs4WQkESXD4DYS2sx4eNsgu1Vy59G+LVtg01wHb3bH95FzP+BmX1rAgshAYEXPMJ8WjwsSIiVz9baQKz9L6f2f3fXpbLD9MSos1yHDolDjZ7G6OlPP93ec8MPBbSOWF/LSrGIJYhETgUIC8qAxhwjLjAgUqw9BjGJ2McgUd+p/Y/+IG7uYRz6hr26BCoTNGrVbQ/dK8J/QJB7SPks1kCsgcNZSUBSwVMXFOKqCJwEEAIxEys3ZGICK6AniexXT774yBO1Wv0VMujsZGCXAK6HcOX2z28Vxucgcj8B1xKrFFFlh03cz4ULV3JmIIhAxBARiDVlAQ6D6DGy+F7//r9+vdrmhV0E7LaNoVDq61PY+wNbUQTcvVOvLL+3mSzuFMEtBHuzFekh4l6IyIInuBz8nkjEnmKiAQG/QoSXhfFsf2rNm9i3O6oKvu83eC5WP/H6/yg0+N3G7AcoAAAAAElFTkSuQmCC"
+
+readme: |-
+  ----------------------------------
+  ## enigma-pd-wml/{{ context.version }} ##
+
+  Enigma-PD-WML segments White Matter Lesions (WML) from a subject's T1-weighted and
+  FLAIR MRI images acquired in the same scanning session. It combines FSL (fsl_anat,
+  bet, flirt, fnirt, fast, bianca) for pre-/post-processing with UNet-pgs for the
+  deep-learning segmentation, and expects the input data in BIDS format.
+
+  Lesion maps are produced in native and MNI standard space, split into
+  periventricular and deep white matter lesions, together with per-session zip files,
+  lesion volume CSVs and an HTML quality-control report.
+
+  The pipeline always operates on the dataset mounted at `/data`, so run it from your
+  top-level BIDS directory with that directory bound to `/data`:
+
+  ```
+  singularity run -B "${PWD}":/data enigma-pd-wml_{{ context.version }}.simg enigma-pd-wml
+  ```
+
+  Options:
+  ```
+  -n <jobs>      number of jobs to run in parallel (default: 1)
+  -o             overwrite existing intermediate files
+  -f <file>      path (relative to /data) to a file listing one subject per line
+  -s <subjects>  comma-separated list of subjects, e.g. -s sub-1,sub-2
+  -l <csv>       CSV of subjects/sessions, for non-BIDS data layouts
+  -h <prefix>    prefix for the generated QC HTML files (default: dataset_1)
+  ```
+
+  If `-f`, `-s` and `-l` are omitted, all subjects in the BIDS dataset are processed.
+
+  Note: running many jobs in parallel substantially increases memory use, because each
+  job loads its own copy of the TensorFlow segmentation model.
+
+  More documentation can be found here: https://github.com/UCL/Enigma-PD-WML
+
+  Citation:
+  ```
+  Park, G., Hong, J., Duffy, B. A., Lee, J. M., & Kim, H. (2021). White matter
+  hyperintensities segmentation using the ensemble U-Net with multi-scale highlighting
+  foregrounds. NeuroImage, 237, 118140.
+
+  M. Jenkinson, C.F. Beckmann, T.E. Behrens, M.W. Woolrich, S.M. Smith. FSL.
+  NeuroImage, 62:782-90, 2012.
+  ```
+
+  To run container outside of this environment: ml enigma-pd-wml/{{ context.version }}
+
+  ----------------------------------

@@ -1,11 +1,15 @@
 import base64
+import json
+import logging
 import stat
 import sys
 import textwrap
+from pathlib import Path
 
 import ismrmrd
 import nibabel as nib
 import numpy as np
+import pytest
 
 import qsmxt
 
@@ -221,6 +225,28 @@ def _input_images():
     return images
 
 
+def _dual_input_images():
+    shape_zyx = (2, 3, 4)
+    images = []
+    for series_index, sequence, image_type, base_value in (
+        (1, "gre_qsm_ND", ismrmrd.IMTYPE_MAGNITUDE, 1000),
+        (2, "gre_qsm_ND", getattr(ismrmrd, "IMTYPE_PHASE", 2), 2000),
+        (3, "gre_qsm", ismrmrd.IMTYPE_MAGNITUDE, 3000),
+        (4, "gre_qsm", getattr(ismrmrd, "IMTYPE_PHASE", 2), 4000),
+    ):
+        for echo in (1, 2):
+            images.append(
+                _image(
+                    series_index,
+                    echo,
+                    sequence,
+                    np.full(shape_zyx, base_value + echo, dtype=np.float32),
+                    image_type=image_type,
+                )
+            )
+    return images
+
+
 def _packed_scanner_images():
     shape_zyx = (144, 3, 4)
     images = []
@@ -271,6 +297,17 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
                 raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
             if nprocs_index + 1 >= len(sys.argv) or sys.argv[nprocs_index + 1] != "24":
                 raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
+            for flag, expected in (
+                ("--qsm-algorithm", "hdqsm"),
+                ("--unwrapping-algorithm", "romeo"),
+                ("--bf-algorithm", "ismv"),
+            ):
+                try:
+                    flag_index = sys.argv.index(flag)
+                except ValueError:
+                    raise SystemExit(f"qsmxt OpenRecon should pass {{flag}} {{expected}}")
+                if flag_index + 1 >= len(sys.argv) or sys.argv[flag_index + 1] != expected:
+                    raise SystemExit(f"qsmxt OpenRecon should pass {{flag}} {{expected}}")
             bids = Path(sys.argv[2])
             output = Path(sys.argv[3])
             phase = sorted(bids.glob("sub-*/anat/*_echo-1_part-phase_MEGRE.nii.gz"))[0]
@@ -279,7 +316,7 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
             affine = img.affine.copy()
             affine[:3, 3] += np.asarray({affine_offset!r}, dtype=float)
             name = phase.name.replace("_echo-1_part-phase_MEGRE.nii.gz", "_Chimap.nii")
-            dest = output / "derivatives" / "qsmxt.rs" / "sub-01" / "anat" / name
+            dest = output / "derivatives" / "qsmxt" / "sub-01" / "anat" / name
             dest.parent.mkdir(parents=True, exist_ok=True)
             nib.save(nib.Nifti1Image(data, affine), str(dest))
             """
@@ -287,6 +324,283 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
     )
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
     return fake
+
+
+def test_openrecon_defaults_select_hdqsm_romeo_and_ismv():
+    assert qsmxt.QSMXT_DERIVATIVE_ROOT == Path("derivatives/qsmxt")
+
+    settings = qsmxt._settings_from_config({}, FakeMetadata())
+
+    assert settings["pipeline_preset"] == "custom"
+    assert settings["qsm_algorithm"] == "hdqsm"
+    assert settings["unwrapping_algorithm"] == "romeo"
+    assert settings["bf_algorithm"] == "ismv"
+    assert settings["mask_preset"] == "bet"
+    assert settings["masking_input"] == "magnitude"
+    assert settings["bet_fractional_intensity"] == 0.5
+    assert settings["mask_cleanup"] == "close-fill"
+    assert settings["mask_dilate"] == 0
+    assert settings["mask_close"] == 1
+    assert settings["mask_fill_holes"] is True
+    assert settings["mask_erode"] == 0
+    assert settings["input_series"] == "distortion-corrected"
+
+
+def test_openrecon_input_series_rejects_unknown_value():
+    with pytest.raises(ValueError, match="unknown inputseries"):
+        qsmxt._settings_from_config(
+            {"parameters": {"inputseries": "arrival-order"}},
+            FakeMetadata(),
+        )
+
+
+def test_openrecon_label_exposes_all_input_series_modes():
+    label = qsmxt.json.loads(
+        (Path(qsmxt.__file__).with_name("OpenReconLabel.json")).read_text()
+    )
+    parameters = {
+        parameter["id"]: parameter for parameter in label["parameters"]
+    }
+
+    selector = parameters["inputseries"]
+    assert selector["default"] == "distortion-corrected"
+    assert [value["id"] for value in selector["values"]] == [
+        "distortion-corrected",
+        "non-distortion-corrected",
+        "both",
+    ]
+    assert "voxelsizemm" not in parameters
+
+
+def test_select_magnitude_phase_pairs_matches_requested_distortion_variant():
+    groups = qsmxt._group_images_by_series(_dual_input_images())
+
+    corrected = qsmxt._select_magnitude_phase_pairs(
+        groups,
+        "distortion-corrected",
+    )
+    non_corrected = qsmxt._select_magnitude_phase_pairs(
+        groups,
+        "non-distortion-corrected",
+    )
+    both = qsmxt._select_magnitude_phase_pairs(groups, "both")
+
+    assert [pair["variant"] for pair in both] == [
+        "distortion-corrected",
+        "non-distortion-corrected",
+    ]
+    assert [int(group["key"][0]) for group in corrected[0]["groups"]] == [3, 4]
+    assert [int(group["key"][0]) for group in non_corrected[0]["groups"]] == [1, 2]
+
+
+def test_select_magnitude_phase_pairs_rejects_incomplete_both_selection():
+    groups = qsmxt._group_images_by_series(_input_images())
+
+    with pytest.raises(ValueError, match="non-distortion-corrected"):
+        qsmxt._select_magnitude_phase_pairs(groups, "both")
+
+
+def test_openrecon_pipeline_presets_select_all_three_algorithms():
+    expected = {
+        "romeo-resharp-rts": ("romeo", "resharp", "rts"),
+        "romeo-ismv-hdqsm": ("romeo", "ismv", "hdqsm"),
+        "romeo-resharp-tikhonov": ("romeo", "resharp", "tikhonov"),
+        "romeo-resharp-tv": ("romeo", "resharp", "tv"),
+        "romeo-resharp-hdqsm": ("romeo", "resharp", "hdqsm"),
+        "romeo-ismv-rts": ("romeo", "ismv", "rts"),
+        "romeo-ismv-whqsm": ("romeo", "ismv", "whqsm"),
+        "romeo-sharp-whqsm": ("romeo", "sharp", "whqsm"),
+        "romeo-resharp-whqsm": ("romeo", "resharp", "whqsm"),
+        "romeo-sharp-tikhonov": ("romeo", "sharp", "tikhonov"),
+        "qsmart": ("romeo", None, "qsmart"),
+        "tgv": ("romeo", None, "tgv"),
+        "autoqsm": ("romeo", None, "autoqsm"),
+        "nextqsm": ("romeo", None, "nextqsm"),
+        "iqsm": (None, None, "iqsm"),
+        "iqsm-plus": (None, None, "iqsm-plus"),
+    }
+
+    assert set(qsmxt.ALGORITHM_PIPELINE_PRESETS) == set(expected)
+    for preset_id, algorithms in expected.items():
+        settings = qsmxt._settings_from_config(
+            {
+                "parameters": {
+                    "pipelinepreset": preset_id,
+                    "qsmalgorithm": "tkd",
+                    "unwrappingalgorithm": "laplacian",
+                    "bfalgorithm": "pdf",
+                }
+            },
+            FakeMetadata(),
+        )
+
+        assert settings["pipeline_preset"] == preset_id
+        assert (
+            settings["unwrapping_algorithm"],
+            settings["bf_algorithm"],
+            settings["qsm_algorithm"],
+        ) == algorithms
+
+
+@pytest.mark.parametrize("preset", qsmxt.ALGORITHM_PIPELINE_PRESETS)
+def test_openrecon_pipeline_preset_reaches_qsmxt_command(preset, tmp_path, monkeypatch):
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"pipelinepreset": preset}},
+        FakeMetadata(),
+    )
+    settings["qsmxt_binary"] = "/opt/qsmxt/qsmxt"
+    bids_dir = tmp_path / "bids"
+    bids_dir.mkdir()
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append((command, kwargs))
+        return qsmxt.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", fake_run)
+
+    qsmxt._run_qsmxt(bids_dir, tmp_path / "output", settings)
+
+    command, kwargs = commands[0]
+    for setting, flag in (
+        ("unwrapping_algorithm", "--unwrapping-algorithm"),
+        ("bf_algorithm", "--bf-algorithm"),
+        ("qsm_algorithm", "--qsm-algorithm"),
+    ):
+        expected = qsmxt.ALGORITHM_PIPELINE_PRESETS[preset][setting]
+        if expected is None:
+            assert flag not in command
+        else:
+            assert command[command.index(flag) + 1] == expected
+    assert command[command.index("--mask") + 1] == (
+        "magnitude,bet:0.5,close:1,fill-holes:0"
+    )
+    assert kwargs["cwd"] == str(bids_dir)
+
+
+def test_openrecon_custom_threshold_mask_reaches_qsmxt_command(
+    tmp_path,
+    monkeypatch,
+):
+    settings = qsmxt._settings_from_config(
+        {
+            "parameters": {
+                "maskpreset": "robust-threshold",
+                "maskinginput": "phase-quality",
+                "maskthresholdmethod": "percentile",
+                "maskthresholdpercentile": "65",
+                "maskdilate": "2",
+                "maskclose": "3",
+                "maskfillholes": "true",
+                "maskmaxholesize": "12000",
+                "maskerode": "1",
+            }
+        },
+        FakeMetadata(),
+    )
+    settings["qsmxt_binary"] = "/opt/qsmxt/qsmxt"
+    bids_dir = tmp_path / "bids"
+    bids_dir.mkdir()
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        return qsmxt.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", fake_run)
+
+    qsmxt._run_qsmxt(bids_dir, tmp_path / "output", settings)
+
+    command = commands[0]
+    assert command[command.index("--mask") + 1] == (
+        "phase-quality,threshold:percentile:65,dilate:2,close:3,"
+        "fill-holes:12000,erode:1"
+    )
+    assert "--mask-preset" not in command
+
+
+def test_openrecon_combined_mask_passes_two_sections(tmp_path, monkeypatch):
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"maskpreset": "combined"}},
+        FakeMetadata(),
+    )
+    settings["qsmxt_binary"] = "/opt/qsmxt/qsmxt"
+    bids_dir = tmp_path / "bids"
+    bids_dir.mkdir()
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        return qsmxt.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", fake_run)
+
+    qsmxt._run_qsmxt(bids_dir, tmp_path / "output", settings)
+
+    command = commands[0]
+    sections = [
+        command[index + 1]
+        for index, value in enumerate(command)
+        if value == "--mask"
+    ]
+    assert sections == [
+        "magnitude,bet:0.5,close:1,fill-holes:0",
+        "magnitude,threshold:otsu,close:1,fill-holes:0",
+    ]
+
+
+def test_openrecon_processing_defaults_can_be_overridden():
+    settings = qsmxt._settings_from_config(
+        {
+            "parameters": {
+                "qsmalgorithm": "rts",
+                "unwrappingalgorithm": "laplacian",
+                "bfalgorithm": "pdf",
+            }
+        },
+        FakeMetadata(),
+    )
+
+    assert settings["qsm_algorithm"] == "rts"
+    assert settings["unwrapping_algorithm"] == "laplacian"
+    assert settings["bf_algorithm"] == "pdf"
+
+
+def test_openrecon_label_exposes_processing_defaults():
+    label_path = Path(qsmxt.__file__).with_name("OpenReconLabel.json")
+    parameters = {
+        parameter["id"]: parameter
+        for parameter in qsmxt.json.loads(label_path.read_text())["parameters"]
+    }
+
+    pipeline_preset = parameters["pipelinepreset"]
+    assert pipeline_preset["type"] == "choice"
+    assert pipeline_preset["default"] == "custom"
+    assert [value["id"] for value in pipeline_preset["values"]] == [
+        "custom",
+        *qsmxt.ALGORITHM_PIPELINE_PRESETS,
+    ]
+    assert parameters["qsmalgorithm"]["default"] == "hdqsm"
+    qsm_algorithms = {
+        value["id"] for value in parameters["qsmalgorithm"]["values"]
+    }
+    assert {"hdqsm", "whqsm"} <= qsm_algorithms
+    assert parameters["unwrappingalgorithm"]["default"] == "romeo"
+    assert parameters["bfalgorithm"]["default"] == "ismv"
+    bf_algorithms = {
+        value["id"] for value in parameters["bfalgorithm"]["values"]
+    }
+    assert "resharp" in bf_algorithms
+    assert parameters["maskpreset"]["default"] == "bet"
+    assert {value["id"] for value in parameters["maskpreset"]["values"]} == {
+        "bet",
+        "robust-threshold",
+        "combined",
+    }
+    assert parameters["maskinginput"]["default"] == "magnitude"
+    assert parameters["betfractionalintensity"]["default"] == 0.5
+    assert parameters["maskcleanup"]["default"] == "close-fill"
+    assert "voxelsizemm" not in parameters
 
 
 def test_scanner_display_volume_scales_qsm_ppm_range_to_uint12_interval():
@@ -299,7 +613,152 @@ def test_scanner_display_volume_scales_qsm_ppm_range_to_uint12_interval():
     assert meta["scale"] == 100000.0
     assert meta["offset"] == 2048.0
     assert meta["formula"] == "ppm = (display - 2048) / 100000"
+    assert meta["rescale_slope"] == 0.00001
+    assert meta["rescale_intercept"] == -0.02048
+    assert meta["padding_value"] == 0
     assert meta["clipped_voxels"] == 0
+
+
+def test_scanner_display_volume_reserves_stored_zero_for_qsm_padding():
+    data = np.asarray([[[-0.02048, 0.0, 0.01]]], dtype=np.float32)
+
+    display, meta = qsmxt._scanner_display_volume(data, "qsm", "ppm")
+
+    assert 0 not in display
+    decoded = display.astype(np.float64) * meta["rescale_slope"]
+    decoded += meta["rescale_intercept"]
+    assert np.allclose(decoded, data, atol=meta["rescale_slope"] / 2)
+    assert meta["padding_value"] == 0
+
+
+def test_scanner_display_volume_uses_robust_qsm_window_without_clipping_extrema():
+    data = np.concatenate(
+        (
+            np.full(500, -0.05, dtype=np.float32),
+            np.full(500, 0.05, dtype=np.float32),
+            np.asarray([-0.4, 0.5], dtype=np.float32),
+        )
+    ).reshape(1, 1, -1)
+
+    display, meta = qsmxt._scanner_display_volume(data, "qsm", "ppm")
+
+    assert display.min() == 1648
+    assert display.max() == 2548
+    assert meta["scale_input_min"] == pytest.approx(-0.4)
+    assert meta["scale_input_max"] == pytest.approx(0.5)
+    assert meta["window_input_min"] == pytest.approx(-0.05)
+    assert meta["window_input_max"] == pytest.approx(0.05)
+
+
+def test_output_meta_publishes_qsm_window_in_integer_ppb_domain():
+    source = _image(
+        1,
+        1,
+        "gre_qsm",
+        np.ones((1, 1, 3), dtype=np.float32),
+    )
+    physical = np.concatenate(
+        (
+            np.full(500, -0.05, dtype=np.float32),
+            np.full(500, 0.05, dtype=np.float32),
+            np.asarray([-0.4, 0.5], dtype=np.float32),
+        )
+    ).reshape(1, 1, -1)
+    display, display_meta = qsmxt._scanner_display_volume(
+        physical,
+        "qsm",
+        "ppm",
+    )
+
+    meta = qsmxt._output_meta(
+        source,
+        source.getHead(),
+        qsmxt.OUTPUT_SERIES_START,
+        "QSMxT QSM",
+        "QSMXT_CHIMAP",
+        "qsm",
+        "ppm",
+        physical,
+        Path("/tmp/qsm.nii.gz"),
+        0,
+        1,
+        display_meta,
+    )
+
+    assert meta["RescaleType"] == "US"
+    assert float(meta["RescaleSlope"]) == 1.0
+    assert float(meta["RescaleIntercept"]) == -2048.0
+    assert float(meta["WindowCenter"]) == 0.0
+    assert float(meta["WindowWidth"]) == 100.0
+    assert meta["QSMxTWindowDomain"] == "ppb"
+    decoded_ppb = (
+        display.astype(np.float64) * float(meta["RescaleSlope"])
+        + float(meta["RescaleIntercept"])
+    )
+    np.testing.assert_allclose(decoded_ppb, physical * 1000.0, atol=0.5)
+
+
+def test_output_meta_replaces_source_scaling_with_qsm_dicom_contract():
+    source = _image(
+        1,
+        1,
+        "gre_qsm",
+        np.ones((1, 1, 3), dtype=np.float32),
+        meta_values={
+            "RescaleSlope": "2",
+            "RescaleIntercept": "-4096",
+            "RescaleType": "PHASE",
+            "PixelPaddingValue": "4095",
+            "PixelPaddingRangeLimit": "4095",
+            "WindowCenter": "2048",
+            "WindowWidth": "4096",
+            "VOILUTFunction": "LINEAR",
+        },
+    )
+    physical = np.asarray([[[-0.01, 0.0, 0.01]]], dtype=np.float32)
+    display, display_meta = qsmxt._scanner_display_volume(physical, "qsm", "ppm")
+
+    meta = qsmxt._output_meta(
+        source,
+        source.getHead(),
+        qsmxt.OUTPUT_SERIES_START,
+        "QSMxT QSM",
+        "QSMXT_CHIMAP",
+        "qsm",
+        "ppm",
+        physical,
+        Path("/tmp/qsm.nii.gz"),
+        0,
+        1,
+        display_meta,
+    )
+
+    assert meta["DataRole"] == ["Image", "Quantitative"]
+    assert float(meta["RescaleSlope"]) == 0.01
+    assert float(meta["RescaleIntercept"]) == -20.48
+    assert meta["RescaleType"] == "US"
+    assert meta["PixelPaddingValue"] == "0"
+    assert meta["PixelPaddingRangeLimit"] == "0"
+    assert float(meta["WindowCenter"]) == 0.0
+    assert float(meta["WindowWidth"]) == 20.0
+    assert "VOILUTFunction" not in meta
+    assert float(meta["QSMxTPhysicalWindowCenter"]) == 0.0
+    assert float(meta["QSMxTPhysicalWindowWidth"]) == 0.02
+    assert meta["QSMxTWindowDomain"] == "ppb"
+    assert 0 not in display
+
+    decoded_ppb = (
+        display.astype(np.float64) * float(meta["RescaleSlope"])
+        + float(meta["RescaleIntercept"])
+    )
+    center = float(meta["WindowCenter"])
+    width = float(meta["WindowWidth"])
+    rendered = np.clip(
+        (decoded_ppb - (center - width / 2.0)) / width,
+        0.0,
+        1.0,
+    )
+    assert np.unique(rendered).size == 3
 
 
 def test_scanner_display_volume_maps_mask_foreground_to_valid_uint12_maximum():
@@ -326,6 +785,82 @@ def test_scanner_display_volume_ignores_sparse_t2star_fit_outlier_for_scaling():
     assert meta["scale"] == 10000.0
     assert meta["clipped_voxels"] == 1
     assert meta["input_max"] == 10000.0
+
+
+def test_output_meta_uses_robust_t2star_range_for_window():
+    source = _image(
+        1,
+        1,
+        "gre_qsm",
+        np.ones((1, 10, 10), dtype=np.float32),
+    )
+    physical = np.full((10, 10, 10), 0.05, dtype=np.float32)
+    physical[0, 0, 0] = 10000.0
+    _, display_meta = qsmxt._scanner_display_volume(physical, "t2star", "s")
+
+    meta = qsmxt._output_meta(
+        source,
+        source.getHead(),
+        qsmxt.OUTPUT_SERIES_START,
+        "QSMxT T2star",
+        "QSMXT_T2STAR",
+        "t2star",
+        "s",
+        physical,
+        Path("/tmp/t2star.nii.gz"),
+        0,
+        10,
+        display_meta,
+    )
+
+    assert "WindowCenter" not in meta
+    assert "WindowWidth" not in meta
+
+
+def test_find_qsmxt_outputs_accepts_v9_combined_magnitude_name(tmp_path):
+    anat_dir = tmp_path / "output" / "derivatives" / "qsmxt" / "sub-01" / "anat"
+    anat_dir.mkdir(parents=True)
+    combined_magnitude = anat_dir / "sub-01_acq-greqsm_CombinedMagnitude.nii"
+    nib.save(
+        nib.Nifti1Image(np.ones((2, 2, 2), dtype=np.float32), np.eye(4)),
+        combined_magnitude,
+    )
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"sendoutputs": "magnitude"}},
+        FakeMetadata(),
+    )
+
+    specs = qsmxt._find_qsmxt_outputs(
+        tmp_path / "output",
+        {"subject": "01"},
+        settings,
+    )
+
+    assert specs[0][2] == combined_magnitude
+
+
+def test_write_bids_dataset_logs_source_and_written_volume_statistics(
+    tmp_path,
+    caplog,
+):
+    caplog.set_level(logging.INFO)
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"echotimesms": "10,20"}},
+        FakeMetadata(),
+    )
+
+    qsmxt.write_bids_dataset(
+        _input_images(),
+        FakeMetadata(),
+        tmp_path / "bids",
+        settings,
+    )
+
+    assert "QSMxT diagnostic source series" in caplog.text
+    assert "QSMxT diagnostic selected input pair" in caplog.text
+    assert "QSMxT diagnostic BIDS magnitude echo=1" in caplog.text
+    assert "QSMxT diagnostic BIDS phase echo=1" in caplog.text
+    assert "sha256=" in caplog.text
 
 
 def test_write_bids_dataset_pairs_magnitude_and_phase(tmp_path):
@@ -484,6 +1019,34 @@ def test_write_bids_dataset_stacks_single_slice_echo_groups_from_metadata(tmp_pa
     assert sidecar["B0_dir"] == [0.0, 0.0, 1.0]
 
 
+def test_images_to_nifti_volume_rejects_implausibly_small_position_spacing():
+    images = []
+    for slice_index in range(4):
+        image = _image(
+            1,
+            slice_index + 1,
+            "gre_qsm_Mag",
+            np.full((1, 3, 4), 1000 + slice_index, dtype=np.float32),
+            meta_values={"Actual3DImagePartNumber": str(slice_index)},
+            header_values={"slice": slice_index},
+        )
+        header = image.getHead()
+        _set_header_vector(header, "field_of_view", [4.0, 3.0, 1.0])
+        _set_header_vector(header, "slice_dir", [0.0, 0.0, -1.0])
+        _set_header_vector(
+            header,
+            "position",
+            [0.0, 0.0, -float(slice_index) / 3.0],
+        )
+        image.setHead(header)
+        images.append(image)
+
+    volume, affine = qsmxt._images_to_nifti_volume(images, kind="magnitude")
+
+    assert volume.shape == (4, 3, 4)
+    np.testing.assert_allclose(affine[:3, 2], [0.0, 0.0, -1.0])
+
+
 def test_write_bids_dataset_groups_scanner_slices_by_echo_from_minihead(tmp_path):
     settings = qsmxt._settings_from_config({}, FakeMetadata())
 
@@ -546,14 +1109,27 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert meta["QSMxTDisplayScale"] == "1000"
     assert meta["QSMxTDisplayOffset"] == "2048"
     assert meta["QSMxTDisplayFormula"] == "ppm = (display - 2048) / 1000"
+    assert meta["DataRole"] == ["Image", "Quantitative"]
+    assert float(meta["RescaleSlope"]) == 1.0
+    assert float(meta["RescaleIntercept"]) == -2048.0
+    assert meta["RescaleType"] == "US"
+    assert meta["PixelPaddingValue"] == "0"
+    assert meta["PixelPaddingRangeLimit"] == "0"
+    assert float(meta["WindowCenter"]) == 1500.0
+    assert float(meta["WindowWidth"]) == 1000.0
+    assert "VOILUTFunction" not in meta
+    assert float(meta["QSMxTPhysicalWindowCenter"]) == 1.5
+    assert float(meta["QSMxTPhysicalWindowWidth"]) == 1.0
+    assert meta["QSMxTWindowDomain"] == "ppb"
     assert meta["QSMxTDisplayScaleInputMin"] == "1.5"
     assert meta["QSMxTDisplayScaleInputMax"] == "1.5"
     assert meta["QSMxTDisplayMin"] == "3548"
     assert meta["QSMxTDisplayMax"] == "3548"
     assert meta["QSMxTDisplayClippedVoxels"] == "0"
     assert meta["ImageComment"] == (
-        "QSMxT QSM; scanner display uint16 0-4095; "
-        "ppm = (display - 2048) / 1000"
+        "QSMxT QSM DC; scanner display uint16 0-4095; "
+        "ppm = (display - 2048) / 1000; "
+        "stored 0 is DICOM pixel padding"
     )
     assert meta["ImageComments"] == meta["ImageComment"]
     assert meta["slice_count"] == "2"
@@ -576,6 +1152,52 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert second_meta["IsmrmrdSliceNo"] == "1"
     assert second_meta["SeriesInstanceUID"] == meta["SeriesInstanceUID"]
     assert second_meta["SOPInstanceUID"] != meta["SOPInstanceUID"]
+
+
+def test_process_both_input_series_runs_separately_and_returns_unique_outputs(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    fake_qsmxt = _fake_qsmxt_binary(tmp_path)
+    connection = FakeConnection(_dual_input_images())
+
+    qsmxt.process(
+        connection,
+        {
+            "parameters": {
+                "qsmxtbinary": str(fake_qsmxt),
+                "echotimesms": "10,20",
+                "inputseries": "both",
+            }
+        },
+        FakeMetadata(),
+    )
+
+    assert connection.closed is True
+    assert connection.logs == []
+    assert len(connection.sent_batches) == 2
+    assert [len(batch) for batch in connection.sent_batches] == [2, 2]
+
+    first_meta = [
+        ismrmrd.Meta.deserialize(batch[0].attribute_string)
+        for batch in connection.sent_batches
+    ]
+    assert [meta["SeriesDescription"] for meta in first_meta] == [
+        "QSMxT QSM DC",
+        "QSMxT QSM ND",
+    ]
+    assert [meta["QSMxTInputSeries"] for meta in first_meta] == [
+        "distortion-corrected",
+        "non-distortion-corrected",
+    ]
+    assert len(
+        {
+            int(batch[0].getHead().image_series_index)
+            for batch in connection.sent_batches
+        }
+    ) == 2
+    assert len({meta["SeriesInstanceUID"] for meta in first_meta}) == 2
 
 
 def test_process_returns_scanner_packed_volume_as_one_mm_slices(tmp_path, monkeypatch):
@@ -720,7 +1342,6 @@ def test_original_passthrough_merges_concatenations_into_one_series_per_contrast
         series_index = int(output.getHead().image_series_index)
         series_counts[series_index] = series_counts.get(series_index, 0) + 1
 
-    # Exactly two output series: one magnitude (6 slices) and one phase (6).
     assert len(series_counts) == 2
     assert sorted(series_counts.values()) == [6, 6]
 
@@ -927,3 +1548,34 @@ def test_derived_outputs_use_original_source_geometry_when_originals_are_sent(
         np.testing.assert_allclose(output_header.read_dir, source_header.read_dir)
         np.testing.assert_allclose(output_header.phase_dir, source_header.phase_dir)
         np.testing.assert_allclose(output_header.slice_dir, source_header.slice_dir)
+
+
+@pytest.mark.parametrize(
+    "parameter,flag,value",
+    [
+        (parameter, flag, choice["id"])
+        for parameter, flag in (
+            ("qsmalgorithm", "--qsm-algorithm"),
+            ("unwrappingalgorithm", "--unwrapping-algorithm"),
+            ("bfalgorithm", "--bf-algorithm"),
+        )
+        for item in json.loads(Path(__file__).with_name("OpenReconLabel.json").read_text())["parameters"]
+        if item["id"] == parameter
+        for choice in item["values"]
+        if choice["id"] != "default"
+    ],
+)
+def test_gui_algorithm_reaches_command(parameter, flag, value, tmp_path, monkeypatch):
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"pipelinepreset": "custom", parameter: value}}, FakeMetadata()
+    )
+    commands = []
+
+    def capture(command, **kwargs):
+        commands.append(command)
+        return qsmxt.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", capture)
+    qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
+    command = commands[0]
+    assert command[command.index(flag) + 1] == value

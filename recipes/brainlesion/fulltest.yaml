@@ -21,32 +21,26 @@ tests:
   - name: brainles_preprocessing distribution is healthy
     command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_preprocessing"); assert d.version == "0.6.10" and len(tuple(d.files or ())) > 20'
 
-  - name: brats distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("brats"); assert d.version == "0.0.27" and len(tuple(d.files or ())) > 10'
-
   - name: deep_quality_estimation distribution is healthy
     command: python -c 'from importlib.metadata import distribution; d=distribution("deep_quality_estimation"); assert d.version == "0.0.3" and len(tuple(d.files or ())) > 5'
 
   - name: gliomoda distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("gliomoda"); assert d.version == "0.0.3" and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("gliomoda"); assert d.version == "0.0.4" and len(tuple(d.files or ())) > 5'
 
   - name: loguru distribution is pinned
     command: python -c 'from importlib.metadata import version; assert version("loguru") == "0.7.3"'
 
   - name: panoptica distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("panoptica"); assert d.version == "1.5.1" and len(tuple(d.files or ())) > 20'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("panoptica"); assert d.version == "2.1.6" and len(tuple(d.files or ())) > 20'
 
   - name: petu distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("petu"); assert d.version == "0.0.5" and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("petu"); assert d.version == "0.0.7" and len(tuple(d.files or ())) > 5'
 
   - name: brainles_aurora imports
     command: python -c 'import brainles_aurora'
 
   - name: brainles_preprocessing imports
     command: python -c 'import brainles_preprocessing'
-
-  - name: brats imports
-    command: python -c 'import brats'
 
   - name: deep_quality_estimation imports
     command: python -c 'import deep_quality_estimation'
@@ -92,12 +86,6 @@ tests:
 
   - name: Preprocessing registration modules import
     command: python -c 'import brainles_preprocessing.registration.ANTs.ANTs, brainles_preprocessing.registration.niftyreg.niftyreg'
-
-  - name: BraTS core modules import
-    command: python -c 'import brats.core.brats_algorithm, brats.core.inpainting_algorithms, brats.core.missing_mri_algorithms, brats.core.segmentation_algorithms'
-
-  - name: BraTS utility modules import
-    command: python -c 'import brats.utils.algorithm_config, brats.utils.data_handling, brats.utils.exceptions, brats.utils.zenodo'
 
   - name: DQE processing modules import
     command: python -c 'import deep_quality_estimation.center_of_mass, deep_quality_estimation.enums, deep_quality_estimation.transforms'
@@ -209,26 +197,6 @@ tests:
   - name: DQE packaged model weights are nonempty
     command: python -c 'from importlib.resources import files; p=files("deep_quality_estimation").joinpath("weights/dqe_weights.pth"); assert p.is_file() and p.stat().st_size > 1000000'
 
-  - name: BraTS metadata catalog loads
-    command: |
-      python - <<'PY'
-      from importlib.resources import files
-      from brats.utils.algorithm_config import load_algorithms
-      path = files("brats").joinpath("data/meta/adult_glioma_pre_treatment.yml")
-      algorithms = load_algorithms(path)
-      assert algorithms
-      assert all(item.meta.authors and item.run_args.docker_image for item in algorithms.values())
-      PY
-
-  - name: BraTS algorithm parameters are valid YAML
-    command: python -c 'from importlib.resources import files; import yaml; data=yaml.safe_load(files("brats").joinpath("data/parameters/brats24_adult_glioma_mist.yml").read_text()); assert isinstance(data, dict) and data'
-
-  - name: BraTS metadata includes multiple challenge families
-    command: python -c 'from importlib.resources import files; names={p.name for p in files("brats").joinpath("data/meta").iterdir() if p.suffix==".yml"}; assert {"africa.yml","inpainting.yml","meningioma.yml","pediatric.yml"}.issubset(names)'
-
-  - name: BraTS algorithm classes are exposed
-    command: python -c 'from brats import AdultGliomaPreTreatmentSegmenter, AfricaSegmenter, Inpainter, MissingMRI; assert all(callable(x) for x in (AdultGliomaPreTreatmentSegmenter,AfricaSegmenter,Inpainter,MissingMRI))'
-
   - name: Aurora default configuration is safe for CPU discovery
     command: python -c 'from brainles_aurora.inferer.config import AuroraInfererConfig; c=AuroraInfererConfig(); assert c.workers == 0 and c.sliding_window_batch_size == 1 and 0 < c.threshold < 1'
 
@@ -279,3 +247,275 @@ tests:
           assert np.array_equal(loaded.get_fdata(), data)
           assert np.array_equal(loaded.affine, affine)
       PY
+  - name: all bundled components import
+    description: >-
+      The shipped build test ran only "python --version" then "exit 1", so no
+      component was ever imported at build time.
+    command: python -c "import panoptica, deep_quality_estimation, gliomoda, petu, brainles_preprocessing, brainles_hd_bet; print('components ok')"
+    expected_output_contains: "components ok"
+
+  - name: aurora imports
+    description: Imported separately because its package graph needs the inferer first.
+    command: python -c "import brainles_aurora.inferer; print('aurora ok')"
+    expected_output_contains: "aurora ok"
+
+  - name: python3 resolves inside the container
+    description: >-
+      Deploying only "python" left python3 falling through to the host
+      interpreter, where the components are absent, so any script with a
+      /usr/bin/env python3 shebang failed with ModuleNotFoundError.
+    command: python3 -c "import gliomoda; print('python3 ok')"
+    expected_output_contains: "python3 ok"
+
+  - name: the weights directory is writable
+    description: >-
+      Every component previously resolved its weights inside the read-only
+      image and died with Errno 30 before doing any work.
+    command: |
+      bash -c 'd="${BLS_WEIGHTS_DIR:-/tmp/brainlesion-weights}"; mkdir -p "$d" && test -w "$d" && echo "weights-writable $d"'
+    expected_output_contains: "weights-writable"
+
+  - name: weight resolvers point outside the image
+    description: >-
+      Asserts the redirect took, rather than that a directory happens to exist:
+      a resolver still pointing into site-packages would fail at run time.
+    command: |
+      python -c "
+      import os, pathlib, gliomoda, petu, brainles_hd_bet.utils as h
+      base = pathlib.Path(os.environ.get('BLS_WEIGHTS_DIR', '/tmp/brainlesion-weights')).resolve()
+      hb = pathlib.Path(h.folder_with_parameter_files).resolve()
+      assert base in hb.parents or hb.is_relative_to(base), hb
+      for mod in (gliomoda, petu):
+          pkg = pathlib.Path(mod.__file__).parent.resolve()
+          assert not str(hb).startswith(str(pkg)), hb
+      print('resolvers-redirected')
+      "
+    expected_output_contains: "resolvers-redirected"
+
+  - name: the broken Zenodo archive endpoint is not used
+    description: >-
+      gliomoda, petu and aurora request Zenodo's files-archive endpoint, which
+      returns HTTP 400, so the patched resolvers must use the per-file API.
+    command: |
+      bash -c 'grep -l "_bls_fetch_record" $(python -c "import gliomoda,petu,pathlib; print(pathlib.Path(gliomoda.__file__).parent/\"weights.py\", pathlib.Path(petu.__file__).parent/\"weights.py\")") | wc -l'
+    expected_output_contains: "2"
+
+  - name: bundled versions match the standalone modules
+    description: >-
+      The bundle previously pinned panoptica 1.5.1, gliomoda 0.0.3 and petu
+      0.0.5, so the same analysis gave different results depending on which
+      module a user loaded, with nothing warning about the divergence.
+    command: |
+      python -c "
+      import importlib.metadata as md
+      for pkg in ('panoptica', 'gliomoda', 'petu'):
+          print(pkg, md.version(pkg))
+      "
+    expected_output_contains: "panoptica 2.1.6"
+
+  - name: panoptica instance relabelling survives >255 labels
+    description: >-
+      2.1.6 still builds its label lookup with the connected-components dtype,
+      so multi-lesion evaluations overflow. The image carries the upstream-main
+      fix; this fails if it is lost.
+    command: |
+      python -c "
+      import numpy as np
+      from panoptica._functionals import _map_labels
+      a = np.zeros((4, 4), dtype=np.uint8); a[0, 0] = 3
+      print('relabel-max', int(_map_labels(a, {3: 256}).max()))
+      "
+    expected_output_contains: "relabel-max 256"
+
+  - name: the preprocessor and hd-bet commands are deployed
+    description: >-
+      Both were installed but never exposed, leaving a hand-written python
+      script as the only supported way into this container.
+    command: bash -c 'command -v preprocessor && command -v hd-bet && echo "clis ok"'
+    expected_output_contains: "clis ok"
+
+  - name: the hd-bet command starts
+    description: >-
+      hd_bet.py imports maybe_mkdir_p from brainles_hd_bet.utils, which never
+      defined it, so every invocation -- including --help -- died on import
+      before parsing an argument. `test -x` passed on it; running it is what
+      catches this. The helper is restored at build time.
+    command: hd-bet --help
+    expected_output_contains: "--input"
+
+  - name: a failed brain extraction is not reported as success
+    description: >-
+      run_hd_bet caught its loader's errors, printed a message and continued,
+      so an extraction that produced nothing returned normally and exited 0.
+      Any pipeline checking the exit code carried on with a mask that was never
+      written. Asserted on the installed source rather than by running an
+      extraction, which produced nothing.
+
+      Run rather than grepped: reading the installed source proves the patch
+      is present, not that it is reached, and the handler it replaces is the
+      one that swallowed the error. run_hd_bet loads its fold weights before
+      it ever opens the input -- so the weight plumbing is stubbed out, which
+      is what keeps this off the network in an image that deliberately does
+      not bake the five folds. Everything after that is the real code path: a
+      genuinely missing file, upstream's real loader, and the patched handler.
+    command: |
+      python - <<'PY'
+      import pathlib, tempfile
+      import brainles_hd_bet.run as run
+
+      work = pathlib.Path(tempfile.mkdtemp())
+      stub = work / "fold.model"
+      stub.write_bytes(b"")
+
+      # The only two things standing between here and the loader: fetching
+      # ~350 MB of folds, and torch.load-ing them. Neither is under test.
+      run.maybe_download_parameters = lambda index: None
+      run.get_params_fname = lambda index: str(stub)
+      run.torch.load = lambda *args, **kwargs: {}
+
+      missing = str(work / "not-a-real-scan.nii.gz")
+      try:
+          run.run_hd_bet(
+              mri_fnames=[missing],
+              output_fnames=[str(work / "out.nii.gz")],
+              mode="fast",
+              device="cpu",
+              do_tta=False,
+          )
+      except RuntimeError as exc:
+          # Either patched handler is a pass: SimpleITK reports a missing file
+          # as RuntimeError, but which of the two fires is upstream's business.
+          assert "hd-bet could not read" in str(exc) or "hd-bet rejected" in str(exc), exc
+          assert exc.__cause__ is not None, "the original error was not chained"
+          print("raises-on-failure")
+      else:
+          raise SystemExit(
+              "SILENT FAILURE: a missing input returned normally, so a caller "
+              "checking the exit code would carry on without a mask"
+          )
+      PY
+    expected_output_contains: "raises-on-failure"
+
+  - name: the default atlas resolves inside the image
+    description: >-
+      AtlasCentricPreprocessor defaults to Atlas.BRATS_SRI24 and fetched it
+      into its own installed package, which is read-only at run time, so
+      `preprocessor` failed within seconds using nothing but its own defaults.
+      The atlases are baked in, as the standalone container already does.
+    command: |
+      python -c "
+      from brainles_preprocessing.constants import Atlas
+      from brainles_preprocessing.utils.zenodo import fetch_atlases
+      atlas = fetch_atlases() / Atlas.BRATS_SRI24.value
+      print('atlas-bundled' if atlas.is_file() else 'ATLAS-MISSING')
+      "
+    expected_output_contains: "atlas-bundled"
+
+  - name: the baked atlas survives an upstream version bump
+    description: >-
+      Baking the atlases fixes the first run, not the version check on every
+      run after it. fetch() asks Zenodo before it looks at the disk, and
+      ATLASES_RECORD_ID is a Zenodo concept DOI, which always resolves to the
+      newest release -- so on a version mismatch it rmtree'd the local copy and
+      re-downloaded into the read-only image. The day upstream published, this
+      container would have started failing on its own defaults, on every node,
+      without changing at all. A copy already on disk is now authoritative and
+      Zenodo is not consulted, so this asserts both halves: the baked files are
+      returned untouched, and no lookup happened.
+    command: |
+      python - <<'PY'
+      import pathlib
+      import requests
+      from brainles_preprocessing.utils import zenodo
+
+      baked = sorted(
+          pathlib.Path(zenodo.ATLASES_FOLDER).glob(zenodo.ATLASES_RECORD_ID + "_v*")
+      )
+      assert len(baked) == 1, baked
+      before = {p.name for p in baked[0].iterdir()}
+      assert before, "the baked atlas folder is empty"
+
+      # Zenodo advertising something newer is the case that crashed.
+      asked = []
+      def bumped(self):
+          asked.append(1)
+          return ({"version": "99.0.0"}, "https://example.invalid/archive.zip")
+      zenodo.ZenodoRecord._get_metadata_and_archive_url = bumped
+
+      got = zenodo.fetch_atlases()
+      assert got == baked[0], (got, baked[0])
+      assert not asked, "Zenodo was queried at run time"
+      assert {p.name for p in got.iterdir()} == before, "the baked files changed"
+
+      # And the pre-existing offline behaviour must not regress.
+      zenodo.requests.get = lambda *a, **k: (_ for _ in ()).throw(
+          requests.exceptions.ConnectionError("no network")
+      )
+      assert zenodo.fetch_atlases() == baked[0]
+      print("atlas-survives-version-bump")
+      PY
+    expected_output_contains: "atlas-survives-version-bump"
+
+  - name: the brain-extraction profile is selectable
+    description: >-
+      HD-BET's default is a five-fold ensemble with test-time mirroring, hours
+      per volume on CPU, and the CLI exposed no way to ask for anything
+      cheaper: a measured run got through registration and then hit a
+      90-minute timeout in brain extraction. Asked of click's parsed option
+      set rather than of the rendered help. Typer lays --help out as a rich
+      table, and rich truncates the option column with an ellipsis once the
+      width it guessed is narrow enough, so grepping the help for the flag
+      names asserts on the width the container happened to render at. The
+      profile also has to reach HD-BET, so the forwarding is exercised as
+      well: a flag that parses and changes nothing is what the 90-minute
+      timeout was.
+    command: |
+      python -c "
+      import inspect
+      import typer.main
+      from brainles_preprocessing.brain_extraction.brain_extractor import HDBetExtractor
+      from brainles_preprocessing.cli import app, _ProfiledHDBetExtractor
+
+      cmd = typer.main.get_command(app)
+      opts = {o for p in cmd.params for o in p.opts + p.secondary_opts}
+      missing = [f for f in ('--bet-mode', '--bet-tta', '--no-bet-tta') if f not in opts]
+      assert not missing, 'missing %s, have %s' % (missing, sorted(opts))
+
+      # The names have to exist on the real extractor, and be settable by
+      # keyword. A recorder with a permissive *args/**kwargs signature would
+      # swallow a rename or a positional call that fails for real at run time,
+      # so record through the genuine signature instead and let bind() reject
+      # anything it would not accept.
+      real = inspect.signature(HDBetExtractor.extract)
+      for name in ('mode', 'do_tta'):
+          kind = real.parameters[name].kind
+          assert kind is not inspect.Parameter.POSITIONAL_ONLY, (name, kind)
+
+      seen = {}
+      def recorder(self, *args, **kwargs):
+          bound = real.bind(self, *args, **kwargs)
+          bound.apply_defaults()
+          seen.update(bound.arguments)
+      HDBetExtractor.extract = recorder
+
+      required = dict(
+          input_image_path='in.nii.gz',
+          masked_image_path='out.nii.gz',
+          brain_mask_path='mask.nii.gz',
+      )
+
+      _ProfiledHDBetExtractor(mode='fast', do_tta=False).extract(**required)
+      assert (seen['mode'], seen['do_tta']) == ('fast', False), seen
+
+      seen.clear()
+      _ProfiledHDBetExtractor().extract(**required)
+      assert (seen['mode'], seen['do_tta']) == ('accurate', True), seen
+
+      # An explicit call must still win over the profile, or the preprocessor
+      # passing its own value would be silently overridden.
+      seen.clear()
+      _ProfiledHDBetExtractor(mode='fast').extract(mode='accurate', **required)
+      assert seen['mode'] == 'accurate', seen
+      print('bet-profile-selectable')
+      "
+    expected_output_contains: "bet-profile-selectable"

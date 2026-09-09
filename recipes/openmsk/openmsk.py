@@ -1,15 +1,15 @@
-"""OpenRecon module for OpenMSK/KneePipeline qDESS knee MRI analysis."""
+"""OpenRecon module for OpenMSK/KneePipeline DESS knee MRI analysis."""
 
 from __future__ import annotations
 
 import base64
 import copy
-import csv
 import json
 import logging
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import traceback
@@ -30,13 +30,53 @@ KNEEPIPELINE_CONFIG = Path(
 )
 NNUNET_NUMPY_COMPAT_PATH = os.environ.get("OPENMSK_NNUNET_NUMPY_COMPAT_PATH", "/opt/openmsk_compat")
 OPENMSK_PIPELINE_TIMEOUT = int(os.environ.get("OPENMSK_PIPELINE_TIMEOUT", "5400"))
-DEFAULT_SEG_MODEL = "acl_qdess_bone_july_2024"
+DEFAULT_SEG_MODEL = "goyal_sagittal"
+
+# Public OpenRecon segmentations use the same DOSMA-native labels as the
+# upstream OpenMSK monolith. The modular KneePipeline post-processing steps use
+# a different canonical scheme internally, so conversion happens only after the
+# public segmentation has been sent and is reversed for public subregion output.
+UPSTREAM_LABELS = {
+    0: "background",
+    1: "patellar_cartilage",
+    2: "femoral_cartilage",
+    3: "medial_tibial_cartilage",
+    4: "lateral_tibial_cartilage",
+    5: "medial_meniscus",
+    6: "lateral_meniscus",
+    7: "femur",
+    8: "tibia",
+    9: "patella",
+}
+# Extends KneePipeline's own DOSMA remap (which has no meniscus entries and
+# would zero labels 5/6) by parking the menisci at canonical 8/9. That is only
+# safe while the pinned KneePipeline steps hard-code canonical labels 1-7 and
+# subregions 11-15, leaving 8/9 unused; re-verify when bumping
+# kneepipeline_commit in build.yaml.
+UPSTREAM_TO_CANONICAL_LABELS = {
+    1: 7,
+    2: 4,
+    3: 5,
+    4: 6,
+    5: 8,
+    6: 9,
+    7: 1,
+    8: 2,
+    9: 3,
+}
+CANONICAL_TO_UPSTREAM_LABELS = {
+    canonical: upstream
+    for upstream, canonical in UPSTREAM_TO_CANONICAL_LABELS.items()
+}
+OPENMSK_LABEL_SCHEME_META_KEY = "OpenMSKLabelScheme"
+UPSTREAM_LABEL_SCHEME = "upstream_dosma_native_v1"
 
 ORIGINAL_SERIES_INDEX = 100
 SEGMENT_SERIES_INDEX = 101
 T2MAP_SERIES_INDEX = 102
 SUBREGION_SERIES_INDEX = 103
 METRICS_REPORT_SERIES_INDEX = 104
+EXTRA_ORIGINAL_SERIES_INDEX_START = 105
 SEGMENT_SERIES_NAME = "openmsk_segmentation"
 T2MAP_SERIES_NAME = "openmsk_t2map"
 SUBREGION_SERIES_NAME = "openmsk_subregions"
@@ -68,7 +108,6 @@ QDESS_TG_TAG = (0x0019, 0x10B7)
 QDESS_DEFAULTS = {
     "tr_ms": 25.0,
     "te1_ms": 8.0,
-    "te2_ms": 42.0,
     "flip_angle_deg": 30.0,
     "gl_area": 3132.0,
     "tg_us": 1560.0,
@@ -155,18 +194,19 @@ def process(connection, config, metadata):
         source_selection = _select_primary_source(magnitude_images)
         source_group = source_selection.get("primary") if source_selection else []
         if not source_group:
-            logging.warning("No processable qDESS source group selected")
+            logging.warning("No processable DESS source group selected")
             return
+        _log_qdess_input_detection(connection, magnitude_images, source_selection)
 
         with tempfile.TemporaryDirectory(prefix="openmsk_") as tmpdir:
             tmpdir_path = Path(tmpdir)
-            echo1_nifti_path = tmpdir_path / "openmsk_echo1.nii.gz"
+            segmentation_nifti_path = tmpdir_path / "openmsk_rss.nii.gz"
             output_dir = tmpdir_path / "out"
             output_dir.mkdir()
 
             ordered_sources, nifti_shape = _write_source_nifti(
-                source_group,
-                echo1_nifti_path,
+                source_selection.get("echo_groups", {}),
+                segmentation_nifti_path,
                 metadata,
             )
             qdess_params = _resolve_qdess_parameters(
@@ -174,6 +214,7 @@ def process(connection, config, metadata):
                 metadata,
                 source_selection.get("echo_groups", {}),
             )
+            _log_qdess_timing(connection, qdess_params, source_selection)
             qdess_dicom_dir = _write_synthetic_qdess_dicom_input(
                 source_selection.get("echo_groups", {}),
                 tmpdir_path / "openmsk_qdess_dicom",
@@ -181,11 +222,10 @@ def process(connection, config, metadata):
                 config,
                 qdess_params,
             )
-            pipeline_input_path = qdess_dicom_dir or echo1_nifti_path
-            if qdess_dicom_dir is not None:
-                logging.info("Using synthesized qDESS DICOM input for KneePipeline: %s", qdess_dicom_dir)
-            else:
-                logging.info("Using echo-1 NIfTI input for KneePipeline: %s", echo1_nifti_path)
+            logging.info(
+                "Using both-echo RSS NIfTI input for KneePipeline segmentation: %s",
+                segmentation_nifti_path,
+            )
             run_config_path = _write_run_config(
                 tmpdir_path,
                 seg_model,
@@ -194,11 +234,14 @@ def process(connection, config, metadata):
             )
 
             segmentation_result = _run_kneepipeline_segmentation(
-                pipeline_input_path,
+                segmentation_nifti_path,
                 output_dir,
                 seg_model,
                 run_config_path,
             )
+            fit_dicom_path = None
+            if qdess_dicom_dir is not None:
+                fit_dicom_path = _stage_qdess_fit_input(qdess_dicom_dir, output_dir)
             segmentation_ok = _step_succeeded(segmentation_result)
             if not segmentation_ok:
                 logging.warning(
@@ -222,15 +265,19 @@ def process(connection, config, metadata):
                 SEGMENT_IMAGE_TYPE,
                 data_role="Segmentation",
                 dtype=np.int16,
-                comment="OpenMSK segmentation",
+                comment="OpenMSK segmentation (upstream DOSMA labels)",
                 source_geometry_segment=True,
-                reference_nifti_path=echo1_nifti_path,
+                reference_nifti_path=segmentation_nifti_path,
+                extra_meta={OPENMSK_LABEL_SCHEME_META_KEY: UPSTREAM_LABEL_SCHEME},
             )
             _send_images(connection, segment_images, "openmsk_segmentation")
             sent_images.extend(segment_images)
 
             postprocessing_ok = True
-            compute_t2 = _segmentation_is_qdess(segmentation_result)
+            t2_statistics_scope = ""
+            compute_t2 = fit_dicom_path is not None or _segmentation_is_qdess(
+                segmentation_result
+            )
             if compute_thickness or compute_t2 or run_nsm:
                 postprocessing_result = _run_kneepipeline_postprocessing(
                     output_dir,
@@ -239,6 +286,17 @@ def process(connection, config, metadata):
                     compute_t2,
                 )
                 postprocessing_ok = _step_succeeded(postprocessing_result)
+                if isinstance(postprocessing_result, dict):
+                    t2_statistics_scope = str(
+                        postprocessing_result.get("t2_statistics_scope", "")
+                    )
+                if t2_statistics_scope == "global_cartilage_compartments":
+                    _send_logviewer_info(
+                        connection,
+                        "OpenMSK subregion generation was unavailable; T2 statistics "
+                        "were computed from the global femoral, medial tibial, lateral "
+                        "tibial, and patellar cartilage labels.",
+                    )
                 if not postprocessing_ok:
                     logging.warning(
                         "KneePipeline post-processing reported an error after "
@@ -247,7 +305,7 @@ def process(connection, config, metadata):
             elif _segmentation_skips_step(segmentation_result, "t2_mapping"):
                 logging.info(
                     "Skipping OpenMSK T2 mapping because KneePipeline identified "
-                    "the OpenRecon input as non-qDESS"
+                    "the OpenRecon input as non-DESS"
                 )
             else:
                 logging.info("Skipping OpenMSK mesh/thickness post-processing")
@@ -257,7 +315,10 @@ def process(connection, config, metadata):
                 logging.info("OpenMSK metrics: %s", metrics_comment)
 
             subregion_path = _find_single_output(output_dir, "*_subregions-labels.nii.gz")
-            if subregion_path is not None:
+            if (
+                subregion_path is not None
+                and t2_statistics_scope != "global_cartilage_compartments"
+            ):
                 subregion_images = _nifti_to_mrd_images(
                     subregion_path,
                     ordered_sources,
@@ -268,11 +329,19 @@ def process(connection, config, metadata):
                     dtype=np.int16,
                     comment=_join_comments("OpenMSK subregion segmentation", metrics_comment),
                     source_geometry_segment=True,
-                    reference_nifti_path=echo1_nifti_path,
-                    extra_meta=_metrics_extra_meta(metrics_comment),
+                    reference_nifti_path=segmentation_nifti_path,
+                    label_map=CANONICAL_TO_UPSTREAM_LABELS,
+                    extra_meta={
+                        OPENMSK_LABEL_SCHEME_META_KEY: UPSTREAM_LABEL_SCHEME,
+                        **_metrics_extra_meta(metrics_comment),
+                    },
                 )
                 _send_images(connection, subregion_images, "openmsk_subregions")
                 sent_images.extend(subregion_images)
+            elif t2_statistics_scope == "global_cartilage_compartments":
+                logging.info(
+                    "Not returning the global-label T2 fallback as a subregion series"
+                )
             else:
                 logging.info("No OpenMSK subregion segmentation was written")
 
@@ -332,14 +401,14 @@ def process(connection, config, metadata):
                     dtype=np.float32,
                     comment=metrics_comment or "OpenMSK T2 map",
                     source_geometry_segment=False,
-                    reference_nifti_path=echo1_nifti_path,
+                    reference_nifti_path=segmentation_nifti_path,
                     extra_meta=_metrics_extra_meta(metrics_comment),
                 )
                 _send_images(connection, t2_images, "openmsk_t2map")
                 sent_images.extend(t2_images)
             else:
                 logging.info(
-                    "No T2 map was written; check the qDESS echo grouping, synthesized "
+                    "No T2 map was written; check the DESS echo grouping, synthesized "
                     "DICOM parameter logs, and KneePipeline t2_mapping status."
                 )
 
@@ -551,8 +620,12 @@ def _select_primary_source(images):
         return {}
 
     key, group = max(grouped.items(), key=lambda item: len(item[1]))
-    echo_groups = _split_echo_groups(group)
-    echo_key = sorted(echo_groups, key=_echo_key_sort)[0]
+    echo_groups, grouping_method = _detect_echo_groups(group)
+    echo_key = (
+        "FID"
+        if "FID" in echo_groups
+        else sorted(echo_groups, key=_echo_key_sort)[0]
+    )
     selected = echo_groups[echo_key]
     logging.info(
         "Selected OpenMSK source group=%s echo=%s images=%d from echo groups=%s",
@@ -566,7 +639,109 @@ def _select_primary_source(images):
         "primary_echo_key": echo_key,
         "primary": selected,
         "echo_groups": echo_groups,
+        "echo_grouping_method": grouping_method,
     }
+
+
+def _log_qdess_input_detection(connection, images, source_selection):
+    echo_groups = source_selection.get("echo_groups", {})
+    if len(echo_groups) < 2:
+        return
+    grouping_method = source_selection.get("echo_grouping_method", "unknown")
+    image_roles = {}
+    for echo_key, group in echo_groups.items():
+        role = "segmentation RSS+fit"
+        for image in group:
+            image_roles[id(image)] = f"{_echo_group_label(echo_key, grouping_method)} {role}"
+
+    series = {}
+    for image in images:
+        header = image.getHead()
+        series_index = int(
+            getattr(image, "image_series_index", header.image_series_index)
+        )
+        set_index = int(getattr(image, "set", header.set))
+        contrast_index = int(getattr(image, "contrast", header.contrast))
+        series_name = _source_series_name(image) or "<unnamed>"
+        meta = _meta_from_image(image)
+        echo_time = _meta_text(meta, "EchoTime") or _meta_text(meta, "TE") or "<missing>"
+        key = (series_index, set_index, contrast_index, series_name, echo_time)
+        series.setdefault(
+            key,
+            {"images": 0, "roles": set()},
+        )
+        series[key]["images"] += 1
+        series[key]["roles"].add(image_roles.get(id(image), "base/other"))
+
+    detected = "; ".join(
+        f"series={series_index} set={set_index} contrast={contrast_index} "
+        f"name={series_name!r} TE={echo_time} ms images={details['images']} "
+        f"role={','.join(sorted(details['roles']))}"
+        for (
+            series_index,
+            set_index,
+            contrast_index,
+            series_name,
+            echo_time,
+        ), details in sorted(series.items())
+    )
+    _send_logviewer_info(
+        connection,
+        f"Detected OpenMSK input volumes ({len(images)} magnitude images): {detected}",
+    )
+
+    ordered_groups = _ordered_echo_groups(echo_groups)
+    fitting_echoes = ", ".join(
+        f"{_echo_group_label(echo_key, grouping_method)} "
+        f"name={(_source_series_name(group[0]) or '<unnamed>')!r} images={len(group)}"
+        for echo_key, group in ordered_groups
+    )
+    rss_echoes = ", ".join(
+        _echo_group_label(echo_key, grouping_method)
+        for echo_key, _group in ordered_groups[:2]
+    )
+    _send_logviewer_info(
+        connection,
+        "OpenMSK DESS routing: "
+        f"grouping={grouping_method}; "
+        f"segmentation=RSS({rss_echoes}); "
+        f"fitting echoes=[{fitting_echoes}]",
+    )
+
+
+def _log_qdess_timing(connection, qdess_params, source_selection):
+    echo_groups = source_selection.get("echo_groups", {})
+    ordered_groups = _ordered_echo_groups(echo_groups)
+    if len(ordered_groups) < 2:
+        return
+
+    grouping_method = source_selection.get("echo_grouping_method", "unknown")
+    first_echo_label = _echo_group_label(ordered_groups[0][0], grouping_method)
+    second_echo_label = _echo_group_label(ordered_groups[1][0], grouping_method)
+    sources = qdess_params.get("sources", {})
+    te_sources = sources.get("te_ms", ["", ""])
+    te_values = qdess_params.get("te_ms", [None, None])
+    message = (
+        "OpenMSK DESS fitting parameters: "
+        f"received TE labels={qdess_params.get('received_te_ms', [])} ms; "
+        f"TR={qdess_params.get('tr_ms')} ms ({sources.get('tr_ms', '')}); "
+        f"TE1({first_echo_label})={te_values[0]} ms ({te_sources[0]}); "
+        f"TE2({second_echo_label})={te_values[1]} ms ({te_sources[1]}); "
+        f"flip={qdess_params.get('flip_angle_deg')} deg "
+        f"({sources.get('flip_angle_deg', '')}); "
+        f"GL area={qdess_params.get('gl_area')} "
+        f"({sources.get('gl_area', '')}); "
+        f"TG={qdess_params.get('tg_us')} us ({sources.get('tg_us', '')})"
+    )
+    _send_logviewer_info(connection, message)
+
+
+def _send_logviewer_info(connection, message):
+    logging.info(message)
+    try:
+        connection.send_logging(constants.MRD_LOGGING_INFO, message)
+    except Exception:
+        logging.warning("Could not send OpenMSK info message to logviewer", exc_info=True)
 
 
 def _source_group_key(image):
@@ -576,7 +751,6 @@ def _source_group_key(image):
     return (
         int(getattr(image, "average", 0)),
         int(getattr(image, "repetition", 0)),
-        int(getattr(image, "set", 0)),
         matrix,
         fov,
     )
@@ -588,13 +762,18 @@ def _select_primary_source_group(images):
 
 
 def _split_echo_groups(images):
+    groups, _method = _detect_echo_groups(images)
+    return groups
+
+
+def _detect_echo_groups(images):
     named_echo_groups = _split_named_dess_echo_groups(images)
     if named_echo_groups:
-        return named_echo_groups
+        return named_echo_groups, "series-name suffix (_fid/_SE)"
 
     contrast_values = {int(getattr(image, "contrast", 0)) for image in images}
     if len(contrast_values) > 1:
-        return _group_by_header_field(images, "contrast")
+        return _group_by_header_field(images, "contrast"), "contrast"
 
     echo_time_groups = {}
     for image in images:
@@ -603,13 +782,32 @@ def _split_echo_groups(images):
         if echo_time:
             echo_time_groups.setdefault(echo_time, []).append(image)
     if len(echo_time_groups) > 1:
-        return echo_time_groups
+        return echo_time_groups, "EchoTime"
 
     source_series_groups = _split_source_series_groups(images)
     if source_series_groups:
-        return source_series_groups
+        return source_series_groups, "image_series_index"
 
-    return _split_duplicate_slice_positions(images)
+    set_groups = _group_by_header_field(images, "set")
+    if len(set_groups) > 1 and _echo_group_counts_match(set_groups):
+        return set_groups, "set"
+
+    duplicate_position_groups = _split_duplicate_slice_positions(images)
+    if len(duplicate_position_groups) > 1:
+        return duplicate_position_groups, "duplicate slice position"
+    return duplicate_position_groups, "single echo"
+
+
+def _echo_group_label(echo_key, grouping_method):
+    if echo_key in ("FID", "SE"):
+        return str(echo_key)
+    if grouping_method in ("set", "contrast"):
+        return f"{grouping_method}={echo_key}"
+    if grouping_method == "image_series_index":
+        return f"series={echo_key}"
+    if grouping_method == "EchoTime":
+        return f"TE={echo_key}"
+    return f"echo={echo_key}"
 
 
 def _echo_key_sort(value):
@@ -645,7 +843,7 @@ def _split_named_dess_echo_groups(images):
 
 def _named_dess_echo_key(image):
     source_name = _source_series_name(image).lower()
-    if not source_name or "dess" not in source_name:
+    if not source_name:
         return None
     if re.search(r"(^|[_\W])fid($|[_\W])", source_name):
         return "FID"
@@ -694,13 +892,86 @@ def _split_duplicate_slice_positions(images):
     return echo_groups
 
 
-def _write_source_nifti(images, output_path, metadata):
-    headers = [image.getHead() for image in images]
-    sort_indices, slice_axis, _ = _slice_sort_indices(headers)
-    ordered_images = [images[index] for index in sort_indices]
-    ordered_headers = [headers[index] for index in sort_indices]
+def _write_source_nifti(echo_groups_or_images, output_path, metadata):
+    if isinstance(echo_groups_or_images, dict):
+        echo_groups = echo_groups_or_images
+    else:
+        echo_groups = {0: list(echo_groups_or_images)}
 
-    pixels_yxz = np.stack([_slice_pixels(image) for image in ordered_images], axis=2)
+    nonempty_echo_groups = [
+        (echo_key, list(echo_groups[echo_key]))
+        for echo_key in sorted(echo_groups, key=_echo_key_sort)
+        if echo_groups[echo_key]
+    ]
+    if not nonempty_echo_groups:
+        raise ValueError("Cannot write OpenMSK NIfTI without source images")
+
+    echo_keys = [echo_key for echo_key, _images in nonempty_echo_groups[:2]]
+    reference_images = nonempty_echo_groups[0][1]
+    reference_sort_indices, slice_axis, _records = _slice_sort_indices(
+        [image.getHead() for image in reference_images]
+    )
+    ordered_images = [reference_images[index] for index in reference_sort_indices]
+    ordered_headers = [image.getHead() for image in ordered_images]
+
+    echo_stacks = []
+    for echo_key, echo_images in nonempty_echo_groups[:2]:
+        _axis, geometry_records = _build_slice_geometry_records(
+            [image.getHead() for image in echo_images],
+            slice_axis=slice_axis,
+        )
+        echo_sort_indices = [
+            record["input_index"]
+            for record in sorted(
+                geometry_records,
+                key=lambda record: (
+                    round(record["projected_position"], 4),
+                    record["slice"],
+                    record["image_index"],
+                    record["input_index"],
+                ),
+            )
+        ]
+        echo_images = [echo_images[index] for index in echo_sort_indices]
+        if len(echo_images) != len(ordered_images):
+            raise ValueError(
+                "Cannot compute DESS RSS from unequal echo groups: "
+                f"{echo_keys[0]}={len(ordered_images)} {echo_key}={len(echo_images)}"
+            )
+        for slice_index, (reference_image, echo_image) in enumerate(
+            zip(ordered_images, echo_images)
+        ):
+            _validate_rss_slice_geometry(
+                reference_image.getHead(),
+                echo_image.getHead(),
+                echo_key,
+                slice_index,
+            )
+        echo_stacks.append(
+            np.stack([_slice_pixels(image) for image in echo_images], axis=2)
+        )
+
+    if len(echo_stacks) >= 2:
+        pixels_yxz = np.hypot(echo_stacks[0], echo_stacks[1]).astype(
+            np.float32,
+            copy=False,
+        )
+        description = "OpenMSK RSS of both DESS echoes"
+        logging.info(
+            "Computed OpenMSK segmentation RSS from echo groups %s and %s "
+            "with %d slice(s); intensity range=[%s, %s]",
+            echo_keys[0],
+            echo_keys[1],
+            len(ordered_images),
+            float(np.nanmin(pixels_yxz)),
+            float(np.nanmax(pixels_yxz)),
+        )
+    else:
+        pixels_yxz = echo_stacks[0]
+        description = "OpenMSK single-echo MRD reconstruction"
+        logging.warning(
+            "Only one echo group is available; writing a single-echo segmentation input"
+        )
     data_xyz = np.asarray(pixels_yxz.transpose((1, 0, 2)), dtype=np.float32)
 
     matrix = np.array(ordered_headers[0].matrix_size[:], dtype=float)
@@ -719,7 +990,7 @@ def _write_source_nifti(images, output_path, metadata):
     header.set_data_dtype(np.float32)
     header.set_dim_info(freq=1, phase=0, slice=2)
     header.set_xyzt_units(xyz="mm", t="sec")
-    header["descrip"] = "OpenMSK qDESS echo-1 MRD reconstruction"
+    header["descrip"] = description
     header["aux_file"] = "Not for diagnostic use"
     try:
         tr = metadata.sequenceParameters.TR[0]
@@ -739,6 +1010,34 @@ def _write_source_nifti(images, output_path, metadata):
         [float(v) for v in voxel_size],
     )
     return ordered_images, data_xyz.shape
+
+
+def _validate_rss_slice_geometry(reference_header, echo_header, echo_key, slice_index):
+    reference_matrix = tuple(int(value) for value in reference_header.matrix_size[:2])
+    echo_matrix = tuple(int(value) for value in echo_header.matrix_size[:2])
+    geometry_matches = (
+        reference_matrix == echo_matrix
+        and np.allclose(
+            _header_vector(reference_header, "position"),
+            _header_vector(echo_header, "position"),
+            atol=1e-3,
+        )
+        and np.allclose(
+            _header_vector(reference_header, "read_dir"),
+            _header_vector(echo_header, "read_dir"),
+            atol=1e-4,
+        )
+        and np.allclose(
+            _header_vector(reference_header, "phase_dir"),
+            _header_vector(echo_header, "phase_dir"),
+            atol=1e-4,
+        )
+    )
+    if not geometry_matches:
+        raise ValueError(
+            "Cannot compute DESS RSS from geometrically mismatched echoes: "
+            f"echo={echo_key} sorted_slice={slice_index}"
+        )
 
 
 def _ordered_echo_groups(echo_groups):
@@ -765,9 +1064,19 @@ def _resolve_qdess_parameters(config, metadata, echo_groups):
     params["tr_ms"] = tr_ms
     params["sources"]["tr_ms"] = source
 
-    te_values, te_sources = _resolve_qdess_echo_times(config, metadata, echo_groups)
+    te_values, te_sources = _resolve_qdess_echo_times(
+        config,
+        metadata,
+        echo_groups,
+        tr_ms=tr_ms,
+    )
     params["te_ms"] = te_values
     params["sources"]["te_ms"] = te_sources
+    sequence_te = _metadata_sequence_values_ms(metadata, "TE")[:2]
+    image_te = _echo_group_meta_echo_times(echo_groups)[:2]
+    params["received_te_ms"] = (
+        image_te if len(image_te) > len(sequence_te) else sequence_te
+    )
 
     flip_angle, source = _first_available_float(
         (
@@ -802,45 +1111,41 @@ def _resolve_qdess_parameters(config, metadata, echo_groups):
     params["tg_us"] = tg_us
     params["sources"]["tg_us"] = source
 
-    logging.info("Resolved qDESS synthesis parameters: %s", params)
+    logging.info("Resolved DESS synthesis parameters: %s", params)
     return params
 
 
-def _resolve_qdess_echo_times(config, metadata, echo_groups):
-    te_values = []
-    te_sources = []
-    seq_te = _metadata_sequence_values_ms(metadata, "TE")
-    if len(seq_te) >= 2:
-        return seq_te[:2], ["mrd.sequenceParameters.TE[0]", "mrd.sequenceParameters.TE[1]"]
-    if len(seq_te) == 1:
-        # DOSMA's qDESS fit uses one sequence TE for the S1/S2 signal ratio.
-        # Scanner image exporters may expose the two qDESS volumes as separate
-        # series while carrying only that single TE in the MRD header.
-        return [seq_te[0], seq_te[0]], [
-            "mrd.sequenceParameters.TE[0]",
-            "mrd.sequenceParameters.TE[0] (shared qDESS TE)",
-        ]
+def _resolve_qdess_echo_times(config, metadata, echo_groups, tr_ms=None):
+    if tr_ms is None:
+        tr_ms, _source = _first_available_float(
+            (
+                (
+                    "mrd.sequenceParameters.TR",
+                    lambda: _metadata_sequence_float(metadata, "TR", 0, unit="ms"),
+                ),
+                (
+                    "openrecon.qdess_tr_ms",
+                    lambda: _config_float_any(config, ("qdess_tr_ms", "qdesstrms")),
+                ),
+                ("default.qdess_tr_ms", lambda: QDESS_DEFAULTS["tr_ms"]),
+            )
+        )
 
+    seq_te = _metadata_sequence_values_ms(metadata, "TE")
     meta_te = _echo_group_meta_echo_times(echo_groups)
-    config_te = [
-        _config_float_any(config, ("qdess_te1_ms", "qdesste1ms")),
-        _config_float_any(config, ("qdess_te2_ms", "qdesste2ms")),
-    ]
-    defaults = [QDESS_DEFAULTS["te1_ms"], QDESS_DEFAULTS["te2_ms"]]
-    for index in range(2):
-        if index < len(seq_te) and seq_te[index] is not None:
-            te_values.append(seq_te[index])
-            te_sources.append(f"mrd.sequenceParameters.TE[{index}]")
-        elif index < len(meta_te) and meta_te[index] is not None:
-            te_values.append(meta_te[index])
-            te_sources.append(f"image_meta.echo_group[{index}]")
-        elif config_te[index] is not None:
-            te_values.append(config_te[index])
-            te_sources.append(f"openrecon.qdess_te{index + 1}_ms")
-        else:
-            te_values.append(defaults[index])
-            te_sources.append(f"default.qdess_te{index + 1}_ms")
-    return te_values, te_sources
+    te1_ms, te1_source = _first_available_float(
+        (
+            ("mrd.sequenceParameters.TE[0]", lambda: seq_te[0] if seq_te else None),
+            ("image_meta.echo_group[0]", lambda: meta_te[0] if meta_te else None),
+            (
+                "openrecon.qdess_te1_ms",
+                lambda: _config_float_any(config, ("qdess_te1_ms", "qdesste1ms")),
+            ),
+            ("default.qdess_te1_ms", lambda: QDESS_DEFAULTS["te1_ms"]),
+        )
+    )
+    te2_ms = 2.0 * float(tr_ms) - float(te1_ms)
+    return [te1_ms, te2_ms], [te1_source, "computed as 2 * TR - TE1"]
 
 
 def _first_available_float(candidates):
@@ -932,21 +1237,21 @@ def _metadata_protocol_name(metadata):
 def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config, qdess_params):
     ordered_groups = _ordered_echo_groups(echo_groups)
     if len(ordered_groups) < 2:
-        logging.info("Cannot synthesize qDESS DICOM: only %d echo group(s) available", len(ordered_groups))
+        logging.info("Cannot synthesize DESS DICOM: only %d echo group(s) available", len(ordered_groups))
         return None
 
     echo_pairs = ordered_groups[:2]
     slice_count = len(echo_pairs[0][1])
     if slice_count == 0 or any(len(images) != slice_count for _key, images in echo_pairs):
         logging.warning(
-            "Cannot synthesize qDESS DICOM: echo group slice counts differ: %s",
+            "Cannot synthesize DESS DICOM: echo group slice counts differ: %s",
             [len(images) for _key, images in echo_pairs],
         )
         return None
 
     missing = [key for key in ("tr_ms", "te_ms", "flip_angle_deg", "gl_area", "tg_us") if qdess_params.get(key) is None]
     if missing:
-        logging.warning("Cannot synthesize qDESS DICOM: missing qDESS parameter(s) %s", missing)
+        logging.warning("Cannot synthesize DESS DICOM: missing DESS parameter(s) %s", missing)
         return None
 
     try:
@@ -954,7 +1259,7 @@ def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config
         from pydicom.dataset import FileDataset, FileMetaDataset
         from pydicom.uid import ExplicitVRLittleEndian, MRImageStorage, generate_uid
     except Exception:
-        logging.warning("Cannot synthesize qDESS DICOM because pydicom import failed:\n%s", traceback.format_exc())
+        logging.warning("Cannot synthesize DESS DICOM because pydicom import failed:\n%s", traceback.format_exc())
         return None
 
     output_dir = Path(output_dir)
@@ -972,7 +1277,7 @@ def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config
     pixel_scale = _dicom_pixel_scale(all_pixels)
 
     logging.info(
-        "Synthesizing qDESS DICOM series: out=%s slices=%d echo_keys=%s TR=%sms TE=%s flip=%sdeg "
+        "Synthesizing DESS DICOM series: out=%s slices=%d echo_keys=%s TR=%sms TE=%s flip=%sdeg "
         "GL_AREA=%s TG=%sus sources=%s",
         output_dir,
         slice_count,
@@ -1057,8 +1362,26 @@ def _write_synthetic_qdess_dicom_input(echo_groups, output_dir, metadata, config
                 ds.save_as(str(path), write_like_original=False)
             written.append(path)
 
-    logging.info("Wrote %d synthetic qDESS DICOM file(s) to %s", len(written), output_dir)
+    logging.info("Wrote %d synthetic DESS DICOM file(s) to %s", len(written), output_dir)
     return output_dir
+
+
+def _stage_qdess_fit_input(qdess_dicom_dir, working_dir):
+    source = Path(qdess_dicom_dir)
+    target = Path(working_dir) / "openmsk_qdess_fit"
+    try:
+        target.symlink_to(source.resolve(), target_is_directory=True)
+        method = "symlinked"
+    except OSError:
+        shutil.copytree(source, target)
+        method = "copied"
+    logging.info(
+        "Staged both DESS echoes for fitting: %s %s -> %s",
+        method,
+        source,
+        target,
+    )
+    return target
 
 
 def _dicom_now():
@@ -1265,9 +1588,7 @@ sys.path.insert(0, str(pipeline_dir))
 import os
 import subprocess as _sp
 
-from run_pipeline import _get_remap_table
-from steps._common import STEP_RESULT_FILENAME, load_config
-from steps.label_remap import run as label_remap
+from steps._common import STEP_RESULT_FILENAME
 
 # KneePipeline's own _run_step_subprocess hardcodes a 600s timeout, too short
 # for CPU-only / emulated hosts where DOSMA qDESS inference can take much
@@ -1307,7 +1628,6 @@ working_dir = Path(sys.argv[2])
 seg_model = sys.argv[3]
 config_path = Path(sys.argv[4])
 
-config = load_config(str(config_path))
 working_dir.mkdir(parents=True, exist_ok=True)
 link_path = working_dir / input_path.name
 if not link_path.exists():
@@ -1318,6 +1638,7 @@ if not link_path.exists():
 
 summary = {
     "segmodel": seg_model,
+    "output_label_scheme": "upstream_dosma_native_v1",
     "errors": {},
 }
 
@@ -1328,11 +1649,7 @@ seg_result = _run_step(
     config_path=str(config_path),
 )
 summary["segmentation"] = seg_result
-
-remap_table = _get_remap_table(seg_result["model_name"], config)
-if remap_table:
-    label_remap(working_dir, options={"remap_table": remap_table}, config=config)
-summary["label_remap"] = bool(remap_table)
+summary["label_remap"] = False
 
 summary_path = working_dir / "_openmsk_segmentation_summary.json"
 summary_path.write_text(json.dumps(summary, default=str, indent=2))
@@ -1366,6 +1683,7 @@ def _run_kneepipeline_postprocessing(output_dir, config_path, compute_thickness,
     script = r"""
 import json
 from pathlib import Path
+import shutil
 import sys
 import traceback
 
@@ -1373,39 +1691,93 @@ pipeline_dir = Path("/opt/KneePipeline")
 sys.path.insert(0, str(pipeline_dir))
 
 from steps._common import load_config
+from steps.label_remap import run as label_remap
 
 working_dir = Path(sys.argv[1])
 config_path = Path(sys.argv[2])
 compute_thickness = json.loads(sys.argv[3])
 compute_t2 = json.loads(sys.argv[4])
+upstream_to_canonical_labels = json.loads(sys.argv[5])
 
 config = load_config(str(config_path))
 summary = {
     "compute_thickness": compute_thickness,
     "compute_t2": compute_t2,
+    "input_label_scheme": "upstream_dosma_native_v1",
+    "processing_label_scheme": "kneepipeline_canonical_v1",
     "errors": {},
+    "warnings": {},
 }
 
 try:
-    from steps.generate_meshes import run as generate_meshes
-    summary["generate_meshes"] = generate_meshes(
+    summary["label_remap"] = label_remap(
         working_dir,
-        options={"compute_thickness": compute_thickness},
+        options={"remap_table": upstream_to_canonical_labels},
         config=config,
     )
 except Exception:
-    summary["errors"]["generate_meshes"] = traceback.format_exc()
+    summary["errors"]["label_remap"] = traceback.format_exc()
 
-if compute_t2:
+if "label_remap" not in summary["errors"]:
     try:
-        from steps.t2_mapping import run as t2_mapping
-        summary["t2_mapping"] = t2_mapping(working_dir, config=config)
+        from steps.generate_meshes import run as generate_meshes
+        summary["generate_meshes"] = generate_meshes(
+            working_dir,
+            options={"compute_thickness": compute_thickness},
+            config=config,
+        )
+    except Exception:
+        if compute_thickness:
+            summary["errors"]["generate_meshes"] = traceback.format_exc()
+        else:
+            summary["warnings"]["generate_meshes"] = traceback.format_exc()
+
+if compute_t2 and "label_remap" not in summary["errors"]:
+    try:
+        from steps._common import find_file
+
+        subregion_paths = list(working_dir.glob("*_subregions-labels.nii.gz"))
+        if subregion_paths:
+            summary["t2_statistics_scope"] = "cartilage_subregions"
+        else:
+            segmentation_path = find_file(working_dir, "*_all-labels.nii.gz")
+            fallback_subregions_path = working_dir / segmentation_path.name.replace(
+                "_all-labels.nii.gz",
+                "_subregions-labels.nii.gz",
+            )
+            shutil.copy2(segmentation_path, fallback_subregions_path)
+            summary["t2_statistics_scope"] = "global_cartilage_compartments"
+            summary["t2_subregion_fallback"] = str(fallback_subregions_path)
+
+        fit_dicom_dir = working_dir / "openmsk_qdess_fit"
+        dicom_files = [
+            path
+            for path in fit_dicom_dir.iterdir()
+            if path.is_file() and path.suffix.lower() == ".dcm"
+        ] if fit_dicom_dir.is_dir() else []
+        if not dicom_files:
+            raise FileNotFoundError(
+                f"No synthetic DESS DICOM files found in {fit_dicom_dir}"
+            )
+
+        from steps import t2_mapping as t2_mapping_step
+
+        def _openmsk_find_dicom_dir(_working_dir):
+            return fit_dicom_dir
+
+        t2_mapping_step._find_dicom_dir = _openmsk_find_dicom_dir
+        summary["t2_mapping"] = t2_mapping_step.run(working_dir, config=config)
     except Exception:
         summary["errors"]["t2_mapping"] = traceback.format_exc()
+elif not compute_t2:
+    summary["t2_mapping"] = {
+        "skipped": True,
+        "reason": "KneePipeline segmentation did not identify the input as DESS",
+    }
 else:
     summary["t2_mapping"] = {
         "skipped": True,
-        "reason": "KneePipeline segmentation did not identify the input as qDESS",
+        "reason": "Upstream-to-canonical label conversion failed",
     }
 
 summary_path = working_dir / "_openmsk_postprocessing_summary.json"
@@ -1422,6 +1794,7 @@ if summary["errors"]:
         str(config_path),
         json.dumps(bool(compute_thickness)),
         json.dumps(bool(compute_t2)),
+        json.dumps(UPSTREAM_TO_CANONICAL_LABELS),
     ]
     result = subprocess.run(
         cmd,
@@ -1518,6 +1891,7 @@ def _nifti_to_mrd_images(
     comment,
     source_geometry_segment,
     reference_nifti_path=None,
+    label_map=None,
     extra_meta=None,
 ):
     img = nib.load(str(nifti_path))
@@ -1548,7 +1922,11 @@ def _nifti_to_mrd_images(
         info = np.iinfo(dtype)
         rounded = np.clip(rounded, info.min, info.max)
         data_yxz = rounded.astype(dtype, copy=False)
+        if label_map:
+            data_yxz = _remap_integer_labels(data_yxz, label_map)
     else:
+        if label_map:
+            raise ValueError("label_map can only be applied to integer NIfTI output")
         data_yxz = data_yxz.astype(dtype, copy=False)
 
     max_value = float(np.nanmax(data_yxz)) if data_yxz.size else 1.0
@@ -1599,6 +1977,15 @@ def _nifti_to_mrd_images(
         ).serialize()
         outputs.append(output)
     return outputs
+
+
+def _remap_integer_labels(data, label_map):
+    """Remap known labels without discarding background or subregion labels."""
+    source = np.asarray(data)
+    remapped = np.array(source, copy=True)
+    for source_label, target_label in label_map.items():
+        remapped[source == int(source_label)] = int(target_label)
+    return remapped
 
 
 def _nifti_on_reference_grid(img, reference_nifti_path, *, order):
@@ -1699,29 +2086,79 @@ def _match_volume_shape_yxz(data, target_shape):
 
 
 def _restamp_images(images, series_index, series_name, type_token, comment):
-    series_uid = _derived_uid(series_name, series_index)
     outputs = []
-    for index, image in enumerate(images):
-        output = ismrmrd.Image.from_array(np.array(image.data, copy=True), transpose=False)
-        header = copy.deepcopy(image.getHead())
-        header.image_series_index = series_index
-        header.image_index = index + 1
-        output.setHead(header)
-        output.image_series_index = series_index
-        output.image_index = index + 1
-        output.attribute_string = _passthrough_meta(
-            image,
-            series_name,
-            series_uid,
-            series_index,
-            index,
-            type_token,
-            comment,
-            _image_abs_max(image.data),
-            slice_count=len(images),
-        ).serialize()
-        outputs.append(output)
+    source_groups = _passthrough_source_groups(images)
+    if len(source_groups) > 1:
+        logging.info(
+            "Splitting %d source image(s) into %d labeled passthrough subseries",
+            len(images),
+            len(source_groups),
+        )
+
+    for group_index, source_group in enumerate(source_groups):
+        output_series_index = (
+            series_index
+            if group_index == 0
+            else EXTRA_ORIGINAL_SERIES_INDEX_START + group_index - 1
+        )
+        series_uid = _derived_uid(series_name, output_series_index)
+        source_name = _source_series_name(source_group[0]) or "<unnamed>"
+        logging.info(
+            "OpenMSK passthrough subseries: output_series=%d source_name=%r images=%d",
+            output_series_index,
+            source_name,
+            len(source_group),
+        )
+        for index, image in enumerate(source_group):
+            output = ismrmrd.Image.from_array(
+                np.array(image.data, copy=True),
+                transpose=False,
+            )
+            header = copy.deepcopy(image.getHead())
+            header.image_series_index = output_series_index
+            header.image_index = index + 1
+            output.setHead(header)
+            output.image_series_index = output_series_index
+            output.image_index = index + 1
+            output.attribute_string = _passthrough_meta(
+                image,
+                series_name,
+                series_uid,
+                output_series_index,
+                index,
+                type_token,
+                comment,
+                _image_abs_max(image.data),
+                slice_count=len(source_group),
+            ).serialize()
+            outputs.append(output)
     return outputs
+
+
+def _passthrough_source_groups(images):
+    groups = []
+    group_index_by_key = {}
+    for image in images:
+        header = image.getHead()
+        meta = _meta_from_image(image)
+        key = (
+            int(header.image_series_index),
+            _source_series_name(image),
+            _meta_text(meta, "SeriesInstanceUID"),
+            _meta_text(meta, "SeriesNumberRangeNameUID"),
+            int(header.image_type),
+            int(header.average),
+            int(header.repetition),
+            int(header.set),
+            int(header.contrast),
+        )
+        group_index = group_index_by_key.get(key)
+        if group_index is None:
+            group_index = len(groups)
+            group_index_by_key[key] = group_index
+            groups.append([])
+        groups[group_index].append(image)
+    return groups
 
 
 def _image_abs_max(data):
@@ -2270,6 +2707,23 @@ def _set_header_sequence_field(image_header, field_name, values):
         setattr(image_header, field_name, tuple(values))
 
 
+def _explicit_header_geometry_meta(header):
+    return {
+        "ImageRowDir": [
+            f"{value:.18f}" for value in _header_vector(header, "read_dir")
+        ],
+        "ImageColumnDir": [
+            f"{value:.18f}" for value in _header_vector(header, "phase_dir")
+        ],
+        "ImageSliceNormDir": [
+            f"{value:.18f}" for value in _header_vector(header, "slice_dir")
+        ],
+        "SlicePosLightMarker": [
+            f"{value:.18f}" for value in _header_vector(header, "position")
+        ],
+    }
+
+
 def _derived_uid(*parts):
     source = ".".join(str(part) for part in parts if part is not None)
     return "2.25." + str(uuid.uuid5(uuid.NAMESPACE_URL, source).int)
@@ -2282,15 +2736,13 @@ def _collect_metrics_comment(output_dir):
 
 def _collect_metrics_outputs(output_dir):
     summaries = []
-    for json_pattern, csv_pattern, label in (
-        ("*_thickness_results.json", "*_thickness_results.csv", "thickness"),
-        ("*_t2_results.json", None, "t2"),
-        ("bscore_results.json", None, "bscore"),
+    for json_pattern, label in (
+        ("*_thickness_results.json", "thickness"),
+        ("*_t2_results.json", "t2"),
+        ("bscore_results.json", "bscore"),
     ):
         json_path = _find_single_output(output_dir, json_pattern)
-        csv_path = _find_single_output(output_dir, csv_pattern) if csv_pattern else None
         payload = None
-        rows = []
 
         if json_path is not None:
             try:
@@ -2298,59 +2750,22 @@ def _collect_metrics_outputs(output_dir):
             except Exception:
                 payload = None
 
-        if csv_path is not None:
-            rows = _read_metrics_csv_rows(csv_path)
-
-        if payload is None and not rows:
+        if payload is None:
             continue
         summaries.append(
             {
                 "label": label,
                 "json_path": json_path,
-                "csv_path": csv_path,
                 "payload": payload,
-                "rows": rows,
             }
         )
     return summaries
 
 
-def _read_metrics_csv_rows(path):
-    try:
-        with open(path, newline="") as f:
-            return list(csv.DictReader(f))
-    except Exception:
-        logging.warning("Failed to read OpenMSK metrics CSV %s:\n%s", path, traceback.format_exc())
-        return []
-
-
 def _summarize_metrics_output(metrics_output):
     label = metrics_output["label"]
-    summaries = []
-    summary = _summarize_json_metrics(f"{label}.json", metrics_output.get("payload"))
-    if summary:
-        summaries.append(summary)
-
-    summary = _summarize_csv_metrics(f"{label}.csv", metrics_output.get("rows") or [])
-    if summary:
-        summaries.append(summary)
-
-    return "; ".join(summaries)
-
-
-def _summarize_csv_metrics(label, rows):
-    if not rows:
-        return ""
-    parts = []
-    for key in _csv_fieldnames(rows[0])[:6]:
-        value = _coerce_float_or_none(rows[0].get(key))
-        if value is not None:
-            parts.append(f"{key}={value:.4g}")
-    return f"{label}: " + ", ".join(parts) if parts else label
-
-
-def _csv_fieldnames(row):
-    return sorted(str(key) for key in row.keys() if key is not None)
+    source = label if label in {"thickness", "t2"} else f"{label}.json"
+    return _summarize_json_metrics(source, metrics_output.get("payload"))
 
 
 def _summarize_json_metrics(label, payload):
@@ -2385,6 +2800,7 @@ def _metrics_report_rows(metrics_outputs):
     rows = []
     for metrics_output in metrics_outputs:
         label = metrics_output["label"]
+        source = label if label in {"thickness", "t2"} else f"{label}.json"
         payload = metrics_output.get("payload")
         if isinstance(payload, dict):
             for key in sorted(payload.keys()):
@@ -2392,25 +2808,9 @@ def _metrics_report_rows(metrics_outputs):
                 if isinstance(value, (int, float)):
                     rows.append(
                         {
-                            "source": f"{label}.json",
-                            "metric": str(key),
-                            "value": _format_metric_value(value),
-                        }
-                    )
-
-        csv_rows = metrics_output.get("rows") or []
-        for row_index, csv_row in enumerate(csv_rows, start=1):
-            source = f"{label}.csv"
-            if len(csv_rows) > 1:
-                source = f"{source} row {row_index}"
-            for key in _csv_fieldnames(csv_row):
-                value = csv_row.get(key)
-                if value not in (None, ""):
-                    rows.append(
-                        {
                             "source": source,
                             "metric": str(key),
-                            "value": str(value),
+                            "value": _format_metric_value(value),
                         }
                     )
     return rows
@@ -2466,10 +2866,9 @@ def _render_metrics_report_pages(metrics_outputs, width, height):
         f"Version: {OPENMSK_VERSION}",
         "Files: "
         + ", ".join(
-            path.name
+            output["json_path"].name
             for output in metrics_outputs
-            for path in (output.get("json_path"), output.get("csv_path"))
-            if path is not None
+            if output.get("json_path") is not None
         ),
     ]
     table_top = margin + (len(title_lines) + 1) * line_height + 8
@@ -2557,53 +2956,85 @@ def _build_metrics_report_images(metrics_outputs, source_images, metrics_comment
     if not pages:
         return []
 
-    series_uid = _derived_uid(METRICS_REPORT_SERIES_NAME, METRICS_REPORT_SERIES_INDEX)
-    outputs = []
+    # Match MuscleMap's scanner-tested report contract: pages are slices of one
+    # canonical explicit volume, not separate source-derived 2D images.
+    page_arrays = [np.asarray(page, dtype=np.uint16) for page in pages]
+    first_page_shape = tuple(page_arrays[0].shape)
+    if any(tuple(page.shape) != first_page_shape for page in page_arrays):
+        logging.warning(
+            "Failed to build OpenMSK metrics report image because page shapes "
+            "differ: %s",
+            [tuple(page.shape) for page in page_arrays],
+        )
+        return []
+
     page_count = len(pages)
-    for index, page in enumerate(pages):
-        page = np.ascontiguousarray(page.astype(np.uint16, copy=False))
-        output = ismrmrd.Image.from_array(page, transpose=False)
-        header = copy.deepcopy(base_header)
-        header.data_type = output.data_type
-        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-        header.image_series_index = METRICS_REPORT_SERIES_INDEX
-        header.image_index = index + 1
-        header.slice = index
-        _set_header_sequence_field(header, "matrix_size", [page.shape[1], page.shape[0], 1])
-        _set_header_sequence_field(header, "field_of_view", [float(page.shape[1]), float(page.shape[0]), float(page_count)])
-        _set_header_sequence_field(header, "position", [0.0, 0.0, float(index)])
-        _set_header_sequence_field(header, "read_dir", [1.0, 0.0, 0.0])
-        _set_header_sequence_field(header, "phase_dir", [0.0, 1.0, 0.0])
-        _set_header_sequence_field(header, "slice_dir", [0.0, 0.0, 1.0])
-        output.setHead(header)
-        output.image_series_index = METRICS_REPORT_SERIES_INDEX
-        output.image_index = index + 1
-        output.attribute_string = _derived_meta(
-            source_images[0],
-            METRICS_REPORT_SERIES_NAME,
-            series_uid,
-            METRICS_REPORT_SERIES_INDEX,
-            index,
-            METRICS_REPORT_IMAGE_TYPE,
-            "Image",
-            metrics_comment or "OpenMSK metrics report",
-            float(np.nanmax(page)) if page.size else 4095.0,
-            source_geometry_segment=False,
-            slice_count=page_count,
-            extra_meta={
-                "Keep_image_geometry": "0",
-                "OpenMSKMetricsRows": str(len(rows)),
-                **_metrics_extra_meta(metrics_comment),
-            },
-        ).serialize()
-        outputs.append(output)
+    page_height, page_width = first_page_shape
+    report_volume = np.stack(page_arrays, axis=0)
+    output = ismrmrd.Image.from_array(
+        np.ascontiguousarray(report_volume),
+        transpose=False,
+    )
+    header = copy.deepcopy(base_header)
+    header.data_type = output.data_type
+    header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    header.image_series_index = METRICS_REPORT_SERIES_INDEX
+    header.image_index = 1
+    header.slice = 0
+    header.contrast = 0
+    _set_header_sequence_field(
+        header,
+        "matrix_size",
+        [page_width, page_height, page_count],
+    )
+    _set_header_sequence_field(
+        header,
+        "field_of_view",
+        [float(page_width), float(page_height), float(page_count)],
+    )
+    _set_header_sequence_field(header, "position", [0.0, 0.0, 0.0])
+    _set_header_sequence_field(header, "read_dir", [1.0, 0.0, 0.0])
+    _set_header_sequence_field(header, "phase_dir", [0.0, 1.0, 0.0])
+    _set_header_sequence_field(header, "slice_dir", [0.0, 0.0, 1.0])
+    output.setHead(header)
+    output.image_series_index = METRICS_REPORT_SERIES_INDEX
+    output.image_index = 1
+
+    series_uid = _derived_uid(
+        METRICS_REPORT_SERIES_NAME,
+        METRICS_REPORT_SERIES_INDEX,
+    )
+    report_meta = _derived_meta(
+        source_images[0],
+        METRICS_REPORT_SERIES_NAME,
+        series_uid,
+        METRICS_REPORT_SERIES_INDEX,
+        0,
+        METRICS_REPORT_IMAGE_TYPE,
+        "Segmentation",
+        metrics_comment or "OpenMSK metrics report",
+        float(np.nanmax(report_volume)) if report_volume.size else 4095.0,
+        source_geometry_segment=False,
+        slice_count=page_count,
+        extra_meta={
+            "Keep_image_geometry": "0",
+            "OpenMSKMetricsRows": str(len(rows)),
+            **_metrics_extra_meta(metrics_comment),
+        },
+    )
+    if "IceMiniHead" in report_meta:
+        del report_meta["IceMiniHead"]
+    for key, value in _explicit_header_geometry_meta(header).items():
+        report_meta[key] = value
+    output.attribute_string = report_meta.serialize()
 
     logging.info(
-        "Created OpenMSK metrics report image series with %d page(s) in image_series_index=%d",
+        "Created OpenMSK metrics explicit-volume report image with %d page(s) "
+        "in image_series_index=%d",
         page_count,
         METRICS_REPORT_SERIES_INDEX,
     )
-    return outputs
+    return [output]
 
 
 def _send_images(connection, images, context):
@@ -2612,13 +3043,50 @@ def _send_images(connection, images, context):
     batch = []
     current_series = None
     for image in images:
-        series_index = int(getattr(image, "image_series_index", getattr(image.getHead(), "image_series_index", 0)))
+        series_index = int(
+            getattr(
+                image,
+                "image_series_index",
+                getattr(image.getHead(), "image_series_index", 0),
+            )
+        )
         if batch and series_index != current_series:
-            logging.info("Sending %s series=%s images=%d", context, current_series, len(batch))
+            logging.info(
+                "Sending %s series=%s images=%d",
+                context,
+                current_series,
+                len(batch),
+            )
+            _log_passthrough_output(connection, batch, context)
             connection.send_image(batch)
             batch = []
         batch.append(image)
         current_series = series_index
     if batch:
-        logging.info("Sending %s series=%s images=%d", context, current_series, len(batch))
+        logging.info(
+            "Sending %s series=%s images=%d",
+            context,
+            current_series,
+            len(batch),
+        )
+        _log_passthrough_output(connection, batch, context)
         connection.send_image(batch)
+
+
+def _log_passthrough_output(connection, images, context):
+    if context != "original_passthrough" or not images:
+        return
+    image = images[0]
+    series_index = int(
+        getattr(
+            image,
+            "image_series_index",
+            getattr(image.getHead(), "image_series_index", 0),
+        )
+    )
+    series_name = _source_series_name(image) or "<unnamed>"
+    _send_logviewer_info(
+        connection,
+        "Returning OpenMSK source subseries: "
+        f"series={series_index} name={series_name!r} images={len(images)}",
+    )

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Run python from inside this container.
+#
+# brainles_preprocessing is installed in the container's environment, not on
+# the host, so "import brainles_preprocessing" only works with this
+# interpreter. The container does not put python on your PATH, because doing so
+# silently replaced the host interpreter for the rest of the shell.
+exec /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python "$@"

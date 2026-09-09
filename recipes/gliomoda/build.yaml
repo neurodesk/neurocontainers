@@ -1,0 +1,478 @@
+name: gliomoda
+version: 0.0.4
+
+description: GlioMODA segments gliomas from multi-modal brain MRI across arbitrary sequence combinations.
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/BrainLesion/GlioMODA/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  # Version of the model weights baked into the image. Bumping this is a
+  # deliberate act: the build asserts the archive Zenodo serves matches, so new
+  # upstream weights fail the build here instead of silently changing results.
+  weights_version: "1.0.2"
+  venv: /opt/gliomoda-0.0.4
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        VENV: "{{ context.venv }}"
+        # These default under $HOME, which does not exist at container runtime.
+        MPLCONFIGDIR: /tmp/mpl-gliomoda
+        XDG_CACHE_HOME: /tmp/cache-gliomoda
+        PYTHONNOUSERSITE: "1"
+        PATH: "{{ context.venv }}/bin:$PATH"
+
+    - install:
+        - ca-certificates
+        - fonts-dejavu-core
+        - libgl1
+        - libglib2.0-0t64
+        - libgomp1
+        - python3
+        - unzip
+        - python3-pip
+        - python3-venv
+
+    - run:
+        - python3 -m venv "${VENV}"
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        # CUDA wheels: these are GPU inference tools and the default index
+        # already resolves to CUDA builds, so pin the index explicitly rather
+        # than letting the resolver choose a different one on a rebuild.
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir
+          --extra-index-url https://download.pytorch.org/whl/cu124 torch
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "gliomoda==0.0.4"
+        # Import at build time so a broken resolve fails here rather than on
+        # first use; read the version from distribution metadata because these
+        # packages do not all define __version__.
+        - . "${VENV}/bin/activate" && python -c "import importlib.metadata as md; import gliomoda; print('gliomoda', md.version('gliomoda'))"
+        # Bake the model weights into the image so inference runs offline and every
+        # run uses the same weights. Adds ~3.3GB to the image.
+        #
+        # Upstream's own downloader cannot be used: it fetches Zenodo's
+        # files-archive endpoint, which now returns HTTP 400, so it creates the
+        # version directory and then bails, leaving it empty. The archive is
+        # fetched directly from the pinned record instead, which also gets the
+        # builder's download cache.
+        - WDIR="$(. "${VENV}/bin/activate" && python -c "import gliomoda,pathlib; print(pathlib.Path(gliomoda.__file__).parent/'weights'/'weights_v{{ context.weights_version }}')")"
+        - mkdir -p "${WDIR}"
+        - unzip -q {{ get_file("weights.zip") }} -d "${WDIR}"
+        # Upstream unpacks a nested zip if the archive contains one; do the same.
+        - find "${WDIR}" -maxdepth 1 -name '*.zip' -exec sh -c 'unzip -q "$1" -d "$(dirname "$1")" && rm -f "$1"' _ {} \;
+        # Fail the build rather than ship an image that silently re-downloads.
+        - . "${VENV}/bin/activate" && python -c "import pathlib,gliomoda as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; assert dirs, 'no weights baked into the image'; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()); print('baked', dirs[0].name, round(n/1e6), 'MB'); assert n > 2000*1e6, 'weights look truncated'"
+        # The baked weights must be the version this recipe declares.
+        - . "${VENV}/bin/activate" && python -c "import pathlib,gliomoda as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x.name for x in root.rglob('weights_v*') if x.is_dir()]; want='weights_v{{ context.weights_version }}'; assert want in dirs, 'expected '+want+', found '+str(dirs)+' -- upstream published new weights, bump weights_version'"
+        # Pin: stop the package querying Zenodo at run time so the image cannot
+        # swap its weights underneath a user. Upstream already handles an
+        # unreachable Zenodo by falling back to the local copy, so this reuses
+        # that supported path rather than adding new behaviour. Newer weights now
+        # require a rebuild with weights_version bumped.
+        # Locate the module by path rather than importing it: a failed command
+        # substitution would silently expand to "" and cat into nothing.
+        - WMOD="$(. "${VENV}/bin/activate" && python -c "import gliomoda,pathlib; print(pathlib.Path(gliomoda.__file__).parent/'weights.py')")"
+        - test -f "${WMOD}"
+        - cat {{ get_file("pin_weights.py") }} >> "${WMOD}"
+        - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import _get_zenodo_metadata_and_archive_url as f; m,_u=f(); assert m['version']=='{{ context.weights_version }}', m; print('zenodo lookup pinned to', m['version'])"
+        # Prove the pinned lookup still resolves the baked weights.
+        - . "${VENV}/bin/activate" && python -c "from gliomoda.weights import check_weights_path; p=str(check_weights_path()); assert p.endswith('weights_v{{ context.weights_version }}'), p; print('resolves offline to', p)"
+        # Upstream ships no console_scripts, so the container provides one: a thin
+        # argparse front-end over the documented Python API. It adds no logic of
+        # its own beyond argument validation.
+        - install -m 0755 {{ get_file("gliomoda") }} /usr/local/bin/gliomoda
+        - . "${VENV}/bin/activate" && gliomoda --help > /dev/null && echo "gliomoda CLI ok"
+        - chmod -R a+rX "${VENV}"
+        - rm -rf /root/.cache/pip /tmp/mpl-gliomoda /tmp/cache-gliomoda
+
+    - workdir: /opt
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+files:
+  - name: weights.zip
+    url: https://zenodo.org/api/records/15625233/files/weights.zip/content
+  - name: gliomoda
+    contents: |
+      #!{{ context.venv }}/bin/python3
+      """Command line front-end for GlioMODA.
+
+      Upstream ships no console_scripts; this wraps gliomoda.Inferer.infer. It adds
+      three things the bare API does not do, each of which was a real failure in
+      testing: it picks a device instead of assuming CUDA, it checks the input grid
+      and the presence of the selected model before loading anything, and it reports
+      what it is about to do.
+      """
+      import argparse
+      import os
+      import sys
+      from pathlib import Path
+
+      ATLAS_SHAPE = (240, 240, 155)
+
+
+      def weights_root():
+          import gliomoda
+          root = Path(gliomoda.__file__).parent / "weights"
+          found = sorted(root.glob("weights_v*"))
+          return found[-1] if found else None
+
+
+      def bundled_version():
+          w = weights_root()
+          return w.name.replace("weights_v", "") if w else "unknown"
+
+
+      def available_modes():
+          w = weights_root()
+          if not w:
+              return []
+          return sorted(d.name.replace("_", "-") for d in w.iterdir() if d.is_dir())
+
+
+      def cgroup_cpu_quota():
+          """CPU quota imposed on this container, or None if unlimited."""
+          # cgroup v2: "max 100000" or "<quota_us> <period_us>"
+          try:
+              parts = Path("/sys/fs/cgroup/cpu.max").read_text().split()
+              if parts and parts[0] != "max":
+                  return max(1, int(parts[0]) // int(parts[1]))
+          except (OSError, ValueError, IndexError, ZeroDivisionError):
+              pass
+          # cgroup v1
+          try:
+              quota = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read_text())
+              period = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read_text())
+              if quota > 0 and period > 0:
+                  return max(1, quota // period)
+          except (OSError, ValueError):
+              pass
+          return None
+
+
+      def default_threads():
+          """Threads when --threads is not given, and where the number came from.
+
+          The env vars come first, but the Neurodesk launcher runs singularity
+          with --cleanenv, which strips them before this wrapper can read them.
+          Without the kernel fallbacks torch would then use every logical core
+          on the machine rather than the cores the job was allocated, which
+          oversubscribes shared nodes.
+
+          The kernel fallbacks are a floor, not the allocation. Measured on a
+          Neurodesk node, a 2-CPU and a 4-CPU Slurm job both defaulted to 8
+          threads, because the cgroup quota visible in here belongs to the
+          Neurodesk session and Slurm sets no per-job cgroup or affinity. The
+          source is returned alongside the count so the announcement can name
+          it and an oversubscribed default is visible in the log rather than
+          silent.
+          """
+          for var in ("SLURM_CPUS_PER_TASK", "OMP_NUM_THREADS"):
+              value = os.environ.get(var, "")
+              if value.isdigit():
+                  return int(value), "$" + var
+          limits = []
+          try:
+              limits.append((len(os.sched_getaffinity(0)), "affinity mask"))
+          except (AttributeError, OSError):
+              pass
+          quota = cgroup_cpu_quota()
+          if quota:
+              limits.append((quota, "cgroup quota"))
+          if not limits:
+              return None, "torch default"
+          return min(limits, key=lambda limit: limit[0])
+
+
+      def check_grid(paths):
+          """Reject inputs that are not on the atlas grid, naming the offender.
+
+          The comparison must be exact: upstream reloads each file and asserts
+          shape == (240, 240, 155), so squeezing singleton axes here would only
+          admit a file that fails minutes later with a bare AssertionError. The
+          canonical BraTS atlas ships as (240, 240, 155, 1), so that case gets
+          its own message.
+          """
+          import nibabel as nib
+          for flag, path in paths.items():
+              shape = tuple(int(x) for x in nib.load(path).shape)
+              if shape == ATLAS_SHAPE:
+                  continue
+              msg = (f"error: {path} (--{flag}) has shape {shape}; GlioMODA "
+                     f"requires exactly {ATLAS_SHAPE} BraTS/SRI24 atlas space.\n")
+              if tuple(x for x in shape if x != 1) == ATLAS_SHAPE:
+                  msg += ("The grid matches apart from a singleton axis; drop it "
+                          "first, e.g. with nibabel's squeeze_image or "
+                          "fslroi.")
+              else:
+                  msg += ("Inputs must be skull-stripped, co-registered and "
+                          "resampled onto that grid. Use brainles-preprocessing "
+                          "to get there.")
+              sys.exit(msg)
+
+
+      def main(argv=None):
+          p = argparse.ArgumentParser(
+              prog="gliomoda",
+              description="Segment glioma from multi-modal brain MRI (BraTS labels).",
+              epilog="Not every combination of modalities has a model; run with "
+                     "--list-models to see the ones bundled in this image.",
+          )
+          p.add_argument("-t1c", "--t1c", help="T1 contrast-enhanced image (NIfTI)")
+          p.add_argument("-t2f", "--t2f", help="T2 FLAIR image (NIfTI)")
+          p.add_argument("-t1n", "--t1n", help="T1 native image (NIfTI)")
+          p.add_argument("-t2w", "--t2w", help="T2 weighted image (NIfTI)")
+          p.add_argument("-o", "--output", help="Output segmentation file (NIfTI)")
+          p.add_argument("--use-res-enc-l", action="store_true",
+                         help="Use the ResEncL model (requires all four modalities)")
+          p.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"],
+                         help="Device to run on. auto uses a GPU when one is present "
+                              "(default: auto)")
+          p.add_argument("--threads", type=int, default=None,
+                         help="CPU threads. Defaults to $SLURM_CPUS_PER_TASK, then "
+                              "$OMP_NUM_THREADS, then the CPUs the kernel grants "
+                              "this container (affinity mask / cgroup quota). The "
+                              "module launcher strips the two variables, and the "
+                              "kernel fallback sees the Neurodesk session rather "
+                              "than your allocation, so pass this explicitly on a "
+                              "shared node. The chosen number and its source are "
+                              "printed when the run starts.")
+          p.add_argument("--list-models", action="store_true",
+                         help="List the model folders bundled in this image and exit")
+          p.add_argument("--version", action="store_true",
+                         help="Report the package and bundled weights versions and exit")
+          a = p.parse_args(argv)
+
+          if a.version:
+              import importlib.metadata as md
+              print(f"gliomoda {md.version('gliomoda')} (bundled weights v{bundled_version()})")
+              return 0
+          if a.list_models:
+              for mode in available_modes():
+                  print(mode)
+              return 0
+
+          modalities = {"t1c": a.t1c, "t2f": a.t2f, "t1n": a.t1n, "t2w": a.t2w}
+          supplied = {k: v for k, v in modalities.items() if v}
+          if not supplied:
+              p.error("at least one of -t1c/-t2f/-t1n/-t2w is required")
+          if not a.output:
+              p.error("-o/--output is required")
+          if a.use_res_enc_l and len(supplied) != 4:
+              p.error("--use-res-enc-l requires all four modalities")
+
+          for flag, path in supplied.items():
+              if not Path(path).is_file():
+                  p.error(f"--{flag}: no such file: {path}")
+
+          # Pre-flight before anything expensive: upstream asserts the grid deep inside
+          # the pipeline and names only the expected shape, not the offending file.
+          check_grid(supplied)
+
+          # Not every declared InferenceMode has weights in this image. Upstream lists
+          # all of them as "available models" and then fails with a bare
+          # FileNotFoundError on dataset.json, so check here while we can still say
+          # something useful.
+          mode = "-".join(k for k in ("t1c", "t2f", "t1n", "t2w") if k in supplied)
+          modes = available_modes()
+          if modes and mode not in modes:
+              sys.exit(
+                  f"error: no model in this image for the combination '{mode}'.\n"
+                  f"Bundled models: {', '.join(modes)}\n"
+                  "Weights are baked in and the Zenodo lookup is disabled, so a "
+                  "missing model cannot be fetched at run time."
+              )
+
+          import torch
+
+          # Upstream defaults to device="cuda" and never falls back: _configure_device
+          # builds torch.device(requested) and only consults torch.cuda.is_available()
+          # to decide whether to call empty_cache(). On a node with no NVIDIA driver
+          # inference dies inside nnU-Net, about twenty frames below the user's
+          # command, after the model has already loaded.
+          device = a.device
+          if device == "auto":
+              device = "cuda" if torch.cuda.is_available() else "cpu"
+          elif device == "cuda" and not torch.cuda.is_available():
+              # Without this, forcing CUDA on a GPU-less node loads the model and
+              # dies ~50 s later inside nnU-Net with a raw RuntimeError, about
+              # twenty frames below the user's command.
+              sys.exit("error: --device cuda requested but no CUDA device is "
+                       "available (torch.cuda.is_available() is False).\n"
+                       "Use --device cpu, or omit --device to select "
+                       "automatically.")
+
+          if a.threads:
+              threads, thread_source = a.threads, "--threads"
+          else:
+              threads, thread_source = default_threads()
+          if threads:
+              os.environ["OMP_NUM_THREADS"] = str(threads)
+              torch.set_num_threads(threads)
+
+          from gliomoda import Inferer
+
+          print(f"gliomoda: mode {mode}, device {device}, "
+                f"{torch.get_num_threads()} thread(s) [{thread_source}], "
+                f"weights v{bundled_version()}",
+                flush=True)
+          Inferer(device=device).infer(
+              t1c=a.t1c, t2f=a.t2f, t1n=a.t1n, t2w=a.t2w,
+              segmentation_file=a.output, use_ResEncL=a.use_res_enc_l,
+          )
+          print(f"wrote {a.output}")
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
+  - name: pin_weights.py
+    contents: |
+      # Appended to upstream's weights module by the neurocontainers recipe.
+      # Redefining the lookup shadows the original, so the package takes its own
+      # "Zenodo unreachable -> use the local weights" branch and never downloads
+      # at run time. This image ships weights_v1.0.2; to move to newer weights,
+      # bump weights_version in build.yaml and rebuild the container.
+      def _get_zenodo_metadata_and_archive_url():
+          # Returning None would be upstream's "Zenodo unreachable" path, but
+          # check_weights_path only binds zenodo_metadata inside "if zenodo_data:"
+          # and then reads it unconditionally, so None raises UnboundLocalError.
+          # Returning metadata whose version matches the baked weights takes the
+          # "latest weights are already present" branch instead: no network, no
+          # download, and the local weights are returned.
+          return ({"version": "1.0.2"}, "")
+
+deploy:
+  # Only the tool. Putting the venv bin on the deploy path also exported python,
+  # python3 and python3.12, which then shadowed the user's own interpreter for
+  # the rest of the shell, so host-side analysis in the same script silently ran
+  # against this container's python instead.
+  bins:
+    - gliomoda
+
+categories:
+  - image segmentation
+  - structural imaging
+  - machine learning
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAtUlEQVR42u2Yuw2AMAxEMxSjMAAlFTWTMgATsAGIAaIkii/+5E5y/x7Iiu2UGIZhGIYJlGXf3lK5hDYp0wOuLiIJP1wCAT9MAgkPl5ACfK5jvIQEdK7gEijwGhFVgRzofa7VEma+/g+dK+hfQMPXSFBgOoFW+JKE6QaGNzJ7wKuA+3dA6iVWFZCYhdTHiZ5pVH2Y69kHTI3UZjYz1/AhduIQV4kQd6EQl7kQt9Ew12mGYZh58wGjEyf/sYHLfwAAAABJRU5ErkJggg==
+
+readme: |-
+  ----------------------------------
+  ## gliomoda/{{ context.version }} ##
+
+  GlioMODA segments gliomas from multi-modal brain MRI across several sequence
+  combinations.
+
+  Part of the BrainLesion Suite (BLS): https://github.com/BrainLesion
+
+  ### Input requirements
+
+  Inputs must be skull-stripped, co-registered and resampled to the BraTS/SRI24
+  atlas grid: **exactly 240x240x155 at 1 mm**. Anything else is rejected. Use
+  brainles-preprocessing, which bundles the SRI24 template, to get there.
+
+  ### Output
+
+  One NIfTI with BraTS 2023 labels, on the same grid and affine as the input:
+
+  ```
+  1 = necrotic tumour core
+  2 = non-enhancing FLAIR hyperintensity (oedema)
+  3 = enhancing tumour
+  ```
+
+  ### Example
+
+  ```
+  ml gliomoda/{{ context.version }}
+
+  gliomoda -t1c t1c.nii.gz -t2f flair.nii.gz -o seg.nii.gz
+  ```
+
+  Not every combination of sequences has a model. List the ones in this image:
+
+  ```
+  gliomoda --list-models
+  ```
+
+  `--use-res-enc-l` selects the ResEncL model and requires all four sequences.
+
+  ### GPU and CPU
+
+  A GPU is used when present; on a CPU-only node the tool selects CPU
+  automatically. Expect roughly 5-12 minutes per case on 4 cores. Force a device
+  with `--device cpu` or `--device cuda`.
+
+  Threads default to $SLURM_CPUS_PER_TASK, then $OMP_NUM_THREADS, then the CPUs
+  the kernel grants the container (affinity mask or cgroup quota). Two caveats
+  matter on a Neurodesk node, and neither is obvious:
+
+  - The module launcher runs singularity with `--cleanenv`, which strips both
+    variables before this tool can read them. Setting `SLURM_CPUS_PER_TASK` or
+    `OMP_NUM_THREADS` in your job script has no effect here.
+  - The kernel fallback then sees the whole Neurodesk session's CPU quota, not
+    your Slurm allocation. Measured on an 8-CPU session, a 2-CPU job and a
+    4-CPU job both defaulted to 8 threads.
+
+  So on a shared node, set the count explicitly:
+
+  ```
+  gliomoda -t1c t1c.nii.gz -t2f flair.nii.gz -o seg.nii.gz \
+           --threads "${SLURM_CPUS_PER_TASK:-4}"
+  ```
+
+  or pass the allocation through the launcher, which does survive
+  `--cleanenv`:
+
+  ```
+  SINGULARITYENV_SLURM_CPUS_PER_TASK="${SLURM_CPUS_PER_TASK}" \
+    gliomoda -t1c t1c.nii.gz -t2f flair.nii.gz -o seg.nii.gz
+  ```
+
+  The run announces which of these it used, so an oversubscribed default is
+  visible rather than silent:
+
+  ```
+  gliomoda: mode t1c-t2f, device cpu, 8 thread(s) [cgroup quota], weights v1.0.2
+  ```
+
+  ### Scripting
+
+  This module exposes the `gliomoda` command only; no container Python is on
+  PATH, so `from gliomoda import Inferer` in the module environment imports
+  nothing. Use the CLI. If you genuinely need the upstream Python API, enter
+  the image directly:
+
+  ```
+  singularity exec <image>.simg {{ context.venv }}/bin/python3 \
+    -c 'from gliomoda import Inferer; Inferer(device="cpu").infer(...)'
+  ```
+
+  Inferer defaults to device="cuda" and does not fall back, so pass device
+  explicitly when scripting against the API on a CPU node.
+
+  ### Notes
+
+  Upstream ships no console_scripts, so this container adds a thin `gliomoda`
+  CLI over the documented Python API. nnU-Net v2 is pinned by upstream to 2.5.2.
+
+  Model weights **v{{ context.weights_version }}** are bundled in the image. The
+  Zenodo lookup is disabled, so the container never downloads weights at run
+  time: it works offline, and every run uses the same weights. Picking up newer
+  upstream weights requires a rebuild of this container.
+
+  `gliomoda --version` reports both the package and the bundled weights version.
+
+  More documentation can be found here: https://github.com/BrainLesion/GlioMODA

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Print a bundled panoptica config, or list the available ones.
+#
+# The configs ship inside the image, so they are not readable from the host.
+# This copies one out so it can be edited and passed back with -c.
+set -euo pipefail
+
+CONFIG_DIR="$(panoptica-python -c 'import os, panoptica; print(os.path.join(os.path.dirname(panoptica.__file__), "configs"))')"
+
+usage() {
+  cat <<USAGE
+Usage: panoptica-config <name>     print a bundled config to stdout
+       panoptica-config --list     list the bundled configs
+
+  panoptica-config BRATS > my_config.yaml
+  panopticacli -ref ref.nii.gz -pred pred.nii.gz -c my_config.yaml
+
+Names may be given bare (BRATS) or in full (panoptica_evaluator_BRATS).
+USAGE
+}
+
+[ $# -eq 1 ] || { usage; exit 2; }
+
+case "$1" in
+  -h|--help) usage; exit 0 ;;
+  --list)
+    find "$CONFIG_DIR" -maxdepth 1 -name '*.yaml' -exec basename {} .yaml \; | sort
+    exit 0 ;;
+esac
+
+for candidate in "$1" "panoptica_evaluator_$1" "panoptica_config_$1"; do
+  if [ -f "${CONFIG_DIR}/${candidate}.yaml" ]; then
+    cat "${CONFIG_DIR}/${candidate}.yaml"
+    exit 0
+  fi
+done
+
+echo "no bundled config named '$1'. Available:" >&2
+find "$CONFIG_DIR" -maxdepth 1 -name '*.yaml' -exec basename {} .yaml \; | sort >&2
+exit 1

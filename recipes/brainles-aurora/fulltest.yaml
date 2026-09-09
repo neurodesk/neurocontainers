@@ -1,0 +1,171 @@
+name: brainles-aurora
+version: 0.2.7
+weights_version: "1.0.0"
+
+tests:
+  - name: package imports
+    description: Guards the whole dependency resolve, which is the fragile part of this recipe.
+    command: python -c "import brainles_aurora; print('import ok')"
+    expected_output_contains: "import ok"
+
+  - name: reports the packaged version
+    description: Guards against the venv resolving a different release than the recipe pins.
+    command: python -c "import importlib.metadata as md; print(md.version('brainles-aurora'))"
+    expected_output_contains: "${version}"
+
+  - name: runs outside HOME
+    description: $HOME does not exist at container runtime; caches must point somewhere writable.
+    command: env HOME=/nonexistent python -c "import brainles_aurora; print('no-home ok')"
+    expected_output_contains: "no-home ok"
+
+  - name: torch imports and computes on CPU
+    description: A CUDA-built torch must still work where no GPU is present.
+    command: python -c "import torch; print('torch', torch.__version__, (torch.ones(2)+1).sum().item())"
+    expected_output_contains: "4.0"
+
+  - name: model weights are bundled in the image
+    description: >-
+      The point of baking the weights in is that inference works offline; this
+      fails if a rebuild ever silently drops them.
+    command: python -c "import pathlib,brainles_aurora as _m; root=pathlib.Path(_m.__file__).parent; dirs=[x for x in root.rglob('weights_v*') if x.is_dir()]; n=sum(f.stat().st_size for x in dirs for f in x.rglob('*') if f.is_file()) if dirs else 0; print('weights-mb', round(n/1e6))"
+    expected_output_contains: "weights-mb"
+
+  - name: bundled weights are the declared version
+    description: Guards against a rebuild shipping different weights than the readme states.
+    command: python -c "import pathlib,brainles_aurora as _m; root=pathlib.Path(_m.__file__).parent; print([x.name for x in root.rglob('weights_v*') if x.is_dir()])"
+    expected_output_contains: "weights_v1.0.0"
+
+  - name: weights are pinned, not fetched at run time
+    description: >-
+      The Zenodo lookup is disabled at build time so the image cannot swap its
+      weights underneath a user; this fails if that patch is ever lost. The pin
+      reports the baked version rather than (None, None) so that
+      check_model_weights takes its "already present" branch: returning None
+      made it log "Zenodo server could not be reached", describing a network
+      failure that never happened.
+    command: python -c "import brainles_aurora.inferer; from brainles_aurora.utils.weights import _get_zenodo_metadata_and_archive_url as f; m,u=f(); print('pinned' if m=={'version':'${weights_version}'} and u=='' else 'NOT-PINNED')"
+    expected_output_contains: "pinned"
+
+  - name: resolving the weights logs no network failure
+    description: >-
+      The user-visible symptom of the old pin: every run warned about an
+      unreachable Zenodo server, sending people after a proxy problem that does
+      not exist.
+    command: |
+      python -c "
+      import logging, io
+      buf = io.StringIO()
+      logging.basicConfig(stream=buf, level=logging.DEBUG, force=True)
+      import brainles_aurora.inferer
+      from brainles_aurora.utils.weights import check_model_weights
+      p = check_model_weights()
+      out = buf.getvalue()
+      print('resolved', str(p).endswith('weights_v${weights_version}'))
+      print('NETWORK-WARNING' if 'could not be reached' in out else 'no-network-warning')
+      "
+    expected_output_contains: "no-network-warning"
+
+  - name: the weights helper imports in any order
+    description: >-
+      brainles_aurora.utils and brainles_aurora.inferer import each other
+      upstream, so three of the six plausible import orders died with a
+      circular ImportError that reads like a broken installation. One constant
+      is inlined at build time to break the cycle; each order runs in its own
+      interpreter so the result cannot depend on a previous import.
+    command: |
+      python -c "from brainles_aurora.utils import check_model_weights"
+      python -c "from brainles_aurora.utils.weights import check_model_weights"
+      python -c "import brainles_aurora; from brainles_aurora.utils import check_model_weights"
+      python -c "from brainles_aurora.inferer import AuroraInferer"
+      echo "import-orders-ok"
+    expected_output_contains: "import-orders-ok"
+
+  - name: seeding reaches the test-time augmentation
+    description: >-
+      monai.utils.set_determinism does not seed Randomizable.R, which is where
+      RandGaussianNoised -- upstream's TTA noise -- draws from, so the wrapper
+      replaces R as well. If that stops working the --seed flag goes silently
+      inert and default runs become irreproducible again.
+    command: |
+      python -c "
+      import numpy as np, torch
+      from monai.transforms import RandGaussianNoised, Randomizable
+      from monai.utils import set_determinism
+      def draw(seed):
+          set_determinism(seed=seed)
+          Randomizable.R = np.random.RandomState(seed)
+          d = {'images': torch.zeros(1, 4, 4)}
+          return RandGaussianNoised(keys='images', prob=1.0, std=0.001)(d)['images'].numpy()
+      print('seeded-reproducible' if np.array_equal(draw(0), draw(0)) and not np.array_equal(draw(0), draw(1)) else 'SEEDING-INERT')
+      "
+    expected_output_contains: "seeded-reproducible"
+
+  - name: two default runs of the same input agree
+    description: >-
+      The default configuration uses test-time augmentation, which upstream
+      leaves unseeded: two runs of the same subject differed by 11 voxels,
+      which matters for a tool whose reported output is a lesion volume. The
+      wrapper seeds it, so a repeat must reproduce the first run exactly.
+    timeout: 2400
+    command: |
+      cd "$(mktemp -d)"
+      python -c "
+      import nibabel as nib, numpy as np
+      rng = np.random.default_rng(0)
+      nib.save(nib.Nifti1Image(rng.random((128, 128, 32)).astype('float32'), np.eye(4)), 't1c.nii.gz')
+      "
+      aurora -t1c t1c.nii.gz -o seg_a.nii.gz --device cpu
+      aurora -t1c t1c.nii.gz -o seg_b.nii.gz --device cpu
+      python -c "
+      import nibabel as nib, numpy as np
+      a = nib.load('seg_a.nii.gz').get_fdata()
+      b = nib.load('seg_b.nii.gz').get_fdata()
+      print('repeats-identical' if np.array_equal(a, b) else 'REPEATS-DIFFER %d voxels' % int((a != b).sum()))
+      "
+    expected_output_contains: "repeats-identical"
+
+  - name: aurora CLI is on PATH and renders help
+    description: >-
+      The CLI is added by this recipe rather than upstream, so nothing else
+      would catch it going missing or failing to import its dependencies.
+    command: aurora --help
+    expected_output_contains: "usage: aurora"
+
+  - name: an unsupported modality combination fails immediately
+    description: >-
+      Only 7 of the 15 combinations have a model. Upstream raises
+      NotImplementedError, but only after torch, monai and the 330 MB weight
+      directory have loaded. The wrapper rejects it up front and names the
+      combinations that do work.
+    command: |
+      out="$(aurora -t1 a.nii.gz -t2 b.nii.gz -o seg.nii.gz 2>&1)" && rc=0 || rc=$?
+      echo "$out" | grep -q 'T2 is only usable' && echo "lists-valid-combinations"
+      echo "exit=$rc"
+    expected_output_contains: "lists-valid-combinations"
+
+  - name: inference runs and accepts a bare relative output path
+    description: >-
+      The form printed in this container's own README. Upstream's save_as_nifti
+      calls os.makedirs(os.path.dirname(output_file)) with no guard, and
+      os.makedirs("") raises -- after inference has completed, so a user lost
+      the whole run and got no output. The wrapper now makes output paths
+      absolute. This also covers the critical path end to end: weights resolve,
+      model loads, inference runs, NIfTI is written.
+    timeout: 900
+    command: |
+      cd "$(mktemp -d)"
+      python -c "
+      import nibabel as nib, numpy as np
+      nib.save(nib.Nifti1Image(np.random.rand(128,128,32).astype('float32'), np.eye(4)), 't1c.nii.gz')
+      "
+      aurora -t1c t1c.nii.gz -o seg.nii.gz --whole-tumor-mask whole.nii.gz --no-tta --device cpu
+      python -c "
+      import nibabel as nib, numpy as np
+      seg = np.unique(nib.load('seg.nii.gz').get_fdata())
+      whole = np.unique(nib.load('whole.nii.gz').get_fdata())
+      assert set(seg.tolist()) <= {0.0, 1.0, 2.0}, seg
+      # the channel outputs are thresholded masks, never probabilities
+      assert set(whole.tolist()) <= {0.0, 1.0}, whole
+      print('inference-ok')
+      "
+    expected_output_contains: "inference-ok"

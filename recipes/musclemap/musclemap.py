@@ -29,6 +29,8 @@ mmSegmentOutputPath = "/opt/input_dseg.nii.gz"
 mmMetricsSegmentationPath = "/tmp/musclemap_input_dseg_metrics.nii.gz"
 mmMetricsOutputDir = "/tmp/musclemap_metrics"
 mmMetricsMethod = "average"
+muscleMapWholebodyModelVersionEnv = "MUSCLEMAP_WHOLEBODY_MODEL_VERSION"
+muscleMapRegionalModelVersionEnv = "MUSCLEMAP_REGIONAL_MODEL_VERSION"
 metricsSeriesIndex = 120
 muscleMapDisplayLabel = "Musclemap"
 muscleMapImageTypeToken = "MUSCLEMAP"
@@ -3326,11 +3328,28 @@ def _read_metrics_csv(csv_path):
     return fieldnames, rows
 
 
-def _run_mm_extract_metrics(method, region, components, segmentation_path, input_image_path, output_dir):
-    if os.path.exists(output_dir):
-        shutil.rmtree(output_dir)
-    os.makedirs(output_dir, exist_ok=True)
+def _resolve_musclemap_model_version(region):
+    environment_name = (
+        muscleMapWholebodyModelVersionEnv
+        if region == "wholebody"
+        else muscleMapRegionalModelVersionEnv
+    )
+    model_version = os.environ.get(environment_name, "").strip()
+    if not model_version:
+        raise RuntimeError(
+            f"{environment_name} is not set; cannot select the baked MuscleMap model"
+        )
+    return model_version
 
+
+def _build_mm_extract_metrics_command(
+    method,
+    region,
+    components,
+    segmentation_path,
+    input_image_path,
+    output_dir,
+):
     metrics_cmd = [
         "python",
         "/opt/MuscleMap/scripts/mm_extract_metrics.py",
@@ -3338,11 +3357,28 @@ def _run_mm_extract_metrics(method, region, components, segmentation_path, input
         "-s", segmentation_path,
         "-i", input_image_path,
         "-o", output_dir,
+        "--model_version", _resolve_musclemap_model_version(region),
     ]
     if region:
         metrics_cmd.extend(["-r", region])
     if method in ("kmeans", "gmm") and components is not None:
         metrics_cmd.extend(["-c", str(components)])
+    return metrics_cmd
+
+
+def _run_mm_extract_metrics(method, region, components, segmentation_path, input_image_path, output_dir):
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    metrics_cmd = _build_mm_extract_metrics_command(
+        method,
+        region,
+        components,
+        segmentation_path,
+        input_image_path,
+        output_dir,
+    )
 
     logging.info("Running command: %s", " ".join(metrics_cmd))
     metrics_result = subprocess.run(
@@ -3554,6 +3590,10 @@ def _transform_musclemap_label_values(labels):
 def _restore_musclemap_label_values(labels):
     labels = np.asarray(labels, dtype=np.int64)
     return 10 * (labels // 3) + (labels % 3)
+
+
+def _resolve_label_transform(region, requested):
+    return bool(requested and region == "wholebody")
 
 
 def _metrics_segmentation_labels_for_lookup(segmentation_labels, label_transform):
@@ -3926,6 +3966,7 @@ def _build_mm_segment_command(bodyregion, chunksize, spatialoverlap):
         "mm_segment",
         "-i", mmSegmentInputPath,
         "-r", bodyregion,
+        "--model_version", _resolve_musclemap_model_version(bodyregion),
     ]
 
     if _mm_segment_supports_option("-c", "--chunksize"):
@@ -4397,8 +4438,14 @@ def process_image(
 
     # Extract UI parameters from JSON config
     bodyregion = mrdhelper.get_json_config_param(config, 'bodyregion', default='wholebody', type='str')
-    metrics_region = mrdhelper.get_json_config_param(config, 'metricsregion', default='', type='str')
-    metrics_region = _first_non_empty_text(metrics_region) or bodyregion
+    configured_metrics_region = mrdhelper.get_json_config_param(config, 'metricsregion', default='', type='str')
+    if configured_metrics_region and configured_metrics_region != bodyregion:
+        logging.warning(
+            "Ignoring legacy metricsregion=%s; metrics must use segmentation bodyregion=%s",
+            configured_metrics_region,
+            bodyregion,
+        )
+    metrics_region = bodyregion
     chunksize = mrdhelper.get_json_config_param(config, 'chunksize', default='auto', type='str')
     spatialoverlap = mrdhelper.get_json_config_param(config, 'spatialoverlap', default=50, type='int')
     
@@ -4461,10 +4508,12 @@ def process_image(
 
     data = data.astype(np.int64, copy=False)
 
-    # Expected label coding ends in 0/1/2 (except background 0).
-    bad_labels = np.unique(data[(data != 0) & ((data % 10) > 2)])
-    if bad_labels.size > 0:
-        raise ValueError(f"Unexpected labels detected (first 20): {bad_labels[:20].tolist()}")
+    # Whole-body labels encode center/left/right in the final digit. Regional
+    # models use dense class IDs and must remain on their native label scale.
+    if bodyregion == "wholebody":
+        bad_labels = np.unique(data[(data != 0) & ((data % 10) > 2)])
+        if bad_labels.size > 0:
+            raise ValueError(f"Unexpected labels detected (first 20): {bad_labels[:20].tolist()}")
 
     print("maximum value in segmented data:")
     print(np.max(data))
@@ -4503,10 +4552,16 @@ def process_image(
     print("data shape after crop:")
     print(data.shape)
 
-    label_transform = _as_config_bool(
+    label_transform_requested = _as_config_bool(
         mrdhelper.get_json_config_param(config, 'labeltransform', default=True, type='bool')
     )
-    logging.info("labeltransform resolved to %s", label_transform)
+    label_transform = _resolve_label_transform(bodyregion, label_transform_requested)
+    logging.info(
+        "labeltransform requested=%s resolved=%s for bodyregion=%s",
+        label_transform_requested,
+        label_transform,
+        bodyregion,
+    )
 
     if label_transform:
         logging.info("Applying label transformation: 3 * (label_in // 10) + (label_in % 10)")

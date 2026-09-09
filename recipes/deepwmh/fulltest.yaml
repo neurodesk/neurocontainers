@@ -1,0 +1,397 @@
+# DeepWMH container test suite
+#
+# DeepWMH segments white matter hyperintensities from a single T2-FLAIR image
+# without requiring manual annotations for training. The container bundles the
+# authors' pre-trained model, their nnU-Net fork, ROBEX and ANTs.
+#
+# The suite verifies the interfaces, the installed model tree, the external
+# tools, and the two output defects that used to be silent.
+#
+# It does NOT run a full segmentation. That was tried: DeepWMH skull-strips
+# with ROBEX before inference, and ROBEX fits a trained shape model, so it
+# rejects a synthetic phantom outright (measured: it fails in under 3s). A real
+# end-to-end run needs a real T2-FLAIR brain, and no image in this stack ships
+# one, so it cannot be done offline in CI. Instead, the nnU-Net model restore
+# below exercises the exact call chain that used to fail -- which is where a
+# container that could not run a single inference would still be caught.
+
+name: deepwmh
+version: 1.0.1
+default_timeout: 300
+
+env:
+  PYTHONNOUSERSITE: "1"
+  MPLCONFIGDIR: /tmp/deepwmh-matplotlib
+
+tests:
+  # ==========================================================================
+  # ENTRYPOINTS
+  # ==========================================================================
+  - name: deepwmh wrapper is on PATH
+    description: The convenience wrapper that preselects the bundled model.
+    command: command -v deepwmh
+    expected_output_contains: deepwmh
+
+  - name: DeepWMH_predict is on PATH
+    command: command -v DeepWMH_predict
+    expected_output_contains: DeepWMH_predict
+
+  - name: DeepWMH_predict renders help
+    description: Exercises the full import chain, including the nnU-Net fork.
+    command: DeepWMH_predict -h
+    expected_output_contains: "--skip-bfc"
+
+  - name: DeepWMH_install renders help
+    command: DeepWMH_install -h
+    expected_output_contains: "-m"
+
+  - name: DeepWMH_train exists but is not exported
+    description: >-
+      The entry point is installed by upstream's setup.py, but it is left out
+      of deploy.bins: its first action is check_system_integrity with every
+      check enabled, including FSL and FreeSurfer, neither of which is in this
+      image, so the module would advertise a command that can only ever fail.
+      Upstream needs them for training only; this container does inference.
+    command: command -v DeepWMH_train
+    expected_output_contains: DeepWMH_train
+
+  - name: antsGroupRegistration is installed
+    command: command -v antsGroupRegistration
+    expected_output_contains: antsGroupRegistration
+
+  # ==========================================================================
+  # PYTHON RUNTIME
+  # ==========================================================================
+  - name: Python runtime is 3.9
+    description: >-
+      DeepWMH's pinned dependencies only publish wheels up to cp39; a newer
+      interpreter silently reintroduces source builds.
+    command: python -c 'import sys; assert sys.version_info[:2] == (3, 9)'
+
+  - name: Python does not load user packages
+    description: >-
+      Ensure results come from the container, not a bound user site: a bound
+      home puts ~/.local/lib/python3.9/site-packages on the import path, where
+      it can shadow torch or numpy and silently change inference results. The
+      assertion names the mechanism (PYTHONNOUSERSITE baked into the image) as
+      well as the effect, because ENABLE_USER_SITE alone is answerable by the
+      caller's environment: an earlier build shipped without the variable and
+      this test still passed in CI, whose runner supplied it, while failing on
+      a plain apptainer exec on the platform the container ships to.
+    command: |
+      python -c "
+      import os, site
+      assert os.environ.get('PYTHONNOUSERSITE'), 'PYTHONNOUSERSITE not set in the image'
+      assert site.ENABLE_USER_SITE is False, site.ENABLE_USER_SITE
+      print('user-site-disabled')
+      "
+    expected_output_contains: "user-site-disabled"
+
+  - name: deepwmh package imports
+    command: python -c 'import deepwmh; print(deepwmh.__name__)'
+
+  - name: deepwmh reports its version
+    command: python -c 'import deepwmh.pkginfo as p; print(p.__version__)'
+    expected_output_contains: "1.0"
+
+  - name: DeepWMH prediction module imports
+    command: python -c 'import deepwmh.main.predict, deepwmh.main.install_model'
+
+  - name: DeepWMH pipeline module imports
+    command: python -c 'import deepwmh.pipeline.DCNN_multistage'
+
+  - name: DeepWMH analysis modules import
+    command: python -c 'import deepwmh.analysis.lesion_analysis, deepwmh.analysis.metrics, deepwmh.analysis.image_ops'
+
+  - name: nnU-Net fork is the installed one
+    description: >-
+      DeepWMH requires lchdl/nnUNet_for_DeepWMH, not upstream MIC-DKFZ/nnUNet.
+      The fork is installed editable from /opt/nnunet_for_deepwmh.
+    command: python -c 'import nnunet, os; print(os.path.realpath(os.path.dirname(nnunet.__file__)))'
+    expected_output_contains: /opt/nnunet_for_deepwmh
+
+  - name: PyTorch CPU runtime works
+    command: python -c 'import torch; x=torch.tensor([1.,2.,3.]); assert torch.dot(x,x).item() == 14'
+
+  - name: PyTorch is the cu118 build
+    command: python -c 'import torch; print(torch.__version__)'
+    expected_output_contains: "2.5.0"
+
+  - name: NiBabel runtime works
+    command: python -c 'import nibabel as nib, numpy as np; img=nib.Nifti1Image(np.zeros((2,3,4)), np.eye(4)); assert img.shape == (2,3,4)'
+
+  - name: SimpleITK image runtime works
+    command: python -c 'import SimpleITK as sitk; img=sitk.Image([3,4,5], sitk.sitkFloat32); assert img.GetSize() == (3,4,5)'
+
+  # ==========================================================================
+  # BUNDLED PRE-TRAINED MODEL
+  # ==========================================================================
+  - name: Model directory environment variable is set
+    command: bash -lc 'test -n "$DEEPWMH_MODEL_DIR" && echo "DEEPWMH_MODEL_DIR=$DEEPWMH_MODEL_DIR"'
+    expected_output_contains: DEEPWMH_MODEL_DIR=/opt/deepwmh-model
+
+  - name: Installed model tree contains network weights
+    description: >-
+      DeepWMH_install lays out an nnU-Net fold containing model_best.model.
+      Without this the container builds but every prediction fails at runtime.
+    command: bash -lc 'find "$DEEPWMH_MODEL_DIR" -name "model_best.model" | head -n 1'
+    expected_output_contains: model_best.model
+
+  - name: Model weights are a plausible size
+    command: bash -lc 'test "$(find "$DEEPWMH_MODEL_DIR" -name "model_best.model" -size +10M | wc -l)" -ge 1'
+
+  - name: Installed model tree contains nnU-Net plans
+    command: bash -lc 'find "$DEEPWMH_MODEL_DIR" -name "plans.pkl" | head -n 1'
+    expected_output_contains: plans.pkl
+
+  - name: nnU-Net plans deserialise
+    command: |
+      python - <<'PY'
+      import os, pickle, pathlib
+      root = pathlib.Path(os.environ["DEEPWMH_MODEL_DIR"])
+      plans = next(root.rglob("plans.pkl"))
+      with plans.open("rb") as handle:
+          data = pickle.load(handle)
+      assert isinstance(data, dict) and data, "plans.pkl did not load as a dict"
+      print("plans keys:", len(data))
+      PY
+
+  # ==========================================================================
+  # EXTERNAL TOOLS
+  # ==========================================================================
+  - name: ROBEX_DIR is set
+    command: bash -lc 'test -n "$ROBEX_DIR" && echo "ROBEX_DIR=$ROBEX_DIR"'
+    expected_output_contains: ROBEX_DIR=/opt/robex
+
+  - name: ROBEX launcher is executable
+    description: Skull stripping step of the DeepWMH pipeline.
+    command: bash -lc 'test -x "$ROBEX_DIR/runROBEX.sh" && echo robex-ok'
+    expected_output_contains: robex-ok
+
+  - name: ROBEX binary is present
+    command: bash -lc 'test -x "$ROBEX_DIR/ROBEX" && echo robex-bin-ok'
+    expected_output_contains: robex-bin-ok
+
+  - name: ANTs N4 bias correction is available
+    description: Without ANTs, users must pass --skip-bfc and accuracy degrades.
+    command: command -v N4BiasFieldCorrection
+    expected_output_contains: N4BiasFieldCorrection
+
+  - name: ANTs registration is available
+    command: command -v antsRegistration
+    expected_output_contains: antsRegistration
+
+  - name: ANTs random seed is pinned
+    description: The pipeline is only reproducible when ANTs is seeded.
+    command: bash -lc 'echo "ANTS_RANDOM_SEED=$ANTS_RANDOM_SEED"'
+    expected_output_contains: ANTS_RANDOM_SEED=0
+
+  # ==========================================================================
+  # SANITY
+  # ==========================================================================
+  - name: NIfTI file round trip preserves data and affine
+    command: |
+      python - <<'PY'
+      import tempfile
+      from pathlib import Path
+      import nibabel as nib
+      import numpy as np
+      with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+          path = Path(tmp) / "flair.nii.gz"
+          data = np.arange(24, dtype=np.float32).reshape(2, 3, 4)
+          affine = np.diag([1.0, 1.0, 1.0, 1.0])
+          nib.save(nib.Nifti1Image(data, affine), path)
+          loaded = nib.load(path)
+          assert np.array_equal(loaded.get_fdata(), data)
+          assert np.array_equal(loaded.affine, affine)
+      PY
+
+  - name: DeepWMH_predict rejects a missing input image
+    description: Confirms argument handling fails cleanly rather than hanging.
+    command: bash -lc 'DeepWMH_predict -i /tmp/does-not-exist.nii.gz -n s1 -o /tmp/out -g -1 >/dev/null 2>&1; test $? -ne 0 && echo rejected'
+    expected_output_contains: rejected
+
+  - name: nnU-Net tolerates a read-only model directory
+    description: >-
+      The fork opens a training log in the model folder even during inference,
+      and that path comes from the model pickle, so it points into the read-only
+      image. Unpatched, prediction dies after N4 with Errno 30. This asserts the
+      patch is present in the shipped image.
+    command: >-
+      grep -c "neurocontainers. fall back to a writable log dir"
+      /opt/nnunet_for_deepwmh/nnunet/training/network_training/network_trainer.py
+    expected_output_contains: "1"
+
+  - name: the log fallback resolves to a writable directory
+    description: Exercises the fallback against the real read-only model directory.
+    command: |
+      python -c "
+      import os
+      d = os.environ.get('DEEPWMH_MODEL_DIR', '/opt/deepwmh-model')
+      ok = os.access(d, os.W_OK)
+      fb = os.path.join(os.environ.get('TMPDIR', '/tmp'), 'deepwmh-nnunet-logs')
+      os.makedirs(fb, exist_ok=True)
+      print('model-dir-writable', ok, 'fallback-writable', os.access(fb, os.W_OK))
+      "
+    expected_output_contains: "fallback-writable True"
+
+  # ==========================================================================
+  # OUTPUT CORRECTNESS
+  # ==========================================================================
+  - name: masks are written as 0/1, not 0/255
+    description: >-
+      save_nifti casts data to float32 but reused the caller's header, which
+      for the segmentation stages declares uint8. nibabel then stored 255 and
+      set scl_slope=1/255, so the declared final mask read back as
+      {0, 1.00000006} and `mask == 1` silently selected nothing, while code
+      reading raw integers saw 255 -- and 001_raw in the same run wrote a true
+      {0, 1}, so the encoding was not even self-consistent. Nothing errored and
+      the mask looked correct in a viewer.
+    command: |
+      python -c "
+      import numpy as np, nibabel as nib, tempfile, os
+      from deepwmh.utilities.data_io import save_nifti
+      d = tempfile.mkdtemp(); q = os.path.join(d, 'm.nii.gz')
+      base = nib.Nifti1Image(np.zeros((8,8,4), np.uint8), np.eye(4))
+      base.header.set_data_dtype(np.uint8)
+      m = np.zeros((8,8,4), 'float32'); m[2:5,2:5,1:3] = 1
+      save_nifti(m, base.header, q)
+      img = nib.load(q); dat = img.get_fdata()
+      print('dtype', img.get_data_dtype(), 'slope', img.dataobj.slope)
+      print('equals-one', int((dat == 1).sum()), 'greater-zero', int((dat > 0).sum()))
+      "
+    expected_output_contains: "equals-one 18 greater-zero 18"
+
+  - name: a generated GIF preview can be read back
+    description: >-
+      003_Previews/*.gif is the only built-in QC artifact. Written through the
+      pinned imageio 2.13.2 they came out unreadable for several geometries --
+      by every decoder tried, including imageio's own reader inside this same
+      image -- while deepwmh still exited 0, so the failure was silent. The
+      frames are now written with Pillow.
+    timeout: 600
+    command: |
+      python -c "
+      import numpy as np, nibabel as nib, tempfile, os
+      from deepwmh.utilities.nii_preview import nii_as_gif
+      from deepwmh.utilities.data_io import try_load_gif
+      d = tempfile.mkdtemp()
+      v = os.path.join(d, 'v.nii.gz'); g = os.path.join(d, 'v.gif')
+      nib.save(nib.Nifti1Image(np.random.rand(32,32,8).astype('float32'), np.eye(4)), v)
+      nii_as_gif(v, g)
+      print('gif-readable', try_load_gif(g), os.path.getsize(g) > 0)
+      "
+    expected_output_contains: "gif-readable True True"
+
+  - name: a preview with a sub-256-colour palette can be read back
+    description: >-
+      The round-trip above passes on a full 256-colour palette, which is the
+      one case that already worked, so it could not catch this. imageio 2.13.2
+      reshapes PIL's getpalette() to (256, 3); Pillow 9.2 changed getpalette()
+      to return only the colours in use, so reading a smaller palette raises
+      ValueError. Real FLAIR previews quantise to 8-128 colours: on three
+      clinical subjects, two of three previews were valid GIFs that ImageMagick
+      and a current Pillow decoded fine but this image could not open. That
+      matters beyond QC, because predict.py and DCNN_multistage.py both skip
+      preview generation only when try_load_gif() succeeds, so the failing
+      previews were regenerated on every rerun.
+    command: |
+      python -c "
+      import numpy as np, tempfile, os
+      from PIL import Image
+      from deepwmh.utilities.data_io import try_load_gif
+      d = tempfile.mkdtemp(); g = os.path.join(d, 'p.gif')
+      band = lambda i: ((np.indices((16,16))[1] // 4) * 60 + 10*i).astype('uint8')
+      fr = [Image.fromarray(band(i)).convert('P', palette=Image.ADAPTIVE, colors=4) for i in range(3)]
+      fr[0].save(g, save_all=True, append_images=fr[1:], duration=100, loop=0)
+      n = len(Image.open(g).getpalette()) // 3
+      print('palette-entries', n, 'sub256', n < 256, 'readable', try_load_gif(g))
+      "
+    expected_output_contains: "sub256 True readable True"
+
+  - name: imageio no longer assumes a 256-entry palette
+    description: >-
+      Asserts the patched line is the one that ships, so a rebuild that drops
+      the patch fails here rather than silently regressing previews.
+    command: |
+      python -c "
+      import pathlib, imageio.plugins
+      root = pathlib.Path(imageio.plugins.__file__).parent
+      bad = [str(p) for p in root.glob('*.py')
+             if 'getpalette()).reshape((256, 3))' in p.read_text()]
+      print('unpatched-files', bad)
+      "
+    expected_output_contains: "unpatched-files []"
+
+  # ==========================================================================
+  # CLI SURFACE
+  # ==========================================================================
+  - name: deepwmh --help describes deepwmh, not DeepWMH_predict
+    description: >-
+      The wrapper exec'd DeepWMH_predict, so --help printed that tool's usage:
+      the wrong program name, and "-m TRAINED_MODEL" listed as required, which
+      contradicts every example in the readme -- none of which pass -m, because
+      the wrapper supplies it.
+    command: deepwmh --help
+    expected_output_contains: "usage: deepwmh"
+
+  - name: deepwmh --help does not demand -m
+    command: |
+      deepwmh --help | grep -q 'TRAINED_MODEL' && echo "STILL-DEMANDS-M" || echo "no-m-required"
+    expected_output_contains: "no-m-required"
+
+  - name: deepwmh --help names the final output directory
+    description: >-
+      Nothing documented which of the three segmentation directories is the
+      result; a user taking 001_raw gets an unmasked, un-postprocessed mask.
+    command: deepwmh --help
+    expected_output_contains: "003_postproc_fov"
+
+  - name: ROBEX resolves through PATH
+    description: >-
+      ROBEX is exported as a command and transparent-singularity resolves its
+      wrappers through the container's PATH. /opt/robex was on deploy.path but
+      not on PATH, so `ROBEX` and `runROBEX.sh` were both advertised by the
+      module and both failed with "executable file not found in $PATH".
+    command: bash -lc 'command -v ROBEX && command -v runROBEX.sh'
+    expected_output_contains: /opt/robex/ROBEX
+
+  # ==========================================================================
+  # END-TO-END
+  # ==========================================================================
+  - name: the nnU-Net model restores from the read-only image
+    description: >-
+      This is the call chain that made every inference fail: nnUNet_predict ->
+      load_model_and_checkpoint_files -> restore_model instantiates
+      nnUNetTrainerV2, whose __init__ calls print_to_log_file, which opens
+      training_log_<stamp>.txt in self.output_folder. That folder is restored
+      from the model pickle and points at /opt/deepwmh-model, inside the
+      read-only squashfs, so it died with "OSError: [Errno 30] Read-only file
+      system" after loading the model.
+
+      Loading the real weights through upstream's own entry point is a stronger
+      check than grepping for the patch: it fails if the fallback stops working
+      for any reason, not only if the patch text goes missing. A full
+      segmentation cannot be tested here -- ROBEX rejects a synthetic phantom,
+      and no real T2-FLAIR brain ships in this stack.
+    timeout: 900
+    command: |
+      python -c "
+      import os, pathlib
+      # The PR pipeline runs this suite in Docker as root, for whom the model
+      # tree is writable -- which masked the fold_0 mkdir failure entirely: CI
+      # passed 40/40 while the same restore died with Errno 30 on the real
+      # read-only apptainer image. Drop to nobody so an unwritable model tree
+      # is unwritable in every environment this test runs in.
+      if os.geteuid() == 0:
+          os.setuid(65534)
+      from nnunet.training.model_restore import load_model_and_checkpoint_files
+      root = pathlib.Path(os.environ['DEEPWMH_MODEL_DIR'])
+      best = next(root.rglob('model_best.model'))
+      folder = best.parent.parent
+      print('restoring from', folder)
+      trainer, params = load_model_and_checkpoint_files(
+          str(folder), folds='all', checkpoint_name='model_best')
+      print('model-restored params', len(params))
+      "
+    expected_output_contains: "model-restored params"

@@ -46,7 +46,17 @@ tests:
         command -v jupyter
         command -v code-server
         command -v apptainer
+        command -v virgl_test_server
         test -x /usr/lib/xorg/Xorg
+        test -f /etc/systemd/system/neurodesktop-virgl.service
+        grep -Fq "ConditionPathExists=/dev/dri/renderD128" /etc/systemd/system/neurodesktop-virgl.service
+        grep -Fq -- "virgl_test_server --multi-clients" /etc/systemd/system/neurodesktop-virgl.service
+        grep -Fq -- "--socket-path /tmp/.virgl_test" /etc/systemd/system/neurodesktop-virgl.service
+        test ! -e /etc/systemd/system/glass.target.wants/neurodesktop-virgl.service
+        test -x /usr/local/sbin/neurodesktop-start-virgl
+        test -x /usr/local/libexec/neurodesktop-container-runtime
+        test -L /usr/local/bin/apptainer
+        test -L /usr/local/bin/singularity
         ! command -v guacd
         ! command -v Xvnc
         ! command -v vncserver
@@ -76,16 +86,90 @@ tests:
         runtime="$(mktemp -d)"
         trap '"'"'rm -rf "$runtime"'"'"' EXIT
         XDG_RUNTIME_DIR="$runtime"
+        printf "processor : 0\ncpu MHz : 2400.000\n" > "$runtime/cpuinfo"
+        NEURODESKTOP_CPUINFO_COMPAT_FILE="$runtime/cpuinfo"
         source /opt/neurodesktop/environment_variables.sh
         test -d "$NEURODESKTOP_APPTAINER_OVERLAY"
         test "$(stat -c %a "$NEURODESKTOP_APPTAINER_OVERLAY")" = 700
+        test -d "$MCR_CACHE_ROOT"
+        test "$APPTAINERENV_MCR_CACHE_ROOT" = "$MCR_CACHE_ROOT"
+        test "$SINGULARITYENV_MCR_CACHE_ROOT" = "$MCR_CACHE_ROOT"
         case "$neurodesk_singularity_opts" in
           *"$NEURODESKTOP_APPTAINER_OVERLAY"*) ;;
+          *) exit 1 ;;
+        esac
+        case "$neurodesk_singularity_opts" in
+          *"$runtime/cpuinfo:/proc/cpuinfo:ro"*) ;;
           *) exit 1 ;;
         esac
         echo app-overlay-ready
       '
     expected_output_contains: "app-overlay-ready"
+
+  - name: GPU acceleration is scoped by the image manifest
+    description: Verify the master switch and exact container allowlist control VirGL injection
+    command: |
+      bash -c '
+        set -eo pipefail
+        runtime="$(mktemp -d)"
+        trap '"'"'rm -rf "$runtime"'"'"' EXIT
+        manifest="$runtime/manifest.tsv"
+        printf "mrtrix3\t3.0.8\n" > "$manifest"
+        real_runtime="$runtime/real-runtime"
+        cat > "$real_runtime" <<'"'"'EOF'"'"'
+      #!/bin/sh
+      printf "driver=%s\n" "${APPTAINERENV_GALLIUM_DRIVER:-}"
+      printf "socket=%s\n" "${APPTAINERENV_VTEST_SOCKET_NAME:-}"
+      printf "gl=%s\n" "${APPTAINERENV_MESA_GL_VERSION_OVERRIDE:-}"
+      printf "glsl=%s\n" "${APPTAINERENV_MESA_GLSL_VERSION_OVERRIDE:-}"
+      EOF
+        chmod +x "$real_runtime"
+        starter="$runtime/start-virgl"
+        cat > "$starter" <<'"'"'EOF'"'"'
+      #!/bin/sh
+      python3 -c '"'"'import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.close()'"'"' "$NEURODESKTOP_VTEST_SOCKET"
+      EOF
+        chmod +x "$starter"
+        wrapper=/usr/local/bin/apptainer
+        common="NEURODESKTOP_APPTAINER_REAL=$real_runtime NEURODESKTOP_GPU_MANIFEST=$manifest NEURODESKTOP_VIRGL_STARTER=$starter NEURODESKTOP_VTEST_SOCKET=$runtime/vtest"
+
+        disabled="$(env $common "$wrapper" exec mrtrix3_3.0.8_20260107.simg true)"
+        ! printf "%s\n" "$disabled" | grep -q "driver=virpipe"
+        test ! -e "$runtime/vtest"
+
+        unlisted="$(env $common NEURODESKTOP_GPU_ACCELERATION=1 "$wrapper" exec blender_5.0.1_20260701.simg true)"
+        ! printf "%s\n" "$unlisted" | grep -q "driver=virpipe"
+        test ! -e "$runtime/vtest"
+
+        accelerated="$(env $common NEURODESKTOP_GPU_ACCELERATION=1 "$wrapper" exec mrtrix3_3.0.8_20260107.simg true)"
+        printf "%s\n" "$accelerated" | grep -Fq "driver=virpipe"
+        printf "%s\n" "$accelerated" | grep -Fq "socket=$runtime/vtest"
+        printf "%s\n" "$accelerated" | grep -Fq "gl=4.1"
+        printf "%s\n" "$accelerated" | grep -Fq "glsl=410"
+
+        mismatch="$(env $common NEURODESKTOP_GPU_ACCELERATION=1 "$wrapper" exec mrtrix3_3.0.80_20260107.simg true)"
+        ! printf "%s\n" "$mismatch" | grep -q "driver=virpipe"
+        echo gpu-manifest-ready
+      '
+    expected_output_contains: "gpu-manifest-ready"
+
+  - name: MATLAB CPU information compatibility
+    description: Verify ARM processor records gain the frequency field required by amd64 MATLAB Runtime
+    command: |
+      bash -lc '
+        set -euo pipefail
+        runtime="$(mktemp -d)"
+        trap '"'"'rm -rf "$runtime"'"'"' EXIT
+        printf "processor : 0\nmodel name : Apple M\n\nprocessor : 1\nmodel name : Apple M\n" > "$runtime/source"
+        NEURODESKTOP_CPUINFO_SOURCE="$runtime/source" \
+        NEURODESKTOP_CPUINFO_OUTPUT="$runtime/output" \
+        NEURODESKTOP_CPUINFO_SKIP_MOUNT=1 \
+          /usr/local/sbin/neurodesktop-cpuinfo-compat
+        test "$(grep -Ec '"'"'^cpu MHz[[:space:]]*:'"'"' "$runtime/output")" = 2
+        test "$(grep -Ec '"'"'^processor[[:space:]]*:'"'"' "$runtime/output")" = 2
+        echo matlab-cpuinfo-ready
+      '
+    expected_output_contains: "matlab-cpuinfo-ready"
 
   - name: Neurodesktop version environment
     description: Verify the image exposes the recipe version
@@ -101,6 +185,7 @@ tests:
           /usr/local/bin/start-neurodesktop-jupyterlab \
           /usr/local/bin/neurodesktop-start-jupyter \
           /usr/local/sbin/neurodesktop-glass-prepare \
+          /usr/local/sbin/neurodesktop-cpuinfo-compat \
           /opt/neurodesktop/jupyterlab_startup.sh \
           /opt/neurodesktop/deferred_startup.sh \
           /opt/neurodesktop/nested_container_runtime.sh \

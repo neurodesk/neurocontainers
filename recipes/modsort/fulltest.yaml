@@ -1,0 +1,78 @@
+name: modsort
+version: 0.0.2
+
+tests:
+  - name: modsort launcher is on PATH
+    command: command -v modsort
+    expected_output_contains: "modsort"
+
+  - name: the unpacked application is present
+    description: The AppImage is extracted at build time, so AppRun must exist and be executable.
+    command: test -x /opt/modsort/AppRun && echo apprun-ok
+    expected_output_contains: "apprun-ok"
+
+  - name: every Electron shared library resolves
+    description: >-
+      A GUI app missing a library fails at launch with no display to report it,
+      so check the dynamic linker can satisfy the binary instead.
+    command: |
+      bash -c 'n=$(ldd /opt/modsort/modsort 2>/dev/null | grep -c "not found" || true); echo "missing-libs=$n"'
+    expected_output_contains: "missing-libs=0"
+
+  - name: the launcher passes --no-sandbox
+    description: >-
+      Chromium's setuid sandbox cannot initialise in an unprivileged container
+      without user namespaces. Note this flag is no longer load-bearing for the
+      AppDir search: testing on apptainer 1.5.3 with user namespaces available
+      found the app started with the sandbox enabled too, so the flag is kept
+      as a safeguard rather than a proven requirement.
+    command: grep -c -- "--no-sandbox" /usr/local/bin/modsort
+    expected_output_contains: "1"
+
+  - name: the application tree is readable by a non-root user
+    description: >-
+      --appimage-extract produces a 0700 squashfs-root and cp -a preserves it.
+      Every build step runs as root, for whom 0700 is fully accessible, but
+      apptainer runs as the invoking user: the shipped container failed with
+      "Permission denied" (exit 126) for every non-root user and could not even
+      list /opt/modsort. This check is user-independent, so it holds wherever
+      the suite runs.
+    command: |
+      n=$(find /opt/modsort -type d ! -perm -o+rx | wc -l)
+      f=$(find /opt/modsort -name AppRun ! -perm -o+rx | wc -l)
+      echo "unreadable-dirs=$n unreadable-apprun=$f"
+    expected_output_contains: "unreadable-dirs=0 unreadable-apprun=0"
+
+  - name: the launcher exports APPDIR
+    description: >-
+      Upstream's AppRun resolves APPDIR by walking up from its own location
+      looking for "$path/$1" -- the first command-line argument, not $0. In a
+      real AppImage the runtime pre-sets APPDIR so that never runs; this recipe
+      extracts the AppImage, so it does. Handed "--no-sandbox", which is not a
+      path, the search walked /opt/modsort to /opt to "", leaving BIN as
+      "/modsort" and exiting 127. Exporting APPDIR skips the search and keeps
+      "modsort <path>" working, which simply dropping the flag would not.
+    command: grep -c 'export APPDIR=' /usr/local/bin/modsort
+    expected_output_contains: "1"
+
+  - name: the launcher starts the application under a virtual display
+    description: >-
+      The test this suite needed. It previously asserted only the absence of one
+      error string, and was narrowed in the same commit that produced a broken
+      image -- on the incorrect premise that the "no such file or directory" it
+      matched was benign Electron noise about /dev/dri. Electron never started,
+      so that line was the defect itself, and narrowing the matcher turned a
+      true positive into a pass. Exit 60 means the process did not survive.
+    timeout: 300
+    command: |
+      xvfb-run -a modsort > /tmp/modsort-launch.log 2>&1 &
+      pid=$!
+      sleep 30
+      if kill -0 "$pid" 2>/dev/null; then state=ALIVE; else state=DEAD; fi
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      echo "state=$state"
+      if [ "$state" != ALIVE ]; then
+          echo "--- launch log ---"; tail -40 /tmp/modsort-launch.log; exit 60
+      fi
+    expected_output_contains: "state=ALIVE"

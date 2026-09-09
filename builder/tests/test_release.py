@@ -70,11 +70,13 @@ def test_named_arm64_variant_is_a_normal_container_release() -> None:
         "20260102",
         "aarch64",
         "arm64",
+        source_recipe="tool",
     )
 
     assert release_version("1.2.3", "aarch64", "arm64") == "1.2.3"
     assert data["variant"] == "arm64"
     assert data["architecture"] == "aarch64"
+    assert data["recipe"] == "tool"
     assert data["apps"] == {
         "tool_arm64 1.2.3": {
             "version": "20260102",

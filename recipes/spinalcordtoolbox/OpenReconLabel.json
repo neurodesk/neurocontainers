@@ -28,9 +28,9 @@
     "emitter": "image",
     "injector": "image",
     "can_process_adjustment_data": false,
-    "can_use_gpu": true,
-    "min_count_required_gpus": 1,
-    "min_required_gpu_memory": 10048,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 0,
     "min_required_memory": 40096,
     "min_count_required_cpu_cores": 32,
     "content_qualification_type": "RESEARCH"
@@ -116,10 +116,6 @@
           "name": { "en": "sct_deepseg_lesion_sci_t2" }
         },
         {
-          "id": "sct_deepseg_lesion_ms",
-          "name": { "en": "sct_deepseg_lesion_ms" }
-        },
-        {
           "id": "sct_deepseg_lesion_ms_axial_t2",
           "name": { "en": "sct_deepseg_lesion_ms_axial_t2" }
         },
@@ -138,18 +134,6 @@
         {
           "id": "sct_deepseg_sc_canal_t2",
           "name": { "en": "sct_deepseg_sc_canal_t2" }
-        },
-        {
-          "id": "sct_deepseg_spine",
-          "name": { "en": "sct_deepseg_spine" }
-        },
-        {
-          "id": "sct_bundle_t2_anatomy",
-          "name": { "en": "sct_bundle_t2_anatomy" }
-        },
-        {
-          "id": "sct_bundle_t2_ms",
-          "name": { "en": "sct_bundle_t2_ms" }
         },
         {
           "id": "sct_bundle_t2s_gm",

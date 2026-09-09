@@ -1,0 +1,38 @@
+name: enigma-pd-wml
+version: 1.1.1
+
+tests:
+  - name: pipeline wrapper available
+    description: Verify the enigma-pd-wml launcher is on PATH.
+    command: command -v enigma-pd-wml
+    expected_output_contains: "enigma-pd-wml"
+
+  - name: pipeline scripts installed at the paths the pipeline hardcodes
+    description: analysis_script.sh calls MAKE_HTML.sh, png_generator.py and the QC guide images by absolute path.
+    command: test -x /analysis_script.sh && test -x /MAKE_HTML.sh && test -f /png_generator.py && test -d /qc_guide_images && echo scripts_ok
+    expected_output_contains: "scripts_ok"
+
+  - name: UNet-pgs segmentation script available
+    description: The deep-learning segmentation step is invoked as /WMHs_segmentation_PGS.sh.
+    command: test -x /WMHs_segmentation_PGS.sh && echo unet_ok
+    expected_output_contains: "unet_ok"
+
+  - name: FSL conda environment is usable
+    description: runAnalysis sources fslconf then activates the conda env before calling FSL; verify that exact path works.
+    command: bash -c '. ${FSLDIR}/etc/fslconf/fsl.sh && . /conda/etc/profile.d/conda.sh && conda activate ${FSLENV} && bet 2>&1 | head -n 3'
+    expected_output_contains: "Usage:    bet"
+
+  - name: FSL standard space data present
+    description: processOutputs copies MNI152 templates and atlases out of FSLDIR.
+    command: test -f ${FSLDIR}/data/standard/MNI152_T1_1mm.nii.gz && test -f ${FSLDIR}/data/atlases/JHU/JHU-ICBM-labels-1mm.nii.gz && echo fsldata_ok
+    expected_output_contains: "fsldata_ok"
+
+  - name: supporting command line tools present
+    description: The pipeline shells out to parallel, zip, tree and bc.
+    command: command -v parallel && command -v zip && command -v tree && command -v bc
+    expected_output_contains: "parallel"
+
+  - name: errors clearly when the BIDS directory is not mounted
+    description: With nothing bound to /data the launcher must say so, rather than failing deep inside the pipeline.
+    command: enigma-pd-wml 2>&1 | head -n 5
+    expected_output_contains: "no data found at /data"

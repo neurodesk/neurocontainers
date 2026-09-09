@@ -1,13 +1,23 @@
 name: musclemap
-version: 1.3.45
+version: 1.4.0
 architectures:
     - x86_64
 
 variables:
-    # Upstream publishes the official release as tag "1.3", while the
-    # NeuroContainers recipe version is kept as 1.3.x.
-    musclemap_source_tag: "{{ context.version.split('.')[:2] | join('.') }}"
-    musclemap_archive_url: "https://github.com/MuscleMap/MuscleMap/archive/refs/tags/{{ context.musclemap_source_tag }}.zip"
+    musclemap_model_version: "{{ context.version.split('.')[:2] | join('.') }}"
+    musclemap_regional_model_version: "0.0"
+    musclemap_software_version: "2.0"
+    # The requested model support landed after the upstream software tag. Pin
+    # the exact audited commit instead of following the mutable main branch.
+    musclemap_source_revision: "6e1e1eb6732337c13cab53bd5cc800c69024774f"
+    musclemap_archive_url: "https://github.com/MuscleMap/MuscleMap/archive/{{ context.musclemap_source_revision }}.zip"
+    wholebody_model_record: "21929873"
+    abdomen_model_record: "19631081"
+    forearm_model_record: "19633115"
+    leg_model_record: "19633057"
+    pelvis_model_record: "19632902"
+    thigh_model_record: "19633000"
+    abdomen_template_record: "20043148"
     spinalcordtoolbox_version: "6.5"
     spinalcordtoolbox_archive_url: "https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{ context.spinalcordtoolbox_version }}.tar.gz"
 
@@ -22,16 +32,62 @@ files:
       filename: OpenReconLabel.json
     - name: OpenReconREADME.md
       filename: OpenReconREADME.md
+    - name: musclemap-container-defaults.patch
+      filename: musclemap-container-defaults.patch
+    - name: verify_musclemap_install.py
+      filename: verify_musclemap_install.py
     - name: musclemap_zip
       url: "{{ context.musclemap_archive_url }}"
     - name: spinalcordtoolbox_tar
       url: "{{ context.spinalcordtoolbox_archive_url }}"
+    - name: wholebody_model_pth
+      url: "https://zenodo.org/api/records/{{ context.wholebody_model_record }}/files/contrast_agnostic_wholebody_model.pth/content"
+    - name: wholebody_model_json
+      url: "https://zenodo.org/api/records/{{ context.wholebody_model_record }}/files/contrast_agnostic_wholebody_model.json/content"
+    - name: abdomen_model_pth
+      url: "https://zenodo.org/api/records/{{ context.abdomen_model_record }}/files/contrast_agnostic_abdomen_model.pth/content"
+    - name: abdomen_model_json
+      url: "https://zenodo.org/api/records/{{ context.abdomen_model_record }}/files/contrast_agnostic_abdomen_model.json/content"
+    - name: forearm_model_pth
+      url: "https://zenodo.org/api/records/{{ context.forearm_model_record }}/files/contrast_agnostic_forearm_model.pth/content"
+    - name: forearm_model_json
+      url: "https://zenodo.org/api/records/{{ context.forearm_model_record }}/files/contrast_agnostic_forearm_model.json/content"
+    - name: leg_model_pth
+      url: "https://zenodo.org/api/records/{{ context.leg_model_record }}/files/contrast_agnostic_leg_model.pth/content"
+    - name: leg_model_json
+      url: "https://zenodo.org/api/records/{{ context.leg_model_record }}/files/contrast_agnostic_leg_model.json/content"
+    - name: pelvis_model_pth
+      url: "https://zenodo.org/api/records/{{ context.pelvis_model_record }}/files/contrast_agnostic_pelvis_model.pth/content"
+    - name: pelvis_model_json
+      url: "https://zenodo.org/api/records/{{ context.pelvis_model_record }}/files/contrast_agnostic_pelvis_model.json/content"
+    - name: thigh_model_pth
+      url: "https://zenodo.org/api/records/{{ context.thigh_model_record }}/files/contrast_agnostic_thigh_model.pth/content"
+    - name: thigh_model_json
+      url: "https://zenodo.org/api/records/{{ context.thigh_model_record }}/files/contrast_agnostic_thigh_model.json/content"
+    - name: abdomen_template
+      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template.nii.gz/content"
+    - name: abdomen_template_dseg
+      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg.nii.gz/content"
+    - name: abdomen_template_label_1
+      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-1.nii.gz/content"
+    - name: abdomen_template_label_2
+      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-2.nii.gz/content"
+    - name: abdomen_template_label_3
+      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-3.nii.gz/content"
+    - name: abdomen_template_label_4
+      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-4.nii.gz/content"
+    - name: abdomen_template_label_5
+      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-5.nii.gz/content"
+    - name: abdomen_template_label_6
+      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-6.nii.gz/content"
+    - name: abdomen_template_label_7
+      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-7.nii.gz/content"
+    - name: abdomen_template_label_8
+      url: "https://zenodo.org/api/records/{{ context.abdomen_template_record }}/files/abdomen_template_dseg_label-8.nii.gz/content"
 
 build:
     kind: neurodocker
-    base-image: pytorch/pytorch:2.4.0-cuda11.8-cudnn9-runtime
-    # Match the official MuscleMap 1.3 torch pin while keeping a CUDA 11.8 build
-    # preinstalled in the base image for scanner compatibility.
+    base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
     pkg-manager: apt
 
     directives:
@@ -45,8 +101,8 @@ build:
             - git
             - libglib2.0-0
             - libmpich-dev
+            - patch
             - python3-pip
-            - python3-pyqt5
             - python-is-python3
             - rsync
             - unzip
@@ -54,13 +110,39 @@ build:
         - include: macros/openrecon/neurodocker.yaml
 
         - workdir: /opt/
-        - run: 
+        - run:
             - unzip {{ get_file("musclemap_zip") }} -d /opt
-            - mv MuscleMap-{{ context.musclemap_source_tag }} MuscleMap
+            - mv MuscleMap-{{ context.musclemap_source_revision }} MuscleMap
             - cd MuscleMap
+            - patch -p1 < {{ get_file("musclemap-container-defaults.patch") }}
             - pip install -e .
-            - pip install pillow==10.4.0
-            - python -c "from PIL import Image, ImageDraw, ImageFont"
+            - python -c "import customtkinter, tkinter; from PIL import Image; import torch; assert torch.__version__.startswith('2.4.1')"
+
+        - workdir: /opt/MuscleMap
+        - run:
+            - install -D -m 0444 {{ get_file("wholebody_model_pth") }} scripts/models/wholebody/v{{ context.musclemap_model_version }}/contrast_agnostic_wholebody_model.pth
+            - install -D -m 0444 {{ get_file("wholebody_model_json") }} scripts/models/wholebody/v{{ context.musclemap_model_version }}/contrast_agnostic_wholebody_model.json
+            - install -D -m 0444 {{ get_file("abdomen_model_pth") }} scripts/models/abdomen/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_abdomen_model.pth
+            - install -D -m 0444 {{ get_file("abdomen_model_json") }} scripts/models/abdomen/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_abdomen_model.json
+            - install -D -m 0444 {{ get_file("forearm_model_pth") }} scripts/models/forearm/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_forearm_model.pth
+            - install -D -m 0444 {{ get_file("forearm_model_json") }} scripts/models/forearm/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_forearm_model.json
+            - install -D -m 0444 {{ get_file("leg_model_pth") }} scripts/models/leg/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_leg_model.pth
+            - install -D -m 0444 {{ get_file("leg_model_json") }} scripts/models/leg/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_leg_model.json
+            - install -D -m 0444 {{ get_file("pelvis_model_pth") }} scripts/models/pelvis/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_pelvis_model.pth
+            - install -D -m 0444 {{ get_file("pelvis_model_json") }} scripts/models/pelvis/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_pelvis_model.json
+            - install -D -m 0444 {{ get_file("thigh_model_pth") }} scripts/models/thigh/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_thigh_model.pth
+            - install -D -m 0444 {{ get_file("thigh_model_json") }} scripts/models/thigh/v{{ context.musclemap_regional_model_version }}/contrast_agnostic_thigh_model.json
+            - install -D -m 0444 {{ get_file("abdomen_template") }} scripts/templates/abdomen/abdomen_template.nii.gz
+            - install -D -m 0444 {{ get_file("abdomen_template_dseg") }} scripts/templates/abdomen/abdomen_template_dseg.nii.gz
+            - install -D -m 0444 {{ get_file("abdomen_template_label_1") }} scripts/templates/abdomen/abdomen_template_dseg_label-1.nii.gz
+            - install -D -m 0444 {{ get_file("abdomen_template_label_2") }} scripts/templates/abdomen/abdomen_template_dseg_label-2.nii.gz
+            - install -D -m 0444 {{ get_file("abdomen_template_label_3") }} scripts/templates/abdomen/abdomen_template_dseg_label-3.nii.gz
+            - install -D -m 0444 {{ get_file("abdomen_template_label_4") }} scripts/templates/abdomen/abdomen_template_dseg_label-4.nii.gz
+            - install -D -m 0444 {{ get_file("abdomen_template_label_5") }} scripts/templates/abdomen/abdomen_template_dseg_label-5.nii.gz
+            - install -D -m 0444 {{ get_file("abdomen_template_label_6") }} scripts/templates/abdomen/abdomen_template_dseg_label-6.nii.gz
+            - install -D -m 0444 {{ get_file("abdomen_template_label_7") }} scripts/templates/abdomen/abdomen_template_dseg_label-7.nii.gz
+            - install -D -m 0444 {{ get_file("abdomen_template_label_8") }} scripts/templates/abdomen/abdomen_template_dseg_label-8.nii.gz
+            - install -D -m 0555 {{ get_file("verify_musclemap_install.py") }} /opt/code/verify_musclemap_install.py
 
         - run:
             - tar -xz -C /opt/ -f {{ get_file("spinalcordtoolbox_tar") }}
@@ -85,13 +167,18 @@ build:
 
         - environment:
               MKL_THREADING_LAYER: GNU
+              MUSCLEMAP_SOFTWARE_VERSION: "{{ context.musclemap_software_version }}"
+              MUSCLEMAP_SOURCE_REVISION: "{{ context.musclemap_source_revision }}"
+              MUSCLEMAP_WHOLEBODY_MODEL_VERSION: "{{ context.musclemap_model_version }}"
+              MUSCLEMAP_REGIONAL_MODEL_VERSION: "{{ context.musclemap_regional_model_version }}"
 
         - run:
-            - cp {{ get_file("musclemap.py") }} /opt/code/python-ismrmrd-server/musclemap.py
-            - cp {{ get_file("nifti2mrd.py") }} /opt/code/python-ismrmrd-server/nifti2mrd.py
-            - cp {{ get_file("enhanceddicom2mrd.py") }} /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py
-            - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
-            - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
+            - install -m 0444 {{ get_file("musclemap.py") }} /opt/code/python-ismrmrd-server/musclemap.py
+            - install -m 0444 {{ get_file("nifti2mrd.py") }} /opt/code/python-ismrmrd-server/nifti2mrd.py
+            - install -m 0444 {{ get_file("enhanceddicom2mrd.py") }} /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py
+            - install -m 0444 {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+            - install -m 0444 {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
+            - python /opt/code/verify_musclemap_install.py
             
 deploy:
     bins:
@@ -105,22 +192,26 @@ readme: |-
   ----------------------------------
   ## musclemap/{{ context.version }} ##
 
-  An Open-Source Whole-Body Quantitative MRI tool of Muscle
+  An open-source quantitative MRI toolbox for muscle segmentation and analysis.
 
-  A free and open-source software toolbox for whole-body muscle segmentation and analysis.
+  This image packages MuscleMap software {{ context.musclemap_software_version }}
+  from commit {{ context.musclemap_source_revision }}, whole-body model
+  v{{ context.musclemap_model_version }}, regional model
+  v{{ context.musclemap_regional_model_version }}, and the abdomen registration
+  template. All model and template assets are available offline at runtime.
 
   Example:
   ```bash
-  #mm_segment -i str(input_image) -r str(bodyregion) -c int(chunksize) -s int(spatialoverlap) -g Y
-  mm_segment -i /opt/input.nii.gz -r wholebody -c 50 -s 50 -g Y
+  mm_segment -i /opt/input.nii.gz -r wholebody --model_version {{ context.musclemap_model_version }} -c auto -s 50 -g Y
 
-  mm_register_to_template -i sub-example02_t2w.nii.gz -s sub-example02_t2w_dseg.nii.gz -r wholebody
+  # Registration templates are currently available for the abdomen region.
+  mm_register_to_template -i sub-example02_t2w.nii.gz -s sub-example02_t2w_dseg.nii.gz -r abdomen
 
-  #For T1w and T2w MRI:
-  mm_extract_metrics -m gmm -r wholebody -i image.nii.gz -s image_dseg.nii.gz -c 3
+  # T1w and T2w MRI
+  mm_extract_metrics -m gmm -r wholebody --model_version {{ context.musclemap_model_version }} -i image.nii.gz -s image_dseg.nii.gz -c 3
 
-  #For Dixon Fat-Water MRI:
-  mm_extract_metrics -m dixon -r wholebody -f image_fat.nii.gz -w image_water.nii.gz -s image_dseg.nii.gz
+  # Dixon fat-water MRI
+  mm_extract_metrics -m dixon -r wholebody --model_version {{ context.musclemap_model_version }} -f image_fat.nii.gz -w image_water.nii.gz -s image_dseg.nii.gz
 
   ```
 
@@ -128,14 +219,13 @@ readme: |-
 
   McKay MJ, Weber KA 2nd, Wesselink EO, Smith ZA, Abbott R, Anderson DB, Ashton-James CE, Atyeo J, Beach AJ, Burns J, Clarke S, Collins NJ, Coppieters MW, Cornwall J, Crawford RJ, De Martino E, Dunn AG, Eyles JP, Feng HJ, Fortin M, Franettovich Smith MM, Galloway G, Gandomkar Z, Glastras S, Henderson LA, Hides JA, Hiller CE, Hilmer SN, Hoggarth MA, Kim B, Lal N, LaPorta L, Magnussen JS, Maloney S, March L, Nackley AG, O'Leary SP, Peolsson A, Perraton Z, Pool-Goudzwaard AL, Schnitzler M, Seitz AL, Semciw AI, Sheard PW, Smith AC, Snodgrass SJ, Sullivan J, Tran V, Valentin S, Walton DM, Wishart LR, Elliott JM. MuscleMap: An Open-Source, Community-Supported Consortium for Whole-Body Quantitative MRI of Muscle. J Imaging. 2024;10(11):262. https://doi.org/10.3390/jimaging10110262
   
-  label values can be found here:
-  wholebody: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/wholebody/contrast_agnostic_wholebody_model.json
-  abdomen: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/abdomen/contrast_agnostic_abdomen_model.json
-  forearm: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/forearm/contrast_agnostic_forearm_model.json
-  leg: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/leg/contrast_agnostic_leg_model.json
-  pelvis: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/pelvis/contrast_agnostic_pelvis_model.json
-  thigh: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/thigh/contrast_agnostic_thigh_model.json
-  
+  Immutable model records and label definitions:
+  - wholebody: https://zenodo.org/records/{{ context.wholebody_model_record }}
+  - abdomen: https://zenodo.org/records/{{ context.abdomen_model_record }}
+  - forearm: https://zenodo.org/records/{{ context.forearm_model_record }}
+  - leg: https://zenodo.org/records/{{ context.leg_model_record }}
+  - pelvis: https://zenodo.org/records/{{ context.pelvis_model_record }}
+  - thigh: https://zenodo.org/records/{{ context.thigh_model_record }}
 
   ----------------------------------
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAB/ElEQVR4AbSUS8tpURzGn+1e5BYGKIpiZqbMTQyUAV/WJ5CJZOSSJHIXueTueNab98z81+m8r/ayN2uv57ee9b+YADx1RzgcfkajUe33qUvA6653FYtFVCoVmEz6y/TffO1hv99jNBrh+aSJ1x8alzYgEAjgfr/DbDbD6/VqSH+9IgKsVitKpRLK5TLm8zlmsxny+TwKhcKXgvAtAoLBoDqSbreLzWaD3W6H4/GoQDpORADPnS4sFgt8Ph8SiYQ6osfjAcMwIH1EAMUZWIrTDWOQyWRgt9txOp0kfYgA7jQUCiGVSiGdTsPtdmO1WuFVE7jdbv8PYEput1uVQc1mE3zu9XoYDoegO4kgOqDA9XrFeDxWDpLJJKbTKc7n8884YNXmcjlEIhG1ezrIZrPq9+VyIf/jEB0wqNxxtVpFp9NBq9VCvV6HzWaD0+n8KM5JEcDqZd5z58wcj8ejgrxYLFTaUuTTEAEsrFqtBr/fr9oEz54F1mg0VF/6JM45EcAATyYTxGIxrNdrsPBeLVsFmQLSEAFvATqIx+NgFhmGXMHvddoAxoKpOhgMtNLznwHsoqxg3tlV3wLSXdvBcrkE48H+czgcJN3veW0Ai4riPCr2p28F4UEbYBiG6j0OhwMul0uQ/TutDWA9cBkBvxKDdrsNdlG2in6/T5bW+AMAAP//wtg5bQAAAAZJREFUAwAZcfw0V/0rGAAAAABJRU5ErkJggg==
@@ -143,6 +233,12 @@ categories:
   - body
 copyright:
   - license: MIT
-    url: https://github.com/MuscleMap/MuscleMap?tab=MIT-1-ov-file#readme
+    url: "https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_revision }}/LICENSE"
+  - license: CC-BY-4.0
+    url: https://zenodo.org/records/19633057
+  - license: CC-BY-4.0
+    url: https://zenodo.org/records/19632902
+  - license: CC-BY-4.0
+    url: https://zenodo.org/records/20043148
   - license: LGPL-3.0
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE

@@ -10,10 +10,14 @@ import ismrmrd
 import nibabel as nib
 import numpy as np
 import pydicom
+import yaml
 
 
 def _install_openrecon_stubs():
-    sys.modules.setdefault("constants", types.SimpleNamespace(MRD_LOGGING_ERROR=3))
+    sys.modules.setdefault(
+        "constants",
+        types.SimpleNamespace(MRD_LOGGING_INFO=1, MRD_LOGGING_ERROR=3),
+    )
 
     def get_json_config_param(config, key, default=None, type=None):
         if isinstance(config, str):
@@ -77,6 +81,25 @@ def make_series_image(series_index, slice_index, position_z, series_name, *, ech
         meta["EchoTime"] = str(echo_time)
     image.attribute_string = meta.serialize()
     return image
+
+
+def make_set_separated_qdess_images(slice_count=80):
+    images = []
+    for slice_index in range(slice_count):
+        for set_index in (0, 1):
+            image = make_series_image(
+                1,
+                slice_index,
+                float(slice_index),
+                "knee_qDESS_0.36x0.36x1_omsk_0.1.4",
+                echo_time=5.05,
+            )
+            header = image.getHead()
+            header.set = set_index
+            header.image_index = slice_index * 2 + set_index + 1
+            image.setHead(header)
+            images.append(image)
+    return images
 
 
 def make_source_image_with_minihead():
@@ -206,6 +229,157 @@ def test_original_passthrough_preserves_source_identity_and_valid_paramarray():
     assert '    "NONE"' not in minihead
 
 
+def test_original_passthrough_splits_three_source_volumes_into_labeled_subseries():
+    source_series = (
+        (10, "sequenceName"),
+        (11, "sequenceName_fid"),
+        (12, "sequenceName_SE"),
+    )
+    images = [
+        make_series_image(series_index, slice_index, float(slice_index), series_name)
+        for series_index, series_name in source_series
+        for slice_index in range(80)
+    ]
+
+    restamped = openmsk._restamp_images(
+        images,
+        openmsk.ORIGINAL_SERIES_INDEX,
+        "openmsk_original",
+        "ORIGINAL",
+        "OpenMSK original",
+    )
+
+    groups = {}
+    for image in restamped:
+        groups.setdefault(int(image.image_series_index), []).append(image)
+
+    assert list(groups) == [
+        openmsk.ORIGINAL_SERIES_INDEX,
+        openmsk.EXTRA_ORIGINAL_SERIES_INDEX_START,
+        openmsk.EXTRA_ORIGINAL_SERIES_INDEX_START + 1,
+    ]
+    assert [len(group) for group in groups.values()] == [80, 80, 80]
+    for (output_series_index, group), (_source_series_index, expected_name) in zip(
+        groups.items(), source_series
+    ):
+        metas = [ismrmrd.Meta.deserialize(image.attribute_string) for image in group]
+        assert {first(meta, "SeriesDescription") for meta in metas} == {expected_name}
+        assert {first(meta, "SequenceDescription") for meta in metas} == {expected_name}
+        assert {first(meta, "ProtocolName") for meta in metas} == {expected_name}
+        assert {first(meta, "SeriesInstanceUID") for meta in metas} == {
+            first(metas[0], "SeriesInstanceUID")
+        }
+        assert {first(meta, "SeriesNumberRangeNameUID") for meta in metas} == {
+            f"openmsk_original_{output_series_index}"
+        }
+        assert [int(image.image_index) for image in group] == list(range(1, 81))
+
+    sent_batches = []
+    logviewer_messages = []
+    openmsk._send_images(
+        types.SimpleNamespace(
+            send_image=lambda batch: sent_batches.append(batch),
+            send_logging=lambda _level, message: logviewer_messages.append(message),
+        ),
+        restamped,
+        "original_passthrough",
+    )
+    assert [int(batch[0].image_series_index) for batch in sent_batches] == [
+        openmsk.ORIGINAL_SERIES_INDEX,
+        openmsk.EXTRA_ORIGINAL_SERIES_INDEX_START,
+        openmsk.EXTRA_ORIGINAL_SERIES_INDEX_START + 1,
+    ]
+    assert [len(batch) for batch in sent_batches] == [80, 80, 80]
+    assert logviewer_messages == [
+        "Returning OpenMSK source subseries: "
+        f"series={series_index} name={series_name!r} images=80"
+        for series_index, series_name in (
+            (openmsk.ORIGINAL_SERIES_INDEX, "sequenceName"),
+            (openmsk.EXTRA_ORIGINAL_SERIES_INDEX_START, "sequenceName_fid"),
+            (openmsk.EXTRA_ORIGINAL_SERIES_INDEX_START + 1, "sequenceName_SE"),
+        )
+    ]
+
+
+def test_recipe_uses_system_cuda_and_minimal_pymskt_dependencies():
+    recipe = yaml.safe_load(Path("build.yaml").read_text())
+    files = {entry["name"]: entry for entry in recipe["files"]}
+    packaged_config = json.loads(files["openmsk_config"]["contents"])
+    reference = files["pymskt_right_knee_reference"]
+    reference_url = recipe["variables"]["pymskt_right_knee_reference_url"]
+
+    assert "dosma_model_url" not in recipe["variables"]
+    assert "dosma_qdess_model" not in files
+    assert packaged_config["default_seg_model"] == "goyal_sagittal"
+    assert (
+        packaged_config["models"]["acl_qdess_bone_july_2024"]
+        == packaged_config["models"]["goyal_sagittal"]
+    )
+    assert reference["url"] == "{{ context.pymskt_right_knee_reference_url }}"
+    assert "/gattia/pymskt/" in reference_url
+    assert "/main/" not in reference_url
+    run_commands = [
+        command
+        for directive in recipe["build"]["directives"]
+        for command in directive.get("run", [])
+    ]
+    assert any(
+        '{{ get_file("pymskt_right_knee_reference") }}' in command
+        and "right_knee_example.nrrd" in command
+        for command in run_commands
+    )
+    reference_install = next(
+        command
+        for command in run_commands
+        if "pymskt_reference_path=" in command
+    )
+    assert 'find_spec("pymskt")' in reference_install
+    assert "import pymskt" not in reference_install
+    assert "sha256sum -c -" in reference_install
+    torch_install = next(
+        command for command in run_commands if "torch==2.2.2+cu118" in command
+    )
+    assert "--no-deps" in torch_install
+    assert "nvidia-nccl-cu11==2.19.3" in "\n".join(run_commands)
+    assert not any("import torch, torchvision" in command for command in run_commands)
+
+    nsm_requirement_filter = next(
+        command
+        for command in run_commands
+        if "requirements.txt" in command and "sed -i" in command
+    )
+    assert "mskt" in nsm_requirement_filter
+
+    mskt_install = next(
+        command for command in run_commands if "mskt==0.1.20" in command
+    )
+    assert "--no-deps" in mskt_install
+    assert "nnunetv2==2.4.2" in mskt_install
+    assert "acvl-utils==0.2.6" in mskt_install
+    assert "dynamic-network-architectures==0.3.1" in mskt_install
+    dependency_commands = "\n".join(run_commands)
+    for dependency in (
+        "point-cloud-utils==0.34.0",
+        "pyacvd==0.4.0",
+        "pyvista==0.48.4",
+        "vtk==9.6.2",
+        "param==2.4.1",
+        "cycpd==0.28",
+        "batchgenerators==0.25.3",
+        "connected-components-3d==4.0.0",
+    ):
+        assert dependency in dependency_commands
+    for omitted_dependency in (
+        "itkwidgets",
+        "itk-core",
+        "jupyter",
+        "notebook",
+        "traittypes",
+        "pyfocusr",
+    ):
+        assert omitted_dependency not in dependency_commands
+
+
 class FakeConnection:
     def __init__(self, items):
         self.items = list(items)
@@ -296,7 +470,7 @@ def test_process_runs_t2_postprocessing_for_qdess_segmentation_result(monkeypatc
     assert connection.logs == []
 
 
-def test_process_uses_synthetic_qdess_dicom_when_two_echoes_available(monkeypatch):
+def test_process_segments_rss_and_stages_two_echoes_for_fitting(monkeypatch):
     events = []
     segmentation_inputs = []
     writer_echo_counts = []
@@ -338,10 +512,12 @@ def test_process_uses_synthetic_qdess_dicom_when_two_echoes_available(monkeypatc
     )
 
     assert writer_echo_counts == [[1, 1]]
-    assert segmentation_inputs[0].name == "openmsk_qdess_dicom"
+    assert segmentation_inputs[0].name == "openmsk_rss.nii.gz"
     assert events == ["original_passthrough", "openmsk_segmentation"]
     assert connection.closed
-    assert connection.logs == []
+    messages = [message for _level, message in connection.logs]
+    assert any("grouping=duplicate slice position" in message for message in messages)
+    assert any("computed as 2 * TR - TE1" in message for message in messages)
 
 
 def test_select_primary_source_keeps_qdess_echo_series_together():
@@ -359,6 +535,16 @@ def test_select_primary_source_keeps_qdess_echo_series_together():
     assert len(selection["primary"]) == 2
 
 
+def test_select_primary_source_combines_set_separated_echoes_from_scanner_log():
+    selection = openmsk._select_primary_source(make_set_separated_qdess_images())
+
+    assert selection["echo_grouping_method"] == "set"
+    assert list(selection["echo_groups"]) == [0, 1]
+    assert [len(group) for group in selection["echo_groups"].values()] == [80, 80]
+    assert len(selection["primary"]) == 80
+    assert {int(image.set) for image in selection["primary"]} == {0}
+
+
 def test_split_echo_groups_prefers_named_dess_fid_se_over_base_series():
     images = [
         make_series_image(10, 0, 0.0, "wip_dess_fastwater_goyal_sag"),
@@ -374,6 +560,221 @@ def test_split_echo_groups_prefers_named_dess_fid_se_over_base_series():
     assert list(groups) == ["FID", "SE"]
     assert [int(image.image_series_index) for image in groups["FID"]] == [11, 11]
     assert [int(image.image_series_index) for image in groups["SE"]] == [12, 12]
+
+
+def test_process_routes_named_fid_and_se_to_rss_and_logs_detection(monkeypatch):
+    events = []
+    segmentation_inputs = []
+    segmentation_sources = {}
+    fitting_sources = {}
+    staged_fit_inputs = []
+    images = [
+        make_series_image(10, 0, 0.0, "sequenceName", echo_time=5.05),
+        make_series_image(11, 0, 0.0, "sequenceName_fid", echo_time=5.05),
+        make_series_image(12, 0, 0.0, "sequenceName_SE", echo_time=5.05),
+    ]
+    metadata = types.SimpleNamespace(
+        encoding=[],
+        sequenceParameters=types.SimpleNamespace(
+            TR=[25.0],
+            TE=[5.05, 5.05],
+            flipAngle_deg=[30.0],
+        ),
+    )
+
+    def fake_write_source_nifti(echo_groups, *_args):
+        segmentation_sources.update(
+            {
+                key: [openmsk._source_series_name(image) for image in group]
+                for key, group in echo_groups.items()
+            }
+        )
+        return echo_groups["FID"], (4, 4, 1)
+
+    def fake_writer(echo_groups, output_dir, *_args):
+        fitting_sources.update(
+            {
+                key: [openmsk._source_series_name(image) for image in group]
+                for key, group in echo_groups.items()
+            }
+        )
+        output_dir.mkdir()
+        Path(output_dir, "fit_marker.dcm").write_text("dicom")
+        return output_dir
+
+    def fake_write_run_config(tmpdir, *_args):
+        path = Path(tmpdir) / "openmsk_config.json"
+        path.write_text("{}")
+        return path
+
+    def fake_segmentation(input_path, output_dir, *_args):
+        segmentation_inputs.append(Path(input_path))
+        Path(output_dir, "openmsk_rss_all-labels.nii.gz").write_text("labels")
+        return {
+            "ok": True,
+            "segmentation": {"is_qdess": False, "skip_steps": ["t2_mapping"]},
+        }
+
+    def fake_postprocessing(output_dir, _config_path, _compute_thickness, compute_t2):
+        staged_fit_inputs.append(
+            (
+                any(
+                    child.is_dir() and (child / "fit_marker.dcm").exists()
+                    for child in Path(output_dir).iterdir()
+                ),
+                compute_t2,
+            )
+        )
+        return True
+
+    monkeypatch.setattr(openmsk, "_write_source_nifti", fake_write_source_nifti)
+    monkeypatch.setattr(openmsk, "_write_synthetic_qdess_dicom_input", fake_writer)
+    monkeypatch.setattr(openmsk, "_write_run_config", fake_write_run_config)
+    monkeypatch.setattr(openmsk, "_run_kneepipeline_segmentation", fake_segmentation)
+    monkeypatch.setattr(
+        openmsk,
+        "_run_kneepipeline_postprocessing",
+        fake_postprocessing,
+    )
+    monkeypatch.setattr(
+        openmsk,
+        "_nifti_to_mrd_images",
+        lambda *_args, **_kwargs: [make_image()],
+    )
+    monkeypatch.setattr(
+        openmsk,
+        "_send_images",
+        lambda _connection, _images, context: events.append(context),
+    )
+
+    connection = FakeConnection(images)
+    openmsk.process(connection, {}, metadata)
+
+    assert segmentation_sources == {
+        "FID": ["sequenceName_fid"],
+        "SE": ["sequenceName_SE"],
+    }
+    assert [path.name for path in segmentation_inputs] == ["openmsk_rss.nii.gz"]
+    assert fitting_sources == {
+        "FID": ["sequenceName_fid"],
+        "SE": ["sequenceName_SE"],
+    }
+    assert staged_fit_inputs == [(True, True)]
+    assert events == ["original_passthrough", "openmsk_segmentation"]
+    messages = [message for _level, message in connection.logs]
+    assert any(
+        "sequenceName'" in message and "role=base/other" in message
+        for message in messages
+    )
+    assert any(
+        "segmentation=RSS(FID, SE)" in message and "fitting echoes=[FID" in message
+        for message in messages
+    )
+    assert any(
+        "received TE labels=[5.05, 5.05] ms" in message
+        and "TR=25.0 ms" in message
+        and "TE1(FID)=5.05 ms" in message
+        and "TE2(SE)=44.95 ms (computed as 2 * TR - TE1)" in message
+        and "flip=30.0 deg (mrd.sequenceParameters.flipAngle_deg)" in message
+        and "GL area=3132.0 (default.qdess_gl_area)" in message
+        and "TG=1560.0 us (default.qdess_tg_us)" in message
+        for message in messages
+    )
+    assert connection.closed
+
+
+def test_process_routes_set_separated_echoes_to_rss_and_logs_computed_te2(monkeypatch):
+    segmentation_sets = {}
+    fitting_sets = {}
+    images = make_set_separated_qdess_images()
+    metadata = types.SimpleNamespace(
+        encoding=[],
+        sequenceParameters=types.SimpleNamespace(
+            TR=[14.93],
+            TE=[5.05],
+            flipAngle_deg=[25.0],
+        ),
+    )
+
+    def fake_write_source_nifti(echo_groups, *_args):
+        segmentation_sets.update(
+            {
+                key: [int(image.set) for image in group]
+                for key, group in echo_groups.items()
+            }
+        )
+        return echo_groups[0], (4, 4, len(echo_groups[0]))
+
+    def fake_writer(echo_groups, output_dir, *_args):
+        fitting_sets.update(
+            {
+                key: [int(image.set) for image in group]
+                for key, group in echo_groups.items()
+            }
+        )
+        output_dir.mkdir()
+        Path(output_dir, "fit_marker.dcm").write_text("dicom")
+        return output_dir
+
+    def fake_write_run_config(tmpdir, *_args):
+        path = Path(tmpdir) / "openmsk_config.json"
+        path.write_text("{}")
+        return path
+
+    def fake_segmentation(_input_path, output_dir, *_args):
+        Path(output_dir, "openmsk_rss_all-labels.nii.gz").write_text("labels")
+        return {"ok": True, "segmentation": {"is_qdess": False, "skip_steps": []}}
+
+    monkeypatch.setattr(openmsk, "_write_source_nifti", fake_write_source_nifti)
+    monkeypatch.setattr(openmsk, "_write_synthetic_qdess_dicom_input", fake_writer)
+    monkeypatch.setattr(openmsk, "_write_run_config", fake_write_run_config)
+    monkeypatch.setattr(openmsk, "_run_kneepipeline_segmentation", fake_segmentation)
+    monkeypatch.setattr(openmsk, "_run_kneepipeline_postprocessing", lambda *_args: True)
+    monkeypatch.setattr(
+        openmsk,
+        "_nifti_to_mrd_images",
+        lambda *_args, **_kwargs: [make_image()],
+    )
+    monkeypatch.setattr(openmsk, "_send_images", lambda *_args: None)
+
+    connection = FakeConnection(images)
+    openmsk.process(
+        connection,
+        {"parameters": {"qdess_gl_area": 3132.0, "qdess_tg_us": 1560.0}},
+        metadata,
+    )
+
+    assert {key: (len(values), set(values)) for key, values in segmentation_sets.items()} == {
+        0: (80, {0}),
+        1: (80, {1}),
+    }
+    assert {key: (len(values), set(values)) for key, values in fitting_sets.items()} == {
+        0: (80, {0}),
+        1: (80, {1}),
+    }
+    messages = [message for _level, message in connection.logs]
+    assert any(
+        "160 magnitude images" in message
+        and "set=0" in message
+        and "set=1" in message
+        and "images=80" in message
+        for message in messages
+    )
+    assert any(
+        "grouping=set" in message
+        and "segmentation=RSS(set=0, set=1)" in message
+        and "fitting echoes=[set=0" in message
+        and "set=1" in message
+        for message in messages
+    )
+    assert any(
+        "received TE labels=[5.05, 5.05] ms" in message
+        and "TR=14.93 ms" in message
+        and "TE1(set=0)=5.05 ms" in message
+        and "TE2(set=1)=24.81 ms (computed as 2 * TR - TE1)" in message
+        for message in messages
+    )
+    assert connection.closed
 
 
 def test_process_does_not_fallback_from_requested_model_failure(monkeypatch):
@@ -498,6 +899,7 @@ def test_process_can_skip_originals_when_requested(monkeypatch):
 
 def test_process_sends_subregions_and_metrics_report_when_outputs_exist(monkeypatch):
     events = []
+    label_maps = {}
     source = make_image()
     source.attribute_string = ismrmrd.Meta().serialize()
 
@@ -524,7 +926,12 @@ def test_process_sends_subregions_and_metrics_report_when_outputs_exist(monkeypa
     monkeypatch.setattr(openmsk, "_write_run_config", fake_write_run_config)
     monkeypatch.setattr(openmsk, "_run_kneepipeline_segmentation", fake_segmentation)
     monkeypatch.setattr(openmsk, "_run_kneepipeline_postprocessing", fake_postprocessing)
-    monkeypatch.setattr(openmsk, "_nifti_to_mrd_images", lambda *_args, **_kwargs: [make_image()])
+
+    def fake_nifti_to_mrd(_path, _sources, series_index, *_args, **kwargs):
+        label_maps[series_index] = kwargs.get("label_map")
+        return [make_image()]
+
+    monkeypatch.setattr(openmsk, "_nifti_to_mrd_images", fake_nifti_to_mrd)
     monkeypatch.setattr(openmsk, "_build_metrics_report_images", lambda *_args, **_kwargs: [make_image()])
     monkeypatch.setattr(openmsk, "_send_images", lambda _connection, _images, context: events.append(context))
 
@@ -541,15 +948,17 @@ def test_process_sends_subregions_and_metrics_report_when_outputs_exist(monkeypa
         "openmsk_subregions",
         "openmsk_metrics_report",
     ]
+    assert label_maps[openmsk.SEGMENT_SERIES_INDEX] is None
+    assert label_maps[openmsk.SUBREGION_SERIES_INDEX] == openmsk.CANONICAL_TO_UPSTREAM_LABELS
     assert connection.closed
     assert connection.logs == []
 
 
 def test_write_run_config_preserves_requested_segmentation_model(tmp_path, monkeypatch):
     source_config = {
-        "default_seg_model": "acl_qdess_bone_july_2024",
+        "default_seg_model": "goyal_sagittal",
         "models": {
-            "acl_qdess_bone_july_2024": "/opt/DOSMA_WEIGHTS/default.h5",
+            "acl_qdess_bone_july_2024": "/opt/DOSMA_WEIGHTS/sagittal_best_model.h5",
             "goyal_sagittal": "/opt/DOSMA_WEIGHTS/sagittal_best_model.h5",
         },
     }
@@ -568,33 +977,38 @@ def test_write_run_config_preserves_requested_segmentation_model(tmp_path, monke
     assert run_config["default_seg_model"] == "goyal_sagittal"
 
 
-def test_openrecon_label_keeps_packaged_model_choices():
+def test_openrecon_label_has_minimal_dess_controls_and_packaged_model_choices():
     label = json.loads(Path("OpenReconLabel.json").read_text())
     params = {param["id"]: param for param in label["parameters"]}
 
+    assert set(params) == {
+        "config",
+        "sendoriginal",
+        "segmodel",
+        "computethickness",
+    }
+    assert params["config"]["label"]["en"] == "Analysis"
+    assert params["config"]["values"][0]["name"]["en"] == "DESS"
     assert params["sendoriginal"]["default"] is True
     assert [value["id"] for value in params["segmodel"]["values"]] == [
-        "acl_qdess_bone_july_2024",
         "goyal_sagittal",
         "goyal_coronal",
         "goyal_axial",
         "nnunet_knee",
     ]
-    model_names = {value["id"]: value["name"]["en"] for value in params["segmodel"]["values"]}
-    assert model_names["acl_qdess_bone_july_2024"] == "DOSMA qDESS bone/cartilage July 2024"
-    assert params["runnsm"]["type"] == "boolean"
-    assert params["runnsm"]["default"] is False
-    assert params["runbscore"]["type"] == "boolean"
-    assert params["runbscore"]["default"] is False
-    for key in (
-        "qdesstrms",
-        "qdesste1ms",
-        "qdesste2ms",
-        "qdessflipangledeg",
-        "qdessglarea",
-        "qdesstgus",
-    ):
-        assert params[key]["type"] == "double"
+    assert params["segmodel"]["default"] == "goyal_sagittal"
+    model_names = {
+        value["id"]: value["name"]["en"]
+        for value in params["segmodel"]["values"]
+    }
+    assert model_names == {
+        "goyal_sagittal": "Goyal sagittal",
+        "goyal_coronal": "Goyal coronal",
+        "goyal_axial": "Goyal axial",
+        "nnunet_knee": "nnU-Net knee",
+    }
+    assert "acl_qdess_bone_july_2024" not in json.dumps(label)
+    assert "qDESS" not in json.dumps(label)
 
 
 def test_kneepipeline_subprocess_env_prepends_numpy_compat_path(monkeypatch):
@@ -614,7 +1028,10 @@ def test_run_kneepipeline_segmentation_returns_step_summary(tmp_path, monkeypatc
     input_path.write_text("image")
     config_path.write_text("{}")
 
+    invoked_scripts = []
+
     def fake_run(cmd, **_kwargs):
+        invoked_scripts.append(cmd[2])
         summary_path = Path(cmd[4]) / openmsk.OPENMSK_SEGMENTATION_SUMMARY
         summary_path.write_text(
             json.dumps(
@@ -622,7 +1039,7 @@ def test_run_kneepipeline_segmentation_returns_step_summary(tmp_path, monkeypatc
                     "segmentation": {
                         "is_qdess": True,
                         "skip_steps": [],
-                        "model_name": "acl_qdess_bone_july_2024",
+                        "model_name": "goyal_sagittal",
                     }
                 }
             )
@@ -634,7 +1051,7 @@ def test_run_kneepipeline_segmentation_returns_step_summary(tmp_path, monkeypatc
     result = openmsk._run_kneepipeline_segmentation(
         input_path,
         output_dir,
-        "acl_qdess_bone_july_2024",
+        "goyal_sagittal",
         config_path,
     )
 
@@ -642,6 +1059,203 @@ def test_run_kneepipeline_segmentation_returns_step_summary(tmp_path, monkeypatc
     assert result["returncode"] == 0
     assert openmsk._segmentation_is_qdess(result)
     assert not openmsk._segmentation_skips_step(result, "t2_mapping")
+    assert "steps.label_remap" not in invoked_scripts[0]
+    assert "_get_remap_table" not in invoked_scripts[0]
+
+
+def test_postprocessing_converts_complete_upstream_contract_to_canonical(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    config_path.write_text("{}")
+    invoked_commands = []
+
+    def fake_run(cmd, **_kwargs):
+        invoked_commands.append(cmd)
+        summary_path = output_dir / openmsk.OPENMSK_POSTPROCESSING_SUMMARY
+        summary_path.write_text(json.dumps({"label_remap": {"remapped": True}}))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(openmsk.subprocess, "run", fake_run)
+
+    result = openmsk._run_kneepipeline_postprocessing(
+        output_dir,
+        config_path,
+        compute_thickness=True,
+        compute_t2=True,
+    )
+
+    command = invoked_commands[0]
+    assert json.loads(command[-1]) == {
+        str(source): target
+        for source, target in openmsk.UPSTREAM_TO_CANONICAL_LABELS.items()
+    }
+    assert command[2].index("summary[\"label_remap\"] = label_remap") < command[2].index(
+        "summary[\"generate_meshes\"] = generate_meshes"
+    )
+    assert 'working_dir / "openmsk_qdess_fit"' in command[2]
+    assert "t2_mapping_step._find_dicom_dir = _openmsk_find_dicom_dir" in command[2]
+    assert '"*_subregions-labels.nii.gz"' in command[2]
+    assert '"global_cartilage_compartments"' in command[2]
+    assert 'summary["warnings"]["generate_meshes"]' in command[2]
+    compile(command[2], "<openmsk-postprocessing>", "exec")
+    assert result["ok"] is True
+
+
+def test_postprocessing_recovers_global_t2_metrics_when_subregions_fail(
+    tmp_path,
+    monkeypatch,
+):
+    steps_dir = tmp_path / "steps"
+    steps_dir.mkdir()
+    (steps_dir / "__init__.py").write_text("")
+    (steps_dir / "_common.py").write_text(
+        """from pathlib import Path
+def load_config(_path):
+    return {}
+def find_file(working_dir, pattern):
+    matches = list(Path(working_dir).glob(pattern))
+    if len(matches) != 1:
+        raise FileNotFoundError(pattern)
+    return matches[0]
+"""
+    )
+    (steps_dir / "label_remap.py").write_text(
+        """def run(_working_dir, options=None, config=None):
+    return {"remapped": True}
+"""
+    )
+    (steps_dir / "generate_meshes.py").write_text(
+        """def run(_working_dir, options=None, config=None):
+    raise RuntimeError("simulated offline subregion failure")
+"""
+    )
+    (steps_dir / "t2_mapping.py").write_text(
+        """import json
+from pathlib import Path
+def _find_dicom_dir(_working_dir):
+    raise AssertionError("OpenMSK must replace directory-order discovery")
+def run(working_dir, config=None):
+    working_dir = Path(working_dir)
+    dicom_dir = _find_dicom_dir(working_dir)
+    assert dicom_dir.name == "openmsk_qdess_fit"
+    assert list(working_dir.glob("*_subregions-labels.nii.gz"))
+    (working_dir / "scan_t2_results.json").write_text(
+        json.dumps({"fem_cart_t2_ms_mean": 42.0})
+    )
+    return {"metrics": {"fem_cart_t2_ms_mean": 42.0}}
+"""
+    )
+
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    (output_dir / "scan_all-labels.nii.gz").write_text("canonical labels")
+    fit_dir = output_dir / "openmsk_qdess_fit"
+    fit_dir.mkdir()
+    (fit_dir / "echo_001.dcm").write_bytes(b"DICM")
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}")
+    monkeypatch.setattr(openmsk, "KNEEPIPELINE_DIR", tmp_path)
+
+    result = openmsk._run_kneepipeline_postprocessing(
+        output_dir,
+        config_path,
+        compute_thickness=False,
+        compute_t2=True,
+    )
+
+    assert result["ok"] is True
+    assert result["returncode"] == 0
+    assert result["t2_statistics_scope"] == "global_cartilage_compartments"
+    assert "generate_meshes" in result["warnings"]
+    assert result["errors"] == {}
+    assert (output_dir / "scan_subregions-labels.nii.gz").read_text() == (
+        "canonical labels"
+    )
+    assert json.loads((output_dir / "scan_t2_results.json").read_text()) == {
+        "fem_cart_t2_ms_mean": 42.0
+    }
+
+
+def test_upstream_label_contract_includes_all_model_tissues():
+    assert openmsk.UPSTREAM_LABELS == {
+        0: "background",
+        1: "patellar_cartilage",
+        2: "femoral_cartilage",
+        3: "medial_tibial_cartilage",
+        4: "lateral_tibial_cartilage",
+        5: "medial_meniscus",
+        6: "lateral_meniscus",
+        7: "femur",
+        8: "tibia",
+        9: "patella",
+    }
+    assert openmsk.UPSTREAM_TO_CANONICAL_LABELS == {
+        1: 7,
+        2: 4,
+        3: 5,
+        4: 6,
+        5: 8,
+        6: 9,
+        7: 1,
+        8: 2,
+        9: 3,
+    }
+    assert openmsk.CANONICAL_TO_UPSTREAM_LABELS == {
+        canonical: upstream
+        for upstream, canonical in openmsk.UPSTREAM_TO_CANONICAL_LABELS.items()
+    }
+
+
+def test_label_remap_preserves_unlisted_subregion_labels():
+    canonical = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15])
+
+    upstream = openmsk._remap_integer_labels(
+        canonical,
+        openmsk.CANONICAL_TO_UPSTREAM_LABELS,
+    )
+
+    assert upstream.tolist() == [0, 7, 8, 9, 2, 3, 4, 1, 5, 6, 11, 12, 13, 14, 15]
+
+
+def test_write_source_nifti_uses_geometry_aligned_rss_of_both_echoes(tmp_path):
+    fid = [
+        make_series_image(11, 0, 0.0, "sequenceName_fid"),
+        make_series_image(11, 1, 1.0, "sequenceName_fid"),
+    ]
+    se = [
+        make_series_image(12, 1, 1.0, "sequenceName_SE"),
+        make_series_image(12, 0, 0.0, "sequenceName_SE"),
+    ]
+    for image in fid + se:
+        header = image.getHead()
+        header.read_dir[:] = [1.0, 0.0, 0.0]
+        header.phase_dir[:] = [0.0, 1.0, 0.0]
+        header.slice_dir[:] = [0.0, 0.0, 1.0]
+        image.setHead(header)
+    fid[0].data[:] = 3
+    fid[1].data[:] = 5
+    se[0].data[:] = 12
+    se[1].data[:] = 4
+    output_path = tmp_path / "openmsk_rss.nii.gz"
+
+    ordered_sources, shape = openmsk._write_source_nifti(
+        {"FID": fid, "SE": se},
+        output_path,
+        types.SimpleNamespace(
+            sequenceParameters=types.SimpleNamespace(TR=[25.0]),
+        ),
+    )
+
+    rss = nib.load(output_path)
+    rss_data = np.asarray(rss.dataobj)
+    assert shape == (4, 4, 2)
+    assert [int(image.slice) for image in ordered_sources] == [0, 1]
+    np.testing.assert_allclose(rss_data[:, :, 0], 5.0)
+    np.testing.assert_allclose(rss_data[:, :, 1], 13.0)
+    assert "RSS of both DESS echoes" in rss.header["descrip"].tobytes().decode(
+        errors="ignore"
+    )
 
 
 def test_synthetic_qdess_dicom_contains_t2_inputs(tmp_path):
@@ -684,7 +1298,7 @@ def test_synthetic_qdess_dicom_contains_t2_inputs(tmp_path):
     assert int(first.EchoNumbers) == 1
     assert int(second.EchoNumbers) == 2
     assert float(first.EchoTime) == 7.5
-    assert float(second.EchoTime) == 41.5
+    assert float(second.EchoTime) == 44.5
     assert float(first.RepetitionTime) == 26.0
     assert float(first.FlipAngle) == 31.0
     assert float(first[openmsk.QDESS_GL_AREA_TAG].value) == 3133.0
@@ -692,11 +1306,11 @@ def test_synthetic_qdess_dicom_contains_t2_inputs(tmp_path):
     assert first.SeriesDescription == "qDESS_test"
 
 
-def test_single_mrd_qdess_te_is_shared_by_both_synthetic_echoes():
+def test_second_qdess_echo_time_is_computed_from_tr_and_first_echo():
     echo1 = make_series_image(1, 0, 0.0, "qDESS_test", echo_time=5.05)
-    echo2 = make_series_image(2, 0, 0.0, "qDESS_test")
+    echo2 = make_series_image(2, 0, 0.0, "qDESS_test", echo_time=5.05)
     metadata = types.SimpleNamespace(
-        sequenceParameters=types.SimpleNamespace(TE=[5.05]),
+        sequenceParameters=types.SimpleNamespace(TR=[25.0], TE=[5.05, 5.05]),
     )
 
     te_values, te_sources = openmsk._resolve_qdess_echo_times(
@@ -710,10 +1324,10 @@ def test_single_mrd_qdess_te_is_shared_by_both_synthetic_echoes():
         {1: [echo1], 2: [echo2]},
     )
 
-    assert te_values == [5.05, 5.05]
+    assert te_values == [5.05, 44.95]
     assert te_sources == [
         "mrd.sequenceParameters.TE[0]",
-        "mrd.sequenceParameters.TE[0] (shared qDESS TE)",
+        "computed as 2 * TR - TE1",
     ]
 
 
@@ -771,7 +1385,49 @@ def test_nifti_to_mrd_reindexes_rotated_labels_to_source_grid(tmp_path, monkeypa
     np.testing.assert_array_equal(np.squeeze(outputs[0].data), expected_yx)
 
 
-def test_metrics_report_images_include_metrics_metadata(tmp_path):
+def test_nifti_to_mrd_returns_upstream_labels_for_canonical_subregions(tmp_path):
+    source = make_image()
+    canonical_xyz = np.array(
+        [
+            [0, 1, 2, 3],
+            [4, 5, 6, 7],
+            [8, 9, 11, 12],
+            [13, 14, 15, 0],
+        ],
+        dtype=np.int16,
+    )[:, :, None]
+    label_path = tmp_path / "source_subregions-labels.nii.gz"
+    nib.save(nib.Nifti1Image(canonical_xyz, np.eye(4)), label_path)
+
+    outputs = openmsk._nifti_to_mrd_images(
+        label_path,
+        [source],
+        openmsk.SUBREGION_SERIES_INDEX,
+        openmsk.SUBREGION_SERIES_NAME,
+        openmsk.SUBREGION_IMAGE_TYPE,
+        data_role="Segmentation",
+        dtype=np.int16,
+        comment="OpenMSK subregion segmentation",
+        source_geometry_segment=True,
+        label_map=openmsk.CANONICAL_TO_UPSTREAM_LABELS,
+    )
+
+    expected_xyz = np.array(
+        [
+            [0, 7, 8, 9],
+            [2, 3, 4, 1],
+            [5, 6, 11, 12],
+            [13, 14, 15, 0],
+        ],
+        dtype=np.int16,
+    )[:, :, None]
+    np.testing.assert_array_equal(np.squeeze(outputs[0].data), expected_xyz[:, :, 0].T)
+
+
+def test_metrics_report_images_match_musclemap_explicit_volume_contract(
+    tmp_path,
+    monkeypatch,
+):
     source = make_source_image_with_minihead()
     metrics_json = tmp_path / "openmsk_echo1_thickness_results.json"
     metrics_json.write_text(json.dumps({"fem_cart_mm_mean": 1.2345}))
@@ -779,11 +1435,18 @@ def test_metrics_report_images_include_metrics_metadata(tmp_path):
         {
             "label": "thickness",
             "json_path": metrics_json,
-            "csv_path": None,
             "payload": {"fem_cart_mm_mean": 1.2345},
-            "rows": [],
         }
     ]
+    report_pages = [
+        np.arange(20, dtype=np.uint16).reshape(4, 5),
+        np.arange(20, 40, dtype=np.uint16).reshape(4, 5),
+    ]
+    monkeypatch.setattr(
+        openmsk,
+        "_render_metrics_report_pages",
+        lambda *_args, **_kwargs: report_pages,
+    )
 
     images = openmsk._build_metrics_report_images(
         metrics_outputs,
@@ -797,15 +1460,54 @@ def test_metrics_report_images_include_metrics_metadata(tmp_path):
     meta = ismrmrd.Meta.deserialize(image.attribute_string)
 
     assert int(header.image_series_index) == openmsk.METRICS_REPORT_SERIES_INDEX
+    assert int(header.image_index) == 1
+    assert int(header.slice) == 0
+    assert list(header.matrix_size) == [5, 4, 2]
+    assert list(header.field_of_view) == [5.0, 4.0, 2.0]
+    assert list(header.position) == [0.0, 0.0, 0.0]
+    assert list(header.read_dir) == [1.0, 0.0, 0.0]
+    assert list(header.phase_dir) == [0.0, 1.0, 0.0]
+    assert list(header.slice_dir) == [0.0, 0.0, 1.0]
     assert first(meta, "SeriesDescription") == openmsk.METRICS_REPORT_SERIES_NAME
-    assert first(meta, "DataRole") == "Image"
+    assert first(meta, "DataRole") == "Segmentation"
     assert first(meta, "Keep_image_geometry") == "0"
     assert first(meta, "OpenMSKMetricsRows") == "1"
+    assert first(meta, "slice_count") == "2"
+    assert first(meta, "NumberOfSlices") == "2"
+    assert first(meta, "ImagesInAcquisition") == "2"
+    assert meta["ImageRowDir"] == [
+        "1.000000000000000000",
+        "0.000000000000000000",
+        "0.000000000000000000",
+    ]
+    assert meta["ImageColumnDir"] == [
+        "0.000000000000000000",
+        "1.000000000000000000",
+        "0.000000000000000000",
+    ]
+    assert meta["ImageSliceNormDir"] == [
+        "0.000000000000000000",
+        "0.000000000000000000",
+        "1.000000000000000000",
+    ]
+    assert meta["SlicePosLightMarker"] == [
+        "0.000000000000000000",
+        "0.000000000000000000",
+        "0.000000000000000000",
+    ]
+    assert "IceMiniHead" not in meta
     assert "fem_cart_mm_mean" in first(meta, "ImageComments")
-    assert np.asarray(image.data).max() > 0
+    np.testing.assert_array_equal(np.asarray(image.data)[0], np.stack(report_pages))
+
+    orientation_probe = np.zeros((4, 5), dtype=np.uint16)
+    orientation_probe[0, 0] = 1
+    orientation_probe[1, 4] = 2
+    oriented_probe = openmsk._orient_metrics_report_page(orientation_probe)
+    assert oriented_probe[-1, -1] == 1
+    assert oriented_probe[-2, 0] == 2
 
 
-def test_collect_metrics_outputs_reads_csv_when_json_absent(tmp_path):
+def test_collect_metrics_outputs_ignores_thickness_csv_when_json_absent(tmp_path):
     metrics_csv = tmp_path / "openmsk_echo1_thickness_results.csv"
     metrics_csv.write_text("fem_cart_mm_mean,med_tib_cart_mm_mean\n1.2345,2.5\n")
 
@@ -813,23 +1515,32 @@ def test_collect_metrics_outputs_reads_csv_when_json_absent(tmp_path):
     comment = openmsk._collect_metrics_comment(tmp_path)
     rows = openmsk._metrics_report_rows(outputs)
 
-    assert outputs[0]["label"] == "thickness"
-    assert outputs[0]["rows"] == [{"fem_cart_mm_mean": "1.2345", "med_tib_cart_mm_mean": "2.5"}]
-    assert "fem_cart_mm_mean=1.234" in comment
-    assert {"source": "thickness.csv", "metric": "fem_cart_mm_mean", "value": "1.2345"} in rows
+    assert outputs == []
+    assert comment == ""
+    assert rows == []
 
 
-def test_collect_metrics_outputs_reports_json_and_csv_when_both_exist(tmp_path):
+def test_collect_metrics_outputs_uses_extensionless_json_sources_and_ignores_csv(tmp_path):
     metrics_json = tmp_path / "openmsk_echo1_thickness_results.json"
     metrics_csv = tmp_path / "openmsk_echo1_thickness_results.csv"
+    t2_json = tmp_path / "openmsk_echo1_t2_results.json"
+    bscore_json = tmp_path / "bscore_results.json"
     metrics_json.write_text(json.dumps({"fem_cart_mm_mean": 1.25}))
     metrics_csv.write_text("med_tib_cart_mm_mean\n2.5\n")
+    t2_json.write_text(json.dumps({"fem_cart_t2_ms_mean": 42.0}))
+    bscore_json.write_text(json.dumps({"bscore": 3.0}))
 
     outputs = openmsk._collect_metrics_outputs(tmp_path)
     comment = openmsk._collect_metrics_comment(tmp_path)
     rows = openmsk._metrics_report_rows(outputs)
 
-    assert "thickness.json: fem_cart_mm_mean=1.25" in comment
-    assert "thickness.csv: med_tib_cart_mm_mean=2.5" in comment
-    assert {"source": "thickness.json", "metric": "fem_cart_mm_mean", "value": "1.25"} in rows
-    assert {"source": "thickness.csv", "metric": "med_tib_cart_mm_mean", "value": "2.5"} in rows
+    assert "thickness: fem_cart_mm_mean=1.25" in comment
+    assert "t2: fem_cart_t2_ms_mean=42" in comment
+    assert "bscore.json: bscore=3" in comment
+    assert "thickness.json" not in comment
+    assert "t2.json" not in comment
+    assert ".csv" not in comment
+    assert {"source": "thickness", "metric": "fem_cart_mm_mean", "value": "1.25"} in rows
+    assert {"source": "t2", "metric": "fem_cart_t2_ms_mean", "value": "42"} in rows
+    assert {"source": "bscore.json", "metric": "bscore", "value": "3"} in rows
+    assert all(row["metric"] != "med_tib_cart_mm_mean" for row in rows)

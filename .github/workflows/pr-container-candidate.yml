@@ -118,17 +118,12 @@ jobs:
           # fulltest suites declare required_files: from OpenNeuro, which
           # builder/run_tests.py fetches with datalad. Without this the runner
           # raises FileNotFoundError: 'datalad' and the candidate fails after a
-          # full image build. Mirrors the install in run-fulltest.yml.
-          uv pip install --system datalad datalad-installer
-          if [ "$(uname -m)" = "x86_64" ]; then
-            datalad-installer --sudo ok git-annex -m datalad/packages
-          else
-            # datalad/packages publishes amd64 .debs only, so dpkg -i fails on
-            # the arm64 runners. The distro package is older but sufficient for
-            # fetching required_files.
-            sudo apt-get update
-            sudo apt-get install -y git-annex
-          fi
+          # full image build.
+          uv pip install --system datalad
+          # Ubuntu provides git-annex for both architectures. Avoid depending
+          # on the external DataLad package server during candidate setup.
+          sudo apt-get update
+          sudo apt-get install -y git-annex
           git-annex version
           datalad --version
       - name: Configure git for DataLad

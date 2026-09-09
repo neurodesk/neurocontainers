@@ -1,0 +1,21 @@
+# Neurodesktop experimental VirGL allowlist, schema 1.
+#
+# Fields are the exact NeuroContainers recipe name and version. The image build
+# date is intentionally not part of the key, so rebuilding an unchanged recipe
+# does not require a desktop image update.
+mrtrix3	3.0.8
+connectomeworkbench	2.1.0
+voreen	5.3.0
+ilastik	1.4.0
+itksnap	4.4.0
+freesurfer	8.2.0
+afni	26.0.07
+brainvisa	6.0.38
+qupath	0.7.0
+dsistudio	2024.06.12
+trackvis	0.6.1
+brkraw	0.3.11
+gimp	2.10.18
+functionnectome	2.5.0
+mipav	11.3.3
+mipview	0.1.4

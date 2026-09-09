@@ -53,35 +53,35 @@
       "id": "sendb1",
       "label": { "en": "Send B1 map" },
       "type": "boolean",
-      "information": { "en": "Send measured B1 as scanner-display uint16 pixels scaled by 100; divide pixels by 100 for uT" },
+      "information": { "en": "Send measured B1 using the full 12-bit uint16 display range with DICOM rescaling back to uT" },
       "default": true
     },
     {
       "id": "sendbsp",
       "label": { "en": "Send BS phase" },
       "type": "boolean",
-      "information": { "en": "Send Bloch-Siegert phase converted to degrees and multiplied by 10" },
+      "information": { "en": "Send Bloch-Siegert phase using the full 12-bit display range with DICOM rescaling back to degrees" },
       "default": true
     },
     {
       "id": "sendphsc",
       "label": { "en": "Send Tx phase" },
       "type": "boolean",
-      "information": { "en": "Send echo-A transmit phase converted to degrees and multiplied by 10" },
+      "information": { "en": "Send dedicated transmit phase using the full 12-bit display range with DICOM rescaling back to degrees" },
       "default": true
     },
     {
       "id": "sendb0",
       "label": { "en": "Send B0 map" },
       "type": "boolean",
-      "information": { "en": "Send B0 phase-difference map output in Hz" },
+      "information": { "en": "Send B0 using the full 12-bit display range with DICOM rescaling back to Hz" },
       "default": true
     },
     {
       "id": "sendmask",
       "label": { "en": "Send mask" },
       "type": "boolean",
-      "information": { "en": "Send the optional magnitude-threshold mask for visual QC; it is not applied to calculated maps" },
+      "information": { "en": "Send the optional magnitude-threshold mask using the full 12-bit display range; it is not applied to calculated maps" },
       "default": false
     },
     {
