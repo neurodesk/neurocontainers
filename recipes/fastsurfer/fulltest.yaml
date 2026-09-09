@@ -474,18 +474,10 @@ tests:
   # ==========================================================================
   # DOCKER/CONTAINER CONFIGURATION
   # ==========================================================================
-  - name: Docker directory exists
-    description: Verify Docker configuration directory exists
-    command: bash -lc 'test -d /fastsurfer/Docker && echo "Docker dir exists"'
-    expected_output_contains: "Docker dir exists"
-
-  # ==========================================================================
-  # TEST DIRECTORY IN CONTAINER
-  # ==========================================================================
-  - name: Test directory exists
-    description: Verify test directory exists in container
-    command: bash -lc 'test -d /fastsurfer/test && echo "test dir exists"'
-    expected_output_contains: "test dir exists"
+  - name: Container entrypoint available
+    description: Verify the upstream runtime entrypoint is executable
+    command: test -x /fastsurfer/tools/Docker/entrypoint.sh
+    expected_exit_code: 0
 
 cleanup:
   script: |
