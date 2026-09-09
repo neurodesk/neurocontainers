@@ -371,7 +371,7 @@ jobs:
           push_mandatory_ghcr "${ghcr}"
 
           for destination in \
-            "${DOCKERHUB_ORG}/${legacy}:${staging_tag}" \
+            "docker.io/${DOCKERHUB_ORG}/${legacy}:${staging_tag}" \
             "registry.rc.nectar.org.au/ssdsorg/${legacy}:${staging_tag}"; do
             docker tag "${source}" "${destination}"
             docker push "${destination}" || \
@@ -609,7 +609,7 @@ jobs:
             done
 
             for destination in \
-              "${DOCKERHUB_ORG}/${legacy}" \
+              "docker.io/${DOCKERHUB_ORG}/${legacy}" \
               "registry.rc.nectar.org.au/ssdsorg/${legacy}"; do
               for tag in "${build_date}" latest; do
                 retag_optional "${destination}:${staging_tag}" "${tag}"

@@ -191,9 +191,11 @@ def test_candidate_promotion_retries_mandatory_ghcr_pushes() -> None:
     assert "Mandatory GHCR publish failed after 3 attempts" in publish_steps
     assert 'push_mandatory_ghcr "${legacy_ghcr}"' in publish_steps
     assert 'push_mandatory_ghcr "${ghcr}"' in publish_steps
+    assert '"docker.io/${DOCKERHUB_ORG}/${legacy}:${staging_tag}"' in publish_steps
     assert "retag_mandatory()" in finalize_steps
     assert 'if oras tag "${source}" "${tag}"; then' in finalize_steps
     assert 'retag_mandatory "${ghcr}:${staging_tag}" "${tag}"' in finalize_steps
+    assert '"docker.io/${DOCKERHUB_ORG}/${legacy}"' in finalize_steps
 
 
 def test_candidate_promotion_syncs_openrecon_from_verified_manifests() -> None:
