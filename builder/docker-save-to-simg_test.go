@@ -14,6 +14,20 @@ import (
 	"testing"
 )
 
+func TestCleanArchiveNameRejectsAbsoluteAndTraversalPaths(t *testing.T) {
+	for _, name := range []string{
+		"../manifest.json",
+		"layers/../../manifest.json",
+		"/manifest.json",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := cleanArchiveName(name); err == nil {
+				t.Fatalf("cleanArchiveName(%q) accepted an unsafe path", name)
+			}
+		})
+	}
+}
+
 func TestRegularFileUsesLongInodeWhenDataStartExceeds32Bit(t *testing.T) {
 	n := &node{
 		kind:         nodeRegular,

@@ -139,6 +139,11 @@ func extractDockerSave(inPath, tmp string, imageIndex int) (dockerManifestEntry,
 	}
 	tr := tar.NewReader(r)
 	entries := map[string]string{}
+	root, err := filepath.Abs(tmp)
+	if err != nil {
+		return dockerManifestEntry{}, "", nil, fmt.Errorf("resolve extraction directory: %w", err)
+	}
+	rootPrefix := root + string(os.PathSeparator)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -154,7 +159,10 @@ func extractDockerSave(inPath, tmp string, imageIndex int) (dockerManifestEntry,
 		if err != nil {
 			return dockerManifestEntry{}, "", nil, err
 		}
-		out := filepath.Join(tmp, rel)
+		out := filepath.Join(root, filepath.FromSlash(rel))
+		if !strings.HasPrefix(out, rootPrefix) {
+			return dockerManifestEntry{}, "", nil, fmt.Errorf("unsafe archive path %q", hdr.Name)
+		}
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 			return dockerManifestEntry{}, "", nil, err
 		}
@@ -214,9 +222,18 @@ func extractDockerSave(inPath, tmp string, imageIndex int) (dockerManifestEntry,
 }
 
 func cleanArchiveName(name string) (string, error) {
-	name = strings.TrimPrefix(path.Clean("/"+name), "/")
-	if name == "" || name == "." || strings.HasPrefix(name, "../") || strings.Contains(name, "/../") {
-		return "", fmt.Errorf("unsafe archive path %q", name)
+	original := name
+	if path.IsAbs(name) {
+		return "", fmt.Errorf("unsafe archive path %q", original)
+	}
+	for _, part := range strings.Split(name, "/") {
+		if part == ".." {
+			return "", fmt.Errorf("unsafe archive path %q", original)
+		}
+	}
+	name = path.Clean(name)
+	if name == "" || name == "." {
+		return "", fmt.Errorf("unsafe archive path %q", original)
 	}
 	return name, nil
 }

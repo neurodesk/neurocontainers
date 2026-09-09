@@ -385,8 +385,9 @@ def migrate_tagged(name: str, item: tuple[str, str, str, str, str]) -> None:
     old, source, tag, version_regex, method = item
     path = RECIPES / name / "build.yaml"
     text = ensure_variables(path.read_text(), {"base_image_tag": tag})
-    if old.startswith("ghcr.io/"):
-        image = old.rsplit(":", 1)[0]
+    registry, separator, repository = old.partition("/")
+    if registry == "ghcr.io" and separator:
+        image = f"{registry}/{repository.rsplit(':', 1)[0]}"
     else:
         image = old.split(":", 1)[0]
     text = replace_base(text, old, f"{image}:{{{{ context.base_image_tag }}}}")

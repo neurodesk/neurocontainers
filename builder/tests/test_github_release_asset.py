@@ -2,6 +2,7 @@
 
 import hashlib
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 import yaml
@@ -114,7 +115,7 @@ def test_selects_one_stable_release_and_preserves_its_url_after_cdn_redirect(ups
     assert result.url == "https://github.com/example/tool/releases/tag/v2.0.0"
     assert result.metadata == {"sha256": hashlib.sha256(public.payload).hexdigest(), "size": len(public.payload)}
     assert public.urls == [TAGGED_URL]
-    assert all("api.github.com" in url for url in github.urls)
+    assert all(urlparse(url).hostname == "api.github.com" for url in github.urls)
     assert not any("/latest" in url for url in github.urls + public.urls)
 
 
