@@ -27,6 +27,8 @@ from builder.staging import (
 
 
 class FakeResponse(io.BytesIO):
+    headers: dict[str, str] = {}
+
     def __enter__(self) -> "FakeResponse":
         return self
 

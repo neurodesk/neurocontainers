@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
+import io
 import shutil
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +20,42 @@ from builder.validation import FileInfo
 
 def digest(contents: bytes) -> str:
     return hashlib.sha256(contents).hexdigest()
+
+
+@pytest.mark.parametrize("retry", [0, 1])
+@pytest.mark.parametrize("chunked", [False, True])
+def test_truncated_http_body_is_not_cached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, retry: int, chunked: bool
+) -> None:
+    class Socket:
+        def __init__(self, body: bytes):
+            self.body = body
+
+        def makefile(self, mode: str):
+            header = b"Transfer-Encoding: chunked" if chunked else b"Content-Length: 8"
+            return io.BytesIO(b"HTTP/1.1 200 OK\r\n" + header + b"\r\n\r\n" + self.body)
+
+    bodies = iter(
+        [b"8\r\nshort", b"8\r\ncomplete\r\n0\r\n\r\n"]
+        if chunked else [b"short", b"complete"]
+    )
+
+    def urlopen(request, timeout):
+        response = http.client.HTTPResponse(Socket(next(bodies)))
+        response.begin()
+        return response
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr("builder.cache.time.sleep", lambda delay: None)
+    cache = HttpCache(tmp_path / "httpcache")
+    if retry:
+        path = cache.get("https://example.com/model", retry=retry)
+        assert path.read_bytes() == b"complete"
+        assert list(cache.root.iterdir()) == [path]
+    else:
+        with pytest.raises(DownloadError, match="IncompleteRead" if chunked else "Content-Length"):
+            cache.get("https://example.com/model", retry=retry)
+        assert list(cache.root.iterdir()) == []
 
 
 def test_checksum_cache_keeps_distinct_contents_at_the_same_url(tmp_path: Path) -> None:

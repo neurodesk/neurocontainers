@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import os
 import re
 import shutil
@@ -78,7 +79,7 @@ def _verify_checksum(path: Path, expected: str, label: str) -> None:
 def _is_retryable_download_error(exc: BaseException) -> bool:
     if isinstance(exc, urllib.error.HTTPError):
         return exc.code in RETRYABLE_HTTP_CODES
-    if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
+    if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError, http.client.IncompleteRead)):
         return True
     return False
 
@@ -145,6 +146,12 @@ class HttpCache:
                 ):
                     tmp = Path(handle.name)
                     shutil.copyfileobj(response, handle)
+                    content_length = response.headers.get("Content-Length")
+                    if content_length is not None and handle.tell() != int(content_length):
+                        raise OSError(
+                            f"Content-Length mismatch: expected {content_length} bytes, "
+                            f"received {handle.tell()}"
+                        )
                 if expected is not None:
                     _verify_checksum(tmp, expected, label)
                 tmp.chmod(0o644)
@@ -155,6 +162,7 @@ class HttpCache:
                 urllib.error.URLError,
                 TimeoutError,
                 OSError,
+                http.client.IncompleteRead,
             ) as exc:
                 last_error = exc
                 if attempt >= attempts or not _is_retryable_download_error(exc):
