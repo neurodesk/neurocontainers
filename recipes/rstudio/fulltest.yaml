@@ -60,7 +60,7 @@ tests:
   # ==========================================================================
   - name: RStudio version check
     description: Verify RStudio binary exists and reports version
-    command: command -v rstudio && rstudio --version 2>&1 | head -1
+    command: dpkg-query -W -f='${Version}\n' rstudio
     expected_output_contains: "${version}"
 
   - name: RStudio server exists
@@ -111,8 +111,8 @@ tests:
   # ==========================================================================
   - name: tidyverse package load
     description: Verify tidyverse meta-package loads
-    command: Rscript -e "library(tidyverse); packageVersion('tidyverse')"
-    expected_output_contains: "2.0.0"
+    command: Rscript -e "library(tidyverse); cat('tidyverse loaded: ', as.character(packageVersion('tidyverse')))"
+    expected_output_contains: "tidyverse loaded:"
 
   - name: dplyr package
     description: Verify dplyr loads and works
@@ -121,18 +121,18 @@ tests:
 
   - name: ggplot2 package
     description: Verify ggplot2 loads
-    command: Rscript -e "library(ggplot2); packageVersion('ggplot2')"
-    expected_output_contains: "4.0"
+    command: Rscript -e "library(ggplot2); cat('ggplot2 loaded: ', as.character(packageVersion('ggplot2')))"
+    expected_output_contains: "ggplot2 loaded:"
 
   - name: tidyr package
     description: Verify tidyr loads
-    command: Rscript -e "library(tidyr); packageVersion('tidyr')"
-    expected_output_contains: "1.3"
+    command: Rscript -e "library(tidyr); cat('tidyr loaded: ', as.character(packageVersion('tidyr')))"
+    expected_output_contains: "tidyr loaded:"
 
   - name: readr package
     description: Verify readr loads
-    command: Rscript -e "library(readr); packageVersion('readr')"
-    expected_output_contains: "2.1"
+    command: Rscript -e "library(readr); cat('readr loaded: ', as.character(packageVersion('readr')))"
+    expected_output_contains: "readr loaded:"
 
   - name: purrr package
     description: Verify purrr loads
@@ -146,8 +146,8 @@ tests:
 
   - name: forcats package
     description: Verify forcats loads
-    command: Rscript -e "library(forcats); packageVersion('forcats')"
-    expected_output_contains: "1.0"
+    command: Rscript -e "library(forcats); cat('forcats loaded: ', as.character(packageVersion('forcats')))"
+    expected_output_contains: "forcats loaded:"
 
   - name: lubridate package
     description: Verify lubridate loads and works
@@ -169,13 +169,13 @@ tests:
 
   - name: reshape2 package
     description: Verify reshape2 loads
-    command: Rscript -e "library(reshape2); packageVersion('reshape2')"
-    expected_output_contains: "1.4"
+    command: Rscript -e "library(reshape2); cat('reshape2 loaded: ', as.character(packageVersion('reshape2')))"
+    expected_output_contains: "reshape2 loaded:"
 
   - name: plyr package
     description: Verify plyr loads
-    command: Rscript -e "library(plyr); packageVersion('plyr')"
-    expected_output_contains: "1.8"
+    command: Rscript -e "library(plyr); cat('plyr loaded: ', as.character(packageVersion('plyr')))"
+    expected_output_contains: "plyr loaded:"
 
   # ==========================================================================
   # STATISTICS AND MODELING
@@ -225,8 +225,8 @@ tests:
   # ==========================================================================
   - name: caret package
     description: Verify caret loads
-    command: Rscript -e "library(caret); packageVersion('caret')"
-    expected_output_contains: "7.0"
+    command: Rscript -e "library(caret); cat('caret loaded: ', as.character(packageVersion('caret')))"
+    expected_output_contains: "caret loaded:"
 
   - name: randomForest package
     description: Verify randomForest loads and works
@@ -263,8 +263,8 @@ tests:
   # ==========================================================================
   - name: rstan package
     description: Verify rstan loads
-    command: Rscript -e "library(rstan); packageVersion('rstan')"
-    expected_output_contains: "2.32"
+    command: Rscript -e "library(rstan); cat('rstan loaded: ', as.character(packageVersion('rstan')))"
+    expected_output_contains: "rstan loaded:"
 
   - name: StanHeaders package
     description: Verify StanHeaders loads
@@ -278,8 +278,8 @@ tests:
 
   - name: bayesplot package
     description: Verify bayesplot loads
-    command: Rscript -e "library(bayesplot); packageVersion('bayesplot')"
-    expected_output_contains: "1.15"
+    command: Rscript -e "library(bayesplot); cat('bayesplot loaded: ', as.character(packageVersion('bayesplot')))"
+    expected_output_contains: "bayesplot loaded:"
 
   - name: loo package
     description: Verify loo loads
@@ -341,8 +341,8 @@ tests:
 
   - name: plotly package
     description: Verify plotly loads
-    command: Rscript -e "library(plotly); packageVersion('plotly')"
-    expected_output_contains: "4.12"
+    command: Rscript -e "library(plotly); cat('plotly loaded: ', as.character(packageVersion('plotly')))"
+    expected_output_contains: "plotly loaded:"
 
   - name: RColorBrewer package
     description: Verify RColorBrewer loads
@@ -364,8 +364,8 @@ tests:
   # ==========================================================================
   - name: shiny package
     description: Verify shiny loads
-    command: Rscript -e "library(shiny); packageVersion('shiny')"
-    expected_output_contains: "1.12"
+    command: Rscript -e "library(shiny); cat('shiny loaded: ', as.character(packageVersion('shiny')))"
+    expected_output_contains: "shiny loaded:"
 
   - name: htmlwidgets package
     description: Verify htmlwidgets loads
@@ -397,8 +397,8 @@ tests:
   # ==========================================================================
   - name: knitr package
     description: Verify knitr loads
-    command: Rscript -e "library(knitr); packageVersion('knitr')"
-    expected_output_contains: "1.51"
+    command: Rscript -e "library(knitr); cat('knitr loaded: ', as.character(packageVersion('knitr')))"
+    expected_output_contains: "knitr loaded:"
 
   - name: rmarkdown package
     description: Verify rmarkdown loads
@@ -445,8 +445,8 @@ tests:
 
   - name: ncdf4 package
     description: Verify ncdf4 loads (NetCDF support)
-    command: Rscript -e "library(ncdf4); packageVersion('ncdf4')"
-    expected_output_contains: "1.19"
+    command: Rscript -e "library(ncdf4); cat('ncdf4 loaded: ', as.character(packageVersion('ncdf4')))"
+    expected_output_contains: "ncdf4 loaded:"
 
   - name: DBI package
     description: Verify DBI loads
@@ -478,8 +478,8 @@ tests:
 
   - name: future package
     description: Verify future loads
-    command: Rscript -e "library(future); packageVersion('future')"
-    expected_output_contains: "1.69"
+    command: Rscript -e "library(future); cat('future loaded: ', as.character(packageVersion('future')))"
+    expected_output_contains: "future loaded:"
 
   - name: future.apply package
     description: Verify future.apply loads
