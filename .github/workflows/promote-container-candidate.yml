@@ -523,6 +523,7 @@ jobs:
         env:
           ARTIFACTS: ${{ needs.await_candidate.outputs.artifacts }}
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
           PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
         run: |
           jq -s 'add' promotion-metadata/verified-manifest-*.json > verified-manifests.json
@@ -535,7 +536,8 @@ jobs:
           python tools/one_pr_release.py verify-metadata \
             --bundle promotion-metadata/release-previews \
             --manifests verified-manifests.json \
-            --head-sha "${HEAD_SHA}" --pr-number "${PR_NUMBER}"
+            --head-sha "${HEAD_SHA}" --merge-sha "${MERGE_SHA}" \
+            --pr-number "${PR_NUMBER}"
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
