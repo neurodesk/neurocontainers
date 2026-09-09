@@ -1,5 +1,5 @@
 # FastSurfer container test suite
-# Tests for FastSurfer v2.4.2 - Deep learning neuroimaging pipeline
+# Tests for FastSurfer - Deep learning neuroimaging pipeline
 #
 # FastSurfer provides a fully compatible FreeSurfer alternative for:
 #   - Volumetric analysis (within minutes)
@@ -14,7 +14,7 @@
 # help messages, and basic functionality that can run quickly.
 
 name: fastsurfer
-version: 2.4.2
+version: 2.5.4
 
 required_files:
   - dataset: ds000001
@@ -41,7 +41,7 @@ tests:
   - name: FastSurfer version check
     description: Verify FastSurfer reports correct version
     command: run_fastsurfer.sh --version
-    expected_output_contains: "2.4.2"
+    expected_output_contains: "${version}"
 
   - name: run_fastsurfer.sh help
     description: Verify main pipeline help is accessible
