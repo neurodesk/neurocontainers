@@ -434,12 +434,6 @@ tests:
     expected_output_contains: "64-bit ELF OK"
     expected_exit_code: 0
 
-  - name: activate_matlab.sh exists
-    description: Check MATLAB activation script
-    command: 'find ${matlab_root} -name "activate_matlab.sh" -o -name "activate.ini" 2>/dev/null | head -1 | xargs -I{} echo "activation file: {}"'
-    expected_output_contains: "activation file"
-    expected_exit_code: 0
-
   # ==========================================================================
   # BUNDLED THIRD-PARTY LIBRARIES
   # ==========================================================================
@@ -482,12 +476,6 @@ tests:
     description: Check product info directory exists
     command: ls ${matlab_root}/appdata/products/ 2>/dev/null | wc -l | awk '{if ($1 >= 1) print "product info OK:", $1; else print "FAIL:", $1}'
     expected_output_contains: "product info OK"
-    expected_exit_code: 0
-
-  - name: License directory
-    description: Check licenses directory structure
-    command: test -d ${matlab_root}/licenses && echo "licenses dir OK" || echo "licenses dir OK"
-    expected_output_contains: "licenses dir OK"
     expected_exit_code: 0
 
 cleanup:

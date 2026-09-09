@@ -49,6 +49,7 @@ build:
         - csh
         - curl
         - dbus-x11
+        - file
         - less
         - libfftw3-double3
         - lmod
