@@ -1126,6 +1126,13 @@ tests:
       '
       clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --qsm \
         --qsm-mask ${output_dir}/cli/mask.nii -o ${output_dir}/cli/qsm_masked.nii
+      julia --startup-file=no -e '
+      using CLEARSWI
+      result = readmag("${output_dir}/cli/qsm_masked.nii")
+      @assert size(result) == (40, 40, 20)
+      @assert all(isfinite, result)
+      @assert maximum(result) > minimum(result)
+      '
     validate:
       - output_exists: ${output_dir}/cli/mask.nii
       - output_exists: ${output_dir}/cli/qsm_masked.nii
