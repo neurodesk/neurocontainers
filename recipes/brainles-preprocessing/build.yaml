@@ -1,13 +1,28 @@
 name: brainles-preprocessing
-version: 0.6.10
+version: 0.6.10.post1
+
+variables:
+  upstream_version: "0.6.10"
+  hdbet_record: "2540695"
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABOUlEQVR42u3dsRHCMAwF0CxBywhUDMQajMIATMQSrAAVC3CHogQnsp9OdYp39p2U4nualFK7rMPxVKiJbOrVE83KTL3SrMM0gk7eaBydjNFoOvOMxtSZYQSIzgIjQHQWGKEBBAjQZkBcfhglvnK5v6t0U6BCLmmpPFBpnbhREqgDnaARIEDtgbrRiRg5Qa4YoD0CmYNM0naxlkC2eUCAAAECBAgQIEBf+/y4VemmQIVc0lJ5oNI6caMkUAc6QSNAgNoDdaMTMXKCXDFAewQyB5mk7WK2eb87AAECBAgQIECANgd6Xl9VuilQIZe0VB6otE7cKAnUgU7QCBCg9kDd6ESMnCBXDNAegcxBJmm7mPAF2R2AAAESYyYFDxAjSZx/AhJ2y2ixjsBtRmvoCP33bIRnNlqKKKXm1wc7XnMcuYuNogAAAABJRU5ErkJggg==
 
 architectures:
   - x86_64
 
 auto_update:
-  method: pypi
-  package: brainles-preprocessing
+  method: sources
+  sources:
+    - id: brainles-preprocessing
+      method: pypi
+      package: brainles-preprocessing
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: hdbet-models
+      method: zenodo
+      record: "2540695"
+      target:
+        variable: hdbet_record
 
 build:
   kind: neurodocker
@@ -31,7 +46,7 @@ build:
     - run:
         # Core library. antspyx (registration) + SimpleITK ship self-contained
         # manylinux wheels, so no extra system libraries are needed on x86_64.
-        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.version }}
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.upstream_version }}
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')"
 
     - run:
@@ -113,11 +128,7 @@ build:
         # the same way -- which would leave the container unable to produce the
         # skull-stripped input its atlas registration is for.
         #
-        # Upstream's own downloader is used here: unlike the atlas fetch it
-        # pulls per-fold files from direct URLs, which work. run_hd_bet loads
-        # fold 0 alone by default and all five otherwise, so all five are baked.
-        - >-
-          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_hd_bet.utils import maybe_download_parameters; [maybe_download_parameters(f) for f in range(5)]; print('hd-bet weights baked')"
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("install_hdbet_models.py") }} {{ get_file("hdbet_0_model") }} {{ get_file("hdbet_1_model") }} {{ get_file("hdbet_2_model") }} {{ get_file("hdbet_3_model") }} {{ get_file("hdbet_4_model") }}
         - >-
           /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import pathlib; from brainles_hd_bet.utils import folder_with_parameter_files as d; f=sorted(pathlib.Path(d).glob('*.model')); assert len(f)==5, [x.name for x in f]; print('hd-bet folds:', [x.name for x in f])"
         # Fail the build rather than ship an image that cannot register.
@@ -151,6 +162,27 @@ build:
         PATH: /opt/miniconda-py311_24.9.2-0/envs/brainles/bin:$PATH
 
 files:
+  - name: install_hdbet_models.py
+    contents: |
+      import shutil
+      import sys
+      from pathlib import Path
+      from brainles_hd_bet.utils import folder_with_parameter_files
+
+      destination = Path(folder_with_parameter_files)
+      destination.mkdir(parents=True, exist_ok=True)
+      for fold, source in enumerate(sys.argv[1:]):
+          shutil.copyfile(source, destination / (str(fold) + ".model"))
+  - name: hdbet_0_model
+    url: https://zenodo.org/api/records/{{ context.hdbet_record }}/files/0.model/content
+  - name: hdbet_1_model
+    url: https://zenodo.org/api/records/{{ context.hdbet_record }}/files/1.model/content
+  - name: hdbet_2_model
+    url: https://zenodo.org/api/records/{{ context.hdbet_record }}/files/2.model/content
+  - name: hdbet_3_model
+    url: https://zenodo.org/api/records/{{ context.hdbet_record }}/files/3.model/content
+  - name: hdbet_4_model
+    url: https://zenodo.org/api/records/{{ context.hdbet_record }}/files/4.model/content
   - name: fix_preprocessor_cli
     filename: fix_preprocessor_cli.py
   - name: fix_hdbet_cli

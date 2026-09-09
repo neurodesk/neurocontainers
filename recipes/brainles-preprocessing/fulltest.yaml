@@ -1,5 +1,6 @@
 name: brainles-preprocessing
-version: 0.6.10
+version: 0.6.10.post1
+upstream_version: "0.6.10"
 
 tests:
   - name: package imports
@@ -8,7 +9,7 @@ tests:
 
   - name: reports the packaged version
     command: python -c "import importlib.metadata as md; print(md.version('brainles-preprocessing'))"
-    expected_output_contains: "${version}"
+    expected_output_contains: "${upstream_version}"
 
   - name: the preprocessor entry points import
     command: python -c "from brainles_preprocessing.preprocessor import Preprocessor, AtlasCentricPreprocessor; print('preprocessors ok')"

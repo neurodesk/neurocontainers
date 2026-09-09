@@ -292,15 +292,15 @@ files:
   - name: libjpeg62_turbo_deb
     url: http://ftp.br.debian.org/debian/pool/main/libj/libjpeg-turbo/libjpeg62-turbo_2.0.6-4_amd64.deb
   - name: hdbet_0_model
-    url: https://zenodo.org/record/2540695/files/0.model?download=1
+    url: https://zenodo.org/api/records/2540695/files/0.model/content
   - name: hdbet_1_model
-    url: https://zenodo.org/record/2540695/files/1.model?download=1
+    url: https://zenodo.org/api/records/2540695/files/1.model/content
   - name: hdbet_2_model
-    url: https://zenodo.org/record/2540695/files/2.model?download=1
+    url: https://zenodo.org/api/records/2540695/files/2.model/content
   - name: hdbet_3_model
-    url: https://zenodo.org/record/2540695/files/3.model?download=1
+    url: https://zenodo.org/api/records/2540695/files/3.model/content
   - name: hdbet_4_model
-    url: https://zenodo.org/record/2540695/files/4.model?download=1
+    url: https://zenodo.org/api/records/2540695/files/4.model/content
   - name: lcm_64_tar
     url: http://www.s-provencher.com/pub/LCModel/programs/lcm-64.tar
   - name: lcmodel_3t_zip
