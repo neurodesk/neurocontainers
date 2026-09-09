@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import platform
 import shlex
@@ -15,7 +16,7 @@ from typing import Any
 import yaml
 
 from .ir import Copy, Definition, Entrypoint, Env, From, Install, Run, RunWithMounts, User, Workdir
-from .staging import CopySource, StagingPlan, declared_file_from_mapping
+from .staging import CopySource, DeclaredFile, StagingPlan, declared_file_from_mapping
 from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
@@ -608,10 +609,19 @@ def compile_recipe(
                 params.setdefault("arch", "x86_64" if context.arch == "x86_64" else "aarch64")
                 apply_builtin_template(name, params, pkg_manager, definition.add)
             elif "boutique" in directive:
-                boutique_data = directive["boutique"]
+                boutique_data = renderer.render_value(directive["boutique"], context)
                 if not isinstance(boutique_data, dict):
                     raise ValueError("Boutique directive must be a mapping")
                 filename = f"{boutique_data.get('name', 'tool')}.json"
+                plan.add_file(
+                    DeclaredFile(
+                        name=filename,
+                        contents=json.dumps(boutique_data, indent=2) + "\n",
+                    )
+                )
+                plan.copy_sources.append(
+                    CopySource(source=filename, declared_name=filename)
+                )
                 definition.add(Run("mkdir -p /boutique"))
                 definition.add(Copy((filename,), f"/boutique/{filename}"))
             elif "test" in directive:

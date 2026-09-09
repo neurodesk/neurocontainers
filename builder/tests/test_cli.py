@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 from types import SimpleNamespace
@@ -84,6 +85,57 @@ def test_cmd_stage_can_download_declared_url_files(
 
     assert cli.cmd_stage(args) == 0
     assert calls == [{"recreate": True, "stage": True, "download": True}]
+
+
+def test_write_build_files_stages_rendered_boutiques_descriptor(tmp_path):
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    (recipe_dir / "build.yaml").write_text(
+        """
+variables:
+  descriptor_version: 9.8.7
+name: boutique-test
+version: 1.2.3
+architectures: [aarch64]
+categories: [programming]
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - boutique:
+        name: boutique-test
+        description: Test descriptor staging.
+        tool-version: '{{ context.descriptor_version }}'
+        schema-version: '0.5'
+        command-line: boutique-test [INPUT]
+        inputs:
+          - name: input
+            id: input
+            description: Test input.
+            type: String
+            optional: true
+            value-key: '[INPUT]'
+readme: Boutique staging test.
+""".lstrip()
+    )
+    compiled = cli.compile_recipe(
+        recipe_dir,
+        architecture="aarch64",
+    )
+
+    build_dir, _ = cli.write_build_files(
+        tmp_path,
+        compiled,
+        tmp_path / "build",
+        recreate=True,
+        stage=True,
+    )
+
+    descriptor = json.loads((build_dir / "boutique-test.json").read_text())
+    assert descriptor["name"] == "boutique-test"
+    assert descriptor["tool-version"] == "9.8.7"
+    assert descriptor["command-line"] == "boutique-test [INPUT]"
 
 
 def test_write_build_files_rejects_empty_readme(tmp_path: cli.Path) -> None:
