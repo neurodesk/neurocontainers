@@ -117,8 +117,22 @@ jobs:
           MERGE_SHA: ${{ steps.pr.outputs.merge_sha }}
         run: |
           base_sha="$(git rev-parse "${MERGE_SHA}^1")"
-          python tools/one_pr_release.py --repo-root . detect \
-            --base "${base_sha}" --head "${MERGE_SHA}"
+          set +e
+          detection="$(python tools/one_pr_release.py --repo-root . detect \
+            --base "${base_sha}" --head "${MERGE_SHA}" 2>&1)"
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            if grep -Fq "Automated releases require a recipe-only PR." <<< "$detection"; then
+              echo "The merged PR changed recipes and other repository code; skipping candidate promotion."
+              echo "recipes=[]" >> "$GITHUB_OUTPUT"
+              echo "release_plan={}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            printf '%s\n' "$detection" >&2
+            exit "$status"
+          fi
+          printf '%s\n' "$detection"
 
   await_candidate:
     needs: resolve
