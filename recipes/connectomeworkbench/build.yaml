@@ -23,7 +23,7 @@ auto_update:
     method: apt
     package: connectome-workbench
     urls:
-    - https://neuro.debian.net/debian/dists/bookworm/main/binary-amd64/Packages.gz
+    - https://neurodebian.inm7.de/debian/dists/bookworm/main/binary-amd64/Packages.gz
     - https://deb.debian.org/debian/dists/bookworm/main/binary-amd64/Packages.xz
     target:
       variable: package_version
