@@ -97,6 +97,31 @@ def test_bids_validator_template_installs_setuptools_on_apt() -> None:
     assert "python3-setuptools" in apt_dependencies
 
 
+@pytest.mark.parametrize("method", ["binaries", "source"])
+def test_mrtrix_template_preserves_existing_library_search_path(method) -> None:
+    directives = []
+    apply_builtin_template(
+        "mrtrix3", {"version": "3.0.4", "method": method}, "apt", directives.append
+    )
+    library_path = next(
+        item.values["LD_LIBRARY_PATH"]
+        for item in directives
+        if isinstance(item, Env) and "LD_LIBRARY_PATH" in item.values
+    )
+    result = subprocess.run(
+        [
+            "/bin/sh",
+            "-c",
+            f'export LD_LIBRARY_PATH="{library_path}"; printenv LD_LIBRARY_PATH',
+        ],
+        env={"PATH": "/usr/bin:/bin", "LD_LIBRARY_PATH": "/existing/libraries"},
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "/opt/mrtrix3-3.0.4/lib:/existing/libraries"
+
+
 @pytest.mark.parametrize("version", ["6.0.6", "6.0.7.99", "7.0.0"])
 def test_fsl_template_installs_new_versions_without_a_url_table_entry(version) -> None:
     directives = []

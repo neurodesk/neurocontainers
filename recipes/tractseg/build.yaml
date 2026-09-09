@@ -2,7 +2,7 @@ variables:
   upstream_version: "2.9"
 
 name: tractseg
-version: 2.9.post1
+version: 2.9.post2
 architectures:
   - x86_64
 copyright:

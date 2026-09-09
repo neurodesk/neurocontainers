@@ -14,6 +14,7 @@ binaries:
     - bzip2
     - ca-certificates
     - curl
+    - libfftw3-double3
     - libpng16-16
     - '{{ self.libtiff_package }}'
     yum:
@@ -28,7 +29,7 @@ binaries:
   directives:
   - environment:
       PATH: '{{ self.install_path }}/bin:$PATH'
-      LD_LIBRARY_PATH: '{{ self.install_path }}/lib:$PATH'
+      LD_LIBRARY_PATH: '{{ self.install_path }}/lib:$LD_LIBRARY_PATH'
   - run: '{{ self.install_dependencies() }}
 
       echo "Downloading MRtrix3 ..."
@@ -71,7 +72,7 @@ source:
   directives:
   - environment:
       PATH: '{{ self.install_path }}/bin:$PATH'
-      LD_LIBRARY_PATH: '{{ self.install_path }}/lib:$PATH'
+      LD_LIBRARY_PATH: '{{ self.install_path }}/lib:$LD_LIBRARY_PATH'
   - run: '{{ self.install_dependencies() }}
 
       mkdir -p {{ self.install_path }}
