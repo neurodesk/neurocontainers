@@ -3,6 +3,7 @@
 
 name: epirecon
 version: 0.0.4
+twixtools_version: "0.24"
 
 test_data:
   output_dir: test_output
@@ -39,7 +40,19 @@ tests:
   - name: epirecon module imports with its runtime dependencies
     description: Verify the reconstruction module imports cleanly from the FIRE dispatch path
     script: |
-      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import ismrmrd, numpy, constants, mrdhelper, epirecon; print(epirecon.__file__)" | grep -x '/opt/code/python-ismrmrd-server/epirecon.py'
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      from importlib.metadata import version
+
+      import constants
+      import epirecon
+      import ismrmrd
+      import mrdhelper
+      import numpy
+
+      assert version("twixtools") == "${twixtools_version}"
+      assert epirecon.__file__ == "/opt/code/python-ismrmrd-server/epirecon.py"
+      print(epirecon.__file__)
+      PY
 
   - name: Cartesian FFT reconstruction locates a point source
     description: Verify reconstruct_coil_images and combine_coils_sos recover a known k-space point source at the expected voxel
