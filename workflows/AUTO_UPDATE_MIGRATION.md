@@ -1,20 +1,20 @@
 # Automatic update migration verification
 
-The collection contains 246 recipes. All have automatic update policies and a
+The collection contains 247 recipes. All have automatic update policies and a
 sibling `fulltest.yaml`. The audit rejects missing policies, manual exceptions,
 notification-only policies, unused update targets, and missing OpenRecon source
 ownership. Runtime suites must contain executable tests. New recipes pass the
 same checks before they can be merged.
 
-116 recipes track a directly installed release version. The other 130 use
-independent source targets, covering 372 package, source, model, image, and binary
+116 recipes track a directly installed release version. The other 131 use
+independent source targets, covering 378 package, source, model, image, and binary
 inputs. Their container revisions are separate from software versions. Shared
 macro changes select the consuming recipes for candidate builds.
 
 ## What was verified
 
 - Every recipe validated and generated a Dockerfile. The collection declares
-  301 architecture targets, all selected for CI and all successful. CI results
+  302 architecture targets, all selected for CI and all successful. CI results
   consolidate runs across repair commits and do not represent one full rebuild
   at the final commit.
   [Per-target results](auto-update-build-results.tsv) include the tested commit
@@ -60,7 +60,7 @@ macro changes select the consuming recipes for candidate builds.
   and aarch64. Its compatibility repair locates the installed `dafne_dl` package
   instead of depending on a versioned Miniconda path, and verifies GUI imports
   and offscreen startup under Python 3.8.
-- All 674 builder tests passed. They cover source selection, update bindings,
+- All 693 builder tests passed. They cover source selection, update bindings,
   metadata/version consistency, checksums, cache behavior, shared-input release
   planning, and PR reuse. An advancing source branch does not create another PR
   while the same container revision already has an open update PR.
@@ -71,6 +71,11 @@ imports, JIDT Java linkage, portable CLEARSWI compilation, native Dafne radiomic
 GOUHFI CUDA wheel selection, and validated RABIES atlas downloads. Runtime checks
 exercise the installed commands and data. GPU model checks use CPU providers;
 physical GPU execution remains unverified.
+
+After this branch incorporated the latest `main`, the newly added epirecon recipe
+failed the automatic-update audit. Its final policy tracks the Ubuntu image,
+twixtools, the local OpenRecon macro, and all four dependencies installed by the
+macro. Six source-transition replays and its x86_64 container runtime suite passed.
 
 ## Reproduce the checks
 

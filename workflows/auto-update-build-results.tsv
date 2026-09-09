@@ -99,6 +99,7 @@ eharmonize_arm64 | aarch64	success	f9071635501b833c7e5b19ba48ac18e36c116eb9	http
 elastix | x86_64	success	669ee1cc9622fc65e71f77ca34717d5d2a666988	https://github.com/neurodesk/neurocontainers/actions/runs/34298722483/job/102300914971
 emuses | x86_64	success	669ee1cc9622fc65e71f77ca34717d5d2a666988	https://github.com/neurodesk/neurocontainers/actions/runs/34298722483/job/102300914769
 enigma-pd-wml | x86_64	success	669ee1cc9622fc65e71f77ca34717d5d2a666988	https://github.com/neurodesk/neurocontainers/actions/runs/34298722483/job/102300914860
+epirecon | x86_64	success	289a57cd0d3f0640455152f715257b3bb99e9ce7	https://github.com/neurodesk/neurocontainers/actions/runs/34381363495/job/102566835996
 esilpd | x86_64	success	b7f552bdae0a52db20616daa26a91af604b738d9	https://github.com/neurodesk/neurocontainers/actions/runs/34139410693/job/101797825450
 exploreasl | x86_64	success	0871231e2460e7a0218cf2f26ba60bdecc902779	https://github.com/neurodesk/neurocontainers/actions/runs/34131373058/job/101772152993
 ezbids | x86_64	success	0871231e2460e7a0218cf2f26ba60bdecc902779	https://github.com/neurodesk/neurocontainers/actions/runs/34131373058/job/101772153124
