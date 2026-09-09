@@ -192,6 +192,29 @@ def detect_recipes(base: str, head: str) -> list[str]:
     return release_plan(base, head).candidate_recipes
 
 
+def recipe_changes_since_merge_are_source_only(recipe: str, merge_sha: str) -> bool:
+    """Allow finalization past concurrent changes that preserve the image."""
+    base_recipe = load_recipe_at(merge_sha, recipe)
+    head_recipe = load_recipe_at("HEAD", recipe)
+    recipe_prefix = f"recipes/{recipe}/"
+    relevant_paths = [
+        path
+        for path in changed_files(merge_sha, "HEAD")
+        if path.startswith(recipe_prefix)
+        or path_is_shared_input(path, base_recipe)
+        or path_is_shared_input(path, head_recipe)
+    ]
+    if not relevant_paths:
+        return False
+
+    plan = plan_recipe_changes(
+        relevant_paths,
+        {recipe: base_recipe},
+        {recipe: head_recipe},
+    )
+    return plan.source_only_recipes == [recipe]
+
+
 def build_date(recipe: str, revision: str = "HEAD") -> str:
     """Return the last build.yaml commit date in release-tag format."""
     data = load_recipe_at(revision, recipe)
@@ -688,6 +711,7 @@ def verify_published_metadata(
     manifests_path: Path,
     expected_head_sha: str,
     expected_pr_number: int,
+    expected_merge_sha: str | None = None,
 ) -> list[dict[str, Any]]:
     """Revalidate small promotion metadata after large artifacts are published."""
     try:
@@ -730,7 +754,14 @@ def verify_published_metadata(
             raise RuntimeError(f"Published head SHA mismatch for {container}")
         if manifest.get("pr_number") != expected_pr_number:
             raise RuntimeError(f"Published PR number mismatch for {container}")
-        if manifest.get("recipe_fingerprint") != recipe_fingerprint(recipe):
+        fingerprint_changed = (
+            manifest.get("recipe_fingerprint") != recipe_fingerprint(recipe)
+        )
+        source_only_change = (
+            expected_merge_sha is not None
+            and recipe_changes_since_merge_are_source_only(recipe, expected_merge_sha)
+        )
+        if fingerprint_changed and not source_only_change:
             raise RuntimeError(
                 f"Merged recipe differs from published candidate: {container}"
             )
@@ -788,6 +819,7 @@ def command_verify_metadata(args: argparse.Namespace) -> None:
         Path(args.manifests),
         args.head_sha,
         args.pr_number,
+        args.merge_sha,
     )
 
 
@@ -855,6 +887,7 @@ def parser() -> argparse.ArgumentParser:
     verify_metadata.add_argument("--bundle", required=True)
     verify_metadata.add_argument("--manifests", required=True)
     verify_metadata.add_argument("--head-sha", required=True)
+    verify_metadata.add_argument("--merge-sha", required=True)
     verify_metadata.add_argument("--pr-number", required=True, type=int)
     verify_metadata.set_defaults(func=command_verify_metadata)
 

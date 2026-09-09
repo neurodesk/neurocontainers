@@ -459,6 +459,63 @@ def test_verify_published_metadata_rechecks_identity_without_large_artifacts(
         )
 
 
+def test_verify_published_metadata_allows_only_source_changes_since_merge(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Concurrent source metadata must not invalidate a published candidate."""
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    recipe_dir = write_recipe(tmp_path)
+    git("add", ".")
+    git("commit", "-m", "Merge candidate")
+    merge_sha = git("rev-parse", "HEAD")
+
+    recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text(encoding="utf-8"))
+    bundle = tmp_path / "release-previews"
+    candidate_dir = bundle / "demo"
+    candidate_dir.mkdir(parents=True)
+    release = release_data("demo", "1.2.3", recipe, "20260721", "x86_64")
+    (candidate_dir / "1.2.3.json").write_text(json.dumps(release), encoding="utf-8")
+    manifest = {
+        "recipe": "demo",
+        "container": "demo",
+        "variant": "",
+        "architecture": "x86_64",
+        "version": "1.2.3",
+        "build_date": "20260721",
+        "image_name": "demo_1.2.3",
+        "pr_number": 42,
+        "head_sha": "abc123",
+        "candidate_tag": "nd-candidate-demo:abc123",
+        "recipe_fingerprint": one_pr_release.recipe_fingerprint("demo"),
+        "docker_archive": "demo_1.2.3_20260721.docker.tar",
+        "docker_sha256": "1" * 64,
+        "sif": "demo_1.2.3_20260721.simg",
+        "sif_sha256": "2" * 64,
+        "release_json": "1.2.3.json",
+    }
+    manifests_path = tmp_path / "verified-manifests.json"
+    manifests_path.write_text(json.dumps([manifest]), encoding="utf-8")
+
+    recipe["auto_update"] = {"method": "dockerhub", "repo": "example/demo"}
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe), encoding="utf-8")
+    git("commit", "-am", "Add update metadata")
+    assert one_pr_release.verify_published_metadata(
+        bundle, manifests_path, "abc123", 42, merge_sha
+    ) == [manifest]
+
+    recipe["build"]["base-image"] = "ubuntu:24.10"
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe), encoding="utf-8")
+    git("commit", "-am", "Change image")
+    with pytest.raises(RuntimeError, match="differs from published candidate"):
+        one_pr_release.verify_published_metadata(
+            bundle, manifests_path, "abc123", 42, merge_sha
+        )
+
+
 def test_detect_targets_expands_declared_architectures(tmp_path: Path, monkeypatch) -> None:
     """Every architecture a recipe declares becomes its own build target."""
     recipe_dir = write_recipe(tmp_path)
