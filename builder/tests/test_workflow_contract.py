@@ -54,6 +54,17 @@ def test_candidate_workflow_skips_mixed_prs_without_hiding_other_detection_error
     assert 'exit "$status"' in candidate_workflow
 
 
+def test_promotion_workflow_skips_mixed_prs_without_hiding_other_detection_errors() -> None:
+    promotion_workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
+
+    assert "Automated releases require a recipe-only PR." in promotion_workflow
+    assert 'echo "recipes=[]" >> "$GITHUB_OUTPUT"' in promotion_workflow
+    assert 'echo "release_plan={}" >> "$GITHUB_OUTPUT"' in promotion_workflow
+    assert 'exit "$status"' in promotion_workflow
+
+
 def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> None:
     candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
     reporter = Path(".github/workflows/report-container-candidate.yml").read_text()

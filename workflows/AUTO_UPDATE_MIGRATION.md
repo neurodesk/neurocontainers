@@ -60,7 +60,7 @@ macro changes select the consuming recipes for candidate builds.
   and aarch64. Its compatibility repair locates the installed `dafne_dl` package
   instead of depending on a versioned Miniconda path, and verifies GUI imports
   and offscreen startup under Python 3.8.
-- All 693 builder tests passed. They cover source selection, update bindings,
+- All 694 builder tests passed. They cover source selection, update bindings,
   metadata/version consistency, checksums, cache behavior, shared-input release
   planning, and PR reuse. An advancing source branch does not create another PR
   while the same container revision already has an open update PR.
