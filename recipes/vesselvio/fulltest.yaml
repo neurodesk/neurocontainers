@@ -12,6 +12,8 @@ name: vesselvio
 version: 1.1.2.post1
 upstream_version: 1.1.2
 
+env_setup: export NUMBA_CACHE_DIR="${output_dir}/numba"
+
 test_data:
   sample_volume: /opt/vesselvio-${upstream_version}/library/volumes/Demo Volume.nii
   output_dir: test_output
@@ -48,6 +50,8 @@ tests:
           os.environ['VESSELVIO_OUTPUT_DIR'] = str(output)
           os.environ['NUMBA_CACHE_DIR'] = str(runtime / 'numba')
           os.environ['MPLCONFIGDIR'] = str(runtime / 'matplotlib')
+          os.environ['XDG_CACHE_HOME'] = str(runtime / 'cache')
+          os.environ['XDG_RUNTIME_DIR'] = str(runtime)
           os.chdir(runtime)
           sys.path.insert(0, str(source))
           import VesselVio
@@ -437,7 +441,7 @@ tests:
       import nibabel as nib
       import numpy as np
       image = nib.load('${sample_volume}')
-      volume = image.get_fdata()
+      volume = image.get_fdata().squeeze()
       assert volume.ndim == 3
       assert np.isfinite(volume).all()
       assert np.count_nonzero(volume) > 0

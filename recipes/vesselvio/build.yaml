@@ -70,6 +70,7 @@ build:
         SKIMAGE_DATADIR: /opt/scikit-image-data
     - run:
         - python -c 'import skimage'
+        - ln -sf /usr/lib/$(uname -m)-linux-gnu/libGLdispatch.so.0 /opt/miniforge/envs/vesselvio/lib/libGLdispatch.so.0
     - run:
         - mkdir -p /opt/vesselvio-{{ context.upstream_version }}
         - tar -xzf {{ get_file("vesselvio_source") }} -C /opt/vesselvio-{{ context.upstream_version }} --strip-components=1
@@ -118,6 +119,8 @@ files:
       done
       export NUMBA_CACHE_DIR="$runtime_dir/numba"
       export MPLCONFIGDIR="$runtime_dir/matplotlib"
+      export XDG_CACHE_HOME="$runtime_dir/cache"
+      export XDG_RUNTIME_DIR="$runtime_dir"
       cd "$runtime_dir"
       /opt/miniforge/envs/vesselvio/bin/python "$source_dir/VesselVio.py" "$@"
 
