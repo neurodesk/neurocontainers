@@ -492,7 +492,7 @@ tests:
   # ==========================================================================
   - name: Container entrypoint available
     description: Verify the upstream runtime entrypoint is executable
-    command: test -x /fastsurfer/tools/Docker/entrypoint.sh
+    command: test -x /fastsurfer/tools/Docker/entrypoint.sh || test -x /fastsurfer/Docker/entrypoint.sh
     expected_exit_code: 0
 
 cleanup:
