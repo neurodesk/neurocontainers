@@ -24,7 +24,7 @@ auto_update:
   - id: mrsi-pipeline
     method: github_commit
     repo: korbinian90/mrsi_pipeline_neurodesk
-    ref: HEAD
+    ref: no_water_weights_in_coil_comb
     target:
       variable: mrsi_pipeline_commit
   - id: hdbet
