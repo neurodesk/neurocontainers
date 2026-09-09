@@ -223,6 +223,19 @@ def validate_fulltest_contract(
             f"version '{recipe_version}'; update both files in the same change"
         )
 
+    tests = config.get("tests")
+    if not isinstance(tests, list) or not tests:
+        raise ValueError(f"{path} fulltest requires a nonempty tests list")
+    for index, test in enumerate(tests, start=1):
+        command = (
+            test.get("command") or test.get("script")
+            if isinstance(test, dict) else None
+        )
+        if not isinstance(command, str) or not command.strip():
+            raise ValueError(
+                f"{path} fulltest test {index} requires a nonempty command or script"
+            )
+
 
 def validate_template_syntax(template: str, path: str):
     """Validate Jinja2 syntax for a rendered template string."""

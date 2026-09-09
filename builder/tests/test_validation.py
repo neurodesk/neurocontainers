@@ -372,7 +372,7 @@ def write_recipe_with_fulltest(tmp_path, fulltest: dict) -> str:
 def test_validate_recipe_file_accepts_matching_fulltest_version(tmp_path):
     build_yaml = write_recipe_with_fulltest(
         tmp_path,
-        {"name": "file-test-app", "version": "1.2.3", "tests": []},
+        {"name": "file-test-app", "version": "1.2.3", "tests": [{"command": "tool --version"}]},
     )
 
     result = validate_recipe_file(build_yaml)
@@ -387,7 +387,7 @@ def test_validate_recipe_file_resolves_fulltest_version_variable(tmp_path):
             "name": "file-test-app",
             "tool_version": "1.2.3",
             "version": "${tool_version}",
-            "tests": [],
+            "tests": [{"script": "tool --version"}],
         },
     )
 
@@ -403,6 +403,22 @@ def test_validate_recipe_file_rejects_stale_fulltest_version(tmp_path):
     )
 
     with pytest.raises(ValueError, match="update both files in the same change"):
+        validate_recipe_file(build_yaml)
+
+
+@pytest.mark.parametrize(
+    "tests",
+    [None, [], {}, [None], [{}], [{"command": "  "}],
+     [{"script": "\n"}], [{"command": ["tool"]}],
+     [{"command": "  ", "script": "tool --version"}]],
+)
+def test_validate_recipe_file_requires_executable_fulltest(tmp_path, tests):
+    build_yaml = write_recipe_with_fulltest(
+        tmp_path,
+        {"name": "file-test-app", "version": "1.2.3", "tests": tests},
+    )
+
+    with pytest.raises(ValueError, match="fulltest.*(nonempty|command or script)"):
         validate_recipe_file(build_yaml)
 
 
