@@ -19,12 +19,18 @@ ANNEX = "https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/a
 OBJECT_ID = re.compile(r"[0-9a-f]{24}")
 MODEL_KEY = re.compile(r"SHA256E-s(?P<size>\d+)--(?P<sha256>[0-9a-f]{64})(?:\.[A-Za-z0-9.]+)?")
 REPO_PATH = re.compile(r"[A-Za-z0-9_./-]+")
-BUNDLE_METHODS = frozenset({"slicer_release", "freesurfer_release", "github_release_asset"})
+BUNDLE_METHODS = frozenset({
+    "slicer_release", "freesurfer_release", "github_release_asset", "libreoffice_release",
+})
+LIBREOFFICE_DOWNLOAD = "https://download.documentfoundation.org/libreoffice/"
+LIBREOFFICE_ARCHIVE = "https://downloadarchive.documentfoundation.org/libreoffice/old/"
 
 
 def validate_bundle(config: dict) -> None:
     method = config.get("method")
-    if method == "slicer_release":
+    if method == "libreoffice_release":
+        allowed = {"method"}
+    elif method == "slicer_release":
         allowed = {"method", "app_id", "extension"}
         if not OBJECT_ID.fullmatch(str(config.get("app_id", ""))):
             raise ValueError("slicer_release.app_id must be a Girder object ID")
@@ -240,11 +246,65 @@ def _github_release_asset(config: dict, github_session: requests.Session, sessio
                              tag=release.tag, metadata={"sha256": digest, "size": size})
 
 
+def _libreoffice(session: requests.Session):
+    from .update_observations import SourceObservation, _https_url
+
+    stable_url = LIBREOFFICE_DOWNLOAD + "stable/"
+    release = latest_version({
+        "method": "webpage",
+        "url": stable_url,
+        "version_regex": r'href="(?P<version>\d+\.\d+\.\d+)/"',
+    }, session)
+    if release is None:
+        raise ValueError("LibreOffice supplied no stable release")
+
+    source_url = LIBREOFFICE_DOWNLOAD + f"src/{release.version}/"
+    response = session.get(source_url, timeout=30)
+    response.raise_for_status()
+    _https_url(response.url, "LibreOffice source listing response URL")
+    pattern = (r"href=[\"']libreoffice-(" + re.escape(release.version)
+               + r"\.\d+)\.tar\.xz[\"']")
+    builds = set(re.findall(pattern, response.text))
+    if len(builds) != 1:
+        raise ValueError("LibreOffice stable source listing must identify one released build")
+    build = builds.pop()
+
+    def checksum(url: str) -> str:
+        result = session.get(url + ".sha256", timeout=30)
+        result.raise_for_status()
+        _https_url(result.url, "LibreOffice checksum response URL")
+        filename = url.rsplit("/", 1)[1]
+        match = re.fullmatch(
+            r"([a-fA-F0-9]{64})[ \t]+\*?" + re.escape(filename) + r"\s*",
+            result.text,
+        )
+        if match is None:
+            raise ValueError(f"LibreOffice supplied an invalid SHA256 for {filename}")
+        return match[1].lower()
+
+    metadata = {}
+    for arch, filename_arch in (("x86_64", "x86-64"), ("aarch64", "aarch64")):
+        stable = (stable_url + f"{release.version}/deb/{arch}/"
+                  + f"LibreOffice_{release.version}_Linux_{filename_arch}_deb.tar.gz")
+        archived = (LIBREOFFICE_ARCHIVE + f"{build}/deb/{arch}/"
+                    + f"LibreOffice_{build}_Linux_{filename_arch}_deb.tar.gz")
+        digest = checksum(stable)
+        if checksum(archived) != digest:
+            raise ValueError(f"LibreOffice {arch} archive differs from the stable release")
+        metadata[f"{arch}_sha256"] = digest
+    return SourceObservation(
+        value=build, version=build, url=LIBREOFFICE_ARCHIVE + build + "/",
+        metadata=metadata,
+    )
+
+
 def observe_bundle(config: dict, github_session: requests.Session, current: str | None = None):
     """Resolve every coupled input before returning one immutable observation."""
     validate_bundle(config)
     with requests.Session() as session:
         configure_read_retries(session)
+        if config["method"] == "libreoffice_release":
+            return _libreoffice(session)
         if config["method"] == "slicer_release":
             return _slicer(config, session)
         if config["method"] == "github_release_asset":

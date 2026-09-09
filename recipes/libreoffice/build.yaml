@@ -1,5 +1,5 @@
 name: libreoffice
-version: 26.2.4
+version: 26.8.0
 
 copyright:
   - license: MPL-2.0
@@ -12,6 +12,9 @@ architectures:
   - aarch64
 
 variables:
+  upstream_version: "26.8.0.3"
+  x86_64_sha256: d0a6031a3837e48f9854e6d2da6489b9fadbd814afa4741fa32a197741663a22
+  aarch64_sha256: f989b73c31e7e16b3f99475bc5befaffdf42af75f83fe882293e1a0258cc9173
   libreoffice_archive:
     try:
       - value: libreoffice_x86_64_deb
@@ -21,16 +24,25 @@ variables:
 
 files:
   - name: libreoffice_x86_64_deb
-    url: https://download.documentfoundation.org/libreoffice/stable/{{ context.version }}/deb/x86_64/LibreOffice_{{ context.version }}_Linux_x86-64_deb.tar.gz
+    url: https://downloadarchive.documentfoundation.org/libreoffice/old/{{ context.upstream_version }}/deb/x86_64/LibreOffice_{{ context.upstream_version }}_Linux_x86-64_deb.tar.gz
+    sha256: "{{ context.x86_64_sha256 }}"
     condition: arch == "x86_64"
   - name: libreoffice_aarch64_deb
-    url: https://download.documentfoundation.org/libreoffice/stable/{{ context.version }}/deb/aarch64/LibreOffice_{{ context.version }}_Linux_aarch64_deb.tar.gz
+    url: https://downloadarchive.documentfoundation.org/libreoffice/old/{{ context.upstream_version }}/deb/aarch64/LibreOffice_{{ context.upstream_version }}_Linux_aarch64_deb.tar.gz
+    sha256: "{{ context.aarch64_sha256 }}"
     condition: arch == "aarch64"
 
 auto_update:
-  method: webpage
-  version_regex: href="(?P<version>\d+\.\d+\.\d+)/"
-  url: https://download.documentfoundation.org/libreoffice/stable/
+  method: sources
+  sources:
+    - id: libreoffice
+      method: libreoffice_release
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+        variables:
+          x86_64_sha256: x86_64_sha256
+          aarch64_sha256: aarch64_sha256
 
 build:
   kind: neurodocker
@@ -78,7 +90,7 @@ build:
         - tar -xzf {{ get_file(context.libreoffice_archive) }} -C /tmp/libreoffice --strip-components=1
         - apt-get update
         - find /tmp/libreoffice/DEBS -name "*.deb" | xargs apt-get install -y --no-install-recommends
-        - LO_DIR="/opt/libreoffice{{ context.version.split('.')[0] }}.{{ context.version.split('.')[1] }}"
+        - LO_DIR="/opt/libreoffice{{ context.upstream_version.split('.')[0] }}.{{ context.upstream_version.split('.')[1] }}"
         - test -x "${LO_DIR}/program/soffice"
         - ln -sfn "${LO_DIR}/program/soffice" /usr/local/bin/libreoffice
         - ln -sfn "${LO_DIR}/program/soffice" /usr/local/bin/soffice
@@ -91,7 +103,7 @@ build:
         - rm -rf /tmp/libreoffice /var/lib/apt/lists/*
 
     - environment:
-        PATH: /opt/libreoffice{{ context.version.split('.')[0] }}.{{ context.version.split('.')[1] }}/program:$PATH
+        PATH: /opt/libreoffice{{ context.upstream_version.split('.')[0] }}.{{ context.upstream_version.split('.')[1] }}/program:$PATH
 
 deploy:
   bins:

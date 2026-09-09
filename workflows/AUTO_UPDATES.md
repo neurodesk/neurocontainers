@@ -157,9 +157,20 @@ The source list supports the release providers above and these providers:
 | `http_digest` | HTTPS `url` | SHA-256 of the downloaded bytes, including mutable snapshot URLs |
 | `artifact_listing` | `url`, `download_base`, `version_regex` | Published artifact URL and computed SHA-256 |
 | `apt` | `package`, `urls` | Package version from the selected distribution's `Packages.gz` or `Packages.xz` indexes |
+| `libreoffice_release` | Official stable release and source listings | Released four-part build and matching archived SHA-256s for both Linux architectures |
 | `zenodo` | Published `record` ID | Latest published record in that record's version family |
 | `slicer_release` | See Slicer recipes | Slicer binary and extension from the same build revision |
 | `freesurfer_release` | See SynthSeg recipe | FreeSurfer release and its corresponding model bundle |
+
+LibreOffice uses `libreoffice_release` with a variable target for its four-part
+`upstream_version` and `target.variables` mappings for `x86_64_sha256` and
+`aarch64_sha256`. The provider selects a three-part release from the official
+stable listing, reads its exact build from the corresponding source listing,
+and requires both archived binary checksums to match the stable downloads.
+Declared files use the permanent `downloadarchive.documentfoundation.org`
+URLs and those digest variables. Missing architectures, ambiguous builds, or
+checksum differences fail the observation before any recipe edits. Release
+candidates in the archive listing are never used to discover updates.
 
 A `target.variable` receives the observed identity by default. Set `value: tag`
 for exact release tags or `value: version` for parsed release versions.
