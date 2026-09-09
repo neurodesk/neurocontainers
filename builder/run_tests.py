@@ -267,6 +267,22 @@ def prepare_required_files(
     return suite_work_dir
 
 
+def _container_binds(work_dir: Path, variables: dict[str, str]) -> list[str]:
+    binds = {f"{work_dir}:{work_dir}"}
+    container_dirs = {"/opt", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/var"}
+    for key, value in variables.items():
+        if key == "output_dir" or "/" not in str(value):
+            continue
+        parent = Path(value).parent
+        if not parent.exists():
+            continue
+        resolved = str(parent.resolve())
+        if any(resolved == root or resolved.startswith(root + "/") for root in container_dirs):
+            continue
+        binds.add(f"{parent}:{parent}")
+    return sorted(binds)
+
+
 def run_single_test(
     test: dict,
     container_path: Path,
@@ -344,26 +360,11 @@ def run_single_test(
 
         try:
             if container_path:
-                binds = set()
-                binds.add(f"{work_dir}:{work_dir}")
-                # Only bind host paths that need to be accessible inside the container.
-                # Skip paths under standard container directories (e.g. /opt, /usr)
-                # to avoid overlaying the container's own filesystem.
-                container_dirs = {"/opt", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/var"}
-                for key, value in variables.items():
-                    if key not in ["output_dir"] and "/" in str(value):
-                        parent = Path(value).parent
-                        if parent.exists():
-                            # Don't bind if the path is under a standard container directory
-                            abs_parent = str(parent.resolve())
-                            if not any(abs_parent == d or abs_parent.startswith(d + "/") for d in container_dirs):
-                                binds.add(f"{parent}:{parent}")
-
                 cmd_list = [
                     container_runtime_command(), "exec", "--writable-tmpfs",
                     "--pwd", str(work_dir),
                 ]
-                for b in binds:
+                for b in _container_binds(work_dir, variables):
                     cmd_list.extend(["-B", b])
                 cmd_list.extend([str(container_path), "bash", str(script_path)])
             else:
@@ -583,19 +584,11 @@ def _run_setup_in_container(
             f.write(setup_script)
         os.chmod(script_path, 0o755)
 
-        binds = set()
-        binds.add(f"{work_dir}:{work_dir}")
-        for key, value in variables.items():
-            if key not in ["output_dir"] and "/" in str(value):
-                parent = Path(value).parent
-                if parent.exists():
-                    binds.add(f"{parent}:{parent}")
-
         cmd_list = [
             container_runtime_command(), "exec", "--writable-tmpfs",
             "--pwd", str(work_dir),
         ]
-        for b in binds:
+        for b in _container_binds(work_dir, variables):
             cmd_list.extend(["-B", b])
         cmd_list.extend([str(container_path), "bash", str(script_path)])
 

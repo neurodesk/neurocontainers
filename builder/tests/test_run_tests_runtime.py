@@ -121,3 +121,30 @@ def test_container_setup_and_tests_share_the_output_directory(tmp_path, monkeypa
     )
     assert result.passed, result.message
     assert (work / "output/result").read_text() == "fixture"
+
+
+def test_setup_preserves_container_software_and_binds_host_data(tmp_path, monkeypatch) -> None:
+    work = tmp_path / "work"
+    data = tmp_path / "data"
+    work.mkdir()
+    data.mkdir()
+    commands = []
+
+    def runtime_run(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(run_tests.subprocess, "run", runtime_run)
+    variables = {"tool_dir": "/opt/tool", "input": str(data / "image.nii")}
+    error = run_tests._run_setup_in_container("true", "image.sif", work, variables)
+    assert error is None
+    result = run_tests.run_single_test(
+        {"name": "software available", "command": "true"},
+        "image.sif", variables, work,
+    )
+    assert result.passed
+    for command in commands:
+        binds = [command[index + 1] for index, arg in enumerate(command) if arg == "-B"]
+        assert "/opt:/opt" not in binds
+        assert f"{work}:{work}" in binds
+        assert f"{data}:{data}" in binds
