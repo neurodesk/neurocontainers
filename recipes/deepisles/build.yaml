@@ -1,6 +1,9 @@
 name: deepisles
 version: "1.1"
 
+variables:
+  weights_md5: be5b6dfcd66b55c2e6dc6db9a5880f7f
+
 copyright:
   - license: Apache-2.0
     url: https://github.com/ezequieldlrosa/DeepIsles/blob/main/LICENSE
@@ -60,6 +63,12 @@ build:
   pkg-manager: apt
 
   directives:
+    - file:
+        name: weights.7z
+        url: https://zenodo.org/api/records/14026715/files/stroke_ensemble_weights.7z/content
+    - run:
+        - echo "{{ context.weights_md5 }}  {{ get_file("weights.7z") }}" | md5sum --check --status
+
     - install: git libgl1
 
     - group:
@@ -135,12 +144,8 @@ build:
         - run:
             - . /root/.bashrc
             - conda activate deepisles
-            - pip install -e ./src/HD-BET
-
-        - run:
-            - . /root/.bashrc
-            - conda activate deepisles
             - pip install -r requirements.txt
+            - pip install -e ./src/HD-BET
 
         - run:
             - . /root/.bashrc
@@ -155,10 +160,6 @@ build:
             - echo "conda activate deepisles" >> ~/.bashrc
 
     - install: p7zip-full wget
-
-    - file:
-        name: weights.7z
-        url: https://zenodo.org/records/14026715/files/stroke_ensemble_weights.7z?download=1
 
     - run:
         - 7za x {{ get_file("weights.7z") }}
