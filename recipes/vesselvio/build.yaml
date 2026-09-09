@@ -1,12 +1,12 @@
 name: vesselvio
-version: 1.1.2
-# https://github.com/JacobBumgarner/VesselVio/releases
-
+version: 1.1.2.post1
 architectures:
   - x86_64
   - aarch64
 
 variables:
+  upstream_version: 1.1.2
+  miniforge_version: 26.7.2-0
   miniforge_installer:
     try:
       - value: Miniforge3-Linux-x86_64.sh
@@ -15,81 +15,107 @@ variables:
         condition: arch == "aarch64"
 
 auto_update:
-  method: github_release
-  repo: JacobBumgarner/VesselVio
+  method: sources
+  sources:
+    - id: vesselvio
+      method: github_release
+      repo: JacobBumgarner/VesselVio
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: miniforge
+      method: github_release
+      repo: conda-forge/miniforge
+      target:
+        variable: miniforge_version
+        value: tag
 
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
   pkg-manager: apt
-
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
-
     - install:
-        - git
         - ca-certificates
-        - libqt5gui5
-        - qt5-qmake
-        - qtbase5-dev
-
+        - patch
+        - g++
+        - libgl1-mesa-dri
+        - libgl1-mesa-glx
+        - libxkbcommon-x11-0
+        - libxcb-xinerama0
+        - xvfb
+        - xauth
     - environment:
+        IMAGEIO_FFMPEG_EXE: /opt/miniforge/envs/vesselvio/bin/ffmpeg
         CONDA_DIR: /opt/miniforge
-        PATH: /opt/miniforge/bin:/opt/miniforge/envs/vesselvio/bin:$PATH
-
+        PATH: /opt/miniforge/envs/vesselvio/bin:/opt/miniforge/bin:$PATH
     - run:
-        - cp {{ get_file(context.miniforge_installer) }} /tmp/miniforge.sh
-        - bash /tmp/miniforge.sh -b -p /opt/miniforge
-        - rm -f /tmp/miniforge.sh
-        - conda config --system --prepend channels conda-forge
-        - conda config --set channel_priority strict
+        - bash {{ get_file(context.miniforge_installer) }} -b -p /opt/miniforge
         - conda config --system --set auto_update_conda false
-        - conda config --system --set show_channel_urls true
-        - conda create -y -n vesselvio python=3.10 pip pyqt=5.15
+        - >-
+          conda create -y --override-channels -c conda-forge -n vesselvio
+          python=3.10 pip cython=3.0.12 setuptools=75.8.2 wheel=0.45.1 numpy=1.23.5 scipy=1.10.1 pandas=1.5.3
+          numba=0.57.1 llvmlite=0.40.1 scikit-image=0.20.0
+          pyqt=5.15.9 vtk=9.2.6 pyvista=0.38.6 pyvistaqt=0.9.1
+          matplotlib=3.7.3 python-igraph=0.9.10 networkx=2.8.8
+          opencv=4.7.0 nibabel=5.1.0 imageio=2.31.5
+          openpyxl=3.1.2 meshio=5.3.4 jinja2
+          transforms3d=0.4.1
+        - python -m pip install --no-deps --no-build-isolation --no-binary=PyMCubes,imageio-ffmpeg imageio-ffmpeg==0.4.9 geomdl==5.3.1 PyExcelerate==0.10.0 PyMCubes==0.1.6
+        - python -m pip check
         - conda clean --all --yes
-
     - run:
-        - git clone --branch v{{ context.version }} https://github.com/JacobBumgarner/VesselVio.git /opt/vesselvio-{{ context.version }}/
-        - sed -i '/^PyQt5==/d;/^PyQt5-Qt5==/d;/^PyQt5-sip==/d' /opt/vesselvio-{{ context.version }}/requirements.txt
-        - conda run -n vesselvio python -m pip install -r /opt/vesselvio-{{ context.version }}/requirements.txt
-
+        - mkdir -p /opt/vesselvio-{{ context.upstream_version }}
+        - tar -xzf {{ get_file("vesselvio_source") }} -C /opt/vesselvio-{{ context.upstream_version }} --strip-components=1
+        - patch -d /opt/vesselvio-{{ context.upstream_version }} -p1 < {{ get_file("linux_paths") }}
     - copy:
         - vesselvio
-        - /opt/vesselvio-{{ context.version }}/vesselvio
-
+        - /opt/vesselvio-{{ context.upstream_version }}/vesselvio
     - run:
-        - chmod a+x /opt/vesselvio-{{ context.version }}/vesselvio
-
+        - chmod 755 /opt/vesselvio-{{ context.upstream_version }}/vesselvio
     - environment:
-        PATH: $PATH:/opt/vesselvio-{{ context.version }}
+        PATH: $PATH:/opt/vesselvio-{{ context.upstream_version }}
 
 deploy:
-  path:
-    - /opt/vesselvio-{{ context.version }}
+  bins:
+    - vesselvio
 
 files:
   - name: Miniforge3-Linux-x86_64.sh
-    url: https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+    url: https://github.com/conda-forge/miniforge/releases/download/{{ context.miniforge_version }}/Miniforge3-Linux-x86_64.sh
   - name: Miniforge3-Linux-aarch64.sh
-    url: https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh
+    url: https://github.com/conda-forge/miniforge/releases/download/{{ context.miniforge_version }}/Miniforge3-Linux-aarch64.sh
+  - name: vesselvio_source
+    url: https://github.com/JacobBumgarner/VesselVio/archive/refs/tags/v{{ context.upstream_version }}.tar.gz
+  - name: linux_paths
+    filename: linux-paths.patch
   - name: vesselvio
     contents: |
       #!/usr/bin/env bash
-      cd ~
-      mkdir -p ~/library/cache/
-
-      FILE=~/library/cache/preferences.json
-      if [ -f "$FILE" ]; then
-          echo "$FILE exists. Not overwriting."
-      else
-          echo "$FILE does not exist. Copying file template."
-          cp /opt/vesselvio-{{ context.version }}/library/cache/preferences.json ~/library/cache/preferences.json
+      set -euo pipefail
+      source_dir=/opt/vesselvio-{{ context.upstream_version }}
+      if [[ "${1:-}" == --version ]]; then
+        printf '%s\n' 'VesselVio {{ context.upstream_version }}'
+        exit 0
       fi
-
-      cp -r /opt/vesselvio-{{ context.version }}/library/annotation/ ~/library/
-      cp -r /opt/vesselvio-{{ context.version }}/library/volumes/ ~/library/
-      python /opt/vesselvio-{{ context.version }}/VesselVio.py
+      if [[ "${1:-}" == --help ]]; then
+        printf '%s\n' 'Usage: vesselvio [--version | --help]' 'Launch the VesselVio vascular analysis desktop.'
+        exit 0
+      fi
+      export VESSELVIO_OUTPUT_DIR="${VESSELVIO_OUTPUT_DIR:-$PWD}"
+      runtime_dir=$(mktemp -d "${TMPDIR:-/tmp}/vesselvio.XXXXXXXX")
+      trap 'rm -rf "$runtime_dir"' EXIT
+      mkdir -p "$runtime_dir/library/cache"
+      python -c 'import json, os, sys; json.dump({"results_dir": os.environ["VESSELVIO_OUTPUT_DIR"], "update_check": True}, open(sys.argv[1], "w"))' "$runtime_dir/library/cache/preferences.json"
+      for resource in annotation volumes icons; do
+        ln -s "$source_dir/library/$resource" "$runtime_dir/library/$resource"
+      done
+      export NUMBA_CACHE_DIR="$runtime_dir/numba"
+      export MPLCONFIGDIR="$runtime_dir/matplotlib"
+      cd "$runtime_dir"
+      /opt/miniforge/envs/vesselvio/bin/python "$source_dir/VesselVio.py" "$@"
 
 categories:
   - quantitative imaging
@@ -109,6 +135,9 @@ readme: |
   ```
   vesselvio
   ```
+
+  Results default to the directory from which VesselVio was launched. Set
+  `VESSELVIO_OUTPUT_DIR` to choose a different writable results directory.
 
   More documentation can be found here: https://jacobbumgarner.github.io/VesselVio/
 

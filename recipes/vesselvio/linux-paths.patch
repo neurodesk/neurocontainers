@@ -1,0 +1,11 @@
+--- a/library/helpers.py
++++ b/library/helpers.py
+@@ -52,6 +52,8 @@
+         load_dir = os.path.join(os.path.expanduser("~"), location)
+     elif sys_os == "Windows":
+         load_dir = os.path.join(os.path.join(os.environ["USERPROFILE"]), location)
++    elif sys_os == "Linux":
++        load_dir = os.environ.get("VESSELVIO_OUTPUT_DIR", os.getcwd())
+     load_dir = std_path(load_dir)
+     return load_dir
+ 
