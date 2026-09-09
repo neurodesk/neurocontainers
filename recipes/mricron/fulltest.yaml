@@ -20,8 +20,10 @@
 
 name: mricron
 version: 1.2.20211006
-mricron_package_version: 1.2.20211006+dfsg-5
-dcm2niix_package_version: 1.0.20220720-1build1
+mricron_amd64_version: 1.2.20211006+dfsg-5
+mricron_arm64_version: 1.2.20211006+dfsg-5
+dcm2niix_amd64_version: 1.0.20220720-1build1
+dcm2niix_arm64_version: 1.0.20220720-1build1
 
 required_files:
   - dataset: ds000001
@@ -51,7 +53,7 @@ tests:
   - name: dcm2niix version check
     description: Verify dcm2niix reports the upstream version encoded in its tracked package
     command: |
-      expected=$(printf '%s' "${dcm2niix_package_version}" | sed 's/[+-].*//')
+      expected=$(dpkg-query -W -f='${Version}' dcm2niix | sed 's/[+-].*//')
       output=$(dcm2niix --version 2>&1 || true)
       if ! printf '%s\n' "$output" | grep -Fq "v${expected}"; then
         printf '%s\n' "$output"
@@ -62,10 +64,22 @@ tests:
 
   - name: installed package versions
     description: Verify the installed packages match the automatically tracked versions
-    command: dpkg-query -W -f='${Version}\n' mricron dcm2niix
-    expected_output_contains:
-      - "${mricron_package_version}"
-      - "${dcm2niix_package_version}"
+    command: |
+      case "$(dpkg --print-architecture)" in
+        amd64)
+          mricron_expected="${mricron_amd64_version}"
+          dcm2niix_expected="${dcm2niix_amd64_version}"
+          ;;
+        arm64)
+          mricron_expected="${mricron_arm64_version}"
+          dcm2niix_expected="${dcm2niix_arm64_version}"
+          ;;
+        *) exit 1 ;;
+      esac
+      test "$(dpkg-query -W -f='${Version}' mricron)" = "$mricron_expected" || exit 1
+      test "$(dpkg-query -W -f='${Version}' dcm2niix)" = "$dcm2niix_expected" || exit 1
+      echo "Installed package versions match this architecture"
+    expected_output_contains: "Installed package versions match this architecture"
 
   - name: native executable architectures
     description: Verify MRIcron and dcm2niix executables match the container architecture

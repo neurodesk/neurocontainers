@@ -1,6 +1,20 @@
 variables:
-  mricron_package_version: 1.2.20211006+dfsg-5
-  dcm2niix_package_version: 1.0.20220720-1build1
+  mricron_amd64_version: 1.2.20211006+dfsg-5
+  mricron_arm64_version: 1.2.20211006+dfsg-5
+  dcm2niix_amd64_version: 1.0.20220720-1build1
+  dcm2niix_arm64_version: 1.0.20220720-1build1
+  mricron_package_version:
+    try:
+      - value: "{{ context.mricron_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.mricron_arm64_version }}"
+        condition: arch=="aarch64"
+  dcm2niix_package_version:
+    try:
+      - value: "{{ context.dcm2niix_amd64_version }}"
+        condition: arch=="x86_64"
+      - value: "{{ context.dcm2niix_arm64_version }}"
+        condition: arch=="aarch64"
 
 name: mricron
 version: 1.2.20211006
@@ -14,28 +28,42 @@ auto_update:
   method: sources
   local: []
   sources:
-    - id: mricron
+    - id: mricron-amd64
       method: apt
       package: mricron
       urls:
         - https://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
         - https://archive.ubuntu.com/ubuntu/dists/noble-updates/universe/binary-amd64/Packages.gz
+      target:
+        variable: mricron_amd64_version
+        fulltest_variable: mricron_amd64_version
+    - id: mricron-arm64
+      method: apt
+      package: mricron
+      urls:
         - https://ports.ubuntu.com/ubuntu-ports/dists/noble/universe/binary-arm64/Packages.gz
         - https://ports.ubuntu.com/ubuntu-ports/dists/noble-updates/universe/binary-arm64/Packages.gz
       target:
-        variable: mricron_package_version
-        fulltest_variable: mricron_package_version
-    - id: dcm2niix
+        variable: mricron_arm64_version
+        fulltest_variable: mricron_arm64_version
+    - id: dcm2niix-amd64
       method: apt
       package: dcm2niix
       urls:
         - https://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
         - https://archive.ubuntu.com/ubuntu/dists/noble-updates/universe/binary-amd64/Packages.gz
+      target:
+        variable: dcm2niix_amd64_version
+        fulltest_variable: dcm2niix_amd64_version
+    - id: dcm2niix-arm64
+      method: apt
+      package: dcm2niix
+      urls:
         - https://ports.ubuntu.com/ubuntu-ports/dists/noble/universe/binary-arm64/Packages.gz
         - https://ports.ubuntu.com/ubuntu-ports/dists/noble-updates/universe/binary-arm64/Packages.gz
       target:
-        variable: dcm2niix_package_version
-        fulltest_variable: dcm2niix_package_version
+        variable: dcm2niix_arm64_version
+        fulltest_variable: dcm2niix_arm64_version
 
 build:
   kind: neurodocker
