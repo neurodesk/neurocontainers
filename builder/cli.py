@@ -49,6 +49,8 @@ def write_build_files(
     dockerfile_path.write_text(render_dockerfile(compiled.definition))
     (build_dir / "README.md").write_text(readme + "\n")
     shutil.copy2(compiled.recipe_dir / "build.yaml", build_dir / "build.yaml")
+    for artifact in (dockerfile_path, build_dir / "README.md", build_dir / "build.yaml"):
+        artifact.chmod(0o644)
 
     if stage:
         materialize_plan(

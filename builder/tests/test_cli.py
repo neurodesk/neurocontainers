@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 from types import SimpleNamespace
 
@@ -104,3 +105,33 @@ def test_init_requires_user_to_configure_upstream(tmp_path, monkeypatch):
     assert data["auto_update"]["method"] == "github_release"
     with pytest.raises(ValueError):
         validate_update_policy(data)
+
+
+def test_build_metadata_is_readable_with_restrictive_umask(tmp_path):
+    from builder.ir import Definition, From
+
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    source = recipe_dir / "build.yaml"
+    source.write_text("name: tool\nversion: 1.0\n")
+    source.chmod(0o600)
+    compiled = SimpleNamespace(
+        name="tool",
+        version="1.0",
+        readme="# Tool\n",
+        recipe_dir=recipe_dir,
+        definition=Definition([From("ubuntu:24.04")]),
+        recipe={"build": {}},
+        architecture="x86_64",
+    )
+    previous_umask = os.umask(0o077)
+    try:
+        build_dir, dockerfile = cli.write_build_files(tmp_path, compiled, tmp_path / "build")
+    finally:
+        os.umask(previous_umask)
+
+    for artifact in (dockerfile, build_dir / "README.md", build_dir / "build.yaml"):
+        assert artifact.stat().st_mode & 0o777 == 0o644
+    assert (build_dir / "build.yaml").read_bytes() == source.read_bytes()
+    assert (build_dir / "README.md").read_text() == "# Tool\n"
+    assert source.stat().st_mode & 0o777 == 0o600
