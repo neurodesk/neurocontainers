@@ -14,7 +14,7 @@
 # help messages, and basic functionality that can run quickly.
 
 name: fastsurfer
-version: 2.5.4
+version: 2.4.2
 
 required_files:
   - dataset: ds000001
