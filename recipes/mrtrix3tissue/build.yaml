@@ -23,6 +23,9 @@ build:
     - install:
         - qtbase5-dev
         - libqt5opengl5-dev
+        - libqt5svg5-dev
+    - environment:
+        QT_SELECT: qt5
     - template:
         name: mrtrix3
         version: "3Tissue_v{{ context.version }}"
