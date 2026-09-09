@@ -1,5 +1,5 @@
 name: dafne
-version: 1.8a4.post1
+version: 1.8a4.post2
 
 copyright:
   - license: GPL-3.0
@@ -16,7 +16,7 @@ variables:
     try:
       - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3"
         condition: arch=="x86_64"
-      - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3 pyqt=5.15 vtk"
+      - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3 pyqt=5.15 vtk h5py=3.11.0"
         condition: arch=="aarch64"
   pip_install:
     try:
@@ -26,6 +26,8 @@ variables:
         condition: arch=="aarch64"
 
 files:
+  - name: register_conda_metadata.py
+    filename: register_conda_metadata.py
   - name: radiomics_source
     url: https://github.com/AIM-Harvard/pyradiomics/archive/refs/tags/v{{ context.radiomics_version }}.tar.gz
   - name: patch_radiomics_metadata.py
@@ -128,8 +130,10 @@ build:
     - template:
         name: miniconda
         conda_install: "{{ context.conda_install }}"
-        mamba: "true"
-        version: py38_22.11.1-1
+        version: py38_23.11.0-2
+
+    - run: python {{ get_file("register_conda_metadata.py") }}
+      condition: arch=="aarch64"
 
     - run:
         - mkdir -p /tmp/pyradiomics-source
@@ -140,7 +144,7 @@ build:
         - rm -rf /tmp/pyradiomics-source
       condition: arch=="aarch64"
 
-    - run: python -m pip install --no-cache-dir {{ context.pip_install }}
+    - run: python -m pip install --no-cache-dir --only-binary=PyQt5,vtk,h5py {{ context.pip_install }}
 
     - environment:
         HOME: /tmp

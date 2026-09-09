@@ -4,7 +4,7 @@
 # network access or model downloads.
 
 name: dafne
-version: 1.8a4.post1
+version: 1.8a4.post2
 upstream_version: 1.8a4
 radiomics_version: 3.1.0
 
@@ -125,7 +125,7 @@ tests:
     description: Verify the PyQt xcb platform plugin has all system libraries needed for Xvfb startup
     command: |
       set -euo pipefail
-      plugin="$(find /opt/miniconda-py38_22.11.1-1 -path '*/platforms/libqxcb.so' | head -1)"
+      plugin="$(python -c 'from PyQt5.QtCore import QLibraryInfo; print(QLibraryInfo.location(QLibraryInfo.PluginsPath) + "/platforms/libqxcb.so")')"
       test -n "$plugin"
       ldd "$plugin" | tee /tmp/dafne-libqxcb-ldd.txt
       if grep -F "not found" /tmp/dafne-libqxcb-ldd.txt; then
@@ -186,3 +186,15 @@ tests:
       sed -n '1,40p' "$log"
     expected_output_contains: "dafne startup status"
     timeout: 60
+
+  - name: native GUI libraries expose matching package metadata
+    command: |
+      python - <<'PY'
+      from importlib.metadata import version
+      from PyQt5.QtCore import PYQT_VERSION_STR
+      from vtkmodules.vtkCommonCore import vtkVersion
+      assert version('PyQt5') == PYQT_VERSION_STR
+      assert version('vtk') == vtkVersion.GetVTKVersion()
+      print('native package metadata matches')
+      PY
+    expected_output_contains: native package metadata matches
