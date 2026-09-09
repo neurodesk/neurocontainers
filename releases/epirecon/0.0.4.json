@@ -1,13 +1,12 @@
 {
   "apps": {
-    "openmsk 0.2.0": {
+    "epirecon 0.0.4": {
       "version": "20260908",
       "exec": "",
       "apptainer_args": []
     }
   },
   "categories": [
-    "image segmentation",
-    "quantitative imaging"
+    "image reconstruction"
   ]
 }

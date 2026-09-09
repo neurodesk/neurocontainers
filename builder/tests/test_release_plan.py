@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import attrs
+import pytest
 
 from builder.release_plan import TOP_LEVEL_FIELD_TIERS, plan_recipe_changes
 from builder.validation import ContainerRecipe
@@ -53,6 +54,48 @@ def test_semantically_unchanged_yaml_is_source_only() -> None:
 
     assert plan.candidate_recipes == []
     assert plan.decisions[0].reasons == ("yaml-only-change",)
+
+
+@pytest.mark.parametrize("updates", [
+    {"readme": "Updated instructions for {{ context.name }}/{{ context.version }}"},
+    {"readme_url": "https://example.com/guide"},
+    {"structured_readme": {"description": "Updated instructions"}},
+    {"categories": ["workflows"]},
+    {"readme": "New help", "categories": ["workflows"], "auto_update": {}},
+])
+def test_documentation_and_categories_preserve_image(updates) -> None:
+    plan = plan_recipe_changes(
+        ["recipes/demo/build.yaml"], {"demo": recipe()}, {"demo": recipe(**updates)}
+    )
+
+    assert plan.candidate_recipes == []
+    assert plan.source_only_recipes == ["demo"]
+
+
+@pytest.mark.parametrize("updates", [
+    {"readme": '{{ get_file("asset") }}'},
+    {"categories": ["{{ context.category }}"]},
+    {"readme": "Help", "version": "2.0"},
+    {"readme": "Help", "files": [{"name": "config", "contents": "changed"}]},
+    {"readme": "Help", "deploy": {"bins": ["new-command"]}},
+])
+def test_uncertain_templates_and_build_inputs_still_require_candidate(updates) -> None:
+    # Check both directions, including removal of a template with side effects.
+    for base, head in ((recipe(), recipe(**updates)), (recipe(**updates), recipe())):
+        plan = plan_recipe_changes(
+            ["recipes/demo/build.yaml"], {"demo": base}, {"demo": head}
+        )
+        assert plan.candidate_recipes == ["demo"]
+
+
+def test_documentation_with_staged_file_change_requires_candidate() -> None:
+    plan = plan_recipe_changes(
+        ["recipes/demo/build.yaml", "recipes/demo/config.txt"],
+        {"demo": recipe(readme="Old help")},
+        {"demo": recipe(readme="New help")},
+    )
+
+    assert plan.candidate_recipes == ["demo"]
 
 
 def test_runtime_recipe_field_change_requires_candidate() -> None:

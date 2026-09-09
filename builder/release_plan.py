@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Mapping
@@ -35,11 +36,41 @@ TOP_LEVEL_FIELD_TIERS: dict[str, frozenset[str]] = {
     "epoch": frozenset({"candidate"}),
 }
 
-# This first release-planner milestone intentionally enables only the proven,
-# hermetic case from #2994. Other roles are recorded above for completeness but
-# remain candidate-required until their post-merge publication paths exist.
+# Other roles remain candidate-required until their publication paths exist.
 ENABLED_SOURCE_ONLY_FIELDS = frozenset({"auto_update"})
+DOCUMENTATION_FIELDS = frozenset({"readme", "readme_url", "structured_readme"})
 KNOWN_NON_IMAGE_FILES = frozenset({"fulltest.yaml"})
+
+
+def literal_categories(recipe: Mapping[str, object]) -> list[str] | None:
+    """Return categories that the catalog can publish without executing Jinja."""
+    value = recipe.get("categories", [])
+    if not isinstance(value, list) or not all(
+        isinstance(item, str)
+        and not any(token in item for token in ("{{", "{%", "{#"))
+        for item in value
+    ):
+        return None
+    return value
+
+
+def _passive_documentation(value: object) -> bool:
+    """Allow prose and simple context substitutions, not template side effects."""
+    if isinstance(value, str):
+        prose = re.sub(
+            r"{{\s*(?:context\.(?:name|version|original_version|arch|variant)|arch)\s*}}",
+            "",
+            value,
+        )
+        return not any(token in prose for token in ("{{", "{%", "{#"))
+    if isinstance(value, Mapping):
+        return all(
+            _passive_documentation(key) and _passive_documentation(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return all(_passive_documentation(item) for item in value)
+    return True
 
 
 @dataclass(frozen=True)
@@ -189,6 +220,15 @@ def plan_recipe_changes(
                 candidate_reasons.append("new-recipe")
             else:
                 changed_fields = _changed_top_level_fields(base, head)
+                non_image_fields = set(ENABLED_SOURCE_ONLY_FIELDS)
+                for field in DOCUMENTATION_FIELDS:
+                    if all(
+                        _passive_documentation(data.get(field))
+                        for data in (base, head)
+                    ):
+                        non_image_fields.add(field)
+                if all(literal_categories(data) is not None for data in (base, head)):
+                    non_image_fields.add("categories")
                 unknown = changed_fields - TOP_LEVEL_FIELD_TIERS.keys()
                 if unknown:
                     candidate_reasons.append("unclassified-field")
@@ -196,6 +236,8 @@ def plan_recipe_changes(
                     source_reasons.append("yaml-only-change")
                 elif changed_fields <= ENABLED_SOURCE_ONLY_FIELDS:
                     source_reasons.append("auto-update-only")
+                elif changed_fields <= non_image_fields:
+                    source_reasons.append("documentation-or-catalog-only")
                 else:
                     candidate_reasons.append("recipe-definition-changed")
 

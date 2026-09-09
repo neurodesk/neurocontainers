@@ -526,5 +526,6 @@ def test_update_apps_json_runs_for_release_file_pushes() -> None:
     workflow = Path(".github/workflows/update-apps-json.yml").read_text()
 
     assert "  push:\n    branches: [main]\n    paths:\n      - \"releases/**/*.json\"" in workflow
+    assert '      - "recipes/**/build.yaml"' in workflow
     assert "pull_request:" not in workflow
     assert "github.event.pull_request.merged" not in workflow

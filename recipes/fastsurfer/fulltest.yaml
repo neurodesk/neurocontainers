@@ -1,5 +1,5 @@
 # FastSurfer container test suite
-# Tests for FastSurfer v2.4.2 - Deep learning neuroimaging pipeline
+# Tests for FastSurfer - Deep learning neuroimaging pipeline
 #
 # FastSurfer provides a fully compatible FreeSurfer alternative for:
 #   - Volumetric analysis (within minutes)
@@ -14,7 +14,7 @@
 # help messages, and basic functionality that can run quickly.
 
 name: fastsurfer
-version: 2.4.2
+version: 2.5.4
 
 required_files:
   - dataset: ds000001
@@ -474,18 +474,10 @@ tests:
   # ==========================================================================
   # DOCKER/CONTAINER CONFIGURATION
   # ==========================================================================
-  - name: Docker directory exists
-    description: Verify Docker configuration directory exists
-    command: bash -lc 'test -d /fastsurfer/Docker && echo "Docker dir exists"'
-    expected_output_contains: "Docker dir exists"
-
-  # ==========================================================================
-  # TEST DIRECTORY IN CONTAINER
-  # ==========================================================================
-  - name: Test directory exists
-    description: Verify test directory exists in container
-    command: bash -lc 'test -d /fastsurfer/test && echo "test dir exists"'
-    expected_output_contains: "test dir exists"
+  - name: Container entrypoint available
+    description: Verify the upstream runtime entrypoint is executable
+    command: test -x /fastsurfer/tools/Docker/entrypoint.sh
+    expected_exit_code: 0
 
 cleanup:
   script: |
