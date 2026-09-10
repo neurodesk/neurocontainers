@@ -45,8 +45,19 @@ directives:
       - cmake --install build
       - ldconfig
 
+  # ismrmrd 1.14.x breaks against the xsdata 24.4 API, while 1.15.0 onwards
+  # requires xsdata 26.2+. Follow whichever range the pinned ismrmrd resolves
+  # with instead of one hardcoded ceiling.
+  - variables:
+      openrecon_xsdata_spec:
+        try:
+          - value: ">=26.2"
+            condition: (context.openrecon_ismrmrd_version | default("1.14.2")).split(".")[:2] | map("int") | list >= [1, 15]
+          - value: ">=22.12,<24.4"
+            condition: "true"
+
   - run:
-      - python3 -m pip install $(python3 -m pip install --help | grep -q -- "--break-system-packages" && echo "--break-system-packages") --no-cache-dir h5py ismrmrd=={{ context.openrecon_ismrmrd_version | default("1.14.2") }} "xsdata<24.4" matplotlib pydicom==3.0.1 pynetdicom nibabel scipy scikit-image
+      - python3 -m pip install $(python3 -m pip install --help | grep -q -- "--break-system-packages" && echo "--break-system-packages") --no-cache-dir h5py ismrmrd=={{ context.openrecon_ismrmrd_version | default("1.14.2") }} "xsdata{{ context.openrecon_xsdata_spec }}" matplotlib pydicom==3.0.1 pynetdicom nibabel scipy scikit-image
 
   - run:
       - git clone https://github.com/ismrmrd/ismrmrd-python-tools.git
