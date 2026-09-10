@@ -1,7 +1,5 @@
 name: amico
-version: "2.1.0.post2"
-variables:
-  upstream_version: "2.1.1"
+version: "2.1.1"
 architectures:
   - x86_64
   - aarch64
@@ -52,14 +50,8 @@ structured_readme:
     Neuroimage 215 (2020): 116835.
     https://doi.org/10.1016/j.neuroimage.2020.116835
 auto_update:
-  method: sources
-  sources:
-    - id: amico
-      method: pypi
-      package: dmri-amico
-      target:
-        variable: upstream_version
-        fulltest_variable: upstream_version
+  method: pypi
+  package: dmri-amico
 
 build:
   kind: neurodocker
@@ -73,7 +65,7 @@ build:
         env_name: amico
         env_exists: "false"
         conda_install: python=3.12
-        pip_install: setuptools<81 dmri-amico=={{ context.upstream_version }}
+        pip_install: setuptools<81 dmri-amico=={{ context.version }}
     - environment:
         PATH: /opt/miniconda/envs/amico/bin:/opt/miniconda/bin:$PATH
     - deploy:
