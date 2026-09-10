@@ -1,5 +1,5 @@
 name: apptainer
-version: 1.4.4
+version: 1.5.3
 
 architectures:
   - x86_64

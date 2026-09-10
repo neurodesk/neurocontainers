@@ -1,7 +1,7 @@
 name: amico
-version: 2.1.0.post1
+version: "2.1.0.post2"
 variables:
-  upstream_version: 2.1.0
+  upstream_version: "2.1.1"
 architectures:
   - x86_64
   - aarch64
