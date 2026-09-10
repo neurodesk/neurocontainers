@@ -1,5 +1,5 @@
 name: metabody
-version: 1.0.4
+version: 1.0.5
 architectures:
     - x86_64
 
@@ -193,8 +193,8 @@ build:
               - chmod +x /opt/code/python-ismrmrd-server/mrd2dicom.py
               - chmod +x /opt/code/afni_processing.sh
 deploy:
-    bins:
-        - /opt/code/afni_processing.sh
+    path:
+        - /opt/code
 
 categories:
   - functional imaging

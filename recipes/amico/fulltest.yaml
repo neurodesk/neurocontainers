@@ -28,8 +28,8 @@
 # utility functions, and synthetic signal generation.
 
 name: amico
-version: 2.1.0.post1
-upstream_version: 2.1.0
+version: "2.1.0.post2"
+upstream_version: "2.1.1"
 
 required_files:
   - dataset: ds000001

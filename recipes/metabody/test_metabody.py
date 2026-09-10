@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import subprocess
 import sys
 import types
@@ -7,6 +8,7 @@ from pathlib import Path
 import ismrmrd
 import nibabel as nib
 import numpy as np
+import pytest
 
 
 RECIPE_DIR = Path(__file__).parent
@@ -64,6 +66,102 @@ def make_image(
         metadata["RepetitionTime"] = str(repetition_time_ms)
     image.attribute_string = metadata.serialize()
     return image
+
+
+def render_single_stat(monkeypatch, colormap: str):
+    metabody = load_metabody_module()
+    source = make_image(0, 0, 10)
+    monkeypatch.setattr(metabody.nib, "save", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(metabody.subprocess, "run", lambda *_args, **_kwargs: None)
+
+    stat_data = np.arange(6, dtype=np.float32).reshape(2, 3, 1, 1) + 1
+    stat_image = nib.Nifti1Image(stat_data, np.eye(4))
+    monkeypatch.setattr(
+        metabody,
+        "show_stats",
+        lambda *_args, **_kwargs: (["stat-0"], stat_image),
+    )
+
+    output = metabody.process_image(
+        [source],
+        None,
+        {"sendOriginal": False, "colormap": colormap},
+        None,
+    )
+    assert len(output) == 1
+    return output[0], ismrmrd.Meta.deserialize(output[0].attribute_string)
+
+
+def test_openrecon_label_exposes_output_appearance_choices():
+    label = json.loads((RECIPE_DIR / "OpenReconLabel.json").read_text())
+    parameter = next(
+        item for item in label["parameters"] if item["id"] == "colormap"
+    )
+
+    assert parameter["label"]["en"] == "Output appearance"
+    assert parameter["default"] == "scanner_lut"
+    assert [choice["id"] for choice in parameter["values"]] == [
+        "scanner_lut",
+        "seismic",
+        "jet",
+        "gray",
+        "coolwarm",
+        "bwr",
+        "none",
+    ]
+
+
+def test_missing_output_appearance_preserves_legacy_seismic_default():
+    metabody = load_metabody_module()
+
+    output_spec = metabody.resolve_output_spec({})
+
+    assert isinstance(output_spec, metabody.EmbeddedRgbOutput)
+    assert output_spec.colormap == "seismic"
+
+
+@pytest.mark.parametrize("colormap", ["seismic", "jet", "gray", "coolwarm", "bwr"])
+def test_embedded_rgb_has_no_scanner_lut(monkeypatch, colormap):
+    image, metadata = render_single_stat(monkeypatch, colormap)
+
+    assert image.data.shape == (3, 1, 2, 3)
+    assert image.channels == 3
+    assert image.image_type == 6
+    assert image.data.dtype == np.uint16
+    assert 0 <= image.data.min() <= image.data.max() <= 255
+    assert metadata["InternalSend"] == "1"
+    assert "RGB" in metadata["ImageProcessingHistory"]
+    assert "LUTFileName" not in metadata
+    assert "WindowCenter" not in metadata
+    assert "WindowWidth" not in metadata
+
+
+def test_scanner_palette_uses_one_scalar_channel(monkeypatch):
+    image, metadata = render_single_stat(monkeypatch, "scanner_lut")
+
+    assert image.data.shape == (1, 1, 2, 3)
+    assert image.channels == 1
+    assert image.image_type == ismrmrd.IMTYPE_MAGNITUDE
+    assert 0 <= image.data.min() <= image.data.max() <= 4095
+    assert metadata["LUTFileName"] == "MicroDeltaHotMetal.pal"
+    assert "InternalSend" not in metadata
+    assert "RGB" not in metadata["ImageProcessingHistory"]
+    assert metadata["WindowCenter"] == "2048.0"
+    assert metadata["WindowWidth"] == "4096"
+
+
+def test_grayscale_uses_one_scalar_channel_without_lut(monkeypatch):
+    image, metadata = render_single_stat(monkeypatch, "none")
+
+    assert image.data.shape == (1, 1, 2, 3)
+    assert image.channels == 1
+    assert image.image_type == ismrmrd.IMTYPE_MAGNITUDE
+    assert 0 <= image.data.min() <= image.data.max() <= 4095
+    assert "LUTFileName" not in metadata
+    assert "InternalSend" not in metadata
+    assert "RGB" not in metadata["ImageProcessingHistory"]
+    assert metadata["WindowCenter"] == "2048.0"
+    assert metadata["WindowWidth"] == "4096"
 
 
 def test_sparse_counters_use_dense_stacking_and_slice_headers(monkeypatch):

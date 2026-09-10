@@ -1,12 +1,12 @@
 {
   "apps": {
-    "fastsurfer 2.5.4": {
+    "metabody 1.0.5": {
       "version": "20260910",
       "exec": "",
       "apptainer_args": []
     }
   },
   "categories": [
-    "structural imaging"
+    "functional imaging"
   ]
 }

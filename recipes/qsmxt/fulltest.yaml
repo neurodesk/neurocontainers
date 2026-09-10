@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.16.0
+version: 9.17.0
 
 test_data:
   output_dir: test_output
@@ -211,7 +211,7 @@ tests:
           assert parameters["betfractionalintensity"]["default"] == 0.5
           assert parameters["maskcleanup"]["default"] == "close-fill"
       send_original = next(parameter for parameter in data["parameters"] if parameter["id"] == "sendoriginal")
-      assert send_original["default"] is False
+      assert send_original["default"] is True
       assert "minip" not in parameter_ids
       print(label)
       PY
@@ -335,6 +335,7 @@ tests:
                   "echotimesms": "10,20",
                   "maxechoes": "2",
                   "sendoutputs": "qsm",
+                  "sendoriginal": "false",
               }
           },
           FakeMetadata(),
@@ -407,4 +408,4 @@ tests:
       print("sent derived images:", len(connection.sent_batches[0]))
       PY
 
-upstream_version: 9.16.0
+upstream_version: 9.17.0
