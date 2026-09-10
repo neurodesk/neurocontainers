@@ -43,6 +43,11 @@ TWO_PART_VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 POST_RELEASE_VERSION_PATTERN = re.compile(
     r"^(?P<base>(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){1,2})\.post(?P<post>0|[1-9]\d*)$"
 )
+IMAGE_ASSIGNMENT_PATTERN = re.compile(
+    r"^(?P<prefix>[ \t]*(?:export[ \t]+)?baseDockerImage=)(?P<image>\S*)$",
+    re.MULTILINE,
+)
+BUILD_DATE_PATTERN = re.compile(r"^\d{8}$")
 
 
 @dataclass(frozen=True)
@@ -165,6 +170,50 @@ def update_params_version(contents: str, version: str) -> str:
     )
 
 
+def released_build_date(source_root: Path, container: str, version: str) -> str | None:
+    """Return the build date the release metadata published for this version."""
+    validate_version(version)
+    releases = source_root / "releases"
+    release = releases / container / f"{version}.json"
+    if not release.resolve().is_relative_to(releases.resolve()):
+        raise ValueError(f"Invalid container name: {container!r}")
+    if not release.is_file():
+        return None
+    try:
+        apps = json.loads(release.read_text(encoding="utf-8"))["apps"]
+        build_date = str(apps[f"{container} {version}"]["version"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return build_date if BUILD_DATE_PATTERN.fullmatch(build_date) else None
+
+
+def dated_image_tag(contents: str) -> str | None:
+    """Return the build-date tag a params.sh image reference pins, if any."""
+    match = IMAGE_ASSIGNMENT_PATTERN.search(contents)
+    if match is None:
+        return None
+    _, separator, tag = match.group("image").rpartition(":")
+    if not separator or not BUILD_DATE_PATTERN.fullmatch(tag):
+        return None
+    return tag
+
+
+def update_params_image_tag(contents: str, build_date: str) -> str:
+    """Point a dated image reference at the build published for this release."""
+    if not BUILD_DATE_PATTERN.fullmatch(build_date):
+        raise ValueError(f"Invalid build date: {build_date!r}")
+    if dated_image_tag(contents) is None:
+        return contents
+    match = IMAGE_ASSIGNMENT_PATTERN.search(contents)
+    assert match is not None
+    repository = match.group("image").rpartition(":")[0]
+    return (
+        contents[: match.start("image")]
+        + f"{repository}:{build_date}"
+        + contents[match.end("image") :]
+    )
+
+
 def prepare_recipe(
     source_root: Path,
     openrecon_root: Path,
@@ -206,6 +255,25 @@ def prepare_recipe(
 
     params = target_params.read_text(encoding="utf-8")
     updated_params = update_params_version(params, version)
+    pinned_tag = dated_image_tag(updated_params)
+    if pinned_tag is not None:
+        build_date = released_build_date(
+            source_root, openrecon_target.container, version
+        )
+        if build_date is None:
+            notes.append(
+                f"- Leave the `{pinned_tag}` image tag in "
+                f"`{(relative_recipe / 'params.sh').as_posix()}` because no release "
+                f"metadata was found for {openrecon_target.container} {version}; "
+                "confirm that image exists before merging"
+            )
+        else:
+            updated_params = update_params_image_tag(updated_params, build_date)
+            if build_date != pinned_tag:
+                notes.append(
+                    f"- Repoint `{(relative_recipe / 'params.sh').as_posix()}` from "
+                    f"image tag `{pinned_tag}` to the published `{build_date}`"
+                )
     if updated_params != params:
         target_params.write_text(updated_params, encoding="utf-8")
 

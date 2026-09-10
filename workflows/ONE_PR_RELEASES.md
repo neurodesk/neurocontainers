@@ -44,6 +44,10 @@ artifacts after merge. They no longer create a second release-metadata PR.
    opens or reuses an OpenRecon metadata PR after the release metadata push. If
    the version, label, and README are unchanged, it dispatches the OpenRecon
    build directly so same-version container rebuilds still propagate.
+   An OpenRecon `params.sh` that pins a dated image tag is repointed at the build
+   date this release published, so the OpenRecon build pulls the image the
+   promoter just pushed. When no release metadata resolves that date, the tag is
+   left alone and the PR body says so.
 
 Manual builds remain available as a recovery path. The old push-to-main
 `auto-build` workflow is removed so recipe changes cannot start an untested
