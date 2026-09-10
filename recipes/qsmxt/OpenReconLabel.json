@@ -82,7 +82,7 @@
       "label": { "en": "Send original" },
       "type": "boolean",
       "information": { "en": "Send original magnitude and phase image series before derived QSMxT output." },
-      "default": false
+      "default": true
     },
     {
       "id": "pipelinepreset",

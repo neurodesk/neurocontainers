@@ -344,6 +344,7 @@ def test_openrecon_defaults_select_hdqsm_romeo_and_ismv():
     assert settings["mask_fill_holes"] is True
     assert settings["mask_erode"] == 0
     assert settings["input_series"] == "distortion-corrected"
+    assert settings["send_original"] is True
 
 
 def test_openrecon_input_series_rejects_unknown_value():
@@ -600,6 +601,7 @@ def test_openrecon_label_exposes_processing_defaults():
     assert parameters["maskinginput"]["default"] == "magnitude"
     assert parameters["betfractionalintensity"]["default"] == 0.5
     assert parameters["maskcleanup"]["default"] == "close-fill"
+    assert parameters["sendoriginal"]["default"] is True
     assert "voxelsizemm" not in parameters
 
 
@@ -1085,7 +1087,13 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
 
     qsmxt.process(
         connection,
-        {"parameters": {"qsmxtbinary": str(fake_qsmxt), "echotimesms": "10,20"}},
+        {
+            "parameters": {
+                "qsmxtbinary": str(fake_qsmxt),
+                "echotimesms": "10,20",
+                "sendoriginal": "false",
+            }
+        },
         FakeMetadata(),
     )
 
@@ -1169,6 +1177,7 @@ def test_process_both_input_series_runs_separately_and_returns_unique_outputs(
                 "qsmxtbinary": str(fake_qsmxt),
                 "echotimesms": "10,20",
                 "inputseries": "both",
+                "sendoriginal": "false",
             }
         },
         FakeMetadata(),
@@ -1207,7 +1216,7 @@ def test_process_returns_scanner_packed_volume_as_one_mm_slices(tmp_path, monkey
 
     qsmxt.process(
         connection,
-        {"parameters": {"qsmxtbinary": str(fake_qsmxt)}},
+        {"parameters": {"qsmxtbinary": str(fake_qsmxt), "sendoriginal": "false"}},
         FakeMetadata(),
     )
 
@@ -1434,7 +1443,6 @@ def test_process_sends_restamped_originals_before_derived_output(tmp_path, monke
             "parameters": {
                 "qsmxtbinary": str(fake_qsmxt),
                 "echotimesms": "10,20",
-                "sendoriginal": "true",
             }
         },
         FakeMetadata(),

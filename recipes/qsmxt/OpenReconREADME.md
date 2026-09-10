@@ -33,7 +33,9 @@ debugging, but they are not shown in the scanner UI. Voxel geometry comes from
 the MRD image stream.
 
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
-QSMxT derivatives that exist after the run.
+QSMxT derivatives that exist after the run. The original magnitude and phase
+series are sent back before the derived output by default; disable
+`sendoriginal` when only the derived maps should reach the scanner database.
 
 Derived outputs are converted to unsigned 12-bit display values in the valid
 `0..4095` range. Binary masks use `0` and `4095`. QSM storage scaling preserves
@@ -82,9 +84,9 @@ The OpenRecon wrapper also supplies the output directory and resource settings.
 Its custom-pipeline defaults are ROMEO phase unwrapping, iSMV background-field
 removal, HD-QSM inversion, and BET magnitude masking. BET uses a 0.5 fractional
 intensity threshold, closing radius 1, and automatic hole filling. This differs
-from the upstream QSMxT inversion default, which is RTS. Only the QSM map is
-returned by default. Enable `sendoriginal` only when the original magnitude and
-phase series are needed for debugging.
+from the upstream QSMxT inversion default, which is RTS. The QSM map is the only
+derived output returned by default, and `sendoriginal` is on so the source
+magnitude and phase series are stored alongside it.
 
 The default prioritizes speed while retaining good similarity in the QSM-CI
 in silico 2019 benchmark: ROMEO + iSMV + HD-QSM achieved xSIM 0.361 in about
@@ -357,7 +359,7 @@ An [example Siemens 3 T GRE protocol
 is included as a starting point. It acquires five echoes at 5, 10, 15, 20, and
 25 ms. Its saved OpenRecon settings use ROMEO, PDF, and RTS with robust-threshold
 masking, return the QSM map, and also send the original magnitude and phase
-series. These saved settings differ from the current OpenRecon defaults above.
+series. Their algorithm choices differ from the current OpenRecon defaults above.
 Review all acquisition and safety settings on the target scanner before use.
 
 ## UI parameters
@@ -367,7 +369,7 @@ Review all acquisition and safety settings on the target scanner before use.
 | config | `config` | choice | `qsmxt` | Selects the MRD server configuration. |
 | Input images | `inputseries` | choice | `distortion-corrected` | Processes corrected, ND, or both magnitude/phase pairs. |
 | Output maps | `sendoutputs` | choice | `qsm` | Selects which QSMxT derivatives are sent back. |
-| Send original | `sendoriginal` | boolean | `false` | Sends original magnitude and phase image series before derived outputs. |
+| Send original | `sendoriginal` | boolean | `true` | Sends original magnitude and phase image series before derived outputs. |
 | Pipeline preset | `pipelinepreset` | choice | `custom` | Selects a three-stage combination, a complete-method preset, or custom controls. |
 | QSM algorithm | `qsmalgorithm` | choice | `hdqsm` | Inversion algorithm for the custom pipeline. |
 | Unwrap | `unwrappingalgorithm` | choice | `romeo` | Phase-unwrapping algorithm for the custom pipeline. |

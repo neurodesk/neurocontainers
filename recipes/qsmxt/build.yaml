@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.16.0
+version: 9.17.0
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
@@ -13,7 +13,7 @@ variables:
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
   openrecon_ismrmrd_version: "1.14.2"
-  upstream_version: "9.16.0"
+  upstream_version: "9.17.0"
   model_revision: e7c66cece159dc163885afd6165f582769dc5f29
   qsmxt_tarball:
     try:
