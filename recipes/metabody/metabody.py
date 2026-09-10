@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 import traceback
+from dataclasses import dataclass
 
 import ismrmrd
 import matplotlib.pyplot as plt
@@ -18,7 +19,105 @@ debugFolder = "/tmp/share/debug"
 ORIGINAL_SERIES_INDEX = 99
 PROCESSED_SERIES_INDEX = ORIGINAL_SERIES_INDEX + 1
 RGB_IMAGE_TYPE = 6
+SCANNER_LUT_OUTPUT = "scanner_lut"
+GRAYSCALE_OUTPUT = "none"
+SCANNER_LUT_FILENAME = "MicroDeltaHotMetal.pal"
 DEFAULT_REPETITION_TIME_SECONDS = 1.0
+
+
+@dataclass(frozen=True)
+class EmbeddedRgbOutput:
+    colormap: str
+
+
+@dataclass(frozen=True)
+class ScannerPaletteOutput:
+    pass
+
+
+@dataclass(frozen=True)
+class GrayscaleOutput:
+    pass
+
+
+@dataclass(frozen=True)
+class OutputEncoding:
+    data: np.ndarray
+    image_type: int
+    processing_history: tuple[str, ...]
+    sequence_description: str
+    window_center: str | None = None
+    window_width: str | None = None
+    internal_send: int | None = None
+    lut_file_name: str | None = None
+
+
+def resolve_output_spec(config):
+    value = mrdhelper.get_json_config_param(
+        config,
+        "colormap",
+        default="seismic",
+    )
+    if value == SCANNER_LUT_OUTPUT:
+        return ScannerPaletteOutput()
+    if value == GRAYSCALE_OUTPUT:
+        return GrayscaleOutput()
+    if not isinstance(value, str):
+        raise ValueError("Output appearance must be a string")
+
+    try:
+        plt.get_cmap(value)
+    except ValueError as exc:
+        raise ValueError(f"Unsupported output appearance: {value!r}") from exc
+    return EmbeddedRgbOutput(value)
+
+
+def encode_output_data(data, output_spec, max_value):
+    scalar_data = data.astype(np.float64)
+    scalar_data *= max_value / scalar_data.max()
+    scalar_data = np.around(scalar_data)
+
+    if isinstance(output_spec, EmbeddedRgbOutput):
+        logging.info(
+            'Converting data into embedded RGB using colormap "%s"',
+            output_spec.colormap,
+        )
+        normalized_data = scalar_data.astype(np.float64)
+        normalized_data -= normalized_data.min()
+        normalized_data *= 1 / normalized_data.max()
+        rgb_data = plt.get_cmap(output_spec.colormap)(normalized_data)
+        rgb_data = rgb_data[..., 0:-1]
+        rgb_data = rgb_data.transpose((5, 0, 1, 2, 3, 4))
+        rgb_data *= 255
+        return OutputEncoding(
+            data=rgb_data.astype(np.uint16),
+            image_type=RGB_IMAGE_TYPE,
+            processing_history=("PYTHON", "METABODY", "RGB"),
+            sequence_description="FIRE_RGB",
+            internal_send=1,
+        )
+
+    scalar_data = scalar_data.astype(np.int16)
+    if isinstance(output_spec, ScannerPaletteOutput):
+        logging.info("Using the scanner hot-metal palette")
+        return OutputEncoding(
+            data=scalar_data,
+            image_type=ismrmrd.IMTYPE_MAGNITUDE,
+            processing_history=("PYTHON", "METABODY", "LUT"),
+            sequence_description="FIRE_LUT",
+            window_center=str((max_value + 1) / 2),
+            window_width=str(max_value + 1),
+            lut_file_name=SCANNER_LUT_FILENAME,
+        )
+
+    return OutputEncoding(
+        data=scalar_data,
+        image_type=ismrmrd.IMTYPE_MAGNITUDE,
+        processing_history=("PYTHON", "METABODY"),
+        sequence_description="OpenRecon",
+        window_center=str((max_value + 1) / 2),
+        window_width=str(max_value + 1),
+    )
 
 
 def get_repetition_time_seconds(image_meta):
@@ -193,10 +292,7 @@ def process_image(images, connection, config, metadata):
     send_originals = mrdhelper.get_json_config_param(
         config, 'sendOriginal', default=True
     )
-    colormap = mrdhelper.get_json_config_param(
-        config, 'colormap', default='seismic'
-    )
-    do_rgb = colormap != 'none'
+    output_spec = resolve_output_spec(config)
 
     # Note: The MRD Image class stores data as [cha z y x]
     # Extract image data into a 5D array of size [img cha z y x]
@@ -347,37 +443,8 @@ def process_image(images, connection, config, metadata):
     #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
     maxVal = 2**BitsStored - 1
 
-    # Normalize data
-    data = data.astype(np.float64)
-    data *= maxVal/data.max()
-    data = np.around(data)
-
-    if do_rgb:
-        logging.info(f'Converting data into RGB using colormap "{colormap}"')
-
-        # Normalize to (0.0, 1.0) as expected by get_cmap()
-        data = data.astype(np.float64)
-        data -= data.min()
-        data *= 1/data.max()
-
-        # Apply colormap
-        cmap = plt.get_cmap(colormap)
-        rgb = cmap(data)
-
-        # Remove alpha channel. The input shape is
-        # [cha y x rep slice 4] where the last dimension is RGBA.
-        # `cha` can be replaced by RGB and become `z` (see the required
-        # shape when creating the ISMRMRD Image with `cha` below).
-        rgb = rgb[...,0:-1]
-        rgb = rgb.transpose((5, 0, 1, 2, 3, 4))
-        # rgb = rgb.squeeze()
-
-        # MRD RGB images must be uint16 in range (0, 255)
-        rgb *= 255
-        data = rgb.astype(np.uint16)
-        # np.save(debugFolder + "/" + "imgRGB.npy", data)
-    else:
-        data = data.astype(np.int16)
+    output_encoding = encode_output_data(data, output_spec, maxVal)
+    data = output_encoding.data
 
     # Re-slice image data back into 2D images.
     # Preallocate outputs for speed and efficiency.
@@ -406,9 +473,6 @@ def process_image(images, connection, config, metadata):
             # with this option, can take input as: [cha z y x], [z y x], or [y x]
             img_data = data[..., stat, slice_position]
             # logging.debug(f'Output image data shape for slice {slc} and stat {stat}: {img_data.shape}')
-            # if do_rgb:
-            #     # Make sure RGB takes place of 'cha'.
-            #     img_data = np.expand_dims(img_data, axis=1)
             imagesOut[out_idx] = ismrmrd.Image.from_array(img_data, transpose=False)
 
             # Create a copy of the original fixed header and update the data_type
@@ -421,41 +485,43 @@ def process_image(images, connection, config, metadata):
             oldHeader.slice = slice_id
             oldHeader.repetition = stat
             oldHeader.image_index = out_idx + 1
-            if do_rgb:
-                # Set RGB parameters
-                # To be defined as ismrmrd.IMTYPE_RGB
-                oldHeader.image_type = RGB_IMAGE_TYPE
-                # RGB "channels".  This is set by from_array, but need to
-                # be explicit as we're copying the old header instead.
-                # Otherwise the data itself gets amended.
-                oldHeader.channels = 3
+            oldHeader.image_type = output_encoding.image_type
+            # from_array() sets the channel count, but setHead() replaces that
+            # header with this geometry copy.
+            oldHeader.channels = imagesOut[out_idx].channels
             imagesOut[out_idx].setHead(oldHeader)
 
             # Stat maps are first in the output
             img_comment = stat_labels[stat] if stat <= len(stat_labels)-1 else 'fMRI'
             # Create a copy of the original ISMRMRD Meta attributes and update
             tmpMeta = ismrmrd.Meta.deserialize(meta[header_index].serialize())
-            tmpMeta['DataRole']                       = 'Image'
-            tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'METABODY']
-            tmpMeta['WindowCenter']                   = str((maxVal+1)/2)
-            tmpMeta['WindowWidth']                    = str((maxVal+1))
-            tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
-            tmpMeta['Keep_image_geometry']            = 1
-            tmpMeta['ImageComments']                  = img_comment
+            for key in (
+                'InternalSend',
+                'LUTFileName',
+                'WindowCenter',
+                'WindowWidth',
+            ):
+                if tmpMeta.get(key) is not None:
+                    del tmpMeta[key]
 
-            # Example for setting RGB
-            if do_rgb:
-                tmpMeta['SequenceDescriptionAdditional']  = 'FIRE_RGB'
-                tmpMeta['ImageProcessingHistory'].append('RGB')
+            tmpMeta['DataRole'] = 'Image'
+            tmpMeta['ImageProcessingHistory'] = list(
+                output_encoding.processing_history
+            )
+            tmpMeta['SequenceDescriptionAdditional'] = (
+                output_encoding.sequence_description
+            )
+            tmpMeta['Keep_image_geometry'] = 1
+            tmpMeta['ImageComments'] = img_comment
 
-                # RGB images have no windowing
-                del tmpMeta['WindowCenter']
-                del tmpMeta['WindowWidth']
-
-                # RGB images shouldn't undergo further processing, e.g. orientation or distortion correction
-                tmpMeta['InternalSend'] = 1
-
-                tmpMeta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
+            if output_encoding.window_center is not None:
+                tmpMeta['WindowCenter'] = output_encoding.window_center
+            if output_encoding.window_width is not None:
+                tmpMeta['WindowWidth'] = output_encoding.window_width
+            if output_encoding.internal_send is not None:
+                tmpMeta['InternalSend'] = output_encoding.internal_send
+            if output_encoding.lut_file_name is not None:
+                tmpMeta['LUTFileName'] = output_encoding.lut_file_name
 
             # Add image orientation directions to MetaAttributes if not already present
             if tmpMeta.get('ImageRowDir') is None:
