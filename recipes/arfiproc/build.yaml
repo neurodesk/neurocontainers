@@ -1,5 +1,5 @@
 name: arfiproc
-version: 1.0.0
+version: "1.0.0.post1"
 architectures:
     - x86_64
     - aarch64
@@ -14,8 +14,8 @@ variables:
   openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
-  openrecon_ismrmrd_version: "1.14.2"
-  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+  openrecon_ismrmrd_version: "1.15.0"
+  base_image_digest: "sha256:829f6df217bcbae2b371026e81711d1a787c61b2967ad09d015063663ebafbf7"
 
 auto_update:
   method: sources

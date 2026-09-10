@@ -2,7 +2,7 @@
 # Focused verification for the shipped OpenRecon runtime and module import path.
 
 name: arfiproc
-version: 1.0.0
+version: "1.0.0.post1"
 
 test_data:
   output_dir: test_output
