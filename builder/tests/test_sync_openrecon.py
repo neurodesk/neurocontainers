@@ -264,3 +264,45 @@ def test_unchanged_metadata_dispatches_openrecon_rebuild(
         "-f",
         'applications=["demo"]',
     ] in commands
+
+
+# Docker rejects "+", so build metadata cannot carry the post-release marker.
+DOCKER_TAG_PATTERN = __import__("re").compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
+
+
+@pytest.mark.parametrize("container_version", ["1.6.0.post1", "1.0.0.post1", "2.9.post2"])
+def test_post_release_versions_stay_schema_valid_and_taggable(container_version):
+    # The updater rebuilds a container as X.Y.Z.postN when only its
+    # dependencies moved, and OpenRecon publishes that version both into a
+    # schema-checked label and into a Docker tag.
+    metadata_version = sync_openrecon.openrecon_version(container_version)
+
+    assert sync_openrecon.OPENRECON_SEMVER_PATTERN.fullmatch(metadata_version)
+    assert DOCKER_TAG_PATTERN.fullmatch(f"V{metadata_version}".lower())
+    assert metadata_version != container_version
+
+
+def test_post_release_container_version_is_kept_for_docker_operations(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    (target / "params.sh").write_text(
+        "#!/bin/bash\n"
+        "export toolName=demo\n"
+        "export version=1.6.0\n"
+        "export baseDockerImage=vnmd/${toolName}_${version}\n",
+        encoding="utf-8",
+    )
+
+    prepared = sync_openrecon.prepare_recipe(
+        source_root, openrecon_root, "demo", "1.6.0.post1"
+    )
+
+    assert prepared is not None
+    params = (target / "params.sh").read_text(encoding="utf-8")
+    assert "export version=1.6.0.post1\n" in params
+    assert "export openrecon_version=1.6.0-post1\n" in params
