@@ -6,7 +6,7 @@
 # the ARM64 port is complete.
 
 name: apptainer
-version: 1.4.4
+version: 1.5.3
 
 setup:
   script: |
