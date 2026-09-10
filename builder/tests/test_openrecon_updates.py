@@ -88,3 +88,28 @@ def test_macro_fallback_matches_migration_baseline(shared_recipe):
     (path / "build.yaml").write_text(yaml.safe_dump(recipe))
     generated = render_dockerfile(compile_recipe(path, architecture="x86_64", include_dirs=default_config().include_dirs).definition)
     assert all(value in generated for value in OPENRECON_PINS.values())
+
+
+@pytest.mark.parametrize(
+    "ismrmrd_version,requirement",
+    [
+        ("1.9.8", '"xsdata>=22.12,<24.4"'),
+        ("1.14.2", '"xsdata>=22.12,<24.4"'),
+        ("1.15.0", '"xsdata>=26.2"'),
+    ],
+)
+def test_shared_xsdata_requirement_follows_pinned_ismrmrd(
+    shared_recipe, ismrmrd_version, requirement
+):
+    # ismrmrd 1.14.x reads xsdata APIs that 24.4 removed while 1.15.0 requires
+    # 26.2+, so a single hardcoded range makes pip resolution impossible for
+    # every recipe on the other side of that boundary.
+    path, recipe = shared_recipe
+    recipe["variables"]["openrecon_ismrmrd_version"] = ismrmrd_version
+    (path / "build.yaml").write_text(yaml.safe_dump(recipe, sort_keys=False))
+    generated = render_dockerfile(
+        compile_recipe(
+            path, architecture="x86_64", include_dirs=default_config().include_dirs
+        ).definition
+    )
+    assert f"ismrmrd=={ismrmrd_version} {requirement}" in generated
