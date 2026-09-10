@@ -8,21 +8,34 @@ copyright:
 architectures:
   - x86_64
 
+variables:
+  brainsuite_version: 23a
+
 auto_update:
-  method: dockerhub
-  repo: bids/brainsuite
-  version_regex: ^v(?P<version>[0-9]+[a-z])$
-  version_scheme: year_letter
+  method: sources
+  sources:
+    - id: brainsuite
+      method: dockerhub
+      repo: bids/brainsuite
+      version_regex: ^v(?P<version>[0-9]+[a-z])$
+      version_scheme: year_letter
+      target:
+        variable: brainsuite_version
+        fulltest_variable: brainsuite_version
 
 build:
   kind: neurodocker
-  base-image: bids/brainsuite:v{{ context.version }}
+  base-image: bids/brainsuite:v{{ context.brainsuite_version }}
   pkg-manager: apt
 
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
-        PATH: /BrainSuite:/opt/BrainSuite{{ context.version }}/bin:/opt/BrainSuite{{ context.version }}/svreg/bin:/opt/BrainSuite{{ context.version }}/bdp:/opt/BrainSuite{{ context.version }}/bfp:/BrainSuite/QC:$PATH
+        PATH: /BrainSuite:/opt/BrainSuite{{ context.brainsuite_version }}/bin:/opt/BrainSuite{{ context.brainsuite_version }}/svreg/bin:/opt/BrainSuite{{ context.brainsuite_version }}/bdp:/opt/BrainSuite{{ context.brainsuite_version }}/bfp:/BrainSuite/QC:$PATH
+
+    - environment:
+        LD_LIBRARY_PATH: "${BrainSuiteMCR}/runtime/glnxa64:${BrainSuiteMCR}/bin/glnxa64:${BrainSuiteMCR}/sys/os/glnxa64:${BrainSuiteMCR}/sys/opengl/lib/glnxa64:$LD_LIBRARY_PATH"
+        XAPPLRESDIR: "${BrainSuiteMCR}/X11/app-defaults"
 
     - entrypoint: bash
 
@@ -32,9 +45,9 @@ deploy:
   path:
     - /BrainSuite
     - /BrainSuite/QC
-    - /opt/BrainSuite{{ context.version }}/bin
-    - /opt/BrainSuite{{ context.version }}/svreg/bin
-    - /opt/BrainSuite{{ context.version }}/bdp
+    - /opt/BrainSuite{{ context.brainsuite_version }}/bin
+    - /opt/BrainSuite{{ context.brainsuite_version }}/svreg/bin
+    - /opt/BrainSuite{{ context.brainsuite_version }}/bdp
 
 categories:
   - bids apps
@@ -45,7 +58,7 @@ categories:
 
 structured_readme:
   description: |
-    BrainSuite BIDS App packages BrainSuite workflows for anatomical, diffusion, and functional MRI processing in the BIDS App framework. This recipe uses the public BrainSuite v{{ context.version }} BIDS App image.
+    BrainSuite BIDS App packages BrainSuite workflows for anatomical, diffusion, and functional MRI processing in the BIDS App framework. This recipe uses the public BrainSuite v{{ context.brainsuite_version }} BIDS App image.
   example: |
     run.py /path/to/bids /path/to/output participant --stages CSE
 
@@ -58,7 +71,7 @@ readme: |
   ----------------------------------
   ## brainsuite/{{ context.version }} ##
 
-  BrainSuite BIDS App packages BrainSuite workflows for anatomical, diffusion, and functional MRI processing in the BIDS App framework. This recipe uses the public BrainSuite v{{ context.version }} BIDS App image.
+  BrainSuite BIDS App packages BrainSuite workflows for anatomical, diffusion, and functional MRI processing in the BIDS App framework. This recipe uses the public BrainSuite v{{ context.brainsuite_version }} BIDS App image.
 
   Example:
   ```
