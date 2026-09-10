@@ -138,7 +138,14 @@ def test_detect_from_git_preserves_metadata_only_release(tmp_path: Path, monkeyp
 
     path = recipe_dir / "build.yaml"
     recipe = yaml.safe_load(path.read_text())
-    recipe.update(readme="Updated help", categories=["workflows"], auto_update={})
+    recipe.update(
+        readme="Updated help",
+        categories=["workflows"],
+        auto_update={},
+        copyright=[{"license": "MIT", "url": "https://example.com/license"}],
+        icon="data:image/png;base64,aGVsbG8=",
+        draft=True,
+    )
     path.write_text(yaml.safe_dump(recipe) + "# Clarified documentation\n")
     git("commit", "-am", "Update documentation and catalog")
     assert one_pr_release.detect_recipes(base, "HEAD") == []

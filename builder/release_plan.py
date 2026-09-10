@@ -36,8 +36,9 @@ TOP_LEVEL_FIELD_TIERS: dict[str, frozenset[str]] = {
     "epoch": frozenset({"candidate"}),
 }
 
-# Other roles remain candidate-required until their publication paths exist.
-ENABLED_SOURCE_ONLY_FIELDS = frozenset({"auto_update"})
+# Fields outside these proven non-image groups remain candidate-required.
+ENABLED_SOURCE_ONLY_FIELDS = frozenset({"auto_update", "copyright", "draft"})
+ENABLED_CATALOG_FIELDS = frozenset({"icon"})
 DOCUMENTATION_FIELDS = frozenset({"readme", "readme_url", "structured_readme"})
 KNOWN_NON_IMAGE_FILES = frozenset({"fulltest.yaml"})
 
@@ -220,7 +221,9 @@ def plan_recipe_changes(
                 candidate_reasons.append("new-recipe")
             else:
                 changed_fields = _changed_top_level_fields(base, head)
-                non_image_fields = set(ENABLED_SOURCE_ONLY_FIELDS)
+                non_image_fields = set(
+                    ENABLED_SOURCE_ONLY_FIELDS | ENABLED_CATALOG_FIELDS
+                )
                 for field in DOCUMENTATION_FIELDS:
                     if all(
                         _passive_documentation(data.get(field))
@@ -234,8 +237,12 @@ def plan_recipe_changes(
                     candidate_reasons.append("unclassified-field")
                 elif not changed_fields:
                     source_reasons.append("yaml-only-change")
-                elif changed_fields <= ENABLED_SOURCE_ONLY_FIELDS:
+                elif changed_fields == {"auto_update"}:
                     source_reasons.append("auto-update-only")
+                elif changed_fields <= ENABLED_SOURCE_ONLY_FIELDS:
+                    source_reasons.append("source-metadata-only")
+                elif changed_fields <= ENABLED_CATALOG_FIELDS:
+                    source_reasons.append("catalog-only")
                 elif changed_fields <= non_image_fields:
                     source_reasons.append("documentation-or-catalog-only")
                 else:

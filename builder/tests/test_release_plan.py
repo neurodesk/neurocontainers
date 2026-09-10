@@ -45,6 +45,27 @@ def test_auto_update_only_change_is_source_only() -> None:
     assert plan.decisions[0].reasons == ("auto-update-only",)
 
 
+@pytest.mark.parametrize(
+    "updates,reason",
+    [
+        (
+            {"copyright": [{"license": "MIT", "url": "https://example.com/license"}]},
+            "source-metadata-only",
+        ),
+        ({"icon": "data:image/png;base64,aGVsbG8="}, "catalog-only"),
+        ({"draft": True}, "source-metadata-only"),
+    ],
+)
+def test_non_image_recipe_metadata_is_source_only(updates, reason) -> None:
+    plan = plan_recipe_changes(
+        ["recipes/demo/build.yaml"], {"demo": recipe()}, {"demo": recipe(**updates)}
+    )
+
+    assert plan.candidate_recipes == []
+    assert plan.source_only_recipes == ["demo"]
+    assert plan.decisions[0].reasons == (reason,)
+
+
 def test_semantically_unchanged_yaml_is_source_only() -> None:
     data = recipe()
 
