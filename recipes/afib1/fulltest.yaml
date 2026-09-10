@@ -1,5 +1,5 @@
 name: afib1
-version: 1.6.0
+version: "1.6.0.post1"
 
 test_data:
   output_dir: test_output
