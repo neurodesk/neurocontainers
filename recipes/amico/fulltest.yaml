@@ -1,5 +1,5 @@
 # AMICO container test suite
-# Tests for AMICO v2.1.0 - Accelerated Microstructure Imaging via Convex Optimization
+# Tests for AMICO v2.1.1 - Accelerated Microstructure Imaging via Convex Optimization
 #
 # AMICO is a Python framework for fitting microstructure models to diffusion MRI data.
 # It implements several diffusion models including:
@@ -28,8 +28,7 @@
 # utility functions, and synthetic signal generation.
 
 name: amico
-version: "2.1.0.post2"
-upstream_version: "2.1.1"
+version: "2.1.1"
 
 required_files:
   - dataset: ds000001
@@ -72,7 +71,7 @@ tests:
   - name: AMICO version check
     description: Verify AMICO version
     command: python -c "import amico; print('AMICO version:', amico.__version__)"
-    expected_output_contains: "${upstream_version}"
+    expected_output_contains: "${version}"
 
   - name: AMICO README check
     description: Verify AMICO README contains expected information
