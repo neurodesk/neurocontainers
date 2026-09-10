@@ -1,7 +1,7 @@
 {
   "apps": {
     "fastsurfer 2.5.4": {
-      "version": "20260909",
+      "version": "20260910",
       "exec": "",
       "apptainer_args": []
     }
