@@ -38,9 +38,14 @@ class Session:
         return Response(self.data, url)
 
 
-def slicer_lists(monkeypatch, *, extension_revision="34045", extensions=1):
-    package = {"_id": "1" * 24, "meta": {"app_id": "0" * 24, "version": "5.10.0", "pre_release": False,
-               "revision": "34045", "os": "linux", "arch": "amd64"}}
+def slicer_package(version, revision, pre_release=False):
+    return {"_id": "1" * 24, "meta": {"app_id": "0" * 24, "version": version, "pre_release": pre_release,
+            "revision": revision, "os": "linux", "arch": "amd64"}}
+
+
+def slicer_lists(monkeypatch, *, extension_revision="34045", extensions=1, query_revision="34045",
+                 releases=("5.9.0", "5.10.0", "5.11.0rc1", "nightly"), packages=None):
+    packages = packages if packages is not None else {"5.10.0": [slicer_package("5.10.0", "34045")]}
     extension = {"_id": "2" * 24, "meta": {"app_id": "0" * 24, "app_revision": extension_revision,
                  "baseName": "MONAILabel", "os": "linux", "arch": "amd64"}}
     calls = []
@@ -48,11 +53,10 @@ def slicer_lists(monkeypatch, *, extension_revision="34045", extensions=1):
     def listing(session, url, **params):
         calls.append((url, params))
         if url.endswith("/release"):
-            return [{"name": "5.9.0"}, {"name": "5.10.0"}, {"name": "5.11.0rc1"}, {"name": "nightly"}]
+            return [{"name": name} for name in releases]
         if url.endswith("/package"):
-            assert params["release_id_or_name"] == "5.10.0"
-            return [package]
-        assert params["app_revision"] == "34045"
+            return packages[params["release_id_or_name"]]
+        assert params["app_revision"] == query_revision
         return [extension] * extensions
 
     monkeypatch.setattr(bundles, "_json_list", listing)
@@ -70,6 +74,51 @@ def test_slicer_resolves_application_extension_and_abi_together(monkeypatch):
     assert result.metadata["extension_item"] == "2" * 24
     assert result.metadata["extension_sha256"] == "a" * 64
     assert len(downloads) == 2
+
+
+def test_slicer_falls_back_to_the_newest_promoted_release(monkeypatch):
+    # Kitware publishes a stable release name before its Linux package exists and again
+    # before promoting that package, so the newest promoted build has to win rather than
+    # failing the whole update run.
+    calls = slicer_lists(
+        monkeypatch,
+        query_revision="34627",
+        extension_revision="34627",
+        releases=("5.10.0", "5.12.3", "5.12.4", "5.12.5"),
+        packages={"5.12.5": [],
+                  "5.12.4": [slicer_package("5.12.4", "34645", pre_release=True)],
+                  "5.12.3": [slicer_package("5.12.3", "34627")]},
+    )
+    monkeypatch.setattr(bundles, "_download", lambda session, url, **kwargs: ("a" * 64, 42))
+    result = bundles._slicer({"app_id": "0" * 24, "extension": "MONAILabel"}, None)
+    assert result.version == "5.12.3"
+    assert result.metadata["revision"] == "34627"
+    assert result.metadata["abi"] == "5.12"
+    assert [params["release_id_or_name"] for url, params in calls
+            if url.endswith("/package")] == ["5.12.5", "5.12.4", "5.12.3"]
+
+
+def test_slicer_refuses_an_ambiguous_package_listing(monkeypatch):
+    # Skipping empty listings must not also wave through a release publishing two Linux builds.
+    slicer_lists(
+        monkeypatch,
+        releases=("5.12.4",),
+        packages={"5.12.4": [slicer_package("5.12.4", "34645"), slicer_package("5.12.4", "34646")]},
+    )
+    monkeypatch.setattr(bundles, "_download", lambda *args, **kwargs: pytest.fail("ambiguous bundle downloaded"))
+    with pytest.raises(ValueError, match="expected one Slicer Linux package"):
+        bundles._slicer({"app_id": "0" * 24, "extension": "MONAILabel"}, None)
+
+
+def test_slicer_refuses_a_listing_with_no_promoted_release(monkeypatch):
+    slicer_lists(
+        monkeypatch,
+        releases=("5.12.4",),
+        packages={"5.12.4": [slicer_package("5.12.4", "34645", pre_release=True)]},
+    )
+    monkeypatch.setattr(bundles, "_download", lambda *args, **kwargs: pytest.fail("pre-release bundle downloaded"))
+    with pytest.raises(ValueError, match="promoted"):
+        bundles._slicer({"app_id": "0" * 24, "extension": "MONAILabel"}, None)
 
 
 @pytest.mark.parametrize("revision,count", [("99999", 1), ("34045", 0), ("34045", 2)])
