@@ -132,10 +132,20 @@ def _slicer(config: dict, session: requests.Session):
             versions.append((version, name))
     if not versions:
         raise ValueError("Slicer has no published stable release")
-    _, version = max(versions)
-    package = _one(_json_list(session, app_url + "/package", os="linux", arch="amd64",
-                             release_id_or_name=version, limit=0), "Slicer Linux package")
-    meta = package.get("meta", {})
+    # A stable release name can still carry a package Kitware flags as a pre-release while
+    # it finishes promoting that build, so walk down to the newest promoted package instead
+    # of failing the update run on a release upstream has not finished publishing.
+    for _, version in sorted(versions, reverse=True):
+        packages = _json_list(session, app_url + "/package", os="linux", arch="amd64",
+                              release_id_or_name=version, limit=0)
+        if not packages:
+            continue  # Slicer uploads per platform, so a release can predate its Linux build.
+        package = _one(packages, "Slicer Linux package")
+        meta = package.get("meta", {})
+        if meta.get("pre_release") is not True:
+            break
+    else:
+        raise ValueError("Slicer has no promoted stable Linux package")
     revision = str(meta.get("revision", ""))
     if (meta.get("app_id") != config["app_id"] or meta.get("version") != version or meta.get("pre_release") is not False
             or meta.get("os") != "linux" or meta.get("arch") != "amd64" or not revision.isdecimal()):
