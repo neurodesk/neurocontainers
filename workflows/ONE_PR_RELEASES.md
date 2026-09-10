@@ -69,12 +69,13 @@ second build.
 
 The planner reads the base and head `build.yaml` files as YAML data. It does not
 render Jinja or execute any code from the pull request. Changes that affect only
-`auto_update`, documentation (`readme`, `readme_url`, `structured_readme`), literal
-`categories`, semantically unchanged YAML, or `fulltest.yaml` are currently
-classified as source-only: they are validated, but the existing container is
-preserved and no candidate is built or promoted. This is a behavioural release
-projection, not a claim that rebuilding would produce byte-identical images;
-the current image still embeds the raw `build.yaml` and README.
+`auto_update`, `copyright`, `draft`, `icon`, documentation (`readme`, `readme_url`,
+`structured_readme`), literal `categories`, semantically unchanged YAML, or
+`fulltest.yaml` are currently classified as source-only. The workflow validates
+them, but preserves the existing container and builds or promotes no candidate.
+This is a behavioural release projection, not a claim that rebuilding would
+produce byte-identical images; the current image still embeds the raw
+`build.yaml` and README.
 
 Documentation may use simple context substitutions such as
 `{{ context.version }}`. More complex templates remain candidate-required because
