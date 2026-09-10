@@ -58,36 +58,40 @@
     },
     {
       "id": "colormap",
-      "label": { "en": "Colormap name" },
+      "label": { "en": "Output appearance" },
       "type": "choice",
       "values": [
         {
-          "id": "none",
-          "name": { "en": "none" }
+          "id": "scanner_lut",
+          "name": { "en": "Scanner hot metal (most compatible)" }
         },
         {
           "id": "seismic",
-          "name": { "en": "seismic" }
+          "name": { "en": "Seismic (embedded RGB)" }
         },
         {
           "id": "jet",
-          "name": { "en": "jet" }
+          "name": { "en": "Jet (embedded RGB)" }
         },
         {
           "id": "gray",
-          "name": { "en": "gray" }
+          "name": { "en": "Gray (embedded RGB)" }
         },
         {
           "id": "coolwarm",
-          "name": { "en": "coolwarm" }
+          "name": { "en": "Coolwarm (embedded RGB)" }
         },
         {
           "id": "bwr",
-          "name": { "en": "bwr" }
+          "name": { "en": "Blue-white-red (embedded RGB)" }
+        },
+        {
+          "id": "none",
+          "name": { "en": "Grayscale" }
         }
       ],
-      "default": "seismic",
-      "information": { "en": "Matplotlib colormap to use." }
+      "default": "scanner_lut",
+      "information": { "en": "Use the scanner palette, embed a color map in the image, or return grayscale." }
     }
   ]
 }
