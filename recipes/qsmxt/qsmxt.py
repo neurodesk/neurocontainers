@@ -151,6 +151,7 @@ INPUT_SERIES_CHOICES = (
     "both",
 )
 DEFAULT_INPUT_SERIES = DISTORTION_CORRECTED
+DEFAULT_SEND_ORIGINAL = True
 MASK_CLEANUP_PRESETS = {
     "none": {"dilate": 0, "close": 0, "fill_holes": False, "erode": 0},
     "fill": {"dilate": 0, "close": 0, "fill_holes": True, "erode": 0},
@@ -1608,7 +1609,11 @@ def _settings_from_config(config, metadata=None):
         ) from error
     return {
         "input_series": input_series,
-        "send_original": _config_bool(params, "sendoriginal", False),
+        "send_original": _config_bool(
+            params,
+            "sendoriginal",
+            DEFAULT_SEND_ORIGINAL,
+        ),
         "send_outputs": str(params.get("sendoutputs", "qsm") or "qsm"),
         "max_echoes": _config_int(params, "maxechoes", 0),
         "echo_times_ms": _config_text(params, "echotimesms", ""),
