@@ -40,6 +40,9 @@ OPENRECON_SEMVER_PATTERN = re.compile(
     r"(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
 )
 TWO_PART_VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+POST_RELEASE_VERSION_PATTERN = re.compile(
+    r"^(?P<base>(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){1,2})\.post(?P<post>0|[1-9]\d*)$"
+)
 
 
 @dataclass(frozen=True)
@@ -79,6 +82,16 @@ def openrecon_version(version: str) -> str:
         return version
     if TWO_PART_VERSION_PATTERN.fullmatch(version):
         return f"{version}.0"
+    post_release = POST_RELEASE_VERSION_PATTERN.fullmatch(version)
+    if post_release:
+        # The updater rebuilds a container as X.Y.Z.postN when only its
+        # dependencies moved. Carry that as a semver prerelease rather than
+        # +build metadata, because OpenRecon derives a Docker tag from this
+        # version and tags reject "+".
+        base = post_release.group("base")
+        if TWO_PART_VERSION_PATTERN.fullmatch(base):
+            base = f"{base}.0"
+        return f"{base}-post{post_release.group('post')}"
     raise ValueError(
         f"OpenRecon requires a semantic version; cannot normalize {version!r}"
     )
