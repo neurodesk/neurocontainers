@@ -11,6 +11,7 @@ from builder.release_artifact import (
     resolve_release_artifact,
     resolve_suite_container,
 )
+from builder.openrecon_updates import OPENRECON_PINS
 from builder.validation import resolve_fulltest_version
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -429,4 +430,109 @@ def test_repository_fulltests_do_not_hardcode_release_artifacts() -> None:
         "fulltest.yaml must not hardcode a release artifact; remove 'container:' so it "
         "is resolved from releases/<recipe>/<version>.json, or set 'pin_container: true' "
         "when a historical image is genuinely required:\n" + "\n".join(offenders)
+    )
+
+
+# Containers whose release label is deliberately their own, not the tracked
+# software's version: a wrapper or bundle identity, or a base image pinned by
+# date. Adding a recipe here is a statement that `ml <recipe>/<version>` is not
+# meant to name the installed software's version.
+INDEPENDENT_CONTAINER_VERSIONS = {
+    "dicomtools": "bundles dcm2niix under its own 1.x line",
+    "epirecon": "local reconstruction pipeline, tracks a pypi dependency",
+    "esilpd": "local pipeline, tracks an upstream download",
+    "fatsegnet": "1.0.gpu names the variant, not the tracked package",
+    "flames": "local pipeline, tracks a pypi dependency",
+    "lesymap": "tracks a base image pinned by date",
+    "oshyx": "tracks a base image pinned by date",
+    "vesselboost": "local pipeline, tracks the model release",
+}
+
+# Same shape as the amico 2.1.0.post2 mislabel fixed in #3137: a single tracked
+# package whose version the label used to follow and no longer does. These need
+# a relabel decision per container, so the check tolerates them by name rather
+# than passing silently on the whole class.
+KNOWN_LABEL_DRIFT = {
+    "datalad": "labelled 1.3.1, installs the apt package 1.1.5",
+    "gimp": "labelled 2.10.18, installs the apt package 2.10.36",
+    "lstai": "labelled 1.2.0.post1, installs 1.1",
+    "palmettobug": "labelled 0.0.3.post1, installs 0.2.11",
+    "vina": "labelled 1.2.3, installs the apt package 1.2.5",
+}
+
+SHARED_DEPENDENCY_VARIABLES = frozenset(OPENRECON_PINS)
+
+# A commit, digest or listing pins bytes without naming a software version, so
+# a label can never be expected to agree with one.
+UNVERSIONED_SOURCE_METHODS = frozenset(
+    {
+        "artifact_listing",
+        "git_commit",
+        "github_commit",
+        "github_release_asset",
+        "http_digest",
+        "oci_digest",
+    }
+)
+
+
+def tracked_software_source(recipe: dict) -> dict | None:
+    """Return the lone source that names the installed software's version."""
+    policy = recipe.get("auto_update")
+    if not isinstance(policy, dict) or policy.get("method") != "sources":
+        return None
+    candidates = [
+        source
+        for source in policy.get("sources") or []
+        if isinstance(source, dict)
+        and source.get("method") not in UNVERSIONED_SOURCE_METHODS
+        and (source.get("target") or {}).get("variable")
+        not in SHARED_DEPENDENCY_VARIABLES
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def version_cores_agree(label: str, installed: str) -> bool:
+    """Report whether one version's numeric core prefixes the other's."""
+    label_core = re.findall(r"\d+", re.sub(r"\.post\d+$", "", label))
+    installed_core = re.findall(r"\d+", installed)
+    if not label_core or not installed_core:
+        return False
+    return (
+        label_core == installed_core[: len(label_core)]
+        or installed_core == label_core[: len(installed_core)]
+    )
+
+
+def test_single_package_recipes_label_the_software_version_they_install() -> None:
+    """A label that stops following its one package misnames what users load."""
+    offenders = []
+    for build_yaml in sorted((REPO_ROOT / "recipes").glob("*/build.yaml")):
+        recipe_name = build_yaml.parent.name
+        if recipe_name in INDEPENDENT_CONTAINER_VERSIONS or recipe_name in KNOWN_LABEL_DRIFT:
+            continue
+        recipe = yaml.safe_load(build_yaml.read_text(encoding="utf-8")) or {}
+        if not isinstance(recipe, dict):
+            continue
+        source = tracked_software_source(recipe)
+        if source is None:
+            continue
+        variable = (source.get("target") or {}).get("variable")
+        installed = str((recipe.get("variables") or {}).get(variable, ""))
+        label = str(recipe.get("version", ""))
+        if not installed or not label:
+            continue
+        if not version_cores_agree(label, installed):
+            offenders.append(
+                f"{recipe_name}: labelled {label}, installs {installed} "
+                f"(source {source.get('method')} -> {variable})"
+            )
+
+    assert not offenders, (
+        "a recipe that installs one tracked package must label the release with "
+        "that package's version, so `ml <recipe>/<version>` names what it ships. "
+        "Either track the package directly (auto_update.method: pypi, "
+        "github_release, ...) with {{ context.version }} in the install command, "
+        "or record the independent identity in "
+        "INDEPENDENT_CONTAINER_VERSIONS:\n" + "\n".join(offenders)
     )
