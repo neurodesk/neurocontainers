@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "afib1 1.6.0.post1": {
+      "version": "20260910",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction"
+  ]
+}
