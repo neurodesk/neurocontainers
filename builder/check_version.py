@@ -554,6 +554,28 @@ def submit_bump(
     return "opened"
 
 
+# Retries are already exhausted by the time these surface, and a request that never reached
+# upstream says nothing about the recipe. Across 247 recipes a brief outage at any one of them
+# would otherwise fail the whole scheduled run, so they defer to the next run instead.
+TRANSIENT_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+
+def unreachable_upstream(exc: BaseException) -> bool:
+    """Report whether the failure is the network rather than the recipe."""
+    if isinstance(exc, requests.exceptions.HTTPError):
+        response = getattr(exc, "response", None)
+        return response is not None and response.status_code in TRANSIENT_HTTP_STATUSES
+    return isinstance(
+        exc,
+        (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+            requests.exceptions.RetryError,
+            requests.exceptions.ChunkedEncodingError,
+        ),
+    )
+
+
 def write_report(rows, report_path=None):
     if report_path:
         Path(report_path).write_text(json.dumps(rows, indent=2) + "\n")
@@ -690,7 +712,14 @@ def main():
             row["status"] = "available"
             candidates.append((path, data, release, new_version, row, None))
         except Exception as exc:
-            row.update(status="error", detail=f"{type(exc).__name__}: {exc}")
+            detail = f"{type(exc).__name__}: {exc}"
+            if unreachable_upstream(exc):
+                row.update(
+                    status="deferred",
+                    detail=f"Upstream unreachable; retried on the next run. {detail}",
+                )
+            else:
+                row.update(status="error", detail=detail)
         print(f"{row['recipe']}: {row['status']} {row['detail']}", flush=True)
 
     opened = 0
@@ -750,7 +779,14 @@ def main():
             else:
                 row["status"] = f"pr-{result}"
         except Exception as exc:
-            row.update(status="error", detail=f"{type(exc).__name__}: {exc}")
+            detail = f"{type(exc).__name__}: {exc}"
+            if unreachable_upstream(exc):
+                row.update(
+                    status="deferred",
+                    detail=f"Upstream unreachable; retried on the next run. {detail}",
+                )
+            else:
+                row.update(status="error", detail=detail)
     write_report(rows, args.json)
     return int(not rows or any(row["status"] == "error" for row in rows))
 

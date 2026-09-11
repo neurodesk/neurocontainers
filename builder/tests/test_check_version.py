@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import requests
 import yaml
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "check_version.py"
@@ -394,3 +395,41 @@ def test_raw_tag_rewrite_rejects_anchors_and_block_scalars(source):
     text = f"variables:\n  upstream_tag: {source}\nauto_update: {{}}\n"
     with pytest.raises(ValueError, match="plain or quoted scalar"):
         check_version.rewrite_upstream_tag(text, "upstream_tag", "v1.9.6")
+
+
+def raise_and_classify(exc):
+    try:
+        raise exc
+    except Exception as caught:
+        return check_version.unreachable_upstream(caught)
+
+
+def test_unreachable_upstream_defers_the_outages_that_failed_scheduled_runs():
+    # The exact failures that turned whole auto-update runs red while every recipe was fine.
+    zenodo = requests.exceptions.ConnectionError(
+        "HTTPSConnectionPool(host='zenodo.org', port=443): Max retries exceeded"
+    )
+    tgvqsm = requests.exceptions.ConnectTimeout(
+        "HTTPSConnectionPool(host='www.neuroimaging.at', port=443): Max retries exceeded"
+    )
+    assert raise_and_classify(zenodo)
+    assert raise_and_classify(tgvqsm)
+    assert raise_and_classify(requests.exceptions.ReadTimeout("read timed out"))
+    assert raise_and_classify(requests.exceptions.RetryError("too many retries"))
+    assert raise_and_classify(requests.exceptions.ChunkedEncodingError("truncated"))
+
+
+@pytest.mark.parametrize("status,deferred", [(429, True), (503, True), (504, True), (404, False), (403, False)])
+def test_unreachable_upstream_separates_server_outages_from_missing_resources(status, deferred):
+    response = requests.Response()
+    response.status_code = status
+    assert check_version.unreachable_upstream(
+        requests.exceptions.HTTPError(response=response)
+    ) is deferred
+
+
+def test_unreachable_upstream_still_fails_the_run_for_recipe_defects():
+    # The Slicer metadata mismatch must stay an error; only the network gets a pass.
+    assert not raise_and_classify(ValueError("Slicer package release or architecture metadata disagrees"))
+    assert not raise_and_classify(KeyError("upstream_version"))
+    assert not raise_and_classify(requests.exceptions.HTTPError("no response attached"))
