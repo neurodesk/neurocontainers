@@ -18,7 +18,7 @@
 #   - BOLD: Functional MRI (task-balloonanalogrisktask)
 
 name: bidsappbrainsuite
-version: 21a
+version: 23a
 
 required_files:
   - dataset: ds000001

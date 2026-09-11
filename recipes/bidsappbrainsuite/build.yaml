@@ -1,5 +1,5 @@
 name: bidsappbrainsuite
-version: "21a"
+version: "23a"
 # https://hub.docker.com/r/bids/brainsuite/tags
 
 architectures:
