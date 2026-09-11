@@ -13,7 +13,7 @@
 #   - And many more scientific Python packages
 
 name: palmettobug
-version: "0.0.3.post1"
+version: "0.2.11"
 
 test_data:
   output_dir: test_output
@@ -30,7 +30,7 @@ tests:
     command: >-
       python3 -c 'import importlib.metadata as m; import palmettobug;
       d = m.distribution("palmettobug");
-      assert d.version == "${upstream_version}";
+      assert d.version == "${version}";
       assert any(e.name == "palmettobug" for e in d.entry_points)'
     expected_exit_code: 0
 
@@ -724,4 +724,3 @@ cleanup:
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
 
-upstream_version: 0.2.11

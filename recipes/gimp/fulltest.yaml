@@ -1,6 +1,6 @@
 package_version: 2.10.36-3ubuntu0.24.04.1
 name: gimp
-version: 2.10.18
+version: 2.10.36
 setup:
   script: '#!/usr/bin/env bash
 
