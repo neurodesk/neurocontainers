@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "b0map 1.0.0.post1": {
+      "version": "20260911",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction"
+  ]
+}
