@@ -13,7 +13,7 @@
 # in ds000001, so we test the bundled tools (FSL, ANTs, FreeSurfer utilities)
 
 name: aslprep
-version: 26.0.2
+version: 26.0.3
 
 required_files:
   - dataset: ds000001
