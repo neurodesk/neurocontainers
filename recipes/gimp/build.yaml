@@ -2,7 +2,7 @@ variables:
   package_version: 2.10.36-3ubuntu0.24.04.1
 
 name: gimp
-version: "2.10.18"
+version: 2.10.36
 
 architectures:
   - x86_64
@@ -10,6 +10,7 @@ architectures:
 
 auto_update:
   method: sources
+  container_version: gimp
   local: []
   sources:
   - id: gimp

@@ -4,7 +4,7 @@ variables:
   hdbet_version: '1.1'
 
 name: lstai
-version: 1.2.0.post1
+version: 1.1.0
 copyright:
   - license: MIT
     url: https://github.com/CompImg/LST-AI/blob/main/LICENSE
@@ -12,6 +12,7 @@ architectures:
   - x86_64
 auto_update:
   method: sources
+  container_version: upstream
   sources:
     - id: upstream
       method: github_release_asset

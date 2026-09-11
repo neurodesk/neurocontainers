@@ -1,20 +1,10 @@
-variables:
-  upstream_version: 0.2.11
-
 name: palmettobug
-version: "0.0.3.post1" # https://github.com/immunecells/HARMONI
+version: "0.2.11" # https://github.com/immunecells/HARMONI
 architectures:
   - x86_64
 auto_update:
-  method: sources
-  sources:
-  - id: palmettobug
-    method: pypi
-    package: palmettobug
-    target:
-      variable: upstream_version
-      value: version
-      fulltest_variable: upstream_version
+  method: pypi
+  package: palmettobug
 
 build:
   kind: neurodocker
@@ -31,7 +21,7 @@ build:
           conda_install: -c conda-forge python=3.11
           version: latest
     - run:
-        - pip install --no-cache-dir "setuptools<81" palmettobug=={{ context.upstream_version }}
+        - pip install --no-cache-dir "setuptools<81" palmettobug=={{ context.version }}
 
 
 deploy:
