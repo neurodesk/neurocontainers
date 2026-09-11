@@ -448,15 +448,11 @@ INDEPENDENT_CONTAINER_VERSIONS = {
     "vesselboost": "local pipeline, tracks the model release",
 }
 
-# Same shape as the amico 2.1.0.post2 mislabel fixed in #3137: a single tracked
-# package whose version the label used to follow and no longer does. Relabelling
-# a published container is a per-container decision, so the check tolerates them
-# by name until each one is settled.
+# vina is labelled 1.2.3 while installing the apt package 1.2.5. Its relabel is
+# ready but cannot be released: rebuilding it at any version fails the Dive gate
+# at 85% user-wasted bytes, because the shared neurodocker preamble duplicates
+# more base files than vina's own 8.7 MB payload adds.
 KNOWN_LABEL_DRIFT = {
-    "datalad": "labelled 1.3.1, installs the apt package 1.1.5",
-    "gimp": "labelled 2.10.18, installs the apt package 2.10.36",
-    "lstai": "labelled 1.2.0.post1, installs 1.1",
-    "palmettobug": "labelled 0.0.3.post1, installs 0.2.11",
     "vina": "labelled 1.2.3, installs the apt package 1.2.5",
 }
 
