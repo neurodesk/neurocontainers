@@ -1,6 +1,6 @@
 package_version: 1.2.5-2build1
 name: vina
-version: 1.2.5
+version: 1.2.3
 test_data:
   output_dir: test_output
 setup:

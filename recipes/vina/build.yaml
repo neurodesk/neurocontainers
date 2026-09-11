@@ -2,7 +2,7 @@ variables:
   package_version: 1.2.5-2build1
 
 name: vina
-version: 1.2.5
+version: 1.2.3
 
 copyright:
   - license: Apache-2.0
@@ -14,7 +14,6 @@ architectures:
 
 auto_update:
   method: sources
-  container_version: autodock-vina
   local: []
   sources:
   - id: autodock-vina
