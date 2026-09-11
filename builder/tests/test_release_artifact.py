@@ -449,9 +449,9 @@ INDEPENDENT_CONTAINER_VERSIONS = {
 }
 
 # Same shape as the amico 2.1.0.post2 mislabel fixed in #3137: a single tracked
-# package whose version the label used to follow and no longer does. These need
-# a relabel decision per container, so the check tolerates them by name rather
-# than passing silently on the whole class.
+# package whose version the label used to follow and no longer does. Relabelling
+# a published container is a per-container decision, so the check tolerates them
+# by name until each one is settled.
 KNOWN_LABEL_DRIFT = {
     "datalad": "labelled 1.3.1, installs the apt package 1.1.5",
     "gimp": "labelled 2.10.18, installs the apt package 2.10.36",
@@ -477,19 +477,36 @@ UNVERSIONED_SOURCE_METHODS = frozenset(
 
 
 def tracked_software_source(recipe: dict) -> dict | None:
-    """Return the lone source that names the installed software's version."""
+    """Return the source whose version the container label should name."""
     policy = recipe.get("auto_update")
     if not isinstance(policy, dict) or policy.get("method") != "sources":
         return None
+    sources = [source for source in policy.get("sources") or [] if isinstance(source, dict)]
+    driver = policy.get("container_version")
+    if driver:
+        # The recipe says which software it is a distribution of, so a second
+        # tracked dependency no longer makes the label unattributable.
+        return next((source for source in sources if source.get("id") == driver), None)
     candidates = [
         source
-        for source in policy.get("sources") or []
-        if isinstance(source, dict)
-        and source.get("method") not in UNVERSIONED_SOURCE_METHODS
+        for source in sources
+        if source.get("method") not in UNVERSIONED_SOURCE_METHODS
         and (source.get("target") or {}).get("variable")
         not in SHARED_DEPENDENCY_VARIABLES
     ]
     return candidates[0] if len(candidates) == 1 else None
+
+
+def tracked_version(recipe: dict, source: dict) -> str:
+    """Return the software version the recipe currently records for a source."""
+    target = source.get("target") or {}
+    variables = recipe.get("variables") or {}
+    if "variable" in target:
+        return str(variables.get(target["variable"], ""))
+    for variable, field in (target.get("variables") or {}).items():
+        if field == "version":
+            return str(variables.get(variable, ""))
+    return ""
 
 
 def version_cores_agree(label: str, installed: str) -> bool:
@@ -517,15 +534,14 @@ def test_single_package_recipes_label_the_software_version_they_install() -> Non
         source = tracked_software_source(recipe)
         if source is None:
             continue
-        variable = (source.get("target") or {}).get("variable")
-        installed = str((recipe.get("variables") or {}).get(variable, ""))
+        installed = tracked_version(recipe, source)
         label = str(recipe.get("version", ""))
         if not installed or not label:
             continue
         if not version_cores_agree(label, installed):
             offenders.append(
                 f"{recipe_name}: labelled {label}, installs {installed} "
-                f"(source {source.get('method')} -> {variable})"
+                f"(source {source.get('id')} via {source.get('method')})"
             )
 
     assert not offenders, (
@@ -533,6 +549,7 @@ def test_single_package_recipes_label_the_software_version_they_install() -> Non
         "that package's version, so `ml <recipe>/<version>` names what it ships. "
         "Either track the package directly (auto_update.method: pypi, "
         "github_release, ...) with {{ context.version }} in the install command, "
-        "or record the independent identity in "
+        "nominate it with auto_update.container_version so the updater keeps the "
+        "label on the software, or record the independent identity in "
         "INDEPENDENT_CONTAINER_VERSIONS:\n" + "\n".join(offenders)
     )

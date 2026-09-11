@@ -12,6 +12,29 @@ from typing import Mapping
 import yaml
 from packaging.version import InvalidVersion, Version
 
+# These sources pin exact bytes without naming a software version, so they can
+# never drive the container label.
+VERSIONLESS_METHODS = frozenset({"git_commit", "github_commit", "http_digest", "oci_digest"})
+
+
+def _validate_container_version(config: dict, ids: set[str]) -> None:
+    """Reject a version driver that is missing or cannot observe a version."""
+    driver = config.get("container_version")
+    if driver is None:
+        return
+    if not isinstance(driver, str) or driver not in ids:
+        raise ValueError(
+            f"container_version must name one of this recipe's sources: {sorted(ids)}"
+        )
+    method = next(
+        source["method"] for source in config["sources"] if source.get("id") == driver
+    )
+    if method in VERSIONLESS_METHODS:
+        raise ValueError(
+            f"container_version source {driver} tracks {method}, which pins bytes "
+            "without naming a software version"
+        )
+
 
 def source_config(source: dict) -> dict:
     return {key: value for key, value in source.items() if key not in {"id", "target"}}
@@ -20,8 +43,10 @@ def source_config(source: dict) -> dict:
 def validate_sources_config(config: dict) -> None:
     from .update_observations import validate_source
 
-    if set(config) - {"method", "sources", "local"}:
-        raise ValueError("sources policy accepts only method, sources and local")
+    if set(config) - {"method", "sources", "local", "container_version"}:
+        raise ValueError(
+            "sources policy accepts only method, sources, local and container_version"
+        )
     sources = config.get("sources", [])
     if not isinstance(sources, list) or (not sources and "local" not in config):
         raise ValueError("sources policy requires installed sources or local paths")
@@ -83,6 +108,7 @@ def validate_sources_config(config: dict) -> None:
             r"[A-Za-z_][A-Za-z_0-9]*", str(target["fulltest_variable"])
         ):
             raise ValueError(f"{name}: invalid fulltest variable")
+    _validate_container_version(config, ids)
 
 
 def _acquisition_text(recipe: dict, variable: str) -> str:
@@ -282,6 +308,8 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
     suite_original = suite_path.read_text()
     updated, suite_updated = original, suite_original
     changes, urls = [], []
+    driver = recipe["auto_update"].get("container_version")
+    driver_version = None
     for source in recipe["auto_update"].get("sources", []):
         target = source["target"]
         current = str(recipe["variables"][target["variable"]]) if "variable" in target else None
@@ -329,7 +357,13 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
                                              source.get("version_scheme", "numeric"), source.get("include_prereleases", False))
                 if previous and _is_older(observation.version, previous.version):
                     continue
-            if observation.version and target.get("value", "value") != "tag":
+            # An apt version is ordered by _debian_newer above; its upstream
+            # version is a label, not a comparable release identity here.
+            if (
+                observation.version
+                and source["method"] != "apt"
+                and target.get("value", "value") != "tag"
+            ):
                 try:
                     if Version(selected) <= Version(current):
                         continue
@@ -366,10 +400,18 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
                 changes.append(f"`{'.'.join(map(str, path))}`: `{node}` → `{value}`")
         if updated != previous:
             urls.append(observation.url)
+            if source["id"] == driver:
+                driver_version = observation.version
     if updated == original:
         return None
     current_version = str(recipe["version"])
-    next_version = next_container_version(current_version)
+    # A nominated source names the software this container is a distribution of,
+    # so its release becomes the label. Everything else, including a dependency
+    # moving on its own, still only rebuilds the same software as .postN.
+    if driver_version and _is_older(current_version, driver_version):
+        next_version = driver_version
+    else:
+        next_version = next_container_version(current_version)
     updated = rewrite_scalar(updated, ("version",), next_version)
     suite = yaml.safe_load(suite_updated)
     indirect = re.fullmatch(r"\$\{(\w+)\}", str(suite["version"]))
