@@ -15,7 +15,7 @@
 # Tests focus on MRtrix3 utilities that can work with available structural/functional data.
 
 name: bidsappmrtrix3connectome
-version: 0.5.3
+version: 0.6.0
 
 required_files:
   - dataset: ds000001
