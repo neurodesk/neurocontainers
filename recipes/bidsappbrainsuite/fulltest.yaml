@@ -47,6 +47,18 @@ setup:
     mkdir -p ${output_dir}/pipeline
 
 tests:
+  - name: Renderdfs resolves its runtime libraries
+    description: Verify the surface renderer can load the MATLAB Runtime and OpenGL
+    script: |
+      set -eu
+      renderer="/opt/BrainSuite${version}/bin/renderdfs"
+      test -x "$renderer"
+      dependencies="$(ldd "$renderer")"
+      printf '%s\n' "$dependencies"
+      if printf '%s\n' "$dependencies" | grep -q 'not found'; then
+        exit 1
+      fi
+
   # ==========================================================================
   # BASIC FUNCTIONALITY AND VERSION CHECKS
   # ==========================================================================
