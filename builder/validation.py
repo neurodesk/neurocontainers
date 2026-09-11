@@ -569,6 +569,7 @@ class Template:
 class AutoUpdate:
     method: str = attrs.field()
     sources: Optional[List[Dict[str, Any]]] = attrs.field(default=None)
+    container_version: Optional[str] = attrs.field(default=None)
     local: Optional[List[str]] = attrs.field(default=None)
     repo: Optional[str] = attrs.field(default=None)
     package: Optional[str] = attrs.field(default=None)

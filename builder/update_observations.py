@@ -618,6 +618,16 @@ def _debian_newer(candidate: str, current: str) -> bool:
     return result.returncode == 0
 
 
+def debian_upstream_version(version: str) -> str:
+    """Return the software's own version, without the epoch or Debian revision.
+
+    A container labelled with the packaging revision would rename itself for a
+    rebuild that ships identical software.
+    """
+    upstream = version.split(":", 1)[-1]
+    return upstream.rsplit("-", 1)[0] if "-" in upstream else upstream
+
+
 def _apt(config: dict, session: requests.Session) -> SourceObservation:
     package = config["package"]
     best: str | None = None
@@ -645,6 +655,7 @@ def _apt(config: dict, session: requests.Session) -> SourceObservation:
     return SourceObservation(
         value=best,
         url=best_url,
+        version=debian_upstream_version(best),
         metadata={"package": package},
     )
 

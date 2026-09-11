@@ -139,6 +139,43 @@ required. Its `upstream_version` scalar must match the recipe variable; assertio
 use `${upstream_version}` when checking software versions and `${version}` when
 checking the container version.
 
+### Let one source name the container
+
+By default a `sources` policy only ever increments the container revision, which
+is right when the label is the container's own identity. When the container is a
+distribution of one piece of software, and the label should keep naming that
+software's version, nominate its source with `container_version`:
+
+```yaml
+version: 2.10.36
+variables:
+  package_version: 2.10.36-3ubuntu0.24.04.1
+
+auto_update:
+  method: sources
+  container_version: gimp
+  sources:
+    - id: gimp
+      method: apt
+      package: gimp
+      urls:
+        - https://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
+      target:
+        variable: package_version
+        fulltest_variable: package_version
+```
+
+A release of that software becomes the container version, while the install
+keeps the pin it needs: here the apt package version carries a distribution
+revision the label must not inherit, so the container is `2.10.36` and the
+install is `gimp=2.10.36-3ubuntu0.24.04.1`. Any other source moving on its own,
+or a repackaging of the same software version, still increments the revision as
+`2.10.36.post1`. The nominated source must observe a version, so a commit or
+digest source is rejected.
+
+Without `container_version` the label and the software drift apart the first
+time upstream moves, which `builder/tests/test_release_artifact.py` fails.
+
 All source observations resolve before the updater writes files. One or several
 changed inputs increment the container revision once, such as `1.0.0.post1`.
 Opaque container labels use `.r1`. The plan updates the sibling test version and

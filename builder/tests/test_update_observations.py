@@ -806,7 +806,9 @@ Version: 1:2.0-1ubuntu2
     )
 
     assert observed.value == "1:2.0-1ubuntu2"
-    assert observed.version is None
+    # The install pin needs the epoch and Debian revision; a container label
+    # naming this software does not.
+    assert observed.version == "2.0"
     assert observed.url.endswith("Packages.gz")
     assert observed.metadata == {"package": "demo"}
 
