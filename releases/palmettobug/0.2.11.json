@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "palmettobug 0.2.11": {
+      "version": "20260911",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "palmettobugGUI-palmettobug 0.2.11": {
+      "version": "20260911",
+      "exec": "palmettobug",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "molecular biology"
+  ]
+}

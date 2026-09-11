@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "gimp 2.10.36": {
+      "version": "20260911",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "gimpGUI-gimp 2.10.36": {
+      "version": "20260911",
+      "exec": "gimp",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization"
+  ]
+}
