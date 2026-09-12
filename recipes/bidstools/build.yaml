@@ -1,5 +1,5 @@
 name: bidstools
-version: 1.0.4.post1
+version: "1.0.4.post2"
 
 architectures:
   - x86_64
@@ -15,7 +15,7 @@ variables:
   heudiconv_version: 1.5.0
   traits_version: 7.1.0
   bru2nii_version: 1.0.20180303
-  dcm2niix_version: 1.0.20250505
+  dcm2niix_version: "1.0.20260724"
 
 auto_update:
   method: sources
