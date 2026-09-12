@@ -14,4 +14,11 @@ rules:
   # If the amount of wasted space makes up for X% or more of the image, mark as failed.
   # Note: the base image layer is NOT included in the total image size.
   # Expressed as a ratio between 0-1; fails if the threshold is met or crossed.
+  #
+  # This ratio divides waste by the bytes a recipe's own layers add, so for a
+  # container whose payload is smaller than the shared neurodocker preamble it
+  # measures that preamble instead. dive cannot express a floor, so the
+  # candidate workflow waives this rule alone below the absolute waste in
+  # DIVE_RATIO_FLOOR_BYTES (tools/one_pr_release.py). Every other rule here,
+  # and this one above the floor, still fails the release.
   highestUserWastedPercent: 0.3

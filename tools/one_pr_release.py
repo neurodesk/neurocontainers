@@ -71,6 +71,15 @@ DIVE_PERCENT_FAILURE_PATTERN = re.compile(
     r"\([^=]+=([0-9]+(?:\.[0-9]+)?)\s*[<>]\s*"
     r"threshold=([0-9]+(?:\.[0-9]+)?)\)"
 )
+# The wasted-percentage rule divides waste by the bytes a recipe's own layers
+# add, so for a container whose payload is smaller than the shared neurodocker
+# preamble it measures that preamble rather than the recipe. vina adds one
+# 8.7 MB apt layer and inherits ~57 MB of duplicated glibc, locales and dpkg
+# metadata, which no recipe change can reach. Below this floor the ratio says
+# nothing actionable; above it, waste is worth a maintainer's attention.
+DIVE_RATIO_FLOOR_BYTES = 200 * 1024 * 1024
+DIVE_RATIO_RULE = "highestUserWastedPercent"
+DIVE_FAILED_RULE_PATTERN = re.compile(r"^\s*FAIL:\s*([A-Za-z][A-Za-z0-9_]*)", re.MULTILINE)
 DIVE_INEFFICIENT_FILE_PATTERN = re.compile(
     r"^\s*(\d+)\s+([0-9]+(?:\.[0-9]+)?\s+[kKMGT]?B)\s+(/\S.*)$"
 )
@@ -409,6 +418,43 @@ def _result_count(data: dict[str, Any], field: str) -> int:
     if result < 0:
         raise RuntimeError(f"Invalid candidate test result {field}: {value!r}")
     return result
+
+
+def dive_gate_outcome(report_path: Path, status: str) -> tuple[str, str]:
+    """Decide the Dive gate, waiving the ratio rule on small absolute waste."""
+    if status not in DIVE_STATUSES:
+        raise RuntimeError(f"Invalid Dive status: {status!r}")
+    if status == "success":
+        return "success", "Dive reported no policy failures"
+    if status != "failure" or not report_path.is_file():
+        return "failure", f"Dive did not complete: {status}"
+
+    try:
+        text = ANSI_ESCAPE_PATTERN.sub("", report_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError) as error:
+        raise RuntimeError(
+            f"Unable to read Dive report {report_path}: {error}"
+        ) from error
+
+    failed = set(DIVE_FAILED_RULE_PATTERN.findall(text))
+    if failed != {DIVE_RATIO_RULE}:
+        return "failure", f"Dive failed: {', '.join(sorted(failed)) or 'unknown rule'}"
+
+    match = DIVE_WASTED_BYTES_PATTERN.search(text)
+    if match is None:
+        return "failure", f"Dive failed {DIVE_RATIO_RULE} and reported no wasted bytes"
+
+    wasted = int(match.group(1))
+    if wasted >= DIVE_RATIO_FLOOR_BYTES:
+        return "failure", (
+            f"Dive failed {DIVE_RATIO_RULE} on {match.group(2).strip()} of waste, "
+            f"at or above the {DIVE_RATIO_FLOOR_BYTES // (1024 * 1024)} MB floor"
+        )
+    return "success", (
+        f"{DIVE_RATIO_RULE} waived: {match.group(2).strip()} of waste is below the "
+        f"{DIVE_RATIO_FLOOR_BYTES // (1024 * 1024)} MB floor, so the ratio reflects "
+        "base-image churn rather than this recipe"
+    )
 
 
 def build_dive_summary(report_path: Path, status: str) -> dict[str, Any]:
@@ -820,6 +866,16 @@ def verify_published_metadata(
     return manifests
 
 
+def command_dive_gate(args: argparse.Namespace) -> None:
+    """Apply the size-aware Dive policy to one candidate's report."""
+    outcome, reason = dive_gate_outcome(
+        Path(args.candidate_dir) / "dive-report.txt", args.status
+    )
+    print(reason)
+    if outcome != "success":
+        raise SystemExit(1)
+
+
 def command_verify_metadata(args: argparse.Namespace) -> None:
     """Verify staged metadata without downloading Docker or SIF artifacts."""
     verify_published_metadata(
@@ -891,6 +947,11 @@ def parser() -> argparse.ArgumentParser:
     verify.add_argument("--pr-number", required=True, type=int)
     verify.add_argument("--output", required=True)
     verify.set_defaults(func=command_verify)
+
+    dive_gate = subparsers.add_parser("dive-gate")
+    dive_gate.add_argument("--candidate-dir", required=True)
+    dive_gate.add_argument("--status", required=True, choices=sorted(DIVE_STATUSES))
+    dive_gate.set_defaults(func=command_dive_gate)
 
     verify_metadata = subparsers.add_parser("verify-metadata")
     verify_metadata.add_argument("--bundle", required=True)
