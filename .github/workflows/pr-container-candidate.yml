@@ -230,10 +230,15 @@ jobs:
           CONTAINER: ${{ matrix.container }}
         run: |
           set -o pipefail
+          status=success
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
             -v "${PWD}/.github/.dive-ci.yml:/.dive-ci.yml:ro" \
             wagoodman/dive:latest "${CANDIDATE_TAG}" --ci --ci-config /.dive-ci.yml \
-            2>&1 | tee "candidate/${CONTAINER}/dive-report.txt"
+            2>&1 | tee "candidate/${CONTAINER}/dive-report.txt" || status=failure
+          # dive cannot express "judge the ratio only once the waste is worth
+          # judging", so the outcome of this step is the size-aware decision.
+          python tools/one_pr_release.py dive-gate \
+            --candidate-dir "candidate/${CONTAINER}" --status "${status}"
       - name: Generate manifest and release preview
         env:
           RECIPE: ${{ matrix.recipe }}

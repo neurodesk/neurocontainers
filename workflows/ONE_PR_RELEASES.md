@@ -12,7 +12,12 @@ artifacts after merge. They no longer create a second release-metadata PR.
    runner.
 2. Each candidate builds a Docker archive and SIF, runs the deploy/fulltest and
    Dive checks, generates the release JSON preview, and stores everything for
-   30 days under its own container identity.
+   30 days under its own container identity. Dive's wasted-percentage rule is
+   applied only once the absolute waste is worth judging: below
+   `DIVE_RATIO_FLOOR_BYTES` that ratio measures the shared neurodocker
+   preamble rather than the recipe, so `one_pr_release.py dive-gate` waives
+   that one rule and the step says so. Every other Dive rule, and this one
+   above the floor, still fails the candidate.
 3. A trusted `workflow_run` posts one action-first lifecycle summary on recipe
    PRs. The heading names the exact container, version, and architecture and
    tells the maintainer whether to merge, fix a candidate, wait for promotion,

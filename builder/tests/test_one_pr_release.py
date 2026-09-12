@@ -806,3 +806,61 @@ def test_one_pr_workflows_preserve_fork_reporting_contract() -> None:
     assert "listPullRequestsAssociatedWithCommit" in reporter
     assert "if (prs.length === 0) return" not in reporter
     assert "].join('\\n');" in reporter
+
+
+def dive_report(tmp_path: Path, wasted_bytes: int, display: str, *failed: str) -> Path:
+    """Write a Dive CI report with the given failing rules."""
+    lines = [
+        "  efficiency: 82.4040 %",
+        f"  wastedBytes: {wasted_bytes} bytes ({display})",
+        "  userWastedPercent: 85.3592 %",
+        "Results:",
+    ]
+    lines += [f"  FAIL: {rule}: policy text (%-x=0.85 > threshold=0.3)" for rule in failed]
+    (tmp_path / "dive-report.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return tmp_path / "dive-report.txt"
+
+
+def test_small_absolute_waste_waives_only_the_ratio_rule(tmp_path: Path) -> None:
+    # vina adds one 8.7 MB layer and inherits the preamble's duplication, so the
+    # ratio describes the base image rather than anything the recipe controls.
+    report = dive_report(tmp_path, 56730634, "57 MB", "highestUserWastedPercent")
+
+    outcome, reason = one_pr_release.dive_gate_outcome(report, "failure")
+
+    assert outcome == "success"
+    assert "below the 200 MB floor" in reason
+
+
+def test_large_absolute_waste_still_fails_the_ratio_rule(tmp_path: Path) -> None:
+    report = dive_report(tmp_path, 943718400, "944 MB", "highestUserWastedPercent")
+
+    outcome, reason = one_pr_release.dive_gate_outcome(report, "failure")
+
+    assert outcome == "failure"
+    assert "944 MB" in reason
+
+
+def test_a_second_failing_rule_is_never_waived(tmp_path: Path) -> None:
+    report = dive_report(
+        tmp_path, 10485760, "10 MB", "highestUserWastedPercent", "lowestEfficiency"
+    )
+
+    outcome, reason = one_pr_release.dive_gate_outcome(report, "failure")
+
+    assert outcome == "failure"
+    assert "lowestEfficiency" in reason
+
+
+def test_a_dive_run_that_never_completed_is_not_waived(tmp_path: Path) -> None:
+    dive_report(tmp_path, 1024, "1 kB", "highestUserWastedPercent")
+
+    outcome, _ = one_pr_release.dive_gate_outcome(tmp_path / "dive-report.txt", "cancelled")
+
+    assert outcome == "failure"
+
+
+def test_a_missing_report_cannot_waive_a_dive_failure(tmp_path: Path) -> None:
+    outcome, _ = one_pr_release.dive_gate_outcome(tmp_path / "absent.txt", "failure")
+
+    assert outcome == "failure"
