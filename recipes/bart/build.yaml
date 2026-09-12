@@ -1,5 +1,5 @@
 name: bart
-version: 0.9.00
+version: 1.0.00
 
 copyright:
   - license: BSD-3-Clause # has to be SPDX Identifier
@@ -20,8 +20,11 @@ build:
 
   directives:
     - install:
+        # BART 1.0.00 requires GCC 12; Ubuntu 22.04 defaults to 11. CUDA 12.0
+        # rejects a host compiler newer than GCC 12, so 12 is also the ceiling.
         - make
-        - gcc
+        - gcc-12
+        - g++-12
         - libfftw3-dev
         - liblapacke-dev
         - libpng-dev
@@ -33,7 +36,7 @@ build:
         - tar -xz -C /opt/bart-{{ context.version }}/ --strip-components 1 -f {{ get_file("v0_9_00_tar_gz") }}
 
     - run:
-        - CUDA_BASE=/usr/local/cuda/ CUDA_LIB=lib64 CUDA=1 make -j 8
+        - CC=gcc-12 CXX=g++-12 CUDA_BASE=/usr/local/cuda/ CUDA_LIB=lib64 CUDA=1 make -j 8
 
     - environment:
         PATH: /opt/bart-{{ context.version }}:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
