@@ -37,8 +37,10 @@ tests:
 
   - name: List available commands
     description: Show all available BART commands
-    command: bart 2>&1 | head -3
-    expected_output_contains: "Available commands"
+    # 1.0.00 replaced the "Available commands are:" banner with a hint line, so
+    # assert on the listing itself rather than the wording above it.
+    command: bart 2>&1 | tr -s ' \n' ' '
+    expected_output_contains: "phantom"
 
   # ==========================================================================
   # ARRAY CREATION AND MANIPULATION
