@@ -1,8 +1,10 @@
 variables:
-  package_version: 1.1.5-1~nd120+1
+  venv: /opt/datalad
+  datalad_version: 1.6.2
+  git_annex_version: 10.20230126-3
 
 name: datalad
-version: 1.1.5
+version: 1.6.2
 
 copyright:
   - license: MIT
@@ -21,23 +23,48 @@ auto_update:
   container_version: datalad
   local: []
   sources:
+  # DataLad publishes to PyPI; Debian and NeuroDebian carry 1.1.5, years behind.
   - id: datalad
-    method: apt
+    method: pypi
     package: datalad
+    target:
+      variable: datalad_version
+      value: version
+      fulltest_variable: datalad_version
+  # git-annex is DataLad's storage backend rather than part of DataLad. Track
+  # Debian's build, which is the one published for both architectures this
+  # recipe declares; NeuroDebian's newer git-annex-standalone is amd64 only.
+  - id: git_annex
+    method: apt
+    package: git-annex
     urls:
-    - https://neurodebian.inm7.de/debian/dists/bookworm/main/binary-amd64/Packages.gz
     - https://deb.debian.org/debian/dists/bookworm/main/binary-amd64/Packages.xz
     target:
-      variable: package_version
-      fulltest_variable: package_version
+      variable: git_annex_version
+      fulltest_variable: git_annex_version
 
 build:
   kind: neurodocker
   base-image: neurodebian:bookworm-non-free
   pkg-manager: apt
   directives:
+  - environment:
+      DEBIAN_FRONTEND: noninteractive
+      PATH: "{{ context.venv }}/bin:$PATH"
   - install:
-    - "datalad={{ context.package_version }}"
+    - "git-annex={{ context.git_annex_version }}"
+    - git
+    - python3
+    - python3-pip
+    - python3-venv
+  - run:
+    - python3 -m venv {{ context.venv }}
+    - "{{ context.venv }}/bin/python -m pip install --no-cache-dir --upgrade pip setuptools wheel"
+    - "{{ context.venv }}/bin/python -m pip install --no-cache-dir datalad=={{ context.datalad_version }}"
+    # A Debian login shell resets PATH, and git-annex resolves its special
+    # remote helpers by name, so datalad's own entry points belong on the
+    # default PATH rather than only inside the venv.
+    - ln -s -t /usr/local/bin {{ context.venv }}/bin/datalad {{ context.venv }}/bin/git-annex-remote-datalad {{ context.venv }}/bin/git-annex-remote-datalad-archives {{ context.venv }}/bin/git-annex-remote-ora {{ context.venv }}/bin/git-annex-remote-ria {{ context.venv }}/bin/git-credential-datalad
   - run:
     - git config --global user.email "user@neurodesk.github.io"
     - git config --global user.name "Neurodesk User"
@@ -45,6 +72,8 @@ build:
 deploy:
   bins:
     - datalad
+  path:
+    - "{{ context.venv }}/bin"
 
 readme: |
   ## datalad/{{context.version}} ##

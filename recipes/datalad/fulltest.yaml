@@ -1,6 +1,8 @@
-package_version: 1.1.5-1~nd120+1
+datalad_version: 1.6.2
+git_annex_version: 10.20230126-3
+venv: /opt/datalad
 name: datalad
-version: 1.1.5
+version: 1.6.2
 test_data:
   output_dir: test_output
 setup:
@@ -10,13 +12,9 @@ setup:
     $(mktemp -d /tmp/datalad-fulltest-dataset.XXXXXX)\"\nln -sfn \"${fresh_dataset_dir}\" /tmp/datalad-fulltest-dataset\n"
 tests:
 - name: DataLad version check
-  description: Verify the datalad CLI version matches the shipped runtime
-  command: |
-    reported="$(datalad --version)"
-    expected="${package_version}"
-    expected="${expected#*:}"
-    printf '%s\n' "$reported"
-    test "$reported" = "datalad ${expected%-*}"
+  description: Verify the datalad CLI reports the version this container ships
+  command: datalad --version 2>&1
+  expected_output_contains: ${datalad_version}
 - name: DataLad help output
   description: Verify the main help text renders
   command: datalad --help 2>&1 | head -20
@@ -46,5 +44,18 @@ tests:
   depends_on: DataLad save file
   expected_output_contains: nothing to save, working tree clean
 - name: installed distribution version
-  command: dpkg-query -W -f='${Version}\n' datalad
-  expected_output_contains: ${package_version}
+  description: Verify the venv holds the datalad release this container declares
+  command: ${venv}/bin/python -m pip show datalad
+  expected_output_contains: ${datalad_version}
+- name: git-annex backend version
+  description: Verify the pinned git-annex DataLad stores its data with
+  command: dpkg-query -W -f='${Version}\n' git-annex
+  expected_output_contains: ${git_annex_version}
+- name: DataLad entry points resolve outside the venv
+  description: A login shell resets PATH and git-annex resolves helpers by name
+  command: bash -lc 'command -v datalad; command -v git-annex-remote-ora'
+  expected_output_contains: /usr/local/bin/datalad
+- name: git-annex is usable by datalad
+  description: Verify datalad finds a working git-annex
+  command: git annex version 2>&1 | head -1
+  expected_output_contains: git-annex version
