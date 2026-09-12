@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "bart 1.0.00": {
+      "version": "20260911",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction"
+  ]
+}
