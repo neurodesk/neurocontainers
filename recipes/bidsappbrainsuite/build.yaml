@@ -1,5 +1,5 @@
 name: bidsappbrainsuite
-version: "21a"
+version: "23a"
 # https://hub.docker.com/r/bids/brainsuite/tags
 
 architectures:
@@ -21,6 +21,13 @@ build:
         DEBIAN_FRONTEND: noninteractive
         PATH: $PATH:/BrainSuite/
 
+    # 23a runs its tools on the MATLAB Runtime, and the upstream image sets
+    # BrainSuiteMCR without putting its libraries, including OpenGL, on the
+    # loader path. 21a shipped no runtime at all, so this is new with the bump.
+    - environment:
+        LD_LIBRARY_PATH: "${BrainSuiteMCR}/runtime/glnxa64:${BrainSuiteMCR}/bin/glnxa64:${BrainSuiteMCR}/sys/os/glnxa64:${BrainSuiteMCR}/sys/opengl/lib/glnxa64:$LD_LIBRARY_PATH"
+        XAPPLRESDIR: "${BrainSuiteMCR}/X11/app-defaults"
+
     - run:
         - printf '%s\n' '#!/usr/bin/env bash' 'set -e' '' 'if [ "$#" -eq 0 ]; then' '  exec /usr/bin/env bash' 'fi' '' 'exec "$@"' > /usr/local/bin/bidsappbrainsuite-entrypoint
         - chmod +x /usr/local/bin/bidsappbrainsuite-entrypoint
@@ -30,9 +37,9 @@ build:
 deploy:
   path:
     - /BrainSuite/QC
-    - /opt/BrainSuite21a/bin
-    - /opt/BrainSuite21a/svreg/bin
-    - /opt/BrainSuite21a/bdp
+    - /opt/BrainSuite{{ context.version }}/bin
+    - /opt/BrainSuite{{ context.version }}/svreg/bin
+    - /opt/BrainSuite{{ context.version }}/bdp
     - /usr/local/miniconda/bin
     - /BrainSuite
 
