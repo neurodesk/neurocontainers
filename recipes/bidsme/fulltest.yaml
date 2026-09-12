@@ -17,8 +17,8 @@
 # Documentation: https://github.com/CyclotronResearchCentre/bidsme/blob/dev/doc/cli-interface.md
 
 name: bidsme
-version: 1.9.3.post1
-upstream_version: 1.9.3
+version: "1.9.3.post2"
+upstream_version: "1.9.6"
 dcm2niix_version: 1.0.20260724
 
 required_files:

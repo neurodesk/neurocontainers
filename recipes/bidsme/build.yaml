@@ -1,5 +1,5 @@
 name: bidsme
-version: 1.9.3.post1
+version: "1.9.3.post2"
 architectures:
   - x86_64
   - aarch64
@@ -31,8 +31,8 @@ auto_update:
         fulltest_variable: dcm2niix_version
 
 variables:
-  upstream_tag: '1.9.3'
-  upstream_version: '1.9.3'
+  upstream_tag: "v1.9.6"
+  upstream_version: "1.9.6"
   dcm2niix_version: '1.0.20260724'
 
 build:
