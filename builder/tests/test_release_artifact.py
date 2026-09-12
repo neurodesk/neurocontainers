@@ -448,14 +448,6 @@ INDEPENDENT_CONTAINER_VERSIONS = {
     "vesselboost": "local pipeline, tracks the model release",
 }
 
-# vina is labelled 1.2.3 while installing the apt package 1.2.5. Its relabel is
-# ready but cannot be released: rebuilding it at any version fails the Dive gate
-# at 85% user-wasted bytes, because the shared neurodocker preamble duplicates
-# more base files than vina's own 8.7 MB payload adds.
-KNOWN_LABEL_DRIFT = {
-    "vina": "labelled 1.2.3, installs the apt package 1.2.5",
-}
-
 SHARED_DEPENDENCY_VARIABLES = frozenset(OPENRECON_PINS)
 
 # A commit, digest or listing pins bytes without naming a software version, so
@@ -522,7 +514,7 @@ def test_single_package_recipes_label_the_software_version_they_install() -> Non
     offenders = []
     for build_yaml in sorted((REPO_ROOT / "recipes").glob("*/build.yaml")):
         recipe_name = build_yaml.parent.name
-        if recipe_name in INDEPENDENT_CONTAINER_VERSIONS or recipe_name in KNOWN_LABEL_DRIFT:
+        if recipe_name in INDEPENDENT_CONTAINER_VERSIONS:
             continue
         recipe = yaml.safe_load(build_yaml.read_text(encoding="utf-8")) or {}
         if not isinstance(recipe, dict):
