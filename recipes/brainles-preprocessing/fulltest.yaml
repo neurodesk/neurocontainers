@@ -1,6 +1,6 @@
 name: brainles-preprocessing
-version: 0.6.10.post1
-upstream_version: "0.6.10"
+version: "0.6.10.post2"
+upstream_version: "0.6.13"
 
 tests:
   - name: package imports

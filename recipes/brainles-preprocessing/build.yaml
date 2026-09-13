@@ -1,8 +1,8 @@
 name: brainles-preprocessing
-version: 0.6.10.post1
+version: "0.6.10.post2"
 
 variables:
-  upstream_version: "0.6.10"
+  upstream_version: "0.6.13"
   hdbet_record: "2540695"
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABOUlEQVR42u3dsRHCMAwF0CxBywhUDMQajMIATMQSrAAVC3CHogQnsp9OdYp39p2U4nualFK7rMPxVKiJbOrVE83KTL3SrMM0gk7eaBydjNFoOvOMxtSZYQSIzgIjQHQWGKEBBAjQZkBcfhglvnK5v6t0U6BCLmmpPFBpnbhREqgDnaARIEDtgbrRiRg5Qa4YoD0CmYNM0naxlkC2eUCAAAECBAgQIEBf+/y4VemmQIVc0lJ5oNI6caMkUAc6QSNAgNoDdaMTMXKCXDFAewQyB5mk7WK2eb87AAECBAgQIECANgd6Xl9VuilQIZe0VB6otE7cKAnUgU7QCBCg9kDd6ESMnCBXDNAegcxBJmm7mPAF2R2AAAESYyYFDxAjSZx/AhJ2y2ixjsBtRmvoCP33bIRnNlqKKKXm1wc7XnMcuYuNogAAAABJRU5ErkJggg==
 
