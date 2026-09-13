@@ -1,5 +1,5 @@
 name: brainvisa
-version: 6.0.38
+version: 6.0.40
 
 tests:
   - name: BrainVISA launchers are available
