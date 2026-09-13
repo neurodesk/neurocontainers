@@ -1,5 +1,5 @@
 name: brainlesion
-version: 1.0.0
+version: "1.0.0.post1"
 default_timeout: 120
 
 env:

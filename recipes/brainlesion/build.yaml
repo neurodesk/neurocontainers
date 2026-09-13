@@ -1,5 +1,5 @@
 name: brainlesion
-version: 1.0.0
+version: "1.0.0.post1"
 architectures:
   - x86_64
 structured_readme:
@@ -24,18 +24,18 @@ structured_readme:
 variables:
   atlas_version: 2.0.0
   loguru_version: 0.7.3
-  panoptica_version: 2.1.6
+  panoptica_version: "2.1.7"
   deep_quality_estimation_version: 0.0.3
   petu_version: 0.0.7
   gliomoda_version: 0.0.4
   antspyx_version: 0.6.3
-  auxiliary_version: 0.3.1
+  auxiliary_version: "0.4.2"
   brainles_hd_bet_version: 0.0.11
   ttictoc_version: 0.5.6
-  typer_version: 0.15.4
-  tqdm_version: 4.67.1
+  typer_version: "0.27.2"
+  tqdm_version: "4.70.1"
   brainles_aurora_version: 0.2.7
-  brainles_preprocessing_version: 0.6.10
+  brainles_preprocessing_version: "0.6.13"
 
 auto_update:
   method: sources
