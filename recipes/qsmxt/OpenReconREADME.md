@@ -73,6 +73,9 @@ For threshold-based masking, choose **Robust threshold** or **BET + threshold un
 
 **Mask cleanup** can fill holes and close small gaps. Its default is **Close and fill holes**. Mask settings apply independently of the pipeline preset.
 
+## Citation
+Stewart, Ashley Wilton, Simon Daniel Robinson, Kieran O’Brien, et al. “QSMxT: Robust Masking and Artifact Reduction for Quantitative Susceptibility Mapping.” Magnetic Resonance in Medicine 87, no. 3 (2022): 1289–300. https://doi.org/10.1002/mrm.29048.
+
 ## Help and further reading
 
 For problems or feature requests, [open a NeuroContainers issue](https://github.com/neurodesk/neurocontainers/issues). For questions about using the package, visit the [Neurodesk discussion forum](https://github.com/orgs/neurodesk/discussions).
