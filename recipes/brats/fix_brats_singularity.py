@@ -146,7 +146,8 @@ dock = root / "brats" / "core" / "docker.py"
 patch(
     dock,
     '''    logger.error(
-        f"Failed to connect to docker daemon. Please make sure docker is installed and running. Error: {e}"
+        f"Failed to connect to docker daemon. Please make sure docker is "
+        f"installed and running. Error: {e}"
     )''',
     '''    # neurocontainers: docker never exists on this platform, so an ERROR
     # telling the user to install it is noise on every single command.
