@@ -6,13 +6,13 @@ architectures:
   - x86_64
 
 variables:
-  cartool_release_hash: 8FCF
+  cartool_release_hash: 3A59
   cartool_installer: "Cartool64Setup.{{ context.version }}.{{ context.cartool_release_hash }}.exe"
   cartool_installer_url: "https://github.com/DenisBrunet/Cartool/releases/download/{{ context.version }}/{{ context.cartool_installer }}"
 
 files:
   - name: cartool_installer
-    url: "https://github.com/DenisBrunet/Cartool/releases/download/{{ context.version }}/Cartool64Setup.{{ context.version }}.3A59.exe"
+    url: "{{ context.cartool_installer_url }}"
 
 auto_update:
   method: github_release
