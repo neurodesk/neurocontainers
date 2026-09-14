@@ -191,7 +191,7 @@ def main() -> None:
     if args.refresh:
         refresh(args, parameters)
     generated = render(json.loads(SNAPSHOT.read_text()), parameters)
-    readme = ROOT / "OpenReconREADME.md"
+    readme = ROOT / "OpenReconTechnicalReference.md"
     text = readme.read_text()
     before, rest = text.split(START, 1)
     _, after = rest.split(END, 1)
