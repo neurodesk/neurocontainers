@@ -5,7 +5,7 @@
 # that is required for Apptainer/Singularity runtime users.
 
 name: cartool
-version: 5.06.04
+version: 5.06.05
 
 cartool_version: ${version}
 cartool_dir: /opt/cartool-${cartool_version}
