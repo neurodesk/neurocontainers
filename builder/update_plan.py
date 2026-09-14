@@ -256,14 +256,23 @@ def rewrite_scalar(text: str, path: tuple[str | int, ...], value: str) -> str:
 
 
 def next_container_version(current: str) -> str:
-    match = re.fullmatch(r"(.*)\.(post|r)(\d+)", current)
-    if match:
-        return f"{match[1]}.{match[2]}{int(match[3]) + 1}"
+    """Advance the container minor version independently of installed sources."""
+    current = re.sub(r"\.(?:post|r)\d+(?=$|\+)", "", current)
     try:
-        Version(current)
+        version = Version(current)
     except InvalidVersion:
-        return current + ".r1"
-    return current + ".post1"
+        match = re.fullmatch(r"v?(\d+(?:\.\d+)*)([.-][A-Za-z][A-Za-z0-9.-]*)?", current)
+        if not match:
+            return "1.0.0"
+        release = tuple(int(part) for part in match[1].split("."))
+        suffix = "-" + match[2].lstrip(".-") if match[2] else ""
+        epoch = ""
+    else:
+        release = version.release
+        suffix = f"+{version.local}" if version.local else ""
+        epoch = f"{version.epoch}!" if version.epoch else ""
+    minor = release[1] if len(release) > 1 else 0
+    return f"{epoch}{release[0]}.{minor + 1}.0{suffix}"
 
 
 @dataclass(frozen=True)
@@ -405,10 +414,8 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
     if updated == original:
         return None
     current_version = str(recipe["version"])
-    # A nominated source names the software this container is a distribution of,
-    # so its release becomes the label. Everything else, including a dependency
-    # moving on its own, still only rebuilds the same software as .postN.
-    if driver_version and _is_older(current_version, driver_version):
+    if (driver_version and _is_older(current_version, driver_version)
+            and not re.search(r"\.(?:post|r)\d+(?:$|[.+-])", driver_version)):
         next_version = driver_version
     else:
         next_version = next_container_version(current_version)

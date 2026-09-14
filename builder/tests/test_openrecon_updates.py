@@ -46,6 +46,15 @@ def test_shared_dependencies_cannot_be_omitted_or_bound_to_another_repo(shared_r
         validate_openrecon_policy(recipe)
 
 
+def test_openrecon_rejects_arm64_variants(shared_recipe):
+    _, recipe = shared_recipe
+    recipe["architectures"].append("aarch64")
+    with pytest.raises(ValueError, match="x86_64 only"):
+        validate_openrecon_policy(recipe)
+    recipe["architectures"] = ["x86_64"]
+    validate_openrecon_policy(recipe)
+
+
 def test_nested_group_requires_shared_policy(shared_recipe):
     _, recipe = shared_recipe
     recipe["build"]["directives"] = [{"group": recipe["build"]["directives"]}]

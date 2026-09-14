@@ -908,7 +908,7 @@
     "suite_scalars": {
       "upstream_version": "0.2.11"
     },
-    "container_version": "0.0.3.post1",
+    "container_version": "0.1.0",
     "replace_run_group": {
       "contains": "cp {{ get_file(\"HARMONI_main_250424_zip\") }} HARMONI-main-250424.zip",
       "commands": [

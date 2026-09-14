@@ -5,7 +5,7 @@ variables:
   upstream_commit: 9f64560efde8b58da6a87eed8eb6598f47cc4a3d
 
 name: deepsif
-version: 0.0.1.post1
+version: "0.1.0"
 
 copyright:
   - license: BSD-3-Clause
@@ -197,7 +197,7 @@ readme: |-
   ```
 
   More documentation can be found here: https://github.com/bfinl/DeepSIF
-  The python environment: /opt/miniconda-4.7.12/envs/deepsif-{{ context.version }}/bin/python3
+  The python environment: /opt/miniconda-4.7.12/envs/deepsif-{{ context.install_version }}/bin/python3
 
   This container does not contain MATLAB.
 

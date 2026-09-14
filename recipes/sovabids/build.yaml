@@ -18,7 +18,7 @@ variables:
   sovabids_tag: v0.3.1-alpha
 
 name: sovabids
-version: 0.3.1a0.post1
+version: "0.4.0"
 
 architectures:
   - x86_64

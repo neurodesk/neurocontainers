@@ -5,7 +5,7 @@ mnelab_version: 1.5.4
 vscode_version: "1.136.1"
 pipeline_commit: ab27777abf79c62bdfd4914dd180957f580f1bbe
 name: mneextended
-version: 1.1.0.post2
+version: "1.2.0"
 default_timeout: 60
 tests:
 - name: Python imports mne

@@ -15,7 +15,7 @@
 #   - Siemens, Philips, Bruker, GE, Varian, Marconi, Toshiba
 
 name: lcmodel
-version: "6.3.post1"
+version: "6.4.0"
 
 test_data:
   lcmodel_dir: /opt/lcmodel-${upstream_version}/.lcmodel

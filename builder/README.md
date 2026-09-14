@@ -48,7 +48,7 @@ python -m builder stage bidsappaa --recreate --download
 python -m builder staged-context-args build/bidsappaa > /tmp/image-context-args
 mapfile -d '' -t image_context_args < /tmp/image-context-args
 docker buildx build build/bidsappaa --load \
-  --file build/bidsappaa/bidsappaa_0.2.0.post1.Dockerfile \
+  --file build/bidsappaa/bidsappaa_0.3.0.Dockerfile \
   --build-context neurocontainer-cache=build/bidsappaa/cache \
   "${image_context_args[@]}"
 ```

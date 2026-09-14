@@ -1,8 +1,7 @@
 name: prostatefiducialseg
-version: 7.0.0.post1
+version: "7.1.0"
 architectures:
     - x86_64
-    - aarch64
 
 readme_url: https://raw.githubusercontent.com/astewartau/seedseg/{{ context.upstream_commit }}/README.md
 
@@ -12,15 +11,9 @@ variables:
     openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
     openrecon_ismrmrd_version: "1.14.2"
     upstream_commit: "3354f6cc3cf750ada5bd3e25bd0ab6e1712662ab"
-    onnxruntime_version: "1.23.2"
     onnxruntime_gpu_version: "1.23.2"
     conda_version: "25.5.1-0"
-    conda_download_url:
-        try:
-            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py310_{{ context.conda_version }}-Linux-x86_64.sh"
-              condition: arch=="x86_64"
-            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py310_{{ context.conda_version }}-Linux-aarch64.sh"
-              condition: arch=="aarch64"
+    conda_download_url: "https://repo.anaconda.com/miniconda/Miniconda3-py310_{{ context.conda_version }}-Linux-x86_64.sh"
 
 files:
     - name: prostatefiducialseg.py
@@ -97,12 +90,6 @@ auto_update:
     url: https://osf.io/download/svmjp/
     target:
       file: seedseg-model-seed123.onnx
-  - id: onnxruntime
-    method: pypi
-    package: onnxruntime
-    version_regex: '^(?P<version>1[.](?:[0-9]|1[0-9]|2[0-3])[.][0-9]+)$'
-    target:
-      variable: onnxruntime_version
   - id: onnxruntime_gpu
     method: pypi
     package: onnxruntime-gpu
@@ -143,9 +130,6 @@ build:
               - pip install SimpleITK nibabel pandas scikit-learn
         # Python 3.10 wheels are available through ONNX Runtime 1.23.
         - run: pip install "onnxruntime-gpu=={{ context.onnxruntime_gpu_version }}"
-          condition: arch=="x86_64"
-        - run: pip install "onnxruntime=={{ context.onnxruntime_version }}"
-          condition: arch=="aarch64"
 
         # download model
         - workdir: /opt

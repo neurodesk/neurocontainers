@@ -1,5 +1,5 @@
 name: gouhfi
-version: 0.0.1.post3
+version: "0.1.0"
 upstream_commit: 1eb71b642bcd3b6c92dbf65e4b69c8cf52847205
 torch_version: "2.7.1"
 antspyx_version: "0.6.3"

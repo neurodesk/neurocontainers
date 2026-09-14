@@ -217,7 +217,7 @@ def test_plan_couples_tagged_url_digest_and_version_and_reobserves_mutable_asset
     assert replaced is not None
     replaced.apply()
     refreshed = yaml.safe_load(path.read_text())
-    assert refreshed["version"] == "1.0.0.post2"
+    assert refreshed["version"] == "1.2.0"
     assert refreshed["variables"]["upstream_version"] == "2.0.0"
     assert refreshed["files"][0]["url"] == TAGGED_URL
     assert refreshed["files"][0]["sha256"] == hashlib.sha256(public.payload).hexdigest()

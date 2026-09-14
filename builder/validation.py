@@ -157,6 +157,11 @@ def validate_container_icon(instance, attribute, value):
 
 def validate_recipe_metadata(recipe_dict: Dict[str, Any]) -> None:
     """Validate metadata required for published NeuroDesk container recipes."""
+    if re.search(r"\.(?:post|r)\d+(?:$|[.+-])", str(recipe_dict.get("version", ""))):
+        raise ValueError(
+            "Container versions must use a new minor version, not a .post or .r suffix. "
+            "Pin upstream post-release versions in a separate recipe variable."
+        )
     validate_container_icon(None, None, recipe_dict.get("icon"))
 
     categories = recipe_dict.get("categories")

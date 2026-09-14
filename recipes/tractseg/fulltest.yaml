@@ -14,7 +14,7 @@
 # For full TractSeg testing, diffusion data with bvals/bvecs is required.
 
 name: tractseg
-version: 2.9.post2
+version: "2.10.0"
 upstream_version: "2.9"
 
 required_files:

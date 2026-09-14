@@ -6,7 +6,7 @@ variables:
   model_commit: f960cce2857f67f682b7382f67be3efd17182029
 
 name: gouhfi
-version: 0.0.1.post3
+version: "0.1.0"
 architectures:
   - x86_64
   - aarch64

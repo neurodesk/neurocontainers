@@ -1,5 +1,5 @@
 name: mgltools
-version: 1.5.7.post2
+version: "1.6.0"
 # check for latest version: https://ccsb.scripps.edu/mgltools/downloads/
 
 architectures:

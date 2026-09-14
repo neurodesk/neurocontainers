@@ -4,7 +4,7 @@ variables:
   upstream_commit: 113d1054b8700b362a86b8e495045c2b78a46bb1
 
 name: megnet
-version: 1.0.1.post1
+version: "1.1.0"
 architectures:
   - x86_64
 structured_readme:

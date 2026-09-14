@@ -84,9 +84,11 @@ def tag_to_recipe_version(tag, current_version=""):
     if (current_version or "").strip()[:1] in ("v", "V"):
         candidate = f"v{candidate}"
     try:
-        version.parse(candidate)
+        parsed = version.parse(candidate)
     except Exception as e:
         dbg("tag_to_recipe_version parse failed:", e)
+        return None
+    if parsed.is_postrelease:
         return None
     return candidate
 

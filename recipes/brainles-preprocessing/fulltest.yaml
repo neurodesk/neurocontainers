@@ -1,5 +1,5 @@
 name: brainles-preprocessing
-version: 0.6.10.post1
+version: "0.7.0"
 upstream_version: "0.6.10"
 
 tests:

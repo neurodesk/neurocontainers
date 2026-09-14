@@ -16,6 +16,12 @@ from builder import check_version
 from tools import one_pr_release
 
 
+@pytest.mark.parametrize("tag", ["1.2.0.post1", "v1.2.0.post2", "1.2.0.r1"])
+def test_direct_upstream_post_release_cannot_become_a_container_label(tag):
+    assert check_version.tag_to_recipe_version(tag) is None
+    assert check_version.tag_to_recipe_version("v1.3.0") == "1.3.0"
+
+
 def write_recipe(tmp_path: Path, recipe: dict, fulltest: dict) -> Path:
     root = tmp_path / recipe["name"]
     root.mkdir()
@@ -260,7 +266,7 @@ def test_release_tag_and_software_version_advance_together(tmp_path, release):
         "source_tag": "v2.1.0", "software_version": "2.1.0",
     }
     assert suite["software_version"] == "2.1.0"
-    assert suite["version"] == changed["version"] == "7.0.0.post1"
+    assert suite["version"] == changed["version"] == "7.1.0"
     assert plan_sources(path, observations={"source": observation}) is None
 
 

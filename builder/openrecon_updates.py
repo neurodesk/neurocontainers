@@ -74,6 +74,8 @@ def uses_openrecon(recipe: dict) -> bool:
 def validate_openrecon_policy(recipe: dict) -> None:
     if not uses_openrecon(recipe):
         return
+    if recipe.get("architectures") != ["x86_64"]:
+        raise ValueError("OpenRecon containers support x86_64 only")
     policy = recipe.get("auto_update") or {}
     if policy.get("method") != "sources":
         raise ValueError("OpenRecon requires explicit shared dependency sources")

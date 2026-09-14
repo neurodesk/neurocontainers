@@ -31,6 +31,33 @@ VALID_SVG_ICON = (
 )
 
 
+@pytest.mark.parametrize("version", [
+    "1.2.0.post1", "1.2.0.post2", "1.2.0.post1-gpu",
+    "1.2.0.r1", "1.2.0.post1+gpu",
+])
+def test_container_post_release_is_rejected_but_upstream_pin_is_allowed(version):
+    recipe = {
+        "name": "demo",
+        "version": version,
+        "variables": {"upstream_version": "1.2.0.post1"},
+        "architectures": ["x86_64"],
+        "categories": ["workflows"],
+        "icon": VALID_ICON,
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:24.04",
+            "pkg-manager": "apt",
+            "directives": [],
+        },
+    }
+    with pytest.raises(ValueError, match="new minor version"):
+        validate_recipe_dict(recipe)
+    recipe["version"] = "1.3.0"
+    validated = validate_recipe_dict(recipe)
+    assert validated.version == "1.3.0"
+    assert validated.variables["upstream_version"] == "1.2.0.post1"
+
+
 def test_valid_minimal_recipe():
     """Test validation of a minimal valid recipe"""
     recipe = {
