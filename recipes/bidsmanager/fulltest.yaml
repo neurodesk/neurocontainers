@@ -1,8 +1,8 @@
 # bidsmanager container test suite
-# Tests for BIDS Manager v1.2.3 - raw-to-BIDS conversion, curation, metadata editing, and validation.
+# Tests for BIDS Manager - raw-to-BIDS conversion, curation, metadata editing, and validation.
 
 name: bidsmanager
-version: 1.2.3
+version: 1.2.6.1
 
 setup:
   script: |
@@ -44,7 +44,10 @@ tests:
   - name: bidsmgr-validate help
     description: Verify the validator CLI entrypoint is available.
     command: bidsmgr-validate --help
-    expected_output_contains: "Schema-driven validation"
+    expected_output_contains:
+      - "usage: bidsmgr-validate"
+      - "--strict"
+      - "--schema"
 
   - name: dcm2niix help
     description: Verify the DICOM conversion backend is exposed.
