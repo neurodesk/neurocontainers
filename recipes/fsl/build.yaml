@@ -1,7 +1,7 @@
 name: fsl
 # check for latest version: https://fsl.fmrib.ox.ac.uk/fsl/docs/development/history/index.html
 # check or add latest version is in neurodocker https://github.com/ReproNim/neurodocker/blob/master/neurodocker/templates/fsl.yaml
-version: 6.0.7.22.post1
+version: "6.1.0"
 
 variables:
   fsl_version: "6.0.7.22"

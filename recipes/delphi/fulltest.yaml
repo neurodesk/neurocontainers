@@ -1,5 +1,5 @@
 name: delphi
-version: 0.0.2.post1
+version: "0.1.0"
 tests:
 - name: source revision
   command: git -c safe.directory=/opt/encryption -C /opt/encryption rev-parse HEAD

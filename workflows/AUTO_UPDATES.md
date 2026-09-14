@@ -141,7 +141,7 @@ checking the container version.
 
 ### Let one source name the container
 
-By default a `sources` policy only ever increments the container revision, which
+By default a `sources` policy increments the container minor version, which
 is right when the label is the container's own identity. When the container is a
 distribution of one piece of software, and the label should keep naming that
 software's version, nominate its source with `container_version`:
@@ -169,19 +169,39 @@ A release of that software becomes the container version, while the install
 keeps the pin it needs: here the apt package version carries a distribution
 revision the label must not inherit, so the container is `2.10.36` and the
 install is `gimp=2.10.36-3ubuntu0.24.04.1`. Any other source moving on its own,
-or a repackaging of the same software version, still increments the revision as
-`2.10.36.post1`. The nominated source must observe a version, so a commit or
+or a repackaging of the same software version, increments the container minor
+version to `2.11.0`. The nominated source must observe a version, so a commit or
 digest source is rejected.
 
-Without `container_version` the label and the software drift apart the first
-time upstream moves, which `builder/tests/test_release_artifact.py` fails.
+A nominated source supplies a newer upstream release label when available.
+Dependency updates still receive a new container minor version. The installed
+software version remains in the source variable and can differ from the label.
+An upstream post-release also uses a new container minor version.
 
 All source observations resolve before the updater writes files. One or several
-changed inputs increment the container revision once, such as `1.0.0.post1`.
-Opaque container labels use `.r1`. The plan updates the sibling test version and
-mapped test variables together. Repeating the same observation produces no
-further change. Stable release and mapped software versions cannot move backward.
-GitHub commit updates require a descendant of the current commit.
+changed inputs increment the container minor version once, such as `1.2.3` to
+`1.3.0`. The patch component resets to zero. The plan updates the sibling test
+version and mapped software variables together. Repeating the same observation
+produces no further change. Stable release and mapped software versions cannot
+move backward. GitHub commit updates require a descendant of the current commit.
+
+Container updates do not append post-release or revision suffixes. Existing
+post-release labels advance to the next minor version, so `1.2.0.post2` becomes
+`1.3.0`. Numeric date labels follow the same rule: `20220617` becomes
+`20220617.1.0`. Prerelease labels become a final container release at the next
+minor version. Hardware labels are retained, so `4.0.1.sm75` becomes
+`4.1.0-sm75`. Opaque labels such as `latest` or `r7771` start a numeric container
+release series at `1.0.0`; subsequent changes produce `1.1.0`, `1.2.0`, and so on.
+Installed software keeps its independently pinned version, including any upstream
+post-release suffix.
+Direct upstream-to-container policies reject post-release tags. Use a `sources`
+policy with a pinned software variable when the upstream package uses them.
+
+Run `python3 tools/migrate_container_versions.py` to preview the migration of
+existing post-release container labels and retirement of OpenRecon ARM64
+variants. OpenRecon containers support x86_64 only. Add `--apply` to update
+recipes and fulltests and remove the old release catalog records. Build the renamed
+containers to generate new release records; do not relabel old images.
 
 The source list supports the release providers above and these providers:
 

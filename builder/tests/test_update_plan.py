@@ -41,7 +41,7 @@ def test_independent_versions_change_real_inputs_together_and_replay(tmp_path):
     plan = plan_sources(path, observations=found)
     assert plan == plan_sources(path, observations=found)
     assert yaml.safe_load(path.read_text())['version'] == '7.3.3'
-    assert plan.next_version == '7.3.3.post1'
+    assert plan.next_version == '7.4.0'
     assert len(plan.changes) == 2
     plan.apply()
     plan.apply()
@@ -61,6 +61,19 @@ def test_conflicting_file_prevents_all_writes(tmp_path):
     with pytest.raises(ValueError, match='conflicts'):
         plan.apply()
     assert path.read_text() == before
+
+
+def test_nominated_upstream_post_release_uses_container_minor_version(tmp_path):
+    path = make_recipe(tmp_path)
+    recipe = yaml.safe_load(path.read_text())
+    recipe['auto_update']['container_version'] = 'tool'
+    path.write_text(yaml.safe_dump(recipe, sort_keys=False))
+    plan = plan_sources(path, observations=observations('7.4.post1'))
+    assert plan.next_version == '7.4.0'
+    plan.apply()
+    changed = yaml.safe_load(path.read_text())
+    assert changed['variables']['tool_version'] == '7.4.post1'
+    assert changed['version'] == '7.4.0'
 
 
 def test_failure_of_one_component_leaves_every_file_unchanged(tmp_path):
@@ -94,7 +107,28 @@ def test_runtime_documentation_alone_is_not_a_source_binding(tmp_path):
         validate_target_bindings(recipe)
 
 
-@pytest.mark.parametrize(('old', 'new'), [('1.0', '1.0.post1'), ('1.0.post2', '1.0.post3'), ('4.0.1.sm75', '4.0.1.sm75.r1'), ('latest', 'latest.r1'), ('latest.r9', 'latest.r10')])
+@pytest.mark.parametrize(('old', 'new'), [
+    ('1.2.3', '1.3.0'),
+    ('1.9.9', '1.10.0'),
+    ('1.0', '1.1.0'),
+    ('1.0.post2', '1.1.0'),
+    ('1.2.0.post1', '1.3.0'),
+    ('1.3.0', '1.4.0'),
+    ('6.0.7.22.post1', '6.1.0'),
+    ('26.0.rc3.post1', '26.1.0'),
+    ('20220617.post1', '20220617.1.0'),
+    ('2024.06.12.post1', '2024.7.0'),
+    ('4.0.1.sm75', '4.1.0-sm75'),
+    ('4.1.0-sm75', '4.2.0-sm75'),
+    ('1.0.gpu.post2', '1.1.0-gpu'),
+    ('1.2.3+gpu', '1.3.0+gpu'),
+    ('1.2.3.r1+gpu', '1.3.0+gpu'),
+    ('latest', '1.0.0'),
+    ('latest.r9', '1.0.0'),
+    ('r7771', '1.0.0'),
+    ('v1.2.3', '1.3.0'),
+    ('1!2.3.4', '1!2.4.0'),
+])
 def test_container_revision_is_independent_of_upstream_version(old, new):
     assert next_container_version(old) == new
 
@@ -182,19 +216,17 @@ def test_a_dependency_moving_alone_still_rebuilds_the_same_software(tmp_path):
 
     plan = plan_sources(path, observations=found)
 
-    assert plan.next_version == '2.10.36.post1'
+    assert plan.next_version == '2.11.0'
 
 
-def test_repackaging_the_same_software_does_not_rename_the_container(tmp_path, debian_ordering):
-    # A new Debian revision of the same upstream release is a rebuild, not a
-    # new version of the software the label names.
+def test_repackaging_the_same_software_bumps_container_minor(tmp_path, debian_ordering):
     path = make_apt_recipe(tmp_path)
     found = {'tool': apt_observation('2.10.36-4ubuntu1'),
              'helper': SourceObservation('a' * 40, 'https://github.com/example/helper')}
 
     plan = plan_sources(path, observations=found)
 
-    assert plan.next_version == '2.10.36.post1'
+    assert plan.next_version == '2.11.0'
     plan.apply()
     assert yaml.safe_load(path.read_text())['variables']['package_version'] == '2.10.36-4ubuntu1'
 

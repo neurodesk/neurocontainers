@@ -1,6 +1,6 @@
 # Runtime checks use the bundled GQI template; it contains QA and ISO, not tensor FA/AD/RD.
 name: dsistudio
-version: 2024.06.12.post1
+version: "2024.7.0"
 upstream_version: 2024.6.12
 env:
   QT_QPA_PLATFORM: offscreen

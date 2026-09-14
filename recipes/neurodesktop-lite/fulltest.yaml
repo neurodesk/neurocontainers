@@ -1,9 +1,9 @@
 # neurodesktop-lite container test suite
-# Tests for neurodesktop-lite 20260428.post2 - native Glass LXDE desktop with
+# Tests for neurodesktop-lite 20260428.1.0 - native Glass LXDE desktop with
 # on-demand JupyterLab, CVMFS-backed NeuroDesk tooling, and workflow utilities.
 
 name: neurodesktop-lite
-version: "20260428.post2"
+version: "20260428.1.0"
 claude_version: 2.1.263
 apptainer_version: 1.4.4
 ipywidgets_version: 8.1.9

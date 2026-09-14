@@ -5,7 +5,7 @@ variables:
   synthstrip_version: '1.8'
 
 name: syncro
-version: 0.1.1.post1
+version: "0.2.0"
 
 copyright:
   - license: BSD-2-Clause

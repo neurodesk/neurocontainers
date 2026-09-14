@@ -2,7 +2,7 @@ variables:
   dcm2niix_tag: v1.0.20260724
 
 name: dicomtools
-version: "1.0.0.post2"
+version: "1.1.0"
 
 copyright:
   - name: dcmtk license

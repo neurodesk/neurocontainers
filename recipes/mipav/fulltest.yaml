@@ -1,5 +1,5 @@
 name: mipav
-version: 11.3.3.post1
+version: "11.4.0"
 
 test_data:
   output_dir: test_output/mipav

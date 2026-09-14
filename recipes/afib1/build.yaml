@@ -1,8 +1,7 @@
 name: afib1
-version: "1.6.0.post1"
+version: "1.7.0"
 architectures:
     - x86_64
-    - aarch64
 
 files:
     - name: afib1.py
@@ -73,7 +72,7 @@ build:
 
         #BET2 application
         - install:
-              - gcc-aarch64-linux-gnu cmake make build-essential
+              - cmake make build-essential
 
         - workdir: /opt/code
         - run:
