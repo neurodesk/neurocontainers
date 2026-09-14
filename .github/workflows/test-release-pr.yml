@@ -42,7 +42,7 @@ jobs:
   test-containers:
     needs: detect-changes
     if: needs.detect-changes.outputs.has-changes == 'true'
-    runs-on: neurodesk-arcrunner-release-test
+    runs-on: ${{ matrix.release.architecture == 'aarch64' && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'neurodesk-arcrunner-release-test' }}
     # Do not raise max-parallel. maxRunners 2 is insurance against ARC #4307, not spare
     # throughput, and keeping this at 1 is what leaves the second slot free. Revisit
     # only when #4307 lands or syd1 retires.
@@ -94,9 +94,11 @@ jobs:
             flock 9
             python -m pip install --upgrade pip
             pip install -r requirements.txt
-            uv pip install --system datalad datalad-installer
+            uv pip install --system datalad
             if ! command -v git-annex >/dev/null 2>&1; then
-              datalad-installer --sudo ok git-annex -m datalad/packages
+              # Ubuntu supplies native packages for both AMD64 and ARM64.
+              sudo apt-get update
+              sudo apt-get install -y git-annex
             fi
           ) 9>/tmp/neurocontainers-release-test-deps.lock
           git-annex version
@@ -180,6 +182,7 @@ jobs:
           echo "Name: ${{ matrix.release.name }}"
           echo "Recipe: ${{ matrix.release.recipe }}"
           echo "Version: ${{ matrix.release.version }}"
+          echo "Architecture: ${{ matrix.release.architecture }}"
           echo "File: ${{ matrix.release.file }}"
           echo "Current directory: $(pwd)"
           echo "Release file exists: $([ -f '${{ matrix.release.file }}' ] && echo 'yes' || echo 'no')"
@@ -199,7 +202,7 @@ jobs:
             ls -la "$RECIPE_DIR" || echo "Recipe directory not found"
           fi
 
-          echo "test-config=$TEST_CONFIG" >> $GITHUB_OUTPUT
+          echo "test-config=$TEST_CONFIG" >> "$GITHUB_OUTPUT"
 
       - name: Analyze image layer waste with Dive
         id: dive
@@ -346,7 +349,7 @@ jobs:
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: test-results-${{ matrix.release.name }}
+          name: test-results-${{ matrix.release.name }}-${{ matrix.release.version }}
           path: |
             source/builder/test-results-${{ matrix.release.name }}.json
             source/builder/test-report-${{ matrix.release.name }}.md
@@ -457,7 +460,7 @@ jobs:
         continue-on-error: true
         with:
           pattern: test-results-*
-          merge-multiple: true
+          merge-multiple: false
           path: test-results
 
       - name: Summarize test results
@@ -472,7 +475,7 @@ jobs:
           WASTED_SPACE_RECIPES=0
           DIVE_ERROR_RECIPES=0
 
-          for file in test-results-*.json; do
+          for file in test-results-*/test-results-*.json; do
             if [ -f "$file" ]; then
               TOTAL_RECIPES=$((TOTAL_RECIPES + 1))
               
@@ -486,7 +489,7 @@ jobs:
             fi
           done
 
-          for file in dive-status-*.txt; do
+          for file in test-results-*/dive-status-*.txt; do
             if [ -f "$file" ]; then
               DIVE_STATUS="$(tr -d '[:space:]' < "$file")"
               if [ "$DIVE_STATUS" = "failed" ]; then

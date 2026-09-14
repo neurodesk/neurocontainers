@@ -54,6 +54,7 @@ def test_existing_recipe_fulltest_yaml_ignores_placeholder_latest_metadata(
             "name": "mrtrix3",
             "recipe": "mrtrix3",
             "version": "3.0.8",
+            "architecture": "x86_64",
             "file": latest_release.relative_to(tmp_path).as_posix(),
         }
     ]
@@ -72,6 +73,7 @@ def test_existing_recipe_fulltest_yaml_uses_latest_release_metadata(tmp_path: Pa
             "name": "cat12",
             "recipe": "cat12",
             "version": "26.0.rc3",
+            "architecture": "x86_64",
             "file": latest_release.relative_to(tmp_path).as_posix(),
         }
     ]
@@ -100,6 +102,7 @@ def test_test_config_change_prefers_x86_release_over_arm64_metadata(
             "name": "niimath",
             "recipe": "niimath",
             "version": "1.0.20250804",
+            "architecture": "x86_64",
             "file": latest_x86_release.relative_to(tmp_path).as_posix(),
         }
     ]
@@ -118,6 +121,7 @@ def test_existing_recipe_legacy_test_yaml_is_ignored(
 
 
 def test_release_metadata_can_be_paired_with_fulltest_yaml(tmp_path: Path) -> None:
+    write_release(tmp_path, "cat12", "26.0.rc3")
     result = detect_release_pr_changes(
         [
             "releases/cat12/26.0.rc3.json",
@@ -132,6 +136,7 @@ def test_release_metadata_can_be_paired_with_fulltest_yaml(tmp_path: Path) -> No
             "name": "cat12",
             "recipe": "cat12",
             "version": "26.0.rc3",
+            "architecture": "x86_64",
             "file": "releases/cat12/26.0.rc3.json",
         }
     ]
@@ -159,6 +164,7 @@ def test_named_variant_release_uses_source_recipe_test_suite(tmp_path: Path) -> 
             "name": "spinalcordtoolbox_gpu",
             "recipe": "spinalcordtoolbox",
             "version": "7.3.2",
+            "architecture": "x86_64",
             "file": release.relative_to(tmp_path).as_posix(),
         }
     ]
@@ -225,3 +231,60 @@ def test_retiring_a_release_does_not_queue_a_test_for_the_removed_version(
 
     assert changed == []
     assert detect_release_pr_changes(changed, repo_root=tmp_path).matrix() == []
+
+
+@pytest.mark.parametrize("metadata, version", [
+    ({"architecture": "aarch64", "recipe": "niimath", "variant": "arm64"}, "1.0"),
+    ({"architecture": "arm64"}, "1.0"),
+    ({"apps": {"tool": {"version": "20260914", "architecture": "aarch64"}}}, "1.0"),
+    ({}, "1.0-arm64"),
+])
+def test_arm_release_matrix_carries_resolved_architecture(
+    tmp_path: Path, metadata: dict, version: str,
+) -> None:
+    release = write_release(tmp_path, "niimath_arm64", version)
+    data = json.loads(release.read_text())
+    data.update(metadata)
+    release.write_text(json.dumps(data))
+    result = detect_release_pr_changes([release.relative_to(tmp_path).as_posix()], repo_root=tmp_path)
+    assert result.matrix()[0]["architecture"] == "aarch64"
+
+
+@pytest.mark.parametrize("named_variant", [False, True])
+def test_mixed_architecture_releases_keep_both_matrix_entries(
+    tmp_path: Path, named_variant: bool,
+) -> None:
+    x86 = write_release(tmp_path, "niimath", "1.0")
+    arm_name = "niimath_arm64" if named_variant else "niimath"
+    arm_version = "1.0" if named_variant else "1.0-arm64"
+    arm = write_release(tmp_path, arm_name, arm_version, source_recipe="niimath")
+    data = json.loads(arm.read_text())
+    data["architecture"] = "aarch64"
+    arm.write_text(json.dumps(data))
+
+    result = detect_release_pr_changes(
+        [x86.relative_to(tmp_path).as_posix(), arm.relative_to(tmp_path).as_posix(),
+         "recipes/niimath/fulltest.yaml"],
+        repo_root=tmp_path,
+    )
+
+    assert [(entry.name, entry.version, entry.architecture) for entry in result.entries] == [
+        ("niimath", "1.0", "x86_64"),
+        (arm_name, arm_version, "aarch64"),
+    ]
+    assert all(entry.recipe == "niimath" for entry in result.entries)
+
+
+def test_test_only_change_with_only_legacy_arm_release(tmp_path: Path) -> None:
+    write_release(tmp_path, "niimath", "1.0-arm64")
+    result = detect_release_pr_changes(["recipes/niimath/fulltest.yaml"], repo_root=tmp_path)
+    assert result.matrix()[0]["architecture"] == "aarch64"
+
+
+def test_unsupported_release_architecture_fails_detection(tmp_path: Path) -> None:
+    release = write_release(tmp_path, "tool", "1.0")
+    data = json.loads(release.read_text())
+    data["architecture"] = "riscv64"
+    release.write_text(json.dumps(data))
+    with pytest.raises(ReleaseChangeError, match="Invalid architecture"):
+        detect_release_pr_changes([release.relative_to(tmp_path).as_posix()], repo_root=tmp_path)

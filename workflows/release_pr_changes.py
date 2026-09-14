@@ -12,6 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from builder.config import canonical_architecture
+
+
 class ReleaseChangeError(RuntimeError):
     """Raised when release metadata is mixed with unrelated PR changes."""
 
@@ -22,6 +25,7 @@ class ReleaseEntry:
     recipe: str
     version: str
     file: str
+    architecture: str
 
     def as_dict(self) -> dict[str, str]:
         return {
@@ -29,6 +33,7 @@ class ReleaseEntry:
             "recipe": self.recipe,
             "version": self.version,
             "file": self.file,
+            "architecture": self.architecture,
         }
 
 
@@ -90,6 +95,27 @@ def _release_source_recipe(release_file: Path, fallback: str) -> str:
             f"Invalid source recipe {recipe!r} in {release_file.as_posix()}"
         )
     return recipe
+
+
+def _release_architecture(release_file: Path) -> str:
+    """Resolve current metadata and legacy per-app or filename ARM64 markers."""
+    try:
+        data = json.loads(release_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReleaseChangeError(f"Unable to read release metadata {release_file}: {exc}") from exc
+
+    architecture = data.get("architecture")
+    if not architecture:
+        apps = data.get("apps") or {}
+        first_app = next(iter(apps.values()), {})
+        if isinstance(first_app, dict):
+            architecture = first_app.get("architecture")
+    if not architecture:
+        architecture = "aarch64" if release_file.stem.endswith("-arm64") else "x86_64"
+    try:
+        return canonical_architecture(str(architecture))
+    except ValueError as exc:
+        raise ReleaseChangeError(f"Invalid architecture in {release_file}: {architecture!r}") from exc
 
 
 def find_latest_release_file(
@@ -171,7 +197,7 @@ def detect_release_pr_changes(
             f"Unrelated files: {', '.join(unrelated_to_release)}"
         )
 
-    entries: dict[str, ReleaseEntry] = {}
+    entries: dict[tuple[str, str], ReleaseEntry] = {}
     for path in paths:
         match = RELEASE_PATTERN.match(path)
         if not match:
@@ -179,11 +205,12 @@ def detect_release_pr_changes(
 
         container, version = match.groups()
         source_recipe = _release_source_recipe(root / path, container)
-        entries[container] = ReleaseEntry(
+        entries[container, version] = ReleaseEntry(
             name=container,
             recipe=source_recipe,
             version=version,
             file=path,
+            architecture=_release_architecture(root / path),
         )
 
     candidate_recipes = {
@@ -212,18 +239,19 @@ def detect_release_pr_changes(
             prefer_x86_64=True,
         )
         if release_file and version:
-            entries[recipe] = ReleaseEntry(
+            entries[recipe, version] = ReleaseEntry(
                 name=recipe,
                 recipe=_release_source_recipe(release_file, recipe),
                 version=version,
                 file=_relative_posix(release_file, root),
+                architecture=_release_architecture(release_file),
             )
         elif recipe not in skipped_seen:
             skipped_new_recipe_tests.append(recipe)
             skipped_seen.add(recipe)
 
     return DetectionResult(
-        entries=tuple(sorted(entries.values(), key=lambda item: item.name)),
+        entries=tuple(sorted(entries.values(), key=lambda item: (item.name, item.version))),
         skipped_new_recipe_tests=tuple(sorted(skipped_new_recipe_tests)),
     )
 
