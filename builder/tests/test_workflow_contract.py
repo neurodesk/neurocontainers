@@ -560,3 +560,29 @@ def test_update_apps_json_runs_for_release_file_pushes() -> None:
     assert '      - "recipes/**/build.yaml"' in workflow
     assert "pull_request:" not in workflow
     assert "github.event.pull_request.merged" not in workflow
+
+
+def test_release_tests_select_native_runners_and_keep_artifacts_separate() -> None:
+    import yaml
+
+    workflow = yaml.safe_load(Path(".github/workflows/test-release-pr.yml").read_text())
+    job = workflow["jobs"]["test-containers"]
+    assert job["runs-on"] == (
+        "${{ matrix.release.architecture == 'aarch64' && "
+        "'blacksmith-8vcpu-ubuntu-2404-arm' || 'neurodesk-arcrunner-release-test' }}"
+    )
+    assert job["strategy"]["matrix"]["release"] == (
+        "${{ fromJson(needs.detect-changes.outputs.modified-releases) }}"
+    )
+    steps = {step["name"]: step for step in job["steps"]}
+    dependencies = steps["Install dependencies"]["run"]
+    assert "sudo apt-get install -y git-annex" in dependencies
+    assert "datalad-installer" not in dependencies
+    assert steps["Install Apptainer"]["uses"] == "./source/.github/actions/setup-apptainer"
+    assert steps["Upload test results"]["with"]["name"] == (
+        "test-results-${{ matrix.release.name }}-${{ matrix.release.version }}"
+    )
+    summary_steps = workflow["jobs"]["summarize-results"]["steps"]
+    assert summary_steps[0]["with"]["merge-multiple"] is False
+    assert "test-results-*/test-results-*.json" in summary_steps[1]["run"]
+    assert "test-results-*/dive-status-*.txt" in summary_steps[1]["run"]
