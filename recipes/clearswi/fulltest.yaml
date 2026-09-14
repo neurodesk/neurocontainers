@@ -18,7 +18,7 @@
 #   - Phase.nii: 40x40x20x3 multi-echo phase (3 echoes)
 
 name: clearswi
-version: 1.6.1
+version: 1.7.0
 
 test_data:
   output_dir: test_output
