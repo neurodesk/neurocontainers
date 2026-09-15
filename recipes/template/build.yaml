@@ -37,6 +37,7 @@ build:
 deploy:
   bins: 
     - datalad
+    - git
 
 categories:
   - data organisation
