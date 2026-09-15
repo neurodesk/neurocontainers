@@ -1065,7 +1065,7 @@ jobs:
       # pulls. Flip to public via the API so publishing stays hands-off. Needs an
       # OAuth token (repo:admin) in secrets.QUAY_API_TOKEN — the robot registry
       # token used above cannot call the REST API. Idempotent (already-public is a
-      # no-op) and non-fatal: a missing token or API error only warns.
+      ## no-op) and non-fatal: a missing token or API error only warns.
       - name: Make Quay repo public
         env:
           QUAY_API_TOKEN: ${{ secrets.QUAY_API_TOKEN }}
