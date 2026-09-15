@@ -1,7 +1,7 @@
 variables: {}
 
 name: afni
-version: 26.0.07
+version: "26.1.0"
 # https://hub.docker.com/r/afni/afni_make_build/tags
 # https://afni.nimh.nih.gov/about_afni
 
@@ -171,4 +171,4 @@ files:
   url: https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz
 - name: afni_binary
   url: https://afni.nimh.nih.gov/pub/dist/tgz/linux_ubuntu_24_64.tgz
-  sha256: 988f5d7f84b7e26f80de4ed0b2af41b93cea52a92422d0d703505e97cd980738
+  sha256: "14dca5b8bb37a5fc36561f23cd01963be0f804bc89f4bac22a28483736010c28"
