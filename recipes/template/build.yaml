@@ -33,6 +33,7 @@ build:
   - install:
     - datalad 
     - datalad-container
+    - curl
 
 deploy:
   bins: 
