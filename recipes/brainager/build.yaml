@@ -1,8 +1,8 @@
 variables:
-  upstream_commit: 3f53965001a992bf54cea46382e10c5b96c40a15
+  upstream_commit: "f9444605527337b07b9a8eb2f6c8c81261aa8b61"
 
 name: brainager
-version: "2.2.0"
+version: "2.3.0"
 
 copyright:
   - license: LGPL-3.0
