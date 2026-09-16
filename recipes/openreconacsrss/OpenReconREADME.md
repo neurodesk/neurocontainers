@@ -112,7 +112,7 @@ python /opt/code/python-ismrmrd-server/fire_poc.py /path/to/session \
 ```
 
 The same command runs from the repository with
-`shared/fire_poc/fire_poc.py` and Python dependencies from the recipe. Output
+`macros/fire_poc/fire_poc.py` and Python dependencies from the recipe. Output
 must be a new directory. `--dicom` writes derived MR preview files with new
 Study/Series/SOP UIDs, empty patient identity, encoded-grid geometry, and uint16
 pixels plus a rescale slope. They are offline previews, not scanner-validated
@@ -130,12 +130,12 @@ collision with an incoming original series is rejected.
 ## Tests and known scope
 
 ```sh
-python shared/fire_poc/tests/smoke_fire_poc.py
+python macros/fire_poc/tests/smoke_fire_poc.py
 ```
 
 The same synthetic capture, numerical reconstruction, and DICOM tests run from
 `fulltest.yaml` inside each image. They prove MRD-side behavior, not scanner
-compatibility. The shared implementation is `shared/fire_poc/fire_poc.py`.
+compatibility. The shared implementation is `macros/fire_poc/fire_poc.py`.
 The base image and four shared OpenRecon sources are pinned through recipe
 variables and tracked by the repository's automatic update policy.
 

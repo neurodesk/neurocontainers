@@ -24,9 +24,9 @@ files:
   - name: scanner-session.example.json
     filename: scanner-session.example.json
   - name: fire_poc.py
-    filename: ../../shared/fire_poc/fire_poc.py
+    filename: ../../macros/fire_poc/fire_poc.py
   - name: smoke_fire_poc.py
-    filename: ../../shared/fire_poc/tests/smoke_fire_poc.py
+    filename: ../../macros/fire_poc/tests/smoke_fire_poc.py
 
 variables:
   openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
@@ -39,7 +39,7 @@ auto_update:
   method: sources
   local:
   - macros/openrecon
-  - shared/fire_poc
+  - macros/fire_poc
   sources:
   - id: base_image
     method: oci_digest
