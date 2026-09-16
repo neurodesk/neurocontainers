@@ -293,7 +293,23 @@ def assemble(group: list[ismrmrd.Acquisition], metadata: Any, domain: str) -> tu
         if line.shape[1] != nx:
             raise ValueError(
                 "Readout width after discards must match encoded matrix; no "
-                "implicit cropping"
+                "implicit cropping. "
+                f"inputdomain={domain}, encoding_space_ref={acq.encoding_space_ref}, "
+                f"scan_counter={acq.scan_counter}, slice={acq.idx.slice}, "
+                f"repetition={acq.idx.repetition}, "
+                f"kspace_encode_step_1={acq.idx.kspace_encode_step_1}, "
+                f"flags={int(acq.flags):#x}, data_shape={acq.data.shape}, "
+                f"number_of_samples={acq.number_of_samples}, "
+                f"discard_pre={acq.discard_pre}, discard_post={acq.discard_post}, "
+                f"retained_samples={line.shape[1]}, center_sample={acq.center_sample}, "
+                f"sample_time_us={acq.sample_time_us}, "
+                f"encoded_matrix=({matrix.x}, {matrix.y}, {matrix.z}), "
+                f"encoded_fov_mm=({enc.encodedSpace.fieldOfView_mm.x}, "
+                f"{enc.encodedSpace.fieldOfView_mm.y}, {enc.encodedSpace.fieldOfView_mm.z}), "
+                f"recon_matrix=({enc.reconSpace.matrixSize.x}, "
+                f"{enc.reconSpace.matrixSize.y}, {enc.reconSpace.matrixSize.z}), "
+                f"recon_fov_mm=({enc.reconSpace.fieldOfView_mm.x}, "
+                f"{enc.reconSpace.fieldOfView_mm.y}, {enc.reconSpace.fieldOfView_mm.z})"
             )
         if domain == "kx-ky" and int(acq.center_sample) - start != nx // 2:
             raise ValueError(
