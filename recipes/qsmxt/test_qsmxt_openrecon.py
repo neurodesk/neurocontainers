@@ -745,7 +745,7 @@ def test_output_meta_replaces_source_scaling_with_qsm_dicom_contract():
     assert float(meta["WindowWidth"]) == 20.0
     assert "VOILUTFunction" not in meta
     assert float(meta["QSMxTPhysicalWindowCenter"]) == 0.0
-    assert float(meta["QSMxTPhysicalWindowWidth"]) == 0.02
+    assert float(meta["QSMxTPhysicalWindowWidth"]) == pytest.approx(0.02)
     assert meta["QSMxTWindowDomain"] == "ppb"
     assert 0 not in display
 
@@ -1631,3 +1631,37 @@ def test_gui_algorithm_reaches_command(parameter, flag, value, tmp_path, monkeyp
     qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
     command = commands[0]
     assert command[command.index(flag) + 1] == value
+
+
+@pytest.mark.parametrize("amplitude", [0.0001, 1.0, 10000.0])
+def test_swi_window_survives_integer_bridge_and_is_shared_across_slices(
+    amplitude, tmp_path
+):
+    physical = np.zeros((2, 32, 32), dtype=np.float32)
+    physical[1] = np.linspace(0.1, 1.0, 1024).reshape(32, 32) * amplitude
+    physical[1, -1, -1] = 3.269 * amplitude
+    source = _image(1, 1, "gre_qsm", physical[:1])
+    display, _ = qsmxt._scanner_display_volume(physical, "swi", "a.u.")
+    path = tmp_path / "swi.nii.gz"
+    nib.save(nib.Nifti1Image(np.moveaxis(physical, 0, -1), np.eye(4)), path)
+    images = qsmxt._nifti_to_mrd_images(
+        path, source, qsmxt.OUTPUT_SERIES_START,
+        "QSMxT SWI", "QSMXT_SWI", "swi", "a.u.",
+    )
+    qsmxt._validate_output_images(images, [source])
+    assert len(images) == 2
+    windows = []
+    for image in images:
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        center, width = int(meta["WindowCenter"]), int(meta["WindowWidth"])
+        assert width > 2
+        windows.append((center, width))
+        assert float(meta["RescaleSlope"]) == 1.0
+        assert float(meta["RescaleIntercept"]) == 0.0
+        assert meta["QSMxTWindowDomain"] == "scaled-a.u."
+        scale = float(meta["QSMxTDisplayScale"])
+        high = np.percentile(physical[physical > 0], 99)
+        assert width == pytest.approx(high * scale, abs=1)
+        assert center == pytest.approx(width / 2, abs=1)
+        np.testing.assert_allclose(display / scale, physical, atol=0.51 / scale)
+    assert windows[0] == windows[1]

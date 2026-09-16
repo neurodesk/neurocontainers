@@ -138,6 +138,7 @@ T2STAR_SCALE_MIN_POSITIVE_VOXELS = 100
 T2STAR_WINDOW_PERCENTILE = 95.0
 T2STAR_DICOM_MS_PER_SECOND = 1000.0
 T2STAR_MAX_SCALE_INPUT_SECONDS = SCANNER_DISPLAY_MAX / T2STAR_DICOM_MS_PER_SECOND
+SWI_WINDOW_PERCENTILE = 99.0
 QSM_WINDOW_LOW_PERCENTILE = 1.0
 QSM_WINDOW_HIGH_PERCENTILE = 99.0
 QSM_WINDOW_MIN_NONZERO_VOXELS = 100
@@ -2234,12 +2235,13 @@ def _output_meta(
     meta["QSMxTDisplayScaleInputMax"] = (
         f"{float(display_meta['scale_input_max']):.6g}"
     )
-    meta["QSMxTPhysicalWindowCenter"] = f"{float(physical_center):.6g}"
-    meta["QSMxTPhysicalWindowWidth"] = f"{float(physical_width):.6g}"
-    dicom_value_scale = _dicom_value_scale(output_id)
+    meta["QSMxTPhysicalWindowCenter"] = f"{float(physical_center):.17g}"
+    meta["QSMxTPhysicalWindowWidth"] = f"{float(physical_width):.17g}"
+    dicom_value_scale = _dicom_value_scale(output_id, display_meta["scale"])
     meta["QSMxTWindowDomain"] = {
         "qsm": "ppb",
         "t2star": "ms",
+        "swi": "scaled-a.u.",
     }.get(output_id, "physical")
     meta["QSMxTDisplayMin"] = str(int(display_meta["display_min"]))
     meta["QSMxTDisplayMax"] = str(int(display_meta["display_max"]))
@@ -2256,7 +2258,7 @@ def _output_meta(
         meta["PixelPaddingRangeLimit"] = str(
             int(display_meta["padding_value"])
         )
-    if output_id in {"qsm", "t2star"}:
+    if output_id in {"qsm", "t2star", "swi"}:
         meta["WindowCenter"] = str(
             int(np.rint(physical_center * dicom_value_scale))
         )
@@ -2332,7 +2334,7 @@ def _validate_output_images(output_images, input_images):
         rescale_slope = _meta_float(meta, "RescaleSlope")
         rescale_intercept = _meta_float(meta, "RescaleIntercept")
         output_id = _meta_text(meta, "QSMxTOutput")
-        dicom_value_scale = _dicom_value_scale(output_id)
+        dicom_value_scale = _dicom_value_scale(output_id, display_scale or 1.0)
         if display_scale is not None and display_scale > 0.0:
             expected_slope = dicom_value_scale / display_scale
             expected_intercept = (
@@ -2360,7 +2362,7 @@ def _validate_output_images(output_images, input_images):
         if _meta_text(meta, "RescaleType") != "US":
             errors.append(f"image {index} RescaleType is not US")
 
-        if output_id in {"qsm", "t2star"}:
+        if output_id in {"qsm", "t2star", "swi"}:
             window_center = _meta_float(meta, "WindowCenter")
             window_width = _meta_float(meta, "WindowWidth")
             physical_window_center = _meta_float(
@@ -2759,8 +2761,9 @@ def _normalized_or_default(values, default):
     return vector / norm
 
 
-def _dicom_value_scale(output_id):
+def _dicom_value_scale(output_id, display_scale):
     return {
+        "swi": display_scale,
         "qsm": QSM_DICOM_PPB_PER_PPM,
         "t2star": T2STAR_DICOM_MS_PER_SECOND,
     }.get(output_id, 1.0)
@@ -2897,6 +2900,11 @@ def _scanner_display_window_range(
             high = float(np.percentile(finite_positive, T2STAR_WINDOW_PERCENTILE))
             return 0.0, min(high, scale_input_max)
         return 0.0, scale_input_max
+    if output_id == "swi":
+        positive = values[np.isfinite(values) & (values > 0.0)]
+        if positive.size:
+            return 0.0, float(np.percentile(positive, SWI_WINDOW_PERCENTILE))
+        return scale_input_min, scale_input_max
     if output_id != "qsm":
         return scale_input_min, scale_input_max
 

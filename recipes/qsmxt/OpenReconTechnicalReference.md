@@ -73,6 +73,16 @@ integer-window limitation. `QSMxTWindowDomain=ms` identifies this conversion.
 remain in seconds, matching the source NIfTI. Scanner export clipping does not
 modify that NIfTI, and saturated DICOM pixels cannot recover the original fits.
 
+SWI DICOM values use scaled arbitrary units with a rescale slope of one.
+`QSMxTWindowDomain=scaled-a.u.` identifies this domain. Its explicit integer
+window spans zero to the 99th percentile of positive finite voxels across the
+volume, so every slice uses the same contrast, including empty edge slices.
+This avoids fractional scanner-generated windows being rounded to zero or one.
+Storage scaling still preserves the full finite range; the display window does
+not clip stored pixels. `QSMxTDisplayFormula` and the physical window metadata
+retain the conversion to the source arbitrary units. Source NIfTI values do not
+change.
+
 QSMxT computes T2* from multi-echo magnitude data inside its reconstruction mask.
 The [v9.21.0 pipeline](https://github.com/QSMxT/QSMxT/blob/v9.21.0/src/pipeline/runner.rs)
 requires at least three echoes and calls the
