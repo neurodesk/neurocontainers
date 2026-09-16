@@ -46,26 +46,31 @@ auto_update:
     package: loguru
     target:
       variable: loguru_version
+      fulltest_variable: loguru_version
   - id: panoptica
     method: pypi
     package: panoptica
     target:
       variable: panoptica_version
+      fulltest_variable: panoptica_version
   - id: deep_quality_estimation
     method: pypi
     package: deep_quality_estimation
     target:
       variable: deep_quality_estimation_version
+      fulltest_variable: deep_quality_estimation_version
   - id: petu
     method: pypi
     package: petu
     target:
       variable: petu_version
+      fulltest_variable: petu_version
   - id: gliomoda
     method: pypi
     package: gliomoda
     target:
       variable: gliomoda_version
+      fulltest_variable: gliomoda_version
   - id: antspyx
     method: pypi
     package: antspyx
@@ -101,11 +106,13 @@ auto_update:
     package: brainles-aurora
     target:
       variable: brainles_aurora_version
+      fulltest_variable: brainles_aurora_version
   - id: brainles-preprocessing
     method: pypi
     package: brainles-preprocessing
     target:
       variable: brainles_preprocessing_version
+      fulltest_variable: brainles_preprocessing_version
 
 build:
   kind: neurodocker
@@ -287,9 +294,9 @@ readme: |-
   brainles_hd_bet           brain extraction
   ```
 
-  Bundled versions: panoptica 2.1.6, gliomoda 0.0.4, petu 0.0.7,
-  deep_quality_estimation 0.0.3, brainles-aurora 0.2.7,
-  brainles-preprocessing 0.6.10, brainles_hd_bet 0.0.11. Each is also available
+  Bundled versions: panoptica {{ context.panoptica_version }}, gliomoda {{ context.gliomoda_version }}, petu {{ context.petu_version }},
+  deep_quality_estimation {{ context.deep_quality_estimation_version }}, brainles-aurora {{ context.brainles_aurora_version }},
+  brainles-preprocessing {{ context.brainles_preprocessing_version }}, brainles_hd_bet {{ context.brainles_hd_bet_version }}. Each is also available
   as its own container, which adds a command line interface these do not have.
 
   ### Example
