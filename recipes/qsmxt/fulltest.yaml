@@ -130,6 +130,52 @@ tests:
       print("T2 star fit, millisecond scaling, and scanner window verified")
       PYCODE
 
+  - name: SWI scanner window
+    description: Verify integer windows shared by tissue and empty slices
+    script: |
+      set -euo pipefail
+      python - <<'PYCODE'
+      import sys
+      import tempfile
+      from pathlib import Path
+
+      import ismrmrd
+      import nibabel as nib
+      import numpy as np
+
+      sys.path.insert(0, "/opt/code/python-ismrmrd-server")
+      import qsmxt
+
+      with tempfile.TemporaryDirectory() as work:
+          data = np.zeros((32, 32, 2), dtype=np.float32)
+          data[:, :, 1] = np.linspace(0.1, 1.0, 1024).reshape(32, 32)
+          data[-1, -1, 1] = 3.269
+          path = Path(work) / "swi.nii.gz"
+          nib.save(nib.Nifti1Image(data, np.eye(4)), path)
+          anchor = ismrmrd.Image.from_array(np.ones((1, 32, 32), dtype=np.float32))
+          images = qsmxt._nifti_to_mrd_images(
+              path, anchor, qsmxt.OUTPUT_SERIES_START,
+              "QSMxT SWI", "QSMXT_SWI", "swi", "a.u.",
+          )
+          qsmxt._validate_output_images(images, [anchor])
+          assert len(images) == 2
+          windows = set()
+          for image in images:
+              meta = ismrmrd.Meta.deserialize(image.attribute_string)
+              assert meta["QSMxTWindowDomain"] == "scaled-a.u."
+              assert float(meta["RescaleSlope"]) == 1
+              assert float(meta["RescaleIntercept"]) == 0
+              center, width = int(meta["WindowCenter"]), int(meta["WindowWidth"])
+              assert width > 2
+              high = np.percentile(data[data > 0], 99)
+              assert abs(width - high * float(meta["QSMxTDisplayScale"])) <= 1
+              assert abs(center - width / 2) <= 1
+              windows.add((center, width))
+          assert len(windows) == 1
+          np.testing.assert_array_equal(nib.load(path).get_fdata(), data)
+      print("SWI scaling and shared integer scanner window verified")
+      PYCODE
+
   - name: OpenRecon algorithm coverage
     description: Compare GUI algorithm choices with the installed QSMxT CLI
     script: |
