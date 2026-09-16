@@ -1,5 +1,5 @@
 name: clinica
-version: 0.10.0
+version: 0.11.3
 default_timeout: 60
 env_setup: |
   assert_linked() {
