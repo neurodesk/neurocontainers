@@ -1,21 +1,17 @@
 """Make the `preprocessor` console script usable.
 
-Three defects in brainles_preprocessing 0.6.10's cli.py. The first two are hit
-before any work is done; the third is hit after two and a half minutes of it:
+Two defects in brainles_preprocessing's cli.py. The first is hit before any
+work is done; the second is hit after two and a half minutes of it. (A third,
+`output_dir` annotated `str | Path`, broke every invocation up to 0.6.10 and
+was fixed upstream in 0.6.13.)
 
-1. `output_dir` is annotated `str | Path`. Typer cannot build a parameter from
-   a union type and raises at import, so every invocation fails -- including
-   `preprocessor --help`. Narrowing it to `Path` is what upstream does
-   elsewhere in the same signature, and the body already uses it as a Path
-   (`output_dir / "temp"`).
-
-2. `input_atlas` defaults to the string "SRI24 BraTS atlas", which is a label,
+1. `input_atlas` defaults to the string "SRI24 BraTS atlas", which is a label,
    not a path. The body guards with `if input_atlas is not None`, so that
    default is passed straight through as `atlas_image_path` and registration
    fails on a missing file. `None` lets the guard fall through to the
    preprocessor's own bundled atlas, which is what the label describes.
 
-3. The CLI passes no `brain_extractor`, so the preprocessor substitutes
+2. The CLI passes no `brain_extractor`, so the preprocessor substitutes
    `HDBetExtractor()` and its `extract` defaults: `mode="accurate"`,
    `device=0`, `do_tta=True`. That is a five-fold ensemble with test-time
    mirroring -- 40 forward passes. On a CPU-only node a measured run reached
@@ -30,7 +26,7 @@ before any work is done; the third is hit after two and a half minutes of it:
    the CLI grows three options to set them. Upstream's own defaults are
    unchanged, so a GPU run behaves exactly as before.
 
-Kept as a patch rather than a fork: it is two annotations and one extractor,
+Kept as a patch rather than a fork: it is one default and one extractor,
 and pinning a fork would strand the recipe on this release.
 """
 
@@ -46,20 +42,12 @@ source = cli_path.read_text()
 
 replacements = [
     (
-        """output_dir: Annotated[
-        str | Path,
-""",
-        """output_dir: Annotated[
-        Path,
-""",
-    ),
-    (
         """    ] = "SRI24 BraTS atlas",
 """,
         """    ] = None,
 """,
     ),
-    # Defect 3, part one: an extractor that carries the caller's profile.
+    # Defect 2, part one: an extractor that carries the caller's profile.
     (
         """from brainles_preprocessing.preprocessor import AtlasCentricPreprocessor
 
@@ -67,7 +55,7 @@ replacements = [
 def version_callback(value: bool):
 """,
         """from brainles_preprocessing.preprocessor import AtlasCentricPreprocessor
-from brainles_preprocessing.brain_extraction.brain_extractor import HDBetExtractor
+from brainles_preprocessing.brain_extraction.hd_bet import HDBetExtractor
 
 
 class _ProfiledHDBetExtractor(HDBetExtractor):
@@ -112,7 +100,7 @@ class _ProfiledHDBetExtractor(HDBetExtractor):
 def version_callback(value: bool):
 """,
     ),
-    # Defect 3, part two: the flags, ahead of --version so they appear with
+    # Defect 2, part two: the flags, ahead of --version so they appear with
     # the other real options rather than after the eager one.
     (
         """    version: Annotated[
@@ -150,7 +138,7 @@ def version_callback(value: bool):
         Optional[bool],
 """,
     ),
-    # Defect 3, part three: the wiring. Without this the flags parse and do
+    # Defect 2, part three: the wiring. Without this the flags parse and do
     # nothing, which is the failure mode the fulltest checks for.
     (
         """        temp_folder=output_dir / "temp",
