@@ -1,5 +1,12 @@
 name: brainlesion
-version: 1.0.0
+version: "1.1.0"
+brainles_aurora_version: "0.2.7"
+brainles_preprocessing_version: "0.6.13"
+deep_quality_estimation_version: "0.0.3"
+gliomoda_version: "0.0.4"
+loguru_version: "0.7.3"
+panoptica_version: "2.1.7"
+petu_version: "0.0.7"
 default_timeout: 120
 
 env:
@@ -16,25 +23,25 @@ tests:
     command: python -c 'import site; assert site.ENABLE_USER_SITE is False'
 
   - name: brainles_aurora distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_aurora"); assert d.version == "0.2.7" and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_aurora"); assert d.version == "${brainles_aurora_version}" and len(tuple(d.files or ())) > 5'
 
   - name: brainles_preprocessing distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_preprocessing"); assert d.version == "0.6.10" and len(tuple(d.files or ())) > 20'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("brainles_preprocessing"); assert d.version == "${brainles_preprocessing_version}" and len(tuple(d.files or ())) > 20'
 
   - name: deep_quality_estimation distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("deep_quality_estimation"); assert d.version == "0.0.3" and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("deep_quality_estimation"); assert d.version == "${deep_quality_estimation_version}" and len(tuple(d.files or ())) > 5'
 
   - name: gliomoda distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("gliomoda"); assert d.version == "0.0.4" and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("gliomoda"); assert d.version == "${gliomoda_version}" and len(tuple(d.files or ())) > 5'
 
   - name: loguru distribution is pinned
-    command: python -c 'from importlib.metadata import version; assert version("loguru") == "0.7.3"'
+    command: python -c 'from importlib.metadata import version; assert version("loguru") == "${loguru_version}"'
 
   - name: panoptica distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("panoptica"); assert d.version == "2.1.6" and len(tuple(d.files or ())) > 20'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("panoptica"); assert d.version == "${panoptica_version}" and len(tuple(d.files or ())) > 20'
 
   - name: petu distribution is healthy
-    command: python -c 'from importlib.metadata import distribution; d=distribution("petu"); assert d.version == "0.0.7" and len(tuple(d.files or ())) > 5'
+    command: python -c 'from importlib.metadata import distribution; d=distribution("petu"); assert d.version == "${petu_version}" and len(tuple(d.files or ())) > 5'
 
   - name: brainles_aurora imports
     command: python -c 'import brainles_aurora'
@@ -311,13 +318,13 @@ tests:
       for pkg in ('panoptica', 'gliomoda', 'petu'):
           print(pkg, md.version(pkg))
       "
-    expected_output_contains: "panoptica 2.1.6"
+    expected_output_contains: "panoptica ${panoptica_version}"
 
   - name: panoptica instance relabelling survives >255 labels
     description: >-
-      2.1.6 still builds its label lookup with the connected-components dtype,
-      so multi-lesion evaluations overflow. The image carries the upstream-main
-      fix; this fails if it is lost.
+      Up to 2.1.6 panoptica built its label lookup with the connected-components
+      dtype, so multi-lesion evaluations overflowed. Fixed upstream in 2.1.7;
+      this fails if it regresses.
     command: |
       python -c "
       import numpy as np
@@ -473,7 +480,7 @@ tests:
       python -c "
       import inspect
       import typer.main
-      from brainles_preprocessing.brain_extraction.brain_extractor import HDBetExtractor
+      from brainles_preprocessing.brain_extraction.hd_bet import HDBetExtractor
       from brainles_preprocessing.cli import app, _ProfiledHDBetExtractor
 
       cmd = typer.main.get_command(app)

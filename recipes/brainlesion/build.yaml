@@ -1,5 +1,5 @@
 name: brainlesion
-version: 1.0.0
+version: "1.1.0"
 architectures:
   - x86_64
 structured_readme:
@@ -24,18 +24,18 @@ structured_readme:
 variables:
   atlas_version: 2.0.0
   loguru_version: 0.7.3
-  panoptica_version: 2.1.6
+  panoptica_version: "2.1.7"
   deep_quality_estimation_version: 0.0.3
   petu_version: 0.0.7
   gliomoda_version: 0.0.4
   antspyx_version: 0.6.3
-  auxiliary_version: 0.3.1
+  auxiliary_version: "0.4.2"
   brainles_hd_bet_version: 0.0.11
   ttictoc_version: 0.5.6
-  typer_version: 0.15.4
-  tqdm_version: 4.67.1
+  typer_version: "0.27.2"
+  tqdm_version: "4.70.1"
   brainles_aurora_version: 0.2.7
-  brainles_preprocessing_version: 0.6.10
+  brainles_preprocessing_version: "0.6.13"
 
 auto_update:
   method: sources
@@ -46,26 +46,31 @@ auto_update:
     package: loguru
     target:
       variable: loguru_version
+      fulltest_variable: loguru_version
   - id: panoptica
     method: pypi
     package: panoptica
     target:
       variable: panoptica_version
+      fulltest_variable: panoptica_version
   - id: deep_quality_estimation
     method: pypi
     package: deep_quality_estimation
     target:
       variable: deep_quality_estimation_version
+      fulltest_variable: deep_quality_estimation_version
   - id: petu
     method: pypi
     package: petu
     target:
       variable: petu_version
+      fulltest_variable: petu_version
   - id: gliomoda
     method: pypi
     package: gliomoda
     target:
       variable: gliomoda_version
+      fulltest_variable: gliomoda_version
   - id: antspyx
     method: pypi
     package: antspyx
@@ -101,11 +106,13 @@ auto_update:
     package: brainles-aurora
     target:
       variable: brainles_aurora_version
+      fulltest_variable: brainles_aurora_version
   - id: brainles-preprocessing
     method: pypi
     package: brainles-preprocessing
     target:
       variable: brainles_preprocessing_version
+      fulltest_variable: brainles_preprocessing_version
 
 build:
   kind: neurodocker
@@ -158,12 +165,10 @@ build:
         # fulltest because it is the whole point of the previous step.
         - >-
           python -c "from brainles_preprocessing.utils import zenodo as z; asked=[]; z.ZenodoRecord._get_metadata_and_archive_url=lambda self: (asked.append(1), ({'version':'99.0.0'},''))[1]; p=z.fetch_atlases(); assert p.name.endswith('_v{{ context.atlas_version }}'), p; assert not asked, 'zenodo queried at run time'; print('atlas pin survives an upstream version bump')"
-        # panoptica 2.x builds its instance-label lookup with the dtype of the
-        # connected-components array, so multi-lesion evaluations fail once
-        # reference plus unmatched predicted instances exceed 255. Fixed on
-        # upstream main but not in 2.1.6, and carried by the standalone
-        # panoptica container for the same reason.
-        - python {{ get_file("fix_map_labels_dtype") }}
+        # panoptica up to 2.1.6 built its instance-label lookup with the dtype
+        # of the connected-components array, so multi-lesion evaluations failed
+        # once reference plus unmatched predicted instances exceeded 255. Fixed
+        # upstream in 2.1.7; keep the check so a regression fails the build.
         - >-
           python -c "import numpy as np; from panoptica._functionals import _map_labels; a=np.zeros((4,4),dtype=np.uint8); a[0,0]=3; assert int(_map_labels(a,{3:256}).max())==256; print('instance relabelling handles >255 labels')"
         # finding 4: both exist at /opt/miniconda/bin but were never exposed.
@@ -253,8 +258,6 @@ files:
     filename: fix_preprocessor_cli.py
   - name: bls_writable_weights
     filename: bls_writable_weights.py
-  - name: fix_map_labels_dtype
-    filename: fix_map_labels_dtype.py
   - name: fix_hd_bet_cli
     filename: fix_hd_bet_cli.py
   - name: bake_atlases.py
@@ -291,9 +294,9 @@ readme: |-
   brainles_hd_bet           brain extraction
   ```
 
-  Bundled versions: panoptica 2.1.6, gliomoda 0.0.4, petu 0.0.7,
-  deep_quality_estimation 0.0.3, brainles-aurora 0.2.7,
-  brainles-preprocessing 0.6.10, brainles_hd_bet 0.0.11. Each is also available
+  Bundled versions: panoptica {{ context.panoptica_version }}, gliomoda {{ context.gliomoda_version }}, petu {{ context.petu_version }},
+  deep_quality_estimation {{ context.deep_quality_estimation_version }}, brainles-aurora {{ context.brainles_aurora_version }},
+  brainles-preprocessing {{ context.brainles_preprocessing_version }}, brainles_hd_bet {{ context.brainles_hd_bet_version }}. Each is also available
   as its own container, which adds a command line interface these do not have.
 
   ### Example
