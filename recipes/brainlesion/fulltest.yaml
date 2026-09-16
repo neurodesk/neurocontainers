@@ -473,7 +473,7 @@ tests:
       python -c "
       import inspect
       import typer.main
-      from brainles_preprocessing.brain_extraction.brain_extractor import HDBetExtractor
+      from brainles_preprocessing.brain_extraction.hd_bet import HDBetExtractor
       from brainles_preprocessing.cli import app, _ProfiledHDBetExtractor
 
       cmd = typer.main.get_command(app)

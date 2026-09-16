@@ -4,7 +4,7 @@
 which is read-only once the image is built. That fixes the first-run download,
 but not the version check that happens on every run after it.
 
-`ZenodoRecord.fetch()` queries Zenodo before it looks at what is already on
+`ZenodoRecord.fetch()` (through `_fetch_uncached()` since 0.6.13) queries Zenodo before it looks at what is already on
 disk, and `ATLASES_RECORD_ID = "15236131"` is a Zenodo *concept* DOI, which by
 design always resolves to the newest version. When the remote version differs
 from the local one, `fetch()` does:
@@ -55,12 +55,12 @@ source = zenodo_path.read_text()
 replacements = [
     # Consult the disk before the network, and stop there when it answers.
     (
-        '''    def fetch(self) -> Path:
-        """Fetch the latest version of the record from Zenodo or from local storage."""
+        '''    def _fetch_uncached(self) -> Path:
+        """Perform the actual Zenodo check / download without consulting the cache."""
         zenodo_response = self._get_metadata_and_archive_url()
 ''',
-        '''    def fetch(self) -> Path:
-        """Fetch the latest version of the record from Zenodo or from local storage."""
+        '''    def _fetch_uncached(self) -> Path:
+        """Perform the actual Zenodo check / download without consulting the cache."""
         baked = self._baked_copy()
         if baked is not None:
             return baked
