@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "blender 5.2.2": {
+      "version": "20260916",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "blenderGUI-blender 5.2.2": {
+      "version": "20260916",
+      "exec": "blender",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization"
+  ]
+}
