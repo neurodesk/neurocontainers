@@ -96,7 +96,7 @@
       "label": { "en": "Use GPU" },
       "type": "boolean",
       "default": false,
-      "information": { "en": "Run inference on the reconstruction GPU. CPU inference is the default to avoid GPU memory exhaustion; enable this only when enough GPU memory is available." }
+      "information": { "en": "Run inference on the reconstruction GPU. CPU inference is the default to avoid GPU memory exhaustion; enable this only when enough GPU memory is available. Failed GPU inference is retried once on CPU with the same segmentation settings." }
     },
     {
       "id": "sscrop",

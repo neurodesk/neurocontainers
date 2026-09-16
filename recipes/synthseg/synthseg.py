@@ -604,6 +604,102 @@ def _resolve_synthseg_crop_options(
     return False, crop_size
 
 
+def _log_synthseg_resources(pid: int, use_gpu: bool) -> None:
+    try:
+        status = Path(f"/proc/{pid}/status").read_text()
+        memory = [line for line in status.splitlines() if line.startswith(("VmRSS:", "VmHWM:"))]
+        logging.info("SynthSeg pid=%d host memory: %s", pid, "; ".join(memory))
+    except OSError:
+        pass
+    if not use_gpu:
+        return
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,name,driver_version,memory.total,memory.used,memory.free,utilization.gpu",
+                "--format=csv,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        if result.returncode == 0:
+            logging.info(
+                "SynthSeg GPU sample (device-wide memory in MiB, utilization in percent):\n%s",
+                result.stdout.strip(),
+            )
+        else:
+            logging.info("SynthSeg GPU telemetry unavailable: %s", result.stderr.strip())
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logging.info("SynthSeg GPU telemetry unavailable: %s", exc)
+
+
+def _run_synthseg_command(ss_cmd: list[str], output_dir: Path) -> None:
+    started = perf_counter()
+    gpu_requested = "--cpu" not in ss_cmd
+    for attempt in range(2 if gpu_requested else 1):
+        use_gpu = gpu_requested and attempt == 0
+        device = "gpu" if use_gpu else "cpu"
+        command = list(ss_cmd)
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        if not use_gpu:
+            if "--cpu" not in command:
+                command.append("--cpu")
+            env["CUDA_VISIBLE_DEVICES"] = "-1"
+        stdout_path = output_dir.parent / f"synthseg_{device}.stdout.log"
+        stderr_path = output_dir.parent / f"synthseg_{device}.stderr.log"
+        logging.info(
+            "Running SynthSeg attempt=%d device=%s command: %s; stdout=%s stderr=%s "
+            "CUDA_VISIBLE_DEVICES=%s NVIDIA_VISIBLE_DEVICES=%s TF_GPU_ALLOCATOR=%s "
+            "TF_FORCE_GPU_ALLOW_GROWTH=%s",
+            attempt + 1, device, " ".join(command), stdout_path, stderr_path,
+            env.get("CUDA_VISIBLE_DEVICES", "unset"),
+            env.get("NVIDIA_VISIBLE_DEVICES", "unset"),
+            env.get("TF_GPU_ALLOCATOR", "unset"),
+            env.get("TF_FORCE_GPU_ALLOW_GROWTH", "unset"),
+        )
+        attempt_started = perf_counter()
+        with stdout_path.open("w") as stdout, stderr_path.open("w") as stderr:
+            with subprocess.Popen(command, stdout=stdout, stderr=stderr, env=env) as process:
+                while True:
+                    _log_synthseg_resources(process.pid, use_gpu)
+                    try:
+                        returncode = process.wait(timeout=5)
+                        break
+                    except subprocess.TimeoutExpired:
+                        logging.info(
+                            "SynthSeg device=%s running elapsed=%.1f s",
+                            device, perf_counter() - attempt_started,
+                        )
+        output = stdout_path.read_text(errors="replace")
+        errors = stderr_path.read_text(errors="replace")
+        if output.strip():
+            logging.info("SynthSeg %s stdout:\n%s", device, output.rstrip())
+        if errors.strip():
+            logging.info("SynthSeg %s stderr:\n%s", device, errors.rstrip())
+        logging.info(
+            "SynthSeg device=%s finished in %.1f s with exit code %s; total elapsed=%.1f s",
+            device, perf_counter() - attempt_started, returncode, perf_counter() - started,
+        )
+        _log_directory_contents("SynthSeg output directory", output_dir)
+        if returncode == 0:
+            return
+        if use_gpu:
+            logging.warning(
+                "SynthSeg GPU attempt failed with exit code %s. Removing partial outputs "
+                "and retrying once on CPU with the same model, fast mode, crop, parcellation "
+                "and QC settings. GPU logs remain in %s.",
+                returncode, output_dir.parent,
+            )
+            shutil.rmtree(output_dir)
+            output_dir.mkdir()
+        else:
+            raise subprocess.CalledProcessError(returncode, command, output=output, stderr=errors)
+
+
 def _build_synthseg_command(
     input_path: Path,
     output_path: Path,
@@ -3937,33 +4033,6 @@ def process_image(images, connection, config, metadata):
         except OSError as exc:
             logging.warning("Could not read the SynthSeg %s CSV: %s", label, exc)
 
-    def run_synthseg_command(ss_cmd):
-        logging.info("Running SynthSeg command: %s", " ".join(ss_cmd))
-        started = perf_counter()
-        result = subprocess.run(ss_cmd, check=False, capture_output=True, text=True)
-
-        if result.stdout and result.stdout.strip():
-            logging.info("SynthSeg stdout:\n%s", result.stdout.rstrip())
-        if result.stderr and result.stderr.strip():
-            logging.info("SynthSeg stderr:\n%s", result.stderr.rstrip())
-
-        logging.info(
-            "SynthSeg inference finished in %.1f s with exit code %s",
-            perf_counter() - started,
-            result.returncode,
-        )
-        _log_directory_contents("SynthSeg input directory", input_dir)
-        _log_directory_contents("SynthSeg output directory", output_dir)
-
-        if result.returncode != 0:
-            logging.error("SynthSeg command failed with exit code %s", result.returncode)
-            raise subprocess.CalledProcessError(
-                result.returncode,
-                ss_cmd,
-                output=result.stdout,
-                stderr=result.stderr,
-            )
-
     if debug_threshold_segment:
         logging.warning(
             "ssdebugthresholdsegment is enabled; skipping SynthSeg model "
@@ -3987,7 +4056,7 @@ def process_image(images, connection, config, metadata):
         print('Debug threshold processing done')
 
     else:
-        run_synthseg_command(
+        _run_synthseg_command(
             _build_synthseg_command(
                 input_path,
                 output_path,
@@ -4000,7 +4069,8 @@ def process_image(images, connection, config, metadata):
                 crop_size=crop_size,
                 volumes_csv_path=volumes_csv_path if write_volumes else None,
                 qc_csv_path=qc_csv_path if write_qc else None,
-            )
+            ),
+            output_dir,
         )
         if write_volumes:
             log_csv_output("region volume", volumes_csv_path)

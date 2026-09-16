@@ -1,8 +1,7 @@
 name: synthseg
-# The recipe version tracks the FreeSurfer release that publishes mri_synthseg
-# and its trained weights. That release ships SynthSeg 2.0 (plus SynthSeg 1.0,
-# SynthSeg-robust and Photo-SynthSeg 1.0).
-version: 8.2.0
+# Container releases advance independently of the pinned FreeSurfer software
+# and trained weights in upstream_version.
+version: 8.2.1
 
 copyright:
   - name: FreeSurfer Software License Agreement
@@ -312,9 +311,11 @@ readme: |-
   ```
 
   A CUDA GPU is used automatically when available; pass `--cpu` to force CPU
-  inference. The OpenRecon configuration defaults to CPU inference and enables
-  automatic cropping; scanner operators can opt into GPU inference when enough
-  GPU memory is available. Label indices in the output follow the FreeSurfer
+  inference. The OpenRecon configuration defaults to CPU inference, fast mode
+  and automatic cropping; scanner operators can opt into GPU inference when enough
+  GPU memory is available. Failed GPU inference is retried once on CPU with the
+  same segmentation settings. Per-attempt timing and memory samples are logged.
+  Label indices in the output follow the FreeSurfer
   convention and can be looked up in
   `$FREESURFER_HOME/FreeSurferColorLUT.txt`.
 
