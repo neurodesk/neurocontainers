@@ -315,9 +315,9 @@ tests:
 
   - name: panoptica instance relabelling survives >255 labels
     description: >-
-      2.1.6 still builds its label lookup with the connected-components dtype,
-      so multi-lesion evaluations overflow. The image carries the upstream-main
-      fix; this fails if it is lost.
+      Up to 2.1.6 panoptica built its label lookup with the connected-components
+      dtype, so multi-lesion evaluations overflowed. Fixed upstream in 2.1.7;
+      this fails if it regresses.
     command: |
       python -c "
       import numpy as np

@@ -158,12 +158,10 @@ build:
         # fulltest because it is the whole point of the previous step.
         - >-
           python -c "from brainles_preprocessing.utils import zenodo as z; asked=[]; z.ZenodoRecord._get_metadata_and_archive_url=lambda self: (asked.append(1), ({'version':'99.0.0'},''))[1]; p=z.fetch_atlases(); assert p.name.endswith('_v{{ context.atlas_version }}'), p; assert not asked, 'zenodo queried at run time'; print('atlas pin survives an upstream version bump')"
-        # panoptica 2.x builds its instance-label lookup with the dtype of the
-        # connected-components array, so multi-lesion evaluations fail once
-        # reference plus unmatched predicted instances exceed 255. Fixed on
-        # upstream main but not in 2.1.6, and carried by the standalone
-        # panoptica container for the same reason.
-        - python {{ get_file("fix_map_labels_dtype") }}
+        # panoptica up to 2.1.6 built its instance-label lookup with the dtype
+        # of the connected-components array, so multi-lesion evaluations failed
+        # once reference plus unmatched predicted instances exceeded 255. Fixed
+        # upstream in 2.1.7; keep the check so a regression fails the build.
         - >-
           python -c "import numpy as np; from panoptica._functionals import _map_labels; a=np.zeros((4,4),dtype=np.uint8); a[0,0]=3; assert int(_map_labels(a,{3:256}).max())==256; print('instance relabelling handles >255 labels')"
         # finding 4: both exist at /opt/miniconda/bin but were never exposed.
@@ -253,8 +251,6 @@ files:
     filename: fix_preprocessor_cli.py
   - name: bls_writable_weights
     filename: bls_writable_weights.py
-  - name: fix_map_labels_dtype
-    filename: fix_map_labels_dtype.py
   - name: fix_hd_bet_cli
     filename: fix_hd_bet_cli.py
   - name: bake_atlases.py
