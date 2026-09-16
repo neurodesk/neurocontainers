@@ -10,7 +10,7 @@
 # These tests use brain MRI data for basic functionality verification.
 
 name: spinalcordtoolbox
-version: "7.3.3"
+version: "7.3.4"
 upstream_version: "7.3"
 
 required_files:
@@ -46,6 +46,11 @@ setup:
     PY
 
 tests:
+  - name: Installed SCT model profile
+    description: Check selected model weights, standard labelling assets, and CPU-only lite dependencies
+    command: /opt/spinalcordtoolbox-${install_version}/python/envs/venv_sct/bin/python /opt/code/python-ismrmrd-server/verify_sct_models.py
+    expected_exit_code: 0
+
   # ==========================================================================
   # SYSTEM AND VERSION CHECKS
   # ==========================================================================

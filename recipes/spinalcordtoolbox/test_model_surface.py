@@ -1,110 +1,88 @@
-import ast
 import json
-import re
 from pathlib import Path
 
-import yaml
+import pytest
 
+from sct_model_profile import FULL_TASKS, LITE_TASKS, configure, load_tasks, main
+from test_spinalcordtoolbox_openrecon import _load_runtime_helpers_for_test
 
 RECIPE_DIR = Path(__file__).resolve().parent
-BUILD_PATH = RECIPE_DIR / "build.yaml"
-WRAPPER_PATH = RECIPE_DIR / "spinalcordtoolbox.py"
-README_PATH = RECIPE_DIR / "OpenReconREADME.md"
-LABEL_PATHS = (
-    RECIPE_DIR / "OpenReconLabel.json",
-    RECIPE_DIR / "OpenReconLabel.gpu.json",
-)
-
-EXPECTED_DEEPSEG_TASKS = {
-    "spinalcord",
-    "sc_epi",
-    "sc_lumbar_t2",
-    "sc_mouse_t1",
-    "graymatter",
-    "gm_sc_7t_t2star",
-    "gm_wm_exvivo_t2",
-    "gm_mouse_t1",
-    "lesion_ms_axial_t2",
-    "lesion_ms_mp2rage",
-    "lesion_sci_t2",
-    "tumor_t2",
-    "rootlets",
-    "sc_canal_t2",
-}
-REMOVED_DEEPSEG_TASKS = {
-    "gm_wm_mouse_t1",
-    "lesion_ms",
-    "spine",
-    "tumor_edema_cavity_t1_t2",
-}
-EXPECTED_BUNDLES = {
-    "sct_bundle_t2s_gm",
-    "sct_bundle_mouse_t1",
-}
-REMOVED_BUNDLES = {
-    "sct_bundle_t2_anatomy",
-    "sct_bundle_t2_ms",
-}
 
 
-def _module_assignment(name):
-    tree = ast.parse(WRAPPER_PATH.read_text())
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        for target in node.targets:
-            if isinstance(target, ast.Name) and target.id == name:
-                return ast.literal_eval(node.value)
-    raise AssertionError(f"Could not find assignment for {name}")
-
-
-def _installed_deepseg_tasks():
-    recipe = yaml.safe_load(BUILD_PATH.read_text())
-    tasks = set()
-    pattern = re.compile(r"^sct_deepseg ([a-z0-9_]+) -install$")
-    for directive in recipe["build"]["directives"]:
-        for command in directive.get("run", []):
-            match = pattern.fullmatch(command.strip())
-            if match:
-                tasks.add(match.group(1))
-    return tasks
-
-
-def _analysis_choices(label_path):
-    label = json.loads(label_path.read_text())
-    analysis = next(
-        parameter
-        for parameter in label["parameters"]
-        if parameter["id"] == "analysis"
+@pytest.mark.parametrize("profile", ["lite", "full"])
+@pytest.mark.parametrize("label_name", ["OpenReconLabel.json", "OpenReconLabel.gpu.json"])
+def test_profile_generates_matching_menu_and_runtime(tmp_path, monkeypatch, profile, label_name):
+    label = tmp_path / "OpenReconLabel.json"
+    label.write_bytes((RECIPE_DIR / label_name).read_bytes())
+    gpu = label_name.endswith(".gpu.json")
+    if profile == "lite" and gpu:
+        with pytest.raises(ValueError, match="CPU-only"):
+            configure(profile, label, gpu=gpu)
+        return
+    configure(profile, label, gpu=gpu)
+    tasks = load_tasks(tmp_path / "sct_model_profile.json")
+    assert set(tasks) == set(LITE_TASKS if profile == "lite" else FULL_TASKS)
+    monkeypatch.setattr("test_spinalcordtoolbox_openrecon.load_tasks", lambda: tasks)
+    runtime = _load_runtime_helpers_for_test(
+        ["_resolve_requested_analyses", "_supported_analysis_ids"],
+        ["SCT_DEEPSEG_TASKS", "SCT_ANALYSIS_REGISTRY", "SCT_ANALYSIS_BUNDLES"],
     )
-    return {value["id"] for value in analysis["values"]}
+    metadata = json.loads(label.read_text())
+    choices = next(p["values"] for p in metadata["parameters"] if p["id"] == "analysis")
+    assert {v["id"] for v in choices} == set(runtime["_supported_analysis_ids"]())
+    for choice in choices:
+        assert runtime["_resolve_requested_analyses"](choice["id"])
+    for excluded in ("sct_deepseg_sc_mouse_t1", "sct_deepseg_gm_mouse_t1", "sct_bundle_mouse_t1"):
+        with pytest.raises(ValueError, match="Unsupported SCT analysis"):
+            runtime["_resolve_requested_analyses"](excluded)
+    if profile == "lite":
+        assert metadata["general"]["id"] == "spinalcordtoolbox_lite"
+        for task in set(FULL_TASKS) - set(LITE_TASKS):
+            with pytest.raises(ValueError, match="Unsupported SCT analysis"):
+                runtime["_resolve_requested_analyses"](f"sct_deepseg_{task}")
+        assert runtime["_resolve_requested_analyses"]("sct_bundle_t2s_gm") == (
+            "sct_deepseg_spinalcord", "sct_deepseg_graymatter",
+        )
 
 
-def test_installed_models_match_the_openrecon_surface():
-    assert _installed_deepseg_tasks() == EXPECTED_DEEPSEG_TASKS
-    assert set(_module_assignment("SCT_DEEPSEG_TASKS")) == EXPECTED_DEEPSEG_TASKS
-
-    bundles = set(_module_assignment("SCT_ANALYSIS_BUNDLES"))
-    assert bundles == EXPECTED_BUNDLES
-
-    expected_choices = {
-        *(f"sct_deepseg_{task}" for task in EXPECTED_DEEPSEG_TASKS),
-        "sct_label_vertebrae",
-        "sct_spinalcord_area",
-        *EXPECTED_BUNDLES,
-    }
-    for label_path in LABEL_PATHS:
-        assert _analysis_choices(label_path) == expected_choices
+def test_installer_uses_profile_tasks(monkeypatch):
+    calls = []
+    monkeypatch.setattr("sys.argv", ["sct_model_profile.py", "lite", "--install"])
+    monkeypatch.setattr("sct_model_profile.subprocess.run", lambda argv, check: calls.append(argv))
+    main()
+    assert calls == [["sct_deepseg", task, "-install"] for task in LITE_TASKS]
 
 
-def test_removed_models_leave_no_openrecon_metadata():
-    removed_analysis_ids = {
-        *(f"sct_deepseg_{task}" for task in REMOVED_DEEPSEG_TASKS),
-        *REMOVED_BUNDLES,
-    }
-    readme_identifiers = set(re.findall(r"`([^`]+)`", README_PATH.read_text()))
-    assert readme_identifiers.isdisjoint(removed_analysis_ids)
+def test_lite_menu_is_available_to_openrecon_packaging(tmp_path):
+    from tools.sync_openrecon import prepare_recipe
 
-    for label_path in LABEL_PATHS:
-        choices = _analysis_choices(label_path)
-        assert choices.isdisjoint(removed_analysis_ids)
+    generated = tmp_path / "OpenReconLabel.json"
+    generated.write_bytes((RECIPE_DIR / "OpenReconLabel.json").read_bytes())
+    configure("lite", generated)
+    target = tmp_path / "openrecon"
+    result = prepare_recipe(
+        RECIPE_DIR.parents[1], target, "spinalcordtoolbox", "7.3.3", variant="lite",
+    )
+    assert result is not None
+    packaged = target / "recipes/spinalcordtoolbox_lite/OpenReconLabel.json"
+    assert json.loads(packaged.read_text()) == json.loads(generated.read_text())
+
+
+def test_lite_gpu_rejected_before_install(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["sct_model_profile.py", "lite", "--gpu", "--install"])
+    monkeypatch.setattr("sct_model_profile.subprocess.run", lambda *a, **kw: pytest.fail("installer ran"))
+    with pytest.raises(SystemExit):
+        main()
+
+
+def test_missing_manifest_fails_closed(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        load_tasks(tmp_path / "sct_model_profile.json")
+
+
+@pytest.mark.parametrize("contents", ["not json", '{"profile": "unknown"}', '{}'])
+def test_invalid_manifest_fails_closed(tmp_path, contents):
+    path = tmp_path / "sct_model_profile.json"
+    path.write_text(contents)
+    with pytest.raises((ValueError, KeyError)):
+        load_tasks(path)
