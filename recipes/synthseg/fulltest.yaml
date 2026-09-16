@@ -12,7 +12,7 @@
 # runners; every other test is a fast asset/interface check.
 
 name: synthseg
-version: 8.2.0
+version: 8.2.1
 
 required_files:
   - dataset: ds000001

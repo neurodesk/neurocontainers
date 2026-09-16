@@ -478,3 +478,100 @@ def test_parameter_matrix_only_emits_runnable_combinations():
         if config["parameters"]["ssmodel"] == "robust"
     }
     assert all("_fast1" in name for name in robust_names)
+
+
+def _inference_helpers():
+    import logging
+    import shutil
+    import subprocess
+    from time import perf_counter
+
+    helpers = _load_runtime_helpers_for_test(
+        ["_run_synthseg_command", "_log_synthseg_resources", "_log_directory_contents"]
+    )
+    helpers.update(
+        logging=logging, shutil=shutil, subprocess=subprocess, perf_counter=perf_counter
+    )
+    return helpers
+
+
+def test_gpu_failure_retries_cpu_without_partial_outputs(tmp_path, caplog):
+    import logging
+    import sys
+
+    helpers = _inference_helpers()
+    helpers["_log_synthseg_resources"] = lambda *args: None
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    program = tmp_path / "inference.py"
+    program.write_text('''
+import json, os, sys
+from pathlib import Path
+out = Path(sys.argv[1])
+with (out.parent / "attempts.jsonl").open("a") as log:
+    log.write(json.dumps(sys.argv[2:]) + "\\n")
+if "--cpu" not in sys.argv:
+    (out / "partial.csv").write_text("incomplete")
+    print("ResourceExhaustedError: GPU OOM", file=sys.stderr)
+    sys.exit(1)
+assert os.environ["CUDA_VISIBLE_DEVICES"] == "-1"
+assert not (out / "partial.csv").exists()
+(out / "seg.nii.gz").write_text("completed on CPU")
+''')
+    command = [sys.executable, str(program), str(output_dir), "--fast", "--parc", "--qc"]
+    with caplog.at_level(logging.INFO):
+        helpers["_run_synthseg_command"](command, output_dir)
+    attempts = [json.loads(line) for line in (tmp_path / "attempts.jsonl").read_text().splitlines()]
+    assert attempts == [["--fast", "--parc", "--qc"], ["--fast", "--parc", "--qc", "--cpu"]]
+    assert (output_dir / "seg.nii.gz").read_text() == "completed on CPU"
+    assert "GPU OOM" in (tmp_path / "synthseg_gpu.stderr.log").read_text()
+    assert (tmp_path / "synthseg_cpu.stdout.log").exists()
+    assert "retrying once on CPU" in caplog.text
+    assert "device=cpu finished" in caplog.text
+
+
+def test_inference_attempt_counts_and_final_error(tmp_path):
+    import subprocess
+    import sys
+
+    import pytest
+
+    helpers = _inference_helpers()
+    helpers["_log_synthseg_resources"] = lambda *args: None
+    for cpu, exitcode, expected_attempts in [(False, 0, 1), (True, 0, 1), (False, 3, 2), (True, 3, 1)]:
+        work = tmp_path / f"{cpu}-{exitcode}"
+        out = work / "output"
+        out.mkdir(parents=True)
+        program = (
+            "import sys; from pathlib import Path; "
+            f"p=Path({str(work / 'attempts')!r}); "
+            "p.open('a').write('attempt\\n'); "
+            "print('failure detail', file=sys.stderr); "
+            f"sys.exit({exitcode})"
+        )
+        command = [sys.executable, "-c", program] + (["--cpu"] if cpu else [])
+        if exitcode:
+            with pytest.raises(subprocess.CalledProcessError) as error:
+                helpers["_run_synthseg_command"](command, out)
+            assert error.value.returncode == exitcode
+            assert "--cpu" in error.value.cmd
+            assert "failure detail" in error.value.stderr
+        else:
+            helpers["_run_synthseg_command"](command, out)
+        assert len((work / "attempts").read_text().splitlines()) == expected_attempts
+
+
+def test_gpu_telemetry_is_best_effort(monkeypatch, caplog):
+    import logging
+    import os
+    import subprocess
+
+    helpers = _inference_helpers()
+    for failure in [FileNotFoundError("no nvidia-smi"), subprocess.TimeoutExpired("nvidia-smi", 2)]:
+        def fail(*args, **kwargs):
+            raise failure
+        monkeypatch.setattr(subprocess, "run", fail)
+        with caplog.at_level(logging.INFO):
+            helpers["_log_synthseg_resources"](os.getpid(), True)
+        assert "GPU telemetry unavailable" in caplog.text
+        assert "VmRSS:" in caplog.text

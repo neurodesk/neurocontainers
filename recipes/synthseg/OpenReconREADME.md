@@ -81,14 +81,32 @@ fails immediately rather than part-way through inference.
 
 ## Runtime Notes
 
-Runtime is dominated by the segmentation network. Fast mode on a GPU is the
-quickest configuration; disabling fast mode, enabling parcellation or QC, or
+Runtime is dominated by the segmentation network. Fast mode is enabled by
+default (`ssfast=true`). Existing scanner protocols that explicitly store
+`ssfast=false` must be updated to enable it. Fast mode on a GPU is the quickest
+configuration; disabling fast mode, enabling parcellation or QC, or
 forcing CPU inference each add a substantial amount of time. `robust` is the
 slowest model.
 
 OpenRecon uses CPU inference by default because the parcellation network can
 exhaust scanner GPU memory on a full 1 mm volume. Enable `ssusegpu` only when
 the reconstruction GPU has enough free memory for the selected model and crop.
+If GPU inference exits with an error, the wrapper removes partial outputs and
+retries once on CPU with `--cpu` and `CUDA_VISIBLE_DEVICES=-1`. The retry keeps
+the model, fast mode, crop, parcellation and QC settings. CPU failures are
+reported without another retry.
+
+Each attempt logs its command, device, exit code and elapsed time. While it
+runs, the wrapper samples process RAM and, for GPU attempts, GPU name, driver,
+total/used/free VRAM and utilization approximately every five seconds. GPU
+measurements cover the whole device, including other processes; sampling can
+miss short peaks. Missing or unresponsive `nvidia-smi` does not block inference.
+Unbuffered stdout and stderr are saved to `synthseg_gpu.stdout.log`,
+`synthseg_gpu.stderr.log`, `synthseg_cpu.stdout.log` and
+`synthseg_cpu.stderr.log` for the attempts that run, in the run workspace under
+`/tmp/share/debug/synthseg_openrecon/`. These files survive a CPU retry, but a
+new run using the same workspace replaces them. Output is also copied into
+the reconstruction log when each attempt finishes.
 
 Automatic cropping is enabled by the default `sscrop=0` to reduce the 3D
 network's peak GPU memory use. It finds the non-zero bounding box after SynthSeg
