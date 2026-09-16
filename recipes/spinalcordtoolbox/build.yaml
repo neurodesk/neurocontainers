@@ -1,15 +1,23 @@
 name: spinalcordtoolbox
-version: "7.3.3"
+version: "7.3.4"
 copyright:
   - license: LGPL-3.0
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
 architectures:
   - x86_64
 options:
+  lite:
+    description: Install only core human segmentation models (CPU only)
+    default: false
   gpu:
     description: Install SCT with CUDA-enabled PyTorch
     default: false
 variants:
+  lite:
+    architecture: x86_64
+    options:
+      lite: true
+      gpu: false
   gpu:
     architecture: x86_64
     options:
@@ -63,6 +71,8 @@ build:
   base-image: ubuntu:22.04
   pkg-manager: apt
   directives:
+    - condition: context.options.lite and context.options.gpu
+      run: "echo 'The lite profile requires CPU-only SCT' >&2; exit 1"
     - environment:
         DEBIAN_FRONTEND: noninteractive
     - install:
@@ -103,21 +113,9 @@ build:
     - condition: context.options.gpu
       run:
         - /opt/spinalcordtoolbox-{{ context.install_version }}/python/envs/venv_sct/bin/python -c 'import os, torch; assert torch.version.cuda; assert os.environ.get("SCT_USE_GPU") == "1"; print(torch.__version__, torch.version.cuda)'
+    - copy: sct_model_profile.py /opt/code/python-ismrmrd-server/sct_model_profile.py
     - run:
-        - sct_deepseg spinalcord -install
-        - sct_deepseg sc_epi -install
-        - sct_deepseg sc_lumbar_t2 -install
-        - sct_deepseg sc_mouse_t1 -install
-        - sct_deepseg graymatter -install
-        - sct_deepseg gm_sc_7t_t2star -install
-        - sct_deepseg gm_wm_exvivo_t2 -install
-        - sct_deepseg gm_mouse_t1 -install
-        - sct_deepseg lesion_ms_axial_t2 -install
-        - sct_deepseg lesion_ms_mp2rage -install
-        - sct_deepseg lesion_sci_t2 -install
-        - sct_deepseg tumor_t2 -install 
-        - sct_deepseg rootlets -install
-        - sct_deepseg sc_canal_t2 -install
+        - python3 /opt/code/python-ismrmrd-server/sct_model_profile.py {{ 'lite' if context.options.lite else 'full' }} --install
         - rm -rf /home/spinalcordtoolbox/.cache
     - condition: not context.options.gpu
       run:
@@ -126,6 +124,9 @@ build:
     - copy: spinalcordtoolbox.py /opt/code/python-ismrmrd-server/spinalcordtoolbox.py
     - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
     - copy: openrecon_label /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - run:
+        - python3 /opt/code/python-ismrmrd-server/sct_model_profile.py {{ 'lite' if context.options.lite else 'full' }} --label /opt/code/python-ismrmrd-server/OpenReconLabel.json {{ '--gpu' if context.options.gpu else '' }}
+    - copy: verify_sct_models.py /opt/code/python-ismrmrd-server/verify_sct_models.py
     - copy: OpenReconREADME.md /opt/code/python-ismrmrd-server/OpenReconREADME.md
     - deploy:
           bins:
@@ -136,7 +137,10 @@ readme: |-
   ----------------------------------
   ## {{ context.name }}/{{ context.version }} ##
   This packages upstream SCT {{ context.upstream_version }}.
-  {% if context.options.gpu %}
+  {% if context.options.lite %}
+  This CPU-only lite variant includes spinalcord, graymatter, and all three lesion tasks.
+  It retains the standard SCT assets for vertebral labelling.
+  {% elif context.options.gpu %}
   This variant installs SCT's CUDA-enabled PyTorch environment.
   {% else %}
   This is the CPU-only variant. Use spinalcordtoolbox_gpu for CUDA support.
@@ -175,7 +179,10 @@ files:
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{ context.upstream_version }}.tar.gz
   - name: openrecon_label
     filename: OpenReconLabel.json
-    condition: not context.options.gpu
+    condition: not context.options.gpu and not context.options.lite
+  - name: openrecon_label
+    filename: OpenReconLabel.lite.json
+    condition: context.options.lite
   - name: openrecon_label
     filename: OpenReconLabel.gpu.json
     condition: context.options.gpu

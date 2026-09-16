@@ -18,6 +18,8 @@ from time import perf_counter
 import xml.dom.minidom
 import xml.etree.ElementTree as ET
 
+from sct_model_profile import load_tasks
+
 import constants
 import ismrmrd
 import mrdhelper
@@ -30,22 +32,7 @@ import numpy.fft as fft
 debugFolder = "/tmp/share/debug"
 OPENRECON_WORKSPACE_ROOT = "spinalcordtoolbox_openrecon"
 
-SCT_DEEPSEG_TASKS = (
-    "spinalcord",
-    "sc_epi",
-    "sc_lumbar_t2",
-    "sc_mouse_t1",
-    "graymatter",
-    "gm_sc_7t_t2star",
-    "gm_wm_exvivo_t2",
-    "gm_mouse_t1",
-    "lesion_ms_axial_t2",
-    "lesion_ms_mp2rage",
-    "lesion_sci_t2",
-    "tumor_t2",
-    "rootlets",
-    "sc_canal_t2",
-)
+SCT_DEEPSEG_TASKS = load_tasks()
 
 SCT_ANALYSIS_REGISTRY = {
     **{
@@ -119,10 +106,6 @@ SCT_ANALYSIS_BUNDLES = {
     "sct_bundle_t2s_gm": (
         "sct_deepseg_spinalcord",
         "sct_deepseg_graymatter",
-    ),
-    "sct_bundle_mouse_t1": (
-        "sct_deepseg_sc_mouse_t1",
-        "sct_deepseg_gm_mouse_t1",
     ),
 }
 
@@ -4015,7 +3998,7 @@ def _attach_sci_lesion_analysis_metrics(output_specs, work_dir, qc_dir):
             "-qc",
             str(qc_dir),
         ],
-        cwd=work_dir,
+        cwd=analysis_dir,
     )
     xlsx_path = _find_sct_analyze_lesion_xlsx(analysis_dir)
     label_path = _find_sct_analyze_lesion_label(analysis_dir)

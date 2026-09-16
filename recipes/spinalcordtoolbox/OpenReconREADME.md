@@ -10,6 +10,22 @@ SCT tools process MRI data (NIfTI files) and can do fully automatic tasks such a
 
 Reference: Jan Valošek, Julien Cohen-Adad, Reproducible Spinal Cord Quantitative MRI Analysis with the Spinal Cord Toolbox, Magnetic Resonance in Medical Sciences, 2024, Volume 23, Issue 3, Pages 307-315, Released on J-STAGE July 01, 2024, Advance online publication March 12, 2024, Online ISSN 1880-2206, Print ISSN 1347-3182, https://doi.org/10.2463/mrms.rev.2023-0159, https://www.jstage.jst.go.jp/article/mrms/23/3/23_rev.2023-0159/_article/-char/en,
 
+## Container variants
+
+`spinalcordtoolbox_lite` uses CPU-only PyTorch and installs five deepseg tasks:
+`spinalcord`, `graymatter`, `lesion_ms_axial_t2`, `lesion_ms_mp2rage`, and
+`lesion_sci_t2`. It retains SCT's standard assets, including PAM50 and the
+models used by `sct_deepseg_gm` and vertebral labelling. Some tasks contain
+multiple model checkpoints, so five tasks does not mean five weight files.
+
+The lite OpenRecon menu includes these segmentations, vertebral labelling,
+spinal cord area, and `sct_bundle_t2s_gm`. Requests for omitted analyses fail
+before SCT runs. The full CPU and GPU variants include the additional human
+tasks listed below. Mouse analyses are no longer installed or exposed.
+
+Build the lite container with `sf-build spinalcordtoolbox --variant lite`.
+The lite and GPU options cannot be combined.
+
 ## Parameters
 
 | Parameter id | Type | Default | Description |
@@ -28,11 +44,9 @@ Reference: Jan Valošek, Julien Cohen-Adad, Reproducible Spinal Cord Quantitativ
 | `sct_spinalcord_area` | `sct_deepseg spinalcord`, then `sct_label_vertebrae`, then `sct_process_segmentation -discfile <disc_labels> -perlevel 1`; falls back to `sct_process_segmentation -i <cord_seg>` | 3D T2-weighted spinal cord MRI. Returns the spinal cord segmentation and embeds `MEAN(area)` values from `sct_process_segmentation` in the returned DICOM metadata. |
 | `sct_deepseg_sc_epi` | `sct_deepseg sc_epi` | EPI-BOLD fMRI image volume containing the spinal cord. |
 | `sct_deepseg_sc_lumbar_t2` | `sct_deepseg sc_lumbar_t2` | Lumbar spinal cord T2-weighted MRI. |
-| `sct_deepseg_sc_mouse_t1` | `sct_deepseg sc_mouse_t1` | Mouse spinal cord T1-weighted MRI. |
 | `sct_deepseg_graymatter` | `sct_deepseg_gm` | 3D T2*-like spinal cord image for gray matter segmentation. This path matches SCT `batch_processing.sh`. |
 | `sct_deepseg_gm_sc_7t_t2star` | `sct_deepseg gm_sc_7t_t2star` | 7T T2*-weighted spinal cord image for cord/gray matter segmentation. |
 | `sct_deepseg_gm_wm_exvivo_t2` | `sct_deepseg gm_wm_exvivo_t2` | Ex vivo human T2-weighted spinal cord image for gray/white matter segmentation. |
-| `sct_deepseg_gm_mouse_t1` | `sct_deepseg gm_mouse_t1` | Mouse spinal cord MRI for gray matter segmentation. |
 | `sct_deepseg_lesion_ms_axial_t2` | `sct_deepseg lesion_ms_axial_t2` | Axial T2-weighted spinal cord MRI with intramedullary MS lesions. |
 | `sct_deepseg_lesion_ms_mp2rage` | `sct_deepseg lesion_ms_mp2rage` | Cropped MP2RAGE spinal cord data for MS lesion segmentation. |
 | `sct_deepseg_lesion_sci_t2` | `sct_deepseg lesion_sci_t2`, then `sct_analyze_lesion` | T2-weighted spinal cord MRI with intramedullary spinal cord injury lesion. Returns separate lesion and spinal cord segmentation series, then embeds lesion morphometric metrics in the lesion series and a metrics report DICOM series. |
@@ -48,7 +62,6 @@ Combined modes run several SCT analyses on the same input NIfTI and return one d
 | Analysis id | Runs | Required input data |
 | --- | --- | --- |
 | `sct_bundle_t2s_gm` | `sct_deepseg_spinalcord`, `sct_deepseg_graymatter` | T2*-like spinal cord image suitable for gray matter segmentation. |
-| `sct_bundle_mouse_t1` | `sct_deepseg_sc_mouse_t1`, `sct_deepseg_gm_mouse_t1` | Mouse T1-weighted spinal cord image. |
 
 ## Outputs
 
@@ -97,3 +110,24 @@ repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
 Questions can also be posted in the Neurodesk discussion forum at
 https://github.com/orgs/neurodesk/discussions or sent via
 https://neurodesk.org/contact/.
+
+## Verify the lite container
+
+Run the installed verifier with SCT's Python to check the selected model files,
+standard SCT assets, and absence of CUDA dependencies:
+
+```bash
+"$SCT_DIR/python/envs/venv_sct/bin/python" /opt/code/python-ismrmrd-server/verify_sct_models.py
+```
+
+To run inference, mount the extracted upstream `sct_testing_data` directory and
+pass `--data /path/to/sct_testing_data --output /path/to/results`. Run with
+network access disabled to verify that all models are already installed.
+The verifier runs all five tasks, the legacy gray matter command used by
+OpenRecon, vertebral labelling, and cord area measurement. The cropped T2 fixture
+uses its supplied initialization label because automatic C2-C3 detection can fail
+on this short field of view. OpenRecon uses automatic detection. The verifier checks
+output geometry, finite values, and nonempty cord, gray matter, and label maps.
+It preserves results in the output directory. The lesion tests follow upstream
+smoke inputs, including resampled T2 and dummy T2 input for MP2RAGE, so they
+verify execution rather than clinical segmentation accuracy.

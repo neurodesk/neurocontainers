@@ -12,6 +12,8 @@ import nibabel as nib
 import numpy as np
 import pytest
 
+from sct_model_profile import FULL_TASKS, load_tasks
+
 
 RECIPE_DIR = Path(__file__).resolve().parent
 WRAPPER_PATH = RECIPE_DIR / "spinalcordtoolbox.py"
@@ -24,11 +26,9 @@ EXPECTED_DEEPSEG_TASKS = {
     "spinalcord",
     "sc_epi",
     "sc_lumbar_t2",
-    "sc_mouse_t1",
     "graymatter",
     "gm_sc_7t_t2star",
     "gm_wm_exvivo_t2",
-    "gm_mouse_t1",
     "lesion_ms_axial_t2",
     "lesion_ms_mp2rage",
     "lesion_sci_t2",
@@ -79,10 +79,6 @@ EXPECTED_ANALYSIS_BUNDLES = {
         "sct_deepseg_spinalcord",
         "sct_deepseg_graymatter",
     ),
-    "sct_bundle_mouse_t1": (
-        "sct_deepseg_sc_mouse_t1",
-        "sct_deepseg_gm_mouse_t1",
-    ),
 }
 
 EXPECTED_ANALYSIS_OUTPUTS = {
@@ -130,6 +126,8 @@ EXPECTED_ANALYSIS_OUTPUTS = {
 
 
 def _module_assignment(name):
+    if name == "SCT_DEEPSEG_TASKS":
+        return FULL_TASKS
     tree = ast.parse(WRAPPER_PATH.read_text())
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -329,6 +327,7 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
                 "log": staticmethod(lambda *args, **kwargs: None),
             },
         ),
+        "load_tasks": load_tasks,
         "nib": nib,
         "np": np,
         "Path": Path,
@@ -2754,6 +2753,7 @@ def test_run_lesion_sci_t2_analysis_returns_lesion_and_cord_masks(tmp_path):
                 ],
             )
             (analysis_dir / "output_lesion_label.nii.gz").write_bytes(b"label")
+            assert Path(cwd, "output_lesion_label.nii.gz").read_bytes() == b"label"
         else:
             raise AssertionError(f"Unexpected command: {command}")
 
@@ -2792,7 +2792,7 @@ def test_run_lesion_sci_t2_analysis_returns_lesion_and_cord_masks(tmp_path):
             "-qc",
             str(work_dir / "qc_singleSubj"),
         ),
-        work_dir,
+        work_dir / "sct_analyze_lesion",
     )
     assert [(spec["path"], spec["series_suffix"]) for spec in specs] == [
         (
