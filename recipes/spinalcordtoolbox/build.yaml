@@ -1,5 +1,5 @@
 name: spinalcordtoolbox
-version: "7.3.4"
+version: "7.3.5"
 copyright:
   - license: LGPL-3.0
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
@@ -12,16 +12,14 @@ options:
   gpu:
     description: Install SCT with CUDA-enabled PyTorch
     default: false
+# Temporarily publish only lite; retain full CPU/GPU install options for later.
+build_default: false
 variants:
   lite:
     architecture: x86_64
     options:
       lite: true
       gpu: false
-  gpu:
-    architecture: x86_64
-    options:
-      gpu: true
 variables:
   openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
