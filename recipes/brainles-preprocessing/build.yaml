@@ -66,7 +66,7 @@ build:
 
     - run:
         # The `preprocessor` console script fails on every invocation as
-        # shipped, including --help. See the patch for the two annotations.
+        # shipped. See the patch.
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("fix_preprocessor_cli") }}
         # `hd-bet` has the same disease: hd_bet.py imports maybe_mkdir_p from
         # brainles_hd_bet.utils, which never defines it, so the script dies on
@@ -92,7 +92,7 @@ build:
         - >-
           /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import typer; from brainles_preprocessing import cli; c=typer.main.get_command(cli.app); n=set(); [n.update(p.opts+p.secondary_opts) for p in c.params]; need={'--bet-mode','--bet-device','--bet-tta','--no-bet-tta'}; assert need <= n, 'missing '+str(sorted(need-n)); print('bet profile selectable')"
         - >-
-          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.brain_extractor import HDBetExtractor; from brainles_preprocessing.cli import _ProfiledHDBetExtractor as E; seen={}; HDBetExtractor.extract=lambda self,*a,**k: seen.update(k); E(mode='fast',device='cpu',do_tta=False).extract(); assert seen=={'mode':'fast','device':'cpu','do_tta':False}, seen; seen.clear(); E().extract(); assert seen=={'mode':'accurate','device':0,'do_tta':True}, seen; print('bet profile reaches hd-bet')"
+          /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.hd_bet import HDBetExtractor; from brainles_preprocessing.cli import _ProfiledHDBetExtractor as E; seen={}; HDBetExtractor.extract=lambda self,*a,**k: seen.update(k); E(mode='fast',device='cpu',do_tta=False).extract(); assert seen=={'mode':'fast','device':'cpu','do_tta':False}, seen; seen.clear(); E().extract(); assert seen=={'mode':'accurate','device':0,'do_tta':True}, seen; print('bet profile reaches hd-bet')"
         # SynthStrip must pick a device rather than assume one. Asserted on the
         # resolution alone so the build does not pay for model load twice --
         # the fulltest runs a real CPU extraction with no device argument. Both
