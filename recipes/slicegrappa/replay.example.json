@@ -1,0 +1,22 @@
+{
+  "parameters": {
+    "mode": "reconstruct",
+    "inputdomain": "kx-ky",
+    "preprocessed": false,
+    "series": 60000,
+    "smsmap": {
+      "0": {
+        "slices": [
+          0,
+          1
+        ],
+        "shifts": [
+          0.0,
+          0.5
+        ]
+      }
+    },
+    "kernelsize": 3,
+    "ridge": 0.001
+  }
+}

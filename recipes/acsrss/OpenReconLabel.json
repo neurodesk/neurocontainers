@@ -1,0 +1,93 @@
+{
+  "general": {
+    "name": {
+      "en": "acsrss"
+    },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": {
+      "en": "Reconstruct ACS Fourier/RSS images in memory and return them via ISMRMRD for scanner DICOM conversion."
+    },
+    "id": "acsrss",
+    "regulatory_information": {
+      "device_trade_name": "acsrss",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "",
+      "made_in": "",
+      "manufacture_date": "",
+      "material_number": "acsrss_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "",
+      "udi": "",
+      "safety_advices": "",
+      "special_operating_instructions": "Research proof of concept. Input must be regridded and phase-corrected. Select remaining Fourier transforms. See OpenReconREADME.md.",
+      "additional_relevant_information": ""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "raw",
+    "injector": "image",
+    "can_process_adjustment_data": true,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 0,
+    "min_required_memory": 4096,
+    "min_count_required_cpu_cores": 1,
+    "content_qualification_type": "RESEARCH",
+    "channel_compression": {
+      "require_state": "off"
+    }
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": {
+        "en": "config"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "acsrss",
+          "name": {
+            "en": "acsrss"
+          }
+        }
+      ],
+      "default": "acsrss"
+    },
+    {
+      "id": "inputdomain",
+      "label": {
+        "en": "Input domain: kx-ky = RO+PE; x-ky = PE only"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "kx-ky",
+          "name": {
+            "en": "kx-ky"
+          }
+        },
+        {
+          "id": "x-ky",
+          "name": {
+            "en": "x-ky"
+          }
+        }
+      ],
+      "default": "kx-ky"
+    },
+    {
+      "id": "sendoriginal",
+      "label": {
+        "en": "Return original images if received"
+      },
+      "type": "boolean",
+      "default": true
+    }
+  ]
+}
