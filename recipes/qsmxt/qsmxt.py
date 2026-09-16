@@ -135,6 +135,9 @@ SCANNER_DISPLAY_PADDING_VALUE = 0
 SCANNER_DISPLAY_DATA_MIN = 1
 T2STAR_SCALE_PERCENTILE = 99.9
 T2STAR_SCALE_MIN_POSITIVE_VOXELS = 100
+T2STAR_WINDOW_PERCENTILE = 95.0
+T2STAR_DICOM_MS_PER_SECOND = 1000.0
+T2STAR_MAX_SCALE_INPUT_SECONDS = SCANNER_DISPLAY_MAX / T2STAR_DICOM_MS_PER_SECOND
 QSM_WINDOW_LOW_PERCENTILE = 1.0
 QSM_WINDOW_HIGH_PERCENTILE = 99.0
 QSM_WINDOW_MIN_NONZERO_VOXELS = 100
@@ -2182,6 +2185,8 @@ def _output_meta(
         slice_number = slice_index
     slice_number = str(int(slice_number))
     image_comment = _scanner_display_comment(series_name, display_meta)
+    if output_id == "t2star":
+        image_comment += "; DICOM values in ms"
 
     meta["DataRole"] = ["Image", "Quantitative"]
     meta["ImageProcessingHistory"] = ["PYTHON", "QSMXT"]
@@ -2231,12 +2236,11 @@ def _output_meta(
     )
     meta["QSMxTPhysicalWindowCenter"] = f"{float(physical_center):.6g}"
     meta["QSMxTPhysicalWindowWidth"] = f"{float(physical_width):.6g}"
-    dicom_value_scale = (
-        QSM_DICOM_PPB_PER_PPM if output_id == "qsm" else 1.0
-    )
-    meta["QSMxTWindowDomain"] = (
-        "ppb" if output_id == "qsm" else "physical"
-    )
+    dicom_value_scale = _dicom_value_scale(output_id)
+    meta["QSMxTWindowDomain"] = {
+        "qsm": "ppb",
+        "t2star": "ms",
+    }.get(output_id, "physical")
     meta["QSMxTDisplayMin"] = str(int(display_meta["display_min"]))
     meta["QSMxTDisplayMax"] = str(int(display_meta["display_max"]))
     meta["QSMxTDisplayClippedVoxels"] = str(int(display_meta["clipped_voxels"]))
@@ -2252,7 +2256,7 @@ def _output_meta(
         meta["PixelPaddingRangeLimit"] = str(
             int(display_meta["padding_value"])
         )
-    if output_id == "qsm":
+    if output_id in {"qsm", "t2star"}:
         meta["WindowCenter"] = str(
             int(np.rint(physical_center * dicom_value_scale))
         )
@@ -2328,9 +2332,7 @@ def _validate_output_images(output_images, input_images):
         rescale_slope = _meta_float(meta, "RescaleSlope")
         rescale_intercept = _meta_float(meta, "RescaleIntercept")
         output_id = _meta_text(meta, "QSMxTOutput")
-        dicom_value_scale = (
-            QSM_DICOM_PPB_PER_PPM if output_id == "qsm" else 1.0
-        )
+        dicom_value_scale = _dicom_value_scale(output_id)
         if display_scale is not None and display_scale > 0.0:
             expected_slope = dicom_value_scale / display_scale
             expected_intercept = (
@@ -2358,7 +2360,7 @@ def _validate_output_images(output_images, input_images):
         if _meta_text(meta, "RescaleType") != "US":
             errors.append(f"image {index} RescaleType is not US")
 
-        if output_id == "qsm":
+        if output_id in {"qsm", "t2star"}:
             window_center = _meta_float(meta, "WindowCenter")
             window_width = _meta_float(meta, "WindowWidth")
             physical_window_center = _meta_float(
@@ -2757,6 +2759,13 @@ def _normalized_or_default(values, default):
     return vector / norm
 
 
+def _dicom_value_scale(output_id):
+    return {
+        "qsm": QSM_DICOM_PPB_PER_PPM,
+        "t2star": T2STAR_DICOM_MS_PER_SECOND,
+    }.get(output_id, 1.0)
+
+
 def _window_center_width(data):
     values = np.asarray(data, dtype=np.float32)
     finite = values[np.isfinite(values)]
@@ -2862,6 +2871,8 @@ def _scanner_display_scale_range(values, output_id, input_min, input_max):
     if output_id != "t2star":
         return input_min, input_max
 
+    # Keep at least 1 ms storage precision even when the fit tail is not sparse.
+    input_max = min(max(0.0, input_max), T2STAR_MAX_SCALE_INPUT_SECONDS)
     finite_positive = values[np.isfinite(values) & (values > 0.0)]
     if finite_positive.size < T2STAR_SCALE_MIN_POSITIVE_VOXELS:
         return 0.0, input_max
@@ -2880,6 +2891,12 @@ def _scanner_display_window_range(
     scale_input_min,
     scale_input_max,
 ):
+    if output_id == "t2star":
+        finite_positive = values[np.isfinite(values) & (values > 0.0)]
+        if finite_positive.size:
+            high = float(np.percentile(finite_positive, T2STAR_WINDOW_PERCENTILE))
+            return 0.0, min(high, scale_input_max)
+        return 0.0, scale_input_max
     if output_id != "qsm":
         return scale_input_min, scale_input_max
 

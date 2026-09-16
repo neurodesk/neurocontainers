@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.19.1
+version: 9.21.0
 
 test_data:
   output_dir: test_output
@@ -71,7 +71,64 @@ tests:
 
   - name: QSMxT release version
     command: qsmxt --version
-    expected_output_contains: "${version}"
+    expected_output_contains: "${upstream_version}"
+
+  - name: T2 star fitting and scanner display
+    description: Fit synthetic echoes and verify millisecond scaling and a shared robust window
+    script: |
+      set -euo pipefail
+      python - <<'PYCODE'
+      import subprocess
+      import sys
+      import tempfile
+      from pathlib import Path
+
+      import ismrmrd
+      import nibabel as nib
+      import numpy as np
+
+      sys.path.insert(0, "/opt/code/python-ismrmrd-server")
+      import qsmxt
+
+      with tempfile.TemporaryDirectory() as work:
+          root = Path(work)
+          truth = np.full((10, 10, 10), 0.05)
+          truth[0, :2, :] = 12.0
+          mask = root / "mask.nii.gz"
+          nib.save(nib.Nifti1Image(np.ones(truth.shape, dtype=np.uint8), np.eye(4)), mask)
+          echoes = []
+          for index, te in enumerate([0.01, 0.02, 0.03]):
+              path = root / f"echo-{index}.nii.gz"
+              signal = (1000 * np.exp(-te / truth)).astype(np.float32)
+              nib.save(nib.Nifti1Image(signal, np.eye(4)), path)
+              echoes.append(str(path))
+          result = root / "T2starmap.nii.gz"
+          subprocess.run([
+              "qsmxt", "t2star", *echoes, "--mask", str(mask),
+              "--output", str(result), "--echo-times", "0.01", "0.02", "0.03",
+          ], check=True)
+          fitted = nib.load(result).get_fdata()
+          np.testing.assert_allclose(fitted, truth, rtol=0.001)
+          anchor = ismrmrd.Image.from_array(np.ones((1, 10, 10), dtype=np.float32))
+          images = qsmxt._nifti_to_mrd_images(
+              result, anchor, qsmxt.OUTPUT_SERIES_START,
+              "QSMxT T2star", "QSMXT_T2STAR", "t2star", "s",
+          )
+          qsmxt._validate_output_images(images, [anchor])
+          assert len(images) == 10
+          for image in images:
+              meta = ismrmrd.Meta.deserialize(image.attribute_string)
+              assert meta["QSMxTWindowDomain"] == "ms"
+              assert float(meta["RescaleSlope"]) == 1
+              assert float(meta["WindowCenter"]) == 25
+              assert float(meta["WindowWidth"]) == 50
+              assert int(meta["QSMxTDisplayClippedVoxels"]) == 20
+              pixels = image.data.reshape(10, 10)
+              assert np.count_nonzero(pixels == 50) == 98
+              assert np.count_nonzero(pixels == 4095) == 2
+          np.testing.assert_array_equal(nib.load(result).get_fdata(), fitted)
+      print("T2 star fit, millisecond scaling, and scanner window verified")
+      PYCODE
 
   - name: OpenRecon algorithm coverage
     description: Compare GUI algorithm choices with the installed QSMxT CLI
@@ -408,4 +465,4 @@ tests:
       print("sent derived images:", len(connection.sent_batches[0]))
       PY
 
-upstream_version: 9.19.1
+upstream_version: 9.21.0

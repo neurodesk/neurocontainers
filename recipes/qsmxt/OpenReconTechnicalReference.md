@@ -47,8 +47,10 @@ Derived outputs are converted to unsigned 12-bit display values in the valid
 the complete finite susceptibility range, while its automatic display window
 uses the 1st and 99th percentiles of finite non-zero voxels. Sparse extrema
 therefore remain quantitatively recoverable without flattening the visible
-contrast. T2* scaling uses the 99.9th percentile of positive finite fits so
-isolated extreme fits are clipped instead of quantizing the useful map to zero.
+contrast. T2* scaling uses the 99.9th percentile of positive finite fits, capped
+at 4.095 seconds to retain storage steps of 1 ms or finer. Larger values saturate
+at stored code `4095`. The default T2* window spans zero to the 95th percentile
+of positive finite fits, bounded by the scaling range and shared across slices.
 The original range, scaling range, scale, inverse formula, physical display
 window, and clipped-voxel count are included in the returned metadata.
 
@@ -64,6 +66,23 @@ window in ppm. The Enhanced MR object keeps `RescaleType=US` as required.
 `QSMxTWindowDomain=ppb` records the domain of the standard DICOM window fields.
 `QSMxTDisplayFormula` records how to recover the source ppm value from a stored
 pixel.
+
+T2* DICOM values and standard window fields use milliseconds to avoid the same
+integer-window limitation. `QSMxTWindowDomain=ms` identifies this conversion.
+`QSMxTUnits`, the inverse display formula, and the physical window metadata
+remain in seconds, matching the source NIfTI. Scanner export clipping does not
+modify that NIfTI, and saturated DICOM pixels cannot recover the original fits.
+
+QSMxT computes T2* from multi-echo magnitude data inside its reconstruction mask.
+The [v9.21.0 pipeline](https://github.com/QSMxT/QSMxT/blob/v9.21.0/src/pipeline/runner.rs)
+requires at least three echoes and calls the
+[QSM.rs v0.35.0 ARLO estimator](https://github.com/astewartau/QSM.rs/blob/v0.35.0/src/utils/r2star.rs),
+with a log-linear fallback for rejected estimates. The ARLO calculation assumes
+equally spaced echo times. The pipeline writes R2* in inverse seconds and takes
+`T2* = 1 / R2*` for positive rates inside the mask, otherwise zero. Small positive
+rates therefore produce arbitrarily large finite T2* values. The scanner display
+limits are presentation choices, not fit-quality thresholds or changes to this
+estimator. Assessing an extreme fit requires the source magnitude echoes.
 
 Maps with a non-zero stored-value offset, including QSM, reserve stored code `0`.
 The bridge sends `PixelPaddingValue=0` and `PixelPaddingRangeLimit=0`, and native

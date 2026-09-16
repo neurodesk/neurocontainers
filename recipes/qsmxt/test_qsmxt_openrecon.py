@@ -815,8 +815,52 @@ def test_output_meta_uses_robust_t2star_range_for_window():
         display_meta,
     )
 
-    assert "WindowCenter" not in meta
-    assert "WindowWidth" not in meta
+    assert float(meta["WindowCenter"]) == 25.0
+    assert float(meta["WindowWidth"]) == 50.0
+    assert float(meta["RescaleSlope"]) == pytest.approx(0.1)
+    assert float(meta["RescaleIntercept"]) == 0.0
+    assert meta["QSMxTWindowDomain"] == "ms"
+    assert meta["QSMxTUnits"] == "s"
+    assert "DICOM values in ms" in meta["ImageComments"]
+
+
+def test_t2star_long_fit_tail_preserves_millisecond_precision_and_tissue_window():
+    tissue = np.linspace(0.020, 0.080, 9800, dtype=np.float32)
+    data = np.concatenate([tissue, np.full(200, 12.0)]).reshape(10, 10, 100)
+    original = data.copy()
+    display, display_meta = qsmxt._scanner_display_volume(data, "t2star", "s")
+    source = _image(1, 1, "gre_qsm", np.ones((1, 10, 100), dtype=np.float32))
+    meta = qsmxt._output_meta(
+        source, source.getHead(), qsmxt.OUTPUT_SERIES_START,
+        "QSMxT T2star", "QSMXT_T2STAR", "t2star", "s", data,
+        Path("/tmp/t2star.nii.gz"), 0, 10, display_meta,
+    )
+
+    decoded_ms = display.reshape(-1) * float(meta["RescaleSlope"])
+    decoded_ms += float(meta["RescaleIntercept"])
+    assert display_meta["rescale_slope"] <= 0.001
+    assert np.max(np.abs(decoded_ms[:9800] - tissue * 1000)) <= 0.501
+    assert 50 <= float(meta["WindowWidth"]) <= 80
+    assert float(meta["WindowCenter"]) == round(float(meta["WindowWidth"]) / 2)
+    assert display_meta["clipped_voxels"] == 200
+    assert np.all(display.reshape(-1)[9800:] == 4095)
+    assert np.array_equal(data, original)
+
+
+@pytest.mark.parametrize("values", [[0.0], [np.nan, np.inf, -np.inf], [-1.0, 12.0]])
+def test_t2star_empty_or_small_maps_have_valid_window_and_scaling(values):
+    data = np.asarray(values, dtype=np.float32).reshape(1, 1, -1)
+    display, display_meta = qsmxt._scanner_display_volume(data, "t2star", "s")
+    source = _image(1, 1, "gre_qsm", np.ones_like(data))
+    meta = qsmxt._output_meta(
+        source, source.getHead(), qsmxt.OUTPUT_SERIES_START,
+        "QSMxT T2star", "QSMXT_T2STAR", "t2star", "s", data,
+        Path("/tmp/t2star.nii.gz"), 0, 1, display_meta,
+    )
+    assert 0 < float(meta["RescaleSlope"]) <= 1
+    assert float(meta["WindowWidth"]) >= 1
+    assert meta["QSMxTWindowDomain"] == "ms"
+    assert np.all(display[(~np.isfinite(data)) | (data <= 0)] == 0)
 
 
 def test_find_qsmxt_outputs_accepts_v9_combined_magnitude_name(tmp_path):
