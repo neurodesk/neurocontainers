@@ -1,0 +1,18 @@
+name: openreconacsrss
+version: 0.1.0
+
+tests:
+  - name: deployed launcher
+    command: openreconacsrss --version
+    expected_output_contains: "${version}"
+  - name: server CLI starts
+    command: openreconacsrss --help
+    expected_output_contains: "Example server for MRD streaming format"
+  - name: application and server imports
+    command: python -c "import sys; sys.path.insert(0, '/opt/code/python-ismrmrd-server'); import openreconacsrss, fire_poc, ismrmrd"
+  - name: capture replay and numerical smoke tests
+    command: python /opt/code/python-ismrmrd-server/smoke_fire_poc.py
+    expected_output_contains: "FIRE POC smoke tests passed"
+  - name: recipe version
+    command: printenv FIRE_POC_VERSION
+    expected_output_contains: "${version}"
