@@ -1,0 +1,111 @@
+name: openreconacsrss
+version: 0.1.0
+architectures:
+  - x86_64
+
+files:
+  - name: launcher
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      if [[ "${1:-}" == "--version" ]]; then
+        printf 'openreconacsrss {{ context.version }}\n'
+        exit 0
+      fi
+      exec python /opt/code/python-ismrmrd-server/main.py -H 0.0.0.0 -p 9002 -d openreconacsrss "$@"
+  - name: openreconacsrss.py
+    filename: openreconacsrss.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+  - name: replay.example.json
+    filename: replay.example.json
+  - name: scanner-session.example.json
+    filename: scanner-session.example.json
+  - name: fire_poc.py
+    filename: ../../macros/fire_poc/fire_poc.py
+  - name: smoke_fire_poc.py
+    filename: ../../macros/fire_poc/tests/smoke_fire_poc.py
+
+variables:
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+
+auto_update:
+  method: sources
+  local:
+  - macros/openrecon
+  - macros/fire_poc
+  sources:
+  - id: base_image
+    method: oci_digest
+    image: ubuntu
+    tag: '22.04'
+    target:
+      variable: base_image_digest
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install: ca-certificates git build-essential python3-pip python-is-python3
+    - include: macros/openrecon/neurodocker.yaml
+    - run:
+        - cp {{ get_file("openreconacsrss.py") }} /opt/code/python-ismrmrd-server/openreconacsrss.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - cp {{ get_file("replay.example.json") }} /opt/code/python-ismrmrd-server/replay.example.json
+        - cp {{ get_file("fire_poc.py") }} /opt/code/python-ismrmrd-server/fire_poc.py
+        - cp {{ get_file("smoke_fire_poc.py") }} /opt/code/python-ismrmrd-server/smoke_fire_poc.py
+        - cp {{ get_file("scanner-session.example.json") }} /opt/code/python-ismrmrd-server/scanner-session.example.json
+        - install -m 0755 {{ get_file("launcher") }} /usr/local/bin/openreconacsrss
+        - mkdir -p /tmp/share/fire-poc
+        - chmod 1777 /tmp/share /tmp/share/fire-poc
+    - environment:
+        FIRE_POC_VERSION: "{{ context.version }}"
+
+deploy:
+  bins:
+    - openreconacsrss
+
+categories:
+  - image reconstruction
+
+readme: |
+  openreconacsrss/{{ context.version }}
+  Capture ACS data and reconstruct Fourier/RSS preview images.
+  Capture-first research application. See OpenReconREADME.md for the scanner
+  acquisition checklist, data contract, limitations, and offline replay command.
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABcElEQVR4nOWZy1HEMBBE212EwGZigmDz4EY43MiDJKxMSILDVi0uIw22NCPc4t3WLc+opSmvPtPj/AxlCHEIcQhxCHEIcQhxCHEIcQhxCHEIcR7qXpvfX0tSenlrUXGQ6dBizsjtS9rtZK+BTdc3CbyGfDazVBpYB/0Z0VD3e05Hwh4zcA+UjbJTbY+Qyh4Y3fu7mi2k1KD+MgO3d0rWK1T3gNYMRCS7PSmNZapVMwaChirIA7M9KNGiBmVhtpH95TqVyj7FE1dIhDjsPPzuk0CIQ4xhYO5YP75VRIhDiEOMuif+XD62j5arFclWq19cvtXL0/U/zcBlZTfiK+QVlhCHGMNAitkuGXj9dRLiEMMYSB2ryHHpRYjD9Y8+k+C78qXRzu7BSVR2O1MIysJSi4hCitg20b2XJTVo0zcZx+tep9O+p9yj3Q9Mg9/QjHBHNsgt5SD3xCeEEIcQhxCHEIcQhxCHEIcQhxCHf92BVr4AeeWUCY1l0doAAAAASUVORK5CYII=

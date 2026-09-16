@@ -1,0 +1,8 @@
+{
+  "parameters": {
+    "mode": "reconstruct",
+    "inputdomain": "kx-ky",
+    "preprocessed": false,
+    "series": 60000
+  }
+}
