@@ -134,6 +134,11 @@ example above produces `qsmxt_gpu` and `qsmxt_gpu_arm64`. Variant `options`
 preset the same boolean recipe options used by `context.options.<name>`
 conditions.
 
+`build_default` defaults to `true`. Setting it to `false` excludes unnamed
+builds on every architecture, leaving only the declared `variants`. At least
+one variant must remain. Build a retained variant with
+`sf-build spinalcordtoolbox --variant lite`.
+
 Each concrete identity is a container in its own right: it builds as its own PR
 candidate, publishes to its own `ghcr.io`/`quay.io` repository, and gets its own
 `releases/<container>/<version>.json`. Adding `aarch64` to a recipe therefore

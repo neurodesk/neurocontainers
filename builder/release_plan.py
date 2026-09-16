@@ -15,6 +15,7 @@ TOP_LEVEL_FIELD_TIERS: dict[str, frozenset[str]] = {
     "architectures": frozenset({"candidate"}),
     "build": frozenset({"candidate"}),
     "variants": frozenset({"candidate"}),
+    "build_default": frozenset({"candidate"}),
     "auto_update": frozenset({"source_only"}),
     "icon": frozenset({"catalog"}),
     "copyright": frozenset({"source_only"}),

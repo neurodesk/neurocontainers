@@ -761,6 +761,7 @@ class ContainerRecipe:
     architectures: List[str] = attrs.field(validator=attrs.validators.min_len(1))
     build: NeuroDockerBuildRecipe = attrs.field()
     variants: Optional[Dict[str, VariantConfig]] = attrs.field(default=None)
+    build_default: bool = attrs.field(default=True, validator=attrs.validators.instance_of(bool))
     auto_update: Optional[AutoUpdate] = attrs.field(default=None)
     icon: Optional[str] = attrs.field(default=None)
     copyright: Optional[List[Union[CustomCopyrightInfo, SPDXCopyrightInfo]]] = (

@@ -83,8 +83,9 @@ def concrete_variant_specs(recipe: dict[str, Any]) -> list[dict[str, Any]]:
         default_architecture,
         *[arch for arch in architectures if arch != default_architecture],
     ]
-    for architecture in ordered_architectures:
-        specs.append(make_variant_spec(str(recipe["name"]), "", architecture))
+    if recipe.get("build_default", True):
+        for architecture in ordered_architectures:
+            specs.append(make_variant_spec(str(recipe["name"]), "", architecture))
 
     for variant_name, config in (recipe.get("variants") or {}).items():
         configured_architectures = config.get("architectures") or (
@@ -103,6 +104,8 @@ def concrete_variant_specs(recipe: dict[str, Any]) -> list[dict[str, Any]]:
                 )
             )
 
+    if not specs:
+        raise ValueError(f"recipe {recipe['name']} has no enabled builds")
     selectors = [str(spec["variant"]) for spec in specs]
     if len(selectors) != len(set(selectors)):
         raise ValueError(f"recipe {recipe['name']} declares duplicate concrete variants")
