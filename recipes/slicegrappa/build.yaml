@@ -1,5 +1,5 @@
 name: slicegrappa
-version: 0.1.1
+version: 0.1.2
 architectures:
   - x86_64
 
@@ -24,13 +24,13 @@ files:
   - name: scanner-session.example.json
     filename: scanner-session.example.json
   - name: configure_server.py
-    filename: ../../macros/fire_apps/configure_server.py
+    filename: configure_server.py
   - name: smoke_fire_dispatch.py
-    filename: ../../macros/fire_apps/tests/smoke_fire_dispatch.py
+    filename: tests/smoke_fire_dispatch.py
   - name: fire_poc.py
-    filename: ../../macros/fire_apps/fire_poc.py
+    filename: fire_poc.py
   - name: smoke_fire_poc.py
-    filename: ../../macros/fire_apps/tests/smoke_fire_poc.py
+    filename: tests/smoke_fire_poc.py
 
 variables:
   openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
@@ -43,7 +43,6 @@ auto_update:
   method: sources
   local:
   - macros/openrecon
-  - macros/fire_apps
   sources:
   - id: base_image
     method: oci_digest
