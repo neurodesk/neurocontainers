@@ -60,6 +60,9 @@ volume uses zero-valued pixels and stores its physical value in the intercept.
   converted from radians to degrees. Preferred series indices start at `140`.
 - `<source>-b0`: B0 phase-difference map in Hz on preferred series index `160`.
 - `<source>-mask`: optional binary mask on preferred series index `161`.
+- `<source>-real-frameNNN` and `<source>-imag-frameNNN`: optional components of
+  each original reconstructed frame, in source magnitude units. Series indices
+  start at `180`, skipping occupied indices. Each series contains one 3D volume.
 
 The preferred series indices are shifted only if the incoming image stream
 already uses one of them.
@@ -83,8 +86,42 @@ for every output series.
 - `sendphsc` default `true`: send dedicated transmit phase maps.
 - `sendb0` default `true`: send the B0 map.
 - `sendmask` default `false`: send the magnitude-derived QC mask.
+- `sendreal` default `false`: send `magnitude * cos(phase_radians)` for every
+  original frame.
+- `sendimag` default `false`: send `magnitude * sin(phase_radians)` for every
+  original frame.
+- `phasewrap` default `4096`: phase counts per full turn. Set to `0` when input
+  phase pixels are already in radians.
 - `bspulsewidthms` default `12.0`: BS pulse width in milliseconds used in the
   KBS calculation.
+
+## Send original real and imaginary images
+
+Enable **Send original real images** and **Send original imaginary images** in
+the OpenRecon parameters. For JSON configuration, add these options to the
+`parameters` object:
+
+```json
+{"parameters": {"sendreal": true, "sendimag": true}}
+```
+
+The existing map outputs remain enabled. To return only the original image
+components, also set `sendb1`, `sendbsp`, `sendphsc`, and `sendb0` to `false`.
+Leave `sendmask` disabled.
+
+Both component outputs include every paired input frame, including reference
+frames and any frames beyond those used for B1 mapping. Magnitude and phase
+frame counts must match across all slices. `NNN` is the one-based sorted frame
+index, also recorded in `BlochSiegertSourceFrameIndex`.
+
+The component calculations use the input phase convention without the BSp
+polarity correction. They do not apply the QC mask. The outputs carry MRD
+real/imaginary image types and corresponding DICOM component metadata.
+
+Recover signed component values from stored DICOM pixels using each image's
+`pixel * RescaleSlope + RescaleIntercept`. This display encoding quantizes the
+values to 12 bits; it does not preserve the full floating-point precision.
+Do not apply rescaling twice if your DICOM reader already applies it.
 
 ## Scanner Notes
 

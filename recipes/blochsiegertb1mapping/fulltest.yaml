@@ -433,5 +433,84 @@ tests:
     assert no_output_connection.sent_images == []
     assert no_output_connection.closed is True
 
+    component_settings = {
+        "sendb1": False,
+        "sendbsp": False,
+        "sendphsc": False,
+        "sendb0": False,
+        "sendreal": True,
+        "sendimag": True,
+    }
+    # Include an extra frame beyond the 11 used for mapping and both signs
+    # within each volume to exercise signed pixel recovery after quantization.
+    component_inputs = []
+    phase_pattern = np.tile(np.array([-2.4, -0.7, 0.4, 2.1]), (8, 2))
+    expected_components = []
+    for frame_index in range(12):
+        magnitudes = []
+        phases = []
+        for slice_index in range(2):
+            magnitude = make_image(
+                frame_index, "magnitude", 20 + 3 * slice_index,
+                slice_index=slice_index,
+            )
+            phase = make_image(frame_index, "phase", 0, slice_index=slice_index)
+            radians = phase_pattern + frame_index * 0.01 + slice_index * 0.02
+            phase.data[:] = (radians + math.pi) * module.PHASE_WRAP / (2 * math.pi)
+            component_inputs.extend([magnitude, phase])
+            magnitudes.append(magnitude.data[0])
+            phases.append(radians[np.newaxis])
+        magnitude_volume = np.concatenate(magnitudes)
+        phase_volume = np.concatenate(phases)
+        expected_components.extend([
+            magnitude_volume * np.cos(phase_volume),
+            magnitude_volume * np.sin(phase_volume),
+        ])
+    component_connection = FakeConnection(component_inputs + [None])
+    module.process(component_connection, {"parameters": component_settings}, None)
+    assert component_connection.closed
+    assert component_connection.logging == []
+    component_outputs = [
+        image for batch in component_connection.sent_images for image in batch
+    ]
+    assert len(component_outputs) == 24
+    module._validate_output_images(component_outputs, component_inputs)
+    for index, (image, expected) in enumerate(zip(component_outputs, expected_components)):
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        slope = float(first(meta["RescaleSlope"]))
+        intercept = float(first(meta["RescaleIntercept"]))
+        recovered = image.data[0].astype(float) * slope + intercept
+        assert np.allclose(recovered, expected, atol=slope / 2 + 1e-4, rtol=0)
+        assert recovered.min() < 0 < recovered.max()
+        assert list(image.getHead().matrix_size) == [8, 8, 2]
+        assert np.allclose(image.getHead().field_of_view, [8, 8, 10])
+        name, token, component, image_type = (
+            ("real", "R", "REAL", ismrmrd.IMTYPE_REAL)
+            if index % 2 == 0 else
+            ("imag", "I", "IMAGINARY", ismrmrd.IMTYPE_IMAG)
+        )
+        assert image.image_type == image_type
+        assert first(meta["ComplexImageComponent"]) == component
+        assert first(meta["ImageType"]) == f"DERIVED\\PRIMARY\\{token}\\BSS{name.upper()}"
+        assert first(meta["DicomImageType"]) == first(meta["ImageType"])
+        assert first(meta["BlochSiegertSourceFrameIndex"]) == str(index // 2 + 1)
+        assert first(meta["SeriesDescription"]).endswith(f"-{name}-frame{index // 2 + 1:03d}")
+
+    # The flags work independently; radians input uses the same conversion path.
+    for image in component_inputs:
+        if image.image_type == ismrmrd.IMTYPE_PHASE:
+            image.data[:] = image.data * (2 * math.pi / module.PHASE_WRAP) - math.pi
+    for selected in ("real", "imag"):
+        selected_settings = dict(component_settings, phasewrap=0)
+        selected_settings[f"send{'imag' if selected == 'real' else 'real'}"] = False
+        selected_result = module.compute_bloch_siegert_maps(component_inputs, selected_settings)
+        selected_outputs = module.build_output_images(selected_result, selected_settings, component_inputs)
+        assert len(selected_outputs) == 12
+        for image, expected in zip(selected_outputs, expected_components[0 if selected == "real" else 1::2]):
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            slope = float(first(meta["RescaleSlope"]))
+            recovered = image.data[0].astype(float) * slope + float(first(meta["RescaleIntercept"]))
+            assert np.allclose(recovered, expected, atol=slope / 2 + 1e-4, rtol=0)
+
     print("Bloch-Siegert OpenRecon workflow tests passed")
     PY

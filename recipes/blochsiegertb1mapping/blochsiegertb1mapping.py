@@ -248,6 +248,64 @@ def build_output_images(result, settings=None, input_images=None):
             )
         )
 
+    components = [
+        (name, operation, image_type)
+        for name, operation, image_type in (
+            ("real", np.cos, ismrmrd.IMTYPE_REAL),
+            ("imag", np.sin, ismrmrd.IMTYPE_IMAG),
+        )
+        if _setting_bool(settings, f"send{name}", default=False)
+    ]
+    if components:
+        magnitude_groups, phase_groups = _pair_slice_groups(
+            _group_frames_by_slice(result["magnitude_images"]),
+            _group_frames_by_slice(result["phase_images"]),
+        )
+        frame_counts = {
+            len(group) for group in magnitude_groups + phase_groups
+        }
+        if len(frame_counts) != 1:
+            raise ValueError(
+                "Real/imaginary output requires matching magnitude and phase "
+                "frame counts across all slices"
+            )
+        used_series = {
+            int(image.image_series_index) for image in input_images + outputs
+        }
+        series_index = 180
+        phase_wrap = _setting_float(settings, "phasewrap", default=PHASE_WRAP)
+        for frame_index in range(len(magnitude_groups[0])):
+            frame_anchors = [group[frame_index] for group in magnitude_groups]
+            magnitude = np.concatenate(
+                [_image_volume_data(image) for image in frame_anchors], axis=0
+            )
+            phase = _phase_to_radians(
+                np.concatenate(
+                    [_image_volume_data(group[frame_index]) for group in phase_groups],
+                    axis=0,
+                ),
+                phase_wrap,
+            )
+            for name, operation, image_type in components:
+                while series_index in used_series:
+                    series_index += 1
+                output = _map_to_mrd_image(
+                    magnitude * operation(phase),
+                    frame_anchors[0],
+                    frame_anchors,
+                    series_index,
+                    f"{source_name}-{name}-frame{frame_index + 1:03d}",
+                    f"BSS{name.upper()}",
+                    f"BlochSiegertSource{name.title()}",
+                    "a.u.",
+                    image_type=image_type,
+                )
+                meta = _meta_from_image(output)
+                meta["BlochSiegertSourceFrameIndex"] = str(frame_index + 1)
+                output.attribute_string = meta.serialize()
+                outputs.append(output)
+                used_series.add(series_index)
+
     return outputs
 
 
@@ -860,6 +918,7 @@ def _map_to_mrd_image(
     tx_index=None,
     window_center=None,
     window_width=None,
+    image_type=ismrmrd.IMTYPE_MAGNITUDE,
 ):
     volume = np.asarray(volume)
     if volume.ndim != 3:
@@ -887,7 +946,7 @@ def _map_to_mrd_image(
 
     header = anchor_image.getHead()
     header.data_type = output.data_type
-    header.image_type = int(getattr(ismrmrd, "IMTYPE_MAGNITUDE", 1))
+    header.image_type = int(image_type)
     header.image_series_index = int(series_index)
     header.image_index = 1
     header.slice = 0
@@ -980,14 +1039,19 @@ def _output_meta(
 
     series_uid = _derived_series_uid(source_image, series_index, series_name)
     sop_uid = _derived_instance_uid(source_image, series_uid, series_index, series_name)
-    image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
+    component_token, component_name = {
+        ismrmrd.IMTYPE_MAGNITUDE: ("M", "MAGNITUDE"),
+        ismrmrd.IMTYPE_REAL: ("R", "REAL"),
+        ismrmrd.IMTYPE_IMAG: ("I", "IMAGINARY"),
+    }[header.image_type]
+    image_type = f"DERIVED\\PRIMARY\\{component_token}\\{image_type_token}"
 
     meta["DataRole"] = "Image"
     meta["ImageProcessingHistory"] = ["PYTHON", "BLOCHSIEGERTB1MAPPING"]
     meta["ImageType"] = image_type
     meta["DicomImageType"] = image_type
     meta["ImageTypeValue4"] = image_type_token
-    meta["ComplexImageComponent"] = "MAGNITUDE"
+    meta["ComplexImageComponent"] = component_name
     meta["SeriesDescription"] = series_name
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
@@ -1277,6 +1341,8 @@ def _settings_from_config(config):
         "sendphsc": _config_bool(config, "sendphsc", default=True),
         "sendb0": _config_bool(config, "sendb0", default=True),
         "sendmask": _config_bool(config, "sendmask", default=False),
+        "sendreal": _config_bool(config, "sendreal", default=False),
+        "sendimag": _config_bool(config, "sendimag", default=False),
         "bspulsewidthms": _config_float(
             config,
             "bspulsewidthms",

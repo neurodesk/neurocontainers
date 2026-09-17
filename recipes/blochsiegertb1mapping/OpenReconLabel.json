@@ -85,6 +85,20 @@
       "default": false
     },
     {
+      "id": "sendreal",
+      "label": { "en": "Send original real images" },
+      "type": "boolean",
+      "information": { "en": "Send one real-component volume per original frame, with DICOM rescaling back to signed source magnitude units" },
+      "default": false
+    },
+    {
+      "id": "sendimag",
+      "label": { "en": "Send original imaginary images" },
+      "type": "boolean",
+      "information": { "en": "Send one imaginary-component volume per original frame, with DICOM rescaling back to signed source magnitude units" },
+      "default": false
+    },
+    {
       "id": "bspulsewidthms",
       "label": { "en": "BS pulse width" },
       "type": "double",

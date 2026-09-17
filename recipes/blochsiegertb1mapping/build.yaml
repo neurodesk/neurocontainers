@@ -114,6 +114,12 @@ readme: |-
   Small negative BSp values are retained in the phase output and clamped only
   in the separate nonnegative copy used for the B1 square-root calculation.
 
+  Enable `sendreal` and/or `sendimag` to return real and imaginary components
+  of every original magnitude/phase frame, including reference frames. Both
+  default to false. Outputs use one 3D series per frame and component, named
+  `<source>-real-frameNNN` and `<source>-imag-frameNNN`. Recover signed values
+  in source magnitude units with `pixel * RescaleSlope + RescaleIntercept`.
+
   OpenRecon runtime notes: `recipes/blochsiegertb1mapping/OpenReconREADME.md`.
 
   Build and validate:
