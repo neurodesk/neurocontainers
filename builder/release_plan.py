@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Mapping
 
 
@@ -42,6 +42,45 @@ ENABLED_SOURCE_ONLY_FIELDS = frozenset({"auto_update", "copyright", "draft"})
 ENABLED_CATALOG_FIELDS = frozenset({"icon"})
 DOCUMENTATION_FIELDS = frozenset({"readme", "readme_url", "structured_readme"})
 KNOWN_NON_IMAGE_FILES = frozenset({"fulltest.yaml"})
+
+# A recipe may only leave recipes/ through this manifest. Removal is otherwise
+# indistinguishable from an accidental deletion, and the planner has no recipe
+# left to classify.
+RETIREMENT_MANIFEST = "workflows/retired_recipes.yaml"
+
+
+def parse_retirements(document: object) -> dict[str, str]:
+    """Read retired recipe names and where each one went.
+
+    The manifest is repository-authored data read as plain YAML, never
+    rendered, so it carries the same trust as the rest of release policy.
+    """
+    if document is None:
+        return {}
+    if not isinstance(document, Mapping):
+        raise ValueError(f"{RETIREMENT_MANIFEST} must be a YAML mapping")
+    entries = document.get("retired", [])
+    if not isinstance(entries, list):
+        raise ValueError(f"{RETIREMENT_MANIFEST} must map 'retired' to a list")
+    retired: dict[str, str] = {}
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"Every {RETIREMENT_MANIFEST} entry must be a mapping")
+        name = entry.get("recipe")
+        reason = entry.get("reason")
+        if not isinstance(name, str) or Path(name).name != name or name in {".", ".."}:
+            raise ValueError(
+                f"{RETIREMENT_MANIFEST} entries need a plain 'recipe' directory name"
+            )
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError(f"Retiring {name} requires a non-empty 'reason'")
+        if name in retired:
+            raise ValueError(f"{RETIREMENT_MANIFEST} lists {name} twice")
+        successor = entry.get("superseded_by", "")
+        if not isinstance(successor, str):
+            raise ValueError(f"'superseded_by' for {name} must be a recipe name")
+        retired[name] = successor
+    return retired
 
 
 def literal_categories(recipe: Mapping[str, object]) -> list[str] | None:
@@ -88,7 +127,20 @@ class ReleasePlan:
 
     @property
     def changed_recipes(self) -> list[str]:
-        return [decision.recipe for decision in self.decisions]
+        """Recipes still present at head. CI validates each one by path."""
+        return [
+            decision.recipe
+            for decision in self.decisions
+            if decision.action != "retired"
+        ]
+
+    @property
+    def retired_recipes(self) -> list[str]:
+        return [
+            decision.recipe
+            for decision in self.decisions
+            if decision.action == "retired"
+        ]
 
     @property
     def candidate_recipes(self) -> list[str]:
@@ -112,6 +164,7 @@ class ReleasePlan:
             "changed_recipes": self.changed_recipes,
             "candidate_recipes": self.candidate_recipes,
             "source_only_recipes": self.source_only_recipes,
+            "retired_recipes": self.retired_recipes,
             "decisions": [
                 {
                     "recipe": decision.recipe,
@@ -178,6 +231,7 @@ def plan_recipe_changes(
     changed_paths: list[str],
     base_recipes: Mapping[str, Mapping[str, object] | None],
     head_recipes: Mapping[str, Mapping[str, object] | None],
+    retired: Mapping[str, str] | None = None,
 ) -> ReleasePlan:
     """Classify recipe changes without rendering or executing head-authored data.
 
@@ -187,6 +241,7 @@ def plan_recipe_changes(
     the already-published artifact instead of rebuilding those provenance files.
     """
     decisions: list[RecipeDecision] = []
+    retirements = retired or {}
     affected = set(recipe_names_from_paths(changed_paths))
     affected.update(
         name for name, recipe in head_recipes.items()
@@ -202,9 +257,22 @@ def plan_recipe_changes(
         base = base_recipes.get(recipe)
         head = head_recipes.get(recipe)
         if head is None:
+            if recipe not in retirements:
+                raise ValueError(
+                    f"Recipe removal or a missing recipes/{recipe}/build.yaml "
+                    f"requires an explicit migration: list it in "
+                    f"{RETIREMENT_MANIFEST}"
+                )
+            # Nothing to build or publish. Releases already in releases/ stay
+            # served from their own metadata, so the catalog keeps the history.
+            decisions.append(
+                RecipeDecision(recipe, "retired", ("recipe-retired",))
+            )
+            continue
+        if recipe in retirements:
             raise ValueError(
-                f"Recipe removal or a missing recipes/{recipe}/build.yaml "
-                "requires an explicit migration"
+                f"{RETIREMENT_MANIFEST} retires {recipe}, but "
+                f"recipes/{recipe}/build.yaml still exists"
             )
 
         candidate_reasons: list[str] = []

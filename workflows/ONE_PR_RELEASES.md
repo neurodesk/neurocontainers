@@ -99,6 +99,36 @@ preserves all published app identities and build dates and does not rewrite
 release JSON or publish images. Missing recipes and templated categories retain
 the categories from release metadata.
 
+## Retiring a recipe
+
+Deleting `recipes/<name>/` leaves the planner with nothing to classify, and an
+unannounced deletion looks exactly like an accidental one, so removal is
+fail-closed too. A recipe leaves the repository only by being listed in
+`workflows/retired_recipes.yaml` in the same pull request that deletes it:
+
+```yaml
+retired:
+  - recipe: oldname
+    superseded_by: newname
+    reason: Renamed; newname carries the maintained recipe.
+```
+
+Each entry needs a plain directory name and a non-empty reason; `superseded_by`
+is optional but must name a recipe that exists at head when it is given. The
+planner rejects an entry whose `recipes/<name>/build.yaml` is still present, so
+the manifest cannot drift from the tree.
+
+A retirement publishes nothing and withdraws nothing. The recipe is reported as
+`retired` rather than `changed`, which keeps it out of the schema validation
+that runs by path, and no candidate is built. Artifacts already in `releases/`
+keep their metadata, so apps.json and the catalog continue to serve every
+version that was built; `generate_apps_json.py` already falls back to release
+metadata when a recipe directory is absent.
+
+Because the gate runs the planner from the trusted base, a pull request cannot
+both introduce a new removal rule and rely on it. Land the policy change first,
+then the removal.
+
 Every other recipe definition change is deliberately fail-closed and requires
 a candidate. A changed recipe-local file such as `install.sh` also requires a
 candidate even when `build.yaml` itself is unchanged. The explicit top-level
