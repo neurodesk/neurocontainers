@@ -64,7 +64,7 @@ def verify_dicom(input_path: Path, output_dir: Path) -> None:
         "tfdevice": "cpu", "tfflatpatches": True,
     }}, None)
     outputs = [image for batch in connection.image_batches for image in batch]
-    assert connection.closed and len(outputs) == 3 * len(images), connection.logs
+    assert connection.closed and len(outputs) == 3 * len(images) + 1, connection.logs
     patch_images = [image for image in outputs if
         "_topofit_patch_qc" in ismrmrd.Meta.deserialize(image.attribute_string)["SeriesDescription"]]
     assert len(patch_images) == len(images)

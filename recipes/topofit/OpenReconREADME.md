@@ -70,9 +70,10 @@ A center ring shows the true in-plane normal component at physical scale (4095).
 A dot means that the normal points toward increasing slice positions. A cross
 means that it points toward decreasing slice positions. This convention keeps
 a through-plane normal visible without drawing a false in-plane arrow. The
-result manifest stores the centers and normals in NIfTI world RAS. Each QC
-image comment also contains the centers and unit normals in scanner
-patient-space LPS.
+result manifest stores the centers and normals in both NIfTI world RAS and
+patient LPH. QC image comments include LPH centers and unit normals up to the
+comment length limit. The separate `TopoFit_patch_table` series contains all
+accepted patches.
 
 Patch IDs such as `LH01` and `RH03` appear beside their normal glyphs. They are
 ranked within each hemisphere for that run, not longitudinal anatomical labels.
@@ -126,9 +127,9 @@ hemispheres; 3 marks overlap. The mask keeps the source shape and affine.
 | Inference device | `tfdevice` | `cuda` | Run on the scanner GPU or use CPU for compatibility testing. |
 | TopoFit model | `tfmodel` | `t1w_1mm` | Select the T1w or synthetic pretrained model. |
 | Conform input | `tfconform` | `true` | Resample internally to the model grid. |
-| Find cortical patches | `tfflatpatches` | `false` | Find connected mid-cortical candidates and return patch-and-normal QC with LPS geometry in image comments. |
-| Maximum patches per hemisphere | `tfpatchcount` | `3` | Return up to 1–10 accepted patches per selected hemisphere. |
-| Cortical patch radius | `tfpatchradius` | `10 mm` | Mesh-edge radius, 5–20 mm. |
+| Find cortical patches | `tfflatpatches` | `false` | Find connected mid-cortical candidates and return patch-and-normal QC with LPH centers and outward unit normals in image comments and a DICOM table. |
+| Maximum patches per hemisphere | `tfpatchcount` | `3` | Return up to 1–100 accepted patches per selected hemisphere. |
+| Cortical patch radius | `tfpatchradius` | `10 mm` | Mesh-edge radius, 2–20 mm. |
 | Patch hemisphere | `tfpatchhemisphere` | `both` | Both, `lh`, or `rh`. Reconstruction remains bilateral. |
 | Patch search region | `tfpatchregion` | `cortex` | Whole eligible cortex or `roi`. |
 | Native-space ROI path | `tfpatchroi` | empty | Container-visible NIfTI mask path, used only in ROI mode. |
@@ -194,3 +195,28 @@ restores the previous output count without restoring the old manifest schema.
 Please cite the BrainNet/TopoFit publication and software release used by your
 study. BrainNet source and release information is available at
 https://github.com/simnibs/brainnet.
+
+### Patch numbering and coordinate table
+
+The patch count accepts 1 to 100 per hemisphere. The mesh-edge radius accepts
+2 to 20 mm. A 2 mm radius is approximately a 4 mm diameter on a flat surface.
+The quality and overlap criteria can result in fewer patches than requested.
+
+IDs start at `LH01` and `RH01` independently. Candidates are sorted by increasing
+`RMS plane-fit error + radius * (1 - normal coherence)`, then by seed face index
+for ties. Candidates that share vertices with an accepted patch are skipped.
+The score favors flat patches with consistent normals; it is not RMS alone.
+
+When patch search is enabled, `TopoFit_patch_table` returns all accepted patches
+as a paginated DICOM image series using the OpenMSK and MuscleMap report layout
+convention. Columns contain the patch ID, center coordinates in millimeters,
+outward unit normal components, area, RMS error, and ranking score.
+An empty result returns a page stating that no patch met the criteria.
+
+The table and image comments use patient **LPH**: positive left, posterior, and
+head. This is equivalent to DICOM LPS, where superior means toward the head.
+RAS centers and normals convert to LPH by negating their first two components.
+Normals are dimensionless directions, not positions or angles.
+The manifest includes `center_lph_mm` and `normal_lph` alongside the RAS fields
+used for mesh calculations. These remain research outputs under the existing
+TopoFit validation status.

@@ -381,8 +381,10 @@ def _stamp_output(
     processing_history: list[str],
     warning: str = "",
     details: str = "",
+    *,
+    header=None,
 ) -> None:
-    header = copy.copy(source.getHead())
+    header = copy.copy(source.getHead() if header is None else header)
     header.data_type = output.data_type
     header.image_type = ismrmrd.IMTYPE_MAGNITUDE
     header.image_series_index = series_index
@@ -437,15 +439,110 @@ def _clone_original_series(images, series_index: int) -> list:
 def _format_flat_patch_comment(flat_patches) -> str:
     parts = []
     for patch_id, patch in flat_patches.items():
-        center_lps = np.asarray(patch.center_ras_mm, dtype=float) * (-1.0, -1.0, 1.0)
-        normal_lps = np.asarray(patch.normal_ras, dtype=float) * (-1.0, -1.0, 1.0)
-        center = ",".join(f"{value:.2f}" for value in center_lps)
-        normal = ",".join(f"{value:.4f}" for value in normal_lps)
+        center = ",".join(f"{value:.2f}" for value in patch.center_lph_mm)
+        normal = ",".join(f"{value:.4f}" for value in patch.normal_lph)
         parts.append(
-            f"TopoFit patch {patch_id} {patch.surface} LPS_mm center=({center}) "
+            f"TopoFit patch {patch_id} {patch.surface} LPH_mm center=({center}) "
             f"normal=({normal}) area_mm2={patch.area_mm2:.1f} rms_mm={patch.rms_distance_mm:.3f}"
         )
+        if sum(len(part) + 2 for part in parts) > 8000:
+            parts.pop()
+            parts.append("See TopoFit_patch_table for all patch coordinates and normals.")
+            break
     return "; ".join(parts)
+
+
+def _render_patch_report_pages(flat_patches) -> list[np.ndarray]:
+    from PIL import Image, ImageDraw, ImageFont
+
+    width, height = 1200, 900
+    margin, line_height, rows_per_page = 24, 28, 22
+    font = ImageFont.load_default(size=18)
+    rows = []
+    for patch_id, patch in flat_patches.items():
+        rows.append((
+            patch_id,
+            *(f"{value:.2f}" for value in patch.center_lph_mm),
+            *(f"{value:.4f}" for value in patch.normal_lph),
+            f"{patch.area_mm2:.1f}", f"{patch.rms_distance_mm:.3f}",
+            f"{patch.score:.3f}",
+        ))
+    page_count = max(1, (len(rows) + rows_per_page - 1) // rows_per_page)
+    pages = []
+    headers = ("Patch", "L mm", "P mm", "H mm", "Normal L", "Normal P", "Normal H",
+               "Area mm2", "RMS mm", "Score")
+    for page_index in range(page_count):
+        canvas = Image.new("L", (width, height), 0)
+        draw = ImageDraw.Draw(canvas)
+        title_lines = (
+            "TopoFit cortical patches",
+            "Patient LPH: +Left, +Posterior, +Head. Centers in mm; outward unit normals.",
+            "LH/RH numbered independently, lowest score first; overlapping candidates skipped.",
+            "Score = RMS plane-fit error + radius * (1 - normal coherence). Lower is flatter.",
+            f"Page {page_index + 1}/{page_count}    Accepted patches: {len(rows)}",
+        )
+        for index, line in enumerate(title_lines):
+            draw.text((margin, margin + index * line_height), line, font=font, fill=255)
+        y = margin + 6 * line_height
+        column_width = (width - 2 * margin) // len(headers)
+        for index, header in enumerate(headers):
+            draw.text((margin + index * column_width, y), header, font=font, fill=255)
+        draw.line((margin, y + line_height - 2, width - margin, y + line_height - 2), fill=160)
+        start = page_index * rows_per_page
+        for row_index, row in enumerate(rows[start:start + rows_per_page], start=1):
+            for index, value in enumerate(row):
+                draw.text((margin + index * column_width, y + row_index * line_height),
+                          value, font=font, fill=240)
+        if not rows:
+            draw.text((margin, y + line_height), "No patch met the quality criteria.",
+                      font=font, fill=240)
+        draw.text((margin, height - 2 * line_height), RESEARCH_WARNING, font=font, fill=255)
+        # OpenMSK and MuscleMap use this orientation for scanner table images.
+        pages.append(np.rot90(np.asarray(canvas, dtype=np.uint16) * 16, 2).copy())
+    return pages
+
+
+def _patch_report_mrd_images(flat_patches, source_images, series_index: int) -> list:
+    pages = _render_patch_report_pages(flat_patches)
+    volume = np.stack(pages)
+    page_count, height, width = volume.shape
+    output = ismrmrd.Image.from_array(np.ascontiguousarray(volume), transpose=False)
+    header = copy.copy(source_images[0].getHead())
+    header.matrix_size[:] = (width, height, page_count)
+    header.field_of_view[:] = (float(width), float(height), float(page_count))
+    header.position[:] = (0.0, 0.0, 0.0)
+    header.read_dir[:] = (1.0, 0.0, 0.0)
+    header.phase_dir[:] = (0.0, 1.0, 0.0)
+    header.slice_dir[:] = (0.0, 0.0, 1.0)
+    header.slice = 0
+    header.contrast = 0
+    _stamp_output(
+        output, source_images[0], series_index, 0, _new_series_uid(),
+        "TopoFit_patch_table", ["PYTHON", "TOPOFIT", "PATCH_TABLE"],
+        RESEARCH_WARNING,
+        "Patch centers in patient LPH mm; outward unit normals in LPH. "
+        "LPH = left, posterior, head, equivalent to DICOM LPS.",
+        header=header,
+    )
+    meta = _meta_from_image(output)
+    meta.pop("IceMiniHead", None)
+    meta["Keep_image_geometry"] = "0"
+    meta["partition_count"] = "1"
+    meta["ImageType"] = "DERIVED\\PRIMARY\\M\\TOPOFIT_PATCH_TABLE"
+    meta["DicomImageType"] = meta["ImageType"]
+    meta["ImageTypeValue3"] = "M"
+    meta["ImageTypeValue4"] = "TOPOFIT_PATCH_TABLE"
+    for key in ("slice_count", "NumberOfSlices", "ImagesInAcquisition"):
+        meta[key] = str(page_count)
+    for key, values in (
+        ("ImageRowDir", header.read_dir), ("ImageColumnDir", header.phase_dir),
+        ("ImageSliceNormDir", header.slice_dir), ("SlicePosLightMarker", header.position),
+    ):
+        meta[key] = [f"{value:.18f}" for value in values]
+    meta["TopoFitPatchCount"] = str(len(flat_patches))
+    meta["TopoFitCoordinateSystem"] = "LPH"
+    output.attribute_string = meta.serialize()
+    return [output]
 
 
 def _format_sulcal_middepth_comment(sulci) -> str:
@@ -677,6 +774,12 @@ def process(connection, config, metadata):
                 )
                 pending_output.append(("TopoFit patch QC", patch_qc_images))
                 next_series_index += 1
+            if options.find_flat_patches:
+                report_images = _patch_report_mrd_images(
+                    result.flat_patches, ordered, next_series_index,
+                )
+                pending_output.append(("TopoFit patch table", report_images))
+                next_series_index += 1
             logging.info(
                 "TOPOFIT_OPENRECON_RESULT status=%s elapsed_seconds=%.3f "
                 "manifest=%s warning=%s",
@@ -725,14 +828,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--find-flat-patches",
         action="store_true",
-        help="Find and draw up to three distinct mid-cortical patches per hemisphere",
+        help="Find and draw ranked mid-cortical patches per hemisphere",
     )
     parser.add_argument(
         "--patch-roi", type=str,
         help="Restrict patch selection to a nonzero NIfTI mask on the input grid",
     )
-    parser.add_argument("--patch-count", type=int, default=3, help="Maximum patches per hemisphere, 1-10")
-    parser.add_argument("--patch-radius", type=float, default=10.0, help="Mesh-edge radius in mm, 5-20")
+    parser.add_argument("--patch-count", type=int, default=3, help="Maximum patches per hemisphere, 1-100")
+    parser.add_argument("--patch-radius", type=float, default=10.0, help="Mesh-edge radius in mm, 2-20")
     parser.add_argument("--patch-max-rms", type=float, default=0.5, help="Maximum plane-fit error in mm")
     parser.add_argument("--patch-min-area", type=float, default=0.25, help="Minimum area as a fraction of pi * radius^2")
     parser.add_argument("--patch-hemisphere", choices=("both", "lh", "rh"), default="both")

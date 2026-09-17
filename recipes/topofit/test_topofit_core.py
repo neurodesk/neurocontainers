@@ -25,6 +25,25 @@ from topofit_core import (
 
 
 class TopoFitCoreTests(unittest.TestCase):
+    def test_two_mm_radius_can_return_more_than_fifty_patches(self):
+        vertices, faces = [], []
+        for index in range(60):
+            offset = len(vertices)
+            x = index * 10.0
+            vertices.extend(((x, 0, 0), (x + 1.8, 0, 0), (x, 1.8, 0),
+                             (x - 1.8, 0, 0), (x, -1.8, 0)))
+            faces.extend(tuple(offset + k for k in triangle) for triangle in
+                         ((0, 1, 2), (0, 2, 3), (0, 3, 4), (0, 4, 1)))
+        patches = find_ranked_patches(
+            np.asarray(vertices), np.asarray(faces), "lh.mid", radius_mm=2, count=60,
+        )
+        self.assertEqual(len(patches), 60)
+        used = set()
+        for detection in patches:
+            self.assertTrue(used.isdisjoint(detection.vertex_indices))
+            used.update(detection.vertex_indices)
+            self.assertGreaterEqual(detection.patch.area_mm2, np.pi)
+
     def test_multiple_patches_are_ranked_disjoint_and_quality_limited(self):
         x, y = np.meshgrid(np.arange(41.), np.arange(21.), indexing="ij")
         vertices = np.column_stack((x.ravel(), y.ravel(), np.zeros(x.size)))
@@ -54,11 +73,22 @@ class TopoFitCoreTests(unittest.TestCase):
     def test_patch_parameters_are_validated(self):
         from dataclasses import replace
         defaults = TopoFitOptions()
-        for field, value in (("patch_count", 0), ("patch_count", 11),
+        validate_options(replace(defaults, patch_count=100, patch_radius_mm=2))
+        for field, value in (("patch_count", 0), ("patch_count", 101),
                              ("patch_radius_mm", 0), ("patch_max_rms_mm", float("nan")),
                              ("patch_min_area_fraction", 1.1), ("patch_hemisphere", "bad")):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 validate_options(replace(defaults, **{field: value}))
+
+    def test_patch_coordinates_in_patient_lph(self):
+        patch = topofit_core.FlatPatch(
+            surface="lh.mid", center_ras_mm=(12, -34, 56),
+            normal_ras=(0.36, -0.48, 0.8), radius_mm=2,
+            area_mm2=8, rms_distance_mm=0.1, vertex_count=12,
+        )
+        np.testing.assert_allclose(patch.center_lph_mm, (-12, 34, 56))
+        np.testing.assert_allclose(patch.normal_lph, (-0.36, 0.48, 0.8))
+        self.assertAlmostEqual(np.linalg.norm(patch.normal_lph), 1)
 
     def test_mock_mesh_has_local_neighborhoods_on_full_size_scan(self):
         with tempfile.TemporaryDirectory() as directory:
