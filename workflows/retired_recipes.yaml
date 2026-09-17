@@ -14,4 +14,14 @@
 #
 # Listing a recipe here and deleting it belong in the same pull request: the
 # planner rejects an entry whose recipes/<name>/build.yaml still exists.
-retired: []
+retired:
+  - recipe: openreconacsrss
+    superseded_by: acsrss
+    reason: >-
+      Renamed to acsrss, which carries the maintained recipe and the fixes for
+      readout oversampling and segmented EPI ACS.
+  - recipe: openreconslicegrappa
+    superseded_by: slicegrappa
+    reason: >-
+      Renamed to slicegrappa, which carries the maintained recipe and the same
+      reconstruction fixes.
