@@ -57,8 +57,6 @@ build:
         version: py310_25.5.1-0
         install_path: /opt/miniconda
         conda_install: python=3.10 pip
-    - install:
-        - build-essential
     - run:
         - conda create -y -n clinicadlEnv python=3.10 pip
         - conda run -n clinicadlEnv pip install --no-cache-dir clinicadl=={{ context.clinicadl_version }}
