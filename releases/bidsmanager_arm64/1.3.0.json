@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "bidsmanager_arm64 1.3.0": {
+      "version": "20260917",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation",
+    "bids apps"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "bidsmanager"
+}
