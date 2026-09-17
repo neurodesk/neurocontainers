@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
@@ -178,6 +179,63 @@ class RuntimeTests(unittest.TestCase):
         np.testing.assert_allclose(
             conn.images[0].data[0, 0], poc.rss(padded, "kx-ky"), rtol=1e-6
         )
+
+    def test_recon_width_readout_with_stale_encoded_header(self):
+        # Scanner case: 110 samples, encoded RO 220/396 mm, recon RO 110/198 mm,
+        # and stale center_sample=109. Use a smaller equivalent numerical case.
+        header = deepcopy(self.metadata)
+        header.encoding[0].encodedSpace = deepcopy(header.encoding[0].encodedSpace)
+        header.encoding[0].encodedSpace.matrixSize.x = 24
+        header.encoding[0].encodedSpace.fieldOfView_mm.x = 240
+        for domain in ("kx-ky", "x-ky"):
+            for center in (6, 11, 12):
+                with self.subTest(domain=domain, center=center):
+                    acqs = acquisitions(self.data, flag=ismrmrd.ACQ_IS_PARALLEL_CALIBRATION)
+                    for acq in acqs:
+                        acq.center_sample = center
+                    conn = Connection(acqs + [None])
+                    poc.process_acs(conn, {"parameters": {"inputdomain": domain}}, header)
+                    self.assertEqual([msg for level, msg in conn.logs if level == 3], [])
+                    self.assertTrue(conn.closed)
+                    self.assertEqual(len(conn.images), 1)
+                    np.testing.assert_allclose(
+                        conn.images[0].data[0, 0], poc.rss(self.data, domain), rtol=1e-6
+                    )
+                    self.assertEqual(list(conn.images[0].field_of_view), [120, 120, 4])
+                    self.assertEqual(header.encoding[0].encodedSpace.matrixSize.x, 24)
+                    self.assertEqual(acqs[0].center_sample, center)
+
+        acqs = acquisitions(self.data)
+        acqs[0].center_sample = 3
+        with self.assertRaisesRegex(ValueError, "Asymmetric"):
+            poc.assemble(acqs, header, "kx-ky")
+        header.encoding[0].encodedSpace.fieldOfView_mm.x = 180
+        with self.assertRaisesRegex(ValueError, "integer multiple"):
+            poc.assemble(acquisitions(self.data), header, "kx-ky")
+
+    def test_ambiguous_pe_frames_report_both_acquisitions(self):
+        group = acquisitions(self.data, flag=ismrmrd.ACQ_IS_PARALLEL_CALIBRATION)
+        repeated = acquisitions(self.data, flag=ismrmrd.ACQ_IS_PARALLEL_CALIBRATION)[0]
+        repeated.scan_counter = 100
+        repeated.idx.segment = 2
+        conn = Connection(group + [repeated, None])
+        poc.process_acs(conn, {}, self.metadata)
+        error = next(message for level, message in conn.logs if level == 3)
+        self.assertIn("repeated PE line", error)
+        self.assertIn("previous: scan_counter=0", error)
+        self.assertIn("current: scan_counter=100", error)
+        self.assertIn("'segment': 2", error)
+        self.assertTrue(conn.closed)
+        self.assertEqual(conn.images, [])
+
+        group[0].idx.kspace_encode_step_1 = 12
+        conn = Connection(group + [None])
+        poc.process_acs(conn, {}, self.metadata)
+        error = next(message for level, message in conn.logs if level == 3)
+        self.assertIn("Out-of-range PE line: mapped_ky=12, grid_y=12", error)
+        self.assertIn("minimum=0, maximum=11, center=6", error)
+        self.assertTrue(conn.closed)
+        self.assertEqual(conn.images, [])
 
     def test_live_acs_empty_and_unflagged_streams_close_without_images(self):
         for items in ([], acquisitions(self.data)):

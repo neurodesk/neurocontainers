@@ -10,6 +10,7 @@ import logging
 import os
 import platform
 import traceback
+from copy import deepcopy
 from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
@@ -278,6 +279,23 @@ def groups_from_file(path: str | Path) -> dict[tuple, list[ismrmrd.Acquisition]]
     return groups
 
 
+def acquisition_context(acq: ismrmrd.Acquisition) -> str:
+    """Header-only diagnostics for ambiguous scanner frame boundaries."""
+    counters = {
+        name: int(getattr(acq.idx, name))
+        for name in (
+            "kspace_encode_step_1", "kspace_encode_step_2", "slice",
+            "repetition", "contrast", "phase", "set", "average", "segment",
+        )
+    }
+    return (
+        f"scan_counter={acq.scan_counter}, measurement_uid={acq.measurement_uid}, "
+        f"encoding_space_ref={acq.encoding_space_ref}, flags={int(acq.flags):#x}, "
+        f"counters={counters}, user={list(acq.idx.user)}, "
+        f"timestamp={acq.acquisition_time_stamp}"
+    )
+
+
 def assemble(group: list[ismrmrd.Acquisition], metadata: Any, domain: str) -> tuple:
     """Strict 2D Cartesian contract; retain ACS location on the encoded grid.
 
@@ -300,10 +318,41 @@ def assemble(group: list[ismrmrd.Acquisition], metadata: Any, domain: str) -> tu
     if limit is None:
         raise ValueError("An explicit PE encoding limit and center are required")
     ny, nx = int(matrix.y), int(matrix.x)
+    # FIRE can remove RO oversampling but retain the original encodedSpace
+    # and center_sample. Accept only a complete recon-width readout whose
+    # matrix/FOV ratios describe the same voxel spacing. Do not infer domain.
+    retained = first.number_of_samples - first.discard_pre - first.discard_post
+    recon = enc.reconSpace
+    corrected_readout = (
+        0 < int(recon.matrixSize.x) == retained < nx
+        and nx % retained == 0
+        and np.isclose(
+            enc.encodedSpace.fieldOfView_mm.x / nx,
+            recon.fieldOfView_mm.x / retained,
+        )
+        and recon.matrixSize.y == matrix.y
+        and recon.matrixSize.z == matrix.z
+        and np.allclose(
+            [recon.fieldOfView_mm.y, recon.fieldOfView_mm.z],
+            [enc.encodedSpace.fieldOfView_mm.y, enc.encodedSpace.fieldOfView_mm.z],
+        )
+    )
+    original_nx = nx
+    if corrected_readout:
+        enc = deepcopy(enc)
+        enc.encodedSpace.matrixSize.x = int(retained)
+        enc.encodedSpace.fieldOfView_mm.x = recon.fieldOfView_mm.x
+        matrix = enc.encodedSpace.matrixSize
+        nx = int(retained)
+        logging.warning(
+            "ACS readout header correction: encoded width %d -> %d, FOV %g mm; "
+            "using reconSpace RO geometry, preserving inputdomain=%s",
+            original_nx, nx, enc.encodedSpace.fieldOfView_mm.x, domain,
+        )
     factor = readout_oversampling(first, nx)
     width = nx * factor
     data = np.zeros((first.active_channels, ny, width), dtype=np.complex64)
-    seen = []
+    seen = {}
     for acq in group:
         if acq.trajectory_dimensions or acq.is_flag_set(ismrmrd.ACQ_IS_REVERSE):
             raise ValueError(
@@ -319,9 +368,25 @@ def assemble(group: list[ismrmrd.Acquisition], metadata: Any, domain: str) -> tu
         if not np.isfinite(acq.data).all():
             raise ValueError("Nonfinite acquisition data")
         ky = int(acq.idx.kspace_encode_step_1) - int(limit.center) + ny // 2
-        if not 0 <= ky < ny or ky in seen:
+        if not 0 <= ky < ny:
+            raw_lines = [int(a.idx.kspace_encode_step_1) for a in group]
             raise ValueError(
-                "Out-of-range or repeated PE line; inspect counters before grouping"
+                f"Out-of-range PE line: mapped_ky={ky}, grid_y={ny}, "
+                f"PE_limits=(minimum={limit.minimum}, maximum={limit.maximum}, "
+                f"center={limit.center}), group_line_range="
+                f"({min(raw_lines)}, {max(raw_lines)}), group_size={len(group)}; "
+                f"acquisition: {acquisition_context(acq)}"
+            )
+        if ky in seen:
+            previous = seen[ky]
+            raise ValueError(
+                f"repeated PE line: mapped_ky={ky}, grid_y={ny}, "
+                f"PE_limits=(minimum={limit.minimum}, maximum={limit.maximum}, "
+                f"center={limit.center}), group_size={len(group)}, "
+                f"unique_lines_before_failure={len(seen)}; "
+                f"previous: {acquisition_context(previous)}; "
+                f"current: {acquisition_context(acq)}; "
+                "inspect frame boundaries before combining acquisitions"
             )
         start, stop = (
             int(acq.discard_pre),
@@ -350,13 +415,18 @@ def assemble(group: list[ismrmrd.Acquisition], metadata: Any, domain: str) -> tu
                 f"recon_fov_mm=({enc.reconSpace.fieldOfView_mm.x}, "
                 f"{enc.reconSpace.fieldOfView_mm.y}, {enc.reconSpace.fieldOfView_mm.z})"
             )
-        if domain == "kx-ky" and int(acq.center_sample) - start != width // 2:
+        center = int(acq.center_sample) - start
+        if corrected_readout and center in (original_nx // 2 - 1, original_nx // 2):
+            # Legacy center from the uncropped readout (zero- or one-based
+            # midpoint convention). This exception is limited to that layout.
+            center = nx // 2
+        if domain == "kx-ky" and center != width // 2:
             raise ValueError(
                 "Asymmetric readout is unsupported; center_sample must match "
                 "the grid center"
             )
         data[:, ky] = line
-        seen.append(ky)
+        seen[ky] = acq
     return (
         remove_readout_oversampling(data, nx, domain),
         np.array(sorted(seen)),

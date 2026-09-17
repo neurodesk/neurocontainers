@@ -58,7 +58,16 @@ consistent geometry and channels, and a readout width, after discard samples,
 that is a constant integer multiple of the encoded matrix. That multiple is the
 vendor readout oversampling and is removed by cropping in image space, so
 derived images always land on the encoded grid and match the header field of
-view. Reversed readouts, duplicate PE lines, trajectories, and
+view. One FIRE header compatibility case is also supported: when the received
+readout already matches the smaller reconstruction width, encoded and
+reconstruction RO matrix/FOV ratios agree, the width ratio is an integer, and
+the PE/slice geometry is unchanged, the reconstruction RO width and FOV replace
+the stale encoded RO geometry. A center matching the old RO midpoint (or its
+preceding sample) is treated as stale and normalized to the new midpoint.
+This assumes a complete, centered readout after oversampling removal; it does
+not support partial readouts. The correction is logged and never changes the
+selected input domain: use `x-ky` if ICE has already applied the readout FFT.
+Reversed readouts, duplicate PE lines, trajectories, and
 asymmetric k-space readout centers are rejected. There is no partial-Fourier
 completion, in-plane GRAPPA, or slice-GRAPPA.
 Start with a short phantom scan because ACS is buffered until the connection ends.
