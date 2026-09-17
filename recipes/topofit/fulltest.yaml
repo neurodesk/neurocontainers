@@ -5,7 +5,7 @@
 # on CPU and can take several minutes on a CPU-only release runner.
 
 name: topofit
-version: "0.5.1"
+version: "0.6.0"
 
 required_files:
   - dataset: ds000001

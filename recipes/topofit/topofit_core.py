@@ -99,6 +99,18 @@ class FlatPatch:
     normal_coherence: float = 1.0
     score: float = 0.0
 
+    @property
+    def center_lph_mm(self) -> tuple[float, float, float]:
+        """Patient coordinates: left, posterior, head, equivalent to DICOM LPS."""
+        r, a, s = self.center_ras_mm
+        return (-r, -a, s)
+
+    @property
+    def normal_lph(self) -> tuple[float, float, float]:
+        """Outward unit normal in patient LPH, without positional translation."""
+        r, a, s = self.normal_ras
+        return (-r, -a, s)
+
 
 @dataclass(frozen=True)
 class _DetectedFlatPatch:
@@ -155,10 +167,10 @@ def validate_options(options: TopoFitOptions) -> tuple[str, str]:
     if options.patch_roi is not None and not options.find_flat_patches:
         raise ValueError("patch ROI requires flat-patch analysis")
     if (isinstance(options.patch_count, bool) or not isinstance(options.patch_count, int)
-            or not 1 <= options.patch_count <= 10):
-        raise ValueError("patch count must be an integer from 1 to 10")
+            or not 1 <= options.patch_count <= 100):
+        raise ValueError("patch count must be an integer from 1 to 100")
     for name, value, minimum, maximum in (
-        ("patch radius", options.patch_radius_mm, 5.0, 20.0),
+        ("patch radius", options.patch_radius_mm, 2.0, 20.0),
         ("patch maximum RMS", options.patch_max_rms_mm, 0.01, 2.0),
         ("patch minimum area fraction", options.patch_min_area_fraction, 0.1, 1.0),
     ):
@@ -1271,6 +1283,10 @@ def run_topofit_workflow(
         elapsed_seconds=round(elapsed, 3),
     )
     manifest = asdict(result)
+    for patch_id, patch in flat_patches.items():
+        manifest["flat_patches"][patch_id].update(
+            center_lph_mm=patch.center_lph_mm, normal_lph=patch.normal_lph,
+        )
     manifest["options"] = asdict(options)
     manifest["brainnet_command"] = command
     manifest["prescription_coordinates"] = None
@@ -1297,7 +1313,10 @@ def run_topofit_workflow(
         "overlap": "no_shared_vertices_within_hemisphere",
         "minimum_normal_coherence": MIN_PATCH_NORMAL_COHERENCE,
         "minimum_area_mm2": np.pi * options.patch_radius_mm**2 * options.patch_min_area_fraction,
-        "schema_version": 2,
+        "schema_version": 3,
+        "patient_coordinates": "LPH: left, posterior, head; equivalent to DICOM LPS",
+        "ranking": "ascending rms_distance_mm + radius_mm * (1 - normal_coherence); seed face index breaks ties",
+        "numbering": "LH01/RH01 onward, independently per hemisphere after overlap suppression",
         "normal_ras": "representative_patch_plane_normal",
         "local_normals": "topofit_patch_geometry.npz; outward mid-surface unit normals",
     }

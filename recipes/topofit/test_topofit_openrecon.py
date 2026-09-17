@@ -98,18 +98,77 @@ def _run_mock_workflow(input_path, run_dir, options):
 
 
 class TopoFitOpenReconTests(unittest.TestCase):
+    def test_patch_table_paginates_all_rows_with_canonical_geometry(self):
+        from PIL import ImageDraw
+        from topofit_core import FlatPatch
+
+        patches = {}
+        for hemisphere in ("LH", "RH"):
+            for number in range(1, 101):
+                patch_id = f"{hemisphere}{number:02d}"
+                patches[patch_id] = FlatPatch(
+                    surface=f"{hemisphere.lower()}.mid", patch_id=patch_id,
+                    center_ras_mm=(12, -34, 56), normal_ras=(0.36, -0.48, 0.8),
+                    radius_mm=2, area_mm2=8, rms_distance_mm=0.1, vertex_count=12,
+                )
+        sources = _mrd_volume()
+        source_meta = ismrmrd.Meta.deserialize(sources[0].attribute_string)
+        source_meta["IceMiniHead"] = "source geometry must not leak into table"
+        source_meta["SOPInstanceUID"] = "1.2.3"
+        sources[0].attribute_string = source_meta.serialize()
+        original_text = ImageDraw.ImageDraw.text
+        drawn = []
+
+        def record_text(draw, xy, text, *args, **kwargs):
+            drawn.append(text)
+            return original_text(draw, xy, text, *args, **kwargs)
+
+        with mock.patch.object(ImageDraw.ImageDraw, "text", record_text):
+            outputs = topofit._patch_report_mrd_images(patches, sources, 10)
+        self.assertEqual(len(outputs), 1)
+        output = outputs[0]
+        self.assertEqual(output.data.shape, (1, 10, 900, 1200))
+        self.assertEqual(output.image_series_index, 10)
+        np.testing.assert_allclose(output.field_of_view, (1200, 900, 10))
+        np.testing.assert_allclose(output.position, (0, 0, 0))
+        np.testing.assert_allclose(output.read_dir, (1, 0, 0))
+        np.testing.assert_allclose(output.phase_dir, (0, 1, 0))
+        for patch_id in patches:
+            self.assertEqual(drawn.count(patch_id), 1)
+        for value in ("-12.00", "34.00", "56.00", "-0.3600", "0.4800", "0.8000"):
+            self.assertEqual(drawn.count(value), 200)
+        meta = ismrmrd.Meta.deserialize(output.attribute_string)
+        self.assertEqual(meta["TopoFitPatchCount"], "200")
+        self.assertEqual(meta["NumberOfSlices"], "10")
+        self.assertEqual(meta["Keep_image_geometry"], "0")
+        self.assertEqual(meta["TopoFitCoordinateSystem"], "LPH")
+        self.assertEqual(meta["BurnedInAnnotation"], "YES")
+        self.assertNotIn("IceMiniHead", meta)
+        self.assertNotIn("SOPInstanceUID", meta)
+        np.testing.assert_allclose(np.asarray(meta["ImageRowDir"], float), (1, 0, 0))
+        self.assertTrue(all(np.any(page) for page in output.data[0]))
+        comments = topofit._format_flat_patch_comment(patches)
+        self.assertLess(len(comments), 9000)
+        self.assertIn("See TopoFit_patch_table", comments)
+
+    def test_empty_patch_table_reports_no_accepted_patches(self):
+        images = topofit._patch_report_mrd_images({}, _mrd_volume(), 10)
+        self.assertEqual(images[0].data.shape, (1, 1, 900, 1200))
+        meta = ismrmrd.Meta.deserialize(images[0].attribute_string)
+        self.assertEqual(meta["TopoFitPatchCount"], "0")
+
     def test_scanner_label_defaults_and_patch_controls_reach_core_options(self):
         from topofit_core import TopoFitOptions
         label = json.loads(Path(__file__).with_name("OpenReconLabel.json").read_text())
         parameters = {p["id"]: p["default"] for p in label["parameters"]}
         self.assertEqual(topofit._options_from_config({"parameters": parameters}), TopoFitOptions())
-        parameters.update(tfflatpatches=True, tfpatchcount=5, tfpatchradius=7.5,
+        parameters.update(tfflatpatches=True, tfpatchcount=100, tfpatchradius=2.0,
                           tfpatchmaxrms=0.3, tfpatchminarea=0.4,
                           tfpatchhemisphere="lh", tfpatchregion="roi",
                           tfpatchroi="/data/roi.nii.gz")
         options = topofit._options_from_config({"parameters": parameters})
-        self.assertEqual(options.patch_count, 5)
-        self.assertEqual(options.patch_radius_mm, 7.5)
+        self.assertEqual(options.patch_count, 100)
+        self.assertEqual(options.patch_radius_mm, 2.0)
         self.assertEqual(options.patch_max_rms_mm, 0.3)
         self.assertEqual(options.patch_min_area_fraction, 0.4)
         self.assertEqual(options.patch_hemisphere, "lh")
@@ -246,13 +305,13 @@ class TopoFitOpenReconTests(unittest.TestCase):
             ]
             self.assertEqual(errors, [])
             outputs = [image for batch in connection.image_batches for image in batch]
-            self.assertEqual(len(outputs), 64)
+            self.assertEqual(len(outputs), 65)
             self.assertEqual(
                 {int(image.image_series_index) for image in outputs},
-                {8, 9},
+                {8, 9, 10},
             )
             self.assertTrue(
-                all(image.data.shape == (1, 1, 32, 32) for image in outputs)
+                all(image.data.shape == (1, 1, 32, 32) for image in outputs if int(image.image_series_index) != 10)
             )
             self.assertEqual(max(int(np.max(image.data)) for image in outputs), 4095)
 
@@ -262,6 +321,14 @@ class TopoFitOpenReconTests(unittest.TestCase):
             patch_outputs = [
                 image for image in outputs if int(image.image_series_index) == 9
             ]
+            report = next(image for image in outputs if int(image.image_series_index) == 10)
+            report_meta = ismrmrd.Meta.deserialize(report.attribute_string)
+            self.assertEqual(report_meta["SeriesDescription"], "TopoFit_patch_table")
+            self.assertEqual(report_meta["TopoFitPatchCount"], "2")
+            self.assertNotEqual(
+                report_meta["SeriesInstanceUID"],
+                ismrmrd.Meta.deserialize(patch_outputs[0].attribute_string)["SeriesInstanceUID"],
+            )
             output_meta = ismrmrd.Meta.deserialize(
                 surface_outputs[0].attribute_string
             )
@@ -275,10 +342,10 @@ class TopoFitOpenReconTests(unittest.TestCase):
             self.assertEqual(output_meta["TopoFitPrescriptionStatus"], "WITHHELD")
             self.assertEqual(output_meta["ImageComment"], output_meta["ImageComments"])
             self.assertIn(
-                "TopoFit patch LH01 lh.mid LPS_mm", output_meta["ImageComments"]
+                "TopoFit patch LH01 lh.mid LPH_mm", output_meta["ImageComments"]
             )
             self.assertIn(
-                "TopoFit patch RH01 rh.mid LPS_mm", output_meta["ImageComments"]
+                "TopoFit patch RH01 rh.mid LPH_mm", output_meta["ImageComments"]
             )
             self.assertIn("normal=(", output_meta["ImageComments"])
             self.assertIn(
@@ -317,6 +384,8 @@ class TopoFitOpenReconTests(unittest.TestCase):
             for patch in manifest["flat_patches"].values():
                 center_lps = np.asarray(patch["center_ras_mm"]) * (-1.0, -1.0, 1.0)
                 normal_lps = np.asarray(patch["normal_ras"]) * (-1.0, -1.0, 1.0)
+                np.testing.assert_allclose(patch["center_lph_mm"], center_lps)
+                np.testing.assert_allclose(patch["normal_lph"], normal_lps)
                 center_text = ",".join(f"{value:.2f}" for value in center_lps)
                 normal_text = ",".join(f"{value:.4f}" for value in normal_lps)
                 self.assertIn(

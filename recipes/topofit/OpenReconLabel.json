@@ -106,18 +106,18 @@
       "label": { "en": "Find cortical patches" },
       "type": "boolean",
       "default": false,
-      "information": { "en": "Find ranked, non-overlapping cortical patches with visible IDs and normals. Default: up to three per hemisphere at 50% depth. Automatic candidates are not lesion ROIs or matched controls." }
+      "information": { "en": "Find ranked, non-overlapping cortical patches with visible IDs and outward unit normals. Return a DICOM table with patch centers in mm and normals in patient LPH: left, posterior, head. Default: up to three per hemisphere at 50% depth. Automatic candidates are not lesion ROIs or matched controls." }
     },
     {
       "id": "tfpatchcount", "label": { "en": "Maximum patches per hemisphere" },
-      "type": "int", "minimum": 1, "maximum": 10, "default": 3,
-      "information": { "en": "Return up to this many distinct patches in each selected hemisphere. Fewer are returned when quality criteria cannot be met." }
+      "type": "int", "minimum": 1, "maximum": 100, "default": 3,
+      "information": { "en": "Return up to 100 distinct patches per selected hemisphere. LH01, LH02, ... and RH01, RH02, ... are numbered independently by increasing score: RMS plane-fit error + radius * (1 - normal coherence). Lower scores indicate flatter patches with more consistent normals. Overlapping candidates are skipped. Fewer patches may meet the quality criteria." }
     },
     {
       "id": "tfpatchradius", "label": { "en": "Cortical patch radius" },
-      "type": "double", "minimum": 5.0, "maximum": 20.0, "default": 10.0,
+      "type": "double", "minimum": 2.0, "maximum": 20.0, "default": 10.0,
       "unit": { "en": "mm" },
-      "information": { "en": "Grow neighborhoods along cortical mesh edges, not by straight-line distance through the brain." }
+      "information": { "en": "Radius of 2-20 mm along cortical mesh edges, not straight-line distance through the brain. This is a radius, not a diameter." }
     },
     {
       "id": "tfpatchhemisphere", "label": { "en": "Patch hemisphere" },
