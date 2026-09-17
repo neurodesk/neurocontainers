@@ -23,7 +23,9 @@ if str(SCRIPT_REPO_ROOT) not in sys.path:
 
 from builder.release import release_data
 from builder.release_plan import (
+    RETIREMENT_MANIFEST,
     ReleasePlan,
+    parse_retirements,
     plan_recipe_changes,
     recipe_names_from_paths,
     path_is_shared_input,
@@ -165,6 +167,35 @@ def load_recipe_at(revision: str, recipe: str) -> dict[str, Any] | None:
     return data
 
 
+def load_retirements_at(revision: str) -> dict[str, str]:
+    """Read the retirement manifest from a Git tree, tolerating its absence."""
+    present = run_git("ls-tree", "--name-only", revision, "--", RETIREMENT_MANIFEST)
+    if present != RETIREMENT_MANIFEST:
+        return {}
+    try:
+        document = yaml.safe_load(run_git("show", f"{revision}:{RETIREMENT_MANIFEST}"))
+    except yaml.YAMLError as error:
+        raise RuntimeError(
+            f"Unable to parse {RETIREMENT_MANIFEST} at {revision}: {error}"
+        ) from error
+    retired = parse_retirements(document)
+    for recipe, successor in retired.items():
+        if run_git(
+            "ls-tree", "--name-only", revision, "--", f"recipes/{recipe}/build.yaml"
+        ):
+            raise RuntimeError(
+                f"{RETIREMENT_MANIFEST} retires {recipe}, but "
+                f"recipes/{recipe}/build.yaml is still present"
+            )
+        if successor and not run_git(
+            "ls-tree", "--name-only", revision, "--", f"recipes/{successor}/build.yaml"
+        ):
+            raise RuntimeError(
+                f"{recipe} is retired in favour of {successor}, which does not exist"
+            )
+    return retired
+
+
 def release_plan(base: str, head: str) -> ReleasePlan:
     """Plan recipe work from Git trees using trusted, non-rendering policy."""
     paths = changed_files(base, head)
@@ -174,16 +205,27 @@ def release_plan(base: str, head: str) -> ReleasePlan:
         names = sorted(set(names) | {path.split("/")[1] for path in tree.splitlines() if re.fullmatch(r"recipes/[^/]+/build.yaml", path)})
     base_recipes = {recipe: load_recipe_at(base, recipe) for recipe in names}
     head_recipes = {recipe: load_recipe_at(head, recipe) for recipe in names}
+    # Reading the manifest costs a Git call, so only consult it when a recipe
+    # actually vanished or the manifest itself is part of the change.
+    consult_manifest = (
+        any(data is None for data in head_recipes.values())
+        or RETIREMENT_MANIFEST in paths
+    )
     plan = plan_recipe_changes(
         paths,
         base_recipes,
         head_recipes,
+        load_retirements_at(head) if consult_manifest else {},
     )
     if not plan.candidate_recipes:
         return plan
 
-    allowed = tuple(f"recipes/{recipe}/" for recipe in plan.changed_recipes)
+    allowed = tuple(
+        f"recipes/{recipe}/"
+        for recipe in plan.changed_recipes + plan.retired_recipes
+    )
     unrelated = [path for path in paths if not path.startswith(allowed)
+                 and path != RETIREMENT_MANIFEST
                  and not any(path_is_shared_input(path, head_recipes[name]) for name in plan.candidate_recipes)]
     if unrelated:
         raise RuntimeError(
@@ -359,6 +401,7 @@ def command_detect(args: argparse.Namespace) -> None:
             "targets": json.dumps(detect_targets(recipes)),
             "changed_recipes": json.dumps(plan.changed_recipes),
             "source_only_recipes": json.dumps(plan.source_only_recipes),
+            "retired_recipes": json.dumps(plan.retired_recipes),
             "release_plan": json.dumps(plan.as_dict(), separators=(",", ":")),
         }
     )

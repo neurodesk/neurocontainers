@@ -864,3 +864,52 @@ def test_a_missing_report_cannot_waive_a_dive_failure(tmp_path: Path) -> None:
     outcome, _ = one_pr_release.dive_gate_outcome(tmp_path / "absent.txt", "failure")
 
     assert outcome == "failure"
+
+
+def test_retirement_manifest_gates_recipe_removal(tmp_path: Path, monkeypatch) -> None:
+    """A recipe may only leave recipes/ together with a manifest entry."""
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    write_recipe(tmp_path, "demo")
+    write_recipe(tmp_path, "successor")
+    git("add", ".")
+    git("commit", "-m", "Initial recipes")
+    base = git("rev-parse", "HEAD")
+
+    manifest = tmp_path / one_pr_release.RETIREMENT_MANIFEST
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    git("rm", "-r", "-q", "recipes/demo")
+    git("commit", "-m", "Remove demo without a manifest")
+    with pytest.raises(ValueError, match=one_pr_release.RETIREMENT_MANIFEST):
+        one_pr_release.detect_recipes(base, "HEAD")
+
+    entry = [{"recipe": "demo", "superseded_by": "successor", "reason": "renamed"}]
+    manifest.write_text(yaml.safe_dump({"retired": entry}), encoding="utf-8")
+    git("add", ".")
+    git("commit", "-m", "Retire demo in favour of successor")
+    plan = one_pr_release.release_plan(base, "HEAD")
+    assert plan.retired_recipes == ["demo"]
+    assert plan.changed_recipes == []
+    assert one_pr_release.detect_recipes(base, "HEAD") == []
+
+    # The manifest is a statement about the tree, not a free-form note.
+    manifest.write_text(
+        yaml.safe_dump({"retired": [{"recipe": "successor", "reason": "typo"}]}),
+        encoding="utf-8",
+    )
+    git("commit", "-am", "Claim a recipe that is still present")
+    with pytest.raises(RuntimeError, match="still present"):
+        one_pr_release.detect_recipes(base, "HEAD")
+
+    manifest.write_text(
+        yaml.safe_dump(
+            {"retired": [{"recipe": "demo", "superseded_by": "absent", "reason": "x"}]}
+        ),
+        encoding="utf-8",
+    )
+    git("commit", "-am", "Point at a successor that does not exist")
+    with pytest.raises(RuntimeError, match="does not exist"):
+        one_pr_release.detect_recipes(base, "HEAD")

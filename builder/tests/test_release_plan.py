@@ -3,7 +3,12 @@ from __future__ import annotations
 import attrs
 import pytest
 
-from builder.release_plan import TOP_LEVEL_FIELD_TIERS, plan_recipe_changes
+from builder.release_plan import (
+    RETIREMENT_MANIFEST,
+    TOP_LEVEL_FIELD_TIERS,
+    parse_retirements,
+    plan_recipe_changes,
+)
 from builder.validation import ContainerRecipe
 
 
@@ -181,3 +186,62 @@ def test_shared_watch_uses_path_boundaries():
     data = {"demo": watched}
     assert not plan_recipe_changes(["macros/shared-other/code.py"], data, data).decisions
     assert plan_recipe_changes(["macros/shared/code.py"], data, data).candidate_recipes == ["demo"]
+
+
+def test_unlisted_recipe_removal_is_rejected():
+    with pytest.raises(ValueError, match=RETIREMENT_MANIFEST):
+        plan_recipe_changes(
+            ["recipes/demo/build.yaml"], {"demo": recipe()}, {"demo": None}
+        )
+
+
+def test_retired_recipe_is_neither_built_nor_validated():
+    plan = plan_recipe_changes(
+        ["recipes/demo/build.yaml", "recipes/demo/fulltest.yaml"],
+        {"demo": recipe()},
+        {"demo": None},
+        {"demo": "successor"},
+    )
+
+    assert plan.retired_recipes == ["demo"]
+    assert plan.decisions[0].reasons == ("recipe-retired",)
+    # changed_recipes drives builder/validation.py by path in CI, so a recipe
+    # that no longer exists must not appear there.
+    assert plan.changed_recipes == []
+    assert plan.candidate_recipes == []
+    assert plan.source_only_recipes == []
+    assert plan.as_dict()["retired_recipes"] == ["demo"]
+
+
+def test_retiring_a_recipe_that_still_exists_is_rejected():
+    with pytest.raises(ValueError, match="still exists"):
+        plan_recipe_changes(
+            ["recipes/demo/build.yaml"],
+            {"demo": recipe()},
+            {"demo": recipe(version="2.0.0")},
+            {"demo": ""},
+        )
+
+
+def test_retirement_manifest_requires_a_named_recipe_and_reason():
+    assert parse_retirements(None) == {}
+    assert parse_retirements({"retired": []}) == {}
+    assert parse_retirements(
+        {"retired": [{"recipe": "old", "reason": "renamed", "superseded_by": "new"}]}
+    ) == {"old": "new"}
+    # A successor is optional; work that simply ended still has to say why.
+    assert parse_retirements({"retired": [{"recipe": "old", "reason": "gone"}]}) == {
+        "old": ""
+    }
+    for document, message in (
+        ({"retired": {"old": "new"}}, "list"),
+        ({"retired": [{"reason": "renamed"}]}, "plain 'recipe' directory name"),
+        ({"retired": [{"recipe": "../escape", "reason": "x"}]}, "plain 'recipe'"),
+        ({"retired": [{"recipe": "old", "reason": "  "}]}, "non-empty 'reason'"),
+        (
+            {"retired": [{"recipe": "old", "reason": "a"}, {"recipe": "old", "reason": "b"}]},
+            "twice",
+        ),
+    ):
+        with pytest.raises(ValueError, match=message):
+            parse_retirements(document)
