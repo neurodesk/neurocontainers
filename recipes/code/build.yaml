@@ -1,11 +1,11 @@
 variables:
-  vscode_version: "1.136.1"
-  julia_version: 1.6.3
-  go_version: 1.17.2
-  singularity_version: 3.9.3
+  vscode_version: "1.138.0"
+  julia_version: "1.13.0"
+  go_version: "1.27.1"
+  singularity_version: "4.5.1"
 
 name: code
-version: "240320"
+version: "240320.1.0"
 
 architectures:
   - x86_64
