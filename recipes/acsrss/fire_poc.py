@@ -198,12 +198,45 @@ def ifft_centered(data: np.ndarray, axes: tuple[int, ...]) -> np.ndarray:
     )
 
 
+def fft_centered(data: np.ndarray, axes: tuple[int, ...]) -> np.ndarray:
+    return np.fft.fftshift(
+        np.fft.fftn(np.fft.ifftshift(data, axes=axes), axes=axes, norm="ortho"),
+        axes=axes,
+    )
+
+
+def readout_oversampling(acq: ismrmrd.Acquisition, width: int) -> int:
+    """OpenRecon states encodedSpace at base resolution while the ADC keeps the
+    vendor readout oversampling, so the factor comes from the retained samples."""
+    retained = (
+        int(acq.number_of_samples) - int(acq.discard_pre) - int(acq.discard_post)
+    )
+    factor, remainder = divmod(retained, width)
+    return factor if factor >= 1 and remainder == 0 else 0
+
+
+def remove_readout_oversampling(
+    data: np.ndarray, width: int, domain: str
+) -> np.ndarray:
+    """Crop the readout in image space; cropping k-space would shrink the FOV."""
+    samples = data.shape[-1]
+    if samples == width:
+        return data
+    start = (samples - width) // 2
+    if domain == "x-ky":
+        return data[..., start : start + width]
+    cropped = ifft_centered(data, (-1,))[..., start : start + width]
+    return fft_centered(cropped, (-1,)).astype(np.complex64, copy=False)
+
+
 def rss(data: np.ndarray, domain: str) -> np.ndarray:
     axes = (-2,) if domain == "x-ky" else (-2, -1)
     return np.sqrt(np.sum(np.abs(ifft_centered(data, axes)) ** 2, axis=0))
 
 
 def group_key(acq: ismrmrd.Acquisition) -> tuple:
+    """Segment is the EPI shot that carried the line, not a separate frame, so
+    multi-shot segments of one k-space are deliberately grouped together."""
     return (
         int(acq.measurement_uid),
         int(acq.encoding_space_ref),
@@ -216,7 +249,6 @@ def group_key(acq: ismrmrd.Acquisition) -> tuple:
                 "phase",
                 "set",
                 "average",
-                "segment",
             )
         ),
         calibration(acq),
@@ -247,7 +279,11 @@ def groups_from_file(path: str | Path) -> dict[tuple, list[ismrmrd.Acquisition]]
 
 
 def assemble(group: list[ismrmrd.Acquisition], metadata: Any, domain: str) -> tuple:
-    """Strict 2D Cartesian contract; retain ACS location on the encoded grid."""
+    """Strict 2D Cartesian contract; retain ACS location on the encoded grid.
+
+    Any vendor readout oversampling is removed, so the returned grid always
+    matches encodedSpace and the header field of view.
+    """
     first = group[0]
     enc = metadata.encoding[first.encoding_space_ref]
     matrix = enc.encodedSpace.matrixSize
@@ -258,13 +294,15 @@ def assemble(group: list[ismrmrd.Acquisition], metadata: Any, domain: str) -> tu
         != "cartesian"
     ):
         raise ValueError("Only Cartesian, already regridded input is supported")
-    if matrix.z != 1 or any(a.idx.kspace_encode_step_2 or a.idx.segment for a in group):
-        raise ValueError("Only unsegmented 2D data is supported")
+    if matrix.z != 1 or any(a.idx.kspace_encode_step_2 for a in group):
+        raise ValueError("Only 2D single-slab data is supported")
     limit = enc.encodingLimits.kspace_encoding_step_1
     if limit is None:
         raise ValueError("An explicit PE encoding limit and center are required")
     ny, nx = int(matrix.y), int(matrix.x)
-    data = np.zeros((first.active_channels, ny, nx), dtype=np.complex64)
+    factor = readout_oversampling(first, nx)
+    width = nx * factor
+    data = np.zeros((first.active_channels, ny, width), dtype=np.complex64)
     seen = []
     for acq in group:
         if acq.trajectory_dimensions or acq.is_flag_set(ismrmrd.ACQ_IS_REVERSE):
@@ -290,10 +328,10 @@ def assemble(group: list[ismrmrd.Acquisition], metadata: Any, domain: str) -> tu
             int(acq.number_of_samples - acq.discard_post),
         )
         line = acq.data[:, start:stop]
-        if line.shape[1] != nx:
+        if line.shape[1] != width:
             raise ValueError(
-                "Readout width after discards must match encoded matrix; no "
-                "implicit cropping. "
+                "Readout width after discards must be a constant integer multiple "
+                "of the encoded matrix; no implicit cropping. "
                 f"inputdomain={domain}, encoding_space_ref={acq.encoding_space_ref}, "
                 f"scan_counter={acq.scan_counter}, slice={acq.idx.slice}, "
                 f"repetition={acq.idx.repetition}, "
@@ -303,6 +341,7 @@ def assemble(group: list[ismrmrd.Acquisition], metadata: Any, domain: str) -> tu
                 f"discard_pre={acq.discard_pre}, discard_post={acq.discard_post}, "
                 f"retained_samples={line.shape[1]}, center_sample={acq.center_sample}, "
                 f"sample_time_us={acq.sample_time_us}, "
+                f"readout_oversampling={factor}, expected_samples={width}, "
                 f"encoded_matrix=({matrix.x}, {matrix.y}, {matrix.z}), "
                 f"encoded_fov_mm=({enc.encodedSpace.fieldOfView_mm.x}, "
                 f"{enc.encodedSpace.fieldOfView_mm.y}, {enc.encodedSpace.fieldOfView_mm.z}), "
@@ -311,14 +350,19 @@ def assemble(group: list[ismrmrd.Acquisition], metadata: Any, domain: str) -> tu
                 f"recon_fov_mm=({enc.reconSpace.fieldOfView_mm.x}, "
                 f"{enc.reconSpace.fieldOfView_mm.y}, {enc.reconSpace.fieldOfView_mm.z})"
             )
-        if domain == "kx-ky" and int(acq.center_sample) - start != nx // 2:
+        if domain == "kx-ky" and int(acq.center_sample) - start != width // 2:
             raise ValueError(
                 "Asymmetric readout is unsupported; center_sample must match "
                 "the grid center"
             )
         data[:, ky] = line
         seen.append(ky)
-    return data, np.array(sorted(seen)), first, enc
+    return (
+        remove_readout_oversampling(data, nx, domain),
+        np.array(sorted(seen)),
+        first,
+        enc,
+    )
 
 
 def image_from_rss(
@@ -356,7 +400,7 @@ def image_from_rss(
     meta["ImageProcessingHistory"] = ["FIRE", "POC", description]
     meta["SequenceDescriptionAdditional"] = description
     meta["ImageComments"] = (
-        "Research proof of concept; encoded grid, no oversampling crop"
+        "Research proof of concept; encoded grid, readout oversampling removed"
     )
     image.attribute_string = meta.serialize()
     return image

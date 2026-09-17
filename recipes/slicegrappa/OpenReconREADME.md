@@ -177,8 +177,8 @@ python /opt/code/python-ismrmrd-server/fire_poc.py /path/to/session \
   --output /path/to/new-output --dicom
 ```
 
-The same command runs from the repository with
-`macros/fire_apps/fire_poc.py` and Python dependencies from the recipe. Output
+The same command runs from the repository with this recipe's
+`fire_poc.py` and Python dependencies from the recipe. Output
 must be a new directory. `--dicom` writes derived MR preview files with new
 Study/Series/SOP UIDs, empty patient identity, encoded-grid geometry, and uint16
 pixels plus a rescale slope. They are offline previews, not scanner-validated
@@ -196,20 +196,24 @@ collision with an incoming original series is rejected.
 ## Tests and known scope
 
 ```sh
-python macros/fire_apps/tests/smoke_fire_poc.py
+python recipes/slicegrappa/tests/smoke_fire_poc.py
 ```
 
 The same synthetic capture, numerical reconstruction, and DICOM tests run from
 `fulltest.yaml` inside each image. They prove MRD-side behavior, not scanner
-compatibility. The shared implementation is `macros/fire_apps/fire_poc.py`.
+compatibility. The implementation is this recipe's own `fire_poc.py`; the
+acsrss recipe carries its own copy, so the two containers release independently.
 The base image and four shared OpenRecon sources are pinned through recipe
 variables and tracked by the repository's automatic update policy.
 
-Only unsegmented 2D Cartesian reconstruction is implemented. Captures still save
+Only 2D Cartesian reconstruction is implemented, with the multi-shot EPI
+segments of one slice merged into a single frame. Captures still save
 unsupported inputs. Reconstruction rejects trajectories, reversed readouts,
 asymmetric readout centers, repeated PE lines, and inconsistent geometry/coil
-layouts. It does not perform ramp regridding, EPI phase correction, coil
-compression, partial-Fourier completion, in-plane GRAPPA, or oversampling removal.
+layouts. Readout oversampling is removed by cropping in image space when the
+readout width is an integer multiple of the encoded matrix. It does not perform
+ramp regridding, EPI phase correction, coil compression, partial-Fourier
+completion, or in-plane GRAPPA.
 Headers must describe the grid at the export point, not a grid before ICE changed
 it. No implicit flips or transpose conventions are used to imitate ICE.
 

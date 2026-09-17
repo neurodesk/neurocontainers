@@ -51,16 +51,21 @@ scanner's DICOM conversion.
 
 ## Scope and tests
 
-Only unsegmented 2D Cartesian data are supported. ACS needs at least two
-contiguous PE lines, consistent geometry and channels, and readout width matching
-the encoded matrix after discard samples. Reversed readouts, duplicate PE lines,
-trajectories, and asymmetric k-space readout centers are rejected. There is no
-partial-Fourier completion, in-plane GRAPPA, oversampling crop, or slice-GRAPPA.
+Only 2D Cartesian data are supported. Multi-shot EPI is handled: `idx.segment` marks
+the shot that carried a line, not a separate frame, so a slice's segments are
+reconstructed as one k-space. ACS then needs at least two contiguous PE lines,
+consistent geometry and channels, and a readout width, after discard samples,
+that is a constant integer multiple of the encoded matrix. That multiple is the
+vendor readout oversampling and is removed by cropping in image space, so
+derived images always land on the encoded grid and match the header field of
+view. Reversed readouts, duplicate PE lines, trajectories, and
+asymmetric k-space readout centers are rejected. There is no partial-Fourier
+completion, in-plane GRAPPA, or slice-GRAPPA.
 Start with a short phantom scan because ACS is buffered until the connection ends.
 
 `fulltest.yaml` runs numerical tests and a real TCP test of the packaged server
 with both parameterless adjustment and explicit application sessions. The TCP
 test checks RSS pixels and image series, and asserts that no capture directory is
-created. The shared implementation is `macros/fire_apps/fire_poc.py`; this
-application calls `process_acs`. The slice-GRAPPA application's capture path is
-separate.
+created. The implementation is this recipe's own `fire_poc.py`; this
+application calls `process_acs`. The slice-GRAPPA recipe carries its own copy,
+so the two containers release independently.

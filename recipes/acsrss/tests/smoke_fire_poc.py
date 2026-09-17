@@ -134,6 +134,51 @@ class RuntimeTests(unittest.TestCase):
                 self.assertFalse(any(level == 3 for level, _ in conn.logs))
         self.assertEqual(list(self.root.iterdir()), [])
 
+    def test_oversampled_readout_lands_on_the_encoded_grid(self):
+        # OpenRecon reports encodedSpace at base resolution while the ADC keeps
+        # the vendor 2x readout oversampling, so the crop happens in image space.
+        wide = np.zeros((2, 12, 24), np.complex64)
+        wide[..., 6:18] = poc.ifft_centered(self.data, (-1,))
+        expected = poc.rss(self.data, "kx-ky")
+        streams = (("kx-ky", poc.fft_centered(wide, (-1,))), ("x-ky", wide))
+        for domain, streamed in streams:
+            with self.subTest(domain=domain):
+                conn = Connection(
+                    acquisitions(streamed, flag=ismrmrd.ACQ_IS_PARALLEL_CALIBRATION)
+                    + [None]
+                )
+                poc.process_acs(
+                    conn, {"parameters": {"inputdomain": domain}}, self.metadata
+                )
+                self.assertEqual([level for level, _ in conn.logs if level == 3], [])
+                self.assertEqual(conn.images[0].data.shape, (1, 1, 12, 12))
+                np.testing.assert_allclose(
+                    conn.images[0].data[0, 0], expected, rtol=1e-5, atol=1e-5
+                )
+                self.assertEqual(list(conn.images[0].field_of_view), [120, 120, 4])
+
+    def test_multishot_epi_acs_segments_form_one_frame(self):
+        # Segmented EPI splits one contiguous ACS region across shots; each shot
+        # alone is not contiguous, so the segments must reconstruct together.
+        shots = {0: [2, 3, 6, 7], 1: [4, 5, 8, 9]}
+        items = []
+        for segment, lines in shots.items():
+            acqs = acquisitions(
+                self.data, flag=ismrmrd.ACQ_IS_PARALLEL_CALIBRATION, lines=lines
+            )
+            for acq in acqs:
+                acq.idx.segment = segment
+            items += acqs
+        conn = Connection(items + [None])
+        poc.process_acs(conn, {"parameters": {"inputdomain": "kx-ky"}}, self.metadata)
+        self.assertEqual([level for level, _ in conn.logs if level == 3], [])
+        self.assertEqual(len(conn.images), 1)
+        padded = np.zeros_like(self.data)
+        padded[:, sum(shots.values(), [])] = self.data[:, sum(shots.values(), [])]
+        np.testing.assert_allclose(
+            conn.images[0].data[0, 0], poc.rss(padded, "kx-ky"), rtol=1e-6
+        )
+
     def test_live_acs_empty_and_unflagged_streams_close_without_images(self):
         for items in ([], acquisitions(self.data)):
             conn = Connection(items + [None])
@@ -373,6 +418,10 @@ class RuntimeTests(unittest.TestCase):
         group[0].set_flag(ismrmrd.ACQ_IS_REVERSE)
         with self.assertRaisesRegex(ValueError, "polarity"):
             poc.assemble(group, self.metadata, "kx-ky")
+        with self.assertRaisesRegex(ValueError, "integer multiple"):
+            poc.assemble(
+                acquisitions(self.data[..., :10]), self.metadata, "kx-ky"
+            )
         with self.assertRaisesRegex(ValueError, "ridge"):
             poc.train_kernel(np.stack([self.data, self.data]), ridge=0)
 
