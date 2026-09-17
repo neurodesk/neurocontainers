@@ -1,5 +1,5 @@
 name: clinicadl
-version: 1.6.1
+version: 2.0.0
 default_timeout: 60
 clinica_version: 0.7.7
 env_setup: |
