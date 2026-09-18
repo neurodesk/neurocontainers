@@ -1,7 +1,7 @@
 {
   "apps": {
     "neurodesktop-lite_arm64 20260428.1.0": {
-      "version": "20260918",
+      "version": "20260917",
       "exec": "",
       "apptainer_args": []
     }
