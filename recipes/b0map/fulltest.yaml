@@ -2,7 +2,7 @@
 # Focused verification for the shipped BET2 binary and OpenRecon runtime.
 
 name: b0map
-version: "1.1.0"
+version: "1.2.0"
 
 test_data:
   output_dir: test_output
