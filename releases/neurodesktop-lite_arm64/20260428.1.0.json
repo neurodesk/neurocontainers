@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "neurodesktop-lite_arm64 20260428.1.0": {
+      "version": "20260918",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming",
+    "visualization",
+    "data organisation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "neurodesktop-lite",
+  "show_in_menu": false,
+  "show_in_applist": false
+}
