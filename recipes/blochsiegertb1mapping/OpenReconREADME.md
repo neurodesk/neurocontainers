@@ -70,7 +70,7 @@ volume uses zero-valued pixels and stores its physical value in the intercept.
   converted from radians to degrees. Preferred series indices start at `140`.
 - `<source>-b0`: B0 phase-difference map in Hz on preferred series index `160`.
 - `<source>-ref-amplitude`: 1Tx reference-amplitude map in V on preferred
-  series index `170`, computed as `11.74 * Ref Amplitude / B1`.
+  series index `170`, computed as `11.74 * ABS_Tx_Ref_Amp / B1`.
 - `<source>-b1-processing`: masked B1 histogram/cumulative-sum information
   images in a single derived series (`1` image for 1Tx, `8` images for 8Tx).
 - `<source>-b0-processing`: masked B0 histogram/cumulative-sum information
@@ -96,9 +96,9 @@ for every output series.
 - `sendbsp` default `true`: send Bloch-Siegert phase maps.
 - `sendphsc` default `true`: send dedicated transmit phase maps.
 - B1 and B0 maps are always sent. The masks are never sent as output series.
-- `applymask` default `false`: apply `MaskForMagnitude` to every returned B1,
+- `applymask` default `true`: apply `MaskForMagnitude` to every returned B1,
   BSp, transmit-phase, and B0 map.
-- `applyfilter` default `false`: change BS phase filtering from replacing only
+- `applyfilter` default `true`: change BS phase filtering from replacing only
   untrusted voxels to replacing the entire volume with the polynomial fit.
   B0 filtering always replaces only untrusted voxels.
 - Polynomial fitting uses order `20` for 1Tx and order `10` for 8Tx.
@@ -108,6 +108,8 @@ for every output series.
   convert the pre/post reference phase evolution to a B0 map in Hz.
 - `predummy` default `2`: number of additional pre-reference dummy TRs.
 - `postdummy` default `2`: number of additional post-reference dummy TRs.
+- `abstxrefamp` default `200.0`: absolute transmit reference amplitude in V;
+  used for the 1Tx reference-amplitude map.
 
 The scanner UI exposes the dummy counts as integer controls from 0 through 10
 with unit `TRs`.

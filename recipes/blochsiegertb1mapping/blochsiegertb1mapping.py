@@ -2,22 +2,31 @@
 
 At a high level, this script:
 
-1. Extracts the Bloch-Siegert phase differences from the reconstructed phase
-   frames for each transmit channel.
+1. Loads the reconstructed magnitude and phase frames for each transmit
+   channel and identifies the frame groups used for the mapping.
 2. Averages the configured pre-dummy and post-dummy reference frames to
    estimate the B0 map from phase evolution.
-3. Derives a trusted-phase mask from phase stability within the magnitude mask;
-   optional polynomial filtering uses only these trusted voxels as its fit
-   points before replacing the requested voxels.
-4. Builds a Bloch-Siegert lookup table from the supplied RF pulse and pulse
+3. Derives a trusted-phase mask from phase stability within the magnitude mask.
+4. Before any polynomial fitting of the BS phase, fits a degree-2 temporal
+   phase baseline to the retained reference frames
+   (pre-dummy, C/D, and B0-corrected post-reference frames) at trusted voxels,
+   after removing each voxel's average phase to avoid wrapping; the average is
+   restored to the interpolated baseline before correcting the BS frames.
+5. Fills untrusted BS-phase voxels using MATLAB-regionfill-style harmonic
+   inpainting, while filtering B0 with the existing trusted-voxel polynomial.
+   The previous polynomial BS-phase extrapolation remains in
+   `_extrapolate_phase_volume` (and can be restored in
+   `_filter_bloch_siegert_maps` if this method is not suitable).
+6. Builds a Bloch-Siegert lookup table from the supplied RF pulse and pulse
    width, then interpolates B1 values from the measured B0 and BS phase.
-5. Generates the B1 maps and the 1Tx reference-amplitude output using the GUI
+7. Generates the B1 maps and the 1Tx reference-amplitude output using the GUI
    reference amplitude.
-6. Applies the magnitude mask to outputs when requested and writes positioned
+8. Applies the magnitude mask to outputs when requested and writes positioned
    per-slice DICOM images.
 """
 
 import base64
+import gc
 import io
 import json
 import logging
@@ -29,15 +38,7 @@ import uuid
 from functools import lru_cache
 
 import ismrmrd
-import matplotlib
 import numpy as np
-from PIL import Image
-from scipy.ndimage import gaussian_filter
-from scipy.io import loadmat
-from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 try:
     import constants
@@ -64,7 +65,11 @@ BSP_SERIES_INDEX_START = 120
 PHSC_SERIES_INDEX_START = 140
 B0_SERIES_INDEX = 160
 REF_AMPLITUDE_SERIES_INDEX = 170
-FILTER_POLYNOMIAL_ORDER_BY_TX = {1: 10, 8: 10}
+FILTER_POLYNOMIAL_ORDER_BY_TX = {1: 10, 8: 10, 16: 10}
+
+
+class FrameCountMismatchError(ValueError):
+    """Raised when a slice cannot be identified as a configured sequence."""
 
 SOURCE_PARENT_REFERENCE_META_KEYS = {
     "DicomEngineDimString",
@@ -118,11 +123,32 @@ def process(connection, config, metadata):
         _validate_output_images(output_images, input_images)
         _send_images_by_series(connection, output_images)
 
+    except FrameCountMismatchError as error:
+        # A wrong dummy-frame setting must not produce mis-indexed maps.
+        # Stop cleanly after logging the reason; no output images are sent.
+        logging.warning("No maps generated: %s", error)
     except Exception:
         message = traceback.format_exc()
         logging.error(message)
         connection.send_logging(constants.MRD_LOGGING_ERROR, message)
     finally:
+        # The scanner may invoke the recon repeatedly in the same worker.
+        # Drop the large input/output/result object graphs before closing so
+        # NumPy buffers are returned promptly instead of being retained until
+        # a later garbage-collection cycle.
+        try:
+            output_images.clear()
+        except (NameError, UnboundLocalError):
+            pass
+        try:
+            input_images.clear()
+        except (NameError, UnboundLocalError):
+            pass
+        try:
+            result.clear()
+        except (NameError, UnboundLocalError, AttributeError):
+            pass
+        gc.collect()
         connection.send_close()
 
 
@@ -133,6 +159,7 @@ def compute_bloch_siegert_maps(input_images, settings=None):
     expected_frame_counts = (
         _required_frame_count(1, pre_dummy, post_dummy),
         _required_frame_count(8, pre_dummy, post_dummy),
+        _required_frame_count(16, pre_dummy, post_dummy),
     )
     magnitude_images, phase_images = _split_magnitude_phase_images(
         input_images,
@@ -140,11 +167,12 @@ def compute_bloch_siegert_maps(input_images, settings=None):
     )
     logging.info(
         "Bloch-Siegert frame split: magnitude=%d phase=%d; expected per-slice "
-        "counts: 1Tx=%d, 8Tx=%d (pre_dummy=%d, post_dummy=%d)",
+        "counts: 1Tx=%d, 8Tx=%d, 16Tx=%d (pre_dummy=%d, post_dummy=%d)",
         len(magnitude_images),
         len(phase_images),
         expected_frame_counts[0],
         expected_frame_counts[1],
+        expected_frame_counts[2],
         pre_dummy,
         post_dummy,
     )
@@ -152,13 +180,6 @@ def compute_bloch_siegert_maps(input_images, settings=None):
         raise ValueError("Bloch-Siegert mapping requires magnitude image messages")
     if not phase_images:
         raise ValueError("Bloch-Siegert mapping requires phase image messages")
-    _log_reference_metadata(
-        magnitude_images[0],
-        (
-            _setting_float(settings, "refamplitude", default=301.0),
-        ),
-    )
-
     gui_pulse_width = _setting_float(
         settings, "bspulsewidthms", default=BSS_PULSE_WIDTH_MS
     )
@@ -233,6 +254,14 @@ def compute_bloch_siegert_maps(input_images, settings=None):
         axis=0,
     ))
 
+    # Preserve only the lightweight geometry anchors; per-slice results are
+    # no longer needed after the volume assembly.  Do
+    # not keep references to every intermediate slice while filtering and
+    # LUT interpolation allocate their own working arrays.
+    anchor_images = [group[0] for group in magnitude_groups]
+    del magnitude_groups, phase_groups, slice_results
+    gc.collect()
+
     bsp, b0 = _filter_bloch_siegert_maps(
         bsp,
         b0,
@@ -257,18 +286,19 @@ def compute_bloch_siegert_maps(input_images, settings=None):
     # previous analytical path, which clamped them to zero before calculating
     # B1. Passing them to the scattered interpolant otherwise selects the
     # nearest B1=0 edge and makes the map appear binary.
-    bsp_for_lut = np.maximum(np.asarray(bsp, dtype=np.float32), 0.0)
+    raw_negative_bsp = int(np.count_nonzero(np.asarray(bsp) < 0))
+    # Keep the post-filter BS phase nonnegative for both the BSp output and
+    # the LUT lookup.  The LUT is defined only for nonnegative phase shifts.
+    bsp = np.maximum(np.asarray(bsp, dtype=np.float32), 0.0)
     logging.info(
-        "B1 LUT phase clamp: negative_values=%d/%d",
-        int(np.count_nonzero(np.asarray(bsp) < 0)),
-        int(np.asarray(bsp).size),
+        "B1 LUT phase clamp: raw_negative_values=%d/%d; "
+        "lut_input_range=[%.6g,%.6g]",
+        raw_negative_bsp,
+        int(bsp.size),
+        float(np.min(bsp)),
+        float(np.max(bsp)),
     )
-    b1 = _b1_from_lookup_table(bsp_for_lut, b0, pulse_width)
-    ref_amplitude = _setting_float(
-        settings,
-        "refamplitude",
-        default=301.0,
-    )
+    b1 = _b1_from_lookup_table(bsp, b0, pulse_width)
     logging.info(
         "Final B1 map after LUT: shape=%s range=[%.6g,%.6g] "
         "unique_values=%d zero_count=%d one_count=%d",
@@ -283,8 +313,8 @@ def compute_bloch_siegert_maps(input_images, settings=None):
     return {
         "nframe": nframe,
         "ntx": ntx,
-        "slice_count": len(slice_results),
-        "anchor_images": [group[0] for group in magnitude_groups],
+        "slice_count": int(b0.shape[0]),
+        "anchor_images": anchor_images,
         "magnitude_images": magnitude_images,
         "phase_images": phase_images,
         "b1": b1.astype(np.float32),
@@ -308,7 +338,6 @@ def build_output_images(result, settings=None, input_images=None):
     pulse_width = float(result.get("pulse_width", _setting_float(
         settings, "bspulsewidthms", default=BSS_PULSE_WIDTH_MS
     )))
-    source_name = f"{source_name} RF Pulse Width {pulse_width:.3g} ms"
     apply_mask = _setting_bool(settings, "applymask", default=False)
     output_mask = np.asarray(result["mask_for_magnitude"], dtype=bool)
 
@@ -382,7 +411,7 @@ def build_output_images(result, settings=None, input_images=None):
             anchor,
             slice_anchors,
             series_indices["b0"],
-            f"{source_name}-b0",
+            f"{source_name} OR B0 Map",
             "BSSB0",
             "BlochSiegertB0Map",
             "Hz",
@@ -392,8 +421,8 @@ def build_output_images(result, settings=None, input_images=None):
     if result["ntx"] == 1:
         reference_amp = _setting_float(
             settings,
-            "refamplitude",
-            default=301.0,
+            "abstxrefamp",
+            default=200.0,
         )
         ref_amplitude = np.divide(
             11.74 * reference_amp,
@@ -409,7 +438,7 @@ def build_output_images(result, settings=None, input_images=None):
                 anchor,
                 slice_anchors,
                 series_indices["refamp"],
-                f"{source_name}-ref-amplitude",
+                f"{source_name} OR V_Ref_Amp",
                 "BSSREFAMP",
                 "BlochSiegertReferenceAmplitude",
                 "V",
@@ -459,7 +488,7 @@ def _build_processing_info_images(
     """Create one masked histogram image per channel in one derived series."""
     mask = np.asarray(result["mask_for_magnitude"], dtype=bool)
     images = []
-    series_name = f"{source_name}-{map_label.lower()}-processing"
+    series_name = f"{source_name} OR {map_label} Hist"
     volumes = np.asarray(result[map_key], dtype=np.float64)
     if volumes.ndim == 3:
         volumes = volumes[np.newaxis, ...]
@@ -469,7 +498,20 @@ def _build_processing_info_images(
                 "Processing mask shape does not match B1 volume: "
                 f"mask={mask.shape}, {map_label}={values.shape}"
             )
-        finite_values = values[mask & np.isfinite(values)]
+        histogram_mask = mask & np.isfinite(values)
+        # Zero B1 values generally represent clamped/untrusted voxels and
+        # dominate the nTx=8 histogram.  Exclude them from B1 statistics only;
+        # B0 and other map histograms retain their zero values.
+        if map_label.lower() == "b1":
+            histogram_mask &= np.abs(values) > 1e-6
+        finite_values = values[histogram_mask]
+        logging.info(
+            "%s histogram samples: channel=%d retained=%d excluded_zero=%d",
+            map_label,
+            tx_index + 1,
+            int(finite_values.size),
+            int(np.count_nonzero(mask & np.isfinite(values)) - finite_values.size),
+        )
         pixels = _histogram_pixels(finite_values, tx_index + 1, map_label, units)
         display_pixels, display_meta = _scale_volume_to_display_range(
             pixels[np.newaxis, ...],
@@ -487,6 +529,13 @@ def _build_processing_info_images(
         header.image_series_index = int(series_index)
         header.image_index = tx_index + 1
         header.slice = 0
+        # Histograms are synthetic display images, not anatomical slices.
+        # Use a canonical image orientation so scanner-specific anchor
+        # orientations cannot rotate or mirror the text (notably on Cima).
+        _set_header_sequence_field(header, "read_dir", [1.0, 0.0, 0.0])
+        _set_header_sequence_field(header, "phase_dir", [0.0, 1.0, 0.0])
+        _set_header_sequence_field(header, "slice_dir", [0.0, 0.0, 1.0])
+        _set_header_sequence_field(header, "position", [0.0, 0.0, 0.0])
         _set_header_sequence_field(header, "matrix_size", [1024, 1024, 1])
         _set_header_sequence_field(header, "field_of_view", [200.0, 200.0, 1.0])
         output.setHead(header)
@@ -500,8 +549,11 @@ def _build_processing_info_images(
             "BlochSiegertProcessingInfo",
             "gray",
             1,
-            2047.5,
-            4095.0,
+            # Use a readable scanner display window for histogram images.
+            # DICOM convention is WindowCenter (level) followed by
+            # WindowWidth: WL=150, WW=350.
+            150.0,
+            350.0,
             tx_index=tx_index,
             display_meta=display_meta,
             instance_index=tx_index + 1,
@@ -525,13 +577,31 @@ def _histogram_pixels(values, channel_index, map_label, units):
         finite_values = np.asarray([0.0], dtype=np.float64)
     value_min = float(np.min(finite_values))
     value_max = float(np.max(finite_values))
+    # B0 can contain isolated phase-wrap/extrapolation outliers, so use a
+    # robust range for that histogram.  Do not do this for B1: clipping its
+    # upper percentile can make a correctly scaled 7--12 uT map appear as a
+    # sub-unit histogram.  B1 samples have already had zero values removed.
+    if map_label.lower() == "b0":
+        display_min, display_max = np.percentile(finite_values, [1.0, 99.0])
+        if display_min < display_max:
+            histogram_values = np.clip(finite_values, display_min, display_max)
+            low_outliers = int(np.count_nonzero(finite_values < display_min))
+            high_outliers = int(np.count_nonzero(finite_values > display_max))
+        else:
+            display_min, display_max = value_min, value_max
+            histogram_values = finite_values
+            low_outliers = high_outliers = 0
+    else:
+        display_min, display_max = value_min, value_max
+        histogram_values = finite_values
+        low_outliers = high_outliers = 0
     if value_min == value_max:
         half_width = max(abs(value_min) * 0.05, 0.5)
         histogram_range = (value_min - half_width, value_max + half_width)
     else:
-        histogram_range = (value_min, value_max)
+        histogram_range = (float(display_min), float(display_max))
     histogram, edges = np.histogram(
-        finite_values,
+        histogram_values,
         bins=256,
         range=histogram_range,
     )
@@ -541,6 +611,14 @@ def _histogram_pixels(values, channel_index, map_label, units):
     q1, median, q3 = np.percentile(finite_values, [25.0, 50.0, 75.0])
     iqr = q3 - q1
 
+    # Plotting is intentionally imported only when processing images are
+    # actually requested.  Importing matplotlib/Pillow at module startup
+    # consumes substantial scanner memory before any data arrive.
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from PIL import Image
+
     figure, (histogram_axis, cumulative_axis) = plt.subplots(
         2,
         1,
@@ -549,15 +627,22 @@ def _histogram_pixels(values, channel_index, map_label, units):
     )
     figure.suptitle(
         f"{map_label} Histogram and Cumulative Sum - Channel {channel_index}\n"
-        f"IQR: {iqr:.3f} {units}, Median: {median:.3f} {units}",
+        f"IQR: {iqr:.3f} {units}, Median: {median:.3f} {units}; "
+        f"display: [{display_min:.3f}, {display_max:.3f}] {units}; "
+        f"outliers: {low_outliers + high_outliers}",
         fontsize=8,
     )
     histogram_axis.plot(centers, histogram, color="black")
+    # The rendered image is rotated 180 degrees for scanner display.  Reverse
+    # the plot axis before rasterization so the value distribution remains
+    # left-to-right in the final image.
+    histogram_axis.invert_xaxis()
     histogram_axis.set_xlabel(f"{map_label} ({units})")
     histogram_axis.set_ylabel("Count")
     histogram_axis.tick_params(labelsize=6)
     histogram_axis.grid()
     cumulative_axis.plot(centers, cumulative, color="black")
+    cumulative_axis.invert_xaxis()
     cumulative_axis.set_xlabel(f"{map_label} ({units})")
     cumulative_axis.set_ylabel("Cumulative fraction")
     cumulative_axis.tick_params(labelsize=6)
@@ -570,7 +655,12 @@ def _histogram_pixels(values, channel_index, map_label, units):
         (1024, 1024),
         resample=Image.Resampling.LANCZOS,
     )
-    return np.fliplr(np.asarray(image, dtype=np.uint16))
+    # The scanner display requires a 180-degree rotation for these synthetic
+    # processing images.  Do not add a horizontal mirror here: it makes the
+    # lettering unreadable even when the image orientation looks correct.
+    pixels = np.asarray(image, dtype=np.uint16)
+    pixels = np.rot90(pixels, 2)
+    return pixels
 
 
 def _phase_input_domain(data_min, data_max, phase_wrap):
@@ -648,12 +738,40 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings, slice_ind
     phase_b = complex_phase[phase_b_indices]
     phase_c = complex_phase[phase_c_indices]
     phase_d = complex_phase[phase_d_indices]
+    post_start = ECHOES_PER_TX * ntx + pre_dummy + 1
+    post_stop = post_start + post_dummy + 1
+    tx_phase_start = post_stop
+    tx_phase_stop = tx_phase_start + ntx
     phase_mask, phase_difference_std_degrees = _phase_stability_mask(
         complex_phase,
         pre_dummy,
         phase_c_indices,
         phase_d_indices,
         mask_for_magnitude,
+    )
+    b0_phase = _estimate_post_reference_phase(
+        complex_phase,
+        b0_pre_reference,
+        post_start,
+        post_stop,
+    )
+    phase_a, phase_b = _correct_bs_phase_temporal_baseline(
+        complex_phase,
+        phase_a,
+        phase_b,
+        phase_c,
+        phase_d,
+        b0_pre_reference,
+        phase_mask,
+        b0_pre_start,
+        b0_pre_stop,
+        post_start,
+        post_stop,
+        phase_a_indices,
+        phase_b_indices,
+        phase_c_indices,
+        phase_d_indices,
+        b0_phase,
     )
     # Scanner DICOM phase has the opposite BSp polarity to the positive phase
     # convention used by the MATLAB-derived B1 calculation. Correct that
@@ -671,10 +789,6 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings, slice_ind
     bsp_for_b1 = np.maximum(bsp, 0.0)
     b1 = np.sqrt(bsp_for_b1 / kbs)
 
-    post_start = ECHOES_PER_TX * ntx + pre_dummy + 1
-    post_stop = post_start + post_dummy + 1
-    tx_phase_start = post_stop
-    tx_phase_stop = tx_phase_start + ntx
     if slice_index == 0:
         logging.info(
             "Bloch-Siegert frame layout (1-based): b0_pre=%d-%d B=%s C=%s "
@@ -789,15 +903,11 @@ def _compute_slice_maps(magnitude_images, phase_images, ntx, settings, slice_ind
 
     phsc = np.angle(complex_phase[tx_phase_start:tx_phase_stop]).astype(np.float32)
 
-    post_reference = np.mean(
-        complex_phase[post_start:post_stop],
-        axis=0,
-    )
     delta_te_ms = _setting_float(settings, "deltatems", default=DELTA_TE_MS)
     if delta_te_ms <= 0:
         raise ValueError(f"deltatems must be positive, got {delta_te_ms}")
     b0 = (
-        np.angle(post_reference * np.conj(b0_pre_reference))
+        b0_phase
         * 1000.0
         / (2.0 * math.pi * delta_te_ms)
     ).astype(np.float32)
@@ -853,6 +963,112 @@ def _phase_stability_mask(
     return phase_mask, phase_difference_std_degrees
 
 
+def _correct_bs_phase_temporal_baseline(
+    complex_phase,
+    phase_a,
+    phase_b,
+    phase_c,
+    phase_d,
+    b0_pre_reference,
+    phase_mask,
+    b0_pre_start,
+    b0_pre_stop,
+    post_start,
+    post_stop,
+    phase_a_indices,
+    phase_b_indices,
+    phase_c_indices,
+    phase_d_indices,
+    b0_phase,
+):
+    """Remove a quadratic temporal phase baseline at trusted voxels."""
+    n_tx = phase_a.shape[0]
+    time_pre = np.arange(b0_pre_start, b0_pre_stop, dtype=np.float64) + 1.0
+    time_post = np.arange(post_start, post_stop, dtype=np.float64) + 1.0
+    trusted = np.asarray(phase_mask, dtype=bool)
+    corrected_a = np.array(phase_a, copy=True)
+    corrected_b = np.array(phase_b, copy=True)
+    logging.info(
+        "Temporal BS baseline fit positions (1-based): pre=%s C=%s D=%s post=%s",
+        _format_frame_indices(np.arange(b0_pre_start, b0_pre_stop)),
+        _format_frame_indices(phase_c_indices),
+        _format_frame_indices(phase_d_indices),
+        _format_frame_indices(np.arange(post_start, post_stop)),
+    )
+    for tx_index in range(n_tx):
+        time_fit = np.concatenate(
+            (
+                time_pre,
+                np.asarray([phase_c_indices[tx_index] + 1.0]),
+                np.asarray([phase_d_indices[tx_index] + 1.0]),
+                time_post,
+            )
+        )
+        vandermonde = np.column_stack((
+            np.ones(time_fit.size),
+            time_fit,
+            time_fit * time_fit,
+        ))
+        fit_pinv = np.linalg.pinv(vandermonde)
+        post_phase = complex_phase[post_start:post_stop]
+        post_offsets = np.arange(1, post_phase.shape[0] + 1, dtype=np.float32)
+        post_phase = post_phase * np.exp(-1j * post_offsets[:, None, None, None] * b0_phase)
+        fit_samples = np.concatenate(
+            (
+                complex_phase[b0_pre_start:b0_pre_stop],
+                phase_c[tx_index:tx_index + 1],
+                phase_d[tx_index:tx_index + 1],
+                post_phase * np.exp(-1j * b0_phase),
+            ),
+            axis=0,
+        )
+        # Remove the voxel-wise average phase before unwrapping.  This keeps
+        # the temporal residual near zero and prevents 2*pi jumps from being
+        # interpreted as rapid temporal evolution.
+        average_phase = np.angle(np.mean(fit_samples, axis=0))
+        relative_samples = fit_samples * np.exp(-1j * average_phase)
+        phase_values = np.unwrap(np.angle(relative_samples), axis=0)
+        flat = phase_values.reshape(phase_values.shape[0], -1)
+        trusted_flat = trusted.reshape(-1)
+        coefficients = fit_pinv @ flat[:, trusted_flat]
+        average_phase_flat = average_phase.reshape(-1)[trusted_flat]
+        for target, target_indices in (
+            (corrected_a, phase_a_indices),
+            (corrected_b, phase_b_indices),
+        ):
+            target_phase = np.angle(target[tx_index])
+            target_time = np.asarray(target_indices[tx_index], dtype=np.float64) + 1.0
+            design = np.asarray([1.0, target_time, target_time * target_time])
+            corrected = target[tx_index].copy()
+            baseline = average_phase_flat + design @ coefficients
+            corrected[trusted] *= np.exp(-1j * baseline)
+            target[tx_index] = corrected
+    return corrected_a, corrected_b
+
+
+def _estimate_post_reference_phase(complex_phase, pre_reference, post_start, post_stop):
+    """Estimate B0 phase from circularly averaged post-frame increments."""
+    post_frames = np.asarray(complex_phase[post_start:post_stop])
+    if post_frames.shape[0] == 0:
+        raise ValueError("No post-reference frames available for B0 estimation")
+    increments = np.empty_like(post_frames, dtype=np.complex64)
+    increments[0] = post_frames[0] * np.conj(pre_reference)
+    if post_frames.shape[0] > 1:
+        increments[1:] = post_frames[1:] * np.conj(post_frames[:-1])
+    phase_increments = np.angle(increments)
+    b0_phase = np.angle(np.mean(np.exp(1j * phase_increments), axis=0))
+    logging.info(
+        "B0 post-reference phase increments: frames=%d increment_deg=[%.3f,%.3f] "
+        "mean_phase_deg=[%.3f,%.3f]",
+        post_frames.shape[0],
+        float(np.degrees(np.min(phase_increments))),
+        float(np.degrees(np.max(phase_increments))),
+        float(np.degrees(np.min(b0_phase))),
+        float(np.degrees(np.max(b0_phase))),
+    )
+    return b0_phase.astype(np.float32)
+
+
 def _bloch_siegert_magnitude_mask(magnitude_stack, ntx):
     mask_source = np.mean(magnitude_stack[: 2 * ntx + 2], axis=0)
     finite_values = mask_source[np.isfinite(mask_source)]
@@ -882,65 +1098,102 @@ def _filter_bloch_siegert_maps(
         polynomial_order = FILTER_POLYNOMIAL_ORDER_BY_TX[bsp.shape[0]]
     except KeyError as error:
         raise ValueError(
-            f"Unsupported nTx={bsp.shape[0]} for filtering; expected 1 or 8"
+            f"Unsupported nTx={bsp.shape[0]} for filtering; expected 1, 8, or 16"
         ) from error
     filtered_bsp = np.empty_like(bsp, dtype=np.float32)
 
     for tx_index in range(bsp.shape[0]):
-        filtered_bsp[tx_index] = _extrapolate_phase_volume(
+        # New path: MATLAB regionfill-style harmonic interpolation of only
+        # the untrusted BS-phase voxels.  The former polynomial path is kept
+        # above in _extrapolate_phase_volume for easy rollback.
+        filtered_bsp[tx_index] = _regionfill_phase_volume(
             bsp[tx_index],
             phase_mask,
-            polynomial_order,
-            zero_non_positive=False,
             apply_to_entire_volume=apply_bsp_to_entire_volume,
-            smooth_sigma=FILTER_SMOOTH_SIGMA,
         )
 
-    filtered_b0 = _extrapolate_phase_volume(
+    filtered_b0 = _regionfill_phase_volume(
         b0,
         phase_mask,
-        polynomial_order,
-        zero_non_positive=False,
         apply_to_entire_volume=True,
-        smooth_sigma=FILTER_SMOOTH_SIGMA,
     )
     return filtered_bsp, filtered_b0.astype(np.float32)
 
 
+def _regionfill_phase_volume(volume, mask, apply_to_entire_volume=False):
+    """Fill masked-out voxels by solving a slice-wise discrete Laplace equation.
+
+    This is the numerical equivalent of MATLAB's 2-D ``regionfill`` applied
+    independently to each slice. Trusted voxels provide Dirichlet boundary
+    values; untrusted voxels are iteratively replaced by the mean of their
+    four in-plane neighbors. The trusted samples are retained in the output.
+    """
+    values = np.asarray(volume, dtype=np.float32)
+    trusted = np.asarray(mask, dtype=bool)
+    if values.shape != trusted.shape:
+        raise ValueError(
+            f"Regionfill volume/mask shape mismatch: volume={values.shape}, "
+            f"mask={trusted.shape}"
+        )
+    output = np.array(values, copy=True)
+    if values.ndim != 3:
+        raise ValueError(f"Regionfill expects a 3-D volume, got {values.shape}")
+
+    for slice_index in range(values.shape[0]):
+        image = output[slice_index]
+        trusted_slice = trusted[slice_index]
+        missing = ~trusted_slice
+        if not np.any(missing) or not np.any(trusted_slice):
+            continue
+        finite_trusted = image[trusted_slice & np.isfinite(image)]
+        if finite_trusted.size == 0:
+            continue
+        image[~np.isfinite(image)] = float(np.mean(finite_trusted))
+        fill = image.copy()
+        fill[missing] = float(np.mean(finite_trusted))
+        for _ in range(1000):
+            padded = np.pad(fill, 1, mode="edge")
+            neighbor_mean = (
+                padded[:-2, 1:-1]
+                + padded[2:, 1:-1]
+                + padded[1:-1, :-2]
+                + padded[1:-1, 2:]
+            ) * 0.25
+            delta = float(np.max(np.abs(neighbor_mean[missing] - fill[missing])))
+            fill[missing] = neighbor_mean[missing]
+            if delta < 1e-4:
+                break
+        if apply_to_entire_volume:
+            # Regionfill preserves trusted boundary samples by definition;
+            # only the previously untrusted region is replaced.
+            image[missing] = fill[missing]
+        else:
+            image[missing] = fill[missing]
+        output[slice_index] = image
+    return output.astype(np.float32)
+
+
 @lru_cache(maxsize=8)
 def _generate_bloch_siegert_lut(pulse_width):
-    mat_path = os.path.join(os.path.dirname(__file__), "ABSPulse.mat")
-    mat = loadmat(mat_path)
-    pulse = np.asarray(mat["ABS_Pulse"]).reshape(-1).astype(complex)
-    b0 = np.arange(-740.0, 740.0 + 20.0, 20.0)
-    b1 = np.arange(0.0, 12.0 + 0.3, 0.3)
-    dt = float(pulse_width) * 1e-6
-    gamma = 2.0 * math.pi * 42.577e6
-    pulse = pulse / max(float(np.max(np.abs(pulse))), 1e-12)
-    b0_grid, b1_grid = np.meshgrid(b0, b1, indexing="ij")
-    pos = _simulate_transverse_grid(
-        pulse,
-        b0_grid.reshape(-1),
-        b1_grid.reshape(-1),
-        dt,
-        gamma,
-    )
-    neg = _simulate_transverse_grid(
-        np.conj(pulse),
-        b0_grid.reshape(-1),
-        b1_grid.reshape(-1),
-        dt,
-        gamma,
-    )
-    phi_diff = np.angle(neg[:, 0] + 1j * neg[:, 1]) - np.angle(
-        pos[:, 0] + 1j * pos[:, 1]
-    )
-    lut = np.unwrap(phi_diff.reshape(b0.size, b1.size), axis=1)
-    lut -= lut[:, :1]
+    lut_path = os.path.join(os.path.dirname(__file__), "blochsiegert_lut.npz")
+    tables = np.load(lut_path)
+    pulse_widths = np.asarray(tables["pulse_widths"], dtype=np.float64)
+    width_index = int(np.argmin(np.abs(pulse_widths - float(pulse_width))))
+    selected_width = float(pulse_widths[width_index])
+    b0 = np.asarray(tables["b0_offsets"], dtype=np.float32)
+    b1 = np.asarray(tables["b1_scales"], dtype=np.float32)
+    lut = np.asarray(tables["lut"][width_index], dtype=np.float32)
+    if not np.isclose(selected_width, float(pulse_width)):
+        logging.warning(
+            "B1 LUT pulse width %.6g ms unavailable; using nearest precomputed "
+            "table %.6g ms",
+            pulse_width,
+            selected_width,
+        )
     logging.info(
         "B1 LUT generated: pulse_width=%.6g ms shape=%s b0=[%.6g,%.6g] "
         "b1=[%.6g,%.6g] phase=[%.6g,%.6g]",
-        pulse_width,
+        selected_width,
         lut.shape,
         float(b0.min()),
         float(b0.max()),
@@ -980,6 +1233,10 @@ def _simulate_transverse_grid(rf, b0_offsets, b1_scales, dt, gamma):
 
 
 def _b1_from_lookup_table(bsp, b0, pulse_width):
+    # scipy is loaded lazily so the OpenRecon worker has a small startup
+    # footprint while waiting for the scanner to begin sending data.
+    from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+
     b0_grid, b1_grid, lut = _generate_bloch_siegert_lut(float(pulse_width))
     points = np.column_stack((
         np.repeat(b0_grid, b1_grid.size),
@@ -988,24 +1245,41 @@ def _b1_from_lookup_table(bsp, b0, pulse_width):
     values = np.tile(b1_grid, b0_grid.size)
     linear = LinearNDInterpolator(points, values)
     nearest = NearestNDInterpolator(points, values)
-    query = np.column_stack((np.asarray(b0).reshape(-1), np.asarray(bsp).reshape(-1)))
-    result = linear(query)
-    missing = np.isnan(result)
+    bsp_array = np.asarray(bsp)
+    # B0 is one map per slice, whereas BSp is one map per transmit channel.
+    # Broadcast B0 across the channel dimension for nTx>1 LUT queries.
+    b0_array = np.broadcast_to(np.asarray(b0), bsp_array.shape)
+    b0_flat = b0_array.reshape(-1)
+    bsp_flat = bsp_array.reshape(-1)
+    result = np.empty(b0_flat.size, dtype=np.float32)
+    missing_count = 0
+    linear_count = 0
+    # nTx=8 produces over one million voxels.  Chunking avoids retaining the
+    # full query matrix and both interpolator temporaries at the same time.
+    chunk_size = 100_000
+    for start in range(0, b0_flat.size, chunk_size):
+        stop = min(start + chunk_size, b0_flat.size)
+        query_chunk = np.column_stack((b0_flat[start:stop], bsp_flat[start:stop]))
+        values_chunk = np.asarray(linear(query_chunk), dtype=np.float32)
+        missing = np.isnan(values_chunk)
+        linear_count += int(np.count_nonzero(~missing))
+        missing_count += int(np.count_nonzero(missing))
+        if np.any(missing):
+            values_chunk[missing] = nearest(query_chunk[missing])
+        result[start:stop] = values_chunk
     logging.info(
         "B1 LUT interpolation input: points=%d query=%d b0=[%.6g,%.6g] "
         "phase=[%.6g,%.6g] linear_hits=%d nearest_fallback=%d",
         points.shape[0],
-        query.shape[0],
-        float(np.min(query[:, 0])),
-        float(np.max(query[:, 0])),
-        float(np.min(query[:, 1])),
-        float(np.max(query[:, 1])),
-        int(np.count_nonzero(~missing)),
-        int(np.count_nonzero(missing)),
+        b0_flat.size,
+        float(np.min(b0_flat)),
+        float(np.max(b0_flat)),
+        float(np.min(bsp_flat)),
+        float(np.max(bsp_flat)),
+        linear_count,
+        missing_count,
     )
-    if np.any(missing):
-        result[missing] = nearest(query[missing])
-    result = np.asarray(result, dtype=np.float32).reshape(np.asarray(bsp).shape)
+    result = result.reshape(bsp_array.shape)
     logging.info(
         "B1 LUT interpolation output: shape=%s range=[%.6g,%.6g] "
         "unique_values=%d zero_count=%d one_count=%d",
@@ -1084,6 +1358,8 @@ def _extrapolate_phase_volume(
     )
 
     if smooth_sigma > 0:
+        from scipy.ndimage import gaussian_filter
+
         output = gaussian_filter(
             output,
             sigma=float(smooth_sigma),
@@ -1274,7 +1550,7 @@ def _is_phase_image(image):
     return "PHASE" in text or re.search(r"(^|\\|\s)P($|\\|\s)", text) is not None
 
 
-def _group_frames_by_slice(images, expected_frame_counts=(11, 46)):
+def _group_frames_by_slice(images, expected_frame_counts=(11, 46, 86)):
     minimum_frame_count = min(expected_frame_counts)
     indexed = list(enumerate(images))
     if indexed and all(_is_volume_frame_image(image) for _order, image in indexed):
@@ -1359,7 +1635,7 @@ def _slice_group_key(image):
     return int(image.getHead().slice)
 
 
-def _chunked_frame_groups(indexed_images, expected_frame_counts=(11, 46)):
+def _chunked_frame_groups(indexed_images, expected_frame_counts=(11, 46, 86)):
     total = len(indexed_images)
     chunk_size = next(
         (
@@ -1420,13 +1696,17 @@ def _sequence_shape(frame_count, pre_dummy, post_dummy):
 
     one_tx_frames = _required_frame_count(1, pre_dummy, post_dummy)
     eight_tx_frames = _required_frame_count(8, pre_dummy, post_dummy)
-    if frame_count >= eight_tx_frames:
+    sixteen_tx_frames = _required_frame_count(16, pre_dummy, post_dummy)
+    if frame_count == eight_tx_frames:
         return eight_tx_frames, 8
-    if frame_count >= one_tx_frames:
+    if frame_count == sixteen_tx_frames:
+        return sixteen_tx_frames, 16
+    if frame_count == one_tx_frames:
         return one_tx_frames, 1
-    raise ValueError(
-        "Bloch-Siegert mapping requires at least "
-        f"{one_tx_frames} frames for 1Tx or {eight_tx_frames} frames for 8Tx "
+    raise FrameCountMismatchError(
+        "Bloch-Siegert frame count does not match the configured sequence: "
+        f"{one_tx_frames} frames for 1Tx, {eight_tx_frames} frames for 8Tx, "
+        f"or {sixteen_tx_frames} frames for 16Tx "
         f"with predummy={pre_dummy} and postdummy={post_dummy}; "
         f"got {frame_count}"
     )
@@ -1721,7 +2001,6 @@ def _output_meta(
     )
     meta["SeriesInstanceUID"] = series_uid
     meta["SOPInstanceUID"] = sop_uid
-    meta["SequenceDescriptionAdditional"] = "openrecon"
     meta["Keep_image_geometry"] = "0"
     meta["partition_count"] = "1"
     meta["slice_count"] = str(int(slice_count))
@@ -1776,9 +2055,15 @@ def _allocate_output_series_indices(input_images, ntx):
 
 
 def _map_series_name(source_name, map_name, index, count):
+    labels = {
+        "b1": "B1 map",
+        "bsp": "BS Phase",
+        "phsc": "Tx Phase",
+    }
+    label = labels.get(map_name, map_name)
     if count == 1:
-        return f"{source_name}-{map_name}"
-    return f"{source_name}-{map_name}-tx{index + 1:02d}"
+        return f"{source_name} OR {label}"
+    return f"{source_name} OR {label} Tx{index + 1}"
 
 
 def _derived_series_grouping(series_name, series_index):
@@ -2041,7 +2326,7 @@ def _settings_from_config(config):
         "sendphsc": _config_bool(config, "sendphsc", default=True),
         "applymask": _config_bool(config, "applymask", default=False),
         "applyfilter": _config_bool(config, "applyfilter", default=False),
-        "refamplitude": _config_float(config, "refamplitude", default=301.0),
+        "abstxrefamp": _config_float(config, "abstxrefamp", default=200.0),
         "bspulsewidthms": _config_int(
             config,
             "bspulsewidthms",
@@ -2369,6 +2654,9 @@ def _log_reference_metadata(image, target_values):
         len(meta.keys()),
         ", ".join(sorted(str(key) for key in meta.keys())) or "none",
     )
+    for key in sorted(meta.keys(), key=str):
+        value = _meta_text(meta, key).replace("\n", "\\n")
+        logging.info("ISMRMRD metadata value: %s=%s", key, value[:500])
     targets = tuple(
         round(float(value), 1) for value in target_values if float(value) > 0
     )
@@ -2393,6 +2681,10 @@ def _log_reference_metadata(image, target_values):
         len(minihead_names),
         ", ".join(minihead_names) or "none",
     )
+    for line in minihead.splitlines():
+        stripped = line.strip()
+        if stripped and "<Param" in stripped:
+            logging.info("Mini-ICE parameter value: %s", stripped[:500])
     mini_matches = [
         line.strip()[:300]
         for line in minihead.splitlines()

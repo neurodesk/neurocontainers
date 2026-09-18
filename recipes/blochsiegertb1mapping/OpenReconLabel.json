@@ -54,28 +54,28 @@
       "label": { "en": "Send BS phase" },
       "type": "boolean",
       "information": { "en": "Send Bloch-Siegert phase using the full 12-bit display range with DICOM rescaling back to degrees" },
-      "default": true
+      "default": false
     },
     {
       "id": "sendphsc",
       "label": { "en": "Send Tx phase" },
       "type": "boolean",
       "information": { "en": "Send dedicated transmit phase using the full 12-bit display range with DICOM rescaling back to degrees" },
-      "default": true
+      "default": false
     },
     {
       "id": "applymask",
       "label": { "en": "Apply Mask" },
       "type": "boolean",
       "information": { "en": "Apply the MATLAB-derived magnitude mask to all output maps" },
-      "default": false
+      "default": true
     },
     {
       "id": "applyfilter",
       "label": { "en": "Apply Filter" },
       "type": "boolean",
       "information": { "en": "Replace the entire BS phase volume with its polynomial fit; otherwise only untrusted voxels are replaced" },
-      "default": false
+      "default": true
     },
     {
       "id": "bspulsewidthms",
@@ -98,13 +98,13 @@
       "unit": { "en": "ms" }
     },
     {
-      "id": "refamplitude",
-      "label": { "en": "Ref Amplitude" },
+      "id": "abstxrefamp",
+      "label": { "en": "ABS Tx Ref Amp" },
       "type": "double",
-      "information": { "en": "Reference transmit amplitude used to scale the B1 map" },
+      "information": { "en": "Absolute transmit reference amplitude used for the reference-amplitude map" },
       "minimum": 0,
       "maximum": 2000,
-      "default": 301.0,
+      "default": 200.0,
       "unit": { "en": "V" }
     },
     {

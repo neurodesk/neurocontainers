@@ -1,5 +1,5 @@
 name: blochsiegertb1mapping
-version: 1.0.41
+version: 1.0.56
 default_timeout: 120
 tests:
 - name: Bloch-Siegert OpenRecon workflow unit smoke test
@@ -106,11 +106,7 @@ tests:
     assert one_tx["phsc"].shape == (1, 1, 8, 8)
     assert one_tx["b0"].shape == (1, 8, 8)
     assert np.allclose(one_tx["bsp"][0, 0, 3, 3], 0.3, atol=1e-5)
-    expected_b1 = (
-        math.sqrt(0.3 / (0.044 * 12.0 / 6.0))
-        * 301.0
-        / 200.0
-    )
+    expected_b1 = math.sqrt(0.3 / (0.044 * 12.0 / 6.0))
     assert np.allclose(one_tx["b1"][0, 0, 3, 3], expected_b1, atol=1e-5)
     wider_pulse = module.compute_bloch_siegert_maps(
         one_tx_images,
@@ -128,8 +124,8 @@ tests:
         atol=1e-5,
     )
     assert np.allclose(
-        11.74 * settings["refamplitude"] / one_tx["b1"][0, 0, 3, 3],
-        11.74 * 301.0 / expected_b1,
+        11.74 * settings["abstxrefamp"] / one_tx["b1"][0, 0, 3, 3],
+        11.74 * 200.0 / expected_b1,
         atol=1e-5,
     )
     half_ms_b0 = module.compute_bloch_siegert_maps(
@@ -508,12 +504,12 @@ tests:
     )
     assert np.isclose(
         ref_amplitude_restored[0, 0, 3, 3],
-        11.74 * 301.0 / expected_b1,
+        11.74 * 200.0 / expected_b1,
         atol=ref_amplitude_slope / 2.0,
     )
     custom_ref_outputs = module.build_output_images(
         one_tx,
-        dict(settings, refamplitude=100.0, applymask=True),
+        dict(settings, abstxrefamp=100.0, applymask=True),
         one_tx_images,
     )
     custom_ref_output = [
@@ -799,6 +795,8 @@ tests:
     assert "sendb1" not in parameters
     assert "sendb0" not in parameters
     assert "sendmask" not in parameters
+    assert parameters["sendbsp"]["default"] is False
+    assert parameters["sendphsc"]["default"] is False
     for parameter_id, label_text in (
         ("applymask", "Apply Mask"),
         ("applyfilter", "Apply Filter"),
@@ -806,20 +804,19 @@ tests:
         parameter = parameters[parameter_id]
         assert parameter["label"]["en"] == label_text
         assert parameter["type"] == "boolean"
-        assert parameter["default"] is False
+        assert parameter["default"] is True
     delta_te = parameters["deltatems"]
     assert delta_te["label"]["en"] == "Delta TE"
     assert delta_te["type"] == "double"
     assert delta_te["default"] == 1.0
     assert delta_te["unit"]["en"] == "ms"
-    assert "abstxrefamp" not in parameters
-    ref_amplitude = parameters["refamplitude"]
-    assert ref_amplitude["label"]["en"] == "Ref Amplitude"
-    assert ref_amplitude["type"] == "double"
-    assert ref_amplitude["default"] == 301.0
-    assert ref_amplitude["minimum"] == 0
-    assert ref_amplitude["maximum"] == 2000
-    assert ref_amplitude["unit"]["en"] == "V"
+    abs_ref_amplitude = parameters["abstxrefamp"]
+    assert abs_ref_amplitude["label"]["en"] == "ABS Tx Ref Amp"
+    assert abs_ref_amplitude["type"] == "double"
+    assert abs_ref_amplitude["default"] == 200.0
+    assert abs_ref_amplitude["minimum"] == 0
+    assert abs_ref_amplitude["maximum"] == 2000
+    assert abs_ref_amplitude["unit"]["en"] == "V"
     for parameter_id in ("predummy", "postdummy"):
         dummy = parameters[parameter_id]
         assert dummy["type"] == "int"

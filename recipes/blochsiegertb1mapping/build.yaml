@@ -1,5 +1,5 @@
 name: blochsiegertb1mapping
-version: 1.0.41
+version: 1.0.56
 architectures:
   - x86_64
 
@@ -16,8 +16,8 @@ files:
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
-  - name: ABSPulse.mat
-    filename: ABSPulse.mat
+  - name: blochsiegert_lut.npz
+    filename: blochsiegert_lut.npz
   - name: blochsiegertb1mapping
     contents: |-
       #!/usr/bin/env bash
@@ -38,7 +38,7 @@ build:
     - copy: blochsiegertb1mapping.py /opt/code/python-ismrmrd-server/blochsiegertb1mapping.py
     - copy: dicom2mrd.py /opt/code/python-ismrmrd-server/dicom2mrd.py
     - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
-    - copy: ABSPulse.mat /opt/code/python-ismrmrd-server/ABSPulse.mat
+    - copy: blochsiegert_lut.npz /opt/code/python-ismrmrd-server/blochsiegert_lut.npz
     - run:
         - install -m 0755 {{ get_file("blochsiegertb1mapping") }} /usr/local/bin/blochsiegertb1mapping
         - mkdir -p /tmp/share/debug
@@ -77,7 +77,7 @@ readme: |-
   image comments record the inverse mapping back to physical units. B1 is
   reported in uT, BSp and Tx phase in degrees, and B0 in Hz.
   For 1Tx, a reference-amplitude map in V is also returned using
-  `11.74 * Ref_Amplitude / B1`.
+  `11.74 * ABS_Tx_Ref_Amp / B1`.
   Processing-information histogram images are generated for masked B1 (one per
   Tx channel) and masked B0; they use uT and Hz source units respectively.
   Small negative BSp values are retained in the phase output and clamped only
