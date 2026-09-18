@@ -45,6 +45,7 @@ variables:
   neurocommand_commit: b83cefc49f38e240b85d1a55e6fe95e4406e99b0
   nf_neuro_commit: d21a678afd4343ab4c3cdf9f757e821bbfe68188
   jupyterlab_slurm_commit: c34354f0aaa1b12f6243224bed631cf07c858409
+  hatchling_build_version: 1.32.0
   codex_version: 0.153.4
   claude_version: 2.1.263
   opencode_version: 1.18.29
@@ -570,7 +571,8 @@ build:
         - rm -rf /home/${NB_USER}/.cache
 
     - run:
-        - /opt/conda/bin/pip install datalad=={{ context.datalad_version }} nipype=={{ context.nipype_version }} nbdev=={{ context.nbdev_version }} nf-core=={{ context.nf_core_version }} snakemake=={{ context.snakemake_version }} pydra=={{ context.pydra_version }} nipoppy=={{ context.nipoppy_version }} matplotlib=={{ context.matplotlib_version }} datalad-container=={{ context.datalad_container_version }} datalad-osf=={{ context.datalad_osf_version }} osfclient=={{ context.osfclient_version }} watermark=={{ context.watermark_version }} ipyniivue=={{ context.ipyniivue_version }} jupyter-server-proxy=={{ context.jupyter_server_proxy_version }} jupyterlmod=={{ context.jupyterlmod_version }} jupyterlab-git=={{ context.jupyterlab_git_version }} notebook_intelligence=={{ context.notebook_intelligence_version }} jupyterlab_rise=={{ context.jupyterlab_rise_version }} jupyterlab-niivue=={{ context.jupyterlab_niivue_version }} jupyterlab_myst=={{ context.jupyterlab_myst_version }} jupyter-sshd-proxy=={{ context.jupyter_sshd_proxy_version }} papermill=={{ context.papermill_version }} ipycanvas=={{ context.ipycanvas_version }} jupyter-resource-usage=={{ context.jupyter_resource_usage_version }} jupyter_scheduler=={{ context.jupyter_scheduler_version }} jupyterlab-slurm@git+https://github.com/NERSC/jupyterlab-slurm.git@{{ context.jupyterlab_slurm_commit }} httpx=={{ context.httpx_version }} ipywidgets=={{ context.ipywidgets_version }} ipyvolume=={{ context.ipyvolume_version }} jupyterlab_widgets=={{ context.jupyterlab_widgets_version }} nbgitpuller=={{ context.nbgitpuller_version }} xnat=={{ context.xnat_version }} pytest=={{ context.pytest_version }} requests=={{ context.requests_version }} chardet=={{ context.chardet_version }}
+        - /opt/conda/bin/pip install datalad=={{ context.datalad_version }} nipype=={{ context.nipype_version }} nbdev=={{ context.nbdev_version }} nf-core=={{ context.nf_core_version }} snakemake=={{ context.snakemake_version }} pydra=={{ context.pydra_version }} nipoppy=={{ context.nipoppy_version }} matplotlib=={{ context.matplotlib_version }} datalad-container=={{ context.datalad_container_version }} datalad-osf=={{ context.datalad_osf_version }} osfclient=={{ context.osfclient_version }} watermark=={{ context.watermark_version }} ipyniivue=={{ context.ipyniivue_version }} jupyter-server-proxy=={{ context.jupyter_server_proxy_version }} jupyterlmod=={{ context.jupyterlmod_version }} jupyterlab-git=={{ context.jupyterlab_git_version }} notebook_intelligence=={{ context.notebook_intelligence_version }} jupyterlab_rise=={{ context.jupyterlab_rise_version }} jupyterlab-niivue=={{ context.jupyterlab_niivue_version }} jupyterlab_myst=={{ context.jupyterlab_myst_version }} jupyter-sshd-proxy=={{ context.jupyter_sshd_proxy_version }} papermill=={{ context.papermill_version }} ipycanvas=={{ context.ipycanvas_version }} jupyter-resource-usage=={{ context.jupyter_resource_usage_version }} jupyter_scheduler=={{ context.jupyter_scheduler_version }} httpx=={{ context.httpx_version }} ipywidgets=={{ context.ipywidgets_version }} ipyvolume=={{ context.ipyvolume_version }} jupyterlab_widgets=={{ context.jupyterlab_widgets_version }} nbgitpuller=={{ context.nbgitpuller_version }} xnat=={{ context.xnat_version }} pytest=={{ context.pytest_version }} requests=={{ context.requests_version }} chardet=={{ context.chardet_version }}
+        - /opt/conda/bin/pip install --build-constraint {{ get_file("jupyter_build_constraints") }} jupyterlab-slurm@git+https://github.com/NERSC/jupyterlab-slurm.git@{{ context.jupyterlab_slurm_commit }}
         - /opt/conda/bin/jupyter labextension disable @jupyterlab/apputils-extension:announcements
         - rm -rf /home/${NB_USER}/.cache
 
@@ -636,7 +638,7 @@ build:
     - user: ${NB_USER}
 
     - run:
-        - cd /tmp/neurodesk-launcher && /opt/conda/bin/pip install .
+        - cd /tmp/neurodesk-launcher && /opt/conda/bin/pip install --build-constraint {{ get_file("jupyter_build_constraints") }} .
         - /opt/conda/bin/jupyter labextension disable @jupyterhub/jupyter-server-proxy
         - rm -rf /home/${NB_USER}/.cache
 
@@ -780,6 +782,11 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: jupyter_build_constraints
+    contents: |
+      # hatch-jupyter-builder 0.9.1 is incompatible with Hatchling 1.32.3.
+      hatchling=={{ context.hatchling_build_version }}
+
   - name: code_server_amd64
     url: https://github.com/coder/code-server/releases/download/v{{ context.code_server_version }}/code-server-{{ context.code_server_version }}-linux-amd64.tar.gz
     condition: arch=="x86_64"
