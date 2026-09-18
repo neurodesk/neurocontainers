@@ -50,82 +50,49 @@
       "information": { "en": "Define the config to be executed by MRD server" }
     },
     {
+      "id": "sendb1",
+      "label": { "en": "Send B1 map" },
+      "type": "boolean",
+      "information": { "en": "Send measured B1 using the full 12-bit uint16 display range with DICOM rescaling back to uT" },
+      "default": true
+    },
+    {
       "id": "sendbsp",
       "label": { "en": "Send BS phase" },
       "type": "boolean",
       "information": { "en": "Send Bloch-Siegert phase using the full 12-bit display range with DICOM rescaling back to degrees" },
-      "default": false
+      "default": true
     },
     {
       "id": "sendphsc",
       "label": { "en": "Send Tx phase" },
       "type": "boolean",
       "information": { "en": "Send dedicated transmit phase using the full 12-bit display range with DICOM rescaling back to degrees" },
+      "default": true
+    },
+    {
+      "id": "sendb0",
+      "label": { "en": "Send B0 map" },
+      "type": "boolean",
+      "information": { "en": "Send B0 using the full 12-bit display range with DICOM rescaling back to Hz" },
+      "default": true
+    },
+    {
+      "id": "sendmask",
+      "label": { "en": "Send mask" },
+      "type": "boolean",
+      "information": { "en": "Send the optional magnitude-threshold mask using the full 12-bit display range; it is not applied to calculated maps" },
       "default": false
-    },
-    {
-      "id": "applymask",
-      "label": { "en": "Apply Mask" },
-      "type": "boolean",
-      "information": { "en": "Apply the MATLAB-derived magnitude mask to all output maps" },
-      "default": true
-    },
-    {
-      "id": "applyfilter",
-      "label": { "en": "Apply Filter" },
-      "type": "boolean",
-      "information": { "en": "Replace the entire BS phase volume with its polynomial fit; otherwise only untrusted voxels are replaced" },
-      "default": true
     },
     {
       "id": "bspulsewidthms",
       "label": { "en": "BS pulse width" },
-      "type": "int",
-      "information": { "en": "Bloch-Siegert pulse width used for KBS = 0.044 * pulse_width / 6" },
-      "minimum": 1,
-      "maximum": 15,
-      "default": 6,
-      "unit": { "en": "ms" }
-    },
-    {
-      "id": "deltatems",
-      "label": { "en": "Delta TE" },
       "type": "double",
-      "information": { "en": "Echo-time difference used to convert the B0 phase evolution to Hz" },
+      "information": { "en": "Bloch-Siegert pulse width used for KBS = 0.044 * pulse_width / 6" },
       "minimum": 0.1,
       "maximum": 100.0,
-      "default": 1.0,
+      "default": 12.0,
       "unit": { "en": "ms" }
-    },
-    {
-      "id": "abstxrefamp",
-      "label": { "en": "ABS Tx Ref Amp" },
-      "type": "double",
-      "information": { "en": "Absolute transmit reference amplitude used for the reference-amplitude map" },
-      "minimum": 0,
-      "maximum": 2000,
-      "default": 200.0,
-      "unit": { "en": "V" }
-    },
-    {
-      "id": "predummy",
-      "label": { "en": "No of pre-dummy TRs" },
-      "type": "int",
-      "information": { "en": "Number of pre-dummy TRs" },
-      "minimum": 0,
-      "maximum": 10,
-      "default": 2,
-      "unit": { "en": "TRs" }
-    },
-    {
-      "id": "postdummy",
-      "label": { "en": "No of post-dummy TRs" },
-      "type": "int",
-      "information": { "en": "Number of post-dummy TRs" },
-      "minimum": 0,
-      "maximum": 10,
-      "default": 2,
-      "unit": { "en": "TRs" }
     }
   ]
 }

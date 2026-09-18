@@ -1,0 +1,566 @@
+name: arfirecon
+version: 1.0.1
+default_timeout: 120
+tests:
+  - name: ARFI magnitude and phase OpenRecon workflow smoke test
+    description: Verify every magnitude and phase frame is returned in two series.
+    command: |
+      python3 - <<'PY'
+      import importlib.util
+      import math
+      import sys
+      from pathlib import Path
+
+      import ismrmrd
+      import numpy as np
+
+      wrapper_path = Path("/opt/code/python-ismrmrd-server/arfirecon.py")
+      if not wrapper_path.exists():
+          wrapper_path = Path("arfirecon.py")
+      spec = importlib.util.spec_from_file_location("arfirecon", wrapper_path)
+      module = importlib.util.module_from_spec(spec)
+      sys.modules["arfirecon"] = module
+      spec.loader.exec_module(module)
+
+      def first(value):
+          return value[0] if isinstance(value, list) else value
+
+      def raw_phase(radians):
+          return (float(radians) + math.pi) * module.PHASE_WRAP / (2.0 * math.pi)
+
+      def make_image(
+          frame_index,
+          slice_index,
+          radians,
+          series_index=2,
+          phase=True,
+          volume_slices=1,
+          data_is_phase=None,
+          corner_offset=0.25,
+      ):
+          if data_is_phase is None:
+              data_is_phase = phase
+          stored_value = raw_phase(radians) if data_is_phase else float(radians)
+          data = np.full(
+              (1, volume_slices, 8, 8),
+              stored_value,
+              dtype=np.float32,
+          )
+          data[0, :, 0, 0] = (
+              raw_phase(radians + corner_offset)
+              if data_is_phase
+              else float(radians + 1.0)
+          )
+          image = ismrmrd.Image.from_array(data, transpose=False)
+          header = image.getHead()
+          header.image_type = (
+              ismrmrd.IMTYPE_PHASE if phase else ismrmrd.IMTYPE_MAGNITUDE
+          )
+          header.image_series_index = series_index
+          header.image_index = frame_index + 1
+          header.slice = slice_index
+          # Coronal source geometry: array rows run in the Head-Feet axis.
+          # The asymmetric corner pixel below makes a row reversal detectable.
+          header.read_dir = (1.0, 0.0, 0.0)
+          header.phase_dir = (0.0, 0.0, -1.0)
+          header.slice_dir = (0.0, 1.0, 0.0)
+          header.position = (0.0, float(slice_index * 5.0), 0.0)
+          header.field_of_view = (8.0, 8.0, float(5.0 * volume_slices))
+          image.setHead(header)
+
+          meta = ismrmrd.Meta()
+          meta["DataRole"] = "Image"
+          meta["SeriesDescription"] = "arfi_source"
+          meta["SequenceDescription"] = "arfi_source"
+          meta["ProtocolName"] = "arfi_source"
+          meta["SeriesNumberRangeNameUID"] = f"arfi_source_{series_index}"
+          meta["SeriesInstanceUID"] = f"1.2.826.0.1.3680043.10.543.{series_index}"
+          meta["SOPInstanceUID"] = (
+              f"1.2.826.0.1.3680043.10.543.{series_index}."
+              f"{slice_index + 1}.{frame_index + 1}"
+          )
+          meta["ComplexImageComponent"] = "PHASE" if phase else "MAGNITUDE"
+          meta["ImageType"] = (
+              "ORIGINAL\\PRIMARY\\P" if phase else "ORIGINAL\\PRIMARY\\M"
+          )
+          image.attribute_string = meta.serialize()
+          return image
+
+      frame_phases = [-1.0, 0.0, 1.0]
+      frame_magnitudes = [10.0, 20.0, 30.0]
+      magnitude_images = [
+          make_image(
+              frame,
+              slice_index,
+              magnitude + slice_index,
+              series_index=1,
+              phase=False,
+          )
+          for slice_index in range(2)
+          for frame, magnitude in enumerate(frame_magnitudes)
+      ]
+      phase_images = [
+          make_image(frame, slice_index, radians + 0.1 * slice_index)
+          for slice_index in range(2)
+          for frame, radians in enumerate(frame_phases)
+      ]
+      settings = module._settings_from_config(
+          {"parameters": {"arfischemes": "multiplefreq", "arfiblocklength": 3}}
+      )
+      input_images = magnitude_images + phase_images
+      result = module.compute_image_frames(input_images, settings)
+      assert result["frame_count"] == 3
+      assert result["slice_count"] == 2
+      assert result["magnitude"].shape == (3, 2, 8, 8)
+      assert result["phase"].shape == (3, 2, 8, 8)
+      assert set(result) == {
+          "frame_count",
+          "slice_count",
+          "magnitude_frame_anchor_images",
+          "phase_frame_anchor_images",
+          "magnitude_images",
+          "phase_images",
+          "magnitude",
+          "phase",
+          "arfi_phase_difference",
+          "with_fus_phase_standard_deviation",
+          "no_fus_phase_standard_deviation",
+      }
+      assert result["with_fus_phase_standard_deviation"] is None
+      assert result["no_fus_phase_standard_deviation"] is None
+      expected_multiple_no_fus = np.mean(
+          [
+              frame_magnitudes[0] * np.exp(1j * frame_phases[0]),
+              frame_magnitudes[2] * np.exp(1j * frame_phases[2]),
+          ]
+      )
+      expected_multiple_with_fus = (
+          frame_magnitudes[1] * np.exp(1j * frame_phases[1])
+      )
+      expected_multiple_phase = np.angle(
+          expected_multiple_with_fus * np.conj(expected_multiple_no_fus)
+      )
+      assert np.isclose(
+          result["arfi_phase_difference"][0, 3, 3],
+          expected_multiple_phase,
+          atol=1e-5,
+      )
+      multiple_no_fus, multiple_with_fus = (
+          module._multiple_frequency_frame_groups(10)
+      )
+      assert multiple_no_fus.tolist() == [0, 2, 3, 6, 7, 8]
+      assert multiple_with_fus.tolist() == [1, 4, 5, 9]
+      assert np.allclose(
+          result["magnitude"][:, 0, 3, 3],
+          frame_magnitudes,
+          atol=1e-5,
+      )
+      assert np.allclose(result["phase"][:, 0, 3, 3], frame_phases, atol=1e-5)
+      assert np.allclose(
+          result["phase"][:, 1, 3, 3],
+          np.asarray(frame_phases) + 0.1,
+          atol=1e-5,
+      )
+
+      outputs = module.build_output_images(result, settings, input_images)
+      assert len(outputs) == (2 * len(frame_phases) + 1) * 2
+      assert [int(image.image_series_index) for image in outputs] == [
+          *([101] * 6), *([102] * 6), *([103] * 2),
+      ]
+      assert [int(image.getHead().image_index) for image in outputs] == [
+          1, 2, 3, 4, 5, 6,
+          1, 2, 3, 4, 5, 6,
+          1, 2,
+      ]
+      assert all(np.asarray(image.data).shape == (1, 1, 8, 8) for image in outputs)
+      assert [int(image.getHead().slice) for image in outputs] == [
+          *([0, 1] * 6), 0, 1,
+      ]
+      assert np.allclose(
+          [image.getHead().position for image in outputs],
+          [(0.0, 0.0, 0.0), (0.0, 5.0, 0.0)] * 7,
+      )
+      module._validate_output_images(outputs, input_images)
+
+      # Preserve coronal orientation and pixel row order. Reversing the
+      # phase_dir or the y array axis would flip Head and Feet on the scanner.
+      for output in outputs:
+          header = output.getHead()
+          meta = ismrmrd.Meta.deserialize(output.attribute_string)
+          assert np.allclose(header.read_dir, (1.0, 0.0, 0.0))
+          assert np.allclose(header.phase_dir, (0.0, 0.0, -1.0))
+          assert np.allclose(header.slice_dir, (0.0, 1.0, 0.0))
+          assert first(meta.get("Keep_image_geometry")) == "1"
+          assert np.allclose(
+              [float(value) for value in meta.get("ImageRowDir")],
+              header.read_dir,
+          )
+          assert np.allclose(
+              [float(value) for value in meta.get("ImageColumnDir")],
+              header.phase_dir,
+          )
+
+      magnitude_pixels = np.asarray(outputs[0].data, dtype=np.float64)
+      magnitude_meta = ismrmrd.Meta.deserialize(outputs[0].attribute_string)
+      magnitude_slope = float(first(magnitude_meta.get("RescaleSlope")))
+      magnitude_intercept = float(first(magnitude_meta.get("RescaleIntercept")))
+      restored_magnitude = (
+          magnitude_pixels * magnitude_slope + magnitude_intercept
+      )
+      assert np.isclose(
+          restored_magnitude[0, 0, 0, 0],
+          11.0,
+          atol=magnitude_slope / 2.0,
+      )
+      assert np.isclose(
+          restored_magnitude[0, 0, -1, 0],
+          10.0,
+          atol=magnitude_slope / 2.0,
+      )
+
+      frame_series_count = len(frame_phases) * 2
+      for output_index, output in enumerate(outputs[: 2 * frame_series_count]):
+          meta = ismrmrd.Meta.deserialize(output.attribute_string)
+          is_phase = output_index >= frame_series_count
+          series_offset = output_index % frame_series_count
+          frame_in_series = series_offset // 2
+          slice_in_frame = series_offset % 2
+          assert first(meta.get("SeriesDescription")) == (
+              "arfi_source Phase" if is_phase else "arfi_source Magnitude"
+          )
+          assert first(meta.get("ARFIOutput")) == (
+              "ARFIPhase" if is_phase else "ARFIMagnitude"
+          )
+          assert first(meta.get("ARFIUnits")) == (
+              "degrees" if is_phase else "a.u."
+          )
+          assert first(meta.get("ARFIFrameIndex")) == str(frame_in_series + 1)
+          assert first(meta.get("ARFIScheme")) == "multiplefreq"
+          assert first(meta.get("ARFIBlockLength")) == "3"
+          if is_phase:
+              assert first(meta.get("ARFIDisplayConversion")) == "radians to degrees"
+          else:
+              assert first(meta.get("ARFIDisplayConversion")) is None
+          assert not any("BlochSiegert" in key for key in meta.keys())
+
+          slope = float(first(meta.get("RescaleSlope")))
+          intercept = float(first(meta.get("RescaleIntercept")))
+          restored = np.asarray(output.data, dtype=np.float64) * slope + intercept
+          expected = (
+              math.degrees(frame_phases[frame_in_series] + 0.1 * slice_in_frame)
+              if is_phase
+              else frame_magnitudes[frame_in_series] + slice_in_frame
+          )
+          assert np.isclose(restored[0, 0, 3, 3], expected, atol=slope / 2.0)
+
+      multiple_arfi_outputs = outputs[-2:]
+      multiple_arfi_output = multiple_arfi_outputs[0]
+      multiple_arfi_meta = ismrmrd.Meta.deserialize(
+          multiple_arfi_output.attribute_string
+      )
+      assert first(multiple_arfi_meta.get("SeriesDescription")) == (
+          "arfi_source ARFI phase"
+      )
+      assert first(multiple_arfi_meta.get("ARFIOutput")) == (
+          "ARFIPhaseDifference"
+      )
+      assert first(multiple_arfi_meta.get("ARFIScheme")) == "multiplefreq"
+      multiple_pixels = np.concatenate(
+          [np.asarray(image.data) for image in multiple_arfi_outputs],
+          axis=1,
+      )
+      assert int(np.min(multiple_pixels)) == 0
+      assert int(np.max(multiple_pixels)) == 4095
+      multiple_slope = float(first(multiple_arfi_meta.get("RescaleSlope")))
+      multiple_intercept = float(
+          first(multiple_arfi_meta.get("RescaleIntercept"))
+      )
+      restored_multiple = (
+          multiple_pixels.astype(np.float64) * multiple_slope
+          + multiple_intercept
+      )
+      assert np.isclose(
+          restored_multiple[0, 0, 3, 3],
+          math.degrees(expected_multiple_phase),
+          atol=multiple_slope / 2.0,
+      )
+
+      # Optional phase standard deviation uses each set's complex mean as its
+      # phase reference, followed by sample standard deviation of the residual
+      # wrapped phases. A one-frame set has zero standard deviation.
+      std_settings = module._settings_from_config({
+          "parameters": {
+              "arfischemes": "multiplefreq",
+              "arfiblocklength": 3,
+              "sendphasestandarddeviation": True,
+          }
+      })
+      assert std_settings["sendphasestandarddeviation"] is True
+      std_result = module.compute_image_frames(input_images, std_settings)
+      no_fus_values = np.asarray(frame_magnitudes)[[0, 2]] * np.exp(
+          1j * np.asarray(frame_phases)[[0, 2]]
+      )
+      no_fus_mean = np.mean(no_fus_values)
+      expected_no_fus_std = np.std(
+          np.angle(no_fus_values * np.conj(no_fus_mean)),
+          ddof=1,
+      )
+      assert np.isclose(
+          std_result["no_fus_phase_standard_deviation"][0, 3, 3],
+          expected_no_fus_std,
+          atol=1e-6,
+      )
+      assert np.allclose(
+          std_result["with_fus_phase_standard_deviation"],
+          0.0,
+      )
+
+      std_outputs = module.build_output_images(
+          std_result,
+          std_settings,
+          input_images,
+      )
+      assert len(std_outputs) == 18
+      assert [int(image.image_series_index) for image in std_outputs[-4:]] == [
+          104, 104, 105, 105,
+      ]
+      with_fus_std_meta = ismrmrd.Meta.deserialize(
+          std_outputs[-4].attribute_string
+      )
+      no_fus_std_meta = ismrmrd.Meta.deserialize(
+          std_outputs[-2].attribute_string
+      )
+      assert first(with_fus_std_meta.get("SeriesDescription")) == (
+          "arfi_source withFUS phase standard deviation"
+      )
+      assert first(with_fus_std_meta.get("ARFIOutput")) == (
+          "ARFIWithFUSPhaseStandardDeviation"
+      )
+      assert first(no_fus_std_meta.get("SeriesDescription")) == (
+          "arfi_source noFUS phase standard deviation"
+      )
+      assert first(no_fus_std_meta.get("ARFIOutput")) == (
+          "ARFINoFUSPhaseStandardDeviation"
+      )
+      no_fus_std_slope = float(first(no_fus_std_meta.get("RescaleSlope")))
+      no_fus_std_intercept = float(
+          first(no_fus_std_meta.get("RescaleIntercept"))
+      )
+      restored_no_fus_std = (
+          np.asarray(std_outputs[-2].data, dtype=np.float64)
+          * no_fus_std_slope
+          + no_fus_std_intercept
+      )
+      assert np.isclose(
+          restored_no_fus_std[0, 0, 3, 3],
+          math.degrees(expected_no_fus_std),
+          atol=max(no_fus_std_slope / 2.0, 1e-6),
+      )
+      module._validate_output_images(std_outputs, input_images)
+
+      # Retain compatibility with replay data where both source series are
+      # incorrectly marked as magnitude: the second equal-length series is phase.
+      fallback_images = [
+          make_image(frame, 0, radians, series_index=1, phase=False)
+          for frame, radians in enumerate(frame_phases)
+      ] + [
+          make_image(
+              frame,
+              0,
+              radians,
+              series_index=2,
+              phase=False,
+              data_is_phase=True,
+          )
+          for frame, radians in enumerate(frame_phases)
+      ]
+      fallback = module.compute_image_frames(fallback_images, settings)
+      assert fallback["frame_count"] == 3
+      assert np.allclose(fallback["phase"][:, 0, 3, 3], frame_phases, atol=1e-5)
+
+      volume_magnitude_images = [
+          make_image(
+              frame,
+              0,
+              magnitude,
+              series_index=1,
+              phase=False,
+              volume_slices=2,
+          )
+          for frame, magnitude in enumerate(frame_magnitudes)
+      ]
+      volume_phase_images = [
+          make_image(frame, 0, radians, series_index=2, volume_slices=2)
+          for frame, radians in enumerate(frame_phases)
+      ]
+      volume_images = volume_magnitude_images + volume_phase_images
+      volume_result = module.compute_image_frames(volume_images, settings)
+      assert volume_result["frame_count"] == 3
+      assert volume_result["slice_count"] == 2
+      assert volume_result["phase"].shape == (3, 2, 8, 8)
+      volume_outputs = module.build_output_images(
+          volume_result,
+          settings,
+          volume_images,
+      )
+      assert len(volume_outputs) == 14
+      assert all(
+          np.asarray(image.data).shape == (1, 1, 8, 8)
+          for image in volume_outputs
+      )
+      assert np.allclose(
+          [image.getHead().position for image in volume_outputs[:2]],
+          [(0.0, 0.0, 0.0), (0.0, 5.0, 0.0)],
+      )
+      module._validate_output_images(volume_outputs, volume_images)
+
+      # Single Freq groups frames sequentially. One-based odd groups are noFUS
+      # and one-based even groups are withFUS; both averages are complex-valued.
+      single_phases = [0.1, 0.1, 0.4, 0.4, 0.1, 0.1]
+      single_magnitude_images = [
+          make_image(
+              frame,
+              0,
+              10.0 + frame,
+              series_index=1,
+              phase=False,
+          )
+          for frame in range(len(single_phases))
+      ]
+      single_phase_images = [
+          make_image(
+              frame,
+              0,
+              radians,
+              series_index=2,
+              corner_offset=0.5 if frame in (2, 3) else 0.25,
+          )
+          for frame, radians in enumerate(single_phases)
+      ]
+      single_images = single_magnitude_images + single_phase_images
+      single_settings = module._settings_from_config(
+          {"parameters": {"arfischemes": "singlefreq", "arfiblocklength": 2}}
+      )
+      single_result = module.compute_image_frames(single_images, single_settings)
+      assert np.isclose(
+          single_result["arfi_phase_difference"][0, 3, 3],
+          0.3,
+          atol=1e-5,
+      )
+      assert np.isclose(
+          single_result["arfi_phase_difference"][0, 0, 0],
+          0.55,
+          atol=1e-5,
+      )
+      single_std_settings = module._settings_from_config({
+          "parameters": {
+              "arfischemes": "singlefreq",
+              "arfiblocklength": 2,
+              "sendphasestandarddeviation": True,
+          }
+      })
+      single_std_result = module.compute_image_frames(
+          single_images,
+          single_std_settings,
+      )
+      single_no_fus_indices, single_with_fus_indices = (
+          module._single_frequency_frame_groups(len(single_phases), 2)
+      )
+      assert single_no_fus_indices.tolist() == [0, 1, 4, 5]
+      assert single_with_fus_indices.tolist() == [2, 3]
+      single_complex_values = (
+          np.arange(10.0, 16.0) * np.exp(1j * np.asarray(single_phases))
+      )
+      single_no_fus_mean = np.mean(
+          single_complex_values[single_no_fus_indices]
+      )
+      expected_single_no_fus_std = np.std(
+          np.angle(
+              single_complex_values[single_no_fus_indices]
+              * np.conj(single_no_fus_mean)
+          ),
+          ddof=1,
+      )
+      assert np.isclose(
+          single_std_result["no_fus_phase_standard_deviation"][0, 3, 3],
+          expected_single_no_fus_std,
+          atol=1e-6,
+      )
+      assert np.isclose(
+          single_std_result["with_fus_phase_standard_deviation"][0, 3, 3],
+          0.0,
+          atol=1e-6,
+      )
+      assert len(module.build_output_images(
+          single_std_result,
+          single_std_settings,
+          single_images,
+      )) == 15
+      single_outputs = module.build_output_images(
+          single_result,
+          single_settings,
+          single_images,
+      )
+      assert len(single_outputs) == 13
+      assert [int(image.image_series_index) for image in single_outputs] == (
+          [101] * 6 + [102] * 6 + [103]
+      )
+      arfi_phase_output = single_outputs[-1]
+      arfi_phase_meta = ismrmrd.Meta.deserialize(
+          arfi_phase_output.attribute_string
+      )
+      assert first(arfi_phase_meta.get("SeriesDescription")) == (
+          "arfi_source ARFI phase"
+      )
+      assert first(arfi_phase_meta.get("ARFIOutput")) == "ARFIPhaseDifference"
+      assert first(arfi_phase_meta.get("ARFIBlockLength")) == "2"
+      arfi_phase_pixels = np.asarray(arfi_phase_output.data)
+      assert int(np.min(arfi_phase_pixels)) == 0
+      assert int(np.max(arfi_phase_pixels)) == 4095
+      arfi_slope = float(first(arfi_phase_meta.get("RescaleSlope")))
+      arfi_intercept = float(first(arfi_phase_meta.get("RescaleIntercept")))
+      restored_arfi_phase = arfi_phase_pixels.astype(np.float64) * arfi_slope
+      restored_arfi_phase += arfi_intercept
+      assert np.isclose(
+          restored_arfi_phase[0, 0, 3, 3],
+          math.degrees(0.3),
+          atol=arfi_slope / 2.0,
+      )
+      module._validate_output_images(single_outputs, single_images)
+
+      class FakeConnection:
+          def __init__(self, items):
+              self.items = iter(items)
+              self.sent_images = []
+              self.logging = []
+              self.closed = False
+
+          def __iter__(self):
+              return self
+
+          def __next__(self):
+              return next(self.items)
+
+          def send_image(self, images):
+              self.sent_images.append(list(images))
+
+          def send_logging(self, level, message):
+              self.logging.append((level, message))
+
+          def send_close(self):
+              self.closed = True
+
+      connection = FakeConnection(input_images + [None])
+      module.process(
+          connection,
+          {"parameters": {"arfischemes": "multiplefreq", "arfiblocklength": 3}},
+          None,
+      )
+      sent = [image for batch in connection.sent_images for image in batch]
+      assert connection.logging == []
+      assert connection.closed is True
+      assert len(connection.sent_images) == 3
+      assert len(sent) == (2 * len(frame_phases) + 1) * 2
+
+      print("ARFI magnitude and phase OpenRecon workflow tests passed")
+      PY
