@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import attrs
+import pytest
 
-from builder.release_plan import TOP_LEVEL_FIELD_TIERS, plan_recipe_changes
+from builder.release_plan import (
+    RETIREMENT_MANIFEST,
+    TOP_LEVEL_FIELD_TIERS,
+    parse_retirements,
+    plan_recipe_changes,
+)
 from builder.validation import ContainerRecipe
 
 
@@ -44,6 +50,27 @@ def test_auto_update_only_change_is_source_only() -> None:
     assert plan.decisions[0].reasons == ("auto-update-only",)
 
 
+@pytest.mark.parametrize(
+    "updates,reason",
+    [
+        (
+            {"copyright": [{"license": "MIT", "url": "https://example.com/license"}]},
+            "source-metadata-only",
+        ),
+        ({"icon": "data:image/png;base64,aGVsbG8="}, "catalog-only"),
+        ({"draft": True}, "source-metadata-only"),
+    ],
+)
+def test_non_image_recipe_metadata_is_source_only(updates, reason) -> None:
+    plan = plan_recipe_changes(
+        ["recipes/demo/build.yaml"], {"demo": recipe()}, {"demo": recipe(**updates)}
+    )
+
+    assert plan.candidate_recipes == []
+    assert plan.source_only_recipes == ["demo"]
+    assert plan.decisions[0].reasons == (reason,)
+
+
 def test_semantically_unchanged_yaml_is_source_only() -> None:
     data = recipe()
 
@@ -53,6 +80,48 @@ def test_semantically_unchanged_yaml_is_source_only() -> None:
 
     assert plan.candidate_recipes == []
     assert plan.decisions[0].reasons == ("yaml-only-change",)
+
+
+@pytest.mark.parametrize("updates", [
+    {"readme": "Updated instructions for {{ context.name }}/{{ context.version }}"},
+    {"readme_url": "https://example.com/guide"},
+    {"structured_readme": {"description": "Updated instructions"}},
+    {"categories": ["workflows"]},
+    {"readme": "New help", "categories": ["workflows"], "auto_update": {}},
+])
+def test_documentation_and_categories_preserve_image(updates) -> None:
+    plan = plan_recipe_changes(
+        ["recipes/demo/build.yaml"], {"demo": recipe()}, {"demo": recipe(**updates)}
+    )
+
+    assert plan.candidate_recipes == []
+    assert plan.source_only_recipes == ["demo"]
+
+
+@pytest.mark.parametrize("updates", [
+    {"readme": '{{ get_file("asset") }}'},
+    {"categories": ["{{ context.category }}"]},
+    {"readme": "Help", "version": "2.0"},
+    {"readme": "Help", "files": [{"name": "config", "contents": "changed"}]},
+    {"readme": "Help", "deploy": {"bins": ["new-command"]}},
+])
+def test_uncertain_templates_and_build_inputs_still_require_candidate(updates) -> None:
+    # Check both directions, including removal of a template with side effects.
+    for base, head in ((recipe(), recipe(**updates)), (recipe(**updates), recipe())):
+        plan = plan_recipe_changes(
+            ["recipes/demo/build.yaml"], {"demo": base}, {"demo": head}
+        )
+        assert plan.candidate_recipes == ["demo"]
+
+
+def test_documentation_with_staged_file_change_requires_candidate() -> None:
+    plan = plan_recipe_changes(
+        ["recipes/demo/build.yaml", "recipes/demo/config.txt"],
+        {"demo": recipe(readme="Old help")},
+        {"demo": recipe(readme="New help")},
+    )
+
+    assert plan.candidate_recipes == ["demo"]
 
 
 def test_runtime_recipe_field_change_requires_candidate() -> None:
@@ -101,3 +170,78 @@ def test_unclassified_field_fails_closed_to_candidate() -> None:
 
     assert plan.candidate_recipes == ["demo"]
     assert plan.decisions[0].reasons == ("unclassified-field",)
+
+
+def test_shared_macro_rebuilds_all_consumers_without_recipe_edits():
+    dependent = recipe(build={"directives": [{"include": "macros/shared/tool.yaml"}]})
+    unrelated = recipe()
+    data = {"first": dependent, "second": dependent, "other": unrelated}
+    plan = plan_recipe_changes(["macros/shared/tool.yaml"], data, data)
+    assert plan.candidate_recipes == ["first", "second"]
+    assert all(d.reasons == ("shared-build-input-changed",) for d in plan.decisions)
+
+
+def test_shared_watch_uses_path_boundaries():
+    watched = recipe(auto_update={"method": "sources", "local": ["macros/shared"]})
+    data = {"demo": watched}
+    assert not plan_recipe_changes(["macros/shared-other/code.py"], data, data).decisions
+    assert plan_recipe_changes(["macros/shared/code.py"], data, data).candidate_recipes == ["demo"]
+
+
+def test_unlisted_recipe_removal_is_rejected():
+    with pytest.raises(ValueError, match=RETIREMENT_MANIFEST):
+        plan_recipe_changes(
+            ["recipes/demo/build.yaml"], {"demo": recipe()}, {"demo": None}
+        )
+
+
+def test_retired_recipe_is_neither_built_nor_validated():
+    plan = plan_recipe_changes(
+        ["recipes/demo/build.yaml", "recipes/demo/fulltest.yaml"],
+        {"demo": recipe()},
+        {"demo": None},
+        {"demo": "successor"},
+    )
+
+    assert plan.retired_recipes == ["demo"]
+    assert plan.decisions[0].reasons == ("recipe-retired",)
+    # changed_recipes drives builder/validation.py by path in CI, so a recipe
+    # that no longer exists must not appear there.
+    assert plan.changed_recipes == []
+    assert plan.candidate_recipes == []
+    assert plan.source_only_recipes == []
+    assert plan.as_dict()["retired_recipes"] == ["demo"]
+
+
+def test_retiring_a_recipe_that_still_exists_is_rejected():
+    with pytest.raises(ValueError, match="still exists"):
+        plan_recipe_changes(
+            ["recipes/demo/build.yaml"],
+            {"demo": recipe()},
+            {"demo": recipe(version="2.0.0")},
+            {"demo": ""},
+        )
+
+
+def test_retirement_manifest_requires_a_named_recipe_and_reason():
+    assert parse_retirements(None) == {}
+    assert parse_retirements({"retired": []}) == {}
+    assert parse_retirements(
+        {"retired": [{"recipe": "old", "reason": "renamed", "superseded_by": "new"}]}
+    ) == {"old": "new"}
+    # A successor is optional; work that simply ended still has to say why.
+    assert parse_retirements({"retired": [{"recipe": "old", "reason": "gone"}]}) == {
+        "old": ""
+    }
+    for document, message in (
+        ({"retired": {"old": "new"}}, "list"),
+        ({"retired": [{"reason": "renamed"}]}, "plain 'recipe' directory name"),
+        ({"retired": [{"recipe": "../escape", "reason": "x"}]}, "plain 'recipe'"),
+        ({"retired": [{"recipe": "old", "reason": "  "}]}, "non-empty 'reason'"),
+        (
+            {"retired": [{"recipe": "old", "reason": "a"}, {"recipe": "old", "reason": "b"}]},
+            "twice",
+        ),
+    ):
+        with pytest.raises(ValueError, match=message):
+            parse_retirements(document)

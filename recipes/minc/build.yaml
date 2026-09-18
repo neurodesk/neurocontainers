@@ -8,6 +8,23 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://packages.bic.mni.mcgill.ca/minc-toolkit/Debian/
+    version_regex: minc-toolkit-(?P<version>\d+(?:\.\d+)+)-\d+-Ubuntu_18\.04-x86_64\.deb$
+    download_base: https://packages.bic.mni.mcgill.ca/minc-toolkit/Debian/
+    target:
+      file: archive
+      variables:
+        upstream_version: version
+  - id: volgenmodel
+    method: github_commit
+    repo: CAIsr/volgenmodel-nipype
+    target:
+      variable: volgenmodel_revision
 build:
   kind: neurodocker
 
@@ -15,15 +32,57 @@ build:
   pkg-manager: apt
 
   directives:
-    - template:
-        name: minc
-        version: 1.9.18
-
+    - install:
+      - ca-certificates
+      - curl
+      - libgl1-mesa-dev
+      - libice6
+      - libsm6
+      - libx11-6
+      - libxext6
+      - libxi6
+      - libxmu6
+      - libgomp1
+      - libjpeg62
+      - unzip
+      - octave
+      - libglu1-mesa
+      - libgl1-mesa-glx
+      - perl
+      - imagemagick
+      - bc
+      - ed
+      - libc6
+      - libstdc++6
+      - gdebi-core
+      - binutils
+      - git
+    - environment:
+        MINC_TOOLKIT: /opt/minc-{{ context.upstream_version }}
+        MINC_TOOLKIT_VERSION: /opt/minc-{{ context.upstream_version }}
+        PATH: /opt/minc-{{ context.upstream_version }}/bin:/opt/minc-{{ context.upstream_version }}/volgenmodel-nipype/extra-scripts:/opt/minc-{{
+          context.upstream_version }}/pipeline:$PATH
+        PERL5LIB: /opt/minc-{{ context.upstream_version }}/perl:/opt/minc-{{ context.upstream_version }}/pipeline:${PERL5LIB}
+        LD_LIBRARY_PATH: /opt/minc-{{ context.upstream_version }}/lib:/opt/minc-{{ context.upstream_version }}/lib/InsightToolkit:${LD_LIBRARY_PATH}
+        MNI_DATAPATH: /opt/minc-{{ context.upstream_version }}/share
+        MINC_FORCE_V2: '1'
+        MINC_COMPRESS: '4'
+        VOLUME_CACHE_THRESHOLD: '-1'
+        MANPATH: /opt/minc-{{ context.upstream_version }}/man:${MANPATH}
+    - run:
+      - cd / && ar p {{ get_file("archive") }} data.tar.gz | tar -xz
+      - ln -s /opt/minc/{{ context.upstream_version }} /opt/minc-{{ context.upstream_version }}
+      - mkdir -p /opt/minc-{{ context.upstream_version }}/volgenmodel-nipype
+      - tar -xzf {{ get_file("volgenmodel") }} -C /opt/minc-{{ context.upstream_version }}/volgenmodel-nipype --strip-components
+        1
+      - tar -xzf {{ get_file("beast") }} -C /opt/minc-{{ context.upstream_version }}/share
+      - unzip -q {{ get_file("mni_09a") }} -d /opt/minc-{{ context.upstream_version }}/share/icbm152_model_09a
+      - unzip -q {{ get_file("mni_09c") }} -d /opt/minc-{{ context.upstream_version }}/share/icbm152_model_09c
 deploy:
   path:
-    - /opt/minc-1.9.18/bin/
-    - /opt/minc-1.9.18/volgenmodel-nipype/extra-scripts
-    - /opt/minc-1.9.18/pipeline
+    - /opt/minc-{{ context.upstream_version }}/bin/
+    - /opt/minc-{{ context.upstream_version }}/volgenmodel-nipype/extra-scripts
+    - /opt/minc-{{ context.upstream_version }}/pipeline
 
 readme: |-
   ----------------------------------
@@ -53,3 +112,18 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAYAAACOEfKtAAAACXBI
 gui_apps:
   - name: "registerGUI"
     exec: "register"
+variables:
+  upstream_version: 1.9.18
+  volgenmodel_revision: 9e2d8d9cb9e42925a612c9c81bd081c095879aec
+files:
+- name: archive
+  url: https://packages.bic.mni.mcgill.ca/minc-toolkit/Debian/minc-toolkit-1.9.18-20200813-Ubuntu_18.04-x86_64.deb
+  sha256: 43701593e9f366604b45b066849c4bb065e9cf5f41602af6e523366e50552947
+- name: volgenmodel
+  url: https://github.com/CAIsr/volgenmodel-nipype/archive/{{ context.volgenmodel_revision }}.tar.gz
+- name: beast
+  url: https://packages.bic.mni.mcgill.ca/tgz/beast-library-1.1.tar.gz
+- name: mni_09a
+  url: https://www.bic.mni.mcgill.ca/~vfonov/icbm/2009/mni_icbm152_nlin_sym_09a_minc2.zip
+- name: mni_09c
+  url: https://www.bic.mni.mcgill.ca/~vfonov/icbm/2009/mni_icbm152_nlin_sym_09c_minc2.zip

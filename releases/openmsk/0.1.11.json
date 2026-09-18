@@ -1,7 +1,7 @@
 {
   "apps": {
     "openmsk 0.1.11": {
-      "version": "20260814",
+      "version": "20260902",
       "exec": "",
       "apptainer_args": []
     }

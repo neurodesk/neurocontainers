@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "cartool 5.06.05": {
+      "version": "20260914",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "electrophysiology",
+    "visualization"
+  ]
+}

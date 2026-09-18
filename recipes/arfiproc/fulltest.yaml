@@ -2,7 +2,7 @@
 # Focused verification for the shipped OpenRecon runtime and module import path.
 
 name: arfiproc
-version: 1.0.0
+version: "1.1.0"
 
 test_data:
   output_dir: test_output
@@ -15,9 +15,9 @@ setup:
 
 tests:
   - name: Native runtime
-    description: Verify the local image runs on a supported architecture
+    description: Verify the local image runs on x86_64
     script: |
-      uname -m | grep -E '^(x86_64|aarch64)$'
+      test "$(uname -m)" = x86_64
 
   - name: OpenRecon server help
     description: Verify the shipped python-ismrmrd server entrypoint starts correctly

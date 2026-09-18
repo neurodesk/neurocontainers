@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import copy
-import csv
 import json
 import logging
 import os
@@ -31,7 +30,7 @@ KNEEPIPELINE_CONFIG = Path(
 )
 NNUNET_NUMPY_COMPAT_PATH = os.environ.get("OPENMSK_NNUNET_NUMPY_COMPAT_PATH", "/opt/openmsk_compat")
 OPENMSK_PIPELINE_TIMEOUT = int(os.environ.get("OPENMSK_PIPELINE_TIMEOUT", "5400"))
-DEFAULT_SEG_MODEL = "acl_qdess_bone_july_2024"
+DEFAULT_SEG_MODEL = "goyal_sagittal"
 
 # Public OpenRecon segmentations use the same DOSMA-native labels as the
 # upstream OpenMSK monolith. The modular KneePipeline post-processing steps use
@@ -2737,15 +2736,13 @@ def _collect_metrics_comment(output_dir):
 
 def _collect_metrics_outputs(output_dir):
     summaries = []
-    for json_pattern, csv_pattern, label in (
-        ("*_thickness_results.json", "*_thickness_results.csv", "thickness"),
-        ("*_t2_results.json", None, "t2"),
-        ("bscore_results.json", None, "bscore"),
+    for json_pattern, label in (
+        ("*_thickness_results.json", "thickness"),
+        ("*_t2_results.json", "t2"),
+        ("bscore_results.json", "bscore"),
     ):
         json_path = _find_single_output(output_dir, json_pattern)
-        csv_path = _find_single_output(output_dir, csv_pattern) if csv_pattern else None
         payload = None
-        rows = []
 
         if json_path is not None:
             try:
@@ -2753,59 +2750,22 @@ def _collect_metrics_outputs(output_dir):
             except Exception:
                 payload = None
 
-        if csv_path is not None:
-            rows = _read_metrics_csv_rows(csv_path)
-
-        if payload is None and not rows:
+        if payload is None:
             continue
         summaries.append(
             {
                 "label": label,
                 "json_path": json_path,
-                "csv_path": csv_path,
                 "payload": payload,
-                "rows": rows,
             }
         )
     return summaries
 
 
-def _read_metrics_csv_rows(path):
-    try:
-        with open(path, newline="") as f:
-            return list(csv.DictReader(f))
-    except Exception:
-        logging.warning("Failed to read OpenMSK metrics CSV %s:\n%s", path, traceback.format_exc())
-        return []
-
-
 def _summarize_metrics_output(metrics_output):
     label = metrics_output["label"]
-    summaries = []
-    summary = _summarize_json_metrics(f"{label}.json", metrics_output.get("payload"))
-    if summary:
-        summaries.append(summary)
-
-    summary = _summarize_csv_metrics(f"{label}.csv", metrics_output.get("rows") or [])
-    if summary:
-        summaries.append(summary)
-
-    return "; ".join(summaries)
-
-
-def _summarize_csv_metrics(label, rows):
-    if not rows:
-        return ""
-    parts = []
-    for key in _csv_fieldnames(rows[0])[:6]:
-        value = _coerce_float_or_none(rows[0].get(key))
-        if value is not None:
-            parts.append(f"{key}={value:.4g}")
-    return f"{label}: " + ", ".join(parts) if parts else label
-
-
-def _csv_fieldnames(row):
-    return sorted(str(key) for key in row.keys() if key is not None)
+    source = label if label in {"thickness", "t2"} else f"{label}.json"
+    return _summarize_json_metrics(source, metrics_output.get("payload"))
 
 
 def _summarize_json_metrics(label, payload):
@@ -2840,6 +2800,7 @@ def _metrics_report_rows(metrics_outputs):
     rows = []
     for metrics_output in metrics_outputs:
         label = metrics_output["label"]
+        source = label if label in {"thickness", "t2"} else f"{label}.json"
         payload = metrics_output.get("payload")
         if isinstance(payload, dict):
             for key in sorted(payload.keys()):
@@ -2847,25 +2808,9 @@ def _metrics_report_rows(metrics_outputs):
                 if isinstance(value, (int, float)):
                     rows.append(
                         {
-                            "source": f"{label}.json",
-                            "metric": str(key),
-                            "value": _format_metric_value(value),
-                        }
-                    )
-
-        csv_rows = metrics_output.get("rows") or []
-        for row_index, csv_row in enumerate(csv_rows, start=1):
-            source = f"{label}.csv"
-            if len(csv_rows) > 1:
-                source = f"{source} row {row_index}"
-            for key in _csv_fieldnames(csv_row):
-                value = csv_row.get(key)
-                if value not in (None, ""):
-                    rows.append(
-                        {
                             "source": source,
                             "metric": str(key),
-                            "value": str(value),
+                            "value": _format_metric_value(value),
                         }
                     )
     return rows
@@ -2921,10 +2866,9 @@ def _render_metrics_report_pages(metrics_outputs, width, height):
         f"Version: {OPENMSK_VERSION}",
         "Files: "
         + ", ".join(
-            path.name
+            output["json_path"].name
             for output in metrics_outputs
-            for path in (output.get("json_path"), output.get("csv_path"))
-            if path is not None
+            if output.get("json_path") is not None
         ),
     ]
     table_top = margin + (len(title_lines) + 1) * line_height + 8

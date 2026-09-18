@@ -3,8 +3,54 @@ from __future__ import annotations
 import json
 
 import pytest
+import yaml
 
 from tools.generate_apps_json import generate_apps_json, merge_container_releases
+
+
+@pytest.mark.parametrize("container,source", [("demo", None), ("demo_gpu_arm64", "demo")])
+def test_catalog_refresh_preserves_published_artifacts(tmp_path, container, source) -> None:
+    release_dir = tmp_path / "releases" / container
+    release_dir.mkdir(parents=True)
+    release = {
+        "apps": {f"{container} 1.0": {"version": "20260101", "exec": "demo"}},
+        "categories": ["programming"],
+    }
+    if source:
+        release.update(recipe=source, variant="gpu_arm64", architecture="aarch64")
+    release_path = release_dir / "1.0.json"
+    original = json.dumps(release)
+    release_path.write_text(original)
+    recipe_dir = tmp_path / "recipes" / (source or container)
+    recipe_dir.mkdir(parents=True)
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump({"categories": ["workflows"]}))
+    output = tmp_path / "apps.json"
+
+    generate_apps_json(str(release_dir.parent), str(output))
+
+    catalog = json.loads(output.read_text())[container]
+    assert catalog["categories"] == ["workflows"]
+    assert catalog["apps"] == release["apps"]
+    assert release_path.read_text() == original
+
+
+@pytest.mark.parametrize("recipe", [None, {}, {"categories": ["{{ context.category }}"]}])
+def test_catalog_retains_release_categories_when_recipe_cannot_supply_them(tmp_path, recipe) -> None:
+    release_dir = tmp_path / "releases" / "demo"
+    release_dir.mkdir(parents=True)
+    (release_dir / "1.0.json").write_text(json.dumps({
+        "apps": {"demo 1.0": {"version": "20260101"}},
+        "categories": ["programming"],
+    }))
+    if recipe is not None:
+        recipe_dir = tmp_path / "recipes" / "demo"
+        recipe_dir.mkdir(parents=True)
+        (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe))
+    output = tmp_path / "apps.json"
+
+    generate_apps_json(str(release_dir.parent), str(output))
+
+    assert json.loads(output.read_text())["demo"]["categories"] == ["programming"]
 
 
 def test_merge_container_releases_preserves_visibility_flags(tmp_path) -> None:

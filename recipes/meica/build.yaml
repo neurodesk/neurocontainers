@@ -1,10 +1,54 @@
+variables:
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  upstream_version: 4.0.1
+
 name: meica
 version: 4.0.1
 copyright:
   - license: CC-BY-NC-SA-4.0
-    url: https://github.com/ME-ICA/me-ica/blob/{{ context.version }}/LICENSE
+    url: https://github.com/ME-ICA/me-ica/blob/{{ context.upstream_version }}/LICENSE
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  sources:
+  - id: meica
+    method: github_release
+    repo: ME-ICA/me-ica
+    target:
+      variable: upstream_version
+      value: version
+      fulltest_variable: upstream_version
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+  local:
+  - macros/openrecon
 
 build:
   kind: neurodocker
@@ -48,8 +92,8 @@ build:
 
     - environment:
         MEICA_REPO: /opt/meica/me-ica
-        MEICA_SOURCE_TAG: "{{ context.version }}"
-        MEICA_RUNTIME_TAG: "{{ context.version }}"
+        MEICA_SOURCE_TAG: "{{ context.upstream_version }}"
+        MEICA_RUNTIME_TAG: "{{ context.upstream_version }}"
         MEICA_AFNI_RUNTIME: /opt/meica/me-ica/meica-afni-runtime
         MEICA_AFNI_RUNTIME_ACTIVATE: /opt/meica/me-ica/meica-afni-runtime/activate_meica_afni
         MEICA_REQUIRE_DISTRIBUTED_AFNI: "1"
@@ -140,9 +184,9 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAAXNS
 
 files:
   - name: meica_source
-    url: https://github.com/ME-ICA/me-ica/archive/refs/tags/{{ context.version }}.tar.gz
+    url: https://github.com/ME-ICA/me-ica/archive/refs/tags/{{ context.upstream_version }}.tar.gz
   - name: meica_afni_runtime
-    url: https://github.com/ME-ICA/meica-afni/releases/download/{{ context.version }}/meica-afni-runtime-linux-x86_64.tar.gz
+    url: https://github.com/ME-ICA/meica-afni/releases/download/{{ context.upstream_version }}/meica-afni-runtime-linux-x86_64.tar.gz
   - name: meica_launcher
     filename: meica-launcher
   - name: meica_skullstrip_fallback

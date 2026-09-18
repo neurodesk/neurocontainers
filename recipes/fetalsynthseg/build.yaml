@@ -8,9 +8,22 @@ copyright:
 architectures:
   - x86_64
 
+variables:
+  base_image_digest: sha256:380b4ce81cb13f67ce8a09391e557f964eb6b1befbdbb405dd8e08dc474c620f
+
+auto_update:
+  method: sources
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: vzalevskyi/fetalsynthseg
+      tag: latest
+      target:
+        variable: base_image_digest
+
 build:
   kind: neurodocker
-  base-image: vzalevskyi/fetalsynthseg:latest
+  base-image: vzalevskyi/fetalsynthseg:latest@{{ context.base_image_digest }}
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false

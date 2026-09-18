@@ -1,10 +1,33 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from tools import sync_openrecon
+
+
+def test_sync_openrecon_runs_as_workflow_script(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    script = repo_root / "tools" / "sync_openrecon.py"
+    isolated_runner = (
+        "import runpy, sys, types; "
+        "sys.modules['yaml'] = types.ModuleType('yaml'); "
+        "sys.argv = ['sync_openrecon.py', '--help']; "
+        f"runpy.run_path({str(script)!r}, run_name='__main__')"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-S", "-c", isolated_runner],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def write_source_recipe(root: Path, recipe: str = "demo") -> None:
@@ -13,7 +36,41 @@ def write_source_recipe(root: Path, recipe: str = "demo") -> None:
     (recipe_dir / "OpenReconLabel.json").write_text(
         '{"general": {"id": "demo"}}\n', encoding="utf-8"
     )
+    (recipe_dir / "OpenReconLabel.gpu.json").write_text(
+        '{"general": {"id": "demo_gpu"}}\n', encoding="utf-8"
+    )
     (recipe_dir / "OpenReconREADME.md").write_text("# Demo\n", encoding="utf-8")
+    (recipe_dir / "build.yaml").write_text(
+        "name: demo\n"
+        "architectures:\n"
+        "  - x86_64\n"
+        "variants:\n"
+        "  gpu:\n"
+        "    architecture: x86_64\n",
+        encoding="utf-8",
+    )
+
+
+def write_release_metadata(
+    root: Path, container: str, version: str, build_date: str
+) -> None:
+    release = root / "releases" / container
+    release.mkdir(parents=True, exist_ok=True)
+    (release / f"{version}.json").write_text(
+        json.dumps(
+            {
+                "apps": {
+                    f"{container} {version}": {
+                        "version": build_date,
+                        "exec": "",
+                        "apptainer_args": [],
+                    }
+                },
+                "categories": ["other"],
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.parametrize(
@@ -74,6 +131,168 @@ def test_prepare_recipe_bootstraps_missing_target(tmp_path: Path) -> None:
         encoding="utf-8"
     )
     assert prepared.notes[0].startswith("- Create `recipes/demo`")
+
+
+def test_prepare_recipe_separates_two_part_container_and_openrecon_versions(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    (target / "params.sh").write_text(
+        "#!/bin/bash\n"
+        "export toolName=demo\n"
+        "export version=0.1\n"
+        "export baseDockerImage=vnmd/${toolName}_${version}\n",
+        encoding="utf-8",
+    )
+
+    prepared = sync_openrecon.prepare_recipe(
+        source_root, openrecon_root, "demo", "0.2"
+    )
+
+    assert prepared is not None
+    params = (target / "params.sh").read_text(encoding="utf-8")
+    assert "export version=0.2\n" in params
+    assert "export openrecon_version=0.2.0\n" in params
+    assert "export baseDockerImage=vnmd/${toolName}_${version}\n" in params
+
+
+def test_prepare_recipe_points_dated_image_at_the_published_build(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    write_release_metadata(source_root, "demo", "0.2.0", "20260910")
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    (target / "params.sh").write_text(
+        "#!/bin/bash\n"
+        "export toolName=demo\n"
+        "export version=0.1.0\n"
+        "export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20260907\n",
+        encoding="utf-8",
+    )
+
+    prepared = sync_openrecon.prepare_recipe(
+        source_root, openrecon_root, "demo", "0.2.0"
+    )
+
+    assert prepared is not None
+    params = (target / "params.sh").read_text(encoding="utf-8")
+    assert (
+        "export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20260910\n"
+        in params
+    )
+    assert any("20260907" in note and "20260910" in note for note in prepared.notes)
+
+
+def test_prepare_recipe_keeps_an_already_current_image_tag(tmp_path: Path) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    write_release_metadata(source_root, "demo", "0.2.0", "20260910")
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    (target / "params.sh").write_text(
+        "#!/bin/bash\n"
+        "export version=0.1.0\n"
+        "export baseDockerImage=ghcr.io/neurodesk/demo_0.2.0:20260910\n",
+        encoding="utf-8",
+    )
+
+    prepared = sync_openrecon.prepare_recipe(
+        source_root, openrecon_root, "demo", "0.2.0"
+    )
+
+    assert prepared is not None
+    assert "ghcr.io/neurodesk/demo_0.2.0:20260910" in (
+        target / "params.sh"
+    ).read_text(encoding="utf-8")
+    assert not any("image tag" in note for note in prepared.notes)
+
+
+def test_prepare_recipe_reports_an_unresolved_build_date(tmp_path: Path) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    (target / "params.sh").write_text(
+        "#!/bin/bash\n"
+        "export version=0.1.0\n"
+        "export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20260907\n",
+        encoding="utf-8",
+    )
+
+    prepared = sync_openrecon.prepare_recipe(
+        source_root, openrecon_root, "demo", "0.2.0"
+    )
+
+    assert prepared is not None
+    assert "${version}:20260907\n" in (target / "params.sh").read_text(
+        encoding="utf-8"
+    )
+    assert any("20260907" in note for note in prepared.notes)
+
+
+def test_prepare_recipe_resolves_the_build_date_of_a_named_variant(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    write_release_metadata(source_root, "demo_gpu", "1.2.3", "20260910")
+    target = openrecon_root / "recipes" / "demo_gpu"
+    target.mkdir(parents=True)
+    (target / "params.sh").write_text(
+        "#!/bin/bash\n"
+        "export version=1.2.2\n"
+        "export baseDockerImage=ghcr.io/neurodesk/demo_gpu_1.2.2:20260904\n",
+        encoding="utf-8",
+    )
+
+    prepared = sync_openrecon.prepare_recipe(
+        source_root, openrecon_root, "demo", "1.2.3", variant="gpu"
+    )
+
+    assert prepared is not None
+    assert "ghcr.io/neurodesk/demo_gpu_1.2.2:20260910" in (
+        target / "params.sh"
+    ).read_text(encoding="utf-8")
+
+
+def test_prepare_recipe_resolves_named_variant_to_concrete_container(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+
+    prepared = sync_openrecon.prepare_recipe(
+        source_root,
+        openrecon_root,
+        "demo",
+        "1.2.3",
+        variant="gpu",
+    )
+
+    assert prepared is not None
+    target = openrecon_root / "recipes" / "demo_gpu"
+    assert (target / "OpenReconLabel.json").read_text(encoding="utf-8") == (
+        '{"general": {"id": "demo_gpu"}}\n'
+    )
+    assert "export toolName=demo_gpu" in (target / "params.sh").read_text(
+        encoding="utf-8"
+    )
+    assert prepared.paths == (
+        "recipes/demo_gpu/OpenReconLabel.json",
+        "recipes/demo_gpu/params.sh",
+        "recipes/demo_gpu/README.md",
+    )
 
 
 def test_prepare_recipe_skips_recipes_without_openrecon_label(tmp_path: Path) -> None:
@@ -173,3 +392,45 @@ def test_unchanged_metadata_dispatches_openrecon_rebuild(
         "-f",
         'applications=["demo"]',
     ] in commands
+
+
+# Docker rejects "+", so build metadata cannot carry the post-release marker.
+DOCKER_TAG_PATTERN = __import__("re").compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
+
+
+@pytest.mark.parametrize("container_version", ["1.6.0.post1", "1.0.0.post1", "2.9.post2"])
+def test_post_release_versions_stay_schema_valid_and_taggable(container_version):
+    # The updater rebuilds a container as X.Y.Z.postN when only its
+    # dependencies moved, and OpenRecon publishes that version both into a
+    # schema-checked label and into a Docker tag.
+    metadata_version = sync_openrecon.openrecon_version(container_version)
+
+    assert sync_openrecon.OPENRECON_SEMVER_PATTERN.fullmatch(metadata_version)
+    assert DOCKER_TAG_PATTERN.fullmatch(f"V{metadata_version}".lower())
+    assert metadata_version != container_version
+
+
+def test_post_release_container_version_is_kept_for_docker_operations(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    (target / "params.sh").write_text(
+        "#!/bin/bash\n"
+        "export toolName=demo\n"
+        "export version=1.6.0\n"
+        "export baseDockerImage=vnmd/${toolName}_${version}\n",
+        encoding="utf-8",
+    )
+
+    prepared = sync_openrecon.prepare_recipe(
+        source_root, openrecon_root, "demo", "1.6.0.post1"
+    )
+
+    assert prepared is not None
+    params = (target / "params.sh").read_text(encoding="utf-8")
+    assert "export version=1.6.0.post1\n" in params
+    assert "export openrecon_version=1.6.0-post1\n" in params

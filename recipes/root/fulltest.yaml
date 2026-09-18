@@ -34,8 +34,8 @@ tests:
 
   - name: ROOT config version
     description: Check root-config reports correct version
-    command: root-config --version
-    expected_output_contains: "6.22/02"
+    command: root-config --version | tr '/' '.'
+    expected_output_contains: "${version}"
     expected_exit_code: 0
 
   - name: ROOT features list
@@ -107,8 +107,8 @@ tests:
   # ==========================================================================
   - name: ROOT interpreter basic test
     description: Test ROOT interpreter with simple expression
-    command: "root -b -l -q -e 'gROOT->GetVersion()' 2>&1"
-    expected_output_contains: "6.22/02"
+    command: "root -b -l -q -e 'gROOT->GetVersion()' 2>&1 | tr '/' '.'"
+    expected_output_contains: "${version}"
     ignore_exit_code: true
 
   - name: ROOT cout output

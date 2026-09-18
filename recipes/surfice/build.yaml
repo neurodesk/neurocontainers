@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: neurolabusc/surf-ice
+
 build:
   kind: neurodocker
 
@@ -78,7 +82,7 @@ gui_apps:
 
 files:
   - name: surfice_linux_zip
-    url: https://github.com/neurolabusc/surf-ice/releases/download/v1.0.20210730/surfice_linux.zip
+    url: https://github.com/neurolabusc/surf-ice/releases/download/v{{ context.version }}/surfice_linux.zip
 
   - name: libqt5pas1_2_9_0_amd64_deb
     url: https://github.com/davidbannon/libqt5pas/releases/download/v1.2.9/libqt5pas1_2.9-0_amd64.deb

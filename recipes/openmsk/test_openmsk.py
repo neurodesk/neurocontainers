@@ -304,9 +304,17 @@ def test_original_passthrough_splits_three_source_volumes_into_labeled_subseries
 def test_recipe_uses_system_cuda_and_minimal_pymskt_dependencies():
     recipe = yaml.safe_load(Path("build.yaml").read_text())
     files = {entry["name"]: entry for entry in recipe["files"]}
+    packaged_config = json.loads(files["openmsk_config"]["contents"])
     reference = files["pymskt_right_knee_reference"]
     reference_url = recipe["variables"]["pymskt_right_knee_reference_url"]
 
+    assert "dosma_model_url" not in recipe["variables"]
+    assert "dosma_qdess_model" not in files
+    assert packaged_config["default_seg_model"] == "goyal_sagittal"
+    assert (
+        packaged_config["models"]["acl_qdess_bone_july_2024"]
+        == packaged_config["models"]["goyal_sagittal"]
+    )
     assert reference["url"] == "{{ context.pymskt_right_knee_reference_url }}"
     assert "/gattia/pymskt/" in reference_url
     assert "/main/" not in reference_url
@@ -948,9 +956,9 @@ def test_process_sends_subregions_and_metrics_report_when_outputs_exist(monkeypa
 
 def test_write_run_config_preserves_requested_segmentation_model(tmp_path, monkeypatch):
     source_config = {
-        "default_seg_model": "acl_qdess_bone_july_2024",
+        "default_seg_model": "goyal_sagittal",
         "models": {
-            "acl_qdess_bone_july_2024": "/opt/DOSMA_WEIGHTS/default.h5",
+            "acl_qdess_bone_july_2024": "/opt/DOSMA_WEIGHTS/sagittal_best_model.h5",
             "goyal_sagittal": "/opt/DOSMA_WEIGHTS/sagittal_best_model.h5",
         },
     }
@@ -983,20 +991,23 @@ def test_openrecon_label_has_minimal_dess_controls_and_packaged_model_choices():
     assert params["config"]["values"][0]["name"]["en"] == "DESS"
     assert params["sendoriginal"]["default"] is True
     assert [value["id"] for value in params["segmodel"]["values"]] == [
-        "acl_qdess_bone_july_2024",
         "goyal_sagittal",
         "goyal_coronal",
         "goyal_axial",
         "nnunet_knee",
     ]
+    assert params["segmodel"]["default"] == "goyal_sagittal"
     model_names = {
         value["id"]: value["name"]["en"]
         for value in params["segmodel"]["values"]
     }
-    assert (
-        model_names["acl_qdess_bone_july_2024"]
-        == "DOSMA DESS bone/cartilage July 2024"
-    )
+    assert model_names == {
+        "goyal_sagittal": "Goyal sagittal",
+        "goyal_coronal": "Goyal coronal",
+        "goyal_axial": "Goyal axial",
+        "nnunet_knee": "nnU-Net knee",
+    }
+    assert "acl_qdess_bone_july_2024" not in json.dumps(label)
     assert "qDESS" not in json.dumps(label)
 
 
@@ -1028,7 +1039,7 @@ def test_run_kneepipeline_segmentation_returns_step_summary(tmp_path, monkeypatc
                     "segmentation": {
                         "is_qdess": True,
                         "skip_steps": [],
-                        "model_name": "acl_qdess_bone_july_2024",
+                        "model_name": "goyal_sagittal",
                     }
                 }
             )
@@ -1040,7 +1051,7 @@ def test_run_kneepipeline_segmentation_returns_step_summary(tmp_path, monkeypatc
     result = openmsk._run_kneepipeline_segmentation(
         input_path,
         output_dir,
-        "acl_qdess_bone_july_2024",
+        "goyal_sagittal",
         config_path,
     )
 
@@ -1424,9 +1435,7 @@ def test_metrics_report_images_match_musclemap_explicit_volume_contract(
         {
             "label": "thickness",
             "json_path": metrics_json,
-            "csv_path": None,
             "payload": {"fem_cart_mm_mean": 1.2345},
-            "rows": [],
         }
     ]
     report_pages = [
@@ -1498,7 +1507,7 @@ def test_metrics_report_images_match_musclemap_explicit_volume_contract(
     assert oriented_probe[-2, 0] == 2
 
 
-def test_collect_metrics_outputs_reads_csv_when_json_absent(tmp_path):
+def test_collect_metrics_outputs_ignores_thickness_csv_when_json_absent(tmp_path):
     metrics_csv = tmp_path / "openmsk_echo1_thickness_results.csv"
     metrics_csv.write_text("fem_cart_mm_mean,med_tib_cart_mm_mean\n1.2345,2.5\n")
 
@@ -1506,23 +1515,32 @@ def test_collect_metrics_outputs_reads_csv_when_json_absent(tmp_path):
     comment = openmsk._collect_metrics_comment(tmp_path)
     rows = openmsk._metrics_report_rows(outputs)
 
-    assert outputs[0]["label"] == "thickness"
-    assert outputs[0]["rows"] == [{"fem_cart_mm_mean": "1.2345", "med_tib_cart_mm_mean": "2.5"}]
-    assert "fem_cart_mm_mean=1.234" in comment
-    assert {"source": "thickness.csv", "metric": "fem_cart_mm_mean", "value": "1.2345"} in rows
+    assert outputs == []
+    assert comment == ""
+    assert rows == []
 
 
-def test_collect_metrics_outputs_reports_json_and_csv_when_both_exist(tmp_path):
+def test_collect_metrics_outputs_uses_extensionless_json_sources_and_ignores_csv(tmp_path):
     metrics_json = tmp_path / "openmsk_echo1_thickness_results.json"
     metrics_csv = tmp_path / "openmsk_echo1_thickness_results.csv"
+    t2_json = tmp_path / "openmsk_echo1_t2_results.json"
+    bscore_json = tmp_path / "bscore_results.json"
     metrics_json.write_text(json.dumps({"fem_cart_mm_mean": 1.25}))
     metrics_csv.write_text("med_tib_cart_mm_mean\n2.5\n")
+    t2_json.write_text(json.dumps({"fem_cart_t2_ms_mean": 42.0}))
+    bscore_json.write_text(json.dumps({"bscore": 3.0}))
 
     outputs = openmsk._collect_metrics_outputs(tmp_path)
     comment = openmsk._collect_metrics_comment(tmp_path)
     rows = openmsk._metrics_report_rows(outputs)
 
-    assert "thickness.json: fem_cart_mm_mean=1.25" in comment
-    assert "thickness.csv: med_tib_cart_mm_mean=2.5" in comment
-    assert {"source": "thickness.json", "metric": "fem_cart_mm_mean", "value": "1.25"} in rows
-    assert {"source": "thickness.csv", "metric": "med_tib_cart_mm_mean", "value": "2.5"} in rows
+    assert "thickness: fem_cart_mm_mean=1.25" in comment
+    assert "t2: fem_cart_t2_ms_mean=42" in comment
+    assert "bscore.json: bscore=3" in comment
+    assert "thickness.json" not in comment
+    assert "t2.json" not in comment
+    assert ".csv" not in comment
+    assert {"source": "thickness", "metric": "fem_cart_mm_mean", "value": "1.25"} in rows
+    assert {"source": "t2", "metric": "fem_cart_t2_ms_mean", "value": "42"} in rows
+    assert {"source": "bscore.json", "metric": "bscore", "value": "3"} in rows
+    assert all(row["metric"] != "med_tib_cart_mm_mean" for row in rows)

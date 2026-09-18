@@ -366,16 +366,18 @@ process_deploy_bins() {
     while IFS= read -r entry; do
         [ -z "$entry" ] && continue
 
-        local resolved=""
-        if [[ "$entry" == /* ]] || [[ "$entry" == .* ]]; then
-            if [ -f "$entry" ]; then
-                resolved="$entry"
-            fi
+        # Transparent Singularity uses each DEPLOY_BINS entry as the host-side
+        # wrapper filename and executes that same value through the container's
+        # PATH. Paths can exist in the image while still being impossible to
+        # expose as wrapper commands.
+        if [[ "$entry" == */* ]]; then
+            record_result "deploy_bin.name:$entry" "failed" \
+                "DEPLOY_BINS entry $entry must be a command name without '/'. Add its directory to PATH or DEPLOY_PATH."
+            continue
         fi
 
-        if [ -z "$resolved" ]; then
-            resolved=$(command -v "$entry" 2>/dev/null || true)
-        fi
+        local resolved=""
+        resolved=$(command -v "$entry" 2>/dev/null || true)
 
         if [ -n "$resolved" ]; then
             record_result "deploy_bin:$entry" "passed" "Binary $entry found at $resolved."

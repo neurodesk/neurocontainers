@@ -9,6 +9,11 @@ structured_readme:
   example: Osprey
   documentation: https://schorschinho.github.io/osprey/
   citation: "G Oeltzschner, HJ Zöllner, SCN Hui, M Mikkelsen, MG Saleh, S Tapper, RAE Edden. Osprey: Open-Source Processing, Reconstruction & Estimation of Magnetic Resonance Spectroscopy Data. J Neurosci Meth 343:108827 (2020)."
+auto_update:
+  method: github_release
+  repo: schorschinho/osprey
+  version_regex: ^v\.(?P<version>\d+\.\d+\.\d+)$
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04

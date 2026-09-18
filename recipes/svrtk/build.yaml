@@ -10,9 +10,22 @@ copyright:
 architectures:
   - x86_64
 
+variables:
+  base_image_digest: sha256:d0ee22d6476277d172276ca33ee2a3f6334e1bf773c789d6012c8c23804460de
+
+auto_update:
+  method: sources
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: fetalsvrtk/svrtk
+      tag: general_auto_amd
+      target:
+        variable: base_image_digest
+
 build:
   kind: neurodocker
-  base-image: fetalsvrtk/svrtk:general_auto_amd
+  base-image: fetalsvrtk/svrtk:general_auto_amd@{{ context.base_image_digest }}
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false

@@ -1,0 +1,6 @@
+name: rshrf
+version: 1.7.0
+tests:
+- name: rsHRF help
+  command: rsHRF --help
+  expected_output_contains: bids_dir

@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "clinica 0.11.3": {
+      "version": "20260916",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "workflows"
+  ]
+}

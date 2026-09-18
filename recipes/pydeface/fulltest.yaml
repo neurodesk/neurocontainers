@@ -41,7 +41,7 @@ tests:
   - name: pydeface version check
     description: Verify pydeface binary runs and reports version
     command: pydeface --help 2>&1 | head -3
-    expected_output_contains: "pydeface 2.0.2"
+    expected_output_contains: "pydeface ${version}"
 
   - name: pydeface help
     description: Verify pydeface displays help message

@@ -16,7 +16,7 @@ tests:
   - name: rapidtide reports version
     description: Verify rapidtide runs and reports the installed version.
     command: rapidtide --version
-    expected_output_contains: "3.1.11"
+    expected_output_contains: "${version}"
     expected_exit_code: 0
 
   - name: happy launcher available
@@ -28,5 +28,5 @@ tests:
   - name: rapidtide package importable
     description: Verify the rapidtide Python package imports successfully.
     command: python -c "import rapidtide; print(rapidtide.__version__)"
-    expected_output_contains: "3.1.11"
+    expected_output_contains: "${version}"
     expected_exit_code: 0

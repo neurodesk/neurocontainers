@@ -1,0 +1,58 @@
+{
+  "general": {
+    "name": { "en": "epirecon" },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": { "en": "Fully-sampled Cartesian 3D EPI reconstruction: per-coil 3D FFT with root-sum-of-squares coil combination." },
+    "id": "epirecon",
+    "regulatory_information": {
+      "device_trade_name": "epirecon",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "Erlangen, Germany",
+      "made_in": "DE",
+      "manufacture_date": "2023/02/14",
+      "material_number": "epirecon_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "00860000171212",
+      "udi": "(01)00860000171212(21)1.3.0",
+      "safety_advices": "",
+      "special_operating_instructions": "OpenRecon Cartesian 3D EPI FFT reconstruction from raw k-space to magnitude image data",
+      "additional_relevant_information": ""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "raw",
+    "injector": "compleximage",
+    "can_process_adjustment_data": true,
+    "can_use_gpu": false,
+    "min_required_memory": 8000,
+    "min_count_required_cpu_cores": 4,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": { "en": "config" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "epirecon",
+          "name": { "en": "epirecon" }
+        }
+      ],
+      "default": "epirecon",
+      "information": { "en": "Define the config to be executed by the MRD server." }
+    },
+    {
+      "id": "orientationflipslice",
+      "label": { "en": "Reverse slice axis" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Reverse the partition (slice) axis before the acquisition frame is rotated into the standard display view." }
+    }
+  ]
+}

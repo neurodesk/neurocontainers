@@ -1,5 +1,5 @@
 # MRtrix3Tissue container test suite
-# Tests for MRtrix3Tissue v5.2.8 - MRtrix3 fork with 3-Tissue CSD capabilities
+# Tests for MRtrix3Tissue - MRtrix3 fork with 3-Tissue CSD capabilities
 #
 # MRtrix3Tissue adds capabilities for 3-Tissue CSD modelling and analysis
 # to a complete version of MRtrix3. More info: https://3Tissue.github.io
@@ -393,18 +393,10 @@ tests:
       - output_exists: ${output_dir}/t1w_normalise.nii.gz
 
   - name: mrfilter FFT forward
-    description: Apply forward Fourier transform (crashes with SIGFPE, SIGSEGV, or SIGABRT - container bug)
-    command: |
-      set +e
-      mrfilter ${t1w} fft -magnitude test_output/t1w_fft.nii.gz -force
-      status=$?
-      if [ "$status" -eq 8 ] || [ "$status" -eq 11 ] || [ "$status" -eq 134 ]; then
-        echo "mrfilter fft exited with known crash status $status"
-        exit 0
-      fi
-      echo "Unexpected mrfilter fft exit status: $status"
-      exit 1
-    expected_output_contains: "mrfilter fft exited with known crash status"
+    description: Apply forward Fourier transform and write its magnitude
+    command: mrfilter ${t1w} fft -magnitude test_output/t1w_fft.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_fft.nii.gz
 
   # ==========================================================================
   # THRESHOLDING - mrthreshold

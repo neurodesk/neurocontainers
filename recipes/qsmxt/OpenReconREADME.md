@@ -1,74 +1,85 @@
 # QSMxT OpenRecon
 
-This OpenRecon adapter receives reconstructed ISMRMRD image messages, separates
-the magnitude and phase series, writes a temporary BIDS MEGRE dataset, runs the
-QSMxT v9 Rust binary, and sends selected derivatives back as derived MRD image
-series.
+QSMxT OpenRecon creates quantitative susceptibility maps from MRI magnitude and phase images and returns the results to the scanner database. Use it to reconstruct and compare QSM maps from brain gradient-echo acquisitions within your OpenRecon workflow.
 
-The wrapper expects one magnitude series and one phase series. It classifies
-phase data from MRD image type metadata, DICOM image type metadata, or source
-series names such as `phase`, `pha`, or `_Pha`. If explicit metadata is absent
-and exactly two series are present, the lower dynamic-range series is used as
-phase.
+The package supports single-echo and multi-echo data, a choice of reconstruction methods, adjustable brain masks, and optional SWI, T2*, and R2* maps. You can process distortion-corrected images, non-distortion-corrected images, or both.
 
-For each derived magnitude/phase echo group the wrapper writes:
+## Prepare your acquisition
 
-```text
-sub-01/anat/sub-01_acq-<source>_echo-N_part-mag_MEGRE.nii.gz
-sub-01/anat/sub-01_acq-<source>_echo-N_part-phase_MEGRE.nii.gz
-```
+Use a plain gradient-echo (GRE) sequence with both magnitude and **unfiltered phase** reconstruction enabled. Filtered phase from an SWI sequence is not a suitable input. Magnitude and phase images must have matching echoes and the same distortion-correction setting.
 
-QSMxT sidecars include `EchoTime`, `MagneticFieldStrength`, and `B0_dir`.
-Echo grouping, echo times, field strength, and B0 direction are derived from the
-incoming MRD image stream and generated NIfTI geometry when available. The
-container still accepts `maxechoes`, `echotimesms`, `echotimems`,
-`echospacingms`, `fieldstrength`, and `b0dir` as manual JSON overrides for
-debugging, but they are not shown in the scanner UI.
+An [example Siemens 3 T GRE protocol](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/gre_qsm.pro) is available as a starting point. It acquires five echoes at 5, 10, 15, 20, and 25 ms. Review the acquisition and safety settings on your scanner before use. The example saves different reconstruction settings from the package defaults, so check the OpenRecon controls after loading it.
 
-Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
-QSMxT derivatives that exist after the run.
+## Run a reconstruction
 
-Derived outputs are converted to unsigned 12-bit display values in the valid
-`0..4095` range. Binary masks use `0` and `4095`. T2* scaling uses the 99.9th
-percentile of positive finite fits so isolated extreme fits are clipped instead
-of quantizing the useful map to zero. The original range, scaling range, scale,
-inverse formula, and clipped-voxel count are included in the returned metadata.
+With the QSMxT package installed in OpenRecon:
 
-QSMxT needs unfiltered phase data. SWI sequences that already apply SWI-specific
-phase processing or filtering are not suitable inputs for this OpenRecon
-adapter; for example, `t2_swi_tra_wave4_2mm` does not provide the required
-unfiltered phase data and should not be used for QSMxT. Start from a plain GRE
-sequence instead, and enable both phase and magnitude reconstruction.
+1. Select **qsmxt** as the reconstruction package. Leave **config** set to **qsmxt**.
+2. Set **Input images** to match your acquisition. The default is **Distortion corrected**.
+3. For an initial reconstruction, leave **Pipeline preset** on **Custom algorithm controls** with **QSM algorithm** set to **HD-QSM**, **Unwrap** to **ROMEO**, and **Background** to **iSMV**.
+4. Leave **Mask preset** on **BET (recommended)** to identify the brain from the magnitude image.
+5. Leave **Output maps** on **QSM only**. Keep **Send original** enabled if you also want the source magnitude and phase series in the scanner database.
+6. Run the acquisition with OpenRecon enabled. When reconstruction finishes, look for the **QSMxT QSM** series alongside the original images.
 
-The scanner UI defaults are set for a robust inline QSM run: only the QSM map is
-returned, QSM inversion uses RTS, unwrapping uses ROMEO, background-field removal
-uses PDF, and masking uses the robust-threshold preset. Enable `sendoriginal`
-only when the original magnitude and phase series are needed for debugging.
+## Choose the input images
 
-## Input Data
+**Input images** offers these options:
 
-Use a plain GRE acquisition with unfiltered phase and magnitude outputs enabled.
-Do not use filtered SWI phase images as QSMxT input.
+| Option | When to use it |
+| --- | --- |
+| Distortion corrected | Process the corrected magnitude and phase images. This is the default. |
+| Not distortion corrected (ND) | Process the magnitude and phase series marked `ND`. |
+| Both | Compare corrected and uncorrected results. Both magnitude/phase pairs must be available. |
 
-## UI Parameters
+**Both** returns separate `DC` and `ND` result series and takes roughly twice as long as processing one pair. If reconstruction reports missing input images, check that both magnitude and unfiltered phase are available for the selected correction setting.
 
-| GUI label | Parameter id | Type | Default | Description |
-| --- | --- | --- | --- | --- |
-| config | `config` | choice | `qsmxt` | Selects the MRD server configuration. |
-| Output maps | `sendoutputs` | choice | `qsm` | Selects which QSMxT derivatives are sent back. |
-| Send original | `sendoriginal` | boolean | `false` | Sends original magnitude and phase image series before derived outputs. |
-| QSM algorithm | `qsmalgorithm` | choice | `rts` | QSMxT inversion algorithm. |
-| Unwrap | `unwrappingalgorithm` | choice | `romeo` | QSMxT phase-unwrapping algorithm. |
-| Background | `bfalgorithm` | choice | `pdf` | QSMxT background-field removal algorithm. |
-| Mask preset | `maskpreset` | choice | `robust-threshold` | QSMxT masking preset. |
+## Choose the output maps
 
-## Open Source Development
+Use **Output maps** to select what returns to the scanner database:
 
-The source for this OpenRecon package is in the NeuroContainers repository:
-https://github.com/NeuroDesk/neurocontainers/tree/main/recipes/qsmxt
+| Option | Result |
+| --- | --- |
+| QSM only | Quantitative susceptibility map. This is the default. |
+| All available | All available maps from the run, including the brain mask and combined magnitude image. |
+| Magnitude | Combined magnitude image. |
+| Mask | Brain mask used for reconstruction, useful for checking brain coverage. |
+| SWI | Susceptibility-weighted image. |
+| T2 star | T2* relaxation map. Use at least three equally spaced echoes. |
+| R2 star | R2* relaxation-rate map. Use a multi-echo acquisition. |
 
-For bugs and feature requests, opening an issue in the NeuroContainers
-repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
-Questions can also be posted in the Neurodesk discussion forum at
-https://github.com/orgs/neurodesk/discussions or sent via
-https://neurodesk.org/contact/.
+**Send original** controls whether the source magnitude and phase images are also returned. Turn it off to keep only the selected output maps.
+
+For quantitative analysis, use a viewer that applies DICOM rescaling. QSM DICOM values are in parts per billion (ppb); divide by 1000 to convert to parts per million (ppm).
+
+T2* DICOM values are in milliseconds. The default window covers zero to the 95th percentile of positive fits and stays constant across slices. Scanner storage retains steps of 1 ms or finer, with values above 4095 ms saturating. Use the full-precision NIfTI output to inspect extreme fits.
+
+## Change the reconstruction method
+
+Use **Pipeline preset** to choose a predefined combination of processing methods. The menu also includes complete reconstruction methods such as QSMART, TGV, AutoQSM, NeXtQSM, iQSM, and iQSM+. Packaged deep-learning methods work offline and run on the CPU.
+
+A preset overrides **QSM algorithm**, **Unwrap**, and **Background**. To choose those stages yourself, select **Custom algorithm controls**:
+
+- **Unwrap** removes phase jumps. The OpenRecon default is ROMEO.
+- **Background** removes background-field contributions. The default is iSMV.
+- **QSM algorithm** calculates susceptibility. The default is HD-QSM.
+
+Choosing **Default** in a stage control uses the corresponding OpenRecon default above. Reconstruction time and results depend on the method, acquisition, and available hardware. See the [QSMxT algorithm reference](https://qsmxt.github.io/QSMxT/reference/algorithms/) for descriptions of the methods. The upstream command-line defaults differ from the OpenRecon defaults listed here.
+
+## Adjust the brain mask
+
+The mask defines the region included in reconstruction. To inspect its coverage alongside the QSM map, select **All available** under **Output maps**.
+
+Start with **BET (recommended)**. If the mask excludes brain tissue, lower **BET threshold** from its default of **0.5** to make the mask larger.
+
+For threshold-based masking, choose **Robust threshold** or **BET + threshold union** under **Mask preset**. The union includes regions selected by either method. **Threshold input** selects the image used for thresholding, and **Threshold method** selects Otsu or Percentile. **Mask percentile** applies only when you choose Percentile.
+
+**Mask cleanup** can fill holes and close small gaps. Its default is **Close and fill holes**. Mask settings apply independently of the pipeline preset.
+
+## Citation
+Stewart, Ashley Wilton, Simon Daniel Robinson, Kieran O’Brien, et al. “QSMxT: Robust Masking and Artifact Reduction for Quantitative Susceptibility Mapping.” Magnetic Resonance in Medicine 87, no. 3 (2022): 1289–300. https://doi.org/10.1002/mrm.29048.
+
+## Help and further reading
+
+For problems or feature requests, [open a NeuroContainers issue](https://github.com/neurodesk/neurocontainers/issues). For questions about using the package, visit the [Neurodesk discussion forum](https://github.com/orgs/neurodesk/discussions).
+
+Implementation details and benchmark results are in the [OpenRecon technical reference](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/OpenReconTechnicalReference.md).

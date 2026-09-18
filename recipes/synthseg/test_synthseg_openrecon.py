@@ -119,6 +119,7 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
         "np": np,
         "ndi": type("FakeNdi", (), {"zoom": staticmethod(lambda *args, **kwargs: None)}),
         "os": __import__("os"),
+        "Path": Path,
         "re": re,
         "itertools": itertools,
         "uuid": uuid,
@@ -293,6 +294,132 @@ def _openrecon_helpers():
     )
 
 
+def _synthseg_command_helpers():
+    return _load_runtime_helpers_for_test(
+        [
+            "_build_synthseg_command",
+            "_resolve_synthseg_crop_options",
+        ],
+        assignments=[
+            "SYNTHSEG_COMMAND",
+            "SYNTHSEG_CROP_MULTIPLE",
+        ],
+    )
+
+
+def _mp2rage_selection_helpers():
+    return _load_runtime_helpers_for_test(
+        [
+            "_image_identity_values",
+            "_meta_from_image",
+            "_normalized_identity_text",
+            "_select_anatomical_input_images",
+        ],
+        assignments=["MP2RAGE_IDENTITY_META_KEYS"],
+    )
+
+
+def _selection_image(
+    helpers,
+    description,
+    protocol="T1_MP2RAGE",
+    series_index=1,
+):
+    image = helpers["FakeImage"](np.zeros((1, 1, 2, 2), dtype=np.int16))
+    head = image.getHead()
+    head.image_series_index = series_index
+    image.setHead(head)
+    image.attribute_string = helpers["FakeMeta"](
+        {
+            "SeriesDescription": description,
+            "ProtocolName": protocol,
+        }
+    ).serialize()
+    return image
+
+
+def test_mp2rage_selection_keeps_only_uni_den_images():
+    helpers = _mp2rage_selection_helpers()
+    images = [
+        _selection_image(helpers, "T1_MP2RAGE_INV1"),
+        _selection_image(helpers, "T1_MP2RAGE_UNI-DEN"),
+        _selection_image(helpers, "T1_MP2RAGE_UNI_DEN"),
+        _selection_image(helpers, "T1_MP2RAGE_INV2"),
+    ]
+
+    selected = helpers["_select_anatomical_input_images"](images)
+
+    assert selected == images[1:3]
+
+
+def test_mp2rage_selection_uses_first_series_without_uni_den():
+    helpers = _mp2rage_selection_helpers()
+    images = [
+        _selection_image(helpers, "T1_MP2RAGE_INV1", series_index=4),
+        _selection_image(helpers, "T1_MP2RAGE_INV1", series_index=4),
+        _selection_image(helpers, "T1_MP2RAGE_UNI", series_index=5),
+    ]
+
+    selected = helpers["_select_anatomical_input_images"](images)
+
+    assert selected == images[:2]
+
+
+def test_non_mp2rage_selection_preserves_all_magnitude_images():
+    helpers = _mp2rage_selection_helpers()
+    images = [
+        _selection_image(helpers, "MPRAGE_T1W", protocol="MPRAGE"),
+        _selection_image(helpers, "GRE_T1W", protocol="GRE"),
+    ]
+
+    assert helpers["_select_anatomical_input_images"](images) == images
+
+
+def test_synthseg_crop_options_are_mutually_exclusive_and_aligned():
+    helpers = _synthseg_command_helpers()
+    resolve = helpers["_resolve_synthseg_crop_options"]
+
+    assert resolve(-1) == (False, 0)
+    assert resolve(0) == (True, 0)
+    assert resolve(192) == (False, 192)
+    assert resolve(193) == (False, 224)
+    assert resolve(-2) == (False, 0)
+
+
+def test_synthseg_command_uses_autocrop_or_manual_crop():
+    helpers = _synthseg_command_helpers()
+    build_command = helpers["_build_synthseg_command"]
+    common = {
+        "model": "synthseg",
+        "fast": True,
+        "parcellation": True,
+        "use_gpu": False,
+        "threads": 8,
+    }
+
+    automatic = build_command(
+        Path("input.nii.gz"),
+        Path("output.nii.gz"),
+        autocrop=True,
+        crop_size=0,
+        **common,
+    )
+    assert "--autocrop" in automatic
+    assert "--crop" not in automatic
+    assert "--cpu" in automatic
+
+    manual = build_command(
+        Path("input.nii.gz"),
+        Path("output.nii.gz"),
+        autocrop=False,
+        crop_size=192,
+        **common,
+    )
+    assert "--autocrop" not in manual
+    crop_index = manual.index("--crop")
+    assert manual[crop_index + 1] == "192"
+
+
 def test_openrecon_defaults_match_the_scanner_label():
     """The wrapper reads every scanner parameter by id, so the two must agree.
 
@@ -351,3 +478,100 @@ def test_parameter_matrix_only_emits_runnable_combinations():
         if config["parameters"]["ssmodel"] == "robust"
     }
     assert all("_fast1" in name for name in robust_names)
+
+
+def _inference_helpers():
+    import logging
+    import shutil
+    import subprocess
+    from time import perf_counter
+
+    helpers = _load_runtime_helpers_for_test(
+        ["_run_synthseg_command", "_log_synthseg_resources", "_log_directory_contents"]
+    )
+    helpers.update(
+        logging=logging, shutil=shutil, subprocess=subprocess, perf_counter=perf_counter
+    )
+    return helpers
+
+
+def test_gpu_failure_retries_cpu_without_partial_outputs(tmp_path, caplog):
+    import logging
+    import sys
+
+    helpers = _inference_helpers()
+    helpers["_log_synthseg_resources"] = lambda *args: None
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    program = tmp_path / "inference.py"
+    program.write_text('''
+import json, os, sys
+from pathlib import Path
+out = Path(sys.argv[1])
+with (out.parent / "attempts.jsonl").open("a") as log:
+    log.write(json.dumps(sys.argv[2:]) + "\\n")
+if "--cpu" not in sys.argv:
+    (out / "partial.csv").write_text("incomplete")
+    print("ResourceExhaustedError: GPU OOM", file=sys.stderr)
+    sys.exit(1)
+assert os.environ["CUDA_VISIBLE_DEVICES"] == "-1"
+assert not (out / "partial.csv").exists()
+(out / "seg.nii.gz").write_text("completed on CPU")
+''')
+    command = [sys.executable, str(program), str(output_dir), "--fast", "--parc", "--qc"]
+    with caplog.at_level(logging.INFO):
+        helpers["_run_synthseg_command"](command, output_dir)
+    attempts = [json.loads(line) for line in (tmp_path / "attempts.jsonl").read_text().splitlines()]
+    assert attempts == [["--fast", "--parc", "--qc"], ["--fast", "--parc", "--qc", "--cpu"]]
+    assert (output_dir / "seg.nii.gz").read_text() == "completed on CPU"
+    assert "GPU OOM" in (tmp_path / "synthseg_gpu.stderr.log").read_text()
+    assert (tmp_path / "synthseg_cpu.stdout.log").exists()
+    assert "retrying once on CPU" in caplog.text
+    assert "device=cpu finished" in caplog.text
+
+
+def test_inference_attempt_counts_and_final_error(tmp_path):
+    import subprocess
+    import sys
+
+    import pytest
+
+    helpers = _inference_helpers()
+    helpers["_log_synthseg_resources"] = lambda *args: None
+    for cpu, exitcode, expected_attempts in [(False, 0, 1), (True, 0, 1), (False, 3, 2), (True, 3, 1)]:
+        work = tmp_path / f"{cpu}-{exitcode}"
+        out = work / "output"
+        out.mkdir(parents=True)
+        program = (
+            "import sys; from pathlib import Path; "
+            f"p=Path({str(work / 'attempts')!r}); "
+            "p.open('a').write('attempt\\n'); "
+            "print('failure detail', file=sys.stderr); "
+            f"sys.exit({exitcode})"
+        )
+        command = [sys.executable, "-c", program] + (["--cpu"] if cpu else [])
+        if exitcode:
+            with pytest.raises(subprocess.CalledProcessError) as error:
+                helpers["_run_synthseg_command"](command, out)
+            assert error.value.returncode == exitcode
+            assert "--cpu" in error.value.cmd
+            assert "failure detail" in error.value.stderr
+        else:
+            helpers["_run_synthseg_command"](command, out)
+        assert len((work / "attempts").read_text().splitlines()) == expected_attempts
+
+
+def test_gpu_telemetry_is_best_effort(monkeypatch, caplog):
+    import logging
+    import os
+    import subprocess
+
+    helpers = _inference_helpers()
+    for failure in [FileNotFoundError("no nvidia-smi"), subprocess.TimeoutExpired("nvidia-smi", 2)]:
+        def fail(*args, **kwargs):
+            raise failure
+        monkeypatch.setattr(subprocess, "run", fail)
+        with caplog.at_level(logging.INFO):
+            helpers["_log_synthseg_resources"](os.getpid(), True)
+        assert "GPU telemetry unavailable" in caplog.text
+        assert "VmRSS:" in caplog.text

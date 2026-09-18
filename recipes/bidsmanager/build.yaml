@@ -1,5 +1,5 @@
 name: bidsmanager
-version: 1.2.3
+version: 1.3.0
 
 copyright:
   - license: MIT
@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
   - aarch64
+
+auto_update:
+  method: pypi
+  package: bids-manager
 
 build:
   kind: neurodocker

@@ -1,12 +1,13 @@
 name: libreoffice
-version: 26.2.4
+version: 26.8.0
+upstream_version: "26.8.0.3"
 default_timeout: 120
 
 tests:
   - name: LibreOffice version check
     description: Verify LibreOffice starts in CLI mode and reports its version.
     command: libreoffice --version
-    expected_output_contains: LibreOffice
+    expected_output_contains: LibreOffice ${upstream_version}
 
   - name: LibreOffice GUI launch targets
     description: Verify the GUI launcher commands for the main LibreOffice applications are available.

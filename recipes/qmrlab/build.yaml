@@ -4,10 +4,14 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lE
 
 copyright:
   - license: MIT
-    url: https://github.com/qMRLab/qMRLab/blob/v2.4.2/LICENSE
+    url: https://github.com/qMRLab/qMRLab/blob/v{{ context.version }}/LICENSE
 
 architectures:
   - x86_64
+
+auto_update:
+  method: github_release
+  repo: qMRLab/qMRLab
 
 build:
   kind: neurodocker
@@ -38,12 +42,11 @@ build:
         - rm -f /tmp/image-2.14.0.tar.gz /tmp/io-2.6.0.tar.gz /tmp/struct-1.0.18.tar.gz /tmp/statistics-1.6.7.tar.gz /tmp/optim-1.6.2.tar.gz
 
     - run:
-        - cp {{ get_file("qmrlab_archive") }} /tmp/qMRLab-2.4.2.tar.gz
-        - tar -xzf /tmp/qMRLab-2.4.2.tar.gz -C /
-        - rm /tmp/qMRLab-2.4.2.tar.gz
+        - mkdir -p /opt/qmrlab
+        - tar -xzf {{ get_file("qmrlab_archive") }} -C /opt/qmrlab --strip-components=1
 
     - run:
-        - /bin/sh -lc 'cd /qMRLab-2.4.2 && octave --no-gui --eval "qMRLabVer"'
+        - /bin/sh -lc 'cd /opt/qmrlab && octave --no-gui --eval "qMRLabVer"'
         - printf '#!/bin/bash\nls -la' > /usr/bin/ll
         - chmod +x /usr/bin/ll
         - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
@@ -78,7 +81,7 @@ readme: |-
 
 files:
   - name: qmrlab_archive
-    url: https://github.com/qMRLab/qMRLab/archive/v2.4.2.tar.gz
+    url: https://github.com/qMRLab/qMRLab/archive/v{{ context.version }}.tar.gz
   - name: octave_image
     url: https://downloads.sourceforge.net/project/octave/Octave%20Forge%20Packages/Individual%20Package%20Releases/image-2.14.0.tar.gz
   - name: octave_io

@@ -45,7 +45,7 @@ setup:
     #!/usr/bin/env bash
     set -e
     # The binary returns exit code 3 for `--version`, so validate by output content instead.
-    dcm2niix --version 2>&1 | grep -q "v1.0.20240202" || {
+    dcm2niix --version 2>&1 | grep -q "${version}" || {
       echo "dcm2niix bundled binary is not runnable on this architecture"
       exit 126
     }
@@ -61,7 +61,7 @@ tests:
     description: Verify dcm2niix reports correct version
     command: dcm2niix --version 2>&1
     ignore_exit_code: true
-    expected_output_contains: "v1.0.20240202"
+    expected_output_contains: "${version}"
 
   - name: Version string format
     description: Verify version output contains build information

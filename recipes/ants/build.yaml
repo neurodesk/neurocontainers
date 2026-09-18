@@ -7,6 +7,10 @@ copyright:
 
 architectures:
   - x86_64
+auto_update:
+  method: github_release
+  repo: ANTsX/ANTs
+
 build:
   kind: neurodocker
 

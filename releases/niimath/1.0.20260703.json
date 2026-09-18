@@ -1,7 +1,7 @@
 {
   "apps": {
     "niimath 1.0.20260703": {
-      "version": "20260706",
+      "version": "20260909",
       "exec": "",
       "apptainer_args": []
     }

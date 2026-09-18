@@ -1,3 +1,6 @@
+variables:
+  package_version: 2.1.0-1~nd120+1
+
 name: connectomeworkbench
 version: 2.1.0
 
@@ -12,6 +15,20 @@ files:
   - name: license.txt
     filename: license.txt
 
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: connectome-workbench
+    method: apt
+    package: connectome-workbench
+    urls:
+    - https://neurodebian.inm7.de/debian/dists/bookworm/main/binary-amd64/Packages.gz
+    - https://deb.debian.org/debian/dists/bookworm/main/binary-amd64/Packages.xz
+    target:
+      variable: package_version
+      fulltest_variable: package_version
+
 build:
   kind: neurodocker
 
@@ -19,7 +36,7 @@ build:
   pkg-manager: apt
 
   directives:
-    - install: connectome-workbench
+    - install: "connectome-workbench={{ context.package_version }}"
 
     - template:
         name: freesurfer

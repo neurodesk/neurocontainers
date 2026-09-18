@@ -1,8 +1,41 @@
+variables:
+  vscode_version: "1.136.1"
+  julia_version: 1.6.3
+  go_version: 1.17.2
+  singularity_version: 3.9.3
+
 name: code
 version: "240320"
 
 architectures:
   - x86_64
+
+auto_update:
+  method: sources
+  local: []
+  sources:
+  - id: vscode
+    method: webpage
+    target:
+      variable: vscode_version
+    url: https://update.code.visualstudio.com/api/update/linux-x64/stable/latest
+    version_regex: '"productVersion":\s*"(?P<version>\d+(?:\.\d+)+)"'
+  - id: julia
+    method: github_release
+    repo: JuliaLang/julia
+    target:
+      variable: julia_version
+  - id: go
+    method: webpage
+    url: https://go.dev/dl/?mode=json
+    version_regex: '"version":\s*"go(?P<version>\d+\.\d+\.\d+)"'
+    target:
+      variable: go_version
+  - id: singularity
+    method: github_release
+    repo: sylabs/singularity
+    target:
+      variable: singularity_version
 
 build:
   kind: neurodocker
@@ -75,10 +108,10 @@ build:
     - workdir: /opt
 
     - run:
-        - cp {{ get_file("julia_1_6_3_linux_x86_64_tar_gz") }} julia-1.6.3-linux-x86_64.tar.gz
-        - tar zxvf julia-1.6.3-linux-x86_64.tar.gz
-        - rm -rf julia-1.6.3-linux-x86_64.tar.gz
-        - ln -s /opt/julia-1.6.3 /opt/julia-latest
+        - cp {{ get_file("julia_1_6_3_linux_x86_64_tar_gz") }} julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+        - tar zxvf julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+        - rm -rf julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+        - ln -s /opt/julia-{{ context.julia_version }} /opt/julia-latest
 
     - run:
         - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python
@@ -93,25 +126,25 @@ build:
 
     - environment:
         DONT_PROMPT_WSL_INSTALL: "1"
-        PATH: $PATH:/opt/julia-1.6.3/bin
+        PATH: $PATH:/opt/julia-{{ context.julia_version }}/bin
         GOPATH: $HOME/go
 
     - run:
-        - cp {{ get_file("go1_17_2_linux_amd64_tar_gz") }} go1.17.2.linux-amd64.tar.gz
-        - tar -C /usr/local -xzvf go1.17.2.linux-amd64.tar.gz
-        - rm go1.17.2.linux-amd64.tar.gz
+        - cp {{ get_file("go1_17_2_linux_amd64_tar_gz") }} go{{ context.go_version }}.linux-amd64.tar.gz
+        - tar -C /usr/local -xzvf go{{ context.go_version }}.linux-amd64.tar.gz
+        - rm go{{ context.go_version }}.linux-amd64.tar.gz
 
     - environment:
         PATH: $PATH:/usr/local/go/bin:$GOPATH/bin
 
     - run:
         - mkdir -p /root/go/src/github.com/sylabs
-        - cd /root/go/src/github.com/sylabs && wget https://github.com/sylabs/singularity/releases/download/v3.9.3/singularity-ce-3.9.3.tar.gz
-        - cd /root/go/src/github.com/sylabs && tar -xzvf singularity-ce-3.9.3.tar.gz
-        - cd /root/go/src/github.com/sylabs/singularity-ce-3.9.3 && ./mconfig --without-suid --prefix=/usr/local/singularity
-        - make -C /root/go/src/github.com/sylabs/singularity-ce-3.9.3/builddir
-        - make -C /root/go/src/github.com/sylabs/singularity-ce-3.9.3/builddir install
-        - rm -rf /root/go/src/github.com/sylabs/singularity-ce-3.9.3
+        - cd /root/go/src/github.com/sylabs && wget https://github.com/sylabs/singularity/releases/download/v{{ context.singularity_version }}/singularity-ce-{{ context.singularity_version }}.tar.gz
+        - cd /root/go/src/github.com/sylabs && tar -xzvf singularity-ce-{{ context.singularity_version }}.tar.gz
+        - cd /root/go/src/github.com/sylabs/singularity-ce-{{ context.singularity_version }} && ./mconfig --without-suid --prefix=/usr/local/singularity
+        - make -C /root/go/src/github.com/sylabs/singularity-ce-{{ context.singularity_version }}/builddir
+        - make -C /root/go/src/github.com/sylabs/singularity-ce-{{ context.singularity_version }}/builddir install
+        - rm -rf /root/go/src/github.com/sylabs/singularity-ce-{{ context.singularity_version }}
         - rm -rf /usr/local/go /root/go
         - ln -s /usr/local/singularity/bin/singularity /bin/
 
@@ -154,13 +187,13 @@ readme: |
 
 files:
   - name: download
-    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+    url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-x64/stable
 
   - name: julia_1_6_3_linux_x86_64_tar_gz
-    url: https://julialang-s3.julialang.org/bin/linux/x64/1.6/julia-1.6.3-linux-x86_64.tar.gz
+    url: https://julialang-s3.julialang.org/bin/linux/x64/{{ context.julia_version.split(".")[:2] | join(".") }}/julia-{{ context.julia_version }}-linux-x86_64.tar.gz
 
   - name: go1_17_2_linux_amd64_tar_gz
-    url: https://dl.google.com/go/go1.17.2.linux-amd64.tar.gz
+    url: https://dl.google.com/go/go{{ context.go_version }}.linux-amd64.tar.gz
   - name: code
     contents: |
       #\!/usr/bin/env sh

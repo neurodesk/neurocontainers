@@ -27,6 +27,11 @@ files:
   - name: gc-ctrl.py
     filename: gc-ctrl.py
 
+auto_update:
+  method: webpage
+  url: https://docs.globus.org/globus-connect-personal/changes/
+  version_regex: <h2[^>]*>v(?P<version>\d+\.\d+\.\d+)\s*\(
+
 build:
   kind: neurodocker
   base-image: fedora:37

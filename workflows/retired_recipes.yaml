@@ -1,0 +1,27 @@
+# Recipes that have left recipes/. The release planner refuses a deletion that
+# is not listed here, because an unannounced removal is indistinguishable from
+# an accidental one and leaves it with no recipe to classify.
+#
+# Retiring a recipe publishes nothing and withdraws nothing. Artifacts already
+# in releases/ keep their metadata, so the catalog and apps.json continue to
+# serve every version that was built. Name the successor in superseded_by when
+# the work moved rather than ended.
+#
+#   retired:
+#     - recipe: oldname
+#       superseded_by: newname
+#       reason: Renamed; newname carries the maintained recipe.
+#
+# Listing a recipe here and deleting it belong in the same pull request: the
+# planner rejects an entry whose recipes/<name>/build.yaml still exists.
+retired:
+  - recipe: openreconacsrss
+    superseded_by: acsrss
+    reason: >-
+      Renamed to acsrss, which carries the maintained recipe and the fixes for
+      readout oversampling and segmented EPI ACS.
+  - recipe: openreconslicegrappa
+    superseded_by: slicegrappa
+    reason: >-
+      Renamed to slicegrappa, which carries the maintained recipe and the same
+      reconstruction fixes.

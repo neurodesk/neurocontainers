@@ -1,0 +1,12 @@
+name: neurocommand
+version: 1.0.0
+
+tests:
+  - name: apptainer available
+    description: Verify the container launcher used by NeuroCommand is installed.
+    command: apptainer --version
+    expected_output_contains: apptainer version
+  - name: cvmfs client available
+    description: Verify the CVMFS client used for NeuroDesk modules is installed.
+    command: command -v cvmfs_config
+    expected_output_contains: cvmfs_config

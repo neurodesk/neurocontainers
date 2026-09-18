@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -16,7 +17,10 @@ from builder.template_backend import apply_builtin_template
 def test_strict_context_rendering() -> None:
     renderer = TemplateRenderer()
     context = RenderContext(name="tool", version="1.2.3", arch="x86_64")
-    assert renderer.render_string("{{ context.version }} {{ arch }}", context) == "1.2.3 x86_64"
+    assert (
+        renderer.render_string("{{ context.version }} {{ arch }}", context)
+        == "1.2.3 x86_64"
+    )
 
 
 def test_get_file_requires_declared_file() -> None:
@@ -34,7 +38,10 @@ def test_get_local_tracks_requested_context() -> None:
         arch="x86_64",
         local_keys={"src"},
     )
-    assert renderer.render_string('{{ get_local("src") }}', context) == "/.neurocontainer-local/src"
+    assert (
+        renderer.render_string('{{ get_local("src") }}', context)
+        == "/.neurocontainer-local/src"
+    )
     assert context.requested_locals == ["src"]
 
 
@@ -69,10 +76,18 @@ def test_builtin_templates_are_native_directive_format() -> None:
             method_data = data.get(method)
             if not isinstance(method_data, dict):
                 continue
-            assert method_data.get("builder") == "neurodocker", f"{path.name}:{method} has no macro builder"
-            assert "env" not in method_data, f"{path.name}:{method} still uses legacy env"
-            assert "instructions" not in method_data, f"{path.name}:{method} still uses legacy instructions"
-            assert isinstance(method_data.get("directives"), list), f"{path.name}:{method} has no directives"
+            assert (
+                method_data.get("builder") == "neurodocker"
+            ), f"{path.name}:{method} has no macro builder"
+            assert (
+                "env" not in method_data
+            ), f"{path.name}:{method} still uses legacy env"
+            assert (
+                "instructions" not in method_data
+            ), f"{path.name}:{method} still uses legacy instructions"
+            assert isinstance(
+                method_data.get("directives"), list
+            ), f"{path.name}:{method} has no directives"
 
 
 def test_bids_validator_template_installs_setuptools_on_apt() -> None:
@@ -80,6 +95,96 @@ def test_bids_validator_template_installs_setuptools_on_apt() -> None:
     data = yaml.safe_load(path.read_text())
     apt_dependencies = data["binaries"]["dependencies"]["apt"]
     assert "python3-setuptools" in apt_dependencies
+
+
+@pytest.mark.parametrize("method", ["binaries", "source"])
+def test_mrtrix_template_preserves_existing_library_search_path(method) -> None:
+    directives = []
+    apply_builtin_template(
+        "mrtrix3", {"version": "3.0.4", "method": method}, "apt", directives.append
+    )
+    library_path = next(
+        item.values["LD_LIBRARY_PATH"]
+        for item in directives
+        if isinstance(item, Env) and "LD_LIBRARY_PATH" in item.values
+    )
+    result = subprocess.run(
+        [
+            "/bin/sh",
+            "-c",
+            f'export LD_LIBRARY_PATH="{library_path}"; printenv LD_LIBRARY_PATH',
+        ],
+        env={"PATH": "/usr/bin:/bin", "LD_LIBRARY_PATH": "/existing/libraries"},
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "/opt/mrtrix3-3.0.4/lib:/existing/libraries"
+
+
+@pytest.mark.parametrize("options", [None, "", "-nogui -debug"])
+def test_mrtrix_source_template_configure_options(options) -> None:
+    directives = []
+    arguments = {"version": "3.0.4", "method": "source"}
+    if options is not None:
+        arguments["configure_options"] = options
+    apply_builtin_template("mrtrix3", arguments, "apt", directives.append)
+    command = "\n".join(item.command for item in directives if isinstance(item, Run))
+    configure = next(line for line in command.splitlines() if "python3 configure" in line)
+    expected = "-nogui" if options is None else options
+    assert shlex.split(configure) == ["python3", "configure", *shlex.split(expected)]
+
+
+@pytest.mark.parametrize("version", ["6.0.6", "6.0.7.99", "7.0.0"])
+def test_fsl_template_installs_new_versions_without_a_url_table_entry(version) -> None:
+    directives = []
+    apply_builtin_template("fsl", {"version": version}, "apt", directives.append)
+    command = "\n".join(item.command for item in directives if isinstance(item, Run))
+    installer = next(line for line in command.splitlines() if "curl -fsSL" in line)
+
+    assert shlex.split(installer) == [
+        "curl",
+        "-fsSL",
+        "https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/fslinstaller.py",
+        "|",
+        "python3",
+        "-",
+        "-d",
+        f"/opt/fsl-{version}",
+        "-V",
+        version,
+    ]
+    assert "fslpython_install.sh" not in command
+
+
+def test_fsl_template_accepts_a_custom_installer_url() -> None:
+    directives = []
+    url = "https://mirror.example.org/fslinstaller.py?revision=1&format=python"
+    apply_builtin_template(
+        "fsl",
+        {"version": "6.0.7.99", "fslinstaller_url": url},
+        "apt",
+        directives.append,
+    )
+    command = "\n".join(item.command for item in directives if isinstance(item, Run))
+    installer = next(line for line in command.splitlines() if "curl -fsSL" in line)
+
+    assert shlex.split(installer)[2] == url
+    assert f'"{url}"' in installer
+
+
+def test_fsl_template_keeps_legacy_archive_installation() -> None:
+    directives = []
+    apply_builtin_template("fsl", {"version": "6.0.5.1"}, "apt", directives.append)
+    command = "\n".join(item.command for item in directives if isinstance(item, Run))
+
+    assert (
+        "curl -fL https://fsl.fmrib.ox.ac.uk/fsldownloads/"
+        "fsl-6.0.5.1-centos7_64.tar.gz"
+    ) in command
+    assert "tar -xz -C /opt/fsl-6.0.5.1 --strip-components 1" in command
+    assert "bash /opt/fsl-6.0.5.1/etc/fslconf/fslpython_install.sh" in command
+    assert "python3 - -d" not in command
 
 
 def test_miniconda_template_bootstraps_python_and_pip_for_pip_install() -> None:
@@ -145,7 +250,9 @@ def test_miniconda_template_latest_chains_update_after_tos_guard() -> None:
     assert "if conda tos --help >/dev/null 2>&1; then conda tos accept; fi;" in command
     assert "\nconda update -yq -nbase conda" in command
     assert "\n&& conda update -yq -nbase conda" not in command
-    dockerfile_run = "\n".join(render_directive(next(item for item in directives if isinstance(item, Run))))
+    dockerfile_run = "\n".join(
+        render_directive(next(item for item in directives if isinstance(item, Run)))
+    )
     assert "then conda tos accept; fi; \\\n       conda update" in dockerfile_run
 
 
@@ -166,7 +273,9 @@ def test_miniconda_template_mamba_chains_after_tos_guard() -> None:
     assert "\nconda config --set solver libmamba" in command
     assert "\n&& conda install -yq -nbase conda-libmamba-solver" not in command
     assert "\n&& conda config --set solver libmamba" not in command
-    dockerfile_run = "\n".join(render_directive(next(item for item in directives if isinstance(item, Run))))
+    dockerfile_run = "\n".join(
+        render_directive(next(item for item in directives if isinstance(item, Run)))
+    )
     assert "then conda tos accept; fi; \\\n       conda install" in dockerfile_run
     assert "\n    && conda config --set solver libmamba" in dockerfile_run
 
@@ -183,7 +292,9 @@ def test_miniconda_template_pinned_default_chains_after_tos_guard() -> None:
         "apt",
         directives.append,
     )
-    dockerfile_run = "\n".join(render_directive(next(item for item in directives if isinstance(item, Run))))
+    dockerfile_run = "\n".join(
+        render_directive(next(item for item in directives if isinstance(item, Run)))
+    )
     assert not any(line.strip().startswith("#") for line in dockerfile_run.splitlines())
 
     shell_command = dockerfile_run.removeprefix("RUN ").replace("\\\n", " ")
@@ -215,10 +326,19 @@ def test_matlabmcr_template_allows_legacy_ncurses_package() -> None:
     directives = []
     apply_builtin_template(
         "matlabmcr",
-        {"version": "2019b", "install_path": "/opt/mcr", "ncurses_package": "libncurses5"},
+        {
+            "version": "2019b",
+            "install_path": "/opt/mcr",
+            "ncurses_package": "libncurses5",
+        },
         "apt",
         directives.append,
     )
     command = "\n".join(item.command for item in directives if isinstance(item, Run))
     assert "libncurses5" in command
     assert "libncurses6" not in command
+
+
+def test_matlabmcr_rejects_unmapped_runtime_before_building() -> None:
+    with pytest.raises(ValueError, match="Unsupported MATLAB Runtime release"):
+        apply_builtin_template("matlabmcr", {"version": "2099a"}, "apt", lambda _: None)

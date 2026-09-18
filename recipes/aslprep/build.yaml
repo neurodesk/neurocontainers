@@ -1,10 +1,15 @@
 name: aslprep
-version: 26.0.2
+version: 26.0.3
 copyright:
   - license: BSD-3-Clause
     url: https://github.com/pennlinc/aslprep/blob/main/LICENSE.md
 architectures:
   - x86_64
+auto_update:
+  method: dockerhub
+  repo: pennlinc/aslprep
+  version_regex: ^(?P<version>[0-9]+\.[0-9]+\.[0-9]+)$
+
 build:
   kind: neurodocker
   base-image: pennlinc/aslprep:{{ context.version }}

@@ -30,7 +30,7 @@ tests:
   - name: Get fsqc version
     description: Verify fsqc package version
     command: python -c "import fsqc; print(fsqc.get_version())"
-    expected_output_contains: "2.1.4"
+    expected_output_contains: "${version}"
 
   - name: Get fsqc system info
     description: Display system and dependency information via Python

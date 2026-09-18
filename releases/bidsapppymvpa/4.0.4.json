@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "bidsapppymvpa 4.0.4": {
+      "version": "20260912",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "bids apps"
+  ]
+}

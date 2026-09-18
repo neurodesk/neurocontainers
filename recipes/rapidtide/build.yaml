@@ -35,6 +35,10 @@ structured_readme:
     resting state fMRI-BOLD signals for blood arrival time enhances functional
     connectivity analysis. Front. Hum. Neurosci. 10:311.
     https://doi.org/10.3389/fnhum.2016.00311
+auto_update:
+  method: pypi
+  package: rapidtide
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

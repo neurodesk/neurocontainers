@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "bidsappmrtrix3connectome 0.6.0": {
+      "version": "20260911",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "bids apps"
+  ]
+}

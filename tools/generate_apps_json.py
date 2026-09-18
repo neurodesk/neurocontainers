@@ -6,11 +6,20 @@ This tool reads all release files from the releases/ directory and creates
 a consolidated apps.json file that matches the original format.
 """
 
+import argparse
 import json
 import os
-import argparse
+import sys
 from pathlib import Path
 from typing import Dict, Any
+
+import yaml
+
+SCRIPT_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(SCRIPT_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_REPO_ROOT))
+
+from builder.release_plan import literal_categories
 
 
 VISIBILITY_FIELDS = ("show_in_menu", "show_in_applist")
@@ -122,18 +131,60 @@ def merge_container_releases(container_name: str, release_files: list) -> Dict[s
     return {**merged_visibility, **container_data}
 
 
-def generate_apps_json(releases_dir: str, output_file: str):
+def current_recipe_categories(
+    container_name: str, release_files: list, recipes_dir: Path
+) -> list[str] | None:
+    """Read current catalog categories, retaining release data as the fallback.
+
+    Named variants record their source recipe in release metadata. Never infer
+    it by splitting container names, which may themselves contain underscores.
+    """
+    sources = {
+        data.get("recipe", container_name)
+        for _, path in release_files
+        if not is_legacy_arm64_release(data := load_release_file(path))
+    }
+    if len(sources) != 1:
+        return None
+    source = sources.pop()
+    if (
+        not isinstance(source, str)
+        or source in {".", ".."}
+        or Path(source).name != source
+    ):
+        return None
+    path = recipes_dir / source / "build.yaml"
+    if not path.is_file():
+        return None
+    try:
+        recipe = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, yaml.YAMLError) as error:
+        print(f"Warning: retaining release categories for {container_name}: {error}")
+        return None
+    if not isinstance(recipe, dict) or "categories" not in recipe:
+        return None
+    return literal_categories(recipe)
+
+
+def generate_apps_json(
+    releases_dir: str, output_file: str, recipes_dir: str | None = None
+) -> None:
     """
     Generate apps.json from all release files.
     
     Args:
         releases_dir: Directory containing release files
         output_file: Path to write the generated apps.json
+        recipes_dir: Current recipes; defaults to a sibling of releases_dir
     """
     print(f"Collecting release files from: {releases_dir}")
     
     # Collect all release files
     containers = collect_release_files(releases_dir)
+    recipe_root = (
+        Path(recipes_dir) if recipes_dir is not None
+        else Path(releases_dir).parent / "recipes"
+    )
     
     if not containers:
         print("No release files found!")
@@ -157,6 +208,11 @@ def generate_apps_json(releases_dir: str, output_file: str):
         
         # Merge all releases for this container
         container_data = merge_container_releases(container_name, release_files)
+        categories = current_recipe_categories(
+            container_name, release_files, recipe_root
+        )
+        if categories is not None:
+            container_data["categories"] = sorted(set(categories))
         for app_name in container_data["apps"]:
             existing_owner = app_owners.get(app_name)
             if existing_owner is not None:
@@ -191,6 +247,10 @@ def main():
         help="Directory containing release files"
     )
     parser.add_argument(
+        "--recipes-dir",
+        help="Current recipes for catalog categories (defaults to sibling of releases)"
+    )
+    parser.add_argument(
         "--output",
         default="apps.json",
         help="Output path for generated apps.json"
@@ -202,7 +262,7 @@ def main():
     releases_dir = os.path.abspath(args.releases_dir)
     output_file = os.path.abspath(args.output)
     
-    generate_apps_json(releases_dir, output_file)
+    generate_apps_json(releases_dir, output_file, args.recipes_dir)
     
     return 0
 

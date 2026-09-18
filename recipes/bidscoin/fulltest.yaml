@@ -57,7 +57,7 @@ tests:
   - name: BIDScoin version details
     description: Check BIDS and BIDScoin version information
     command: bidscoin --version 2>&1
-    expected_output_contains: "4.6.2"
+    expected_output_contains: "${version}"
 
   - name: BIDScoin list executables
     description: List all BIDScoin commands and utilities
@@ -79,7 +79,7 @@ tests:
   # ==========================================================================
   - name: dcm2niix version check
     description: Verify dcm2niix binary runs and reports version
-    command: dcm2niix -v n 2>&1 | head -1
+    command: dcm2niix -h
     expected_output_contains: "dcm2niiX version"
 
   - name: dcm2niix help
@@ -503,7 +503,7 @@ tests:
   - name: Python bidscoin module
     description: Verify bidscoin Python module can be imported
     command: python -c "import bidscoin; print(bidscoin.__version__)" 2>&1
-    expected_output_contains: "4.6.2"
+    expected_output_contains: "${version}"
 
   - name: Python nibabel module
     description: Verify nibabel is available for NIfTI handling

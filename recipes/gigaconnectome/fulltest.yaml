@@ -47,7 +47,7 @@ tests:
   - name: giga_connectome version check
     description: Verify giga_connectome binary runs and reports version
     command: giga_connectome --version
-    expected_output_contains: "0.6.0"
+    expected_output_contains: "${version}"
 
   - name: giga_connectome help
     description: Verify giga_connectome displays help information

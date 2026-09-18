@@ -9,6 +9,7 @@ architectures:
 auto_update:
   method: github_release
   repo: rordenlab/niimath
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -18,11 +19,10 @@ build:
     - group:
         - variables:
             github_url: https://github.com/rordenlab/niimath.git
-            revision: 167031ef1d6f2e6c3beb164dbf8e2c23857947b2
+            revision: 'v{{ context.version }}'
         - run:
-            - git clone {{ local.github_url }} /tmp/niimath
+            - git clone --branch {{ local.revision }} {{ local.github_url }} /tmp/niimath
             - cd /tmp/niimath
-            - git reset --hard {{ local.revision }}
             - cd ./src
             - make static -j{{ parallel_jobs }}
             - cp niimath /usr/bin

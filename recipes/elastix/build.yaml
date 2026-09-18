@@ -5,6 +5,12 @@ version: 5.1.0
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: SuperElastix/elastix
+  assets:
+    downloaded_file: elastix-[0-9.]+-(?:linux|ubuntu)\.zip
+
 build:
   kind: neurodocker
 

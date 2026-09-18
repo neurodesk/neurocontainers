@@ -1,5 +1,5 @@
 name: apptainer
-version: 1.4.4
+version: 1.5.3
 
 architectures:
   - x86_64
@@ -15,6 +15,10 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAATPklE
 
 show_in_menu: false
 show_in_applist: false
+
+auto_update:
+  method: github_release
+  repo: apptainer/apptainer
 
 build:
   kind: neurodocker

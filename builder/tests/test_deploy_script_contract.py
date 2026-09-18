@@ -22,8 +22,9 @@ def _run_deploy_script(tmp_path: Path, mode: int) -> tuple[int, dict]:
     env = os.environ.copy()
     env.update(
         {
-            "DEPLOY_BINS": "./owner-only-tool",
+            "DEPLOY_BINS": "owner-only-tool",
             "DEPLOY_PATH": "",
+            "PATH": f".:{env.get('PATH', '')}",
         }
     )
     result = subprocess.run(
@@ -63,6 +64,41 @@ def test_deploy_script_accepts_world_accessible_executable(tmp_path: Path) -> No
 
     assert returncode == 0
     assert payload["failed"] == 0
+
+
+def test_deploy_script_rejects_path_as_wrapper_command(tmp_path: Path) -> None:
+    tool = tmp_path / "tool"
+    tool.write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
+    tool.chmod(
+        stat.S_IRUSR
+        | stat.S_IWUSR
+        | stat.S_IXUSR
+        | stat.S_IRGRP
+        | stat.S_IXGRP
+        | stat.S_IROTH
+        | stat.S_IXOTH
+    )
+    env = os.environ.copy()
+    env.update({"DEPLOY_BINS": str(tool), "DEPLOY_PATH": ""})
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT)],
+        capture_output=True,
+        cwd=tmp_path,
+        env=env,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+
+    assert result.returncode == 1
+    assert {
+        "name": f"deploy_bin.name:{tool}",
+        "status": "failed",
+        "message": (
+            f"DEPLOY_BINS entry {tool} must be a command name without '/'. "
+            "Add its directory to PATH or DEPLOY_PATH."
+        ),
+    } in payload["tests"]
 
 
 def test_deploy_script_checks_directory_access_without_find(tmp_path: Path) -> None:

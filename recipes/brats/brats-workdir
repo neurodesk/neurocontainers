@@ -1,0 +1,76 @@
+#!/usr/bin/python3
+# stdlib only, deliberately: the system interpreter never moves when the
+# venv path changes with the brats version.
+"""Print the OCI WorkingDir of a Docker Hub image.
+
+Used by brats-pull to record the working directory next to each sandbox.
+Apptainer discards the OCI WorkingDir when it converts an image (only
+ENTRYPOINT, CMD, ENV and labels survive into .singularity.d), and at run time
+there is no docker daemon to ask -- so algorithms whose ENTRYPOINT is a
+relative path, such as brats23_africa_blackbean's "python3 mlcube.py", started
+in the wrong directory and exited immediately. Recording it at pull time is
+the one moment the registry is guaranteed reachable.
+
+Prints an empty line for images that define no WorkingDir; exits non-zero on
+any failure so the caller can warn instead of recording garbage.
+"""
+import json
+import sys
+import urllib.parse
+import urllib.request
+
+ACCEPT = ", ".join([
+    "application/vnd.docker.distribution.manifest.v2+json",
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+    "application/vnd.oci.image.index.v1+json",
+])
+
+
+def fetch(url, headers=None):
+    request = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        return json.loads(response.read().decode())
+
+
+def main(argv):
+    if len(argv) != 2 or argv[1] in ("-h", "--help"):
+        print(__doc__.strip())
+        print("\nusage: brats-workdir <image>")
+        return 0 if len(argv) == 2 else 2
+
+    image = argv[1]
+    repo, _, tag = image.partition(":")
+    tag = tag or "latest"
+    if "/" not in repo:
+        repo = "library/" + repo
+
+    token = fetch(
+        "https://auth.docker.io/token?service=registry.docker.io&scope="
+        + urllib.parse.quote(f"repository:{repo}:pull")
+    )["token"]
+    headers = {"Authorization": "Bearer " + token, "Accept": ACCEPT}
+
+    manifest = fetch(
+        f"https://registry-1.docker.io/v2/{repo}/manifests/{tag}", headers
+    )
+    if "manifests" in manifest:  # multi-arch index: this stack is x86_64 only
+        digest = next(
+            entry["digest"]
+            for entry in manifest["manifests"]
+            if entry.get("platform", {}).get("architecture") == "amd64"
+        )
+        manifest = fetch(
+            f"https://registry-1.docker.io/v2/{repo}/manifests/{digest}", headers
+        )
+
+    config = fetch(
+        f"https://registry-1.docker.io/v2/{repo}/blobs/{manifest['config']['digest']}",
+        headers,
+    )
+    print(config.get("config", {}).get("WorkingDir", ""))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

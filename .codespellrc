@@ -25,6 +25,7 @@ ignore-regex = (Linke AC|Claus Zimmer|Zimmer, Claus|[A-Za-z0-9+/]{40,}={0,2})
 #   requestor - the X11 XSelectionRequestEvent field name
 #   doubleclick - an Openbox rc.xml key
 #   fo       - a variable name in nipype example code
+#   adres    - Siemens protocol resolution field (adRes)
 #   caf      - the `tar caf` flag cluster
 #   mattern, sherif, hart - author surnames in citations
-ignore-words-list = nd,te,delte,fwe,toi,ttest,varian,gaus,desolve,ist,readin,ans,commun,mapp,reson,mede,nwo,espace,requestor,doubleclick,mattern,sherif,hart,fo,caf
+ignore-words-list = nd,te,delte,fwe,toi,ttest,varian,gaus,desolve,ist,readin,ans,commun,mapp,reson,mede,nwo,espace,requestor,doubleclick,mattern,sherif,hart,fo,caf,adres

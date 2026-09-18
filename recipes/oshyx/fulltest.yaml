@@ -17,6 +17,7 @@
 
 name: oshyx
 version: "0.4"
+software_version: 0.4
 
 test_data:
   t1w_test: /OSHy/sub-test.nii.gz
@@ -43,7 +44,7 @@ tests:
   - name: OSHy.py version and banner
     description: Verify OSHy.py runs and displays version banner
     command: "bash -c 'python -u /OSHy/OSHy.py 2>&1 | head -5'"
-    expected_output_contains: "OSHy-X v0.4"
+    expected_output_contains: "OSHy-X v${software_version}"
 
   - name: OSHy.py help message
     description: Display OSHy.py command-line help

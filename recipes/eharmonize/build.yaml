@@ -1,3 +1,6 @@
+variables:
+  upstream_commit: 15e981551693a479753b29ce39f2745420c1facf
+
 name: eharmonize
 version: 1.0.0
 architectures:
@@ -8,6 +11,16 @@ structured_readme:
   example: eharmonize --help
   documentation: https://github.com/ahzhu/eharmonize
   citation: "ahzhu. (2025). ahzhu/eharmonize: Initial Release (v0.0.0). Zenodo. https://doi.org/10.5281/zenodo.15116825"
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: ahzhu/eharmonize
+    ref: HEAD
+    target:
+      variable: upstream_commit
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -25,7 +38,7 @@ build:
         env_exists: "false"
     - run:
         - cd /opt
-        - git clone https://github.com/ahzhu/eharmonize.git
+        - git clone https://github.com/ahzhu/eharmonize.git && git -C eharmonize checkout {{ context.upstream_commit }}
         - cd eharmonize
         # Replace git+ssh://git@ with https:// in setup.py to avoid SSH issues
         - sed -i "s/git+ssh:\/\/git@/git+https:\/\//" setup.py

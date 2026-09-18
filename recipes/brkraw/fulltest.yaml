@@ -1,5 +1,5 @@
 # brkraw container test suite
-# Tests for brkraw v0.3.11 - Bruker raw MRI data converter and tools
+# Tests for brkraw - Bruker raw MRI data converter and tools
 #
 # BrkRaw is a Python module for accessing raw Bruker Biospin MRI data.
 # This container also includes nibabel command-line tools.
@@ -15,7 +15,7 @@
 # the expected behavior but cannot be fully validated with NIfTI test data.
 
 name: brkraw
-version: 0.3.11
+version: 0.5.7
 
 required_files:
   - dataset: ds000001
@@ -44,7 +44,7 @@ tests:
   - name: brkraw version check
     description: Verify brkraw binary runs and reports correct version
     command: brkraw --version
-    expected_output_contains: "0.3.11"
+    expected_output_contains: "${version}"
 
   - name: brkraw help
     description: Display brkraw main help message
@@ -54,78 +54,23 @@ tests:
   - name: brkraw info help
     description: Display help for the info subcommand
     command: brkraw info --help
-    expected_output_contains: "input raw Bruker data"
+    expected_output_contains: "Path to the Bruker study"
 
-  - name: brkraw tonii help
-    description: Display help for single file conversion
-    command: brkraw tonii --help
+  - name: brkraw convert help
+    description: Display the scan and reconstruction conversion interface.
+    command: brkraw convert --help
     expected_output_contains:
-      - "input raw Bruker data"
-      - "--bids"
-      - "--scanid"
-      - "--recoid"
+      - "--scan-id"
+      - "--reco-id"
+      - "--sidecar"
 
-  - name: brkraw tonii_all help
-    description: Display help for batch conversion
-    command: brkraw tonii_all --help
+  - name: brkraw convert-batch help
+    description: Display the batch conversion interface.
+    command: brkraw convert-batch --help
     expected_output_contains:
-      - "input directory"
+      - "Root folder containing datasets"
       - "--output"
-      - "--ignore-localizer"
-
-  - name: brkraw bids_helper help
-    description: Display help for BIDS datasheet creation
-    command: brkraw bids_helper --help
-    expected_output_contains:
-      - "BIDS datasheet"
-      - "--format"
-      - "--json"
-
-  - name: brkraw bids_convert help
-    description: Display help for BIDS conversion
-    command: brkraw bids_convert --help
-    expected_output_contains:
-      - "BIDS datahseet"
-      - "--output"
-      - "datasheet"
-
-  # ==========================================================================
-  # BRK-BACKUP TOOL - Archiving Functionality
-  # ==========================================================================
-  - name: brk-backup version check
-    description: Verify brk-backup archiving tool runs
-    command: brk-backup --version
-    expected_output_contains: "brk-backup"
-
-  - name: brk-backup help
-    description: Display brk-backup main help
-    command: brk-backup --help
-    expected_output_contains:
-      - "BrkRaw command-line interface for archiving"
-      - "archived"
-      - "review"
-      - "backup"
-      - "clean"
-
-  - name: brk-backup archived help
-    description: Display help for scanning archived data status
-    command: brk-backup archived --help
-    expected_output_contains: "archived"
-
-  - name: brk-backup review help
-    description: Display help for reviewing data conflicts
-    command: brk-backup review --help
-    expected_output_contains: "review"
-
-  - name: brk-backup backup help
-    description: Display help for archiving raw data
-    command: brk-backup backup --help
-    expected_output_contains: "backup"
-
-  - name: brk-backup clean help
-    description: Display help for cleaning problematic archives
-    command: brk-backup clean --help
-    expected_output_contains: "clean"
+      - "--sidecar"
 
   # ==========================================================================
   # NIBABEL TOOLS - nib-ls (List/Summary)
@@ -509,24 +454,22 @@ tests:
   # These tests document expected behavior but require actual Bruker raw data
   # ==========================================================================
   - name: brkraw info error handling
-    description: Test brkraw info with invalid input (exits silently)
-    command: brkraw info nonexistent_bruker_data 2>&1; echo "brkraw info completed with exit $?"
-    expected_output_contains: "brkraw info completed"
+    description: Reject a missing Bruker study with a useful diagnostic.
+    command: brkraw info nonexistent_bruker_data
+    expected_exit_code: 2
+    expected_output_contains: "Path not found:"
 
-  - name: brkraw tonii error handling
-    description: Test brkraw tonii with invalid input (expected to fail gracefully)
-    command: brkraw tonii nonexistent_bruker_data 2>&1 || echo "Expected error - no Bruker data"
-    expected_output_contains: "Expected error"
+  - name: brkraw convert error handling
+    description: Reject a missing input study before conversion.
+    command: brkraw convert nonexistent_bruker_data
+    expected_exit_code: 2
+    expected_output_contains: "Path not found:"
 
-  - name: brkraw tonii_all error handling
-    description: Test brkraw tonii_all with invalid directory
-    command: brkraw tonii_all nonexistent_directory 2>&1 || echo "Expected error - no Bruker data"
-    expected_output_contains: "Expected error"
-
-  - name: brkraw bids_helper error handling
-    description: Test brkraw bids_helper with invalid input
-    command: brkraw bids_helper nonexistent_directory ${output_dir}/bids_sheet.csv 2>&1 || echo "Expected error - no Bruker data"
-    expected_output_contains: "Expected error"
+  - name: brkraw convert-batch error handling
+    description: Reject a missing batch input directory.
+    command: brkraw convert-batch nonexistent_directory
+    expected_exit_code: 2
+    expected_output_contains: "Path not found:"
 
   # ==========================================================================
   # COMBINED WORKFLOW TESTS

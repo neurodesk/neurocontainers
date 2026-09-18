@@ -1,4 +1,5 @@
 name: Recipes CI
+
 permissions:
   contents: read
 
@@ -6,217 +7,157 @@ on:
   workflow_dispatch:
     inputs:
       debug:
-        description: "Debug mode (only run niimath test)"
+        description: Run only niimath when no recipe list is supplied
         type: boolean
         default: true
+      recipes:
+        description: Comma-separated recipes; empty uses debug selection or all recipes
+        type: string
+        default: ''
       run-tests:
-        description: "Run tests for each built container"
+        description: Run deploy checks and fulltest.yaml against each newly built container
         type: boolean
-        default: false
+        default: true
       architecture:
-        description: "Target architecture (x86_64 or arm64)"
+        description: Declared architectures to build
         type: choice
         required: true
         default: x86_64
+        options: [x86_64, arm64, all]
+      x86-runner:
+        description: Runner pool for x86 builds in the NeuroDesk repository
+        type: choice
+        default: neurodesk-syd-arcrunner-neurocontainers
         options:
-          - x86_64
-          - arm64
+          - neurodesk-syd-arcrunner-neurocontainers
+          - blacksmith-8vcpu-ubuntu-2404
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build-builder-sif:
-    name: Build builder.sif
-    runs-on: ${{ github.event.inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    env:
-      ARCH: ${{ github.event.inputs.architecture || 'x86_64' }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Install Apptainer
-        uses: ./.github/actions/setup-apptainer
-        with:
-          apptainer-version: 1.4.3
-
-      - name: Install builder tooling
-        run: |
-          set -euxo pipefail
-          python -m pip install --upgrade pip
-          # Install this repo as a package to expose sf-* entry points
-          pip install -e .
-
-      - name: Build builder SIF
-        run: |
-          set -euxo pipefail
-          # Build via Docker and convert to SIF (avoids requiring host BuildKit)
-          sf-make builder --ignore-architectures --architecture "${ARCH}" --use-docker
-
-      - name: Upload builder SIF artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: builder-sif
-          path: sifs/*.sif
-
   prepare-matrix:
-    name: Discover recipes
-    runs-on: ${{ github.event.inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    name: Select recipe builds
+    runs-on: ubuntu-22.04
     outputs:
-      recipes: ${{ steps.set-matrix.outputs.recipes }}
+      targets: ${{ steps.matrix.outputs.targets }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Build recipe list (debug or full)
-        id: set-matrix
-        shell: bash
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install recipe discovery dependencies
+        run: python -m pip install pyyaml
+      - name: Expand selected recipes and variants
+        id: matrix
+        env:
+          REQUESTED_RECIPES: ${{ inputs.recipes }}
+          ARCHITECTURE: ${{ inputs.architecture }}
+          DEBUG: ${{ inputs.debug }}
         run: |
-          set -euo pipefail
-          if [[ "${{ github.event.inputs.debug }}" == "true" ]]; then
-            # Debug mode: only test niimath
-            RECIPES='["niimath"]'
-          else
-            # Full mode: discover all recipes with build.yaml under recipes/*/
-            mapfile -t files < <(find recipes -mindepth 2 -maxdepth 2 -name build.yaml | sort)
-            names=()
-            for f in "${files[@]}"; do
-              # Extract recipe directory name (recipes/<name>/build.yaml)
-              n=$(basename "$(dirname "$f")")
-              # Skip the builder recipe itself in matrix to avoid recursion
-              if [[ "$n" == "builder" ]]; then continue; fi
-              names+=("\"$n\"")
-            done
-            if [[ ${#names[@]} -eq 0 ]]; then
-              echo "No recipes found" >&2
-              RECIPES='[]'
-            else
-              # Join the JSON-quoted names with commas to form valid JSON array
-              RECIPES="[$(IFS=,; echo "${names[*]}")]"
-            fi
-          fi
-          echo "recipes=$RECIPES" >> "$GITHUB_OUTPUT"
+          args=()
+          if [ "$DEBUG" = true ]; then args+=(--debug); fi
+          targets=$(python -m workflows.recipe_ci --recipes "$REQUESTED_RECIPES" \
+            --architecture "$ARCHITECTURE" "${args[@]}")
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
 
-  build-or-test-recipe:
-    name: Recipe ${{ matrix.recipe }}
-    needs: [prepare-matrix, build-builder-sif]
-    runs-on: ${{ github.event.inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+  verify:
+    name: ${{ matrix.container }} | ${{ matrix.architecture }}
+    needs: prepare-matrix
+    runs-on: ${{ github.repository == 'neurodesk/neurocontainers' && (matrix.architecture == 'aarch64' && 'blacksmith-8vcpu-ubuntu-2404-arm' || inputs.x86-runner) || (matrix.architecture == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-22.04') }}
+    timeout-minutes: 360
     strategy:
       fail-fast: false
+      max-parallel: 8
       matrix:
-        recipe: ${{ fromJSON(needs.prepare-matrix.outputs.recipes) }}
+        include: ${{ fromJSON(needs.prepare-matrix.outputs.targets) }}
+    env:
+      RECIPE: ${{ matrix.recipe }}
+      CONTAINER: ${{ matrix.container }}
+      VARIANT: ${{ matrix.variant }}
+      ARCHITECTURE: ${{ matrix.architecture }}
+      VERSION: ${{ matrix.version }}
+      NEURO_CI_IMAGE: neurocontainer-check/${{ matrix.container }}:${{ github.sha }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v8.1.0
+      - name: Install builder from this checkout
+        run: python -m pip install -e .
       - name: Install Apptainer
+        if: inputs.run-tests
         uses: ./.github/actions/setup-apptainer
         with:
           apptainer-version: 1.4.3
-
-      - name: Download builder SIF artifact
-        uses: actions/download-artifact@v8
+      - name: Install runtime test data tooling
+        if: inputs.run-tests
+        run: |
+          python -m pip install datalad
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends git-annex
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Prepare runtime scratch paths
+        if: inputs.run-tests
+        run: |
+          mkdir -p "$RUNNER_TEMP/apptainer/cache" "$RUNNER_TEMP/apptainer/tmp"
+          echo "APPTAINER_CACHEDIR=$RUNNER_TEMP/apptainer/cache" >> "$GITHUB_ENV"
+          echo "APPTAINER_TMPDIR=$RUNNER_TEMP/apptainer/tmp" >> "$GITHUB_ENV"
+      - name: Validate and stage recipe inputs
+        run: |
+          python builder/validation.py "recipes/$RECIPE/build.yaml"
+          python -m builder stage "$RECIPE" --recreate --download \
+            --architecture "$ARCHITECTURE" --variant "$VARIANT"
+      - name: Set up Blacksmith Docker builder
+        if: github.repository == 'neurodesk/neurocontainers' && (matrix.architecture == 'aarch64' || inputs.x86-runner == 'blacksmith-8vcpu-ubuntu-2404')
+        uses: useblacksmith/setup-docker-builder@v1
+      - name: Build the selected container
+        run: |
+          dockerfile=$(find "build/$CONTAINER" -maxdepth 1 -name '*.Dockerfile' -print -quit)
+          test -n "$dockerfile"
+          python -m builder staged-context-args "build/$CONTAINER" > "$RUNNER_TEMP/image-context-args"
+          mapfile -d '' -t IMAGE_CONTEXT_ARGS < "$RUNNER_TEMP/image-context-args"
+          docker buildx build "build/$CONTAINER" --load --file "$dockerfile" --tag "$NEURO_CI_IMAGE" \
+            --build-context "neurocontainer-cache=build/$CONTAINER/cache" "${IMAGE_CONTEXT_ARGS[@]}"
+      - name: Set up Go for image conversion
+        if: inputs.run-tests
+        uses: actions/setup-go@v6
         with:
-          name: builder-sif
-          path: sifs
-
-      - name: List artifacts
-        run: ls -la sifs
-
-      - name: Prepare /mnt for container /tmp
+          go-version: '1.25.1'
+          cache: false
+      - name: Convert the freshly built image for runtime tests
+        if: inputs.run-tests
         run: |
-          set -euxo pipefail
-          # Ensure a writable tmp area on the host we can bind into the container
-          sudo mkdir -p /mnt/tmp
-          sudo chown "$USER" /mnt/tmp
-
-      - name: Build SIF via builder image (BuildKit inside container)
-        env:
-          RECIPE: ${{ matrix.recipe }}
-          ARCH: ${{ github.event.inputs.architecture || 'x86_64' }}
+          set -euo pipefail
+          mkdir -p "check/$CONTAINER/test-output/fulltest-containers"
+          CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' \
+            -o "$RUNNER_TEMP/docker-save-to-simg" builder/docker-save-to-simg.go
+          candidate="check/$CONTAINER/test-output/fulltest-containers/${CONTAINER}_${VERSION}.simg"
+          docker save "$NEURO_CI_IMAGE" | TMPDIR="$RUNNER_TEMP" "$RUNNER_TEMP/docker-save-to-simg" - "$candidate.tmp"
+          mv "$candidate.tmp" "$candidate"
+      - name: Run deploy checks and the recipe runtime suite
+        if: inputs.run-tests
         run: |
-          set -euxo pipefail
-          # Use the builder SIF to run sf-make; bind the repo so it can access recipes
-          BUILDER_SIF=$(ls sifs/*.sif | head -n1)
-          echo "Using builder SIF: $BUILDER_SIF"
-          # Bind current workspace inside the container and execute sf-make against the recipe
-          # The builder image clones neurocontainers at build time; we prefer mounting our checkout
-          apptainer exec \
-            --fakeroot \
-            --writable-tmpfs \
-            --bind "/mnt/tmp:/tmp" \
-            --bind "$PWD:/workspace" \
-            "$BUILDER_SIF" \
-            bash -lc "cd /workspace && sf-make \"${RECIPE}\" --ignore-architectures --architecture \"${ARCH}\""
-
-      - name: Set up Python for testing
-        if: ${{ github.event.inputs['run-tests'] == 'true' }}
-        uses: actions/setup-python@v6
+          python -m workflows.release_test_runner \
+            --recipe "$RECIPE" --version "$VERSION" \
+            --release-file "check/$CONTAINER/$VERSION.json" \
+            --candidate-container "check/$CONTAINER/test-output/fulltest-containers/${CONTAINER}_${VERSION}.simg" \
+            --test-config "recipes/$RECIPE/fulltest.yaml" \
+            --results-path "check/$CONTAINER/test-results.json" \
+            --output-dir "check/$CONTAINER/test-output" --repo-root . --verbose
+      - name: Retain runtime results and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          python-version: "3.11"
-
-      - name: Install builder tooling (for tests)
-        if: ${{ github.event.inputs['run-tests'] == 'true' }}
-        run: |
-          set -euxo pipefail
-          python -m pip install --upgrade pip
-          pip install -e .
-
-      - name: Determine recipe version
-        if: ${{ github.event.inputs['run-tests'] == 'true' }}
-        id: get-version
-        run: |
-          python - <<'PY'
-          import yaml, os
-          p = f"recipes/${{ matrix.recipe }}/build.yaml"
-          with open(p) as f:
-              d = yaml.safe_load(f)
-          version = d.get('version','latest')
-          print(f"Detected version: {version}")
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
-              out.write(f"version={version}\n")
-          PY
-
-      - name: Run container tests (apptainer)
-        if: ${{ github.event.inputs['run-tests'] == 'true' }}
-        env:
-          RECIPE: ${{ matrix.recipe }}
-          VERSION: ${{ steps.get-version.outputs.version }}
-        run: |
-          set -euxo pipefail
-          echo "Testing ${RECIPE}:${VERSION} using local SIF"
-          mkdir -p builder
-          python - <<'PY'
-          from pathlib import Path
-          import os
-
-          from workflows.test_runner import ContainerTestRunner, TestRequest
-
-          recipe = os.environ["RECIPE"]
-          version = os.environ["VERSION"]
-
-          runner = ContainerTestRunner()
-          request = TestRequest(
-              recipe=recipe,
-              version=version,
-              runtime="apptainer",
-              location="local",
-              test_config=Path(f"recipes/{recipe}/build.yaml"),
-              cleanup=False,
-              auto_cleanup=False,
-              verbose=True,
-              allow_missing_release=True,
-              output_dir=Path("builder"),
-              results_path=Path(f"builder/test-results-{recipe}.json"),
-          )
-
-          outcome = runner.run(request)
-          print(f"Status: {outcome.status}")
-          if outcome.reason:
-              print(f"Reason: {outcome.reason}")
-          PY
+          name: recipe-check-${{ matrix.container }}-${{ github.sha }}
+          path: |
+            check/${{ matrix.container }}/test-results.json
+            check/${{ matrix.container }}/test-output/*.json
+            check/${{ matrix.container }}/test-output/*.jsonl
+            check/${{ matrix.container }}/test-output/*.log
+          retention-days: 7
+          if-no-files-found: ignore

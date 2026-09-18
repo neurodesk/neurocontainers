@@ -18,7 +18,7 @@
 #   - Phase.nii: 40x40x20x3 multi-echo phase (3 echoes)
 
 name: clearswi
-version: 1.6.1
+version: 1.7.0
 
 test_data:
   output_dir: test_output
@@ -1126,6 +1126,13 @@ tests:
       '
       clearswi -m "$D/Mag.nii" -p "$D/Phase.nii" -t "[4,8,12]" --qsm \
         --qsm-mask ${output_dir}/cli/mask.nii -o ${output_dir}/cli/qsm_masked.nii
+      julia --startup-file=no -e '
+      using CLEARSWI
+      result = readmag("${output_dir}/cli/qsm_masked.nii")
+      @assert size(result) == (40, 40, 20)
+      @assert all(isfinite, result)
+      @assert maximum(result) > minimum(result)
+      '
     validate:
       - output_exists: ${output_dir}/cli/mask.nii
       - output_exists: ${output_dir}/cli/qsm_masked.nii

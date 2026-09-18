@@ -40,7 +40,7 @@ tests:
   - name: FreeSurfer version check
     description: Verify mri_info binary runs and reports version
     command: mri_info --version
-    expected_output_contains: "freesurfer 8.2.0"
+    expected_output_contains: "freesurfer ${version}"
 
   - name: recon-all version check
     description: Verify recon-all script is available

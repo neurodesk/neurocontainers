@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "spinalcordtoolbox_gpu 7.3.3": {
+      "version": "20260904",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "spine"
+  ],
+  "variant": "gpu",
+  "architecture": "x86_64",
+  "recipe": "spinalcordtoolbox"
+}

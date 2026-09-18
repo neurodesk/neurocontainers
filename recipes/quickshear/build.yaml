@@ -8,6 +8,10 @@ copyright:
 architectures:
     - x86_64
 
+auto_update:
+  method: pypi
+  package: quickshear
+
 build:
     kind: neurodocker
 
@@ -29,7 +33,7 @@ build:
               - python3-pip
 
         - run:
-              - pip install quickshear==1.2.0
+              - pip install quickshear=={{ context.version }}
 
         - install:
               - build-essential

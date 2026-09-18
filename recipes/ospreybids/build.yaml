@@ -7,9 +7,14 @@ structured_readme:
   example: osprey
   documentation: https://osprey-bids.readthedocs.io/en/latest/index.html
   citation: 'G Oeltzschner, HJ Zöllner, SCN Hui, M Mikkelsen, MG Saleh, S Tapper, RAE Edden. Osprey: Open-Source Processing, Reconstruction & Estimation of Magnetic Resonance Spectroscopy Data. J Neurosci Meth 343:108827 (2020).'
+auto_update:
+  method: dockerhub
+  repo: dcanumn/osprey-bids
+  version_regex: ^v(?P<version>\d+(?:\.\d+)+)$
+
 build:
   kind: neurodocker
-  base-image: dcanumn/osprey-bids:v4.2.1
+  base-image: dcanumn/osprey-bids:v{{ context.version }}
   pkg-manager: apt
   directives:
     - deploy:

@@ -10,8 +10,8 @@ architectures:
   - aarch64
 
 auto_update:
-  method: github_release
-  repo: TIO-IKIM/medical_image_deidentification
+  method: pypi
+  package: mede
 
 build:
   kind: neurodocker

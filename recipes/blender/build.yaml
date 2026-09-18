@@ -1,5 +1,5 @@
 name: blender
-version: 5.0.1
+version: 5.2.2
 
 copyright:
   - license: GPL-3.0-or-later
@@ -7,6 +7,10 @@ copyright:
 
 architectures:
   - x86_64
+
+auto_update:
+  method: github_tags
+  repo: blender/blender
 
 build:
   kind: neurodocker

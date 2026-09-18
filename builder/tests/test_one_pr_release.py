@@ -122,6 +122,39 @@ def test_detect_recipes_allows_pr_without_recipes(tmp_path: Path, monkeypatch) -
     assert one_pr_release.detect_recipes("base", "head") == []
 
 
+def test_detect_from_git_preserves_metadata_only_release(tmp_path: Path, monkeypatch) -> None:
+    """PR detection and post-merge promotion use the same non-image verdict."""
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    recipe_dir = write_recipe(tmp_path)
+    helper = recipe_dir / "config.txt"
+    helper.write_text("original")
+    git("add", ".")
+    git("commit", "-m", "Initial recipe")
+    base = git("rev-parse", "HEAD")
+
+    path = recipe_dir / "build.yaml"
+    recipe = yaml.safe_load(path.read_text())
+    recipe.update(
+        readme="Updated help",
+        categories=["workflows"],
+        auto_update={},
+        copyright=[{"license": "MIT", "url": "https://example.com/license"}],
+        icon="data:image/png;base64,aGVsbG8=",
+        draft=True,
+    )
+    path.write_text(yaml.safe_dump(recipe) + "# Clarified documentation\n")
+    git("commit", "-am", "Update documentation and catalog")
+    assert one_pr_release.detect_recipes(base, "HEAD") == []
+
+    helper.write_text("new runtime configuration")
+    git("commit", "-am", "Update staged input")
+    assert one_pr_release.detect_recipes(base, "HEAD") == ["demo"]
+
+
 def test_detect_recipes_rejects_mixed_pr(tmp_path: Path, monkeypatch) -> None:
     """Mixed automation and recipe changes cannot cross the trust boundary."""
     recipe_dir = write_recipe(tmp_path)
@@ -267,6 +300,24 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     verified = one_pr_release.verify_candidate(candidate_dir, "abc123", 42)
     assert verified["recipe"] == "demo"
 
+    manifest["recipe_fingerprint"] = "0" * 64
+    (candidate_dir / "manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        one_pr_release,
+        "recipe_changes_since_merge_are_source_only",
+        lambda recipe, merge_sha: recipe == "demo" and merge_sha == "merge123",
+    )
+    verified = one_pr_release.verify_candidate(
+        candidate_dir, "abc123", 42, "merge123"
+    )
+    assert verified["recipe"] == "demo"
+    manifest["recipe_fingerprint"] = one_pr_release.recipe_fingerprint("demo")
+    (candidate_dir / "manifest.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+
     manifest["image_name"] = "forged_image"
     (candidate_dir / "manifest.json").write_text(
         json.dumps(manifest), encoding="utf-8"
@@ -380,6 +431,114 @@ def test_verify_candidate_rejects_a_variant_the_recipe_does_not_declare(
         assert "does not declare variant" in str(error)
     else:
         raise AssertionError("undeclared variant identity was accepted")
+
+
+def test_verify_published_metadata_rechecks_identity_without_large_artifacts(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The locked finalizer needs only the verified manifest and release preview."""
+    recipe_dir = write_recipe(tmp_path)
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    bundle = tmp_path / "release-previews"
+    candidate_dir = bundle / "demo"
+    candidate_dir.mkdir(parents=True)
+
+    recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text(encoding="utf-8"))
+    release = release_data("demo", "1.2.3", recipe, "20260721", "x86_64")
+    (candidate_dir / "1.2.3.json").write_text(
+        json.dumps(release), encoding="utf-8"
+    )
+    manifest = {
+        "recipe": "demo",
+        "container": "demo",
+        "variant": "",
+        "architecture": "x86_64",
+        "version": "1.2.3",
+        "build_date": "20260721",
+        "image_name": "demo_1.2.3",
+        "pr_number": 42,
+        "head_sha": "abc123",
+        "candidate_tag": "nd-candidate-demo:abc123",
+        "recipe_fingerprint": one_pr_release.recipe_fingerprint("demo"),
+        "docker_archive": "demo_1.2.3_20260721.docker.tar",
+        "docker_sha256": "1" * 64,
+        "sif": "demo_1.2.3_20260721.simg",
+        "sif_sha256": "2" * 64,
+        "release_json": "1.2.3.json",
+    }
+    manifests_path = tmp_path / "verified-manifests.json"
+    manifests_path.write_text(json.dumps([manifest]), encoding="utf-8")
+
+    verified = one_pr_release.verify_published_metadata(
+        bundle, manifests_path, "abc123", 42
+    )
+    assert verified == [manifest]
+    assert not (candidate_dir / manifest["docker_archive"]).exists()
+    assert not (candidate_dir / manifest["sif"]).exists()
+
+    manifest["head_sha"] = "different"
+    manifests_path.write_text(json.dumps([manifest]), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Published head SHA mismatch"):
+        one_pr_release.verify_published_metadata(
+            bundle, manifests_path, "abc123", 42
+        )
+
+
+def test_verify_published_metadata_allows_only_source_changes_since_merge(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Concurrent source metadata must not invalidate a published candidate."""
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    recipe_dir = write_recipe(tmp_path)
+    git("add", ".")
+    git("commit", "-m", "Merge candidate")
+    merge_sha = git("rev-parse", "HEAD")
+
+    recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text(encoding="utf-8"))
+    bundle = tmp_path / "release-previews"
+    candidate_dir = bundle / "demo"
+    candidate_dir.mkdir(parents=True)
+    release = release_data("demo", "1.2.3", recipe, "20260721", "x86_64")
+    (candidate_dir / "1.2.3.json").write_text(json.dumps(release), encoding="utf-8")
+    manifest = {
+        "recipe": "demo",
+        "container": "demo",
+        "variant": "",
+        "architecture": "x86_64",
+        "version": "1.2.3",
+        "build_date": "20260721",
+        "image_name": "demo_1.2.3",
+        "pr_number": 42,
+        "head_sha": "abc123",
+        "candidate_tag": "nd-candidate-demo:abc123",
+        "recipe_fingerprint": one_pr_release.recipe_fingerprint("demo"),
+        "docker_archive": "demo_1.2.3_20260721.docker.tar",
+        "docker_sha256": "1" * 64,
+        "sif": "demo_1.2.3_20260721.simg",
+        "sif_sha256": "2" * 64,
+        "release_json": "1.2.3.json",
+    }
+    manifests_path = tmp_path / "verified-manifests.json"
+    manifests_path.write_text(json.dumps([manifest]), encoding="utf-8")
+
+    recipe["auto_update"] = {"method": "dockerhub", "repo": "example/demo"}
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe), encoding="utf-8")
+    git("commit", "-am", "Add update metadata")
+    assert one_pr_release.verify_published_metadata(
+        bundle, manifests_path, "abc123", 42, merge_sha
+    ) == [manifest]
+
+    recipe["build"]["base-image"] = "ubuntu:24.10"
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe), encoding="utf-8")
+    git("commit", "-am", "Change image")
+    with pytest.raises(RuntimeError, match="differs from published candidate"):
+        one_pr_release.verify_published_metadata(
+            bundle, manifests_path, "abc123", 42, merge_sha
+        )
 
 
 def test_detect_targets_expands_declared_architectures(tmp_path: Path, monkeypatch) -> None:
@@ -647,3 +806,110 @@ def test_one_pr_workflows_preserve_fork_reporting_contract() -> None:
     assert "listPullRequestsAssociatedWithCommit" in reporter
     assert "if (prs.length === 0) return" not in reporter
     assert "].join('\\n');" in reporter
+
+
+def dive_report(tmp_path: Path, wasted_bytes: int, display: str, *failed: str) -> Path:
+    """Write a Dive CI report with the given failing rules."""
+    lines = [
+        "  efficiency: 82.4040 %",
+        f"  wastedBytes: {wasted_bytes} bytes ({display})",
+        "  userWastedPercent: 85.3592 %",
+        "Results:",
+    ]
+    lines += [f"  FAIL: {rule}: policy text (%-x=0.85 > threshold=0.3)" for rule in failed]
+    (tmp_path / "dive-report.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return tmp_path / "dive-report.txt"
+
+
+def test_small_absolute_waste_waives_only_the_ratio_rule(tmp_path: Path) -> None:
+    # vina adds one 8.7 MB layer and inherits the preamble's duplication, so the
+    # ratio describes the base image rather than anything the recipe controls.
+    report = dive_report(tmp_path, 56730634, "57 MB", "highestUserWastedPercent")
+
+    outcome, reason = one_pr_release.dive_gate_outcome(report, "failure")
+
+    assert outcome == "success"
+    assert "below the 200 MB floor" in reason
+
+
+def test_large_absolute_waste_still_fails_the_ratio_rule(tmp_path: Path) -> None:
+    report = dive_report(tmp_path, 943718400, "944 MB", "highestUserWastedPercent")
+
+    outcome, reason = one_pr_release.dive_gate_outcome(report, "failure")
+
+    assert outcome == "failure"
+    assert "944 MB" in reason
+
+
+def test_a_second_failing_rule_is_never_waived(tmp_path: Path) -> None:
+    report = dive_report(
+        tmp_path, 10485760, "10 MB", "highestUserWastedPercent", "lowestEfficiency"
+    )
+
+    outcome, reason = one_pr_release.dive_gate_outcome(report, "failure")
+
+    assert outcome == "failure"
+    assert "lowestEfficiency" in reason
+
+
+def test_a_dive_run_that_never_completed_is_not_waived(tmp_path: Path) -> None:
+    dive_report(tmp_path, 1024, "1 kB", "highestUserWastedPercent")
+
+    outcome, _ = one_pr_release.dive_gate_outcome(tmp_path / "dive-report.txt", "cancelled")
+
+    assert outcome == "failure"
+
+
+def test_a_missing_report_cannot_waive_a_dive_failure(tmp_path: Path) -> None:
+    outcome, _ = one_pr_release.dive_gate_outcome(tmp_path / "absent.txt", "failure")
+
+    assert outcome == "failure"
+
+
+def test_retirement_manifest_gates_recipe_removal(tmp_path: Path, monkeypatch) -> None:
+    """A recipe may only leave recipes/ together with a manifest entry."""
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    write_recipe(tmp_path, "demo")
+    write_recipe(tmp_path, "successor")
+    git("add", ".")
+    git("commit", "-m", "Initial recipes")
+    base = git("rev-parse", "HEAD")
+
+    manifest = tmp_path / one_pr_release.RETIREMENT_MANIFEST
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    git("rm", "-r", "-q", "recipes/demo")
+    git("commit", "-m", "Remove demo without a manifest")
+    with pytest.raises(ValueError, match=one_pr_release.RETIREMENT_MANIFEST):
+        one_pr_release.detect_recipes(base, "HEAD")
+
+    entry = [{"recipe": "demo", "superseded_by": "successor", "reason": "renamed"}]
+    manifest.write_text(yaml.safe_dump({"retired": entry}), encoding="utf-8")
+    git("add", ".")
+    git("commit", "-m", "Retire demo in favour of successor")
+    plan = one_pr_release.release_plan(base, "HEAD")
+    assert plan.retired_recipes == ["demo"]
+    assert plan.changed_recipes == []
+    assert one_pr_release.detect_recipes(base, "HEAD") == []
+
+    # The manifest is a statement about the tree, not a free-form note.
+    manifest.write_text(
+        yaml.safe_dump({"retired": [{"recipe": "successor", "reason": "typo"}]}),
+        encoding="utf-8",
+    )
+    git("commit", "-am", "Claim a recipe that is still present")
+    with pytest.raises(RuntimeError, match="still present"):
+        one_pr_release.detect_recipes(base, "HEAD")
+
+    manifest.write_text(
+        yaml.safe_dump(
+            {"retired": [{"recipe": "demo", "superseded_by": "absent", "reason": "x"}]}
+        ),
+        encoding="utf-8",
+    )
+    git("commit", "-am", "Point at a successor that does not exist")
+    with pytest.raises(RuntimeError, match="does not exist"):
+        one_pr_release.detect_recipes(base, "HEAD")

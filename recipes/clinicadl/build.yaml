@@ -1,18 +1,52 @@
 name: clinicadl
-version: 1.6.1
+version: 2.0.0
 architectures:
   - x86_64
 variables:
+  clinicadl_version: 2.0.0
   clinica_version: 0.7.7
+  setuptools_version: 80.9.0
+  traits_version: 6.4.3
 structured_readme:
   description: |-
     Framework for the reproducible processing of neuroimaging data with deep learning methods
     ClinicaDL is the deep learning extension of Clinica, a Python library to process neuroimaging data in BIDS format.
-  example: ml clinicadl
-  documentation: clinicadl.aramislab.fr/
+  example: |-
+    ml clinicadl
+    python -c 'from clinicadl.train import Trainer; print(Trainer)'
+  documentation: https://clinicadl.readthedocs.io/en/stable/
   citation: |-
     Thibeau-Sutre, E., Díaz, M., Hassanaly, R., Routier, A., Dormont, D., Colliot, O., Burgos, N.: ‘ClinicaDL: an open-source deep learning software for reproducible neuroimaging processing‘, 2021.
     Routier, A., Burgos, N., Díaz, M., Bacci, M., Bottani, S., El-Rifai O., Fontanella, S., Gori, P., Guillon, J., Guyot, A., Hassanaly, R., Jacquemont, T., Lu, P., Marcoux, A., Moreau, T., Samper-González, J., Teichmann, M., Thibeau-Sutre, E., Vaillant G., Wen, J., Wild, A., Habert, M.-O., Durrleman, S., and Colliot, O.: ‘Clinica: An Open Source Software Platform for Reproducible Clinical Neuroscience Studies’, 2021. doi:10.3389/fninf.2021.689675
+auto_update:
+  method: sources
+  container_version: clinicadl
+  sources:
+    - id: clinicadl
+      method: pypi
+      package: clinicadl
+      target:
+        variable: clinicadl_version
+        fulltest_variable: clinicadl_version
+    - id: clinica
+      method: pypi
+      package: clinica
+      target:
+        variable: clinica_version
+        fulltest_variable: clinica_version
+    - id: setuptools
+      method: pypi
+      package: setuptools
+      target:
+        variable: setuptools_version
+        fulltest_variable: setuptools_version
+    - id: traits
+      method: pypi
+      package: traits
+      target:
+        variable: traits_version
+        fulltest_variable: traits_version
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -25,7 +59,10 @@ build:
         conda_install: python=3.10 pip
     - run:
         - conda create -y -n clinicadlEnv python=3.10 pip
-        - conda run -n clinicadlEnv pip install clinicadl=={{ context.version }} clinica=={{ context.clinica_version }} setuptools==80.9.0 traits==6.4.3
+        - conda run -n clinicadlEnv pip install --no-cache-dir clinicadl=={{ context.clinicadl_version }}
+        - conda create -y -n clinicaEnv python=3.10 pip
+        - conda run -n clinicaEnv pip install --no-cache-dir clinica=={{ context.clinica_version }} setuptools=={{ context.setuptools_version }} traits=={{ context.traits_version }}
+        - conda clean --all --yes
     - template:
         name: fsl
         version: 6.0.7.16
@@ -48,15 +85,16 @@ build:
     - deploy:
         path:
           - /opt/miniconda/envs/clinicadlEnv/bin
+        bins:
+          - clinica
     - environment:
-        PATH: /opt/miniconda/envs/clinicadlEnv/bin:$PATH
+        PATH: /opt/miniconda/envs/clinicadlEnv/bin:/opt/miniconda/envs/clinicaEnv/bin:$PATH
     - test:
         name: testScript
         script: |-
           #!/bin/bash
-          export PATH="/opt/miniconda/envs/clinicadlEnv/bin:$PATH"
           clinica --version
-          clinicadl -h | head -n 5
+          python -c 'from clinicadl.train import Trainer; print(Trainer)'
           fslmaths --version
           recon-all --version
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA3BJREFUSEu1lV1MU2cYx39HKhcGloEVqJkSCdkyPhLINgxkQEKmmLlkGUOo4vwY29zGQvTCzGUXA5Wwm8mNCXd4wYIX3pTtZjAvCFm2mDpGBUOWoPQUpqnWUvFAoYdzavp2nLWHtqsxnqRp3tO3z////J73fR7p408D4XA4TOwHiFtv/GZ+H1nruh75SrpfOvnJYjjdgMmEUhmQTrT7UwokcpjKkHm/EIh18LwBI7FiDUjHTvrSRpQOc3MthUBytuusrgaQkMiwZCFJGSkPQyID0kcnHpoQaShPZDzyzyzMX6OyspBAIMDs7GNee/00uh7CeeOMwBB53tp7GdvO/cAWQzwO0dHjDwxEuq7hf+RiynWewcGLNDQ0GIFUVaWjo4Nfrz+mcLeXsbExamtrWVPtmwRiiUhtx7xGBsGgl8mJC1wZ+Iq6ujo6Ozvp7++npKSEoaEhysrKqKjYS07ONiEQ2RNca6XA9k7yDP4T0PF6/2D27++Q5SkGBgZob2/nlV3voWmrqKFJRkdH6enpwefzxQi0UGDbFycQl8Hho/cFIl1Xkd3D5O+4jsPhEHiWlAPsLmxCUeaZuPk1j3xOgay+vt4QWFk9lJ6ApoW4O3uVN99wCyylpaXkWs+xI+9tQmt+brkuMu9xJBTIL4giSniK7G33RA00TcUjO9DXf8TpdNLd3c0vozspsDWgKB4mJ77h0g8dDA8PxyFaDjazIZCop0mtR/75F5GG1/sbN37/gmBwEZfLxbsHz7KnqI3FxWnyrDcFlpqaGjIzMw1EC/eKyc2tAimawVbLS2Rlv4okZYq11HJ4wTimEad//fktfZdOYbfb6evro7e3l/LycuFcURRsNptRg66uLqanp42jPDMzg7JcSVHxl1gs2eJeCIGN1CKFnvf8xK3Jc4yPj1NVVWX82e/309jYiFveSmlJNAPzMzIywmenBuMFmls9cb0oFFpCdl9jynUBq9VKdXW1cDk3N0defj3brdXM3P5+U/CNF7sK2ygq+pwMS3YUUUTA3It0fZ0nS3cIBG4TXLlPOKyRlV3MyzkVqKrCyrIHPRwdNBjDSiywxNRAIPqwRX6x7brpkHtTu45tVub2+6zzQvqgeS5pu050cVLN7oQXzSzwf0M8nYzietH7TXeeCZH5tppH5KaJlkjgeWa02cBT7D1jbdy4T7UAAAAASUVORK5CYII=
@@ -70,9 +108,15 @@ readme: |-
   Example:
   ```
   ml clinicadl
+  python -c 'from clinicadl.train import Trainer; print(Trainer)'
   ```
 
-  More documentation can be found here: clinicadl.aramislab.fr/
+  ClinicaDL 2 uses a Python API. The clinicadl command and its subcommands were
+  removed upstream; rewrite 1.x CLI workflows using the Python API.
+  The python command runs the ClinicaDL environment. The clinica preprocessing
+  command uses a separate environment with its own dependencies.
+
+  More documentation can be found here: https://clinicadl.readthedocs.io/en/stable/
 
   Citation:
   ```

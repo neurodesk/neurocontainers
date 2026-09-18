@@ -21,6 +21,7 @@ on:
         options:
         - "neurodesk-syd2-arcrunner-neurocontainers"
         - "neurodesk-syd-arcrunner-neurocontainers"
+        - "neurodesk-qris1-arcrunner-neurocontainers"
         - "blacksmith-8vcpu-ubuntu-2404"
         - "blacksmith-8vcpu-ubuntu-2404-arm"
         - "ubuntu-22.04"
@@ -103,6 +104,9 @@ jobs:
             ;;
           "neurodesk-syd2-arcrunner-neurocontainers")
             runner='"neurodesk-syd2-arcrunner-neurocontainers"'
+            ;;
+          "neurodesk-qris1-arcrunner-neurocontainers")
+            runner='"neurodesk-qris1-arcrunner-neurocontainers"'
             ;;
           "blacksmith-8vcpu-ubuntu-2404"|"blacksmith-8vcpu-ubuntu-2404-arm"|"ubuntu-22.04"|"self-hosted")
             runner="\"$CHOICE\""

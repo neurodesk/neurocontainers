@@ -8,6 +8,16 @@ copyright:
 architectures:
   - x86_64
 
+variables:
+  upstream_tag: v2023.12.1+402
+
+auto_update:
+  method: github_tags
+  repo: rstudio/rstudio
+  tag_variable: upstream_tag
+  version_regex: 'v(?P<version>\d{4}\.\d{2}\.\d+)\+\d+'
+  reason: Build-only revisions require manual review; automatic PRs track changes to the RStudio software version.
+
 build:
   kind: neurodocker
 
@@ -158,10 +168,10 @@ readme: |-
 
 files:
   - name: rstudio_2023_12_1_402_amd64_deb
-    url: https://download1.rstudio.org/electron/jammy/amd64/rstudio-2023.12.1-402-amd64.deb
+    url: "https://download1.rstudio.org/electron/jammy/amd64/rstudio-{{ context.upstream_tag[1:] | replace('+', '-') }}-amd64.deb"
 
   - name: rstudio_server_2023_12_1_402_amd64_deb
-    url: https://download2.rstudio.org/server/jammy/amd64/rstudio-server-2023.12.1-402-amd64.deb
+    url: "https://download2.rstudio.org/server/jammy/amd64/rstudio-server-{{ context.upstream_tag[1:] | replace('+', '-') }}-amd64.deb"
   - name: rstudio-server-start
     contents: |
       #!/bin/bash
@@ -206,9 +216,10 @@ files:
   - name: dependencies.R
     contents: |-
       # R Script to install the dependencies
+      if(!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
       if("devtools" %in% rownames(installed.packages()) == FALSE) {install.packages("devtools")}
-      if("MRIcrotome" %in% rownames(installed.packages()) == FALSE) {devtools::install_github("Mouse-Imaging-Centre/MRIcrotome", upgrade_dependencies = FALSE)}
-      if("RMINC" %in% rownames(installed.packages()) == FALSE) {devtools::install_github("Mouse-Imaging-Centre/RMINC", upgrade_dependencies = FALSE)}
+      if("MRIcrotome" %in% rownames(installed.packages()) == FALSE) {remotes::install_github("Mouse-Imaging-Centre/MRIcrotome", upgrade_dependencies = FALSE)}
+      if("RMINC" %in% rownames(installed.packages()) == FALSE) {remotes::install_github("Mouse-Imaging-Centre/RMINC", upgrade_dependencies = FALSE)}
       if("ProbBayes" %in% rownames(installed.packages()) == FALSE) {install.packages("ProbBayes")}
       if("bayesplot" %in% rownames(installed.packages()) == FALSE) {install.packages("bayesplot")}
       if("brms" %in% rownames(installed.packages()) == FALSE) {install.packages("brms")}

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Mapping
 
 
@@ -14,6 +15,7 @@ TOP_LEVEL_FIELD_TIERS: dict[str, frozenset[str]] = {
     "architectures": frozenset({"candidate"}),
     "build": frozenset({"candidate"}),
     "variants": frozenset({"candidate"}),
+    "build_default": frozenset({"candidate"}),
     "auto_update": frozenset({"source_only"}),
     "icon": frozenset({"catalog"}),
     "copyright": frozenset({"source_only"}),
@@ -35,11 +37,81 @@ TOP_LEVEL_FIELD_TIERS: dict[str, frozenset[str]] = {
     "epoch": frozenset({"candidate"}),
 }
 
-# This first release-planner milestone intentionally enables only the proven,
-# hermetic case from #2994. Other roles are recorded above for completeness but
-# remain candidate-required until their post-merge publication paths exist.
-ENABLED_SOURCE_ONLY_FIELDS = frozenset({"auto_update"})
+# Fields outside these proven non-image groups remain candidate-required.
+ENABLED_SOURCE_ONLY_FIELDS = frozenset({"auto_update", "copyright", "draft"})
+ENABLED_CATALOG_FIELDS = frozenset({"icon"})
+DOCUMENTATION_FIELDS = frozenset({"readme", "readme_url", "structured_readme"})
 KNOWN_NON_IMAGE_FILES = frozenset({"fulltest.yaml"})
+
+# A recipe may only leave recipes/ through this manifest. Removal is otherwise
+# indistinguishable from an accidental deletion, and the planner has no recipe
+# left to classify.
+RETIREMENT_MANIFEST = "workflows/retired_recipes.yaml"
+
+
+def parse_retirements(document: object) -> dict[str, str]:
+    """Read retired recipe names and where each one went.
+
+    The manifest is repository-authored data read as plain YAML, never
+    rendered, so it carries the same trust as the rest of release policy.
+    """
+    if document is None:
+        return {}
+    if not isinstance(document, Mapping):
+        raise ValueError(f"{RETIREMENT_MANIFEST} must be a YAML mapping")
+    entries = document.get("retired", [])
+    if not isinstance(entries, list):
+        raise ValueError(f"{RETIREMENT_MANIFEST} must map 'retired' to a list")
+    retired: dict[str, str] = {}
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"Every {RETIREMENT_MANIFEST} entry must be a mapping")
+        name = entry.get("recipe")
+        reason = entry.get("reason")
+        if not isinstance(name, str) or Path(name).name != name or name in {".", ".."}:
+            raise ValueError(
+                f"{RETIREMENT_MANIFEST} entries need a plain 'recipe' directory name"
+            )
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError(f"Retiring {name} requires a non-empty 'reason'")
+        if name in retired:
+            raise ValueError(f"{RETIREMENT_MANIFEST} lists {name} twice")
+        successor = entry.get("superseded_by", "")
+        if not isinstance(successor, str):
+            raise ValueError(f"'superseded_by' for {name} must be a recipe name")
+        retired[name] = successor
+    return retired
+
+
+def literal_categories(recipe: Mapping[str, object]) -> list[str] | None:
+    """Return categories that the catalog can publish without executing Jinja."""
+    value = recipe.get("categories", [])
+    if not isinstance(value, list) or not all(
+        isinstance(item, str)
+        and not any(token in item for token in ("{{", "{%", "{#"))
+        for item in value
+    ):
+        return None
+    return value
+
+
+def _passive_documentation(value: object) -> bool:
+    """Allow prose and simple context substitutions, not template side effects."""
+    if isinstance(value, str):
+        prose = re.sub(
+            r"{{\s*(?:context\.(?:name|version|original_version|arch|variant)|arch)\s*}}",
+            "",
+            value,
+        )
+        return not any(token in prose for token in ("{{", "{%", "{#"))
+    if isinstance(value, Mapping):
+        return all(
+            _passive_documentation(key) and _passive_documentation(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return all(_passive_documentation(item) for item in value)
+    return True
 
 
 @dataclass(frozen=True)
@@ -55,7 +127,20 @@ class ReleasePlan:
 
     @property
     def changed_recipes(self) -> list[str]:
-        return [decision.recipe for decision in self.decisions]
+        """Recipes still present at head. CI validates each one by path."""
+        return [
+            decision.recipe
+            for decision in self.decisions
+            if decision.action != "retired"
+        ]
+
+    @property
+    def retired_recipes(self) -> list[str]:
+        return [
+            decision.recipe
+            for decision in self.decisions
+            if decision.action == "retired"
+        ]
 
     @property
     def candidate_recipes(self) -> list[str]:
@@ -79,6 +164,7 @@ class ReleasePlan:
             "changed_recipes": self.changed_recipes,
             "candidate_recipes": self.candidate_recipes,
             "source_only_recipes": self.source_only_recipes,
+            "retired_recipes": self.retired_recipes,
             "decisions": [
                 {
                     "recipe": decision.recipe,
@@ -100,6 +186,37 @@ def recipe_names_from_paths(paths: list[str]) -> list[str]:
     return sorted(recipes)
 
 
+def shared_recipe_paths(recipe: Mapping[str, object] | None) -> tuple[str, ...]:
+    """Return declared shared build inputs without evaluating recipe templates."""
+    if recipe is None:
+        return ()
+    paths: set[str] = set()
+    policy = recipe.get("auto_update")
+    if isinstance(policy, dict):
+        paths.update(policy.get("local", []))
+
+    def walk(node):
+        if isinstance(node, dict):
+            if isinstance(node.get("include"), str):
+                path = node["include"]
+                paths.add(path if path.startswith("macros/") else "macros/" + path)
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(recipe.get("build", {}))
+    for path in paths:
+        if not isinstance(path, str) or not path.startswith("macros/") or ".." in PurePosixPath(path).parts:
+            raise ValueError("shared recipe inputs must be paths under macros/")
+    return tuple(sorted(paths))
+
+
+def path_is_shared_input(path: str, recipe: Mapping[str, object] | None) -> bool:
+    return any(path == shared or path.startswith(shared.rstrip("/") + "/") for shared in shared_recipe_paths(recipe))
+
+
 def _changed_top_level_fields(
     base: Mapping[str, object], head: Mapping[str, object]
 ) -> set[str]:
@@ -114,6 +231,7 @@ def plan_recipe_changes(
     changed_paths: list[str],
     base_recipes: Mapping[str, Mapping[str, object] | None],
     head_recipes: Mapping[str, Mapping[str, object] | None],
+    retired: Mapping[str, str] | None = None,
 ) -> ReleasePlan:
     """Classify recipe changes without rendering or executing head-authored data.
 
@@ -123,7 +241,13 @@ def plan_recipe_changes(
     the already-published artifact instead of rebuilding those provenance files.
     """
     decisions: list[RecipeDecision] = []
-    for recipe in recipe_names_from_paths(changed_paths):
+    retirements = retired or {}
+    affected = set(recipe_names_from_paths(changed_paths))
+    affected.update(
+        name for name, recipe in head_recipes.items()
+        if any(path_is_shared_input(path, recipe) for path in changed_paths)
+    )
+    for recipe in sorted(affected):
         recipe_prefix = f"recipes/{recipe}/"
         relative_paths = {
             path.removeprefix(recipe_prefix)
@@ -133,12 +257,27 @@ def plan_recipe_changes(
         base = base_recipes.get(recipe)
         head = head_recipes.get(recipe)
         if head is None:
+            if recipe not in retirements:
+                raise ValueError(
+                    f"Recipe removal or a missing recipes/{recipe}/build.yaml "
+                    f"requires an explicit migration: list it in "
+                    f"{RETIREMENT_MANIFEST}"
+                )
+            # Nothing to build or publish. Releases already in releases/ stay
+            # served from their own metadata, so the catalog keeps the history.
+            decisions.append(
+                RecipeDecision(recipe, "retired", ("recipe-retired",))
+            )
+            continue
+        if recipe in retirements:
             raise ValueError(
-                f"Recipe removal or a missing recipes/{recipe}/build.yaml "
-                "requires an explicit migration"
+                f"{RETIREMENT_MANIFEST} retires {recipe}, but "
+                f"recipes/{recipe}/build.yaml still exists"
             )
 
         candidate_reasons: list[str] = []
+        if any(path_is_shared_input(path, head) for path in changed_paths):
+            candidate_reasons.append("shared-build-input-changed")
         source_reasons: list[str] = []
         build_yaml_changed = "build.yaml" in relative_paths
         other_paths = relative_paths - {"build.yaml"} - KNOWN_NON_IMAGE_FILES
@@ -151,13 +290,30 @@ def plan_recipe_changes(
                 candidate_reasons.append("new-recipe")
             else:
                 changed_fields = _changed_top_level_fields(base, head)
+                non_image_fields = set(
+                    ENABLED_SOURCE_ONLY_FIELDS | ENABLED_CATALOG_FIELDS
+                )
+                for field in DOCUMENTATION_FIELDS:
+                    if all(
+                        _passive_documentation(data.get(field))
+                        for data in (base, head)
+                    ):
+                        non_image_fields.add(field)
+                if all(literal_categories(data) is not None for data in (base, head)):
+                    non_image_fields.add("categories")
                 unknown = changed_fields - TOP_LEVEL_FIELD_TIERS.keys()
                 if unknown:
                     candidate_reasons.append("unclassified-field")
                 elif not changed_fields:
                     source_reasons.append("yaml-only-change")
-                elif changed_fields <= ENABLED_SOURCE_ONLY_FIELDS:
+                elif changed_fields == {"auto_update"}:
                     source_reasons.append("auto-update-only")
+                elif changed_fields <= ENABLED_SOURCE_ONLY_FIELDS:
+                    source_reasons.append("source-metadata-only")
+                elif changed_fields <= ENABLED_CATALOG_FIELDS:
+                    source_reasons.append("catalog-only")
+                elif changed_fields <= non_image_fields:
+                    source_reasons.append("documentation-or-catalog-only")
                 else:
                     candidate_reasons.append("recipe-definition-changed")
 

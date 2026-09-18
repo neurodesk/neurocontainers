@@ -42,9 +42,14 @@ readme: |-
   To run container outside of this environment: ml nibabies/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: dockerhub
+  repo: nipreps/nibabies
+  version_regex: ^(?P<version>\d+(?:\.\d+)+)$
+
 build:
   kind: neurodocker
-  base-image: nipreps/nibabies:24.0.0
+  base-image: nipreps/nibabies:{{ context.version }}
   pkg-manager: apt
   directives:
     - deploy:

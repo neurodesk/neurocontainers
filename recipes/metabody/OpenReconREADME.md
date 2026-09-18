@@ -3,7 +3,8 @@
 `metabody` is an OpenRecon image-in/image-out package for body-localizer fMRI
 processing. It receives reconstructed image messages, stacks slices and
 repetitions into a 4D NIfTI image, runs the bundled AFNI processing workflow,
-and returns statistical maps followed by the processed image time series.
+and returns statistical maps. It can also return copies of the input images as
+a separate series.
 
 ## Recommended Sequence
 
@@ -16,13 +17,24 @@ foot, right foot, left hand, right hand, and tongue contrasts.
 
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
-| config | `config` | choice | `metabody` | Selects the MRD server configuration. |
+| Configuration | `config` | choice | `metabody` | Run the Metabody MRD server configuration. |
+| Send original images | `sendOriginal` | boolean | `true` | Return copies of the input images as series 99 before the statistical maps. |
+| Output appearance | `colormap` | choice | `scanner_lut` | Use the scanner hot-metal palette, embed a selected color map as RGB, or return grayscale output. |
+
+The scanner hot-metal option returns one scalar channel and asks the scanner to
+apply `MicroDeltaHotMetal.pal`. This is the recommended and most compatible
+color output. The grayscale option also returns one scalar channel but does not
+request a palette. Named Matplotlib color maps are embedded as three-channel RGB
+data and remain experimental until scanner round-trip behavior is confirmed.
 
 ## Runtime Notes
 
-- The OpenRecon label exposes only `config`; AFNI model settings are fixed in
-  the bundled `afni_processing.sh` workflow.
+- AFNI model settings are fixed in the bundled `afni_processing.sh` workflow.
 - Returned statistical maps carry `ImageComments` labels from the AFNI output.
+- Palette and embedded RGB modes are mutually exclusive. Embedded RGB images do
+  not carry scanner palette or windowing metadata.
+- The processor uses the incoming slice and repetition counters to stack images,
+  so their arrival order does not affect the 4D NIfTI layout.
 - Runtime work is written under temporary directories such as `/tmp/afni`, not
   under `/home`.
 

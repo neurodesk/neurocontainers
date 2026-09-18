@@ -12,6 +12,12 @@ variables:
   matlab_release: R{{ context.version }}
   matlab_runtime_root: /opt/matlabruntime/{{ context.matlab_release }}
 
+auto_update:
+  method: oci
+  url: https://containers.mathworks.com/v2/matlab-runtime/tags/list
+  version_scheme: year_letter
+  version_regex: 'r(?P<version>20\d{2}[ab])'
+
 build:
   kind: neurodocker
   base-image: containers.mathworks.com/matlab-runtime:r{{ context.version }}

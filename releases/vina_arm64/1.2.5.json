@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "vina_arm64 1.2.5": {
+      "version": "20260911",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "molecular biology"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "vina"
+}

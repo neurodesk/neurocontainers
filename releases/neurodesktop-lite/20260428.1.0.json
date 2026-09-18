@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "neurodesktop-lite 20260428.1.0": {
+      "version": "20260917",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming",
+    "visualization",
+    "data organisation"
+  ],
+  "show_in_menu": false,
+  "show_in_applist": false
+}

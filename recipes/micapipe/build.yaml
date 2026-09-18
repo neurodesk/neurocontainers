@@ -5,9 +5,14 @@ version: v0.2.3
 architectures:
   - x86_64
 
+auto_update:
+  method: dockerhub
+  repo: micalab/micapipe
+  version_regex: '^v(?P<version>\d+(?:\.\d+)+)$'
+
 build:
   kind: neurodocker
-  base-image: micalab/micapipe:v0.2.3
+  base-image: micalab/micapipe:{{ context.version }}
   pkg-manager: apt
 
   directives:

@@ -1,0 +1,9 @@
+name: radtract
+version: 0.2.3
+tests:
+- name: radtract version
+  command: python3 -c "from importlib.metadata import version; print(version('radtract'))"
+  expected_output_contains: ${version}
+- name: radtract launcher
+  command: command -v radtract_parcellate
+  expected_output_contains: radtract_parcellate

@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "aidamri 3.0": {
+      "version": "20260910",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "rodent imaging",
+    "structural imaging",
+    "diffusion imaging",
+    "functional imaging"
+  ]
+}

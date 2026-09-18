@@ -12,9 +12,14 @@ structured_readme:
        --participant-label <label> # optional
   documentation: https://xcp-d.readthedocs.io/en/latest/usage.html
   citation: 'Mehta, K., Salo, T., Madison, T. J., Adebimpe, A., Bassett, D. S., Bertolero, M., ... & Satterthwaite, T. D. (2024). XCP-D: A Robust Pipeline for the post-processing of fMRI data. Imaging Neuroscience, 2, 1-26. doi:10.1162/imag_a_00257.'
+auto_update:
+  method: dockerhub
+  repo: pennlinc/xcp_d
+  version_regex: ^(?P<version>\d+(?:\.\d+)+)$
+
 build:
   kind: neurodocker
-  base-image: pennlinc/xcp_d:0.10.7
+  base-image: pennlinc/xcp_d:{{ context.version }}
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false

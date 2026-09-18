@@ -57,9 +57,14 @@ structured_readme:
         url = {https://github.com/nilearn/nilearn},
         doi = {https://doi.org/10.5281/zenodo.8397156}
     }
+auto_update:
+  method: dockerhub
+  repo: bids/giga_connectome
+  version_regex: ^(?P<version>[0-9]+\.[0-9]+\.[0-9]+)$
+
 build:
   kind: neurodocker
-  base-image: bids/giga_connectome:0.6.0
+  base-image: bids/giga_connectome:{{ context.version }}
   pkg-manager: apt
   directives: []
 

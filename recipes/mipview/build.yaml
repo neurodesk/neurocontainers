@@ -6,11 +6,15 @@ copyright:
 - license: MIT
   url: https://github.com/KMarshallX/MipView/blob/master/License.md
 variables:
-  mipview_version: 0.1.4
+  mipview_version: '{{ context.version }}'
   mipview_archive_url: "https://github.com/KMarshallX/MipView/archive/refs/tags/v{{ context.mipview_version }}.tar.gz"
 files:
 - name: MipView_tar
   url: "{{ context.mipview_archive_url }}"
+auto_update:
+  method: github_release
+  repo: KMarshallX/MipView
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

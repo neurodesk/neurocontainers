@@ -1,5 +1,7 @@
+palm_version: '119'
+
 # palm container test suite
-# Tests for PALM alpha119 - Permutation Analysis of Linear Models
+# Tests for PALM alpha${palm_version} - Permutation Analysis of Linear Models
 #
 # PALM performs permutation-based inference for the general linear model,
 # supporting volumetric, surface, and non-imaging data with features including:
@@ -19,7 +21,7 @@
 #   - Winkler AM et al. (2016) Hum Brain Mapp 37(4):1486-511 (NPC/MV)
 
 name: palm
-version: alpha119
+version: "alpha119"
 
 test_data:
   output_dir: test_output

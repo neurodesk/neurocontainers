@@ -29,7 +29,7 @@ tests:
   - name: Version check
     description: Verify Julia binary runs and reports version
     command: julia --version
-    expected_output_contains: "julia version 1.9.4"
+    expected_output_contains: "julia version ${version}"
     expected_exit_code: 0
 
   - name: Help output
@@ -47,7 +47,7 @@ tests:
   - name: Version constant
     description: Test VERSION constant access
     command: julia -e 'println(VERSION)'
-    expected_output_contains: "1.9.4"
+    expected_output_contains: "${version}"
     expected_exit_code: 0
 
   - name: System kernel info
@@ -922,10 +922,8 @@ tests:
 
   - name: Least squares
     description: Test overdetermined system
-    command: julia -e 'A = [1.0 1.0; 1.0 2.0; 1.0 3.0]; b = [1.0, 2.0, 3.0]; x = A \ b; println(round.(x, digits=1))'
-    expected_output_contains:
-      - "[-0.0, 1.0]"
-      - "[0.0, 1.0]"
+    command: julia -e 'using LinearAlgebra; A = [1.0 1.0; 1.0 2.0; 1.0 3.0]; b = [1.0, 2.0, 3.0]; x = A \ b; @assert isapprox(x, [0.0, 1.0]; atol=1e-12); @assert norm(A*x-b) < 1e-12; println("Least-squares solution verified")'
+    expected_output_contains: "Least-squares solution verified"
     expected_exit_code: 0
 
 cleanup:

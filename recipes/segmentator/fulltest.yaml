@@ -22,7 +22,7 @@ tests:
 
   - name: Segmentator Python imports
     command: python -c "from importlib.metadata import version; import segmentator, nibabel, scipy, compoda; from segmentator.deriche_3D import deriche_3D; print(version('segmentator'))"
-    expected_output_contains: "1.6.1"
+    expected_output_contains: "${version}"
 
   - name: Segmentator no-GUI histogram smoke test
     command: |

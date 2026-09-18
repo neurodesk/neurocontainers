@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_tags
+  repo: thomshaw92/LASHiS
+
 build:
   kind: neurodocker
 
@@ -51,6 +55,7 @@ build:
 
     # The LASHiS Python package, pinned to the same version as this recipe.
     - run:
+        - python3 -m ensurepip --upgrade
         - python3 -m pip install --no-cache-dir
             "lashis @ git+https://github.com/thomshaw92/LASHiS.git@v{{ context.version }}"
 

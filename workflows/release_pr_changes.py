@@ -12,6 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from builder.config import canonical_architecture
+
+
 class ReleaseChangeError(RuntimeError):
     """Raised when release metadata is mixed with unrelated PR changes."""
 
@@ -19,14 +22,18 @@ class ReleaseChangeError(RuntimeError):
 @dataclass(frozen=True)
 class ReleaseEntry:
     name: str
+    recipe: str
     version: str
     file: str
+    architecture: str
 
     def as_dict(self) -> dict[str, str]:
         return {
             "name": self.name,
+            "recipe": self.recipe,
             "version": self.version,
             "file": self.file,
+            "architecture": self.architecture,
         }
 
 
@@ -47,6 +54,7 @@ RELEASE_PATTERN = re.compile(r"^releases/([^/]+)/([^/]+)\.json$")
 TEST_CONFIG_PATTERN = re.compile(r"^recipes/([^/]+)/fulltest\.yaml$")
 BUILD_RECIPE_PATTERN = re.compile(r"^recipes/([^/]+)/build\.yaml$")
 BUILD_DATE_PATTERN = re.compile(r"^\d{8}$")
+RECIPE_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
 
 def _relative_posix(path: Path, repo_root: Path) -> str:
@@ -73,6 +81,41 @@ def _release_build_date(release_file: Path) -> str:
     except Exception:
         pass
     return ""
+
+
+def _release_source_recipe(release_file: Path, fallback: str) -> str:
+    try:
+        data = json.loads(release_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+    recipe = str(data.get("recipe", fallback)).strip()
+    if not RECIPE_NAME_PATTERN.fullmatch(recipe):
+        raise ReleaseChangeError(
+            f"Invalid source recipe {recipe!r} in {release_file.as_posix()}"
+        )
+    return recipe
+
+
+def _release_architecture(release_file: Path) -> str:
+    """Resolve current metadata and legacy per-app or filename ARM64 markers."""
+    try:
+        data = json.loads(release_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ReleaseChangeError(f"Unable to read release metadata {release_file}: {exc}") from exc
+
+    architecture = data.get("architecture")
+    if not architecture:
+        apps = data.get("apps") or {}
+        first_app = next(iter(apps.values()), {})
+        if isinstance(first_app, dict):
+            architecture = first_app.get("architecture")
+    if not architecture:
+        architecture = "aarch64" if release_file.stem.endswith("-arm64") else "x86_64"
+    try:
+        return canonical_architecture(str(architecture))
+    except ValueError as exc:
+        raise ReleaseChangeError(f"Invalid architecture in {release_file}: {architecture!r}") from exc
 
 
 def find_latest_release_file(
@@ -154,14 +197,21 @@ def detect_release_pr_changes(
             f"Unrelated files: {', '.join(unrelated_to_release)}"
         )
 
-    entries: dict[str, ReleaseEntry] = {}
+    entries: dict[tuple[str, str], ReleaseEntry] = {}
     for path in paths:
         match = RELEASE_PATTERN.match(path)
         if not match:
             continue
 
-        recipe, version = match.groups()
-        entries[recipe] = ReleaseEntry(name=recipe, version=version, file=path)
+        container, version = match.groups()
+        source_recipe = _release_source_recipe(root / path, container)
+        entries[container, version] = ReleaseEntry(
+            name=container,
+            recipe=source_recipe,
+            version=version,
+            file=path,
+            architecture=_release_architecture(root / path),
+        )
 
     candidate_recipes = {
         match.group(1)
@@ -176,7 +226,7 @@ def detect_release_pr_changes(
             continue
 
         recipe = match.group(1)
-        if recipe in entries:
+        if any(entry.recipe == recipe for entry in entries.values()):
             continue
         # A build.yaml change is tested against the exact newly built candidate
         # by PR container candidate. Retesting the previous published image here
@@ -189,24 +239,29 @@ def detect_release_pr_changes(
             prefer_x86_64=True,
         )
         if release_file and version:
-            entries[recipe] = ReleaseEntry(
+            entries[recipe, version] = ReleaseEntry(
                 name=recipe,
+                recipe=_release_source_recipe(release_file, recipe),
                 version=version,
                 file=_relative_posix(release_file, root),
+                architecture=_release_architecture(release_file),
             )
         elif recipe not in skipped_seen:
             skipped_new_recipe_tests.append(recipe)
             skipped_seen.add(recipe)
 
     return DetectionResult(
-        entries=tuple(sorted(entries.values(), key=lambda item: item.name)),
+        entries=tuple(sorted(entries.values(), key=lambda item: (item.name, item.version))),
         skipped_new_recipe_tests=tuple(sorted(skipped_new_recipe_tests)),
     )
 
 
 def get_changed_files(base_ref: str, head_ref: str, *, repo_root: str | Path = ".") -> list[str]:
     proc = subprocess.run(
-        ["git", "diff", "--name-only", f"{base_ref}...{head_ref}"],
+        # --diff-filter=d drops deletions. A retired release (its JSON removed)
+        # has no container left to download, so queueing a test for it would
+        # fail on the missing metadata file the matrix leg tries to read.
+        ["git", "diff", "--name-only", "--diff-filter=d", f"{base_ref}...{head_ref}"],
         cwd=repo_root,
         check=False,
         capture_output=True,

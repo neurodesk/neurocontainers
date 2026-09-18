@@ -11,3 +11,4 @@ tests:
     ldconfig -p | grep -q 'libgomp\.so\.1'
     ldconfig -p | grep -q 'libstdc++\.so\.6'
     find /opt -maxdepth 2 -type f -name StarTrack -perm -111 -print -quit | grep -q StarTrack
+upstream_version: '20250920'

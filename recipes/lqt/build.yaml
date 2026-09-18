@@ -1,3 +1,6 @@
+variables:
+  upstream_commit: ab5801bd5ef2d5a9c3c6d75c332d0ef2fa6968b8
+
 name: lqt
 version: 0.1.0
 copyright:
@@ -62,6 +65,16 @@ readme: |-
   To run container outside of this environment: ml lqt/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: jdwor/LQT
+    ref: HEAD
+    target:
+      variable: upstream_commit
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -72,7 +85,7 @@ build:
         - r-base-dev
         - libgsl-dev
     - run:
-        - R --slave -e "options(repos = c(CRAN = 'https://cloud.r-project.org')); install.packages('remotes'); remotes::install_version('gsl', version = '2.1-8', repos = 'https://cloud.r-project.org'); install.packages('aws', dependencies = TRUE); remotes::install_github('jdwor/LQT', dependencies = NA, upgrade = 'never', build_vignettes = FALSE); cat('Installed LQT from GitHub\n')"
+        - R --slave -e "options(repos = c(CRAN = 'https://cloud.r-project.org')); install.packages('remotes'); remotes::install_version('gsl', version = '2.1-8', repos = 'https://cloud.r-project.org'); install.packages('aws', dependencies = TRUE); remotes::install_github('jdwor/LQT@{{ context.upstream_commit }}', dependencies = NA, upgrade = 'never', build_vignettes = FALSE); cat('Installed LQT from GitHub\n')"
     - test:
         name: verify_r_installation
         script: |-

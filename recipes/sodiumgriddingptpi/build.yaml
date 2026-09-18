@@ -23,18 +23,79 @@ files:
     filename: mrd2nifti.py
   - name: sodiumgridding_ptpi_trajectory_n28_g50_p5
     url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/23Na_pTPI_n28_g50_p5traj.h5
+    sha256: b1c133a3400bc057ae9f78c60160c1868e36d4d602b117cf84f4131501ad1624
   - name: sodiumgridding_ptpi_trajectory_n28_g70_p5
     url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/23Na_pTPI_n28_g70_p5traj.h5
+    sha256: 15970ccac46c9e2edfda1be4e33ebd338bf8913b3d42513334b2bb6df57687a2
   - name: sodiumgridding_ptpi_trajectory_n50_g70_p5
     url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/23Na_pTPI_n50_g70_p5traj.h5
+    sha256: 8b2420e35dbb220d6d73d59a1d41da76dc0273309e5c868eaae8549a871800d8
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
 
+variables:
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+
+auto_update:
+  method: sources
+  local:
+  - macros/openrecon
+  sources:
+  - id: base_image
+    method: oci_digest
+    image: ubuntu
+    tag: '22.04'
+    target:
+      variable: base_image_digest
+  - id: sodiumgridding_ptpi_trajectory_n28_g50_p5
+    method: http_digest
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/23Na_pTPI_n28_g50_p5traj.h5
+    target:
+      file: sodiumgridding_ptpi_trajectory_n28_g50_p5
+  - id: sodiumgridding_ptpi_trajectory_n28_g70_p5
+    method: http_digest
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/23Na_pTPI_n28_g70_p5traj.h5
+    target:
+      file: sodiumgridding_ptpi_trajectory_n28_g70_p5
+  - id: sodiumgridding_ptpi_trajectory_n50_g70_p5
+    method: http_digest
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/23Na_pTPI_n50_g70_p5traj.h5
+    target:
+      file: sodiumgridding_ptpi_trajectory_n50_g70_p5
+  - id: openrecon_ismrmrd
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+
 build:
   kind: neurodocker
-  base-image: ubuntu:22.04
+  base-image: ubuntu:22.04@{{ context.base_image_digest }}
   pkg-manager: apt
 
   directives:

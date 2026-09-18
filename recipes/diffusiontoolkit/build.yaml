@@ -4,6 +4,18 @@ version: 0.6.4.1
 architectures:
   - x86_64
 
+auto_update:
+  method: sources
+  sources:
+  - id: standalone
+    method: artifact_listing
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build?format=json&prefix=Diffusion_Toolkit
+    version_regex: Diffusion_Toolkit_v(?P<version>\d+(?:\.\d+)+)_x86_64\.tar\.gz$
+    download_base: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/
+    target:
+      file: archive
+      variables:
+        upstream_version: version
 build:
   kind: neurodocker
   base-image: centos:7
@@ -20,17 +32,16 @@ build:
         - fontconfig
         - libXext
 
-    - workdir: /opt/{{ context.name }}-{{ context.version }}
+    - workdir: /opt/{{ context.name }}-{{ context.upstream_version }}
 
     - run:
-        - "curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/Diffusion_Toolkit_v{{ context.version }}_x86_64.tar.gz | tar -xz -C /opt/{{ context.name }}-{{ context.version }}/ --strip-components 1"
-
+        - tar -xz -C /opt/{{ context.name }}-{{ context.upstream_version }}/ --strip-components 1 -f {{ get_file("archive") }}
     - environment:
-        PATH: \$PATH:/opt/{{ context.name }}-{{ context.version }}
+        PATH: \$PATH:/opt/{{ context.name }}-{{ context.upstream_version }}
 
 deploy:
   path:
-    - /opt/{{ context.name }}-{{ context.version }}
+    - /opt/{{ context.name }}-{{ context.upstream_version }}
 
 categories:
   - diffusion imaging
@@ -71,3 +82,9 @@ readme: |
   \`\`\`
 
   ----------------------------------
+variables:
+  upstream_version: 0.6.4.1
+files:
+- name: archive
+  url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/Diffusion_Toolkit_v0.6.4.1_x86_64.tar.gz
+  sha256: d862dff6a0656db7ca8999e765c80cdddc99b435830779eca39143140bb9a0ec

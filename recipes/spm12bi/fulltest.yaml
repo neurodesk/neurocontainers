@@ -6,11 +6,11 @@ test_data:
   output_dir: test_output
 
 env_setup: |
-  export PATH=/opt/spm12:/opt/miniconda-py38_23.11.0-2/bin:$PATH
-  export LD_LIBRARY_PATH=/opt/mcr/v97/runtime/glnxa64:/opt/mcr/v97/bin/glnxa64:/opt/mcr/v97/sys/os/glnxa64:/opt/mcr/v97/sys/opengl/lib/glnxa64:/opt/mcr/v97/extern/bin/glnxa64:$LD_LIBRARY_PATH
+  export PATH=/opt/spm12:/opt/miniconda-py310_25.5.1-0/bin:$PATH
+  export LD_LIBRARY_PATH=/opt/matlab-runtime/runtime/glnxa64:/opt/matlab-runtime/bin/glnxa64:/opt/matlab-runtime/sys/os/glnxa64:/opt/matlab-runtime/sys/opengl/lib/glnxa64:/opt/matlab-runtime/extern/bin/glnxa64:$LD_LIBRARY_PATH
   export MCR_INHIBIT_CTF_LOCK=1
   export SPM_HTML_BROWSER=0
-  export XAPPLRESDIR=/opt/mcr/v97/x11/app-defaults
+  export XAPPLRESDIR=/opt/matlab-runtime/x11/app-defaults
 
 setup:
   script: |
@@ -35,9 +35,9 @@ tests:
     description: Verify the MATLAB Compiler Runtime installation is present.
     command: |
       set -e
-      test -d /opt/mcr/v97/runtime/glnxa64
-      test -d /opt/mcr/v97/bin/glnxa64
-      ls /opt/mcr/v97/runtime/glnxa64 | head
+      test -d /opt/matlab-runtime/runtime/glnxa64
+      test -d /opt/matlab-runtime/bin/glnxa64
+      ls /opt/matlab-runtime/runtime/glnxa64 | head
     expected_exit_code: 0
 
   - name: Legacy ncurses runtime library exists
@@ -53,12 +53,12 @@ tests:
 
   - name: run_spm12 shell wrapper starts
     description: Verify the standard wrapper can invoke the compiled SPM runtime.
-    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ function exit
+    command: /opt/spm12/run_spm12.sh /opt/matlab-runtime/ function exit
     expected_exit_code: 0
 
   - name: SPM batch mode help starts
     description: Verify SPM starts far enough to print command help.
-    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ help 2>&1 | head -40
+    command: /opt/spm12/run_spm12.sh /opt/matlab-runtime/ help 2>&1 | head -40
     expected_exit_code: 0
 
   - name: Python runtime imports
@@ -97,7 +97,7 @@ tests:
     command: |
       python - <<'PY'
       import nipype.interfaces.spm as spm
-      matlab_cmd = "/opt/spm12/run_spm12.sh /opt/mcr/v97/ script"
+      matlab_cmd = "/opt/spm12/run_spm12.sh /opt/matlab-runtime/ script"
       spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)
       cmd = spm.SPMCommand().inputs.matlab_cmd
       assert "/opt/spm12/run_spm12.sh" in cmd
@@ -144,8 +144,8 @@ tests:
     description: Verify runtime library directories referenced by LD_LIBRARY_PATH exist.
     command: |
       set -e
-      test -d /opt/mcr/v97/sys/opengl/lib/glnxa64
-      find /opt/mcr/v97/sys/opengl/lib/glnxa64 -maxdepth 1 -type f | head
+      test -d /opt/matlab-runtime/sys/opengl/lib/glnxa64
+      find /opt/matlab-runtime/sys/opengl/lib/glnxa64 -maxdepth 1 -type f | head
     expected_exit_code: 0
 
   - name: Python scipy linear algebra works
@@ -212,5 +212,7 @@ tests:
 
   - name: README documents standalone invocation
     description: Verify container documentation includes the runtime wrapper example.
-    command: grep -F "run_spm12.sh /opt/mcr/v97/" /README.md
-    expected_output_contains: run_spm12.sh /opt/mcr/v97/
+    command: grep -F "run_spm12.sh /opt/matlab-runtime/" /README.md
+    expected_output_contains: run_spm12.sh /opt/matlab-runtime/
+upstream_version: latest
+matlab_version: 2019b

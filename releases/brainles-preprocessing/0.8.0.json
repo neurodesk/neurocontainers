@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "brainles-preprocessing 0.8.0": {
+      "version": "20260916",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image registration",
+    "structural imaging"
+  ]
+}

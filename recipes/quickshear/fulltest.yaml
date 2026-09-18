@@ -45,7 +45,7 @@ tests:
   - name: Quickshear version check
     description: Check quickshear module version via Python
     command: python3 -c "import quickshear; print(quickshear.__version__)"
-    expected_output_contains: "1.2.0"
+    expected_output_contains: "${version}"
 
   # ==========================================================================
   # MRI_SYNTHSTRIP SKULL STRIPPING (prerequisite for quickshear)

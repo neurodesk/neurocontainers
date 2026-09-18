@@ -1,5 +1,5 @@
 name: aidamri
-version: "2.0"
+version: "3.0"
 
 copyright:
   - license: GPL-3.0-only
@@ -14,6 +14,10 @@ variables:
   niftyreg_version: 1.4.0
   niftyreg_revision: 83d8d1182ed4c227ce4764f1fdab3b1797eecd8d
   fsl_version: 5.0.11
+
+auto_update:
+  method: github_release
+  repo: Aswendt-Lab/AIDAmri
 
 build:
   kind: neurodocker

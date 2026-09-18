@@ -46,6 +46,10 @@ readme: |-
   To run container outside of this environment: ml spm25/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: github_release
+  repo: spm/spm
+
 build:
   kind: neurodocker
   base-image: ghcr.io/spm/spm-docker:docker-matlab-{{ context.version }}

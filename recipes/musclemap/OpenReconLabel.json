@@ -13,7 +13,7 @@
       "manufacture_date":"2023/02/14",
       "material_number":"musclemap_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
       "gtin":"00860000171212",
-      "udi":"(01)00860000171212(21)1.3.0",
+      "udi":"(01)00860000171212(21)VERSION_WILL_BE_REPLACED_BY_SCRIPT",
       "safety_advices":"",
       "special_operating_instructions":"MuscleMap Segmentation",
       "additional_relevant_information":""
@@ -95,7 +95,7 @@
       "id": "labeltransform",
       "label": { "en": "Label Transform" },
       "type": "boolean",
-      "information": { "en": "To invert: original = 10 * (mapped // 3) + (mapped % 3) " },
+      "information": { "en": "For whole-body labels only, map IDs into the DICOM int12 range. Regional labels remain unchanged. To invert: original = 10 * (mapped // 3) + (mapped % 3)." },
       "default": true
     },
     {
@@ -152,33 +152,8 @@
           "name": { "en": "abdomen" }
         },
         {
-          "id": "pelvis",
-          "name": { "en": "pelvis" }
-        },
-        {
-          "id": "thigh",
-          "name": { "en": "thigh" }
-        },
-        {
-          "id": "leg",
-          "name": { "en": "leg" }
-        }
-      ],
-      "default": "wholebody",
-      "information": { "en": "Select the body region for segmentation" }
-    },
-    {
-      "id": "metricsregion",
-      "label": { "en": "Metrics Region" },
-      "type": "choice",
-      "values": [
-        {
-          "id": "wholebody",
-          "name": { "en": "wholebody" }
-        },
-        {
-          "id": "abdomen",
-          "name": { "en": "abdomen" }
+          "id": "forearm",
+          "name": { "en": "forearm" }
         },
         {
           "id": "pelvis",
@@ -194,7 +169,7 @@
         }
       ],
       "default": "wholebody",
-      "information": { "en": "Region passed to MuscleMap metrics" }
+      "information": { "en": "Select the body region for segmentation and metrics." }
     },
     {
       "id": "chunksize",

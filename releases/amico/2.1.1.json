@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "amico 2.1.1": {
+      "version": "20260910",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}

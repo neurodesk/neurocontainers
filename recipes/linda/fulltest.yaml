@@ -13,6 +13,7 @@
 
 name: linda
 version: 0.5.1
+software_version: 0.5.1
 
 required_files:
   - dataset: ds000001
@@ -61,7 +62,7 @@ tests:
   - name: LINDA version check
     description: Check LINDA package version
     command: R --quiet -e "library(LINDA); packageVersion('LINDA')"
-    expected_output_contains: "0.5.1"
+    expected_output_contains: "${software_version}"
 
   - name: LINDA functions available
     description: List available LINDA functions

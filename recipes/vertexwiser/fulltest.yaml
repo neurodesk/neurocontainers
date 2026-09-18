@@ -35,12 +35,12 @@ tests:
     command: |
       R --slave - <<'RS'
       library(VertexWiseR)
-      stopifnot(as.character(packageVersion("VertexWiseR")) == "1.5.1")
+      stopifnot(as.character(packageVersion("VertexWiseR")) == "${version}")
       exports <- getNamespaceExports("VertexWiseR")
       stopifnot(all(c("smooth_surf", "plot_surf3d", "RFT_vertex_analysis") %in% exports))
       cat("VertexWiseR", as.character(packageVersion("VertexWiseR")), "\n")
       RS
-    expected_output_contains: VertexWiseR 1.5.1
+    expected_output_contains: VertexWiseR ${version}
 
   - name: Reticulate uses bundled Python
     description: Verify reticulate is configured to use the container Python environment

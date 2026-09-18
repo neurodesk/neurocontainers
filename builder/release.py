@@ -48,6 +48,8 @@ def release_data(
     build_date: str,
     architecture: str | None = None,
     variant: str | None = None,
+    *,
+    source_recipe: str | None = None,
 ) -> dict[str, Any]:
     apptainer_args = recipe.get("apptainer_args", [])
     normalized_architecture = normalize_architecture(architecture)
@@ -70,8 +72,11 @@ def release_data(
         "categories": recipe.get("categories", ["other"]),
     }
     if is_named_variant:
+        if not source_recipe:
+            raise ValueError("source_recipe is required for named variant releases")
         data["variant"] = variant
         data["architecture"] = normalized_architecture
+        data["recipe"] = source_recipe
     for visibility_field in ("show_in_menu", "show_in_applist"):
         if recipe.get(visibility_field) is not None:
             data[visibility_field] = recipe[visibility_field]

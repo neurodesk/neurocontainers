@@ -1,3 +1,7 @@
+variables:
+  install_version: "2.1.1"
+  upstream_commit: 5ef98b0fb36d2ceac0f69a359e8cb16bead360fb
+
 name: civet
 version: 2.1.1
 copyright:
@@ -12,6 +16,16 @@ copyright:
  
 architectures:
     - x86_64
+
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: aces/CIVET_Full_Project
+    ref: HEAD
+    target:
+      variable: upstream_commit
 
 build:
     kind: neurodocker
@@ -55,7 +69,7 @@ build:
 
         - workdir: /
         - run:
-              - git clone git@github.com:aces/CIVET_Full_Project.git
+              - git clone https://github.com/aces/CIVET_Full_Project.git && git -C /CIVET_Full_Project checkout {{ context.upstream_commit }}
               - cd /CIVET_Full_Project
               - git lfs pull
               - mkdir -p Linux-x86_64/SRC
@@ -73,7 +87,7 @@ build:
               MINC_COMPRESS: "4"
               MINC_FORCE_V2: "1"
               MNI_DATAPATH: /CIVET_Full_Project/Linux-x86_64/share
-              PATH: /CIVET_Full_Project/Linux-x86_64/CIVET-{{ context.version }}:/CIVET_Full_Project/Linux-x86_64/CIVET-{{ context.version }}/progs:/CIVET_Full_Project/Linux-x86_64/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+              PATH: /CIVET_Full_Project/Linux-x86_64/CIVET-{{ context.install_version }}:/CIVET_Full_Project/Linux-x86_64/CIVET-{{ context.install_version }}/progs:/CIVET_Full_Project/Linux-x86_64/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
               PERL5LIB: /CIVET_Full_Project/Linux-x86_64/perl
               R_LIBS: /CIVET_Full_Project/Linux-x86_64/R_LIBS
               VOLUME_CACHE_THRESHOLD: "-1"

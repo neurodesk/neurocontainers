@@ -3,9 +3,5 @@ channels:
   - conda-forge
 
 dependencies:
-  - python=3
-  - mne-bids
-  - pybv>=0.7.3
-  - flask
-  - uvicorn
-  - httpx
+  - python=3.10
+  - pip

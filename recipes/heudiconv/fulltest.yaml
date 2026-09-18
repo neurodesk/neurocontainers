@@ -45,7 +45,7 @@ tests:
   - name: Heudiconv version check
     description: Verify heudiconv binary runs and reports version
     command: heudiconv --version
-    expected_output_contains: "1.3.1"
+    expected_output_contains: "${version}"
 
   - name: Heudiconv help
     description: Display heudiconv help message

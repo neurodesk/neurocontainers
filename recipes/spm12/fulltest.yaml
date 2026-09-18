@@ -3,7 +3,7 @@
 #
 # SPM12 (Statistical Parametric Mapping) is a comprehensive software package for
 # the analysis of brain imaging data sequences (fMRI, PET, SPECT, EEG, MEG).
-# This standalone version uses MATLAB Compiler Runtime (MCR) v97 (R2019b).
+# This standalone version uses MATLAB Compiler Runtime (MCR) v97 (R${matlab_version}).
 #
 # Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
 #   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
@@ -21,7 +21,7 @@ version: r7771
 # Container paths
 container_paths:
   spm_root: /opt/spm12
-  mcr_root: /opt/mcr/v97
+  mcr_root: /opt/matlab-runtime
   spm_script: /opt/spm12/run_spm12.sh
 
 required_files:
@@ -57,7 +57,7 @@ tests:
 
   - name: MCR installation exists
     description: Verify MATLAB Compiler Runtime v97 is installed
-    command: bash -lc 'test -d /opt/mcr/v97 && echo "MCR v97 installed"'
+    command: bash -lc 'test -d /opt/matlab-runtime && echo "MCR v97 installed"'
     expected_output_contains: "MCR v97 installed"
 
   - name: SPM12 binary exists
@@ -75,26 +75,26 @@ tests:
   # ==========================================================================
   - name: SPM12 version check
     description: Verify SPM12 reports correct version
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ --version 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ --version 2>&1'
     expected_output_contains: "SPM12"
     timeout: 120
 
   - name: SPM12 help output
     description: Verify SPM12 help displays correctly
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ --help 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ --help 2>&1'
     expected_output_contains: "Usage"
     timeout: 120
 
   - name: MATLAB version check
     description: Verify MCR reports MATLAB version
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ --version 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ --version 2>&1'
     expected_output_contains: "MATLAB"
     timeout: 120
 
   - name: SPM12 revision number
     description: Verify SPM12 revision 7771
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ --version 2>&1'
-    expected_output_contains: "7771"
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ --version 2>&1'
+    expected_output_contains: "${spm_revision}"
     timeout: 120
 
   # ==========================================================================
@@ -102,55 +102,55 @@ tests:
   # ==========================================================================
   - name: SPM eval disp command
     description: Test basic MATLAB eval with disp
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp('\''SPM12 working'\'')" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp('\''SPM12 working'\'')" 2>&1'
     expected_output_contains: "SPM12 working"
     timeout: 180
 
   - name: SPM eval spm version
     description: Get SPM version via spm function
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "spm('\''ver'\'')" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "spm('\''ver'\'')" 2>&1'
     expected_output_contains: "SPM12"
     timeout: 180
 
   - name: SPM eval get defaults
     description: Verify SPM defaults are accessible
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "d=spm_get_defaults; disp(class(d))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "d=spm_get_defaults; disp(class(d))" 2>&1'
     expected_output_contains: "struct"
     timeout: 180
 
   - name: SPM eval exist spm_vol
     description: Verify spm_vol function exists
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('\''spm_vol'\''))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp(exist('\''spm_vol'\''))" 2>&1'
     expected_output_contains: "2"
     timeout: 180
 
   - name: SPM eval exist spm_realign
     description: Verify spm_realign function exists
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('\''spm_realign'\''))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp(exist('\''spm_realign'\''))" 2>&1'
     expected_output_contains: "2"
     timeout: 180
 
   - name: SPM eval exist spm_smooth
     description: Verify spm_smooth function exists
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('\''spm_smooth'\''))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp(exist('\''spm_smooth'\''))" 2>&1'
     expected_output_contains: "2"
     timeout: 180
 
   - name: SPM eval exist spm_coreg
     description: Verify spm_coreg function exists
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('\''spm_coreg'\''))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp(exist('\''spm_coreg'\''))" 2>&1'
     expected_output_contains: "2"
     timeout: 180
 
   - name: SPM eval exist spm_preproc
     description: Verify spm_preproc function exists
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('\''spm_preproc'\''))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp(exist('\''spm_preproc'\''))" 2>&1'
     expected_output_contains: "2"
     timeout: 180
 
   - name: SPM eval exist spm_spm
     description: Verify spm_spm function (GLM estimation) exists
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('\''spm_spm'\''))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp(exist('\''spm_spm'\''))" 2>&1'
     expected_output_contains: "2"
     timeout: 180
 
@@ -465,7 +465,7 @@ tests:
     description: Execute SPM12 smoothing via batch
     command: |
       bash -lc 'cd test_output && \
-      /opt/spm12/run_spm12.sh /opt/mcr/v97/ batch spm_batch/smooth_batch.m 2>&1 | tail -30'
+      /opt/spm12/run_spm12.sh /opt/matlab-runtime/ batch spm_batch/smooth_batch.m 2>&1 | tail -30'
     depends_on: Create smoothing batch file
     timeout: 300
     validate:
@@ -474,7 +474,7 @@ tests:
   - name: Verify smoothed output dimensions
     description: Check that smoothed image has same dimensions as input
     command: |
-      bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "V=spm_vol('\''$(pwd)/test_output/s6sub-01_T1w.nii'\''); disp(V.dim)" 2>&1 | tail -5'
+      bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "V=spm_vol('\''$(pwd)/test_output/s6sub-01_T1w.nii'\''); disp(V.dim)" 2>&1 | tail -5'
     depends_on: Run SPM12 smoothing
     timeout: 180
     expected_exit_code: 0
@@ -508,7 +508,7 @@ tests:
     description: Execute SPM12 image calculator (multiply by 2)
     command: |
       bash -lc 'cd test_output && \
-      /opt/spm12/run_spm12.sh /opt/mcr/v97/ batch spm_batch/imcalc_batch.m 2>&1 | tail -30'
+      /opt/spm12/run_spm12.sh /opt/matlab-runtime/ batch spm_batch/imcalc_batch.m 2>&1 | tail -30'
     depends_on: Create imcalc batch file
     timeout: 300
     validate:
@@ -541,7 +541,7 @@ tests:
     description: Execute SPM12 image calculator (threshold)
     command: |
       bash -lc 'cd test_output && \
-      /opt/spm12/run_spm12.sh /opt/mcr/v97/ batch spm_batch/imcalc_thr_batch.m 2>&1 | tail -30'
+      /opt/spm12/run_spm12.sh /opt/matlab-runtime/ batch spm_batch/imcalc_thr_batch.m 2>&1 | tail -30'
     depends_on: Create imcalc threshold batch
     timeout: 300
     validate:
@@ -553,7 +553,7 @@ tests:
   - name: SPM12 read volume header
     description: Read NIfTI header using spm_vol
     command: |
-      bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "V=spm_vol('\''$(pwd)/test_output/sub-01_T1w.nii'\''); disp(V.fname)" 2>&1 | tail -10'
+      bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "V=spm_vol('\''$(pwd)/test_output/sub-01_T1w.nii'\''); disp(V.fname)" 2>&1 | tail -10'
     depends_on: Prepare uncompressed T1w for SPM12
     timeout: 180
     expected_exit_code: 0
@@ -562,7 +562,7 @@ tests:
   - name: SPM12 get image dimensions
     description: Read image dimensions using spm_vol
     command: |
-      bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "V=spm_vol('\''$(pwd)/test_output/sub-01_T1w.nii'\''); disp(V.dim)" 2>&1 | tail -5'
+      bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "V=spm_vol('\''$(pwd)/test_output/sub-01_T1w.nii'\''); disp(V.dim)" 2>&1 | tail -5'
     depends_on: Prepare uncompressed T1w for SPM12
     timeout: 180
     expected_exit_code: 0
@@ -570,7 +570,7 @@ tests:
   - name: SPM12 get voxel size
     description: Read voxel dimensions from header
     command: |
-      bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "V=spm_vol('\''$(pwd)/test_output/sub-01_T1w.nii'\''); disp(sqrt(sum(V.mat(1:3,1:3).^2)))" 2>&1 | tail -5'
+      bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "V=spm_vol('\''$(pwd)/test_output/sub-01_T1w.nii'\''); disp(sqrt(sum(V.mat(1:3,1:3).^2)))" 2>&1 | tail -5'
     depends_on: Prepare uncompressed T1w for SPM12
     timeout: 180
     expected_exit_code: 0
@@ -578,7 +578,7 @@ tests:
   - name: SPM12 read image data
     description: Read and report image statistics
     command: |
-      bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "V=spm_vol('\''$(pwd)/test_output/sub-01_T1w.nii'\''); Y=spm_read_vols(V); disp(['\''Mean: '\'' num2str(mean(Y(:)))])" 2>&1 | tail -10'
+      bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "V=spm_vol('\''$(pwd)/test_output/sub-01_T1w.nii'\''); Y=spm_read_vols(V); disp(['\''Mean: '\'' num2str(mean(Y(:)))])" 2>&1 | tail -10'
     depends_on: Prepare uncompressed T1w for SPM12
     timeout: 180
     expected_output_contains: "Mean:"
@@ -588,45 +588,45 @@ tests:
   # ==========================================================================
   - name: SPM12 exist spm_P function
     description: Verify p-value function exists
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('\''spm_P'\''))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp(exist('\''spm_P'\''))" 2>&1'
     expected_output_contains: "2"
     timeout: 180
 
   - name: SPM12 exist spm_P_FDR function
     description: Verify FDR correction function exists
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('\''spm_P_FDR'\''))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp(exist('\''spm_P_FDR'\''))" 2>&1'
     expected_output_contains: "2"
     timeout: 180
 
   - name: SPM12 exist spm_Tcdf function
     description: Verify T distribution CDF function exists
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('\''spm_Tcdf'\''))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp(exist('\''spm_Tcdf'\''))" 2>&1'
     expected_output_contains: "2"
     timeout: 180
 
   - name: SPM12 exist spm_Fcdf function
     description: Verify F distribution CDF function exists
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('\''spm_Fcdf'\''))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp(exist('\''spm_Fcdf'\''))" 2>&1'
     expected_output_contains: "2"
     timeout: 180
 
   - name: SPM12 exist spm_Ncdf function
     description: Verify Normal distribution CDF function exists
-    command: bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('\''spm_Ncdf'\''))" 2>&1'
+    command: bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "disp(exist('\''spm_Ncdf'\''))" 2>&1'
     expected_output_contains: "2"
     timeout: 180
 
   - name: SPM12 T-statistic calculation
     description: Calculate T-statistic using SPM function
     command: |
-      bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "p=spm_Tcdf(2.5,20); disp(['\''p-value: '\'' num2str(p)])" 2>&1 | tail -5'
+      bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "p=spm_Tcdf(2.5,20); disp(['\''p-value: '\'' num2str(p)])" 2>&1 | tail -5'
     timeout: 180
     expected_output_contains: "p-value:"
 
   - name: SPM12 F-statistic calculation
     description: Calculate F-statistic using SPM function
     command: |
-      bash -lc '/opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "p=spm_Fcdf(3.5,[1 20]); disp(['\''p-value: '\'' num2str(p)])" 2>&1 | tail -5'
+      bash -lc '/opt/spm12/run_spm12.sh /opt/matlab-runtime/ eval "p=spm_Fcdf(3.5,[1 20]); disp(['\''p-value: '\'' num2str(p)])" 2>&1 | tail -5'
     timeout: 180
     expected_output_contains: "p-value:"
 
@@ -728,7 +728,7 @@ tests:
 
   - name: Nipype SPM path configuration
     description: Verify nipype can be configured for SPM standalone
-    command: "bash -lc 'python3 -c \"\ntry:\n    import nipype.interfaces.spm as spm\n    matlab_cmd = '\"'\"'/opt/spm12/run_spm12.sh /opt/mcr/v97/ script'\"'\"'\n    spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)\n    print('\"'\"'Nipype SPM path configured successfully'\"'\"')\nexcept Exception as e:\n    print('\"'\"'Configuration test:'\"'\"', str(e))\n\" 2>&1 || echo \"Nipype config test complete\"'"
+    command: "bash -lc 'python3 -c \"\ntry:\n    import nipype.interfaces.spm as spm\n    matlab_cmd = '\"'\"'/opt/spm12/run_spm12.sh /opt/matlab-runtime/ script'\"'\"'\n    spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)\n    print('\"'\"'Nipype SPM path configured successfully'\"'\"')\nexcept Exception as e:\n    print('\"'\"'Configuration test:'\"'\"', str(e))\n\" 2>&1 || echo \"Nipype config test complete\"'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -960,3 +960,6 @@ cleanup:
     echo "  - Smoothed T1w: test_output/s6sub-01_T1w.nii"
     echo "  - Image calc outputs: test_output/T1w_*.nii"
     echo "  - Batch files: test_output/spm_batch/"
+upstream_version: r7771
+matlab_version: 2019b
+spm_revision: '7771'

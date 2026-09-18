@@ -31,6 +31,33 @@ VALID_SVG_ICON = (
 )
 
 
+@pytest.mark.parametrize("version", [
+    "1.2.0.post1", "1.2.0.post2", "1.2.0.post1-gpu",
+    "1.2.0.r1", "1.2.0.post1+gpu",
+])
+def test_container_post_release_is_rejected_but_upstream_pin_is_allowed(version):
+    recipe = {
+        "name": "demo",
+        "version": version,
+        "variables": {"upstream_version": "1.2.0.post1"},
+        "architectures": ["x86_64"],
+        "categories": ["workflows"],
+        "icon": VALID_ICON,
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:24.04",
+            "pkg-manager": "apt",
+            "directives": [],
+        },
+    }
+    with pytest.raises(ValueError, match="new minor version"):
+        validate_recipe_dict(recipe)
+    recipe["version"] = "1.3.0"
+    validated = validate_recipe_dict(recipe)
+    assert validated.version == "1.3.0"
+    assert validated.variables["upstream_version"] == "1.2.0.post1"
+
+
 def test_valid_minimal_recipe():
     """Test validation of a minimal valid recipe"""
     recipe = {
@@ -372,7 +399,7 @@ def write_recipe_with_fulltest(tmp_path, fulltest: dict) -> str:
 def test_validate_recipe_file_accepts_matching_fulltest_version(tmp_path):
     build_yaml = write_recipe_with_fulltest(
         tmp_path,
-        {"name": "file-test-app", "version": "1.2.3", "tests": []},
+        {"name": "file-test-app", "version": "1.2.3", "tests": [{"command": "tool --version"}]},
     )
 
     result = validate_recipe_file(build_yaml)
@@ -387,7 +414,7 @@ def test_validate_recipe_file_resolves_fulltest_version_variable(tmp_path):
             "name": "file-test-app",
             "tool_version": "1.2.3",
             "version": "${tool_version}",
-            "tests": [],
+            "tests": [{"script": "tool --version"}],
         },
     )
 
@@ -403,6 +430,22 @@ def test_validate_recipe_file_rejects_stale_fulltest_version(tmp_path):
     )
 
     with pytest.raises(ValueError, match="update both files in the same change"):
+        validate_recipe_file(build_yaml)
+
+
+@pytest.mark.parametrize(
+    "tests",
+    [None, [], {}, [None], [{}], [{"command": "  "}],
+     [{"script": "\n"}], [{"command": ["tool"]}],
+     [{"command": "  ", "script": "tool --version"}]],
+)
+def test_validate_recipe_file_requires_executable_fulltest(tmp_path, tests):
+    build_yaml = write_recipe_with_fulltest(
+        tmp_path,
+        {"name": "file-test-app", "version": "1.2.3", "tests": tests},
+    )
+
+    with pytest.raises(ValueError, match="fulltest.*(nonempty|command or script)"):
         validate_recipe_file(build_yaml)
 
 

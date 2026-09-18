@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /opt/venv/bin/python -W ignore::DeprecationWarning /opt/lstai/LST_AI/lst "$@"

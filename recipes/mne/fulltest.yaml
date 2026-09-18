@@ -12,24 +12,24 @@ setup:
 tests:
   - name: MNE conda environment exists
     description: Verify the current MNE conda environment is present
-    command: test -x /opt/miniconda-latest/envs/mne-1.12.1/bin/python
+    command: test -x /opt/miniconda-latest/envs/mne-${version}/bin/python
     expected_exit_code: 0
 
   - name: MNE version check
     description: Verify MNE imports from the shipped conda environment
-    command: /opt/miniconda-latest/envs/mne-1.12.1/bin/python -c "import mne; print(mne.__version__)"
-    expected_output_contains: "1.12.1"
+    command: /opt/miniconda-latest/envs/mne-${version}/bin/python -c "import mne; print(mne.__version__)"
+    expected_output_contains: "${version}"
 
   - name: MNE core dependencies import
     description: Verify core MNE dependencies are available
     command: >-
-      /opt/miniconda-latest/envs/mne-1.12.1/bin/python -c "import numpy, scipy, sklearn, matplotlib; print('dependencies ok')"
+      /opt/miniconda-latest/envs/mne-${version}/bin/python -c "import numpy, scipy, sklearn, matplotlib; print('dependencies ok')"
     expected_output_contains: "dependencies ok"
 
   - name: MNE creates synthetic raw data
     description: Exercise a small in-memory MNE workflow
     command: |
-      /opt/miniconda-latest/envs/mne-1.12.1/bin/python - <<'PY'
+      /opt/miniconda-latest/envs/mne-${version}/bin/python - <<'PY'
       import numpy as np
       import mne
 

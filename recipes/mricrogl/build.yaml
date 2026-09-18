@@ -8,6 +8,12 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: github_release
+  repo: rordenlab/MRIcroGL
+  assets:
+    v: MRIcroGL_linux(?:_includes_Python)?\.zip
+
 build:
   kind: neurodocker
 

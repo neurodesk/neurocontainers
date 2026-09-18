@@ -12,7 +12,12 @@ artifacts after merge. They no longer create a second release-metadata PR.
    runner.
 2. Each candidate builds a Docker archive and SIF, runs the deploy/fulltest and
    Dive checks, generates the release JSON preview, and stores everything for
-   30 days under its own container identity.
+   30 days under its own container identity. Dive's wasted-percentage rule is
+   applied only once the absolute waste is worth judging: below
+   `DIVE_RATIO_FLOOR_BYTES` that ratio measures the shared neurodocker
+   preamble rather than the recipe, so `one_pr_release.py dive-gate` waives
+   that one rule and the step says so. Every other Dive rule, and this one
+   above the floor, still fails the candidate.
 3. A trusted `workflow_run` posts one action-first lifecycle summary on recipe
    PRs. The heading names the exact container, version, and architecture and
    tells the maintainer whether to merge, fix a candidate, wait for promotion,
@@ -44,6 +49,10 @@ artifacts after merge. They no longer create a second release-metadata PR.
    opens or reuses an OpenRecon metadata PR after the release metadata push. If
    the version, label, and README are unchanged, it dispatches the OpenRecon
    build directly so same-version container rebuilds still propagate.
+   An OpenRecon `params.sh` that pins a dated image tag is repointed at the build
+   date this release published, so the OpenRecon build pulls the image the
+   promoter just pushed. When no release metadata resolves that date, the tag is
+   left alone and the PR body says so.
 
 Manual builds remain available as a recovery path. The old push-to-main
 `auto-build` workflow is removed so recipe changes cannot start an untested
@@ -69,11 +78,56 @@ second build.
 
 The planner reads the base and head `build.yaml` files as YAML data. It does not
 render Jinja or execute any code from the pull request. Changes that affect only
-`auto_update`, semantically unchanged YAML, or `fulltest.yaml` are currently
-classified as source-only: they are validated, but the existing container is
-preserved and no candidate is built or promoted. This is a behavioural release
-projection, not a claim that rebuilding would produce byte-identical images;
-the current image still embeds the raw `build.yaml` and README.
+`auto_update`, `copyright`, `draft`, `icon`, documentation (`readme`, `readme_url`,
+`structured_readme`), literal `categories`, semantically unchanged YAML, or
+`fulltest.yaml` are currently classified as source-only. The workflow validates
+them, but preserves the existing container and builds or promotes no candidate.
+This is a behavioural release projection, not a claim that rebuilding would
+produce byte-identical images; the current image still embeds the raw
+`build.yaml` and README.
+
+Documentation may use simple context substitutions such as
+`{{ context.version }}`. More complex templates remain candidate-required because
+rendering can have side effects. Documentation inside an existing image remains
+the version shipped with that image; updated documentation is available in the
+recipe source until the next image release.
+
+The apps.json workflow also runs on recipe definition changes. It reads literal
+categories from the current source recipe (including the source recorded for
+named variants), replacing the historical category union in the catalog. It
+preserves all published app identities and build dates and does not rewrite
+release JSON or publish images. Missing recipes and templated categories retain
+the categories from release metadata.
+
+## Retiring a recipe
+
+Deleting `recipes/<name>/` leaves the planner with nothing to classify, and an
+unannounced deletion looks exactly like an accidental one, so removal is
+fail-closed too. A recipe leaves the repository only by being listed in
+`workflows/retired_recipes.yaml` in the same pull request that deletes it:
+
+```yaml
+retired:
+  - recipe: oldname
+    superseded_by: newname
+    reason: Renamed; newname carries the maintained recipe.
+```
+
+Each entry needs a plain directory name and a non-empty reason; `superseded_by`
+is optional but must name a recipe that exists at head when it is given. The
+planner rejects an entry whose `recipes/<name>/build.yaml` is still present, so
+the manifest cannot drift from the tree.
+
+A retirement publishes nothing and withdraws nothing. The recipe is reported as
+`retired` rather than `changed`, which keeps it out of the schema validation
+that runs by path, and no candidate is built. Artifacts already in `releases/`
+keep their metadata, so apps.json and the catalog continue to serve every
+version that was built; `generate_apps_json.py` already falls back to release
+metadata when a recipe directory is absent.
+
+Because the gate runs the planner from the trusted base, a pull request cannot
+both introduce a new removal rule and rely on it. Land the policy change first,
+then the removal.
 
 Every other recipe definition change is deliberately fail-closed and requires
 a candidate. A changed recipe-local file such as `install.sh` also requires a

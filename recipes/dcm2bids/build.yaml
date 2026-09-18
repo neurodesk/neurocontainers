@@ -9,6 +9,10 @@ architectures:
   - x86_64
   - aarch64
 
+auto_update:
+  method: pypi
+  package: dcm2bids
+
 build:
   kind: neurodocker
 

@@ -68,6 +68,10 @@ readme: |-
   To run container outside of this environment: ml fsqc/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: pypi
+  package: fsqc
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -82,7 +86,7 @@ build:
         bins: []
     - install: git
     - run:
-        - pip install git+https://github.com/deep-mi/fsqc.git
+        - pip install fsqc=={{ context.version }}
     - test:
         name: verify_installation
         script: |-

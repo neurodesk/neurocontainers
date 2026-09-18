@@ -23,9 +23,13 @@ if str(SCRIPT_REPO_ROOT) not in sys.path:
 
 from builder.release import release_data
 from builder.release_plan import (
+    RETIREMENT_MANIFEST,
     ReleasePlan,
+    parse_retirements,
     plan_recipe_changes,
     recipe_names_from_paths,
+    path_is_shared_input,
+    shared_recipe_paths,
 )
 from builder.variants import concrete_variant_specs
 
@@ -69,6 +73,15 @@ DIVE_PERCENT_FAILURE_PATTERN = re.compile(
     r"\([^=]+=([0-9]+(?:\.[0-9]+)?)\s*[<>]\s*"
     r"threshold=([0-9]+(?:\.[0-9]+)?)\)"
 )
+# The wasted-percentage rule divides waste by the bytes a recipe's own layers
+# add, so for a container whose payload is smaller than the shared neurodocker
+# preamble it measures that preamble rather than the recipe. vina adds one
+# 8.7 MB apt layer and inherits ~57 MB of duplicated glibc, locales and dpkg
+# metadata, which no recipe change can reach. Below this floor the ratio says
+# nothing actionable; above it, waste is worth a maintainer's attention.
+DIVE_RATIO_FLOOR_BYTES = 200 * 1024 * 1024
+DIVE_RATIO_RULE = "highestUserWastedPercent"
+DIVE_FAILED_RULE_PATTERN = re.compile(r"^\s*FAIL:\s*([A-Za-z][A-Za-z0-9_]*)", re.MULTILINE)
 DIVE_INEFFICIENT_FILE_PATTERN = re.compile(
     r"^\s*(\d+)\s+([0-9]+(?:\.[0-9]+)?\s+[kKMGT]?B)\s+(/\S.*)$"
 )
@@ -115,6 +128,19 @@ def recipe_fingerprint(recipe: str) -> str:
         digest.update(b"\0")
         digest.update(path.read_bytes())
         digest.update(b"\0")
+    data = yaml.safe_load((recipe_dir / "build.yaml").read_text())
+    for shared in shared_recipe_paths(data):
+        source = REPO_ROOT / shared
+        files = sorted(source.rglob("*")) if source.is_dir() else [source]
+        for path in files:
+            if path.is_dir():
+                continue
+            if not path.resolve().is_relative_to(REPO_ROOT.resolve()):
+                raise RuntimeError(f"Shared build input escapes the repository: {path}")
+            digest.update(path.relative_to(REPO_ROOT).as_posix().encode())
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -141,20 +167,66 @@ def load_recipe_at(revision: str, recipe: str) -> dict[str, Any] | None:
     return data
 
 
+def load_retirements_at(revision: str) -> dict[str, str]:
+    """Read the retirement manifest from a Git tree, tolerating its absence."""
+    present = run_git("ls-tree", "--name-only", revision, "--", RETIREMENT_MANIFEST)
+    if present != RETIREMENT_MANIFEST:
+        return {}
+    try:
+        document = yaml.safe_load(run_git("show", f"{revision}:{RETIREMENT_MANIFEST}"))
+    except yaml.YAMLError as error:
+        raise RuntimeError(
+            f"Unable to parse {RETIREMENT_MANIFEST} at {revision}: {error}"
+        ) from error
+    retired = parse_retirements(document)
+    for recipe, successor in retired.items():
+        if run_git(
+            "ls-tree", "--name-only", revision, "--", f"recipes/{recipe}/build.yaml"
+        ):
+            raise RuntimeError(
+                f"{RETIREMENT_MANIFEST} retires {recipe}, but "
+                f"recipes/{recipe}/build.yaml is still present"
+            )
+        if successor and not run_git(
+            "ls-tree", "--name-only", revision, "--", f"recipes/{successor}/build.yaml"
+        ):
+            raise RuntimeError(
+                f"{recipe} is retired in favour of {successor}, which does not exist"
+            )
+    return retired
+
+
 def release_plan(base: str, head: str) -> ReleasePlan:
     """Plan recipe work from Git trees using trusted, non-rendering policy."""
     paths = changed_files(base, head)
     names = recipe_names_from_paths(paths)
+    if any(path.startswith("macros/") for path in paths):
+        tree = run_git("ls-tree", "-r", "--name-only", head, "--", "recipes")
+        names = sorted(set(names) | {path.split("/")[1] for path in tree.splitlines() if re.fullmatch(r"recipes/[^/]+/build.yaml", path)})
+    base_recipes = {recipe: load_recipe_at(base, recipe) for recipe in names}
+    head_recipes = {recipe: load_recipe_at(head, recipe) for recipe in names}
+    # Reading the manifest costs a Git call, so only consult it when a recipe
+    # actually vanished or the manifest itself is part of the change.
+    consult_manifest = (
+        any(data is None for data in head_recipes.values())
+        or RETIREMENT_MANIFEST in paths
+    )
     plan = plan_recipe_changes(
         paths,
-        {recipe: load_recipe_at(base, recipe) for recipe in names},
-        {recipe: load_recipe_at(head, recipe) for recipe in names},
+        base_recipes,
+        head_recipes,
+        load_retirements_at(head) if consult_manifest else {},
     )
     if not plan.candidate_recipes:
         return plan
 
-    allowed = tuple(f"recipes/{recipe}/" for recipe in plan.changed_recipes)
-    unrelated = [path for path in paths if not path.startswith(allowed)]
+    allowed = tuple(
+        f"recipes/{recipe}/"
+        for recipe in plan.changed_recipes + plan.retired_recipes
+    )
+    unrelated = [path for path in paths if not path.startswith(allowed)
+                 and path != RETIREMENT_MANIFEST
+                 and not any(path_is_shared_input(path, head_recipes[name]) for name in plan.candidate_recipes)]
     if unrelated:
         raise RuntimeError(
             "Automated releases require a recipe-only PR. Unrelated paths: "
@@ -171,8 +243,32 @@ def detect_recipes(base: str, head: str) -> list[str]:
     return release_plan(base, head).candidate_recipes
 
 
+def recipe_changes_since_merge_are_source_only(recipe: str, merge_sha: str) -> bool:
+    """Allow finalization past concurrent changes that preserve the image."""
+    base_recipe = load_recipe_at(merge_sha, recipe)
+    head_recipe = load_recipe_at("HEAD", recipe)
+    recipe_prefix = f"recipes/{recipe}/"
+    relevant_paths = [
+        path
+        for path in changed_files(merge_sha, "HEAD")
+        if path.startswith(recipe_prefix)
+        or path_is_shared_input(path, base_recipe)
+        or path_is_shared_input(path, head_recipe)
+    ]
+    if not relevant_paths:
+        return False
+
+    plan = plan_recipe_changes(
+        relevant_paths,
+        {recipe: base_recipe},
+        {recipe: head_recipe},
+    )
+    return plan.source_only_recipes == [recipe]
+
+
 def build_date(recipe: str, revision: str = "HEAD") -> str:
     """Return the last build.yaml commit date in release-tag format."""
+    data = load_recipe_at(revision, recipe)
     value = run_git(
         "log",
         "-1",
@@ -181,6 +277,7 @@ def build_date(recipe: str, revision: str = "HEAD") -> str:
         revision,
         "--",
         f"recipes/{recipe}/build.yaml",
+        *shared_recipe_paths(data),
     )
     if not value:
         raise RuntimeError(f"Could not determine build date for {recipe}")
@@ -304,6 +401,7 @@ def command_detect(args: argparse.Namespace) -> None:
             "targets": json.dumps(detect_targets(recipes)),
             "changed_recipes": json.dumps(plan.changed_recipes),
             "source_only_recipes": json.dumps(plan.source_only_recipes),
+            "retired_recipes": json.dumps(plan.retired_recipes),
             "release_plan": json.dumps(plan.as_dict(), separators=(",", ":")),
         }
     )
@@ -331,6 +429,7 @@ def command_manifest(args: argparse.Namespace) -> None:
         info["build_date"],
         info["architecture"],
         info["variant"],
+        source_recipe=args.recipe,
     )
     release_path = candidate_dir / f"{info['version']}.json"
     release_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
@@ -362,6 +461,43 @@ def _result_count(data: dict[str, Any], field: str) -> int:
     if result < 0:
         raise RuntimeError(f"Invalid candidate test result {field}: {value!r}")
     return result
+
+
+def dive_gate_outcome(report_path: Path, status: str) -> tuple[str, str]:
+    """Decide the Dive gate, waiving the ratio rule on small absolute waste."""
+    if status not in DIVE_STATUSES:
+        raise RuntimeError(f"Invalid Dive status: {status!r}")
+    if status == "success":
+        return "success", "Dive reported no policy failures"
+    if status != "failure" or not report_path.is_file():
+        return "failure", f"Dive did not complete: {status}"
+
+    try:
+        text = ANSI_ESCAPE_PATTERN.sub("", report_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError) as error:
+        raise RuntimeError(
+            f"Unable to read Dive report {report_path}: {error}"
+        ) from error
+
+    failed = set(DIVE_FAILED_RULE_PATTERN.findall(text))
+    if failed != {DIVE_RATIO_RULE}:
+        return "failure", f"Dive failed: {', '.join(sorted(failed)) or 'unknown rule'}"
+
+    match = DIVE_WASTED_BYTES_PATTERN.search(text)
+    if match is None:
+        return "failure", f"Dive failed {DIVE_RATIO_RULE} and reported no wasted bytes"
+
+    wasted = int(match.group(1))
+    if wasted >= DIVE_RATIO_FLOOR_BYTES:
+        return "failure", (
+            f"Dive failed {DIVE_RATIO_RULE} on {match.group(2).strip()} of waste, "
+            f"at or above the {DIVE_RATIO_FLOOR_BYTES // (1024 * 1024)} MB floor"
+        )
+    return "success", (
+        f"{DIVE_RATIO_RULE} waived: {match.group(2).strip()} of waste is below the "
+        f"{DIVE_RATIO_FLOOR_BYTES // (1024 * 1024)} MB floor, so the ratio reflects "
+        "base-image churn rather than this recipe"
+    )
 
 
 def build_dive_summary(report_path: Path, status: str) -> dict[str, Any]:
@@ -560,7 +696,10 @@ def load_candidate_manifest(candidate_dir: Path) -> dict[str, Any]:
 
 
 def verify_candidate(
-    candidate_dir: Path, expected_head_sha: str, expected_pr_number: int | None = None
+    candidate_dir: Path,
+    expected_head_sha: str,
+    expected_pr_number: int | None = None,
+    expected_merge_sha: str | None = None,
 ) -> dict[str, Any]:
     """Verify a candidate against its PR identity and the merged recipe."""
     manifest = load_candidate_manifest(candidate_dir)
@@ -592,7 +731,12 @@ def verify_candidate(
         raise RuntimeError(f"Candidate head SHA mismatch for {container}")
     if expected_pr_number is not None and manifest["pr_number"] != expected_pr_number:
         raise RuntimeError(f"Candidate PR number mismatch for {container}")
-    if manifest["recipe_fingerprint"] != recipe_fingerprint(recipe):
+    fingerprint_changed = manifest["recipe_fingerprint"] != recipe_fingerprint(recipe)
+    source_only_change = (
+        expected_merge_sha is not None
+        and recipe_changes_since_merge_are_source_only(recipe, expected_merge_sha)
+    )
+    if fingerprint_changed and not source_only_change:
         raise RuntimeError(f"Merged recipe differs from tested candidate: {container}")
 
     expected_release_json = f"{expected_info['version']}.json"
@@ -638,6 +782,7 @@ def verify_candidate(
         expected_info["build_date"],
         expected_info["architecture"],
         variant,
+        source_recipe=recipe,
     )
     actual_release = json.loads(paths["release_json"].read_text(encoding="utf-8"))
     if actual_release != expected_release:
@@ -648,13 +793,140 @@ def verify_candidate(
 def command_verify(args: argparse.Namespace) -> None:
     """Verify all candidate directories and write their trusted manifests."""
     manifests = [
-        verify_candidate(path.parent, args.head_sha, args.pr_number)
+        verify_candidate(path.parent, args.head_sha, args.pr_number, args.merge_sha)
         for path in sorted(Path(args.bundle).glob("*/manifest.json"))
     ]
     if not manifests:
         raise RuntimeError(f"No candidate manifests found under {args.bundle}")
     Path(args.output).write_text(
         json.dumps(manifests, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def verify_published_metadata(
+    bundle: Path,
+    manifests_path: Path,
+    expected_head_sha: str,
+    expected_pr_number: int,
+    expected_merge_sha: str | None = None,
+) -> list[dict[str, Any]]:
+    """Revalidate small promotion metadata after large artifacts are published."""
+    try:
+        manifests = json.loads(manifests_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            f"Unable to read published manifests {manifests_path}: {error}"
+        ) from error
+    if not isinstance(manifests, list) or not manifests:
+        raise RuntimeError("Published manifests must be a non-empty JSON array")
+
+    containers: set[str] = set()
+    for manifest in manifests:
+        if not isinstance(manifest, dict):
+            raise RuntimeError("Each published manifest must be a JSON object")
+        missing = [
+            field for field in CANDIDATE_MANIFEST_FIELDS if field not in manifest
+        ]
+        if missing:
+            raise RuntimeError(
+                "Published manifest is missing fields: " + ", ".join(missing)
+            )
+
+        recipe = validate_recipe_identifier(manifest.get("recipe"))
+        container = validate_recipe_identifier(manifest.get("container"))
+        if container in containers:
+            raise RuntimeError(f"Duplicate published container manifest: {container}")
+        containers.add(container)
+
+        variant = manifest.get("variant")
+        if not isinstance(variant, str):
+            raise RuntimeError(f"Invalid candidate variant for {recipe}: {variant!r}")
+        expected_info = inspect_recipe(
+            recipe,
+            expected_head_sha,
+            variant,
+            manifest.get("build_date"),
+        )
+        if manifest.get("head_sha") != expected_head_sha:
+            raise RuntimeError(f"Published head SHA mismatch for {container}")
+        if manifest.get("pr_number") != expected_pr_number:
+            raise RuntimeError(f"Published PR number mismatch for {container}")
+        fingerprint_changed = (
+            manifest.get("recipe_fingerprint") != recipe_fingerprint(recipe)
+        )
+        source_only_change = (
+            expected_merge_sha is not None
+            and recipe_changes_since_merge_are_source_only(recipe, expected_merge_sha)
+        )
+        if fingerprint_changed and not source_only_change:
+            raise RuntimeError(
+                f"Merged recipe differs from published candidate: {container}"
+            )
+
+        expected_release_json = f"{expected_info['version']}.json"
+        expected_values = {
+            "recipe": recipe,
+            "container": expected_info["container"],
+            "variant": variant,
+            "architecture": expected_info["architecture"],
+            "version": expected_info["version"],
+            "build_date": expected_info["build_date"],
+            "image_name": expected_info["image_name"],
+            "candidate_tag": expected_info["candidate_tag"],
+            "docker_archive": expected_info["docker_archive"],
+            "sif": expected_info["sif"],
+            "release_json": expected_release_json,
+        }
+        for field, expected in expected_values.items():
+            if manifest.get(field) != expected:
+                raise RuntimeError(
+                    f"Published {field} mismatch for {container}: "
+                    f"expected {expected!r}, got {manifest.get(field)!r}"
+                )
+
+        release_path = candidate_file(
+            bundle / container,
+            manifest.get("release_json"),
+            "release JSON",
+        )
+        try:
+            actual_release = json.loads(release_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise RuntimeError(
+                f"Unable to read published release JSON {release_path}: {error}"
+            ) from error
+        expected_release = release_data(
+            container,
+            expected_info["version"],
+            load_recipe(recipe),
+            expected_info["build_date"],
+            expected_info["architecture"],
+            variant,
+            source_recipe=recipe,
+        )
+        if actual_release != expected_release:
+            raise RuntimeError(f"Published release JSON mismatch for {container}")
+    return manifests
+
+
+def command_dive_gate(args: argparse.Namespace) -> None:
+    """Apply the size-aware Dive policy to one candidate's report."""
+    outcome, reason = dive_gate_outcome(
+        Path(args.candidate_dir) / "dive-report.txt", args.status
+    )
+    print(reason)
+    if outcome != "success":
+        raise SystemExit(1)
+
+
+def command_verify_metadata(args: argparse.Namespace) -> None:
+    """Verify staged metadata without downloading Docker or SIF artifacts."""
+    verify_published_metadata(
+        Path(args.bundle),
+        Path(args.manifests),
+        args.head_sha,
+        args.pr_number,
+        args.merge_sha,
     )
 
 
@@ -714,9 +986,23 @@ def parser() -> argparse.ArgumentParser:
     verify = subparsers.add_parser("verify")
     verify.add_argument("--bundle", required=True)
     verify.add_argument("--head-sha", required=True)
+    verify.add_argument("--merge-sha", required=True)
     verify.add_argument("--pr-number", required=True, type=int)
     verify.add_argument("--output", required=True)
     verify.set_defaults(func=command_verify)
+
+    dive_gate = subparsers.add_parser("dive-gate")
+    dive_gate.add_argument("--candidate-dir", required=True)
+    dive_gate.add_argument("--status", required=True, choices=sorted(DIVE_STATUSES))
+    dive_gate.set_defaults(func=command_dive_gate)
+
+    verify_metadata = subparsers.add_parser("verify-metadata")
+    verify_metadata.add_argument("--bundle", required=True)
+    verify_metadata.add_argument("--manifests", required=True)
+    verify_metadata.add_argument("--head-sha", required=True)
+    verify_metadata.add_argument("--merge-sha", required=True)
+    verify_metadata.add_argument("--pr-number", required=True, type=int)
+    verify_metadata.set_defaults(func=command_verify_metadata)
 
     materialize = subparsers.add_parser("materialize")
     materialize.add_argument("--bundle", required=True)

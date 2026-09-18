@@ -80,9 +80,22 @@ structured_readme:
 
     Faria AV. Annotated Clinical MRIs and Linked Metadata of Patients with Acute Stroke, Baltimore, Maryland, 2009-2019. ICPSR, 2022. https://doi.org/10.3886/ICPSR38464.v5
 
+variables:
+  base_image_digest: sha256:bd3508a0278538bbf10b7b0a090085b7b584860cef7f3c1fed6183707fc6223d
+
+auto_update:
+  method: sources
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: sljhlab/openads
+      tag: gpu
+      target:
+        variable: base_image_digest
+
 build:
   kind: neurodocker
-  base-image: docker.io/sljhlab/openads:gpu
+  base-image: docker.io/sljhlab/openads:gpu@{{ context.base_image_digest }}
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false

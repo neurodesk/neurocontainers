@@ -26,6 +26,36 @@ Run `sf-make <recipe_dir>` to build a Singularity/Apptainer SIF using BuildKit w
 
 A common workflow involves building the container and running a command inside it. You can run `sf-login <name>` to build a container and immediately drop into a shell.
 
+### Legacy base images
+
+Set `build.convert-base-image: true` when an upstream image uses Docker schema 1,
+which current Docker versions cannot pull. Staging resolves the selected tag to
+an immutable digest and converts that image into an OCI layout with Skopeo. It
+preserves the upstream layers and runtime configuration. Other base images use
+the ordinary registry build path.
+
+Install `skopeo` for builds without Docker. When Docker is available, staging
+runs a pinned Skopeo image as the current user. The converter reads public
+registry images without credentials. Converted images are cached by source
+digest, architecture, and converter identity under `httpcache/oci`; `sf-cache --all`
+clears them. A native Skopeo binary is identified by its executable SHA-256.
+
+The `sf-*` build commands pass the staged OCI context to Docker or BuildKit.
+For a direct buildx invocation, load its arguments after staging:
+
+```bash
+python -m builder stage bidsappaa --recreate --download
+python -m builder staged-context-args build/bidsappaa > /tmp/image-context-args
+mapfile -d '' -t image_context_args < /tmp/image-context-args
+docker buildx build build/bidsappaa --load \
+  --file build/bidsappaa/bidsappaa_0.3.0.Dockerfile \
+  --build-context neurocontainer-cache=build/bidsappaa/cache \
+  "${image_context_args[@]}"
+```
+
+This uses Docker's [OCI layout context support](https://docs.docker.com/reference/cli/docker/buildx/build/#use-an-oci-layout-directory-as-build-context).
+The layout stays outside the primary Docker build context through `.dockerignore`.
+
 ### Architecture Options
 
 All build commands (`sf-build`, `sf-login`, `sf-test`, `sf-make`) support architecture options:
@@ -103,6 +133,11 @@ Architectures are concrete variants automatically: `aarch64` produces
 example above produces `qsmxt_gpu` and `qsmxt_gpu_arm64`. Variant `options`
 preset the same boolean recipe options used by `context.options.<name>`
 conditions.
+
+`build_default` defaults to `true`. Setting it to `false` excludes unnamed
+builds on every architecture, leaving only the declared `variants`. At least
+one variant must remain. Build a retained variant with
+`sf-build spinalcordtoolbox --variant lite`.
 
 Each concrete identity is a container in its own right: it builds as its own PR
 candidate, publishes to its own `ghcr.io`/`quay.io` repository, and gets its own

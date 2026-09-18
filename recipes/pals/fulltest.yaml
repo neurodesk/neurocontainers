@@ -1,0 +1,12 @@
+name: pals
+version: 2.0.1
+tests:
+- name: source revision
+  command: git -C /opt/pals-2.0.1 rev-parse HEAD
+  expected_exit_code: 0
+  expected_output_contains: ${upstream_commit}
+- name: FSL launcher
+  command: command -v flirt
+  expected_exit_code: 0
+  expected_output_contains: flirt
+upstream_commit: b3699e951ba929d5822bd98a8b65414f075f02a8

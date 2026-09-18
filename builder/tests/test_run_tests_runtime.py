@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+
 from builder import run_tests
 
 
@@ -76,3 +78,73 @@ def test_container_variables_expand_literal_recipe_version() -> None:
         run_tests.substitute_variables(config["container"], variables)
         == "deeplabcut_2.3.11_REFERENCE.simg"
     )
+
+
+def test_script_runner_expands_independent_version_variables(tmp_path) -> None:
+    runner = tmp_path / "runner-2.3"
+    runner.write_text('#!/bin/sh\nprintf "runner-2.3\\n"\nexec bash "$1"\n')
+    runner.chmod(0o755)
+    result = run_tests.run_single_test(
+        {"name": "versioned runner", "script": "printf 'payload-${upstream_version}\\n'",
+         "expected_output_contains": "runner-2.3\npayload-2.3"},
+        None,
+        {"upstream_version": "2.3", "runner_dir": str(tmp_path)},
+        tmp_path,
+        script_runner='${runner_dir}/runner-${upstream_version}',
+    )
+    assert result.passed, result.stderr or result.message
+
+
+def test_container_setup_and_tests_share_the_output_directory(tmp_path, monkeypatch) -> None:
+    work = tmp_path / "suite"
+    work.mkdir()
+    fallback = tmp_path / "runtime-default"
+    fallback.mkdir()
+    real_run = subprocess.run
+
+    def runtime_run(command, **kwargs):
+        # Model a runtime whose default cwd differs from the host subprocess cwd.
+        cwd = command[command.index("--pwd") + 1] if "--pwd" in command else fallback
+        payload = command[command.index("image.sif") + 1:]
+        return real_run(payload, **{**kwargs, "cwd": cwd})
+
+    monkeypatch.setattr(run_tests.subprocess, "run", runtime_run)
+    error = run_tests._run_setup_in_container(
+        "mkdir -p output\nprintf fixture > output/input", "image.sif", work, {}
+    )
+    assert error is None, error
+    assert (work / "output/input").read_text() == "fixture"
+    result = run_tests.run_single_test(
+        {"name": "relative output", "command": "cp output/input output/result",
+         "validate": [{"output_exists": "output/result"}]},
+        "image.sif", {}, work,
+    )
+    assert result.passed, result.message
+    assert (work / "output/result").read_text() == "fixture"
+
+
+def test_setup_preserves_container_software_and_binds_host_data(tmp_path, monkeypatch) -> None:
+    work = tmp_path / "work"
+    data = tmp_path / "data"
+    work.mkdir()
+    data.mkdir()
+    commands = []
+
+    def runtime_run(command, **kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(run_tests.subprocess, "run", runtime_run)
+    variables = {"tool_dir": "/opt/tool", "input": str(data / "image.nii")}
+    error = run_tests._run_setup_in_container("true", "image.sif", work, variables)
+    assert error is None
+    result = run_tests.run_single_test(
+        {"name": "software available", "command": "true"},
+        "image.sif", variables, work,
+    )
+    assert result.passed
+    for command in commands:
+        binds = [command[index + 1] for index, arg in enumerate(command) if arg == "-B"]
+        assert "/opt:/opt" not in binds
+        assert f"{work}:{work}" in binds
+        assert f"{data}:{data}" in binds

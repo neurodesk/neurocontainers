@@ -8,10 +8,26 @@ copyright:
 architectures:
   - x86_64
 
+variables:
+  software_version: 1.8.7
+  base_image_tag: release-v1.8.7.post1.dev3
+
+auto_update:
+  method: sources
+  sources:
+    - id: base_image_tag
+      method: dockerhub
+      repo: fcpindi/c-pac
+      version_regex: 'release-v(?P<version>\d+\.\d+\.\d+\.post\d+\.dev\d+)'
+      include_prereleases: true
+      target:
+        variable: base_image_tag
+        value: tag
+
 build:
   kind: neurodocker
 
-  base-image: fcpindi/c-pac:release-v{{ context.version }}.post1.dev3
+  base-image: fcpindi/c-pac:{{ context.base_image_tag }}
   pkg-manager: apt
 
   directives:

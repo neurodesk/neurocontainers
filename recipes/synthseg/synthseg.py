@@ -32,6 +32,17 @@ OPENRECON_MODEL_DEFAULT = "synthseg"
 OPENRECON_MODEL_VALUES = ("synthseg", "robust", "v1")
 OPENRECON_SERIES_SUFFIX = "OR"
 OPENRECON_SEGMENT_SOURCE_GEOMETRY_SERIES_SUFFIX = "openrecon"
+MP2RAGE_IDENTITY_META_KEYS = (
+    "SeriesDescription",
+    "SequenceDescription",
+    "ProtocolName",
+    "SequenceName",
+    "ImageComments",
+    "ImageComment",
+    "ImageType",
+    "DicomImageType",
+    "ImageTypeValue4",
+)
 SYNTHSEG_OUTPUT_GEOMETRY_2D = "2d"
 SYNTHSEG_SEGMENT_SEND_ORDER = "after_originals"
 SYNTHSEG_SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
@@ -78,6 +89,7 @@ SCANNER_WRITE_UNSAFE_META_KEYS = {
 
 # mri_synthseg resolves every model and label file relative to FREESURFER_HOME.
 SYNTHSEG_COMMAND = "mri_synthseg"
+SYNTHSEG_CROP_MULTIPLE = 32
 SYNTHSEG_MODEL_FILES = {
     "synthseg": "synthseg_2.0.h5",
     "robust": "synthseg_robust_2.0.h5",
@@ -98,7 +110,8 @@ OPENRECON_DEFAULTS = {
     "ssmodel": OPENRECON_MODEL_DEFAULT,
     "ssparc": False,
     "ssfast": True,
-    "ssusegpu": True,
+    "ssusegpu": False,
+    "sscrop": 0,
     "ssthreads": 8,
     "ssvolumes": False,
     "ssqc": False,
@@ -555,6 +568,185 @@ def _resolve_synthseg_models(model: str, parcellation: bool, qc: bool) -> list[P
     if qc:
         model_files.append(SYNTHSEG_QC_MODEL_FILE)
     return [_resolve_synthseg_model(model_file) for model_file in model_files]
+
+
+def _resolve_synthseg_crop_options(
+    crop_size: int,
+) -> tuple[bool, int]:
+    """Resolve the OpenRecon crop value to SynthSeg CLI options."""
+    if crop_size < -1:
+        logging.warning(
+            "Invalid SynthSeg crop value %s requested. Disabling cropping.",
+            crop_size,
+        )
+        crop_size = -1
+
+    if crop_size == -1:
+        return False, 0
+
+    if crop_size == 0:
+        return True, 0
+
+    if crop_size > 0 and crop_size % SYNTHSEG_CROP_MULTIPLE:
+        requested_crop_size = crop_size
+        crop_size = (
+            (crop_size + SYNTHSEG_CROP_MULTIPLE - 1)
+            // SYNTHSEG_CROP_MULTIPLE
+            * SYNTHSEG_CROP_MULTIPLE
+        )
+        logging.warning(
+            "SynthSeg crop size %s is not divisible by %s. Rounding up to %s.",
+            requested_crop_size,
+            SYNTHSEG_CROP_MULTIPLE,
+            crop_size,
+        )
+
+    return False, crop_size
+
+
+def _log_synthseg_resources(pid: int, use_gpu: bool) -> None:
+    try:
+        status = Path(f"/proc/{pid}/status").read_text()
+        memory = [line for line in status.splitlines() if line.startswith(("VmRSS:", "VmHWM:"))]
+        logging.info("SynthSeg pid=%d host memory: %s", pid, "; ".join(memory))
+    except OSError:
+        pass
+    if not use_gpu:
+        return
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=index,name,driver_version,memory.total,memory.used,memory.free,utilization.gpu",
+                "--format=csv,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        if result.returncode == 0:
+            logging.info(
+                "SynthSeg GPU sample (device-wide memory in MiB, utilization in percent):\n%s",
+                result.stdout.strip(),
+            )
+        else:
+            logging.info("SynthSeg GPU telemetry unavailable: %s", result.stderr.strip())
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logging.info("SynthSeg GPU telemetry unavailable: %s", exc)
+
+
+def _run_synthseg_command(ss_cmd: list[str], output_dir: Path) -> None:
+    started = perf_counter()
+    gpu_requested = "--cpu" not in ss_cmd
+    for attempt in range(2 if gpu_requested else 1):
+        use_gpu = gpu_requested and attempt == 0
+        device = "gpu" if use_gpu else "cpu"
+        command = list(ss_cmd)
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        if not use_gpu:
+            if "--cpu" not in command:
+                command.append("--cpu")
+            env["CUDA_VISIBLE_DEVICES"] = "-1"
+        stdout_path = output_dir.parent / f"synthseg_{device}.stdout.log"
+        stderr_path = output_dir.parent / f"synthseg_{device}.stderr.log"
+        logging.info(
+            "Running SynthSeg attempt=%d device=%s command: %s; stdout=%s stderr=%s "
+            "CUDA_VISIBLE_DEVICES=%s NVIDIA_VISIBLE_DEVICES=%s TF_GPU_ALLOCATOR=%s "
+            "TF_FORCE_GPU_ALLOW_GROWTH=%s",
+            attempt + 1, device, " ".join(command), stdout_path, stderr_path,
+            env.get("CUDA_VISIBLE_DEVICES", "unset"),
+            env.get("NVIDIA_VISIBLE_DEVICES", "unset"),
+            env.get("TF_GPU_ALLOCATOR", "unset"),
+            env.get("TF_FORCE_GPU_ALLOW_GROWTH", "unset"),
+        )
+        attempt_started = perf_counter()
+        with stdout_path.open("w") as stdout, stderr_path.open("w") as stderr:
+            with subprocess.Popen(command, stdout=stdout, stderr=stderr, env=env) as process:
+                while True:
+                    _log_synthseg_resources(process.pid, use_gpu)
+                    try:
+                        returncode = process.wait(timeout=5)
+                        break
+                    except subprocess.TimeoutExpired:
+                        logging.info(
+                            "SynthSeg device=%s running elapsed=%.1f s",
+                            device, perf_counter() - attempt_started,
+                        )
+        output = stdout_path.read_text(errors="replace")
+        errors = stderr_path.read_text(errors="replace")
+        if output.strip():
+            logging.info("SynthSeg %s stdout:\n%s", device, output.rstrip())
+        if errors.strip():
+            logging.info("SynthSeg %s stderr:\n%s", device, errors.rstrip())
+        logging.info(
+            "SynthSeg device=%s finished in %.1f s with exit code %s; total elapsed=%.1f s",
+            device, perf_counter() - attempt_started, returncode, perf_counter() - started,
+        )
+        _log_directory_contents("SynthSeg output directory", output_dir)
+        if returncode == 0:
+            return
+        if use_gpu:
+            logging.warning(
+                "SynthSeg GPU attempt failed with exit code %s. Removing partial outputs "
+                "and retrying once on CPU with the same model, fast mode, crop, parcellation "
+                "and QC settings. GPU logs remain in %s.",
+                returncode, output_dir.parent,
+            )
+            shutil.rmtree(output_dir)
+            output_dir.mkdir()
+        else:
+            raise subprocess.CalledProcessError(returncode, command, output=output, stderr=errors)
+
+
+def _build_synthseg_command(
+    input_path: Path,
+    output_path: Path,
+    *,
+    model: str,
+    fast: bool,
+    parcellation: bool,
+    use_gpu: bool,
+    threads: int,
+    autocrop: bool,
+    crop_size: int,
+    volumes_csv_path: Path | None = None,
+    qc_csv_path: Path | None = None,
+) -> list[str]:
+    """Build the mri_synthseg command for one OpenRecon image volume."""
+    # --keepgeom is mandatory here: mri_synthseg segments at 1 mm isotropic
+    # and would otherwise return a volume that no longer matches the source
+    # MRD slice grid, so the labels could not be stamped back onto the
+    # incoming image headers.
+    cmd = [
+        SYNTHSEG_COMMAND,
+        "--i", str(input_path),
+        "--o", str(output_path),
+        "--keepgeom",
+        "--noaddctab",
+        "--threads", str(threads),
+    ]
+    if model == "robust":
+        cmd.append("--robust")
+    elif model == "v1":
+        cmd.append("--v1")
+    if fast and model != "robust":
+        # --robust implies --fast; passing both is accepted but noisy.
+        cmd.append("--fast")
+    if parcellation:
+        cmd.append("--parc")
+    if crop_size > 0:
+        cmd.extend(["--crop", str(crop_size)])
+    elif autocrop:
+        cmd.append("--autocrop")
+    if not use_gpu:
+        cmd.append("--cpu")
+    if volumes_csv_path is not None:
+        cmd.extend(["--vol", str(volumes_csv_path)])
+    if qc_csv_path is not None:
+        cmd.extend(["--qc", str(qc_csv_path)])
+    return cmd
 
 
 def _clone_mrd_image(image):
@@ -3187,6 +3379,70 @@ def _as_image_list(images):
     return list(images)
 
 
+def _normalized_identity_text(value):
+    """Normalize scanner labels so UNI-DEN, UNI_DEN, and UNIDEN compare alike."""
+
+    if isinstance(value, (list, tuple)):
+        value = " ".join(str(item) for item in value)
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _image_identity_values(image):
+    meta_obj = _meta_from_image(image)
+    values = []
+    for key in MP2RAGE_IDENTITY_META_KEYS:
+        try:
+            value = meta_obj.get(key)
+        except Exception:
+            continue
+        if isinstance(value, (list, tuple)):
+            values.extend(str(item) for item in value if item is not None)
+        elif value is not None:
+            values.append(str(value))
+    return values
+
+
+def _select_anatomical_input_images(images):
+    """Prefer MP2RAGE UNI-DEN, with the first magnitude series as a fallback."""
+
+    images = list(images)
+    identities = [
+        [_normalized_identity_text(value) for value in _image_identity_values(image)]
+        for image in images
+    ]
+    if not any("mp2rage" in value for values in identities for value in values):
+        return images
+
+    selected = [
+        image
+        for image, values in zip(images, identities)
+        if any("uniden" in value for value in values)
+    ]
+    if not selected:
+        fallback_series_index = int(getattr(images[0], "image_series_index", 0))
+        selected = [
+            image
+            for image in images
+            if int(getattr(image, "image_series_index", 0))
+            == fallback_series_index
+        ]
+        logging.warning(
+            "MP2RAGE input was detected, but no UNI-DEN contrast was received; "
+            "processing the first magnitude image series instead "
+            "(image_series_index=%d, images=%d)",
+            fallback_series_index,
+            len(selected),
+        )
+        return selected
+    logging.info(
+        "MP2RAGE input detected; selected %d UNI-DEN image(s) and ignored %d "
+        "other MP2RAGE image(s)",
+        len(selected),
+        len(images) - len(selected),
+    )
+    return selected
+
+
 def process(connection, config, metadata):
     logging.info("Config: \n%s", config)
 
@@ -3212,7 +3468,7 @@ def process(connection, config, metadata):
 
     # Continuously parse incoming data parsed from MRD messages
     acqGroup = []
-    imageGroups = {}
+    magnitudeImages = []
     skipped_passthrough_images = 0
     waveformGroup = []
     try:
@@ -3242,7 +3498,7 @@ def process(connection, config, metadata):
             elif isinstance(item, ismrmrd.Image):
                 # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
                 if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
-                    imageGroups.setdefault(int(item.image_series_index), []).append(item)
+                    magnitudeImages.append(item)
                 else:
                     skipped_passthrough_images += 1
                     continue
@@ -3258,6 +3514,11 @@ def process(connection, config, metadata):
 
             else:
                 logging.error("Unsupported data type %s", type(item).__name__)
+
+        selectedImages = _select_anatomical_input_images(magnitudeImages)
+        imageGroups = {}
+        for item in selectedImages:
+            imageGroups.setdefault(int(item.image_series_index), []).append(item)
 
         logging.info(
             "Input stream drained before SynthSeg image processing: "
@@ -3628,6 +3889,15 @@ def process_image(images, connection, config, metadata):
         fast = True
 
     use_gpu = boolean_checker("ssusegpu", default_val=OPENRECON_DEFAULTS["ssusegpu"])
+    crop_size = int(
+        mrdhelper.get_json_config_param(
+            config,
+            "sscrop",
+            default=OPENRECON_DEFAULTS["sscrop"],
+            type='int',
+        )
+    )
+    autocrop, crop_size = _resolve_synthseg_crop_options(crop_size)
     threads = int(
         mrdhelper.get_json_config_param(
             config,
@@ -3726,7 +3996,8 @@ def process_image(images, connection, config, metadata):
         model_paths = _resolve_synthseg_models(model, parcellation, write_qc)
     logging.info(
         "OpenRecon SynthSeg options: run_name=%s model=%s model_files=%s "
-        "parcellation=%s fast=%s use_gpu=%s threads=%s volumes_csv=%s qc_csv=%s "
+        "parcellation=%s fast=%s use_gpu=%s autocrop=%s crop_size=%s "
+        "threads=%s volumes_csv=%s qc_csv=%s "
         "outputgeometry=%s segmentation_send_order=%s "
         "debug_threshold_segment=%s "
         "reslice_sagittal=%s reslice_coronal=%s",
@@ -3736,6 +4007,8 @@ def process_image(images, connection, config, metadata):
         parcellation,
         fast,
         use_gpu,
+        autocrop,
+        crop_size,
         threads,
         write_volumes,
         write_qc,
@@ -3745,36 +4018,6 @@ def process_image(images, connection, config, metadata):
         reslice_sagittal,
         reslice_coronal,
     )
-
-    def build_synthseg_command():
-        # --keepgeom is mandatory here: mri_synthseg segments at 1 mm isotropic
-        # and would otherwise return a volume that no longer matches the source
-        # MRD slice grid, so the labels could not be stamped back onto the
-        # incoming image headers.
-        cmd = [
-            SYNTHSEG_COMMAND,
-            "--i", str(input_path),
-            "--o", str(output_path),
-            "--keepgeom",
-            "--noaddctab",
-            "--threads", str(threads),
-        ]
-        if model == "robust":
-            cmd.append("--robust")
-        elif model == "v1":
-            cmd.append("--v1")
-        if fast and model != "robust":
-            # --robust implies --fast; passing both is accepted but noisy.
-            cmd.append("--fast")
-        if parcellation:
-            cmd.append("--parc")
-        if not use_gpu:
-            cmd.append("--cpu")
-        if write_volumes:
-            cmd.extend(["--vol", str(volumes_csv_path)])
-        if write_qc:
-            cmd.extend(["--qc", str(qc_csv_path)])
-        return cmd
 
     def log_csv_output(label, csv_path):
         if not csv_path.exists():
@@ -3789,33 +4032,6 @@ def process_image(images, connection, config, metadata):
             )
         except OSError as exc:
             logging.warning("Could not read the SynthSeg %s CSV: %s", label, exc)
-
-    def run_synthseg_command(ss_cmd):
-        logging.info("Running SynthSeg command: %s", " ".join(ss_cmd))
-        started = perf_counter()
-        result = subprocess.run(ss_cmd, check=False, capture_output=True, text=True)
-
-        if result.stdout and result.stdout.strip():
-            logging.info("SynthSeg stdout:\n%s", result.stdout.rstrip())
-        if result.stderr and result.stderr.strip():
-            logging.info("SynthSeg stderr:\n%s", result.stderr.rstrip())
-
-        logging.info(
-            "SynthSeg inference finished in %.1f s with exit code %s",
-            perf_counter() - started,
-            result.returncode,
-        )
-        _log_directory_contents("SynthSeg input directory", input_dir)
-        _log_directory_contents("SynthSeg output directory", output_dir)
-
-        if result.returncode != 0:
-            logging.error("SynthSeg command failed with exit code %s", result.returncode)
-            raise subprocess.CalledProcessError(
-                result.returncode,
-                ss_cmd,
-                output=result.stdout,
-                stderr=result.stderr,
-            )
 
     if debug_threshold_segment:
         logging.warning(
@@ -3840,7 +4056,22 @@ def process_image(images, connection, config, metadata):
         print('Debug threshold processing done')
 
     else:
-        run_synthseg_command(build_synthseg_command())
+        _run_synthseg_command(
+            _build_synthseg_command(
+                input_path,
+                output_path,
+                model=model,
+                fast=fast,
+                parcellation=parcellation,
+                use_gpu=use_gpu,
+                threads=threads,
+                autocrop=autocrop,
+                crop_size=crop_size,
+                volumes_csv_path=volumes_csv_path if write_volumes else None,
+                qc_csv_path=qc_csv_path if write_qc else None,
+            ),
+            output_dir,
+        )
         if write_volumes:
             log_csv_output("region volume", volumes_csv_path)
         if write_qc:

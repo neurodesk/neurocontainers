@@ -1,0 +1,26 @@
+{
+  "apps": {
+    "brainvisa 6.0.40": {
+      "version": "20260913",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "brainvisaGUI-brainvisa 6.0.40": {
+      "version": "20260913",
+      "exec": "brainvisa",
+      "apptainer_args": []
+    },
+    "anatomistGUI-brainvisa 6.0.40": {
+      "version": "20260913",
+      "exec": "anatomist",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "image segmentation",
+    "image registration",
+    "visualization",
+    "workflows"
+  ]
+}

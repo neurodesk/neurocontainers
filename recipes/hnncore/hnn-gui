@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""Start HNN's browser GUI with writable per-session application directories."""
+
+import os
+import tempfile
+from pathlib import Path
+
+
+with tempfile.TemporaryDirectory(prefix="hnn-gui-") as runtime:
+    for variable, directory in {
+        "MPLCONFIGDIR": "matplotlib",
+        "IPYTHONDIR": "ipython",
+        "JUPYTER_CONFIG_DIR": "jupyter-config",
+        "JUPYTER_DATA_DIR": "jupyter-data",
+        "JUPYTER_RUNTIME_DIR": "jupyter-runtime",
+    }.items():
+        os.environ.setdefault(variable, str(Path(runtime) / directory))
+
+    from hnn_core.gui.gui import launch
+
+    launch()

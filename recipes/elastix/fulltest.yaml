@@ -418,7 +418,7 @@ tests:
   - name: elastix version check
     description: Verify elastix binary runs and reports version
     command: elastix --version
-    expected_output_contains: "elastix version: 5.1.0"
+    expected_output_contains: "elastix version: ${version}"
 
   - name: elastix extended version
     description: Check extended version information including ITK and build details
@@ -433,7 +433,7 @@ tests:
   - name: transformix version check
     description: Verify transformix binary runs and reports version
     command: transformix --version
-    expected_output_contains: "transformix version: 5.1.0"
+    expected_output_contains: "transformix version: ${version}"
 
   - name: transformix help
     description: Verify transformix help message displays correctly

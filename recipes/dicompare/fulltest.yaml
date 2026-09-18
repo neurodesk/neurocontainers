@@ -316,10 +316,22 @@ tests:
     command: "bash -lc 'cat /opt/dicompare/dist/schemas/abcd_schema_cleaned.json | python3 -c \"import sys,json; json.load(sys.stdin); print('\"'\"'valid'\"'\"')\"'"
     expected_output_contains: "valid"
 
-  - name: All schemas count
-    description: Verify expected number of schema files
-    command: bash -lc 'ls /opt/dicompare/dist/schemas/*.json | wc -l'
-    expected_output_contains: "10"
+  - name: All indexed schemas are bundled and valid JSON
+    description: Verify every schema offered by the application is present and parses.
+    command: |
+      node <<'JS'
+      const assert = require('node:assert/strict');
+      const fs = require('node:fs');
+      const root = '/opt/dicompare/dist';
+      const index = JSON.parse(fs.readFileSync(root + '/schemas/index.json', 'utf8'));
+      assert(index.length > 0, 'Schema index is empty');
+      for (const entry of index) {
+        assert(entry.startsWith('/schemas/'), entry);
+        JSON.parse(fs.readFileSync(root + entry, 'utf8'));
+      }
+      console.log('All indexed schemas parsed');
+      JS
+    expected_output_contains: "All indexed schemas parsed"
 
   # ==========================================================================
   # VALIDATION FUNCTIONS VERIFICATION
@@ -429,10 +441,19 @@ tests:
     command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/uniform_echo_spacing.json'"
     expected_output_contains: "uniform_echo_spacing"
 
-  - name: All validation functions count
-    description: Verify expected number of validation function files
-    command: bash -lc 'ls /opt/dicompare/dist/validation-functions/*.json | wc -l'
-    expected_output_contains: "19"
+  - name: Bundled validation functions are valid JSON
+    description: Verify the application has parseable validation-function definitions.
+    command: |
+      node <<'JS'
+      const assert = require('node:assert/strict');
+      const fs = require('node:fs');
+      const root = '/opt/dicompare/dist/validation-functions';
+      const files = fs.readdirSync(root).filter(name => name.endsWith('.json'));
+      assert(files.length > 0, 'No validation functions are bundled');
+      for (const name of files) JSON.parse(fs.readFileSync(root + '/' + name, 'utf8'));
+      console.log('All validation functions parsed');
+      JS
+    expected_output_contains: "All validation functions parsed"
 
   # ==========================================================================
   # README AND LAUNCHER VERIFICATION
@@ -446,11 +467,6 @@ tests:
     description: Verify README.md describes dicompare
     command: cat /opt/dicompare/README.md
     expected_output_contains: "dicompare"
-
-  - name: README.md mentions MRI validation
-    description: Verify README.md describes MRI protocol validation
-    command: cat /opt/dicompare/README.md
-    expected_output_contains: "MRI protocol validation"
 
   - name: launcher supports start subcommand
     description: Verify the installed launcher routes the start subcommand

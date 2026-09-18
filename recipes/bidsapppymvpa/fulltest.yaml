@@ -18,7 +18,7 @@
 #   - Events: cash_demean, control_pumps_demean, explode_demean, pumps_demean
 
 name: bidsapppymvpa
-version: 2.0.2
+version: 4.0.4
 
 required_files:
   - dataset: ds000001

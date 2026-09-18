@@ -1,3 +1,6 @@
+variables:
+  upstream_commit: f627b57b8f9291bfa870cb54cb21ddbeb4941d39
+
 name: synthstroke
 version: 0.0.0
 copyright:
@@ -167,6 +170,16 @@ files:
       print(f"\nDone! Run inference with:")
       print(f"  synthstroke --input T1w.nii.gz --outdir ./output/ --weights {weights} --tta")
 
+auto_update:
+  method: sources
+  sources:
+  - id: upstream
+    method: github_commit
+    repo: liamchalcroft/SynthStroke
+    ref: HEAD
+    target:
+      variable: upstream_commit
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -174,12 +187,13 @@ build:
   directives:
     - template:
         name: miniconda
-        version: latest
+        version: py310_25.5.1-0
+        install_path: /opt/miniconda-latest
         conda_install: python=3.10
         pip_install: monai torch nibabel numpy scikit-image tqdm wandb cornucopia huggingface_hub safetensors scipy einops
     - install: git libgl1 curl ca-certificates
     - run:
-        - git clone https://github.com/liamchalcroft/SynthStroke.git /opt/synthstroke
+        - git clone https://github.com/liamchalcroft/SynthStroke.git /opt/synthstroke && git -C /opt/synthstroke checkout {{ context.upstream_commit }}
         - hf download liamchalcroft/synthstroke-baseline --local-dir /opt/synthstroke/weights/baseline
         - cp {{ get_file("run.py") }} /opt/synthstroke/run.py
         - cp {{ get_file("download.py") }} /opt/synthstroke/download.py

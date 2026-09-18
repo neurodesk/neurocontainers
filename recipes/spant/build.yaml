@@ -74,6 +74,10 @@ readme: |-
   To run container outside of this environment: ml spant/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: github_release
+  repo: martin3141/spant
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -95,7 +99,7 @@ build:
         - libtiff5-dev
         - libjpeg-dev
     - run:
-        - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); if (!requireNamespace('remotes', quietly = TRUE)) install.packages('remotes'); remotes::install_github('martin3141/spant@v3.7.0', dependencies = TRUE, upgrade = 'never', build_vignettes = FALSE); cat('Installed spant from GitHub\n') "
+        - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); if (!requireNamespace('remotes', quietly = TRUE)) install.packages('remotes'); remotes::install_github('martin3141/spant@v{{ context.version }}', dependencies = TRUE, upgrade = 'never', build_vignettes = FALSE); cat('Installed spant from GitHub\n') "
     - test:
         name: verify_r_installation
         script: |-

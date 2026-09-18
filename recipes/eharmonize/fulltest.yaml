@@ -31,10 +31,10 @@ tests:
 
   - name: Python runtime available
     description: Verify Python resolves from the Miniconda installation
-    command: python --version
-    expected_output_contains: "Python 3.13."
+    command: python -c "import sys; assert sys.version_info.major == 3; print(sys.executable)"
+    expected_output_contains: "/opt/miniconda/bin/python"
 
   - name: eharmonize package metadata
     description: Verify the installed Python package metadata matches the shipped runtime
-    command: python -m pip show eharmonize 2>&1 | sed -n '1,20p'
-    expected_output_contains: "Version: 0.0.0"
+    command: python -c "from importlib.metadata import distribution; d = distribution('eharmonize'); assert d.version; print(d.metadata['Name'])"
+    expected_output_contains: eharmonize

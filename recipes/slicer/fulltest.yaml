@@ -11,8 +11,9 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 #
 # Note: Slicer CLI modules are invoked via: Slicer --launch <CLI_MODULE> [args]
-# CLI modules are located at: /opt/Slicer-5.10.0-linux-amd64/lib/Slicer-5.10/cli-modules/
+# CLI modules are located at: /opt/Slicer-${upstream_version}-linux-amd64/lib/Slicer-${slicer_abi}/cli-modules/
 
+monailabel_version: 0.8.5
 name: slicer
 version: 5.10.0
 
@@ -28,7 +29,7 @@ test_data:
   t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
   bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
   output_dir: test_output
-  cli_path: /opt/Slicer-5.10.0-linux-amd64/lib/Slicer-5.10/cli-modules
+  cli_path: /opt/Slicer-${upstream_version}-linux-amd64/lib/Slicer-${slicer_abi}/cli-modules
 
 setup:
   script: |
@@ -37,6 +38,13 @@ setup:
     mkdir -p test_output
 
 tests:
+  - name: MONAI Label server version
+    command: python -c 'from importlib.metadata import version; print(version("monailabel"))'
+    expected_output_contains: ${monailabel_version}
+  - name: MONAI Label server launcher
+    command: monailabel --help
+    expected_output_contains: start_server
+
   # ==========================================================================
   # BASIC FUNCTIONALITY
   # ==========================================================================
@@ -524,3 +532,5 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
+upstream_version: 5.10.0
+slicer_abi: '5.10'

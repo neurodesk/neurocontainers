@@ -4,6 +4,11 @@ version: 5.3.0
 architectures:
   - x86_64
 
+auto_update:
+  method: webpage
+  url: https://www.uni-muenster.de/Voreen/download/index.html
+  version_regex: voreen-src-(?P<version>\d+\.\d+\.\d+)-unix\.tar\.gz
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

@@ -14,6 +14,7 @@ tests:
   command: |
     matlabruntime-info | grep "MATLAB Runtime"
     matlabruntime-info | grep "${MCRROOT}"
+    matlabruntime-info | grep "Release: R${version}"
 - name: Test MATLAB Runtime license agreement environment
   description: Verify the container runtime smoke test for this tool.
   command: |

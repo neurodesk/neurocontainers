@@ -1,0 +1,21 @@
+name: acsrss
+version: 0.1.6
+
+tests:
+  - name: deployed launcher
+    command: acsrss --version
+    expected_output_contains: "${version}"
+  - name: server CLI starts
+    command: acsrss --help
+    expected_output_contains: "Example server for MRD streaming format"
+  - name: application and server imports
+    command: python -c "import sys; sys.path.insert(0, '/opt/code/python-ismrmrd-server'); import acsrss, fire_poc, ismrmrd"
+  - name: live ACS and shared numerical smoke tests
+    command: python /opt/code/python-ismrmrd-server/smoke_fire_poc.py
+    expected_output_contains: "FIRE POC smoke tests passed"
+  - name: recipe version
+    command: printenv FIRE_POC_VERSION
+    expected_output_contains: "${version}"
+  - name: parameterless scanner adjustment stream
+    command: python /opt/code/python-ismrmrd-server/smoke_fire_dispatch.py --app acsrss
+    expected_output_contains: "FIRE adjustment dispatch smoke tests passed"

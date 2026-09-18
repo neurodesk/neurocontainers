@@ -287,7 +287,7 @@ def do_segmentation(data):
         cmd = [
             "predict3.py",
             "-i", "t1_from_h5.nii",
-            "-m", "/opt/models/*.pth",
+            "-m", "/opt/models/*.onnx",
             "-o", "output",
             "--n-markers", "3"
         ]

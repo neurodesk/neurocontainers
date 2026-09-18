@@ -58,6 +58,10 @@ readme: |-
   To run container outside of this environment: ml totalsegmentator/{{ context.version }}
 
   ----------------------------------
+auto_update:
+  method: pypi
+  package: TotalSegmentator
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -69,7 +73,7 @@ build:
         env_name: totalsegmentator
         env_exists: "false"
         conda_install: python=3.12
-        pip_install: setuptools TotalSegmentator torch torchvision
+        pip_install: setuptools TotalSegmentator=={{ context.version }} torch torchvision
     - environment:
         PATH: /opt/miniconda-latest/envs/totalsegmentator/bin:/opt/miniconda-latest/bin:$PATH
     - deploy:
