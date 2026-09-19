@@ -4,8 +4,8 @@
 # network access or model downloads.
 
 name: dafne
-version: "1.9.0"
-upstream_version: 1.8a4
+version: "1.10.0"
+upstream_version: "2.1.0a0"
 radiomics_version: 3.1.0
 
 default_timeout: 120
