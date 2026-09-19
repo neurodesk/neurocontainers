@@ -138,6 +138,29 @@ the MATLAB workflow. When `Apply Mask` is also enabled, `MaskForMagnitude` is
 applied to every completed output map—including transmit phase—before scanner
 display encoding.
 
+## FIRE Development Server
+
+From the repository root, activate the Python environment and start the server:
+
+```bash
+source env/bin/activate
+recipes/blochsiegertb1mapping/start-docker.sh
+```
+
+This builds the current recipe and starts `blochsiegertb1mapping-fire` in the
+background, publishing TCP port `9002`. Configure FIRE to use this host, port
+`9002`, and config `blochsiegertb1mapping`. Set
+`BLOCHSIEGERTB1MAPPING_PORT` to use a different host port.
+
+Use `--no-build` to launch an existing image, or `--list` to inspect local images
+and containers. Source changes require stopping the server and rerunning the
+script to rebuild. The container is removed automatically when stopped.
+
+```bash
+docker logs -f blochsiegertb1mapping-fire
+docker stop blochsiegertb1mapping-fire
+```
+
 ## Open Source Development
 
 The source for this OpenRecon package is in the NeuroContainers repository:

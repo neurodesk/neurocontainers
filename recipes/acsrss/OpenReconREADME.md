@@ -6,6 +6,25 @@ raw capture, HDF5 output, or local DICOM files. Incoming original images are
 forwarded by default. Keep the standard ICE branch enabled to produce the normal
 image series when FIRE receives only raw acquisitions.
 
+## FIRE development server
+
+From the repository root, run `recipes/acsrss/start-docker.sh` with the repository
+Python environment activated. The script builds ACSRSS and starts both ACSRSS and
+an existing local Quickgrid image. Use `--no-build` to reuse the ACSRSS image.
+For host ports 9004 and 9005, run:
+
+```bash
+ACSRSS_PORT=9004 QUICKGRID_PORT=9005 recipes/acsrss/start-docker.sh --no-build
+```
+
+ACSRSS starts directly with this command inside the container:
+
+```bash
+python /opt/code/python-ismrmrd-server/main.py -H 0.0.0.0 -p 9002 -d acsrss
+```
+
+Docker maps the selected host port to internal port 9002.
+
 ## Scanner settings
 
 Select `config=acsrss`. The default `inputdomain=kx-ky` applies centered,

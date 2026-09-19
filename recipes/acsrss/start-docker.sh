@@ -116,7 +116,8 @@ fi
 # Docker performs the final atomic port reservation, also detecting non-Docker listeners.
 if ! "$acsrss_running"; then
   "${docker_cmd[@]}" run --detach --rm --name acsrss-fire \
-    --publish "$acsrss_port:9002" --entrypoint /usr/local/bin/acsrss "$image_tag"
+    --publish "$acsrss_port:9002" --entrypoint python "$image_tag" \
+    /opt/code/python-ismrmrd-server/main.py -H 0.0.0.0 -p 9002 -d acsrss
 fi
 if ! "$quickgrid_running"; then
   "${docker_cmd[@]}" run --detach --rm --name quickgrid-fire \
