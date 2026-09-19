@@ -1,5 +1,5 @@
 name: dafne
-version: "1.9.0"
+version: "1.10.0"
 
 copyright:
   - license: GPL-3.0
@@ -10,7 +10,7 @@ architectures:
   - aarch64
 
 variables:
-  upstream_version: 1.8a4
+  upstream_version: "2.1.0a0"
   radiomics_version: 3.1.0
   conda_install:
     try:
