@@ -264,20 +264,23 @@ jobs:
           python tools/one_pr_release.py report \
             --candidate-dir "candidate/${CONTAINER}" \
             --dive-status "${DIVE_OUTCOME}"
-      - name: Upload candidate bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: candidate-${{ matrix.container }}-${{ github.event.pull_request.head.sha }}
-          path: candidate/${{ matrix.container }}/
-          compression-level: 0
-          retention-days: 30
-          if-no-files-found: error
       - name: Upload compact approval report
         if: steps.approval_report.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: candidate-report-${{ matrix.container }}-${{ github.event.pull_request.head.sha }}
           path: candidate/${{ matrix.container }}/candidate-report.json
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload candidate bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-${{ matrix.container }}-${{ github.event.pull_request.head.sha }}
+          path: |
+            candidate/${{ matrix.container }}/
+            !candidate/${{ matrix.container }}/test-output/fulltest-containers/**
+            !candidate/${{ matrix.container }}/test-output/fulltest-work-*/**
+          compression-level: 0
           retention-days: 30
           if-no-files-found: error
       - name: Require candidate tests to pass
