@@ -1,5 +1,5 @@
 name: arfimapping
-version: 1.0.12
+version: "1.1.0"
 default_timeout: 120
 tests:
 - name: Bloch-Siegert OpenRecon workflow unit smoke test
