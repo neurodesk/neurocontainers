@@ -7,6 +7,11 @@ name: dafne
 version: "1.10.0"
 upstream_version: "2.1.0a0"
 radiomics_version: 3.1.0
+numpy_version: "2.1.3"
+tensorflow_version: "2.19.1"
+torch_version: "2.6.0"
+torchvision_version: "0.21.0"
+simpleitk_version: "2.4.1"
 
 default_timeout: 120
 
@@ -43,8 +48,8 @@ tests:
       PY
     expected_output_contains:
       - "dafne"
-      - "numpy 1.24.3"
-      - "SimpleITK"
+      - "numpy ${numpy_version}"
+      - "SimpleITK ${simpleitk_version}"
 
   - name: TensorFlow runtime import
     description: Verify the deep-learning runtime imports and can execute a small tensor operation
@@ -61,6 +66,7 @@ tests:
     expected_output_contains:
       - "protobuf-implementation python"
       - "sum 6"
+      - "tensorflow ${tensorflow_version}"
     timeout: 180
 
   - name: SimpleITK image operations
@@ -198,3 +204,23 @@ tests:
       print('native package metadata matches')
       PY
     expected_output_contains: native package metadata matches
+
+  - name: PyTorch and SAM2 runtime
+    description: Verify the new segmentation runtime imports and executes without model downloads.
+    command: |
+      python - <<'PY'
+      from importlib.metadata import version
+      import torch
+      import torchvision
+      from dafne_sam2.public_api import AVAILABLE_MODELS
+      from sam2.build_sam import build_sam2
+
+      assert version("torch").split("+")[0] == "${torch_version}"
+      assert version("torchvision").split("+")[0] == "${torchvision_version}"
+      assert torch.tensor([1, 2, 3]).sum().item() == 6
+      assert AVAILABLE_MODELS
+      assert callable(build_sam2)
+      print("PyTorch and SAM2 runtime OK")
+      PY
+    expected_output_contains: "PyTorch and SAM2 runtime OK"
+    timeout: 180
