@@ -1,6 +1,7 @@
 name: clinicadl
 version: "2.1.0"
 default_timeout: 60
+freesurfer_version: "7.4.1"
 clinicadl_version: 2.0.0
 clinica_version: "0.11.3"
 setuptools_version: "84.0.0"
@@ -338,3 +339,7 @@ tests:
   - name: mris_convert target exists
     command: test -e "$(readlink -f "$(command -v mris_convert)")"
     expected_exit_code: 0
+
+  - name: FreeSurfer reports the installed version
+    command: recon-all --version
+    expected_output_contains: "${freesurfer_version}"
