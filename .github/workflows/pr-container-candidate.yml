@@ -109,6 +109,7 @@ jobs:
     # persistent self-hosted machine. The ARM64 pool must satisfy the same
     # property: Blacksmith runners are ephemeral cloud VMs, not persistent hosts.
     runs-on: ${{ matrix.architecture == 'aarch64' && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'neurodesk-syd-arcrunner-neurocontainers' }}
+    timeout-minutes: 720
     strategy:
       fail-fast: false
       matrix:
@@ -202,8 +203,10 @@ jobs:
           SIF: ${{ steps.info.outputs.sif }}
         run: |
           mkdir -p "candidate/${CONTAINER}"
-          docker save "${CANDIDATE_TAG}" --output "candidate/${CONTAINER}/${DOCKER_ARCHIVE}"
-          apptainer build "candidate/${CONTAINER}/${SIF}" "docker-archive://candidate/${CONTAINER}/${DOCKER_ARCHIVE}"
+          docker image inspect "${CANDIDATE_TAG}" --format 'Image size: {{.Size}} bytes'
+          df -h . "$APPTAINER_TMPDIR"
+          time docker save "${CANDIDATE_TAG}" --output "candidate/${CONTAINER}/${DOCKER_ARCHIVE}"
+          time apptainer build "candidate/${CONTAINER}/${SIF}" "docker-archive://candidate/${CONTAINER}/${DOCKER_ARCHIVE}"
       - name: Run deploy and fulltest checks
         id: fulltest
         continue-on-error: true
@@ -226,14 +229,15 @@ jobs:
         id: dive
         continue-on-error: true
         env:
-          CANDIDATE_TAG: ${{ steps.info.outputs.candidate_tag }}
+          DOCKER_ARCHIVE: ${{ steps.info.outputs.docker_archive }}
           CONTAINER: ${{ matrix.container }}
         run: |
           set -o pipefail
           status=success
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+          docker run --rm \
+            -v "${PWD}/candidate/${CONTAINER}:/candidate:ro" \
             -v "${PWD}/.github/.dive-ci.yml:/.dive-ci.yml:ro" \
-            wagoodman/dive:latest "${CANDIDATE_TAG}" --ci --ci-config /.dive-ci.yml \
+            wagoodman/dive:latest "docker-archive:///candidate/${DOCKER_ARCHIVE}" --ci --ci-config /.dive-ci.yml \
             2>&1 | tee "candidate/${CONTAINER}/dive-report.txt" || status=failure
           # dive cannot express "judge the ratio only once the waste is worth
           # judging", so the outcome of this step is the size-aware decision.
