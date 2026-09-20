@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "dafne_arm64 1.10.0": {
+      "version": "20260920",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "dafne"
+}

@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "dcm2bids_arm64 3.3.1": {
+      "version": "20260920",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "dcm2bids"
+}

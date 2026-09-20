@@ -1,5 +1,5 @@
 name: dafne
-version: "1.9.0"
+version: "1.10.0"
 
 copyright:
   - license: GPL-3.0
@@ -10,20 +10,24 @@ architectures:
   - aarch64
 
 variables:
-  upstream_version: 1.8a4
+  upstream_version: "2.1.0a0"
   radiomics_version: 3.1.0
+  python_version: "3.11"
+  miniconda_version: py311_25.5.1-0
+  numpy_version: "2.1.3"
+  tensorflow_version: "2.19.1"
+  torch_version: "2.6.0"
+  torchvision_version: "0.21.0"
+  simpleitk_version: "2.4.1"
+  wheel_version: "0.48.0"
+  setuptools_version: "84.0.0"
   conda_install:
     try:
-      - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3"
+      - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel={{ context.wheel_version }} setuptools={{ context.setuptools_version }}"
         condition: arch=="x86_64"
-      - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3 pyqt=5.15 vtk h5py=3.11.0"
+      - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel={{ context.wheel_version }} setuptools={{ context.setuptools_version }} pyqt=5.15 h5py=3.11.0"
         condition: arch=="aarch64"
-  pip_install:
-    try:
-      - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics=={{ context.radiomics_version }} protobuf==3.20.3 dafne=={{ context.upstream_version }}"
-        condition: arch=="x86_64"
-      - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics=={{ context.radiomics_version }} protobuf==3.20.3 dafne=={{ context.upstream_version }}"
-        condition: arch=="aarch64"
+  pip_install: "numpy=={{ context.numpy_version }} tensorflow=={{ context.tensorflow_version }} torch=={{ context.torch_version }} torchvision=={{ context.torchvision_version }} SimpleITK=={{ context.simpleitk_version }} pyradiomics=={{ context.radiomics_version }} dafne=={{ context.upstream_version }}"
 
 files:
   - name: register_conda_metadata.py
@@ -49,41 +53,6 @@ files:
       elif text.count(correct) != 1 and 'dynamic = ["version"]' not in text:
           raise RuntimeError("PyRadiomics packaging changed; review the version metadata repair")
 
-  - name: patch_dafne_dl_annotations.py
-    contents: |-
-      import ast
-      import importlib.util
-      from pathlib import Path
-
-      spec = importlib.util.find_spec("dafne_dl")
-      if spec is None or spec.submodule_search_locations is None:
-          raise RuntimeError("Could not locate the installed dafne_dl package")
-
-      scanned = 0
-      patched = 0
-      for package_dir in spec.submodule_search_locations:
-          for path in Path(package_dir).rglob("*.py"):
-              scanned += 1
-              text = path.read_text()
-              if "from __future__ import annotations" in text.splitlines()[:20]:
-                  continue
-              tree = ast.parse(text)
-              insert_line = 0
-              if (
-                  tree.body
-                  and isinstance(tree.body[0], ast.Expr)
-                  and isinstance(tree.body[0].value, ast.Str)
-              ):
-                  insert_line = tree.body[0].end_lineno or 0
-              lines = text.splitlines()
-              lines.insert(insert_line, "from __future__ import annotations")
-              path.write_text("\n".join(lines) + ("\n" if text.endswith("\n") else ""))
-              patched += 1
-
-      if scanned == 0:
-          raise RuntimeError("The installed dafne_dl package contains no Python files")
-      print("Added deferred annotations to {} of {} dafne_dl files".format(patched, scanned))
-
 auto_update:
   method: sources
   sources:
@@ -97,11 +66,58 @@ auto_update:
     - id: pyradiomics
       method: github_release
       repo: AIM-Harvard/pyradiomics
-      # Later release families require a newer Python than DAFNE's supported stack.
       version_regex: '^v?(?P<version>3\.1\.\d+)$'
       target:
         variable: radiomics_version
         fulltest_variable: radiomics_version
+    - id: numpy
+      method: pypi
+      package: numpy
+      version_regex: '^(?P<version>2\.1\.\d+)$'
+      target:
+        variable: numpy_version
+        fulltest_variable: numpy_version
+    - id: tensorflow
+      method: pypi
+      package: tensorflow
+      version_regex: '^(?P<version>2\.19\.\d+)$'
+      target:
+        variable: tensorflow_version
+        fulltest_variable: tensorflow_version
+    - id: torch
+      method: pypi
+      package: torch
+      version_regex: '^(?P<version>2\.6\.\d+)$'
+      target:
+        variable: torch_version
+        fulltest_variable: torch_version
+    - id: torchvision
+      method: pypi
+      package: torchvision
+      version_regex: '^(?P<version>0\.21\.\d+)$'
+      target:
+        variable: torchvision_version
+        fulltest_variable: torchvision_version
+    - id: simpleitk
+      method: pypi
+      package: SimpleITK
+      version_regex: '^(?P<version>2\.4\.\d+)$'
+      target:
+        variable: simpleitk_version
+        fulltest_variable: simpleitk_version
+
+    - id: wheel
+      method: pypi
+      package: wheel
+      version_regex: '^(?P<version>0\.48\.\d+)$'
+      target:
+        variable: wheel_version
+    - id: setuptools
+      method: pypi
+      package: setuptools
+      version_regex: '^(?P<version>84\.0\.\d+)$'
+      target:
+        variable: setuptools_version
 
 build:
   kind: neurodocker
@@ -143,7 +159,7 @@ build:
     - template:
         name: miniconda
         conda_install: "{{ context.conda_install }}"
-        version: py38_23.11.0-2
+        version: "{{ context.miniconda_version }}"
 
     - run: python {{ get_file("register_conda_metadata.py") }}
       condition: arch=="aarch64"
@@ -155,9 +171,12 @@ build:
         - PYTHONPATH=. python {{ get_file("patch_radiomics_metadata.py") }} {{ context.radiomics_version }}
         - PYTHONPATH=. python -m pip install --no-cache-dir --no-build-isolation --no-deps .
         - rm -rf /tmp/pyradiomics-source
-      condition: arch=="aarch64"
 
-    - run: python -m pip install --no-cache-dir --only-binary=PyQt5,vtk,h5py {{ context.pip_install }}
+    - run:
+        - python -m pip install --no-cache-dir --only-binary=PyQt5,vtk,h5py {{ context.pip_install }}
+        # DAFNE removes Triton on import to avoid TensorFlow GPU crashes.
+        # Do this at build time because the runtime filesystem is read-only.
+        - python -m pip uninstall --yes triton
 
     - environment:
         HOME: /tmp
@@ -167,7 +186,6 @@ build:
         XDG_DATA_HOME: /tmp/.local/share
 
     - run:
-        - python {{ get_file("patch_dafne_dl_annotations.py") }}
         - dafne_bin="$(command -v dafne)"
         - mv "$dafne_bin" "${dafne_bin}.real"
         - printf '%s\n' '#!/usr/bin/env bash' 'export HOME=/tmp' 'export XDG_CACHE_HOME=/tmp/.cache' 'export XDG_CONFIG_HOME=/tmp/.config' 'export XDG_DATA_HOME=/tmp/.local/share' 'export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python' 'mkdir -p "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"' 'exec "$0.real" "$@"' > "$dafne_bin"

@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "dcm2bids 3.3.1": {
+      "version": "20260920",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
