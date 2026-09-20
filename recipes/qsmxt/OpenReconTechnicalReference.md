@@ -39,8 +39,9 @@ the MRD image stream.
 
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
 QSMxT derivatives that exist after the run. The original magnitude and phase
-series are sent back before the derived output by default; disable
-`sendoriginal` when only the derived maps should reach the scanner database.
+series are always sent back before the derived output. There is no
+`sendoriginal` control; an older configuration containing that key cannot
+disable original image return.
 
 Derived outputs are converted to unsigned 12-bit display values in the valid
 `0..4095` range. Binary masks use `0` and `4095`. QSM storage scaling preserves
@@ -119,8 +120,8 @@ Its custom-pipeline defaults are ROMEO phase unwrapping, iSMV background-field
 removal, HD-QSM inversion, and BET magnitude masking. BET uses a 0.5 fractional
 intensity threshold, closing radius 1, and automatic hole filling. This differs
 from the upstream QSMxT inversion default, which is RTS. The QSM map is the only
-derived output returned by default, and `sendoriginal` is on so the source
-magnitude and phase series are stored alongside it.
+derived output returned by default. The source magnitude and phase series
+are always stored alongside it.
 
 The default prioritizes speed while retaining good similarity in the QSM-CI
 in silico 2019 benchmark: ROMEO + iSMV + HD-QSM achieved xSIM 0.361 in about
@@ -128,7 +129,35 @@ in silico 2019 benchmark: ROMEO + iSMV + HD-QSM achieved xSIM 0.361 in about
 3.6 minutes. These are benchmark measurements, not scanner runtime guarantees.
 See the linked full-pipeline results below.
 
-### Pipeline presets
+### GRE source separation
+
+`sourceseparation` accepts `off` (default), `r2star-qsm`, or `decompose`.
+The enabled methods add `--do-chisep --chisep <method>` to `qsmxt run`.
+QSMxT enables the R2* fit for R2*-QSM automatically. DECOMPOSE fits the
+multi-echo magnitude using the reconstructed QSM. Neither method needs R2'.
+The bridge rejects fewer than three selected echoes, nonpositive or unordered
+echo times, unequal spacing for R2*-QSM, and the incompatible `noqsm=true` override.
+
+Enabling separation adds `paramagnetic`, `diamagnetic`, and `separated-total`
+to the returned outputs regardless of `sendoutputs`. Their NIfTI names end in
+`desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap`, and `desc-total_Chimap`.
+Ordinary QSM matching excludes those descriptors. Missing requested source
+maps fail explicitly. With separation off, `sendoutputs=all` retains its
+existing behavior and does not enable separation.
+
+All susceptibility outputs share the QSM display range, robust window,
+ppm metadata, and ppb DICOM rescaling. QSMxT writes the diamagnetic map as
+positive magnitudes, so separated total equals paramagnetic minus diamagnetic.
+
+These expose the implementations in the pinned QSMxT release. QSM-core's
+[R2*-QSM](https://github.com/astewartau/QSM.rs/blob/v0.35.0/src/separation/r2star_qsm.rs)
+uses the voxelwise closed-form solve without the paper's spatial
+regularization. Its
+[DECOMPOSE implementation](https://github.com/astewartau/QSM.rs/blob/v0.35.0/src/separation/decompose.rs)
+synthesizes per-echo phase from
+the reconstructed QSM rather than fitting the original complex GRE signal.
+
+## Pipeline presets
 
 The **Pipeline preset** selection box contains ten scanner-tested combinations
 and six complete-method presets. A pipeline preset overrides **QSM algorithm**,
@@ -265,7 +294,9 @@ voxels enter those calculations.
 The mask preset remains active when an algorithm pipeline preset is selected;
 the pipeline preset only overrides unwrapping, background removal, and QSM
 inversion. Mask controls expose the threshold input and method, BET fractional
-intensity, and a cleanup preset.
+intensity, percentile cutoff, and a cleanup preset. **Mask percentile**
+(`maskthresholdpercentile`) defaults to 65% and applies when **Threshold method**
+is Percentile.
 Magnitude thresholding is the safer choice for single-echo data because a
 single echo provides no inter-echo phase-coherence information. Closing and
 hole filling run before erosion; erosion defaults to zero so repaired gaps are

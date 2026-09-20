@@ -155,7 +155,6 @@ INPUT_SERIES_CHOICES = (
     "both",
 )
 DEFAULT_INPUT_SERIES = DISTORTION_CORRECTED
-DEFAULT_SEND_ORIGINAL = True
 MASK_CLEANUP_PRESETS = {
     "none": {"dilate": 0, "close": 0, "fill_holes": False, "erode": 0},
     "fill": {"dilate": 0, "close": 0, "fill_holes": True, "erode": 0},
@@ -174,6 +173,10 @@ SCANNER_DISPLAY_SCALE_FACTORS = (
     0.01,
     0.001,
 )
+
+SOURCE_SEPARATION_METHODS = ("off", "r2star-qsm", "decompose")
+SOURCE_SEPARATION_OUTPUTS = ("paramagnetic", "diamagnetic", "separated-total")
+SUSCEPTIBILITY_OUTPUTS = {"qsm", *SOURCE_SEPARATION_OUTPUTS}
 
 QSMXT_OUTPUTS = {
     "qsm": {
@@ -214,6 +217,18 @@ QSMXT_OUTPUTS = {
         "units": "Hz",
     },
 }
+
+for output_id, descriptor, series in (
+    ("paramagnetic", "paramagnetic", "QSMxT paramagnetic"),
+    ("diamagnetic", "diamagnetic", "QSMxT diamagnetic"),
+    ("separated-total", "total", "QSMxT separated total"),
+):
+    QSMXT_OUTPUTS[output_id] = {
+        "suffix": f"desc-{descriptor}_Chimap",
+        "token": f"QSMXT_{descriptor.upper()}",
+        "series": series,
+        "units": "ppm",
+    }
 
 SCANNER_WRITE_UNSAFE_META_KEYS = {
     "ImageTypeValue3",
@@ -333,16 +348,15 @@ def process(connection, config, metadata):
                         f"QSMxT failed for {variant} input: {error}"
                     ) from error
 
-        if settings["send_original"]:
-            original_images = _build_original_passthrough_images(
-                input_images,
-                reserved_images=output_images,
-            )
-            logging.info(
-                "Sending %d restamped original image(s) before QSMxT outputs",
-                len(original_images),
-            )
-            _send_images_by_series(connection, original_images)
+        original_images = _build_original_passthrough_images(
+            input_images,
+            reserved_images=output_images,
+        )
+        logging.info(
+            "Sending %d restamped original image(s) before QSMxT outputs",
+            len(original_images),
+        )
+        _send_images_by_series(connection, original_images)
 
         if output_images:
             _validate_output_images(output_images, input_images)
@@ -409,6 +423,8 @@ def write_bids_dataset(
 
     if settings["max_echoes"] > 0:
         n_echoes = min(n_echoes, settings["max_echoes"])
+    if settings["source_separation"] != "off" and n_echoes < 3:
+        raise ValueError("Source separation requires at least 3 GRE magnitude/phase echoes")
     magnitude_echo_groups = magnitude_echo_groups[:n_echoes]
     phase_echo_groups = phase_echo_groups[:n_echoes]
 
@@ -428,6 +444,15 @@ def write_bids_dataset(
         metadata,
         settings,
     )
+    if settings["source_separation"] != "off" and (
+        any(te <= 0 or not np.isfinite(te) for te in echo_times)
+        or any(later <= earlier for earlier, later in zip(echo_times, echo_times[1:]))
+    ):
+        raise ValueError("Source separation requires positive, increasing echo times")
+    if settings["source_separation"] == "r2star-qsm" and not np.allclose(
+        np.diff(echo_times), echo_times[1] - echo_times[0], rtol=0, atol=1e-4,
+    ):
+        raise ValueError("R2*-QSM requires equally spaced echo times for its R2* fit")
     field_strength = settings["field_strength_t"]
     logging.info(
         "Resolved QSMxT acquisition parameters: echo_times_ms=%s, "
@@ -582,6 +607,8 @@ def _run_qsmxt(bids_dir, output_dir, settings):
     do_swi = settings["do_swi"] or "swi" in selected
     do_t2starmap = settings["do_t2starmap"] or "t2star" in selected
     do_r2starmap = settings["do_r2starmap"] or "r2star" in selected
+    if settings["source_separation"] != "off":
+        cmd.extend(["--do-chisep", "--chisep", settings["source_separation"]])
     if settings["no_qsm"]:
         cmd.append("--no-qsm")
     if do_swi:
@@ -616,7 +643,12 @@ def _run_qsmxt(bids_dir, output_dir, settings):
 
 
 def _find_qsmxt_outputs(output_dir, conversion, settings):
-    selected = _selected_output_ids(settings["send_outputs"])
+    selected = [
+        output_id for output_id in _selected_output_ids(settings["send_outputs"])
+        if output_id not in SOURCE_SEPARATION_OUTPUTS
+    ]
+    if settings["source_separation"] != "off":
+        selected.extend(SOURCE_SEPARATION_OUTPUTS)
     derivative_anat_dir = (
         output_dir
         / QSMXT_DERIVATIVE_ROOT
@@ -632,6 +664,10 @@ def _find_qsmxt_outputs(output_dir, conversion, settings):
                 candidate
                 for suffix in suffixes
                 for candidate in derivative_anat_dir.glob(f"*_{suffix}.nii*")
+                if output_id != "qsm" or not any(
+                    f"_desc-{descriptor}_" in candidate.name
+                    for descriptor in ("paramagnetic", "diamagnetic", "total")
+                )
             }
         )
         logging.info(
@@ -641,6 +677,8 @@ def _find_qsmxt_outputs(output_dir, conversion, settings):
             [str(candidate) for candidate in candidates],
         )
         if not candidates:
+            if output_id in SOURCE_SEPARATION_OUTPUTS:
+                raise RuntimeError(f"QSMxT did not produce required {output_id} map")
             logging.info(
                 "Requested QSMxT output %s not found in %s",
                 output_id,
@@ -1602,6 +1640,15 @@ def _settings_from_config(config, metadata=None):
     else:
         b0_dir_source = "nifti_affine"
 
+    source_separation = _config_text(params, "sourceseparation", "off").lower()
+    if source_separation not in SOURCE_SEPARATION_METHODS:
+        raise ValueError(
+            f"unknown sourceseparation {source_separation!r}; "
+            f"expected {', '.join(SOURCE_SEPARATION_METHODS)}"
+        )
+    no_qsm = _config_bool(params, "noqsm", False)
+    if source_separation != "off" and no_qsm:
+        raise ValueError("Source separation requires QSM; disable noqsm")
     pipeline_preset, algorithm_settings = _algorithm_settings(params)
     mask_cleanup = _optional_choice(params, "maskcleanup") or DEFAULT_MASK_CLEANUP
     try:
@@ -1613,12 +1660,8 @@ def _settings_from_config(config, metadata=None):
         ) from error
     return {
         "input_series": input_series,
-        "send_original": _config_bool(
-            params,
-            "sendoriginal",
-            DEFAULT_SEND_ORIGINAL,
-        ),
         "send_outputs": str(params.get("sendoutputs", "qsm") or "qsm"),
+        "source_separation": source_separation,
         "max_echoes": _config_int(params, "maxechoes", 0),
         "echo_times_ms": _config_text(params, "echotimesms", ""),
         "echo_time_ms": _config_float(params, "echotimems", DEFAULT_ECHO_TIME_MS),
@@ -1678,7 +1721,7 @@ def _settings_from_config(config, metadata=None):
             _config_int(params, "maskerode", mask_cleanup_defaults["erode"]),
         ),
         "qsm_reference": _optional_choice(params, "qsmreference"),
-        "no_qsm": _config_bool(params, "noqsm", False),
+        "no_qsm": no_qsm,
         "do_swi": _config_bool(params, "doswi", False),
         "do_t2starmap": _config_bool(params, "dot2starmap", False),
         "do_r2starmap": _config_bool(params, "dor2starmap", False),
@@ -2239,7 +2282,7 @@ def _output_meta(
     meta["QSMxTPhysicalWindowWidth"] = f"{float(physical_width):.17g}"
     dicom_value_scale = _dicom_value_scale(output_id, display_meta["scale"])
     meta["QSMxTWindowDomain"] = {
-        "qsm": "ppb",
+        **{output: "ppb" for output in SUSCEPTIBILITY_OUTPUTS},
         "t2star": "ms",
         "swi": "scaled-a.u.",
     }.get(output_id, "physical")
@@ -2258,7 +2301,7 @@ def _output_meta(
         meta["PixelPaddingRangeLimit"] = str(
             int(display_meta["padding_value"])
         )
-    if output_id in {"qsm", "t2star", "swi"}:
+    if output_id in SUSCEPTIBILITY_OUTPUTS | {"t2star", "swi"}:
         meta["WindowCenter"] = str(
             int(np.rint(physical_center * dicom_value_scale))
         )
@@ -2362,7 +2405,7 @@ def _validate_output_images(output_images, input_images):
         if _meta_text(meta, "RescaleType") != "US":
             errors.append(f"image {index} RescaleType is not US")
 
-        if output_id in {"qsm", "t2star", "swi"}:
+        if output_id in SUSCEPTIBILITY_OUTPUTS | {"t2star", "swi"}:
             window_center = _meta_float(meta, "WindowCenter")
             window_width = _meta_float(meta, "WindowWidth")
             physical_window_center = _meta_float(
@@ -2764,7 +2807,7 @@ def _normalized_or_default(values, default):
 def _dicom_value_scale(output_id, display_scale):
     return {
         "swi": display_scale,
-        "qsm": QSM_DICOM_PPB_PER_PPM,
+        **{output: QSM_DICOM_PPB_PER_PPM for output in SUSCEPTIBILITY_OUTPUTS},
         "t2star": T2STAR_DICOM_MS_PER_SECOND,
     }.get(output_id, 1.0)
 
@@ -2905,7 +2948,7 @@ def _scanner_display_window_range(
         if positive.size:
             return 0.0, float(np.percentile(positive, SWI_WINDOW_PERCENTILE))
         return scale_input_min, scale_input_max
-    if output_id != "qsm":
+    if output_id not in SUSCEPTIBILITY_OUTPUTS:
         return scale_input_min, scale_input_max
 
     finite_nonzero = values[np.isfinite(values) & (values != 0.0)]
@@ -2924,7 +2967,7 @@ def _scanner_display_window_range(
 
 
 def _scanner_display_needs_offset(output_id, input_min):
-    return output_id == "qsm" or input_min < 0.0
+    return output_id in SUSCEPTIBILITY_OUTPUTS or input_min < 0.0
 
 
 def _scanner_display_scale(input_min, input_max, offset, display_min):

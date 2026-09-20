@@ -344,7 +344,6 @@ def test_openrecon_defaults_select_hdqsm_romeo_and_ismv():
     assert settings["mask_fill_holes"] is True
     assert settings["mask_erode"] == 0
     assert settings["input_series"] == "distortion-corrected"
-    assert settings["send_original"] is True
 
 
 def test_openrecon_input_series_rejects_unknown_value():
@@ -601,7 +600,8 @@ def test_openrecon_label_exposes_processing_defaults():
     assert parameters["maskinginput"]["default"] == "magnitude"
     assert parameters["betfractionalintensity"]["default"] == 0.5
     assert parameters["maskcleanup"]["default"] == "close-fill"
-    assert parameters["sendoriginal"]["default"] is True
+    assert "sendoriginal" not in parameters
+    assert parameters["maskthresholdpercentile"]["default"] == 65.0
     assert "voxelsizemm" not in parameters
 
 
@@ -1143,10 +1143,15 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
 
     assert connection.closed is True
     assert connection.logs == []
-    assert len(connection.sent_batches) == 1
-    assert len(connection.sent_batches[0]) == 2
+    assert len(connection.sent_batches) == 3
+    assert len(connection.sent_batches[-1]) == 2
 
-    output = connection.sent_batches[0][0]
+    for original, source in zip(
+        [image for batch in connection.sent_batches[:2] for image in batch],
+        connection.images,
+    ):
+        np.testing.assert_array_equal(original.data, source.data)
+    output = connection.sent_batches[-1][0]
     header = output.getHead()
     meta = ismrmrd.Meta.deserialize(output.attribute_string)
 
@@ -1192,7 +1197,7 @@ def test_process_runs_qsmxt_and_sends_derived_mrd_image(tmp_path, monkeypatch):
     assert meta["IsmrmrdSliceNo"] == "0"
     assert "ImageTypeValue3" not in meta
 
-    second_output = connection.sent_batches[0][1]
+    second_output = connection.sent_batches[-1][1]
     second_header = second_output.getHead()
     second_meta = ismrmrd.Meta.deserialize(second_output.attribute_string)
     assert int(second_header.image_series_index) == qsmxt.OUTPUT_SERIES_START
@@ -1221,7 +1226,6 @@ def test_process_both_input_series_runs_separately_and_returns_unique_outputs(
                 "qsmxtbinary": str(fake_qsmxt),
                 "echotimesms": "10,20",
                 "inputseries": "both",
-                "sendoriginal": "false",
             }
         },
         FakeMetadata(),
@@ -1229,12 +1233,12 @@ def test_process_both_input_series_runs_separately_and_returns_unique_outputs(
 
     assert connection.closed is True
     assert connection.logs == []
-    assert len(connection.sent_batches) == 2
-    assert [len(batch) for batch in connection.sent_batches] == [2, 2]
+    assert len(connection.sent_batches) == 6
+    assert [len(batch) for batch in connection.sent_batches] == [2, 2, 2, 2, 2, 2]
 
     first_meta = [
         ismrmrd.Meta.deserialize(batch[0].attribute_string)
-        for batch in connection.sent_batches
+        for batch in connection.sent_batches[-2:]
     ]
     assert [meta["SeriesDescription"] for meta in first_meta] == [
         "QSMxT QSM DC",
@@ -1247,7 +1251,7 @@ def test_process_both_input_series_runs_separately_and_returns_unique_outputs(
     assert len(
         {
             int(batch[0].getHead().image_series_index)
-            for batch in connection.sent_batches
+            for batch in connection.sent_batches[-2:]
         }
     ) == 2
     assert len({meta["SeriesInstanceUID"] for meta in first_meta}) == 2
@@ -1260,17 +1264,17 @@ def test_process_returns_scanner_packed_volume_as_one_mm_slices(tmp_path, monkey
 
     qsmxt.process(
         connection,
-        {"parameters": {"qsmxtbinary": str(fake_qsmxt), "sendoriginal": "false"}},
+        {"parameters": {"qsmxtbinary": str(fake_qsmxt)}},
         FakeMetadata(),
     )
 
     assert connection.closed is True
     assert connection.logs == []
-    assert len(connection.sent_batches) == 1
-    assert len(connection.sent_batches[0]) == 144
+    assert len(connection.sent_batches) == 3
+    assert len(connection.sent_batches[-1]) == 144
 
-    first = connection.sent_batches[0][0]
-    last = connection.sent_batches[0][-1]
+    first = connection.sent_batches[-1][0]
+    last = connection.sent_batches[-1][-1]
     first_meta = ismrmrd.Meta.deserialize(first.attribute_string)
     np.testing.assert_allclose(first.getHead().field_of_view, [4.0, 3.0, 1.0])
     np.testing.assert_allclose(first.getHead().position, [10.0, 20.0, 30.0])
@@ -1521,7 +1525,6 @@ def test_process_handles_scanner_echo_slice_stream_with_original_passthrough(
         {
             "parameters": {
                 "qsmxtbinary": str(fake_qsmxt),
-                "sendoriginal": "true",
             }
         },
         FakeMetadata(),
@@ -1572,7 +1575,6 @@ def test_derived_outputs_use_original_source_geometry_when_originals_are_sent(
         {
             "parameters": {
                 "qsmxtbinary": str(fake_qsmxt),
-                "sendoriginal": "true",
             }
         },
         FakeMetadata(),
@@ -1665,3 +1667,107 @@ def test_swi_window_survives_integer_bridge_and_is_shared_across_slices(
         assert center == pytest.approx(width / 2, abs=1)
         np.testing.assert_allclose(display / scale, physical, atol=0.51 / scale)
     assert windows[0] == windows[1]
+
+
+@pytest.mark.parametrize("method", qsmxt.SOURCE_SEPARATION_METHODS)
+def test_source_separation_command(method, tmp_path, monkeypatch):
+    settings = qsmxt._settings_from_config({"parameters": {"sourceseparation": method}})
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return qsmxt.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", run)
+    qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
+    command = commands[0]
+    assert ("--do-chisep" in command) == (method != "off")
+    if method != "off":
+        assert command[command.index("--chisep") + 1] == method
+        assert "--no-qsm" not in command
+    else:
+        assert "--chisep" not in command
+
+
+@pytest.mark.parametrize("params, message", [
+    ({"sourceseparation": "chi-sepnet"}, "unknown sourceseparation"),
+    ({"sourceseparation": "decompose", "noqsm": True}, "requires QSM"),
+])
+def test_source_separation_rejects_invalid_settings(params, message):
+    with pytest.raises(ValueError, match=message):
+        qsmxt._settings_from_config({"parameters": params})
+
+
+@pytest.mark.parametrize("method", ["r2star-qsm", "decompose"])
+@pytest.mark.parametrize("max_echoes", [0, 2])
+def test_source_separation_requires_three_selected_echoes(method, max_echoes, tmp_path):
+    settings = qsmxt._settings_from_config({"parameters": {
+        "sourceseparation": method, "maxechoes": max_echoes,
+    }})
+    images = _input_images() if max_echoes == 0 else _scanner_echo_slice_images()
+    with pytest.raises(ValueError, match="at least 3 GRE"):
+        qsmxt.write_bids_dataset(images, FakeMetadata(), tmp_path, settings)
+
+
+@pytest.mark.parametrize("echo_times", ["10,10,20,30,40", "10,20,15,30,40", "0,10,20,30,40"])
+def test_source_separation_requires_increasing_echo_times(echo_times, tmp_path):
+    settings = qsmxt._settings_from_config({"parameters": {
+        "sourceseparation": "decompose", "echotimesms": echo_times,
+    }})
+    with pytest.raises(ValueError, match="positive, increasing echo times"):
+        qsmxt.write_bids_dataset(_scanner_echo_slice_images(), FakeMetadata(), tmp_path, settings)
+
+
+@pytest.mark.parametrize("method", qsmxt.SOURCE_SEPARATION_METHODS)
+@pytest.mark.parametrize("selection", ["qsm", "all"])
+def test_source_maps_do_not_replace_qsm_and_preserve_scanner_units(method, selection, tmp_path):
+    anat = tmp_path / "derivatives" / "qsmxt" / "sub-01" / "anat"
+    anat.mkdir(parents=True)
+    values = {"qsm": -0.04, "paramagnetic": 0.12, "diamagnetic": 0.16, "separated-total": -0.04}
+    for output_id, value in values.items():
+        suffix = qsmxt.QSMXT_OUTPUTS[output_id]["suffix"]
+        data = np.full((4, 3, 2), value, dtype=np.float32)
+        data[0] = 0
+        nib.save(nib.Nifti1Image(data, np.eye(4)), anat / f"sub-01_{suffix}.nii.gz")
+    settings = qsmxt._settings_from_config({"parameters": {
+        "sourceseparation": method, "sendoutputs": selection,
+    }})
+    specs = qsmxt._find_qsmxt_outputs(tmp_path, {"subject": "01"}, settings)
+    expected = {"qsm"} if method == "off" else set(values)
+    assert {output_id for output_id, _, _ in specs} == expected
+    anchor = _input_images()[0]
+    for index, (output_id, spec, path) in enumerate(specs):
+        assert path.name == f"sub-01_{spec['suffix']}.nii.gz"
+        images = qsmxt._nifti_to_mrd_images(
+            path, anchor, qsmxt.OUTPUT_SERIES_START + index,
+            spec["series"], spec["token"], output_id, spec["units"],
+        )
+        qsmxt._validate_output_images(images, [anchor])
+        recovered = []
+        for image in images:
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            assert meta["QSMxTWindowDomain"] == "ppb"
+            assert meta["QSMxTUnits"] == "ppm"
+            recovered.append((image.data * float(meta["RescaleSlope"]) + float(meta["RescaleIntercept"])) / 1000)
+        np.testing.assert_allclose(np.max(recovered), max(values[output_id], 0), atol=0.001)
+        np.testing.assert_allclose(np.min(recovered), min(values[output_id], 0), atol=0.001)
+    (anat / "sub-01_Chimap.nii.gz").unlink()
+    assert all(output_id != "qsm" for output_id, _, _ in qsmxt._find_qsmxt_outputs(tmp_path, {"subject": "01"}, settings))
+
+
+def test_missing_source_map_fails_explicitly(tmp_path):
+    settings = qsmxt._settings_from_config({"parameters": {"sourceseparation": "decompose"}})
+    with pytest.raises(RuntimeError, match="required paramagnetic map"):
+        qsmxt._find_qsmxt_outputs(tmp_path, {"subject": "01"}, settings)
+
+
+@pytest.mark.parametrize("method", ["r2star-qsm", "decompose"])
+def test_nonuniform_echo_spacing_is_only_rejected_for_r2star_qsm(method, tmp_path):
+    settings = qsmxt._settings_from_config({"parameters": {
+        "sourceseparation": method, "echotimesms": "5,10,20,30,40",
+    }})
+    if method == "r2star-qsm":
+        with pytest.raises(ValueError, match="equally spaced"):
+            qsmxt.write_bids_dataset(_scanner_echo_slice_images(), FakeMetadata(), tmp_path, settings)
+    else:
+        qsmxt.write_bids_dataset(_scanner_echo_slice_images(), FakeMetadata(), tmp_path, settings)
