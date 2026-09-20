@@ -66,7 +66,7 @@
       "label": { "en": "Output maps" },
       "type": "choice",
       "values": [
-        { "id": "qsm", "name": { "en": "QSM only" } },
+        { "id": "qsm", "name": { "en": "QSM" } },
         { "id": "all", "name": { "en": "All available" } },
         { "id": "magnitude", "name": { "en": "Magnitude" } },
         { "id": "mask", "name": { "en": "Mask" } },
@@ -75,14 +75,19 @@
         { "id": "r2star", "name": { "en": "R2 star" } }
       ],
       "default": "qsm",
-      "information": { "en": "Select which QSMxT derivatives to send back to OpenRecon." }
+      "information": { "en": "Select which QSMxT derivatives to send back to OpenRecon. Source separation adds its maps when enabled. Original magnitude and phase images are always returned." }
     },
     {
-      "id": "sendoriginal",
-      "label": { "en": "Send original" },
-      "type": "boolean",
-      "information": { "en": "Send original magnitude and phase image series before derived QSMxT output." },
-      "default": true
+      "id": "sourceseparation",
+      "label": { "en": "Source separation" },
+      "type": "choice",
+      "values": [
+        { "id": "off", "name": { "en": "Off" } },
+        { "id": "r2star-qsm", "name": { "en": "R2*-QSM" } },
+        { "id": "decompose", "name": { "en": "DECOMPOSE" } }
+      ],
+      "default": "off",
+      "information": { "en": "Add paramagnetic, diamagnetic, and separated-total susceptibility maps. Requires at least three GRE magnitude and unfiltered phase echoes. R2*-QSM needs equally spaced echoes. No spin-echo acquisition is needed." }
     },
     {
       "id": "pipelinepreset",
@@ -108,14 +113,14 @@
         { "id": "iqsm-plus", "name": { "en": "iQSM+ full pipeline (phase to QSM)" } }
       ],
       "default": "custom",
-      "information": { "en": "Select a scanner-tested combination or a complete reconstruction method. Presets override the custom algorithm controls. Complete methods handle their own background removal; iQSM and iQSM+ also handle unwrapping. Select Custom to choose individual stages." }
+      "information": { "en": "Select a scanner-tested combination or a complete reconstruction method. Any preset other than Custom overrides the QSM algorithm, Unwrap, and Background choices. Complete methods handle their own background removal; iQSM and iQSM+ also handle unwrapping. Select Custom to choose individual stages." }
     },
     {
       "id": "qsmalgorithm",
       "label": { "en": "QSM algorithm" },
       "type": "choice",
       "values": [
-        { "id": "default", "name": { "en": "Default" } },
+        { "id": "default", "name": { "en": "Default (HD-QSM)" } },
         { "id": "whqsm", "name": { "en": "WH-QSM" } },
         { "id": "hdqsm", "name": { "en": "HD-QSM" } },
         { "id": "rts", "name": { "en": "RTS" } },
@@ -147,26 +152,26 @@
         { "id": "iqsm-plus", "name": { "en": "iQSM+" } }
       ],
       "default": "hdqsm",
-      "information": { "en": "QSMxT inversion algorithm for the Custom pipeline preset. HD-QSM is the OpenRecon default for a fast reconstruction with good QSM-CI performance." }
+      "information": { "en": "Used only with the Custom pipeline preset. Default uses HD-QSM. Any other Pipeline preset overrides this choice." }
     },
     {
       "id": "unwrappingalgorithm",
       "label": { "en": "Unwrap" },
       "type": "choice",
       "values": [
-        { "id": "default", "name": { "en": "Default" } },
+        { "id": "default", "name": { "en": "Default (ROMEO)" } },
         { "id": "romeo", "name": { "en": "ROMEO" } },
         { "id": "laplacian", "name": { "en": "Laplacian" } }
       ],
       "default": "romeo",
-      "information": { "en": "QSMxT phase unwrapping algorithm. ROMEO is the recommended default for multi-echo QSM." }
+      "information": { "en": "Used only with the Custom pipeline preset. Default uses ROMEO. Any other Pipeline preset overrides this choice." }
     },
     {
       "id": "bfalgorithm",
       "label": { "en": "Background" },
       "type": "choice",
       "values": [
-        { "id": "default", "name": { "en": "Default" } },
+        { "id": "default", "name": { "en": "Default (iSMV)" } },
         { "id": "vsharp", "name": { "en": "V-SHARP" } },
         { "id": "pdf", "name": { "en": "PDF" } },
         { "id": "lbv", "name": { "en": "LBV" } },
@@ -179,7 +184,7 @@
         { "id": "iqfm", "name": { "en": "iQFM" } }
       ],
       "default": "ismv",
-      "information": { "en": "QSMxT background-field removal algorithm for the Custom pipeline preset. iSMV is the OpenRecon default, paired with ROMEO and HD-QSM." }
+      "information": { "en": "Used only with the Custom pipeline preset. Default uses iSMV. Any other Pipeline preset overrides this choice." }
     },
     {
       "id": "maskpreset",
@@ -224,7 +229,7 @@
         { "id": "percentile", "name": { "en": "Percentile" } }
       ],
       "default": "otsu",
-      "information": { "en": "Threshold generator used by Robust threshold and Combined." }
+      "information": { "en": "Threshold generator used by Robust threshold and Combined. Set the cutoff with Mask percentile." }
     },
     {
       "id": "maskthresholdpercentile",
