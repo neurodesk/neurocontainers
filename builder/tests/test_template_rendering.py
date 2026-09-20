@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import io
 import shlex
-import tarfile
 import subprocess
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -346,7 +346,9 @@ def test_matlabmcr_rejects_unmapped_runtime_before_building() -> None:
         apply_builtin_template("matlabmcr", {"version": "2099a"}, "apt", lambda _: None)
 
 
-def test_freesurfer_extracts_cached_archive_without_downloading(tmp_path, monkeypatch):
+def test_freesurfer_extracts_cached_archive_without_downloading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from builder.template_backend import TemplateMethod
 
     archive = tmp_path / "freesurfer archive.tar.gz"
