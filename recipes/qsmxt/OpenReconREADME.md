@@ -18,7 +18,7 @@ With the QSMxT package installed in OpenRecon:
 2. Set **Input images** to match your acquisition. The default is **Distortion corrected**.
 3. For an initial reconstruction, leave **Pipeline preset** on **Custom algorithm controls** with **QSM algorithm** set to **HD-QSM**, **Unwrap** to **ROMEO**, and **Background** to **iSMV**.
 4. Leave **Mask preset** on **BET (recommended)** to identify the brain from the magnitude image.
-5. Leave **Output maps** on **QSM only**. Keep **Send original** enabled if you also want the source magnitude and phase series in the scanner database.
+5. Leave **Output maps** on **QSM**. The source magnitude and phase series are always returned to the scanner database.
 6. Run the acquisition with OpenRecon enabled. When reconstruction finishes, look for the **QSMxT QSM** series alongside the original images.
 
 ## Choose the input images
@@ -39,7 +39,7 @@ Use **Output maps** to select what returns to the scanner database:
 
 | Option | Result |
 | --- | --- |
-| QSM only | Quantitative susceptibility map. This is the default. |
+| QSM | Quantitative susceptibility map. This is the default. |
 | All available | All available maps from the run, including the brain mask and combined magnitude image. |
 | Magnitude | Combined magnitude image. |
 | Mask | Brain mask used for reconstruction, useful for checking brain coverage. |
@@ -47,11 +47,25 @@ Use **Output maps** to select what returns to the scanner database:
 | T2 star | T2* relaxation map. Use at least three equally spaced echoes. |
 | R2 star | R2* relaxation-rate map. Use a multi-echo acquisition. |
 
-**Send original** controls whether the source magnitude and phase images are also returned. Turn it off to keep only the selected output maps.
+Original magnitude and phase images are always returned before the selected output maps.
 
 For quantitative analysis, use a viewer that applies DICOM rescaling. QSM DICOM values are in parts per billion (ppb); divide by 1000 to convert to parts per million (ppm).
 
 T2* DICOM values are in milliseconds. The default window covers zero to the 95th percentile of positive fits and stays constant across slices. Scanner storage retains steps of 1 ms or finer, with values above 4095 ms saturating. Use the full-precision NIfTI output to inspect extreme fits.
+
+## Separate susceptibility sources
+
+Set **Source separation** to **R2*-QSM** or **DECOMPOSE** to add paramagnetic,
+diamagnetic, and separated-total maps to your selected outputs. The default is
+**Off**. Both methods use the same GRE acquisition and require at least three
+magnitude and unfiltered phase echoes. No spin-echo acquisition is needed.
+Use equally spaced echoes for R2*-QSM's R2* fit.
+
+The returned series are **QSMxT paramagnetic**, **QSMxT diamagnetic**, and
+**QSMxT separated total**, with a `DC` or `ND` suffix matching the input images.
+The diamagnetic map contains positive magnitudes. The separated-total map is
+paramagnetic minus diamagnetic. These maps use the same DICOM units as QSM,
+parts per billion. Divide rescaled DICOM values by 1000 to obtain ppm.
 
 ## Change the reconstruction method
 
@@ -63,7 +77,7 @@ A preset overrides **QSM algorithm**, **Unwrap**, and **Background**. To choose 
 - **Background** removes background-field contributions. The default is iSMV.
 - **QSM algorithm** calculates susceptibility. The default is HD-QSM.
 
-Choosing **Default** in a stage control uses the corresponding OpenRecon default above. Reconstruction time and results depend on the method, acquisition, and available hardware. See the [QSMxT algorithm reference](https://qsmxt.github.io/QSMxT/reference/algorithms/) for descriptions of the methods. The upstream command-line defaults differ from the OpenRecon defaults listed here.
+With **Custom algorithm controls**, **Default (HD-QSM)** uses HD-QSM, **Default (ROMEO)** uses ROMEO, and **Default (iSMV)** uses iSMV. Any other **Pipeline preset** overrides all three choices, even if you change their displayed values. Reconstruction time and results depend on the method, acquisition, and available hardware. See the [QSMxT algorithm reference](https://qsmxt.github.io/QSMxT/reference/algorithms/) for descriptions of the methods. The upstream command-line defaults differ from the OpenRecon defaults listed here.
 
 ## Adjust the brain mask
 
@@ -71,7 +85,7 @@ The mask defines the region included in reconstruction. To inspect its coverage 
 
 Start with **BET (recommended)**. If the mask excludes brain tissue, lower **BET threshold** from its default of **0.5** to make the mask larger.
 
-For threshold-based masking, choose **Robust threshold** or **BET + threshold union** under **Mask preset**. The union includes regions selected by either method. **Threshold input** selects the image used for thresholding, and **Threshold method** selects Otsu or Percentile. **Mask percentile** applies only when you choose Percentile.
+For threshold-based masking, choose **Robust threshold** or **BET + threshold union** under **Mask preset**. The union includes regions selected by either method. **Threshold input** selects the image used for thresholding, and **Threshold method** selects Otsu or Percentile. **Mask percentile** sets the cutoff when you choose Percentile, with a default of **65%**.
 
 **Mask cleanup** can fill holes and close small gaps. Its default is **Close and fill holes**. Mask settings apply independently of the pipeline preset.
 

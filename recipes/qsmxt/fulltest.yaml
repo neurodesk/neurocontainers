@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.21.0
+version: 9.21.1
 
 test_data:
   output_dir: test_output
@@ -128,6 +128,84 @@ tests:
               assert np.count_nonzero(pixels == 4095) == 2
           np.testing.assert_array_equal(nib.load(result).get_fdata(), fitted)
       print("T2 star fit, millisecond scaling, and scanner window verified")
+      PYCODE
+
+  - name: GRE source separation and scanner maps
+    description: Run both GRE-only methods on synthetic echoes and verify source maps and scanner units
+    script: |
+      set -euo pipefail
+      python - <<'PYCODE'
+      import json
+      import sys
+      import tempfile
+      from pathlib import Path
+
+      import ismrmrd
+      import nibabel as nib
+      import numpy as np
+
+      sys.path.insert(0, '/opt/code/python-ismrmrd-server')
+      import qsmxt
+
+      with tempfile.TemporaryDirectory() as work:
+          root = Path(work)
+          bids = root / 'bids'
+          anat = bids / 'sub-01' / 'anat'
+          anat.mkdir(parents=True)
+          (bids / 'dataset_description.json').write_text(json.dumps({
+              'Name': 'GRE source separation smoke test', 'BIDSVersion': '1.9.0',
+          }))
+          shape = (24, 24, 24)
+          xyz = np.indices(shape) - 11.5
+          brain = np.sum(xyz ** 2, axis=0) < 100
+          chi = np.zeros(shape)
+          chi[np.sum(xyz ** 2, axis=0) < 16] = 0.08
+          k = np.meshgrid(*(np.fft.fftfreq(n) for n in shape), indexing='ij')
+          k2 = sum(axis ** 2 for axis in k)
+          dipole = 1 / 3 - np.divide(k[2] ** 2, k2, out=np.zeros(shape), where=k2 > 0)
+          dipole[0, 0, 0] = 0
+          field = np.fft.ifftn(np.fft.fftn(chi) * dipole).real
+          for echo, te in enumerate([0.005, 0.01, 0.015, 0.02, 0.025], 1):
+              magnitude = brain * 1000 * np.exp(-30 * te)
+              phase = np.angle(np.exp(1j * field * 2 * np.pi * 42.57747892 * 3 * te))
+              for part, data in [('mag', magnitude), ('phase', (phase + np.pi) * 4096 / (2 * np.pi))]:
+                  stem = f'sub-01_echo-{echo}_part-{part}_MEGRE'
+                  nib.save(nib.Nifti1Image(data.astype(np.float32), np.eye(4)), anat / f'{stem}.nii.gz')
+                  (anat / f'{stem}.json').write_text(json.dumps({
+                      'EchoTime': te, 'MagneticFieldStrength': 3.0, 'B0_dir': [0, 0, 1],
+                  }))
+          anchor = ismrmrd.Image.from_array(np.ones((1, 24, 24), dtype=np.float32))
+          for method in ['r2star-qsm', 'decompose']:
+              settings = qsmxt._settings_from_config({'parameters': {
+                  'sourceseparation': method, 'maskpreset': 'robust-threshold',
+                  'maskcleanup': 'none', 'qsmalgorithm': 'tkd',
+              }})
+              output = root / method
+              qsmxt._run_qsmxt(bids, output, settings)
+              specs = qsmxt._find_qsmxt_outputs(output, {'subject': '01'}, settings)
+              assert {item[0] for item in specs} == {'qsm', *qsmxt.SOURCE_SEPARATION_OUTPUTS}
+              maps = {}
+              for index, (output_id, spec, path) in enumerate(specs):
+                  data = nib.load(path).get_fdata()
+                  assert np.isfinite(data).all()
+                  assert np.any(data != 0), (method, output_id)
+                  maps[output_id] = data
+                  images = qsmxt._nifti_to_mrd_images(
+                      path, anchor, qsmxt.OUTPUT_SERIES_START + index,
+                      spec['series'], spec['token'], output_id, spec['units'],
+                  )
+                  qsmxt._validate_output_images(images, [anchor])
+                  assert len(images) == 24
+                  for image in images:
+                      meta = ismrmrd.Meta.deserialize(image.attribute_string)
+                      assert meta['QSMxTWindowDomain'] == 'ppb'
+                      assert meta['QSMxTUnits'] == 'ppm'
+              assert np.min(maps['paramagnetic']) >= 0
+              assert np.min(maps['diamagnetic']) >= 0
+              np.testing.assert_allclose(
+                  maps['separated-total'], maps['paramagnetic'] - maps['diamagnetic'], atol=1e-6,
+              )
+              print(f'{method}: GRE reconstruction, distinct source maps, and scanner conversion passed')
       PYCODE
 
   - name: SWI scanner window
@@ -275,7 +353,8 @@ tests:
       expected = {
           "config",
           "sendoutputs",
-          "sendoriginal",
+          "sourceseparation",
+          "maskthresholdpercentile",
           "pipelinepreset",
           "qsmalgorithm",
           "unwrappingalgorithm",
@@ -293,6 +372,8 @@ tests:
       assert {value["id"] for value in pipeline_preset["values"]} == {
           "custom", *qsmxt.ALGORITHM_PIPELINE_PRESETS,
       }
+      assert parameters["sourceseparation"]["default"] == "off"
+      assert {value["id"] for value in parameters["sourceseparation"]["values"]} == set(qsmxt.SOURCE_SEPARATION_METHODS)
       assert parameters["qsmalgorithm"]["default"] == "hdqsm"
       assert "whqsm" in {
           value["id"] for value in parameters["qsmalgorithm"]["values"]
@@ -313,8 +394,8 @@ tests:
           assert parameters["maskinginput"]["default"] == "magnitude"
           assert parameters["betfractionalintensity"]["default"] == 0.5
           assert parameters["maskcleanup"]["default"] == "close-fill"
-      send_original = next(parameter for parameter in data["parameters"] if parameter["id"] == "sendoriginal")
-      assert send_original["default"] is True
+      assert "sendoriginal" not in parameter_ids
+      assert parameters["maskthresholdpercentile"]["default"] == 65.0
       assert "minip" not in parameter_ids
       print(label)
       PY
@@ -446,10 +527,14 @@ tests:
 
       assert connection.closed is True
       assert connection.logs == []
-      assert len(connection.sent_batches) == 1
-      assert len(connection.sent_batches[0]) == 2
+      assert len(connection.sent_batches) == 3
+      assert len(connection.sent_batches[-1]) == 2
 
-      first = connection.sent_batches[0][0]
+      for original, source in zip(
+          [image for batch in connection.sent_batches[:2] for image in batch], images,
+      ):
+          np.testing.assert_array_equal(original.data, source.data)
+      first = connection.sent_batches[-1][0]
       first_header = first.getHead()
       first_meta = ismrmrd.Meta.deserialize(first.attribute_string)
       assert int(first_header.image_series_index) == qsmxt.OUTPUT_SERIES_START
@@ -502,13 +587,13 @@ tests:
       assert first_meta["SliceNo"] == "0"
       assert first_meta["IsmrmrdSliceNo"] == "0"
 
-      second_meta = ismrmrd.Meta.deserialize(connection.sent_batches[0][1].attribute_string)
+      second_meta = ismrmrd.Meta.deserialize(connection.sent_batches[-1][1].attribute_string)
       assert second_meta["NumberInSeries"] == "2"
       assert second_meta["SliceNo"] == "1"
       assert second_meta["IsmrmrdSliceNo"] == "1"
       assert second_meta["SeriesInstanceUID"] == first_meta["SeriesInstanceUID"]
       assert second_meta["SOPInstanceUID"] != first_meta["SOPInstanceUID"]
-      print("sent derived images:", len(connection.sent_batches[0]))
+      print("sent derived images:", len(connection.sent_batches[-1]))
       PY
 
 upstream_version: 9.21.0

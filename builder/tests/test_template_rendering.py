@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 import shlex
 import subprocess
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -342,3 +344,32 @@ def test_matlabmcr_template_allows_legacy_ncurses_package() -> None:
 def test_matlabmcr_rejects_unmapped_runtime_before_building() -> None:
     with pytest.raises(ValueError, match="Unsupported MATLAB Runtime release"):
         apply_builtin_template("matlabmcr", {"version": "2099a"}, "apt", lambda _: None)
+
+
+def test_freesurfer_extracts_cached_archive_without_downloading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from builder.template_backend import TemplateMethod
+
+    archive = tmp_path / "freesurfer archive.tar.gz"
+    with tarfile.open(archive, "w:gz") as handle:
+        for name in ("bin/recon-all", "subjects/bert/omitted"):
+            payload = b"fixture data"
+            entry = tarfile.TarInfo(f"freesurfer/{name}")
+            entry.size = len(payload)
+            handle.addfile(entry, io.BytesIO(payload))
+    destination = tmp_path / "installed"
+    monkeypatch.setattr(TemplateMethod, "install_dependencies", lambda self: ":")
+    directives = []
+    apply_builtin_template(
+        "freesurfer",
+        {"version": "7.4.1", "install_path": str(destination), "archive": str(archive)},
+        "apt",
+        directives.append,
+    )
+    command = next(item.command for item in directives if isinstance(item, Run))
+    subprocess.run(
+        ["bash", "-e", "-c", "curl() { return 97; }; " + command], check=True
+    )
+    assert (destination / "bin/recon-all").read_bytes() == b"fixture data"
+    assert not (destination / "subjects/bert").exists()
