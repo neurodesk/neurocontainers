@@ -19,11 +19,13 @@ variables:
   torch_version: "2.6.0"
   torchvision_version: "0.21.0"
   simpleitk_version: "2.4.1"
+  wheel_version: "0.48.0"
+  setuptools_version: "84.0.0"
   conda_install:
     try:
-      - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel setuptools"
+      - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel={{ context.wheel_version }} setuptools={{ context.setuptools_version }}"
         condition: arch=="x86_64"
-      - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel setuptools pyqt=5.15 h5py=3.11.0"
+      - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel={{ context.wheel_version }} setuptools={{ context.setuptools_version }} pyqt=5.15 h5py=3.11.0"
         condition: arch=="aarch64"
   pip_install: "numpy=={{ context.numpy_version }} tensorflow=={{ context.tensorflow_version }} torch=={{ context.torch_version }} torchvision=={{ context.torchvision_version }} SimpleITK=={{ context.simpleitk_version }} pyradiomics=={{ context.radiomics_version }} dafne=={{ context.upstream_version }}"
 
@@ -103,6 +105,19 @@ auto_update:
       target:
         variable: simpleitk_version
         fulltest_variable: simpleitk_version
+
+    - id: wheel
+      method: pypi
+      package: wheel
+      version_regex: '^(?P<version>0\.48\.\d+)$'
+      target:
+        variable: wheel_version
+    - id: setuptools
+      method: pypi
+      package: setuptools
+      version_regex: '^(?P<version>84\.0\.\d+)$'
+      target:
+        variable: setuptools_version
 
 build:
   kind: neurodocker
