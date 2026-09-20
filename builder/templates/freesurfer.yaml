@@ -7,6 +7,7 @@ binaries:
     - version
     optional:
       install_path: /opt/freesurfer-{{ self.version }}
+      archive: ''
       exclude_paths: 'average/mult-comp-cor
 
         lib/cuda
@@ -76,8 +77,16 @@ binaries:
       MNI_DATAPATH: '{{ self.install_path }}/mni/data'
       MNI_PERL5LIB: '{{ self.install_path }}/mni/share/perl5'
       PERL5LIB: '{{ self.install_path }}/mni/share/perl5'
-  - run: "{{ self.install_dependencies() }}\necho \"Downloading FreeSurfer ...\"\nmkdir -p {{ self.install_path }}\ncurl -fL\
-      \ {{ self.urls[self.version] }} \\\n| tar -xz -C {{ self.install_path }} --owner root --group root --no-same-owner --transform='s,freesurfer/,,'\
-      \ {% if self.exclude_paths -%}\\\n{%- for exclude_path in self.exclude_paths.split() %}\n  {% if not loop.last -%}\n\
-      \  --exclude='{{ exclude_path }}' \\\n  {%- else -%}\n  --exclude='{{ exclude_path }}'\n  {%- endif -%}\n{%- endfor\
-      \ %}\n{%- endif %}\n"
+  - run: |
+      {{ self.install_dependencies() }}
+      mkdir -p {{ self.install_path }}
+      {% if self.archive -%}
+      tar -xzf "{{ self.archive }}" \
+      {% else -%}
+      curl -fL {{ self.urls[self.version] }} \
+      | tar -xz \
+      {% endif -%}
+      -C {{ self.install_path }} --owner root --group root --no-same-owner --transform='s,freesurfer/,,'
+      {%- for exclude_path in self.exclude_paths.split() %} \
+        --exclude='{{ exclude_path }}'
+      {%- endfor %}
