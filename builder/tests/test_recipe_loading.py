@@ -37,7 +37,8 @@ def test_loads_existing_recipe() -> None:
     recipe_dir = resolve_recipe(config, "dcm2niix")
     recipe = load_recipe(recipe_dir)
     assert recipe["name"] == "dcm2niix"
-    assert recipe["version"] == "v1.0.20240202"
+    source = yaml.safe_load((recipe_dir / "build.yaml").read_text())
+    assert recipe["version"] == source["version"]
 
 
 def test_loads_typed_recipe_file() -> None:
@@ -57,7 +58,7 @@ def test_compile_records_metadata() -> None:
     )
     assert compiled.name == "dcm2niix"
     assert compiled.architecture == "x86_64"
-    assert "dcm2niix/v1.0.20240202" in compiled.readme
+    assert f"dcm2niix/{compiled.version}" in compiled.readme
     assert "downloaded_file" in compiled.staging_plan.files
 
 
