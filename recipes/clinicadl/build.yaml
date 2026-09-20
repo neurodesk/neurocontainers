@@ -1,12 +1,13 @@
 name: clinicadl
-version: 2.0.0
+version: "2.1.0"
 architectures:
   - x86_64
 variables:
   clinicadl_version: 2.0.0
-  clinica_version: 0.7.7
-  setuptools_version: 80.9.0
-  traits_version: 6.4.3
+  clinica_version: "0.11.3"
+  setuptools_version: "84.0.0"
+  freesurfer_version: "7.4.1"
+  traits_version: "7.1.0"
 structured_readme:
   description: |-
     Framework for the reproducible processing of neuroimaging data with deep learning methods
@@ -47,6 +48,19 @@ auto_update:
         variable: traits_version
         fulltest_variable: traits_version
 
+    - id: freesurfer
+      method: github_tags
+      repo: freesurfer/freesurfer
+      version_regex: '^v?(?P<version>7\.4\.\d+)$'
+      target:
+        variable: freesurfer_version
+        fulltest_variable: freesurfer_version
+
+files:
+  - name: freesurfer_archive
+    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.freesurfer_version }}/freesurfer-linux-centos7_x86_64-{{ context.freesurfer_version }}.tar.gz
+    retry: 5
+
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -71,7 +85,8 @@ build:
         version: r7771
     - template:
         name: freesurfer
-        version: 7.4.1
+        version: "{{ context.freesurfer_version }}"
+        archive: '{{ get_file("freesurfer_archive") }}'
     - template:
         name: ants
         version: 2.4.3
