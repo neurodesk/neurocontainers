@@ -23,7 +23,7 @@ variables:
     try:
       - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel setuptools"
         condition: arch=="x86_64"
-      - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel setuptools pyqt=5.15 vtk h5py=3.11.0"
+      - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel setuptools pyqt=5.15 h5py=3.11.0"
         condition: arch=="aarch64"
   pip_install: "numpy=={{ context.numpy_version }} tensorflow=={{ context.tensorflow_version }} torch=={{ context.torch_version }} torchvision=={{ context.torchvision_version }} SimpleITK=={{ context.simpleitk_version }} pyradiomics=={{ context.radiomics_version }} dafne=={{ context.upstream_version }}"
 
