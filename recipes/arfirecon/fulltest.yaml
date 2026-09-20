@@ -1,5 +1,5 @@
 name: arfirecon
-version: 1.0.1
+version: "1.1.0"
 default_timeout: 120
 tests:
   - name: ARFI magnitude and phase OpenRecon workflow smoke test

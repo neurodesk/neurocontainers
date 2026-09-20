@@ -1,5 +1,5 @@
 name: arfirecon
-version: 1.0.1
+version: "1.1.0"
 architectures:
   - x86_64
 
@@ -25,7 +25,7 @@ variables:
   openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
-  openrecon_ismrmrd_version: "1.14.2"
+  openrecon_ismrmrd_version: "1.15.0"
 
 auto_update:
   method: sources
