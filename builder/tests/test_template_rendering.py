@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from builder.ir import Env, Run
+from builder.ir import Env, Run, RunWithMounts
 from builder.dockerfile import render_directive, render_dockerfile
 from builder.template import RenderContext, TemplateError, TemplateRenderer
 from builder.recipe import compile_recipe
@@ -373,3 +373,31 @@ def test_freesurfer_extracts_cached_archive_without_downloading(
     )
     assert (destination / "bin/recon-all").read_bytes() == b"fixture data"
     assert not (destination / "subjects/bert").exists()
+
+
+def test_template_file_parameter_mounts_declared_archive(tmp_path: Path) -> None:
+    recipe = yaml.safe_load(
+        (Path(__file__).parent / "fixtures/conditional/build.yaml").read_text()
+    )
+    recipe["files"] = [{"name": "archive", "filename": "archive.tar.gz"}]
+    recipe["build"]["directives"] = [
+        {"template": {
+            "name": "freesurfer",
+            "version": "7.4.1",
+            "archive": '{{ get_file("archive") }}',
+        }}
+    ]
+    (tmp_path / "build.yaml").write_text(yaml.safe_dump(recipe))
+    (tmp_path / "archive.tar.gz").write_bytes(b"archive fixture")
+    compiled = compile_recipe(tmp_path, architecture="x86_64")
+    extraction = next(
+        item for item in compiled.definition.directives
+        if isinstance(item, (Run, RunWithMounts)) and "tar -xzf" in item.command
+    )
+    assert isinstance(extraction, RunWithMounts)
+    mount = extraction.mounts[0]
+    assert "from=neurocontainer-cache" in mount
+    target = mount.split("target=", 1)[1].split(",", 1)[0]
+    cache_id = target.rsplit("/", 1)[1]
+    guest = compiled.staging_plan.cache_mounts[cache_id]["archive"]
+    assert f'{target}/{guest}' in extraction.command

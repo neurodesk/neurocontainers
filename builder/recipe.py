@@ -600,14 +600,38 @@ def compile_recipe(
                 template = directive["template"]
                 if not isinstance(template, dict):
                     raise ValueError("template directive must be a mapping")
-                name = str(renderer.render_value(template.get("name", ""), context))
-                params = {
-                    str(key): renderer.render_value(value, context)
-                    for key, value in template.items()
-                    if key != "name"
-                }
+                before_files = len(context.requested_files)
+                before_locals = len(context.requested_locals)
+                cache_id = "h" + _hash_obj(directive)[:8]
+                previous_cache_id = context.current_cache_id
+                context.current_cache_id = cache_id
+                try:
+                    name = str(renderer.render_value(template.get("name", ""), context))
+                    params = {
+                        str(key): renderer.render_value(value, context)
+                        for key, value in template.items()
+                        if key != "name"
+                    }
+                finally:
+                    context.current_cache_id = previous_cache_id
                 params.setdefault("arch", "x86_64" if context.arch == "x86_64" else "aarch64")
-                apply_builtin_template(name, params, pkg_manager, definition.add)
+                mounts = []
+                if len(context.requested_files) > before_files:
+                    mounts.append(
+                        "--mount=type=bind,"
+                        f"from=neurocontainer-cache,source=/{cache_id},"
+                        f"target=/.neurocontainer-cache/{cache_id},readonly"
+                    )
+                for key in context.requested_locals[before_locals:]:
+                    mounts.append(
+                        f"--mount=type=bind,from={key},source=/,target=/.neurocontainer-local/{key},readonly"
+                    )
+                template_directives = []
+                apply_builtin_template(name, params, pkg_manager, template_directives.append)
+                for item in template_directives:
+                    if mounts and isinstance(item, Run):
+                        item = RunWithMounts(tuple(dict.fromkeys(mounts)), item.command)
+                    definition.add(item)
             elif "boutique" in directive:
                 boutique_data = renderer.render_value(directive["boutique"], context)
                 if not isinstance(boutique_data, dict):
