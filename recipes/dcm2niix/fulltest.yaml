@@ -97,7 +97,7 @@ tests:
   - name: Help shows compression option
     description: Verify help shows -z option for gzip compression
     command: dcm2niix 2>&1
-    expected_output_contains: "-z : gz compress"
+    expected_output_contains: "-z : compress images"
 
   - name: Help shows verbosity option
     description: Verify help shows -v option for verbose output
@@ -422,6 +422,7 @@ tests:
   - name: Invalid option handling
     description: Test error handling for invalid options
     command: dcm2niix --invalid-option 2>&1
+    expected_exit_code: 12
     expected_output_contains: "Error"
 
   - name: No input directory error
