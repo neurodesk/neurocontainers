@@ -1,5 +1,5 @@
 name: deepdisco
-version: "20251008"
+version: "20251008.1.0"
 description: DeepDisco predicts brain connectivity maps from binary lesion or region masks using trained 3D U-Net models.
  
 copyright:
@@ -11,7 +11,7 @@ architectures:
  
 variables:
   install_version: "20251008"
-  upstream_commit: "ab3a7944a6824f7147d5621af79d637c1ff241c1"
+  upstream_commit: "14d6247e62f78195b7e95cf25dd0a37322206cd2"
   install_path: /opt/deepdisco-{{ context.install_version }}
   venv_path: /opt/deepdisco-{{ context.install_version }}/venv
   pip_version: 26.1.1
