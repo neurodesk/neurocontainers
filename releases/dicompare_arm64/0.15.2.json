@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "dicompare_arm64 0.15.2": {
+      "version": "20260921",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "quality control",
+    "data organisation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "dicompare"
+}
