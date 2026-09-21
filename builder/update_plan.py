@@ -12,6 +12,8 @@ from typing import Mapping
 import yaml
 from packaging.version import InvalidVersion, Version
 
+from .versioning import container_version
+
 # These sources pin exact bytes without naming a software version, so they can
 # never drive the container label.
 VERSIONLESS_METHODS = frozenset({"git_commit", "github_commit", "http_digest", "oci_digest"})
@@ -21,19 +23,35 @@ def _validate_container_version(config: dict, ids: set[str]) -> None:
     """Reject a version driver that is missing or cannot observe a version."""
     driver = config.get("container_version")
     if driver is None:
+        raise ValueError(
+            "sources policy requires container_version: select the primary source, "
+            "a variable, or false for a local/bundle version"
+        )
+    if driver is False:
+        return
+    if isinstance(driver, dict):
+        if (
+            set(driver) - {"variable", "prefix"}
+            or not isinstance(driver.get("variable"), str)
+            or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", driver["variable"])
+            or not isinstance(driver.get("prefix", ""), str)
+        ):
+            raise ValueError("container_version mapping requires one recipe variable")
         return
     if not isinstance(driver, str) or driver not in ids:
         raise ValueError(
             f"container_version must name one of this recipe's sources: {sorted(ids)}"
         )
-    method = next(
-        source["method"] for source in config["sources"] if source.get("id") == driver
+    source = next(
+        source for source in config["sources"] if source.get("id") == driver
     )
-    if method in VERSIONLESS_METHODS:
+    if source["method"] in VERSIONLESS_METHODS and not source.get("version_file"):
         raise ValueError(
-            f"container_version source {driver} tracks {method}, which pins bytes "
+            f"container_version source {driver} tracks {source['method']}, which pins bytes "
             "without naming a software version"
         )
+    if source["method"] in VERSIONLESS_METHODS and "version" not in source["target"].get("variables", {}).values():
+        raise ValueError("container_version commit source must record version metadata in a recipe variable")
 
 
 def source_config(source: dict) -> dict:
@@ -255,26 +273,6 @@ def rewrite_scalar(text: str, path: tuple[str | int, ...], value: str) -> str:
     return text[:node.start_mark.index] + json.dumps(str(value)) + text[node.end_mark.index:]
 
 
-def next_container_version(current: str) -> str:
-    """Advance the container minor version independently of installed sources."""
-    current = re.sub(r"\.(?:post|r)\d+(?=$|\+)", "", current)
-    try:
-        version = Version(current)
-    except InvalidVersion:
-        match = re.fullmatch(r"v?(\d+(?:\.\d+)*)([.-][A-Za-z][A-Za-z0-9.-]*)?", current)
-        if not match:
-            return "1.0.0"
-        release = tuple(int(part) for part in match[1].split("."))
-        suffix = "-" + match[2].lstrip(".-") if match[2] else ""
-        epoch = ""
-    else:
-        release = version.release
-        suffix = f"+{version.local}" if version.local else ""
-        epoch = f"{version.epoch}!" if version.epoch else ""
-    minor = release[1] if len(release) > 1 else 0
-    return f"{epoch}{release[0]}.{minor + 1}.0{suffix}"
-
-
 @dataclass(frozen=True)
 class FilePatch:
     path: Path
@@ -317,8 +315,6 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
     suite_original = suite_path.read_text()
     updated, suite_updated = original, suite_original
     changes, urls = [], []
-    driver = recipe["auto_update"].get("container_version")
-    driver_version = None
     for source in recipe["auto_update"].get("sources", []):
         target = source["target"]
         current = str(recipe["variables"][target["variable"]]) if "variable" in target else None
@@ -409,20 +405,17 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
                 changes.append(f"`{'.'.join(map(str, path))}`: `{node}` → `{value}`")
         if updated != previous:
             urls.append(observation.url)
-            if source["id"] == driver:
-                driver_version = observation.version
-    if updated == original:
-        return None
     current_version = str(recipe["version"])
-    if (driver_version and _is_older(current_version, driver_version)
-            and not re.search(r"\.(?:post|r)\d+(?:$|[.+-])", driver_version)):
-        next_version = driver_version
-    else:
-        next_version = next_container_version(current_version)
-    updated = rewrite_scalar(updated, ("version",), next_version)
+    next_version = container_version(yaml.safe_load(updated))
+    if current_version != next_version:
+        updated = rewrite_scalar(updated, ("version",), next_version)
     suite = yaml.safe_load(suite_updated)
     indirect = re.fullmatch(r"\$\{(\w+)\}", str(suite["version"]))
-    suite_updated = rewrite_scalar(suite_updated, (indirect[1] if indirect else "version",), next_version)
+    suite_key = indirect[1] if indirect else "version"
+    if str(suite[suite_key]) != next_version:
+        suite_updated = rewrite_scalar(suite_updated, ("version",), next_version)
+    if updated == original and suite_updated == suite_original:
+        return None
     patches = (FilePatch(recipe_path, original, updated), FilePatch(suite_path, suite_original, suite_updated))
     identity = json.dumps([(p.path.name, p.before, p.after) for p in patches], separators=(",", ":"))
     fingerprint = hashlib.sha256(identity.encode()).hexdigest()

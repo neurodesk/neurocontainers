@@ -12,6 +12,7 @@ structured_readme:
   documentation: https://github.com/ahzhu/eharmonize
   citation: "ahzhu. (2025). ahzhu/eharmonize: Initial Release (v0.0.0). Zenodo. https://doi.org/10.5281/zenodo.15116825"
 auto_update:
+  container_version: false
   method: sources
   sources:
   - id: upstream

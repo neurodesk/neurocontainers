@@ -14,6 +14,7 @@ architectures:
   - x86_64
 
 auto_update:
+  container_version: "meica"
   method: sources
   sources:
   - id: meica

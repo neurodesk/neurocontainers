@@ -19,6 +19,8 @@ if __package__ in (None, ""):
 from builder.update_assets import rewrite_release_assets
 from builder.audit_updates import validate_update_policy
 from builder.update_plan import plan_sources
+from builder.versioning import bind_upstream_version, software_version
+from builder.yaml_edit import set_scalar
 from builder.update_sources import (
     SAFE_SOURCE_REF,
     UpstreamRelease,
@@ -84,13 +86,11 @@ def tag_to_recipe_version(tag, current_version=""):
     if (current_version or "").strip()[:1] in ("v", "V"):
         candidate = f"v{candidate}"
     try:
-        parsed = version.parse(candidate)
+        version.parse(candidate)
     except Exception as e:
         dbg("tag_to_recipe_version parse failed:", e)
         return None
-    if parsed.is_postrelease:
-        return None
-    return candidate
+    return software_version(candidate)
 
 
 def resolve_tag_commit(repo, tag):
@@ -183,7 +183,7 @@ def rewrite_fulltest_version(text, new_version):
     return rewrite_version(text, new_version)
 
 
-def prepare_fulltest_bump(recipe_path, new_version):
+def prepare_fulltest_bump(recipe_path, new_version, updated_recipe=None):
     """Prepare a sibling fulltest update for an automated recipe version bump."""
     fulltest_path = os.path.join(os.path.dirname(recipe_path), "fulltest.yaml")
     if not os.path.isfile(fulltest_path):
@@ -202,6 +202,13 @@ def prepare_fulltest_bump(recipe_path, new_version):
     updated = rewrite_fulltest_version(original, new_version)
     if updated is None:
         raise ValueError(f"cannot rewrite the version in {fulltest_path}")
+    if updated_recipe:
+        recipe = yaml.safe_load(updated_recipe)
+        if variable := recipe.get("auto_update", {}).get("version_variable"):
+            # Existing assertions describe installed software and runtime paths.
+            updated = updated.replace("${version}", "${" + variable + "}")
+            updated = set_scalar(updated, None, variable, str(recipe["variables"][variable]))
+            updated = set_scalar(updated, None, "version", new_version)
     if updated == original:
         return None
     return fulltest_path, updated, old_version
@@ -433,8 +440,21 @@ def prepare_bump(path, current_version, new_version, repo, tag):
     if tag_variable := config.get("tag_variable"):
         updated = rewrite_upstream_tag(updated, tag_variable, tag)
         changes.append(f"`variables.{tag_variable}`: `{tag}`")
+    # release.version may be extracted from a vendor-specific tag by a regex.
+    from builder.update_sources import parse_release_tag
+
+    release = parse_release_tag(
+        tag, "", re.compile(config["version_regex"]) if config.get("version_regex") else None,
+        config.get("version_scheme", "numeric"), config.get("include_prereleases", False),
+    )
+    raw_version = release.version if release else new_version
+    if str(current_version).startswith(("v", "V")) and not raw_version.startswith(("v", "V")):
+        raw_version = "v" + raw_version
+    if config.get("version_variable") or software_version(raw_version) != raw_version:
+        updated = bind_upstream_version(updated, raw_version)
+    config = yaml.safe_load(updated).get("auto_update", {})
     updated, asset_changes = rewrite_release_assets(
-        updated, config, repo, tag, new_version, session
+        updated, config, repo, tag, raw_version if config.get("version_variable") else new_version, session
     )
     changes.extend(asset_changes)
 
@@ -482,7 +502,7 @@ def submit_bump(
     try:
         fulltest_bump = (
             (str(plan.patches[1].path), plan.patches[1].after, current_version)
-            if plan else prepare_fulltest_bump(path, new_version)
+            if plan else prepare_fulltest_bump(path, new_version, updated)
         )
     except ValueError as e:
         print(f"cannot auto-bump {path}: {e}")
@@ -700,7 +720,8 @@ def main():
             if config.get("mode") == "notify":
                 row.update(status="needs-recipe-change", detail=config["reason"])
                 continue
-            comparison = newer(row["current"], release.version)
+            installed = data.get("variables", {}).get(config.get("version_variable"), row["current"])
+            comparison = newer(str(installed), release.version)
             if comparison is None:
                 raise ValueError(
                     "cannot compare the recipe version with the upstream version"

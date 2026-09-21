@@ -1,5 +1,5 @@
 name: libreoffice
-version: 26.8.0
+version: "26.8.0.3"
 
 copyright:
   - license: MPL-2.0
@@ -33,6 +33,7 @@ files:
     condition: arch == "aarch64"
 
 auto_update:
+  container_version: "libreoffice"
   method: sources
   sources:
     - id: libreoffice

@@ -1,5 +1,5 @@
 name: vesselvio
-version: "1.2.0"
+version: "1.1.2"
 architectures:
   - x86_64
   - aarch64
@@ -15,6 +15,7 @@ variables:
         condition: arch == "aarch64"
 
 auto_update:
+  container_version: "vesselvio"
   method: sources
   sources:
     - id: vesselvio

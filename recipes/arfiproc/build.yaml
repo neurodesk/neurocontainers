@@ -17,6 +17,7 @@ variables:
   base_image_digest: "sha256:829f6df217bcbae2b371026e81711d1a787c61b2967ad09d015063663ebafbf7"
 
 auto_update:
+  container_version: false
   method: sources
   local:
   - macros/openrecon

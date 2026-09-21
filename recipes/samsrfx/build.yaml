@@ -1,10 +1,11 @@
 name: samsrfx
-version: v10.004
+version: "v10.004.0"
 
 architectures:
   - x86_64
 
 auto_update:
+  container_version: "standalone"
   method: sources
   sources:
   - id: standalone

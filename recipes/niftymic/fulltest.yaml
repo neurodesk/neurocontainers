@@ -1,5 +1,5 @@
 name: niftymic
-version: 0.9
+version: "0.9.0"
 default_timeout: 120
 
 tests:
@@ -10,3 +10,5 @@ tests:
   - name: reconstruction help
     description: Verify the volume reconstruction entrypoint runs and prints help.
     command: niftymic_reconstruct_volume --help
+
+upstream_version: '0.9'

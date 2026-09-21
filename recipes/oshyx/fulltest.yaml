@@ -16,7 +16,7 @@
 #   - /OSHy/test_T2w.nii.gz: T2w test image
 
 name: oshyx
-version: "0.4"
+version: "0.4.0"
 software_version: 0.4
 
 test_data:

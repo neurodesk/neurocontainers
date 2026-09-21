@@ -267,7 +267,7 @@ def recipe_changes_since_merge_are_source_only(recipe: str, merge_sha: str) -> b
 
 
 def build_date(recipe: str, revision: str = "HEAD") -> str:
-    """Return the last build.yaml commit date in release-tag format."""
+    """Return the last recipe or shared-input commit date in release-tag format."""
     data = load_recipe_at(revision, recipe)
     value = run_git(
         "log",
@@ -276,7 +276,7 @@ def build_date(recipe: str, revision: str = "HEAD") -> str:
         "--date=format:%Y%m%d",
         revision,
         "--",
-        f"recipes/{recipe}/build.yaml",
+        f"recipes/{recipe}",
         *shared_recipe_paths(data),
     )
     if not value:

@@ -32,7 +32,7 @@ def test_readme_version_does_not_count_as_install_binding() -> None:
 def test_unused_raw_tag_variable_cannot_fall_back_to_another_version_binding():
     recipe = {
         "name": "demo",
-        "version": "1.0",
+        "version": "1.0.0",
         "variables": {"upstream_tag": "v1.0"},
         "auto_update": {
             "method": "github_tags",
@@ -81,7 +81,7 @@ def test_locally_maintained_recipe_can_track_repository_inputs(tmp_path):
     recipe_dir.mkdir()
     (recipe_dir / "build.yaml").write_text(yaml.safe_dump({
         "name": "local-example", "version": "1.0.0",
-        "auto_update": {"method": "sources", "sources": [], "local": []},
+        "auto_update": {"method": "sources", "container_version": False, "sources": [], "local": []},
     }))
     (recipe_dir / "fulltest.yaml").write_text("name: local-example\nversion: 1.0.0\ntests: []\n")
     assert audit(tmp_path)[0]["status"] == "automatic"
@@ -234,7 +234,7 @@ def test_versioned_clone_binds_the_tracked_repository(branch):
 def test_raw_tag_variable_must_exist_and_bind_installation():
     recipe = {
         "name": "demo",
-        "version": "1.0",
+        "version": "1.0.0",
         "auto_update": {
             "method": "github_tags",
             "repo": "org/demo",

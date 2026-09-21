@@ -1,5 +1,5 @@
 name: builder
-version: "0.2"
+version: "0.2.0"
 
 architectures:
   - x86_64
@@ -13,6 +13,7 @@ variables:
   base_image_digest: sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
 
 auto_update:
+  container_version: false
   method: sources
   local: []
   sources:

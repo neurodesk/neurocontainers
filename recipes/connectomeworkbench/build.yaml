@@ -16,6 +16,7 @@ files:
     filename: license.txt
 
 auto_update:
+  container_version: "connectome-workbench"
   method: sources
   local: []
   sources:

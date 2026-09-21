@@ -11,6 +11,7 @@ variables:
   base_image_tag: 1.0.2
 
 auto_update:
+  container_version: "base_image_tag"
   method: sources
   sources:
     - id: base_image_tag

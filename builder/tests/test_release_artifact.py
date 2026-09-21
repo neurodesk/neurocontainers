@@ -430,3 +430,22 @@ def test_repository_fulltests_do_not_hardcode_release_artifacts() -> None:
         "is resolved from releases/<recipe>/<version>.json, or set 'pin_container: true' "
         "when a historical image is genuinely required:\n" + "\n".join(offenders)
     )
+
+
+def test_rebuild_selects_new_date_without_changing_software_version(tmp_path):
+    from builder.release import release_data, write_release_file
+
+    containers = tmp_path / 'containers'
+    old = touch(containers, 'tool_7.1.0_20260920.simg')
+    new = touch(containers, 'tool_7.1.0_20260921.simg')
+    for date, expected in [('20260920', old), ('20260921', new)]:
+        data = release_data('tool', '7.1.0', {'categories': ['workflows']}, date)
+        write_release_file(tmp_path, 'tool', '7.1.0', data)
+        artifact = resolve_release_artifact('tool', '7.1.0', tmp_path / 'releases')
+        assert artifact.filename == expected.name
+        result = resolve_suite_container(
+            recipe='tool', version='7.1.0', declared=None, pinned=False,
+            containers_dir=containers, releases_dir=tmp_path / 'releases',
+        )
+        assert result.path == expected
+    assert old.exists()

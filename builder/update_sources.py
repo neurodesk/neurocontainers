@@ -19,6 +19,7 @@ class UpstreamRelease:
 
 
 SOURCE_FIELDS = {
+    "version_variable",
     "version_regex",
     "version_scheme",
     "include_prereleases",
@@ -116,11 +117,12 @@ def validate_update_config(config: dict) -> None:
         raise ValueError("auto_update.package must be a PyPI project name")
     if method == "npm" and not NPM_PACKAGE.fullmatch(config.get("package", "")):
         raise ValueError("auto_update.package must be an npm package name")
-    if "tag_variable" in config and (
-        not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", config["tag_variable"])
-        or config["tag_variable"] in {"version", "original_version"}
-    ):
-        raise ValueError("auto_update.tag_variable must name a recipe variable")
+    for key in ("tag_variable", "version_variable"):
+        if key in config and (
+            not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", config[key])
+            or config[key] in {"version", "original_version"}
+        ):
+            raise ValueError(f"auto_update.{key} must name a recipe variable")
     mode = config.get("mode", "automatic")
     if mode not in {"automatic", "notify"}:
         raise ValueError("auto_update.mode must be automatic or notify")

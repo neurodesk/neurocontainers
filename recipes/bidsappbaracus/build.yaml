@@ -1,5 +1,5 @@
 name: bidsappbaracus
-version: "1.2.0"
+version: "1.1.4"
 # https://hub.docker.com/r/bids/baracus/tags
 
 architectures:
@@ -9,6 +9,7 @@ variables:
   upstream_version: 1.1.4
 
 auto_update:
+  container_version: "upstream"
   method: sources
   sources:
     - id: upstream

@@ -18,12 +18,13 @@ variables:
   sovabids_tag: v0.3.1-alpha
 
 name: sovabids
-version: "0.4.0"
+version: "0.3.1-alpha"
 
 architectures:
   - x86_64
 
 auto_update:
+  container_version: "sovabids"
   method: sources
   sources:
   - id: sovabids

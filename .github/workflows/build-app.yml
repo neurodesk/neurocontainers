@@ -140,6 +140,14 @@ jobs:
           docker --version && aws --version
           gh --version && jq --version && swift --version
 
+      - name: Install builder dependencies
+        run: |
+          PIP_BREAK_SYSTEM_PACKAGES=""
+          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
+            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          fi
+          python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} -r requirements.txt
+
       - name: Set environment variables
         id: envars
         run: |
@@ -167,9 +175,8 @@ jobs:
             RELEASE_VERSION="$VERSION"
           fi
           IMAGENAME="${CONTAINER_NAME}_${VERSION}${IMAGE_SUFFIX}"
-          # Get the commit date of the recipe's build.yaml file
-          # This ensures consistent build dates based on when the recipe was last modified
-          BUILDDATE=$(git log -1 --format=%ad --date=format:%Y%m%d -- recipes/${APPLICATION}/build.yaml)
+          # Include packaged scripts and declared shared inputs in the build date.
+          BUILDDATE=$(python3 -c 'import sys; from pathlib import Path; from builder.release import build_date_for_recipe; print(build_date_for_recipe(Path.cwd(), Path("recipes") / sys.argv[1]))' "$APPLICATION")
           # Fallback to current date if git log fails (e.g., new file not yet committed)
           if [ -z "$BUILDDATE" ]; then
             BUILDDATE=`date +%Y%m%d`
@@ -198,14 +205,6 @@ jobs:
           else
             echo "IMAGETAG=${BUILDDATE}" >> $GITHUB_OUTPUT
           fi
-
-      - name: Install builder dependencies
-        run: |
-          PIP_BREAK_SYSTEM_PACKAGES=""
-          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
-            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
-          fi
-          python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} -r requirements.txt
 
       - name: Generate Dockerfile and stage metadata
         id: generate

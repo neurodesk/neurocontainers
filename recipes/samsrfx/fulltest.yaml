@@ -8,7 +8,7 @@
 # The main entry point is the SamSrfX GUI, but many underlying functions exist.
 
 name: samsrfx
-version: v10.004
+version: "v10.004.0"
 
 # Note: This container runs compiled MATLAB code, so tests focus on:
 # - Container structure and file integrity

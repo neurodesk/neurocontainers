@@ -1,5 +1,5 @@
 name: lesymap
-version: "0.1.0"
+version: "0.0.0.9221"
 architectures:
   - x86_64
 structured_readme:
@@ -12,6 +12,7 @@ variables:
   base_image_tag: 20220701
 
 auto_update:
+  container_version: {"variable": "software_version"}
   method: sources
   sources:
     - id: base_image_tag

@@ -21,6 +21,8 @@ def versioned_source_inputs(recipe: dict) -> list[tuple[str, str]]:
     variables = dict(recipe.get("variables") or {})
     if tag_variable := recipe.get("auto_update", {}).get("tag_variable"):
         variables[tag_variable] = "{{ context." + tag_variable + " }}"
+    if variable := recipe.get("auto_update", {}).get("version_variable"):
+        variables[variable] = "{{ context." + variable + " }}"
     inputs = []
     consumed_files = set()
     copied_files = {}
@@ -152,6 +154,10 @@ def validate_update_policy(recipe: dict, *, recipe_path: Path | None = None) -> 
             "every recipe requires automatic updates; bind installed sources or use a sources policy with local repository inputs"
         )
     validate_update_config(config)
+    from .versioning import validate_container_version
+
+    if "version" in recipe:
+        validate_container_version(recipe)
     from .openrecon_updates import validate_openrecon_policy
 
     validate_openrecon_policy(recipe)
@@ -193,11 +199,13 @@ def validate_update_policy(recipe: dict, *, recipe_path: Path | None = None) -> 
         if "sha256" in files[0] or "checksum" in files[0]:
             raise ValueError(f"{name} pins a checksum that needs update handling")
     inputs = versioned_source_inputs(recipe)
-    bindings = (
-        ("context." + config["tag_variable"],)
-        if config.get("tag_variable")
-        else ("context.version", "context.original_version")
-    )
+    version_variable = config.get("version_variable")
+    if config.get("tag_variable"):
+        bindings = ("context." + config["tag_variable"],)
+    elif version_variable:
+        bindings = ("context." + version_variable,)
+    else:
+        bindings = ("context.version", "context.original_version")
     versioned = [
         (kind, text)
         for kind, text in inputs
@@ -219,8 +227,9 @@ def validate_update_policy(recipe: dict, *, recipe_path: Path | None = None) -> 
         package = "[-_]".join(
             re.escape(part) for part in re.split("[-_]", config["package"])
         )
+        version_name = re.escape(version_variable) if version_variable else "(?:original_)?version"
         pattern = re.compile(
-            rf"(?<![A-Za-z0-9_-]){package}(?:\[[^]]+\])?\s*(?:==?|@)\s*['\"]?{{{{\s*context\.(?:original_)?version",
+            rf"(?<![A-Za-z0-9_-]){package}(?:\[[^]]+\])?\s*(?:==?|@)\s*['\"]?{{{{\s*context\.{version_name}",
             re.I,
         )
         bound = any(
@@ -230,12 +239,13 @@ def validate_update_policy(recipe: dict, *, recipe_path: Path | None = None) -> 
     elif method.startswith("github_"):
         repo = config["repo"].lower()
         name = recipe.get("name", "").lower()
+        version_name = re.escape(version_variable) if version_variable else "(?:original_)?version"
         package_pin = re.compile(
-            rf"(?<![A-Za-z0-9_-]){re.escape(name)}(?:\[[^]]+\])?\s*==?\s*{{{{\s*context\.(?:original_)?version",
+            rf"(?<![A-Za-z0-9_-]){re.escape(name)}(?:\[[^]]+\])?\s*==?\s*{{{{\s*context\.{version_name}",
             re.I,
         )
         julia_pin = re.compile(
-            rf'PackageSpec\(name="{re.escape(name)}",\s*version="{{{{\s*context\.(?:original_)?version',
+            rf'PackageSpec\(name="{re.escape(name)}",\s*version="{{{{\s*context\.{version_name}',
             re.I,
         )
         bound = any(
@@ -249,7 +259,7 @@ def validate_update_policy(recipe: dict, *, recipe_path: Path | None = None) -> 
             or (kind == "requirements" and julia_pin.search(text))
             or (
                 kind == "git"
-                and _git_clone_tracks(text, repo, config.get("tag_variable"))
+                and _git_clone_tracks(text, repo, config.get("tag_variable") or version_variable)
             )
             or (kind == "image" and repo in text.lower())
             or (kind == "template" and name.startswith(text.split()[0].lower()))
@@ -265,7 +275,7 @@ def validate_update_policy(recipe: dict, *, recipe_path: Path | None = None) -> 
             or (
                 kind == "git"
                 and github_feed
-                and _git_clone_tracks(text, github_feed.group(1))
+                and _git_clone_tracks(text, github_feed.group(1), version_variable)
             )
             for kind, text in versioned
         )

@@ -1,5 +1,5 @@
 name: noddi
-version: '1.0'
+version: "1.0.0"
 default_timeout: 120
 tests:
 - name: NODDI wrapper usage

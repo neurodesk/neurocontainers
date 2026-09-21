@@ -22,6 +22,7 @@ variables:
   singularity_version: 3.9.3
 
 auto_update:
+  container_version: {"variable": "install_version"}
   method: sources
   sources:
   - id: relion

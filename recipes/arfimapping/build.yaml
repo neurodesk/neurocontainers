@@ -28,6 +28,7 @@ variables:
   openrecon_ismrmrd_version: "1.14.2"
 
 auto_update:
+  container_version: false
   method: sources
   local:
   - macros/openrecon

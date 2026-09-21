@@ -37,6 +37,7 @@ files:
       sha256: bfe4fe9140383e87a6c0c4cb2a6e9a84c3435f1413fd3644273bd9f1a0c3bdee
 
 auto_update:
+  container_version: false
   method: sources
   sources:
   - id: upstream

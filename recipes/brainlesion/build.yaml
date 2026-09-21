@@ -38,6 +38,7 @@ variables:
   brainles_preprocessing_version: "0.6.13"
 
 auto_update:
+  container_version: false
   method: sources
   local: []
   sources:

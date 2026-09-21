@@ -1,9 +1,10 @@
 name: mipav
-version: "11.4.0"
+version: "11.3.3"
 architectures:
   - x86_64
   - aarch64
 auto_update:
+  container_version: "standalone"
   method: sources
   sources:
   - id: standalone

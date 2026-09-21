@@ -12,6 +12,9 @@ architectures:
   - x86_64
 
 auto_update:
+  container_version:
+    variable: palm_version
+    prefix: alpha
   method: sources
   local: []
   sources:

@@ -84,6 +84,7 @@ variables:
   base_image_digest: sha256:bd3508a0278538bbf10b7b0a090085b7b584860cef7f3c1fed6183707fc6223d
 
 auto_update:
+  container_version: false
   method: sources
   sources:
     - id: base_image

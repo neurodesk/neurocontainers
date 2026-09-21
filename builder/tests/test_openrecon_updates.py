@@ -26,7 +26,7 @@ def shared_recipe(tmp_path):
         "build": {"kind": "neurodocker", "base-image": "ubuntu:24.04", "pkg-manager": "apt",
                   "directives": [{"include": "macros/openrecon/neurodocker.yaml"}]},
         "variables": dict(OPENRECON_PINS),
-        "auto_update": {"method": "sources", "sources": copy.deepcopy(list(OPENRECON_SOURCES))},
+        "auto_update": {"method": "sources", "container_version": False, "sources": copy.deepcopy(list(OPENRECON_SOURCES))},
     }
     (tmp_path / "build.yaml").write_text(yaml.safe_dump(recipe, sort_keys=False))
     (tmp_path / "fulltest.yaml").write_text("name: shared-example\nversion: 1.0.0\ntests: []\n")

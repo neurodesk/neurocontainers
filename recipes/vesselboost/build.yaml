@@ -1,5 +1,5 @@
 name: vesselboost
-version: 2.0.64
+version: "2.0.2"
 copyright:
   - license: MIT
     url: https://github.com/KMarshallX/VesselBoost/blob/master/LICENSE
@@ -32,6 +32,7 @@ files:
   - name: t2s_mod_ep1k2_0728
     url: "{{ context.t2s_mod_ep1k2_0728_url }}"
 auto_update:
+  container_version: "vesselboost"
   method: sources
   sources:
   - id: vesselboost

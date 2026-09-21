@@ -1,7 +1,7 @@
 name: synthseg
 # Container releases advance independently of the pinned FreeSurfer software
 # and trained weights in upstream_version.
-version: 8.2.1
+version: "8.2.0"
 
 copyright:
   - name: FreeSurfer Software License Agreement
@@ -38,6 +38,7 @@ variables:
   synthseg_photo_single_1_0_url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/annex/objects/695/8ef/SHA256E-s159114824--b8da211a79638e5a6920ce3d15e82fd613a6c8479b8abb3e1b83b6452c601274.0.h5/SHA256E-s159114824--b8da211a79638e5a6920ce3d15e82fd613a6c8479b8abb3e1b83b6452c601274.0.h5
   synthseg_photo_single_1_0_sha256: b8da211a79638e5a6920ce3d15e82fd613a6c8479b8abb3e1b83b6452c601274
 auto_update:
+  container_version: "freesurfer"
   method: sources
   local:
   - macros/openrecon

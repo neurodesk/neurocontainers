@@ -157,11 +157,6 @@ def validate_container_icon(instance, attribute, value):
 
 def validate_recipe_metadata(recipe_dict: Dict[str, Any]) -> None:
     """Validate metadata required for published NeuroDesk container recipes."""
-    if re.search(r"\.(?:post|r)\d+(?:$|[.+-])", str(recipe_dict.get("version", ""))):
-        raise ValueError(
-            "Container versions must use a new minor version, not a .post or .r suffix. "
-            "Pin upstream post-release versions in a separate recipe variable."
-        )
     validate_container_icon(None, None, recipe_dict.get("icon"))
 
     categories = recipe_dict.get("categories")
@@ -574,7 +569,8 @@ class Template:
 class AutoUpdate:
     method: str = attrs.field()
     sources: Optional[List[Dict[str, Any]]] = attrs.field(default=None)
-    container_version: Optional[str] = attrs.field(default=None)
+    container_version: Union[str, Dict[str, str], bool, None] = attrs.field(default=None)
+    version_variable: Optional[str] = attrs.field(default=None)
     local: Optional[List[str]] = attrs.field(default=None)
     repo: Optional[str] = attrs.field(default=None)
     package: Optional[str] = attrs.field(default=None)
@@ -1080,6 +1076,9 @@ def validate_recipe_dict(
 
         # Create and return the container recipe
         recipe = ContainerRecipe(**recipe_copy)
+        from builder.versioning import validate_container_version
+
+        validate_container_version(recipe_dict)
         if strict_metadata:
             validate_recipe_metadata(recipe_dict)
         return recipe

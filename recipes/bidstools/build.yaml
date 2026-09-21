@@ -18,6 +18,7 @@ variables:
   dcm2niix_version: "1.0.20260724"
 
 auto_update:
+  container_version: false
   method: sources
   local: []
   sources:

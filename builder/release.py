@@ -7,15 +7,20 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from .config import canonical_architecture
+from .release_plan import shared_recipe_paths
 
 
 def build_date_for_recipe(repo_root: Path, recipe_dir: Path) -> str:
     if os.environ.get("BUILDDATE"):
         return os.environ["BUILDDATE"]
     try:
+        recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text())
         result = subprocess.run(
-            ["git", "log", "-1", "--format=%ad", "--date=format:%Y%m%d", "--", str(recipe_dir / "build.yaml")],
+            ["git", "log", "-1", "--format=%ad", "--date=format:%Y%m%d", "--",
+             str(recipe_dir), *shared_recipe_paths(recipe)],
             cwd=repo_root,
             check=True,
             text=True,

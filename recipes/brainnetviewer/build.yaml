@@ -1,5 +1,5 @@
 name: brainnetviewer
-version: "1.8.0"
+version: "1.7.20191031"
 
 copyright:
   - license: GPL-3.0-only
@@ -9,6 +9,7 @@ architectures:
   - x86_64
 
 auto_update:
+  container_version: {"variable": "upstream_version"}
   method: sources
   sources:
   - id: standalone

@@ -12,6 +12,7 @@ variables:
   brainsuite_version: 23a
 
 auto_update:
+  container_version: "brainsuite"
   method: sources
   sources:
     - id: brainsuite

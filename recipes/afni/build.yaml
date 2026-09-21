@@ -36,6 +36,7 @@ structured_readme:
       https://pubmed.ncbi.nlm.nih.gov/9430344/'
 
 auto_update:
+  container_version: false
   method: sources
   local: []
   sources:

@@ -17,7 +17,7 @@
 # Tests below verify tool availability and basic functionality without full processing
 
 name: bidsappbaracus
-version: "1.2.0"
+version: "1.1.4"
 upstream_version: 1.1.4
 
 required_files:

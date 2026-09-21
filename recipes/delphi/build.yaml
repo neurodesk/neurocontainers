@@ -11,6 +11,7 @@ architectures:
   - x86_64
 
 auto_update:
+  container_version: false
   method: sources
   sources:
   - id: upstream

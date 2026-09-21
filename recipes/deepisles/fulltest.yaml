@@ -1,5 +1,5 @@
 name: deepisles
-version: '1.1'
+version: "1.1.0"
 default_timeout: 60
 tests:
 - name: Python imports gdown
@@ -302,3 +302,5 @@ tests:
 - name: DeepISLES PATH uses its environment
   command: case "$PATH" in /opt/miniconda/envs/deepisles/bin:*) exit 0;; *) exit 1;; esac
   expected_exit_code: 0
+
+upstream_version: '1.1'

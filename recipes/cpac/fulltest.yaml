@@ -1,5 +1,5 @@
 name: cpac
-version: 1.8.7
+version: "1.8.7.post1.dev3"
 software_version: 1.8.7
 default_timeout: 120
 tests:
