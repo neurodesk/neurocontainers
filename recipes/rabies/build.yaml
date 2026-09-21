@@ -1,5 +1,5 @@
 name: rabies
-version: "0.6.0"
+version: "0.5.3"
 
 copyright:
   - name: ACADEMIC PUBLIC LICENSE (Non-Commercial Use)
@@ -61,6 +61,7 @@ variables:
   atlas_record: "5118030"
 
 auto_update:
+  container_version: "rabies"
   method: sources
   sources:
     - id: rabies

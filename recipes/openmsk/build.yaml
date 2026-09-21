@@ -82,6 +82,7 @@ files:
       }
 
 auto_update:
+  container_version: false
   method: sources
   local:
   - macros/openrecon

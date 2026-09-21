@@ -1,5 +1,5 @@
 name: spinalcordtoolbox
-version: "7.3.5"
+version: "7.3.0"
 copyright:
   - license: LGPL-3.0
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
@@ -28,6 +28,7 @@ variables:
   install_version: "7.3.3"
   upstream_version: "7.3"
 auto_update:
+  container_version: "sct"
   method: sources
   sources:
   - id: sct

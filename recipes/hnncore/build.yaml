@@ -14,6 +14,7 @@ variables:
   neuron_commit: 34cf696c4ba947a070abc008b1fc58939d3e6418
 
 auto_update:
+  container_version: "hnn_core"
   method: sources
   sources:
     - id: hnn_core

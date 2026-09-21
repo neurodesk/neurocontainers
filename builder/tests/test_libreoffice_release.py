@@ -97,7 +97,7 @@ def test_plan_advances_build_digests_and_suite_together_and_then_is_idempotent(p
              "sha256": "{{ context." + arch + "_sha256 }}"}
             for arch in ("x86_64", "aarch64")
         ],
-        "auto_update": {"method": "sources", "sources": [{
+        "auto_update": {"method": "sources", "container_version": "office", "sources": [{
             "id": "office", "method": "libreoffice_release",
             "target": {"variable": "upstream_version", "fulltest_variable": "upstream_version",
                        "variables": {"x86_64_sha256": "x86_64_sha256",
@@ -114,9 +114,9 @@ def test_plan_advances_build_digests_and_suite_together_and_then_is_idempotent(p
     for patch in plan.patches:
         patch.path.write_text(patch.after)
     updated = yaml.safe_load(path.read_text())
-    assert updated["version"] == "26.3.0"
+    assert updated["version"] == "26.8.0.3"
     assert updated["variables"] == {"upstream_version": "26.8.0.3",
                                     "x86_64_sha256": "a" * 64, "aarch64_sha256": "b" * 64}
     assert yaml.safe_load(suite.read_text())["upstream_version"] == "26.8.0.3"
-    assert yaml.safe_load(suite.read_text())["version"] == "26.3.0"
+    assert yaml.safe_load(suite.read_text())["version"] == "26.8.0.3"
     assert plan_sources(path) is None

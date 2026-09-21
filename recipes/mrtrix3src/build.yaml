@@ -13,6 +13,7 @@ architectures:
   - x86_64
 
 auto_update:
+  container_version: {"variable": "install_version"}
   method: sources
   sources:
   - id: upstream

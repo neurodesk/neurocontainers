@@ -13,6 +13,7 @@ structured_readme:
   documentation: https://github.com/miao-cao/MEGNET_pipeline.git
   citation: ""
 auto_update:
+  container_version: false
   method: sources
   sources:
   - id: pyqt5

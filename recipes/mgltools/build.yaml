@@ -1,11 +1,12 @@
 name: mgltools
-version: "1.6.0"
+version: "1.5.7"
 # check for latest version: https://ccsb.scripps.edu/mgltools/downloads/
 
 architectures:
   - x86_64
 
 auto_update:
+  container_version: "standalone"
   method: sources
   sources:
   - id: standalone

@@ -1,5 +1,5 @@
 name: bidsapphcppipelines
-version: 4.3.0
+version: "4.3.0"
 # https://hub.docker.com/r/bids/hcppipelines/tags
 
 architectures:
@@ -10,12 +10,13 @@ variables:
   base_image_tag: v4.3.0-3
 
 auto_update:
+  container_version: "base_image_tag"
   method: sources
   sources:
     - id: base_image_tag
       method: dockerhub
       repo: bids/hcppipelines
-      version_regex: 'v(?P<version>\d+\.\d+\.\d+-\d+)'
+      version_regex: 'v(?P<version>\d+\.\d+\.\d+)-\d+'
       target:
         variable: base_image_tag
         value: tag

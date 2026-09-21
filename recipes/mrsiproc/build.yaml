@@ -23,6 +23,7 @@ variables:
   mcr_runtime: /opt/MATLAB_Runtime_R{{ context.matlab_version }}/v911
 
 auto_update:
+  container_version: false
   method: sources
   sources:
   - id: mrsi-pipeline

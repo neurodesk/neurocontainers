@@ -26,6 +26,7 @@ variables:
   base_image_digest: sha256:abe94d551bf6f7f2937f04a2bb5a1b3b7cd25a0f6e2cf684602ea9fa397c78a3
 
 auto_update:
+  container_version: {"variable": "software_version"}
   method: sources
   sources:
     - id: base_image

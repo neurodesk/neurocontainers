@@ -108,6 +108,7 @@ files:
   url: https://zenodo.org/api/records/{{ context.abdomen_template_record }}
 
 auto_update:
+  container_version: false
   method: sources
   local:
   - macros/openrecon

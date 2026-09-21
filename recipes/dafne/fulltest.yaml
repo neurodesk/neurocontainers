@@ -4,7 +4,7 @@
 # network access or model downloads.
 
 name: dafne
-version: "1.10.0"
+version: "2.1.0a0"
 upstream_version: "2.1.0a0"
 radiomics_version: 3.1.0
 numpy_version: "2.1.3"

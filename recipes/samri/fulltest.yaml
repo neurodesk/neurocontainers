@@ -1,5 +1,5 @@
 name: samri
-version: "0.5"
+version: "0.5.0"
 
 tests:
   - name: SAMRI command line help
@@ -30,3 +30,5 @@ tests:
       test -x /opt/bru2/Bru2
       test -d /opt/SAMRI
       test -d /opt/mouse-brain-atlases_generator
+
+upstream_version: '0.5'

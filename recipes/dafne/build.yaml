@@ -1,5 +1,5 @@
 name: dafne
-version: "1.10.0"
+version: "2.1.0a0"
 
 copyright:
   - license: GPL-3.0
@@ -54,6 +54,7 @@ files:
           raise RuntimeError("PyRadiomics packaging changed; review the version metadata repair")
 
 auto_update:
+  container_version: "dafne"
   method: sources
   sources:
     - id: dafne

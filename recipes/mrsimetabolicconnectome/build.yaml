@@ -16,6 +16,7 @@ structured_readme:
     Constructing the Human Brain Metabolic Connectome Using MR Spectroscopic Imaging: Insights into Biochemical Organization, Cytoarchitectonic Similarity and Gene Co-expression Networks Federico Lucchetti, Edgar Céléreau, Pascal Steullet, Yasser Alemán-Gómez, Patric Hagmann, Antoine Klauser, Paul Klauser
     bioRxiv 2025.03.10.642332; doi: https://doi.org/10.1101/2025.03.10.642332
 auto_update:
+  container_version: false
   method: sources
   sources:
   - id: upstream

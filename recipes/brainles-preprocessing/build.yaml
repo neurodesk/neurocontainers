@@ -1,5 +1,5 @@
 name: brainles-preprocessing
-version: "0.8.0"
+version: "0.6.13"
 
 variables:
   upstream_version: "0.6.13"
@@ -10,6 +10,7 @@ architectures:
   - x86_64
 
 auto_update:
+  container_version: "brainles-preprocessing"
   method: sources
   sources:
     - id: brainles-preprocessing

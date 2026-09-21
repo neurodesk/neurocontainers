@@ -1,5 +1,5 @@
 name: deepdisco
-version: "20251008.1.0"
+version: "20251008"
 default_timeout: 120
 tests:
 - name: DeepDisco installation smoke test

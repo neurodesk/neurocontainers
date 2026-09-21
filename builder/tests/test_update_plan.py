@@ -4,16 +4,16 @@ import pytest
 import yaml
 
 from builder.update_observations import SourceObservation
-from builder.update_plan import plan_sources, next_container_version, validate_sources_config, validate_target_bindings
+from builder.update_plan import plan_sources, validate_sources_config, validate_target_bindings
 
 
 def make_recipe(tmp_path):
     root = tmp_path / 'demo'
     root.mkdir()
     recipe = {
-        'name': 'demo', 'version': '7.3.3',
+        'name': 'demo', 'version': '7.3.0',
         'variables': {'tool_version': '7.3', 'source_commit': 'a' * 40},
-        'auto_update': {'method': 'sources', 'sources': [
+        'auto_update': {'method': 'sources', 'container_version': 'tool', 'sources': [
             {'id': 'tool', 'method': 'pypi', 'package': 'example-tool',
              'target': {'variable': 'tool_version', 'fulltest_variable': 'tool_version'}},
             {'id': 'helper', 'method': 'github_commit', 'repo': 'example/helper', 'ref': 'main',
@@ -25,7 +25,7 @@ def make_recipe(tmp_path):
     }
     path = root / 'build.yaml'
     path.write_text(yaml.safe_dump(recipe, sort_keys=False))
-    (root / 'fulltest.yaml').write_text(yaml.safe_dump({'name': 'demo', 'version': '7.3.3', 'tool_version': '7.3', 'tests': [{'name': 'version', 'command': 'example-tool --version', 'expected_output_contains': '${tool_version}'}]}, sort_keys=False))
+    (root / 'fulltest.yaml').write_text(yaml.safe_dump({'name': 'demo', 'version': '7.3.0', 'tool_version': '7.3', 'tests': [{'name': 'version', 'command': 'example-tool --version', 'expected_output_contains': '${tool_version}'}]}, sort_keys=False))
     return path
 
 
@@ -40,7 +40,7 @@ def test_independent_versions_change_real_inputs_together_and_replay(tmp_path):
     found = observations('7.4', 'b' * 40)
     plan = plan_sources(path, observations=found)
     assert plan == plan_sources(path, observations=found)
-    assert yaml.safe_load(path.read_text())['version'] == '7.3.3'
+    assert yaml.safe_load(path.read_text())['version'] == '7.3.0'
     assert plan.next_version == '7.4.0'
     assert len(plan.changes) == 2
     plan.apply()
@@ -63,17 +63,17 @@ def test_conflicting_file_prevents_all_writes(tmp_path):
     assert path.read_text() == before
 
 
-def test_nominated_upstream_post_release_uses_container_minor_version(tmp_path):
+def test_nominated_upstream_post_release_preserves_upstream_version(tmp_path):
     path = make_recipe(tmp_path)
     recipe = yaml.safe_load(path.read_text())
     recipe['auto_update']['container_version'] = 'tool'
     path.write_text(yaml.safe_dump(recipe, sort_keys=False))
     plan = plan_sources(path, observations=observations('7.4.post1'))
-    assert plan.next_version == '7.4.0'
+    assert plan.next_version == '7.4.0.post1'
     plan.apply()
     changed = yaml.safe_load(path.read_text())
     assert changed['variables']['tool_version'] == '7.4.post1'
-    assert changed['version'] == '7.4.0'
+    assert changed['version'] == '7.4.0.post1'
 
 
 def test_failure_of_one_component_leaves_every_file_unchanged(tmp_path):
@@ -105,32 +105,6 @@ def test_runtime_documentation_alone_is_not_a_source_binding(tmp_path):
     recipe['readme'] = '{{ context.tool_version }}'
     with pytest.raises(ValueError, match='acquisition'):
         validate_target_bindings(recipe)
-
-
-@pytest.mark.parametrize(('old', 'new'), [
-    ('1.2.3', '1.3.0'),
-    ('1.9.9', '1.10.0'),
-    ('1.0', '1.1.0'),
-    ('1.0.post2', '1.1.0'),
-    ('1.2.0.post1', '1.3.0'),
-    ('1.3.0', '1.4.0'),
-    ('6.0.7.22.post1', '6.1.0'),
-    ('26.0.rc3.post1', '26.1.0'),
-    ('20220617.post1', '20220617.1.0'),
-    ('2024.06.12.post1', '2024.7.0'),
-    ('4.0.1.sm75', '4.1.0-sm75'),
-    ('4.1.0-sm75', '4.2.0-sm75'),
-    ('1.0.gpu.post2', '1.1.0-gpu'),
-    ('1.2.3+gpu', '1.3.0+gpu'),
-    ('1.2.3.r1+gpu', '1.3.0+gpu'),
-    ('latest', '1.0.0'),
-    ('latest.r9', '1.0.0'),
-    ('r7771', '1.0.0'),
-    ('v1.2.3', '1.3.0'),
-    ('1!2.3.4', '1!2.4.0'),
-])
-def test_container_revision_is_independent_of_upstream_version(old, new):
-    assert next_container_version(old) == new
 
 
 def test_query_parameters_are_not_yaml_anchors():
@@ -216,17 +190,17 @@ def test_a_dependency_moving_alone_still_rebuilds_the_same_software(tmp_path):
 
     plan = plan_sources(path, observations=found)
 
-    assert plan.next_version == '2.11.0'
+    assert plan.next_version == '2.10.36'
 
 
-def test_repackaging_the_same_software_bumps_container_minor(tmp_path, debian_ordering):
+def test_repackaging_the_same_software_preserves_container_version(tmp_path, debian_ordering):
     path = make_apt_recipe(tmp_path)
     found = {'tool': apt_observation('2.10.36-4ubuntu1'),
              'helper': SourceObservation('a' * 40, 'https://github.com/example/helper')}
 
     plan = plan_sources(path, observations=found)
 
-    assert plan.next_version == '2.11.0'
+    assert plan.next_version == '2.10.36'
     plan.apply()
     assert yaml.safe_load(path.read_text())['variables']['package_version'] == '2.10.36-4ubuntu1'
 

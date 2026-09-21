@@ -30,6 +30,7 @@ variables:
   python_version: "3.7"
 
 auto_update:
+  container_version: false
   method: sources
   sources:
   - id: hypermapper

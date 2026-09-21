@@ -1,5 +1,8 @@
+variables:
+  upstream_version: '0.9'
+
 name: niftymic
-version: 0.9
+version: "0.9.0"
 
 copyright:
   - license: BSD-3-Clause
@@ -9,13 +12,14 @@ architectures:
   - x86_64
 
 auto_update:
+  version_variable: "upstream_version"
   method: dockerhub
   repo: renbem/niftymic
   version_regex: ^v(?P<version>\d+(?:\.\d+)+)$
 
 build:
   kind: neurodocker
-  base-image: renbem/niftymic:v{{ context.version }}
+  base-image: renbem/niftymic:v{{ context.upstream_version }}
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false

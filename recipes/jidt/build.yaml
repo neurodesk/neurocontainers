@@ -1,23 +1,25 @@
 name: jidt
-version: "1.6"
+version: "1.6.0"
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=
 
 architectures:
   - x86_64
 
 variables:
+  upstream_version: "1.6"
   rstudio_version: "2022.07.2"
   rstudio_build: "576"
 
 files:
   - name: jidt_zip
-    url: "https://lizier.me/joseph/software/jidt/download.php?file=infodynamics-dist-{{ context.version }}.zip"
+    url: "https://lizier.me/joseph/software/jidt/download.php?file=infodynamics-dist-{{ context.upstream_version }}.zip"
   - name: rstudio_deb
     url: "https://download1.rstudio.org/desktop/jammy/amd64/rstudio-{{ context.rstudio_version }}-{{ context.rstudio_build }}-amd64.deb"
   - name: dependencies.R
     filename: dependencies.R
 
 auto_update:
+  version_variable: "upstream_version"
   method: github_release
   repo: jlizier/jidt
 
@@ -103,11 +105,11 @@ build:
         - chmod +x /usr/bin/ll
         - locale-gen en_AU.UTF-8
 
-    - workdir: /opt/jidt-{{ context.version }}
+    - workdir: /opt/jidt-{{ context.upstream_version }}
 
     - run:
-        - mkdir -p /opt/jidt-{{ context.version }}/infodynamics-dist-{{ context.version }}
-        - unzip {{ get_file("jidt_zip") }} -d /opt/jidt-{{ context.version }}/infodynamics-dist-{{ context.version }}
+        - mkdir -p /opt/jidt-{{ context.upstream_version }}/infodynamics-dist-{{ context.upstream_version }}
+        - unzip {{ get_file("jidt_zip") }} -d /opt/jidt-{{ context.upstream_version }}/infodynamics-dist-{{ context.upstream_version }}
 
     - run:
         - python3 -m pip install --no-cache-dir osfclient jpype1
@@ -138,7 +140,7 @@ build:
     - test:
         name: jidt python demo
         script: |
-          cd /opt/jidt-{{ context.version }}/infodynamics-dist-{{ context.version }}/demos/python
+          cd /opt/jidt-{{ context.upstream_version }}/infodynamics-dist-{{ context.upstream_version }}/demos/python
           python3 example2TeMultidimBinaryData.py
 
     - test:
@@ -148,7 +150,7 @@ build:
 
 deploy:
   path:
-    - /opt/jidt-{{ context.version }}
+    - /opt/jidt-{{ context.upstream_version }}
   bins:
     - Rscript
     - rstudio

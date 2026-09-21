@@ -13,7 +13,7 @@
 # the container setup and basic functionality.
 
 name: cat12
-version: "26.1.0"
+version: "26.0.0.rc3"
 upstream_version: "26.0.rc3"
 
 # Container paths

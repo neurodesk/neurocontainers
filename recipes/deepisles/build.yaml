@@ -1,7 +1,8 @@
 name: deepisles
-version: "1.1"
+version: "1.1.0"
 
 variables:
+  upstream_version: "1.1"
   weights_md5: be5b6dfcd66b55c2e6dc6db9a5880f7f
 
 copyright:
@@ -53,6 +54,7 @@ readme: |-
   ----------------------------------
 
 auto_update:
+  version_variable: "upstream_version"
   method: github_release
   repo: ezequieldlrosa/DeepIsles
 
@@ -75,7 +77,7 @@ build:
         - workdir: /opt
 
         - run:
-            - git clone --depth 1 --branch v{{ context.version }} https://github.com/ezequieldlrosa/DeepIsles.git
+            - git clone --depth 1 --branch v{{ context.upstream_version }} https://github.com/ezequieldlrosa/DeepIsles.git
 
         - workdir: /opt/DeepIsles
 

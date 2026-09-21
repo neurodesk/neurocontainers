@@ -1,5 +1,5 @@
 name: oshyx
-version: "0.4"
+version: "0.4.0"
 
 architectures:
   - x86_64
@@ -9,6 +9,7 @@ variables:
   base_image_tag: 20220614
 
 auto_update:
+  container_version: {"variable": "software_version"}
   method: sources
   sources:
     - id: base_image_tag

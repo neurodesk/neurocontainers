@@ -2,13 +2,14 @@ variables:
   upstream_version: "2.9"
 
 name: tractseg
-version: "2.10.0"
+version: "2.9.0"
 architectures:
   - x86_64
 copyright:
   - license: Apache-2.0
     url: https://github.com/MIC-DKFZ/TractSeg/blob/master/LICENSE
 auto_update:
+  container_version: "tractseg"
   method: sources
   sources:
     - id: tractseg

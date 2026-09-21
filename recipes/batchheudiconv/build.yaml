@@ -17,6 +17,7 @@ structured_readme:
   documentation: https://github.com/kytk/batch-heudiconv
   citation: ''
 auto_update:
+  container_version: false
   method: sources
   sources:
   - id: upstream

@@ -1,5 +1,5 @@
 name: dsistudio
-version: "2024.7.0"
+version: "2024.6.12"
 
 copyright:
   - license: CC-BY-NC-SA-4.0
@@ -14,6 +14,7 @@ variables:
   upstream_version: 2024.6.12
 
 auto_update:
+  container_version: "archive"
   method: sources
   sources:
     - id: archive

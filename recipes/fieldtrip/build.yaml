@@ -1,5 +1,5 @@
 name: fieldtrip
-version: "20220617.1.0"
+version: "20220617"
 
 copyright:
   - license: GPL-3.0
@@ -9,6 +9,7 @@ architectures:
   - x86_64
 
 auto_update:
+  container_version: "standalone"
   method: sources
   sources:
   - id: standalone

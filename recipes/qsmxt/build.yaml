@@ -1,5 +1,5 @@
 name: qsmxt
-version: 9.21.1
+version: "9.21.0"
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
@@ -23,6 +23,7 @@ variables:
         condition: arch == "aarch64"
 
 auto_update:
+  container_version: "qsmxt"
   method: sources
   sources:
   - id: qsmxt

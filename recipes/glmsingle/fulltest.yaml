@@ -12,7 +12,7 @@
 #   - Events: BIDS-formatted event timing files
 
 name: glmsingle
-version: "1.2"
+version: "1.2.0"
 
 required_files:
   - dataset: ds000001
@@ -786,3 +786,5 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
+
+upstream_version: '1.2'

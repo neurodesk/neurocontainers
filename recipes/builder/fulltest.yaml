@@ -1,5 +1,5 @@
 name: builder
-version: "0.2"
+version: "0.2.0"
 
 tests:
   - name: sf-make launcher available

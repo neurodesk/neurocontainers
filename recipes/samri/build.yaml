@@ -1,5 +1,5 @@
 name: samri
-version: "0.5"
+version: "0.5.0"
 
 copyright:
   - license: GPL-3.0-or-later
@@ -9,6 +9,7 @@ architectures:
   - x86_64
 
 variables:
+  upstream_version: "0.5"
   miniconda_version: py37_4.12.0
   bru2_version: v1.0.20180303
   ants_version: 2.3.4
@@ -37,7 +38,7 @@ files:
       statsmodels==0.13.5
       traits==6.3.2
   - name: samri_source
-    url: https://github.com/IBT-FMI/SAMRI/archive/refs/tags/{{ context.version }}.tar.gz
+    url: https://github.com/IBT-FMI/SAMRI/archive/refs/tags/{{ context.upstream_version }}.tar.gz
   - name: bru2_linux_zip
     url: https://github.com/neurolabusc/Bru2Nii/releases/download/{{ context.bru2_version }}/Bru2_Linux.zip
   - name: ants_archive
@@ -46,6 +47,7 @@ files:
     url: https://codeload.github.com/IBT-FMI/mouse-brain-atlases_generator/tar.gz/{{ context.mouse_brain_atlases_generator_commit }}
 
 auto_update:
+  version_variable: "upstream_version"
   method: github_release
   repo: IBT-FMI/SAMRI
 

@@ -102,22 +102,36 @@ For vendor releases such as MATLAB's `2025b` or BrainSuite's `23a`, set
 `version_scheme: year_letter`. GitHub draft and prerelease flags still apply.
 Recipes already storing a leading `v` keep that prefix when bumped.
 
-## Independent software and container versions
+## Software versions and dated container builds
 
-Use `method: sources` when a container combines packages, installs a source
-snapshot, or has a container version that differs from the installed software.
-Each source targets the variable or declared file that selects its actual bytes.
-A source version is never substituted for an unrelated container label.
+The container version identifies the primary software release. Numeric versions
+with fewer than three components are padded with zeros: `7.1` becomes `7.1.0`,
+while `7.1.3` stays `7.1.3`. Longer versions, upstream prerelease/post-release
+suffixes, date labels, and vendor formats are preserved. Container rebuilds use
+the existing build date to distinguish artifacts of the same software version.
+Dependency updates and packaging changes do not invent a new software version.
+
+Use `method: sources` to track the software and its dependencies separately.
+Every sources policy declares `container_version`:
+
+- A source ID selects the primary software source. Its locally recorded version
+  determines the container label, including when only a dependency changes.
+- `{variable: upstream_version}` selects a recipe variable for software pinned
+  separately from an update provider. An optional `prefix` retains vendor naming,
+  for example `{variable: palm_version, prefix: alpha}`.
+- `false` identifies locally maintained software or a bundle without a single
+  upstream version. Updates retain its existing version and use the build date.
+  Do not use this to bypass a known primary software version.
 
 ```yaml
-version: 1.0.0
+version: 7.1.0
 variables:
-  upstream_version: 2.4.0
+  upstream_version: "7.1"
   model_commit: 0123456789abcdef0123456789abcdef01234567
 
 auto_update:
   method: sources
-  local: []
+  container_version: application
   sources:
     - id: application
       method: pypi
@@ -133,75 +147,32 @@ auto_update:
         variable: model_commit
 ```
 
-The install command must use `{{ context.upstream_version }}` and the model
-checkout must use `{{ context.model_commit }}`. A sibling `fulltest.yaml` is
-required. Its `upstream_version` scalar must match the recipe variable; assertions
-use `${upstream_version}` when checking software versions and `${version}` when
-checking the container version.
+Install with `{{ context.upstream_version }}` so padding the container label does
+not change the upstream URL, tag, or package pin. The sibling `fulltest.yaml`
+uses `version: 7.1.0` to identify the container and `upstream_version: "7.1"` for
+software assertions with `${upstream_version}`. Dependency variables remain
+independent of both values.
 
-### Let one source name the container
+APT sources retain the full package pin for installation and derive the label
+from the upstream version, excluding the epoch, Debian revision, and repack suffix.
+A commit source can name the container only when it records version metadata from
+that commit. Otherwise use a recorded software variable or a local/bundle policy.
 
-By default a `sources` policy increments the container minor version, which
-is right when the label is the container's own identity. When the container is a
-distribution of one piece of software, and the label should keep naming that
-software's version, nominate its source with `container_version`:
+Direct release policies can use `version_variable: upstream_version` to keep
+exact upstream pins separate from the padded label. The updater adds this binding
+when an upstream release needs padding and updates software assertions with it.
 
-```yaml
-version: 2.10.36
-variables:
-  package_version: 2.10.36-3ubuntu0.24.04.1
+All observations resolve before any files are written. The updater changes the
+recipe and fulltest together. Repeating the same observation produces no change.
+Source downgrade checks compare installed pins, not container labels. Correcting
+an inflated container label therefore does not downgrade the installed software.
 
-auto_update:
-  method: sources
-  container_version: gimp
-  sources:
-    - id: gimp
-      method: apt
-      package: gimp
-      urls:
-        - https://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz
-      target:
-        variable: package_version
-        fulltest_variable: package_version
-```
-
-A release of that software becomes the container version, while the install
-keeps the pin it needs: here the apt package version carries a distribution
-revision the label must not inherit, so the container is `2.10.36` and the
-install is `gimp=2.10.36-3ubuntu0.24.04.1`. Any other source moving on its own,
-or a repackaging of the same software version, increments the container minor
-version to `2.11.0`. The nominated source must observe a version, so a commit or
-digest source is rejected.
-
-A nominated source supplies a newer upstream release label when available.
-Dependency updates still receive a new container minor version. The installed
-software version remains in the source variable and can differ from the label.
-An upstream post-release also uses a new container minor version.
-
-All source observations resolve before the updater writes files. One or several
-changed inputs increment the container minor version once, such as `1.2.3` to
-`1.3.0`. The patch component resets to zero. The plan updates the sibling test
-version and mapped software variables together. Repeating the same observation
-produces no further change. Stable release and mapped software versions cannot
-move backward. GitHub commit updates require a descendant of the current commit.
-
-Container updates do not append post-release or revision suffixes. Existing
-post-release labels advance to the next minor version, so `1.2.0.post2` becomes
-`1.3.0`. Numeric date labels follow the same rule: `20220617` becomes
-`20220617.1.0`. Prerelease labels become a final container release at the next
-minor version. Hardware labels are retained, so `4.0.1.sm75` becomes
-`4.1.0-sm75`. Opaque labels such as `latest` or `r7771` start a numeric container
-release series at `1.0.0`; subsequent changes produce `1.1.0`, `1.2.0`, and so on.
-Installed software keeps its independently pinned version, including any upstream
-post-release suffix.
-Direct upstream-to-container policies reject post-release tags. Use a `sources`
-policy with a pinned software variable when the upstream package uses them.
-
-Run `python3 tools/migrate_container_versions.py` to preview the migration of
-existing post-release container labels and retirement of OpenRecon ARM64
-variants. OpenRecon containers support x86_64 only. Add `--apply` to update
-recipes and fulltests and remove the old release catalog records. Build the renamed
-containers to generate new release records; do not relabel old images.
+Run `python3 -m builder.audit_updates` to check version policies and reject labels
+that disagree with their software pins. Recipe metadata validation also checks
+the label. Run `python3 tools/migrate_container_versions.py` to preview corrections,
+or add `--apply` to update recipes and fulltests. The migration preserves installed
+inputs and existing release records. New builds generate the dated release metadata;
+do not relabel already published images.
 
 The source list supports the release providers above and these providers:
 

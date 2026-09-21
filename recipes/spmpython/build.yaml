@@ -1,5 +1,5 @@
 name: spmpython
-version: "25.2.0"
+version: "25.1.2.post1"
 copyright:
   - name: GPL-2.0
     url: https://github.com/spm/spm-python/blob/main/LICENCE
@@ -7,6 +7,7 @@ architectures:
   - x86_64
   - aarch64
 auto_update:
+  container_version: "upstream"
   method: "sources"
   sources:
     - id: upstream

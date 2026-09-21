@@ -182,7 +182,7 @@ def test_shared_macro_rebuilds_all_consumers_without_recipe_edits():
 
 
 def test_shared_watch_uses_path_boundaries():
-    watched = recipe(auto_update={"method": "sources", "local": ["macros/shared"]})
+    watched = recipe(auto_update={"method": "sources", "container_version": False, "local": ["macros/shared"]})
     data = {"demo": watched}
     assert not plan_recipe_changes(["macros/shared-other/code.py"], data, data).decisions
     assert plan_recipe_changes(["macros/shared/code.py"], data, data).candidate_recipes == ["demo"]

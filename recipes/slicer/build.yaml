@@ -12,6 +12,7 @@ variables:
   slicer_abi: '5.10'
   monailabel_extension_sha256: e726478a7c2a79e78a5a507b29f4d8dea40a9b9e31175a62cffd448dbdc133b1
 auto_update:
+  container_version: "slicer"
   method: sources
   sources:
   - id: monailabel-server

@@ -1,5 +1,5 @@
 name: deepdisco
-version: "20251008.1.0"
+version: "20251008"
 description: DeepDisco predicts brain connectivity maps from binary lesion or region masks using trained 3D U-Net models.
  
 copyright:
@@ -26,6 +26,7 @@ variables:
   torchio_version: 1.2.0
  
 auto_update:
+  container_version: {"variable": "install_version"}
   method: sources
   sources:
   - id: upstream

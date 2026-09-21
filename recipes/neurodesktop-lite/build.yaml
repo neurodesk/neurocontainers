@@ -90,6 +90,7 @@ variables:
   go_version: 1.23.6
 
 auto_update:
+  container_version: false
   method: sources
   local: []
   sources:

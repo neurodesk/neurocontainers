@@ -166,7 +166,7 @@ def test_arbitrary_variant_can_span_architectures_and_enable_options(tmp_path) -
     recipe_dir.mkdir()
     (recipe_dir / "build.yaml").write_text(
         """name: gpu-tool
-version: 1.0
+version: 1.0.0
 architectures: [x86_64, aarch64]
 readme: gpu-tool {{ context.version }}
 options:
@@ -202,7 +202,7 @@ def test_compile_rejects_variant_on_an_undeclared_architecture(tmp_path) -> None
     recipe_dir.mkdir()
     (recipe_dir / "build.yaml").write_text(
         """name: gpu-tool
-version: 1.0
+version: 1.0.0
 architectures: [x86_64, aarch64]
 variants:
   gpu:
@@ -226,7 +226,7 @@ def write_single_architecture_recipe(recipe_dir: Path) -> None:
     recipe_dir.mkdir()
     (recipe_dir / "build.yaml").write_text(
         """name: x86only
-version: 1.0
+version: 1.0.0
 architectures: [x86_64]
 readme: x86only {{ context.version }}
 build:
@@ -318,7 +318,7 @@ def test_ignore_architectures_preserves_variant_options(tmp_path) -> None:
     recipe_dir.mkdir()
     (recipe_dir / "build.yaml").write_text(
         """name: gpu-tool
-version: 1.0
+version: 1.0.0
 architectures: [x86_64]
 readme: gpu-tool {{ context.version }}
 options:

@@ -28,6 +28,7 @@ structured_readme:
       doi={10.48550/arXiv.2505.11445}
     }
 auto_update:
+  container_version: false
   method: sources
   sources:
   - id: upstream

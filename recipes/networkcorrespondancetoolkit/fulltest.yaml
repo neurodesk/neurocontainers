@@ -14,7 +14,7 @@
 #   https://doi.org/10.1038/s41467-025-58176-9
 
 name: networkcorrespondancetoolkit
-version: "0.4.0"
+version: "0.3.3"
 upstream_version: 0.3.3
 data_commit: 0675b0df7fedc98d95c06c90da58b754a3cbfd49
 

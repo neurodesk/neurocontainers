@@ -1,5 +1,5 @@
 name: bidsappaa
-version: "0.3.0"
+version: "0.2.0"
 
 # https://hub.docker.com/r/bids/aa/tags
 
@@ -10,6 +10,7 @@ variables:
   image_tag: v0.2.0
 
 auto_update:
+  container_version: "upstream"
   method: sources
   sources:
     - id: upstream

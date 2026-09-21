@@ -1,6 +1,6 @@
 # this template file builds cat12, new versions here: https://github.com/ChristianGaser/cat12/releases
 name: cat12
-version: "26.1.0"
+version: "26.0.0.rc3"
 
 copyright:
   - license: GPL-2.0
@@ -24,6 +24,7 @@ files:
     url: https://github.com/ChristianGaser/cat12/releases/download/{{ context.upstream_version }}/cat-standalone-Linux.zip
 
 auto_update:
+  container_version: "cat12"
   method: sources
   sources:
     - id: cat12

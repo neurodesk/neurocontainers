@@ -1,4 +1,3 @@
-import copy
 import json
 
 import pytest
@@ -7,49 +6,92 @@ import yaml
 from tools.migrate_container_versions import migrate
 
 
-@pytest.mark.parametrize("version,openrecon", [
-    ("1.2.3.post2", False),
-    ("1.2.3.r1", False),
-    ("1.2.3", True),
-    ("1.2.3.post1", True),
-])
-def test_migration_preserves_inputs_withdraws_records_and_replays(tmp_path, version, openrecon):
-    directory = tmp_path / "recipes" / "demo"
+@pytest.mark.parametrize('upstream,label', [('7.1', '7.1.0'), ('7.2', '7.2.0'), ('9.21.0', '9.21.0')])
+def test_migration_preserves_inputs_and_release_records_and_replays(tmp_path, upstream, label):
+    directory = tmp_path / 'recipes' / 'demo'
     directory.mkdir(parents=True)
     recipe = {
-        "name": "demo",
-        "version": version,
-        "architectures": ["x86_64", "aarch64"] if openrecon else ["x86_64"],
-        "variables": {"upstream_version": "9.8.7"},
-        "auto_update": {"method": "sources", "local": []},
-        "build": {"directives": [
-            {"include": "macros/openrecon/neurodocker.yaml"}
-        ] if openrecon else []},
+        'name': 'demo', 'version': '9.22.0',
+        'variables': {'upstream_version': upstream},
+        'auto_update': {'method': 'sources', 'sources': [{
+            'id': 'demo', 'method': 'pypi', 'package': 'demo',
+            'target': {'variable': 'upstream_version', 'fulltest_variable': 'upstream_version'},
+        }]},
+        'build': {'directives': [{'run': ['pip install demo=={{ context.upstream_version }}']}]},
     }
-    recipe_path = directory / "build.yaml"
-    suite_path = directory / "fulltest.yaml"
-    recipe_path.write_text(yaml.safe_dump(recipe, sort_keys=False))
-    suite_path.write_text(yaml.safe_dump({"name": "demo", "version": version, "tests": []}))
-    release = tmp_path / "releases" / ("demo_arm64" if openrecon else "demo") / f"{version}.json"
+    path = directory / 'build.yaml'
+    path.write_text(yaml.safe_dump(recipe, sort_keys=False))
+    suite = directory / 'fulltest.yaml'
+    suite.write_text(yaml.safe_dump({'name': 'demo', 'version': '9.22.0', 'upstream_version': upstream, 'tests': []}))
+    release = tmp_path / 'releases' / 'demo' / '9.22.0.json'
     release.parent.mkdir(parents=True)
-    release.write_text(json.dumps({"apps": {f"demo {version}": {"version": "20260909"}}}))
-    retained = tmp_path / "releases" / "other" / "2.0.0.json"
-    retained.parent.mkdir(parents=True)
-    retained.write_text('{}\n')
-    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
-
-    preview = migrate(tmp_path)
-    assert preview["versions"] == [{"recipe": "demo", "old": version, "new": "1.3.0"}]
+    release.write_text(json.dumps({'apps': {'demo 9.22.0': {'version': '20260920'}}}))
+    before = {p: p.read_bytes() for p in (path, suite, release)}
+    assert migrate(tmp_path)['changes'][0]['new'] == label
     assert {p: p.read_bytes() for p in before} == before
     migrate(tmp_path, apply=True)
+    changed = yaml.safe_load(path.read_text())
+    assert changed['version'] == label
+    assert changed['variables'] == recipe['variables']
+    assert changed['build'] == recipe['build']
+    assert yaml.safe_load(suite.read_text())['version'] == label
+    assert release.read_bytes() == before[release]
+    assert migrate(tmp_path, apply=True)['changes'] == []
 
-    expected = copy.deepcopy(recipe)
-    expected.update(version="1.3.0", architectures=["x86_64"])
-    assert yaml.safe_load(recipe_path.read_text()) == expected
-    assert yaml.safe_load(suite_path.read_text())["version"] == "1.3.0"
-    assert not release.exists()
-    assert list((tmp_path / "releases").rglob("*.json")) == [retained]
-    assert retained.read_bytes() == before[retained]
-    assert migrate(tmp_path, apply=True) == {
-        "versions": [], "withdrawn_releases": [], "applied": True,
+    # A retry must also recover an interruption between the two file writes.
+    suite.write_bytes(before[suite])
+    migrate(tmp_path, apply=True)
+    assert yaml.safe_load(suite.read_text())['version'] == label
+    assert migrate(tmp_path, apply=True)['changes'] == []
+
+
+def test_direct_short_version_keeps_exact_download_and_test_versions(tmp_path):
+    from builder.template import RenderContext, TemplateRenderer
+
+    directory = tmp_path / 'recipes' / 'demo'
+    directory.mkdir(parents=True)
+    path = directory / 'build.yaml'
+    path.write_text('''name: demo
+version: "7.1"
+auto_update:
+  method: github_release
+  repo: example/demo
+files:
+  - name: archive
+    url: https://example.org/v{{ context.version }}/archive.tar.gz
+''')
+    suite = directory / 'fulltest.yaml'
+    suite.write_text('name: demo\nversion: "7.1"\ntests:\n  - command: demo --version\n    expected_output_contains: "${version}"\n')
+    original_suite = suite.read_text()
+    migrate(tmp_path, apply=True)
+    suite.write_text(original_suite)
+    migrate(tmp_path, apply=True)
+    recipe = yaml.safe_load(path.read_text())
+    assert recipe['version'] == '7.1.0'
+    context = RenderContext('demo', recipe['version'], 'x86_64', values=recipe['variables'])
+    assert TemplateRenderer().render_string(recipe['files'][0]['url'], context) == 'https://example.org/v7.1/archive.tar.gz'
+    tests = yaml.safe_load(suite.read_text())
+    assert tests['upstream_version'] == '7.1'
+    assert tests['tests'][0]['expected_output_contains'] == '${upstream_version}'
+    assert migrate(tmp_path, apply=True)['changes'] == []
+
+
+def test_source_policy_helper_declares_primary_version(tmp_path):
+    from builder.update_sources import validate_update_config
+    from workflows.migrate_source_policies import migrate as migrate_sources
+
+    directory = tmp_path / "demo"
+    directory.mkdir()
+    path = directory / "build.yaml"
+    path.write_text("name: demo\nversion: 7.1.0\nauto_update: {method: pypi, package: demo}\n")
+    (directory / "fulltest.yaml").write_text("name: demo\nversion: 7.1.0\ntests: []\n")
+    plan = {
+        "variables": {"upstream_version": "7.1"},
+        "sources": [{"id": "demo", "method": "pypi", "package": "demo",
+                     "target": {"variable": "upstream_version"}}],
+        "replacements": [], "files": [], "suite_replacements": [], "suite_scalars": {},
     }
+    migrate_sources(directory, plan, apply=True)
+    config = yaml.safe_load(path.read_text())["auto_update"]
+    assert config["container_version"] == "demo"
+    validate_update_config(config)

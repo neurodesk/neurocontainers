@@ -38,10 +38,11 @@ def rewrite_release_assets(text, config, repo, tag, new_version, session):
             raise ValueError(f"unexpected download URL for {name}")
         # Keep recipe.version in the tag and, when present, the filename,
         # even when an upstream filename also contains a hash.
-        tag_template = tag.replace(new_version, "{{ context.version }}")
-        if "{{ context.version }}" not in tag_template:
+        version_template = "{{ context." + config.get("version_variable", "version") + " }}"
+        tag_template = tag.replace(new_version, version_template)
+        if version_template not in tag_template:
             raise ValueError(f"tag {tag} does not contain recipe version {new_version}")
-        filename = asset["name"].replace(new_version, "{{ context.version }}")
+        filename = asset["name"].replace(new_version, version_template)
         template_url = (
             f"https://github.com/{repo}/releases/download/{tag_template}/{filename}"
         )

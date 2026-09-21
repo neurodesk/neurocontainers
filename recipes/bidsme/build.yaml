@@ -1,5 +1,5 @@
 name: bidsme
-version: "1.11.0"
+version: "1.9.6"
 architectures:
   - x86_64
   - aarch64
@@ -13,6 +13,7 @@ structured_readme:
   documentation: https://github.com/CyclotronResearchCentre/bidsme/blob/dev/doc/cli-interface.md
   citation: ''
 auto_update:
+  container_version: "bidsme"
   method: sources
   sources:
     - id: bidsme

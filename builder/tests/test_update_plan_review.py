@@ -16,12 +16,6 @@ from builder import check_version
 from tools import one_pr_release
 
 
-@pytest.mark.parametrize("tag", ["1.2.0.post1", "v1.2.0.post2", "1.2.0.r1"])
-def test_direct_upstream_post_release_cannot_become_a_container_label(tag):
-    assert check_version.tag_to_recipe_version(tag) is None
-    assert check_version.tag_to_recipe_version("v1.3.0") == "1.3.0"
-
-
 def write_recipe(tmp_path: Path, recipe: dict, fulltest: dict) -> Path:
     root = tmp_path / recipe["name"]
     root.mkdir()
@@ -40,6 +34,7 @@ def tagged_recipe() -> dict:
         "variables": {"image_tag": "release-v2.0.0-r4"},
         "auto_update": {
             "method": "sources",
+            "container_version": False,
             "sources": [
                 {
                     "id": "image",
@@ -66,6 +61,7 @@ def artifact_recipe() -> dict:
         "variables": {"runtime_version": "2.0.0"},
         "auto_update": {
             "method": "sources",
+            "container_version": False,
             "sources": [
                 {
                     "id": "binary",
@@ -147,6 +143,7 @@ def test_apt_version_cannot_downgrade_a_source_plan(tmp_path: Path) -> None:
         "variables": {"apt_version": "2:1.0-1"},
         "auto_update": {
             "method": "sources",
+            "container_version": False,
             "sources": [
                 {
                     "id": "package",
@@ -190,6 +187,7 @@ def test_coupled_metadata_version_cannot_downgrade_a_source_plan(
         },
         "auto_update": {
             "method": "sources",
+            "container_version": False,
             "sources": [
                 {
                     "id": "source",
@@ -238,7 +236,7 @@ def test_release_tag_and_software_version_advance_together(tmp_path, release):
     recipe = {
         "name": "demo", "version": "7.0.0",
         "variables": {"source_tag": "v2.0.0", "software_version": "2.0.0"},
-        "auto_update": {"method": "sources", "sources": [{
+        "auto_update": {"method": "sources", "container_version": False, "sources": [{
             "id": "source", "method": "github_release", "repo": "example/demo",
             "target": {"variable": "source_tag", "value": "tag",
                        "variables": {"software_version": "version"}},
@@ -266,7 +264,7 @@ def test_release_tag_and_software_version_advance_together(tmp_path, release):
         "source_tag": "v2.1.0", "software_version": "2.1.0",
     }
     assert suite["software_version"] == "2.1.0"
-    assert suite["version"] == changed["version"] == "7.1.0"
+    assert suite["version"] == changed["version"] == "7.0.0"
     assert plan_sources(path, observations={"source": observation}) is None
 
 
@@ -312,6 +310,7 @@ def test_http_digest_variable_uses_plain_sha256_protocol() -> None:
         "variables": {"archive_sha256": "sha256:" + "a" * 64},
         "auto_update": {
             "method": "sources",
+            "container_version": False,
             "sources": [
                 {
                     "id": "archive",
@@ -349,6 +348,7 @@ def test_shared_macro_is_part_of_candidate_promotion_fingerprint(
                 "version": "1.0.0",
                 "auto_update": {
                     "method": "sources",
+                    "container_version": False,
                     "local": ["macros/shared/install.yaml"],
                     "sources": [],
                 },
@@ -386,6 +386,7 @@ def test_moving_source_head_reuses_existing_revision_pr_without_using_cap(
                     "variables": {"commit": "a" * 40},
                     "auto_update": {
                         "method": "sources",
+                        "container_version": False,
                         "sources": [
                             {
                                 "id": "source",

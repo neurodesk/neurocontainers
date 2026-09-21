@@ -85,3 +85,47 @@ def test_named_arm64_variant_is_a_normal_container_release() -> None:
             "apptainer_args": ["--cleanenv"],
         }
     }
+
+
+def test_packaged_script_and_shared_input_changes_advance_build_date(tmp_path, monkeypatch):
+    import os
+    import subprocess
+    import yaml
+    from builder.release import build_date_for_recipe
+    from tools import one_pr_release
+
+    monkeypatch.delenv('BUILDDATE', raising=False)
+    monkeypatch.setattr(one_pr_release, 'REPO_ROOT', tmp_path)
+    recipe_dir = tmp_path / 'recipes' / 'demo'
+    recipe_dir.mkdir(parents=True)
+    shared_dir = tmp_path / 'macros' / 'shared'
+    shared_dir.mkdir(parents=True)
+    (recipe_dir / 'build.yaml').write_text(yaml.safe_dump({
+        'name': 'demo', 'version': '7.1.0',
+        'auto_update': {'method': 'sources', 'container_version': False, 'local': ['macros/shared']},
+    }))
+    script = recipe_dir / 'launcher.sh'
+    script.write_text('echo first\n')
+    shared = shared_dir / 'install.sh'
+    shared.write_text('echo dependency\n')
+
+    def git(*args, date=None):
+        environment = dict(os.environ)
+        if date:
+            environment.update(GIT_AUTHOR_DATE=f'{date}T12:00:00+00:00',
+                               GIT_COMMITTER_DATE=f'{date}T12:00:00+00:00')
+        subprocess.run(['git', *args], cwd=tmp_path, env=environment,
+                       check=True, capture_output=True)
+
+    git('init')
+    git('config', 'user.name', 'Test')
+    git('config', 'user.email', 'test@example.org')
+    git('add', '.')
+    git('commit', '-m', 'Initial recipe', date='2026-09-19')
+    for date, file in [('2026-09-20', script), ('2026-09-21', shared)]:
+        file.write_text(file.read_text() + 'echo updated\n')
+        git('add', '.')
+        git('commit', '-m', 'Update packaged input', date=date)
+        expected = date.replace('-', '')
+        assert build_date_for_recipe(tmp_path, recipe_dir) == expected
+        assert one_pr_release.build_date('demo') == expected

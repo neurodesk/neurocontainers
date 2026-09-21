@@ -1,7 +1,7 @@
 # AGENTS.md - NeuroContainers Development Guide
 
 ## Does and Don't
-- Use `{{ context.version }}` for the container release. Bind installed software versions, source commits and artifact digests to explicit recipe variables so dependency updates can advance independently.
+- Match the container version to the primary upstream software version: pad `7.1` to `7.1.0`, preserve `7.1.3`, and use the build date for rebuilds. Bind exact installed versions, source commits, and artifact digests to recipe variables. Declare `auto_update.container_version` for every sources policy; see [version policies](workflows/AUTO_UPDATES.md#software-versions-and-dated-container-builds).
 - always use `{{ get_file("filename") }}` to reference declared files in run directives instead of using `wget` or `curl` directly
 - the home directory will not be available during container runtime! Files cannot be stored under /home if they are needed during runtime!
 - make sure that every build.yaml recipe has a base64 encoded icon - first try to find the official icon, if none exist make one up based on the tool description.
@@ -257,7 +257,8 @@ The validation schema matches the Zod schema from `neurocontainers-ui`.
    validation fails without them.
 3. Configure `auto_update` with explicit targets for the installed software and
    shared dependencies. Bind source variables in install commands or declared
-   downloads; keep container release numbering independent. For rolling sources,
+   downloads; derive the container label from the primary software version. Dependency-only
+   updates retain that label and use the build date. For rolling sources,
    pin and track full commits or artifact digests. Locally maintained recipes use
    a `sources` policy with `local` repository inputs. Every recipe must pass
    `python -m builder.audit_updates`; manual and notification-only policies fail.

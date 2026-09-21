@@ -20,6 +20,7 @@ variables:
   upstream_commit: "0ef4bb446129a71c69684c186048e87c0abbbd9b"
 
 auto_update:
+  container_version: false
   method: sources
   sources:
   - id: upstream

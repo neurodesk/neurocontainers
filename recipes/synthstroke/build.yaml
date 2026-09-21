@@ -171,6 +171,7 @@ files:
       print(f"  synthstroke --input T1w.nii.gz --outdir ./output/ --weights {weights} --tta")
 
 auto_update:
+  container_version: false
   method: sources
   sources:
   - id: upstream

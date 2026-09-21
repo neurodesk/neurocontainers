@@ -10,17 +10,17 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 import tempfile
 from pathlib import Path
 
 import yaml
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-def mapping_nodes(text: str) -> dict[str, tuple[yaml.Node, yaml.Node]]:
-    root = yaml.compose(text)
-    if not isinstance(root, yaml.MappingNode):
-        raise ValueError("recipe must contain a YAML mapping")
-    return {key.value: (key, value) for key, value in root.value}
+from builder.yaml_edit import mapping_nodes, set_scalar
 
 
 def set_section(text: str, key: str, value: object) -> str:
@@ -30,30 +30,6 @@ def set_section(text: str, key: str, value: object) -> str:
         return text.rstrip() + "\n\n" + rendered
     key_node, value_node = nodes[key]
     return text[:key_node.start_mark.index] + rendered + "\n" + text[value_node.end_mark.index:]
-
-
-def set_scalar(text: str, parent: str | None, key: str, value: str) -> str:
-    nodes = mapping_nodes(text)
-    if parent is None:
-        if key not in nodes:
-            return text.rstrip() + "\n\n" + yaml.safe_dump({key: value}, sort_keys=False)
-        node = nodes[key][1]
-    elif parent not in nodes:
-        # Variables must precede expressions that reference them during rendering.
-        return yaml.safe_dump({parent: {key: value}}, sort_keys=False) + "\n" + text
-    else:
-        node = nodes[parent][1]
-        if not isinstance(node, yaml.MappingNode):
-            raise ValueError(f"{parent} must be a mapping")
-        match = next((v for k, v in node.value if k.value == key), None)
-        if match is None:
-            start = text.rfind("\n", 0, node.start_mark.index) + 1
-            line = " " * node.start_mark.column + key + ": " + json.dumps(value) + "\n"
-            return text[:start] + line + text[start:]
-        node = match
-    if not isinstance(node, yaml.ScalarNode):
-        raise ValueError(f"{parent}.{key} must be a scalar")
-    return text[:node.start_mark.index] + json.dumps(value) + text[node.end_mark.index:]
 
 
 def remove_items(text: str, *, commands: list[str], files: list[str]) -> str:
@@ -146,6 +122,11 @@ def migrate(recipe_dir: Path, plan: dict, apply: bool) -> bool:
     policy = {"method": "sources", "sources": plan["sources"]}
     if "local" in plan:
         policy["local"] = plan["local"]
+    from tools.migrate_container_versions import primary_version
+
+    document = yaml.safe_load(updated)
+    document["auto_update"] = policy
+    policy["container_version"] = primary_version(document)
     updated = set_section(updated, "auto_update", policy)
     if "container_version" in plan:
         updated = set_scalar(updated, None, "version", plan["container_version"])
