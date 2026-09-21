@@ -1,5 +1,5 @@
 name: deeplabcut
-version: 2.3.11
+version: 3.0.1
 architectures:
   - x86_64
 structured_readme:

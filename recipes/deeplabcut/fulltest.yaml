@@ -1,5 +1,5 @@
 name: deeplabcut
-version: 2.3.11
+version: 3.0.1
 default_timeout: 60
 tests:
   - name: deeplabcut imports
