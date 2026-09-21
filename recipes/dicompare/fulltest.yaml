@@ -11,7 +11,7 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 
 name: dicompare
-version: 0.5.4
+version: 0.15.2
 
 required_files:
   - dataset: ds000001
@@ -341,100 +341,22 @@ tests:
     command: "bash -lc 'ls -d /opt/dicompare/dist/validation-functions'"
     expected_output_contains: "/opt/dicompare/dist/validation-functions"
 
-  - name: validate_bvalue_shells function exists
-    description: Verify b-value shells validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_bvalue_shells.json'"
-    expected_output_contains: "validate_bvalue_shells"
-
-  - name: validate_bvalue_shells is valid JSON
-    description: Verify b-value shells validation function can be parsed
-    command: "bash -lc 'cat /opt/dicompare/dist/validation-functions/validate_bvalue_shells.json | python3 -c \"import sys,json; json.load(sys.stdin); print('\"'\"'valid'\"'\"')\"'"
-    expected_output_contains: "valid"
-
-  - name: validate_diffusion_directions function exists
-    description: Verify diffusion directions validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_diffusion_directions.json'"
-    expected_output_contains: "validate_diffusion_directions"
-
-  - name: validate_echo_count function exists
-    description: Verify echo count validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_echo_count.json'"
-    expected_output_contains: "validate_echo_count"
-
-  - name: validate_echo_times function exists
-    description: Verify echo times validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_echo_times.json'"
-    expected_output_contains: "validate_echo_times"
-
-  - name: validate_exact_echo_count function exists
-    description: Verify exact echo count validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_exact_echo_count.json'"
-    expected_output_contains: "validate_exact_echo_count"
-
-  - name: validate_first_echo function exists
-    description: Verify first echo validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_first_echo.json'"
-    expected_output_contains: "validate_first_echo"
-
-  - name: validate_flip_angle function exists
-    description: Verify flip angle validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_flip_angle.json'"
-    expected_output_contains: "validate_flip_angle"
-
-  - name: validate_image_slices function exists
-    description: Verify image slices validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_image_slices.json'"
-    expected_output_contains: "validate_image_slices"
-
-  - name: validate_image_type function exists
-    description: Verify image type validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_image_type.json'"
-    expected_output_contains: "validate_image_type"
-
-  - name: validate_magnitude_phase_pairs function exists
-    description: Verify magnitude phase pairs validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_magnitude_phase_pairs.json'"
-    expected_output_contains: "validate_magnitude_phase_pairs"
-
-  - name: validate_mra_type function exists
-    description: Verify MRA type validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_mra_type.json'"
-    expected_output_contains: "validate_mra_type"
-
-  - name: validate_phase_encoding_polarity function exists
-    description: Verify phase encoding polarity validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_phase_encoding_polarity.json'"
-    expected_output_contains: "validate_phase_encoding_polarity"
-
-  - name: validate_pixel_bandwidth function exists
-    description: Verify pixel bandwidth validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_pixel_bandwidth.json'"
-    expected_output_contains: "validate_pixel_bandwidth"
-
-  - name: validate_pixel_spacing function exists
-    description: Verify pixel spacing validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_pixel_spacing.json'"
-    expected_output_contains: "validate_pixel_spacing"
-
-  - name: validate_repetition_time function exists
-    description: Verify repetition time validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_repetition_time.json'"
-    expected_output_contains: "validate_repetition_time"
-
-  - name: validate_slice_count function exists
-    description: Verify slice count validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_slice_count.json'"
-    expected_output_contains: "validate_slice_count"
-
-  - name: validate_temporal_positions function exists
-    description: Verify temporal positions validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_temporal_positions.json'"
-    expected_output_contains: "validate_temporal_positions"
-
-  - name: validate_voxel_shape function exists
-    description: Verify voxel shape validation function is present
-    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_voxel_shape.json'"
-    expected_output_contains: "validate_voxel_shape"
+  - name: Indexed validation functions are bundled
+    description: Verify every function advertised by the application is present and contains a Python implementation.
+    command: |
+      node <<'JS'
+      const assert = require('node:assert/strict');
+      const fs = require('node:fs');
+      const root = '/opt/dicompare/dist/validation-functions';
+      const names = JSON.parse(fs.readFileSync(root + '/index.json', 'utf8'));
+      assert(Array.isArray(names) && names.length > 0, 'Validation index is empty');
+      for (const name of names) {
+        const definition = JSON.parse(fs.readFileSync(root + '/' + name, 'utf8'));
+        assert(typeof definition.implementation === 'string' && definition.implementation.trim(), name);
+      }
+      console.log('All indexed validation functions are bundled');
+      JS
+    expected_output_contains: "All indexed validation functions are bundled"
 
   - name: uniform_echo_spacing function exists
     description: Verify uniform echo spacing validation function is present
@@ -523,7 +445,7 @@ tests:
 
   - name: Web server serves validation functions
     description: Test that serve returns validation function
-    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3007 >/tmp/dicompare-3007.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3007/validation-functions/validate_echo_count.json || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3007 >/tmp/dicompare-3007.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3007/validation-functions/echo_count.json || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
@@ -559,9 +481,9 @@ tests:
   # ==========================================================================
   # VALIDATION FUNCTION CONTENT VALIDATION
   # ==========================================================================
-  - name: validate_echo_count has Python code
+  - name: echo_count has Python code
     description: Verify validation function contains implementation
-    command: "bash -lc 'cat /opt/dicompare/dist/validation-functions/validate_echo_count.json | python3 -c \"import sys,json; d=json.load(sys.stdin); print('\"'\"'implementation'\"'\"' if '\"'\"'implementation'\"'\"' in d else '\"'\"'missing'\"'\"')\"'"
+    command: "bash -lc 'cat /opt/dicompare/dist/validation-functions/echo_count.json | python3 -c \"import sys,json; d=json.load(sys.stdin); print('\"'\"'implementation'\"'\"' if '\"'\"'implementation'\"'\"' in d else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "implementation"
 
   - name: validate_flip_angle has Python code
@@ -624,9 +546,9 @@ tests:
 
   - name: Export validation function to test_output
     description: Copy a validation function file to test output directory
-    command: "bash -lc 'cp /opt/dicompare/dist/validation-functions/validate_echo_count.json test_output/'"
+    command: "bash -lc 'cp /opt/dicompare/dist/validation-functions/echo_count.json test_output/'"
     validate:
-      - output_exists: ${output_dir}/validate_echo_count.json
+      - output_exists: ${output_dir}/echo_count.json
 
   - name: Exported schema is readable
     description: Verify exported schema can be read
