@@ -1,5 +1,6 @@
 name: deeplabcut
-version: 2.3.11
+version: 3.0.1
+tensorflow_version: 2.15.1
 default_timeout: 60
 tests:
   - name: deeplabcut imports
@@ -300,5 +301,5 @@ tests:
     command: python -c 'from importlib.metadata import version; assert version("wandb") == "0.17.9"'
     expected_exit_code: 0
   - name: TensorFlow reports the expected version
-    command: python -c 'from importlib.metadata import version; assert version("tensorflow") == "2.12.0"'
+    command: python -c 'from importlib.metadata import version; assert version("tensorflow") == "${tensorflow_version}"'
     expected_exit_code: 0

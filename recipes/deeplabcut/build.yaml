@@ -1,5 +1,9 @@
 name: deeplabcut
-version: 2.3.11
+version: 3.0.1
+variables:
+  tensorflow_version: 2.15.1
+  pytables_version: 3.10.1
+
 architectures:
   - x86_64
 structured_readme:
@@ -70,12 +74,12 @@ build:
             - nb_conda
             - notebook<7.0.0
             - ffmpeg
-            - pytables==3.8.0
+            - pytables=={{ context.pytables_version }}
             - pip:
               - torch
               - torchvision
               - deeplabcut[gui,modelzoo,tf]=={{ context.version }}
-              - tensorflow==2.12.0
+              - tensorflow=={{ context.tensorflow_version }}
               - wandb==0.17.9
     - copy: deeplabcut_env.yaml /opt/deeplabcut_env.yaml
     - template:
