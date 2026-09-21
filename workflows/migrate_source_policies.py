@@ -122,6 +122,11 @@ def migrate(recipe_dir: Path, plan: dict, apply: bool) -> bool:
     policy = {"method": "sources", "sources": plan["sources"]}
     if "local" in plan:
         policy["local"] = plan["local"]
+    from tools.migrate_container_versions import primary_version
+
+    document = yaml.safe_load(updated)
+    document["auto_update"] = policy
+    policy["container_version"] = primary_version(document)
     updated = set_section(updated, "auto_update", policy)
     if "container_version" in plan:
         updated = set_scalar(updated, None, "version", plan["container_version"])

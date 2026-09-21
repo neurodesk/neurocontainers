@@ -38,6 +38,12 @@ def test_migration_preserves_inputs_and_release_records_and_replays(tmp_path, up
     assert release.read_bytes() == before[release]
     assert migrate(tmp_path, apply=True)['changes'] == []
 
+    # A retry must also recover an interruption between the two file writes.
+    suite.write_bytes(before[suite])
+    migrate(tmp_path, apply=True)
+    assert yaml.safe_load(suite.read_text())['version'] == label
+    assert migrate(tmp_path, apply=True)['changes'] == []
+
 
 def test_direct_short_version_keeps_exact_download_and_test_versions(tmp_path):
     from builder.template import RenderContext, TemplateRenderer
@@ -56,6 +62,9 @@ files:
 ''')
     suite = directory / 'fulltest.yaml'
     suite.write_text('name: demo\nversion: "7.1"\ntests:\n  - command: demo --version\n    expected_output_contains: "${version}"\n')
+    original_suite = suite.read_text()
+    migrate(tmp_path, apply=True)
+    suite.write_text(original_suite)
     migrate(tmp_path, apply=True)
     recipe = yaml.safe_load(path.read_text())
     assert recipe['version'] == '7.1.0'
@@ -65,3 +74,24 @@ files:
     assert tests['upstream_version'] == '7.1'
     assert tests['tests'][0]['expected_output_contains'] == '${upstream_version}'
     assert migrate(tmp_path, apply=True)['changes'] == []
+
+
+def test_source_policy_helper_declares_primary_version(tmp_path):
+    from builder.update_sources import validate_update_config
+    from workflows.migrate_source_policies import migrate as migrate_sources
+
+    directory = tmp_path / "demo"
+    directory.mkdir()
+    path = directory / "build.yaml"
+    path.write_text("name: demo\nversion: 7.1.0\nauto_update: {method: pypi, package: demo}\n")
+    (directory / "fulltest.yaml").write_text("name: demo\nversion: 7.1.0\ntests: []\n")
+    plan = {
+        "variables": {"upstream_version": "7.1"},
+        "sources": [{"id": "demo", "method": "pypi", "package": "demo",
+                     "target": {"variable": "upstream_version"}}],
+        "replacements": [], "files": [], "suite_replacements": [], "suite_scalars": {},
+    }
+    migrate_sources(directory, plan, apply=True)
+    config = yaml.safe_load(path.read_text())["auto_update"]
+    assert config["container_version"] == "demo"
+    validate_update_config(config)

@@ -41,7 +41,7 @@ def migrate(path: Path, apply: bool) -> bool:
         updated = updated.replace("packages upstream QSMxT {{ context.version }}", "packages upstream QSMxT {{ context.upstream_version }}")
         source = {"id": recipe["name"], **policy,
                   "target": {"variable": "upstream_version", "value": "version", "fulltest_variable": "upstream_version"}}
-        policy = {"method": "sources", "sources": [source]}
+        policy = {"method": "sources", "container_version": recipe["name"], "sources": [source]}
         suite = set_scalar(suite, None, "upstream_version", version)
         if recipe["name"] == "qsmxt":
             suite = suite.replace("      qsmxt --version\n", "      qsmxt --version | grep -F '${upstream_version}'\n")

@@ -11,6 +11,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from string import Template
 
 import yaml
 
@@ -21,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
 from builder.update_plan import VERSIONLESS_METHODS, rewrite_scalar
 from builder.versioning import bind_upstream_version, container_version, software_version
 from builder.yaml_edit import set_scalar
+from workflows.migrate_source_policies import write_atomic
 
 # Bundles and locally maintained software have their own release identity.
 # These inputs are dependencies, not a primary application's version.
@@ -95,8 +97,11 @@ def migrate(root: Path, *, apply: bool = False) -> dict:
         if config["method"] != "sources" and (variable := yaml.safe_load(updated)["auto_update"].get("version_variable")):
             if variable not in suite:
                 suite_updated = suite_updated.replace("${version}", "${" + variable + "}")
-                suite_updated = set_scalar(suite_updated, None, variable, current)
-        if current != version:
+                suite_updated = set_scalar(
+                    suite_updated, None, variable,
+                    str(yaml.safe_load(updated)["variables"][variable]),
+                )
+        if Template(str(suite["version"])).safe_substitute(suite) != version:
             # Preserve software assertions even if the suite previously reused
             # its container identity as an installed-version scalar.
             if re.fullmatch(r"\$\{\w+\}", str(suite["version"])):
@@ -110,7 +115,7 @@ def migrate(root: Path, *, apply: bool = False) -> dict:
                             "driver": yaml.safe_load(updated)["auto_update"].get("container_version")})
     if apply:
         for path, contents in writes.items():
-            path.write_text(contents)
+            write_atomic(path, contents)
     return {"changes": changes, "applied": apply}
 
 
