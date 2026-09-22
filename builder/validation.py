@@ -581,6 +581,7 @@ class AutoUpdate:
     assets: Optional[Dict[str, str]] = attrs.field(default=None)
     tag_variable: Optional[str] = attrs.field(default=None)
     mode: Optional[str] = attrs.field(default=None)
+    frozen: Optional[bool] = attrs.field(default=None)
     reason: Optional[str] = attrs.field(default=None)
 
     def __attrs_post_init__(self):

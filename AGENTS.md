@@ -262,6 +262,8 @@ The validation schema matches the Zod schema from `neurocontainers-ui`.
    pin and track full commits or artifact digests. Locally maintained recipes use
    a `sources` policy with `local` repository inputs. Every recipe must pass
    `python -m builder.audit_updates`; manual and notification-only policies fail.
+   A maintainer declining an upstream sets `auto_update.frozen: true` with a
+   `reason`, which keeps the declared sources and stops the updater.
    Read [automatic update policies](workflows/AUTO_UPDATES.md) when selecting a
    provider, tracking compiled artifacts or adding shared macros. OpenRecon
    consumers must include its four shared dependency sources.

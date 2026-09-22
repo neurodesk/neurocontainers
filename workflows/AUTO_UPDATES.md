@@ -284,6 +284,34 @@ its installed source, a published binary feed, or repository-local build inputs.
 A policy that only changes a label, unused variable, or runtime directory fails
 validation.
 
+## Freeze a recipe
+
+A maintainer who declines an upstream for the time being sets `frozen: true` and
+records why. The recipe keeps its declared sources, so the audit still checks the
+bindings and resuming updates means deleting two lines.
+
+```yaml
+auto_update:
+  frozen: true
+  reason: >-
+    Locally maintained app; its dependency pins are held until a maintainer
+    revalidates the runtime against newer upstreams.
+  method: sources
+  container_version: false
+  sources:
+    - id: application
+      method: pypi
+      package: example-tool
+      target:
+        variable: upstream_version
+```
+
+The scheduled updater reports a frozen recipe as `frozen` with that reason and
+contacts no upstream service for it. The coverage audit reports it as `frozen`
+rather than `automatic`, so a held recipe is visible instead of silently absent.
+A reason shorter than 20 characters, or `frozen: false`, fails validation. Closing
+an update PR suppresses only that version; freezing the policy stops the next one.
+
 FieldTrip, PhysIO, and SamSrfX track their published standalone binaries. A newer
 MATLAB source release does not imply a newer standalone binary exists. Producing
 those binaries requires MATLAB Compiler and the relevant licensed toolboxes.

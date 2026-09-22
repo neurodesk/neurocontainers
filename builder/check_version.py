@@ -688,6 +688,10 @@ def main():
             row["current"] = str(data.get("version", ""))
             validate_update_policy(data, recipe_path=path)
             config = data["auto_update"]
+            if config.get("frozen"):
+                row.update(status="frozen", detail=config["reason"])
+                print(f"{row['recipe']}: {row['status']} {row['detail']}", flush=True)
+                continue
             if config["method"] == "sources":
                 plan = plan_sources(path, session)
                 if plan is None:

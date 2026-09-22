@@ -61,9 +61,10 @@ def source_config(source: dict) -> dict:
 def validate_sources_config(config: dict) -> None:
     from .update_observations import validate_source
 
-    if set(config) - {"method", "sources", "local", "container_version"}:
+    if set(config) - {"method", "sources", "local", "container_version", "frozen", "reason"}:
         raise ValueError(
-            "sources policy accepts only method, sources, local and container_version"
+            "sources policy accepts only method, sources, local, container_version, "
+            "frozen and reason"
         )
     sources = config.get("sources", [])
     if not isinstance(sources, list) or (not sources and "local" not in config):

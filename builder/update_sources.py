@@ -19,6 +19,7 @@ class UpstreamRelease:
 
 
 SOURCE_FIELDS = {
+    "frozen",
     "version_variable",
     "version_regex",
     "version_scheme",
@@ -63,6 +64,16 @@ def validate_update_config(config: dict) -> None:
     """Reject missing sources, typos, and unexplained manual update policies."""
     if not isinstance(config, dict):
         raise ValueError("auto_update must be a mapping")
+    if "frozen" in config:
+        if config["frozen"] is not True:
+            raise ValueError(
+                "auto_update.frozen must be true; delete the key to resume updates"
+            )
+        if len(str(config.get("reason", "")).strip()) < 20:
+            raise ValueError(
+                "auto_update.frozen must record why this recipe holds its pins "
+                "in at least 20 characters"
+            )
     method = config.get("method")
     if method == "sources":
         from .update_plan import validate_sources_config
@@ -99,9 +110,9 @@ def validate_update_config(config: dict) -> None:
                 except re.error as exc:
                     raise ValueError(f"invalid asset pattern for {name}") from exc
             continue
-        if key == "include_prereleases":
+        if key in {"include_prereleases", "frozen"}:
             if not isinstance(value, bool):
-                raise ValueError("auto_update.include_prereleases must be a boolean")
+                raise ValueError(f"auto_update.{key} must be a boolean")
             continue
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"auto_update.{key} must be a nonempty string")

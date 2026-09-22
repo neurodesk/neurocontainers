@@ -433,3 +433,32 @@ def test_unreachable_upstream_still_fails_the_run_for_recipe_defects():
     assert not raise_and_classify(ValueError("Slicer package release or architecture metadata disagrees"))
     assert not raise_and_classify(KeyError("upstream_version"))
     assert not raise_and_classify(requests.exceptions.HTTPError("no response attached"))
+
+
+def test_frozen_recipe_declines_an_available_upstream_bump(tmp_path, monkeypatch):
+    import json
+
+    reason = "Maintainer holds these pins until the app is revalidated upstream."
+    write_update_recipe(
+        tmp_path, "held", {"method": "pypi", "package": "demo", "frozen": True, "reason": reason}
+    )
+    write_update_recipe(tmp_path, "tracked", {"method": "pypi", "package": "demo"})
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(check_version, "REPO", None)
+    monkeypatch.setattr(
+        check_version,
+        "latest_version",
+        lambda *args: SimpleNamespace(
+            version="2.0.0", tag="2.0.0", url="https://pypi.org/project/demo/2.0.0/"
+        ),
+    )
+    monkeypatch.setattr(
+        check_version.sys,
+        "argv",
+        ["check_version", "--dry-run", "--json", "report.json"],
+    )
+    assert check_version.main() == 0
+    rows = json.loads((tmp_path / "report.json").read_text())
+    assert [row["status"] for row in rows] == ["frozen", "would-open"]
+    assert rows[0]["detail"] == reason
+    assert rows[0]["upstream"] == ""
