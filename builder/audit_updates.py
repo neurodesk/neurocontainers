@@ -296,11 +296,12 @@ def audit(root: Path) -> list[dict]:
             validate_update_policy(recipe, recipe_path=path)
             config = recipe["auto_update"]
             row.update(
-                status="automatic",
+                status="frozen" if config.get("frozen") else "automatic",
                 method=config["method"],
                 source=config.get("repo")
                 or config.get("package")
                 or config.get("url", ""),
+                reason=config.get("reason", ""),
             )
         except (ValueError, yaml.YAMLError) as exc:
             row.update(status="error", reason=str(exc))

@@ -321,3 +321,60 @@ def test_oci_tracking_must_match_the_imported_image():
     recipe["build"]["base-image"] = "registry.example/unrelated:{{ context.version }}"
     with pytest.raises(ValueError, match="source download"):
         validate_update_policy(recipe)
+
+
+FROZEN_REASON = "Maintainer holds these pins until the app is revalidated upstream."
+
+
+def write_frozen_recipe(tmp_path: Path, policy: dict) -> Path:
+    recipe_dir = tmp_path / "held"
+    recipe_dir.mkdir()
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump({
+        "name": "held", "version": "1.0.0",
+        "auto_update": policy,
+        "build": {"directives": [{"run": "pip install demo=={{ context.version }}"}]},
+    }))
+    (recipe_dir / "fulltest.yaml").write_text("name: held\nversion: 1.0.0\ntests: []\n")
+    return recipe_dir
+
+
+def test_frozen_recipe_keeps_its_declared_tracking_and_audits_as_frozen(tmp_path):
+    write_frozen_recipe(tmp_path, {
+        "method": "pypi", "package": "demo", "frozen": True, "reason": FROZEN_REASON,
+    })
+    row = audit(tmp_path)[0]
+    assert row["status"] == "frozen"
+    assert row["reason"] == FROZEN_REASON
+    assert row["source"] == "demo"
+
+
+def test_freezing_a_recipe_requires_a_recorded_reason(tmp_path):
+    write_frozen_recipe(tmp_path, {"method": "pypi", "package": "demo", "frozen": True})
+    row = audit(tmp_path)[0]
+    assert row["status"] == "error"
+    assert "must record why" in row["reason"]
+
+
+def test_a_frozen_recipe_still_needs_a_working_source_binding(tmp_path):
+    recipe_dir = write_frozen_recipe(tmp_path, {
+        "method": "pypi", "package": "demo", "frozen": True, "reason": FROZEN_REASON,
+    })
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump({
+        "name": "held", "version": "1.0.0",
+        "auto_update": {
+            "method": "pypi", "package": "demo", "frozen": True, "reason": FROZEN_REASON,
+        },
+        "build": {"directives": [{"run": "pip install demo"}]},
+    }))
+    row = audit(tmp_path)[0]
+    assert row["status"] == "error"
+    assert "source download" in row["reason"]
+
+
+def test_resuming_updates_removes_the_key_rather_than_setting_it_false(tmp_path):
+    write_frozen_recipe(tmp_path, {
+        "method": "pypi", "package": "demo", "frozen": False, "reason": FROZEN_REASON,
+    })
+    row = audit(tmp_path)[0]
+    assert row["status"] == "error"
+    assert "delete the key to resume updates" in row["reason"]
