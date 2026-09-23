@@ -53,6 +53,7 @@ auto_update:
   local: []
   sources:
   - id: r-base
+    dependency: true
     method: webpage
     url: https://api.anaconda.org/package/conda-forge/r-base
     version_regex: '"latest_version":\s*"(?P<version>\d+(?:\.\d+)+)"'

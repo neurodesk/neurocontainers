@@ -25,6 +25,7 @@ auto_update:
         variable: upstream_version
         fulltest_variable: upstream_version
     - id: miniforge
+      dependency: true
       method: github_release
       repo: conda-forge/miniforge
       target:

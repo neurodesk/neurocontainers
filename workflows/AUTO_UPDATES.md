@@ -269,6 +269,44 @@ or Last-Modified value. Only an explicit `304 Not Modified` reuses the previous
 verified digest. Servers without validators are downloaded and hashed again.
 The scheduled workflow preserves this metadata cache between runs.
 
+## Dependency sources
+
+A source that pins a library rather than the software the recipe is named for
+sets `dependency: true`. The updater still tracks and still writes it, but a
+change to it alone plans nothing: no PR, no container rebuild. Its new pin is
+written the next time another source in the same recipe moves, so a dependency
+always ships with a release that is being built and tested anyway.
+
+```yaml
+auto_update:
+  method: sources
+  container_version: false
+  sources:
+    - id: heudiconv
+      method: pypi
+      package: heudiconv
+      target:
+        variable: heudiconv_version
+        fulltest_variable: heudiconv_version
+    - id: traits
+      method: pypi
+      package: traits
+      dependency: true
+      target:
+        variable: traits_version
+        fulltest_variable: traits_version
+```
+
+Use it for transitive pins held only for compatibility, such as bidstools
+pinning `traits` for heudiconv. Do not use it for the software a user loads the
+container to run; that source must keep triggering its own updates.
+
+A recipe needs at least one source that still triggers. Marking every source a
+dependency, or marking the source that drives `container_version`, fails
+validation: a recipe that can never update should say so with `frozen` and a
+reason instead of going quiet. `dependency: false` also fails; delete the key to
+let a source trigger again.
+
 ## Local code and compiled binaries
 
 Recipes consisting of repository-local scripts use `method: sources` with

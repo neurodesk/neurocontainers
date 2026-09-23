@@ -30,18 +30,21 @@ auto_update:
         variable: clinicadl_version
         fulltest_variable: clinicadl_version
     - id: clinica
+      dependency: true
       method: pypi
       package: clinica
       target:
         variable: clinica_version
         fulltest_variable: clinica_version
     - id: setuptools
+      dependency: true
       method: pypi
       package: setuptools
       target:
         variable: setuptools_version
         fulltest_variable: setuptools_version
     - id: traits
+      dependency: true
       method: pypi
       package: traits
       target:
@@ -49,6 +52,7 @@ auto_update:
         fulltest_variable: traits_version
 
     - id: freesurfer
+      dependency: true
       method: github_tags
       repo: freesurfer/freesurfer
       version_regex: '^v?(?P<version>7\.4\.\d+)$'

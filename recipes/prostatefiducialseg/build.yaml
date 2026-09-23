@@ -48,24 +48,28 @@ auto_update:
       variable: upstream_commit
       fulltest_variable: upstream_commit
   - id: openrecon_ismrmrd
+    dependency: true
     method: github_release
     repo: ismrmrd/ismrmrd
     target:
       variable: openrecon_ismrmrd_version
       value: version
   - id: openrecon_siemens
+    dependency: true
     method: github_commit
     repo: ismrmrd/siemens_to_ismrmrd
     ref: HEAD
     target:
       variable: openrecon_siemens_commit
   - id: openrecon_python_tools
+    dependency: true
     method: github_commit
     repo: ismrmrd/ismrmrd-python-tools
     ref: HEAD
     target:
       variable: openrecon_python_tools_commit
   - id: openrecon_server
+    dependency: true
     method: github_commit
     repo: astewartau/python-ismrmrd-server
     ref: fix/ismrmrd-compatibility
@@ -92,6 +96,7 @@ auto_update:
     target:
       file: seedseg-model-seed123.onnx
   - id: onnxruntime_gpu
+    dependency: true
     method: pypi
     package: onnxruntime-gpu
     version_regex: '^(?P<version>1[.](?:[0-9]|1[0-9]|2[0-3])[.][0-9]+)$'

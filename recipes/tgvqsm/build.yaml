@@ -9,6 +9,7 @@ auto_update:
   method: sources
   sources:
   - id: cmake
+    dependency: true
     method: github_release
     repo: Kitware/CMake
     version_regex: '^v(?P<version>3[.][0-9]+[.][0-9]+)$'
@@ -20,11 +21,13 @@ auto_update:
     target:
       file: source
   - id: bet2
+    dependency: true
     method: github_commit
     repo: liangfu/bet2
     target:
       variable: bet2_revision
   - id: dcm2niix
+    dependency: true
     method: github_release
     repo: rordenlab/dcm2niix
     target:

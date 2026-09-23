@@ -17,6 +17,9 @@ show_in_menu: false
 show_in_applist: false
 
 auto_update:
+  frozen: true
+  reason: >-
+    Apptainer provides the container runtime used to run nested images; its release is held until a maintainer revalidates nested execution and the aarch64 source build against a newer upstream.
   method: github_release
   repo: apptainer/apptainer
 

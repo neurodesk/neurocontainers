@@ -70,6 +70,7 @@ auto_update:
         variable: upstream_version
         fulltest_variable: upstream_version
     - id: data
+      dependency: true
       method: github_commit
       repo: rubykong/cbig_network_correspondence_data
       ref: master
@@ -77,6 +78,7 @@ auto_update:
         variable: data_commit
         fulltest_variable: data_commit
     - id: environment
+      dependency: true
       method: http_digest
       url: https://raw.githubusercontent.com/rubykong/cbig_network_correspondence/refs/heads/master/NCT_env.yml
       target:

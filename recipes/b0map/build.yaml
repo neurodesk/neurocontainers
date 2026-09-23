@@ -18,6 +18,9 @@ variables:
   fsl_bet2_commit: d5acd7fe09a34679aaac63f67f20409abf2ed3b9
 
 auto_update:
+  frozen: true
+  reason: >-
+    Locally maintained OpenRecon app; its ISMRMRD stack and base image pins are held until a maintainer revalidates the reconstruction against newer upstreams.
   container_version: false
   method: sources
   local:

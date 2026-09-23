@@ -462,3 +462,64 @@ def test_frozen_recipe_declines_an_available_upstream_bump(tmp_path, monkeypatch
     assert [row["status"] for row in rows] == ["frozen", "would-open"]
     assert rows[0]["detail"] == reason
     assert rows[0]["upstream"] == ""
+
+
+def write_sources_recipe(root: Path, name: str, lib_version: str = "7.1.0") -> None:
+    """A bundle whose library pin rides along instead of triggering its own build."""
+    path = root / "recipes" / name
+    path.mkdir(parents=True)
+    (path / "build.yaml").write_text(yaml.safe_dump({
+        "name": name,
+        "version": "1.0.0",
+        "variables": {"app_version": "1.0.0", "lib_version": lib_version},
+        "auto_update": {"method": "sources", "container_version": "app", "sources": [
+            {"id": "app", "method": "pypi", "package": "demo",
+             "target": {"variable": "app_version", "fulltest_variable": "app_version"}},
+            {"id": "lib", "method": "pypi", "package": "demo-lib", "dependency": True,
+             "target": {"variable": "lib_version"}},
+        ]},
+        "build": {"directives": [{"run": "pip install demo=={{ context.app_version }} "
+                                         "demo-lib=={{ context.lib_version }}"}]},
+    }))
+    (path / "fulltest.yaml").write_text(
+        f"name: {name}\nversion: 1.0.0\napp_version: 1.0.0\ntests: []\n"
+    )
+
+
+def run_update_check(tmp_path, monkeypatch, observed: dict[str, str]) -> list[dict]:
+    import json
+    from builder import update_observations
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(check_version, "REPO", None)
+    monkeypatch.setattr(
+        update_observations,
+        "observe_source",
+        lambda config, session=None, *, current=None: update_observations.SourceObservation(
+            observed[config["package"]],
+            f"https://pypi.org/project/{config['package']}",
+            version=observed[config["package"]],
+        ),
+    )
+    monkeypatch.setattr(
+        check_version.sys, "argv", ["check_version", "--dry-run", "--json", "report.json"]
+    )
+    assert check_version.main() == 0
+    return json.loads((tmp_path / "report.json").read_text())
+
+
+def test_dependency_bump_is_reported_without_opening_an_update(tmp_path, monkeypatch):
+    write_sources_recipe(tmp_path, "bundle")
+    rows = run_update_check(tmp_path, monkeypatch, {"demo": "1.0.0", "demo-lib": "7.2.0"})
+    assert [row["status"] for row in rows] == ["dependency-held"]
+    assert "`7.1.0` → `7.2.0`" in rows[0]["detail"]
+    recipe = yaml.safe_load((tmp_path / "recipes/bundle/build.yaml").read_text())
+    assert recipe["variables"]["lib_version"] == "7.1.0"
+
+
+def test_software_update_carries_the_held_dependency_with_it(tmp_path, monkeypatch):
+    write_sources_recipe(tmp_path, "bundle")
+    rows = run_update_check(tmp_path, monkeypatch, {"demo": "1.1.0", "demo-lib": "7.2.0"})
+    assert [row["status"] for row in rows] == ["would-open"]
+    assert "`7.1.0` → `7.2.0`" in rows[0]["detail"]
+    assert rows[0]["upstream"] == "1.1.0"

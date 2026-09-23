@@ -42,6 +42,7 @@ auto_update:
   - macros/openrecon
   sources:
   - id: base_image
+    dependency: true
     method: oci_digest
     image: ubuntu
     tag: '22.04'
@@ -58,24 +59,28 @@ auto_update:
     target:
       file: sodium_trajectory_n28
   - id: openrecon_ismrmrd
+    dependency: true
     method: github_release
     repo: ismrmrd/ismrmrd
     target:
       variable: openrecon_ismrmrd_version
       value: version
   - id: openrecon_siemens
+    dependency: true
     method: github_commit
     repo: ismrmrd/siemens_to_ismrmrd
     ref: HEAD
     target:
       variable: openrecon_siemens_commit
   - id: openrecon_python_tools
+    dependency: true
     method: github_commit
     repo: ismrmrd/ismrmrd-python-tools
     ref: HEAD
     target:
       variable: openrecon_python_tools_commit
   - id: openrecon_server
+    dependency: true
     method: github_commit
     repo: astewartau/python-ismrmrd-server
     ref: fix/ismrmrd-compatibility

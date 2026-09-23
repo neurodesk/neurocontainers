@@ -48,6 +48,7 @@ auto_update:
         variable: mricron_arm64_version
         fulltest_variable: mricron_arm64_version
     - id: dcm2niix-amd64
+      dependency: true
       method: apt
       package: dcm2niix
       urls:
@@ -57,6 +58,7 @@ auto_update:
         variable: dcm2niix_amd64_version
         fulltest_variable: dcm2niix_amd64_version
     - id: dcm2niix-arm64
+      dependency: true
       method: apt
       package: dcm2niix
       urls:

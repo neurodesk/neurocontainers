@@ -43,6 +43,7 @@ auto_update:
   local: []
   sources:
   - id: loguru
+    dependency: true
     method: pypi
     package: loguru
     target:
@@ -73,11 +74,13 @@ auto_update:
       variable: gliomoda_version
       fulltest_variable: gliomoda_version
   - id: antspyx
+    dependency: true
     method: pypi
     package: antspyx
     target:
       variable: antspyx_version
   - id: auxiliary
+    dependency: true
     method: pypi
     package: auxiliary
     target:
@@ -88,16 +91,19 @@ auto_update:
     target:
       variable: brainles_hd_bet_version
   - id: ttictoc
+    dependency: true
     method: pypi
     package: ttictoc
     target:
       variable: ttictoc_version
   - id: typer
+    dependency: true
     method: pypi
     package: typer
     target:
       variable: typer_version
   - id: tqdm
+    dependency: true
     method: pypi
     package: tqdm
     target:

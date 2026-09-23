@@ -31,6 +31,7 @@ auto_update:
   - id: traits
     method: pypi
     package: traits
+    dependency: true
     target:
       variable: traits_version
       fulltest_variable: traits_version

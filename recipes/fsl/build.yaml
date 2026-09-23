@@ -44,6 +44,7 @@ auto_update:
         variable: fsl_version
         fulltest_variable: fsl_version
     - id: oxasl-mp
+      dependency: true
       method: github_commit
       repo: physimals/oxasl_mp
       ref: master

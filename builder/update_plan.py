@@ -37,6 +37,14 @@ def _validate_container_version(config: dict, ids: set[str]) -> None:
             or not isinstance(driver.get("prefix", ""), str)
         ):
             raise ValueError("container_version mapping requires one recipe variable")
+        for source in config.get("sources", []):
+            target = source.get("target") or {}
+            written = {target.get("variable"), *target.get("variables", {})}
+            if driver["variable"] in written and source.get("dependency"):
+                raise ValueError(
+                    f"container_version reads {driver['variable']}, which dependency source "
+                    f"{source['id']} writes: a version driver must trigger its own updates"
+                )
         return
     if not isinstance(driver, str) or driver not in ids:
         raise ValueError(
@@ -45,6 +53,11 @@ def _validate_container_version(config: dict, ids: set[str]) -> None:
     source = next(
         source for source in config["sources"] if source.get("id") == driver
     )
+    if source.get("dependency"):
+        raise ValueError(
+            f"container_version source {driver} is marked dependency: a version driver "
+            "must trigger its own updates"
+        )
     if source["method"] in VERSIONLESS_METHODS and not source.get("version_file"):
         raise ValueError(
             f"container_version source {driver} tracks {source['method']}, which pins bytes "
@@ -55,7 +68,7 @@ def _validate_container_version(config: dict, ids: set[str]) -> None:
 
 
 def source_config(source: dict) -> dict:
-    return {key: value for key, value in source.items() if key not in {"id", "target"}}
+    return {key: value for key, value in source.items() if key not in {"id", "target", "dependency"}}
 
 
 def validate_sources_config(config: dict) -> None:
@@ -88,6 +101,10 @@ def validate_sources_config(config: dict) -> None:
         if name in ids:
             raise ValueError(f"duplicate update source id: {name}")
         ids.add(name)
+        if "dependency" in source and source["dependency"] is not True:
+            raise ValueError(
+                f"{name}: dependency must be true; delete the key to let it trigger updates"
+            )
         validate_source(source_config(source))
         target = source.get("target")
         if not isinstance(target, dict) or len(set(target) & {"variable", "file"}) != 1:
@@ -127,6 +144,11 @@ def validate_sources_config(config: dict) -> None:
             r"[A-Za-z_][A-Za-z_0-9]*", str(target["fulltest_variable"])
         ):
             raise ValueError(f"{name}: invalid fulltest variable")
+    if sources and all(source.get("dependency") for source in sources):
+        raise ValueError(
+            "every source is a dependency, so no upstream could ever open an update: "
+            "leave the primary software triggering, or freeze the recipe"
+        )
     _validate_container_version(config, ids)
 
 
@@ -249,6 +271,18 @@ def _current_artifact_version(source: dict, recipe: dict, file: dict) -> str | N
     return None
 
 
+def rewrite_suite_scalar(text: str, variable: str, value: str) -> str:
+    """Rewrite a fulltest scalar only when the observation differs from it.
+
+    Rewriting re-emits the scalar in canonical double-quoted form, so repeating
+    an unchanged observation over an unquoted value would otherwise produce a
+    cosmetic diff and an empty update PR on every run.
+    """
+    if str(yaml.safe_load(text).get(variable, "")) == value:
+        return text
+    return rewrite_scalar(text, (variable,), value)
+
+
 def rewrite_scalar(text: str, path: tuple[str | int, ...], value: str) -> str:
     """Replace a unique YAML scalar without reformatting unrelated recipe content."""
     node = yaml.compose(text)
@@ -290,6 +324,9 @@ class UpdatePlan:
     changes: tuple[str, ...]
     fingerprint: str
     upstream_urls: tuple[str, ...]
+    # Only dependency sources moved, so this plan is reported and then held
+    # until a source that triggers its own updates ships it.
+    held: bool = False
 
     @property
     def branch(self) -> str:
@@ -316,7 +353,9 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
     suite_original = suite_path.read_text()
     updated, suite_updated = original, suite_original
     changes, urls = [], []
+    triggered = False
     for source in recipe["auto_update"].get("sources", []):
+        before_recipe, before_suite = updated, suite_updated
         target = source["target"]
         current = str(recipe["variables"][target["variable"]]) if "variable" in target else None
         observation = observations[source["id"]] if observations is not None else observe_source(
@@ -377,7 +416,7 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
                     pass
             edits.append((("variables", target["variable"]), selected))
             if variable := target.get("fulltest_variable"):
-                suite_updated = rewrite_scalar(suite_updated, (variable,), selected)
+                suite_updated = rewrite_suite_scalar(suite_updated, variable, selected)
         else:
             index, file = next((i, f) for i, f in enumerate(recipe["files"]) if f["name"] == target["file"])
             current_version = _current_artifact_version(source, recipe, file)
@@ -395,8 +434,7 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
             selected = str(fields[field])
             edits.append((("variables", variable), selected))
             if variable in yaml.safe_load(suite_updated):
-                suite_updated = rewrite_scalar(suite_updated, (variable,), selected)
-        previous = updated
+                suite_updated = rewrite_suite_scalar(suite_updated, variable, selected)
         for path, value in edits:
             node = yaml.safe_load(updated)
             for part in path:
@@ -404,8 +442,9 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
             if str(node) != value:
                 updated = rewrite_scalar(updated, path, value)
                 changes.append(f"`{'.'.join(map(str, path))}`: `{node}` → `{value}`")
-        if updated != previous:
+        if updated != before_recipe or suite_updated != before_suite:
             urls.append(observation.url)
+            triggered = triggered or not source.get("dependency")
     current_version = str(recipe["version"])
     next_version = container_version(yaml.safe_load(updated))
     if current_version != next_version:
@@ -421,4 +460,4 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
     identity = json.dumps([(p.path.name, p.before, p.after) for p in patches], separators=(",", ":"))
     fingerprint = hashlib.sha256(identity.encode()).hexdigest()
     return UpdatePlan(recipe_path.parent.name, current_version, next_version, patches,
-                      tuple(changes), fingerprint, tuple(sorted(set(urls))))
+                      tuple(changes), fingerprint, tuple(sorted(set(urls))), not triggered)

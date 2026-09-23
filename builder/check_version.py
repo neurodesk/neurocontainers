@@ -696,6 +696,11 @@ def main():
                 plan = plan_sources(path, session)
                 if plan is None:
                     row.update(status="current" if config.get("sources") else "repository", detail="Repository changes trigger candidate builds." if "local" in config else "")
+                elif plan.held:
+                    row.update(
+                        status="dependency-held",
+                        detail="Ships with the next software update: " + "; ".join(plan.changes),
+                    )
                 else:
                     release = UpstreamRelease(plan.next_version, plan.fingerprint, ", ".join(plan.upstream_urls))
                     row.update(status="available", upstream=plan.next_version, detail="; ".join(plan.changes))
