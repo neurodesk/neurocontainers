@@ -249,6 +249,18 @@ def _current_artifact_version(source: dict, recipe: dict, file: dict) -> str | N
     return None
 
 
+def rewrite_suite_scalar(text: str, variable: str, value: str) -> str:
+    """Rewrite a fulltest scalar only when the observation differs from it.
+
+    Rewriting re-emits the scalar in canonical double-quoted form, so repeating
+    an unchanged observation over an unquoted value would otherwise produce a
+    cosmetic diff and an empty update PR on every run.
+    """
+    if str(yaml.safe_load(text).get(variable, "")) == value:
+        return text
+    return rewrite_scalar(text, (variable,), value)
+
+
 def rewrite_scalar(text: str, path: tuple[str | int, ...], value: str) -> str:
     """Replace a unique YAML scalar without reformatting unrelated recipe content."""
     node = yaml.compose(text)
@@ -377,7 +389,7 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
                     pass
             edits.append((("variables", target["variable"]), selected))
             if variable := target.get("fulltest_variable"):
-                suite_updated = rewrite_scalar(suite_updated, (variable,), selected)
+                suite_updated = rewrite_suite_scalar(suite_updated, variable, selected)
         else:
             index, file = next((i, f) for i, f in enumerate(recipe["files"]) if f["name"] == target["file"])
             current_version = _current_artifact_version(source, recipe, file)
@@ -395,7 +407,7 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
             selected = str(fields[field])
             edits.append((("variables", variable), selected))
             if variable in yaml.safe_load(suite_updated):
-                suite_updated = rewrite_scalar(suite_updated, (variable,), selected)
+                suite_updated = rewrite_suite_scalar(suite_updated, variable, selected)
         previous = updated
         for path, value in edits:
             node = yaml.safe_load(updated)
