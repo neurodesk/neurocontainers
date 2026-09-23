@@ -50,7 +50,12 @@ Use **Output maps** to select what returns to the scanner database:
 
 Original magnitude and phase images are always returned before the selected output maps.
 
-**SMWI** returns **QSMxT SMWI paramagnetic**, which darkens paramagnetic sources such as veins, iron, and microbleeds, and **QSMxT SMWI diamagnetic**, which darkens diamagnetic sources such as calcification. Unlike SWI, the weighting comes from the susceptibility map, so the contrast sits on the source instead of spreading with its field. SMWI always runs QSM. It uses QSMxT's default weighting, a 1 ppm threshold with power 4, which emphasizes strong sources over subtle tissue contrast.
+**SMWI** returns **QSMxT SMWI paramagnetic**, which darkens paramagnetic sources such as veins,
+iron, and microbleeds, and **QSMxT SMWI diamagnetic**, which darkens diamagnetic sources such
+as calcification. Unlike SWI, the weighting comes from the susceptibility map, so the contrast
+sits on the source instead of spreading with its field. SMWI always runs QSM. It uses QSMxT's
+default weighting, a 1 ppm threshold with power 4, which emphasizes strong sources over subtle
+tissue contrast.
 
 For quantitative analysis, use a viewer that applies DICOM rescaling. QSM DICOM values are in parts per billion (ppb); divide by 1000 to convert to parts per million (ppm).
 
@@ -80,7 +85,12 @@ A preset overrides **QSM algorithm**, **Unwrap**, and **Background**. To choose 
 - **Background** removes background-field contributions. The default is iSMV.
 - **QSM algorithm** calculates susceptibility. The default is HD-QSM.
 
-With **Custom algorithm controls**, **Default (HD-QSM)** uses HD-QSM, **Default (ROMEO)** uses ROMEO, and **Default (iSMV)** uses iSMV. Any other **Pipeline preset** overrides all three choices, even if you change their displayed values. Reconstruction time and results depend on the method, acquisition, and available hardware. See the [QSMxT algorithm reference](https://qsmxt.github.io/QSMxT/reference/algorithms/) for descriptions of the methods. The upstream command-line defaults differ from the OpenRecon defaults listed here.
+With **Custom algorithm controls**, **Default (HD-QSM)** uses HD-QSM, **Default (ROMEO)** uses
+ROMEO, and **Default (iSMV)** uses iSMV. Any other **Pipeline preset** overrides all three
+choices, even if you change their displayed values. Reconstruction time and results depend on
+the method, acquisition, and available hardware. See the [QSMxT algorithm
+reference](https://qsmxt.github.io/QSMxT/reference/algorithms/) for descriptions of the
+methods. The upstream command-line defaults differ from the OpenRecon defaults listed here.
 
 ## Adjust the brain mask
 
