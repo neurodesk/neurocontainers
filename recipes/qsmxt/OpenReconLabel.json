@@ -71,11 +71,12 @@
         { "id": "magnitude", "name": { "en": "Magnitude" } },
         { "id": "mask", "name": { "en": "Mask" } },
         { "id": "swi", "name": { "en": "SWI" } },
+        { "id": "smwi", "name": { "en": "SMWI" } },
         { "id": "t2star", "name": { "en": "T2 star" } },
         { "id": "r2star", "name": { "en": "R2 star" } }
       ],
       "default": "qsm",
-      "information": { "en": "Select which QSMxT derivatives to send back to OpenRecon. Source separation adds its maps when enabled. Original magnitude and phase images are always returned." }
+      "information": { "en": "Select which QSMxT derivatives to send back to OpenRecon. SMWI returns paramagnetic and diamagnetic images weighted by the QSM map. Source separation adds its maps when enabled. Original magnitude and phase images are always returned." }
     },
     {
       "id": "sourceseparation",

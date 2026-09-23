@@ -2,7 +2,7 @@
 
 QSMxT OpenRecon creates quantitative susceptibility maps from MRI magnitude and phase images and returns the results to the scanner database. Use it to reconstruct and compare QSM maps from brain gradient-echo acquisitions within your OpenRecon workflow.
 
-The package supports single-echo and multi-echo data, a choice of reconstruction methods, adjustable brain masks, and optional SWI, T2*, and R2* maps. You can process distortion-corrected images, non-distortion-corrected images, or both.
+The package supports single-echo and multi-echo data, a choice of reconstruction methods, adjustable brain masks, and optional SWI, SMWI, T2*, and R2* maps. You can process distortion-corrected images, non-distortion-corrected images, or both.
 
 ## Prepare your acquisition
 
@@ -44,10 +44,13 @@ Use **Output maps** to select what returns to the scanner database:
 | Magnitude | Combined magnitude image. |
 | Mask | Brain mask used for reconstruction, useful for checking brain coverage. |
 | SWI | Susceptibility-weighted image. |
+| SMWI | Susceptibility map-weighted images: the magnitude weighted by the QSM map. Returns a paramagnetic and a diamagnetic series. |
 | T2 star | T2* relaxation map. Use at least three equally spaced echoes. |
 | R2 star | R2* relaxation-rate map. Use a multi-echo acquisition. |
 
 Original magnitude and phase images are always returned before the selected output maps.
+
+**SMWI** returns **QSMxT SMWI paramagnetic**, which darkens paramagnetic sources such as veins, iron, and microbleeds, and **QSMxT SMWI diamagnetic**, which darkens diamagnetic sources such as calcification. Unlike SWI, the weighting comes from the susceptibility map, so the contrast sits on the source instead of spreading with its field. SMWI always runs QSM. It uses QSMxT's default weighting, a 1 ppm threshold with power 4, which emphasizes strong sources over subtle tissue contrast.
 
 For quantitative analysis, use a viewer that applies DICOM rescaling. QSM DICOM values are in parts per billion (ppb); divide by 1000 to convert to parts per million (ppm).
 

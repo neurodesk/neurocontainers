@@ -150,12 +150,30 @@ ppm metadata, and ppb DICOM rescaling. QSMxT writes the diamagnetic map as
 positive magnitudes, so separated total equals paramagnetic minus diamagnetic.
 
 These expose the implementations in the pinned QSMxT release. QSM-core's
-[R2*-QSM](https://github.com/astewartau/QSM.rs/blob/v0.35.0/src/separation/r2star_qsm.rs)
+[R2*-QSM](https://github.com/astewartau/QSM.rs/blob/v0.38.0/src/separation/r2star_qsm.rs)
 uses the voxelwise closed-form solve without the paper's spatial
 regularization. Its
-[DECOMPOSE implementation](https://github.com/astewartau/QSM.rs/blob/v0.35.0/src/separation/decompose.rs)
+[DECOMPOSE implementation](https://github.com/astewartau/QSM.rs/blob/v0.38.0/src/separation/decompose.rs)
 synthesizes per-echo phase from
 the reconstructed QSM rather than fitting the original complex GRE signal.
+
+### SMWI
+
+`sendoutputs=smwi` adds `--do-smwi` to `qsmxt run` and returns two series,
+`smwi-paramagnetic` and `smwi-diamagnetic`, read from the NIfTI files ending in
+`desc-paramagnetic_smwi` and `desc-diamagnetic_smwi`. `sendoutputs=all` includes
+both. QSMxT enables QSM for SMWI even when `noqsm=true`. The per-contrast minIP
+volumes QSMxT also writes stay in the NIfTI output, as the SWI minIP does.
+
+The [QSM.rs v0.38.0 implementation](https://github.com/astewartau/QSM.rs/blob/v0.38.0/src/swi.rs)
+multiplies the combined magnitude inside the mask by `w(χ)^4`, with
+`w(χ) = clamp(1 - χ/1 ppm, 0, 1)` for the paramagnetic image and
+`clamp(1 + χ/1 ppm, 0, 1)` for the diamagnetic image. These are QSMxT's defaults,
+following SEPIA; the bridge does not override `--smwi-threshold` or
+`--smwi-power`. Both series share the SWI display handling described above:
+scaled arbitrary units, `QSMxTWindowDomain=scaled-a.u.`, and one window across
+the volume. Their image-type tokens are `QSMXT_SMWI_PARA` and `QSMXT_SMWI_DIA`,
+within the 16-character DICOM limit.
 
 ## Pipeline presets
 

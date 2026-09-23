@@ -177,6 +177,9 @@ SCANNER_DISPLAY_SCALE_FACTORS = (
 SOURCE_SEPARATION_METHODS = ("off", "r2star-qsm", "decompose")
 SOURCE_SEPARATION_OUTPUTS = ("paramagnetic", "diamagnetic", "separated-total")
 SUSCEPTIBILITY_OUTPUTS = {"qsm", *SOURCE_SEPARATION_OUTPUTS}
+# One SMWI selection returns both contrasts QSMxT writes for --do-smwi.
+SMWI_OUTPUTS = ("smwi-paramagnetic", "smwi-diamagnetic")
+SWI_LIKE_OUTPUTS = {"swi", *SMWI_OUTPUTS}
 
 QSMXT_OUTPUTS = {
     "qsm": {
@@ -228,6 +231,17 @@ for output_id, descriptor, series in (
         "token": f"QSMXT_{descriptor.upper()}",
         "series": series,
         "units": "ppm",
+    }
+
+for output_id, descriptor, series, token in (
+    ("smwi-paramagnetic", "paramagnetic", "QSMxT SMWI paramagnetic", "QSMXT_SMWI_PARA"),
+    ("smwi-diamagnetic", "diamagnetic", "QSMxT SMWI diamagnetic", "QSMXT_SMWI_DIA"),
+):
+    QSMXT_OUTPUTS[output_id] = {
+        "suffix": f"desc-{descriptor}_smwi",
+        "token": token,
+        "series": series,
+        "units": "a.u.",
     }
 
 SCANNER_WRITE_UNSAFE_META_KEYS = {
@@ -607,6 +621,7 @@ def _run_qsmxt(bids_dir, output_dir, settings):
     do_swi = settings["do_swi"] or "swi" in selected
     do_t2starmap = settings["do_t2starmap"] or "t2star" in selected
     do_r2starmap = settings["do_r2starmap"] or "r2star" in selected
+    do_smwi = any(output_id in selected for output_id in SMWI_OUTPUTS)
     if settings["source_separation"] != "off":
         cmd.extend(["--do-chisep", "--chisep", settings["source_separation"]])
     if settings["no_qsm"]:
@@ -617,6 +632,8 @@ def _run_qsmxt(bids_dir, output_dir, settings):
         cmd.append("--do-t2starmap")
     if do_r2starmap:
         cmd.append("--do-r2starmap")
+    if do_smwi:
+        cmd.append("--do-smwi")
     if not settings["inhomogeneity_correction"]:
         cmd.append("--no-inhomogeneity-correction")
 
@@ -2284,7 +2301,7 @@ def _output_meta(
     meta["QSMxTWindowDomain"] = {
         **{output: "ppb" for output in SUSCEPTIBILITY_OUTPUTS},
         "t2star": "ms",
-        "swi": "scaled-a.u.",
+        **{output: "scaled-a.u." for output in SWI_LIKE_OUTPUTS},
     }.get(output_id, "physical")
     meta["QSMxTDisplayMin"] = str(int(display_meta["display_min"]))
     meta["QSMxTDisplayMax"] = str(int(display_meta["display_max"]))
@@ -2301,7 +2318,7 @@ def _output_meta(
         meta["PixelPaddingRangeLimit"] = str(
             int(display_meta["padding_value"])
         )
-    if output_id in SUSCEPTIBILITY_OUTPUTS | {"t2star", "swi"}:
+    if output_id in SUSCEPTIBILITY_OUTPUTS | SWI_LIKE_OUTPUTS | {"t2star"}:
         meta["WindowCenter"] = str(
             int(np.rint(physical_center * dicom_value_scale))
         )
@@ -2405,7 +2422,7 @@ def _validate_output_images(output_images, input_images):
         if _meta_text(meta, "RescaleType") != "US":
             errors.append(f"image {index} RescaleType is not US")
 
-        if output_id in SUSCEPTIBILITY_OUTPUTS | {"t2star", "swi"}:
+        if output_id in SUSCEPTIBILITY_OUTPUTS | SWI_LIKE_OUTPUTS | {"t2star"}:
             window_center = _meta_float(meta, "WindowCenter")
             window_width = _meta_float(meta, "WindowWidth")
             physical_window_center = _meta_float(
@@ -2763,6 +2780,9 @@ def _selected_output_ids(value):
     for part in re.split(r"[,;\s]+", text):
         if not part:
             continue
+        if part == "smwi":
+            selected.extend(SMWI_OUTPUTS)
+            continue
         if part not in QSMXT_OUTPUTS:
             logging.warning("Ignoring unknown QSMxT output selection: %s", part)
             continue
@@ -2806,7 +2826,7 @@ def _normalized_or_default(values, default):
 
 def _dicom_value_scale(output_id, display_scale):
     return {
-        "swi": display_scale,
+        **{output: display_scale for output in SWI_LIKE_OUTPUTS},
         **{output: QSM_DICOM_PPB_PER_PPM for output in SUSCEPTIBILITY_OUTPUTS},
         "t2star": T2STAR_DICOM_MS_PER_SECOND,
     }.get(output_id, 1.0)
@@ -2943,7 +2963,7 @@ def _scanner_display_window_range(
             high = float(np.percentile(finite_positive, T2STAR_WINDOW_PERCENTILE))
             return 0.0, min(high, scale_input_max)
         return 0.0, scale_input_max
-    if output_id == "swi":
+    if output_id in SWI_LIKE_OUTPUTS:
         positive = values[np.isfinite(values) & (values > 0.0)]
         if positive.size:
             return 0.0, float(np.percentile(positive, SWI_WINDOW_PERCENTILE))

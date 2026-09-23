@@ -1635,20 +1635,22 @@ def test_gui_algorithm_reaches_command(parameter, flag, value, tmp_path, monkeyp
     assert command[command.index(flag) + 1] == value
 
 
+@pytest.mark.parametrize("output_id", sorted(qsmxt.SWI_LIKE_OUTPUTS))
 @pytest.mark.parametrize("amplitude", [0.0001, 1.0, 10000.0])
 def test_swi_window_survives_integer_bridge_and_is_shared_across_slices(
-    amplitude, tmp_path
+    amplitude, output_id, tmp_path
 ):
     physical = np.zeros((2, 32, 32), dtype=np.float32)
     physical[1] = np.linspace(0.1, 1.0, 1024).reshape(32, 32) * amplitude
     physical[1, -1, -1] = 3.269 * amplitude
     source = _image(1, 1, "gre_qsm", physical[:1])
-    display, _ = qsmxt._scanner_display_volume(physical, "swi", "a.u.")
-    path = tmp_path / "swi.nii.gz"
+    display, _ = qsmxt._scanner_display_volume(physical, output_id, "a.u.")
+    path = tmp_path / f"{output_id}.nii.gz"
     nib.save(nib.Nifti1Image(np.moveaxis(physical, 0, -1), np.eye(4)), path)
+    spec = qsmxt.QSMXT_OUTPUTS[output_id]
     images = qsmxt._nifti_to_mrd_images(
         path, source, qsmxt.OUTPUT_SERIES_START,
-        "QSMxT SWI", "QSMXT_SWI", "swi", "a.u.",
+        spec["series"], spec["token"], output_id, spec["units"],
     )
     qsmxt._validate_output_images(images, [source])
     assert len(images) == 2
@@ -1667,6 +1669,44 @@ def test_swi_window_survives_integer_bridge_and_is_shared_across_slices(
         assert center == pytest.approx(width / 2, abs=1)
         np.testing.assert_allclose(display / scale, physical, atol=0.51 / scale)
     assert windows[0] == windows[1]
+
+
+@pytest.mark.parametrize("selection, expected", [
+    ("smwi", True), ("all", True), ("qsm", False), ("swi", False),
+])
+def test_smwi_selection_requests_smwi(selection, expected, tmp_path, monkeypatch):
+    settings = qsmxt._settings_from_config({"parameters": {"sendoutputs": selection}})
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return qsmxt.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", run)
+    qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
+    assert ("--do-smwi" in commands[0]) == expected
+
+
+@pytest.mark.parametrize("selection, expected", [
+    ("smwi", {"smwi-paramagnetic", "smwi-diamagnetic"}),
+    ("swi", {"swi"}),
+])
+def test_smwi_and_swi_outputs_do_not_cross_match(selection, expected, tmp_path):
+    anat = tmp_path / qsmxt.QSMXT_DERIVATIVE_ROOT / "sub-01" / "anat"
+    anat.mkdir(parents=True)
+    # File names written by QSMxT 9.22 for --do-swi and --do-smwi.
+    for suffix in (
+        "swi", "minIP", "desc-paramagnetic_smwi", "desc-diamagnetic_smwi",
+        "desc-paramagnetic_minIP", "desc-diamagnetic_minIP",
+    ):
+        data = np.ones((4, 3, 2), dtype=np.float32)
+        nib.save(nib.Nifti1Image(data, np.eye(4)), anat / f"sub-01_{suffix}.nii")
+    settings = qsmxt._settings_from_config({"parameters": {"sendoutputs": selection}})
+    specs = qsmxt._find_qsmxt_outputs(tmp_path, {"subject": "01"}, settings)
+    assert {output_id for output_id, _, _ in specs} == expected
+    for output_id, spec, path in specs:
+        assert path.name == f"sub-01_{spec['suffix']}.nii"
+        assert len(spec["token"]) <= 16
 
 
 @pytest.mark.parametrize("method", qsmxt.SOURCE_SEPARATION_METHODS)
