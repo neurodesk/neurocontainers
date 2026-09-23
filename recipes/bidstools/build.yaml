@@ -13,7 +13,7 @@ variables:
     - value: Miniconda3-latest-Linux-aarch64.sh
       condition: arch == "aarch64"
   heudiconv_version: "1.5.1"
-  traits_version: 7.1.0
+  traits_version: "7.2.0"
   bru2nii_version: 1.0.20180303
   dcm2niix_version: "1.0.20260724"
 

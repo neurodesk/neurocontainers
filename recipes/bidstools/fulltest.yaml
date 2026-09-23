@@ -3,7 +3,7 @@
 name: bidstools
 version: "1.3.0"
 heudiconv_version: "1.5.1"
-traits_version: 7.1.0
+traits_version: "7.2.0"
 
 setup:
   script: |
