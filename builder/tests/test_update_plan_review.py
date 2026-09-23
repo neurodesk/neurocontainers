@@ -428,6 +428,7 @@ def test_moving_source_head_reuses_existing_revision_pr_without_using_cap(
             fingerprint="fingerprint",
             upstream_urls=(f"https://github.com/example/{name}",),
             changes=("commit changed",),
+            held=False,
         )
 
     opened: list[str] = []

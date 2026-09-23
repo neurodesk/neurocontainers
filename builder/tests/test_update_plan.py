@@ -275,3 +275,58 @@ def test_new_artifact_version_still_updates_the_fulltest(tmp_path):
     assert suite['upstream_version'] == '2.1.0'
     assert suite['version'] == '2.1.0'
     assert plan_sources(path, observations=artifact_observations('2.1.0', 'e' * 64)) is None
+
+
+def dependency_recipe(tmp_path):
+    """The shared helper pin rides along instead of rebuilding the container alone."""
+    path = make_recipe(tmp_path)
+    recipe = yaml.safe_load(path.read_text())
+    recipe['auto_update']['sources'][1]['dependency'] = True
+    path.write_text(yaml.safe_dump(recipe, sort_keys=False))
+    return path
+
+
+def test_dependency_alone_is_held_instead_of_opening_an_update(tmp_path):
+    path = dependency_recipe(tmp_path)
+    plan = plan_sources(path, observations=observations(helper='b' * 40))
+    assert plan.held
+    assert plan.changes == ('`variables.source_commit`: `' + 'a' * 40 + '` → `' + 'b' * 40 + '`',)
+    assert yaml.safe_load(path.read_text())['variables']['source_commit'] == 'a' * 40
+
+
+def test_dependency_rides_along_with_a_software_update(tmp_path):
+    path = dependency_recipe(tmp_path)
+    plan = plan_sources(path, observations=observations('7.4', 'b' * 40))
+    assert plan.next_version == '7.4.0'
+    plan.apply()
+    changed = yaml.safe_load(path.read_text())
+    assert changed['variables'] == {'tool_version': '7.4', 'source_commit': 'b' * 40}
+    assert plan_sources(path, observations=observations('7.4', 'b' * 40)) is None
+
+
+def test_dependency_flag_must_be_true(tmp_path):
+    config = yaml.safe_load(make_recipe(tmp_path).read_text())['auto_update']
+    config['sources'][1]['dependency'] = False
+    with pytest.raises(ValueError, match='dependency must be true'):
+        validate_sources_config(config)
+
+
+def test_every_source_cannot_be_a_dependency(tmp_path):
+    config = yaml.safe_load(make_recipe(tmp_path).read_text())['auto_update']
+    for source in config['sources']:
+        source['dependency'] = True
+    with pytest.raises(ValueError, match='every source is a dependency'):
+        validate_sources_config(config)
+
+
+def test_container_version_driver_cannot_be_a_dependency(tmp_path):
+    config = yaml.safe_load(make_recipe(tmp_path).read_text())['auto_update']
+    config['sources'][0]['dependency'] = True
+    with pytest.raises(ValueError, match='must trigger its own updates'):
+        validate_sources_config(config)
+
+    config['sources'][0].pop('dependency')
+    config['sources'][1]['dependency'] = True
+    config['container_version'] = {'variable': 'source_commit'}
+    with pytest.raises(ValueError, match='must trigger its own updates'):
+        validate_sources_config(config)
