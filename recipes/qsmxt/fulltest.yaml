@@ -1,5 +1,5 @@
 name: qsmxt
-version: "9.21.0"
+version: "9.22.0"
 
 test_data:
   output_dir: test_output
@@ -596,4 +596,4 @@ tests:
       print("sent derived images:", len(connection.sent_batches[-1]))
       PY
 
-upstream_version: 9.21.0
+upstream_version: 9.22.0

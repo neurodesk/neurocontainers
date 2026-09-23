@@ -132,6 +132,8 @@
         { "id": "nltv", "name": { "en": "NLTV" } },
         { "id": "medi", "name": { "en": "MEDI" } },
         { "id": "ilsqr", "name": { "en": "iLSQR" } },
+        { "id": "lsqr", "name": { "en": "LSQR" } },
+        { "id": "heidi", "name": { "en": "HEIDI" } },
         { "id": "qsmart", "name": { "en": "QSMART" } },
         { "id": "tfi", "name": { "en": "TFI" } },
         { "id": "ndi", "name": { "en": "NDI" } },

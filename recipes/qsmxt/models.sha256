@@ -1,5 +1,5 @@
-# QSMxT v9.16.0 / QSM.rs v0.29.0 model registry
-# https://github.com/astewartau/QSM.rs/blob/v0.29.0/src/models/registry.rs
+# QSMxT v9.22.0 / QSM.rs v0.38.0 model registry
+# https://github.com/astewartau/QSM.rs/blob/v0.38.0/src/models/registry.rs
 6f693f0a02c94550179c4b5188ce652fc4bd8198ff57aaddd102fba67fe873d7  bfrnet.onnx
 81854ec2ca85bba25c2f9aae05efdcac299d0efffb03fe6a0e6797019e46b487  xqsm.onnx
 8fd1d79b7a9258a262a2faab9e8469757ae7735f3da6212e431acfb207c21b54  qsmnet.onnx
@@ -15,4 +15,7 @@ d0f0b0391153f8e5e07ef85d46fbe492afc8394fab008350540a6868d0b4a3ba  nextqsm-bf.onn
 50fe388663c05b1d3996139975270e500e13feb025f1b792576dbc0da814a4bc  nextqsm-vjp.onnx
 1f8da7d39eaaa4c3f0f9e67298fba5f14230e769cfd6349c81d0b74a6f800c57  modl-qsm.onnx
 9bc85aa28451fda2c661de4b8fae8604ced7a54f028f94ed33629f6111a48b03  susep-net.onnx
-4f2343649cf36b4c9b371fc732da600720060bf2e76ed845578f16fe3411b3f2  chi-sepnet.onnx
+5b442fdfdb88f50ec9149b384dabd0d2d9adb6983947d9cfa58382b78676bed9  chi-sepnet.onnx
+44cb5e67d1c68dae87a5f532e501dc0d4bf627d91f9c8ba35a56df5ac7ec3cd0  r2primenet.onnx
+f15200f9a0697cf53b151e316a0c4fe2cacfdbe2220deb36cb56184be4a227f9  hd-bet.onnx
+c2821a74e8a03d4073896b5c2e359b3ef86f9776bacd78e00da1c757aa97bbcc  synthseg.onnx

@@ -24,7 +24,7 @@ SLUGS = {
     "fansi-tgv": "fansi-nltgv-qsmrs",
     **{name: f"{name}-qsmrs" for name in (
         "rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi",
-        "tfi", "ilsqr", "qsmart", "ndi", "l1qsm", "whqsm", "hdqsm",
+        "tfi", "ilsqr", "lsqr", "heidi", "qsmart", "ndi", "l1qsm", "whqsm", "hdqsm",
         "amp-pe", "vsharp", "pdf", "lbv", "ismv", "sharp", "resharp",
         "harperella", "iharperella",
     )},

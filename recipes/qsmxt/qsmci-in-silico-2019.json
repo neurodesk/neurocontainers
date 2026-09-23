@@ -1,9 +1,9 @@
 {
-  "retrieved": "2026-09-07",
+  "retrieved": "2026-09-23",
   "index_url": "https://qsmxt.github.io/QSM-CI/results/index.json",
-  "index_sha256": "6c1fa893011bb386d6e677f10a469b8fb0c6ad7f89629e5a937c9dd3d5899b9f",
+  "index_sha256": "14794ff8e995a119b27d43541928188b08cc0b7d4e06881cd4b1197fe5d47fc7",
   "algorithms_url": "https://qsmxt.github.io/QSM-CI/algorithms.json",
-  "algorithms_sha256": "081b1968b0e69767770a96a98df17cb6d617fe2df77fe2957f996b9ee1f16d64",
+  "algorithms_sha256": "206b029c88235d44dc0657faf12e82adb2d5231f9918a748fb2f477d49ab9ca1",
   "algorithms": {
     "whqsm": {
       "id": "whqsm-qsmrs-iso",
@@ -14,9 +14,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 158.61889791488647,
+      "runtime_s": 186.3242552280426,
       "metrics": {
-        "xsim": 0.6217515834364545,
+        "xsim": 0.6450831028503762,
         "nrmse": 42.5025299061804
       }
     },
@@ -29,9 +29,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 33.608713150024414,
+      "runtime_s": 36.887497901916504,
       "metrics": {
-        "xsim": 0.6715373663357117,
+        "xsim": 0.7072648455439792,
         "nrmse": 33.17252193736282
       }
     },
@@ -44,9 +44,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 11.975716352462769,
+      "runtime_s": 14.548266172409058,
       "metrics": {
-        "xsim": 0.6942398283715571,
+        "xsim": 0.74005632952123,
         "nrmse": 38.447135529108486
       }
     },
@@ -59,9 +59,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 10.32469391822815,
+      "runtime_s": 12.78160572052002,
       "metrics": {
-        "xsim": 0.7648294899167801,
+        "xsim": 0.8218279514970191,
         "nrmse": 28.6886159615408
       }
     },
@@ -74,9 +74,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 2.6837496757507324,
+      "runtime_s": 2.1506600379943848,
       "metrics": {
-        "xsim": 0.7296238085504234,
+        "xsim": 0.780224733094306,
         "nrmse": 36.30613223593693
       }
     },
@@ -89,9 +89,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 3.1275031566619873,
+      "runtime_s": 3.8790628910064697,
       "metrics": {
-        "xsim": 0.5994907209796654,
+        "xsim": 0.6447415761203582,
         "nrmse": 46.388942655474146
       }
     },
@@ -104,10 +104,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 183.71307754516602,
+      "runtime_s": 182.625985622406,
       "metrics": {
-        "xsim": 0.4674566344191894,
-        "nrmse": 56.14768979062488
+        "xsim": 0.3979961824607806,
+        "nrmse": 65.06726505522121
       }
     },
     "tikhonov": {
@@ -119,9 +119,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 2.5264809131622314,
+      "runtime_s": 3.730719804763794,
       "metrics": {
-        "xsim": 0.7016639605553306,
+        "xsim": 0.7516933548114011,
         "nrmse": 38.70587749353184
       }
     },
@@ -134,9 +134,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 108.71939754486084,
+      "runtime_s": 98.5874617099762,
       "metrics": {
-        "xsim": 0.7818947119074875,
+        "xsim": 0.8347693630550961,
         "nrmse": 34.960801856650136
       }
     },
@@ -149,10 +149,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 40.699549436569214,
+      "runtime_s": 48.165369510650635,
       "metrics": {
-        "xsim": 0.6219428445243117,
-        "nrmse": 53.05607985908514
+        "xsim": 0.658964693749251,
+        "nrmse": 53.056082781915634
       }
     },
     "ilsqr": {
@@ -162,14 +162,16 @@
       "mode": "isolated",
       "variant": "default",
       "combo": null,
-      "phantom": null,
+      "phantom": "sim",
       "status": "ok",
-      "runtime_s": 68.97674465179443,
+      "runtime_s": 43.65229105949402,
       "metrics": {
-        "xsim": 0.5810902196336484,
+        "xsim": 0.6158587766797933,
         "nrmse": 53.27187958007887
       }
     },
+    "lsqr": null,
+    "heidi": null,
     "qsmart": {
       "id": "qsmart-qsmrs-iso",
       "slug": "qsmart-qsmrs",
@@ -179,9 +181,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 666.0749349594116,
+      "runtime_s": 633.0361156463623,
       "metrics": {
-        "xsim": 0.2450592797508551,
+        "xsim": 0.2512051008258737,
         "nrmse": 83.82779884208755
       }
     },
@@ -194,9 +196,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 247.50743675231934,
+      "runtime_s": 295.1811361312866,
       "metrics": {
-        "xsim": 0.44134197810977277,
+        "xsim": 0.4590924997326217,
         "nrmse": 81.06825346022801
       }
     },
@@ -209,9 +211,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 136.42091035842896,
+      "runtime_s": 108.84392833709717,
       "metrics": {
-        "xsim": 0.6155901738442324,
+        "xsim": 0.6514085056452502,
         "nrmse": 48.331511604777944
       }
     },
@@ -224,9 +226,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 201.32023811340332,
+      "runtime_s": 179.81936240196228,
       "metrics": {
-        "xsim": 0.666691750169656,
+        "xsim": 0.7052505149586884,
         "nrmse": 31.93850220820435
       }
     },
@@ -239,9 +241,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 660.6927392482758,
+      "runtime_s": 799.2800016403198,
       "metrics": {
-        "xsim": 0.6769956308724998,
+        "xsim": 0.719340804917325,
         "nrmse": 32.99364386158841
       }
     },
@@ -254,9 +256,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 118.7577977180481,
+      "runtime_s": 122.63433694839478,
       "metrics": {
-        "xsim": 0.7099391035309035,
+        "xsim": 0.7547995466254869,
         "nrmse": 47.734840041181094
       }
     },
@@ -269,9 +271,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 375.370920419693,
+      "runtime_s": 704.6155548095703,
       "metrics": {
-        "xsim": 0.6528487613912314,
+        "xsim": 0.6913705334224763,
         "nrmse": 52.47826608673199
       }
     },
@@ -284,10 +286,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 113.7213761806488,
+      "runtime_s": 66.05612421035767,
       "metrics": {
-        "xsim": 0.6202409111130656,
-        "nrmse": 49.793814036732016
+        "xsim": 0.6631312296268691,
+        "nrmse": 49.79380282455811
       }
     },
     "qsmnet": {
@@ -299,10 +301,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 222.50838351249695,
+      "runtime_s": 199.19840168952942,
       "metrics": {
-        "xsim": 0.6217182151897079,
-        "nrmse": 49.0209158178078
+        "xsim": 0.6675032012638005,
+        "nrmse": 49.02091311121549
       }
     },
     "qsmnet-plus": {
@@ -312,12 +314,12 @@
       "mode": "isolated",
       "variant": "default",
       "combo": null,
-      "phantom": null,
+      "phantom": "sim",
       "status": "ok",
-      "runtime_s": 213.63435053825378,
+      "runtime_s": 206.69729351997375,
       "metrics": {
-        "xsim": 0.5114892145867522,
-        "nrmse": 52.78238625976493
+        "xsim": 0.5464327340544853,
+        "nrmse": 52.78238282261826
       }
     },
     "autoqsm": {
@@ -329,9 +331,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 268.933758020401,
+      "runtime_s": 286.08948016166687,
       "metrics": {
-        "xsim": 0.2467547151749711,
+        "xsim": 0.2525212019000853,
         "nrmse": 85.67732622957605
       }
     },
@@ -344,9 +346,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 476.2462658882141,
+      "runtime_s": 297.0098614692688,
       "metrics": {
-        "xsim": 0.2445412154186394,
+        "xsim": 0.2616819124668805,
         "nrmse": 77.5331679431055
       }
     },
@@ -359,10 +361,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 125.29134368896484,
+      "runtime_s": 125.4967679977417,
       "metrics": {
-        "xsim": 0.6676989430747042,
-        "nrmse": 41.35378607468433
+        "xsim": 0.7202036114693595,
+        "nrmse": 41.2225489013013
       }
     },
     "lpcnn": {
@@ -374,10 +376,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 513.4902448654175,
+      "runtime_s": 321.0636429786682,
       "metrics": {
-        "xsim": 0.6201424275411298,
-        "nrmse": 45.658848234969554
+        "xsim": 0.665956798573191,
+        "nrmse": 45.65884860278705
       }
     },
     "modl-qsm": {
@@ -389,10 +391,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 349.41113114356995,
+      "runtime_s": 492.1518921852112,
       "metrics": {
-        "xsim": 0.25474550068423585,
-        "nrmse": 73.82661515277167
+        "xsim": 0.27215688837134816,
+        "nrmse": 74.44148649940603
       }
     },
     "nextqsm": {
@@ -404,9 +406,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 169.6996636390686,
+      "runtime_s": 145.7623007297516,
       "metrics": {
-        "xsim": 0.4283929394468237,
+        "xsim": 0.4519220684438545,
         "nrmse": 70.26445973174881
       }
     },
@@ -419,10 +421,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 86.19397735595703,
+      "runtime_s": 94.86584711074829,
       "metrics": {
-        "xsim": 0.31209203078098946,
-        "nrmse": 74.5517058913381
+        "xsim": 0.2707737059911934,
+        "nrmse": 76.6073574523667
       }
     },
     "iqsm-plus": {
@@ -434,10 +436,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 115.13810968399048,
+      "runtime_s": 115.4338891506195,
       "metrics": {
-        "xsim": 0.3197975755371504,
-        "nrmse": 77.003159267797
+        "xsim": 0.27944441212599436,
+        "nrmse": 79.5059710782081
       }
     },
     "romeo": {
@@ -449,10 +451,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 31.919625282287598,
+      "runtime_s": 18.415601015090942,
       "metrics": {
-        "xsim": 0.1902625581124188,
-        "nrmse": 73.24315203974926
+        "xsim": 0.2587325364287505,
+        "nrmse": 72.08891687910649
       }
     },
     "laplacian": {
@@ -464,9 +466,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 24.695618391036987,
+      "runtime_s": 25.539457082748413,
       "metrics": {
-        "xsim": 0.1833579935358206,
+        "xsim": 0.24859824172673367,
         "nrmse": 78.8362894008095
       }
     },
@@ -479,10 +481,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 7.976885080337524,
+      "runtime_s": 13.652645826339722,
       "metrics": {
-        "xsim": 0.8656682672542579,
-        "nrmse": 42.623581251534
+        "xsim": 0.8200184673348561,
+        "nrmse": 51.22001958544299
       }
     },
     "pdf": {
@@ -494,9 +496,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 262.7697277069092,
+      "runtime_s": 211.7326626777649,
       "metrics": {
-        "xsim": 0.8430211307719389,
+        "xsim": 0.8456679279903276,
         "nrmse": 44.49073623165467
       }
     },
@@ -509,10 +511,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 17.474193811416626,
+      "runtime_s": 21.483689069747925,
       "metrics": {
-        "xsim": 0.8776557129948063,
-        "nrmse": 42.38767750033696
+        "xsim": 0.8620696255584777,
+        "nrmse": 46.51879975175737
       }
     },
     "ismv": {
@@ -524,10 +526,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 21.74703621864319,
+      "runtime_s": 22.56756901741028,
       "metrics": {
-        "xsim": 0.9251047096854906,
-        "nrmse": 28.10908187188692
+        "xsim": 0.746208479489142,
+        "nrmse": 51.365182413928835
       }
     },
     "sharp": {
@@ -539,10 +541,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 2.4266819953918457,
+      "runtime_s": 2.8865718841552734,
       "metrics": {
-        "xsim": 0.890581695735657,
-        "nrmse": 36.333968017797716
+        "xsim": 0.6818587003633786,
+        "nrmse": 58.058655716740546
       }
     },
     "resharp": {
@@ -554,10 +556,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 17.855551958084106,
+      "runtime_s": 23.533896446228027,
       "metrics": {
-        "xsim": 0.9034796308624468,
-        "nrmse": 32.99950301675298
+        "xsim": 0.689501213130401,
+        "nrmse": 56.484588825708336
       }
     },
     "harperella": {
@@ -569,9 +571,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 33.21861934661865,
+      "runtime_s": 34.882126331329346,
       "metrics": {
-        "xsim": 0.25120027481868135,
+        "xsim": 0.25375376342623623,
         "nrmse": 105.33702394416613
       }
     },
@@ -584,9 +586,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 48.69553804397583,
+      "runtime_s": 48.941394567489624,
       "metrics": {
-        "xsim": 0.5345961347610801,
+        "xsim": 0.5361890982162892,
         "nrmse": 75.93499425864555
       }
     },
@@ -599,9 +601,9 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 378.5189297199249,
+      "runtime_s": 363.9911479949951,
       "metrics": {
-        "xsim": 0.8131375567989069,
+        "xsim": 0.8172423844863484,
         "nrmse": 58.703795678022
       }
     },
@@ -614,10 +616,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 109.9021544456482,
+      "runtime_s": 120.25764012336731,
       "metrics": {
-        "xsim": 0.5711325438411617,
-        "nrmse": 70.44095319582854
+        "xsim": 0.5073562537344954,
+        "nrmse": 75.45191883352678
       }
     }
   },
@@ -635,10 +637,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 63.15810465812683,
+      "runtime_s": 42.60218286514282,
       "metrics": {
-        "xsim": 0.29253283854680867,
-        "nrmse": 84.60996856572788
+        "xsim": 0.22517222528073047,
+        "nrmse": 85.12894016047568
       }
     },
     "romeo-ismv-hdqsm": {
@@ -654,10 +656,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 83.66205430030823,
+      "runtime_s": 77.60407948493958,
       "metrics": {
-        "xsim": 0.36080840510886,
-        "nrmse": 82.4943926502166
+        "xsim": 0.2907795331270066,
+        "nrmse": 82.03275996446013
       }
     },
     "romeo-resharp-tikhonov": {
@@ -673,10 +675,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 50.907986640930176,
+      "runtime_s": 32.10013294219971,
       "metrics": {
-        "xsim": 0.2826965204011119,
-        "nrmse": 85.79855648723442
+        "xsim": 0.21931066497275314,
+        "nrmse": 85.39333222668014
       }
     },
     "romeo-resharp-tv": {
@@ -692,10 +694,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 73.71509623527527,
+      "runtime_s": 54.02061152458191,
       "metrics": {
-        "xsim": 0.3081612069087422,
-        "nrmse": 82.53266996360726
+        "xsim": 0.22872233316904922,
+        "nrmse": 83.72074539028667
       }
     },
     "romeo-resharp-hdqsm": {
@@ -711,10 +713,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 83.50031208992004,
+      "runtime_s": 62.23931002616882,
       "metrics": {
-        "xsim": 0.36005560520155594,
-        "nrmse": 81.38373468702743
+        "xsim": 0.2723132220260137,
+        "nrmse": 82.7870741606892
       }
     },
     "romeo-ismv-rts": {
@@ -730,10 +732,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 49.20045256614685,
+      "runtime_s": 45.44525671005249,
       "metrics": {
-        "xsim": 0.3030980229895849,
-        "nrmse": 84.86698553732735
+        "xsim": 0.24998936154794443,
+        "nrmse": 83.5895045125966
       }
     },
     "romeo-ismv-whqsm": {
@@ -749,10 +751,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 215.01936602592468,
+      "runtime_s": 214.76638412475586,
       "metrics": {
-        "xsim": 0.3880048377472225,
-        "nrmse": 77.75792516222295
+        "xsim": 0.29233034260767526,
+        "nrmse": 80.43456629915872
       }
     },
     "romeo-sharp-whqsm": {
@@ -768,10 +770,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 232.4991753101349,
+      "runtime_s": 159.75715494155884,
       "metrics": {
-        "xsim": 0.37238936443456017,
-        "nrmse": 78.62103532214796
+        "xsim": 0.2782379002786024,
+        "nrmse": 81.02399666162421
       }
     },
     "romeo-resharp-whqsm": {
@@ -787,10 +789,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 223.047189950943,
+      "runtime_s": 184.69931411743164,
       "metrics": {
-        "xsim": 0.3838690387762323,
-        "nrmse": 77.66316960362553
+        "xsim": 0.2749293356168131,
+        "nrmse": 81.30818754142999
       }
     },
     "romeo-sharp-tikhonov": {
@@ -806,10 +808,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 30.04679775238037,
+      "runtime_s": 15.246484756469727,
       "metrics": {
-        "xsim": 0.2713456559170557,
-        "nrmse": 88.746700030181
+        "xsim": 0.2116351006358684,
+        "nrmse": 86.25273936243096
       }
     },
     "qsmart": {
@@ -821,12 +823,12 @@
       "combo": {
         "field_mapping": "romeo-qsmrs"
       },
-      "phantom": null,
+      "phantom": "sim",
       "status": "ok",
-      "runtime_s": 561.1631233692169,
+      "runtime_s": 666.8610002994537,
       "metrics": {
-        "xsim": 0.13786397868115038,
-        "nrmse": 97.36823612882118
+        "xsim": 0.14650062160373203,
+        "nrmse": 92.92426137402508
       }
     },
     "tgv": {
@@ -840,10 +842,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 161.2389349937439,
+      "runtime_s": 157.5206732749939,
       "metrics": {
-        "xsim": 0.29367064143137794,
-        "nrmse": 92.99662208565435
+        "xsim": 0.2571427614592492,
+        "nrmse": 82.71512025197576
       }
     },
     "autoqsm": {
@@ -857,10 +859,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 234.10726761817932,
+      "runtime_s": 201.47673559188843,
       "metrics": {
-        "xsim": 0.2004266958921991,
-        "nrmse": 90.34247405671398
+        "xsim": 0.2183489218321759,
+        "nrmse": 88.8005720616712
       }
     },
     "nextqsm": {
@@ -874,10 +876,10 @@
       },
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 149.8877215385437,
+      "runtime_s": 128.51998805999756,
       "metrics": {
-        "xsim": 0.2338822562541516,
-        "nrmse": 100.77861356912621
+        "xsim": 0.25638233396327237,
+        "nrmse": 91.05792676140985
       }
     },
     "iqsm": {
@@ -889,10 +891,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 47.2990505695343,
+      "runtime_s": 86.33281922340393,
       "metrics": {
-        "xsim": 0.31209194785267863,
-        "nrmse": 74.55170655340491
+        "xsim": 0.2707737059911934,
+        "nrmse": 76.6073574523667
       }
     },
     "iqsm-plus": {
@@ -904,10 +906,10 @@
       "combo": null,
       "phantom": "sim",
       "status": "ok",
-      "runtime_s": 99.69761633872986,
+      "runtime_s": 99.05832695960999,
       "metrics": {
-        "xsim": 0.31979752710472986,
-        "nrmse": 77.00316528466448
+        "xsim": 0.2794444191337876,
+        "nrmse": 79.50597086272555
       }
     }
   }

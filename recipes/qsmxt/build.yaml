@@ -1,5 +1,5 @@
 name: qsmxt
-version: "9.21.0"
+version: "9.22.0"
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
@@ -13,8 +13,8 @@ variables:
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
   openrecon_ismrmrd_version: "1.14.2"
-  upstream_version: "9.21.0"
-  model_revision: e7c66cece159dc163885afd6165f582769dc5f29
+  upstream_version: "9.22.0"
+  model_revision: 31b08225f3adf2d732dafad4e3c5a94c350ef51b
   qsmxt_tarball:
     try:
       - value: qsmxt_x86_64_tar_gz
@@ -109,6 +109,9 @@ build:
         - install -m 644 {{ get_file("modl-qsm.onnx") }} /opt/qsmxt/models/modl-qsm.onnx
         - install -m 644 {{ get_file("susep-net.onnx") }} /opt/qsmxt/models/susep-net.onnx
         - install -m 644 {{ get_file("chi-sepnet.onnx") }} /opt/qsmxt/models/chi-sepnet.onnx
+        - install -m 644 {{ get_file("r2primenet.onnx") }} /opt/qsmxt/models/r2primenet.onnx
+        - install -m 644 {{ get_file("hd-bet.onnx") }} /opt/qsmxt/models/hd-bet.onnx
+        - install -m 644 {{ get_file("synthseg.onnx") }} /opt/qsmxt/models/synthseg.onnx
         - install -m 644 {{ get_file("models.sha256") }} /opt/qsmxt/models/models.sha256
         - cd /opt/qsmxt/models && sha256sum -c models.sha256
 
@@ -258,3 +261,9 @@ files:
     url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/susep-net.onnx
   - name: chi-sepnet.onnx
     url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/chi-sepnet.onnx
+  - name: r2primenet.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/r2primenet.onnx
+  - name: hd-bet.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/hd-bet.onnx
+  - name: synthseg.onnx
+    url: https://huggingface.co/qsmxt/qsm-onnx-weights/resolve/{{ context.model_revision }}/synthseg.onnx
