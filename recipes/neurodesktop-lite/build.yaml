@@ -284,11 +284,13 @@ auto_update:
     target:
       variable: jupyter_scheduler_version
   - id: httpx
+    dependency: true
     method: pypi
     package: httpx
     target:
       variable: httpx_version
   - id: ipywidgets
+    dependency: true
     method: pypi
     package: ipywidgets
     target:
@@ -300,6 +302,7 @@ auto_update:
     target:
       variable: ipyvolume_version
   - id: jupyterlab_widgets
+    dependency: true
     method: pypi
     package: jupyterlab_widgets
     target:
@@ -328,23 +331,27 @@ auto_update:
     target:
       variable: pytest_version
   - id: requests
+    dependency: true
     method: pypi
     package: requests
     target:
       variable: requests_version
   - id: chardet
+    dependency: true
     method: pypi
     package: chardet
     version_regex: (?P<version>[0-5]\.\d+(?:\.\d+)*)
     target:
       variable: chardet_version
   - id: base-image
+    dependency: true
     method: oci_digest
     image: quay.io/jupyter/base-notebook
     tag: latest
     target:
       variable: base_digest
   - id: go
+    dependency: true
     method: github_tags
     repo: golang/go
     version_regex: go(?P<version>\d+\.\d+(?:\.\d+)?)

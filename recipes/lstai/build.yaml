@@ -26,6 +26,7 @@ auto_update:
           upstream_tag: tag
     # LST 1.x calls HD-BET's v1 CLI and uses its five original model folds.
     - id: hdbet
+      dependency: true
       method: pypi
       package: hd-bet
       version_regex: '(?P<version>1\.\d+(?:\.\d+)?)'
@@ -33,6 +34,7 @@ auto_update:
         variable: hdbet_version
         fulltest_variable: hdbet_version
     - id: dcm2niix
+      dependency: true
       method: github_release_asset
       repo: rordenlab/dcm2niix
       asset: dcm2niix_lnx.zip

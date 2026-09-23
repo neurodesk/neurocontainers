@@ -17,11 +17,13 @@ auto_update:
   method: sources
   sources:
   - id: pyqt5
+    dependency: true
     method: pypi
     package: PyQt5
     target:
       variable: pyqt5_version
   - id: meegkit
+    dependency: true
     method: pypi
     package: meegkit
     target:

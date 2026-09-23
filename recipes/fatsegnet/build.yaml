@@ -19,6 +19,7 @@ auto_update:
     target:
       variable: upstream_commit
   - id: imageio
+    dependency: true
     method: pypi
     package: imageio
     # ImageIO 2.10+ uses Python 3.6 syntax despite declaring Python >=3.5.

@@ -39,24 +39,28 @@ auto_update:
       value: version
       fulltest_variable: upstream_version
   - id: openrecon_ismrmrd
+    dependency: true
     method: github_release
     repo: ismrmrd/ismrmrd
     target:
       variable: openrecon_ismrmrd_version
       value: version
   - id: openrecon_siemens
+    dependency: true
     method: github_commit
     repo: ismrmrd/siemens_to_ismrmrd
     ref: HEAD
     target:
       variable: openrecon_siemens_commit
   - id: openrecon_python_tools
+    dependency: true
     method: github_commit
     repo: ismrmrd/ismrmrd-python-tools
     ref: HEAD
     target:
       variable: openrecon_python_tools_commit
   - id: openrecon_server
+    dependency: true
     method: github_commit
     repo: astewartau/python-ismrmrd-server
     ref: fix/ismrmrd-compatibility

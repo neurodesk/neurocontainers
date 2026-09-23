@@ -24,6 +24,7 @@ auto_update:
         variable: hnn_core_version
         fulltest_variable: hnn_core_version
     - id: neuron
+      dependency: true
       method: github_commit
       repo: neuronsimulator/nrn
       ref: release/8.2

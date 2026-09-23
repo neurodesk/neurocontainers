@@ -20,6 +20,7 @@ auto_update:
         variable: upstream_version
         fulltest_variable: upstream_version
     - id: hdbet-models
+      dependency: true
       method: zenodo
       record: "2540695"
       required_files: [0.model, 1.model, 2.model, 3.model, 4.model]

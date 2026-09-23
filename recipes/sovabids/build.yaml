@@ -36,12 +36,14 @@ auto_update:
       value: tag
       fulltest_variable: sovabids_tag
   - id: bidscoin
+    dependency: true
     method: github_commit
     repo: yjmantilla/bidscoin
     ref: sovabids
     target:
       variable: bidscoin_commit
   - id: mne-bids-pipeline
+    dependency: true
     method: github_commit
     repo: mne-tools/mne-bids-pipeline
     ref: main
@@ -49,78 +51,91 @@ auto_update:
       variable: mne_bids_pipeline_commit
 
   - id: numpy
+    dependency: true
     method: pypi
     package: numpy
     version_regex: ^(?P<version>1\.26\.\d+)$
     target:
       variable: numpy_version
   - id: pandas
+    dependency: true
     method: pypi
     package: pandas
     version_regex: ^(?P<version>1\.5\.\d+)$
     target:
       variable: pandas_version
   - id: scipy
+    dependency: true
     method: pypi
     package: scipy
     version_regex: ^(?P<version>1\.11\.\d+)$
     target:
       variable: scipy_version
   - id: mne
+    dependency: true
     method: pypi
     package: mne
     version_regex: ^(?P<version>1\.6\.\d+)$
     target:
       variable: mne_version
   - id: mne-bids
+    dependency: true
     method: pypi
     package: mne-bids
     version_regex: ^(?P<version>0\.14(?:\.\d+)?)$
     target:
       variable: mne_bids_version
   - id: pybv
+    dependency: true
     method: pypi
     package: pybv
     version_regex: ^(?P<version>0\.7\.\d+)$
     target:
       variable: pybv_version
   - id: fastapi-jsonrpc
+    dependency: true
     method: pypi
     package: fastapi-jsonrpc
     version_regex: ^(?P<version>2\.5\.\d+)$
     target:
       variable: fastapi_jsonrpc_version
   - id: pydantic
+    dependency: true
     method: pypi
     package: pydantic
     version_regex: ^(?P<version>1\.10\.(?:[0-9]|1[0-2]))$
     target:
       variable: pydantic_version
   - id: pydicom
+    dependency: true
     method: pypi
     package: pydicom
     version_regex: ^(?P<version>2\.4\.\d+)$
     target:
       variable: pydicom_version
   - id: flask
+    dependency: true
     method: pypi
     package: flask
     version_regex: ^(?P<version>3\.0\.\d+)$
     target:
       variable: flask_version
   - id: uvicorn
+    dependency: true
     method: pypi
     package: uvicorn
     version_regex: ^(?P<version>0\.30\.\d+)$
     target:
       variable: uvicorn_version
   - id: httpx
+    dependency: true
     method: pypi
     package: httpx
     version_regex: ^(?P<version>0\.27\.\d+)$
     target:
       variable: httpx_version
   - id: fastapi
+    dependency: true
     method: pypi
     package: fastapi
     version_regex: ^(?P<version>0\.99\.\d+)$
@@ -128,12 +143,14 @@ auto_update:
       variable: fastapi_version
 
   - id: vscode
+    dependency: true
     method: http_digest
     url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
     target:
       file: vscode_deb
 
   - id: bids-validator
+    dependency: true
     method: pypi
     package: bids-validator
     target:

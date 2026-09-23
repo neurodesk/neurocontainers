@@ -22,12 +22,14 @@ auto_update:
     target:
       variable: model_commit
   - id: hdbet
+    dependency: true
     method: github_commit
     repo: MIC-DKFZ/HD-BET
     ref: HEAD
     target:
       variable: hdbet_commit
   - id: nnunetv2
+    dependency: true
     method: pypi
     package: nnunetv2
     target:

@@ -30,18 +30,21 @@ auto_update:
     target:
       variable: upstream_commit
   - id: fsl-binaries
+    dependency: true
     method: github_commit
     repo: dlevitas/FSL_binaries
     ref: HEAD
     target:
       variable: fsl_binaries_commit
   - id: bids-specification
+    dependency: true
     method: github_commit
     repo: bids-standard/bids-specification
     ref: HEAD
     target:
       variable: bids_specification_commit
   - id: bids-validator
+    dependency: true
     method: github_commit
     repo: bids-standard/bids-validator
     ref: HEAD

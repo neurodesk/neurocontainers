@@ -20,6 +20,7 @@ auto_update:
   local: []
   sources:
   - id: vscode
+    dependency: true
     method: webpage
     target:
       variable: vscode_version

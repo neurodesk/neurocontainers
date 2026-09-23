@@ -33,6 +33,7 @@ auto_update:
     target:
       variable: mrsi_pipeline_commit
   - id: hdbet
+    dependency: true
     method: pypi
     package: hd-bet
     version_regex: '(?P<version>1\.\d+(?:\.\d+)?)'
@@ -40,6 +41,7 @@ auto_update:
       variable: hdbet_version
       fulltest_variable: hdbet_version
   - id: hdbet-models
+    dependency: true
     method: zenodo
     record: "2540695"
     required_files: [0.model, 1.model, 2.model, 3.model, 4.model]

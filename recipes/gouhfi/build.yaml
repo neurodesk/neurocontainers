@@ -39,6 +39,7 @@ auto_update:
       variable: upstream_commit
       fulltest_variable: upstream_commit
   - id: torch
+    dependency: true
     method: pypi
     package: torch
     # CUDA 11.8 wheels used on x86 end at the PyTorch 2.7 release family.
@@ -47,12 +48,14 @@ auto_update:
       variable: torch_version
       fulltest_variable: torch_version
   - id: antspyx
+    dependency: true
     method: pypi
     package: antspyx
     target:
       variable: antspyx_version
       fulltest_variable: antspyx_version
   - id: antspynet
+    dependency: true
     method: pypi
     package: antspynet
     target:

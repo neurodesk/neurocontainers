@@ -25,6 +25,7 @@ auto_update:
         variables:
           upstream_version: version
     - id: dcm2niix
+      dependency: true
       method: pypi
       package: dcm2niix
       target:

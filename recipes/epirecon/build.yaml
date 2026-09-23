@@ -31,6 +31,9 @@ files:
     filename: OpenReconREADME.md
 
 auto_update:
+  frozen: true
+  reason: >-
+    Locally maintained OpenRecon app; its ISMRMRD stack and base image pins are held until a maintainer revalidates the reconstruction against newer upstreams.
   container_version: false
   method: sources
   local:

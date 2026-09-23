@@ -22,6 +22,7 @@ auto_update:
       variables:
         upstream_version: version
   - id: volgenmodel
+    dependency: true
     method: github_commit
     repo: CAIsr/volgenmodel-nipype
     target:

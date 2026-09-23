@@ -65,6 +65,7 @@ auto_update:
         variable: upstream_version
         fulltest_variable: upstream_version
     - id: pyradiomics
+      dependency: true
       method: github_release
       repo: AIM-Harvard/pyradiomics
       version_regex: '^v?(?P<version>3\.1\.\d+)$'
@@ -72,6 +73,7 @@ auto_update:
         variable: radiomics_version
         fulltest_variable: radiomics_version
     - id: numpy
+      dependency: true
       method: pypi
       package: numpy
       version_regex: '^(?P<version>2\.1\.\d+)$'
@@ -79,6 +81,7 @@ auto_update:
         variable: numpy_version
         fulltest_variable: numpy_version
     - id: tensorflow
+      dependency: true
       method: pypi
       package: tensorflow
       version_regex: '^(?P<version>2\.19\.\d+)$'
@@ -86,6 +89,7 @@ auto_update:
         variable: tensorflow_version
         fulltest_variable: tensorflow_version
     - id: torch
+      dependency: true
       method: pypi
       package: torch
       version_regex: '^(?P<version>2\.6\.\d+)$'
@@ -93,6 +97,7 @@ auto_update:
         variable: torch_version
         fulltest_variable: torch_version
     - id: torchvision
+      dependency: true
       method: pypi
       package: torchvision
       version_regex: '^(?P<version>0\.21\.\d+)$'
@@ -100,6 +105,7 @@ auto_update:
         variable: torchvision_version
         fulltest_variable: torchvision_version
     - id: simpleitk
+      dependency: true
       method: pypi
       package: SimpleITK
       version_regex: '^(?P<version>2\.4\.\d+)$'
@@ -108,12 +114,14 @@ auto_update:
         fulltest_variable: simpleitk_version
 
     - id: wheel
+      dependency: true
       method: pypi
       package: wheel
       version_regex: '^(?P<version>0\.48\.\d+)$'
       target:
         variable: wheel_version
     - id: setuptools
+      dependency: true
       method: pypi
       package: setuptools
       version_regex: '^(?P<version>84\.0\.\d+)$'

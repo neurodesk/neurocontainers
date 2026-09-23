@@ -47,6 +47,7 @@ auto_update:
       variable: mnelab_version
       fulltest_variable: mnelab_version
   - id: vscode
+    dependency: true
     method: webpage
     target:
       variable: vscode_version

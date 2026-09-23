@@ -23,6 +23,7 @@ auto_update:
         variable: upstream_version
         fulltest_variable: upstream_version
     - id: traits
+      dependency: true
       method: pypi
       package: traits
       version_regex: '^(?P<version>6[.][0-9]+[.][0-9]+)$'

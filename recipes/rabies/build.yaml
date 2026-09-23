@@ -71,6 +71,7 @@ auto_update:
         variable: upstream_version
         value: version
     - id: functional_atlas
+      dependency: true
       method: zenodo
       record: "5118030"
       required_files:

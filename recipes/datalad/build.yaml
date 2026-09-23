@@ -35,6 +35,7 @@ auto_update:
   # Debian's build, which is the one published for both architectures this
   # recipe declares; NeuroDebian's newer git-annex-standalone is amd64 only.
   - id: git_annex
+    dependency: true
     method: apt
     package: git-annex
     urls:

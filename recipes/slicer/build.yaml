@@ -16,6 +16,7 @@ auto_update:
   method: sources
   sources:
   - id: monailabel-server
+    dependency: true
     method: pypi
     package: monailabel
     target:
