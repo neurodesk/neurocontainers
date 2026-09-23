@@ -31,6 +31,9 @@ variables:
   base_image_digest: "sha256:829f6df217bcbae2b371026e81711d1a787c61b2967ad09d015063663ebafbf7"
 
 auto_update:
+  frozen: true
+  reason: >-
+    Locally maintained OpenRecon app; its ISMRMRD stack and base image pins are held until a maintainer revalidates the reconstruction against newer upstreams.
   container_version: false
   method: sources
   local:
