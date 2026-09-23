@@ -85,9 +85,9 @@ retain the conversion to the source arbitrary units. Source NIfTI values do not
 change.
 
 QSMxT computes T2* from multi-echo magnitude data inside its reconstruction mask.
-The [v9.21.0 pipeline](https://github.com/QSMxT/QSMxT/blob/v9.21.0/src/pipeline/runner.rs)
+The [v9.22.0 pipeline](https://github.com/QSMxT/QSMxT/blob/v9.22.0/src/pipeline/runner.rs)
 requires at least three echoes and calls the
-[QSM.rs v0.35.0 ARLO estimator](https://github.com/astewartau/QSM.rs/blob/v0.35.0/src/utils/r2star.rs),
+[QSM.rs v0.38.0 ARLO estimator](https://github.com/astewartau/QSM.rs/blob/v0.38.0/src/utils/r2star.rs),
 with a log-linear fallback for rejected estimates. The ARLO calculation assumes
 equally spaced echo times. The pipeline writes R2* in inverse seconds and takes
 `T2* = 1 / R2*` for positive rates inside the mask, otherwise zero. Small positive
@@ -150,12 +150,30 @@ ppm metadata, and ppb DICOM rescaling. QSMxT writes the diamagnetic map as
 positive magnitudes, so separated total equals paramagnetic minus diamagnetic.
 
 These expose the implementations in the pinned QSMxT release. QSM-core's
-[R2*-QSM](https://github.com/astewartau/QSM.rs/blob/v0.35.0/src/separation/r2star_qsm.rs)
+[R2*-QSM](https://github.com/astewartau/QSM.rs/blob/v0.38.0/src/separation/r2star_qsm.rs)
 uses the voxelwise closed-form solve without the paper's spatial
 regularization. Its
-[DECOMPOSE implementation](https://github.com/astewartau/QSM.rs/blob/v0.35.0/src/separation/decompose.rs)
+[DECOMPOSE implementation](https://github.com/astewartau/QSM.rs/blob/v0.38.0/src/separation/decompose.rs)
 synthesizes per-echo phase from
 the reconstructed QSM rather than fitting the original complex GRE signal.
+
+### SMWI
+
+`sendoutputs=smwi` adds `--do-smwi` to `qsmxt run` and returns two series,
+`smwi-paramagnetic` and `smwi-diamagnetic`, read from the NIfTI files ending in
+`desc-paramagnetic_smwi` and `desc-diamagnetic_smwi`. `sendoutputs=all` includes
+both. QSMxT enables QSM for SMWI even when `noqsm=true`. The per-contrast minIP
+volumes QSMxT also writes stay in the NIfTI output, as the SWI minIP does.
+
+The [QSM.rs v0.38.0 implementation](https://github.com/astewartau/QSM.rs/blob/v0.38.0/src/swi.rs)
+multiplies the combined magnitude inside the mask by `w(χ)^4`, with
+`w(χ) = clamp(1 - χ/1 ppm, 0, 1)` for the paramagnetic image and
+`clamp(1 + χ/1 ppm, 0, 1)` for the diamagnetic image. These are QSMxT's defaults,
+following SEPIA; the bridge does not override `--smwi-threshold` or
+`--smwi-power`. Both series share the SWI display handling described above:
+scaled arbitrary units, `QSMxTWindowDomain=scaled-a.u.`, and one window across
+the volume. Their image-type tokens are `QSMXT_SMWI_PARA` and `QSMXT_SMWI_DIA`,
+within the 16-character DICOM limit.
 
 ## Pipeline presets
 
@@ -210,10 +228,11 @@ removal algorithms in the packaged QSMxT release. The release smoke test compare
 them with `qsmxt run --help`. See the [QSMxT algorithm
 reference](https://qsmxt.github.io/QSMxT/reference/algorithms/) for method references.
 
-All 16 ONNX weight files in QSMxT's pinned model registry are downloaded through
+All 19 ONNX weight files in QSMxT's pinned model registry are downloaded through
 the builder cache and verified with SHA-256 during the build. This includes both
-NeXtQSM networks and the source-separation networks available on the command line.
-The uncompressed weights add about 1.46 GB to the image.
+NeXtQSM networks, the source-separation and R2PRIMEnet networks, HD-BET, and
+SynthSeg, which are available on the command line.
+The uncompressed weights add about 1.73 GB to the image.
 
 The container sets `QSM_MODEL_DIR=/opt/qsmxt/models`, so packaged neural-network
 methods work offline and do not require a home directory. `models.sha256` records
@@ -246,6 +265,8 @@ voxels enter those calculations.
 | `nltv` | Nonlinear Total Variation. |
 | `medi` | Morphology Enabled Dipole Inversion. |
 | `ilsqr` | iLSQR inversion. |
+| `lsqr` | Minimally regularized LSQR inversion. |
+| `heidi` | HEIDI inversion, seeded with an LSQR solve. |
 | `qsmart` | QSMART two-stage reconstruction. |
 | `tfi` | Total Field Inversion. |
 | `ndi` | Nonlinear Dipole Inversion. |
@@ -306,7 +327,7 @@ not reopened.
 
 ### QSM-CI in silico 2019 benchmarks
 
-Snapshot retrieved 2026-09-07 from the [QSM-CI results page](https://qsmxt.github.io/QSM-CI/results.html).
+Snapshot retrieved 2026-09-23 from the [QSM-CI results page](https://qsmxt.github.io/QSM-CI/results.html).
 The tables use the default isolated run for each packaged implementation;
 tuned variants and retired implementations are excluded. The pipeline table
 uses the matching composed run starting from phase. Higher xSIM and lower
@@ -324,57 +345,59 @@ scanner turnaround. Read each linked run for its benchmark details.
 
 | GUI algorithm | Benchmark input/stage | xSIM ↑ | NRMSE ↓ | Runtime | Source |
 | --- | --- | ---: | ---: | ---: | --- |
-| `whqsm` | Inversion from true local field | 0.622 | 42.5% | ~2.6 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=whqsm-qsmrs-iso) |
-| `hdqsm` | Inversion from true local field | 0.672 | 33.2% | ~34 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=hdqsm-qsmrs-iso) |
-| `rts` | Inversion from true local field | 0.694 | 38.4% | ~12 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=rts-qsmrs-iso) |
-| `tv` | Inversion from true local field | 0.765 | 28.7% | ~10 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tv-qsmrs-iso) |
-| `tkd` | Inversion from true local field | 0.730 | 36.3% | ~3 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tkd-qsmrs-iso) |
-| `tsvd` | Inversion from true local field | 0.599 | 46.4% | ~3 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tsvd-qsmrs-iso) |
-| `tgv` | QSM from true total field | 0.467 | 56.1% | ~3.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tgv-qsmrs-iso) |
-| `tikhonov` | Inversion from true local field | 0.702 | 38.7% | ~3 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tikhonov-qsmrs-iso) |
-| `nltv` | Inversion from true local field | 0.782 | 35.0% | ~1.8 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=nltv-qsmrs-iso) |
-| `medi` | Inversion from true local field | 0.622 | 53.1% | ~41 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=medi-qsmrs-iso) |
-| `ilsqr` | Inversion from true local field | 0.581 | 53.3% | ~1.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=ilsqr-qsmrs-iso) |
-| `qsmart` | QSM from true total field | 0.245 | 83.8% | ~11.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=qsmart-qsmrs-iso) |
-| `tfi` | QSM from true total field | 0.441 | 81.1% | ~4.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tfi-qsmrs-iso) |
-| `ndi` | Inversion from true local field | 0.616 | 48.3% | ~2.3 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=ndi-qsmrs-iso) |
-| `fansi` | Inversion from true local field | 0.667 | 31.9% | ~3.4 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=fansi-nltv-qsmrs-iso) |
-| `fansi-tgv` | Inversion from true local field | 0.677 | 33.0% | ~11.0 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=fansi-nltgv-qsmrs-iso) |
-| `l1qsm` | Inversion from true local field | 0.710 | 47.7% | ~2.0 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=l1qsm-qsmrs-iso) |
-| `amp-pe` | Inversion from true local field | 0.653 | 52.5% | ~6.3 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=amp-pe-qsmrs-iso) |
-| `xqsm` | Inversion from true local field | 0.620 | 49.8% | ~1.9 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=xqsm-iso) |
-| `qsmnet` | Inversion from true local field | 0.622 | 49.0% | ~3.7 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=qsmnet-iso) |
-| `qsmnet-plus` | Inversion from true local field | 0.511 | 52.8% | ~3.6 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=qsmnet-plus-iso) |
-| `autoqsm` | QSM from true total field | 0.247 | 85.7% | ~4.5 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=autoqsm-iso) |
-| `qsmgan` | Inversion from true local field | 0.245 | 77.5% | ~7.9 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=qsmgan-iso) |
-| `ir2qsm` | Inversion from true local field | 0.668 | 41.4% | ~2.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=ir2qsm-iso) |
-| `lpcnn` | Inversion from true local field | 0.620 | 45.7% | ~8.6 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=lpcnn-iso) |
-| `modl-qsm` | Inversion from true local field | 0.255 | 73.8% | ~5.8 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=modl-qsm-iso) |
-| `nextqsm` | QSM from true total field | 0.428 | 70.3% | ~2.8 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=nextqsm-iso) |
-| `iqsm` | QSM from phase | 0.312 | 74.6% | ~1.4 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iqsm-iso) |
-| `iqsm-plus` | QSM from phase | 0.320 | 77.0% | ~1.9 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iqsm-plus-iso) |
+| `whqsm` | Inversion from true local field | 0.645 | 42.5% | ~3.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=whqsm-qsmrs-iso) |
+| `hdqsm` | Inversion from true local field | 0.707 | 33.2% | ~37 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=hdqsm-qsmrs-iso) |
+| `rts` | Inversion from true local field | 0.740 | 38.4% | ~15 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=rts-qsmrs-iso) |
+| `tv` | Inversion from true local field | 0.822 | 28.7% | ~13 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tv-qsmrs-iso) |
+| `tkd` | Inversion from true local field | 0.780 | 36.3% | ~2 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tkd-qsmrs-iso) |
+| `tsvd` | Inversion from true local field | 0.645 | 46.4% | ~4 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tsvd-qsmrs-iso) |
+| `tgv` | QSM from true total field | 0.398 | 65.1% | ~3.0 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tgv-qsmrs-iso) |
+| `tikhonov` | Inversion from true local field | 0.752 | 38.7% | ~4 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tikhonov-qsmrs-iso) |
+| `nltv` | Inversion from true local field | 0.835 | 35.0% | ~1.6 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=nltv-qsmrs-iso) |
+| `medi` | Inversion from true local field | 0.659 | 53.1% | ~48 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=medi-qsmrs-iso) |
+| `ilsqr` | Inversion from true local field | 0.616 | 53.3% | ~44 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=ilsqr-qsmrs-iso) |
+| `lsqr` | Not reported | Not reported | Not reported | Not reported | No matching run |
+| `heidi` | Not reported | Not reported | Not reported | Not reported | No matching run |
+| `qsmart` | QSM from true total field | 0.251 | 83.8% | ~10.6 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=qsmart-qsmrs-iso) |
+| `tfi` | QSM from true total field | 0.459 | 81.1% | ~4.9 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=tfi-qsmrs-iso) |
+| `ndi` | Inversion from true local field | 0.651 | 48.3% | ~1.8 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=ndi-qsmrs-iso) |
+| `fansi` | Inversion from true local field | 0.705 | 31.9% | ~3.0 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=fansi-nltv-qsmrs-iso) |
+| `fansi-tgv` | Inversion from true local field | 0.719 | 33.0% | ~13.3 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=fansi-nltgv-qsmrs-iso) |
+| `l1qsm` | Inversion from true local field | 0.755 | 47.7% | ~2.0 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=l1qsm-qsmrs-iso) |
+| `amp-pe` | Inversion from true local field | 0.691 | 52.5% | ~11.7 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=amp-pe-qsmrs-iso) |
+| `xqsm` | Inversion from true local field | 0.663 | 49.8% | ~1.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=xqsm-iso) |
+| `qsmnet` | Inversion from true local field | 0.668 | 49.0% | ~3.3 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=qsmnet-iso) |
+| `qsmnet-plus` | Inversion from true local field | 0.546 | 52.8% | ~3.4 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=qsmnet-plus-iso) |
+| `autoqsm` | QSM from true total field | 0.253 | 85.7% | ~4.8 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=autoqsm-iso) |
+| `qsmgan` | Inversion from true local field | 0.262 | 77.5% | ~5.0 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=qsmgan-iso) |
+| `ir2qsm` | Inversion from true local field | 0.720 | 41.2% | ~2.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=ir2qsm-iso) |
+| `lpcnn` | Inversion from true local field | 0.666 | 45.7% | ~5.4 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=lpcnn-iso) |
+| `modl-qsm` | Inversion from true local field | 0.272 | 74.4% | ~8.2 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=modl-qsm-iso) |
+| `nextqsm` | QSM from true total field | 0.452 | 70.3% | ~2.4 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=nextqsm-iso) |
+| `iqsm` | QSM from phase | 0.271 | 76.6% | ~1.6 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iqsm-iso) |
+| `iqsm-plus` | QSM from phase | 0.279 | 79.5% | ~1.9 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iqsm-plus-iso) |
 
 #### Phase unwrapping and field mapping
 
 | GUI algorithm | Benchmark input/stage | xSIM ↑ | NRMSE ↓ | Runtime | Source |
 | --- | --- | ---: | ---: | ---: | --- |
-| `romeo` | Field mapping from phase | 0.190 | 73.2% | ~32 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs-iso) |
-| `laplacian` | Field mapping from phase | 0.183 | 78.8% | ~25 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=laplacian-qsmci-iso) |
+| `romeo` | Field mapping from phase | 0.259 | 72.1% | ~18 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs-iso) |
+| `laplacian` | Field mapping from phase | 0.249 | 78.8% | ~26 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=laplacian-qsmci-iso) |
 
 #### Background removal
 
 | GUI algorithm | Benchmark input/stage | xSIM ↑ | NRMSE ↓ | Runtime | Source |
 | --- | --- | ---: | ---: | ---: | --- |
-| `vsharp` | Background removal from true total field | 0.866 | 42.6% | ~8 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=vsharp-qsmrs-iso) |
-| `pdf` | Background removal from true total field | 0.843 | 44.5% | ~4.4 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=pdf-qsmrs-iso) |
-| `lbv` | Background removal from true total field | 0.878 | 42.4% | ~17 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=lbv-qsmrs-iso) |
-| `ismv` | Background removal from true total field | 0.925 | 28.1% | ~22 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=ismv-qsmrs-iso) |
-| `sharp` | Background removal from true total field | 0.891 | 36.3% | ~2 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=sharp-qsmrs-iso) |
-| `resharp` | Background removal from true total field | 0.903 | 33.0% | ~18 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=resharp-qsmrs-iso) |
-| `harperella` | Local field from phase | 0.251 | 105.3% | ~33 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=harperella-qsmrs-iso) |
-| `iharperella` | Local field from phase | 0.535 | 75.9% | ~49 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iharperella-qsmrs-iso) |
-| `bfrnet` | Background removal from true total field | 0.813 | 58.7% | ~6.3 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=bfrnet-iso) |
-| `iqfm` | Local field from phase | 0.571 | 70.4% | ~1.8 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iqfm-iso) |
+| `vsharp` | Background removal from true total field | 0.820 | 51.2% | ~14 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=vsharp-qsmrs-iso) |
+| `pdf` | Background removal from true total field | 0.846 | 44.5% | ~3.5 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=pdf-qsmrs-iso) |
+| `lbv` | Background removal from true total field | 0.862 | 46.5% | ~21 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=lbv-qsmrs-iso) |
+| `ismv` | Background removal from true total field | 0.746 | 51.4% | ~23 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=ismv-qsmrs-iso) |
+| `sharp` | Background removal from true total field | 0.682 | 58.1% | ~3 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=sharp-qsmrs-iso) |
+| `resharp` | Background removal from true total field | 0.690 | 56.5% | ~24 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=resharp-qsmrs-iso) |
+| `harperella` | Local field from phase | 0.254 | 105.3% | ~35 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=harperella-qsmrs-iso) |
+| `iharperella` | Local field from phase | 0.536 | 75.9% | ~49 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iharperella-qsmrs-iso) |
+| `bfrnet` | Background removal from true total field | 0.817 | 58.7% | ~6.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=bfrnet-iso) |
+| `iqfm` | Local field from phase | 0.507 | 75.5% | ~2.0 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iqfm-iso) |
 
 #### Full pipeline presets
 
@@ -383,22 +406,22 @@ separate from the scanner measurements in the earlier preset table.
 
 | Preset | xSIM ↑ | NRMSE ↓ | Runtime | Source |
 | --- | ---: | ---: | ---: | --- |
-| `romeo-resharp-rts` | 0.293 | 84.6% | ~1.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~resharp-qsmrs~rts-qsmrs-cmp) |
-| `romeo-ismv-hdqsm` | 0.361 | 82.5% | ~1.4 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~ismv-qsmrs~hdqsm-qsmrs-cmp) |
-| `romeo-resharp-tikhonov` | 0.283 | 85.8% | ~51 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~resharp-qsmrs~tikhonov-qsmrs-cmp) |
-| `romeo-resharp-tv` | 0.308 | 82.5% | ~1.2 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~resharp-qsmrs~tv-qsmrs-cmp) |
-| `romeo-resharp-hdqsm` | 0.360 | 81.4% | ~1.4 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~resharp-qsmrs~hdqsm-qsmrs-cmp) |
-| `romeo-ismv-rts` | 0.303 | 84.9% | ~49 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~ismv-qsmrs~rts-qsmrs-cmp) |
-| `romeo-ismv-whqsm` | 0.388 | 77.8% | ~3.6 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~ismv-qsmrs~whqsm-qsmrs-cmp) |
-| `romeo-sharp-whqsm` | 0.372 | 78.6% | ~3.9 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~sharp-qsmrs~whqsm-qsmrs-cmp) |
-| `romeo-resharp-whqsm` | 0.384 | 77.7% | ~3.7 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~resharp-qsmrs~whqsm-qsmrs-cmp) |
-| `romeo-sharp-tikhonov` | 0.271 | 88.7% | ~30 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~sharp-qsmrs~tikhonov-qsmrs-cmp) |
-| `qsmart` | 0.138 | 97.4% | ~9.4 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~qsmart-qsmrs-cmp) |
-| `tgv` | 0.294 | 93.0% | ~2.7 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~tgv-qsmrs-cmp) |
-| `autoqsm` | 0.200 | 90.3% | ~3.9 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~autoqsm-cmp) |
-| `nextqsm` | 0.234 | 100.8% | ~2.5 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~nextqsm-cmp) |
-| `iqsm` | 0.312 | 74.6% | ~47 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iqsm-cmp) |
-| `iqsm-plus` | 0.320 | 77.0% | ~1.7 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iqsm-plus-cmp) |
+| `romeo-resharp-rts` | 0.225 | 85.1% | ~43 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~resharp-qsmrs~rts-qsmrs-cmp) |
+| `romeo-ismv-hdqsm` | 0.291 | 82.0% | ~1.3 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~ismv-qsmrs~hdqsm-qsmrs-cmp) |
+| `romeo-resharp-tikhonov` | 0.219 | 85.4% | ~32 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~resharp-qsmrs~tikhonov-qsmrs-cmp) |
+| `romeo-resharp-tv` | 0.229 | 83.7% | ~54 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~resharp-qsmrs~tv-qsmrs-cmp) |
+| `romeo-resharp-hdqsm` | 0.272 | 82.8% | ~1.0 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~resharp-qsmrs~hdqsm-qsmrs-cmp) |
+| `romeo-ismv-rts` | 0.250 | 83.6% | ~45 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~ismv-qsmrs~rts-qsmrs-cmp) |
+| `romeo-ismv-whqsm` | 0.292 | 80.4% | ~3.6 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~ismv-qsmrs~whqsm-qsmrs-cmp) |
+| `romeo-sharp-whqsm` | 0.278 | 81.0% | ~2.7 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~sharp-qsmrs~whqsm-qsmrs-cmp) |
+| `romeo-resharp-whqsm` | 0.275 | 81.3% | ~3.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~resharp-qsmrs~whqsm-qsmrs-cmp) |
+| `romeo-sharp-tikhonov` | 0.212 | 86.3% | ~15 s | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~sharp-qsmrs~tikhonov-qsmrs-cmp) |
+| `qsmart` | 0.147 | 92.9% | ~11.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~qsmart-qsmrs-cmp) |
+| `tgv` | 0.257 | 82.7% | ~2.6 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~tgv-qsmrs-cmp) |
+| `autoqsm` | 0.218 | 88.8% | ~3.4 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~autoqsm-cmp) |
+| `nextqsm` | 0.256 | 91.1% | ~2.1 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~nextqsm-cmp) |
+| `iqsm` | 0.271 | 76.6% | ~1.4 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iqsm-cmp) |
+| `iqsm-plus` | 0.279 | 79.5% | ~1.7 min | [run](https://qsmxt.github.io/QSM-CI/submission.html?run=iqsm-plus-cmp) |
 
 ROMEO and Laplacian rows measure field mapping, including echo handling,
 rather than unwrapping alone. HARPERELLA, iHARPERELLA, and iQFM benchmark

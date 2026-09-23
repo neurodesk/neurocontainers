@@ -1,5 +1,5 @@
 name: qsmxt
-version: "9.21.0"
+version: "9.22.0"
 
 test_data:
   output_dir: test_output
@@ -206,6 +206,82 @@ tests:
                   maps['separated-total'], maps['paramagnetic'] - maps['diamagnetic'], atol=1e-6,
               )
               print(f'{method}: GRE reconstruction, distinct source maps, and scanner conversion passed')
+      PYCODE
+
+  - name: SMWI scanner maps
+    description: Select SMWI in OpenRecon and verify both QSMxT contrasts reach the scanner window
+    script: |
+      set -euo pipefail
+      python - <<'PYCODE'
+      import json
+      import sys
+      import tempfile
+      from pathlib import Path
+
+      import ismrmrd
+      import nibabel as nib
+      import numpy as np
+
+      sys.path.insert(0, '/opt/code/python-ismrmrd-server')
+      import qsmxt
+
+      with tempfile.TemporaryDirectory() as work:
+          root = Path(work)
+          bids = root / 'bids'
+          anat = bids / 'sub-01' / 'anat'
+          anat.mkdir(parents=True)
+          (bids / 'dataset_description.json').write_text(json.dumps({
+              'Name': 'SMWI smoke test', 'BIDSVersion': '1.9.0',
+          }))
+          shape = (24, 24, 24)
+          xyz = np.indices(shape) - 11.5
+          radius = np.sum(xyz ** 2, axis=0)
+          brain = radius < 100
+          chi = np.zeros(shape)
+          chi[radius < 16] = 0.08
+          chi[(xyz[0] > 3) & (radius < 64)] = -0.08
+          k = np.meshgrid(*(np.fft.fftfreq(n) for n in shape), indexing='ij')
+          k2 = sum(axis ** 2 for axis in k)
+          dipole = 1 / 3 - np.divide(k[2] ** 2, k2, out=np.zeros(shape), where=k2 > 0)
+          dipole[0, 0, 0] = 0
+          field = np.fft.ifftn(np.fft.fftn(chi) * dipole).real
+          for echo, te in enumerate([0.005, 0.01, 0.015], 1):
+              magnitude = brain * 1000 * np.exp(-30 * te)
+              phase = np.angle(np.exp(1j * field * 2 * np.pi * 42.57747892 * 3 * te))
+              for part, data in [('mag', magnitude), ('phase', (phase + np.pi) * 4096 / (2 * np.pi))]:
+                  stem = f'sub-01_echo-{echo}_part-{part}_MEGRE'
+                  nib.save(nib.Nifti1Image(data.astype(np.float32), np.eye(4)), anat / f'{stem}.nii.gz')
+                  (anat / f'{stem}.json').write_text(json.dumps({
+                      'EchoTime': te, 'MagneticFieldStrength': 3.0, 'B0_dir': [0, 0, 1],
+                  }))
+          settings = qsmxt._settings_from_config({'parameters': {
+              'sendoutputs': 'smwi', 'maskpreset': 'robust-threshold',
+              'maskcleanup': 'none', 'qsmalgorithm': 'tkd',
+          }})
+          output = root / 'output'
+          qsmxt._run_qsmxt(bids, output, settings)
+          specs = qsmxt._find_qsmxt_outputs(output, {'subject': '01'}, settings)
+          assert [item[0] for item in specs] == list(qsmxt.SMWI_OUTPUTS)
+          anchor = ismrmrd.Image.from_array(np.ones((1, 24, 24), dtype=np.float32))
+          for index, (output_id, spec, path) in enumerate(specs):
+              data = nib.load(path).get_fdata()
+              assert data.shape == shape, (output_id, data.shape)
+              assert np.isfinite(data).all() and np.min(data) >= 0
+              assert np.any(data > 0), output_id
+              images = qsmxt._nifti_to_mrd_images(
+                  path, anchor, qsmxt.OUTPUT_SERIES_START + index,
+                  spec['series'], spec['token'], output_id, spec['units'],
+              )
+              qsmxt._validate_output_images(images, [anchor])
+              assert len(images) == 24
+              windows = set()
+              for image in images:
+                  meta = ismrmrd.Meta.deserialize(image.attribute_string)
+                  assert meta['QSMxTWindowDomain'] == 'scaled-a.u.'
+                  assert meta['SeriesDescription'] == spec['series']
+                  windows.add((int(meta['WindowCenter']), int(meta['WindowWidth'])))
+              assert len(windows) == 1
+              print(f'{output_id}: {path.name} converted with window {windows.pop()}')
       PYCODE
 
   - name: SWI scanner window
@@ -596,4 +672,4 @@ tests:
       print("sent derived images:", len(connection.sent_batches[-1]))
       PY
 
-upstream_version: 9.21.0
+upstream_version: 9.22.0
