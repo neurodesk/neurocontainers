@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "dsistudio 2026.7.25": {
+      "version": "20260924",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "dsistudioGUI-dsistudio 2026.7.25": {
+      "version": "20260924",
+      "exec": "dsi_studio",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}
