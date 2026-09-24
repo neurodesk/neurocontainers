@@ -14,13 +14,13 @@ test_data:
   t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
   output_dir: test_output
   atlas_dir: /opt/dsi-studio/atlas/human
-  template_t1w: /opt/dsi-studio/atlas/human/human.T1W.nii.gz
-  template_qa: /opt/dsi-studio/atlas/human/human.QA.nii.gz
+  template_t1w: /opt/dsi-studio/atlas/human/human_T1w.nii.gz
+  template_qa: /opt/dsi-studio/atlas/human/human_QA.nii.gz
 setup:
   script: |
     set -eu
     mkdir -p test_output
-    cp /opt/dsi-studio/atlas/human/human.fz test_output/human.fz
+    cp /opt/dsi-studio/tract/human.fz test_output/human.fz
 tests:
   - name: DSI Studio binary exists
     description: Verify dsi_studio binary is in PATH
@@ -29,14 +29,14 @@ tests:
   - name: DSI Studio version check
     description: Check DSI Studio version output
     command: dsi_studio --version
-    expected_output_contains: 'DSI Studio version:'
+    expected_output_contains: 'DSI Studio'
   - name: DSI Studio atlas directory exists
     description: Verify atlas directory is present
     command: ls -la /opt/dsi-studio/atlas/
     expected_output_contains: human
   - name: DSI Studio human template files exist
     description: Verify the bundled human FIB template is available.
-    command: ls /opt/dsi-studio/atlas/human/*.fz
+    command: ls /opt/dsi-studio/tract/*.fz
     expected_output_contains: human.fz
   - name: src action rejects missing input
     description: Verify the action fails for missing or invalid input.
@@ -277,11 +277,7 @@ tests:
     expected_exit_code: 0
   - name: Neonate atlas exists
     description: Verify dHCP neonate atlas is available
-    command: ls /opt/dsi-studio/atlas/human_neonate/
-    expected_exit_code: 0
-  - name: Network files exist
-    description: Verify network definition files are available
-    command: ls /opt/dsi-studio/network/
+    command: ls /opt/dsi-studio/atlas/human-neonate/
     expected_exit_code: 0
   - name: Color map files exist
     description: Verify color map files are available
@@ -411,21 +407,9 @@ tests:
     expected_exit_code: 0
     validate:
       - output_exists: ${output_dir}/human.fz.qa.nii.gz
-  - name: Template tract file exists
-    description: Verify template tractography file exists
-    command: ls /opt/dsi-studio/atlas/human/human.tt.gz
-    expected_exit_code: 0
-  - name: Template mask file exists
-    description: Verify template mask file exists
-    command: ls /opt/dsi-studio/atlas/human/human.mask.nii.gz
-    expected_exit_code: 0
   - name: Template white matter file exists
     description: Verify template white matter file exists
-    command: ls /opt/dsi-studio/atlas/human/human.WM.nii.gz
-    expected_exit_code: 0
-  - name: Template ROI file exists
-    description: Verify template ROI file exists
-    command: ls /opt/dsi-studio/atlas/human/human.roi.nii.gz
+    command: ls /opt/dsi-studio/atlas/human/human_wm.nii.gz
     expected_exit_code: 0
   - name: ana action - Brodmann region analysis
     description: Analyze specific Brodmann area

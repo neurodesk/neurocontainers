@@ -47,6 +47,7 @@ build:
     - run:
         - cp {{ get_file("dsi_studio_ubuntu2204_cpu_zip") }} dsi_studio_ubuntu2204_cpu.zip
         - unzip dsi_studio_ubuntu2204_cpu.zip
+        - mv dsi-studio-cpu dsi-studio
         - chmod a+rwx dsi-studio -R
         - rm dsi_studio_ubuntu2204_cpu.zip
 
