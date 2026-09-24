@@ -1,5 +1,5 @@
 name: dsistudio
-version: "2024.6.12"
+version: "2026.7.25"
 
 copyright:
   - license: CC-BY-NC-SA-4.0
@@ -11,7 +11,7 @@ architectures:
   - x86_64
 
 variables:
-  upstream_version: 2024.6.12
+  upstream_version: "2026.7.25"
 
 auto_update:
   container_version: "archive"
@@ -89,5 +89,5 @@ gui_apps:
 
 files:
   - name: dsi_studio_ubuntu2204_cpu_zip
-    url: https://github.com/frankyeh/DSI-Studio/releases/download/2024.06.12/dsi_studio_ubuntu2204_cpu.zip
-    sha256: 3bb5281a375b21744cf0fdcd096b198cec7ce5c2815ab73973b0a2074b12c338
+    url: "https://github.com/frankyeh/DSI-Studio/releases/download/2026.7.25/dsi_studio_ubuntu2204_cpu.zip"
+    sha256: "67eb7cc9bc9e79880911ae19878aeb247d76ccbf011ed20dc9d298e0701650d9"
