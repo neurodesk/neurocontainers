@@ -26,6 +26,7 @@ auto_update:
     repo: JuliaLang/julia
     target:
       variable: julia_version
+      fulltest_variable: julia_version
   - id: go
     method: webpage
     url: https://go.dev/dl/?mode=json
@@ -37,6 +38,7 @@ auto_update:
     repo: sylabs/singularity
     target:
       variable: singularity_version
+      fulltest_variable: singularity_version
 
 build:
   kind: neurodocker
@@ -100,6 +102,16 @@ build:
         - libgpgme-dev
         - libseccomp-dev
         - pkg-config
+        - autoconf
+        - automake
+        - libtool
+        - libfuse3-dev
+        - libglib2.0-dev
+        - libsubid-dev
+        - fuse3
+        - fuse2fs
+        - squashfs-tools-ng
+        - uidmap
 
     - run:
         - cp {{ get_file("download") }} vscode.deb
@@ -109,7 +121,7 @@ build:
     - workdir: /opt
 
     - run:
-        - cp {{ get_file("julia_1_6_3_linux_x86_64_tar_gz") }} julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+        - cp {{ get_file("julia_tarball") }} julia-{{ context.julia_version }}-linux-x86_64.tar.gz
         - tar zxvf julia-{{ context.julia_version }}-linux-x86_64.tar.gz
         - rm -rf julia-{{ context.julia_version }}-linux-x86_64.tar.gz
         - ln -s /opt/julia-{{ context.julia_version }} /opt/julia-latest
@@ -131,7 +143,7 @@ build:
         GOPATH: $HOME/go
 
     - run:
-        - cp {{ get_file("go1_17_2_linux_amd64_tar_gz") }} go{{ context.go_version }}.linux-amd64.tar.gz
+        - cp {{ get_file("go_tarball") }} go{{ context.go_version }}.linux-amd64.tar.gz
         - tar -C /usr/local -xzvf go{{ context.go_version }}.linux-amd64.tar.gz
         - rm go{{ context.go_version }}.linux-amd64.tar.gz
 
@@ -190,10 +202,10 @@ files:
   - name: download
     url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-x64/stable
 
-  - name: julia_1_6_3_linux_x86_64_tar_gz
+  - name: julia_tarball
     url: https://julialang-s3.julialang.org/bin/linux/x64/{{ context.julia_version.split(".")[:2] | join(".") }}/julia-{{ context.julia_version }}-linux-x86_64.tar.gz
 
-  - name: go1_17_2_linux_amd64_tar_gz
+  - name: go_tarball
     url: https://dl.google.com/go/go{{ context.go_version }}.linux-amd64.tar.gz
   - name: code
     contents: |
