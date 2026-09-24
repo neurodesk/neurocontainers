@@ -15,6 +15,9 @@ variables:
   base_image_digest: sha256:bc694492031b8ec54b86f338766ccbc0353f961669de65b1ad53857d6c275158
 
 auto_update:
+  frozen: true
+  reason: >-
+    Locally maintained recipe that tracks only its operating system base image; digest-only rebuilds are held until a maintainer refreshes the base image deliberately.
   container_version: false
   method: sources
   local: []
