@@ -1,10 +1,10 @@
 variables:
   venv: /opt/datalad
-  datalad_version: "1.6.3"
+  datalad_version: "1.6.4"
   git_annex_version: 10.20230126-3
 
 name: datalad
-version: "1.6.3"
+version: "1.6.4"
 
 copyright:
   - license: MIT
