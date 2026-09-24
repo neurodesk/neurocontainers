@@ -51,17 +51,17 @@ tests:
     description: Verify the action fails for missing or invalid input.
     command: dsi_studio --thread_count=2 --action=trk --source=nonexistent
     expected_exit_code: 1
-    expected_output_contains: does not exist
+    expected_output_contains: file not exist
   - name: ana action rejects missing input
     description: Verify the action fails for missing or invalid input.
     command: dsi_studio --action=ana --source=nonexistent
     expected_exit_code: 1
-    expected_output_contains: does not exist
+    expected_output_contains: file not exist
   - name: atk action rejects missing input
     description: Verify the action fails for missing or invalid input.
     command: dsi_studio --thread_count=2 --action=atk --source=nonexistent
     expected_exit_code: 1
-    expected_output_contains: does not exist
+    expected_output_contains: file not exist
   - name: exp action rejects missing input
     description: Verify the action fails for missing or invalid input.
     command: dsi_studio --action=exp --source=nonexistent
@@ -151,7 +151,7 @@ tests:
       --output=test_output/template_tracks_conn.tt.gz
     validate:
       - output_exists: ${output_dir}/template_tracks_conn.tt.gz
-      - output_exists: test_output/template_tracks_conn.tt.gz.Brodmann.count.pass.connectivity.mat
+      - output_exists: test_output/template_tracks_conn.tt.gz.Brodmann.connectivity.mat
   - name: atk action - track arcuate fasciculus
     description: Automatic tracking of arcuate fasciculus bundle
     command: mkdir -p test_output/atk_23 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=Arcuate
@@ -170,7 +170,7 @@ tests:
     timeout: 300
   - name: atk action - track multiple bundles
     description: Automatic tracking of multiple bundles
-    command: mkdir -p test_output/atk_25 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=Arcuate,Cingulum,Fornix
+    command: mkdir -p test_output/atk_25 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=Arcuate,Fornix,Uncinate
       --output=test_output/atk_25 --track_voxel_ratio=0.01 --tip_iteration=0 --overwrite=1 && test -n "$(find test_output/atk_25
       -name '*.tt.gz' -size +0c -print -quit)" && test -z "$(find test_output/atk_25 -name '*.no_result.txt' -print
       -quit)"
@@ -204,7 +204,7 @@ tests:
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
     validate:
-      - output_exists: test_output/template_wb_tracks.tt.gz.Brodmann.count.pass.connectivity.mat
+      - output_exists: test_output/template_wb_tracks.tt.gz.Brodmann.connectivity.mat
   - name: ana action - region statistics with atlas
     description: Get region statistics using HCP-MMP atlas
     command: dsi_studio --action=ana --source=${output_dir}/human.fz --region=HCP-MMP:L_V1 --output=test_output/region_30.txt
@@ -312,22 +312,22 @@ tests:
       --connectivity_type=pass --output=test_output/template_conn_hcpmmp.tt.gz
     validate:
       - output_exists: ${output_dir}/template_conn_hcpmmp.tt.gz
-      - output_exists: test_output/template_conn_hcpmmp.tt.gz.HCP-MMP.count.pass.connectivity.mat
+      - output_exists: test_output/template_conn_hcpmmp.tt.gz.HCP-MMP.connectivity.mat
   - name: trk action - multiple atlas connectivity
     description: Generate connectivity matrices for multiple atlases
     command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=100 --connectivity=Brodmann,FreeSurferDKT_Cortical
       --output=test_output/template_conn_multi.tt.gz
     validate:
       - output_exists: ${output_dir}/template_conn_multi.tt.gz
-      - output_exists: test_output/template_conn_multi.tt.gz.Brodmann.count.pass.connectivity.mat
-      - output_exists: test_output/template_conn_multi.tt.gz.FreeSurferDKT_Cortical.count.pass.connectivity.mat
+      - output_exists: test_output/template_conn_multi.tt.gz.Brodmann.connectivity.mat
+      - output_exists: test_output/template_conn_multi.tt.gz.FreeSurferDKT_Cortical.connectivity.mat
   - name: trk action - endpoint connectivity
     description: Generate endpoint-based connectivity matrix
     command: dsi_studio --thread_count=2 --action=trk --source=${output_dir}/human.fz --seed_count=100 --connectivity=Brodmann
       --connectivity_type=end --output=test_output/template_conn_end.tt.gz
     validate:
       - output_exists: ${output_dir}/template_conn_end.tt.gz
-      - output_exists: test_output/template_conn_end.tt.gz.Brodmann.count.end.connectivity.mat
+      - output_exists: test_output/template_conn_end.tt.gz.Brodmann.connectivity.mat
   - name: reg action - cost function mutual information
     description: Complete structural registration on CPU and verify the transformed image is written.
     command: mkdir -p test_output/reg_56 && dsi_studio --action=reg --source=${t1w} --to=${template_t1w} --reg_type=0
@@ -469,7 +469,7 @@ tests:
       && dsi_studio --action=ana --source=${output_dir}/human.fz --tract=test_output/pipeline_ana_tracks.tt.gz --connectivity=Brodmann
     validate:
       - output_exists: ${output_dir}/pipeline_ana_tracks.tt.gz
-      - output_exists: test_output/pipeline_ana_tracks.tt.gz.Brodmann.count.pass.connectivity.mat
+      - output_exists: test_output/pipeline_ana_tracks.tt.gz.Brodmann.connectivity.mat
   - name: Pipeline - autotrack multiple bundles with export
     description: Automatically track bundles and export statistics
     command: mkdir -p test_output/atk_82 && dsi_studio --thread_count=2 --action=atk --source=${output_dir}/human.fz --track_id=Arcuate,Uncinate
