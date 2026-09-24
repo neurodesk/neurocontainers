@@ -4,7 +4,7 @@
 # This container provides a development environment with:
 #   - Visual Studio Code with neuroimaging extensions
 #   - Python 3.11 (miniconda) with scientific packages
-#   - Julia 1.6.3
+#   - Julia
 #   - Jupyter notebook 7.x
 #   - Key packages: nibabel, nipype, numpy, scipy, matplotlib, pandas, h5py
 #
@@ -14,6 +14,8 @@
 
 name: code
 version: "240320"
+julia_version: "1.13.0"
+singularity_version: "4.5.1"
 
 required_files:
   - dataset: ds000001
@@ -43,6 +45,11 @@ tests:
   # ==========================================================================
   # VSCODE FUNCTIONALITY
   # ==========================================================================
+  - name: Singularity version
+    description: Verify the bundled SingularityCE build runs and reports the pinned version
+    command: singularity --version
+    expected_output_contains: "singularity-ce version ${singularity_version}"
+
   - name: VSCode version check
     description: Verify VSCode binary runs and reports version
     command: bash -lc '/usr/bin/code --version 2>&1 | head -1'
@@ -422,33 +429,33 @@ tests:
   # ==========================================================================
   - name: Julia version
     description: Verify Julia version
-    command: bash -lc '/opt/julia-1.6.3/bin/julia --version 2>&1'
-    expected_output_contains: "julia version 1.6.3"
+    command: bash -lc '/opt/julia-${julia_version}/bin/julia --version 2>&1'
+    expected_output_contains: "julia version ${julia_version}"
 
   - name: Julia help
     description: Verify Julia help works
-    command: bash -lc '/opt/julia-1.6.3/bin/julia --help 2>&1 | head -5'
+    command: bash -lc '/opt/julia-${julia_version}/bin/julia --help 2>&1 | head -5'
     expected_output_contains: "julia"
 
   - name: Julia basic execution
     description: Test basic Julia execution
-    command: bash -lc '/opt/julia-1.6.3/bin/julia -e '\''println(2 + 2)'\'''
+    command: bash -lc '/opt/julia-${julia_version}/bin/julia -e '\''println(2 + 2)'\'''
     expected_output_contains: "4"
 
   - name: Julia array operations
     description: Test Julia array creation and sum
-    command: "bash -lc '/opt/julia-1.6.3/bin/julia -e '\"'\"'a = [1, 2, 3, 4, 5]; println(\"Sum: \", sum(a))'\"'\"''"
+    command: "bash -lc '/opt/julia-${julia_version}/bin/julia -e '\"'\"'a = [1, 2, 3, 4, 5]; println(\"Sum: \", sum(a))'\"'\"''"
     expected_output_contains: "Sum: 15"
 
   - name: Julia matrix operations
     description: Test Julia matrix multiplication
-    command: "bash -lc '/opt/julia-1.6.3/bin/julia -e '\"'\"'using LinearAlgebra; A = [1 2; 3 4]; println(\"Det: \", det(A))'\"'\"''"
+    command: "bash -lc '/opt/julia-${julia_version}/bin/julia -e '\"'\"'using LinearAlgebra; A = [1 2; 3 4]; println(\"Det: \", det(A))'\"'\"''"
     expected_output_contains: "Det: -2.0"
 
   - name: Julia file I/O
     description: Test Julia can write and read files
     command: |
-      bash -lc '/opt/julia-1.6.3/bin/julia -e '\''
+      bash -lc '/opt/julia-${julia_version}/bin/julia -e '\''
       open("${output_dir}/julia_test.txt", "w") do f
           write(f, "Hello from Julia!")
       end
