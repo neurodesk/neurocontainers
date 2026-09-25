@@ -94,12 +94,53 @@ class RuntimeTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def assert_display_image(self, image, expected):
+        self.assertEqual(image.data.dtype, np.dtype("int16"))
+        target = expected / expected.max() * 4095 if expected.max() > 0 else expected
+        np.testing.assert_allclose(image.data[0, 0], target, atol=0.501, rtol=0)
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        self.assertEqual(meta["WindowCenter"], "2048")
+        self.assertEqual(meta["WindowWidth"], "4096")
+
+    def test_live_display_handles_zero_and_tiny_signal(self):
+        for scale in (0, 1e-20):
+            conn = Connection(acquisitions(
+                self.data * scale, flag=ismrmrd.ACQ_IS_PARALLEL_CALIBRATION
+            ) + [None])
+            with self.assertLogs(level="INFO") as logs:
+                poc.process_acs(conn, {}, self.metadata)
+            self.assertEqual(len(conn.images), 1)
+            self.assert_display_image(conn.images[0], poc.rss(self.data * scale, "x-ky"))
+            self.assertTrue(any("ACS pixel stats:" in msg for msg in logs.output))
+            self.assertEqual(any("zero RSS signal" in msg for _, msg in conn.logs), scale == 0)
+
     def capture(self, items, app="acsrss", params=None):
         conn = Connection(items + [None])
         with patch.dict(os.environ, FIRE_POC_CAPTURE_ROOT=str(self.root)):
             poc.process(conn, {"parameters": params or {}}, self.metadata, app)
         directory = next(self.root.iterdir())
         return conn, directory
+
+    def test_default_completes_ice_readout_transform(self):
+        # Asymmetric landmarks expose sign reversals and one-pixel shifts.
+        coils = np.zeros_like(self.data)
+        coils[0, 2, 3] = 1
+        coils[1, 8, 9] = 0.5j
+        hybrid = np.fft.fftshift(np.fft.ifft(
+            np.fft.ifftshift(coils, axes=(-2,)), axis=-2, norm="ortho"
+        ), axes=(-2,)).astype(np.complex64)
+        expected = np.sqrt(np.sum(np.abs(coils) ** 2, axis=0))
+        for config in ({}, {"parameters": None}, {"parameters": {}}):
+            conn = Connection(acquisitions(
+                hybrid, flag=ismrmrd.ACQ_IS_PARALLEL_CALIBRATION
+            ) + [None])
+            poc.process_acs(conn, config, self.metadata)
+            self.assertTrue(conn.closed)
+            self.assertEqual(len(conn.images), 1)
+            self.assert_display_image(conn.images[0], expected)
+            self.assertEqual(list(conn.images[0].read_dir), [1, 0, 0])
+            self.assertEqual(list(conn.images[0].phase_dir), [0, 1, 0])
+            self.assertFalse(any(level == 3 for level, _ in conn.logs))
 
     def test_live_acs_returns_rss_and_originals_without_files(self):
         for domain in ("kx-ky", "x-ky"):
@@ -121,16 +162,15 @@ class RuntimeTests(unittest.TestCase):
                 self.assertIs(conn.images[0], original)
                 self.assertEqual(len(conn.images), 2)
                 axes = (-2,) if domain == "x-ky" else (-2, -1)
+                transform = np.fft.fftn if domain == "x-ky" else np.fft.ifftn
                 coils = np.fft.fftshift(
-                    np.fft.ifftn(
+                    transform(
                         np.fft.ifftshift(self.data, axes=axes), axes=axes, norm="ortho"
                     ),
                     axes=axes,
                 )
                 expected = np.sqrt(np.sum(np.abs(coils) ** 2, axis=0))
-                np.testing.assert_allclose(
-                    conn.images[1].data[0, 0], expected, rtol=1e-6
-                )
+                self.assert_display_image(conn.images[1], expected)
                 self.assertEqual(conn.images[1].image_series_index, 60000)
                 self.assertFalse(any(level == 3 for level, _ in conn.logs))
         self.assertEqual(list(self.root.iterdir()), [])
@@ -153,9 +193,11 @@ class RuntimeTests(unittest.TestCase):
                 )
                 self.assertEqual([level for level, _ in conn.logs if level == 3], [])
                 self.assertEqual(conn.images[0].data.shape, (1, 1, 12, 12))
-                np.testing.assert_allclose(
-                    conn.images[0].data[0, 0], expected, rtol=1e-5, atol=1e-5
+                display_expected = (
+                    expected[(-np.arange(12)) % 12]
+                    if domain == "x-ky" else expected
                 )
+                self.assert_display_image(conn.images[0], display_expected)
                 self.assertEqual(list(conn.images[0].field_of_view), [120, 120, 4])
 
     def test_multishot_epi_acs_segments_form_one_frame(self):
@@ -176,9 +218,52 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(len(conn.images), 1)
         padded = np.zeros_like(self.data)
         padded[:, sum(shots.values(), [])] = self.data[:, sum(shots.values(), [])]
-        np.testing.assert_allclose(
-            conn.images[0].data[0, 0], poc.rss(padded, "kx-ky"), rtol=1e-6
-        )
+        self.assert_display_image(conn.images[0], poc.rss(padded, "kx-ky"))
+
+    def test_repeated_segment_coverage_returns_independent_acs_images(self):
+        # Scanner layout: two segments each carry 54 lines on a 110 PE grid.
+        header = metadata(110)
+        header.encoding[0].encodedSpace = deepcopy(header.encoding[0].encodedSpace)
+        header.encoding[0].encodedSpace.matrixSize.x = 220
+        header.encoding[0].encodedSpace.fieldOfView_mm.x = 240
+        data = (
+            self.rng.normal(size=(2, 110, 110))
+            + 1j * self.rng.normal(size=(2, 110, 110))
+        ).astype(np.complex64)
+        lines = list(range(28, 82))
+        for domain in ("kx-ky", "x-ky"):
+            items = []
+            expected = []
+            for segment, scale in enumerate((1, 2j)):
+                shot = acquisitions(
+                    data * scale, flag=ismrmrd.ACQ_IS_PARALLEL_CALIBRATION,
+                    lines=lines,
+                )
+                for acq in shot:
+                    acq.idx.segment = segment
+                    acq.center_sample = 109
+                    acq.scan_counter += segment * 4332
+                    acq.clear_flag(ismrmrd.ACQ_LAST_IN_SLICE)
+                items.extend(shot)
+                padded = np.zeros_like(data)
+                padded[:, lines] = (data * scale)[:, lines]
+                expected.append(poc.rss(padded, domain))
+            conn = Connection(items + [None])
+            poc.process_acs(conn, {"parameters": {"inputdomain": domain}}, header)
+            self.assertEqual([msg for level, msg in conn.logs if level == 3], [])
+            self.assertTrue(conn.closed)
+            self.assertEqual(len(conn.images), 2)
+            self.assertEqual([im.image_index for im in conn.images], [1, 2])
+            for image, values in zip(conn.images, expected):
+                self.assert_display_image(image, values)
+
+    def test_duplicate_within_segment_is_still_rejected(self):
+        group = acquisitions(self.data, flag=ismrmrd.ACQ_IS_PARALLEL_CALIBRATION)
+        conn = Connection(group + [group[0], None])
+        poc.process_acs(conn, {}, self.metadata)
+        self.assertTrue(any(level == 3 and "repeated PE line" in msg for level, msg in conn.logs))
+        self.assertEqual(conn.images, [])
+        self.assertTrue(conn.closed)
 
     def test_recon_width_readout_with_stale_encoded_header(self):
         # Scanner case: 110 samples, encoded RO 220/396 mm, recon RO 110/198 mm,
@@ -198,9 +283,7 @@ class RuntimeTests(unittest.TestCase):
                     self.assertEqual([msg for level, msg in conn.logs if level == 3], [])
                     self.assertTrue(conn.closed)
                     self.assertEqual(len(conn.images), 1)
-                    np.testing.assert_allclose(
-                        conn.images[0].data[0, 0], poc.rss(self.data, domain), rtol=1e-6
-                    )
+                    self.assert_display_image(conn.images[0], poc.rss(self.data, domain))
                     self.assertEqual(list(conn.images[0].field_of_view), [120, 120, 4])
                     self.assertEqual(header.encoding[0].encodedSpace.matrixSize.x, 24)
                     self.assertEqual(acqs[0].center_sample, center)
@@ -297,7 +380,9 @@ class RuntimeTests(unittest.TestCase):
         expected = poc.rss(padded, "kx-ky")
         np.testing.assert_allclose(images[0].data[0, 0], expected, rtol=1e-6)
         hybrid = poc.ifft_centered(padded, (-1,))
-        np.testing.assert_allclose(poc.rss(hybrid, "x-ky"), expected, rtol=1e-6)
+        np.testing.assert_allclose(
+            poc.rss(hybrid, "x-ky"), expected[(-np.arange(12)) % 12], rtol=1e-6
+        )
         self.assertEqual(images[0].image_series_index, 60000)
         self.assertEqual(list(images[0].field_of_view), [120, 120, 4])
         output = self.root / "derived"

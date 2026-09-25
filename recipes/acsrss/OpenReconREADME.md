@@ -27,17 +27,22 @@ Docker maps the selected host port to internal port 9002.
 
 ## Scanner settings
 
-Select `config=acsrss`. The default `inputdomain=kx-ky` applies centered,
-orthonormal inverse transforms along readout and phase encoding, followed by
-root-sum-of-squares coil combination. Select `x-ky` only if ICE has already applied
-the readout transform; that setting applies the PE inverse transform only.
+Select `config=acsrss`. The default `inputdomain=x-ky` expects ICE to have
+already transformed readout. FIRE applies a centered, orthonormal forward FFT
+(negative exponent) along phase encoding only, followed by root-sum-of-squares coil
+combination. Select `kx-ky` explicitly for input where neither axis has been
+transformed; that setting applies both RO and PE inverse transforms.
+
+The PE sign for `x-ky` is selected for the current ICE tap to address the observed
+top–bottom reversal. Readout samples and image direction vectors are unchanged.
+Confirm orientation against the native scanner images after changing the tap.
 
 The input must be Cartesian ACS after regridding and phase correction. The
 application does not perform either operation. Calibration flags identify the
 role of the data but cannot establish which ICE processing has occurred.
 
-Parameterless adjustment connections use the same application and default RO+PE
-transforms. The scanner logs showed that adjustment connections do not carry the
+Parameterless adjustment connections use the same application and default PE-only
+transform. The scanner logs showed that adjustment connections do not carry the
 UI parameters; selecting PE-only in the UI therefore does not change those
 connections. The packaged server default handles these connections without
 requiring the launcher to supply an application name.
@@ -48,10 +53,17 @@ from adjustment connections still require scanner verification.
 
 ## Image output
 
+Live scanner output is normalized per image to 0–4095 and sent as signed 16-bit
+integers, with window center 2048 and width 4096. These are display intensities;
+absolute signal differences between images are not preserved. Input magnitude,
+unscaled RSS range, nonzero pixel count, and output range are logged for each
+image. Zero-signal images remain zero and produce a warning. Offline replay
+retains floating-point RSS values.
+
 Both MRD parallel-calibration flags are accepted. Noise, phase-correction,
 navigation, dummy, and surface-coil-correction acquisitions are excluded. Data
 are grouped by measurement, encoding, slice, repetition, echo, phase, set, average,
-and segment. ACS samples remain at their declared positions on the encoded grid;
+with segment coverage resolved as described below. ACS samples remain at their declared positions on the encoded grid;
 missing outer PE lines are zero-filled. The result is a low-resolution ACS image
 with the encoded field of view.
 
@@ -70,9 +82,12 @@ scanner's DICOM conversion.
 
 ## Scope and tests
 
-Only 2D Cartesian data are supported. Multi-shot EPI is handled: `idx.segment` marks
-the shot that carried a line, not a separate frame, so a slice's segments are
-reconstructed as one k-space. ACS then needs at least two contiguous PE lines,
+Only 2D Cartesian data are supported. Disjoint multi-shot EPI segments are
+reconstructed as one k-space. When every segment instead contains the same PE
+line set, with each line occurring once per segment, each segment returns its own
+RSS image with a distinct image index. Complex samples are never averaged across
+these segments. Partial overlaps and duplicates within a segment are rejected.
+ACS then needs at least two contiguous PE lines,
 consistent geometry and channels, and a readout width, after discard samples,
 that is a constant integer multiple of the encoded matrix. That multiple is the
 vendor readout oversampling and is removed by cropping in image space, so

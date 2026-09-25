@@ -79,7 +79,7 @@
           }
         }
       ],
-      "default": "kx-ky"
+      "default": "x-ky"
     },
     {
       "id": "sendoriginal",

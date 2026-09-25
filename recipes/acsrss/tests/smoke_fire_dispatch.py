@@ -73,6 +73,12 @@ def main() -> None:
                         client.send_metadata(ismrmrd.xsd.ToXML(metadata()))
                         client.send_text(json.dumps(config))
                         samples = np.ones((2, 12, 12), np.complex64) * (1 + 2j)
+                        if args.app == "acsrss":
+                            samples *= np.exp(
+                                2j * np.pi * 2 * (np.arange(12) - 6) / 12
+                            )[None, :, None]
+                            samples[:, :, :3] = 0
+                            samples[:, :, 4:] = 0
                         for acquisition in acquisitions(
                             samples, flag=ismrmrd.ACQ_IS_PARALLEL_CALIBRATION
                         ):
@@ -83,7 +89,13 @@ def main() -> None:
                         if args.app == "acsrss":
                             assert len(images) == 1, responses
                             expected = np.zeros((12, 12), np.float32)
-                            expected[6, 6] = 12 * np.sqrt(10)
+                            # Off-center PE landmark detects the Fourier sign;
+                            # its readout position must stay at column 3.
+                            expected[8, 3] = 4095
+                            assert images[0].data.dtype == np.dtype("int16")
+                            meta = ismrmrd.Meta.deserialize(images[0].attribute_string)
+                            assert meta["WindowCenter"] == "2048"
+                            assert meta["WindowWidth"] == "4096"
                             np.testing.assert_allclose(
                                 images[0].data[0, 0], expected, atol=1e-5
                             )

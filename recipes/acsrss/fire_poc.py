@@ -231,13 +231,16 @@ def remove_readout_oversampling(
 
 
 def rss(data: np.ndarray, domain: str) -> np.ndarray:
-    axes = (-2,) if domain == "x-ky" else (-2, -1)
-    return np.sqrt(np.sum(np.abs(ifft_centered(data, axes)) ** 2, axis=0))
+    # The current ICE hybrid-space tap needs the negative-exponent PE transform.
+    coils = (
+        fft_centered(data, (-2,)) if domain == "x-ky"
+        else ifft_centered(data, (-2, -1))
+    )
+    return np.sqrt(np.sum(np.abs(coils) ** 2, axis=0))
 
 
 def group_key(acq: ismrmrd.Acquisition) -> tuple:
-    """Segment is the EPI shot that carried the line, not a separate frame, so
-    multi-shot segments of one k-space are deliberately grouped together."""
+    """Collect candidate frames; ACS segment coverage is resolved separately."""
     return (
         int(acq.measurement_uid),
         int(acq.encoding_space_ref),
@@ -254,6 +257,33 @@ def group_key(acq: ismrmrd.Acquisition) -> tuple:
         ),
         calibration(acq),
     )
+
+
+def acs_frames(group: list[ismrmrd.Acquisition]) -> list[list[ismrmrd.Acquisition]]:
+    """Separate repeated ACS regions without breaking disjoint multi-shot data.
+
+    Only identical, unique PE coverage in every segment establishes separate
+    frames. Other layouts retain strict duplicate checks in assemble().
+    """
+    segments = {}
+    for acq in group:
+        segments.setdefault(int(acq.idx.segment), []).append(acq)
+    coverage = [
+        {int(acq.idx.kspace_encode_step_1) for acq in shot}
+        for shot in segments.values()
+    ]
+    if (
+        len(segments) > 1
+        and all(lines == coverage[0] for lines in coverage)
+        and all(len(shot) == len(lines) for shot, lines in zip(segments.values(), coverage))
+    ):
+        logging.info(
+            "ACS repeated segment coverage: slice=%d, segments=%s, PE lines=%d; "
+            "reconstructing each segment separately",
+            group[0].idx.slice, list(segments), len(coverage[0]),
+        )
+        return list(segments.values())
+    return [group]
 
 
 def groups_from_file(path: str | Path) -> dict[tuple, list[ismrmrd.Acquisition]]:
@@ -442,10 +472,21 @@ def image_from_rss(
     series: int,
     index: int,
     description: str,
+    scanner_display: bool = False,
 ) -> ismrmrd.Image:
     if not 1 <= index <= 65535:
         raise ValueError("POC output image index exceeds the MRD uint16 range")
-    image = ismrmrd.Image.from_array(values.astype(np.float32), transpose=False)
+    if not np.isfinite(values).all():
+        raise ValueError("Nonfinite RSS image")
+    if scanner_display:
+        maximum = float(values.max())
+        pixels = (
+            np.rint(np.clip(values / maximum, 0, 1) * 4095).astype(np.int16)
+            if maximum > 0 else np.zeros(values.shape, dtype=np.int16)
+        )
+    else:
+        pixels = values.astype(np.float32)
+    image = ismrmrd.Image.from_array(pixels, transpose=False)
     for field in (
         "measurement_uid",
         "position",
@@ -472,6 +513,10 @@ def image_from_rss(
     meta["ImageComments"] = (
         "Research proof of concept; encoded grid, readout oversampling removed"
     )
+    if scanner_display:
+        meta["WindowCenter"] = "2048"
+        meta["WindowWidth"] = "4096"
+        meta["ImageComments"] += "; per-image display normalization to 0..4095"
     image.attribute_string = meta.serialize()
     return image
 
@@ -552,9 +597,12 @@ def reconstruct(
         raise ValueError("series must be 1..65535 and distinct from original series")
     if app == "acsrss":
         index = 0
-        for key, group in groups.items():
-            if not key[-1]:
-                continue
+        frames = (
+            frame
+            for key, group in groups.items() if key[-1]
+            for frame in acs_frames(group)
+        )
+        for group in frames:
             data, lines, acq, enc = assemble(group, metadata, domain)
             if len(lines) < 2 or np.any(np.diff(lines) != 1):
                 raise ValueError(
@@ -784,7 +832,7 @@ def process_acs(connection: Any, config: Any, metadata: Any) -> None:
     """Reconstruct ACS in memory and return MRD images to the scanner injector."""
     try:
         params = parameters(config)
-        domain = params.get("inputdomain", "kx-ky")
+        domain = params.get("inputdomain", "x-ky")
         if domain not in ("kx-ky", "x-ky"):
             raise ValueError("inputdomain must be kx-ky or x-ky")
         series = int(params.get("series", 60000))
@@ -797,6 +845,12 @@ def process_acs(connection: Any, config: Any, metadata: Any) -> None:
             1,
             f"ACS RSS: inputdomain={domain}; assuming regridded, phase-corrected "
             "Cartesian input. No data files are written.",
+        )
+        connection.send_logging(
+            1, "ACS Fourier convention: " + (
+                "centered PE FFT (negative exponent); readout unchanged"
+                if domain == "x-ky" else "centered RO+PE IFFT (positive exponent)"
+            ),
         )
         for item in connection:
             if item is None:
@@ -830,18 +884,31 @@ def process_acs(connection: Any, config: Any, metadata: Any) -> None:
         if isinstance(metadata, (str, bytes)):
             metadata = ismrmrd.xsd.CreateFromDocument(metadata)
         count = 0
-        for group in groups.values():
+        frames = (frame for group in groups.values() for frame in acs_frames(group))
+        for group in frames:
             data, lines, acq, enc = assemble(group, metadata, domain)
             if len(lines) < 2 or np.any(np.diff(lines) != 1):
                 raise ValueError(
                     "ACS must contain a contiguous PE region with at least two lines"
                 )
             count += 1
-            connection.send_image(
-                image_from_rss(
-                    rss(data, domain), acq, enc, series, count, "ACS-RSS-POC"
-                )
+            values = rss(data, domain)
+            input_min = min(float(np.abs(a.data).min()) for a in group)
+            input_max = max(float(np.abs(a.data).max()) for a in group)
+            image = image_from_rss(
+                values, acq, enc, series, count, "ACS-RSS-POC", scanner_display=True
             )
+            logging.info(
+                "ACS pixel stats: image=%d slice=%d segments=%s input_abs=[%g,%g] "
+                "RSS=[%g,%g] RSS_nonzero=%d/%d output=int16[%d,%d]",
+                count, acq.idx.slice, sorted({int(a.idx.segment) for a in group}),
+                input_min, input_max, float(values.min()), float(values.max()),
+                np.count_nonzero(values), values.size,
+                int(image.data.min()), int(image.data.max()),
+            )
+            if not np.any(values):
+                connection.send_logging(2, f"ACS image {count}, slice {acq.idx.slice}: zero RSS signal")
+            connection.send_image(image)
         connection.send_logging(1, f"Returned {count} ACS RSS images via ISMRMRD")
     except Exception:
         error = traceback.format_exc()
