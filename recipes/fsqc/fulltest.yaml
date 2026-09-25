@@ -12,7 +12,7 @@
 # is required (norm.mgz, aseg.mgz, aparc+aseg.mgz, surfaces, stats, etc.)
 
 name: fsqc
-version: 2.1.4
+version: 2.1.7
 
 test_data:
   output_dir: test_output
