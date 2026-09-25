@@ -1,5 +1,5 @@
 name: elastix
-version: 5.1.0
+version: 5.3.1
 # https://github.com/SuperElastix/elastix/releases
 
 architectures:
@@ -77,4 +77,4 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAASSElE
 
 files:
   - name: downloaded_file
-    url: https://github.com/SuperElastix/elastix/releases/download/{{ context.version }}/elastix-{{ context.version }}-linux.zip
+    url: "https://github.com/SuperElastix/elastix/releases/download/{{ context.version }}/elastix-{{ context.version }}-ubuntu.zip"
