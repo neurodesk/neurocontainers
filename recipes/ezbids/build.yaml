@@ -20,6 +20,11 @@ variables:
   upstream_commit: "0ef4bb446129a71c69684c186048e87c0abbbd9b"
 
 auto_update:
+  frozen: true
+  reason: >-
+    openneuropet/ezbids_docker publishes no releases or tags, so commit tracking
+    opened an update PR for every push to its default branch. A maintainer bumps
+    upstream_commit when upstream ships a change worth rebuilding for.
   container_version: false
   method: sources
   sources:
