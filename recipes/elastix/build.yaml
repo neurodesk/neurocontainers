@@ -14,7 +14,7 @@ auto_update:
 build:
   kind: neurodocker
 
-  base-image: ubuntu:20.04
+  base-image: ubuntu:22.04
   pkg-manager: apt
 
   directives:
@@ -29,10 +29,10 @@ build:
     - workdir: /opt/{{ context.name }}-{{ context.version }}
 
     - run:
-        - cp {{ get_file("downloaded_file") }} elastix-{{ context.version }}-linux.zip
-        - unzip elastix-{{ context.version }}-linux.zip
+        - cp {{ get_file("downloaded_file") }} elastix-{{ context.version }}.zip
+        - unzip elastix-{{ context.version }}.zip
         - chmod a+x /opt/{{ context.name }}-{{ context.version }}/bin/*
-        - rm elastix-{{ context.version }}-linux.zip
+        - rm elastix-{{ context.version }}.zip
 
     - environment:
         PATH: $PATH:/opt/{{ context.name }}-{{ context.version }}/bin
