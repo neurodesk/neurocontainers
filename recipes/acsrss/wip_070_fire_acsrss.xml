@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<OpenReconConfiguration xmlns="OpenRecon" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="OpenRecon ./OpenRecon.xsd">
+
+  <Marshal>
+    <!-- Functor in the ICE chain that the marshal will be inserted after -->
+    <Anchor>Flags</Anchor>
+
+    <!-- *.ini file provides additional server configuration; if not set, the default ini will be used -->
+    <IniFile>%CustomerIceProgs%\fire\wip_070_fire_acsrss.ini</IniFile>
+    <!-- Config file to be used on the server -->
+    <Config></Config>
+    <!-- Local config file on scanner to be read and sent to server (overrides Config if present) -->
+    <LocalConfig></LocalConfig>
+    <!-- OpenRecon style JSON config. If empty, <Config>.json in the fire\config folder is used (if present) -->
+    <JsonConfig></JsonConfig>
+
+    <!-- XML mapping of ICE parameters to MRD -->
+    <ParameterMap>%CustomerIceProgs%\fire\wip_070_fire_IsmrmrdParameterMap_Siemens.xml</ParameterMap>
+    <!-- Style sheet applied (XSLT) to the XML parameters produced by the map above -->
+    <XslStylesheet>%CustomerIceProgs%\fire\wip_070_fire_IsmrmrdParameterMap_Siemens.xsl</XslStylesheet>
+
+    <!-- Send PMU data in outgoing data stream -->
+    <SendWaveformData>true</SendWaveformData>
+
+    <!-- Purge IRIS memory when starting chroot process and MARS system memory is below this, in MB -->
+    <MinimumMemoryLimit>2048.0</MinimumMemoryLimit>
+    <!-- Always purge IRIS memory before starting chroot process -->
+    <PurgeIrisMemory>false</PurgeIrisMemory>
+    <!-- Amount of time to wait after starting FIRE server before attempting to connect -->
+    <WaitingIntervalForStartOnMarsInSeconds>1.0</WaitingIntervalForStartOnMarsInSeconds>
+    <!-- Amount of time to wait after stopping FIRE server before verifying success -->
+    <WaitingIntervalForCheckToStopOnMarsInSeconds>3.0</WaitingIntervalForCheckToStopOnMarsInSeconds>
+    <!-- Time out period to establish FIRE server connection, in seconds -->
+    <ConnectionTimeOut>3.0</ConnectionTimeOut>
+    <!-- Number of retry attempts to establish FIRE server connection -->
+    <ConnectionRetryLimit>10</ConnectionRetryLimit>
+    <!-- Protocols to be saved into ISMRMRD header (duplicate entries to add multiple) -->
+    <SavedProtocolSectionList></SavedProtocolSectionList>
+
+    <!-- Check if noise statistics have already been processed (don't send dependencies if they have) -->
+    <QueryDependencyStatus>false</QueryDependencyStatus>
+    <!-- Process dependent measurements (adjustments) -->
+    <SendDependentData>false</SendDependentData>
+    <!-- XML mapping of ICE parameters to MRD for adjustments -->
+    <AdjParameterMap>%CustomerIceProgs%\fire\wip_070_fire_IsmrmrdParameterMap_Siemens.xml</AdjParameterMap>
+    <!-- Style sheet applied (XSLT) to the XML parameters produced by the map above -->
+    <AdjXslStylesheet>%CustomerIceProgs%\fire\wip_070_fire_IsmrmrdParameterMap_Siemens.xsl</AdjXslStylesheet>
+    <!-- Config file for processing of adjustments data -->
+    <AdjConfig>default_measurement_dependencies.xml</AdjConfig>
+    <!-- Local config file for processing of adjustments data -->
+    <AdjLocalConfig></AdjLocalConfig>
+
+    <!-- When to initiate connection to FIRE server (can be auto, EndInit, or FirstCall)-->
+    <InitiateConnection>auto</InitiateConnection>
+  </Marshal>
+
+  <RawEmitter>
+    <!-- Functor in the ICE chain that the emitter will be inserted after -->
+    <!--<Anchor>none</Anchor>-->
+    <Anchor>onlinetse</Anchor>
+    <!-- Pass data along original ICE functor chain downstream of emitter -->
+    <PassOnData>true</PassOnData>
+    <!-- Check the image dimensions against limits before passing down the functor chain -->
+    <CheckLimitsPassOnData>true</CheckLimitsPassOnData>
+    <!-- This parameter controls whether the separate ref lines are acquired with Flash readout -->
+    <RefAsFlashReadOut>false</RefAsFlashReadOut>
+    <CompressionPrecision>0</CompressionPrecision>
+    <CompressionTolerance>0.0</CompressionTolerance>
+
+    <!-- Parse non-Cartesian k-space ITrajectory and store in MRD acquisition trajectory field -->
+    <ParseTrajectory>true</ParseTrajectory>
+    <!-- 2D/3D radial angles stored for each line in MDH user parameters 8/9 are parsed and used to fill the MRD acquisition trajectory field -->
+    <ParseMdhRadialAngles>false</ParseMdhRadialAngles>
+    <!-- Store radial k-space angles in MRD AcquisitionHeader user_float fields -->
+    <StoreRadialAngles>false</StoreRadialAngles>
+  </RawEmitter>
+
+  <ImageEmitter>
+    <!-- Functor in the ICE chain that the emitter will be inserted after -->
+    <Anchor>none</Anchor>
+    <!--<Anchor>extractMAG</Anchor>-->
+    <!-- Pass data along original ICE functor chain downstream of emitter -->
+    <PassOnData>true</PassOnData>
+    <!-- Perform NormOrientation (DICOM orientation) on outgoing images -->
+    <EmitNormOriented>true</EmitNormOriented>
+  </ImageEmitter>
+
+  <Injector>
+    <!-- This is the Functor in the ICE chain that the injector will be inserted BEFORE -->
+    <Anchor>imafinish</Anchor>
+    <!-- Split multi-channel (coil) data into separate images -->
+    <SplitChannels>false</SplitChannels>
+    <!-- Whether to use ICE mini header filling service -->
+    <UseIceFillingMiniHeader>true</UseIceFillingMiniHeader>
+    <!-- Override distortion correction mode (blank to use protocol mode, otherwise ND, DIS2D, or DIS3D) -->
+    <DistorCorMode></DistorCorMode>
+  </Injector>
+
+  <Configurator>
+    <!-- Disable NoiseAdjust and other system noise handling when sending raw data -->
+    <DisableSystemNoiseAdjust>false</DisableSystemNoiseAdjust>
+    <!-- If true, the Injector ignore received image data -->
+    <OnlyEmitData>false</OnlyEmitData>
+    <!-- If "image2image", insert ImageEmitter before imafinish and Injector after ImageEmitter.  Leave empty to disable -->
+    <AutoConfigure></AutoConfigure>
+    <!-- List of functors to be removed -->
+    <FunctorRemoveList></FunctorRemoveList>
+    <!-- Remove all functors between RawEmitter (or ImageEmitter) and Injector -->
+    <RemoveIntermediateFunctors>false</RemoveIntermediateFunctors>
+    <!-- If true, disable flip/rotation of images to DICOM standard views (i.e. disable NormOrientation) -->
+    <DisableNormOrientation>false</DisableNormOrientation>
+    <!-- If true, create 16-bit DICOMs -->
+    <Use16Bit>true</Use16Bit>
+    <!-- If false, do not attempt to correct order of pipe services after inserting functors (default: true) -->
+    <CorrectPipeServiceOrder>true</CorrectPipeServiceOrder>
+  </Configurator>
+
+</OpenReconConfiguration>
+
+<!--
+     _____    _    ____      ______    
+    |  ___|  | |  |  _  \   |  ____|      .(
+    | |_     | |  | |_|  |  | |___       / /\
+    |  _|    | |  |  _  /   |  __|      ( ( ))
+    | |      | |  | | \ \   | |____    .-' .`-.
+    |_|      |_|  |_|  \_\  |______|   `='.'`='
+
+    This file contains configuration parameters for the FIRE package.
+
+    The name of xml configuration file should be the same as the ICE ipr,
+    e.g. for the ICE program IceFire.ipr, the xml file should be
+    called IceFire.xml and stored in the same directory.
+    
+    If ipr name is like IceFire.Image.OnlyEmitData.ipr the IceFire will search xml files:
+    IceFire.xml (required), IceFire.Image.xml and IceFire.OnlyEmitData.xml (optional).
+    The optional xml can contains partial configurations to overwite values from IceFire.xml
+-->
