@@ -2,7 +2,7 @@ variables:
   # Final Bullseye security snapshot for the CUDA 11.5 environment.
   debian_security_snapshot: 20260901T000000Z
   vscode_version: "1.136.1"
-  mne_bids_pipeline_commit: 91c2e0677f4a015a35dad48c2faa5e47633ae497
+  mne_bids_pipeline_tag: v1.10.1
 
 name: esilpd
 version: "0.1.0"
@@ -27,11 +27,11 @@ auto_update:
     url: https://update.code.visualstudio.com/api/update/linux-x64/stable/latest
     version_regex: '"productVersion":\s*"(?P<version>\d+(?:\.\d+)+)"'
   - id: mne-bids-pipeline
-    method: github_commit
+    method: github_release
     repo: mne-tools/mne-bids-pipeline
-    ref: main
     target:
-      variable: mne_bids_pipeline_commit
+      variable: mne_bids_pipeline_tag
+      value: tag
 
 build:
   kind: neurodocker
@@ -228,7 +228,7 @@ files:
     url: https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/pool/updates/main/c/ca-certificates/ca-certificates_20250419~deb12u1~deb11u1_all.deb
     sha256: a588acf469f96e272fe3e83225f68ddcda72a95e2dd139086d5edc165d3939e3
   - name: main_tar_gz
-    url: https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.mne_bids_pipeline_commit }}.tar.gz
+    url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/tags/{{ context.mne_bids_pipeline_tag }}.tar.gz
   - name: cuda_keyring_1_0_1_all_deb
     url: https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/cuda-keyring_1.0-1_all.deb
 
