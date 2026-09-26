@@ -91,4 +91,4 @@ gui_apps:
 files:
   - name: dsi_studio_ubuntu2204_cpu_zip
     url: "https://github.com/frankyeh/DSI-Studio/releases/download/2026.7.25/dsi_studio_ubuntu2204_cpu.zip"
-    sha256: "67eb7cc9bc9e79880911ae19878aeb247d76ccbf011ed20dc9d298e0701650d9"
+    sha256: "f0bf036515b01c655b93b6a0894ce29eb7067ffabe893b03e2eddd7e99830e6d"
