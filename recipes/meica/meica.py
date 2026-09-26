@@ -36,6 +36,25 @@ OUTPUT_SPECS = {
     "dr2s": ("MEICA_DR2S", "ME-ICA denoised BOLD-like apparent dR2*"),
     "t2s": ("MEICA_T2S", "ME-ICA T2* map"),
 }
+OUTPUT_UNITS = {"dr2s": "1/s", "t2s": "ms"}
+SIGNED_OUTPUTS = {"dr2s"}
+SCANNER_DISPLAY_MAX = 4095
+SCANNER_DISPLAY_CENTER = 2048
+SCANNER_DISPLAY_PADDING_VALUE = 0
+# Stop at 1 so stored steps never exceed 1 ms or 1/s; larger values saturate.
+SCANNER_DISPLAY_SCALE_FACTORS = (1000000.0, 100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0)
+SCANNER_DISPLAY_SCALE_PERCENTILE = 99.9
+SCANNER_WINDOW_PERCENTILE = {"dr2s": 99.0, "t2s": 95.0}
+SOURCE_SCALING_META_KEYS = (
+    "PixelPaddingRangeLimit",
+    "PixelPaddingValue",
+    "RescaleIntercept",
+    "RescaleSlope",
+    "RescaleType",
+    "VOILUTFunction",
+    "WindowCenter",
+    "WindowWidth",
+)
 
 
 def process(connection, config, metadata):
@@ -66,12 +85,7 @@ def process(connection, config, metadata):
             )
             _run_meica(conversion, work_dir / "output", settings)
             selected = _find_outputs(work_dir / "output")
-            output_images = _outputs_to_mrd(
-                selected,
-                conversion,
-                images,
-                settings["send_float32"],
-            )
+            output_images = _outputs_to_mrd(selected, conversion, images)
 
         if settings["send_original"]:
             connection.send_image([_original_passthrough(image) for image in images])
@@ -205,35 +219,26 @@ def _find_outputs(output_dir):
     return found
 
 
-def _outputs_to_mrd(selected, conversion, input_images, send_float32=False):
+def _outputs_to_mrd(selected, conversion, input_images):
     used_series = {
         int(image.getHead().image_series_index) for image in input_images
     }
     all_series = []
     for offset, (output_id, path) in enumerate(selected):
         series_index = _reserve_series(used_series, OUTPUT_SERIES_START + offset)
-        role, description = OUTPUT_SPECS[output_id]
         all_series.append(
             _nifti_to_mrd_series(
                 path,
                 conversion["source_geometry"],
                 series_index,
-                role,
-                description,
-                send_float32,
+                output_id,
             )
         )
     return all_series
 
 
-def _nifti_to_mrd_series(
-    path,
-    source_geometry,
-    series_index,
-    role,
-    description,
-    send_float32=False,
-):
+def _nifti_to_mrd_series(path, source_geometry, series_index, output_id):
+    role, description = OUTPUT_SPECS[output_id]
     nifti = nib.load(str(path))
     data = _output_data_in_source_space(nifti, source_geometry, path)
     if data.ndim == 3:
@@ -241,20 +246,14 @@ def _nifti_to_mrd_series(
     if data.ndim != 4:
         raise ValueError(f"ME-ICA output must be 3D or 4D, got {path}: {data.shape}")
 
-    if send_float32:
-        scanner_data = np.asarray(data, dtype=np.float32)
-        output_dtype = np.float32
-        scale = 1.0
-        offset = 0.0
-        inverse_formula = "value = pixel"
-        output_data_type = "float32"
-    else:
-        scanner_data, scale, offset = _scanner_display_data(data)
-        output_dtype = np.uint16
-        inverse_formula = "value = display / MEICAScale + MEICAOffset"
-        output_data_type = "uint16"
-    window_center, window_width = _scanner_window(data, send_float32)
-    data_zyxt = np.transpose(scanner_data, (2, 1, 0, 3))
+    display, display_meta = _scanner_display_volume(data, output_id)
+    logging.info(
+        "%s scanner display: %s, %d clipped values",
+        role,
+        display_meta["formula"],
+        display_meta["clipped_voxels"],
+    )
+    data_zyxt = np.transpose(display, (2, 1, 0, 3))
     source_slices = source_geometry["first_timepoint"]
     anchor = source_geometry["anchor"]
     output = []
@@ -263,10 +262,7 @@ def _nifti_to_mrd_series(
     for time_index in range(data_zyxt.shape[3]):
         for slice_index in range(data_zyxt.shape[0]):
             slice_data = data_zyxt[slice_index:slice_index + 1, :, :, time_index]
-            result = ismrmrd.Image.from_array(
-                slice_data.astype(output_dtype, copy=False),
-                transpose=False,
-            )
+            result = ismrmrd.Image.from_array(slice_data, transpose=False)
             geometry_image = _geometry_image_for_slice(
                 source_slices, anchor, slice_index, data_zyxt.shape[0]
             )
@@ -297,12 +293,7 @@ def _nifti_to_mrd_series(
                 image_index,
                 data_zyxt.shape[0],
                 data_zyxt.shape[3],
-                scale,
-                offset,
-                inverse_formula,
-                output_data_type,
-                window_center,
-                window_width,
+                display_meta,
             ).serialize()
             output.append(result)
             image_index += 1
@@ -463,7 +454,6 @@ def _settings(config):
     return {
         "cpus": DEFAULT_CPUS,
         "send_original": _as_bool(params.get("sendoriginal", True)),
-        "send_float32": _as_bool(params.get("sendfloat32", False)),
         "binary": str(
             params.get("meicabinary")
             or os.environ.get("MEICA_BINARY")
@@ -631,35 +621,74 @@ def _unit_vector(value, default):
     return vector / norm if np.isfinite(norm) and norm > 0 else np.asarray(default)
 
 
-def _scanner_display_data(data):
-    finite = data[np.isfinite(data)]
-    if not finite.size:
-        return np.zeros(data.shape, dtype=np.uint16), 1.0, 0.0
-    low, high = np.percentile(finite, [0.5, 99.5])
-    if high <= low:
-        low = float(np.min(finite))
-        high = float(np.max(finite))
-    if high <= low:
-        return np.zeros(data.shape, dtype=np.uint16), 1.0, float(low)
-    scale = 4095.0 / float(high - low)
-    display = np.clip((data - low) * scale, 0, 4095).astype(np.uint16)
-    return display, scale, float(low)
+def _scanner_display_volume(data, output_id):
+    """Encode physical values as 12-bit pixels that DICOM rescaling restores."""
+    units = OUTPUT_UNITS[output_id]
+    values = np.nan_to_num(
+        np.asarray(data, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0
+    )
+    signed = output_id in SIGNED_OUTPUTS
+    magnitudes = np.abs(values) if signed else values
+    nonzero = magnitudes[magnitudes > 0.0]
+    offset = float(SCANNER_DISPLAY_CENTER) if signed else 0.0
+    display_min = SCANNER_DISPLAY_PADDING_VALUE + 1 if signed else 0
+    headroom = SCANNER_DISPLAY_MAX - offset
+
+    scale_max = (
+        float(np.percentile(nonzero, SCANNER_DISPLAY_SCALE_PERCENTILE))
+        if nonzero.size
+        else 0.0
+    )
+    scale = SCANNER_DISPLAY_SCALE_FACTORS[0]
+    if scale_max > 0.0:
+        scale = next(
+            (
+                factor
+                for factor in SCANNER_DISPLAY_SCALE_FACTORS
+                if factor * scale_max <= headroom
+            ),
+            SCANNER_DISPLAY_SCALE_FACTORS[-1],
+        )
+
+    scaled = values * scale + offset
+    clipped_voxels = int(
+        np.count_nonzero((scaled < display_min) | (scaled > SCANNER_DISPLAY_MAX))
+    )
+    display = np.clip(np.rint(scaled), display_min, SCANNER_DISPLAY_MAX)
+
+    window_high = headroom / scale
+    if nonzero.size:
+        window_high = min(
+            window_high,
+            float(np.percentile(nonzero, SCANNER_WINDOW_PERCENTILE[output_id])),
+        )
+    window_low = -window_high if signed else 0.0
+
+    formula = f"{units} = display / {_format_number(scale)}"
+    if offset:
+        formula = (
+            f"{units} = (display - {_format_number(offset)}) / {_format_number(scale)}"
+        )
+    return display.astype(np.uint16), {
+        "units": units,
+        "scale": scale,
+        "offset": offset,
+        "formula": formula,
+        "rescale_slope": 1.0 / scale,
+        "rescale_intercept": -offset / scale,
+        "padding_value": SCANNER_DISPLAY_PADDING_VALUE if signed else None,
+        "clipped_voxels": clipped_voxels,
+        # Siemens truncates fractional window values, so publish integers.
+        "window_center": int(np.rint((window_low + window_high) / 2.0)),
+        "window_width": max(1, int(np.rint(window_high - window_low))),
+    }
 
 
-def _scanner_window(data, float32_output):
-    if not float32_output:
-        return 2047.5, 4095.0
-    finite = data[np.isfinite(data)]
-    if not finite.size:
-        return 0.0, 1.0
-    low, high = np.percentile(finite, [0.5, 99.5])
-    if high <= low:
-        low = float(np.min(finite))
-        high = float(np.max(finite))
-    width = float(high - low)
-    if width <= 0.0:
-        return float(low), 1.0
-    return float(low + width / 2.0), width
+def _format_number(value):
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return f"{number:.6g}"
 
 
 def _geometry_image_for_slice(source_slices, anchor, slice_index, slice_count):
@@ -679,27 +708,42 @@ def _packed_slice_position(header, slice_index, slice_count):
 
 def _derived_meta(
     source, series_index, role, description, image_index,
-    slices, timepoints, scale, offset, inverse_formula,
-    output_data_type, window_center, window_width,
+    slices, timepoints, display_meta,
 ):
     meta = _meta(source)
-    for key in ("IceMiniHead", "SOPInstanceUID", "SeriesInstanceUID"):
+    for key in (
+        "IceMiniHead",
+        "SOPInstanceUID",
+        "SeriesInstanceUID",
+        *SOURCE_SCALING_META_KEYS,
+    ):
         if key in meta:
             del meta[key]
     meta["Keep_image_geometry"] = "1"
-    meta["DataRole"] = "Image"
+    meta["DataRole"] = ["Image", "Quantitative"]
     meta["ImageProcessingHistory"] = ["MEICA", "OPENRECON"]
     meta["SequenceDescription"] = description
     meta["SeriesDescription"] = description
     meta["SeriesNumber"] = str(series_index)
     meta["ImageType"] = ["DERIVED", "PRIMARY", "M", role]
     meta["ImageTypeValue4"] = role
-    meta["MEICAScale"] = f"{scale:.12g}"
-    meta["MEICAOffset"] = f"{offset:.12g}"
-    meta["MEICAInverseScaleFormula"] = inverse_formula
-    meta["MEICAOutputDataType"] = output_data_type
-    meta["WindowCenter"] = f"{window_center:.12g}"
-    meta["WindowWidth"] = f"{window_width:.12g}"
+    meta["ImageComments"] = (
+        f"{description}; scanner display uint16 0-{SCANNER_DISPLAY_MAX}; "
+        f"{display_meta['formula']}"
+    )
+    meta["MEICAUnits"] = display_meta["units"]
+    meta["MEICADisplayScale"] = _format_number(display_meta["scale"])
+    meta["MEICADisplayOffset"] = _format_number(display_meta["offset"])
+    meta["MEICADisplayFormula"] = display_meta["formula"]
+    meta["MEICADisplayClippedVoxels"] = str(display_meta["clipped_voxels"])
+    meta["RescaleSlope"] = _format_number(display_meta["rescale_slope"])
+    meta["RescaleIntercept"] = _format_number(display_meta["rescale_intercept"])
+    meta["RescaleType"] = "US"
+    if display_meta["padding_value"] is not None:
+        meta["PixelPaddingValue"] = str(display_meta["padding_value"])
+        meta["PixelPaddingRangeLimit"] = str(display_meta["padding_value"])
+    meta["WindowCenter"] = str(display_meta["window_center"])
+    meta["WindowWidth"] = str(display_meta["window_width"])
     meta["NumberOfSlices"] = str(slices)
     meta["ImagesInAcquisition"] = str(slices * timepoints)
     meta["NumberInSeries"] = str(image_index)

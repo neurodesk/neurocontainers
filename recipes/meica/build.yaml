@@ -174,9 +174,8 @@ readme: |-
   OpenRecon always returns the denoised BOLD-like apparent dR2* series and the
   T2* map (`dr2s_epi` and `t2s_epi`); there is no scanner output selector. It
   also returns the original echo images by default. Disable `sendoriginal` to
-  return only the derived ME-ICA series. Derived outputs use display-scaled
-  `uint16` pixels by default; enable `sendfloat32` to send the unscaled dR2*
-  and T2* values as `float32` pixels.
+  return only the derived ME-ICA series. Derived outputs are 12-bit `uint16`
+  pixels with DICOM rescaling back to dR2* in `s^-1` and T2* in `ms`.
 
   Documentation: https://github.com/ME-ICA/me-ica
 

@@ -33,14 +33,18 @@ setup:
     assert args[prefix_start + 1] == "openrecon"
     assert "--OVERWRITE_NOWAIT" in args
 
-    images = [nib.load(path) for path in datasets]
-    data = np.mean([image.get_fdata(dtype=np.float32) for image in images], axis=0)
+    # Physical outputs in ME-ICA units: signed dR2* in 1/s, T2* in ms
+    # including a background zero, a failed negative fit, and the 500 ms cap.
+    image = nib.load(datasets[0])
+    dr2s = np.linspace(-1.5, 2.25, int(np.prod(image.shape)), dtype=np.float32)
+    t2s = np.linspace(20.0, 60.0, int(np.prod(image.shape[:3])), dtype=np.float32)
+    t2s[:3] = [0.0, 500.0, -3.0]
     nib.save(
-        nib.Nifti1Image(data.astype(np.float32), images[0].affine),
+        nib.Nifti1Image(dr2s.reshape(image.shape), image.affine),
         Path.cwd() / "openrecon_dr2s_epi.nii.gz",
     )
     nib.save(
-        nib.Nifti1Image(data.mean(axis=3).astype(np.float32), images[0].affine),
+        nib.Nifti1Image(t2s.reshape(image.shape[:3]), image.affine),
         Path.cwd() / "openrecon_t2s_epi.nii.gz",
     )
     PY
@@ -129,18 +133,13 @@ tests:
       assert data["reconstruction"]["injector"] == "image"
       assert data["reconstruction"]["content_qualification_type"] == "RESEARCH"
       assert {item["id"] for item in data["parameters"]} == {
-          "config", "sendoriginal", "sendfloat32"
+          "config", "sendoriginal"
       }
       send_original = next(
           item for item in data["parameters"] if item["id"] == "sendoriginal"
       )
       assert send_original["type"] == "boolean"
       assert send_original["default"] is True
-      send_float32 = next(
-          item for item in data["parameters"] if item["id"] == "sendfloat32"
-      )
-      assert send_float32["type"] == "boolean"
-      assert send_float32["default"] is False
       assert data["reconstruction"]["min_count_required_cpu_cores"] == 24
       print(path)
       PY
@@ -154,7 +153,7 @@ tests:
       PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import meica, ismrmrd, nibabel, numpy; print(meica.__file__)" | grep -x /opt/code/python-ismrmrd-server/meica.py
 
   - name: OpenRecon bridge processes multi-echo time series
-    description: Convert three packed MRD echoes to NIfTI, run a fake ME-ICA command, and return a derived dynamic series
+    description: Convert three packed MRD echoes to NIfTI, run a fake ME-ICA command, and return quantitative uint16 series that DICOM rescaling decodes to dR2* and T2*
     timeout: 180
     script: |
       set -euo pipefail
@@ -262,7 +261,9 @@ tests:
               assert meta["Keep_image_geometry"] == "1"
               assert "IceMiniHead" not in meta
               assert image.data.dtype == np.uint16
-              assert meta["MEICAOutputDataType"] == "uint16"
+              assert meta["DataRole"] == ["Image", "Quantitative"]
+              assert meta["RescaleType"] == "US"
+              assert int(meta["WindowWidth"]) >= 1
 
       assert set(by_role) == {"MEICA_DR2S", "MEICA_T2S"}
       assert len(by_role["MEICA_DR2S"]) == 4
@@ -292,48 +293,46 @@ tests:
       }
       assert derived_only_roles == {"MEICA_DR2S", "MEICA_T2S"}
 
-      float32_connection = Connection(images)
-      meica.process(
-          float32_connection,
-          {
-              "parameters": {
-                  "meicabinary": os.environ["FAKE_MEICA"],
-                  "sendoriginal": False,
-                  "sendfloat32": True,
-              }
-          },
-          Metadata(),
-      )
-      assert float32_connection.closed
-      assert not float32_connection.logs, float32_connection.logs
-      assert len(float32_connection.sent) == 2
-      float32_by_role = {
-          ismrmrd.Meta.deserialize(series[0].attribute_string)[
-              "ImageTypeValue4"
-          ]: series
-          for series in float32_connection.sent
-      }
-      assert set(float32_by_role) == {"MEICA_DR2S", "MEICA_T2S"}
-      for role, series in float32_by_role.items():
-          assert all(image.data.dtype == np.float32 for image in series)
+      def decoded(series):
+          """Apply the published DICOM rescale and return zyxt physical values."""
+          meta = ismrmrd.Meta.deserialize(series[0].attribute_string)
+          slope = float(meta["RescaleSlope"])
+          intercept = float(meta["RescaleIntercept"])
+          slices = 1 + max(int(image.getHead().slice) for image in series)
+          times = 1 + max(int(image.getHead().repetition) for image in series)
+          volume = np.zeros((slices, 3, 4, times))
           for image in series:
-              meta = ismrmrd.Meta.deserialize(image.attribute_string)
-              assert meta["MEICAOutputDataType"] == "float32"
-              assert meta["MEICAScale"] == "1"
-              assert meta["MEICAOffset"] == "0"
-              assert meta["MEICAInverseScaleFormula"] == "value = pixel"
-              assert float(meta["WindowWidth"]) > 0
-              if role == "MEICA_T2S":
-                  assert float(meta["WindowCenter"]) == 205.0
-      dr2s_values = np.concatenate(
-          [np.asarray(image.data).ravel() for image in float32_by_role["MEICA_DR2S"]]
-      )
-      t2s_values = np.concatenate(
-          [np.asarray(image.data).ravel() for image in float32_by_role["MEICA_T2S"]]
-      )
-      assert set(np.unique(dr2s_values)) == {200.0, 210.0}
-      assert set(np.unique(t2s_values)) == {205.0}
-      print("returned uint16 and optional float32 dR2* and T2* ME-ICA MRD series")
+              header = image.getHead()
+              stored = np.asarray(image.data).reshape(3, 4)
+              assert stored.min() >= 0 and stored.max() <= 4095
+              volume[header.slice, :, :, header.repetition] = (
+                  stored * slope + intercept
+              )
+          return volume, meta, slope
+
+      xyzt_shape = (4, 3, 2, 2)
+      dr2s = np.linspace(-1.5, 2.25, int(np.prod(xyzt_shape)), dtype=np.float32)
+      dr2s = np.transpose(dr2s.reshape(xyzt_shape), (2, 1, 0, 3))
+      t2s = np.linspace(20.0, 60.0, int(np.prod(xyzt_shape[:3])), dtype=np.float32)
+      t2s[:3] = [0.0, 500.0, -3.0]
+      t2s = np.transpose(t2s.reshape(xyzt_shape[:3]), (2, 1, 0))[..., np.newaxis]
+
+      volume, meta, slope = decoded(by_role["MEICA_DR2S"])
+      assert slope <= 0.01, "BOLD-scale dR2* needs sub-0.01 1/s storage steps"
+      assert np.allclose(volume, dr2s, atol=slope / 2 + 1e-6)
+      assert meta["MEICAUnits"] == "1/s"
+      assert meta["PixelPaddingValue"] == "0"
+      assert meta["MEICADisplayClippedVoxels"] == "0"
+      assert int(meta["WindowCenter"]) == 0
+
+      volume, meta, slope = decoded(by_role["MEICA_T2S"])
+      assert slope <= 1.0
+      assert np.allclose(volume, np.maximum(t2s, 0.0), atol=slope / 2 + 1e-6)
+      assert meta["MEICAUnits"] == "ms"
+      assert "PixelPaddingValue" not in meta
+      assert meta["MEICADisplayClippedVoxels"] == "1"
+      assert 0 < int(meta["WindowCenter"]) < 500
+      print("returned quantitative uint16 dR2* and T2* ME-ICA MRD series")
       PY
 
 upstream_version: 4.0.1
