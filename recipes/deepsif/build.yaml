@@ -2,7 +2,7 @@ variables:
   # Final Bullseye security snapshot for the CUDA 11.5 environment.
   debian_security_snapshot: 20260901T000000Z
   install_version: "0.0.1"
-  upstream_commit: 9f64560efde8b58da6a87eed8eb6598f47cc4a3d
+  upstream_commit: "03ccfd7525dcd74248af7787e78c5c21f4fbf143"
 
 name: deepsif
 version: "0.0.1"
