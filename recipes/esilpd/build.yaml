@@ -1,8 +1,8 @@
 variables:
   # Final Bullseye security snapshot for the CUDA 11.5 environment.
   debian_security_snapshot: 20260901T000000Z
-  vscode_version: "1.136.1"
-  mne_bids_pipeline_commit: 91c2e0677f4a015a35dad48c2faa5e47633ae497
+  vscode_version: "1.139.1"
+  mne_bids_pipeline_commit: "e0fe00d71e95b20981e657530793eaf4a9ba69fc"
 
 name: esilpd
 version: "0.1.0"
