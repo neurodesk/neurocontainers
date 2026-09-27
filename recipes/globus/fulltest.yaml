@@ -6,7 +6,7 @@
 # It includes the GridFTP server for high-performance data transfer.
 
 name: globus
-globus_version: "3.2.8"
+globus_version: "3.3.1"
 version: "${globus_version}"
 
 globus_dir: /opt/globusconnectpersonal-${version}
