@@ -72,4 +72,4 @@ variables:
 files:
 - name: gingerale.jar
   url: https://www.brainmap.org/ale/GingerALE.jar
-  sha256: a23e7321d707cab046bafebc9c433f8def467596daef394bceee58122d7fee19
+  sha256: "6a0eae7477a2aa8d249bdce6c406debb1fea5cefb1f2e7ec419d06197bd80739"
