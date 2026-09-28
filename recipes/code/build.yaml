@@ -1,5 +1,5 @@
 variables:
-  vscode_version: "1.139.0"
+  vscode_version: "1.139.1"
   julia_version: "1.13.0"
   go_version: "1.27.1"
   singularity_version: "4.5.1"
@@ -19,6 +19,7 @@ auto_update:
     method: webpage
     target:
       variable: vscode_version
+      fulltest_variable: vscode_version
     url: https://update.code.visualstudio.com/api/update/linux-x64/stable/latest
     version_regex: '"productVersion":\s*"(?P<version>\d+(?:\.\d+)+)"'
   - id: julia
@@ -209,8 +210,8 @@ files:
     url: https://dl.google.com/go/go{{ context.go_version }}.linux-amd64.tar.gz
   - name: code
     contents: |
-      #\!/usr/bin/env sh
-      /usr/bin/code --extensions-dir=/opt/vscode-extensions --no-sandbox
+      #!/usr/bin/env sh
+      exec /usr/bin/code --extensions-dir=/opt/vscode-extensions --no-sandbox "$@"
 
   - name: module.sh
     contents: |

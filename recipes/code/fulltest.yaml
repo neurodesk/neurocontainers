@@ -14,6 +14,7 @@
 
 name: code
 version: "240320"
+vscode_version: "1.139.1"
 julia_version: "1.13.0"
 singularity_version: "4.5.1"
 
@@ -51,13 +52,13 @@ tests:
     expected_output_contains: "singularity-ce version ${singularity_version}"
 
   - name: VSCode version check
-    description: Verify VSCode binary runs and reports version
-    command: bash -lc '/usr/bin/code --version 2>&1 | head -1'
-    expected_output_contains: "1."
+    description: Verify the deployed launcher forwards arguments and reports the pinned version
+    command: /usr/local/sbin/code --user-data-dir="${output_dir}/vscode-data" --version
+    expected_output_contains: "${vscode_version}"
 
   - name: VSCode help
     description: Verify VSCode help command works
-    command: bash -lc '/usr/bin/code --help 2>&1 | head -5'
+    command: /usr/local/sbin/code --user-data-dir="${output_dir}/vscode-data" --help
     expected_output_contains: "Visual Studio Code"
 
   - name: VSCode list extensions
