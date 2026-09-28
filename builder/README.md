@@ -26,6 +26,23 @@ Run `sf-make <recipe_dir>` to build a Singularity/Apptainer SIF using BuildKit w
 
 A common workflow involves building the container and running a command inside it. You can run `sf-login <name>` to build a container and immediately drop into a shell.
 
+### Flattened base images
+
+Set `build.flatten-base-image: true` when an upstream image has substantial
+waste from deleted or replaced files in inherited layers. Staging resolves the
+source digest, converts it to OCI, and uses BuildKit to copy its final filesystem
+into one layer. This retains runtime configuration, including environment,
+entrypoint, command, user, working directory, labels, and volume declarations.
+Files inside declared volumes remain present. Only filesystem layer references
+and their history associations change.
+
+Flattening requires Docker Buildx or a configured `buildctl` daemon, plus the
+Skopeo conversion described below. It works with either final build backend.
+It also implies OCI conversion, so `convert-base-image` is optional when
+flattening. The cache separates flattened images from ordinary conversions.
+Large images need disk space for both the source and flattened OCI blobs while
+staging. No image commands run during flattening.
+
 ### Legacy base images
 
 Set `build.convert-base-image: true` when an upstream image uses Docker schema 1,

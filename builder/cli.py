@@ -60,12 +60,13 @@ def write_build_files(
             http_cache_dir=output_root.parent / "httpcache",
             download=download,
         )
-    required = compiled.recipe["build"].get("convert-base-image", False)
+    flatten = compiled.recipe["build"].get("flatten-base-image", False)
+    required = flatten or compiled.recipe["build"].get("convert-base-image", False)
     contexts = ()
     if stage and download and required:
         reference = next(item.image for item in compiled.definition.directives if isinstance(item, From))
         contexts = (stage_image(reference, compiled.architecture,
-                                output_root.parent / "httpcache" / "oci", build_dir),)
+                                output_root.parent / "httpcache" / "oci", build_dir, flatten=flatten),)
     write_contexts(build_dir, compiled.architecture, contexts, required=required)
     return build_dir, dockerfile_path
 

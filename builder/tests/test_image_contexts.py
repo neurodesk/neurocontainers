@@ -133,3 +133,31 @@ def test_native_converter_change_invalidates_cache_identity(tmp_path, monkeypatc
     assert images.select_converter() == second
     monkeypatch.setattr(images.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(returncode=0))
     assert images.select_converter().identity == images.SKOPEO_IMAGE
+
+
+def test_flattening_has_distinct_cache_and_validates_before_publication(tmp_path, monkeypatch, source):
+    converted = []
+    flattened = []
+    def convert(ref, arch, target, **kwargs):
+        converted.append(ref)
+        fixture_layout(target)
+    def flatten(context, arch, target):
+        flattened.append(context)
+        fixture_layout(target)
+    monkeypatch.setattr(images, "convert_image", convert)
+    monkeypatch.setattr(images, "flatten_image", flatten)
+    for index, flatten_flag in enumerate([False, True, True]):
+        images.stage_image("example/legacy:v1", "x86_64", tmp_path / "cache", tmp_path / str(index), flatten=flatten_flag)
+    assert len(converted) == 2
+    assert len(flattened) == 1
+    assert len(list((tmp_path / "cache").iterdir())) == 2
+
+
+def test_failed_flattening_is_not_cached(tmp_path, monkeypatch, source):
+    monkeypatch.setattr(images, "convert_image", lambda ref, arch, target, **kwargs: fixture_layout(target))
+    def fail(*args):
+        raise RuntimeError("export failed")
+    monkeypatch.setattr(images, "flatten_image", fail)
+    with pytest.raises(RuntimeError, match="export failed"):
+        images.stage_image("example/legacy:v1", "x86_64", tmp_path / "cache", tmp_path / "build", flatten=True)
+    assert list((tmp_path / "cache").iterdir()) == []

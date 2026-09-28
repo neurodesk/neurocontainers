@@ -187,3 +187,30 @@ def test_build_metadata_is_readable_with_restrictive_umask(tmp_path):
     assert (build_dir / "build.yaml").read_bytes() == source.read_bytes()
     assert (build_dir / "README.md").read_text() == "# Tool\n"
     assert source.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize("convert", [False, True])
+def test_flatten_base_implies_one_required_oci_staging(tmp_path, monkeypatch, convert):
+    from builder.ir import Definition, From
+    from builder.image_contexts import read_contexts
+
+    recipe_dir = tmp_path / "recipe"
+    recipe_dir.mkdir()
+    (recipe_dir / "build.yaml").write_text("name: demo\n")
+    compiled = SimpleNamespace(
+        name="demo", version="1", readme="# Demo", recipe_dir=recipe_dir,
+        definition=Definition([From("example/tool:1")]), architecture="x86_64",
+        recipe={"build": {"flatten-base-image": True, "convert-base-image": convert}},
+        staging_plan=None,
+    )
+    build, _ = cli.write_build_files(tmp_path, compiled, tmp_path / "build")
+    with pytest.raises(ValueError, match="stage --download"):
+        read_contexts(build)
+    calls = []
+    monkeypatch.setattr(cli, "materialize_plan", lambda *args, **kwargs: None)
+    monkeypatch.setattr(cli, "stage_image", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(cli, "write_contexts", lambda *args, **kwargs: None)
+    cli.write_build_files(tmp_path, compiled, tmp_path / "build", stage=True, download=True)
+    assert len(calls) == 1
+    assert calls[0][0][:2] == ("example/tool:1", "x86_64")
+    assert calls[0][1] == {"flatten": True}
