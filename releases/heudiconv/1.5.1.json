@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "heudiconv 1.5.1": {
+      "version": "20260927",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
