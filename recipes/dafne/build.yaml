@@ -1,5 +1,5 @@
 name: dafne
-version: "2.1.0a0"
+version: "2.1.1a0"
 
 copyright:
   - license: GPL-3.0
@@ -10,7 +10,7 @@ architectures:
   - aarch64
 
 variables:
-  upstream_version: "2.1.0a0"
+  upstream_version: "2.1.1a0"
   radiomics_version: 3.1.0
   python_version: "3.11"
   miniconda_version: py311_25.5.1-0
