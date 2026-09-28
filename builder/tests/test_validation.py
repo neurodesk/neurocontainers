@@ -601,3 +601,18 @@ def test_two_digit_version_yaml_parsing():
     finally:
         # Clean up
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.mark.parametrize("value", [True, False, "true"])
+def test_flatten_base_image_requires_boolean(value):
+    recipe = {
+        "name": "demo", "version": "1.0.0", "architectures": ["x86_64"],
+        "categories": ["workflows"], "icon": VALID_ICON,
+        "build": {"kind": "neurodocker", "base-image": "ubuntu:24.04",
+                  "pkg-manager": "apt", "directives": [], "flatten-base-image": value},
+    }
+    if isinstance(value, bool):
+        assert validate_recipe_dict(recipe).build.flatten_base_image is value
+    else:
+        with pytest.raises((TypeError, ValueError)):
+            validate_recipe_dict(recipe)
