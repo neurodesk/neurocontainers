@@ -210,3 +210,23 @@ def test_compiler_readme_member_must_be_unique_and_bounded():
         archive.writestr("readme.txt", "x" * 65537)
     with pytest.raises(ValueError, match="bounded"):
         bundles.read_matlab_artifact(Session(stream.getvalue()), "https://example.org/app.zip", "readme.txt")
+
+
+@pytest.mark.parametrize("content,expected", [
+    (b"\xca\xfe\x00\x074.0.0.0\x00main", "4.0.0"),
+    (b"4.0.0.0 then 3.0.2.0", None),
+    (b"no version here", None),
+])
+def test_archive_version_reads_one_version_from_an_exact_member(content, expected):
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w") as archive:
+        archive.writestr("org/tool/Main.class", content)
+    session = Session(stream.getvalue())
+    pattern = r"(?P<version>\d+\.\d+\.\d+)\.\d+"
+    if expected is None:
+        with pytest.raises(ValueError, match="one version"):
+            bundles.read_archive_version(session, "https://example.org/tool.jar", "org/tool/Main.class", pattern)
+    else:
+        result = bundles.read_archive_version(session, "https://example.org/tool.jar", "org/tool/Main.class", pattern)
+        assert result[0] == hashlib.sha256(stream.getvalue()).hexdigest()
+        assert result[3] == expected

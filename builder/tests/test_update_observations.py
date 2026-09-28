@@ -827,3 +827,14 @@ def test_apt_reports_missing_package(public_session: Mock) -> None:
             },
             Mock(),
         )
+
+
+@pytest.mark.parametrize("config", [
+    {"method": "http_digest", "url": "https://example.org/tool.jar", "version_member": "Main.class"},
+    {"method": "http_digest", "url": "https://example.org/tool.jar", "version_regex": r"(?P<version>\d+)"},
+    {"method": "http_digest", "url": "https://example.org/tool.jar", "version_member": "../Main.class", "version_regex": r"(?P<version>\d+)"},
+    {"method": "http_digest", "url": "https://example.org/tool.jar", "version_member": "Main.class", "version_regex": r"\d+"},
+])
+def test_http_digest_archive_version_is_validated_before_network(config):
+    with pytest.raises(ValueError):
+        update_observations.validate_source(config)

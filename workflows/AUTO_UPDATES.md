@@ -271,6 +271,25 @@ or Last-Modified value. Only an explicit `304 Not Modified` reuses the previous
 verified digest. Servers without validators are downloaded and hashed again.
 The scheduled workflow preserves this metadata cache between runs.
 
+A mutable URL does not show which version it serves. When the file is a ZIP
+archive, such as a Java `.jar`, set `version_member` to one exact member and
+`version_regex` to a pattern with a named `version` group. The archive must
+record exactly one such version. Map it with `target.variables` so the
+container label follows the file. A rebuilt file with the same version is then
+held rather than labelled as a release:
+
+```yaml
+- id: application
+  method: http_digest
+  url: https://www.brainmap.org/ale/GingerALE.jar
+  version_member: org/brainmap/GingerALE.class
+  version_regex: '(?P<version>\d+\.\d+\.\d+)\.\d+'
+  target:
+    file: gingerale.jar
+    variables:
+      upstream_version: version
+```
+
 ## Dependency sources
 
 A source that pins a library rather than the software the recipe is named for
