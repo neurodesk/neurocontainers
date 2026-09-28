@@ -1,5 +1,5 @@
 # gingerale container test suite
-# Tests for GingerALE 3.0.2 - Activation Likelihood Estimation meta-analysis
+# Tests for GingerALE - Activation Likelihood Estimation meta-analysis
 #
 # GingerALE performs coordinate-based meta-analyses of neuroimaging data using
 # the Activation Likelihood Estimation (ALE) method. Key features include:
@@ -21,7 +21,7 @@
 #   - Turkeltaub PE et al. (2012) Hum Brain Mapp 33:1-13
 
 name: gingerale
-version: "3.0.2"
+version: "4.0.0"
 
 test_data:
   output_dir: test_output
@@ -574,4 +574,4 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output/gingerale
     echo "Test outputs preserved in test_output/gingerale/"
-upstream_version: 3.0.2
+upstream_version: 4.0.0
