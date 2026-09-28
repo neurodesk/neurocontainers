@@ -18,6 +18,7 @@ build:
   kind: neurodocker
   base-image: halfpipe/halfpipe:{{ context.version }}
   pkg-manager: apt
+  flatten-base-image: true
   add-default-template: false
   add-tzdata: false
   directives:
