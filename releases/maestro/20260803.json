@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "maestro 20260803": {
+      "version": "20260928",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging",
+    "machine learning"
+  ]
+}
