@@ -1,10 +1,10 @@
 name: fsl
 # check for latest version: https://fsl.fmrib.ox.ac.uk/fsl/docs/development/history/index.html
 # check or add latest version is in neurodocker https://github.com/ReproNim/neurodocker/blob/master/neurodocker/templates/fsl.yaml
-version: "6.0.7.22"
+version: "6.0.7.23"
 
 variables:
-  fsl_version: "6.0.7.22"
+  fsl_version: "6.0.7.23"
   oxasl_mp_commit: 1986a97cb190471b3938f64d6ef45ef3bf567791
 
 copyright:
