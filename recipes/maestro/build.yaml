@@ -96,12 +96,15 @@ build:
         - rm -rf /tmp/maestro-model
         - cp {{ get_file("config.sh") }} /opt/maestro/config.sh
         - sed -i 's|source config.sh|source /opt/maestro/config.sh|' /opt/maestro/run_inference.sh
+        # MAESTRO's upstream launcher uses a command not provided by nnU-Net 2.8.1.
+        - sed -i 's|nnUNetv2_predict_using_modelfolder|nnUNetv2_predict_from_modelfolder|' /opt/maestro/run_inference.sh
         # Resolve input symlinks correctly even when given a relative directory.
         - sed -i 's|INPUT_DIR="$1"|INPUT_DIR=$(realpath -e "$1")|' /opt/maestro/organize_data.sh
         - chmod +x /opt/maestro/*.sh
         - ln -s /opt/maestro/run_inference.sh /usr/local/bin/maestro
         - ln -s /opt/maestro/organize_data.sh /usr/local/bin/maestro-organize-data
         - ln -s /opt/maestro/convert_output.sh /usr/local/bin/maestro-convert-output
+        - ln -s /opt/maestro-env/bin/nnUNetv2_predict_from_modelfolder /usr/local/bin/nnUNetv2_predict_from_modelfolder
         - echo '{{ context.upstream_commit }}' > /opt/maestro/SOURCE_COMMIT
         - python -c 'from maestro_pkg.primus_trainers_noDA import nnUNet_PrimusV3S_NoDA_Trainer; from dynamic_network_architectures.architectures.primus import PrimusV3S'
 
@@ -110,7 +113,7 @@ deploy:
     - maestro
     - maestro-organize-data
     - maestro-convert-output
-    - nnUNetv2_predict_using_modelfolder
+    - nnUNetv2_predict_from_modelfolder
 
 files:
   - name: maestro_source

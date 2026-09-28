@@ -12,6 +12,11 @@ tests:
     command: cd /tmp && maestro --help
     expected_output_contains: input_directory
 
+  - name: Prediction command on standard PATH
+    description: The inference backend remains available with a cleaned runtime PATH.
+    command: env PATH=/usr/local/bin:/usr/bin:/bin nnUNetv2_predict_from_modelfolder --help
+    expected_output_contains: "usage:"
+
   - name: Installed source and dependencies
     command: |
       set -eu
@@ -63,21 +68,17 @@ tests:
       PY
     expected_output_contains: All five model folds available
 
-  - name: Load pretrained network on CPU
-    description: Restore a real checkpoint using nnU-Net, proving trainer and weight compatibility without a GPU.
+  - name: Initialize CPU inference through MAESTRO
+    description: Run the real launcher and restore all five folds on empty input, checking command routing and model compatibility without a GPU.
     command: |
-      python - <<'PY'
-      import os
-      import torch
-      from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
-      torch.set_num_threads(2)
-      predictor = nnUNetPredictor(device=torch.device('cpu'), perform_everything_on_device=False)
-      predictor.initialize_from_trained_model_folder(os.environ['MODEL_PATH'], use_folds=(0,))
-      assert predictor.network is not None
-      assert predictor.label_manager.num_segmentation_heads == 2
-      print('Pretrained MAESTRO network loaded on CPU')
-      PY
-    expected_output_contains: Pretrained MAESTRO network loaded on CPU
+      set -eu
+      task_dir=$(mktemp -d)
+      trap 'rm -rf "$task_dir"' EXIT
+      mkdir "$task_dir/input"
+      cd "$task_dir"
+      maestro -i "$task_dir/input" -o "$task_dir/output" -m cpu
+      echo 'MAESTRO CPU launcher completed'
+    expected_output_contains: MAESTRO CPU launcher completed
 
   - name: Organize and rename NIfTI data
     description: Relative paths, spaces, modality suffixes, and lesion-mask output names work on actual NIfTI files.
