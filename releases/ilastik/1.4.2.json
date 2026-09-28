@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "ilastik 1.4.2": {
+      "version": "20260928",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "ilastikGUI-ilastik 1.4.2": {
+      "version": "20260928",
+      "exec": "run_ilastik.sh",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ]
+}
