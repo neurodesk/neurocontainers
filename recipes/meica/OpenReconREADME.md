@@ -27,10 +27,19 @@ selectable in the scanner GUI. By default, the adapter also returns the
 incoming reconstructed echo images before the two derived series. Disable
 `sendoriginal` to return only the ME-ICA outputs.
 
-Derived results use scanner-display `uint16` pixels by default. Enable
-`sendfloat32` to return the resampled dR2* and T2* values as unscaled `float32`
-pixels. In float mode the robust display range is carried as window metadata;
-the pixel values themselves are not percentile-scaled or clipped.
+Derived results are stored as 12-bit `uint16` pixels with DICOM
+`RescaleSlope` and `RescaleIntercept`, so viewers that apply DICOM rescaling
+show physical values: dR2* in `s^-1` and T2* in `ms`. The stored step is a
+power of ten chosen per series so that the 99.9th percentile of the values
+fits in the 12-bit range, and it is never coarser than 1 `s^-1` or 1 `ms`.
+dR2* is signed, so zero is stored at code 2048 and code 0 is reserved as DICOM
+pixel padding. Values beyond the representable range saturate; the number of
+saturated values is recorded in `MEICADisplayClippedVoxels`, and
+`MEICADisplayFormula` states how to recover the physical value from a stored
+pixel. Each series uses one fixed display window: symmetric around zero at the
+99th percentile of |dR2*|, and zero to the 95th percentile of positive T2*.
+Window values are integers because Siemens truncates fractional window
+metadata.
 
 The input must be reconstructed magnitude multi-echo EPI. Phase images and raw
 k-space acquisitions are not ME-ICA inputs. An anatomical image is optional in
@@ -42,7 +51,6 @@ ME-ICA and is intentionally not required by this inline adapter.
 | --- | --- | --- | --- |
 | config | `config` | `meica` | Selects the ME-ICA server module. |
 | Send original images | `sendoriginal` | `true` | Return the incoming echo images before the derived ME-ICA outputs. |
-| Send results as float32 | `sendfloat32` | `false` | Return unscaled float32 dR2* and T2* pixels instead of display-scaled uint16 pixels. |
 
 ME-ICA is a research tool and is not intended for standard clinical use.
 
