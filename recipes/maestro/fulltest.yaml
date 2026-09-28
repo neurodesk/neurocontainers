@@ -1,0 +1,109 @@
+name: maestro
+version: "20260803"
+upstream_commit: 22c765eb9285f1d482e11d3c111e6f78fc479d92
+nnunet_version: 2.8.1
+torch_version: 2.8.0
+torchvision_version: 0.23.0
+architectures_version: 0.4.4
+
+tests:
+  - name: MAESTRO launcher
+    description: The inference launcher works outside the installation directory.
+    command: cd /tmp && maestro --help
+    expected_output_contains: input_directory
+
+  - name: Installed source and dependencies
+    command: |
+      set -eu
+      test "$(cat /opt/maestro/SOURCE_COMMIT)" = "${upstream_commit}"
+      python - <<'PY'
+      from importlib.metadata import version
+      expected = {
+          'nnunetv2': '${nnunet_version}',
+          'torch': '${torch_version}',
+          'torchvision': '${torchvision_version}',
+          'dynamic-network-architectures': '${architectures_version}',
+      }
+      for package, pin in expected.items():
+          assert version(package).split('+')[0] == pin, (package, version(package))
+      print('Installed versions verified')
+      PY
+    expected_output_contains: Installed versions verified
+
+  - name: Custom trainer discovery
+    command: |
+      python - <<'PY'
+      from nnunetv2.utilities.find_class_by_name import recursive_find_python_class
+      import os
+      trainer = recursive_find_python_class(
+          os.environ['nnUNet_extTrainer'],
+          'nnUNet_PrimusV3S_NoDA_Trainer', current_module=None,
+      )
+      assert trainer is not None
+      from dynamic_network_architectures.architectures.primus import PrimusV3S
+      assert PrimusV3S is not None
+      print('MAESTRO trainer discovered')
+      PY
+    expected_output_contains: MAESTRO trainer discovered
+
+  - name: Pretrained model assets
+    command: |
+      python - <<'PY'
+      import json
+      import os
+      from pathlib import Path
+      model = Path(os.environ['MODEL_PATH'])
+      dataset = json.loads((model / 'dataset.json').read_text())
+      assert dataset['channel_names'] == {'0': 'T1'}
+      assert dataset['labels'] == {'background': 0, 'lesion': 1}
+      assert (model / 'plans.json').is_file()
+      for fold in range(5):
+          assert (model / f'fold_{fold}' / 'checkpoint_final.pth').stat().st_size > 0
+      print('All five model folds available')
+      PY
+    expected_output_contains: All five model folds available
+
+  - name: Load pretrained network on CPU
+    description: Restore a real checkpoint using nnU-Net, proving trainer and weight compatibility without a GPU.
+    command: |
+      python - <<'PY'
+      import os
+      import torch
+      from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
+      torch.set_num_threads(2)
+      predictor = nnUNetPredictor(device=torch.device('cpu'), perform_everything_on_device=False)
+      predictor.initialize_from_trained_model_folder(os.environ['MODEL_PATH'], use_folds=(0,))
+      assert predictor.network is not None
+      assert predictor.label_manager.num_segmentation_heads == 2
+      print('Pretrained MAESTRO network loaded on CPU')
+      PY
+    expected_output_contains: Pretrained MAESTRO network loaded on CPU
+
+  - name: Organize and rename NIfTI data
+    description: Relative paths, spaces, modality suffixes, and lesion-mask output names work on actual NIfTI files.
+    command: |
+      set -eu
+      task_dir=$(mktemp -d)
+      trap 'rm -rf "$task_dir"' EXIT
+      cd "$task_dir"
+      mkdir 'raw scans' predictions
+      python - <<'PY'
+      import nibabel as nib
+      import numpy as np
+      image = nib.Nifti1Image(np.ones((8, 8, 8), dtype=np.float32), np.eye(4))
+      nib.save(image, 'raw scans/sub-01.nii.gz')
+      nib.save(image, 'predictions/sub-01.nii.gz')
+      PY
+      maestro-organize-data 'raw scans' organized
+      maestro-convert-output predictions masks
+      python - <<'PY'
+      from pathlib import Path
+      import nibabel as nib
+      organized = Path('organized/sub-01_0000.nii.gz')
+      assert organized.is_symlink()
+      assert nib.load(organized).shape == (8, 8, 8)
+      assert nib.load('masks/sub-01_label-lesion_desc-T1_mask.nii.gz').shape == (8, 8, 8)
+      assert not Path('predictions/sub-01.nii.gz').exists()
+      print('NIfTI preparation and output conversion verified')
+      PY
+    expected_output_contains: NIfTI preparation and output conversion verified
