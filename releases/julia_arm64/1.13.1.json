@@ -1,0 +1,25 @@
+{
+  "apps": {
+    "julia_arm64 1.13.1": {
+      "version": "20260928",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "vscodeGUI-julia_arm64 1.13.1": {
+      "version": "20260928",
+      "exec": "code",
+      "apptainer_args": []
+    },
+    "REPLGUI-julia_arm64 1.13.1": {
+      "version": "20260928",
+      "exec": "julia",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "julia"
+}
