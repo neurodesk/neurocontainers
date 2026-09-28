@@ -1,9 +1,9 @@
 # halfpipe container test suite
-# Tests for ENIGMA HALFpipe v1.2.3 - Reproducible fMRI analysis pipeline
+# Tests for ENIGMA HALFpipe - Reproducible fMRI analysis pipeline
 #
 # HALFpipe is a user-friendly software that facilitates reproducible analysis
 # of fMRI data, including preprocessing, single-subject feature extraction,
-# and group analysis. Built on fMRIPrep 20.2.7.
+# and group analysis. Built on fMRIPrep.
 #
 # Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
 #   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
@@ -63,7 +63,7 @@ tests:
   - name: fMRIPrep version check
     description: Verify fmriprep binary runs and reports version
     command: fmriprep --version 2>&1
-    expected_output_contains: "20.2.7"
+    expected_output_contains: "25.2.3"
 
   - name: fMRIPrep help
     description: Display fmriprep help message
