@@ -834,6 +834,7 @@ def test_apt_reports_missing_package(public_session: Mock) -> None:
     {"method": "http_digest", "url": "https://example.org/tool.jar", "version_regex": r"(?P<version>\d+)"},
     {"method": "http_digest", "url": "https://example.org/tool.jar", "version_member": "../Main.class", "version_regex": r"(?P<version>\d+)"},
     {"method": "http_digest", "url": "https://example.org/tool.jar", "version_member": "Main.class", "version_regex": r"\d+"},
+    {"method": "http_digest", "url": "https://example.org/tool.jar", "matlab_readme": "readme.txt", "version_member": "Main.class", "version_regex": r"(?P<version>\d+)"},
 ])
 def test_http_digest_archive_version_is_validated_before_network(config):
     with pytest.raises(ValueError):

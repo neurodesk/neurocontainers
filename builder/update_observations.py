@@ -218,6 +218,8 @@ def validate_source(config: dict) -> None:
             or any(part in {".", ".."} for part in member.split("/"))
         ):
             raise ValueError(f"{field_name} must be one exact relative ZIP member")
+    if "matlab_readme" in config and "version_member" in config:
+        raise ValueError("matlab_readme and version_member cannot be combined")
     if method == "http_digest" and ("version_member" in config) != ("version_regex" in config):
         raise ValueError("http_digest.version_member and version_regex must be set together")
     if method == "http_digest" and "version_regex" in config:

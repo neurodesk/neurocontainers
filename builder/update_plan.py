@@ -58,13 +58,15 @@ def _validate_container_version(config: dict, ids: set[str]) -> None:
             f"container_version source {driver} is marked dependency: a version driver "
             "must trigger its own updates"
         )
-    if source["method"] in VERSIONLESS_METHODS and not source.get("version_file"):
+    if source["method"] in VERSIONLESS_METHODS and not (
+        source.get("version_file") or source.get("version_member")
+    ):
         raise ValueError(
             f"container_version source {driver} tracks {source['method']}, which pins bytes "
             "without naming a software version"
         )
     if source["method"] in VERSIONLESS_METHODS and "version" not in source["target"].get("variables", {}).values():
-        raise ValueError("container_version commit source must record version metadata in a recipe variable")
+        raise ValueError("container_version source must record version metadata in a recipe variable")
 
 
 def source_config(source: dict) -> dict:

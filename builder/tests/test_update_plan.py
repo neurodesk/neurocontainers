@@ -285,6 +285,28 @@ def test_republished_artifact_of_the_same_version_is_held(tmp_path):
     assert plan.changes == ('`files.0.sha256`: `' + 'd' * 64 + '` → `' + 'e' * 64 + '`',)
 
 
+def test_archive_version_can_drive_the_container_label(tmp_path):
+    path = make_artifact_recipe(tmp_path)
+    recipe = yaml.safe_load(path.read_text())
+    source = recipe['auto_update']['sources'][0]
+    source.update(method='http_digest', url='https://example.org/tool.jar',
+                  version_member='Main.class', version_regex=r'(?P<version>\d+\.\d+\.\d+)')
+    del source['download_base']
+    recipe['files'][0]['url'] = source['url']
+    path.write_text(yaml.safe_dump(recipe, sort_keys=False))
+    found = {'standalone': SourceObservation('e' * 64, source['url'], version='2.1.0')}
+
+    plan = plan_sources(path, observations=found)
+
+    assert not plan.held
+    assert plan.next_version == '2.1.0'
+    plan.apply()
+    changed = yaml.safe_load(path.read_text())
+    assert changed['variables']['upstream_version'] == '2.1.0'
+    assert changed['files'][0]['sha256'] == 'e' * 64
+    assert plan_sources(path, observations=found) is None
+
+
 def dependency_recipe(tmp_path):
     """The shared helper pin rides along instead of rebuilding the container alone."""
     path = make_recipe(tmp_path)
