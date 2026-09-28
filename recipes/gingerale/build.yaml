@@ -19,8 +19,12 @@ auto_update:
   - id: binary
     method: http_digest
     url: https://www.brainmap.org/ale/GingerALE.jar
+    version_member: org/brainmap/GingerALE.class
+    version_regex: '(?P<version>\d+\.\d+\.\d+)\.\d+'
     target:
       file: gingerale.jar
+      variables:
+        upstream_version: version
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

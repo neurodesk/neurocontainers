@@ -58,13 +58,15 @@ def _validate_container_version(config: dict, ids: set[str]) -> None:
             f"container_version source {driver} is marked dependency: a version driver "
             "must trigger its own updates"
         )
-    if source["method"] in VERSIONLESS_METHODS and not source.get("version_file"):
+    if source["method"] in VERSIONLESS_METHODS and not (
+        source.get("version_file") or source.get("version_member")
+    ):
         raise ValueError(
             f"container_version source {driver} tracks {source['method']}, which pins bytes "
             "without naming a software version"
         )
     if source["method"] in VERSIONLESS_METHODS and "version" not in source["target"].get("variables", {}).values():
-        raise ValueError("container_version commit source must record version metadata in a recipe variable")
+        raise ValueError("container_version source must record version metadata in a recipe variable")
 
 
 def source_config(source: dict) -> dict:
@@ -370,6 +372,7 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
             **observation.metadata,
         }
         edits = []
+        republished = False
         metadata_downgrade = False
         for variable, field in target.get("variables", {}).items():
             if field != "version":
@@ -422,6 +425,9 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
             current_version = _current_artifact_version(source, recipe, file)
             if observation.version and current_version and _is_older(observation.version, current_version):
                 continue
+            # New bytes under an unchanged version are a re-published build, not
+            # a release: hold them for the next update like a dependency pin.
+            republished = observation.version is not None and observation.version == current_version
             digest = observation.value if source["method"] == "http_digest" else observation.metadata["sha256"]
             if not re.fullmatch(r"[a-f0-9]{64}", digest):
                 raise ValueError(f"{source['id']}: invalid observed SHA-256")
@@ -444,7 +450,7 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
                 changes.append(f"`{'.'.join(map(str, path))}`: `{node}` → `{value}`")
         if updated != before_recipe or suite_updated != before_suite:
             urls.append(observation.url)
-            triggered = triggered or not source.get("dependency")
+            triggered = triggered or not (source.get("dependency") or republished)
     current_version = str(recipe["version"])
     next_version = container_version(yaml.safe_load(updated))
     if current_version != next_version:

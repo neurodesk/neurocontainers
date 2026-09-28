@@ -322,8 +322,8 @@ def observe_bundle(config: dict, github_session: requests.Session, current: str 
         return _freesurfer(config, github_session, session)
 
 
-def read_matlab_artifact(session: requests.Session, url: str, member: str) -> tuple[str, int, str, str]:
-    """Read the compiler-generated runtime requirement from one exact ZIP member."""
+def read_archive_member(session: requests.Session, url: str, member: str) -> tuple[str, int, str, bytes]:
+    """Hash a downloaded ZIP archive and read one exact, bounded member from it."""
     from .update_observations import _https_url
 
     digest = hashlib.sha256()
@@ -331,7 +331,7 @@ def read_matlab_artifact(session: requests.Session, url: str, member: str) -> tu
     with tempfile.TemporaryFile() as archive:
         with session.get(url, stream=True, timeout=60) as response:
             response.raise_for_status()
-            final_url = _https_url(response.url, "MATLAB artifact response URL")
+            final_url = _https_url(response.url, "archive response URL")
             for chunk in response.iter_content(1024 * 1024):
                 if chunk:
                     archive.write(chunk)
@@ -341,9 +341,25 @@ def read_matlab_artifact(session: requests.Session, url: str, member: str) -> tu
         with zipfile.ZipFile(archive) as package:
             entries = [entry for entry in package.infolist() if entry.filename == member]
             if len(entries) != 1 or entries[0].file_size > 65536:
-                raise ValueError("MATLAB artifact requires one bounded runtime readme member")
-            text = package.read(entries[0]).decode("utf-8")
-        runtimes = set(re.findall(r"\bR(20\d{2}[ab])\b", text))
-        if len(runtimes) != 1:
-            raise ValueError("MATLAB artifact readme does not identify one runtime release")
-    return digest.hexdigest(), size, final_url, runtimes.pop()
+                raise ValueError(f"archive requires one bounded member {member}")
+            content = package.read(entries[0])
+    return digest.hexdigest(), size, final_url, content
+
+
+def read_matlab_artifact(session: requests.Session, url: str, member: str) -> tuple[str, int, str, str]:
+    """Read the compiler-generated runtime requirement from one exact ZIP member."""
+    digest, size, final_url, content = read_archive_member(session, url, member)
+    runtimes = set(re.findall(r"\bR(20\d{2}[ab])\b", content.decode("utf-8")))
+    if len(runtimes) != 1:
+        raise ValueError("MATLAB artifact readme does not identify one runtime release")
+    return digest, size, final_url, runtimes.pop()
+
+
+def read_archive_version(session: requests.Session, url: str, member: str, pattern: str) -> tuple[str, int, str, str]:
+    """Read the one version an archive records in an exact member."""
+    digest, size, final_url, content = read_archive_member(session, url, member)
+    text = content.decode("latin-1")
+    versions = {match.group("version") for match in re.finditer(pattern, text)}
+    if len(versions) != 1:
+        raise ValueError(f"{member} does not identify one version")
+    return digest, size, final_url, versions.pop()
