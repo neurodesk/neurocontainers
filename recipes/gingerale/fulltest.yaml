@@ -231,6 +231,11 @@ setup:
     echo "Setup complete: foci files created"
 
 tests:
+  - name: GingerALE version
+    description: Verify the release version recorded in the installed jar
+    command: unzip -p /opt/gingerale/gingerale.jar org/brainmap/GingerALE.class | grep -aoF '${upstream_version}.0'
+    expected_output_contains: "${upstream_version}.0"
+
   # ==========================================================================
   # BASIC FUNCTIONALITY - getALE2
   # ==========================================================================
@@ -435,9 +440,9 @@ tests:
     expected_output_contains: "getClustersStats usage"
 
   - name: getClustersStats required parameters
-    description: Verify required parameter documentation
+    description: Verify required image parameter documentation
     command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats 2>&1'"
-    expected_output_contains: "Foci_Text.txt"
+    expected_output_contains: "Cluster_Image"
 
   - name: getClustersStats optional parameters
     description: Verify optional parameter documentation
@@ -447,30 +452,30 @@ tests:
   - name: Basic cluster statistics
     description: Generate cluster statistics with Talairach labels
     depends_on: Basic cluster detection
-    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \\\n  test_output/gingerale/foci/motor_task_tal.txt \\\n  test_output/gingerale/ale_results/motor_p01_ALE.nii \\\n  test_output/gingerale/ale_results/motor_p01_clust.nii \\\n  -out=test_output/gingerale/ale_results/motor_p01_stats \\\n  2>&1'"
+    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \\\n  test_output/gingerale/ale_results/motor_p01_ALE.nii \\\n  test_output/gingerale/ale_results/motor_p01_clust.nii \\\n  -foci=test_output/gingerale/foci/motor_task_tal.txt \\\n  -out=test_output/gingerale/ale_results/motor_p01_stats \\\n  2>&1'"
     validate:
-      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats.txt
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats_clust.txt
 
   - name: Cluster statistics with P values
     description: Include P values in cluster statistics
     depends_on: Basic cluster detection
-    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \\\n  test_output/gingerale/foci/motor_task_tal.txt \\\n  test_output/gingerale/ale_results/motor_p01_ALE.nii \\\n  test_output/gingerale/ale_results/motor_p01_clust.nii \\\n  -p=test_output/gingerale/ale_results/motor_p01_P.nii \\\n  -out=test_output/gingerale/ale_results/motor_p01_stats_pval \\\n  2>&1'"
+    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \\\n  test_output/gingerale/ale_results/motor_p01_ALE.nii \\\n  test_output/gingerale/ale_results/motor_p01_clust.nii \\\n  -foci=test_output/gingerale/foci/motor_task_tal.txt \\\n  -p=test_output/gingerale/ale_results/motor_p01_P.nii \\\n  -out=test_output/gingerale/ale_results/motor_p01_stats_pval \\\n  2>&1'"
     validate:
-      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats_pval.txt
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats_pval_clust.txt
 
   - name: Cluster statistics including all labels
     description: Include non-gray matter labels in statistics
     depends_on: Basic cluster detection
-    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \\\n  test_output/gingerale/foci/motor_task_tal.txt \\\n  test_output/gingerale/ale_results/motor_p01_ALE.nii \\\n  test_output/gingerale/ale_results/motor_p01_clust.nii \\\n  -noGrayOnly \\\n  -out=test_output/gingerale/ale_results/motor_p01_stats_alllab \\\n  2>&1'"
+    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \\\n  test_output/gingerale/ale_results/motor_p01_ALE.nii \\\n  test_output/gingerale/ale_results/motor_p01_clust.nii \\\n  -foci=test_output/gingerale/foci/motor_task_tal.txt \\\n  -noGrayOnly \\\n  -out=test_output/gingerale/ale_results/motor_p01_stats_alllab \\\n  2>&1'"
     validate:
-      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats_alllab.txt
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats_alllab_clust.txt
 
   - name: Cluster statistics with foci listing
     description: List contributing foci for each cluster
     depends_on: Basic cluster detection
-    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \\\n  test_output/gingerale/foci/motor_task_tal.txt \\\n  test_output/gingerale/ale_results/motor_p01_ALE.nii \\\n  test_output/gingerale/ale_results/motor_p01_clust.nii \\\n  -printFoci \\\n  -out=test_output/gingerale/ale_results/motor_p01_stats_foci \\\n  2>&1'"
+    command: "bash -lc 'java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \\\n  test_output/gingerale/ale_results/motor_p01_ALE.nii \\\n  test_output/gingerale/ale_results/motor_p01_clust.nii \\\n  -foci=test_output/gingerale/foci/motor_task_tal.txt \\\n  -printFoci \\\n  -out=test_output/gingerale/ale_results/motor_p01_stats_foci \\\n  2>&1'"
     validate:
-      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats_foci.txt
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats_foci_clust.txt
 
   # ==========================================================================
   # getALE2Contrast - CONTRAST ANALYSIS
@@ -565,7 +570,7 @@ tests:
   - name: Text output format
     description: Verify cluster statistics text output format
     depends_on: Basic cluster statistics
-    command: head -20 test_output/gingerale/ale_results/motor_p01_stats.txt 2>&1
+    command: head -20 test_output/gingerale/ale_results/motor_p01_stats_clust.txt 2>&1
     expected_output_contains: "mm^3"
 
 cleanup:
