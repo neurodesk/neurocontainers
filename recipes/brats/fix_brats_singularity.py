@@ -73,24 +73,24 @@ patch(
 sing = root / "brats" / "core" / "singularity.py"
 patch(
     sing,
-    """        executor = Client.run(
-            image,
-            options=options,
-            args=args,
-            stream=True,
-            bind=singularity_bindings,
-        )""",
-    """        executor = Client.run(
-            image,
-            options=options,
-            args=args,
-            stream=True,
-            # neurocontainers: without this spython drains only stdout, so an
-            # algorithm that fills its stderr pipe deadlocks against brats and
-            # the job sits idle until walltime with the error stuck in the pipe.
-            stream_type="both",
-            bind=singularity_bindings,
-        )""",
+    """            executor = Client.run(
+                image,
+                options=options,
+                args=args,
+                stream=True,
+                bind=singularity_bindings,
+            )""",
+    """            executor = Client.run(
+                image,
+                options=options,
+                args=args,
+                stream=True,
+                # neurocontainers: without this spython drains only stdout, so an
+                # algorithm that fills its stderr pipe deadlocks against brats and
+                # the job sits idle until walltime with the error stuck in the pipe.
+                stream_type="both",
+                bind=singularity_bindings,
+            )""",
 )
 patch(
     sing,
