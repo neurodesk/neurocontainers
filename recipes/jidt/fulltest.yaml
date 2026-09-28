@@ -1,5 +1,5 @@
 name: jidt
-version: "1.6.0"
+version: "1.6.1"
 
 test_data:
   output_dir: test_output
@@ -38,4 +38,4 @@ tests:
       javap -classpath /opt/jidt-${upstream_version}/infodynamics-dist-${upstream_version}/infodynamics.jar infodynamics.measures.discrete.TransferEntropyCalculatorDiscrete
     expected_output_contains: "TransferEntropyCalculatorDiscrete"
 
-upstream_version: '1.6'
+upstream_version: "1.6.1"
