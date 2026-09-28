@@ -1,5 +1,5 @@
 name: julia
-version: 1.9.4
+version: 1.13.1
 
 copyright:
   - license: MIT
@@ -158,11 +158,20 @@ files:
     url: https://julialang-s3.julialang.org/bin/linux/aarch64/{{ context.version.split('.')[:2] | join('.') }}/julia-{{ context.version }}-linux-aarch64.tar.gz
   - name: install_packages.jl
     contents: |-
-      using Pkg
+      using Pkg, TOML
       ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0
       Pkg.add("ArgParse")
       Pkg.add("FFTW")
       Pkg.add("IJulia")
+      if Sys.ARCH == :aarch64
+          # ZMQ's socket workload segfaults during precompilation on Julia 1.13 ARM64.
+          # Keep normal package compilation and runtime messaging enabled.
+          project_path = Base.active_project()
+          project = TOML.parsefile(project_path)
+          get!(project, "extras", Dict())["ZMQ"] = "c2297ded-f4af-51ae-bb23-16f91089e4e1"
+          get!(project, "preferences", Dict())["ZMQ"] = Dict("precompile_workload" => false)
+          open(io -> TOML.print(io, project), project_path, "w")
+      end
 
   - name: code
     contents: |-

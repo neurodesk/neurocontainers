@@ -11,7 +11,7 @@
 #   SparseArrays, DelimitedFiles, Printf, Serialization, InteractiveUtils
 
 name: julia
-version: 1.9.4
+version: 1.13.1
 
 test_data:
   output_dir: test_output
@@ -758,6 +758,35 @@ tests:
     description: Test IJulia package loading
     command: julia -e 'using IJulia; println("IJulia loaded")'
     expected_output_contains: "IJulia loaded"
+    expected_exit_code: 0
+
+  - name: IJulia ZeroMQ request and reply
+    description: Exercise the notebook transport with real loopback sockets and zero-copy messages
+    command: >-
+      julia -e '
+      using IJulia;
+      ZMQ = IJulia.ZMQ;
+      ctx = ZMQ.Context();
+      server = ZMQ.Socket(ctx, ZMQ.REP);
+      client = ZMQ.Socket(ctx, ZMQ.REQ);
+      try
+        server.rcvtimeo = 10000;
+        client.rcvtimeo = 10000;
+        server.linger = 0;
+        client.linger = 0;
+        ZMQ.bind(server, "tcp://127.0.0.1:*");
+        ZMQ.connect(client, rstrip(server.last_endpoint, Char(0)));
+        ZMQ.send(client, ZMQ.Message("request"));
+        @assert ZMQ.recv(server, String) == "request";
+        ZMQ.send(server, ZMQ.Message("reply"));
+        @assert ZMQ.recv(client, String) == "reply";
+        println("IJulia transport verified");
+      finally
+        close(client);
+        close(server);
+        close(ctx);
+      end'
+    expected_output_contains: "IJulia transport verified"
     expected_exit_code: 0
 
   # ==========================================================================
