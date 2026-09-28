@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "elastix 5.3.1": {
+      "version": "20260925",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image registration"
+  ]
+}
