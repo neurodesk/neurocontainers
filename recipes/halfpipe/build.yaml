@@ -21,6 +21,8 @@ build:
   add-default-template: false
   add-tzdata: false
   directives:
+    - environment:
+        PATH: /opt/conda/envs/fmriprep/bin:$PATH
     - deploy:
         path: []
         bins:

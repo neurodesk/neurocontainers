@@ -49,7 +49,7 @@ tests:
 
   - name: HALFpipe help
     description: Display halfpipe help message
-    command: halfpipe --help 2>&1 | head -20
+    command: halfpipe --help
     expected_output_contains: "ENIGMA HALFpipe"
 
   - name: HALFpipe group-level help
@@ -394,15 +394,20 @@ tests:
   # ==========================================================================
   # ICA-AROMA
   # ==========================================================================
-  - name: ICA-AROMA files check
-    description: Verify ICA-AROMA files are present
-    command: "bash -lc 'ls -la /opt/ICA-AROMA/'"
-    expected_output_contains: "ICA_AROMA.py"
+  - name: ICA-AROMA workflow import
+    description: Verify the current ICA-AROMA implementation used by HALFpipe
+    command: |
+      python3 -c "
+      from halfpipe.workflows.post_processing.ica_aroma import init_ica_aroma_components_wf
+      from fmripost_aroma.workflows.aroma import init_ica_aroma_wf
+      print('ICA-AROMA workflows imported successfully')
+      "
+    expected_output_contains: "ICA-AROMA workflows imported successfully"
 
   - name: ICA-AROMA help
-    description: Check ICA-AROMA help (requires specific environment)
-    command: "bash -lc 'python3 /opt/ICA-AROMA/ICA_AROMA.py --help 2>&1 | head -20 || echo \"ICA-AROMA available\"'"
-    expected_exit_code: 0
+    description: Check the installed fMRIPost-AROMA launcher
+    command: fmripost-aroma --help
+    expected_output_contains: "usage:"
 
   # ==========================================================================
   # NIPYPE WORKFLOW TESTS
