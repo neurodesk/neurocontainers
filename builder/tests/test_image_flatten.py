@@ -263,3 +263,54 @@ def test_buildkit_flattens_real_layers_without_losing_runtime_files(tmp_path):
                 stderr=subprocess.DEVNULL,
                 check=False,
             )
+
+
+@pytest.mark.skipif(
+    os.environ.get("NEUROCONTAINERS_TEST_BUILDKIT") != "1",
+    reason="requires Docker and public registry access",
+)
+def test_registry_conversion_and_flattening_runs_the_result(tmp_path):
+    from builder.image_contexts import stage_image
+
+    reference = "docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
+    build = tmp_path / "build"
+    build.mkdir()
+    context = stage_image(reference, "x86_64", tmp_path / "cache", build, flatten=True)
+    assert validate_layout(context.layout_dir, "x86_64") == context.manifest_digest
+    (build / "Dockerfile").write_text(f"FROM {reference}\n")
+    (build / ".dockerignore").write_text("oci-base/\n")
+    tag = "neurocontainers-converter-test:" + uuid.uuid4().hex
+    try:
+        subprocess.run(
+            [
+                "docker",
+                "buildx",
+                "build",
+                "--load",
+                "--tag",
+                tag,
+                *context.buildx_args(),
+                str(build),
+            ],
+            check=True,
+        )
+        result = subprocess.check_output(
+            [
+                "docker",
+                "run",
+                "--rm",
+                tag,
+                "sh",
+                "-c",
+                "printf converted-and-flattened",
+            ],
+            text=True,
+        )
+        assert result == "converted-and-flattened"
+    finally:
+        subprocess.run(
+            ["docker", "image", "rm", tag],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
