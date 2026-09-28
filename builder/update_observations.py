@@ -48,7 +48,7 @@ NEW_METHOD_FIELDS = {
     "github_commit": frozenset({"repo", "ref", "version_file"}),
     "git_commit": frozenset({"url", "ref"}),
     "oci_digest": frozenset({"image", "tag"}),
-    "http_digest": frozenset({"url", "matlab_readme"}),
+    "http_digest": frozenset({"url", "matlab_readme", "version_member", "version_regex"}),
     "artifact_listing": frozenset(
         {
             "url",
@@ -208,14 +208,27 @@ def validate_source(config: dict) -> None:
             raise ValueError("apt.urls must be a nonempty list")
         for url in urls:
             _https_url(url, "apt.urls entry")
-    if "matlab_readme" in config:
-        member = config["matlab_readme"]
+    for field_name in ("matlab_readme", "version_member"):
+        if field_name not in config:
+            continue
+        member = config[field_name]
         if (
             not isinstance(member, str)
             or not re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*", member)
             or any(part in {".", ".."} for part in member.split("/"))
         ):
-            raise ValueError("matlab_readme must be one exact relative ZIP member")
+            raise ValueError(f"{field_name} must be one exact relative ZIP member")
+    if "matlab_readme" in config and "version_member" in config:
+        raise ValueError("matlab_readme and version_member cannot be combined")
+    if method == "http_digest" and ("version_member" in config) != ("version_regex" in config):
+        raise ValueError("http_digest.version_member and version_regex must be set together")
+    if method == "http_digest" and "version_regex" in config:
+        try:
+            pattern = re.compile(str(config["version_regex"]))
+        except re.error as exc:
+            raise ValueError("http_digest.version_regex is not a valid regular expression") from exc
+        if "version" not in pattern.groupindex:
+            raise ValueError("http_digest.version_regex requires a named version group")
 
 
 def _mapping(response: requests.Response, description: str) -> dict:
@@ -694,11 +707,19 @@ def observe_source(
             return _oci_digest(config, public_session)
         if method == "http_digest":
             runtime = None
+            version = None
             if member := config.get("matlab_readme"):
                 from .update_bundles import read_matlab_artifact
 
                 digest, size, _, runtime = read_matlab_artifact(
                     public_session, config["url"], member
+                )
+                final_url = config["url"]
+            elif member := config.get("version_member"):
+                from .update_bundles import read_archive_version
+
+                digest, size, _, version = read_archive_version(
+                    public_session, config["url"], member, config["version_regex"]
                 )
                 final_url = config["url"]
             else:
@@ -714,6 +735,7 @@ def observe_source(
             return SourceObservation(
                 value=digest,
                 url=final_url,
+                version=version,
                 metadata=metadata,
             )
         if method == "artifact_listing":

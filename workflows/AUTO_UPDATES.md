@@ -259,8 +259,10 @@ This provider selects the highest suitable release using the same stable-version
 rules as `github_release`. It downloads the named asset from that exact tag and
 verifies its size and any published SHA-256. The declared file keeps an explicit
 tagged URL even when GitHub redirects downloads to a signed CDN URL. Each check
-reads the asset bytes again, so replacements under an unchanged release tag also
-produce an update. Missing, duplicate or incomplete assets fail the check. Do not
+reads the asset bytes again. A replacement under an unchanged release tag is a
+re-published build, not a release: like a dependency pin, its new checksum is
+held and ships with the next version update. This applies to every file source
+that reports a version. Missing, duplicate or incomplete assets fail the check. Do not
 combine an independent release selector with a `releases/latest` digest source;
 those selectors can resolve different releases.
 
@@ -268,6 +270,25 @@ Snapshot hashing uses conditional HTTP requests when the server supplies an ETag
 or Last-Modified value. Only an explicit `304 Not Modified` reuses the previous
 verified digest. Servers without validators are downloaded and hashed again.
 The scheduled workflow preserves this metadata cache between runs.
+
+A mutable URL does not show which version it serves. When the file is a ZIP
+archive, such as a Java `.jar`, set `version_member` to one exact member and
+`version_regex` to a pattern with a named `version` group. The archive must
+record exactly one such version. Map it with `target.variables` so the
+container label follows the file. A rebuilt file with the same version is then
+held rather than labelled as a release:
+
+```yaml
+- id: application
+  method: http_digest
+  url: https://www.brainmap.org/ale/GingerALE.jar
+  version_member: org/brainmap/GingerALE.class
+  version_regex: '(?P<version>\d+\.\d+\.\d+)\.\d+'
+  target:
+    file: gingerale.jar
+    variables:
+      upstream_version: version
+```
 
 ## Dependency sources
 
