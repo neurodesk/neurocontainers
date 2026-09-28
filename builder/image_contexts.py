@@ -14,6 +14,7 @@ from pathlib import Path
 
 from .cache import link_or_copy
 from .image_fingerprint import parse_image_reference
+from .image_flatten import FLATTEN_VERSION, flatten_image
 from .update_observations import observe_source
 
 SKOPEO_IMAGE = "quay.io/skopeo/stable@sha256:e5d9c4af8ec327785c7ca938d1e4f8452c6a05014850e58e2ff9456899ebd97c"
@@ -139,10 +140,15 @@ def convert_image(source: str, architecture: str, layout: Path, *, converter: Co
     subprocess.run(command, check=True)
 
 
-def stage_image(reference: str, architecture: str, cache_root: Path, build_dir: Path) -> ImageContext:
+def stage_image(
+    reference: str, architecture: str, cache_root: Path, build_dir: Path, *, flatten: bool = False
+) -> ImageContext:
     source, digest = resolve_source(reference)
     converter = select_converter()
-    identity = json.dumps([source, architecture, converter.identity, CONVERSION_VERSION]).encode()
+    cache_identity = [source, architecture, converter.identity, CONVERSION_VERSION]
+    if flatten:
+        cache_identity.append(["flatten", FLATTEN_VERSION])
+    identity = json.dumps(cache_identity).encode()
     cache_root.mkdir(parents=True, exist_ok=True)
     cached = cache_root / hashlib.sha256(identity).hexdigest()
     if not cached.exists():
@@ -150,7 +156,14 @@ def stage_image(reference: str, architecture: str, cache_root: Path, build_dir: 
         try:
             layout = temporary / "layout"
             convert_image(source, architecture, layout, converter=converter)
-            validate_layout(layout, architecture)
+            manifest_digest = validate_layout(layout, architecture)
+            if flatten:
+                flattened = temporary / "flattened"
+                flatten_image(ImageContext("neurocontainers-flatten-source", digest, layout, manifest_digest),
+                              architecture, flattened)
+                validate_layout(flattened, architecture)
+                shutil.rmtree(layout)
+                layout = flattened
             try:
                 layout.rename(cached)
             except OSError as error:
@@ -189,7 +202,7 @@ def read_contexts(build_dir: Path) -> tuple[ImageContext, ...]:
     if data.get("version") != 1 or data.get("architecture") not in {"x86_64", "aarch64"}:
         raise ValueError("unsupported staged image context metadata")
     if data.get("required") and not data["images"]:
-        raise ValueError("This base image requires conversion; run builder stage --download first")
+        raise ValueError("This base image requires OCI staging; run builder stage --download first")
     contexts = []
     for item in data["images"]:
         _validate_reference(item["from_ref"])

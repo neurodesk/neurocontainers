@@ -1,0 +1,161 @@
+name: maestro
+# Upstream has no numbered releases; identify this source snapshot by its date.
+version: "20260803"
+
+copyright:
+  - name: MAESTRO authors (upstream does not declare a license)
+    url: https://github.com/npnl/MAESTRO
+
+architectures:
+  - x86_64
+
+variables:
+  upstream_commit: 22c765eb9285f1d482e11d3c111e6f78fc479d92
+  model_sha256: 5eacc9a6e1e0d10d24885100189217fa1265f724c8e8cb63fb0cd1d269a3a31f
+  nnunet_version: 2.8.1
+  torch_version: 2.8.0
+  torchvision_version: 0.23.0
+  architectures_version: 0.4.4
+
+auto_update:
+  method: sources
+  container_version: false
+  sources:
+    - id: maestro
+      method: github_commit
+      repo: npnl/MAESTRO
+      ref: main
+      target:
+        variable: upstream_commit
+        fulltest_variable: upstream_commit
+    - id: model
+      method: http_digest
+      url: https://drive.usercontent.google.com/download?id=1Gp02Dgfa5apMf_02Pn2XtoZYHqWgwTOt&export=download&confirm=t
+      target:
+        variable: model_sha256
+    - id: nnunet
+      method: pypi
+      package: nnunetv2
+      dependency: true
+      target:
+        variable: nnunet_version
+        fulltest_variable: nnunet_version
+    - id: torch
+      method: pypi
+      package: torch
+      dependency: true
+      target:
+        variable: torch_version
+        fulltest_variable: torch_version
+    - id: torchvision
+      method: pypi
+      package: torchvision
+      dependency: true
+      target:
+        variable: torchvision_version
+        fulltest_variable: torchvision_version
+    - id: architectures
+      method: pypi
+      package: dynamic-network-architectures
+      dependency: true
+      target:
+        variable: architectures_version
+        fulltest_variable: architectures_version
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - ca-certificates
+        - python3
+        - python3-venv
+        - build-essential
+        - libgomp1
+        - unzip
+    - run:
+        - python3 -m venv /opt/maestro-env
+    - environment:
+        PATH: /opt/maestro-env/bin:$PATH
+        nnUNet_extTrainer: /opt/maestro/custom_trainers
+        PYTHONPATH: /opt/maestro/custom_trainers
+        MODEL_PATH: /opt/maestro/model_weights
+        nnUNet_compile: "false"
+    - run:
+        - python -m pip install --no-cache-dir torch=={{ context.torch_version }} torchvision=={{ context.torchvision_version }} --index-url https://download.pytorch.org/whl/cu128
+        - python -m pip install --no-cache-dir nnunetv2=={{ context.nnunet_version }} dynamic-network-architectures=={{ context.architectures_version }} torch=={{ context.torch_version }} torchvision=={{ context.torchvision_version }}
+        - python -m pip check
+    - run:
+        - mkdir -p /opt/maestro
+        - tar -xzf {{ get_file("maestro_source") }} --strip-components=1 -C /opt/maestro
+        - unzip -q {{ get_file("model_weights") }} -x '*.DS_Store' -d /tmp/maestro-model
+        - mv /tmp/maestro-model/MAESTRO/model_weights /opt/maestro/model_weights
+        - rm -rf /tmp/maestro-model
+        - cp {{ get_file("config.sh") }} /opt/maestro/config.sh
+        - sed -i 's|source config.sh|source /opt/maestro/config.sh|' /opt/maestro/run_inference.sh
+        # MAESTRO's upstream launcher uses a command not provided by nnU-Net 2.8.1.
+        - sed -i 's|nnUNetv2_predict_using_modelfolder|nnUNetv2_predict_from_modelfolder|' /opt/maestro/run_inference.sh
+        # Resolve input symlinks correctly even when given a relative directory.
+        - sed -i 's|INPUT_DIR="$1"|INPUT_DIR=$(realpath -e "$1")|' /opt/maestro/organize_data.sh
+        - chmod +x /opt/maestro/*.sh
+        - ln -s /opt/maestro/run_inference.sh /usr/local/bin/maestro
+        - ln -s /opt/maestro/organize_data.sh /usr/local/bin/maestro-organize-data
+        - ln -s /opt/maestro/convert_output.sh /usr/local/bin/maestro-convert-output
+        - ln -s /opt/maestro-env/bin/nnUNetv2_predict_from_modelfolder /usr/local/bin/nnUNetv2_predict_from_modelfolder
+        - echo '{{ context.upstream_commit }}' > /opt/maestro/SOURCE_COMMIT
+        - python -c 'from maestro_pkg.primus_trainers_noDA import nnUNet_PrimusV3S_NoDA_Trainer; from dynamic_network_architectures.architectures.primus import PrimusV3S'
+
+deploy:
+  bins:
+    - maestro
+    - maestro-organize-data
+    - maestro-convert-output
+    - nnUNetv2_predict_from_modelfolder
+
+files:
+  - name: maestro_source
+    url: https://api.github.com/repos/npnl/MAESTRO/tarball/{{ context.upstream_commit }}
+  - name: model_weights
+    url: https://drive.usercontent.google.com/download?id=1Gp02Dgfa5apMf_02Pn2XtoZYHqWgwTOt&export=download&confirm=t
+    sha256: "{{ context.model_sha256 }}"
+  - name: config.sh
+    filename: config.sh
+
+categories:
+  - image segmentation
+  - structural imaging
+  - machine learning
+
+readme: |
+  ## MAESTRO/{{ context.version }}
+
+  Stroke lesion segmentation of T1-weighted MRI using the ATLAS-trained
+  MAESTRO model and nnU-Net. Includes pretrained weights and the custom
+  PrimusV3S trainer. Upstream source snapshot: {{ context.upstream_commit }}.
+  Upstream does not currently publish a software license.
+
+  ```bash
+  ml maestro/{{ context.version }}
+  maestro-organize-data ./t1_images ./organized
+  maestro -i ./organized -o ./predictions -m cpu
+  # NVIDIA GPU inference (default):
+  maestro -i ./organized -o ./predictions -m gpu -d 0
+  # Optional: moves predictions into BIDS-style lesion-mask filenames.
+  maestro-convert-output ./predictions ./lesion_masks
+  ```
+
+  Inputs must be gzip-compressed NIfTI T1 scans. The organization helper
+  creates symlinks with nnU-Net's `_0000.nii.gz` suffix; keep the originals
+  accessible inside the container. All model assets are installed under /opt.
+  Set MODEL_PATH to use an alternative nnU-Net model folder.
+
+  GPU execution requires a CUDA 12.8-compatible NVIDIA driver and GPU access
+  (Apptainer/Singularity `--nv`, or Docker `--gpus all`). CPU execution is
+  available with `-m cpu`. Output directories must be writable.
+
+  Documentation and model provenance: https://github.com/npnl/MAESTRO
+
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgMTI4IDEyOCI+PHJlY3Qgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiIHJ4PSIyNCIgZmlsbD0iIzE2MzI0ZiIvPjxwYXRoIGQ9Ik02MSAyNUM0OCAxMyAzMSAyNiAzMiAzOUMxNSA0MyAxNyA2MiAyNSA2OEMxNiA4MyAyOSAxMDAgNDIgOTdDNDkgMTEzIDYyIDEwNCA2NCA5NkM2OCAxMDkgODQgMTA5IDg5IDk3QzEwNyA5OSAxMTUgNzkgMTAzIDY4QzExNSA1MyAxMDQgMzcgOTQgMzdDOTMgMjAgNzUgMTcgNjcgMjdMNjQgOTZaIiBmaWxsPSIjZDllZWYyIi8+PHBhdGggZD0iTTQ0IDQwQzU3IDQxIDU3IDU1IDQ3IDYwTTMwIDcyQzQ3IDY0IDU3IDc1IDUzIDkxTTg2IDQwQzcyIDQyIDczIDU1IDgyIDYwTTk3IDc0Qzg0IDY2IDczIDc1IDc3IDkwIiBmaWxsPSJub25lIiBzdHJva2U9IiMxNjMyNGYiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PGVsbGlwc2UgY3g9Ijg1IiBjeT0iNzgiIHJ4PSIxMCIgcnk9IjEzIiBmaWxsPSIjZWY4MzU0Ii8+PC9zdmc+

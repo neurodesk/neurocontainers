@@ -721,6 +721,7 @@ class NeuroDockerBuildRecipe:
     add_tzdata: Optional[bool] = attrs.field(default=None)
     fix_locale_def: Optional[bool] = attrs.field(default=None)
     convert_base_image: bool = attrs.field(default=False, validator=attrs.validators.instance_of(bool))
+    flatten_base_image: bool = attrs.field(default=False, validator=attrs.validators.instance_of(bool))
 
 
 @attrs.define
@@ -1019,6 +1020,8 @@ def validate_recipe_dict(
             build_dict["add_tzdata"] = build_dict.pop("add-tzdata")
         if "fix-locale-def" in build_dict:
             build_dict["fix_locale_def"] = build_dict.pop("fix-locale-def")
+        if "flatten-base-image" in build_dict:
+            build_dict["flatten_base_image"] = build_dict.pop("flatten-base-image")
         if "convert-base-image" in build_dict:
             build_dict["convert_base_image"] = build_dict.pop("convert-base-image")
 

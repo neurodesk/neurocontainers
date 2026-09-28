@@ -15,7 +15,7 @@
 #   IEEE Transactions on Medical Imaging, vol. 29, no. 1, pp. 196-205, January 2010.
 
 name: elastix
-version: 5.1.0
+version: 5.3.1
 
 required_files:
   - dataset: ds000001
