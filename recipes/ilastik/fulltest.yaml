@@ -20,7 +20,7 @@
 # Many tests require pre-trained project files (.ilp) for actual processing.
 
 name: ilastik
-version: 1.4.0
+version: 1.4.2
 
 test_data:
   # ilastik works with various image formats
