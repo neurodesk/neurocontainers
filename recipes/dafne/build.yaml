@@ -12,22 +12,24 @@ architectures:
 variables:
   upstream_version: "2.1.1a0"
   radiomics_version: 3.1.0
-  python_version: "3.11"
+  python_version: "3.13.15"
   miniconda_version: py311_25.5.1-0
   numpy_version: "2.1.3"
-  tensorflow_version: "2.19.1"
-  torch_version: "2.6.0"
-  torchvision_version: "0.21.0"
+  tensorflow_version: "2.20.0"
+  torch_version: "2.7.1"
+  torchvision_version: "0.22.1"
   simpleitk_version: "2.4.1"
+  pyqt_version: "5.15.11"
+  h5py_version: "3.14.0"
   wheel_version: "0.48.0"
   setuptools_version: "84.0.0"
   conda_install:
     try:
       - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel={{ context.wheel_version }} setuptools={{ context.setuptools_version }}"
         condition: arch=="x86_64"
-      - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel={{ context.wheel_version }} setuptools={{ context.setuptools_version }} pyqt=5.15 h5py=3.11.0"
+      - value: "python={{ context.python_version }} numpy={{ context.numpy_version }} wheel={{ context.wheel_version }} setuptools={{ context.setuptools_version }} pyqt={{ context.pyqt_version }}"
         condition: arch=="aarch64"
-  pip_install: "numpy=={{ context.numpy_version }} tensorflow=={{ context.tensorflow_version }} torch=={{ context.torch_version }} torchvision=={{ context.torchvision_version }} SimpleITK=={{ context.simpleitk_version }} pyradiomics=={{ context.radiomics_version }} dafne=={{ context.upstream_version }}"
+  pip_install: "h5py=={{ context.h5py_version }} PyQt5=={{ context.pyqt_version }} numpy=={{ context.numpy_version }} tensorflow=={{ context.tensorflow_version }} torch=={{ context.torch_version }} torchvision=={{ context.torchvision_version }} SimpleITK=={{ context.simpleitk_version }} pyradiomics=={{ context.radiomics_version }} dafne=={{ context.upstream_version }}"
 
 files:
   - name: register_conda_metadata.py
@@ -38,6 +40,13 @@ files:
     contents: |
       from pathlib import Path
       import sys
+
+      versioneer_path = Path("versioneer.py")
+      versioneer_path.write_text(
+          versioneer_path.read_text()
+          .replace("configparser.SafeConfigParser()", "configparser.ConfigParser()")
+          .replace("parser.readfp(f)", "parser.read_file(f)")
+      )
       import versioneer
 
       expected = sys.argv[1]
@@ -84,7 +93,7 @@ auto_update:
       dependency: true
       method: pypi
       package: tensorflow
-      version_regex: '^(?P<version>2\.19\.\d+)$'
+      version_regex: '^(?P<version>2\.20\.\d+)$'
       target:
         variable: tensorflow_version
         fulltest_variable: tensorflow_version
@@ -92,7 +101,7 @@ auto_update:
       dependency: true
       method: pypi
       package: torch
-      version_regex: '^(?P<version>2\.6\.\d+)$'
+      version_regex: '^(?P<version>2\.7\.\d+)$'
       target:
         variable: torch_version
         fulltest_variable: torch_version
@@ -100,7 +109,7 @@ auto_update:
       dependency: true
       method: pypi
       package: torchvision
-      version_regex: '^(?P<version>0\.21\.\d+)$'
+      version_regex: '^(?P<version>0\.22\.\d+)$'
       target:
         variable: torchvision_version
         fulltest_variable: torchvision_version
@@ -113,6 +122,20 @@ auto_update:
         variable: simpleitk_version
         fulltest_variable: simpleitk_version
 
+    - id: pyqt
+      dependency: true
+      method: pypi
+      package: PyQt5
+      version_regex: '^(?P<version>5\.15\.\d+)$'
+      target:
+        variable: pyqt_version
+    - id: h5py
+      dependency: true
+      method: pypi
+      package: h5py
+      version_regex: '^(?P<version>3\.14\.\d+)$'
+      target:
+        variable: h5py_version
     - id: wheel
       dependency: true
       method: pypi
