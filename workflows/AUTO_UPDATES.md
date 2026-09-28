@@ -259,8 +259,10 @@ This provider selects the highest suitable release using the same stable-version
 rules as `github_release`. It downloads the named asset from that exact tag and
 verifies its size and any published SHA-256. The declared file keeps an explicit
 tagged URL even when GitHub redirects downloads to a signed CDN URL. Each check
-reads the asset bytes again, so replacements under an unchanged release tag also
-produce an update. Missing, duplicate or incomplete assets fail the check. Do not
+reads the asset bytes again. A replacement under an unchanged release tag is a
+re-published build, not a release: like a dependency pin, its new checksum is
+held and ships with the next version update. This applies to every file source
+that reports a version. Missing, duplicate or incomplete assets fail the check. Do not
 combine an independent release selector with a `releases/latest` digest source;
 those selectors can resolve different releases.
 

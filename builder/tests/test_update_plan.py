@@ -277,6 +277,14 @@ def test_new_artifact_version_still_updates_the_fulltest(tmp_path):
     assert plan_sources(path, observations=artifact_observations('2.1.0', 'e' * 64)) is None
 
 
+def test_republished_artifact_of_the_same_version_is_held(tmp_path):
+    path = make_artifact_recipe(tmp_path)
+    plan = plan_sources(path, observations=artifact_observations('2.0.0', 'e' * 64))
+    assert plan.held
+    assert plan.next_version == '2.0.0'
+    assert plan.changes == ('`files.0.sha256`: `' + 'd' * 64 + '` → `' + 'e' * 64 + '`',)
+
+
 def dependency_recipe(tmp_path):
     """The shared helper pin rides along instead of rebuilding the container alone."""
     path = make_recipe(tmp_path)
