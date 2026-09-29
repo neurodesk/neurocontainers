@@ -28,7 +28,7 @@
 #   - No bundled Boost libraries
 
 name: matlab
-version: 2025b
+version: 2026b
 
 test_data:
   matlab_root: /opt/matlab/R${version}
@@ -122,10 +122,10 @@ tests:
     expected_output_contains: "sys OK"
     expected_exit_code: 0
 
-  - name: Java directory exists
-    description: Check MATLAB Java integration directory
-    command: test -d ${matlab_root}/sys/java && echo "java OK"
-    expected_output_contains: "java OK"
+  - name: MATLAB Java runtime
+    description: R2026b requires an external JRE; verify the configured JVM can run
+    command: test -f "$MATLAB_JAVA/lib/server/libjvm.so" && "$MATLAB_JAVA/bin/java" -version 2>&1
+    expected_output_contains: 'openjdk version "21.'
     expected_exit_code: 0
 
   - name: Runtime directory exists
