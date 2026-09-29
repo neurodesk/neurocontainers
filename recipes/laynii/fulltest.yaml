@@ -16,7 +16,7 @@
 # NeuroImage, 118091. https://doi.org/10.1016/j.neuroimage.2021.118091
 
 name: laynii
-version: 2.2.1
+version: 2.10.0
 
 required_files:
   - dataset: ds000001
