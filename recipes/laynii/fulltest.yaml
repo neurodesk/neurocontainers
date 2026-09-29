@@ -1,5 +1,5 @@
 # LAYNII container test suite
-# Tests for LayNii v2.2.1 - Layer fMRI analysis software suite
+# Tests for LayNii - Layer fMRI analysis software suite
 #
 # LayNii is a standalone software suite for mesoscopic (functional) MRI
 # It provides layer-analysis tools not included in other major MRI software
@@ -16,7 +16,7 @@
 # NeuroImage, 118091. https://doi.org/10.1016/j.neuroimage.2021.118091
 
 name: laynii
-version: 2.2.1
+version: 2.10.0
 
 required_files:
   - dataset: ds000001
@@ -81,7 +81,7 @@ tests:
     command: LN_SKEW -input ${bold} -output test_output/bold_skew.nii.gz
     validate:
       - output_exists: ${output_dir}/bold_skew_mean.nii.gz
-      - output_exists: ${output_dir}/bold_skew_stedev.nii.gz
+      - output_exists: ${output_dir}/bold_skew_stdev.nii.gz
       - output_exists: ${output_dir}/bold_skew_tSNR.nii.gz
       - output_exists: ${output_dir}/bold_skew_skew.nii.gz
       - output_exists: ${output_dir}/bold_skew_kurt.nii.gz
@@ -118,7 +118,7 @@ tests:
     description: Average time series across trials
     command: LN_TRIAL -input ${bold} -trialdur 30 -output test_output/bold_trial.nii.gz
     validate:
-      - output_exists: ${output_dir}/bold_trial.nii.gz
+      - output_exists: ${output_dir}/bold_trial_TrialAverage.nii.gz
 
   # ==========================================================================
   # SPATIAL SMOOTHING
@@ -195,7 +195,7 @@ tests:
     description: Calculate voxel-wise correlation between two time series
     command: LN_CORREL2FILES -file1 ${bold} -file2 ${bold} -output test_output/bold_correl.nii.gz
     validate:
-      - output_exists: ${output_dir}/bold_correl.nii.gz
+      - output_exists: ${output_dir}/bold_correl_correlated.nii.gz
 
   # ==========================================================================
   # RESAMPLING / ZOOMING
@@ -450,6 +450,7 @@ tests:
     depends_on: Copy container test data
     validate:
       - output_exists: ${output_dir}/column_mask.nii.gz
+      - output_exists: ${output_dir}/column_mask_masked.nii.gz
 
   # ==========================================================================
   # UNFOLDING / FLATTENING
@@ -515,18 +516,22 @@ tests:
   # MULTILATERATION (Advanced column generation)
   # ==========================================================================
   - name: LN2_MULTILATERATE columns
-    description: Generate columns using multilateration algorithm (segfaults in v2.2.0 - container bug)
-    command: LN2_MULTILATERATE -rim test_output/sc_rim.nii.gz -control_points test_output/sc_midGM.nii.gz -radius 5 -output test_output/multilat
-    depends_on: Copy container test data
-    expected_exit_code: 139
+    description: Generate cortical coordinates using multilateration
+    command: LN2_MULTILATERATE -rim /opt/laynii-${version}/test_data/Ding2016_occip_rim.nii.gz -control_points /opt/laynii-${version}/test_data/Ding2016_occipital_rim_midGM_equidist_control_point0.nii.gz -radius 5 -output test_output/multilat
+    validate:
+      - output_exists: ${output_dir}/multilat_UV_coordinates.nii
+      - output_exists: ${output_dir}/multilat_UV_axes.nii
+      - output_exists: ${output_dir}/multilat_perimeter_chunk.nii
 
   # ==========================================================================
   # PATCH FLATTENING
   # ==========================================================================
   - name: LN2_PATCH_FLATTEN
-    description: Flatten cortical patch for visualization (skipped - LN2_MULTILATERATE segfaults)
-    command: echo "Skipped - LN2_MULTILATERATE segfaults, cannot produce UV coordinates"
-    expected_output_contains: "Skipped"
+    description: Flatten a cortical patch using the generated UV coordinates
+    command: LN2_PATCH_FLATTEN -values /opt/laynii-${version}/test_data/Ding2016_occip_T2starweighted_filtered_for_tests.nii.gz -coord_uv test_output/multilat_UV_coordinates.nii -coord_d /opt/laynii-${version}/test_data/Ding2016_occip_rim_layers_equidist.nii.gz -domain test_output/multilat_perimeter_chunk.nii -bins_u 10 -bins_v 10 -output test_output/flatten
+    depends_on: LN2_MULTILATERATE columns
+    validate:
+      - output_exists: ${output_dir}/flatten_flat_10x10x7.nii
 
   # ==========================================================================
   # IFPOINTS (Column seed placement)
