@@ -1,0 +1,143 @@
+name: deepcombat
+version: "0.0.0.9000"
+
+copyright:
+  - license: MIT
+    url: https://github.com/hufengling/DeepComBat/blob/main/LICENSE.md
+
+architectures:
+  - x86_64
+
+structured_readme:
+  description: >-
+    DeepComBat harmonizes multi-batch neuroimaging features. It trains a
+    conditional variational autoencoder and applies ComBat in its latent space
+    and to its residuals, removing multivariate scanner and site effects while
+    preserving the effects of biological covariates.
+  example: Rscript -e 'library(DeepComBat); ?deepcombat_setup'
+  documentation: https://github.com/hufengling/DeepComBat
+  citation: >-
+    Hu, F., Lucas, A., Chen, A.A., Coleman, K., Horng, H., Ng, R.W., Tustison,
+    N.J., Davis, K.A., Shou, H., Li, M., Shinohara, R.T., The Alzheimer's
+    Disease Neuroimaging Initiative. (2023). DeepComBat: A Statistically
+    Motivated, Hyperparameter-Robust, Deep Learning Approach to Harmonization
+    of Neuroimaging Data. bioRxiv. https://doi.org/10.1101/2023.04.24.537396
+
+variables:
+  upstream_version: "0.0.0.9000"
+  deepcombat_commit: bf0eda1c8c6b4690239351065f6ae92c316b4ff4
+  neurocombat_commit: fbec46a61bc92bedb450b0e44addae4ce6afa934
+  cran_snapshot: "2026-09-28"
+
+auto_update:
+  container_version: {"variable": "upstream_version"}
+  method: sources
+  sources:
+    - id: deepcombat
+      method: github_commit
+      repo: hufengling/DeepComBat
+      ref: HEAD
+      target:
+        variable: deepcombat_commit
+    - id: neurocombat
+      method: github_commit
+      repo: Jfortin1/neuroCombat_Rpackage
+      ref: HEAD
+      dependency: true
+      target:
+        variable: neurocombat_commit
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        R_REPOS: "https://packagemanager.posit.co/cran/__linux__/noble/{{ context.cran_snapshot }}"
+
+    - install:
+        - r-base
+        - r-base-dev
+        - r-bioc-biocparallel
+        - r-cran-matrixstats
+        - ca-certificates
+        - libcurl4-openssl-dev
+        - libssl-dev
+
+    - run:
+        - Rscript {{ get_file("install_deepcombat.R") }} {{ get_file("neurocombat_source") }} {{ get_file("deepcombat_source") }}
+        - Rscript -e 'library(DeepComBat); stopifnot(torch::torch_is_installed())'
+        - rm -rf /tmp/Rtmp*
+
+    - deploy:
+        bins:
+          - R
+          - Rscript
+
+files:
+  - name: deepcombat_source
+    url: https://github.com/hufengling/DeepComBat/archive/{{ context.deepcombat_commit }}.tar.gz
+  - name: neurocombat_source
+    url: https://github.com/Jfortin1/neuroCombat_Rpackage/archive/{{ context.neurocombat_commit }}.tar.gz
+  - name: install_deepcombat.R
+    contents: |
+      options(
+        repos = c(CRAN = Sys.getenv("R_REPOS")),
+        HTTPUserAgent = sprintf("R/%s R (%s)", getRversion(),
+          paste(getRversion(), R.version$platform, R.version$arch, R.version$os)),
+        timeout = 1800,
+        Ncpus = max(1L, parallel::detectCores() - 1L)
+      )
+      install.packages(c("torch", "coro", "dplyr"))
+      torch::install_torch()
+      for (tarball in commandArgs(trailingOnly = TRUE)) {
+        install.packages(tarball, repos = NULL, type = "source")
+      }
+
+categories:
+  - statistics
+  - machine learning
+
+readme: |-
+  ----------------------------------
+  ## deepcombat/{{ context.version }} ##
+
+  DeepComBat harmonizes multi-batch neuroimaging features. It trains a
+  conditional variational autoencoder (CVAE) and applies ComBat in its latent
+  space and to its residuals, removing multivariate scanner and site effects
+  while preserving the effects of biological covariates. Apply it to extracted
+  features (for example regional volumes or cortical thickness) after image
+  preprocessing and before statistical analysis.
+
+  The container provides R with the DeepComBat package, R torch with a CPU
+  libtorch, and neuroCombat.
+
+  Example:
+  ```
+  library(DeepComBat)
+  # data: subjects x features matrix
+  # covariates: tibble with columns age, sex, diagnosis, scanner
+  covariates <- tibble::as_tibble(covariates)
+  setup <- deepcombat_setup(~ age + sex + diagnosis, ~ scanner, data, covariates)
+  trained_model <- deepcombat_trainer(setup, verbose = TRUE)
+  harmonized <- deepcombat_harmonize(setup, trained_model)
+  ```
+
+  Pass covariates as a tibble. DeepComBat indexes them in a way that fails for
+  a plain data.frame with "invalid subscript type 'symbol'".
+
+  Run a script non-interactively with `Rscript my_harmonization.R`.
+
+  More documentation can be found here: https://github.com/hufengling/DeepComBat
+
+  Citation:
+  ```
+  Hu, F., Lucas, A., Chen, A.A., Coleman, K., Horng, H., Ng, R.W., Tustison, N.J., Davis, K.A., Shou, H., Li, M., Shinohara, R.T., The Alzheimer's Disease Neuroimaging Initiative. (2023). DeepComBat: A Statistically Motivated, Hyperparameter-Robust, Deep Learning Approach to Harmonization of Neuroimaging Data. bioRxiv. https://doi.org/10.1101/2023.04.24.537396
+  ```
+
+  To run container outside of this environment: ml deepcombat/{{ context.version }}
+
+  ----------------------------------
+
+icon: data:image/png;base64,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
