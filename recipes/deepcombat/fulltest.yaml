@@ -1,0 +1,65 @@
+name: deepcombat
+version: "0.0.0.9000"
+upstream_version: "0.0.0.9000"
+default_timeout: 600
+
+tests:
+  - name: R entrypoints deployed
+    description: Verify the R commands exposed as modules are available.
+    command: Rscript --version
+    expected_output_contains: Rscript
+
+  - name: DeepComBat package version
+    description: Verify the installed DeepComBat package matches the recipe's software version.
+    command: Rscript -e 'cat("DeepComBat", format(packageVersion("DeepComBat")), "\n")'
+    expected_output_contains: "DeepComBat ${upstream_version}"
+
+  - name: DeepComBat exports its workflow
+    description: Verify the documented setup, training and harmonization functions are exported.
+    command: |
+      Rscript - <<'RS'
+      needed <- c("deepcombat_setup", "deepcombat_setup_from_train", "deepcombat_trainer", "deepcombat_harmonize")
+      stopifnot(all(needed %in% getNamespaceExports("DeepComBat")))
+      cat("exports ok\n")
+      RS
+    expected_output_contains: exports ok
+
+  - name: libtorch available at runtime
+    description: Verify R torch finds the libtorch installed in the image and can compute.
+    command: |
+      Rscript - <<'RS'
+      library(torch)
+      stopifnot(torch_is_installed())
+      x <- torch_tensor(matrix(1:4, 2))
+      cat("torch sum", as.numeric(x$sum()), "\n")
+      RS
+    expected_output_contains: torch sum 10
+
+  - name: harmonizes synthetic scanner effects
+    description: Train DeepComBat on features with injected scanner offsets and check the offsets shrink.
+    command: |
+      Rscript - <<'RS'
+      suppressPackageStartupMessages(library(DeepComBat))
+      set.seed(1)
+      torch::torch_manual_seed(1)
+      n <- 150
+      p <- 10
+      covariates <- tibble::tibble(
+        age = rnorm(n, 60, 10),
+        sex = factor(sample(c("F", "M"), n, replace = TRUE)),
+        scanner = factor(rep(c("A", "B", "C"), each = n / 3))
+      )
+      offsets <- c(A = -2, B = 0, C = 2)
+      data <- matrix(rnorm(n * p), n, p) + 0.05 * covariates$age + offsets[as.character(covariates$scanner)]
+      spread <- function(m) max(apply(m, 2, function(col) diff(range(tapply(col, covariates$scanner, mean)))))
+      setup <- deepcombat_setup(~ age + sex, ~ scanner, data, covariates)
+      trained <- deepcombat_trainer(setup, train_epochs = c(2, 5, 2))
+      harmonized <- deepcombat_harmonize(setup, trained)$harmonized
+      stopifnot(identical(dim(harmonized), dim(data)), all(is.finite(harmonized)))
+      before <- spread(data)
+      after <- spread(harmonized)
+      cat(sprintf("scanner spread before %.2f after %.2f\n", before, after))
+      stopifnot(after < before / 4)
+      cat("harmonization ok\n")
+      RS
+    expected_output_contains: harmonization ok
