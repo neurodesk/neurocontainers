@@ -1,0 +1,40 @@
+--- a/src/LN_TRIAL.cpp
++++ b/src/LN_TRIAL.cpp
+@@ -89,7 +89,7 @@
+     // Allocate trial average file
+     nifti_image* nii_trials = nifti_copy_nim_info(nii);
+     nii_trials->nt = trial_dur;
+-    nii_trials->nvox = nr_voxels / nr_trials;
++    nii_trials->nvox = nr_voxels * trial_dur;
+     nii_trials->data = calloc(nii_trials->nvox, nii_trials->nbyper);
+     float* nii_trials_data = static_cast<float*>(nii_trials->data);
+ 
+--- a/src/LN2_MASK.cpp
++++ b/src/LN2_MASK.cpp
+@@ -185,7 +185,7 @@
+     // ========================================================================
+     if (mode_max) {
+         for (int i = 0; i != nr_voxels; ++i) {
+-            if (*(nii_input_data + i) * nii_input->scl_slope  >= thresh) {
++            if (*(columns_data + i) > 0 && *(nii_input_data + i) * nii_input->scl_slope >= thresh) {
+                 thr_exceed [*(columns_data + i)-1] = true;
+             }
+         }
+@@ -225,7 +225,7 @@
+     // Set all voxels in columns that have been selected
+     // ========================================================================
+     for (int i = 0; i < nr_voxels; ++i) {
+-        if ( (thr_exceed [*(columns_data + i) - 1] == true ) && *(columns_data + i) > 0 ) {
++        if (*(columns_data + i) > 0 && thr_exceed[*(columns_data + i) - 1]) {
+            *(mask_data + i) =  1;
+        } else {
+            *(columns_data + i) = 0;  // Also provide masked columns
+@@ -237,7 +237,7 @@
+     // ========================================================================
+     if (!use_outpath) fout = fin1;
+     save_output_nifti(fout, "mask", mask, true, use_outpath);
+-    save_output_nifti(fout, "masked", columns, true, use_outpath);
++    save_output_nifti(fout, "masked", columns, true);
+ 
+     cout << "\n  Finished." << endl;
+     return 0;
