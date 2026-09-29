@@ -61,6 +61,7 @@ build:
         - lua-term
         - lua5.2
         - nano
+        - openjdk-21-jre
         - sudo
         - tree
         - unzip
@@ -121,6 +122,7 @@ build:
         BASH_ENV: /usr/share/module.sh
         PATH: $PATH:{{ context.matlab_install_root }}/bin
         SUPPORTPACKAGEROOT_OVERRIDE: "{{ context.shared_support_package_root }}"
+        MATLAB_JAVA: /usr/lib/jvm/java-21-openjdk-amd64
 
     - run:
         - chmod 0755 /usr/local/bin/matlab
