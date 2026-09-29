@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "deepcombat 0.0.0.9000": {
+      "version": "20260929",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "statistics",
+    "machine learning"
+  ]
+}
