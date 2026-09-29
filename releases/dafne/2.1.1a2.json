@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "dafne 2.1.1a2": {
+      "version": "20260929",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ]
+}
