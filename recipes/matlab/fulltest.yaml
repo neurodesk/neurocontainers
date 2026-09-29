@@ -28,7 +28,7 @@
 #   - No bundled Boost libraries
 
 name: matlab
-version: 2025b
+version: 2026b
 
 test_data:
   matlab_root: /opt/matlab/R${version}
