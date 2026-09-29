@@ -1,0 +1,221 @@
+name: alpaca
+version: 1.1.4
+
+variables:
+  upstream_version: 1.1.4
+  upstream_tag: 1.1.4
+  itkr_commit: c80f2ba3429551c4a752fb6d79079fcb45680094
+  antsrcore_commit: 9a875df253d48e700d0cdf6be14bd60eba62fb6f
+  antsr_commit: 325a3036c60fefd5967fb64a8bad887ef2ba3db7
+  extrantsr_commit: 428830eadd90b997549eab1ae8900e8acc295329
+  oasis_commit: 7ba21f83546f3f2bcf5c1699225f3f6a2e3ed14f
+  mimosa_commit: 9f67d1a5698f45ead4f8b4cfd48e5823c0e55f00
+
+copyright:
+  - license: MIT
+    url: https://github.com/hufengling/ALPaCA/blob/main/LICENSE.md
+
+architectures:
+  - x86_64
+
+auto_update:
+  method: sources
+  container_version: models_1_5
+  sources:
+    - id: models_1_5
+      method: github_release_asset
+      repo: hufengling/ALPaCA
+      asset: models_1_5.zip
+      version_regex: 'v?(?P<version>\d+\.\d+\.\d+)'
+      target:
+        file: models_1_5_zip
+        variables:
+          upstream_version: version
+          upstream_tag: tag
+    - id: models_6_10
+      method: github_release_asset
+      repo: hufengling/ALPaCA
+      asset: models_6_10.zip
+      version_regex: 'v?(?P<version>\d+\.\d+\.\d+)'
+      target:
+        file: models_6_10_zip
+    - id: itkr
+      dependency: true
+      method: github_commit
+      repo: ANTsX/ITKR
+      ref: HEAD
+      target:
+        variable: itkr_commit
+    - id: antsrcore
+      dependency: true
+      method: github_commit
+      repo: ANTsX/ANTsRCore
+      ref: HEAD
+      target:
+        variable: antsrcore_commit
+    - id: antsr
+      dependency: true
+      method: github_commit
+      repo: ANTsX/ANTsR
+      ref: HEAD
+      target:
+        variable: antsr_commit
+    - id: extrantsr
+      dependency: true
+      method: github_commit
+      repo: muschellij2/extrantsr
+      ref: HEAD
+      target:
+        variable: extrantsr_commit
+    - id: oasis
+      dependency: true
+      method: github_commit
+      repo: neuroconductor/oasis
+      ref: HEAD
+      target:
+        variable: oasis_commit
+    - id: mimosa
+      dependency: true
+      method: github_commit
+      repo: neuroconductor-devel/mimosa
+      ref: HEAD
+      target:
+        variable: mimosa_commit
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    # fslr and extrantsr call FSL (bet, fslmaths) during preprocessing.
+    - template:
+        name: fsl
+        version: 6.0.7.18
+
+    - install:
+        - build-essential
+        - cmake
+        - git
+        - unzip
+        - wget
+        - ca-certificates
+        - gnupg
+        - libcurl4-openssl-dev
+        - libssl-dev
+        - libxml2-dev
+        - libfontconfig1-dev
+        - libfreetype6-dev
+        - libharfbuzz-dev
+        - libfribidi-dev
+        - libpng-dev
+        - libjpeg-dev
+        - libtiff5-dev
+        - zlib1g-dev
+        - libbz2-dev
+        - liblzma-dev
+
+    - environment:
+        R_REPOS: https://packagemanager.posit.co/cran/__linux__/noble/2026-09-28
+        R_DEFAULT_INTERNET_TIMEOUT: "1800"
+
+    - run:
+        - wget -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc > /etc/apt/trusted.gpg.d/cran_ubuntu_key.asc
+        - echo "deb https://cloud.r-project.org/bin/linux/ubuntu noble-cran40/" > /etc/apt/sources.list.d/cran-r40.list
+        - apt-get update -qq
+        - apt-get install -y --no-install-recommends r-base r-base-dev
+        - rm -rf /var/lib/apt/lists/*
+
+    # Posit Package Manager serves prebuilt binaries only when the user agent names the R version.
+    - run:
+        - R --slave -e "options(repos = c(CRAN = Sys.getenv('R_REPOS')), HTTPUserAgent = sprintf('R/%s R (%s)', getRversion(), paste(getRversion(), R.version['platform'], R.version['arch'], R.version['os'])), timeout = as.integer(Sys.getenv('R_DEFAULT_INTERNET_TIMEOUT')), Ncpus = parallel::detectCores()); pkgs <- c('Rcpp', 'RcppEigen', 'magrittr', 'dplyr', 'ggplot2', 'purrr', 'reshape2', 'reticulate', 'stringr', 'tibble', 'rsvd', 'GPArotation', 'glmnet', 'oro.nifti', 'RNifti', 'neurobase', 'fslr', 'WhiteStripe', 'matrixStats', 'R.matlab', 'R.utils', 'plyr', 'stapler', 'mmand', 'rlist', 'Rfast', 'torch'); install.packages(pkgs); missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]; if (length(missing)) stop('CRAN install failed for ', paste(missing, collapse = ', '))"
+        - R --slave -e "options(timeout = as.integer(Sys.getenv('R_DEFAULT_INTERNET_TIMEOUT'))); torch::install_torch()"
+        - Rscript -e "library(torch); print(torch_ones(2) + 1)"
+
+    - workdir: /tmp/rbuild
+    - run:
+        - git clone https://github.com/ANTsX/ITKR.git && git -C ITKR checkout {{ context.itkr_commit }} && R CMD INSTALL ITKR
+        - git clone https://github.com/ANTsX/ANTsRCore.git && git -C ANTsRCore checkout {{ context.antsrcore_commit }} && R CMD INSTALL ANTsRCore
+        - git clone https://github.com/ANTsX/ANTsR.git && git -C ANTsR checkout {{ context.antsr_commit }} && R CMD INSTALL ANTsR
+        - git clone https://github.com/muschellij2/extrantsr.git && git -C extrantsr checkout {{ context.extrantsr_commit }} && R CMD INSTALL extrantsr
+        - git clone https://github.com/neuroconductor/oasis.git && git -C oasis checkout {{ context.oasis_commit }} && R CMD INSTALL oasis
+        - git clone https://github.com/neuroconductor-devel/mimosa.git && git -C mimosa checkout {{ context.mimosa_commit }} && R CMD INSTALL mimosa
+        - cd / && rm -rf /tmp/rbuild /tmp/Rtmp*
+
+    - workdir: /tmp/rbuild
+    - run:
+        - git clone --depth 1 --branch {{ context.upstream_tag }} https://github.com/hufengling/ALPaCA.git
+        - mkdir -p ALPaCA/inst/extdata
+        - unzip -j -o {{ get_file("models_1_5_zip") }} '*.pt' -d ALPaCA/inst/extdata
+        - unzip -j -o {{ get_file("models_6_10_zip") }} '*.pt' -d ALPaCA/inst/extdata
+        - test "$(ls ALPaCA/inst/extdata/autoencoder_*.pt ALPaCA/inst/extdata/predictor_*.pt | wc -l)" -eq 20
+        - R CMD INSTALL ALPaCA
+        - cd / && rm -rf /tmp/rbuild /tmp/Rtmp*
+
+    - workdir: /
+    - run:
+        - install -m 0755 {{ get_file("alpaca") }} /usr/local/bin/alpaca
+
+deploy:
+  bins:
+    - alpaca
+    - R
+    - Rscript
+
+files:
+  - name: alpaca
+    filename: alpaca
+  - name: models_1_5_zip
+    url: https://github.com/hufengling/ALPaCA/releases/download/1.1.4/models_1_5.zip
+    sha256: dfaa8746e5c3c56cc9653452bd3f09fef399d4667058410078605ec5140648ca
+  - name: models_6_10_zip
+    url: https://github.com/hufengling/ALPaCA/releases/download/1.1.4/models_6_10.zip
+    sha256: 85e56051bed034121413a6d7ba35806abe5eee59641a551cbe9f9ee196763512
+
+categories:
+  - image segmentation
+  - structural imaging
+  - machine learning
+
+readme: |
+  ----------------------------------
+  ## alpaca/{{ context.version }} ##
+  ALPaCA (Automated Lesion, PRL, and CVS Analysis) segments multiple sclerosis
+  lesions and classifies each lesion candidate for a paramagnetic rim (PRL) and
+  a central vein sign (CVS). It uses a multi-contrast 3D convolutional neural
+  network on T1-weighted, FLAIR, T2*-weighted EPI magnitude and phase images.
+  Lesion candidates come from MIMoSA. The container runs on CPU.
+
+  Run the full pipeline:
+  ```
+  alpaca --t1 t1.nii.gz --flair flair.nii.gz --epi epi.nii.gz --phase phase.nii.gz --output alpaca_out --cores 4
+  ```
+
+  The output directory holds the preprocessed images in EPI space, the MIMoSA
+  probability map (`prob.nii.gz`), labeled lesion candidates, `alpaca_mask.nii.gz`,
+  `predictions.csv` and `probabilities.csv`. Values in `alpaca_mask.nii.gz`:
+  1 lesion, 3 lesion and PRL, 5 lesion and CVS, 7 lesion, PRL and CVS.
+  Run `alpaca --help` for thresholds, a custom brain mask and raw probability maps.
+
+  The R functions are also available directly:
+  ```
+  Rscript -e 'library(ALPaCA); images <- preprocess_images("t1.nii.gz", "flair.nii.gz", "epi.nii.gz", "phase.nii.gz", "out"); make_predictions(images, output_dir = "out")'
+  ```
+
+  Documentation: https://github.com/hufengling/ALPaCA
+
+  Citation:
+  ```
+  Hu F, Ren Z, Chen L, Valcarcel AM, Dworkin J, et al., Shinohara RT. Automated
+  segmentation of multiple sclerosis lesions, paramagnetic rims, and central vein
+  sign on MRI provides reliable diagnostic biomarkers. Imaging Neuroscience. 2025;3.
+  https://doi.org/10.1162/IMAG.a.932
+  ```
+
+  To run container outside of this environment: ml alpaca/{{ context.version }}
+  ----------------------------------
+
+icon: "data:image/png;base64,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"
