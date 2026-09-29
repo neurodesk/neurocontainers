@@ -1,5 +1,5 @@
 name: lipsia
-version: 3.1.1
+version: 4.1.1
 default_timeout: 60
 tests:
 - name: vbcm resolves on PATH
