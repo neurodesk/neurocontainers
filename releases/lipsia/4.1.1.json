@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "lipsia 4.1.1": {
+      "version": "20260929",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "machine learning"
+  ]
+}
