@@ -19,7 +19,6 @@ on:
         required: true
         type: choice
         options:
-        - "neurodesk-syd2-arcrunner-neurocontainers"
         - "neurodesk-syd-arcrunner-neurocontainers"
         - "neurodesk-qris1-arcrunner-neurocontainers"
         - "blacksmith-8vcpu-ubuntu-2404"
@@ -101,9 +100,6 @@ jobs:
         case "$CHOICE" in
           "neurodesk-syd-arcrunner-neurocontainers")
             runner='"neurodesk-syd-arcrunner-neurocontainers"'
-            ;;
-          "neurodesk-syd2-arcrunner-neurocontainers")
-            runner='"neurodesk-syd2-arcrunner-neurocontainers"'
             ;;
           "neurodesk-qris1-arcrunner-neurocontainers")
             runner='"neurodesk-qris1-arcrunner-neurocontainers"'
