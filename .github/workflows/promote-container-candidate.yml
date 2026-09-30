@@ -273,7 +273,13 @@ jobs:
           mkdir -p "promotion-bundle/${CONTAINER}"
           for attempt in 1 2 3 4 5; do
             rm -f artifact.zip
-            if gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip" > artifact.zip; then
+            # Abort a stalled stream so the retry loop can recover; gh api
+            # has no stall timeout and once hung for two hours on a 15 GB bundle.
+            if curl -fsSL --speed-limit 1048576 --speed-time 300 \
+                -H "Authorization: Bearer ${GH_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                -o artifact.zip \
+                "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip"; then
               break
             fi
             if [ "${attempt}" = 5 ]; then
