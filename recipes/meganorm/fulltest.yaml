@@ -1,5 +1,5 @@
 name: meganorm
-version: 0.2.0
+version: 0.2.1
 
 tests:
   - name: meganorm launcher is on PATH
