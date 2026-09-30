@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "alpaca 1.1.4": {
+      "version": "20260929",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging",
+    "machine learning"
+  ]
+}
