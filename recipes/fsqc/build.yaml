@@ -82,8 +82,6 @@ build:
         version: latest
         conda_install: python=3.13
         pip_install: brainprint==0.4.0 lapy==1.3.0 matplotlib nibabel numpy pandas scipy scikit-image transforms3d pyopengl glfw pillow pyrr PyQt6 whippersnappy>=1.3.0
-    - deploy:
-        bins: []
     - install: git
     - run:
         - pip install fsqc=={{ context.version }}
@@ -125,8 +123,10 @@ build:
               print('Package installation verified successfully!')
           "
     - deploy:
-        path: []
-        bins: []
+        bins:
+          - run_fsqc
+          - fsqc-sys_info
+          - brainprint
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh

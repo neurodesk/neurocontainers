@@ -8,10 +8,74 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from workflows.summarize_deploy_results import _summarise_builtin, summarise_results_file
 
 
 SCRIPT = Path("workflows/test_deploy.sh").resolve()
+
+
+@pytest.mark.parametrize("value", [None, "", ":", ":::"])
+def test_deploy_script_rejects_empty_deployment(tmp_path: Path, value: str | None) -> None:
+    env = os.environ.copy()
+    for name in ("DEPLOY_BINS", "DEPLOY_PATH"):
+        if value is None:
+            env.pop(name, None)
+        else:
+            env[name] = value
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT)],
+        capture_output=True,
+        cwd=tmp_path,
+        env=env,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+
+    assert result.returncode == 1
+    assert any(
+        entry["name"] == "deploy.commands" and entry["status"] == "failed"
+        for entry in payload["tests"]
+    )
+
+
+@pytest.mark.parametrize("mode", [None, 0o644, 0o755])
+def test_deploy_script_requires_commands_in_deploy_path(
+    tmp_path: Path, mode: int | None
+) -> None:
+    deploy_dir = tmp_path / "bin"
+    deploy_dir.mkdir(mode=0o755)
+    if mode is not None:
+        tool = deploy_dir / "tool"
+        tool.write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
+        tool.chmod(mode)
+    has_command = mode == 0o755
+    env = os.environ.copy()
+    env.update({"DEPLOY_BINS": "", "DEPLOY_PATH": "bin"})
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT)],
+        capture_output=True,
+        cwd=tmp_path,
+        env=env,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+
+    assert result.returncode == (0 if has_command else 1)
+    assert any(
+        entry["name"] == "deploy.commands"
+        and entry["status"] == ("passed" if has_command else "failed")
+        for entry in payload["tests"]
+    )
+    if has_command:
+        assert any(
+            entry["name"] == "deploy.commands"
+            and entry["message"] == "Deployment commands found: 1."
+            for entry in payload["tests"]
+        )
 
 
 def _run_deploy_script(tmp_path: Path, mode: int) -> tuple[int, dict]:
@@ -152,7 +216,7 @@ def test_deploy_script_checks_directory_access_without_find(tmp_path: Path) -> N
 
     payload = json.loads(result.stdout)
 
-    assert result.returncode == 0
+    assert result.returncode == 1
     assert {
         "name": f"directory.access.arbitrary_user:{deploy_dir}",
         "status": "passed",
