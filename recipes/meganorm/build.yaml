@@ -371,6 +371,11 @@ files:
           ],
           "src/preprocess.py": [
               (
+                  '    fig.savefig(save_autoreject_plot_p, dpi=600, bbox_inches="tight")\n',
+                  '    os.makedirs(os.path.dirname(save_autoreject_plot_p), exist_ok=True)\n'
+                  '    fig.savefig(save_autoreject_plot_p, dpi=600, bbox_inches="tight")\n',
+              ),
+              (
                   '    if which_sensor["eeg"] and rereference_method:\n',
                   # rereference_method is annotated as the *string* "None", which is
                   # truthy, so the documented "no re-referencing" option was passed
@@ -593,6 +598,10 @@ files:
           preprocessed = WORK / "Saved_outputs" / "Preprocessed_data" / "sub-000_preproc-raw.fif"
           if not preprocessed.is_file():
               raise SystemExit(f"preprocessed recording is missing: {preprocessed}")
+
+          rejection_plot = WORK / "Saved_outputs" / "auto_reject_plot" / "sub-000_autoreject_res_plot.png"
+          if not rejection_plot.is_file():
+              raise SystemExit(f"autoreject plot is missing: {rejection_plot}")
 
           csv_path = out_dir / "sub-000.csv"
           if not csv_path.exists():
