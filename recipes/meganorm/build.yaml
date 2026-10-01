@@ -362,6 +362,13 @@ files:
                   "    fooof_freq_range_low, fooof_freq_range_high : PositiveInt, default=1, 40\n",
               ),
           ],
+          "src/mainParallel.py": [
+              (
+                  '        filtered_data.save(f"{save_prep_path}_preproc-raw.fif", overwrite=True)\n',
+                  '        os.makedirs(Path(save_prep_path).parent, exist_ok=True)\n'
+                  '        filtered_data.save(f"{save_prep_path}_preproc-raw.fif", overwrite=True)\n',
+              ),
+          ],
           "src/preprocess.py": [
               (
                   '    if which_sensor["eeg"] and rereference_method:\n',
@@ -582,6 +589,10 @@ files:
               if log.exists():
                   print(log.read_text()[-4000:], file=sys.stderr)
               raise SystemExit(f"pipeline exited {proc.returncode}")
+
+          preprocessed = WORK / "Saved_outputs" / "Preprocessed_data" / "sub-000_preproc-raw.fif"
+          if not preprocessed.is_file():
+              raise SystemExit(f"preprocessed recording is missing: {preprocessed}")
 
           csv_path = out_dir / "sub-000.csv"
           if not csv_path.exists():
