@@ -3,8 +3,8 @@ version: 0.6.2
 architectures:
 - x86_64
 copyright:
-- license: MIT
-  url: https://github.com/KMarshallX/MipView/blob/master/License.md
+- license: Apache-2.0
+  url: https://github.com/KMarshallX/MipView/blob/v{{ context.version }}/LICENSE
 variables:
   mipview_version: '{{ context.version }}'
   mipview_archive_url: "https://github.com/KMarshallX/MipView/archive/refs/tags/v{{ context.mipview_version }}.tar.gz"
