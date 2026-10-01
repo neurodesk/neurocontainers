@@ -1,5 +1,5 @@
 name: matlabruntime
-version: 2025b
+version: 2026b
 default_timeout: 120
 tests:
 - name: Test MATLAB Runtime environment
