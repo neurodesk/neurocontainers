@@ -29,6 +29,9 @@ variables:
               condition: arch=="x86_64"
 
 auto_update:
+  frozen: true
+  reason: >-
+    Locally maintained OpenRecon app; BodyLocaliser timing files and ISMRMRD pins are held until a maintainer revalidates the processing against newer upstreams.
   container_version: false
   method: sources
   sources:
