@@ -236,32 +236,14 @@ files:
          among the missing. Delta is defined as 1-3 Hz, contiguous with the Theta
          band that follows it.
 
-      7. `rereference_method` cannot be set to "no re-referencing". The docstring
-         offers `None`, the annotation is `Literal["average", "REST", "None"]` -- the
-         *string* -- so `null` fails pydantic validation, and `"None"` passes the
-         truthiness guard and reaches `mne.set_eeg_reference("None")`, which fails
-         with `TypeError: can only concatenate str (not "list") to str`. The guard
-         now treats the string as the absent value it was meant to be, and the
-         annotation now also accepts a JSON `null`, so the documented spelling works
-         as well as the string one.
+      7. Upstream 0.2.1 accepts JSON null for no re-referencing. Keep accepting
+         the string "None" used by existing container configurations, and skip
+         re-referencing for both spellings.
 
-      8. Adding Delta in (6) exposed the next inconsistency: `fooof_freq_range_low`
-         is 3, and the whole PSD grid is computed over
-         [fooof_freq_range_low, fooof_freq_range_high], so a 1-3 Hz Delta band lay
-         entirely below the spectrum. Band power summed zero bins, `log10(0)`
-         returned `-inf`, and ten of the forty-two default EEG features -- every one
-         naming Delta -- came out non-finite, values that propagate silently into
-         any downstream normative model. Three coordinated changes close it:
-
-           - the parametrisation floor moves to 1 Hz, so the PSD grid covers every
-             default band;
-           - `individualized_band_ranges` gains the Delta entry it was missing for
-             the same reason (offsets span the band's 2 Hz width, following the
-             pattern of the four existing entries);
-           - zero-or-negative band power yields `nan` -- the pipeline's established
-             missing-value marker, matching what the zero-denominator path in
-             `band_power_ratio` already did -- instead of `-inf`, so no future
-             band/floor inconsistency can put infinities into a feature table.
+      8. The PSD grid must cover the default Delta band. Set the parametrisation
+         floor to 1 Hz and add Delta to the individualized band ranges. Upstream
+         0.2.1 returns linear band power and ratios, so the former patches for
+         log10 of nonpositive power are no longer needed.
 
       9. `ica_method="fastica"` is also repaired at the cause rather than only
          routed around: `fit_params=dict(extended=True)` is now passed to every
@@ -351,9 +333,8 @@ files:
               ),
               # --- the documented null spelling of "no re-referencing" -------------
               (
-                  '    rereference_method: Literal["average", "REST", "None"] = "average"\n',
-                  # The docstring offers None, but the annotation only admitted the
-                  # string "None", so a JSON null failed validation.
+                  '    rereference_method: Literal["average", "REST", None] = "average"\n',
+                  # Preserve string "None" in existing container configurations.
                   '    rereference_method: Optional[Literal["average", "REST", "None"]] = (\n'
                   '        "average"\n'
                   '    )\n',
@@ -408,7 +389,7 @@ files:
                   # at the entry point with the actual situation and the fix, not
                   # thirty seconds in with a TypeError that reads like a config bug.
                   "    raise RuntimeError(\n"
-                  '        "apply_gedai: true cannot work in meganorm 0.2.0: preprocess.py "\n'
+                  '        "apply_gedai: true cannot work in meganorm {{ context.version }}: preprocess.py "\n'
                   '        "constructs Gedai() with keyword arguments no released gedai "\n'
                   '        "accepts (0.1.0 expects different wavelet arguments; 0.3.0\'s "\n'
                   '        "constructor takes none, and its transform_raw() has dropped "\n'
@@ -434,44 +415,6 @@ files:
                   '            "parametrization_method."\n'
                   '        )\n\n'
                   '    logger.info(f"The shape of the extracted features: {final_df.shape}")\n',
-              ),
-              # log10 of a zero or negative band integral produced -inf (or nan with
-              # a warning) inside the feature table. nan is what the pipeline already
-              # emits for a missing value -- band_power_ratio's zero-denominator path
-              # below returns it -- so an empty band now matches that convention
-              # instead of shipping infinities to the normative model.
-              (
-                  "    band_indices = np.logical_and(freqs >= fmin, freqs <= fmax)\n"
-                  "    band_power = np.trapezoid(psd[band_indices], freqs[band_indices])\n"
-                  "\n"
-                  "    return np.log10(band_power)\n",
-                  "    band_indices = np.logical_and(freqs >= fmin, freqs <= fmax)\n"
-                  "    band_power = np.trapezoid(psd[band_indices], freqs[band_indices])\n"
-                  "\n"
-                  "    if band_power <= 0:\n"
-                  "        # The band holds no bins of the PSD grid, or only negative\n"
-                  "        # flattened-PSD values: there is no power to report.\n"
-                  "        return np.nan\n"
-                  "\n"
-                  "    return np.log10(band_power)\n",
-              ),
-              (
-                  "    band_power = np.trapezoid(psd[peak_range_indices], freqs[peak_range_indices])\n"
-                  "    return np.log10(band_power)\n",
-                  "    band_power = np.trapezoid(psd[peak_range_indices], freqs[peak_range_indices])\n"
-                  "    if band_power <= 0:\n"
-                  "        return np.nan\n"
-                  "    return np.log10(band_power)\n",
-              ),
-              (
-                  "    if power_den == 0:\n"
-                  "        return np.nan\n"
-                  "\n"
-                  "    return np.log10(power_num / power_den)\n",
-                  "    if power_num <= 0 or power_den <= 0:\n"
-                  "        return np.nan\n"
-                  "\n"
-                  "    return np.log10(power_num / power_den)\n",
               ),
           ],
           "__init__.py": [
@@ -862,10 +805,10 @@ readme: |-
   ```
 
   A run that discards every channel raises instead of writing an empty feature
-  table and exiting 0; a band holding no power yields `nan` -- the pipeline's
-  missing-value marker -- never `-inf`; `rereference_method` accepts a JSON
-  `null` as well as the string `"None"` for "no re-referencing"; and
-  `meganorm.__version__` exists and matches the installed package.
+  table and exiting 0. MEGaNorm 0.2.1 reports band power and power ratios on a
+  linear scale. `rereference_method` accepts a JSON `null` as well as the string
+  `"None"` for "no re-referencing". `meganorm.__version__` exists and matches the
+  installed package.
 
   Every build of this container synthesizes a short EEG recording, runs the
   pipeline end to end on the shipped `eeg.json`, and fails if any feature the

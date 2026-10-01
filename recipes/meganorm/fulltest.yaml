@@ -124,6 +124,23 @@ tests:
       "
     expected_output_contains: "none-accepted"
 
+  - name: band powers and ratios retain the upstream linear scale
+    description: Container compatibility patches must preserve the numerical units introduced in 0.2.1.
+    command: |
+      meganorm-python -c "
+      import numpy as np
+      from meganorm.src.featureExtraction import abs_canonical_power, abs_individual_power, band_power_ratio
+      freqs = np.array([1., 2., 3., 4.])
+      psd = np.array([2., 2., 4., 4.])
+      assert np.isclose(abs_canonical_power(psd, freqs, 1, 2), 2.)
+      assert np.isclose(abs_individual_power(psd, freqs, [(1.5, 2., 1.)], {'Delta': (-0.5, 0.5)}, 'Delta'), 2.)
+      assert np.isclose(band_power_ratio(psd, freqs, 1, 2, 3, 4), 0.5)
+      assert abs_canonical_power(np.zeros(4), freqs, 1, 2) == 0.
+      assert np.isnan(band_power_ratio(np.zeros(4), freqs, 1, 2, 3, 4))
+      print('linear-power-ok')
+      "
+    expected_output_contains: "linear-power-ok"
+
   - name: the shipped EEG config completes a run with finite features
     description: >-
       The candidate-container report showed why field assertions are not
