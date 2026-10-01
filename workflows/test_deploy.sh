@@ -7,6 +7,7 @@ TOTAL=0
 PASSED=0
 FAILED=0
 SKIPPED=0
+DEPLOY_COMMANDS=0
 
 VISITED_FILES=""
 
@@ -381,6 +382,9 @@ process_deploy_bins() {
 
         if [ -n "$resolved" ]; then
             record_result "deploy_bin:$entry" "passed" "Binary $entry found at $resolved."
+            if [ -f "$resolved" ] && [ -x "$resolved" ]; then
+                ((DEPLOY_COMMANDS++))
+            fi
             test_file "$resolved"
         else
             record_result "deploy_bin:$entry" "failed" "Binary $entry not found on PATH."
@@ -413,6 +417,7 @@ process_deploy_paths() {
                 fi
 
                 ((tested_count++))
+                ((DEPLOY_COMMANDS++))
                 test_file "$target"
             done < <(
                 find "$dir" -maxdepth 1 \
@@ -472,6 +477,11 @@ generate_report() {
 main() {
     process_deploy_bins
     process_deploy_paths
+    if [ "$DEPLOY_COMMANDS" -eq 0 ]; then
+        record_result "deploy.commands" "failed" "No deployment commands found. Set DEPLOY_BINS to command names or DEPLOY_PATH to directories containing executables for CVMFS publication."
+    else
+        record_result "deploy.commands" "passed" "Deployment commands found: $DEPLOY_COMMANDS."
+    fi
     generate_report
 
     if [ "$FAILED" -gt 0 ]; then
