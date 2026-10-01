@@ -1,11 +1,11 @@
 variables:
   debian_security_snapshot: 20260901T000000Z
-  mne_version: 1.12.1
-  autoreject_version: 0.5.0
-  mne_bids_version: 0.19.0
+  mne_version: "1.13.2"
+  autoreject_version: "0.5.1"
+  mne_bids_version: "0.20.0"
   mnelab_version: 1.5.4
-  vscode_version: "1.136.1"
-  pipeline_commit: ab27777abf79c62bdfd4914dd180957f580f1bbe
+  vscode_version: "1.140.0"
+  pipeline_commit: "e0fe00d71e95b20981e657530793eaf4a9ba69fc"
 
 name: mneextended
 version: "1.2.0"
