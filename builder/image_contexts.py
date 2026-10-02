@@ -17,7 +17,7 @@ from .image_fingerprint import parse_image_reference
 from .image_flatten import FLATTEN_VERSION, flatten_image
 from .update_observations import observe_source
 
-SKOPEO_IMAGE = "quay.io/skopeo/stable@sha256:3a14eeb5b3e3cb80a05895fbbc163135bea066b26c3881b48a048de928ef7644"
+SKOPEO_IMAGE = "quay.io/skopeo/stable:v1.22.0@sha256:06dd47ee861e143268f0b811cdf1f9d6509b097945de447dbcdfb668ca15364c"
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 METADATA_FILE = "build-contexts.json"
 LAYOUT_NAME = "oci-base"
