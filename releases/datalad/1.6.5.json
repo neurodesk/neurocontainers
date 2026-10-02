@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "datalad 1.6.5": {
+      "version": "20261001",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
