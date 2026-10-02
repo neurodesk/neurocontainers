@@ -148,7 +148,7 @@ icon: "data:image/png;base64,..."   # Required - base64 data URI
 | `entrypoint` | Set the image entrypoint |
 | `variables` | Define template variables mid-build |
 | `group` + `with` | Apply a shared option set to a nested directive list |
-| `include` | Splice in directives from a shared macro, e.g. `macros/openrecon/neurodocker.yaml` |
+| `include` | Splice in directives from a shared macro, e.g. `macros/openrecon/neurodocker.yaml`; a `file` declared in the macro resolves next to the macro |
 | `file` | Declare a build-context file inline, alongside top-level `files:` |
 | `deploy` | Add `bins`/`path` entries from within the directive list |
 | `boutique` | Emit a Boutiques descriptor |
