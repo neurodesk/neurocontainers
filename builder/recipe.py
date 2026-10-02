@@ -425,6 +425,10 @@ def compile_recipe(
     deploy_bins: list[Any] = []
     deploy_path: list[Any] = []
 
+    # Relative filenames resolve against the directory of the recipe or of the
+    # macro declaring them, so a shared macro can ship its own files.
+    file_dirs = [recipe_dir]
+
     def register_file(mapping: dict[str, Any]) -> None:
         if "condition" in mapping and not renderer.render_condition(str(mapping["condition"]), context):
             return
@@ -434,6 +438,10 @@ def compile_recipe(
         for key in ("filename", "url", "contents", "sha256"):
             if key in rendered and rendered[key] is not None:
                 rendered[key] = renderer.render_value(rendered[key], context)
+        if rendered.get("filename") is not None and file_dirs[-1] != recipe_dir:
+            filename = Path(str(rendered["filename"]))
+            if not filename.is_absolute():
+                rendered["filename"] = str(file_dirs[-1] / filename)
         file = declared_file_from_mapping(name, rendered)
         plan.add_file(file)
         context.file_paths[name] = file.guest_filename or name
@@ -576,8 +584,12 @@ def compile_recipe(
                 if include_path is None:
                     raise FileNotFoundError(f"include not found: {include_name}")
                 include_data = yaml.safe_load(include_path.read_text())
-                for child in include_data.get("directives", []):
-                    apply_directive(child)
+                file_dirs.append(include_path.parent.resolve())
+                try:
+                    for child in include_data.get("directives", []):
+                        apply_directive(child)
+                finally:
+                    file_dirs.pop()
             elif "file" in directive:
                 file_mapping = directive["file"]
                 if not isinstance(file_mapping, dict):

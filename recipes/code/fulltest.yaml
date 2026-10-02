@@ -14,7 +14,7 @@
 
 name: code
 version: "240320"
-vscode_version: "1.139.1"
+vscode_version: "1.140.0"
 julia_version: "1.13.1"
 singularity_version: "4.5.1"
 
