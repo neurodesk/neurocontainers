@@ -143,6 +143,8 @@ build:
         - mkdir -p /opt/mne-bids-pipeline
 
         - tar xz -f {{ get_file("mne_bids_pipeline_tar_gz") }} --strip-components=1 -C /opt/mne-bids-pipeline
+        # Upstream dc6d61b passes a tuple as the --logger-level help, which makes --help crash
+        - sed -i 's/"Default will use the value in the configuration file\.",$/"Default will use the value in the configuration file."/' /opt/mne-bids-pipeline/mne_bids_pipeline/_main.py
         - /opt/miniconda/envs/mne-extended/bin/python -m pip install --no-cache-dir 'mne=={{ context.mne_version }}' 'autoreject=={{ context.autoreject_version }}' 'mne-bids=={{ context.mne_bids_version }}' 'mnelab=={{ context.mnelab_version }}' /opt/mne-bids-pipeline
         - /opt/miniconda/envs/mne-extended/bin/python -m pip check
         - chmod a+rwx /opt/mne-bids-pipeline -R
