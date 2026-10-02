@@ -1,11 +1,11 @@
 variables:
   debian_security_snapshot: 20260901T000000Z
-  mne_version: 1.12.1
-  autoreject_version: 0.5.0
-  mne_bids_version: 0.19.0
+  mne_version: "1.13.2"
+  autoreject_version: "0.5.1"
+  mne_bids_version: "0.20.0"
   mnelab_version: 1.5.4
-  vscode_version: "1.136.1"
-  pipeline_commit: ab27777abf79c62bdfd4914dd180957f580f1bbe
+  vscode_version: "1.140.0"
+  pipeline_commit: "e0fe00d71e95b20981e657530793eaf4a9ba69fc"
 
 name: mneextended
 version: "1.2.0"
@@ -143,6 +143,8 @@ build:
         - mkdir -p /opt/mne-bids-pipeline
 
         - tar xz -f {{ get_file("mne_bids_pipeline_tar_gz") }} --strip-components=1 -C /opt/mne-bids-pipeline
+        # Upstream dc6d61b passes a tuple as the --logger-level help, which makes --help crash
+        - sed -i 's/"Default will use the value in the configuration file\.",$/"Default will use the value in the configuration file."/' /opt/mne-bids-pipeline/mne_bids_pipeline/_main.py
         - /opt/miniconda/envs/mne-extended/bin/python -m pip install --no-cache-dir 'mne=={{ context.mne_version }}' 'autoreject=={{ context.autoreject_version }}' 'mne-bids=={{ context.mne_bids_version }}' 'mnelab=={{ context.mnelab_version }}' /opt/mne-bids-pipeline
         - /opt/miniconda/envs/mne-extended/bin/python -m pip check
         - chmod a+rwx /opt/mne-bids-pipeline -R
