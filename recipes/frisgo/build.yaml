@@ -1,0 +1,163 @@
+name: frisgo
+version: 2.10.0
+architectures:
+  - x86_64
+
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiByeD0iNCIgZmlsbD0iIzEzMjk0YiIvPjxwYXRoIGQ9Ik0zIDhjMS41LTIgMy0yIDQuNSAwczMgMiA0LjUgMCAzLTIgNC41IDAgMyAyIDQuNSAwIiBmaWxsPSJub25lIiBzdHJva2U9IiNmODcxNzEiIHN0cm9rZS13aWR0aD0iMS40IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMyAxMmMxLjUtMSAzLTEgNC41IDBzMyAxIDQuNSAwIDMtMSA0LjUgMCAzIDEgNC41IDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZiYmYyNCIgc3Ryb2tlLXdpZHRoPSIxLjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik0zIDE2aDE4IiBmaWxsPSJub25lIiBzdHJva2U9IiMzNGQzOTkiIHN0cm9rZS13aWR0aD0iMS42IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNNSAyMGgzTTEwLjUgMjBoM00xNiAyMGgzIiBzdHJva2U9IiM3ZGQzZmMiIHN0cm9rZS13aWR0aD0iMS40IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48L3N2Zz4=
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/layerfMRI/LAYNII/blob/master/LICENSE
+
+files:
+  - name: laynii_source
+    url: https://github.com/layerfMRI/LAYNII/archive/refs/tags/v{{ context.laynii_version }}.tar.gz
+  - name: frisgo.py
+    filename: frisgo.py
+  - name: frisgo_simulate.py
+    filename: frisgo_simulate.py
+  - name: openreconi2iexample.py
+    filename: ../openreconi2iexample/openreconi2iexample.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+
+variables:
+  laynii_version: "2.10.0"
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+
+auto_update:
+  method: sources
+  container_version: laynii
+  local:
+  - macros/openrecon
+  - recipes/openreconi2iexample/openreconi2iexample.py
+  sources:
+  - id: laynii
+    method: github_release
+    repo: layerfMRI/LAYNII
+    target:
+      variable: laynii_version
+      fulltest_variable: laynii_version
+  - id: base_image
+    dependency: true
+    method: oci_digest
+    image: ubuntu
+    tag: '22.04'
+    target:
+      variable: base_image_digest
+  - id: openrecon_ismrmrd
+    dependency: true
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    dependency: true
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    dependency: true
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    dependency: true
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install: bzip2 ca-certificates git build-essential python3-pip python-is-python3 zlib1g-dev
+
+    - include: macros/openrecon/neurodocker.yaml
+
+    - run:
+        - mkdir -p /tmp/laynii-source /opt/laynii-{{ context.laynii_version }}
+        - tar -xzf {{ get_file("laynii_source") }} -C /tmp/laynii-source --strip-components=1
+        - make -C /tmp/laynii-source LN2_FRISGO
+        - install -m 0755 /tmp/laynii-source/LN2_FRISGO /opt/laynii-{{ context.laynii_version }}/LN2_FRISGO
+        - install -m 0644 /tmp/laynii-source/LICENSE /opt/laynii-{{ context.laynii_version }}/LICENSE
+        - rm -rf /tmp/laynii-source
+
+    - environment:
+        PATH: /opt/laynii-{{ context.laynii_version }}:$PATH
+        FRISGO_VERSION: "{{ context.version }}"
+
+    - run:
+        - cp {{ get_file("frisgo.py") }} /opt/code/python-ismrmrd-server/frisgo.py
+        - cp {{ get_file("openreconi2iexample.py") }} /opt/code/python-ismrmrd-server/openreconi2iexample.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - install -m 0755 {{ get_file("frisgo_simulate.py") }} /opt/code/python-ismrmrd-server/frisgo_simulate.py
+        - mkdir -p /tmp/share/debug
+        - chmod 1777 /tmp/share /tmp/share/debug
+
+deploy:
+  bins:
+    - LN2_FRISGO
+
+categories:
+  - functional imaging
+  - image reconstruction
+
+readme: |-
+  ----------------------------------
+  ## frisgo/{{ context.version }} ##
+
+  OpenRecon image-to-image Fuzzy Ripple correction for dual-polarity
+  (3D-)EPI BOLD time series, using `LN2_FRISGO -tshift` from
+  LayNii {{ context.laynii_version }}.
+
+  The OpenRecon module collects every reconstructed image of the run, arranges
+  them by slice position and repetition into a 4D NIfTI, runs
+  `LN2_FRISGO -input timeseries.nii -tshift` and returns:
+
+  - the original time series on `image_series_index = 100` (`sendoriginal`)
+  - the FRISGO-corrected time series `<source>-frisgo` on
+    `image_series_index = 101` (`sendfrisgo`)
+
+  Both outputs keep the source 2D geometry, slice and repetition counters with
+  `Keep_image_geometry = 1`. Corrected values are rounded to the source pixel
+  type, so negative values clip to 0 for unsigned scanner images. Run the
+  module with fewer than 4 repetitions and only the originals are returned.
+
+  Simulate the OpenRecon round trip with a 4D NIfTI:
+  ```bash
+  cd /opt/code/python-ismrmrd-server
+  python3 frisgo_simulate.py nifti2mrd /data/NoNoise_slab.nii /tmp/input.h5
+  python3 main.py -v -r -H=0.0.0.0 -p=9002 -S=/tmp/share/saved_data &
+  python3 client.py -c frisgo -p 9002 -o /tmp/output.h5 -G frisgo /tmp/input.h5
+  python3 frisgo_simulate.py mrd2nifti /tmp/output.h5 /data/or_output --group frisgo
+  ```
+
+  Run LN2_FRISGO directly:
+  ```bash
+  LN2_FRISGO -input NoNoise_slab.nii -tshift
+  ```
+
+  Citation:
+  ```
+  Huber, L., Stirnberg, R., Morgan, A.T., Feinberg, D.A., Ehses, P., Knudsen, L., Gulban, O.F., Koiso, K., Gephart, I., Swegle, S., Wardle, S.G., Persichetti, A.S., Beckett, A.J.S., Stöcker, T., Boulant, N., Poser, B.A., Bandettini, P.A. (2025). Short-term gradient imperfections in high-resolution EPI lead to Fuzzy Ripple artifacts. Magnetic Resonance in Medicine. https://doi.org/10.1002/mrm.30489
+  ```
+
+  OpenRecon notes: `recipes/frisgo/OpenReconREADME.md`.
+
+  ----------------------------------
