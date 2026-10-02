@@ -16,8 +16,6 @@ files:
     filename: frisgo.py
   - name: frisgo_simulate.py
     filename: frisgo_simulate.py
-  - name: openreconi2iexample.py
-    filename: ../openreconi2iexample/openreconi2iexample.py
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
 
@@ -34,7 +32,7 @@ auto_update:
   container_version: laynii
   local:
   - macros/openrecon
-  - recipes/openreconi2iexample/openreconi2iexample.py
+  - macros/openrecon_i2i
   sources:
   - id: laynii
     method: github_release
@@ -89,6 +87,7 @@ build:
     - install: bzip2 ca-certificates git build-essential python3-pip python-is-python3 zlib1g-dev
 
     - include: macros/openrecon/neurodocker.yaml
+    - include: macros/openrecon_i2i/helpers.yaml
 
     - run:
         - mkdir -p /tmp/laynii-source /opt/laynii-{{ context.laynii_version }}
@@ -104,7 +103,6 @@ build:
 
     - run:
         - cp {{ get_file("frisgo.py") }} /opt/code/python-ismrmrd-server/frisgo.py
-        - cp {{ get_file("openreconi2iexample.py") }} /opt/code/python-ismrmrd-server/openreconi2iexample.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - install -m 0755 {{ get_file("frisgo_simulate.py") }} /opt/code/python-ismrmrd-server/frisgo_simulate.py
         - mkdir -p /tmp/share/debug
