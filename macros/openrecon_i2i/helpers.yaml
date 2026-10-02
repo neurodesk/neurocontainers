@@ -1,0 +1,12 @@
+builder: neurodocker
+
+# Shared OpenRecon image-to-image helpers: series identity, IceMiniHead and
+# storage metadata handling. Include after macros/openrecon/neurodocker.yaml;
+# consumers import the module as `openreconi2iexample`.
+directives:
+  - file:
+      name: openreconi2iexample.py
+      filename: openreconi2iexample.py
+
+  - run:
+      - cp {{ get_file("openreconi2iexample.py") }} /opt/code/python-ismrmrd-server/openreconi2iexample.py
