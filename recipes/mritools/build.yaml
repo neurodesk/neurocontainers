@@ -1,5 +1,5 @@
 name: mritools
-version: 3.3.0
+version: 4.9.0
 
 copyright:
   - license: MIT
@@ -78,4 +78,4 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBI
 
 files:
   - name: v
-    url: https://github.com/korbinian90/CompileMRI.jl/releases/download/v{{ context.version }}/mritools_linux_{{ context.version }}.tar.gz
+    url: "https://github.com/korbinian90/CompileMRI.jl/releases/download/v{{ context.version }}/mritools_linux_x64_{{ context.version }}.tar.gz"
