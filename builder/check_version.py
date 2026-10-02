@@ -509,9 +509,10 @@ def submit_bump(
         return None
     if fulltest_bump:
         fulltest_path, fulltest_updated, old_fulltest_version = fulltest_bump
-        changes.append(
-            f"`fulltest.yaml` version: `{old_fulltest_version}` → `{new_version}`"
-        )
+        if old_fulltest_version != new_version:
+            changes.append(
+                f"`fulltest.yaml` version: `{old_fulltest_version}` → `{new_version}`"
+            )
 
     if dry_run:
         print(f"=== dry run: would open {branch} ===")
@@ -536,7 +537,12 @@ def submit_bump(
         body_lines += ["", *[f"Closes #{number}" for number in closes]]
     body = "\n".join(body_lines)
 
-    title = f"Bump {name} from {current_version} to {new_version}"
+    if current_version == new_version:
+        # Dependency or bundle updates keep the software version and ship as a
+        # dated rebuild, so "from X to X" would misreport them as a no-op.
+        title = f"Rebuild {name} {new_version} with updated sources"
+    else:
+        title = f"Bump {name} from {current_version} to {new_version}"
 
     if orphan_branch:
         # The commit is already on the remote; only the pull request is missing.

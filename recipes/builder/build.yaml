@@ -13,6 +13,9 @@ variables:
   base_image_digest: sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
 
 auto_update:
+  frozen: true
+  reason: >-
+    Locally maintained builder image; its only tracked input is the moby/buildkit base image digest, which a maintainer bumps together with builder changes rather than as a standalone rebuild.
   container_version: false
   method: sources
   local: []
