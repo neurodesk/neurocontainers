@@ -10,8 +10,6 @@ copyright:
     url: https://opensource.org/license/mit/
 
 files:
-  - name: openreconi2iexample.py
-    filename: openreconi2iexample.py
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
@@ -36,6 +34,7 @@ auto_update:
   method: sources
   local:
   - macros/openrecon
+  - macros/openrecon_i2i
   sources:
   - id: base_image
     method: oci_digest
@@ -79,9 +78,9 @@ build:
     - install: bzip2 ca-certificates git build-essential python3-pip python-is-python3
 
     - include: macros/openrecon/neurodocker.yaml
+    - include: macros/openrecon_i2i/helpers.yaml
 
     - run:
-        - cp {{ get_file("openreconi2iexample.py") }} /opt/code/python-ismrmrd-server/openreconi2iexample.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
     - environment:
         OPENRECONI2IEXAMPLE_VERSION: "{{ context.version }}"

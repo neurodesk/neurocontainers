@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 
 RECIPE_DIR = Path(__file__).resolve().parent
-WRAPPER_PATH = RECIPE_DIR / "openreconi2iexample.py"
+WRAPPER_PATH = RECIPE_DIR.parents[1] / "macros" / "openrecon_i2i" / "openreconi2iexample.py"
 DICOM_CONVERTER_PATH = RECIPE_DIR / "dicom2mrd.py"
 
 
