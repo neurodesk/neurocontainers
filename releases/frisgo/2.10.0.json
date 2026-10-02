@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "frisgo 2.10.0": {
+      "version": "20261002",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "image reconstruction"
+  ]
+}
