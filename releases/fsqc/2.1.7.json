@@ -1,7 +1,7 @@
 {
   "apps": {
     "fsqc 2.1.7": {
-      "version": "20260925",
+      "version": "20261002",
       "exec": "",
       "apptainer_args": []
     }
