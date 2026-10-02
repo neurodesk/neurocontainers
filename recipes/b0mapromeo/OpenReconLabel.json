@@ -1,0 +1,117 @@
+{
+  "general": {
+    "name": {
+      "en": "ROMEO B0 mapping"
+    },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": {
+      "en": "B0 field maps in Hz from multi-echo GRE magnitude and phase images"
+    },
+    "id": "b0mapromeo",
+    "regulatory_information": {
+      "device_trade_name": "ROMEO B0 mapping",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "NeuroDesk, https://neurodesk.org",
+      "made_in": "",
+      "manufacture_date": "2026/10/02",
+      "material_number": "b0mapromeo_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "",
+      "udi": "",
+      "safety_advices": "Research use",
+      "special_operating_instructions": "See OpenReconREADME.md",
+      "additional_relevant_information": ""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 0,
+    "min_required_memory": 8192,
+    "min_count_required_cpu_cores": 5,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": {
+        "en": "Reconstruction"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "b0mapromeo",
+          "name": {
+            "en": "ROMEO B0"
+          }
+        }
+      ],
+      "default": "b0mapromeo"
+    },
+    {
+      "id": "sendoriginal",
+      "label": {
+        "en": "Send original images"
+      },
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "id": "phaseunits",
+      "label": {
+        "en": "Input phase scale"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "siemens",
+          "name": {
+            "en": "Unsigned Siemens"
+          }
+        },
+        {
+          "id": "signed",
+          "name": {
+            "en": "Signed Siemens"
+          }
+        },
+        {
+          "id": "radians",
+          "name": {
+            "en": "Radians"
+          }
+        }
+      ],
+      "default": "siemens"
+    },
+    {
+      "id": "echotimesms",
+      "label": {
+        "en": "Echo times in ms"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Comma-separated echo times. Leave empty to use the acquisition TE metadata."
+      }
+    },
+    {
+      "id": "maxseeds",
+      "label": {
+        "en": "Maximum seeds"
+      },
+      "type": "int",
+      "default": 4000,
+      "minimum": 1,
+      "maximum": 100000
+    }
+  ]
+}

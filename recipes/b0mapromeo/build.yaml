@@ -1,0 +1,162 @@
+name: b0mapromeo
+version: 1.0.0
+architectures:
+  - x86_64
+copyright:
+  - license: MIT
+    url: https://github.com/korbinian90/ROMEO.jl/blob/master/LICENSE
+  - license: MIT
+    url: https://github.com/neurodesk/neurocontainers/blob/main/LICENSE
+variables:
+  openrecon_ismrmrd_version: 1.14.2
+  openrecon_siemens_commit: 055eefc09dfa77fbf11fff85979dea9ef2879ba5
+  openrecon_python_tools_commit: 17fe6fbf1bb645112e2ad0023eb4f42afb36421e
+  openrecon_server_commit: 33362f2139701fbf5ea855808a325eb59b7db2ae
+  upstream_commit: 0eb02bc0652a292ed80fee4a90ccdd3da4cfcd56
+  julia_version: 1.12.5
+  julia_sha256: 41b84d727e4e96fbf3ed9e92fa195d773d247b9097f73fad688f8b699758bae7
+  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+  numpy_version: 2.2.6
+  scipy_version: 1.15.3
+  nibabel_version: 5.4.2
+auto_update:
+  method: sources
+  container_version: false
+  local:
+    - macros/openrecon
+    - macros/openrecon_i2i
+  sources:
+    - id: upstream
+      method: github_commit
+      repo: tbrierre/recon_me_b0map_romeo
+      ref: HEAD
+      target:
+        variable: upstream_commit
+    - id: base_image
+      method: oci_digest
+      image: ubuntu
+      tag: '22.04'
+      target:
+        variable: base_image_digest
+    - id: openrecon_ismrmrd
+      method: github_release
+      repo: ismrmrd/ismrmrd
+      target:
+        variable: openrecon_ismrmrd_version
+        value: version
+    - id: openrecon_siemens
+      method: github_commit
+      repo: ismrmrd/siemens_to_ismrmrd
+      ref: HEAD
+      target:
+        variable: openrecon_siemens_commit
+    - id: openrecon_python_tools
+      method: github_commit
+      repo: ismrmrd/ismrmrd-python-tools
+      ref: HEAD
+      target:
+        variable: openrecon_python_tools_commit
+    - id: openrecon_server
+      method: github_commit
+      repo: astewartau/python-ismrmrd-server
+      ref: fix/ismrmrd-compatibility
+      target:
+        variable: openrecon_server_commit
+    - id: numpy
+      method: pypi
+      package: numpy
+      dependency: true
+      target:
+        variable: numpy_version
+    - id: scipy
+      method: pypi
+      package: scipy
+      dependency: true
+      target:
+        variable: scipy_version
+    - id: nibabel
+      method: pypi
+      package: nibabel
+      dependency: true
+      target:
+        variable: nibabel_version
+    - id: julia
+      method: http_digest
+      url: https://julialang-s3.julialang.org/bin/linux/x64/1.12/julia-1.12.5-linux-x86_64.tar.gz
+      dependency: true
+      target:
+        variable: julia_sha256
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        JULIA_DEPOT_PATH: /opt/julia-depot
+        JULIA_NUM_THREADS: '2'
+        B0MAPROMEO_VERSION: '{{ context.version }}'
+    - install: bzip2 ca-certificates git build-essential python3-pip python-is-python3
+    - include: macros/openrecon/neurodocker.yaml
+    - include: macros/openrecon_i2i/helpers.yaml
+    - run:
+        - python3 -m pip install --no-cache-dir numpy=={{ context.numpy_version }} scipy=={{ context.scipy_version }} nibabel=={{ context.nibabel_version }}
+    - environment:
+        JULIA_CPU_TARGET: generic
+    - run:
+        - mkdir -p /opt/julia /opt/b0mapromeo /opt/julia-depot
+        - tar -xzf {{ get_file("julia_archive") }} --strip-components=1 -C /opt/julia
+        - /opt/julia/bin/julia --version | grep -F 'julia version {{ context.julia_version }}'
+        - git clone https://github.com/tbrierre/recon_me_b0map_romeo /tmp/b0-upstream
+        - git -C /tmp/b0-upstream checkout {{ context.upstream_commit }}
+        - cp -r /tmp/b0-upstream/julia /opt/b0mapromeo/julia
+        - rm -rf /tmp/b0-upstream
+        - /opt/julia/bin/julia --startup-file=no --threads=1 --compile=min --project=/opt/b0mapromeo/julia -e 'using Pkg; Pkg.instantiate(;allow_autoprecomp=false)'
+        - /opt/julia/bin/julia --startup-file=no --threads=1 --project=/opt/b0mapromeo/julia -e 'using Pkg; Pkg.precompile()'
+        - chmod -R a+rX /opt/julia-depot
+    - run:
+        - cp {{ get_file("b0mapromeo.py") }} /opt/code/python-ismrmrd-server/b0mapromeo.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - cp {{ get_file("OpenReconREADME.md") }} /opt/b0mapromeo/OpenReconREADME.md
+        - cp {{ get_file("romeo.jl") }} /opt/b0mapromeo/romeo.jl
+        - cp {{ get_file("smoke_test.py") }} /opt/b0mapromeo/smoke_test.py
+        - install -m 0755 {{ get_file("b0mapromeo") }} /usr/local/bin/b0mapromeo
+        - mkdir -p /tmp/share/b0mapromeo
+        - chmod 1777 /tmp/share /tmp/share/b0mapromeo
+    - environment:
+        PYTHONPATH: /opt/code/python-ismrmrd-server
+        JULIA_NUM_THREADS: '1'
+deploy:
+  bins:
+    - b0mapromeo
+files:
+  - name: b0mapromeo.py
+    filename: b0mapromeo.py
+  - name: b0mapromeo
+    filename: b0mapromeo
+  - name: romeo.jl
+    filename: romeo.jl
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+  - name: smoke_test.py
+    filename: smoke_test.py
+  - name: julia_archive
+    url: https://julialang-s3.julialang.org/bin/linux/x64/1.12/julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+    sha256: '{{ context.julia_sha256 }}'
+categories:
+  - image reconstruction
+  - quantitative imaging
+  - phase processing
+readme: |
+  ROMEO B0 mapping for multi-echo GRE magnitude/phase MRD images and classic/enhanced MR DICOM.
+
+  b0mapromeo --dicom-dir /input/gre_pair --output-dir /output/b0
+
+  Run the ISMRMRD server with config b0mapromeo. Input echo times are in milliseconds;
+  output field maps are in Hz. See /opt/b0mapromeo/OpenReconREADME.md for phase encoding,
+  masking, scanner scaling and runtime parameters.
+
+  Starting pipeline: https://github.com/tbrierre/recon_me_b0map_romeo
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiMxNDI4M2UiLz48ZWxsaXBzZSBjeD0iMzIiIGN5PSIzMiIgcng9IjE4IiByeT0iMjQiIGZpbGw9IiM4OWQ0ZDgiLz48cGF0aCBkPSJNMTggMjBjMjUtMTMgOSAyNCAyOCAxN00xNCAzMmMyMC0xNCAyMCAyMiAzNCA2TTE5IDQzYzE0LTExIDEzIDggMjMgNyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZDg1OTUxIiBzdHJva2Utd2lkdGg9IjQiLz48dGV4dCB4PSIyMiIgeT0iMzciIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjE2IiBmaWxsPSIjMTQyODNlIj5CMDwvdGV4dD48L3N2Zz4=
