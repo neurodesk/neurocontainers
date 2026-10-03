@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import ExitStack
+from dataclasses import dataclass
 import json
 import os
 import subprocess
@@ -23,6 +24,12 @@ from workflows.reporting import (
     publish_test_results,
     write_text,
 )
+
+
+@dataclass(frozen=True)
+class RunOutcome:
+    results: dict[str, Any]
+    reason: str | None = None
 
 
 def _release_build_date(release_file: Path) -> str:
@@ -163,6 +170,7 @@ def _failure_results(
     version: str,
     message: str,
     container_ref: str = "unresolved",
+    return_code: int = 1,
 ) -> dict[str, Any]:
     return {
         "container": container_ref,
@@ -179,7 +187,7 @@ def _failure_results(
                 "status": "failed",
                 "stdout": "",
                 "stderr": message,
-                "return_code": 1,
+                "return_code": return_code,
             }
         ],
     }
@@ -212,157 +220,171 @@ def _skipped_results(
     }
 
 
-def run_fulltest_release(args: argparse.Namespace) -> str:
-    """Run deploy and fulltest checks against a release or local candidate."""
-    release_file = Path(args.release_file)
-    test_config = Path(args.test_config)
-    output_dir = Path(args.output_dir).absolute()
-    results_path = Path(args.results_path)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    run_dir = Path(tempfile.mkdtemp(prefix="fulltest-run-", dir=output_dir))
-    raw_results_path = run_dir / f"fulltest-raw-{args.recipe}.json"
-    fulltest_log_path = run_dir / f"fulltest-{args.recipe}.log"
-    fulltest_jsonl_path = run_dir / f"fulltest-{args.recipe}.jsonl"
-    suite_path = run_dir / f"fulltest-suite-{args.recipe}.yaml"
-    fulltest_work_dir = run_dir / "work"
-    fulltest_work_dir.mkdir()
+def run_fulltest_release(args: argparse.Namespace) -> RunOutcome:
+    """Run deploy and fulltest checks, retaining evidence when execution fails."""
+    container_ref = "unresolved"
+    deploy_results: dict[str, Any] | None = None
+    artifacts: dict[str, Path] = {}
+    return_code = 1
+    reason: str | None = None
+    try:
+        release_file = Path(args.release_file)
+        test_config = Path(args.test_config)
+        output_dir = Path(args.output_dir).absolute()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        run_dir = Path(tempfile.mkdtemp(prefix="fulltest-run-", dir=output_dir))
+        raw_results_path = run_dir / f"fulltest-raw-{args.recipe}.json"
+        fulltest_log_path = run_dir / f"fulltest-{args.recipe}.log"
+        fulltest_jsonl_path = run_dir / f"fulltest-{args.recipe}.jsonl"
+        suite_path = run_dir / f"fulltest-suite-{args.recipe}.yaml"
+        fulltest_work_dir = run_dir / "work"
+        artifacts = {
+            "raw_json": raw_results_path,
+            "jsonl": fulltest_jsonl_path,
+            "log": fulltest_log_path,
+            "suite": suite_path,
+        }
+        fulltest_work_dir.mkdir()
 
-    with ExitStack() as images:
-        tester = images.enter_context(ContainerTester())
-        runtime = tester.select_runtime(args.runtime)
-        if runtime.name != "apptainer":
-            raise RuntimeError("fulltest.yaml release tests currently require Apptainer/Singularity")
+        with ExitStack() as images:
+            tester = images.enter_context(ContainerTester())
+            runtime = tester.select_runtime(args.runtime)
+            if runtime.name != "apptainer":
+                raise RuntimeError("fulltest.yaml release tests currently require Apptainer/Singularity")
 
-        if getattr(args, "candidate_container", None):
-            source = Path(args.candidate_container)
-            if not source.is_file():
-                raise RuntimeError(f"Candidate container not found: {source}")
-            container_ref = str(source)
-        elif args.docker_to_simg:
-            container_ref = tester.convert_docker_image_to_simg(
-                args.recipe,
-                args.version,
-                release_file=str(release_file),
-                docker_registry=args.docker_registry,
-                converter_source=args.docker_save_to_simg,
+            if getattr(args, "candidate_container", None):
+                source = Path(args.candidate_container)
+                if not source.is_file():
+                    raise RuntimeError(f"Candidate container not found: {source}")
+                container_ref = str(source)
+            elif args.docker_to_simg:
+                container_ref = tester.convert_docker_image_to_simg(
+                    args.recipe,
+                    args.version,
+                    release_file=str(release_file),
+                    docker_registry=args.docker_registry,
+                    converter_source=args.docker_save_to_simg,
+                    verbose=args.verbose,
+                )
+            else:
+                build_date = _release_build_date(release_file)
+                image_basename = tester.release_downloader.extract_image_basename_from_release(
+                    str(release_file)
+                )
+                image = tester.release_downloader.download_from_release(
+                    args.recipe,
+                    args.version,
+                    build_date,
+                    image_basename=image_basename,
+                    use_cache=False,
+                )
+                if image is not None:
+                    images.enter_context(image)
+                    container_ref = str(image.path)
+                else:
+                    try:
+                        container_ref = tester.convert_docker_image_to_simg(
+                            args.recipe,
+                            args.version,
+                            release_file=str(release_file),
+                            docker_registry=args.docker_registry,
+                            converter_source=args.docker_save_to_simg,
+                            verbose=args.verbose,
+                        )
+                    except Exception as exc:
+                        raise RuntimeError(
+                            f"Unable to download release container {args.recipe}:{args.version}; "
+                            f"Docker-to-SIMG fallback failed: {exc}"
+                        ) from exc
+            source = Path(container_ref).absolute()
+            container_ref = str(source.resolve())
+
+            suite = yaml.safe_load(test_config.read_text(encoding="utf-8")) or {}
+            suite["name"] = suite.get("name") or args.recipe
+            suite["version"] = args.version
+
+            # The artifact under test is whatever this runner just downloaded or built.
+            # A fulltest that also names an artifact can only agree or be stale, and a
+            # stale name is worth reporting rather than silently overriding.
+            declared = str(suite.pop("container", "") or "").strip()
+            suite.pop("pin_container", None)
+            resolved_name = source.name
+            if declared and not is_placeholder_reference(declared) and declared != resolved_name:
+                raise RuntimeError(
+                    f"{test_config} declares container '{declared}' but the release artifact "
+                    f"under test is '{resolved_name}'. Remove the 'container:' key so the "
+                    "artifact is resolved from releases/ metadata."
+                )
+            write_text(suite_path, yaml.safe_dump(suite, sort_keys=False))
+
+            deploy_results = tester.run_test_suite(
+                container_ref,
+                {"tests": [{"name": "Simple Deploy Bins/Path Test", "builtin": "test_deploy.sh"}]},
                 verbose=args.verbose,
             )
-        else:
-            build_date = _release_build_date(release_file)
-            image_basename = tester.release_downloader.extract_image_basename_from_release(
-                str(release_file)
+
+            command = [
+                "uv",
+                "run",
+                str(Path(args.repo_root).absolute() / "builder/run_tests.py"),
+                str(suite_path),
+                "--container",
+                str(container_ref),
+                "-o",
+                str(raw_results_path),
+                "--log",
+                str(fulltest_log_path),
+                "--jsonl",
+                str(fulltest_jsonl_path),
+                "--work-dir",
+                str(fulltest_work_dir),
+            ]
+            proc = subprocess.run(command, cwd=args.repo_root, text=True, check=False)
+            return_code = proc.returncode
+            if not raw_results_path.is_file():
+                raise RuntimeError(f"run_tests.py failed before writing results: exit {proc.returncode}")
+
+            raw = json.loads(raw_results_path.read_text(encoding="utf-8"))
+            fulltest_results = _normalise_run_tests_output(
+                raw,
+                recipe=args.recipe,
+                version=args.version,
+                container_ref=container_ref,
+                jsonl_records=_load_jsonl_records(fulltest_jsonl_path),
             )
-            image = tester.release_downloader.download_from_release(
-                args.recipe,
-                args.version,
-                build_date,
-                image_basename=image_basename,
-                use_cache=False,
-            )
-            if image is not None:
-                images.enter_context(image)
-                container_ref = str(image.path)
-            else:
-                try:
-                    container_ref = tester.convert_docker_image_to_simg(
-                        args.recipe,
-                        args.version,
-                        release_file=str(release_file),
-                        docker_registry=args.docker_registry,
-                        converter_source=args.docker_save_to_simg,
-                        verbose=args.verbose,
-                    )
-                except Exception as exc:
-                    raise RuntimeError(
-                        f"Unable to download release container {args.recipe}:{args.version}; "
-                        f"Docker-to-SIMG fallback failed: {exc}"
-                    ) from exc
-        source = Path(container_ref).absolute()
-        container_ref = str(source.resolve())
-
-        suite = yaml.safe_load(test_config.read_text(encoding="utf-8")) or {}
-        suite["name"] = suite.get("name") or args.recipe
-        suite["version"] = args.version
-
-        # The artifact under test is whatever this runner just downloaded or built.
-        # A fulltest that also names an artifact can only agree or be stale, and a
-        # stale name is worth reporting rather than silently overriding.
-        declared = str(suite.pop("container", "") or "").strip()
-        suite.pop("pin_container", None)
-        resolved_name = source.name
-        if declared and not is_placeholder_reference(declared) and declared != resolved_name:
-            raise RuntimeError(
-                f"{test_config} declares container '{declared}' but the release artifact "
-                f"under test is '{resolved_name}'. Remove the 'container:' key so the "
-                "artifact is resolved from releases/ metadata."
-            )
-        write_text(suite_path, yaml.safe_dump(suite, sort_keys=False))
-
-        deploy_results = tester.run_test_suite(
-            container_ref,
-            {"tests": [{"name": "Simple Deploy Bins/Path Test", "builtin": "test_deploy.sh"}]},
-            verbose=args.verbose,
-        )
-
-        command = [
-            "uv",
-            "run",
-            str(Path(args.repo_root).absolute() / "builder/run_tests.py"),
-            str(suite_path),
-            "--container",
-            str(container_ref),
-            "-o",
-            str(raw_results_path),
-            "--log",
-            str(fulltest_log_path),
-            "--jsonl",
-            str(fulltest_jsonl_path),
-            "--work-dir",
-            str(fulltest_work_dir),
-        ]
-        proc = subprocess.run(command, cwd=args.repo_root, text=True, check=False)
-        if not raw_results_path.is_file():
-            raise RuntimeError(f"run_tests.py failed before writing results: exit {proc.returncode}")
-
-        raw = json.loads(raw_results_path.read_text(encoding="utf-8"))
-        fulltest_results = _normalise_run_tests_output(
-            raw,
+            if proc.returncode != 0 and not fulltest_results["failed"]:
+                fulltest_results["test_results"].append(
+                    {
+                        "name": "fulltest execution",
+                        "status": "failed",
+                        "stdout": "",
+                        "stderr": (
+                            f"run_tests.py exited with code {proc.returncode} "
+                            "without reporting a failed test"
+                        ),
+                        "return_code": proc.returncode,
+                    }
+                )
+                fulltest_results["total_tests"] += 1
+                fulltest_results["failed"] += 1
+    except Exception as exc:
+        reason = str(exc)
+        fulltest_results = _failure_results(
             recipe=args.recipe,
             version=args.version,
+            message=reason,
             container_ref=container_ref,
-            jsonl_records=_load_jsonl_records(fulltest_jsonl_path),
+            return_code=return_code,
         )
-        if proc.returncode != 0 and not fulltest_results["failed"]:
-            fulltest_results["test_results"].append(
-                {
-                    "name": "fulltest execution",
-                    "status": "failed",
-                    "stdout": "",
-                    "stderr": (
-                        f"run_tests.py exited with code {proc.returncode} "
-                        "without reporting a failed test"
-                    ),
-                    "return_code": proc.returncode,
-                }
-            )
-            fulltest_results["total_tests"] += 1
-            fulltest_results["failed"] += 1
-        fulltest_results["fulltest_artifacts"] = {
-            "raw_json": str(raw_results_path),
-            "jsonl": str(fulltest_jsonl_path),
-            "log": str(fulltest_log_path),
-            "suite": str(suite_path),
-        }
-        results = _combine_results(fulltest_results, deploy_results)
-        published = publish_test_results(
-            recipe=args.recipe,
-            version=args.version,
-            results=results,
-            plan=_publication_plan(
-                recipe=args.recipe, results_path=results_path, output_dir=output_dir
-            ),
-        )
-        return published.status
+
+    fulltest_results["fulltest_artifacts"] = {
+        name: str(path) for name, path in artifacts.items() if path.is_file()
+    }
+    results = (
+        _combine_results(fulltest_results, deploy_results)
+        if deploy_results is not None else fulltest_results
+    )
+    return RunOutcome(results, reason)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -395,57 +417,63 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if not args.test_config or not test_config.is_file():
-            message = "No fulltest.yaml test configuration available"
-            published = publish_test_results(
-                recipe=args.recipe,
-                version=args.version,
-                results=_skipped_results(
+            outcome = RunOutcome(
+                _skipped_results(
                     recipe=args.recipe,
                     version=args.version,
-                    message=message,
-                ),
-                plan=_publication_plan(
-                    recipe=args.recipe,
-                    results_path=Path(args.results_path),
-                    output_dir=Path(args.output_dir),
-                ),
+                    message="No fulltest.yaml test configuration available",
+                )
             )
-            status = published.status
         elif test_config.name != "fulltest.yaml":
             raise RuntimeError(
                 f"Unsupported test configuration {test_config}; only fulltest.yaml is supported"
             )
         else:
-            status = run_fulltest_release(args)
+            outcome = run_fulltest_release(args)
     except Exception as exc:
-        message = str(exc)
-        print(message, file=sys.stderr)
-        try:
-            publish_test_results(
+        outcome = RunOutcome(
+            _failure_results(
+                recipe=args.recipe, version=args.version, message=str(exc),
+            ),
+            str(exc),
+        )
+
+    reason = outcome.reason
+    if reason is not None:
+        print(reason, file=sys.stderr)
+    try:
+        published = publish_test_results(
+            recipe=args.recipe,
+            version=args.version,
+            results=outcome.results,
+            plan=_publication_plan(
                 recipe=args.recipe,
-                version=args.version,
-                results=_failure_results(
-                    recipe=args.recipe,
-                    version=args.version,
-                    message=message,
-                ),
-                plan=_publication_plan(
-                    recipe=args.recipe,
-                    results_path=Path(args.results_path),
-                    output_dir=Path(args.output_dir),
-                ),
-            )
-            if args.github_output:
-                with Path(args.github_output).open("a", encoding="utf-8") as handle:
-                    handle.write("status=failed\n")
-                    handle.write(f"reason={message}\n")
-        except Exception as write_exc:
-            print(f"Unable to write failure report: {write_exc}", file=sys.stderr)
-        return 1
+                results_path=Path(args.results_path),
+                output_dir=Path(args.output_dir),
+            ),
+        )
+        status = published.status
+    except Exception as exc:
+        print(f"Unable to publish test results: {exc}", file=sys.stderr)
+        status = "failed"
+        if reason is None:
+            reason = str(exc)
 
     if args.github_output:
-        with Path(args.github_output).open("a", encoding="utf-8") as handle:
-            handle.write(f"status={status}\n")
+        try:
+            with Path(args.github_output).open("a", encoding="utf-8") as handle:
+                handle.write(f"status={status}\n")
+                if reason is not None:
+                    if "\n" in reason or "\r" in reason:
+                        delimiter = "FULLTEST_REASON"
+                        while delimiter in reason.splitlines():
+                            delimiter += "_"
+                        handle.write(f"reason<<{delimiter}\n{reason}\n{delimiter}\n")
+                    else:
+                        handle.write(f"reason={reason}\n")
+        except OSError as exc:
+            print(f"Unable to write GitHub output: {exc}", file=sys.stderr)
+            return 1
 
     print(f"Status: {status}")
     return 0 if status != "failed" else 1
