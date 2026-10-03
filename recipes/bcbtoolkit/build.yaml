@@ -1,5 +1,5 @@
 name: bcbtoolkit
-version: 0.0.0
+version: 5.3.0
 copyright:
   - license: BSD-3-Clause
     url: https://github.com/chrisfoulon/BCBToolKit?tab=BSD-3-Clause-1-ov-file
@@ -7,32 +7,31 @@ architectures:
   - x86_64
 structured_readme:
   description: |-
-    Tools to indirectly assess brain disconnections from lesion masks in MNI
-    space. Provides disconnectome maps (run_disco.sh), Tractotron probability
-    of disconnection (tractotron_cli.sh), and a Java GUI launcher
-    (BCBToolKit.sh). Bundles a stripped FSL plus a Java runtime — there is no
-    Python package to import. Includes the HCP-1065 probabilistic tract atlas
-    (64 tracts, 2mm MNI152) at /opt/BCBToolKit/Tools/HCP1065/prob.
+    Python edition of the Brain Connectivity and Behaviour toolkit for lesion
+    analysis, including Tractotron, disconnectome maps and AnaCOM2. Includes
+    NumPy, NiBabel, the upstream data bundle and a browser-based interface.
+    The supplementary HCP-1065 probabilistic tract atlas is available at
+    /opt/BCBToolKit/Tools/HCP1065/prob.
+
+    Registration, cortical thickness, fMRI and diffusion workflows require
+    external ANTs, FSL, ICA-AROMA and/or dcm2niix installations; these are not
+    bundled. Configure their paths through the environment or Settings.
   example: |-
-    # Disconnectome maps from a folder of MNI-space lesion masks
-    run_disco.sh -l /data/lesions -o /data/disco_out
+    # Disconnectome maps from MNI-space lesion masks
+    bcbtoolkit disconnectome -l /data/lesions -r /data/disco_out
 
-    # Or in BIDS mode — discovers *lesion*.nii.gz under any anat/ dir
-    run_disco.sh -B /data/bids_root
+    # Tractotron with the bundled atlas
+    bcbtoolkit tractotron -l /data/lesions -r /data/tractotron_out
 
-    # Custom filename pattern (e.g. Linda's "Lesion_in_MNI.nii.gz")
-    run_disco.sh -B /data/bids_root -p "Lesion_in_MNI.nii.gz"
+    # Tractotron with the supplementary HCP-1065 atlas
+    bcbtoolkit tractotron -l /data/lesions_2mm -t /opt/BCBToolKit/Tools/HCP1065/prob -r /data/tractotron_out
 
-    # Tractotron — probability of disconnection per individual tract
-    tractotron_cli.sh -l /data/lesions -o /data/tractotron_out
-    
-    # Tractotron — using bundled HCP-1065 probabilistic tract atlas (2mm MNI)
-    # Reslice lesion to 2mm first if it's in 1mm space
-    tractotron_cli.sh -l /data/lesions_2mm -t /opt/BCBToolKit/Tools/HCP1065/prob -o /data/tractotron_out
+    # Browser interface (open the printed URL)
+    bcbtoolkit gui --no-browser --port 8765
 
-    # Java GUI (requires X forwarding)
+    # The historical GUI launcher name also opens the new interface
     BCBToolKit.sh
-  documentation: https://www.dropbox.com/scl/fi/crlns14gd7flckow067ig/USER_MANUALBCB.pdf?rlkey=49vnztok9brqaa769d42zey2w&e=1&dl=0
+  documentation: https://storage.googleapis.com/bcblabweb/index.html
   citation: |-
     Foulon C. et al. (2018) Advanced lesion symptom mapping analyses and implementation as BCBtoolkit. GigaScience 7, 1–17.
     Thiebaut de Schotten M. et al. (2014) Damage to white matter pathways in subacute and chronic spatial neglect: a group study and 2 single-case studies with complete virtual "in vivo" tractography dissection. Cereb Cortex 24, 691–706.
@@ -40,234 +39,131 @@ structured_readme:
     Thiebaut de Schotten M. et al. (2012) Monkey to human comparative anatomy of the frontal lobe association tracts. Cortex 48, 82–96.
     Catani M. et al. (2012) Short frontal lobe connections of the human brain. Cortex 48, 273–291.
 readme: |-
-  ----------------------------------
-  ## bcbtoolkit/{{ context.version }} ##
+  ## bcbtoolkit/{{ context.version }}
 
-  Tools to indirectly assess brain disconnections from lesion masks in MNI
-  space. Provides disconnectome maps (run_disco.sh), Tractotron probability
-  of disconnection (tractotron_cli.sh), and a Java GUI launcher
-  (BCBToolKit.sh). Bundles a stripped FSL plus a Java runtime — there is no
-  Python package to import. Includes the HCP-1065 probabilistic tract atlas
-  (64 tracts, 2mm MNI152) at /opt/BCBToolKit/Tools/HCP1065/prob.
+  Python edition of the Brain Connectivity and Behaviour toolkit for lesion
+  analysis, including Tractotron, disconnectome maps and AnaCOM2. Includes
+  NumPy, NiBabel, the upstream data bundle and a browser-based interface.
+  The supplementary HCP-1065 probabilistic tract atlas is available at
+  /opt/BCBToolKit/Tools/HCP1065/prob.
 
-  Example:
+  Registration, cortical thickness, fMRI and diffusion workflows require
+  external ANTs, FSL, ICA-AROMA and/or dcm2niix installations; these are not
+  bundled. Configure their paths through the environment or Settings.
+
   ```bash
-  # Disconnectome maps from a folder of MNI-space lesion masks
-  run_disco.sh -l /data/lesions -o /data/disco_out
+  # Disconnectome maps from MNI-space lesion masks
+  bcbtoolkit disconnectome -l /data/lesions -r /data/disco_out
 
-  # Or in BIDS mode — discovers *lesion*.nii.gz under any anat/ dir
-  run_disco.sh -B /data/bids_root
+  # Tractotron with the bundled atlas
+  bcbtoolkit tractotron -l /data/lesions -r /data/tractotron_out
 
-  # Custom filename pattern (e.g. Linda's "Lesion_in_MNI.nii.gz")
-  run_disco.sh -B /data/bids_root -p "Lesion_in_MNI.nii.gz"
+  # Tractotron with the supplementary HCP-1065 atlas
+  bcbtoolkit tractotron -l /data/lesions_2mm -t /opt/BCBToolKit/Tools/HCP1065/prob -r /data/tractotron_out
 
-  # Tractotron — probability of disconnection per individual tract
-  tractotron_cli.sh -l /data/lesions -o /data/tractotron_out
+  # Browser interface (open the printed URL)
+  bcbtoolkit gui --no-browser --port 8765
 
-  # Tractotron — using bundled HCP-1065 probabilistic tract atlas (2mm MNI)
-  # Reslice lesion to 2mm first if it's in 1mm space
-  tractotron_cli.sh -l /data/lesions_2mm -t /opt/BCBToolKit/Tools/HCP1065/prob -o /data/tractotron_out
-
-  # Java GUI (requires X forwarding)
+  # The historical GUI launcher name also opens the new interface
   BCBToolKit.sh
   ```
 
-  More documentation: https://www.dropbox.com/scl/fi/crlns14gd7flckow067ig/USER_MANUALBCB.pdf?rlkey=49vnztok9brqaa769d42zey2w&e=1&dl=0
+  This Python release replaces the Java GUI and the run_disco.sh and
+  tractotron_cli.sh wrappers. Use the disconnectome and tractotron
+  subcommands above; output directories now use -r. The old wrappers'
+  BIDS discovery flags are not supported by the new command line interface.
+
+  Application code and bundled data live under /opt/BCBToolKit. Settings
+  and optional downloaded resources default to ${TMPDIR:-/tmp}/bcbtoolkit-<uid>.
+  Set BCBTOOLKIT_HOME to a writable persistent directory to retain them.
+  The bundled manual is /opt/BCBToolKit/BCBToolKit_manual.pdf.
+
+  More documentation: https://storage.googleapis.com/bcblabweb/index.html
 
   Citation:
-  ```
   Foulon C. et al. (2018) Advanced lesion symptom mapping analyses and implementation as BCBtoolkit. GigaScience 7, 1–17.
   Thiebaut de Schotten M. et al. (2014) Damage to white matter pathways in subacute and chronic spatial neglect: a group study and 2 single-case studies with complete virtual "in vivo" tractography dissection. Cereb Cortex 24, 691–706.
   Thiebaut de Schotten M. et al. (2011) Atlasing location, asymmetry and inter-subject variability of white matter tracts in the human brain with MR diffusion tractography. Neuroimage 54, 49–59.
   Thiebaut de Schotten M. et al. (2012) Monkey to human comparative anatomy of the frontal lobe association tracts. Cortex 48, 82–96.
   Catani M. et al. (2012) Short frontal lobe connections of the human brain. Cortex 48, 273–291.
-  ```
 
-  To run container outside of this environment: ml bcbtoolkit/{{ context.version }}
-
-  ----------------------------------
 files:
   - name: bcbtoolkit_archive
-    url: "https://www.dropbox.com/s/ug93rp9oouryqj3/BCBToolKitLINUX.tar.gz?dl=1"
-    sha256: 6a641651934c395acba1407dd1d08ae38da1d0ef555018bf620e2cc8fe7de18f
-  - name: run_disco_sh
-    url: https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/{{ context.wrapper_revision }}/run_disco.sh
-  - name: tractotron_cli_sh
-    url: https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/{{ context.wrapper_revision }}/tractotron_cli.sh
+    url: "https://www.dropbox.com/scl/fi/tm7pynzkqd5w1ygxde8cd/BCBToolKit_{{ context.version }}_standalone.zip?rlkey=43txdb9xs0w9btk1kedk9a120&dl=1"
+    sha256: 87350d4414688290d2b4ef5e20b86dac3357fd164e5ea7117d988f1e9a505fdc
+  - name: bcbtoolkit_launcher
+    contents: |
+      #!/bin/sh
+      set -eu
+
+      # Keep settings and optional downloads writable without requiring a home mount.
+      export BCBTOOLKIT_HOME="${BCBTOOLKIT_HOME:-${TMPDIR:-/tmp}/bcbtoolkit-$(id -u)}"
+      export PYTHONPATH="/opt/BCBToolKit${PYTHONPATH:+:$PYTHONPATH}"
+      export PYTHONNOUSERSITE=1
+
+      exec /usr/bin/python3 -m bcbtoolkit "$@"
   - name: hcp_atlas_zip
     url: https://github.com/data-others/atlas/releases/download/hcp1065/hcp1065_prob_coverage_nifti.zip
+
 auto_update:
-  container_version: {"variable": "upstream_version"}
+  container_version: binary
   method: sources
   sources:
-  - id: binary
-    method: http_digest
-    url: https://www.dropbox.com/s/ug93rp9oouryqj3/BCBToolKitLINUX.tar.gz?dl=1
-    target:
-      file: bcbtoolkit_archive
-  - id: wrappers
-    method: github_commit
-    repo: chrisfoulon/BCBToolKit
-    target:
-      variable: wrapper_revision
+    - id: binary
+      method: http_digest
+      # Dropbox's file-ID URL stays valid when the displayed filename changes.
+      url: https://www.dropbox.com/scl/fi/tm7pynzkqd5w1ygxde8cd?rlkey=43txdb9xs0w9btk1kedk9a120&dl=1
+      version_member: BCBToolKit_standalone/bcbtoolkit/__init__.py
+      version_regex: '__version__ = "(?P<version>\d+\.\d+\.\d+)"'
+      target:
+        file: bcbtoolkit_archive
+        variables:
+          upstream_version: version
+
 build:
   kind: neurodocker
-  base-image: ubuntu:18.04
+  base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - install: libxt6 libxrender1 libxtst6 libxi6 libglu1-mesa libgl1-mesa-glx curl ca-certificates unzip
-
-    # ---------------------------------------------------------------------
-    # Bundled-FSL environment.
-    #
-    # BCBToolKit ships a stripped FSL split across two trees:
-    #   /opt/BCBToolKit/Tools/binaries/   (fslhd, flirt, fslmaths, track_vis…)
-    #   /opt/BCBToolKit/Tools/libraries/  (libfslio.so, libniftiio.so, …)
-    #
-    # Without these three vars set, every internal FSL call fails with either
-    # "libfslio.so: cannot open shared object file" or "FSLOUTPUTTYPE not set".
-    # The disco/tractotron pipelines do not check exit codes from their inner
-    # FSL calls, so they silently produce no output while still reporting
-    # "Completed successfully". These ENVs are the fix.
-    # ---------------------------------------------------------------------
     - environment:
-        FSLDIR: /opt/BCBToolKit/Tools/binaries
-        LD_LIBRARY_PATH: /opt/BCBToolKit/Tools/libraries/lib
-        FSLOUTPUTTYPE: NIFTI_GZ
-        BCBTOOLKIT_ROOT: /opt/BCBToolKit
-
-    # The BCBToolKitLINUX.tar.gz from Dropbox is missing
-    # Tools/extraFiles/nulldeform.mat, an identity 4x4 affine that
-    # run_disco.sh feeds to flirt -applyxfm -init when it has to reslice
-    # between the SPM 181x217x181 MNI grid and the FSL 182x218x182 MNI grid.
-    # Without it, reslicing fails and downstream track_vis calls produce empty
-    # output while the script can still report success.
+        DEBIAN_FRONTEND: noninteractive
+        PYTHONPATH: /opt/BCBToolKit
+        PYTHONNOUSERSITE: "1"
+        BCBTOOLKIT_DATA: /opt/BCBToolKit/data
+    - install:
+        - ca-certificates
+        - python3
+        - python3-numpy
+        - python3-nibabel
+        - python3-tk
+        - unzip
     - run:
-        - |-
-          mkdir -p /opt/BCBToolKit && cd /opt/BCBToolKit \
-            && cp {{ get_file("bcbtoolkit_archive") }} bcb.tar.gz \
-            && tar --no-same-owner -xzf bcb.tar.gz --strip-components=1 \
-            && rm bcb.tar.gz \
-            && cp {{ get_file("run_disco_sh") }} /opt/BCBToolKit/run_disco.sh \
-            && cp {{ get_file("tractotron_cli_sh") }} /opt/BCBToolKit/tractotron_cli.sh \
-            && chmod +x /opt/BCBToolKit/BCBToolKit.sh \
-                        /opt/BCBToolKit/run_disco.sh \
-                        /opt/BCBToolKit/tractotron_cli.sh \
-            && ln -sf /opt/BCBToolKit/run_disco.sh /usr/local/bin/run_disco.sh \
-            && ln -sf /opt/BCBToolKit/tractotron_cli.sh /usr/local/bin/tractotron_cli.sh \
-            && cp {{ get_file("hcp_atlas_zip") }} /tmp/hcp_atlas.zip \
-            && mkdir -p /opt/BCBToolKit/Tools/HCP1065 \
-            && unzip /tmp/hcp_atlas.zip -d /opt/BCBToolKit/Tools/HCP1065 \
-            && rm /tmp/hcp_atlas.zip \
-            && printf '%s\n' \
-                 '1.000000 0.000000 0.000000 0.000000' \
-                 '0.000000 1.000000 0.000000 0.000000' \
-                 '0.000000 0.000000 1.000000 0.000000' \
-                 '0.000000 0.000000 0.000000 1.000000' \
-                 > /opt/BCBToolKit/Tools/extraFiles/nulldeform.mat \
-            && chown -R root:root /opt/BCBToolKit \
-            && chmod -R a+rX /opt/BCBToolKit \
-            && rm -f /usr/local/bin/BCBToolKit.sh \
-            && printf '%s\n' \
-                 '#!/usr/bin/env bash' \
-                 'cd /opt/BCBToolKit' \
-                 'exec ./BCBToolKit.sh "$@"' \
-                 > /usr/local/bin/BCBToolKit.sh \
-            && chmod 0755 /usr/local/bin/BCBToolKit.sh
-    - deploy:
-        bins:
-          - BCBToolKit.sh
-          - run_disco.sh
-          - tractotron_cli.sh
-        path:
-          - /opt/BCBToolKit
-
+        - unzip -q {{ get_file("bcbtoolkit_archive") }} -d /opt
+        - mv /opt/BCBToolKit_standalone /opt/BCBToolKit
+        - mkdir -p /opt/BCBToolKit/Tools/HCP1065
+        - unzip -q {{ get_file("hcp_atlas_zip") }} -d /opt/BCBToolKit/Tools/HCP1065
+        - cp {{ get_file("bcbtoolkit_launcher") }} /usr/local/bin/bcbtoolkit
+        - chmod 0755 /usr/local/bin/bcbtoolkit
+        - ln -s /usr/local/bin/bcbtoolkit /usr/local/bin/BCBToolKit.sh
+        - chown -R root:root /opt/BCBToolKit
+        - chmod -R a+rX /opt/BCBToolKit
     - test:
-        name: verify_installation
+        name: Python launcher version
         script: |-
-          #!/bin/bash
-          set -euo pipefail
-
-          # Core scripts must exist and be executable
-          test -x /opt/BCBToolKit/BCBToolKit.sh \
-              || { echo "BCBToolKit.sh not found or not executable"; exit 1; }
-          test -x /opt/BCBToolKit/run_disco.sh \
-              || { echo "run_disco.sh not found or not executable"; exit 1; }
-          test -x /opt/BCBToolKit/tractotron_cli.sh \
-              || { echo "tractotron_cli.sh not found or not executable"; exit 1; }
-
-          # Identity transform required for MNI reslicing (not in upstream tarball)
-          test -f /opt/BCBToolKit/Tools/extraFiles/nulldeform.mat \
-              || { echo "nulldeform.mat missing — SPM<->FSL reslice will fail"; exit 1; }
-
-          # Bundled FSL env vars must be set and FSLDIR must exist
-          test -n "${FSLDIR:-}" \
-              || { echo "FSLDIR not set in image"; exit 1; }
-          test -n "${FSLOUTPUTTYPE:-}" \
-              || { echo "FSLOUTPUTTYPE not set in image"; exit 1; }
-          test -d "${FSLDIR}" \
-              || { echo "FSLDIR does not exist: $FSLDIR"; exit 1; }
-
-          # Upstream archive ships as uid/gid 1000 with restrictive group/other
-          # permissions. Normal runtime users must still be able to traverse
-          # bundled tools, libraries, the Java runtime, and data files.
-          unreadable_path="$(find /opt/BCBToolKit \( -type d ! -perm -0005 -o -type f ! -perm -0004 \) -print -quit)"
-          test -z "${unreadable_path}" \
-              || { echo "BCBToolKit path is not world-readable/traversable: ${unreadable_path}"; exit 1; }
-
-          blocked_exec="$(find /opt/BCBToolKit -type f -perm /0111 ! -perm -0001 -print -quit)"
-          test -z "${blocked_exec}" \
-              || { echo "BCBToolKit executable is not world-executable: ${blocked_exec}"; exit 1; }
-
-          test ! -L /usr/local/bin/BCBToolKit.sh \
-              || { echo "BCBToolKit launcher must be a wrapper, not a symlink"; exit 1; }
-          grep -q '/opt/BCBToolKit' /usr/local/bin/BCBToolKit.sh \
-              || { echo "BCBToolKit launcher does not enter /opt/BCBToolKit"; exit 1; }
-
-          runtime_check="$(mktemp /tmp/bcb-runtime-check.XXXXXX)"
-          trap 'rm -f "${runtime_check}"' EXIT
-          cat > "${runtime_check}" <<'EOF'
-          #!/bin/bash
-          set -euo pipefail
-          test -x /opt/BCBToolKit/Tools/binaries/bin/fslmaths
-          test -x /opt/BCBToolKit/jre/bin/java
-          test -r /opt/BCBToolKit/sources.jar
-
-          # The Java GUI loads libawt_xawt.so, which needs system X11
-          # libraries such as libXrender.so.1.
-          awt_ldd="$(
-              LD_LIBRARY_PATH="/opt/BCBToolKit/jre/lib/amd64:/opt/BCBToolKit/jre/lib/amd64/server:${LD_LIBRARY_PATH:-}" \
-                  ldd /opt/BCBToolKit/jre/lib/amd64/libawt_xawt.so
-          )"
-          if echo "${awt_ldd}" | grep -q "not found"; then
-              echo "${awt_ldd}"
-              exit 1
-          fi
-
-          BCBTOOLKIT_ROOT=/opt/BCBToolKit run_disco.sh -l /tmp/nope -o /tmp/out 2>&1 |
-              grep -q "neither an existing file nor directory"
-          EOF
-          chmod 0755 "${runtime_check}"
-
-          if [ "$(id -u)" -eq 0 ]; then
-              if command -v runuser >/dev/null 2>&1; then
-                  runuser -u nobody -- "${runtime_check}"
-              else
-                  su -s /bin/bash nobody -c "${runtime_check}"
-              fi
-          else
-              "${runtime_check}"
-          fi
-
-          echo "=== /opt/BCBToolKit contents ==="
-          ls /opt/BCBToolKit/
-          echo "BCBToolKit installation verified"
+          #!/bin/sh
+          set -eu
+          bcbtoolkit --version | grep -Fx 'bcbtoolkit {{ context.version }}'
+          BCBToolKit.sh --version | grep -Fx 'bcbtoolkit {{ context.version }}'
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
+
+deploy:
+  bins:
+    - bcbtoolkit
+    - BCBToolKit.sh
 categories:
   - structural imaging
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAE6klEQVR4AWRVa0yWZRi+nvf7Pg5DCUtabSHiIKYpjhEyqh+5clQMW9mfDhN1LeastZVtZqwtc9hha6SbrjZoQAqVhYIUWwgJHaQglKjRGkTU4lBmmqAcvu/pvu6X5xMm43rv673u43O/j+KFmn6wMSd6bajxrA01nLGh4z0+jn1vQ/XdNvhJlw19/J0NHv3Wx0edNvjhaRv84BtFoPYrGxQEjnxpA4c7bOD9dhuoOWUD1V8oPGMt+GPkQYgBqBHy4jRajZ3TxaVx1BlPn3J1XH14VhLmg8HzYSMRebVRCNHCzs7PJYfEOx+5x67sTpGcNtpfmlMjqDmrMeJTTazTtQ7FefDchEyKcpnCcU5FzmmiXIo67mzULz7lrCHc02ZC2IA8Oo28KKdPuP4KdxqnNVNXgAvngSuX/bVJEHUxYBy5p4UlEZMTCB85iJmHb8fMplzMPLJOEd75BCLHa2B/7tVCVopFer5GeP/LWLa3BAVN72BpaTEiVeXAyDB4Wj2V1KT1G7AlIRequroadDhEfvsF5w+W4b7OBkTaP4P9tA73/3QKl1pPYGBgAE1NTRgdHUXPW68grvYg8OcQjKxHiugpPBZyO5NzwhiD6elppKamIi0tDRs2bEBsbCy0cWsD0s+2o7GxEYODg0hJSUF8fDxKSkqQlZWF5gNvwrY2wl66KKXk5kkjvUUcnjuDnICcTYeHhzE0NISWlhb09/cjJiYG9tw4Dh06hHA4jLy8PPxhg5jKuwfvHq1HWVkZJicnYX/tBy78ow1Yy5u/M1GpIRQKoaKiApWVlWhvb8fatWv1BJApMjIytPHlFasQeHYvzONPwzzwKEpLS1FQUABwevme3ArXpCeQPC3sHp7nYePGjSgqKkJOTo7K2dnZwOwMEhISMDExAdxwIxCfABMIwixZqjH6+GsEduI/mdUqPK6Dp/A7agimpqaQnJysYMHt27cjPz8fq5anYmxsDJmZmZAg2PAsrDS1/55DYWEh6urqgMVJQDAkw8s3kJu08Ba5j+D3iT6bm5uVr1+/Hn19fYiLi8PKiyNAZxvsj92wp0+ivLxcV4nrlsAkLIIxBkay/AbSSVrKkUSRX65I+yR27dqFrq4ucVtUVVVhx44dmJ2dXVtbG+74vRdLa/fjvd3PIz09HXv27AGWpcMmXq/x3Iwn9aSwvy9yrowfmVMT+/bt0xtUXFyMiZuX4+/kFGzduhVJSUno6OjA+Pg4tmzZos1r64/BZN8Js2gxS/knYBdpJ8vxd7Z582YYYxYgMTERNZ+3AQ+Kb9M2HD7Tr/c/NzdX/51wZWxiNj0JZKyRWgb8phxWbxEb8DZ4OXfBe+ENeDuJ18UKnnsN3u63EXixHN5KuUnLM2Ge2g37zKvovjUPJ+NvwvRD2+C9dAAm/14gJlan14e18G+RECvXDWmSvGYdTJaAdnUusEaQsRp2cZJMJmkSq9fzthyYu4uAwscAsfaWFbBeABx2PvQvmhxIMgHDZCz8oU918ZFrsguZ01QXzVmNEZ9IcyeQ/zPczrg35aKR8xvRMinK6SOkCH3UNYfvomvsHPdvEVvNQacVzmkcZ4JiThcD9ZNIIRqFcOqMZS65x84UFNJdJ5JAZ1WXd2edrlbine6s6hLv7LUnkFHYnQmcgFYk/1cS6VNdFGc1RnwiXT2ZvDD2fwAAAP//8l8sFQAAAAZJREFUAwDi9kPped+rpQAAAABJRU5ErkJggg==
 variables:
-  upstream_version: 0.0.0
-  wrapper_revision: 70754272d545ca324122b2f15ebf96e6344b50bb
+  upstream_version: 5.3.0

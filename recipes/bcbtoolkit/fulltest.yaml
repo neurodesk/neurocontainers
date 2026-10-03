@@ -1,6 +1,88 @@
 name: bcbtoolkit
-version: 0.0.0
+version: 5.3.0
 tests:
-  - name: BCB command line launchers
-    command: test -x /opt/BCBToolKit/jre/bin/java && test -r /opt/BCBToolKit/sources.jar && command -v run_disco.sh && command -v tractotron_cli.sh
+  - name: Python launcher version without a home directory
+    command: HOME=/nonexistent bcbtoolkit --version && HOME=/nonexistent BCBToolKit.sh --version
+    expected_output_contains: "bcbtoolkit ${version}"
     expected_exit_code: 0
+
+  - name: Bundled analysis resources
+    command: |-
+      python3 - <<'PY'
+      from pathlib import Path
+      from bcbtoolkit import Resources
+      resources = Resources()
+      assert resources.mni152.is_file()
+      assert any(resources.tracts_dir.glob('*.nii.gz'))
+      assert any(resources.tracks_dir.glob('*.bcbtrk')) or any(resources.tracks_dir.glob('*.trk'))
+      assert any(Path('/opt/BCBToolKit/Tools/HCP1065/prob').glob('*.nii.gz'))
+      print('Bundled analysis resources available')
+      PY
+    expected_output_contains: Bundled analysis resources available
+
+  - name: Tractotron computes lesion overlap
+    command: |-
+      python3 - <<'PY'
+      import csv
+      import os
+      import subprocess
+      import tempfile
+      from pathlib import Path
+      import nibabel as nib
+      import numpy as np
+
+      with tempfile.TemporaryDirectory() as tmp:
+          root = Path(tmp)
+          (root / 'lesions').mkdir()
+          (root / 'tracts').mkdir()
+          lesion = np.zeros((3, 3, 3), dtype=np.float32)
+          lesion[1, 1, 1] = 1
+          tract = np.zeros_like(lesion)
+          tract[1, 1, 1] = 0.75
+          tract[1, 1, 2] = 0.75
+          nib.save(nib.Nifti1Image(lesion, np.eye(4)), root / 'lesions' / 'lesion.nii.gz')
+          nib.save(nib.Nifti1Image(tract, np.eye(4)), root / 'tracts' / 'tract.nii.gz')
+          env = dict(os.environ, HOME='/nonexistent', BCBTOOLKIT_HOME=str(root / 'settings'))
+          subprocess.run(['bcbtoolkit', 'tractotron', '-l', str(root / 'lesions'),
+                          '-t', str(root / 'tracts'), '-r', str(root / 'results')],
+                         cwd=tmp, env=env, check=True)
+          for name, expected in [('probability', 0.75), ('proportion', 0.5)]:
+              with (root / 'results' / (name + '.csv')).open() as handle:
+                  rows = list(csv.reader(handle))
+              assert len(rows) == 2, rows
+              assert np.isclose(float(rows[1][1]), expected), rows
+      print('Tractotron overlap verified')
+      PY
+    expected_output_contains: Tractotron overlap verified
+
+  - name: Browser interface starts without a home directory
+    command: |-
+      python3 - <<'PY'
+      import os
+      import re
+      import subprocess
+      import tempfile
+      import urllib.request
+
+      with tempfile.TemporaryDirectory() as tmp:
+          env = dict(os.environ, HOME='/nonexistent', BCBTOOLKIT_HOME=tmp, PYTHONUNBUFFERED='1')
+          process = subprocess.Popen(['bcbtoolkit', 'gui', '--no-browser', '--port', '0'],
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                     text=True, env=env)
+          try:
+              for line in process.stdout:
+                  match = re.search(r'http://127\.0\.0\.1:\d+/\?t=\S+', line)
+                  if match:
+                      with urllib.request.urlopen(match.group(), timeout=10) as response:
+                          assert response.status == 200
+                          assert b'BCBToolKit' in response.read()
+                      break
+              else:
+                  raise RuntimeError('Browser interface exited before starting')
+          finally:
+              process.terminate()
+              process.wait(timeout=10)
+      print('Browser interface available')
+      PY
+    timeout: 60
+    expected_output_contains: Browser interface available
