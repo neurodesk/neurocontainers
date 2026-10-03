@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "mricrogl 1.2.20220720": {
+      "version": "20261003",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "mricroglGUI-mricrogl 1.2.20220720": {
+      "version": "20261003",
+      "exec": "MRIcroGL",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization"
+  ]
+}
