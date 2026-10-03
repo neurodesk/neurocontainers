@@ -1,0 +1,162 @@
+name: chimera-brainparcellation
+version: 0.4.1
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/connectomicslab/chimera/blob/v0.4.1/LICENSE
+  - name: FreeSurfer software license
+    url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
+  - name: FSL license
+    url: https://fsl.fmrib.ox.ac.uk/fsl/docs/license.html
+architectures:
+  - x86_64
+variables:
+  upstream_version: 0.4.1
+  clabtoolkit_version: 0.4.2
+  ants_version: 2.4.3
+  fsl_version: 6.0.7.18
+  freesurfer_version: 7.4.1
+  ipython_version: 8.37.0
+  colorama_version: 0.4.6
+auto_update:
+  method: sources
+  container_version: chimera
+  sources:
+    - id: chimera
+      method: artifact_listing
+      url: https://api.github.com/repos/connectomicslab/chimera/tags?per_page=100
+      download_base: https://codeload.github.com/connectomicslab/chimera/tar.gz/
+      version_regex: v(?P<version>\d+(?:\.\d+)+)
+      target:
+        file: chimera_source
+        variables:
+          upstream_version: version
+    - id: clabtoolkit
+      method: pypi
+      package: clabtoolkit
+      dependency: true
+      target:
+        variable: clabtoolkit_version
+    - id: ants
+      method: github_release
+      repo: ANTsX/ANTs
+      dependency: true
+      target:
+        variable: ants_version
+        value: version
+    - id: freesurfer
+      method: github_tags
+      repo: freesurfer/freesurfer
+      dependency: true
+      target:
+        variable: freesurfer_version
+        value: version
+    - id: fsl
+      method: webpage
+      url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/manifest.json
+      version_regex: '"latest"\s*:\s*"(?P<version>\d+(?:\.\d+)+)"'
+      dependency: true
+      target:
+        variable: fsl_version
+        value: version
+    - id: miniconda_installer
+      method: http_digest
+      url: https://repo.anaconda.com/miniconda/Miniconda3-py312_25.5.1-0-Linux-x86_64.sh
+      dependency: true
+      target:
+        file: miniconda_installer
+    - id: ipython
+      method: pypi
+      package: ipython
+      dependency: true
+      target:
+        variable: ipython_version
+    - id: colorama
+      method: pypi
+      package: colorama
+      dependency: true
+      target:
+        variable: colorama_version
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - python3
+        - libncurses5
+        - libgl1
+        - libxt6
+        - libxrender1
+        - libgomp1
+    - template:
+        name: fsl
+        version: '{{ context.fsl_version }}'
+    - template:
+        name: ants
+        version: '{{ context.ants_version }}'
+    - template:
+        name: freesurfer
+        version: '{{ context.freesurfer_version }}'
+        exclude_paths: lib/cuda lib/qt subjects/bert subjects/cvs_avg35 subjects/cvs_avg35_inMNI152
+    - run:
+        - bash {{ get_file("miniconda_installer") }} -b -p /opt/chimera-env
+    - run:
+        - mkdir -p /opt/chimera-source /opt/chimera-bin
+        - tar -xzf {{ get_file("chimera_source") }} -C /opt/chimera-source --strip-components=1
+        - /opt/chimera-env/bin/pip install --no-cache-dir clabtoolkit=={{ context.clabtoolkit_version }} ipython=={{ context.ipython_version
+          }} colorama=={{ context.colorama_version }} /opt/chimera-source
+        - /opt/chimera-env/bin/pip check
+        - cp -r /opt/chimera-source/chimera/data /opt/chimera-env/lib/python3.12/site-packages/chimera/
+        - install -m 755 {{ get_file("chimera-container.py") }} /opt/chimera-bin/chimera
+        - /opt/chimera-env/bin/python {{ get_file("configure-chimera.py") }} {{ context.ants_version }} {{ context.fsl_version }} {{
+          context.freesurfer_version }}
+    - environment:
+        PATH: /opt/chimera-bin:/opt/chimera-env/bin:$PATH
+        TEMPLATEFLOW_HOME: /tmp/chimera-templateflow
+        SUBJECTS_DIR: /tmp/chimera-subjects
+        MPLBACKEND: Agg
+files:
+  - name: chimera_source
+    url: https://codeload.github.com/connectomicslab/chimera/tar.gz/v0.4.1
+    sha256: 5b6faa67b9078db74eb519df3655a29f74a33183a50fa22a1805d91cb1cde666
+  - name: chimera-container.py
+    filename: chimera-container.py
+  - name: miniconda_installer
+    url: https://repo.anaconda.com/miniconda/Miniconda3-py312_25.5.1-0-Linux-x86_64.sh
+    sha256: b99e5bcdf8cd2df9ffd11019eac8a20cf84598267941500935d62e14a0e2a6f6
+  - name: configure-chimera.py
+    filename: configure-chimera.py
+deploy:
+  bins:
+    - chimera
+categories:
+  - image segmentation
+  - structural imaging
+readme: |
+  CHIMERA combines atlases into custom brain parcellations. This is
+  connectomicslab's brain-parcellation tool, distinct from UCSF Chimera.
+
+  Run `chimera --help` or `chimera --regions`.
+  The image includes Python 3.12, clabtoolkit {{ context.clabtoolkit_version }},
+  ANTs {{ context.ants_version }}, FSL {{ context.fsl_version }} and FreeSurfer {{ context.freesurfer_version }}.
+  All packaged atlas and configuration assets are installed under /opt.
+
+  Supply your FreeSurfer license as a mounted file and set `FS_LICENSE` to its
+  container path. Set `TEMPLATEFLOW_HOME` to a writable mounted cache for atlas
+  codes that use TemplateFlow. The default cache is temporary storage.
+  Use writable mounted BIDS, derivatives and FreeSurfer subjects directories.
+  FreeSurfer's reference subjects must be copied into that subjects directory
+  before atlas preparation because CHIMERA may write annotations there.
+
+  An initial local-atlas route is:
+  `chimera --bidsdir /data/bids --derivdir /data/derivatives --freesurferdir /data/subjects --parcodes HFFFFFFFFF`.
+  The HCP cortical atlas is bundled, and F selects standard FreeSurfer regions.
+  This route requires no TemplateFlow atlas download. Supply a valid license and
+  prepare the subjects directory, including a writable copy of fsaverage.
+  The launcher creates a temporary pipeline configuration using FS_LICENSE.
+  An explicit `--config` retains your configuration, including its license setting.
+
+  A full BIDS parcellation and scientific output validation remain required before
+  release acceptance. No FreeSurfer license is embedded in the image.
+  https://github.com/connectomicslab/chimera
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABDklEQVR4nO2ZwQ3CMBAECUoFFEERfGiEN0XxphE644EU2XEc34lbVod2flgW3MSJveGm0/lyyMyRXcC3SICNBNhIgI0E2My4r769HuXH5/WO+BXUCqyq3xwJASLQqxXhEC+wX2W4Q7CApb5Yh/S7kATYSKDGclrFnmjxK7BfX/h5DLmFelUi0gTqGWhrBWWhSX+rkEkv4Hgf8OZ79PwP1hXw5nv0/AWTgDffo8dLxgLcKz10GAh48z16fkv6XUgCbP5dwJvv0fNbxivgzffo+StMt5A336PHS6zPwO+vtDEL6X2ATXoB9Qc6qD9gRf2BGvUH3EiAjQRq1B9wo/5AB/UHrGgXYiMBNhJgIwE2b7vRiUs1dq+AAAAAAElFTkSuQmCC

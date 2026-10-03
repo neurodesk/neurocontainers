@@ -1,0 +1,33 @@
+name: chimera-brainparcellation
+version: 0.4.1
+upstream_version: 0.4.1
+tests:
+  - name: software version
+    command: python -c "from importlib.metadata import version; import sys; assert sys.version_info >= (3, 11);
+      print(version('chimera-brainparcellation'))"
+    expected_output_contains: ${upstream_version}
+  - name: CLI help
+    command: chimera --help
+    expected_output_contains: --parcodes
+  - name: region catalogue
+    command: chimera --regions
+    expected_output_contains: Available parcellations
+  - name: packaged atlas assets
+    command: |-
+      python - <<'PY'
+      from pathlib import Path
+      import chimera
+      from chimera.config_manager import load_parcellations_info
+      parcels, regions = load_parcellations_info()
+      assert len(parcels) == 10 and regions
+      root = Path(chimera.__file__).parent
+      assert list((root / 'data' / 'annot_atlases').glob('*.annot'))
+      assert list((root / 'data' / 'gcs_atlases').glob('*.gcs'))
+      assert list((root / 'config' / 'supraregions').glob('*.tsv'))
+      assert parcels['Cortical']['H']['source'] == 'local'
+      print('atlas and region resources load')
+      PY
+    expected_output_contains: atlas and region resources load
+  - name: imaging dependencies
+    command: command -v recon-all && command -v antsRegistration && command -v fslmaths
+    expected_output_contains: fslmaths
