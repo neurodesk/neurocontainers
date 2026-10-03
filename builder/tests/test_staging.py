@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import io
 import os
+import shlex
 import stat
+import subprocess
+import tarfile
 from pathlib import Path
 import urllib.error
 import urllib.request
 
 import pytest
+import yaml
 
 from builder.cache import (
     DEFAULT_TIMEOUT_SECONDS,
@@ -17,7 +21,9 @@ from builder.cache import (
     get_guest_filename,
 )
 from builder.config import default_config, resolve_recipe
+from builder.ir import RunWithMounts
 from builder.recipe import compile_recipe
+from builder.template_backend import TemplateMethod
 from builder.staging import (
     DeclaredFile,
     StagingPlan,
@@ -268,3 +274,126 @@ def test_restaging_a_different_source_does_not_modify_old_hardlinks(tmp_path: Pa
     assert source.read_text() == "original"
     assert stat.S_IMODE(source.stat().st_mode) == 0o644
     assert not source.samefile(staged / "input.txt")
+
+
+@pytest.mark.parametrize("directive_kind", ["run", "template"])
+def test_macro_file_commands_use_staged_bytes_and_local_contexts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, directive_kind: str
+) -> None:
+    monkeypatch.setattr(TemplateMethod, "install_dependencies", lambda self: ":")
+    macro_dir = tmp_path / "macros" / "openrecon_i2i"
+    macro_dir.mkdir(parents=True)
+    archive = macro_dir / "archive.tar.gz"
+    with tarfile.open(archive, "w:gz") as handle:
+        payload = b"installed from the declared archive\n"
+        entry = tarfile.TarInfo("freesurfer/bin/recon-all")
+        entry.size = len(payload)
+        handle.addfile(entry, io.BytesIO(payload))
+    archive_bytes = archive.read_bytes()
+    output = '{{ get_local("src") }}/installed'
+    if directive_kind == "run":
+        directive = {"run": [
+            f'mkdir -p "{output}"',
+            'tar -xzf "{{ get_file("archive") }}" '
+            f'-C "{output}" --strip-components=1',
+        ]}
+    else:
+        directive = {"template": {
+            "name": "freesurfer", "version": "7.4.1",
+            "archive": '{{ get_file("archive") }}', "install_path": output,
+        }}
+    (macro_dir / "helpers.yaml").write_text(yaml.safe_dump({"directives": [
+        {"file": {"name": "archive", "filename": "archive.tar.gz"}},
+        directive, directive,
+    ]}))
+    recipe = yaml.safe_load(
+        (Path(__file__).parent / "fixtures/conditional/build.yaml").read_text()
+    )
+    recipe["build"]["directives"] = [{"include": "macros/openrecon_i2i/helpers.yaml"}]
+    (tmp_path / "build.yaml").write_text(yaml.safe_dump(recipe))
+    local_dir = tmp_path / "local"
+    local_dir.mkdir()
+    compiled = compile_recipe(
+        tmp_path, architecture="x86_64", include_dirs=(tmp_path,), local_keys={"src"}
+    )
+    commands = [
+        item for item in compiled.definition.directives
+        if isinstance(item, RunWithMounts)
+    ]
+    assert len(commands) == 2
+    for _ in range(2):
+        cache = materialize_plan(
+            compiled.staging_plan, tmp_path, tmp_path / "build",
+            http_cache_dir=tmp_path / "http",
+        )
+        for item in commands:
+            command = item.command
+            for mount in item.mounts:
+                fields = dict(
+                    part.split("=", 1)
+                    for part in mount.removeprefix("--mount=").split(",")
+                    if "=" in part
+                )
+                source = (
+                    cache / fields["source"].lstrip("/")
+                    if fields["from"] == "neurocontainer-cache" else local_dir
+                )
+                command = command.replace(fields["target"], str(source))
+            subprocess.run(["bash", "-e", "-c", command], check=True)
+        assert (local_dir / "installed/bin/recon-all").read_bytes() == payload
+        assert archive.read_bytes() == archive_bytes
+
+
+@pytest.mark.parametrize("existing_cache", [False, True])
+def test_colliding_download_names_resolve_to_their_staged_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing_cache: bool
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "build-home")
+    recipe = yaml.safe_load(
+        (Path(__file__).parent / "fixtures/conditional/build.yaml").read_text()
+    )
+    urls = [
+        "https://example.org/first/input.txt",
+        "https://example.org/second/input.txt",
+    ]
+    recipe["files"] = [
+        {"name": name, "url": url}
+        for name, url in zip(["first", "second"], urls)
+    ]
+    recipe["build"]["directives"] = [{"run": [
+        'cat "{{ get_file("first") }}" "{{ get_file("second") }}" "{{ get_file("first") }}"',
+    ]}]
+    (tmp_path / "build.yaml").write_text(yaml.safe_dump(recipe))
+    http = HttpCache(tmp_path / "http")
+    for url, payload in zip(urls, ["first\n", "second\n"]):
+        http.path_for(url).write_text(payload)
+    if existing_cache:
+        initial = compile_recipe(tmp_path, architecture="x86_64")
+        cache_id = next(iter(initial.staging_plan.cache_mounts))
+        old = (
+            Path.home() / ".cache/neurocontainers/build-context"
+            / cache_id / "input.txt"
+        )
+        old.parent.mkdir(parents=True)
+        old.write_text("older build\n")
+    compiled = compile_recipe(tmp_path, architecture="x86_64")
+    item = next(
+        item for item in compiled.definition.directives
+        if isinstance(item, RunWithMounts)
+    )
+    for _ in range(2):
+        cache = materialize_plan(
+            compiled.staging_plan, tmp_path, tmp_path / "build",
+            http_cache_dir=http.root,
+        )
+        command = item.command.replace("/.neurocontainer-cache/", str(cache) + "/")
+        result = subprocess.run(
+            ["bash", "-e", "-c", command], check=True,
+            capture_output=True, text=True,
+        )
+        assert result.stdout == "first\nsecond\nfirst\n"
+        staged_paths = shlex.split(command)[1:]
+        assert staged_paths[0] == staged_paths[2]
+        assert staged_paths[0] != staged_paths[1]
+    if existing_cache:
+        assert old.read_text() == "older build\n"
