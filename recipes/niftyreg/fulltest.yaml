@@ -1,5 +1,5 @@
 # niftyreg container test suite
-# Tests for NiftyReg v1.4.0 - Medical Image Registration Toolkit
+# Tests for NiftyReg v2.1.2 - Medical Image Registration Toolkit
 #
 # NiftyReg contains tools for rigid, affine, and non-linear registration of 2D/3D images.
 # Main commands:
@@ -21,7 +21,7 @@
 #   J. Med. Img. 1(2) 024003. doi:10.1117/1.JMI.1.2.024003
 
 name: niftyreg
-version: 1.4.0
+version: 2.1.2
 
 required_files:
   - dataset: ds000001
@@ -47,42 +47,42 @@ tests:
   - name: reg_aladin version
     description: Verify reg_aladin binary runs and reports version
     command: reg_aladin --version 2>&1
-    expected_output_contains: "1.5.69"
+    expected_output_contains: "${version}"
 
   - name: reg_f3d version
     description: Verify reg_f3d binary runs and reports version
     command: reg_f3d --version 2>&1
-    expected_output_contains: "1.5.69"
+    expected_output_contains: "${version}"
 
   - name: reg_resample version
     description: Verify reg_resample binary runs and reports version
     command: reg_resample --version 2>&1
-    expected_output_contains: "1.5.69"
+    expected_output_contains: "${version}"
 
   - name: reg_tools version
     description: Verify reg_tools binary runs and reports version
     command: reg_tools --version 2>&1
-    expected_output_contains: "1.5.69"
+    expected_output_contains: "${version}"
 
   - name: reg_transform version
     description: Verify reg_transform binary runs and reports version
     command: reg_transform --version 2>&1
-    expected_output_contains: "1.5.69"
+    expected_output_contains: "${version}"
 
   - name: reg_jacobian version
     description: Verify reg_jacobian binary runs and reports version
     command: reg_jacobian --version 2>&1
-    expected_output_contains: "1.5.69"
+    expected_output_contains: "${version}"
 
   - name: reg_measure version
     description: Verify reg_measure binary runs and reports version
     command: reg_measure --version 2>&1
-    expected_output_contains: "1.5.69"
+    expected_output_contains: "${version}"
 
   - name: reg_average version
     description: Verify reg_average binary runs and reports version
     command: reg_average --version 2>&1
-    expected_output_contains: "1.5.69"
+    expected_output_contains: "${version}"
 
   # ==========================================================================
   # REG_TOOLS - Image Processing Utilities
