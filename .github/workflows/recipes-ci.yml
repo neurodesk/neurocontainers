@@ -159,5 +159,9 @@ jobs:
             check/${{ matrix.container }}/test-output/*.json
             check/${{ matrix.container }}/test-output/*.jsonl
             check/${{ matrix.container }}/test-output/*.log
+            check/${{ matrix.container }}/test-output/fulltest-run-*/*.json
+            check/${{ matrix.container }}/test-output/fulltest-run-*/*.jsonl
+            check/${{ matrix.container }}/test-output/fulltest-run-*/*.log
+            check/${{ matrix.container }}/test-output/fulltest-run-*/*.yaml
           retention-days: 7
           if-no-files-found: ignore

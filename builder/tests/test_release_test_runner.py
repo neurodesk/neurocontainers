@@ -348,31 +348,19 @@ def test_run_fulltest_release_uses_release_image_basename(
             },
         }
     ]
-    assert "container:" not in (
-        output_dir / "fulltest-suite-neurodesktop.yaml"
-    ).read_text(encoding="utf-8")
+    command = run_commands[0]
+    suite_path = Path(command[3])
+    run_dir = suite_path.parent
+    assert "container:" not in suite_path.read_text(encoding="utf-8")
+    assert run_dir.parent == output_dir
     assert run_commands == [
         [
-            "uv",
-            "run",
-            "builder/run_tests.py",
-            str(output_dir / "fulltest-suite-neurodesktop.yaml"),
-            "-c",
-            str(output_dir / "fulltest-containers"),
-            "--container",
-            str(
-                output_dir
-                / "fulltest-containers"
-                / "neurodesktop_20260428_arm64_20260519.simg"
-            ),
-            "-o",
-            str(output_dir / "fulltest-raw-neurodesktop.json"),
-            "--log",
-            str(output_dir / "fulltest-neurodesktop.log"),
-            "--jsonl",
-            str(output_dir / "fulltest-neurodesktop.jsonl"),
-            "--work-dir",
-            str(output_dir / "fulltest-work-neurodesktop"),
+            "uv", "run", str(tmp_path / "builder/run_tests.py"), str(suite_path),
+            "--container", str(source),
+            "-o", str(run_dir / "fulltest-raw-neurodesktop.json"),
+            "--log", str(run_dir / "fulltest-neurodesktop.log"),
+            "--jsonl", str(run_dir / "fulltest-neurodesktop.jsonl"),
+            "--work-dir", str(run_dir / "work"),
         ]
     ]
 
@@ -438,7 +426,8 @@ def test_run_fulltest_release_uses_local_candidate(tmp_path: Path, monkeypatch) 
     )
 
     assert status == "passed"
-    assert (output_dir / "fulltest-containers" / source.name).is_file()
+    assert source.read_text(encoding="utf-8") == "simg"
+    assert not list(output_dir.rglob("*.simg"))
 
 
 def test_run_fulltest_release_falls_back_to_docker_conversion(
@@ -733,7 +722,7 @@ def test_main_publishes_child_exit_with_completed_results(
 
 
 @pytest.fixture
-def repeated_fulltest(tmp_path: Path, monkeypatch):
+def repeated_fulltest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     source = tmp_path / "candidate.simg"
     source.write_bytes(b"original image")
     config = tmp_path / "fulltest.yaml"
@@ -743,15 +732,15 @@ def repeated_fulltest(tmp_path: Path, monkeypatch):
     behavior = {"raw": True, "jsonl": True, "exit": 0}
 
     class Tester:
-        def select_runtime(self, runtime):
+        def select_runtime(self, runtime: str) -> SimpleNamespace:
             return SimpleNamespace(name="apptainer")
 
-        def run_test_suite(self, container, *args, **kwargs):
+        def run_test_suite(self, container: str, *args, **kwargs) -> dict[str, object]:
             deploy_inputs.append(container)
             return {"total_tests": 0, "passed": 0, "failed": 0,
                     "skipped": 0, "test_results": []}
 
-    def child(command, **kwargs):
+    def child(command: list[str], **kwargs) -> SimpleNamespace:
         commands.append(command)
         if behavior["raw"]:
             Path(command[command.index("-o") + 1]).write_text(json.dumps({
@@ -780,7 +769,9 @@ def repeated_fulltest(tmp_path: Path, monkeypatch):
 
 
 @pytest.mark.parametrize("child_exit", [0, 2])
-def test_repeated_fulltest_requires_current_results(repeated_fulltest, child_exit):
+def test_repeated_fulltest_requires_current_results(
+    repeated_fulltest: SimpleNamespace, child_exit: int,
+) -> None:
     run = repeated_fulltest
     assert main(run.args) == 0
     run.behavior.update(raw=False, jsonl=False, exit=child_exit)
@@ -790,7 +781,9 @@ def test_repeated_fulltest_requires_current_results(repeated_fulltest, child_exi
     assert f"exit {child_exit}" in results["test_results"][0]["stderr"]
 
 
-def test_repeated_fulltest_does_not_borrow_jsonl(repeated_fulltest):
+def test_repeated_fulltest_does_not_borrow_jsonl(
+    repeated_fulltest: SimpleNamespace,
+) -> None:
     run = repeated_fulltest
     assert main(run.args) == 0
     run.behavior["jsonl"] = False
@@ -800,7 +793,9 @@ def test_repeated_fulltest_does_not_borrow_jsonl(repeated_fulltest):
     assert test["stderr"] == ""
 
 
-def test_repeated_fulltest_retains_private_artifacts_and_workspace(repeated_fulltest):
+def test_repeated_fulltest_retains_private_artifacts_and_workspace(
+    repeated_fulltest: SimpleNamespace,
+) -> None:
     run = repeated_fulltest
     assert main(run.args) == 0
     previous = json.loads((run.output / "results.json").read_text())["fulltest_artifacts"]
@@ -820,8 +815,11 @@ def test_repeated_fulltest_retains_private_artifacts_and_workspace(repeated_full
 
 @pytest.mark.parametrize("location", ["legacy", "external", "symlink"])
 def test_fulltest_uses_original_candidate_without_staging(
-    repeated_fulltest, tmp_path, monkeypatch, location,
-):
+    repeated_fulltest: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    location: str,
+) -> None:
     run = repeated_fulltest
     monkeypatch.chdir(tmp_path)
     source = (run.output / "fulltest-containers" if location == "legacy"
@@ -837,6 +835,9 @@ def test_fulltest_uses_original_candidate_without_staging(
         source.symlink_to(target)
         run.config.write_text("container: candidate.simg\ntests: []\n")
     run.args[run.args.index("--output-dir") + 1] = "output"
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    run.args[run.args.index("--repo-root") + 1] = str(checkout)
     for candidate in (source, second):
         run.args[run.args.index("--candidate-container") + 1] = str(candidate.relative_to(tmp_path))
         assert main(run.args) == 0
@@ -847,6 +848,7 @@ def test_fulltest_uses_original_candidate_without_staging(
         for flag in ("-o", "--log", "--jsonl", "--work-dir"):
             assert Path(command[command.index(flag) + 1]).is_absolute()
         assert Path(command[3]).is_absolute()
+        assert Path(command[2]) == checkout / "builder/run_tests.py"
     assert source.read_bytes() == b"first image"
     assert second.read_bytes() == b"second image"
     assert list(run.output.rglob("*.simg")) == ([source] if location == "legacy" else [])

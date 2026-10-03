@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -215,16 +215,16 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
     """Run deploy and fulltest checks against a release or local candidate."""
     release_file = Path(args.release_file)
     test_config = Path(args.test_config)
-    output_dir = Path(args.output_dir)
+    output_dir = Path(args.output_dir).absolute()
     results_path = Path(args.results_path)
-    containers_dir = output_dir / "fulltest-containers"
-    raw_results_path = output_dir / f"fulltest-raw-{args.recipe}.json"
-    fulltest_log_path = output_dir / f"fulltest-{args.recipe}.log"
-    fulltest_jsonl_path = output_dir / f"fulltest-{args.recipe}.jsonl"
-    suite_path = output_dir / f"fulltest-suite-{args.recipe}.yaml"
-    fulltest_work_dir = output_dir / f"fulltest-work-{args.recipe}"
-    containers_dir.mkdir(parents=True, exist_ok=True)
-    fulltest_work_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    run_dir = Path(tempfile.mkdtemp(prefix="fulltest-run-", dir=output_dir))
+    raw_results_path = run_dir / f"fulltest-raw-{args.recipe}.json"
+    fulltest_log_path = run_dir / f"fulltest-{args.recipe}.log"
+    fulltest_jsonl_path = run_dir / f"fulltest-{args.recipe}.jsonl"
+    suite_path = run_dir / f"fulltest-suite-{args.recipe}.yaml"
+    fulltest_work_dir = run_dir / "work"
+    fulltest_work_dir.mkdir()
 
     tester = ContainerTester()
     runtime = tester.select_runtime(args.runtime)
@@ -272,11 +272,8 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
                     f"Unable to download release container {args.recipe}:{args.version}; "
                     f"Docker-to-SIMG fallback failed: {exc}"
                 ) from exc
-    source = Path(container_ref)
-    target = containers_dir / source.name
-    if source.resolve() != target.resolve():
-        shutil.copy2(source, target)
-    container_ref = str(target)
+    source = Path(container_ref).absolute()
+    container_ref = str(source.resolve())
 
     suite = yaml.safe_load(test_config.read_text(encoding="utf-8")) or {}
     suite["name"] = suite.get("name") or args.recipe
@@ -287,7 +284,7 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
     # stale name is worth reporting rather than silently overriding.
     declared = str(suite.pop("container", "") or "").strip()
     suite.pop("pin_container", None)
-    resolved_name = Path(container_ref).name
+    resolved_name = source.name
     if declared and not is_placeholder_reference(declared) and declared != resolved_name:
         raise RuntimeError(
             f"{test_config} declares container '{declared}' but the release artifact "
@@ -305,10 +302,8 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
     command = [
         "uv",
         "run",
-        "builder/run_tests.py",
+        str(Path(args.repo_root).absolute() / "builder/run_tests.py"),
         str(suite_path),
-        "-c",
-        str(containers_dir),
         "--container",
         str(container_ref),
         "-o",
@@ -321,7 +316,7 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
         str(fulltest_work_dir),
     ]
     proc = subprocess.run(command, cwd=args.repo_root, text=True, check=False)
-    if proc.returncode != 0 and not raw_results_path.is_file():
+    if not raw_results_path.is_file():
         raise RuntimeError(f"run_tests.py failed before writing results: exit {proc.returncode}")
 
     raw = json.loads(raw_results_path.read_text(encoding="utf-8"))
