@@ -1,0 +1,98 @@
+name: nobrainer
+version: 1.2.1
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/neuronets/nobrainer/blob/{{ context.nobrainer_version }}/LICENSE
+architectures:
+  - x86_64
+variables:
+  nobrainer_version: 1.2.1
+  tensorflow_version: 2.15.1
+  tensorflow_probability_version: 0.23.0
+  tensorflow_addons_version: 0.23.0
+  numpy_version: 1.26.4
+auto_update:
+  method: sources
+  container_version: nobrainer
+  sources:
+    - id: nobrainer
+      method: pypi
+      package: nobrainer
+      target:
+        variable: nobrainer_version
+        fulltest_variable: nobrainer_version
+    - id: tensorflow
+      method: pypi
+      package: tensorflow
+      target:
+        variable: tensorflow_version
+        fulltest_variable: tensorflow_version
+      dependency: true
+      version_regex: (?P<version>2\.15\.\d+)
+    - id: tensorflow-probability
+      method: pypi
+      package: tensorflow-probability
+      target:
+        variable: tensorflow_probability_version
+        fulltest_variable: tensorflow_probability_version
+      dependency: true
+      version_regex: (?P<version>0\.23\.\d+)
+    - id: tensorflow-addons
+      method: pypi
+      package: tensorflow-addons
+      target:
+        variable: tensorflow_addons_version
+        fulltest_variable: tensorflow_addons_version
+      dependency: true
+      version_regex: (?P<version>0\.23\.\d+)
+    - id: numpy
+      method: pypi
+      package: numpy
+      target:
+        variable: numpy_version
+        fulltest_variable: numpy_version
+      dependency: true
+      version_regex: (?P<version>1\.26\.\d+)
+build:
+  kind: neurodocker
+  base-image: debian:bookworm
+  pkg-manager: apt
+  directives:
+    - install:
+        - ca-certificates
+        - python3
+        - python3-venv
+        - libgomp1
+    - run:
+        - python3 -m venv /opt/nobrainer
+        - /opt/nobrainer/bin/python -m pip install --no-cache-dir 'nobrainer=={{ context.nobrainer_version }}' 'tensorflow=={{ context.tensorflow_version }}' 'tensorflow-probability=={{
+          context.tensorflow_probability_version }}' 'tensorflow-addons=={{ context.tensorflow_addons_version }}' 'numpy=={{ context.numpy_version }}'
+        - /opt/nobrainer/bin/python -m pip check
+    - environment:
+        PATH: /opt/nobrainer/bin:$PATH
+        CUDA_VISIBLE_DEVICES: '-1'
+        TF_CPP_MIN_LOG_LEVEL: '2'
+deploy:
+  bins:
+    - nobrainer
+  path:
+    - /opt/nobrainer/bin
+categories:
+  - machine learning
+  - image segmentation
+readme: |
+  ## nobrainer/{{ context.version }}
+
+  Nobrainer is a framework for 3D neural network training and prediction.
+  This stable TensorFlow release runs on the CPU in a Python 3.11 environment.
+  Run `nobrainer --help` and `nobrainer predict --help` for the command line,
+  or import `nobrainer` from `/opt/nobrainer/bin/python`.
+
+  Supply your own model with `nobrainer predict --model /path/to/model input.nii.gz output.nii.gz`.
+  The stable version accepts Keras HDF5 and TensorFlow SavedModel models.
+  Pretrained model weights are not bundled. Consult the
+  [upstream trained-model catalogue](https://github.com/neuronets/trained-models)
+  and check each model's license before use.
+
+  [Stable documentation](https://github.com/neuronets/nobrainer/tree/1.2.1)
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAACIUlEQVR4nO1ZsXHDMAy0c1kiI6SOF8gYcakdXOVU2a60g8us4QXSawStkYJ3PBwpksCDMKMz/1xYtvT4B0kQkvZfH5fdlvHSWoAW3UBrdAOt0Q20RjfQGt1Aa7xakI7TkPrrfLrVjbWv1cxlRKdQxUwFA4B0CqUNlQGldArYBm6Ao97LEp0sAliFKuZeyYkYsFAPM4sN2KnH+GUGAvb3zzf3EZEUGUQeBAYobxAVsJFn4HvgGrCeOXBEZBGnks0fBHrm8XAFGDxYBvLJoAqkcNemGDiDoO1G8wryF/qrfn6/YQFlA3Ea5vviv/vYVFARVDpVT5lT0QNUuB+gIjjtgD9Hk3gP0MB8X2i25vviU5XxcD7d3L/jNIzTEDDE6eeg0MxpuvxxGlLfYc4Y9W8pV4dCoz4Pk3viVZVu2lSPZXVTbyQ3hpUBv17pLxaBTAyktMau9MAfq/i+hZY/qi+uPO7QV9IMDx+IgaDlcod0G07N/tgG3cscj9RGhQdbHOkU1MbxcFXux4U1EE/ZIP20qxGVnVQTFXfU+WWDjwCNimXRXaUcBLwKuahBOwnzwCgbCEZwtZfeyRdf6vzg92LZ3fzjdZaBeBCqdMJFHs6uhy9iTHR1Hu4UMupk9BEFa+CRHvixZIv4MR5EUcRVyNqDlB8po3YeAGZwH7Dw8NA3NHC86mzP/ZaSYsPviWNs8k19KzxHN/qf0Q20RjfQGt1Aa/wBO84lttHeu4QAAAAASUVORK5CYII=
