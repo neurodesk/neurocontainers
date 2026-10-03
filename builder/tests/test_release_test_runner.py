@@ -865,3 +865,105 @@ def test_fulltest_uses_original_candidate_without_staging(
     assert source.read_bytes() == b"first image"
     assert second.read_bytes() == b"second image"
     assert list(run.output.rglob("*.simg")) == ([source] if location == "legacy" else [])
+
+
+@pytest.mark.parametrize("mode,child_exit", [
+    ("missing", 0), ("missing", 2), ("malformed", 2),
+    ("invalid-shape", 2), ("launch", None),
+])
+def test_main_preserves_execution_failure_diagnostics(
+    repeated_fulltest: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mode: str,
+    child_exit: int | None,
+) -> None:
+    from workflows import release_test_runner as runner
+
+    run = repeated_fulltest
+    assert main(run.args) == 0
+    previous = json.loads((run.output / "results.json").read_text())["fulltest_artifacts"]
+    github_output = Path(run.args[run.args.index("--github-output") + 1])
+    github_output.write_text("")
+    capsys.readouterr()
+    deploy = {"name": "deploy", "status": "failed", "stdout": "checked launchers",
+              "stderr": "missing launcher", "return_code": 1}
+    monkeypatch.setattr(runner.ContainerTester, "run_test_suite", lambda *a, **k: {
+        "total_tests": 1, "passed": 0, "failed": 1, "skipped": 0,
+        "test_results": [deploy],
+    })
+    current = {}
+
+    def child(command: list[str], **kwargs) -> SimpleNamespace:
+        current.update({
+            "raw_json": Path(command[command.index("-o") + 1]),
+            "jsonl": Path(command[command.index("--jsonl") + 1]),
+            "log": Path(command[command.index("--log") + 1]),
+            "suite": Path(command[3]),
+        })
+        if mode == "launch":
+            raise OSError("cannot launch child")
+        current["jsonl"].write_text('{"test":"partial","stdout":"current diagnostic"}\n')
+        current["log"].write_text("current log diagnostic\n")
+        if mode == "malformed":
+            current["raw_json"].write_text("{malformed")
+        elif mode == "invalid-shape":
+            current["raw_json"].write_text("[]")
+        return SimpleNamespace(returncode=child_exit)
+
+    monkeypatch.setattr(runner.subprocess, "run", child)
+    assert main(run.args) == 1
+    captured = capsys.readouterr()
+    results = json.loads((run.output / "results.json").read_text())
+    assert results["container"] == str(run.source.resolve())
+    assert (results["total_tests"], results["passed"], results["failed"], results["skipped"]) == (2, 0, 2, 0)
+    assert results["test_results"][0] == deploy
+    assert len(results["test_results"]) == 2
+    failure = results["test_results"][1]
+    assert failure["status"] == "failed"
+    assert failure["return_code"] == (1 if child_exit is None else child_exit)
+    assert failure["stderr"] in captured.err
+    assert github_output.read_text() == f"status=failed\nreason={failure['stderr']}\n"
+    artifacts = results["fulltest_artifacts"]
+    assert artifacts == {key: str(path) for key, path in current.items() if path.is_file()}
+    assert set(artifacts.values()).isdisjoint(previous.values())
+    assert run.source.read_bytes() == b"original image"
+    assert (run.output / "status-sample.txt").read_text() == "failed\n"
+    report = (run.output / "test-report-sample.md").read_text()
+    comment = (run.output / "comment-sample.md").read_text()
+    assert "missing launcher" in report and "missing launcher" in comment
+    assert failure["stderr"] in report and failure["stderr"] in comment
+    assert all(path in report for path in artifacts.values())
+
+
+def test_main_publication_failure_preserves_saved_results(
+    repeated_fulltest: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from workflows import reporting
+
+    run = repeated_fulltest
+    write_text = reporting.write_text
+    saved_results = []
+
+    def fail_report(path: Path, text: str) -> None:
+        if path.name == "test-report-sample.md":
+            raise OSError("report disk failure")
+        write_text(path, text)
+        if path.name == "results.json":
+            saved_results.append(json.loads(text))
+
+    monkeypatch.setattr(reporting, "write_text", fail_report)
+    assert main(run.args) == 1
+    assert len(saved_results) == 1
+    results = json.loads((run.output / "results.json").read_text())
+    assert results == saved_results[0]
+    assert results["container"] == str(run.source.resolve())
+    assert results["test_results"][0]["name"] == "help"
+    assert results["total_tests"] == results["passed"] == 1
+    assert results["failed"] == 0
+    assert all(Path(path).is_file() for path in results["fulltest_artifacts"].values())
+    assert "report disk failure" in capsys.readouterr().err
+    github_output = Path(run.args[run.args.index("--github-output") + 1])
+    assert github_output.read_text() == "status=failed\nreason=report disk failure\n"
