@@ -1,0 +1,71 @@
+# skan container test suite
+#
+# skan analyses skeletonised images: it builds the pixel graph of a skeleton
+# and summarises its branches. These tests exercise that contract on small
+# synthetic skeletons, so they need no external data.
+#
+# Documentation: https://skeleton-analysis.org/stable/
+
+name: skan
+version: "0.13.1"
+
+tests:
+  - name: Import skan and check version
+    description: Verify the package imports and reports the container version
+    command: python -c "import skan; print(f'skan {skan.__version__}')"
+    expected_output_contains: "skan ${version}"
+    expected_exit_code: 0
+
+  - name: Summarise a straight skeleton
+    description: A 10-pixel line is one endpoint-to-endpoint branch of length 9
+    command: |
+      python -c "
+      import numpy as np
+      from skan import Skeleton, summarize
+      image = np.zeros((5, 12), dtype=bool)
+      image[2, 1:11] = True
+      branches = summarize(Skeleton(image), separator='-')
+      assert len(branches) == 1, branches
+      assert abs(branches['branch-distance'].iloc[0] - 9.0) < 1e-6, branches
+      assert branches['branch-type'].iloc[0] == 0, branches
+      print('straight skeleton summarised')
+      "
+    expected_output_contains: "straight skeleton summarised"
+    expected_exit_code: 0
+
+  - name: Summarise a branching skeleton with physical spacing
+    description: A skeletonised cross yields four junction-to-endpoint branches scaled by the pixel spacing
+    command: |
+      python -c "
+      import numpy as np
+      from skimage.morphology import skeletonize
+      from skan import Skeleton, summarize
+      image = np.zeros((41, 41), dtype=bool)
+      image[19:22, 4:37] = True
+      image[4:37, 19:22] = True
+      skeleton = skeletonize(image)
+      unit = summarize(Skeleton(skeleton), separator='-')
+      scaled = summarize(Skeleton(skeleton, spacing=0.5), separator='-')
+      assert len(unit) == 4, unit
+      assert (unit['branch-type'] == 1).all(), unit
+      assert np.allclose(scaled['branch-distance'], unit['branch-distance'] * 0.5)
+      print('branching skeleton summarised')
+      "
+    expected_output_contains: "branching skeleton summarised"
+    expected_exit_code: 0
+
+  - name: Analyse a 3D skeleton
+    description: Skeleton analysis works on volumetric data
+    command: |
+      python -c "
+      import numpy as np
+      from skan import Skeleton, summarize
+      volume = np.zeros((7, 7, 12), dtype=bool)
+      volume[3, 3, 1:11] = True
+      branches = summarize(Skeleton(volume), separator='-')
+      assert len(branches) == 1, branches
+      assert abs(branches['branch-distance'].iloc[0] - 9.0) < 1e-6, branches
+      print('3D skeleton summarised')
+      "
+    expected_output_contains: "3D skeleton summarised"
+    expected_exit_code: 0
