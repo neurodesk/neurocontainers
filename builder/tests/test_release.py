@@ -129,3 +129,9 @@ def test_packaged_script_and_shared_input_changes_advance_build_date(tmp_path, m
         expected = date.replace('-', '')
         assert build_date_for_recipe(tmp_path, recipe_dir) == expected
         assert one_pr_release.build_date('demo') == expected
+
+    shared.unlink()
+    git('add', '.')
+    git('commit', '-m', 'Delete shared input', date='2026-09-22')
+    assert build_date_for_recipe(tmp_path, recipe_dir) == '20260922'
+    assert one_pr_release.build_date('demo') == '20260922'

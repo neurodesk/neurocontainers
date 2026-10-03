@@ -34,6 +34,51 @@ def write_recipe(root: Path, name: str = "demo", version: str = "1.2.3") -> Path
     return recipe_dir
 
 
+def test_shared_fingerprint_preserves_overlapping_input_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    recipe_dir = write_recipe(tmp_path)
+    recipe_file = recipe_dir / "build.yaml"
+    recipe = yaml.safe_load(recipe_file.read_text())
+    recipe["auto_update"] = {"local": ["macros/shared", "macros/shared/a.txt"]}
+    recipe_file.write_text(yaml.safe_dump(recipe))
+    shared = tmp_path / "macros" / "shared"
+    shared.mkdir(parents=True)
+    (shared / "a.txt").write_bytes(b"first")
+    (shared / "b.txt").write_bytes(b"second")
+    expected = hashlib.sha256(
+        b"build.yaml\0" + recipe_file.read_bytes() + b"\0"
+        + b"fulltest.yaml\0tests: []\n\0"
+        + b"macros/shared/a.txt\0first\0"
+        + b"macros/shared/b.txt\0second\0"
+        + b"macros/shared/a.txt\0first\0"
+    ).hexdigest()
+
+    assert one_pr_release.recipe_fingerprint("demo") == expected
+    (shared / "b.txt").write_bytes(b"changed")
+    changed = one_pr_release.recipe_fingerprint("demo")
+    assert changed != expected
+    (shared / "c.txt").write_bytes(b"added")
+    added = one_pr_release.recipe_fingerprint("demo")
+    assert added != changed
+    (shared / "c.txt").unlink()
+    assert one_pr_release.recipe_fingerprint("demo") == changed
+
+
+def test_fingerprint_requires_declared_shared_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    recipe_file = write_recipe(tmp_path) / "build.yaml"
+    recipe = yaml.safe_load(recipe_file.read_text())
+    recipe["build"]["directives"] = [{"include": "shared/missing.yaml"}]
+    recipe_file.write_text(yaml.safe_dump(recipe))
+
+    with pytest.raises(FileNotFoundError):
+        one_pr_release.recipe_fingerprint("demo")
+
+
 def test_run_git_reports_command_and_stderr(monkeypatch) -> None:
     """Git failures include the attempted command and captured diagnostic."""
     def fail(*args, **kwargs) -> None:
