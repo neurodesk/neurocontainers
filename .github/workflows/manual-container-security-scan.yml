@@ -480,8 +480,14 @@ jobs:
               await core.summary.write();
             }
 
+      - name: Fail when a scanner failed
+        if: always() && (steps.grype.outcome == 'failure' || steps.trivy.outcome == 'failure' || steps.semgrep.outcome == 'failure')
+        run: |
+          echo "::error::A scanner failed; this run cannot establish a clean result"
+          exit 1
+
       - name: No vulnerabilities found
-        if: steps.grype.outputs.found != 'true' && steps.trivy.outputs.found != 'true' && steps.semgrep.outputs.found != 'true'
+        if: steps.grype.outcome != 'failure' && steps.trivy.outcome != 'failure' && steps.semgrep.outcome != 'failure' && steps.grype.outputs.found != 'true' && steps.trivy.outputs.found != 'true' && steps.semgrep.outputs.found != 'true'
         run: |
           echo "No security vulnerabilities detected in ${{ inputs.container_image }}"
           echo "::notice::No security vulnerabilities found"
