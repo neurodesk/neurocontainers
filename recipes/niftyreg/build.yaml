@@ -11,7 +11,7 @@ architectures:
 
 variables:
   install_version: "1.4.0"
-  revision: "8ad2f11507ddedb09ed74a9bd97377b70532ee75"
+  revision: "79a17622608fda35dcce9c65560c834009e8743c"
 
 auto_update:
   container_version: {"variable": "install_version"}
