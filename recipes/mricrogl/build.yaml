@@ -1,5 +1,5 @@
 name: mricrogl
-version: 1.2.20211006
+version: 1.2.20220720
 
 copyright:
   - name: mricrogl license
@@ -30,6 +30,7 @@ build:
         - libqt5pas1
         - appmenu-gtk2-module
         - libglu1-mesa
+        - libopenjp2-7
         - pigz
 
     - workdir: /opt
@@ -83,7 +84,7 @@ gui_apps:
 
 files:
   - name: v
-    url: https://github.com/rordenlab/MRIcroGL/releases/download/v{{ context.version }}/MRIcroGL_linux_includes_Python.zip
+    url: "https://github.com/rordenlab/MRIcroGL/releases/download/v{{ context.version }}/MRIcroGL_linux.zip"
 
   - name: libqt5pas1_2_9_0_amd64_deb
     url: https://github.com/davidbannon/libqt5pas/releases/download/v1.2.9/libqt5pas1_2.9-0_amd64.deb
