@@ -32,6 +32,7 @@ ARCHITECTURES = ["x86_64", "aarch64"]
 # Categories from the UI - this should match CATEGORIES in the UI
 CATEGORIES = [
     "functional imaging",
+    "arterial spin labelling",
     "fetal imaging",
     "image reconstruction",
     "spectroscopy",
