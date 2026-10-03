@@ -9,7 +9,7 @@ This document describes how container tests are defined, executed locally, and a
 - **`builder/release_artifact.py`** decides which SIF a fulltest runs against. See [Release Artifact Resolution](#release-artifact-resolution) below.
 - **`workflows/container_tester.py`** still provides runtime selection, release container downloads, Docker-to-SIF conversion, and the builtin deploy check. It is not the fulltest YAML executor. Key flags you will see in CI:
   - `--runtime apptainer` forces the Apptainer/Singularity backend.
-  - `--location auto` searches CVMFS first, then local `./sifs`, then downloads via release metadata. Release downloads try Nectar Object Storage first and fall back to the AWS S3 mirror. Docker tags are only used as the final fallback when the selected runtime is Docker.
+  - `--location auto` searches CVMFS first, then local `./sifs`, then downloads via release metadata. Release downloads try AWS S3 first and fall back to Nectar Object Storage. Docker tags are only used as the final fallback when the selected runtime is Docker.
   - `--docker-to-simg` bypasses the normal SIF lookup, pulls `ghcr.io/<registry>/<name>_<version>:<build_date>`, converts `docker save` output with `docker-save-to-simg`, and tests the generated `.simg` with Apptainer.
   - `--release-file …` injects build-date information so downloads come from the correct storage path.
   - `--cleanup` deletes any downloaded artifacts after tests finish; `--output` writes a JSON summary used for reporting.
@@ -21,14 +21,39 @@ This document describes how container tests are defined, executed locally, and a
 Each `release_test_runner.py` invocation creates a fresh `fulltest-run-*` directory
 under `--output-dir`. It retains the generated suite, raw JSON results, JSONL
 records, log, and private `work/` directory after success or failure. Repeated runs
-cannot reuse these files. The runner tests the original container path without
-copying the image into the run directory or deleting the input or download cache.
+cannot reuse these files. Local candidates use their original container paths.
+Downloaded and converted images use retained private hardlinks. The runner does
+not copy image contents into the run directory or delete inputs or the shared cache.
 
 `--results-path` and the report, comment, and status filenames under `--output-dir`
 remain the latest published result. Concurrent callers that need independent
 reports must select separate output directories and results paths. Remove retained
 `fulltest-run-*` directories when their diagnostics and work files are no longer
 needed. CI uploads the diagnostics and excludes private work directories.
+
+### Image acquisition ownership
+
+Release downloads and Docker conversion return `AcquiredImage` resources. Use
+`with image:` and pass `str(image.path)` to runtime commands. The resource owns
+a private directory on the configured cache filesystem. Its image is a hardlink
+to the completed image, so retaining it does not copy the image contents.
+`image.cache_path` identifies the shared cache entry for explicit eviction.
+
+Each acquisition writes privately and atomically publishes only complete output.
+A cache refresh or eviction cannot change an image retained by another caller.
+Docker conversion also retains its converter binary until the resource closes.
+Failed builds preserve the previous cache entry and remove their private files.
+
+`ContainerTester` owns acquired images until `close()` or context exit. Runners
+release these resources on success, errors, and early returns, including when
+cache cleanup was not requested. `--cleanup` and `--auto-cleanup` additionally
+evict shared cache entries. Local, candidate, and CVMFS inputs remain caller-owned.
+
+A refresh can temporarily retain both old and new image data. Old image blocks
+are freed when their last retained link closes. Forced process termination such
+as SIGKILL can leave a private acquisition directory; no automatic sweep removes
+these directories because another invocation may still own them.
+
 
 ## Release Artifact Resolution
 

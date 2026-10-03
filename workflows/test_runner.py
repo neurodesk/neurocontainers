@@ -82,78 +82,56 @@ class ContainerTestRunner:
     # Public API
 
     def run(self, request: TestRequest) -> TestOutcome:
-        recipe_dir = self.repo_root / "recipes" / request.recipe
-        if not recipe_dir.is_dir():
-            raise FileNotFoundError(f"Recipe directory not found: {recipe_dir}")
-
-        release_file, version, release_reason = self._resolve_release(
-            request.recipe,
-            request.version,
-            request.release_file,
-            request.allow_missing_release,
-        )
-
-        if release_reason and request.allow_missing_release:
-            results = self._build_stub_result(
-                request.recipe,
-                version or request.version or "",
-                status="skipped",
-                message=release_reason,
-            )
-            return self._finalise(request, results, version or "", release_file, release_reason)
-
-        test_config_path, test_reason = self._resolve_test_config(recipe_dir, request)
-
-        if test_reason and request.allow_missing_tests:
-            results = self._build_stub_result(
-                request.recipe,
-                version or request.version or "",
-                status="skipped",
-                message=test_reason,
-            )
-            return self._finalise(request, results, version or "", release_file, test_reason)
-
-        if test_config_path is None:
-            raise FileNotFoundError("Test configuration could not be resolved")
-        if version is None:
-            raise RuntimeError("Container version could not be determined")
-
         try:
-            runtime = self.tester.select_runtime(request.runtime)
-        except RuntimeError as exc:
-            results = self._build_stub_result(
+            recipe_dir = self.repo_root / "recipes" / request.recipe
+            if not recipe_dir.is_dir():
+                raise FileNotFoundError(f"Recipe directory not found: {recipe_dir}")
+
+            release_file, version, release_reason = self._resolve_release(
                 request.recipe,
-                version,
-                status="failed",
-                message=str(exc),
+                request.version,
+                request.release_file,
+                request.allow_missing_release,
             )
-            return self._finalise(request, results, version, release_file, str(exc))
 
-        if request.docker_to_simg and runtime.name != "apptainer":
-            message = "Docker-to-SIMG conversion must be tested with Apptainer/Singularity"
-            results = self._build_stub_result(
-                request.recipe,
-                version,
-                status="failed",
-                message=message,
-            )
-            return self._finalise(request, results, version, release_file, message)
+            if release_reason and request.allow_missing_release:
+                results = self._build_stub_result(
+                    request.recipe,
+                    version or request.version or "",
+                    status="skipped",
+                    message=release_reason,
+                )
+                return self._finalise(request, results, version or "", release_file, release_reason)
 
-        if request.verbose:
-            print(f"Selected runtime: {runtime.name}")
+            test_config_path, test_reason = self._resolve_test_config(recipe_dir, request)
 
-        if request.docker_to_simg:
+            if test_reason and request.allow_missing_tests:
+                results = self._build_stub_result(
+                    request.recipe,
+                    version or request.version or "",
+                    status="skipped",
+                    message=test_reason,
+                )
+                return self._finalise(request, results, version or "", release_file, test_reason)
+
+            if test_config_path is None:
+                raise FileNotFoundError("Test configuration could not be resolved")
+            if version is None:
+                raise RuntimeError("Container version could not be determined")
+
             try:
-                container_ref = self.tester.convert_docker_image_to_simg(
+                runtime = self.tester.select_runtime(request.runtime)
+            except RuntimeError as exc:
+                results = self._build_stub_result(
                     request.recipe,
                     version,
-                    release_file=str(release_file) if release_file else None,
-                    docker_registry=request.docker_registry,
-                    converter_source=request.docker_save_to_simg,
-                    verbose=request.verbose,
+                    status="failed",
+                    message=str(exc),
                 )
-            except Exception as exc:
-                message = f"Unable to convert Docker image to SIMG: {exc}"
+                return self._finalise(request, results, version, release_file, str(exc))
+
+            if request.docker_to_simg and runtime.name != "apptainer":
+                message = "Docker-to-SIMG conversion must be tested with Apptainer/Singularity"
                 results = self._build_stub_result(
                     request.recipe,
                     version,
@@ -161,65 +139,90 @@ class ContainerTestRunner:
                     message=message,
                 )
                 return self._finalise(request, results, version, release_file, message)
-        else:
-            container_ref = self.tester.find_container(
-                request.recipe,
-                version,
-                location=request.location,
-                release_file=str(release_file) if release_file else None,
-            )
 
-        if not container_ref:
-            message = (
-                f"Unable to locate container {request.recipe}:{version} (location={request.location})"
-            )
-            results = self._build_stub_result(
-                request.recipe,
-                version,
-                status="failed",
-                message=message,
-            )
-            return self._finalise(request, results, version, release_file, message)
+            if request.verbose:
+                print(f"Selected runtime: {runtime.name}")
 
-        if request.verbose:
-            print(f"Resolved container reference: {container_ref}")
+            if request.docker_to_simg:
+                try:
+                    container_ref = self.tester.convert_docker_image_to_simg(
+                        request.recipe,
+                        version,
+                        release_file=str(release_file) if release_file else None,
+                        docker_registry=request.docker_registry,
+                        converter_source=request.docker_save_to_simg,
+                        verbose=request.verbose,
+                    )
+                except Exception as exc:
+                    message = f"Unable to convert Docker image to SIMG: {exc}"
+                    results = self._build_stub_result(
+                        request.recipe,
+                        version,
+                        status="failed",
+                        message=message,
+                    )
+                    return self._finalise(request, results, version, release_file, message)
+            else:
+                container_ref = self.tester.find_container(
+                    request.recipe,
+                    version,
+                    location=request.location,
+                    release_file=str(release_file) if release_file else None,
+                )
 
-        try:
-            test_config = self.tester.test_extractor.extract_from_file(
-                str(test_config_path)
-            )
-        except Exception as exc:  # pragma: no cover - defensive
-            message = f"Error loading test configuration: {exc}"
-            results = self._build_stub_result(
-                request.recipe,
-                version,
-                status="failed",
-                message=message,
-            )
-            return self._finalise(request, results, version, release_file, message)
+            if not container_ref:
+                message = (
+                    f"Unable to locate container {request.recipe}:{version} (location={request.location})"
+                )
+                results = self._build_stub_result(
+                    request.recipe,
+                    version,
+                    status="failed",
+                    message=message,
+                )
+                return self._finalise(request, results, version, release_file, message)
 
-        if not test_config or not test_config.get("tests"):
-            message = "No fulltest tests configured"
-            results = self._build_stub_result(
-                request.recipe,
-                version,
-                status="skipped",
-                message=message,
-            )
-            return self._finalise(request, results, version, release_file, message)
+            if request.verbose:
+                print(f"Resolved container reference: {container_ref}")
 
-        try:
+            try:
+                test_config = self.tester.test_extractor.extract_from_file(
+                    str(test_config_path)
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                message = f"Error loading test configuration: {exc}"
+                results = self._build_stub_result(
+                    request.recipe,
+                    version,
+                    status="failed",
+                    message=message,
+                )
+                return self._finalise(request, results, version, release_file, message)
+
+            if not test_config or not test_config.get("tests"):
+                message = "No fulltest tests configured"
+                results = self._build_stub_result(
+                    request.recipe,
+                    version,
+                    status="skipped",
+                    message=message,
+                )
+                return self._finalise(request, results, version, release_file, message)
+
             results = self.tester.run_test_suite(
                 container_ref,
                 test_config,
                 gpu=request.gpu,
                 verbose=request.verbose,
             )
-        finally:
-            if request.cleanup or request.auto_cleanup:
-                self.tester.cleanup_downloaded_containers(verbose=request.verbose)
 
-        return self._finalise(request, results, version, release_file)
+            return self._finalise(request, results, version, release_file)
+        finally:
+            try:
+                if request.cleanup or request.auto_cleanup:
+                    self.tester.cleanup_downloaded_containers(verbose=request.verbose)
+            finally:
+                self.tester.close()
 
     def cleanup_all(self, verbose: bool = False) -> int:
         return self.tester.cleanup_all_cached_containers(verbose)

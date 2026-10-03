@@ -347,6 +347,45 @@ class TestDefinitionExtractor:
             "tests": tests,
         }
 
+
+class AcquiredImage:
+    """A stable image pathname owned until close, independent of cache eviction."""
+
+    def __init__(self, cache_path: Path) -> None:
+        cache_path = cache_path.absolute()
+        self.cache_path = cache_path
+        self._directory = tempfile.TemporaryDirectory(
+            prefix=".acquisition-", dir=cache_path.parent
+        )
+        self.path = Path(self._directory.name) / cache_path.name
+
+    def close(self) -> None:
+        self._directory.cleanup()
+
+    def __enter__(self) -> "AcquiredImage":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
+
+def _link_cached(cache_path: Path, private_path: Path) -> bool:
+    try:
+        os.link(cache_path, private_path)
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _publish(private_path: Path, cache_path: Path) -> None:
+    publication = private_path.with_name(private_path.name + ".publish")
+    os.link(private_path, publication)
+    try:
+        os.replace(publication, cache_path)
+    finally:
+        publication.unlink(missing_ok=True)
+
+
 class ReleaseContainerDownloader:
     """Download containers from release PR URLs"""
 
@@ -377,8 +416,8 @@ class ReleaseContainerDownloader:
         *,
         image_basename: Optional[str] = None,
         use_cache: bool = True,
-    ) -> Optional[str]:
-        """Download container using release build information"""
+    ) -> Optional[AcquiredImage]:
+        """Download and retain a release image until the returned resource closes."""
         if not build_date:
             print(
                 "Release metadata did not include a build date; "
@@ -396,43 +435,32 @@ class ReleaseContainerDownloader:
         filenames = list(dict.fromkeys(filenames))
 
         for filename in filenames:
-            cache_path = os.path.join(self.cache_dir, filename)
-
-            # Check cache first. CI release tests bypass this because rebuilds
-            # on the same day share the same release filename.
-            if use_cache and os.path.exists(cache_path):
-                print(f"Using cached container: {cache_path}")
-                return cache_path
-            if not use_cache and os.path.exists(cache_path):
-                print(f"Refreshing cached container: {cache_path}")
-
-            # Try downloading from each mirror.
-            for source_name, base_url in self.base_urls:
-                url = f"{base_url}/{filename}"
-                temp_path = f"{cache_path}.tmp"
-                print(f"Attempting to download from {source_name}: {url}")
-                print(f"Note: Container will be cached in {self.cache_dir}")
-                print(
-                    "Use --cleanup to remove after testing or --cleanup-all to remove all cached containers"
-                )
-
-                try:
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
-                    urllib.request.urlretrieve(
-                        url,
-                        temp_path,
-                        reporthook=self._download_progress_reporter(filename),
-                    )
-                    os.replace(temp_path, cache_path)
-                    print(f"Successfully downloaded: {cache_path}")
-                    return cache_path
-                except Exception as e:
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
-                    print(f"Failed to download from {source_name} ({url}): {e}")
-                    continue
-
+            image = AcquiredImage(Path(self.cache_dir) / filename)
+            retained = False
+            try:
+                if use_cache and _link_cached(image.cache_path, image.path):
+                    print(f"Using cached container: {image.cache_path}")
+                    retained = True
+                    return image
+                for source_name, base_url in self.base_urls:
+                    url = f"{base_url}/{filename}"
+                    print(f"Attempting to download from {source_name}: {url}")
+                    try:
+                        urllib.request.urlretrieve(
+                            url,
+                            str(image.path),
+                            reporthook=self._download_progress_reporter(filename),
+                        )
+                        _publish(image.path, image.cache_path)
+                        print(f"Successfully downloaded: {image.cache_path}")
+                        retained = True
+                        return image
+                    except Exception as exc:
+                        image.path.unlink(missing_ok=True)
+                        print(f"Failed to download from {source_name} ({url}): {exc}")
+            finally:
+                if not retained:
+                    image.close()
         return None
 
     def _download_progress_reporter(
@@ -590,26 +618,23 @@ class DockerToSimgConverter:
             f"docker-save-to-simg source not found at {self.converter_source}"
         )
 
-    def _ensure_binary(self, verbose: bool = False) -> str:
+    def _ensure_binary(self, directory: Path, verbose: bool = False) -> Path:
         source = self._resolve_converter_source()
-        source_mtime = os.path.getmtime(source)
-
-        if (
-            os.path.exists(self.binary_path)
-            and os.path.getmtime(self.binary_path) >= source_mtime
-        ):
-            return self.binary_path
+        binary = directory / "docker-save-to-simg"
+        if _link_cached(Path(self.binary_path), binary):
+            if binary.stat().st_mtime >= os.path.getmtime(source):
+                return binary
+            binary.unlink()
 
         if shutil.which("go") is None:
             raise RuntimeError("Go is required to build docker-save-to-simg")
-
         cmd = [
             "go",
             "build",
             "-trimpath",
             "-ldflags=-s -w",
             "-o",
-            self.binary_path,
+            str(binary),
             source,
         ]
         env = os.environ.copy()
@@ -617,65 +642,79 @@ class DockerToSimgConverter:
         if verbose:
             print(f"Building docker-save-to-simg from {source}")
         subprocess.run(cmd, check=True, env=env)
-        return self.binary_path
+        if binary.stat().st_size == 0:
+            raise RuntimeError("Built docker-save-to-simg binary is empty")
+        _publish(binary, Path(self.binary_path))
+        return binary
 
     def convert(
         self,
         image_ref: str,
         output_name: str,
         verbose: bool = False,
-    ) -> str:
+    ) -> AcquiredImage:
         if shutil.which("docker") is None:
             raise RuntimeError("Docker is required to pull and save images")
 
-        binary = self._ensure_binary(verbose=verbose)
-        output_path = os.path.join(self.cache_dir, output_name)
-        if (
-            os.path.exists(output_path)
-            and os.path.getsize(output_path) > 0
-            and os.path.getmtime(output_path) >= os.path.getmtime(binary)
-        ):
-            if verbose:
-                print(f"Using cached docker-converted container: {output_path}")
-            return output_path
-        if os.path.exists(output_path):
-            if verbose:
-                print(f"Rebuilding stale docker-converted container: {output_path}")
-            os.remove(output_path)
-
-        print(f"Pulling Docker image: {image_ref}")
-        subprocess.run(["docker", "pull", image_ref], check=True)
-
-        tmp_output = output_path + ".tmp"
-        if os.path.exists(tmp_output):
-            os.remove(tmp_output)
-
-        print(f"Converting Docker image to SIMG: {output_path}")
-        save_proc = subprocess.Popen(
-            ["docker", "save", image_ref],
-            stdout=subprocess.PIPE,
-        )
+        image = AcquiredImage(Path(self.cache_dir) / output_name)
         try:
-            convert_proc = subprocess.run(
-                [binary, "-", tmp_output],
-                stdin=save_proc.stdout,
-                check=False,
+            binary = self._ensure_binary(image.path.parent, verbose=verbose)
+            if _link_cached(image.cache_path, image.path):
+                stat = image.path.stat()
+                if stat.st_size > 0 and stat.st_mtime >= os.path.getmtime(binary):
+                    if verbose:
+                        print(f"Using cached docker-converted container: {image.cache_path}")
+                    return image
+                image.path.unlink()
+
+            print(f"Pulling Docker image: {image_ref}")
+            subprocess.run(["docker", "pull", image_ref], check=True)
+            print(f"Converting Docker image to SIMG: {image.cache_path}")
+            self._convert_stream(image_ref, binary, image.path)
+            if image.path.stat().st_size == 0:
+                raise RuntimeError("Docker image conversion produced an empty image")
+            _publish(image.path, image.cache_path)
+            return image
+        except BaseException:
+            image.close()
+            raise
+
+    @staticmethod
+    def _convert_stream(image_ref: str, binary: Path, output: Path) -> None:
+        save_proc = subprocess.Popen(
+            ["docker", "save", image_ref], stdout=subprocess.PIPE
+        )
+        convert_proc = None
+        try:
+            convert_proc = subprocess.Popen(
+                [str(binary), "-", str(output)], stdin=save_proc.stdout
             )
+            save_proc.stdout.close()
+            converter_status = convert_proc.wait()
+            if converter_status != 0:
+                DockerToSimgConverter._stop_process(save_proc)
+            save_status = save_proc.wait()
+            if converter_status != 0 or save_status != 0:
+                raise RuntimeError(
+                    "Docker image conversion failed "
+                    f"(docker save={save_status}, converter={converter_status})"
+                )
         finally:
             if save_proc.stdout is not None:
                 save_proc.stdout.close()
+            for process in (convert_proc, save_proc):
+                if process is not None:
+                    DockerToSimgConverter._stop_process(process)
 
-        save_returncode = save_proc.wait()
-        if convert_proc.returncode != 0 or save_returncode != 0:
-            if os.path.exists(tmp_output):
-                os.remove(tmp_output)
-            raise RuntimeError(
-                "Docker image conversion failed "
-                f"(docker save={save_returncode}, converter={convert_proc.returncode})"
-            )
-
-        os.replace(tmp_output, output_path)
-        return output_path
+    @staticmethod
+    def _stop_process(process: subprocess.Popen) -> None:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+        process.wait()
 
 
 def build_release_docker_image_ref(
@@ -740,7 +779,7 @@ class ContainerTester:
         )
         self.test_extractor = None
         self.selected_runtime = None
-        self.downloaded_container_path = None  # Track downloaded containers for cleanup
+        self._acquired_images: list[AcquiredImage] = []
 
     def select_runtime(self, preferred: str = None) -> ContainerRuntime:
         """Select the best available container runtime"""
@@ -804,15 +843,15 @@ class ContainerTester:
                     )
                 )
 
-            downloaded_path = self.release_downloader.download_from_release(
+            image = self.release_downloader.download_from_release(
                 name,
                 version,
                 build_date,
                 image_basename=image_basename,
             )
-            if downloaded_path:
-                self.downloaded_container_path = downloaded_path  # Track for cleanup
-                return downloaded_path
+            if image:
+                self._acquired_images.append(image)
+                return str(image.path)
 
         if location == "auto" or location == "docker":
             if (
@@ -860,7 +899,7 @@ class ContainerTester:
         errors: List[str] = []
         for image_ref in image_refs:
             try:
-                converted_path = self.docker_to_simg.convert(
+                image = self.docker_to_simg.convert(
                     image_ref,
                     output_name,
                     verbose=verbose,
@@ -871,8 +910,8 @@ class ContainerTester:
         else:
             raise RuntimeError("; ".join(errors))
 
-        self.downloaded_container_path = converted_path
-        return converted_path
+        self._acquired_images.append(image)
+        return str(image.path)
 
     def run_test_suite(
         self,
@@ -1100,21 +1139,19 @@ class ContainerTester:
             }
 
     def cleanup_downloaded_containers(self, verbose: bool = False) -> bool:
-        """Clean up any containers downloaded during testing"""
-        if not self.downloaded_container_path:
-            if verbose:
-                print("No downloaded containers to clean up")
-            return True
-
-        success = self.release_downloader.cleanup_downloaded_container(
-            self.downloaded_container_path, verbose
-        )
-
-        # Reset the tracked path after cleanup
-        if success:
-            self.downloaded_container_path = None
-
+        """Evict shared cache names while retained images remain readable."""
+        success = True
+        for cache_path in {image.cache_path for image in self._acquired_images}:
+            removed = self.release_downloader.cleanup_downloaded_container(
+                str(cache_path), verbose
+            )
+            success = (removed or not cache_path.exists()) and success
         return success
+
+    def close(self) -> None:
+        for image in self._acquired_images:
+            image.close()
+        self._acquired_images.clear()
 
     def cleanup_all_cached_containers(self, verbose: bool = False) -> int:
         """Clean up all cached containers"""
@@ -1126,7 +1163,7 @@ class ContainerTester:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with automatic cleanup"""
-        self.cleanup_downloaded_containers(verbose=False)
+        self.close()
 
 
 def main():
@@ -1211,12 +1248,12 @@ Examples:
         print(f"Cleaned up {count} cached container file(s)")
         return
 
-    # Use context manager for automatic cleanup if requested
-    if args.auto_cleanup:
-        with tester:
+    with tester:
+        try:
             return run_tests(args, tester)
-    else:
-        return run_tests(args, tester)
+        finally:
+            if args.cleanup or args.auto_cleanup:
+                tester.cleanup_downloaded_containers(args.verbose)
 
 
 def run_tests(args, tester):
@@ -1337,15 +1374,9 @@ def run_tests(args, tester):
         if args.verbose:
             print(f"Found {len(test_config['tests'])} tests")
 
-        # Run tests
-        try:
-            results = tester.run_test_suite(
-                container_ref, test_config, args.gpu, args.verbose
-            )
-        finally:
-            # Clean up downloaded containers if requested (even if tests fail)
-            if args.cleanup or args.auto_cleanup:
-                tester.cleanup_downloaded_containers(args.verbose)
+        results = tester.run_test_suite(
+            container_ref, test_config, args.gpu, args.verbose
+        )
 
     if not args.list_containers:
         # Output results

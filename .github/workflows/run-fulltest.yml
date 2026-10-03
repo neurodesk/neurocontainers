@@ -155,6 +155,7 @@ jobs:
         run: |
           mkdir -p "$CONTAINERS_DIR"
           uv run python -u - <<'PY'
+          from contextlib import ExitStack
           import json
           import os
           import subprocess
@@ -213,70 +214,75 @@ jobs:
               print(f"Build date missing in release file: {release_file}", file=sys.stderr)
               sys.exit(1)
 
-          if docker_to_simg:
-              image_refs = build_release_docker_image_ref_candidates(
-                  suite,
-                  release_version,
-                  build_date,
-                  docker_registry=docker_registry,
-              )
-              converter = DockerToSimgConverter(
-                  cache_dir=str(containers_dir),
-                  converter_source=converter_source,
-              )
-              errors = []
-              for image_ref in image_refs:
-                  try:
-                      container_file = converter.convert(
-                          image_ref,
-                          f"{suite}_{release_version}_{build_date}.docker.simg",
-                          verbose=True,
-                      )
-                      break
-                  except Exception as exc:
-                      errors.append(f"{image_ref}: {exc}")
-              else:
-                  print("Failed to convert any Docker image candidate:", file=sys.stderr)
-                  for error in errors:
-                      print(f"  - {error}", file=sys.stderr)
-                  sys.exit(1)
-          else:
-              downloader = ReleaseContainerDownloader(cache_dir=str(containers_dir))
-              container_file = downloader.download_from_release(suite, release_version, build_date)
-              if not container_file:
-                  print(
-                      f"Failed to download container {suite}:{release_version} "
-                      f"with build date {build_date}",
-                      file=sys.stderr,
+          with ExitStack() as images:
+              if docker_to_simg:
+                  image_refs = build_release_docker_image_ref_candidates(
+                      suite,
+                      release_version,
+                      build_date,
+                      docker_registry=docker_registry,
                   )
-                  sys.exit(1)
+                  converter = DockerToSimgConverter(
+                      cache_dir=str(containers_dir),
+                      converter_source=converter_source,
+                  )
+                  errors = []
+                  for image_ref in image_refs:
+                      try:
+                          image = converter.convert(
+                              image_ref,
+                              f"{suite}_{release_version}_{build_date}.docker.simg",
+                              verbose=True,
+                          )
+                          images.enter_context(image)
+                          break
+                      except Exception as exc:
+                          errors.append(f"{image_ref}: {exc}")
+                  else:
+                      print("Failed to convert any Docker image candidate:", file=sys.stderr)
+                      for error in errors:
+                          print(f"  - {error}", file=sys.stderr)
+                      sys.exit(1)
+              else:
+                  downloader = ReleaseContainerDownloader(cache_dir=str(containers_dir))
+                  image = downloader.download_from_release(suite, release_version, build_date)
+                  if image is None:
+                      print(
+                          f"Failed to download container {suite}:{release_version} "
+                          f"with build date {build_date}",
+                          file=sys.stderr,
+                      )
+                      sys.exit(1)
 
-          print(f"Using container file: {container_file}")
+                  images.enter_context(image)
 
-          workdir = Path("results")
-          workdir.mkdir(exist_ok=True)
-          output_json = workdir / f"{suite}-fulltest.json"
-          output_log = workdir / f"{suite}-fulltest.log"
+              container_file = image.path
+              print(f"Using container file: {container_file}")
 
-          cmd = [
-              "uv",
-              "run",
-              "builder/run_tests.py",
-              str(suite_path),
-              "-c",
-              str(containers_dir),
-              "--container",
-              str(container_file),
-              "-o",
-              str(output_json),
-              "--log",
-              str(output_log),
-          ]
-          print(f"Running: {' '.join(cmd)}")
-          result = subprocess.run(cmd, check=False, text=True)
-          if result.returncode != 0:
-              print("run_tests.py returned non-zero exit status", file=sys.stderr)
-              sys.exit(result.returncode)
+              workdir = Path("results")
+              workdir.mkdir(exist_ok=True)
+              output_json = workdir / f"{suite}-fulltest.json"
+              output_log = workdir / f"{suite}-fulltest.log"
+
+              cmd = [
+                  "uv",
+                  "run",
+                  "builder/run_tests.py",
+                  str(suite_path),
+                  "-c",
+                  str(containers_dir),
+                  "--container",
+                  str(container_file),
+                  "-o",
+                  str(output_json),
+                  "--log",
+                  str(output_log),
+              ]
+              print(f"Running: {' '.join(cmd)}")
+              result = subprocess.run(cmd, check=False, text=True)
+              if result.returncode != 0:
+                  print("run_tests.py returned non-zero exit status", file=sys.stderr)
+                  sys.exit(result.returncode)
           PY
 
       - name: Upload fulltest outputs
