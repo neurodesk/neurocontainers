@@ -1,5 +1,5 @@
 # mritools container test suite
-# Tests for mritools v3.3.0 - MRI phase processing tools
+# Tests for mritools - MRI phase processing tools
 #
 # mritools contains:
 #   - ROMEO: Rapid Opensource Minimum spanning tree algorithm for phase unwrapping
@@ -75,7 +75,7 @@ tests:
   - name: ROMEO version check
     description: Verify ROMEO binary runs and reports version
     command: "bash -lc 'env JULIA_PROJECT=/opt/mritools-${version}/share/julia bash -lc '\"'\"'romeo --version'\"'\"''"
-    expected_output_contains: "3"
+    expected_output_contains: "${version}"
 
   - name: ROMEO help
     description: Display ROMEO help message
