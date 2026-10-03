@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
+
+from workflows.summarize_deploy_results import summarise_results_file
 
 STATUS_EMOJI = {
     "passed": "✅",
@@ -259,3 +262,64 @@ def build_aggregate_summary(entries: Iterable[Tuple[str, Dict]]) -> Tuple[str, D
 def write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+@dataclass(frozen=True)
+class ReportOutput:
+    path: Path
+
+
+@dataclass(frozen=True)
+class CommentOutput:
+    path: Path
+    status_path: Path
+    status_newline: bool = False
+
+
+@dataclass(frozen=True)
+class PublicationPlan:
+    results_path: Path
+    outputs: tuple[ReportOutput | CommentOutput, ...]
+    reload_fallback: bool = False
+
+
+@dataclass(frozen=True)
+class PublishedResults:
+    results: dict[str, object]
+    status: str
+    comment: str | None = None
+    report: str | None = None
+
+
+def publish_test_results(
+    results: dict[str, object],
+    *,
+    recipe: str,
+    version: str,
+    plan: PublicationPlan,
+) -> PublishedResults:
+    """Publish enriched results and requested artifacts in the plan's order."""
+    write_text(plan.results_path, json.dumps(results, indent=2) + "\n")
+    summarise_results_file(plan.results_path)
+    try:
+        data = json.loads(plan.results_path.read_text(encoding="utf-8"))
+    except Exception:
+        if not plan.reload_fallback:
+            raise
+        data = results
+
+    status = determine_status(data)
+    comment = None
+    report = None
+    for output in plan.outputs:
+        if isinstance(output, ReportOutput):
+            report = build_report(data, recipe, version)
+            write_text(output.path, report)
+        else:
+            comment, status = build_comment(data, recipe, version)
+            write_text(output.path, comment)
+            write_text(
+                output.status_path, status + ("\n" if output.status_newline else "")
+            )
+
+    return PublishedResults(data, status, comment, report)

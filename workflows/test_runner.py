@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 from workflows.container_tester import ContainerTester
-from workflows.reporting import build_comment, build_report, determine_status, write_text
-from workflows.summarize_deploy_results import summarise_results_file
+from workflows.reporting import (
+    CommentOutput,
+    PublicationPlan,
+    ReportOutput,
+    publish_test_results,
+)
 from workflows.test_utils import discover_test_config, find_latest_release_file, resolve_path
 
 ARTIFACTS_DIR_NAME = "builder"
@@ -323,21 +326,9 @@ class ContainerTestRunner:
             if request.results_path
             else output_dir / f"{RESULTS_PREFIX}{request.recipe}.json"
         )
-        write_text(results_path, json.dumps(results, indent=2) + "\n")
-
-        summarise_results_file(results_path)
-
-        try:
-            results_data: Dict[str, object] = json.loads(
-                results_path.read_text(encoding="utf-8")
-            )
-        except Exception:
-            results_data = results
-
-        status = determine_status(results_data)
+        outputs: list[CommentOutput | ReportOutput] = []
 
         comment_path: Optional[Path] = None
-        comment_text: Optional[str] = None
         status_path: Optional[Path] = None
         if request.create_comment:
             comment_filename = (
@@ -346,22 +337,15 @@ class ContainerTestRunner:
                 else f"{COMMENT_PREFIX}{request.recipe}.md"
             )
             comment_path = output_dir / comment_filename
-            comment_text, derived_status = build_comment(
-                results_data, request.recipe, version or "unknown"
-            )
-            write_text(comment_path, comment_text)
-
             status_filename = (
                 request.status_filename
                 if request.status_filename is not None
                 else f"{STATUS_PREFIX}{request.recipe}.txt"
             )
             status_path = output_dir / status_filename
-            write_text(status_path, derived_status)
-            status = derived_status  # Align status with comment classification
+            outputs.append(CommentOutput(comment_path, status_path))
 
         report_path: Optional[Path] = None
-        report_text: Optional[str] = None
         if request.create_report:
             report_filename = (
                 request.report_filename
@@ -369,22 +353,26 @@ class ContainerTestRunner:
                 else f"{REPORT_PREFIX}{request.recipe}.md"
             )
             report_path = output_dir / report_filename
-            report_text = build_report(
-                results_data, request.recipe, version or "unknown"
-            )
-            write_text(report_path, report_text)
+            outputs.append(ReportOutput(report_path))
+
+        published = publish_test_results(
+            results,
+            recipe=request.recipe,
+            version=version or "unknown",
+            plan=PublicationPlan(results_path, tuple(outputs), reload_fallback=True),
+        )
 
         return TestOutcome(
             recipe=request.recipe,
             version=version or "",
-            status=status,
-            results=results_data,
+            status=published.status,
+            results=published.results,
             results_path=results_path,
             release_file=release_file,
             reason=reason,
             comment_path=comment_path,
-            comment=comment_text,
+            comment=published.comment,
             status_path=status_path,
             report_path=report_path,
-            report=report_text,
+            report=published.report,
         )
