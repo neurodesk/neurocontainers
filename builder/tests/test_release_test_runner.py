@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from workflows.container_tester import AcquiredImage, ContainerTester
 from workflows.release_test_runner import (
     _combine_results,
     _failure_results,
@@ -267,17 +269,22 @@ def test_run_fulltest_release_uses_release_image_basename(
     output_dir = tmp_path / "builder"
 
     calls: list[dict[str, object]] = []
+    acquired: list[AcquiredImage] = []
 
     class FakeDownloader:
         def extract_image_basename_from_release(self, release_file: str) -> str:
             return "neurodesktop_20260428_arm64"
 
-        def download_from_release(self, *args, **kwargs) -> str:
+        def download_from_release(self, *args, **kwargs) -> AcquiredImage:
             calls.append({"args": args, "kwargs": kwargs})
-            return str(source)
+            image = AcquiredImage(source)
+            os.link(source, image.path)
+            acquired.append(image)
+            return image
 
-    class FakeTester:
+    class FakeTester(ContainerTester):
         def __init__(self) -> None:
+            super().__init__()
             self.release_downloader = FakeDownloader()
 
         def select_runtime(self, runtime: str) -> SimpleNamespace:
@@ -298,6 +305,7 @@ def test_run_fulltest_release_uses_release_image_basename(
 
     def fake_run(command, **kwargs) -> SimpleNamespace:
         run_commands.append(command)
+        assert Path(command[command.index("--container") + 1]).read_text() == "simg"
         raw_path = Path(command[command.index("-o") + 1])
         log_path = Path(command[command.index("--log") + 1])
         jsonl_path = Path(command[command.index("--jsonl") + 1])
@@ -356,13 +364,17 @@ def test_run_fulltest_release_uses_release_image_basename(
     assert run_commands == [
         [
             "uv", "run", str(tmp_path / "builder/run_tests.py"), str(suite_path),
-            "--container", str(source),
+            "--container", str(acquired[0].path),
             "-o", str(run_dir / "fulltest-raw-neurodesktop.json"),
             "--log", str(run_dir / "fulltest-neurodesktop.log"),
             "--jsonl", str(run_dir / "fulltest-neurodesktop.jsonl"),
             "--work-dir", str(run_dir / "work"),
         ]
     ]
+
+
+    assert not acquired[0].path.exists()
+    assert source.read_text() == "simg"
 
 
 def test_run_fulltest_release_uses_local_candidate(tmp_path: Path, monkeypatch) -> None:
@@ -373,7 +385,7 @@ def test_run_fulltest_release_uses_local_candidate(tmp_path: Path, monkeypatch) 
     test_config.write_text("tests: []\n", encoding="utf-8")
     output_dir = tmp_path / "builder"
 
-    class FakeTester:
+    class FakeTester(ContainerTester):
         def select_runtime(self, runtime: str) -> SimpleNamespace:
             return SimpleNamespace(name="apptainer")
 
@@ -465,8 +477,9 @@ def test_run_fulltest_release_falls_back_to_docker_conversion(
             calls.append({"method": "download", "args": args, "kwargs": kwargs})
             return None
 
-    class FakeTester:
+    class FakeTester(ContainerTester):
         def __init__(self) -> None:
+            super().__init__()
             self.release_downloader = FakeDownloader()
 
         def select_runtime(self, runtime: str) -> SimpleNamespace:
@@ -637,7 +650,7 @@ def test_main_publishes_child_exit_with_completed_results(
     }
     test_message = "OK" if fulltest_passed else "Assertion failed"
 
-    class FakeTester:
+    class FakeTester(ContainerTester):
         def select_runtime(self, runtime: str) -> SimpleNamespace:
             return SimpleNamespace(name="apptainer")
 
@@ -731,7 +744,7 @@ def repeated_fulltest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Simple
     deploy_inputs = []
     behavior = {"raw": True, "jsonl": True, "exit": 0}
 
-    class Tester:
+    class Tester(ContainerTester):
         def select_runtime(self, runtime: str) -> SimpleNamespace:
             return SimpleNamespace(name="apptainer")
 

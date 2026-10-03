@@ -1,18 +1,18 @@
-from contextlib import ExitStack
 import os
-from pathlib import Path
 import subprocess
-from typing import Any
+import sys
+from contextlib import ExitStack
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from workflows import container_tester as ct
+from workflows.test_runner import ContainerTestRunner, TestRequest as RunRequest
 
 
-def retained_path(stack: ExitStack, image: Any) -> Path:
+def retained_path(stack: ExitStack, image: ct.AcquiredImage | None) -> Path:
     assert image is not None
-    if isinstance(image, str):
-        return Path(image)
     stack.enter_context(image)
     return image.path
 
@@ -145,4 +145,211 @@ def test_failed_converter_build_preserves_cached_binary_and_reader(
     assert reader.read_bytes() == b"last working converter"
     assert sorted(path.name for path in tmp_path.iterdir()) == [
         "active-converter", "converter.go", "docker-save-to-simg"
+    ]
+
+
+@pytest.mark.parametrize("failure", ["converter", "launch", "save", "empty", "publish"])
+def test_conversion_failure_preserves_cache_and_reaps_children(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    docker = tools / "docker"
+    docker.write_text(
+        f"#!{sys.executable}\n"
+        "import sys, time\n"
+        "if sys.argv[1] == 'save':\n"
+        + ("    time.sleep(2)\n" if failure in {"converter", "launch"}
+           else "    sys.stdout.write('archive')\n")
+        + ("    sys.exit(3)\n" if failure == "save" else "")
+    )
+    docker.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tools) + os.pathsep + os.environ["PATH"])
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    source = tmp_path / "converter.go"
+    source.write_text("package main\n")
+    os.utime(source, (1, 1))
+    converter = ct.DockerToSimgConverter(str(cache_dir), str(source))
+    binary = Path(converter.binary_path)
+    binary.write_text(
+        f"#!{sys.executable}\n"
+        "import pathlib, sys\n"
+        + ("" if failure == "converter" else "sys.stdin.read()\n")
+        + "pathlib.Path(sys.argv[2]).write_bytes("
+        + ("b''" if failure == "empty" else "b'partial or complete output'")
+        + ")\n"
+        + ("sys.exit(2)\n" if failure == "converter" else "")
+    )
+    binary.chmod(0o644 if failure == "launch" else 0o755)
+    cache = cache_dir / "tool.simg"
+    cache.write_bytes(b"previous image")
+    os.utime(cache, (1, 1))
+    reader = tmp_path / "reader.simg"
+    os.link(cache, reader)
+    children = []
+    real_popen = subprocess.Popen
+
+    def spawn(*args, **kwargs) -> subprocess.Popen:
+        process = real_popen(*args, **kwargs)
+        children.append(process)
+        return process
+
+    monkeypatch.setattr(ct.subprocess, "Popen", spawn)
+    if failure == "publish":
+        def fail_replace(*args) -> None:
+            raise OSError("publication failed")
+        monkeypatch.setattr(ct.os, "replace", fail_replace)
+    with pytest.raises((RuntimeError, OSError)):
+        converter.convert("tool:1", "tool.simg")
+    assert cache.read_bytes() == b"previous image"
+    assert reader.read_bytes() == b"previous image"
+    assert sorted(path.name for path in cache_dir.iterdir()) == [
+        "docker-save-to-simg", "tool.simg"
+    ]
+    assert all(process.poll() is not None for process in children)
+    producer = next(process for process in children if process.args[:2] == ["docker", "save"])
+    if failure in {"converter", "launch"}:
+        assert producer.returncode < 0
+
+
+def test_cache_hit_retains_selected_inode_during_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    downloader = ct.ReleaseContainerDownloader(str(tmp_path))
+    cache = tmp_path / "tool_1_20261003.simg"
+    cache.write_bytes(b"selected")
+    replacement = tmp_path / "replacement"
+    replacement.write_bytes(b"new generation")
+    link = os.link
+
+    def link_then_replace(source: Path, destination: Path) -> None:
+        link(source, destination)
+        os.replace(replacement, cache)
+
+    monkeypatch.setattr(ct.os, "link", link_then_replace)
+    image = downloader.download_from_release("tool", "1", "20261003")
+    assert image is not None
+    with image:
+        assert image.path.read_bytes() == b"selected"
+        assert cache.read_bytes() == b"new generation"
+    assert not image.path.exists()
+
+
+@pytest.mark.parametrize("configuration", ["empty", "raises"])
+def test_runner_closes_acquisition_on_early_configuration_return(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configuration: str
+) -> None:
+    recipe = tmp_path / "recipes" / "tool"
+    recipe.mkdir(parents=True)
+    config = recipe / "fulltest.yaml"
+    config.write_text("tests: []\n")
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    cache = cache_dir / "tool_1_20261003.simg"
+    cache.write_bytes(b"image")
+    runner = ContainerTestRunner(repo_root=tmp_path)
+    runner.tester.release_downloader = ct.ReleaseContainerDownloader(str(cache_dir))
+    monkeypatch.setattr(runner, "_resolve_release", lambda *args: (None, "1", None))
+    monkeypatch.setattr(runner, "_resolve_test_config", lambda *args: (config, None))
+    paths = []
+
+    def acquire(*args, **kwargs) -> str:
+        image = ct.AcquiredImage(cache)
+        os.link(cache, image.path)
+        runner.tester._acquired_images.append(image)
+        paths.append(image.path)
+        return str(image.path)
+
+    def extract(*args) -> dict:
+        assert paths[0].read_bytes() == b"image"
+        if configuration == "raises":
+            raise ValueError("invalid configuration")
+        return {"tests": []}
+
+    runner.tester.test_extractor = SimpleNamespace(extract_from_file=extract)
+    monkeypatch.setattr(
+        runner.tester, "select_runtime",
+        lambda *args: SimpleNamespace(name="apptainer"),
+    )
+    monkeypatch.setattr(runner.tester, "find_container", acquire)
+    outcome = runner.run(RunRequest(recipe="tool", version="1"))
+    assert outcome.status == ("skipped" if configuration == "empty" else "failed")
+    assert not paths[0].exists()
+    assert cache.read_bytes() == b"image"
+    assert list(cache_dir.iterdir()) == [cache]
+
+
+def test_repeated_cache_cleanup_keeps_all_active_readers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tester = ct.ContainerTester()
+    tester.release_downloader = ct.ReleaseContainerDownloader(str(tmp_path))
+    cache = tmp_path / "tool_1_20261003.simg"
+    cache.write_bytes(b"image")
+    monkeypatch.setattr(
+        tester.release_downloader, "extract_build_date_from_release",
+        lambda _: "20261003",
+    )
+    release = tmp_path / "release.json"
+    release.write_text("{}")
+    with tester:
+        first = Path(tester.find_container("tool", "1", "release", str(release)))
+        second = Path(tester.find_container("tool", "1", "release", str(release)))
+        assert first != second
+        assert tester.cleanup_downloaded_containers()
+        assert tester.cleanup_downloaded_containers()
+        assert not cache.exists()
+        assert first.read_bytes() == second.read_bytes() == b"image"
+    assert not first.exists()
+    assert not second.exists()
+
+
+def test_overlapping_converter_builds_retain_their_own_binary_and_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    docker = tools / "docker"
+    docker.write_text("#!/bin/sh\nexit 0\n")
+    docker.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tools) + os.pathsep + os.environ["PATH"])
+    source = tmp_path / "converter.go"
+    source.write_text("package main\n")
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    converter = ct.DockerToSimgConverter(str(cache_dir), str(source))
+    builds = []
+    nested = []
+    real_run = subprocess.run
+    real_which = ct.shutil.which
+    monkeypatch.setattr(
+        ct.shutil, "which", lambda name: "/fake/go" if name == "go" else real_which(name)
+    )
+    with ExitStack() as resources:
+        def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
+            if command[:2] != ["go", "build"]:
+                return real_run(command, **kwargs)
+            binary = Path(command[command.index("-o") + 1])
+            builds.append(binary)
+            generation = "outer" if len(builds) == 1 else "inner"
+            binary.write_text(f'#!/bin/sh\nprintf {generation} > "$2"\n')
+            binary.chmod(0o755)
+            if generation == "outer":
+                nested.append(resources.enter_context(
+                    converter.convert("tool:1", "tool.simg")
+                ))
+                os.utime(nested[0].cache_path, (1, 1))
+            return subprocess.CompletedProcess(command, 0)
+
+        monkeypatch.setattr(ct.subprocess, "run", run)
+        outer = resources.enter_context(converter.convert("tool:1", "tool.simg"))
+        assert len(set(builds)) == 2
+        assert outer.path.read_bytes() == b"outer"
+        assert nested[0].path.read_bytes() == b"inner"
+        assert "outer" in builds[0].read_text()
+        assert "inner" in builds[1].read_text()
+        assert outer.cache_path.read_bytes() == b"outer"
+    assert sorted(path.name for path in cache_dir.iterdir()) == [
+        "docker-save-to-simg", "tool.simg"
     ]

@@ -24,13 +24,15 @@ def test_release_downloader_prefers_s3_over_nectar(
         container_tester.urllib.request, "urlretrieve", fake_urlretrieve
     )
 
-    path = downloader.download_from_release("globus", "3.2.8", "20260514")
+    image = downloader.download_from_release("globus", "3.2.8", "20260514")
 
-    assert path == str(tmp_path / "globus_3.2.8_20260514.simg")
-    assert Path(path).read_text(encoding="utf-8") == "simg"
-    assert calls == [
-        "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
-    ]
+    assert image is not None
+    with image:
+        assert str(image.cache_path) == str(tmp_path / "globus_3.2.8_20260514.simg")
+        assert image.path.read_text(encoding="utf-8") == "simg"
+        assert calls == [
+            "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
+        ]
 
 
 def test_release_downloader_falls_back_to_nectar_when_s3_fails(
@@ -50,14 +52,16 @@ def test_release_downloader_falls_back_to_nectar_when_s3_fails(
         container_tester.urllib.request, "urlretrieve", fake_urlretrieve
     )
 
-    path = downloader.download_from_release("globus", "3.2.8", "20260514")
+    image = downloader.download_from_release("globus", "3.2.8", "20260514")
 
-    assert path == str(tmp_path / "globus_3.2.8_20260514.simg")
-    assert Path(path).read_text(encoding="utf-8") == "simg"
-    assert calls == [
-        "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
-        "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/globus_3.2.8_20260514.simg",
-    ]
+    assert image is not None
+    with image:
+        assert str(image.cache_path) == str(tmp_path / "globus_3.2.8_20260514.simg")
+        assert image.path.read_text(encoding="utf-8") == "simg"
+        assert calls == [
+            "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
+            "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/globus_3.2.8_20260514.simg",
+        ]
 
 
 def test_release_downloader_can_refresh_existing_cache(
@@ -77,18 +81,20 @@ def test_release_downloader_can_refresh_existing_cache(
         container_tester.urllib.request, "urlretrieve", fake_urlretrieve
     )
 
-    path = downloader.download_from_release(
+    image = downloader.download_from_release(
         "globus",
         "3.2.8",
         "20260514",
         use_cache=False,
     )
 
-    assert path == str(cache_path)
-    assert cache_path.read_text(encoding="utf-8") == "fresh"
-    assert calls == [
-        "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
-    ]
+    assert image is not None
+    with image:
+        assert str(image.cache_path) == str(cache_path)
+        assert cache_path.read_text(encoding="utf-8") == "fresh"
+        assert calls == [
+            "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
+        ]
 
 
 def test_release_downloader_prefers_image_basename_from_release_metadata(
@@ -108,18 +114,20 @@ def test_release_downloader_prefers_image_basename_from_release_metadata(
         container_tester.urllib.request, "urlretrieve", fake_urlretrieve
     )
 
-    path = downloader.download_from_release(
+    image = downloader.download_from_release(
         "neurodesktop",
         "20260428-arm64",
         "20260519",
         image_basename="neurodesktop_20260428_arm64",
     )
 
-    assert path == str(tmp_path / "neurodesktop_20260428_arm64_20260519.simg")
-    assert Path(path).read_text(encoding="utf-8") == "arm64 simg"
-    assert calls == [
-        "https://neurocontainers.s3.us-east-2.amazonaws.com/neurodesktop_20260428_arm64_20260519.simg",
-    ]
+    assert image is not None
+    with image:
+        assert str(image.cache_path) == str(tmp_path / "neurodesktop_20260428_arm64_20260519.simg")
+        assert image.path.read_text(encoding="utf-8") == "arm64 simg"
+        assert calls == [
+            "https://neurocontainers.s3.us-east-2.amazonaws.com/neurodesktop_20260428_arm64_20260519.simg",
+        ]
 
 
 def test_release_downloader_falls_back_to_computed_filename(
@@ -139,19 +147,21 @@ def test_release_downloader_falls_back_to_computed_filename(
         container_tester.urllib.request, "urlretrieve", fake_urlretrieve
     )
 
-    path = downloader.download_from_release(
+    image = downloader.download_from_release(
         "globus",
         "3.2.8",
         "20260514",
         image_basename="custom_globus",
     )
 
-    assert path == str(tmp_path / "globus_3.2.8_20260514.simg")
-    assert calls == [
-        "https://neurocontainers.s3.us-east-2.amazonaws.com/custom_globus_20260514.simg",
-        "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/custom_globus_20260514.simg",
-        "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
-    ]
+    assert image is not None
+    with image:
+        assert str(image.cache_path) == str(tmp_path / "globus_3.2.8_20260514.simg")
+        assert calls == [
+            "https://neurocontainers.s3.us-east-2.amazonaws.com/custom_globus_20260514.simg",
+            "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/custom_globus_20260514.simg",
+            "https://neurocontainers.s3.us-east-2.amazonaws.com/globus_3.2.8_20260514.simg",
+        ]
 
 
 def test_release_downloader_extracts_sanitized_image_basename(
@@ -195,17 +205,19 @@ def test_release_downloader_accepts_image_basename_with_build_date(
         container_tester.urllib.request, "urlretrieve", fake_urlretrieve
     )
 
-    path = downloader.download_from_release(
+    image = downloader.download_from_release(
         "neurodesktop",
         "20260428-arm64",
         "20260519",
         image_basename="neurodesktop_20260428_arm64_20260519.simg",
     )
 
-    assert path == str(tmp_path / "neurodesktop_20260428_arm64_20260519.simg")
-    assert calls == [
-        "https://neurocontainers.s3.us-east-2.amazonaws.com/neurodesktop_20260428_arm64_20260519.simg",
-    ]
+    assert image is not None
+    with image:
+        assert str(image.cache_path) == str(tmp_path / "neurodesktop_20260428_arm64_20260519.simg")
+        assert calls == [
+            "https://neurocontainers.s3.us-east-2.amazonaws.com/neurodesktop_20260428_arm64_20260519.simg",
+        ]
 
 
 def test_release_downloader_reports_download_progress(
@@ -225,13 +237,15 @@ def test_release_downloader_reports_download_progress(
         container_tester.urllib.request, "urlretrieve", fake_urlretrieve
     )
 
-    path = downloader.download_from_release("globus", "3.2.8", "20260514")
+    image = downloader.download_from_release("globus", "3.2.8", "20260514")
 
-    assert path == str(tmp_path / "globus_3.2.8_20260514.simg")
-    output = capsys.readouterr().out
-    assert "Download size for globus_3.2.8_20260514.simg: 10.0 MB" in output
-    assert "Download progress for globus_3.2.8_20260514.simg: 50%" in output
-    assert "Download progress for globus_3.2.8_20260514.simg: 100%" in output
+    assert image is not None
+    with image:
+        assert str(image.cache_path) == str(tmp_path / "globus_3.2.8_20260514.simg")
+        output = capsys.readouterr().out
+        assert "Download size for globus_3.2.8_20260514.simg: 10.0 MB" in output
+        assert "Download progress for globus_3.2.8_20260514.simg: 50%" in output
+        assert "Download progress for globus_3.2.8_20260514.simg: 100%" in output
 
 
 def test_auto_location_passes_release_image_basename(
