@@ -27,9 +27,8 @@ not copy image contents into the run directory or delete inputs or the shared ca
 
 `--results-path` and the report, comment, and status filenames under `--output-dir`
 remain the latest published result. Concurrent callers that need independent
-reports must select separate output directories and results paths. Remove retained
-`fulltest-run-*` directories when their diagnostics and work files are no longer
-needed. CI uploads the diagnostics and excludes private work directories.
+reports must select separate output directories and results paths. CI uploads the
+diagnostics and excludes private work directories.
 
 If fulltest execution fails before producing usable results, the published result
 keeps completed deploy checks and adds one failed runner check with the original
@@ -38,6 +37,41 @@ or malformed raw result does not erase the available log or JSONL references.
 If report publication fails after saving results JSON, the runner leaves that JSON
 intact, exits with failure, and reports failed status through `GITHUB_OUTPUT` when
 it can write that file.
+
+### Clean up old run artifacts
+
+Preview cleanup, then delete eligible runs with the same retention period:
+
+```bash
+python -m workflows.test_run_artifacts --output-dir builder --older-than-days 7 --dry-run
+python -m workflows.test_run_artifacts --output-dir builder --older-than-days 7
+```
+
+The default retention period is seven days since completion. Zero deletes eligible
+superseded runs immediately. Negative and nonfinite ages are rejected. Each matching
+entry prints its action and reason. Errors while accessing or deleting candidate
+directories return a nonzero exit status. Dry-run takes the same locks and checks
+references without changing files.
+
+Cleanup considers only immediate `fulltest-run-*` directories with valid ownership
+metadata. A directory lock protects execution and every publication step. Completion
+means publication succeeded, even when tests failed. Each run records its absolute
+results destination, so latest results at custom or external paths remain protected.
+Publication holds a separate lock on the results destination's parent directory
+through JSON writing, enrichment, and report generation. Cleanup takes this same
+lock without waiting and holds it through reading the latest references and deletion.
+A busy destination retains its candidates. This also coordinates runners using
+separate output roots with a shared external destination. Results in the same parent
+directory serialize publication, including skipped runs. These locks create no
+sidecar files. A candidate that is itself the results parent is retained.
+
+Cleanup retains active and unfinished runs, legacy directories without metadata,
+invalid records, and runs whose latest results are missing, unreadable, or malformed.
+Interrupted publication and forced termination leave unfinished runs, even if a child
+process continues after its parent dies. These directories need manual review and
+removal after all writers stop. A missing external results file can retain completed
+runs indefinitely. Symlink candidates are skipped, and deletion never follows nested
+symlinks. This command does not clean container images or the shared download cache.
 
 ### Image acquisition ownership
 

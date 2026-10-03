@@ -9,7 +9,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +16,7 @@ import yaml
 
 from builder.release_artifact import is_placeholder_reference
 from workflows.container_tester import ContainerTester
+from workflows.test_run_artifacts import managed_run, publication_guard
 from workflows.reporting import (
     CommentOutput,
     PublicationPlan,
@@ -220,7 +220,7 @@ def _skipped_results(
     }
 
 
-def run_fulltest_release(args: argparse.Namespace) -> RunOutcome:
+def run_fulltest_release(args: argparse.Namespace, *, run_dir: Path) -> RunOutcome:
     """Run deploy and fulltest checks, retaining evidence when execution fails."""
     container_ref = "unresolved"
     deploy_results: dict[str, Any] | None = None
@@ -230,9 +230,6 @@ def run_fulltest_release(args: argparse.Namespace) -> RunOutcome:
     try:
         release_file = Path(args.release_file)
         test_config = Path(args.test_config)
-        output_dir = Path(args.output_dir).absolute()
-        output_dir.mkdir(parents=True, exist_ok=True)
-        run_dir = Path(tempfile.mkdtemp(prefix="fulltest-run-", dir=output_dir))
         raw_results_path = run_dir / f"fulltest-raw-{args.recipe}.json"
         fulltest_log_path = run_dir / f"fulltest-{args.recipe}.log"
         fulltest_jsonl_path = run_dir / f"fulltest-{args.recipe}.jsonl"
@@ -415,46 +412,54 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     test_config = Path(args.test_config)
 
+    reason = None
+    published = None
     try:
-        if not args.test_config or not test_config.is_file():
-            outcome = RunOutcome(
-                _skipped_results(
+        with ExitStack() as runs:
+            try:
+                if not args.test_config or not test_config.is_file():
+                    outcome = RunOutcome(
+                        _skipped_results(
+                            recipe=args.recipe,
+                            version=args.version,
+                            message="No fulltest.yaml test configuration available",
+                        )
+                    )
+                elif test_config.name != "fulltest.yaml":
+                    raise RuntimeError(
+                        f"Unsupported test configuration {test_config}; only fulltest.yaml is supported"
+                    )
+                else:
+                    run = runs.enter_context(managed_run(
+                        Path(args.output_dir), results_path=Path(args.results_path),
+                    ))
+                    outcome = run_fulltest_release(args, run_dir=run.path)
+            except Exception as exc:
+                outcome = RunOutcome(
+                    _failure_results(
+                        recipe=args.recipe, version=args.version, message=str(exc),
+                    ),
+                    str(exc),
+                )
+
+            reason = outcome.reason
+            if reason is not None:
+                print(reason, file=sys.stderr)
+            with publication_guard(Path(args.results_path)):
+                published = publish_test_results(
                     recipe=args.recipe,
                     version=args.version,
-                    message="No fulltest.yaml test configuration available",
+                    results=outcome.results,
+                    plan=_publication_plan(
+                        recipe=args.recipe,
+                        results_path=Path(args.results_path),
+                        output_dir=Path(args.output_dir),
+                    ),
                 )
-            )
-        elif test_config.name != "fulltest.yaml":
-            raise RuntimeError(
-                f"Unsupported test configuration {test_config}; only fulltest.yaml is supported"
-            )
-        else:
-            outcome = run_fulltest_release(args)
+            status = published.status
     except Exception as exc:
-        outcome = RunOutcome(
-            _failure_results(
-                recipe=args.recipe, version=args.version, message=str(exc),
-            ),
-            str(exc),
-        )
-
-    reason = outcome.reason
-    if reason is not None:
-        print(reason, file=sys.stderr)
-    try:
-        published = publish_test_results(
-            recipe=args.recipe,
-            version=args.version,
-            results=outcome.results,
-            plan=_publication_plan(
-                recipe=args.recipe,
-                results_path=Path(args.results_path),
-                output_dir=Path(args.output_dir),
-            ),
-        )
-        status = published.status
-    except Exception as exc:
-        print(f"Unable to publish test results: {exc}", file=sys.stderr)
+        operation = "finalize test run" if published is not None else "publish test results"
+        print(f"Unable to {operation}: {exc}", file=sys.stderr)
         status = "failed"
         if reason is None:
             reason = str(exc)
