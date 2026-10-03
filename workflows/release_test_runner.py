@@ -332,6 +332,21 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
         container_ref=container_ref,
         jsonl_records=_load_jsonl_records(fulltest_jsonl_path),
     )
+    if proc.returncode != 0 and not fulltest_results["failed"]:
+        fulltest_results["test_results"].append(
+            {
+                "name": "fulltest execution",
+                "status": "failed",
+                "stdout": "",
+                "stderr": (
+                    f"run_tests.py exited with code {proc.returncode} "
+                    "without reporting a failed test"
+                ),
+                "return_code": proc.returncode,
+            }
+        )
+        fulltest_results["total_tests"] += 1
+        fulltest_results["failed"] += 1
     fulltest_results["fulltest_artifacts"] = {
         "raw_json": str(raw_results_path),
         "jsonl": str(fulltest_jsonl_path),
@@ -347,8 +362,6 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
             recipe=args.recipe, results_path=results_path, output_dir=output_dir
         ),
     )
-    if proc.returncode != 0:
-        return "failed"
     return published.status
 
 

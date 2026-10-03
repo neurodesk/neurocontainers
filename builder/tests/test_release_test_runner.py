@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from workflows.release_test_runner import (
     _combine_results,
     _failure_results,
@@ -607,3 +609,124 @@ def test_build_comment_treats_json_scalar_stdout_as_plain_output() -> None:
 
     assert status == "passed"
     assert "11.8" in comment
+
+
+@pytest.mark.parametrize(
+    ("child_exit", "fulltest_passed", "deploy_passed", "total", "passed", "failed"),
+    [
+        (1, True, True, 3, 2, 1),
+        (2, True, True, 3, 2, 1),
+        (-15, True, True, 3, 2, 1),
+        (0, True, True, 2, 2, 0),
+        (1, False, True, 2, 1, 1),
+        (0, True, False, 2, 1, 1),
+        (1, True, False, 3, 1, 2),
+    ],
+)
+def test_main_publishes_child_exit_with_completed_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    child_exit: int,
+    fulltest_passed: bool,
+    deploy_passed: bool,
+    total: int,
+    passed: int,
+    failed: int,
+) -> None:
+    source = tmp_path / "candidate.simg"
+    source.write_text("simg", encoding="utf-8")
+    test_config = tmp_path / "fulltest.yaml"
+    test_config.write_text("name: sample\ntests: []\n", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    github_output = tmp_path / "github-output.txt"
+    results_path = output_dir / "results.json"
+    summary = {
+        "total_tests": 1,
+        "tests_passed": int(fulltest_passed),
+        "tests_failed": int(not fulltest_passed),
+    }
+    test_message = "OK" if fulltest_passed else "Assertion failed"
+
+    class FakeTester:
+        def select_runtime(self, runtime: str) -> SimpleNamespace:
+            return SimpleNamespace(name="apptainer")
+
+        def run_test_suite(self, *args, **kwargs) -> dict[str, object]:
+            return {
+                "total_tests": 1,
+                "passed": int(deploy_passed),
+                "failed": int(not deploy_passed),
+                "skipped": 0,
+                "test_results": [
+                    {"name": "deploy", "status": "passed" if deploy_passed else "failed"}
+                ],
+            }
+
+    def fake_run(command, **kwargs) -> SimpleNamespace:
+        raw = {
+            "summary": summary,
+            "suites": [{"name": "sample", "tests": [{
+                "name": "help", "passed": fulltest_passed,
+                "message": test_message, "duration": 0.25,
+            }]}],
+        }
+        Path(command[command.index("-o") + 1]).write_text(
+            json.dumps(raw), encoding="utf-8"
+        )
+        Path(command[command.index("--jsonl") + 1]).write_text(
+            json.dumps({
+                "suite": "sample", "test": "help", "stdout": "usage\n",
+                "stderr": "diagnostic\n", "exit_code": 0 if fulltest_passed else 1,
+            }) + "\n", encoding="utf-8",
+        )
+        Path(command[command.index("--log") + 1]).write_text(
+            "completed help\n", encoding="utf-8"
+        )
+        return SimpleNamespace(returncode=child_exit)
+
+    monkeypatch.setattr("workflows.release_test_runner.ContainerTester", FakeTester)
+    monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
+    exit_code = main([
+        "--recipe", "sample", "--version", "1.0",
+        "--release-file", str(tmp_path / "release.json"),
+        "--candidate-container", str(source), "--test-config", str(test_config),
+        "--output-dir", str(output_dir), "--results-path", str(results_path),
+        "--github-output", str(github_output), "--repo-root", str(tmp_path),
+    ])
+
+    status = "failed" if failed else "passed"
+    assert exit_code == int(bool(failed))
+    assert f"Status: {status}" in capsys.readouterr().out
+    assert github_output.read_text(encoding="utf-8") == f"status={status}\n"
+    assert (output_dir / "status-sample.txt").read_text(encoding="utf-8") == f"{status}\n"
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+    assert (results["total_tests"], results["passed"], results["failed"], results["skipped"]) == (
+        total, passed, failed, 0,
+    )
+    assert len(results["test_results"]) == total
+    assert results["fulltest_summary"] == summary
+    assert results["test_results"][1] == {
+        "name": "help", "status": "passed" if fulltest_passed else "failed",
+        "stdout": "usage\n", "stderr": "diagnostic\n",
+        "return_code": 0 if fulltest_passed else 1,
+        "duration": 0.25, "message": test_message,
+    }
+    artifacts = results["fulltest_artifacts"]
+    assert set(artifacts) == {"raw_json", "jsonl", "log", "suite"}
+    assert all(Path(path).is_file() for path in artifacts.values())
+    assert json.loads(Path(artifacts["raw_json"]).read_text())["summary"] == summary
+    comment = (output_dir / "comment-sample.md").read_text(encoding="utf-8")
+    report = (output_dir / "test-report-sample.md").read_text(encoding="utf-8")
+    assert comment.startswith(f"{'❌' if failed else '✅'} **sample:1.0**")
+    assert f"Tests: {passed}/{total} passed (failed {failed}, skipped 0)" in comment
+    assert status.upper() in report
+    assert f"{passed}/{total} tests passed (failed {failed})" in report
+    if child_exit and fulltest_passed:
+        execution = results["test_results"][2]
+        assert execution["status"] == "failed"
+        assert execution["return_code"] == child_exit
+        assert "run_tests.py" in execution["stderr"]
+        assert str(child_exit) in execution["stderr"]
+        assert execution["stderr"] in comment
+        assert execution["stderr"] in report
