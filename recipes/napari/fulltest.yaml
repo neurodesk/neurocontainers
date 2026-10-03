@@ -1,5 +1,5 @@
 name: napari
-version: 0.8.0
+version: 0.9.2
 default_timeout: 120
 
 tests:
