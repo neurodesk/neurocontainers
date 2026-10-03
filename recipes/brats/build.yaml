@@ -1,5 +1,5 @@
 name: brats
-version: 0.1.12
+version: 0.1.13
 
 description: BraTS orchestrates the winning BraTS challenge algorithms for tumour segmentation, inpainting and missing-MRI synthesis.
 

@@ -1,5 +1,5 @@
 name: brats
-version: 0.1.12
+version: 0.1.13
 
 tests:
   - name: package imports
@@ -46,8 +46,24 @@ tests:
       Nothing is bundled, so discovery is the entry point. This reads the
       metadata inside the installed package, and fails if that layout changes.
     command: |
-      bash -c 'n=$(brats-algorithms --images-only | wc -l); echo "algorithms=$n"; test "$n" -gt 50'
-    expected_output_contains: "algorithms=6"
+      python - <<'PYTEST'
+      from collections import Counter
+      from pathlib import Path
+      import subprocess
+      import brats
+      import yaml
+
+      expected = []
+      for path in (Path(brats.__file__).parent / "data" / "meta").glob("*.yml"):
+          metadata = yaml.safe_load(path.read_text())
+          for spec in metadata["algorithms"].values():
+              expected.append(spec["run_args"]["docker_image"])
+      actual = subprocess.check_output(["brats-algorithms", "--images-only"], text=True).splitlines()
+      assert len(expected) > 50, len(expected)
+      assert Counter(actual) == Counter(expected), (actual, expected)
+      print(f"all packaged algorithms listed: {len(actual)}")
+      PYTEST
+    expected_output_contains: "all packaged algorithms listed:"
 
   - name: the lister prints the pull command for a task
     command: brats-algorithms --task meningioma
