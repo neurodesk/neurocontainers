@@ -28,9 +28,8 @@ from builder.release_plan import (
     parse_retirements,
     plan_recipe_changes,
     recipe_names_from_paths,
-    path_is_shared_input,
-    shared_recipe_paths,
 )
+from builder.shared_inputs import SharedInputs
 from builder.variants import concrete_variant_specs
 
 REPO_ROOT = SCRIPT_REPO_ROOT
@@ -129,18 +128,11 @@ def recipe_fingerprint(recipe: str) -> str:
         digest.update(path.read_bytes())
         digest.update(b"\0")
     data = yaml.safe_load((recipe_dir / "build.yaml").read_text())
-    for shared in shared_recipe_paths(data):
-        source = REPO_ROOT / shared
-        files = sorted(source.rglob("*")) if source.is_dir() else [source]
-        for path in files:
-            if path.is_dir():
-                continue
-            if not path.resolve().is_relative_to(REPO_ROOT.resolve()):
-                raise RuntimeError(f"Shared build input escapes the repository: {path}")
-            digest.update(path.relative_to(REPO_ROOT).as_posix().encode())
-            digest.update(b"\0")
-            digest.update(path.read_bytes())
-            digest.update(b"\0")
+    for path in SharedInputs.from_recipe(data).files(REPO_ROOT):
+        digest.update(path.relative_to(REPO_ROOT).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -224,9 +216,13 @@ def release_plan(base: str, head: str) -> ReleasePlan:
         f"recipes/{recipe}/"
         for recipe in plan.changed_recipes + plan.retired_recipes
     )
+    shared_inputs = [
+        SharedInputs.from_recipe(head_recipes[name])
+        for name in plan.candidate_recipes
+    ]
     unrelated = [path for path in paths if not path.startswith(allowed)
                  and path != RETIREMENT_MANIFEST
-                 and not any(path_is_shared_input(path, head_recipes[name]) for name in plan.candidate_recipes)]
+                 and not any(inputs.contains(path) for inputs in shared_inputs)]
     if unrelated:
         raise RuntimeError(
             "Automated releases require a recipe-only PR. Unrelated paths: "
@@ -252,8 +248,8 @@ def recipe_changes_since_merge_are_source_only(recipe: str, merge_sha: str) -> b
         path
         for path in changed_files(merge_sha, "HEAD")
         if path.startswith(recipe_prefix)
-        or path_is_shared_input(path, base_recipe)
-        or path_is_shared_input(path, head_recipe)
+        or SharedInputs.from_recipe(base_recipe).contains(path)
+        or SharedInputs.from_recipe(head_recipe).contains(path)
     ]
     if not relevant_paths:
         return False
@@ -277,7 +273,7 @@ def build_date(recipe: str, revision: str = "HEAD") -> str:
         revision,
         "--",
         f"recipes/{recipe}",
-        *shared_recipe_paths(data),
+        *SharedInputs.from_recipe(data).roots,
     )
     if not value:
         raise RuntimeError(f"Could not determine build date for {recipe}")

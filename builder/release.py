@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from .config import canonical_architecture
-from .release_plan import shared_recipe_paths
+from .shared_inputs import SharedInputs
 
 
 def build_date_for_recipe(repo_root: Path, recipe_dir: Path) -> str:
@@ -20,7 +20,7 @@ def build_date_for_recipe(repo_root: Path, recipe_dir: Path) -> str:
         recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text())
         result = subprocess.run(
             ["git", "log", "-1", "--format=%ad", "--date=format:%Y%m%d", "--",
-             str(recipe_dir), *shared_recipe_paths(recipe)],
+             str(recipe_dir), *SharedInputs.from_recipe(recipe).roots],
             cwd=repo_root,
             check=True,
             text=True,
