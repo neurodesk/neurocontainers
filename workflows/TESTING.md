@@ -50,9 +50,11 @@ cache cleanup was not requested. `--cleanup` and `--auto-cleanup` additionally
 evict shared cache entries. Local, candidate, and CVMFS inputs remain caller-owned.
 
 A refresh can temporarily retain both old and new image data. Old image blocks
-are freed when their last retained link closes. Forced process termination such
-as SIGKILL can leave a private acquisition directory; no automatic sweep removes
-these directories because another invocation may still own them.
+are freed when their last retained link closes. Each acquisition directory holds
+an exclusive `flock` on itself while its owner is alive. Forced termination such
+as SIGKILL leaves the directory behind but releases the lock. Every new
+acquisition and `--cleanup-all` remove unlocked `.acquisition-*` directories in
+the cache, so live acquisitions are never touched.
 
 
 ## Release Artifact Resolution

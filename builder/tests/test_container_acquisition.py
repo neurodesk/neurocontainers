@@ -353,3 +353,48 @@ def test_overlapping_converter_builds_retain_their_own_binary_and_image(
     assert sorted(path.name for path in cache_dir.iterdir()) == [
         "docker-save-to-simg", "tool.simg"
     ]
+
+
+def test_orphaned_acquisition_is_swept_while_live_acquisition_survives(
+    tmp_path: Path,
+) -> None:
+    holder = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from workflows import container_tester as ct\n"
+        "image = ct.AcquiredImage(Path(sys.argv[1]))\n"
+        "image.path.write_bytes(b'held')\n"
+        "print(image.path, flush=True)\n"
+        "sys.stdin.read()\n"
+    )
+    repo_root = Path(__file__).resolve().parents[2]
+
+    def hold(name: str) -> tuple[subprocess.Popen, Path]:
+        process = subprocess.Popen(
+            [sys.executable, "-c", holder, str(tmp_path / name)],
+            cwd=repo_root,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        return process, Path(process.stdout.readline().strip())
+
+    killed, orphan = hold("killed.simg")
+    live, retained = hold("live.simg")
+    try:
+        killed.kill()
+        killed.wait()
+        assert orphan.exists()
+
+        downloader = ct.ReleaseContainerDownloader(str(tmp_path))
+        downloader.cleanup_all_cache()
+
+        assert not orphan.parent.exists()
+        assert retained.read_bytes() == b"held"
+
+        with ct.AcquiredImage(tmp_path / "next.simg"):
+            assert retained.read_bytes() == b"held"
+    finally:
+        live.communicate("")
+    assert not retained.parent.exists()
+    assert list(tmp_path.iterdir()) == []
