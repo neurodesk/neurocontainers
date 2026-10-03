@@ -15,9 +15,9 @@ show_in_menu: false
 show_in_applist: false
 
 variables:
-  apptainer_version: 1.4.4
-  firefox_version: 150.0.1
-  code_server_version: 4.104.2
+  apptainer_version: "1.5.4"
+  firefox_version: "157.0"
+  code_server_version: "4.140.0"
   firefox_arch:
     try:
     - value: linux-x86_64
@@ -42,34 +42,35 @@ variables:
       condition: arch=="x86_64"
     - value: strace_aarch64
       condition: arch=="aarch64"
-  neurocommand_commit: b83cefc49f38e240b85d1a55e6fe95e4406e99b0
-  nf_neuro_commit: d21a678afd4343ab4c3cdf9f757e821bbfe68188
-  jupyterlab_slurm_commit: c34354f0aaa1b12f6243224bed631cf07c858409
+  neurocommand_commit: "968b4beff8610aad0b4d4009a96aae69bd4e911c"
+  nf_neuro_commit: "db13b89521279b5c4685045d955185453ded8d2a"
+  jupyterlab_slurm_commit: "8dccb39808f8a1b77712a9a5773a7d2601a56683"
+  yarn_version: "1.22.22"
   hatchling_build_version: 1.32.0
-  codex_version: 0.153.4
-  claude_version: 2.1.263
-  opencode_version: 1.18.29
+  codex_version: "0.160.0"
+  claude_version: "2.1.288"
+  opencode_version: "1.18.34"
   nextflow_tag: v26.04.6
   nf_test_version: 0.9.5
-  datalad_version: 1.6.2
+  datalad_version: "1.6.5"
   nipype_version: 1.12.0
-  nbdev_version: 3.3.16
+  nbdev_version: "3.3.24"
   nf_core_version: 4.1.0
-  snakemake_version: 9.26.1
+  snakemake_version: "9.27.0"
   pydra_version: 1.0a7
   nipoppy_version: 0.4.7
-  matplotlib_version: 3.11.1
+  matplotlib_version: "3.11.2"
   datalad_container_version: 1.2.6
   datalad_osf_version: 0.3.0
   osfclient_version: 0.0.5
   watermark_version: 2.6.0
   ipyniivue_version: 2.4.4
-  jupyter_server_proxy_version: 4.5.0
+  jupyter_server_proxy_version: "4.6.0"
   jupyterlmod_version: 5.3.2
   jupyterlab_git_version: 0.54.1
-  notebook_intelligence_version: 5.4.0
+  notebook_intelligence_version: "6.1.0"
   jupyterlab_rise_version: 0.43.1
-  jupyterlab_niivue_version: 0.2.5
+  jupyterlab_niivue_version: "0.2.7"
   jupyterlab_myst_version: 2.7.0
   jupyter_sshd_proxy_version: 0.3.0
   papermill_version: 2.7.0
@@ -86,8 +87,14 @@ variables:
   pytest_version: 9.1.1
   requests_version: 2.34.2
   chardet_version: 5.2.0
-  base_digest: sha256:58070ab2a012191ad517400edfef654c214621b69ec6d8668f6e1f5267db2d42
-  go_version: 1.23.6
+  base_digest: "sha256:4ef9cfd552d265799bd9e959a87fb674da8cea738145ce49e7d286cb967ad1d7"
+  go_version: "1.27.1"
+  go_arch:
+    try:
+    - value: amd64
+      condition: arch=="x86_64"
+    - value: arm64
+      condition: arch=="aarch64"
 
 auto_update:
   container_version: false
@@ -140,6 +147,13 @@ auto_update:
     target:
       variable: claude_version
       fulltest_variable: claude_version
+  - id: yarn
+    dependency: true
+    method: npm
+    package: yarn
+    target:
+      variable: yarn_version
+      fulltest_variable: yarn_version
   - id: opencode
     method: npm
     package: opencode-ai
@@ -473,7 +487,8 @@ build:
     - run:
         - bash {{ get_file("nodesource_setup") }}
         - apt-get update --yes
-        - apt-get install --yes --no-install-recommends nodejs yarn
+        - apt-get install --yes --no-install-recommends nodejs
+        - npm install --global --no-audit --no-fund yarn@{{ context.yarn_version }}
         - apt-get clean
         - rm -rf /var/lib/apt/lists/*
 
@@ -492,13 +507,6 @@ build:
         - tar -xzf {{ get_file(context.strace_file) }} -C /opt/strace --strip-components=1
         - if [ -e /opt/strace/bin/strace ]; then chmod +x /opt/strace/bin/strace; elif [ -e /opt/strace/strace ]; then chmod +x /opt/strace/strace; fi
 
-    - run:
-        - apt-get update --yes
-        - apt-get install --yes --no-install-recommends {{ get_file("apptainer_deb") }}
-        - apt-get clean
-        - rm -rf /var/lib/apt/lists/* /root/.cache /home/${NB_USER}/.cache
-      condition: arch=="x86_64"
-
     - install:
         - build-essential
         - cryptsetup
@@ -508,11 +516,10 @@ build:
         - libsubid-dev
         - pkg-config
         - tzdata
-      condition: arch=="aarch64"
 
     - run:
         - mkdir -p /tmp/apptainer-source /opt/go
-        - tar -xzf {{ get_file("go_arm64") }} -C /opt/go --strip-components=1
+        - tar -xzf {{ get_file("go_archive") }} -C /opt/go --strip-components=1
         - tar -xzf {{ get_file("apptainer_source") }} -C /tmp/apptainer-source --strip-components=1
         - cd /tmp/apptainer-source
         - export PATH=/opt/go/bin:$PATH
@@ -520,7 +527,6 @@ build:
         - make -C builddir -j2
         - make -C builddir install
         - rm -rf /tmp/apptainer-source /opt/go
-      condition: arch=="aarch64"
 
     - run:
         - mv /usr/bin/systemctl /usr/bin/systemctl.orig
@@ -815,17 +821,10 @@ files:
     condition: arch=="aarch64"
     retry: 5
 
-  - name: go_arm64
-    url: https://dl.google.com/go/go{{ context.go_version }}.linux-arm64.tar.gz
-    condition: arch=="aarch64"
+  - name: go_archive
+    url: https://dl.google.com/go/go{{ context.go_version }}.linux-{{ context.go_arch }}.tar.gz
   - name: apptainer_source
     url: https://github.com/apptainer/apptainer/releases/download/v{{ context.apptainer_version }}/apptainer-{{ context.apptainer_version }}.tar.gz
-    condition: arch=="aarch64"
-
-  - name: apptainer_deb
-    url: https://github.com/apptainer/apptainer/releases/download/v{{ context.apptainer_version }}/apptainer_{{ context.apptainer_version }}_amd64.deb
-    condition: arch=="x86_64"
-    retry: 5
 
   - name: firefox_tar
     url: https://download-installer.cdn.mozilla.net/pub/firefox/releases/{{ context.firefox_version }}/{{ context.firefox_arch }}/en-US/firefox-{{ context.firefox_version }}.tar.xz

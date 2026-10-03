@@ -4,8 +4,9 @@
 
 name: neurodesktop-lite
 version: "20260428.1.0"
-claude_version: 2.1.263
-apptainer_version: 1.4.4
+yarn_version: "1.22.22"
+claude_version: "2.1.288"
+apptainer_version: "1.5.4"
 ipywidgets_version: 8.1.9
 jupyterlab_widgets_version: 3.0.17
 nb_conda_kernels_version: 2.5.1
@@ -29,6 +30,10 @@ setup:
     mkdir -p "${output_dir}"
 
 tests:
+  - name: Yarn reports its version
+    command: yarn --version
+    expected_output_contains: "${yarn_version}"
+
   - name: Claude binary is available without a home directory
     description: Verify the installed native executable survives removal of the build user home.
     command: HOME=/proc/neurodesktop-no-home /opt/jovyan_defaults/.local/bin/claude --version
