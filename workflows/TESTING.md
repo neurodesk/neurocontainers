@@ -31,6 +31,14 @@ reports must select separate output directories and results paths. Remove retain
 `fulltest-run-*` directories when their diagnostics and work files are no longer
 needed. CI uploads the diagnostics and excludes private work directories.
 
+If fulltest execution fails before producing usable results, the published result
+keeps completed deploy checks and adds one failed runner check with the original
+error. Artifact references include only files created by that invocation. A missing
+or malformed raw result does not erase the available log or JSONL references.
+If report publication fails after saving results JSON, the runner leaves that JSON
+intact, exits with failure, and reports failed status through `GITHUB_OUTPUT` when
+it can write that file.
+
 ### Image acquisition ownership
 
 Release downloads and Docker conversion return `AcquiredImage` resources. Use

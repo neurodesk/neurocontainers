@@ -203,7 +203,7 @@ def test_main_writes_failure_outputs_when_fulltest_adapter_errors(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    def fail_fulltest(args: SimpleNamespace) -> str:
+    def fail_fulltest(args: SimpleNamespace) -> None:
         raise RuntimeError("Unable to download release container")
 
     monkeypatch.setattr(
@@ -242,9 +242,11 @@ def test_main_writes_failure_outputs_when_fulltest_adapter_errors(
     assert "status=failed" in github_output.read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize("launch_fails", [False, True])
 def test_run_fulltest_release_uses_release_image_basename(
     tmp_path: Path,
     monkeypatch,
+    launch_fails: bool,
 ) -> None:
     """Release tests honor architecture-specific image basenames in metadata."""
     source = tmp_path / "cache" / "neurodesktop_20260428_arm64_20260519.simg"
@@ -306,6 +308,8 @@ def test_run_fulltest_release_uses_release_image_basename(
     def fake_run(command, **kwargs) -> SimpleNamespace:
         run_commands.append(command)
         assert Path(command[command.index("--container") + 1]).read_text() == "simg"
+        if launch_fails:
+            raise OSError("cannot launch child")
         raw_path = Path(command[command.index("-o") + 1])
         log_path = Path(command[command.index("--log") + 1])
         jsonl_path = Path(command[command.index("--jsonl") + 1])
@@ -328,7 +332,7 @@ def test_run_fulltest_release_uses_release_image_basename(
 
     monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
 
-    status = run_fulltest_release(
+    outcome = run_fulltest_release(
         SimpleNamespace(
             recipe="neurodesktop",
             version="20260428-arm64",
@@ -346,7 +350,9 @@ def test_run_fulltest_release_uses_release_image_basename(
         )
     )
 
-    assert status == "passed"
+    assert outcome.reason == ("cannot launch child" if launch_fails else None)
+    assert outcome.results["failed"] == int(launch_fails)
+    assert outcome.results["passed"] == 1
     assert calls == [
         {
             "args": ("neurodesktop", "20260428-arm64", "20260519"),
@@ -419,7 +425,7 @@ def test_run_fulltest_release_uses_local_candidate(tmp_path: Path, monkeypatch) 
     monkeypatch.setattr("workflows.release_test_runner.ContainerTester", FakeTester)
     monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
 
-    status = run_fulltest_release(
+    outcome = run_fulltest_release(
         SimpleNamespace(
             recipe="demo",
             version="1.2.3",
@@ -437,7 +443,8 @@ def test_run_fulltest_release_uses_local_candidate(tmp_path: Path, monkeypatch) 
         )
     )
 
-    assert status == "passed"
+    assert outcome.reason is None
+    assert outcome.results["failed"] == 0
     assert source.read_text(encoding="utf-8") == "simg"
     assert not list(output_dir.rglob("*.simg"))
 
@@ -523,7 +530,7 @@ def test_run_fulltest_release_falls_back_to_docker_conversion(
 
     monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
 
-    status = run_fulltest_release(
+    outcome = run_fulltest_release(
         SimpleNamespace(
             recipe="bidsappbrainsuite",
             version="21a",
@@ -540,7 +547,8 @@ def test_run_fulltest_release_falls_back_to_docker_conversion(
         )
     )
 
-    assert status == "passed"
+    assert outcome.reason is None
+    assert outcome.results["failed"] == 0
     assert calls == [
         {
             "method": "download",
@@ -967,3 +975,69 @@ def test_main_publication_failure_preserves_saved_results(
     assert "report disk failure" in capsys.readouterr().err
     github_output = Path(run.args[run.args.index("--github-output") + 1])
     assert github_output.read_text() == "status=failed\nreason=report disk failure\n"
+
+
+def test_main_early_execution_failure_has_no_unwritten_artifacts(
+    repeated_fulltest: SimpleNamespace,
+) -> None:
+    run = repeated_fulltest
+    run.args[run.args.index("--candidate-container") + 1] = str(run.source.with_name("missing.simg"))
+    assert main(run.args) == 1
+    results = json.loads((run.output / "results.json").read_text())
+    assert results["container"] == "unresolved"
+    assert results["fulltest_artifacts"] == {}
+    assert results["total_tests"] == results["failed"] == 1
+    assert results["passed"] == 0
+    assert "Candidate container not found" in results["test_results"][0]["stderr"]
+    assert not run.commands
+
+
+@pytest.mark.parametrize("publication_fails", [False, True])
+def test_main_preserves_multiline_execution_reason(
+    repeated_fulltest: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    publication_fails: bool,
+) -> None:
+    from workflows import release_test_runner as runner
+    from workflows import reporting
+
+    run = repeated_fulltest
+    reason = "cannot launch child\nFULLTEST_REASON\nstatus=injected"
+
+    def fail_child(*args, **kwargs):
+        raise OSError(reason)
+
+    def fail_report(*args, **kwargs):
+        raise OSError("report disk failure")
+
+    monkeypatch.setattr(runner.subprocess, "run", fail_child)
+    if publication_fails:
+        monkeypatch.setattr(reporting, "build_report", fail_report)
+    assert main(run.args) == 1
+    results = json.loads((run.output / "results.json").read_text())
+    assert results["test_results"][0]["stderr"] == reason
+    assert reason in capsys.readouterr().err
+    github_output = Path(run.args[run.args.index("--github-output") + 1])
+    lines = github_output.read_text().splitlines()
+    assert lines[0] == "status=failed"
+    assert lines[1].startswith("reason<<")
+    delimiter = lines[1].removeprefix("reason<<")
+    assert delimiter not in reason.splitlines()
+    assert lines[-1] == delimiter
+    assert "\n".join(lines[2:-1]) == reason
+
+
+def test_main_github_output_failure_leaves_published_results(
+    repeated_fulltest: SimpleNamespace,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    run = repeated_fulltest
+    run.args[run.args.index("--github-output") + 1] = str(run.output)
+    assert main(run.args) == 1
+    results = json.loads((run.output / "results.json").read_text())
+    assert results["total_tests"] == results["passed"] == 1
+    assert results["failed"] == 0
+    assert results["test_results"][0]["name"] == "help"
+    assert (run.output / "status-sample.txt").read_text() == "passed\n"
+    assert "Unable to write GitHub output" in capsys.readouterr().err
