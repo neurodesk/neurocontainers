@@ -133,5 +133,5 @@
     
     If ipr name is like IceFire.Image.OnlyEmitData.ipr the IceFire will search xml files:
     IceFire.xml (required), IceFire.Image.xml and IceFire.OnlyEmitData.xml (optional).
-    The optional xml can contains partial configurations to overwite values from IceFire.xml
+    The optional xml can contains partial configurations to overwrite values from IceFire.xml
 -->
