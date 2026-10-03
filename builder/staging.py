@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
 import shutil
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 
-from .cache import HttpCache, get_guest_filename, link_or_copy, normalize_sha256, sha256_text
+from .cache import (
+    HttpCache,
+    download_cache_key,
+    get_guest_filename,
+    link_or_copy,
+    normalize_sha256,
+    sha256_text,
+)
 
 
 @dataclass(frozen=True)
@@ -29,12 +36,97 @@ class CopySource:
 class StagingPlan:
     files: dict[str, DeclaredFile] = field(default_factory=dict)
     copy_sources: list[CopySource] = field(default_factory=list)
-    cache_mounts: dict[str, dict[str, str]] = field(default_factory=dict)
+    recipe_dir: Path = field(default_factory=Path)
+    _cache_mounts: dict[str, dict[str, str]] = field(default_factory=dict, init=False, repr=False)
+    _unavailable_files: set[str] = field(default_factory=set, init=False, repr=False)
+    _mount_sources: dict[str, dict[str, str]] = field(default_factory=dict, init=False, repr=False)
 
-    def add_file(self, file: DeclaredFile) -> None:
+    def add_file(
+        self,
+        file: DeclaredFile,
+        *,
+        relative_to: Path | None = None,
+        renderable: bool = True,
+    ) -> None:
         if file.name in self.files:
             raise ValueError(f"duplicate declared file: {file.name}")
+        if file.filename is not None and relative_to is not None and relative_to != self.recipe_dir:
+            filename = Path(file.filename)
+            if not filename.is_absolute():
+                file = replace(file, filename=str(relative_to / filename))
         self.files[file.name] = file
+        if not renderable:
+            self._unavailable_files.add(file.name)
+
+    def _source_identity(self, file: DeclaredFile) -> str:
+        if file.url is not None:
+            return str(Path.home() / ".cache" / "neurocontainers" / download_cache_key(file.url, file.sha256))
+        if file.filename is not None:
+            source = Path(file.filename)
+            if not source.is_absolute():
+                source = self.recipe_dir / source
+            return str(source.resolve())
+        return file.name
+
+    @property
+    def cache_mounts(self) -> dict[str, dict[str, str]]:
+        if not self._mount_sources:
+            return self._cache_mounts
+        sources = {
+            self._source_identity(file): name
+            for name, file in self.files.items()
+            if name not in self._unavailable_files
+        }
+        for cache_id, guests in self._mount_sources.items():
+            self._cache_mounts[cache_id] = {
+                sources[source]: guest for guest, source in guests.items()
+                if source in sources
+            }
+        return self._cache_mounts
+
+    def file_path(self, name: str, cache_id: str | None = None) -> str:
+        if name not in self.files or name in self._unavailable_files:
+            raise KeyError(name)
+        file = self.files[name]
+        guest = file.guest_filename or name
+        if cache_id is None:
+            return f"/.neurocontainer-cache/{guest}"
+        names = self._mount_sources.setdefault(cache_id, {})
+        source = self._source_identity(file)
+        target = Path.home() / ".cache" / "neurocontainers" / "build-context" / cache_id / guest
+        source_path = Path(source)
+        conflicts_existing = False
+        if target.exists():
+            if file.contents is not None and file.url is None and file.filename is None:
+                try:
+                    conflicts_existing = target.read_text() != file.contents
+                except OSError:
+                    conflicts_existing = True
+            else:
+                try:
+                    conflicts_existing = not source_path.samefile(target)
+                except OSError:
+                    conflicts_existing = True
+                if conflicts_existing and source_path.exists():
+                    try:
+                        conflicts_existing = source_path.read_bytes() != target.read_bytes()
+                    except OSError:
+                        conflicts_existing = True
+        if (guest in names and names[guest] != source) or conflicts_existing:
+            stem, dot, suffix = guest.rpartition(".")
+            digest = sha256_text(source)[:12]
+            guest = f"{stem}_{digest}.{suffix}" if dot else f"{guest}_{digest}"
+        names[guest] = source
+        return f"/.neurocontainer-cache/{cache_id}/{guest}"
+
+    def add_copy_source(self, source: str) -> str:
+        if source in self.files and source not in self._unavailable_files:
+            file = self.files[source]
+            resolved = file.guest_filename or source
+            self.copy_sources.append(CopySource(source=resolved, declared_name=source))
+            return resolved
+        self.copy_sources.append(CopySource(source=source))
+        return source
 
 
 def disambiguated_cache_name(cache_dir: Path, preferred: str, source: Path) -> str:

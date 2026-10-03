@@ -20,7 +20,7 @@ from .staging import CopySource, DeclaredFile, StagingPlan, declared_file_from_m
 from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
-from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT, download_cache_key
+from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT
 from .config import ARCHITECTURE_ALIASES, canonical_architecture
 from .variants import concrete_variant_specs, forced_variant_spec, variant_specs
 
@@ -410,6 +410,7 @@ def compile_recipe(
     for key, value in (recipe.get("options") or {}).items():
         if option_values.get(str(key)) and isinstance(value, dict):
             version += str(value.get("version_suffix") or "")
+    plan = StagingPlan(recipe_dir=recipe_dir)
     context = RenderContext(
         name=str(selected_variant["name"]),
         version=version,
@@ -419,8 +420,8 @@ def compile_recipe(
         parallel_jobs=parallel_jobs or (os.cpu_count() or 1),
         local_keys=local_keys or set(),
         options=SimpleNamespace(**option_values),
+        staging_plan=plan,
     )
-    plan = StagingPlan()
     definition = Definition()
     deploy_bins: list[Any] = []
     deploy_path: list[Any] = []
@@ -438,28 +439,8 @@ def compile_recipe(
         for key in ("filename", "url", "contents", "sha256"):
             if key in rendered and rendered[key] is not None:
                 rendered[key] = renderer.render_value(rendered[key], context)
-        if rendered.get("filename") is not None and file_dirs[-1] != recipe_dir:
-            filename = Path(str(rendered["filename"]))
-            if not filename.is_absolute():
-                rendered["filename"] = str(file_dirs[-1] / filename)
         file = declared_file_from_mapping(name, rendered)
-        plan.add_file(file)
-        context.file_paths[name] = file.guest_filename or name
-        if file.url is not None:
-            context.file_sources[name] = str(
-                Path.home() / ".cache" / "neurocontainers"
-                / download_cache_key(file.url, file.sha256)
-            )
-        elif file.filename is not None:
-            source = Path(file.filename)
-            if not source.is_absolute():
-                source = recipe_dir / source
-            context.file_sources[name] = str(source.resolve())
-        elif file.contents is not None:
-            context.file_sources[name] = name
-            context.file_contents[name] = file.contents
-        else:
-            context.file_sources[name] = name
+        plan.add_file(file, relative_to=file_dirs[-1])
 
     for key, value in (recipe.get("variables") or {}).items():
         context.values[key] = renderer.render_value(value, context)
@@ -505,34 +486,16 @@ def compile_recipe(
                 rendered = renderer.render_value(directive["install"], context)
                 definition.add(Install(tuple(_split_install(rendered))))
             elif "run" in directive:
-                before_files = len(context.requested_files)
-                before_locals = len(context.requested_locals)
-                cache_id = "h" + _hash_obj(directive)[:8]
-                previous_cache_id = context.current_cache_id
-                context.current_cache_id = cache_id
-                try:
+                with context.mount_scope("h" + _hash_obj(directive)[:8]) as scope:
                     rendered = renderer.render_value(directive["run"], context)
-                finally:
-                    context.current_cache_id = previous_cache_id
                 if isinstance(rendered, str):
                     rendered = [rendered]
                 elif not isinstance(rendered, list):
                     raise ValueError("run directive must render to a string or list")
                 commands = [str(item) for item in rendered if item is not None and str(item) != ""]
-                mounts: list[str] = []
-                if len(context.requested_files) > before_files:
-                    mounts.append(
-                        "--mount=type=bind,"
-                        f"from=neurocontainer-cache,source=/{cache_id},"
-                        f"target=/.neurocontainer-cache/{cache_id},readonly"
-                    )
-                for key in context.requested_locals[before_locals:]:
-                    mounts.append(
-                        f"--mount=type=bind,from={key},source=/,target=/.neurocontainer-local/{key},readonly"
-                    )
                 command = " " + " \\\n && ".join(commands)
-                if mounts:
-                    definition.add(RunWithMounts(tuple(dict.fromkeys(mounts)), command))
+                if scope.mounts:
+                    definition.add(RunWithMounts(scope.mounts, command))
                 else:
                     definition.add(Run(command))
             elif "workdir" in directive:
@@ -551,15 +514,7 @@ def compile_recipe(
                 parts = _copy_parts(renderer.render_value(directive["copy"], context))
                 if len(parts) < 2:
                     raise ValueError("copy directive requires source and destination")
-                resolved_sources: list[str] = []
-                for source in parts[:-1]:
-                    if source not in context.file_paths:
-                        plan.copy_sources.append(CopySource(source=source))
-                        resolved_sources.append(source)
-                        continue
-                    resolved = context.file_paths[source]
-                    plan.copy_sources.append(CopySource(source=resolved, declared_name=source))
-                    resolved_sources.append(resolved)
+                resolved_sources = [plan.add_copy_source(source) for source in parts[:-1]]
                 definition.add(Copy(tuple(resolved_sources), parts[-1]))
             elif "variables" in directive:
                 values = directive["variables"]
@@ -612,37 +567,19 @@ def compile_recipe(
                 template = directive["template"]
                 if not isinstance(template, dict):
                     raise ValueError("template directive must be a mapping")
-                before_files = len(context.requested_files)
-                before_locals = len(context.requested_locals)
-                cache_id = "h" + _hash_obj(directive)[:8]
-                previous_cache_id = context.current_cache_id
-                context.current_cache_id = cache_id
-                try:
+                with context.mount_scope("h" + _hash_obj(directive)[:8]) as scope:
                     name = str(renderer.render_value(template.get("name", ""), context))
                     params = {
                         str(key): renderer.render_value(value, context)
                         for key, value in template.items()
                         if key != "name"
                     }
-                finally:
-                    context.current_cache_id = previous_cache_id
                 params.setdefault("arch", "x86_64" if context.arch == "x86_64" else "aarch64")
-                mounts = []
-                if len(context.requested_files) > before_files:
-                    mounts.append(
-                        "--mount=type=bind,"
-                        f"from=neurocontainer-cache,source=/{cache_id},"
-                        f"target=/.neurocontainer-cache/{cache_id},readonly"
-                    )
-                for key in context.requested_locals[before_locals:]:
-                    mounts.append(
-                        f"--mount=type=bind,from={key},source=/,target=/.neurocontainer-local/{key},readonly"
-                    )
                 template_directives = []
                 apply_builtin_template(name, params, pkg_manager, template_directives.append)
                 for item in template_directives:
-                    if mounts and isinstance(item, Run):
-                        item = RunWithMounts(tuple(dict.fromkeys(mounts)), item.command)
+                    if scope.mounts and isinstance(item, Run):
+                        item = RunWithMounts(scope.mounts, item.command)
                     definition.add(item)
             elif "boutique" in directive:
                 boutique_data = renderer.render_value(directive["boutique"], context)
@@ -653,7 +590,8 @@ def compile_recipe(
                     DeclaredFile(
                         name=filename,
                         contents=json.dumps(boutique_data, indent=2) + "\n",
-                    )
+                    ),
+                    renderable=False,
                 )
                 plan.copy_sources.append(
                     CopySource(source=filename, declared_name=filename)
@@ -670,14 +608,6 @@ def compile_recipe(
 
     for directive in build.get("directives", []) or []:
         apply_directive(directive)
-
-    reverse_file_sources = {source: name for name, source in context.file_sources.items()}
-    for cache_id, files in context.cache_filenames.items():
-        plan.cache_mounts[cache_id] = {
-            reverse_file_sources[source]: guest
-            for guest, source in files.items()
-            if source in reverse_file_sources
-        }
 
     top_level_deploy = renderer.render_value(recipe.get("deploy") or {}, context)
     if not deploy_bins and isinstance(top_level_deploy, dict):

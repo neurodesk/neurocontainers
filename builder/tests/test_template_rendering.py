@@ -13,6 +13,7 @@ from builder.ir import Env, Run, RunWithMounts
 from builder.dockerfile import render_directive, render_dockerfile
 from builder.template import RenderContext, TemplateError, TemplateRenderer
 from builder.recipe import compile_recipe
+from builder.staging import DeclaredFile
 from builder.template_backend import apply_builtin_template
 
 
@@ -32,7 +33,7 @@ def test_get_file_requires_declared_file() -> None:
         renderer.render_string('{{ get_file("missing") }}', context)
 
 
-def test_get_local_tracks_requested_context() -> None:
+def test_get_local_mounts_requested_context_once() -> None:
     renderer = TemplateRenderer()
     context = RenderContext(
         name="tool",
@@ -40,11 +41,46 @@ def test_get_local_tracks_requested_context() -> None:
         arch="x86_64",
         local_keys={"src"},
     )
-    assert (
+    with context.mount_scope("local-inputs") as scope:
+        assert (
+            renderer.render_string('{{ get_local("src") }}', context)
+            == "/.neurocontainer-local/src"
+        )
         renderer.render_string('{{ get_local("src") }}', context)
-        == "/.neurocontainer-local/src"
+    assert scope.mounts == (
+        "--mount=type=bind,from=src,source=/,target=/.neurocontainer-local/src,readonly",
     )
-    assert context.requested_locals == ["src"]
+
+
+def test_failed_render_restores_mount_scope() -> None:
+    renderer = TemplateRenderer()
+    context = RenderContext(
+        name="tool", version="1.2.3", arch="x86_64", local_keys={"src"}
+    )
+    context.staging_plan.add_file(DeclaredFile(name="payload", contents="payload"))
+    with context.mount_scope("outer") as outer:
+        with pytest.raises(TemplateError):
+            with context.mount_scope("failed"):
+                renderer.render_string(
+                    '{{ get_file("payload") }} {{ context.missing }}', context
+                )
+        assert (
+            renderer.render_string('{{ get_file("payload") }}', context)
+            == "/.neurocontainer-cache/outer/payload"
+        )
+    assert outer.mounts == (
+        "--mount=type=bind,from=neurocontainer-cache,source=/outer,"
+        "target=/.neurocontainer-cache/outer,readonly",
+    )
+    assert (
+        renderer.render_string('{{ get_file("payload") }}', context)
+        == "/.neurocontainer-cache/payload"
+    )
+    with context.mount_scope("next") as next_scope:
+        renderer.render_string('{{ get_local("src") }}', context)
+    assert next_scope.mounts == (
+        "--mount=type=bind,from=src,source=/,target=/.neurocontainer-local/src,readonly",
+    )
 
 
 def test_conditional_fixture_resolves_arch_variable() -> None:

@@ -1,14 +1,39 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import jinja2
 
+from .staging import StagingPlan
+
 
 class TemplateError(ValueError):
     pass
+
+
+@dataclass
+class RenderScope:
+    cache_id: str
+    requested_file: bool = False
+    local_keys: list[str] = field(default_factory=list)
+
+    @property
+    def mounts(self) -> tuple[str, ...]:
+        mounts = []
+        if self.requested_file:
+            mounts.append(
+                "--mount=type=bind,"
+                f"from=neurocontainer-cache,source=/{self.cache_id},"
+                f"target=/.neurocontainer-cache/{self.cache_id},readonly"
+            )
+        mounts.extend(
+            f"--mount=type=bind,from={key},source=/,target=/.neurocontainer-local/{key},readonly"
+            for key in self.local_keys
+        )
+        return tuple(dict.fromkeys(mounts))
 
 
 @dataclass
@@ -22,13 +47,18 @@ class RenderContext:
     values: dict[str, Any] = field(default_factory=dict)
     options: Any = None
     local_keys: set[str] = field(default_factory=set)
-    file_paths: dict[str, str] = field(default_factory=dict)
-    file_sources: dict[str, str] = field(default_factory=dict)
-    file_contents: dict[str, str] = field(default_factory=dict)
-    cache_filenames: dict[str, dict[str, str]] = field(default_factory=dict)
-    requested_files: list[str] = field(default_factory=list)
-    requested_locals: list[str] = field(default_factory=list)
-    current_cache_id: str | None = None
+    staging_plan: StagingPlan = field(default_factory=StagingPlan)
+    _scope: RenderScope | None = field(default=None, init=False, repr=False)
+
+    @contextmanager
+    def mount_scope(self, cache_id: str) -> Iterator[RenderScope]:
+        previous_scope = self._scope
+        scope = RenderScope(cache_id)
+        self._scope = scope
+        try:
+            yield scope
+        finally:
+            self._scope = previous_scope
 
     def __getattr__(self, key: str) -> Any:
         if key == "original_version":
@@ -43,43 +73,19 @@ class RenderContext:
     def get_local(self, key: str) -> str:
         if key not in self.local_keys:
             raise TemplateError(f"local context not available: {key}")
-        self.requested_locals.append(key)
+        if self._scope is not None:
+            self._scope.local_keys.append(key)
         return f"/.neurocontainer-local/{key}"
 
     def get_file(self, name: str) -> str:
-        if name not in self.file_paths:
-            raise TemplateError(f"declared file not available: {name}")
-        self.requested_files.append(name)
-        guest = self.file_paths[name]
-        if self.current_cache_id is not None:
-            names = self.cache_filenames.setdefault(self.current_cache_id, {})
-            source = self.file_sources.get(name, name)
-            target = Path.home() / ".cache" / "neurocontainers" / "build-context" / self.current_cache_id / guest
-            source_path = Path(source)
-            conflicts_existing = False
-            if target.exists():
-                if name in self.file_contents:
-                    try:
-                        conflicts_existing = target.read_text() != self.file_contents[name]
-                    except OSError:
-                        conflicts_existing = True
-                else:
-                    try:
-                        conflicts_existing = not source_path.samefile(target)
-                    except OSError:
-                        conflicts_existing = True
-                    if conflicts_existing and source_path.exists():
-                        try:
-                            conflicts_existing = source_path.read_bytes() != target.read_bytes()
-                        except OSError:
-                            conflicts_existing = True
-            if (guest in names and names[guest] != source) or conflicts_existing:
-                stem, dot, suffix = guest.rpartition(".")
-                digest = __import__("hashlib").sha256(source.encode("utf-8")).hexdigest()[:12]
-                guest = f"{stem}_{digest}.{suffix}" if dot else f"{guest}_{digest}"
-            names[guest] = source
-            return f"/.neurocontainer-cache/{self.current_cache_id}/{guest}"
-        return f"/.neurocontainer-cache/{guest}"
+        cache_id = self._scope.cache_id if self._scope is not None else None
+        try:
+            path = self.staging_plan.file_path(name, cache_id)
+        except KeyError as exc:
+            raise TemplateError(f"declared file not available: {name}") from exc
+        if self._scope is not None:
+            self._scope.requested_file = True
+        return path
 
 
 class TemplateRenderer:
