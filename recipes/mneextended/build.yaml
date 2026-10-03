@@ -5,6 +5,8 @@ variables:
   mne_bids_version: "0.20.0"
   mnelab_version: 1.5.4
   vscode_version: "1.140.0"
+  flux_commit: "6310101dc1957c2cf5370e1c0d21c6ff94e3457e"
+  openneuro_version: "2026.9.1"
   pipeline_commit: "e0fe00d71e95b20981e657530793eaf4a9ba69fc"
 
 name: mneextended
@@ -61,6 +63,25 @@ auto_update:
     target:
       variable: pipeline_commit
       fulltest_variable: pipeline_commit
+
+  - id: flux
+    method: github_commit
+    repo: Neuronal-Oscillations/FLUX
+    ref: main
+    target:
+      variable: flux_commit
+      fulltest_variable: flux_commit
+  - id: openneuro-py
+    method: pypi
+    package: openneuro-py
+    dependency: true
+    target:
+      variable: openneuro_version
+      fulltest_variable: openneuro_version
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/Neuronal-Oscillations/FLUX/blob/{{ context.flux_commit }}/LICENSE
 
 build:
   kind: neurodocker
@@ -148,6 +169,16 @@ build:
         - /opt/miniconda/envs/mne-extended/bin/python -m pip install --no-cache-dir 'mne=={{ context.mne_version }}' 'autoreject=={{ context.autoreject_version }}' 'mne-bids=={{ context.mne_bids_version }}' 'mnelab=={{ context.mnelab_version }}' /opt/mne-bids-pipeline
         - /opt/miniconda/envs/mne-extended/bin/python -m pip check
         - chmod a+rwx /opt/mne-bids-pipeline -R
+    - run:
+        - mkdir -p /tmp/flux-source /opt/flux
+        - tar -xzf {{ get_file("flux_source") }} -C /tmp/flux-source --strip-components=1
+        - cp -a /tmp/flux-source/MNEPython /tmp/flux-source/LICENSE /opt/flux/
+        - printf '%s\n' '{{ context.flux_commit }}' > /opt/flux/SOURCE_COMMIT
+        - rm -rf /tmp/flux-source
+        - /opt/miniconda/envs/mne-extended/bin/python -m pip install --no-cache-dir 'openneuro-py=={{ context.openneuro_version }}'
+        - /opt/miniconda/envs/mne-extended/bin/python -m pip check
+    - copy: flux-smoke-test.py /opt/flux/flux-smoke-test.py
+    - copy: FLUX.md /opt/flux/README.md
     - copy: code /usr/local/sbin/code
     - run:
         - chmod a+x /usr/local/sbin/code
@@ -163,6 +194,13 @@ deploy:
     - code
 
 readme: |-
+  ## FLUX MNE notebooks
+
+  The maintained FLUX MNE notebooks and their images are in `/opt/flux/MNEPython`.
+  Copy that directory into a writable project and open it with `code` or Jupyter
+  using the MNE extended Python environment. Read `/opt/flux/README.md` for the
+  pinned reference dataset, first-look smoke command, and external tool requirements.
+
 
   ----------------------------------
   ## mneextended/{{ context.version }} ##
@@ -191,6 +229,12 @@ readme: |-
   ----------------------------------
 
 files:
+- name: flux_source
+  url: https://github.com/Neuronal-Oscillations/FLUX/archive/{{ context.flux_commit }}.tar.gz
+- name: flux-smoke-test.py
+  filename: flux-smoke-test.py
+- name: FLUX.md
+  filename: FLUX.md
 - name: container_entrypoint
   executable: true
   contents: |
