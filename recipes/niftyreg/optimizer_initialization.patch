@@ -1,0 +1,82 @@
+diff --git a/reg-lib/Optimiser.cpp b/reg-lib/Optimiser.cpp
+index 3807024d..701cbc4a 100644
+--- a/reg-lib/Optimiser.cpp
++++ b/reg-lib/Optimiser.cpp
+@@ -83,7 +83,6 @@ void Optimiser<T>::Initialise(size_t nvox,
+     this->StoreCurrentDof();
+ 
+     this->intOpt = intOpt;
+-    this->bestObjFunctionValue = this->currentObjFunctionValue = this->intOpt->GetObjectiveFunctionValue();
+ 
+     NR_FUNC_CALLED();
+ }
+diff --git a/reg-lib/Optimiser.hpp b/reg-lib/Optimiser.hpp
+index 8b290243..1613774b 100644
+--- a/reg-lib/Optimiser.hpp
++++ b/reg-lib/Optimiser.hpp
+@@ -134,6 +134,9 @@ public:
+                             size_t nvoxBw,
+                             T *cppDataBw,
+                             T *gradDataBw);
++    void InitialiseObjectiveFunction() {
++        this->bestObjFunctionValue = this->currentObjFunctionValue = this->intOpt->GetObjectiveFunctionValue();
++    }
+     virtual void Optimise(T maxLength,
+                           T smallLength,
+                           T& startLength);
+diff --git a/reg-lib/_reg_f3d.cpp b/reg-lib/_reg_f3d.cpp
+index aa71cf50..f820574d 100644
+--- a/reg-lib/_reg_f3d.cpp
++++ b/reg-lib/_reg_f3d.cpp
+@@ -482,6 +482,7 @@ void reg_f3d<T>::SetOptimiser() {
+                                                                       this->optimiseX,
+                                                                       this->optimiseY,
+                                                                       this->optimiseZ));
++    this->optimiser->InitialiseObjectiveFunction();
+     NR_FUNC_CALLED();
+ }
+ /* *************************************************************** */
+diff --git a/reg-lib/_reg_f3d2.cpp b/reg-lib/_reg_f3d2.cpp
+index 05b5f5f1..0c93f446 100644
+--- a/reg-lib/_reg_f3d2.cpp
++++ b/reg-lib/_reg_f3d2.cpp
+@@ -438,6 +438,7 @@ void reg_f3d2<T>::SetOptimiser() {
+                                                                       this->optimiseY,
+                                                                       this->optimiseZ,
+                                                                       conBw.get()));
++    this->optimiser->InitialiseObjectiveFunction();
+     NR_FUNC_CALLED();
+ }
+ /* *************************************************************** */
+diff --git a/reg-lib/cuda/CudaOptimiser.cu b/reg-lib/cuda/CudaOptimiser.cu
+index 38cd1464..35200ea0 100644
+--- a/reg-lib/cuda/CudaOptimiser.cu
++++ b/reg-lib/cuda/CudaOptimiser.cu
+@@ -64,7 +64,6 @@ void CudaOptimiser::Initialise(size_t nvox,
+     this->StoreCurrentDof();
+ 
+     this->intOpt = intOpt;
+-    this->bestObjFunctionValue = this->currentObjFunctionValue = this->intOpt->GetObjectiveFunctionValue();
+ 
+     NR_FUNC_CALLED();
+ }
+diff --git a/reg-test/reg_test_conjugateGradient.cpp b/reg-test/reg_test_conjugateGradient.cpp
+index b5b02217..4416b9eb 100644
+--- a/reg-test/reg_test_conjugateGradient.cpp
++++ b/reg-test/reg_test_conjugateGradient.cpp
+@@ -68,6 +68,7 @@ struct CgFixture {
+             contentBw.reset(creator->Create(reference, reference, controlPointGridBw));
+         optimiser.reset(platform.CreateOptimiser<float>(*content, callbacks, 0, true, true, true, true,
+                                                         contentBw.get()));
++        optimiser->InitialiseObjectiveFunction();
+     }
+ 
+     void SetGradient(F3dContent& con, float value) {
+@@ -228,6 +229,7 @@ TEST_CASE("Conjugate gradient control point update", "[unit]") {
+                             // Recreate the optimiser so it snapshots this best DOF
+                             f.optimiser.reset(platform.CreateOptimiser<float>(*f.content, f.callbacks, 0, true,
+                                                                               optimiseX, optimiseY, optimiseZ));
++                            f.optimiser->InitialiseObjectiveFunction();
+                             unique_ptr<Compute> compute{ platform.CreateCompute(*f.content) };
+                             compute->UpdateControlPointPosition(f.optimiser->GetCurrentDof(),
+                                                                 f.optimiser->GetBestDof(),
