@@ -8,16 +8,16 @@ copyright:
   - license: MIT
     url: https://github.com/neurodesk/neurocontainers/blob/main/LICENSE
 variables:
-  openrecon_ismrmrd_version: 1.14.2
+  openrecon_ismrmrd_version: "1.15.0"
   openrecon_siemens_commit: 055eefc09dfa77fbf11fff85979dea9ef2879ba5
   openrecon_python_tools_commit: 17fe6fbf1bb645112e2ad0023eb4f42afb36421e
   openrecon_server_commit: 33362f2139701fbf5ea855808a325eb59b7db2ae
   upstream_commit: 0eb02bc0652a292ed80fee4a90ccdd3da4cfcd56
   julia_version: 1.12.5
   julia_sha256: 41b84d727e4e96fbf3ed9e92fa195d773d247b9097f73fad688f8b699758bae7
-  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
-  numpy_version: 2.2.6
-  scipy_version: 1.15.3
+  base_image_digest: "sha256:b1066385161d28ddf6bc7e7b28a9170eec11484c821d1a5150d176cbde41d7f7"
+  numpy_version: "2.5.3"
+  scipy_version: "1.18.1"
   nibabel_version: 5.4.2
 auto_update:
   method: sources
