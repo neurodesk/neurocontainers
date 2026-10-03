@@ -454,17 +454,21 @@ jobs:
           build_date="$(echo "${manifest}" | jq -r '.build_date')"
           sif="$(echo "${manifest}" | jq -r '.sif')"
           staging_tag="candidate-${HEAD_SHA}"
+          architecture="$(echo "${manifest}" | jq -r '.architecture')"
+          ghcr_subject="ghcr.io/${GH_REGISTRY}/${container}@$(oras resolve "ghcr.io/${GH_REGISTRY}/${container}:${staging_tag}")"
+          quay_subject="quay.io/neurodesk/${container}@$(oras resolve "quay.io/neurodesk/${container}:${staging_tag}")"
+          python -m builder.oci_labels image "${ghcr_subject}" \
+            --architecture "${architecture}" --format annotations > "$RUNNER_TEMP/sif-annotation-args"
+          mapfile -d '' -t SIF_ANNOTATION_ARGS < "$RUNNER_TEMP/sif-annotation-args"
           cp "promotion-bundle/${container}/${sif}" "${RUNNER_TEMP}/${sif}"
           cd "${RUNNER_TEMP}"
           oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
-            --annotation "org.opencontainers.image.title=${container}" \
-            --annotation "org.opencontainers.image.version=${version}_${build_date}" \
-            "ghcr.io/${GH_REGISTRY}/${container}:${staging_tag}" \
+            "${SIF_ANNOTATION_ARGS[@]}" \
+            "${ghcr_subject}" \
             "${sif}:application/vnd.sylabs.sif.layer.v1.sif"
           oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
-            --annotation "org.opencontainers.image.title=${container}" \
-            --annotation "org.opencontainers.image.version=${version}_${build_date}" \
-            "quay.io/neurodesk/${container}:${staging_tag}" \
+            "${SIF_ANNOTATION_ARGS[@]}" \
+            "${quay_subject}" \
             "${sif}:application/vnd.sylabs.sif.layer.v1.sif"
           cd "$GITHUB_WORKSPACE"
           sif_sha256="$(echo "${manifest}" | jq -r .sif_sha256)"

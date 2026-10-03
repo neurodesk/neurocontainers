@@ -16,6 +16,8 @@ from typing import Any, Callable, Iterable
 VOLATILE_LABELS = {
     "GITHUB_REPOSITORY",
     "GITHUB_SHA",
+    "org.opencontainers.image.created",
+    "org.opencontainers.image.revision",
 }
 
 # Runtime configuration fields compared between a locally built image
@@ -89,6 +91,14 @@ def _normalize(config: dict[str, Any], diff_ids: Iterable[str] | None) -> dict[s
     labels = dict(config.get("Labels") or {})
     for label in VOLATILE_LABELS:
         labels.pop(label, None)
+    version_label = "org.opencontainers.image.version"
+    if version_label in labels:
+        labels[version_label] = re.sub(r"_\d{8}$", "", labels[version_label])
+    documentation_label = "org.opencontainers.image.documentation"
+    if documentation_label in labels:
+        labels[documentation_label] = re.sub(
+            r"(/neurodesk/neurocontainers/tree/)[0-9a-f]{40}/", r"\1REVISION/", labels[documentation_label]
+        )
 
     normalized_config: dict[str, Any] = {}
     for field_name in CONFIG_FIELDS:
