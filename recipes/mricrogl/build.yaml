@@ -30,6 +30,7 @@ build:
         - libqt5pas1
         - appmenu-gtk2-module
         - libglu1-mesa
+        - libopenjp2-7
         - pigz
 
     - workdir: /opt

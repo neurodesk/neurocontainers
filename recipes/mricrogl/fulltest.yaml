@@ -1,5 +1,5 @@
 # mricrogl container test suite
-# Tests for MRIcroGL v1.2.20211006 - NIfTI viewer and dcm2niix converter
+# Tests for MRIcroGL - NIfTI viewer and dcm2niix converter
 #
 # MRIcroGL is a cross-platform tool for viewing DICOM and NIfTI format images.
 # It provides a drag-and-drop user interface as well as a scripting language.
@@ -14,6 +14,7 @@
 
 name: mricrogl
 version: 1.2.20220720
+dcm2niix_version: 1.0.20220720
 
 required_files:
   - dataset: ds000001
@@ -74,7 +75,7 @@ tests:
   - name: dcm2niix version check
     description: Verify dcm2niix reports correct version
     command: dcm2niix --version 2>&1 || true
-    expected_output_contains: "v1.0.20211006"
+    expected_output_contains: "v${dcm2niix_version}"
 
   - name: dcm2niix help output
     description: Verify dcm2niix displays usage information
