@@ -1,5 +1,5 @@
 name: clinica
-version: 0.11.3
+version: 0.12.0
 architectures:
   - x86_64
 structured_readme:
