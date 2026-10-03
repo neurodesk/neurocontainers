@@ -730,3 +730,123 @@ def test_main_publishes_child_exit_with_completed_results(
         assert str(child_exit) in execution["stderr"]
         assert execution["stderr"] in comment
         assert execution["stderr"] in report
+
+
+@pytest.fixture
+def repeated_fulltest(tmp_path: Path, monkeypatch):
+    source = tmp_path / "candidate.simg"
+    source.write_bytes(b"original image")
+    config = tmp_path / "fulltest.yaml"
+    config.write_text("name: sample\ntests: []\n")
+    commands = []
+    deploy_inputs = []
+    behavior = {"raw": True, "jsonl": True, "exit": 0}
+
+    class Tester:
+        def select_runtime(self, runtime):
+            return SimpleNamespace(name="apptainer")
+
+        def run_test_suite(self, container, *args, **kwargs):
+            deploy_inputs.append(container)
+            return {"total_tests": 0, "passed": 0, "failed": 0,
+                    "skipped": 0, "test_results": []}
+
+    def child(command, **kwargs):
+        commands.append(command)
+        if behavior["raw"]:
+            Path(command[command.index("-o") + 1]).write_text(json.dumps({
+                "summary": {"total_tests": 1, "tests_passed": 1, "tests_failed": 0},
+                "suites": [{"name": "sample", "tests": [
+                    {"name": "help", "passed": True}]}],
+            }))
+        if behavior["jsonl"]:
+            Path(command[command.index("--jsonl") + 1]).write_text(json.dumps({
+                "suite": "sample", "test": "help", "stdout": "old stdout",
+                "stderr": "old stderr", "exit_code": 0,
+            }) + "\n")
+        Path(command[command.index("--log") + 1]).write_text("child log\n")
+        return SimpleNamespace(returncode=behavior["exit"])
+
+    monkeypatch.setattr("workflows.release_test_runner.ContainerTester", Tester)
+    monkeypatch.setattr("workflows.release_test_runner.subprocess.run", child)
+    output = tmp_path / "output"
+    args = ["--recipe", "sample", "--version", "1.0", "--release-file", "missing.json",
+            "--candidate-container", str(source), "--test-config", str(config),
+            "--output-dir", str(output), "--results-path", str(output / "results.json"),
+            "--repo-root", str(tmp_path), "--github-output", str(tmp_path / "github-output")]
+    return SimpleNamespace(args=args, behavior=behavior, commands=commands,
+                           deploy_inputs=deploy_inputs, output=output, source=source,
+                           config=config)
+
+
+@pytest.mark.parametrize("child_exit", [0, 2])
+def test_repeated_fulltest_requires_current_results(repeated_fulltest, child_exit):
+    run = repeated_fulltest
+    assert main(run.args) == 0
+    run.behavior.update(raw=False, jsonl=False, exit=child_exit)
+    assert main(run.args) == 1
+    results = json.loads((run.output / "results.json").read_text())
+    assert "help" not in [test["name"] for test in results["test_results"]]
+    assert f"exit {child_exit}" in results["test_results"][0]["stderr"]
+
+
+def test_repeated_fulltest_does_not_borrow_jsonl(repeated_fulltest):
+    run = repeated_fulltest
+    assert main(run.args) == 0
+    run.behavior["jsonl"] = False
+    assert main(run.args) == 0
+    test = json.loads((run.output / "results.json").read_text())["test_results"][0]
+    assert test["stdout"] == ""
+    assert test["stderr"] == ""
+
+
+def test_repeated_fulltest_retains_private_artifacts_and_workspace(repeated_fulltest):
+    run = repeated_fulltest
+    assert main(run.args) == 0
+    previous = json.loads((run.output / "results.json").read_text())["fulltest_artifacts"]
+    contents = {path: Path(path).read_bytes() for path in previous.values()}
+    old_work = Path(run.commands[-1][run.commands[-1].index("--work-dir") + 1])
+    (old_work / "marker").write_text("previous work")
+    run.config.write_text("name: changed\ntests: []\n")
+    assert main(run.args) == 0
+    current = json.loads((run.output / "results.json").read_text())["fulltest_artifacts"]
+    assert set(current.values()).isdisjoint(previous.values())
+    assert all(Path(path).read_bytes() == content for path, content in contents.items())
+    work = Path(run.commands[-1][run.commands[-1].index("--work-dir") + 1])
+    assert not (work / "marker").exists()
+    assert (old_work / "marker").read_text() == "previous work"
+    assert all(Path(path).parent == work.parent for path in current.values())
+
+
+@pytest.mark.parametrize("location", ["legacy", "external", "symlink"])
+def test_fulltest_uses_original_candidate_without_staging(
+    repeated_fulltest, tmp_path, monkeypatch, location,
+):
+    run = repeated_fulltest
+    monkeypatch.chdir(tmp_path)
+    source = (run.output / "fulltest-containers" if location == "legacy"
+              else tmp_path / "first") / "candidate.simg"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"first image")
+    second = tmp_path / "second" / source.name
+    second.parent.mkdir()
+    second.write_bytes(b"second image")
+    if location == "symlink":
+        target = source.with_name("actual-image.simg")
+        source.rename(target)
+        source.symlink_to(target)
+        run.config.write_text("container: candidate.simg\ntests: []\n")
+    run.args[run.args.index("--output-dir") + 1] = "output"
+    for candidate in (source, second):
+        run.args[run.args.index("--candidate-container") + 1] = str(candidate.relative_to(tmp_path))
+        assert main(run.args) == 0
+        command = run.commands[-1]
+        assert Path(command[command.index("--container") + 1]) == candidate.resolve()
+        assert run.deploy_inputs[-1] == str(candidate.resolve())
+        assert "-c" not in command
+        for flag in ("-o", "--log", "--jsonl", "--work-dir"):
+            assert Path(command[command.index(flag) + 1]).is_absolute()
+        assert Path(command[3]).is_absolute()
+    assert source.read_bytes() == b"first image"
+    assert second.read_bytes() == b"second image"
+    assert list(run.output.rglob("*.simg")) == ([source] if location == "legacy" else [])
