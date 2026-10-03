@@ -15,8 +15,13 @@ import yaml
 
 from builder.release_artifact import is_placeholder_reference
 from workflows.container_tester import ContainerTester
-from workflows.reporting import build_comment, build_report, determine_status, write_text
-from workflows.summarize_deploy_results import summarise_results_file
+from workflows.reporting import (
+    CommentOutput,
+    PublicationPlan,
+    ReportOutput,
+    publish_test_results,
+    write_text,
+)
 
 
 def _release_build_date(release_file: Path) -> str:
@@ -135,25 +140,20 @@ def _combine_results(
     return combined
 
 
-def _write_integration_outputs(
-    *,
-    recipe: str,
-    version: str,
-    results: dict[str, Any],
-    results_path: Path,
-    output_dir: Path,
-) -> str:
-    write_text(results_path, json.dumps(results, indent=2) + "\n")
-    summarise_results_file(results_path)
-
-    data = json.loads(results_path.read_text(encoding="utf-8"))
-    report = build_report(data, recipe, version)
-    write_text(output_dir / f"test-report-{recipe}.md", report)
-
-    comment, status = build_comment(data, recipe, version)
-    write_text(output_dir / f"comment-{recipe}.md", comment)
-    write_text(output_dir / f"status-{recipe}.txt", status + "\n")
-    return status
+def _publication_plan(
+    *, recipe: str, results_path: Path, output_dir: Path
+) -> PublicationPlan:
+    return PublicationPlan(
+        results_path=results_path,
+        outputs=(
+            ReportOutput(output_dir / f"test-report-{recipe}.md"),
+            CommentOutput(
+                output_dir / f"comment-{recipe}.md",
+                output_dir / f"status-{recipe}.txt",
+                status_newline=True,
+            ),
+        ),
+    )
 
 
 def _failure_results(
@@ -339,16 +339,17 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
         "suite": str(suite_path),
     }
     results = _combine_results(fulltest_results, deploy_results)
-    status = _write_integration_outputs(
+    published = publish_test_results(
         recipe=args.recipe,
         version=args.version,
         results=results,
-        results_path=results_path,
-        output_dir=output_dir,
+        plan=_publication_plan(
+            recipe=args.recipe, results_path=results_path, output_dir=output_dir
+        ),
     )
     if proc.returncode != 0:
         return "failed"
-    return status
+    return published.status
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -382,7 +383,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if not args.test_config or not test_config.is_file():
             message = "No fulltest.yaml test configuration available"
-            status = _write_integration_outputs(
+            published = publish_test_results(
                 recipe=args.recipe,
                 version=args.version,
                 results=_skipped_results(
@@ -390,9 +391,13 @@ def main(argv: list[str] | None = None) -> int:
                     version=args.version,
                     message=message,
                 ),
-                results_path=Path(args.results_path),
-                output_dir=Path(args.output_dir),
+                plan=_publication_plan(
+                    recipe=args.recipe,
+                    results_path=Path(args.results_path),
+                    output_dir=Path(args.output_dir),
+                ),
             )
+            status = published.status
         elif test_config.name != "fulltest.yaml":
             raise RuntimeError(
                 f"Unsupported test configuration {test_config}; only fulltest.yaml is supported"
@@ -403,7 +408,7 @@ def main(argv: list[str] | None = None) -> int:
         message = str(exc)
         print(message, file=sys.stderr)
         try:
-            _write_integration_outputs(
+            publish_test_results(
                 recipe=args.recipe,
                 version=args.version,
                 results=_failure_results(
@@ -411,8 +416,11 @@ def main(argv: list[str] | None = None) -> int:
                     version=args.version,
                     message=message,
                 ),
-                results_path=Path(args.results_path),
-                output_dir=Path(args.output_dir),
+                plan=_publication_plan(
+                    recipe=args.recipe,
+                    results_path=Path(args.results_path),
+                    output_dir=Path(args.output_dir),
+                ),
             )
             if args.github_output:
                 with Path(args.github_output).open("a", encoding="utf-8") as handle:
