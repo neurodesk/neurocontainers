@@ -624,9 +624,15 @@ def test_build_comment_treats_json_scalar_stdout_as_plain_output() -> None:
     ],
 )
 def test_main_publishes_child_exit_with_completed_results(
-    tmp_path: Path, monkeypatch, capsys,
-    child_exit: int, fulltest_passed: bool, deploy_passed: bool,
-    total: int, passed: int, failed: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    child_exit: int,
+    fulltest_passed: bool,
+    deploy_passed: bool,
+    total: int,
+    passed: int,
+    failed: int,
 ) -> None:
     source = tmp_path / "candidate.simg"
     source.write_text("simg", encoding="utf-8")
@@ -714,7 +720,7 @@ def test_main_publishes_child_exit_with_completed_results(
     report = (output_dir / "test-report-sample.md").read_text(encoding="utf-8")
     assert comment.startswith(f"{'❌' if failed else '✅'} **sample:1.0**")
     assert f"Tests: {passed}/{total} passed (failed {failed}, skipped 0)" in comment
-    assert f"{status.upper()}" in report
+    assert status.upper() in report
     assert f"{passed}/{total} tests passed (failed {failed})" in report
     if child_exit and fulltest_passed:
         execution = results["test_results"][2]
