@@ -89,6 +89,12 @@ variables:
   chardet_version: 5.2.0
   base_digest: "sha256:4ef9cfd552d265799bd9e959a87fb674da8cea738145ce49e7d286cb967ad1d7"
   go_version: "1.27.1"
+  go_arch:
+    try:
+    - value: amd64
+      condition: arch=="x86_64"
+    - value: arm64
+      condition: arch=="aarch64"
 
 auto_update:
   container_version: false
@@ -142,6 +148,7 @@ auto_update:
       variable: claude_version
       fulltest_variable: claude_version
   - id: yarn
+    dependency: true
     method: npm
     package: yarn
     target:
@@ -500,13 +507,6 @@ build:
         - tar -xzf {{ get_file(context.strace_file) }} -C /opt/strace --strip-components=1
         - if [ -e /opt/strace/bin/strace ]; then chmod +x /opt/strace/bin/strace; elif [ -e /opt/strace/strace ]; then chmod +x /opt/strace/strace; fi
 
-    - run:
-        - apt-get update --yes
-        - apt-get install --yes --no-install-recommends {{ get_file("apptainer_deb") }}
-        - apt-get clean
-        - rm -rf /var/lib/apt/lists/* /root/.cache /home/${NB_USER}/.cache
-      condition: arch=="x86_64"
-
     - install:
         - build-essential
         - cryptsetup
@@ -516,11 +516,10 @@ build:
         - libsubid-dev
         - pkg-config
         - tzdata
-      condition: arch=="aarch64"
 
     - run:
         - mkdir -p /tmp/apptainer-source /opt/go
-        - tar -xzf {{ get_file("go_arm64") }} -C /opt/go --strip-components=1
+        - tar -xzf {{ get_file("go_archive") }} -C /opt/go --strip-components=1
         - tar -xzf {{ get_file("apptainer_source") }} -C /tmp/apptainer-source --strip-components=1
         - cd /tmp/apptainer-source
         - export PATH=/opt/go/bin:$PATH
@@ -528,7 +527,6 @@ build:
         - make -C builddir -j2
         - make -C builddir install
         - rm -rf /tmp/apptainer-source /opt/go
-      condition: arch=="aarch64"
 
     - run:
         - mv /usr/bin/systemctl /usr/bin/systemctl.orig
@@ -823,17 +821,10 @@ files:
     condition: arch=="aarch64"
     retry: 5
 
-  - name: go_arm64
-    url: https://dl.google.com/go/go{{ context.go_version }}.linux-arm64.tar.gz
-    condition: arch=="aarch64"
+  - name: go_archive
+    url: https://dl.google.com/go/go{{ context.go_version }}.linux-{{ context.go_arch }}.tar.gz
   - name: apptainer_source
     url: https://github.com/apptainer/apptainer/releases/download/v{{ context.apptainer_version }}/apptainer-{{ context.apptainer_version }}.tar.gz
-    condition: arch=="aarch64"
-
-  - name: apptainer_deb
-    url: https://github.com/apptainer/apptainer/releases/download/v{{ context.apptainer_version }}/apptainer_{{ context.apptainer_version }}_amd64.deb
-    condition: arch=="x86_64"
-    retry: 5
 
   - name: firefox_tar
     url: https://download-installer.cdn.mozilla.net/pub/firefox/releases/{{ context.firefox_version }}/{{ context.firefox_arch }}/en-US/firefox-{{ context.firefox_version }}.tar.xz
