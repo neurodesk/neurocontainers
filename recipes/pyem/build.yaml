@@ -1,0 +1,96 @@
+name: pyem
+version: 0.69.0
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://github.com/asarnow/pyem/blob/v0.69/LICENSE
+architectures:
+  - x86_64
+variables:
+  upstream_version: '0.69'
+  numpy_version: 1.26.4
+  pandas_version: 2.2.3
+  scipy_version: 1.14.1
+  numba_version: 0.61.2
+  starfile_version: 0.5.13
+auto_update:
+  method: sources
+  container_version: pyem
+  sources:
+    - id: pyem
+      method: artifact_listing
+      url: https://api.github.com/repos/asarnow/pyem/tags?per_page=100
+      download_base: https://codeload.github.com/asarnow/pyem/tar.gz/
+      version_regex: v(?P<version>\d+(?:\.\d+)+)
+      target:
+        file: pyem_source
+        variables:
+          upstream_version: version
+    - id: numpy
+      method: pypi
+      package: numpy
+      dependency: true
+      target:
+        variable: numpy_version
+    - id: pandas
+      method: pypi
+      package: pandas
+      dependency: true
+      target:
+        variable: pandas_version
+    - id: scipy
+      method: pypi
+      package: scipy
+      dependency: true
+      target:
+        variable: scipy_version
+    - id: numba
+      method: pypi
+      package: numba
+      dependency: true
+      target:
+        variable: numba_version
+    - id: starfile
+      method: pypi
+      package: starfile
+      dependency: true
+      target:
+        variable: starfile_version
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - python3
+        - python3-venv
+        - ca-certificates
+    - run:
+        - mkdir -p /opt/pyem
+        - tar -xzf {{ get_file("pyem_source") }} -C /opt/pyem --strip-components=1
+        - python3 -m venv /opt/pyem-venv
+        - /opt/pyem-venv/bin/pip install --no-cache-dir numpy=={{ context.numpy_version }} pandas=={{ context.pandas_version
+          }} scipy=={{ context.scipy_version }} numba=={{ context.numba_version }} starfile=={{ context.starfile_version
+          }} /opt/pyem
+        - /opt/pyem-venv/bin/pip check
+    - environment:
+        PATH: /opt/pyem-venv/bin:$PATH
+        MPLBACKEND: Agg
+files:
+  - name: pyem_source
+    url: https://codeload.github.com/asarnow/pyem/tar.gz/v0.69
+    sha256: 969e0075ea7ba854e6ab2c5cf9ab315c7dc994dcb738574707cd4aad380c1105
+deploy:
+  path:
+    - /opt/pyem-venv/bin
+categories:
+  - cryo EM
+readme: |
+  pyem provides Python tools for cryo-EM metadata and image processing.
+  Upstream release v{{ context.upstream_version }} is installed in /opt/pyem-venv.
+
+  Run `csparc2star.py --help` for CryoSPARC conversion and `star.py --help`
+  for RELION STAR selection and editing. All upstream console scripts are exposed.
+  For example, `star.py --class 1 particles.star selected.star` selects one class.
+  Mount your metadata, images and output directory at runtime. These CPU metadata
+  tools do not require a GPU. https://github.com/asarnow/pyem
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABDklEQVR4nO2ZwQ3CMBAECUoFFEERfGiEN0XxphE644EU2XEc34lbVod2flgW3MSJveGm0/lyyMyRXcC3SICNBNhIgI0E2My4r769HuXH5/WO+BXUCqyq3xwJASLQqxXhEC+wX2W4Q7CApb5Yh/S7kATYSKDGclrFnmjxK7BfX/h5DLmFelUi0gTqGWhrBWWhSX+rkEkv4Hgf8OZ79PwP1hXw5nv0/AWTgDffo8dLxgLcKz10GAh48z16fkv6XUgCbP5dwJvv0fNbxivgzffo+StMt5A336PHS6zPwO+vtDEL6X2ATXoB9Qc6qD9gRf2BGvUH3EiAjQRq1B9wo/5AB/UHrGgXYiMBNhJgIwE2b7vRiUs1dq+AAAAAAElFTkSuQmCC
