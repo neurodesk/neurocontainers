@@ -14,6 +14,7 @@ Features:
 """
 
 import argparse
+import fcntl
 import json
 import os
 import shutil
@@ -22,6 +23,7 @@ import sys
 import tempfile
 import urllib.parse
 import urllib.request
+import weakref
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -348,19 +350,67 @@ class TestDefinitionExtractor:
         }
 
 
+_ACQUISITION_PREFIX = ".acquisition-"
+
+
+def _locked_directory(parent: Path) -> tuple[Path, int]:
+    while True:
+        directory = Path(tempfile.mkdtemp(prefix=_ACQUISITION_PREFIX, dir=parent))
+        try:
+            fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        except FileNotFoundError:
+            continue
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        # A sweep may have removed the directory before this lock was taken.
+        try:
+            if os.stat(directory).st_ino == os.fstat(fd).st_ino:
+                return directory, fd
+        except FileNotFoundError:
+            pass
+        os.close(fd)
+
+
+def remove_orphaned_acquisitions(cache_dir: Path) -> int:
+    """Remove acquisition directories whose owning process has exited."""
+    removed = 0
+    for directory in cache_dir.glob(_ACQUISITION_PREFIX + "*"):
+        try:
+            fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(fd)
+            continue
+        try:
+            shutil.rmtree(directory, ignore_errors=True)
+            removed += 1
+        finally:
+            os.close(fd)
+    return removed
+
+
+def _release_directory(directory: Path, lock: int) -> None:
+    try:
+        shutil.rmtree(directory, ignore_errors=True)
+    finally:
+        os.close(lock)
+
+
 class AcquiredImage:
     """A stable image pathname owned until close, independent of cache eviction."""
 
     def __init__(self, cache_path: Path) -> None:
         cache_path = cache_path.absolute()
         self.cache_path = cache_path
-        self._directory = tempfile.TemporaryDirectory(
-            prefix=".acquisition-", dir=cache_path.parent
-        )
-        self.path = Path(self._directory.name) / cache_path.name
+        remove_orphaned_acquisitions(cache_path.parent)
+        directory, lock = _locked_directory(cache_path.parent)
+        self.path = directory / cache_path.name
+        self._release = weakref.finalize(self, _release_directory, directory, lock)
 
     def close(self) -> None:
-        self._directory.cleanup()
+        self._release()
 
     def __enter__(self) -> "AcquiredImage":
         return self
@@ -585,8 +635,10 @@ class ReleaseContainerDownloader:
             if verbose:
                 print(f"Failed to list cache directory: {e}")
 
+        orphaned = remove_orphaned_acquisitions(Path(self.cache_dir))
         if verbose:
             print(f"Cleaned up {removed_count} cached container(s)")
+            print(f"Removed {orphaned} orphaned acquisition directory(ies)")
         return removed_count
 
 
