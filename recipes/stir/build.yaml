@@ -1,0 +1,115 @@
+name: stir
+version: 6.4.0
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/UCL/STIR/blob/rel_{{ context.upstream_version }}/LICENSE.txt
+  - license: LGPL-2.1-or-later
+    url: https://github.com/UCL/STIR/blob/rel_{{ context.upstream_version }}/LICENSES/LGPL-2.1.txt
+  - license: LicenseRef-PARAPET
+    url: https://github.com/UCL/STIR/blob/rel_{{ context.upstream_version }}/LICENSES/PARAPET-license.txt
+  - license: MIT
+    url: https://github.com/fmtlib/fmt/blob/{{ context.fmt_commit }}/LICENSE
+  - license: MPL-2.0
+    url: https://github.com/AMYPAD/CuVec/blob/{{ context.cuvec_commit }}/LICENCE
+architectures:
+  - x86_64
+variables:
+  upstream_version: 6.4.0
+  # Release gitlinks; check STIR compatibility when dependency observers advance these pins.
+  fmt_commit: e424e3f2e607da02742f73db84873b8084fc714c
+  cuvec_commit: f27ececc00088db944a30ea8080016b9bdaa8e39
+auto_update:
+  method: sources
+  container_version: stir
+  sources:
+    - id: stir
+      method: artifact_listing
+      url: https://api.github.com/repos/UCL/STIR/tags?per_page=100
+      download_base: https://codeload.github.com/UCL/STIR/tar.gz/refs/tags/
+      version_regex: rel_(?P<version>\d+\.\d+\.\d+)
+      target:
+        file: source
+        variables:
+          upstream_version: version
+    - id: fmt
+      method: github_commit
+      repo: fmtlib/fmt
+      dependency: true
+      target:
+        variable: fmt_commit
+    - id: cuvec
+      method: github_commit
+      repo: AMYPAD/CuVec
+      dependency: true
+      target:
+        variable: cuvec_commit
+build:
+  kind: neurodocker
+  base-image: debian:bookworm
+  pkg-manager: apt
+  directives:
+    - install:
+        - build-essential
+        - ca-certificates
+        - cmake
+        - libboost-dev
+        - libhdf5-dev
+        - libfftw3-dev
+        - nlohmann-json3-dev
+        - python3
+    - run:
+        - mkdir -p /tmp/stir-source
+        - tar -xzf {{ get_file("source") }} -C /tmp/stir-source --strip-components=1
+        - tar -xzf {{ get_file("fmt") }} -C /tmp/stir-source/external_helpers/fmt --strip-components=1
+        - tar -xzf {{ get_file("cuvec") }} -C /tmp/stir-source/external_helpers/CuVec --strip-components=1
+        - cmake -S /tmp/stir-source -B /tmp/stir-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/stir -DBUILD_SWIG_PYTHON=OFF -DBUILD_TESTING=OFF -DBUILD_DOCUMENTATION=OFF
+          -DDISABLE_ITK=ON -DDISABLE_CERN_ROOT=ON -DDISABLE_NiftyPET_PROJECTOR=ON -DDISABLE_Parallelproj_PROJECTOR=ON
+        - cmake --build /tmp/stir-build --parallel 4
+        - cmake --install /tmp/stir-build
+        - mkdir -p /opt/stir/share/examples /opt/stir/share/licenses
+        - cp -a /tmp/stir-source/examples/recon_demo /opt/stir/share/examples/
+        - cp -a /tmp/stir-source/LICENSE.txt /tmp/stir-source/LICENSES /opt/stir/share/licenses/
+        - cp /tmp/stir-source/VERSION.txt /opt/stir/VERSION.txt
+        - rm -rf /tmp/stir-source /tmp/stir-build
+    - run:
+        - tar -xOf {{ get_file("fmt") }} fmt-{{ context.fmt_commit }}/LICENSE > /opt/stir/share/licenses/fmt-MIT.txt
+        - tar -xOf {{ get_file("cuvec") }} CuVec-{{ context.cuvec_commit }}/LICENCE > /opt/stir/share/licenses/CuVec-MPL-2.0.txt
+    - environment:
+        PATH: /opt/stir/bin:$PATH
+deploy:
+  path:
+    - /opt/stir/bin
+files:
+  - name: source
+    url: https://codeload.github.com/UCL/STIR/tar.gz/refs/tags/rel_6.4.0
+    sha256: ba8c14734272656edd240f4f49722942909f51cc0e8a11a02fca95691f0f4f34
+  - name: fmt
+    url: https://github.com/fmtlib/fmt/archive/{{ context.fmt_commit }}.tar.gz
+  - name: cuvec
+    url: https://github.com/AMYPAD/CuVec/archive/{{ context.cuvec_commit }}.tar.gz
+categories:
+  - image reconstruction
+readme: |
+  ## stir/{{ context.version }}
+
+  Software for Tomographic Image Reconstruction provides CPU PET and SPECT
+  reconstruction, including `OSMAPOSL`, `FBP2D`, `FBP3DRP`, and `generate_image`.
+
+  This build uses the stable STIR {{ context.upstream_version }} source release.
+  Python bindings, ITK, ROOT, CUDA, NiftyPET, and parallelproj support are disabled.
+  Interfile support and STIR's CPU ray-tracing projectors are included.
+  The release's Python bindings are incompatible with Debian's SWIG 4.1;
+  this container provides the reconstruction command-line utilities.
+
+  To run the bundled reconstruction example in a writable directory:
+
+  ```sh
+  cp -r /opt/stir/share/examples/recon_demo ./stir-example
+  cd stir-example
+  OSMAPOSL recon_demo_OSEM.par
+  ```
+
+  The command writes `my_test_image_1.hv` and its voxel data.
+  License texts, including the PARAPET terms, are in `/opt/stir/share/licenses`.
+  [Upstream documentation](https://stir.sourceforge.net/documentation/)
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAADKUlEQVR4nO1au3HDMAxVcrloiHTuvUJSuEhmcJcF3HkKdV7AnWdQ40IzpE+XIdSlgA/GEQQIgtQpuuhVskTiQ3xIgH54fn1vlozHuQUoxarA3FgVmBurAimMQz8p/cVb4GkKot25k34eP491eVVTIBDaMqyKMg/lRwkuOpVsHPr27cM42IEiBQJpoqIECmTNtcCvAEqg85YUyKUjISML0YRYyJUCKSDNrMybZ4Fx6E/fXwFjDuoeh80Wp1hmHTZb3WIB8hTozh0IJMnBYzRQACBNxwWyGzY7jZ6+vw6bLScvBeVh6LmTwEMgJUSLMR0jMixAudLQ1FN7NIj5FE7QaASrApxosGCKV0g+jXO539t1MGWhqFnbtw9MF75cBLOiQaLwDZCRRgMpu3N3i4eCTIpr797X0i4UtSb1HN3L6QJHo7aRdxWLIxUdp4E09SXgKpmefqJql9gwoUBUFL4wqEOQXmAMPuB0bjQYoLBzKkCp6whimk/Bl0rUOvhmu5Dkl8aYlqK2UY2goE5JiVypHcbLbrzsmp/u9mCoDRzQFOCLrbOkMQ0SU4yXnTFq+T6t8PVYQEqpd/zE+XGtysuaal0J5M2lpMCvtar7xbdV4jtxUTdK8J87Xvxrz7f8eD1AMx0PYn3D112ICmGhJg1DLN6Fqilw3wr2V2UYfq2yCTQ+BfTcNw69qAPz/nRGTkFTgG8iyQ0I91quQ7u/Rs98El+kqfOt40J4SqNZot1f2/21eTneHuBlcR0XIFsBaW+HM6ZSDACUM19WLY/w18QU4Dm0fcKn0JdBDeTm2xSWlLwjwrny0/99x0i1Uiw2KbofgEadvbYKRAE7OJpZFKa+kLQ8lj5msjsttRONIZERxFHfSEZtkmY0pu00nTUxj1ojP4pkTFsykqc3qkStuzfasDZR5d4oMpb8XjpfSG3gqIiO9rrzgmOi+4Hk/QNH3hWTtJZUMp23MgBoQkzbpXJe8tnvyJJpNIsah/MwV5h/KArvC//xPbEkSiDNn76pp5B8SWnlVqkHqv3Zw9iBrP5vlWoWkGDJQiVYfFtlcgtMjcVbYFVgbqwKzI1fRXB5Wh4GkwIAAAAASUVORK5CYII=
