@@ -109,10 +109,8 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      # Point the cache at the containers dir so release_test_runner skips its copy (one
-      # artifact on disk, not two), and so the download stays off $HOME, which counts
-      # against the pod's 8Gi ephemeral-storage limit and would evict the pod mid-job for
-      # any container over ~8 GiB.
+      # Keep large SIF downloads on the work volume. $HOME counts against the
+      # pod's 8Gi ephemeral-storage limit and cannot hold larger containers.
       - name: Stage the SIF cache on the work volume
         run: |
           set -euo pipefail
@@ -355,10 +353,10 @@ jobs:
             source/builder/test-report-${{ matrix.release.name }}.md
             source/builder/comment-${{ matrix.release.name }}.md
             source/builder/status-${{ matrix.release.name }}.txt
-            source/builder/fulltest-raw-${{ matrix.release.name }}.json
-            source/builder/fulltest-${{ matrix.release.name }}.jsonl
-            source/builder/fulltest-${{ matrix.release.name }}.log
-            source/builder/fulltest-suite-${{ matrix.release.name }}.yaml
+            source/builder/fulltest-run-*/fulltest-raw-${{ matrix.release.name }}.json
+            source/builder/fulltest-run-*/fulltest-${{ matrix.release.name }}.jsonl
+            source/builder/fulltest-run-*/fulltest-${{ matrix.release.name }}.log
+            source/builder/fulltest-run-*/fulltest-suite-${{ matrix.release.name }}.yaml
             source/builder/dive-${{ matrix.release.name }}.txt
             source/builder/dive-status-${{ matrix.release.name }}.txt
 

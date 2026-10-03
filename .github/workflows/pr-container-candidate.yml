@@ -280,6 +280,7 @@ jobs:
             candidate/${{ matrix.container }}/
             !candidate/${{ matrix.container }}/test-output/fulltest-containers/**
             !candidate/${{ matrix.container }}/test-output/fulltest-work-*/**
+            !candidate/${{ matrix.container }}/test-output/fulltest-run-*/work/**
           compression-level: 0
           retention-days: 30
           if-no-files-found: error

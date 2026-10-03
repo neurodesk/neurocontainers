@@ -16,6 +16,20 @@ This document describes how container tests are defined, executed locally, and a
 - **`workflows/reporting.py`** turns JSON summaries into PR-friendly Markdown — `build_comment` for inline issue comments, `build_report` for the full report, and `build_aggregate_summary` for the matrix roll-up. It is the single source of report formatting; `test_runner.py`, `release_test_runner.py`, and `full_container_test.py` all call into it. GitHub Actions uploads both the JSON and Markdown outputs as artifacts.
 - **`workflows/summarize_deploy_results.py`** parses the builtin `test_deploy.sh` output into a bins/path tree used by the same reports.
 
+## Release test artifacts
+
+Each `release_test_runner.py` invocation creates a fresh `fulltest-run-*` directory
+under `--output-dir`. It retains the generated suite, raw JSON results, JSONL
+records, log, and private `work/` directory after success or failure. Repeated runs
+cannot reuse these files. The runner tests the original container path without
+copying the image into the run directory or deleting the input or download cache.
+
+`--results-path` and the report, comment, and status filenames under `--output-dir`
+remain the latest published result. Concurrent callers that need independent
+reports must select separate output directories and results paths. Remove retained
+`fulltest-run-*` directories when their diagnostics and work files are no longer
+needed. CI uploads the diagnostics and excludes private work directories.
+
 ## Release Artifact Resolution
 
 A fulltest always tests the container the recipe builds now. That is the rule everything below serves: `version:` must equal the recipe's `build.yaml` version, and no older release of the same recipe is ever substituted for it.
