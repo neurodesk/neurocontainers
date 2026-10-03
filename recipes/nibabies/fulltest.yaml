@@ -1,5 +1,5 @@
 # nibabies container test suite
-# Tests for nibabies v24.0.0 - NiPreps infant fMRI preprocessing pipeline
+# Tests for nibabies - NiPreps infant fMRI preprocessing pipeline
 #
 # NiBabies is a robust preprocessing pipeline for infant MRI data (0-2 years).
 # It builds on fMRIPrep's framework but adds infant-specific adaptations:
@@ -52,7 +52,7 @@ tests:
 
   - name: NiBabies help output
     description: Verify nibabies help is accessible
-    command: nibabies --help 2>&1 | head -20
+    command: nibabies --help 2>&1
     expected_output_contains: "NiBabies"
 
   # ==========================================================================
