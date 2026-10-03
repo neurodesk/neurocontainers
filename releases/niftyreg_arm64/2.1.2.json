@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "niftyreg_arm64 2.1.2": {
+      "version": "20261003",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image registration"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "niftyreg"
+}
