@@ -172,7 +172,7 @@ def test_candidate_artifacts_and_promotion_key_off_container_identity() -> None:
     assert 'quay="quay.io/neurodesk/${container}:${staging_tag}"' in publish_steps
     assert 'staging_tag="candidate-${HEAD_SHA}"' in publish_steps
     assert "${recipe}" not in publish_steps
-    assert 'for tag in "${version}_${build_date}" "${version}" latest' in finalize_steps
+    assert 'v2_registry finalize "${ghcr}" "${version}" "${build_date}" --apply' in finalize_steps
 
 
 def test_candidate_promotion_retries_mandatory_ghcr_pushes() -> None:
@@ -186,15 +186,15 @@ def test_candidate_promotion_retries_mandatory_ghcr_pushes() -> None:
         "      - name: Finalize public Docker tags from staged manifests", 1
     )[1].split("      - name: Configure AWS credentials", 1)[0]
 
-    assert "push_mandatory_ghcr()" in publish_steps
+    assert "push_mandatory_image()" in publish_steps
     assert 'if docker push "${image}"; then' in publish_steps
     assert "Mandatory GHCR publish failed after 3 attempts" in publish_steps
-    assert 'push_mandatory_ghcr "${legacy_ghcr}"' in publish_steps
-    assert 'push_mandatory_ghcr "${ghcr}"' in publish_steps
+    assert 'push_mandatory_image "${legacy_ghcr}"' in publish_steps
+    assert 'push_mandatory_image "${ghcr}"' in publish_steps
     assert '"docker.io/${DOCKERHUB_ORG}/${legacy}:${staging_tag}"' in publish_steps
     assert "retag_mandatory()" in finalize_steps
     assert 'if oras tag "${source}" "${tag}"; then' in finalize_steps
-    assert 'retag_mandatory "${ghcr}:${staging_tag}" "${tag}"' in finalize_steps
+    assert 'retag_mandatory "${ghcr}:${staging_tag}" "${version}_${build_date}"' in finalize_steps
     assert '"docker.io/${DOCKERHUB_ORG}/${legacy}"' in finalize_steps
 
 
