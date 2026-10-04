@@ -1,0 +1,81 @@
+name: cmtk
+version: 3.4.0
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://www.nitrc.org/projects/cmtk/
+architectures:
+  - x86_64
+variables:
+  upstream_version: 3.4.0
+auto_update:
+  method: sources
+  container_version: cmtk
+  sources:
+    - id: cmtk
+      method: artifact_listing
+      url: https://www.nitrc.org/frs/?group_id=212
+      download_base: https://www.nitrc.org/frs/
+      version_regex: CMTK-(?P<version>\d+\.\d+\.\d+)-Source\.tar\.gz
+      target:
+        file: source
+        variables:
+          upstream_version: version
+  local: []
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - build-essential
+        - ca-certificates
+        - cmake
+        - libfftw3-dev
+        - zlib1g-dev
+        - libbz2-dev
+        - liblzma-dev
+        - python3
+        - man-db
+        - patch
+    - run:
+        - mkdir -p /tmp/cmtk-source
+        - tar -xzf {{ get_file("source") }} -C /tmp/cmtk-source --strip-components=2
+        - patch -d /tmp/cmtk-source -p1 < {{ get_file("dicom-const.patch") }}
+        - cmake -S /tmp/cmtk-source -B /tmp/cmtk-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=14 -DCMAKE_INSTALL_PREFIX=/opt/cmtk -DCMTK_USE_CUDA=OFF -DCMTK_USE_DCMTK=ON
+          -DCMTK_BUILD_DCMTK=ON -DCMTK_USE_QT=OFF -DBUILD_TESTING=OFF
+        - cmake --build /tmp/cmtk-build --parallel 2
+        - cmake --install /tmp/cmtk-build
+        - mkdir -p /opt/cmtk/share/licenses
+        - cp -a /tmp/cmtk-source/Licenses /opt/cmtk/share/licenses/cmtk
+        - rm -rf /tmp/cmtk-source /tmp/cmtk-build
+    # Ubuntu diverts man to a stub; CMTK help needs the real man-db binary.
+    - run:
+        - rm /usr/bin/man
+        - dpkg-divert --quiet --remove --rename /usr/bin/man
+    - environment:
+        PATH: /opt/cmtk/bin:$PATH
+deploy:
+  bins:
+    - cmtk
+files:
+  - name: source
+    url: https://www.nitrc.org/frs/download.php/15655/CMTK-3.4.0-Source.tar.gz
+    sha256: 14e05f16dbf75e618b79eb7fc13ea985ffc8e158cfd9a6374a6c9af33fcc336e
+  - name: dicom-const.patch
+    filename: dicom-const.patch
+categories:
+  - image registration
+  - structural imaging
+readme: |
+  ## cmtk/{{ context.version }}
+
+  Computational Morphometry Toolkit provides CPU registration and image resampling.
+  Run `cmtk registration --help`, `cmtk warp --help`, or `cmtk reformatx --help`
+  for the affine, nonrigid, and resampling commands.
+
+  Installed from the official CMTK {{ context.upstream_version }} source release.
+  This build supports NIfTI, Analyze, and NRRD images. DICOM support uses the bundled DCMTK library. Optional CUDA
+  and Qt viewers are disabled. License texts are in `/opt/cmtk/share/licenses/cmtk`.
+
+  [Upstream documentation](https://www.nitrc.org/projects/cmtk/)
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABhElEQVR4nO2YzQ3CMAxGA2IBmAYJFmAE2AEW4IA4sEC7Q1dggR6YpjNwiISQSFzXjmNX+F37o+/FwaZZrHfHMGeW2gG4uIA2LqCNC2jjAtq4gDYrzE3n60U6B0D7aICr/1GBSG4lYn3krsLMvgIuoI0JgaHvyM/qC9wPW87jE7oQjZhvNOXQd5v9ifB+8Qrcni/R9y8wpxL8SYzcJ0lbE5MYUwdarepN4vbRwN3m9w22JjGnVwJUEhBKH+oIMDs9jLhAMj2t5ScRFBj6LrlzYvpSDlICuU3/nbuIg4gAJn2EP6fLT+LkpoeDxkdy99SbxPfDlpAecwNAsUmc65UxHGZO567ClKlALn3BdpmjwPeAdKeHYQngu40c9C1kIX0gCxhJH2hbCPiDUJ9pArmFl/7wBZgwieFOL0exSZwMqrj2kWmT+LsIn00/p9PpT2itn+wvlDZqJ30gCJhKHywc7jJxAW1mL1DpdJqDidNpMnD6gKyAZaxXYBQX0MYFtHEBbVxAmzdevZu3g++J8AAAAABJRU5ErkJggg==

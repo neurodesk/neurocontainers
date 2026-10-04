@@ -1,0 +1,53 @@
+name: cmtk
+version: 3.4.0
+tests:
+  - name: Installed source version
+    command: cmtk registration --version
+    expected_output_contains: ${version}
+  - name: Registration help
+    command: cmtk registration --help
+    expected_output_contains: registration
+  - name: Nonrigid registration help
+    command: cmtk warp --help
+    expected_output_contains: warp
+  - name: Resampling help
+    command: cmtk reformatx --help
+    expected_output_contains: reformatx
+  - name: Self-registration and nearest-neighbor resampling
+    timeout: 120
+    command: |
+      python3 - <<'PYCODE'
+      import gzip
+      import math
+      import os
+      from pathlib import Path
+      import subprocess
+      from tempfile import TemporaryDirectory
+
+      os.environ["CMTK_NUM_THREADS"] = "1"
+      os.environ["OMP_NUM_THREADS"] = "1"
+      size = 32
+      voxels = bytes(
+          int(170 * math.exp(-((x-12)**2 + (y-16)**2 + (z-15)**2) / 30)
+              + 70 * math.exp(-((x-22)**2 + (y-12)**2 + (z-21)**2) / 12))
+          for z in range(size) for y in range(size) for x in range(size)
+      )
+      with TemporaryDirectory() as work:
+          image = Path(work) / "phantom.nrrd"
+          output = Path(work) / "resampled.nrrd"
+          transform = Path(work) / "affine.list"
+          header = "NRRD0004\ntype: uchar\ndimension: 3\nsizes: 32 32 32\nspace: right-anterior-superior\nspace directions: (1,0,0) (0,1,0) (0,0,1)\nspace origin: (0,0,0)\nencoding: raw\n\n"
+          image.write_bytes(header.encode() + voxels)
+          subprocess.run(["cmtk", "registration", "--dofs", "6", "--msd", "--sampling", "2",
+              "--outlist", str(transform), str(image), str(image)], check=True)
+          subprocess.run(["cmtk", "reformatx", "--nn", "--outfile", str(output),
+              "--floating", str(image), str(image), str(transform)], check=True)
+          header, data = output.read_bytes().split(b"\n\n", 1)
+          assert b"sizes: 32 32 32" in header, header
+          if b"encoding: gzip" in header:
+              data = gzip.decompress(data)
+          assert len(data) == len(voxels), (len(data), len(voxels))
+          assert data == voxels, "Self-registration changed the synthetic volume"
+          print("CMTK registration and resampling passed")
+      PYCODE
+    expected_output_contains: CMTK registration and resampling passed

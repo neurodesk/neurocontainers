@@ -1,0 +1,17 @@
+--- a/libs/IO/cmtkImageFileDICOM.cxx
++++ b/libs/IO/cmtkImageFileDICOM.cxx
+@@ -495,12 +495,12 @@
+ 
+       // If the CSA Header exists, instantiate SiemensCSAHeader to use in
+       // the retrieval of subsequent imagining quantities
+-      Uint8* csaImageHeaderInfo = NULL;
++      const Uint8* csaImageHeaderInfo = NULL;
+       unsigned long csaImageHeaderLength = 0;
+       std::auto_ptr<SiemensCSAHeader> csaImageHeader;
+       if ( this->m_Dataset->findAndGetUint8Array( DcmTagKey(0x0029,0x1010), csaImageHeaderInfo, &csaImageHeaderLength ).status() == OF_ok ) // the "Image" CSA header, not the "Series" header.
+       {
+-        csaImageHeader.reset( new SiemensCSAHeader( OFstatic_cast(Uint8*, csaImageHeaderInfo), csaImageHeaderLength ) );
++        csaImageHeader.reset( new SiemensCSAHeader( reinterpret_cast<const char*>(csaImageHeaderInfo), csaImageHeaderLength ) );
+       }
+ 
+       DoVendorTagsSiemensDwellTime(csaImageHeader.get());
