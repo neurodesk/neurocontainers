@@ -1,0 +1,53 @@
+name: Repair Nectar SIF mirror
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full candidate head SHA used for the existing staged SIF
+        required: true
+        type: string
+      container:
+        description: Recipe container name
+        required: true
+        type: string
+      sif:
+        description: Published dated SIF filename, including .simg
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  repair:
+    if: github.repository == 'neurodesk/neurocontainers' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: promote-container-and-metadata
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install object storage client
+        run: pip install requests python-keystoneclient
+      - name: Copy and verify the existing large-object manifest
+        env:
+          OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
+          OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
+          OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          CONTAINER: ${{ inputs.container }}
+          SIF: ${{ inputs.sif }}
+        run: |
+          python -m tools.copy_swift_object --source-sha "${SOURCE_SHA}" \
+            --container "${CONTAINER}" --sif "${SIF}" --require-slo --verify-s3
