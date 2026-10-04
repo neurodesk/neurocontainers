@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "nobrainer 1.2.1": {
+      "version": "20261003",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "machine learning",
+    "image segmentation"
+  ]
+}
