@@ -5,7 +5,7 @@
 - always use `{{ get_file("filename") }}` to reference declared files in run directives instead of using `wget` or `curl` directly
 - the home directory will not be available during container runtime! Files cannot be stored under /home if they are needed during runtime!
 - make sure that every build.yaml recipe has a base64 encoded icon - first try to find the official icon, if none exist make one up based on the tool description.
-- these are the available categories: functional imaging, fetal imaging, image reconstruction, spectroscopy, rodent imaging, data organisation, diffusion imaging, structural imaging, quantitative imaging, image segmentation, image registration, visualization, statistics, quality control, spine, electrophysiology, bids apps, machine learning, phase processing, molecular biology, hippocampus, body, shape analysis, cryo EM, programming, workflows.
+- these are the available categories: functional imaging, arterial spin labelling, fetal imaging, image reconstruction, spectroscopy, rodent imaging, data organisation, diffusion imaging, structural imaging, quantitative imaging, image segmentation, image registration, visualization, statistics, quality control, spine, electrophysiology, bids apps, machine learning, phase processing, molecular biology, hippocampus, body, shape analysis, cryo EM, programming, workflows.
 
 ## Environment Setup
 
@@ -216,7 +216,7 @@ pin_container: true
 
 Recipe validation (`builder/validation.py`) enforces:
 - **Architectures**: Must be `x86_64` or `aarch64`
-- **Categories**: Must match the 26-entry `CATEGORIES` list in `builder/validation.py` (reproduced under "Does and Don't" above)
+- **Categories**: Must match the 27-entry `CATEGORIES` list in `builder/validation.py` (reproduced under "Does and Don't" above)
 - **Licenses**: Should use SPDX identifiers
 - **Required fields**: `name`, `version`, `architectures`, `build` (with `kind`, `base-image`, `pkg-manager`, `directives`), `categories`, `icon`
 - **Optional**: `deploy` — omitting it is valid, though most recipes want it
