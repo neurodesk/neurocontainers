@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "loftcbf 3.0.0": {
+      "version": "20261004",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "arterial spin labelling",
+    "quantitative imaging",
+    "quality control"
+  ]
+}
