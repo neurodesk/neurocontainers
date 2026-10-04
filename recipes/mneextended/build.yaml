@@ -101,7 +101,10 @@ build:
         - rm -rf /tmp/debian-ca-certificates
         - sed -i 's|^deb http://deb.debian.org/debian-security |deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/ |; s|http://|https://|g' /etc/apt/sources.list
 
+    - copy: mneextended-run /usr/local/bin/mneextended-run
     - copy: container_entrypoint /usr/local/bin/container-entrypoint
+    - run:
+        - chmod a+x /usr/local/bin/mneextended-run
 
     - entrypoint: /usr/local/bin/container-entrypoint
 
@@ -235,6 +238,9 @@ files:
   filename: flux-smoke-test.py
 - name: FLUX.md
   filename: FLUX.md
+- name: mneextended-run
+  filename: mneextended-run
+  executable: true
 - name: container_entrypoint
   executable: true
   contents: |
@@ -244,7 +250,7 @@ files:
     if [ "$#" -eq 0 ]; then
       set -- /bin/bash
     fi
-    exec "$@"
+    exec /usr/local/bin/mneextended-run "$@"
 - name: debian_ca_certificates
   url: https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/pool/updates/main/c/ca-certificates/ca-certificates_20250419~deb12u1~deb11u1_all.deb
   sha256: a588acf469f96e272fe3e83225f68ddcda72a95e2dd139086d5edc165d3939e3

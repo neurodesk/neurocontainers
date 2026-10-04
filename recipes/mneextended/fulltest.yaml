@@ -417,7 +417,7 @@ tests:
     PYTHON
   expected_output_contains: BIDS EEG round trip succeeded
 - name: VS Code wrapper forwards arguments without a home directory
-  command: HOME=/proc/mneextended-no-home code --version
+  command: env -u XDG_CONFIG_HOME HOME=/proc/mneextended-no-home code --version
   expected_output_contains: ${vscode_version}
 
 - name: FLUX source revision
@@ -425,9 +425,35 @@ tests:
   expected_output_contains: ${flux_commit}
 - name: FLUX notebook dependency
   command: |
-    /opt/miniconda/envs/mne-extended/bin/python -c 'import openneuro; from importlib.metadata import version; print(version("openneuro-py"))'
+    /usr/local/bin/mneextended-run /opt/miniconda/envs/mne-extended/bin/python -c 'import openneuro; from importlib.metadata import version; print(version("openneuro-py"))'
   expected_output_contains: ${openneuro_version}
 - name: FLUX first-look notebook on synthetic MEG data
-  command: /opt/miniconda/envs/mne-extended/bin/python /opt/flux/flux-smoke-test.py
+  command: |
+    env -u XDG_CONFIG_HOME HOME=/proc/mneextended-no-home /usr/local/bin/mneextended-run /opt/miniconda/envs/mne-extended/bin/python - <<'PYTHON'
+    import os
+    import runpy
+    import stat
+    from pathlib import Path
+
+    config = Path(os.environ["XDG_CONFIG_HOME"])
+    assert config.stat().st_uid == os.getuid()
+    assert stat.S_IMODE(config.stat().st_mode) == 0o700
+    runpy.run_path("/opt/flux/flux-smoke-test.py", run_name="__main__")
+    PYTHON
   expected_output_contains: FLUX notebook loading and PSD passed
   timeout: 120
+- name: FLUX launcher preserves a supplied configuration directory
+  command: |
+    config_root="$(mktemp -d)"
+    trap 'rm -rf "$config_root"' EXIT
+    HOME=/proc/mneextended-no-home XDG_CONFIG_HOME="$config_root" EXPECTED_CONFIG="$config_root" /usr/local/bin/mneextended-run /opt/miniconda/envs/mne-extended/bin/python - <<'PYTHON'
+    import os
+    from pathlib import Path
+
+    import openneuro
+
+    assert os.environ["XDG_CONFIG_HOME"] == os.environ["EXPECTED_CONFIG"]
+    assert (Path(os.environ["XDG_CONFIG_HOME"]) / "openneuro-py").is_dir()
+    print("OpenNeuro uses supplied configuration directory")
+    PYTHON
+  expected_output_contains: OpenNeuro uses supplied configuration directory
