@@ -1,0 +1,45 @@
+name: stir
+version: 6.4.0
+tests:
+  - name: Installed source version
+    command: cat /opt/stir/VERSION.txt
+    expected_output_contains: ${version}
+  - name: Reconstruction utilities
+    command: command -v OSMAPOSL && command -v generate_image
+    expected_output_contains: /opt/stir/bin/generate_image
+  - name: CPU OSEM reconstruction of the upstream example
+    timeout: 300
+    command: |
+      set -eu
+      export OMP_NUM_THREADS=2
+      work=$(mktemp -d)
+      trap 'rm -rf "$work"' EXIT
+      cp -a /opt/stir/share/examples/recon_demo/. "$work/"
+      cd "$work"
+      OSMAPOSL recon_demo_OSEM.par
+      python3 - <<'PYCODE'
+      import math
+      import struct
+      from pathlib import Path
+      header = {}
+      for line in Path("my_test_image_1.hv").read_text().splitlines():
+          if ":=" in line:
+              key, value = line.split(":=", 1)
+              header[key.strip().lstrip("!").lower()] = value.strip()
+      assert header["number format"] == "float"
+      assert header["number of bytes per pixel"] == "4"
+      shape = tuple(int(header[f"matrix size [{axis}]"]) for axis in (3, 2, 1))
+      assert shape == (31, 60, 60)
+      data_file = Path(header["name of data file"])
+      raw = data_file.read_bytes()
+      offset = int(header.get("data offset in bytes[1]", "0"))
+      order = "<" if header["imagedata byte order"] == "LITTLEENDIAN" else ">"
+      voxels = [item[0] for item in struct.iter_unpack(order + "f", raw[offset:])]
+      assert len(voxels) == math.prod(shape)
+      assert all(math.isfinite(value) for value in voxels)
+      assert min(voxels) >= 0 and max(voxels) > 0
+      assert max(voxels) > min(voxels)
+      assert raw != Path("init.v").read_bytes()
+      print("CPU OSEM reconstruction passed", shape)
+      PYCODE
+    expected_output_contains: CPU OSEM reconstruction passed
