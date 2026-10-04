@@ -1,9 +1,9 @@
 variables:
-  upstream_version: 1.8.5
+  upstream_version: "1.11.0"
   traits_version: 6.4.3
 
 name: nipype
-version: "1.8.5"
+version: "1.11.0"
 
 copyright:
   - license: Apache-2.0
