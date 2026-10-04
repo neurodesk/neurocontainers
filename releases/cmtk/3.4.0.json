@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "cmtk 3.4.0": {
+      "version": "20261003",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image registration",
+    "structural imaging"
+  ]
+}
