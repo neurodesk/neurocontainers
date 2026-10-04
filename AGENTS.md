@@ -246,6 +246,9 @@ The validation schema matches the Zod schema from `neurocontainers-ui`.
 ### Commit Messages
 - Descriptive, explain what and why
 - Reference issue numbers when applicable (`Fix #123: ...`)
+- In a PR that completes an issue, write `Closes #123` in the description so
+  merging closes it. GitHub ignores `for #123`, `Refs #123`, and
+  `requested in #123`; use those only when work on the issue remains.
 - Skip CI with `[skipci]` in commit message when needed
 
 ## Common Development Tasks
