@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "epu-group-afis 0.3.0": {
+      "version": "20261003",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "cryo EM"
+  ]
+}
