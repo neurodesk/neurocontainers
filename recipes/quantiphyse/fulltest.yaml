@@ -1,0 +1,20 @@
+name: quantiphyse
+version: 0.9.10
+tests:
+- name: installed package versions
+  command: |
+    quantiphyse-python -c "from importlib.metadata import version; assert version('quantiphyse') == '${version}'; print('versions OK', version('quantiphyse-asl'), version('quantiphyse-fabber'))"
+  expected_output_contains: versions OK
+- name: ASL analysis and GUI controls
+  command: |
+    timeout 180 xvfb-run -a quantiphyse-python /opt/quantiphyse/smoke_test.py
+  expected_output_contains: ASL smoke test passed
+  timeout: 240
+- name: launcher and desktop entry
+  command: |
+    quantiphyse --help && test -s /usr/share/applications/quantiphyse.desktop && test -s /usr/share/icons/hicolor/75x75/apps/quantiphyse.png && test -s /opt/licenses/quantiphyse/quantiphyse-LICENSE
+  expected_output_contains: --batch
+- name: redistributable OXASL plugins only
+  command: |
+    quantiphyse-python -c "import importlib.util as u, oxasl_mp; assert u.find_spec('oxasl_enable') is None; assert callable(oxasl_mp.run); print('oxasl plugins OK')"
+  expected_output_contains: oxasl plugins OK

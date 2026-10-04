@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Quantiphyse ASL
+Comment=ASL perfusion imaging and volumetric image analysis
+Exec=quantiphyse %F
+Icon=quantiphyse
+Terminal=false
+Categories=Science;Education;

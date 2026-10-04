@@ -1,0 +1,38 @@
+--- fabber/api.py
++++ fabber/api.py
+@@ -45,6 +45,7 @@
+ import glob
+ import re
+ import collections
++import collections.abc
+ import tempfile
+ 
+ import numpy as np
+@@ -454,7 +455,7 @@
+         """
+         with tempfile.NamedTemporaryFile(prefix="fab", delete=False, dir=tempdir, mode="wt") as tempf:
+             for row in matrix:
+-                if isinstance(row, collections.Sequence):
++                if isinstance(row, collections.abc.Sequence):
+                     tempf.write(" ".join(["%.6g" % val for val in row]) + "\n")
+                 else:
+                     tempf.write("%f\n" % row)
+--- fabber/api_cl.py
++++ fabber/api_cl.py
+@@ -18,6 +18,7 @@
+ from __future__ import unicode_literals, print_function
+ 
+ import collections
++import collections.abc
+ import tempfile
+ import subprocess
+ import shutil
+@@ -435,7 +436,7 @@
+                         # Work around bug in some versions of fabber where some numeric options
+                         # are miscategorized as matrix options
+                         options[key] = str(value)
+-                    elif isinstance(value, (np.ndarray, collections.Sequence)):
++                    elif isinstance(value, (np.ndarray, collections.abc.Sequence)):
+                         options[key] = self._write_temp_matrix(value, indir)
+                     elif isinstance(value, (int, float)):
+                         # Work around fabber_core bug where evaluate-nt is defined as a matrix
