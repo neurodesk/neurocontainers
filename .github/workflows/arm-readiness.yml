@@ -1,0 +1,73 @@
+name: ARM readiness and native cohort
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 2'
+permissions:
+  contents: read
+concurrency:
+  group: arm-readiness
+  cancel-in-progress: false
+jobs:
+  inventory:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pyyaml requests
+      - name: Generate current inventory
+        run: python -m workflows.arm_readiness --output arm-reports/inventory.json
+      - name: Probe cohort public artifacts anonymously
+        run: python -m workflows.arm_readiness --recipes dcm2niix,niimath,datalad --probe --output arm-reports/published-cohort.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm-readiness-${{ github.run_id }}
+          path: arm-reports/
+          retention-days: 90
+  native-cohort:
+    uses: ./.github/workflows/recipes-ci.yml
+    with:
+      recipes: dcm2niix,niimath,datalad
+      architecture: arm64
+      run-tests: true
+      debug: false
+  native-report:
+    needs: native-cohort
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pyyaml requests
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: recipe-check-*
+          path: native-artifacts
+      - name: Attach current native observations
+        run: |
+          python - <<'PY'
+          import json, shutil
+          from pathlib import Path
+          for source in Path('native-artifacts').rglob('native-result.json'):
+              result = json.loads(source.read_text())
+              directory = Path('native-results') / result['container']
+              directory.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(source, directory / 'native-result.json')
+          PY
+          python -m workflows.arm_readiness --results native-results --output arm-reports/native-inventory.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm-native-readiness-${{ github.run_id }}
+          path: arm-reports/
+          retention-days: 90
