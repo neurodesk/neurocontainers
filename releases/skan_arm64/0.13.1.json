@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "skan_arm64 0.13.1": {
+      "version": "20261003",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "shape analysis"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "skan"
+}
