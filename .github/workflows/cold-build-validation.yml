@@ -1,0 +1,138 @@
+name: Cold build validation
+on:
+  schedule:
+    - cron: '41 2 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: cold-build-validation
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    outputs:
+      targets: ${{ steps.plan.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pyyaml
+      - name: Recover prior observations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p cold-report
+          gh run list --workflow cold-build-validation.yml --status completed --limit 20 --json databaseId --jq '.[].databaseId' > /tmp/prior-runs
+          restored=false
+          while read -r run; do
+            if gh run download "$run" --name cold-build-state --dir cold-report; then
+              restored=true
+              break
+            fi
+          done < /tmp/prior-runs
+          if [ "$restored" = false ]; then echo '::warning::No retained state found; starting coverage from scratch'; fi
+      - name: Select bounded due targets
+        id: plan
+        run: |
+          targets=$(python -m workflows.cold_build plan --state cold-report/state.json --output cold-report/plan.json)
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cold-build-plan
+          path: cold-report/
+          retention-days: 90
+  verify:
+    needs: plan
+    if: needs.plan.outputs.targets != '[]'
+    runs-on: ${{ github.repository == 'neurodesk/neurocontainers' && (matrix.architecture == 'aarch64' && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'blacksmith-8vcpu-ubuntu-2404') || (matrix.architecture == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-22.04') }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v8.1.0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.1'
+          cache: false
+      - uses: ./.github/actions/setup-apptainer
+        with:
+          apptainer-version: 1.4.3
+      - uses: useblacksmith/setup-docker-builder@v1
+        if: github.repository == 'neurodesk/neurocontainers'
+      - name: Install builder and data tooling
+        run: |
+          python -m pip install -e . datalad
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends git-annex
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Cold build and runtime checks
+        env:
+          TARGET: ${{ toJSON(matrix) }}
+          APPTAINER_CACHEDIR: ${{ runner.temp }}/apptainer-cache
+          APPTAINER_TMPDIR: ${{ runner.temp }}/apptainer-tmp
+        run: |
+          mkdir -p "$APPTAINER_CACHEDIR" "$APPTAINER_TMPDIR"
+          printf '%s' "$TARGET" > "$RUNNER_TEMP/target.json"
+          python -m workflows.cold_build run --target "$RUNNER_TEMP/target.json" --output "$RUNNER_TEMP/cold-result"
+      - name: Retain observation and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cold-result-${{ matrix.container }}
+          path: |
+            ${{ runner.temp }}/cold-result/observation.json
+            ${{ runner.temp }}/cold-result/cold-build.log
+            ${{ runner.temp }}/cold-result/image-inspect.json
+            ${{ runner.temp }}/cold-result/test-results.json
+            ${{ runner.temp }}/cold-result/test-output/*.json
+            ${{ runner.temp }}/cold-result/test-output/*.log
+            ${{ runner.temp }}/cold-result/test-output/fulltest-run-*/*.json
+            ${{ runner.temp }}/cold-result/test-output/fulltest-run-*/*.log
+          if-no-files-found: warn
+          retention-days: 90
+  record:
+    needs: [plan, verify]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pyyaml
+      - uses: actions/download-artifact@v4
+        with:
+          name: cold-build-plan
+          path: cold-report
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        if: needs.verify.result != 'skipped'
+        with:
+          pattern: cold-result-*
+          path: cold-observations
+      - name: Merge successful and failed observations
+        run: |
+          mkdir -p cold-observations
+          python -m workflows.cold_build merge --state cold-report/state.json --observations cold-observations --plan cold-report/plan.json --output cold-report/state.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cold-build-state
+          path: cold-report/
+          retention-days: 90
