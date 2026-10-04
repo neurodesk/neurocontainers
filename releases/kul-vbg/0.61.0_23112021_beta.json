@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "kul-vbg 0.61.0_23112021_beta": {
+      "version": "20261004",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging"
+  ]
+}
