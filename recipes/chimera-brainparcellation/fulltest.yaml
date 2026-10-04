@@ -31,3 +31,19 @@ tests:
   - name: imaging dependencies
     command: command -v recon-all && command -v antsRegistration && command -v fslmaths
     expected_output_contains: fslmaths
+  - name: hypothalamus morphology in physical coordinates
+    command: |-
+      python - <<'PY'
+      import numpy as np
+      from clabtoolkit.imagetools import MorphologicalOperations
+      mask = np.zeros((15, 15, 15), dtype=np.int16)
+      mask[7, 7, 7] = 14
+      affine = np.diag([1., 2., 3., 1.])
+      result = MorphologicalOperations().dilate_mm(
+          mask, affine, shape="ball", dilation_mm=5)
+      grid = np.indices(mask.shape) - 7
+      distance_squared = sum((grid[axis] * affine[axis, axis]) ** 2 for axis in range(3))
+      np.testing.assert_array_equal(result, distance_squared <= 25)
+      print('physical-coordinate hypothalamus dilation passed')
+      PY
+    expected_output_contains: physical-coordinate hypothalamus dilation passed

@@ -125,7 +125,10 @@ readme: |
 
   The container label follows the script's recorded software version,
   {{ context.upstream_version }}, with numeric padding. Commit updates retain that
-  software label and use the build date. Licensed end-to-end lesion filling and
-  FreeSurfer output validation remain release acceptance work.
+  software label and use the build date. Licensed autorecon1 preprocessing and
+  ANTs lesion filling with -B 2 have been exercised on a public IXI T1 with a
+  synthetic lesion. The filled image preserves native geometry and contains
+  finite intensities throughout the lesion. Full -P 1 reconstruction and lesion
+  label reinsertion remain untested.
   https://github.com/KUL-Radneuron/KUL_VBG
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABDklEQVR4nO2ZwQ3CMBAECUoFFEERfGiEN0XxphE644EU2XEc34lbVod2flgW3MSJveGm0/lyyMyRXcC3SICNBNhIgI0E2My4r769HuXH5/WO+BXUCqyq3xwJASLQqxXhEC+wX2W4Q7CApb5Yh/S7kATYSKDGclrFnmjxK7BfX/h5DLmFelUi0gTqGWhrBWWhSX+rkEkv4Hgf8OZ79PwP1hXw5nv0/AWTgDffo8dLxgLcKz10GAh48z16fkv6XUgCbP5dwJvv0fNbxivgzffo+StMt5A336PHS6zPwO+vtDEL6X2ATXoB9Qc6qD9gRf2BGvUH3EiAjQRq1B9wo/5AB/UHrGgXYiMBNhJgIwE2b7vRiUs1dq+AAAAAAElFTkSuQmCC
