@@ -47,6 +47,7 @@ jobs:
       merge_sha: ${{ steps.pr.outputs.merge_sha }}
       recipes: ${{ steps.plan.outputs.recipes }}
       release_plan: ${{ steps.plan.outputs.release_plan }}
+      skip_reason: ${{ steps.plan.outputs.skip_reason }}
     permissions:
       contents: read
       pull-requests: read
@@ -137,6 +138,7 @@ jobs:
           if [ "$status" -ne 0 ]; then
             if grep -Fq "Automated releases require a recipe-only PR." <<< "$detection"; then
               echo "The merged PR changed recipes and other repository code; skipping candidate promotion."
+              echo "skip_reason=mixed-pr" >> "$GITHUB_OUTPUT"
               echo "recipes=[]" >> "$GITHUB_OUTPUT"
               echo "release_plan={}" >> "$GITHUB_OUTPUT"
               exit 0
@@ -809,6 +811,7 @@ jobs:
           PUBLISH_RESULT: ${{ needs.publish.result }}
           FINALIZE_RESULT: ${{ needs.finalize.result }}
           SYNC_RESULT: ${{ needs.sync_openrecon.result }}
+          SKIP_REASON: ${{ needs.resolve.outputs.skip_reason }}
         with:
           script: |
             const issue_number = Number(process.env.PR_NUMBER);
@@ -858,6 +861,9 @@ jobs:
             if (promotionResult === 'success') {
               heading = `## ✅ ${identity} published from the tested candidate`;
               action = '**Action required:** None. The PR is merged and automatic promotion completed successfully.';
+            } else if (process.env.SKIP_REASON === 'mixed-pr') {
+              heading = `## ⚠️ ${identity} merged — not promoted automatically`;
+              action = '**Action required:** This PR changed repository code alongside recipes, so automatic promotion does not apply and rerunning it will skip again. Publish the changed recipes with the `manual-build` workflow.';
             } else if (awaitResult === 'failure' || awaitResult === 'cancelled') {
               heading = `## ⚠️ ${identity} merged — candidate promotion is blocked`;
               action = `**Action required:** Inspect the candidate wait failure, then rerun \`Promote merged container candidate\` with \`pr_number=${issue_number}\`. Do not rebuild a candidate that has already passed.`;
