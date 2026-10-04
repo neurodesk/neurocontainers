@@ -7,7 +7,7 @@ variables:
   vscode_version: "1.140.0"
   flux_commit: "6310101dc1957c2cf5370e1c0d21c6ff94e3457e"
   openneuro_version: "2026.9.1"
-  pipeline_commit: "e0fe00d71e95b20981e657530793eaf4a9ba69fc"
+  pipeline_commit: "e256fa9be6d826b968d3b536710375b2d5f15fa1"
 
 name: mneextended
 version: "1.2.0"
