@@ -72,16 +72,23 @@ build:
           }} scipy=={{ context.scipy_version }} numba=={{ context.numba_version }} starfile=={{ context.starfile_version
           }} /opt/pyem
         - /opt/pyem-venv/bin/pip check
+    - run:
+        - install -m 755 {{ get_file("launch.sh") }} /opt/pyem-launch
+        - /opt/pyem-venv/bin/python {{ get_file("install_launchers.py") }}
     - environment:
-        PATH: /opt/pyem-venv/bin:$PATH
+        PATH: /opt/pyem-bin:/opt/pyem-venv/bin:$PATH
         MPLBACKEND: Agg
 files:
+  - name: install_launchers.py
+    filename: install_launchers.py
+  - name: launch.sh
+    filename: launch.sh
   - name: pyem_source
     url: https://codeload.github.com/asarnow/pyem/tar.gz/v0.69
     sha256: 969e0075ea7ba854e6ab2c5cf9ab315c7dc994dcb738574707cd4aad380c1105
 deploy:
   path:
-    - /opt/pyem-venv/bin
+    - /opt/pyem-bin
 categories:
   - cryo EM
 readme: |
@@ -91,6 +98,9 @@ readme: |
   Run `csparc2star.py --help` for CryoSPARC conversion and `star.py --help`
   for RELION STAR selection and editing. All upstream console scripts are exposed.
   For example, `star.py --class 1 particles.star selected.star` selects one class.
+  Commands and Python use private temporary Numba and Matplotlib cache directories,
+  removed when the command exits. No writable home directory is required.
+  Set NUMBA_CACHE_DIR or MPLCONFIGDIR to your own writable paths to retain caches.
   Mount your metadata, images and output directory at runtime. These CPU metadata
   tools do not require a GPU. https://github.com/asarnow/pyem
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABDklEQVR4nO2ZwQ3CMBAECUoFFEERfGiEN0XxphE644EU2XEc34lbVod2flgW3MSJveGm0/lyyMyRXcC3SICNBNhIgI0E2My4r769HuXH5/WO+BXUCqyq3xwJASLQqxXhEC+wX2W4Q7CApb5Yh/S7kATYSKDGclrFnmjxK7BfX/h5DLmFelUi0gTqGWhrBWWhSX+rkEkv4Hgf8OZ79PwP1hXw5nv0/AWTgDffo8dLxgLcKz10GAh48z16fkv6XUgCbP5dwJvv0fNbxivgzffo+StMt5A336PHS6zPwO+vtDEL6X2ATXoB9Qc6qD9gRf2BGvUH3EiAjQRq1B9wo/5AB/UHrGgXYiMBNhJgIwE2b7vRiUs1dq+AAAAAAElFTkSuQmCC

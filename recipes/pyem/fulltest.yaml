@@ -6,11 +6,11 @@ tests:
     command: python -c "from importlib.metadata import version; print(version('pyem'))"
     expected_output_contains: ${upstream_version}
   - name: CryoSPARC converter help
-    command: csparc2star.py --help
+    command: env HOME=/nonexistent csparc2star.py --help
     expected_output_contains: 'usage:'
   - name: STAR class selection
     command: |-
-      python - <<'PY'
+      env HOME=/nonexistent python - <<'PY'
       import pathlib, tempfile, subprocess
       from pyem import star
       with tempfile.TemporaryDirectory() as directory:
