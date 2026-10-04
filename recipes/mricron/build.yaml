@@ -105,7 +105,7 @@ build:
         description: MRIcron is a cross-platform NIfTI format image viewer. It can load  multiple layers of images, generate volume renderings and draw regions  of interest. It also provides dcm2niix for converting DICOM images to  NIfTI format.
         tool-version: '{{ context.mricron_package_version }}'
         schema-version: '0.5'
-        command-line: MRIcron [OPTIONS] [IMAGE_FILE]
+        command-line: MRIcron [IMAGE_FILE]
         inputs:
           - name: image_file
             id: image_file
