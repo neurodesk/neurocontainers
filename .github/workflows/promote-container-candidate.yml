@@ -37,9 +37,11 @@ env:
 
 jobs:
   resolve:
+    if: github.repository == 'neurodesk/neurocontainers' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       should_promote: ${{ steps.pr.outputs.should_promote }}
+      sign_artifacts: ${{ steps.signing.outputs.sign_artifacts }}
       pr_number: ${{ steps.pr.outputs.pr_number }}
       head_sha: ${{ steps.pr.outputs.head_sha }}
       merge_sha: ${{ steps.pr.outputs.merge_sha }}
@@ -49,6 +51,16 @@ jobs:
       contents: read
       pull-requests: read
     steps:
+      - name: Resolve artifact signing policy
+        id: signing
+        env:
+          ARTIFACT_SIGNING_ENABLED: ${{ vars.ARTIFACT_SIGNING_ENABLED }}
+        run: |
+          if [ "${ARTIFACT_SIGNING_ENABLED}" = true ]; then
+            echo 'sign_artifacts=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'sign_artifacts=false' >> "$GITHUB_OUTPUT"
+          fi
       - name: Resolve trusted main event to a merged recipe PR
         id: pr
         uses: actions/github-script@v7
@@ -476,6 +488,32 @@ jobs:
             python -m tools.v2_registry resolve "${registry}/${container}:${staging_tag}" \
               --expected-sha256 "${sif_sha256}"
           done
+      - name: Install pinned Cosign
+        if: needs.resolve.outputs.sign_artifacts == 'true'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Sign and verify accepted artifacts
+        if: needs.resolve.outputs.sign_artifacts == 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
+        run: |
+          manifest="$(jq -c '.[0]' verified-manifests.json)"
+          container="$(echo "${manifest}" | jq -r '.container')"
+          sif="$(echo "${manifest}" | jq -r '.sif')"
+          repository="ghcr.io/${GH_REGISTRY}/${container}"
+          subject="${repository}@$(oras resolve "${repository}:candidate-${HEAD_SHA}")"
+          python -m tools.sign_promotion --candidate "promotion-bundle/${container}" \
+            --manifests verified-manifests.json --merge-sha "${MERGE_SHA}" --image "${subject}"
+          for suffix in .sigstore.json .promotion.json .promotion.sigstore.json; do
+            file="${sif}${suffix}"
+            aws s3 cp "promotion-bundle/${container}/${file}" \
+              "s3://neurocontainers/promotion-staging/${HEAD_SHA}/${container}/${file}"
+            aws s3api head-object --bucket neurocontainers \
+              --key "promotion-staging/${HEAD_SHA}/${container}/${file}" >/dev/null
+          done
       - name: Upload trusted promotion metadata
         uses: actions/upload-artifact@v4
         with:
@@ -643,6 +681,7 @@ jobs:
           OS_AUTH_TYPE: v3applicationcredential
           OS_IDENTITY_API_VERSION: "3"
           HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          SIGN_ARTIFACTS: ${{ needs.resolve.outputs.sign_artifacts }}
         run: |
           jq -c '.[]' verified-manifests.json | while read -r manifest; do
             container="$(echo "${manifest}" | jq -r '.container')"
@@ -650,6 +689,12 @@ jobs:
             staged_key="promotion-staging/${HEAD_SHA}/${container}/${sif}"
             aws s3 cp "s3://neurocontainers/${staged_key}" "s3://neurocontainers/${sif}"
             aws s3api head-object --bucket neurocontainers --key "${sif}" >/dev/null
+            if [ "${SIGN_ARTIFACTS:-false}" = true ]; then
+              for suffix in .sigstore.json .promotion.json .promotion.sigstore.json; do
+                aws s3 cp "s3://neurocontainers/${staged_key}${suffix}" "s3://neurocontainers/${sif}${suffix}"
+                aws s3api head-object --bucket neurocontainers --key "${sif}${suffix}" >/dev/null
+              done
+            fi
             swift copy neurodesk "${staged_key}" \
               --destination "/neurodesk/${sif}" || \
               echo "::warning::Nectar object finalization failed for ${sif}"
