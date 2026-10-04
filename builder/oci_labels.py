@@ -95,9 +95,15 @@ def main() -> None:
         command.add_argument("--format", choices=("json", "labels", "annotations"), default="json")
     args = parser.parse_args()
     if args.command == "recipe":
+        from .config import default_config
         from .recipe import compile_recipe
 
-        compiled = compile_recipe(args.path, architecture=args.architecture, variant=args.variant)
+        compiled = compile_recipe(
+            args.path,
+            architecture=args.architecture,
+            variant=args.variant,
+            include_dirs=default_config(args.path).include_dirs,
+        )
         labels = recipe_labels(compiled, args.build_date, args.revision)
     else:
         labels = image_labels(args.reference, args.architecture)
