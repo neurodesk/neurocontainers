@@ -69,3 +69,13 @@ def test_failed_rerun_removes_prior_success_reports(tmp_path, monkeypatch):
     assert report['coverage']['error'] == 1
     assert not (tmp_path / 'reports/tool-1/sbom.json').exists()
     assert not (tmp_path / 'reports/tool-1/vulnerabilities.json').exists()
+
+
+@pytest.mark.parametrize('enabled', [False, None, 'false', 'true', 0, 1, [], {}])
+def test_only_explicit_boolean_true_enables_scanning(tmp_path, enabled):
+    data = inventory()
+    data['containers'][0]['enabled'] = enabled
+    report = scan(tmp_path, data, tmp_path / 'reports', dry_run=True,
+                  syft_version='1', grype_version='2')
+    assert report['coverage']['planned'] == 0
+    assert report['coverage']['disabled'] == 2

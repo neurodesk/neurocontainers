@@ -210,9 +210,10 @@ jobs:
           echo "Running Semgrep static analysis..."
 
           container_id=$(docker create "${{ inputs.container_image }}")
+          trap 'docker rm "$container_id" >/dev/null 2>&1 || true' EXIT
           temp_extract_dir="${{ env.TEMP_DIR }}/container_fs"
           mkdir -p "$temp_extract_dir"
-          docker export "$container_id" | tar -xf - -C "$temp_extract_dir" 2>/dev/null || true
+          docker export "$container_id" | tar -xf - -C "$temp_extract_dir"
 
           # Run Semgrep with exclusions for system files and common false positives
           docker run --rm \
@@ -236,14 +237,13 @@ jobs:
             --severity=ERROR \
             --json \
             --output=/output/semgrep_results.json \
-            /src 2>/dev/null || echo "Semgrep completed with warnings"
+            /src
 
-          docker rm "$container_id" || true
           rm -rf "$temp_extract_dir"
 
           # Count findings
           if [ -f "${{ env.SCAN_OUTPUT_DIR }}/semgrep_results.json" ]; then
-            FINDING_COUNT=$(jq '.results | length' "${{ env.SCAN_OUTPUT_DIR }}/semgrep_results.json")
+            FINDING_COUNT=$(jq -e '.results | if type == "array" then length else error("missing results array") end' "${{ env.SCAN_OUTPUT_DIR }}/semgrep_results.json")
             echo "count=${FINDING_COUNT}" >> $GITHUB_OUTPUT
             
             if [ "$FINDING_COUNT" -gt 0 ]; then
@@ -252,8 +252,8 @@ jobs:
               echo "found=false" >> $GITHUB_OUTPUT
             fi
           else
-            echo "count=0" >> $GITHUB_OUTPUT
-            echo "found=false" >> $GITHUB_OUTPUT
+            echo "Semgrep did not produce a result file" >&2
+            exit 1
           fi
 
       - name: Generate findings summary

@@ -60,7 +60,7 @@ def scan(root: Path, inventory: dict, output: Path, *, dry_run: bool,
     for entry in entries:
         row = {k: v for k, v in entry.items() if k != 'resolved_path'}
         report['containers'].append(row)
-        if not entry.get('enabled', False):
+        if entry.get('enabled') is not True:
             row['status'] = 'disabled'
             continue
         if dry_run:
