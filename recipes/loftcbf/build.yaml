@@ -1,0 +1,116 @@
+name: loftcbf
+version: 3.0.0
+architectures:
+- x86_64
+copyright:
+- license: GPL-3.0-only
+  url: https://github.com/kayjann/LOFT-CBF/blob/main/LICENSE
+- license: GPL-2.0-or-later
+  url: https://github.com/spm/spm12/blob/main/LICENCE.txt
+- license: BSD-2-Clause
+  url: https://www.mathworks.com/matlabcentral/fileexchange/8797-tools-for-nifti-and-analyze-image
+variables:
+  loftcbf_commit: 078b30a190a3e00c1f082c2c050ac8e5afc255ea
+  spm_octave_commit: df701fcae7103fb02edb6f5212be700b0b305cc0
+auto_update:
+  method: sources
+  container_version: false
+  sources:
+  - id: loftcbf
+    method: github_commit
+    repo: kayjann/LOFT-CBF
+    ref: main
+    target:
+      variable: loftcbf_commit
+  - id: spm_octave
+    method: github_commit
+    repo: spm/spm-octave
+    ref: main
+    dependency: true
+    target:
+      variable: spm_octave_commit
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+  - environment:
+      DEBIAN_FRONTEND: noninteractive
+  - install:
+    - octave
+    - liboctave-dev
+    - make
+    - patch
+    - unzip
+    - ca-certificates
+  - run:
+    - mkdir -p /opt/loftcbf /opt/spm12 /opt/nifti /opt/licenses/loftcbf
+    - tar -xzf {{ get_file("loftcbf_archive") }} -C /opt/loftcbf --strip-components=1
+    - cp /opt/loftcbf/LICENSE /opt/licenses/loftcbf/LOFT-CBF-LICENSE
+    - tar -xzf {{ get_file("spm12_archive") }} -C /opt/spm12 --strip-components=1
+    - patch -p3 -d /opt/spm12 < {{ get_file("spm12_octave_patch") }}
+    - make -C /opt/spm12/src PLATFORM=octave
+    - make -C /opt/spm12/src PLATFORM=octave install
+    - make -C /opt/spm12/src PLATFORM=octave clean
+    - unzip -q {{ get_file("nifti_toolbox") }} -d /opt/nifti
+    - cp /opt/nifti/license.txt /opt/licenses/loftcbf/NIfTI-LICENSE
+    - printf 'addpath("/opt/spm12");\naddpath("/opt/nifti");\naddpath("/opt/loftcbf");\n' >> /usr/share/octave/site/m/startup/octaverc
+    - octave-cli --eval 'assert(exist("spm_jobman") == 2 && exist("load_untouch_nii") == 2 && exist("LOFT_CBFquantify") == 2); spm("ver")'
+  - copy:
+    - loftcbf_smoke.m
+    - /opt/loftcbf/loftcbf_smoke.m
+deploy:
+  bins:
+  - octave
+  - octave-cli
+files:
+- name: loftcbf_archive
+  url: https://github.com/kayjann/LOFT-CBF/archive/{{ context.loftcbf_commit }}.tar.gz
+- name: spm12_archive
+  url: https://github.com/spm/spm12/archive/refs/tags/r7771.tar.gz
+  sha256: 5cf7f88f607a5b92cf4f39dd4ad649c4b7ebcf98564e72fd003abe1d66213cb4
+- name: spm12_octave_patch
+  url: https://raw.githubusercontent.com/spm/spm-octave/{{ context.spm_octave_commit }}/spm12_r7771.patch
+- name: nifti_toolbox
+  url: https://www.mathworks.com/matlabcentral/mlc-downloads/downloads/submissions/8797/versions/28/download/zip
+  sha256: a4dcf585a6eb107ed9e21e68cc068c3d555a4d31866f5d2785ca1ad235976736
+- name: loftcbf_smoke.m
+  filename: loftcbf_smoke.m
+categories:
+- arterial spin labelling
+- quantitative imaging
+- quality control
+readme: |
+  LOFT-CBF is the arterial spin labelling CBF and quality-control toolbox from
+  Kay Jann's LOFT lab at the University of Southern California. It realigns
+  control and label images with SPM, subtracts them (simple, surround or sinc),
+  quantifies CBF for PASL, CASL, pCASL and 3D GRASE acquisitions, and reports
+  DVARS, framewise displacement, tSNR and temporal SD.
+
+  This image runs it in GNU Octave with SPM12 r7771 (patched for Octave) and
+  the NIfTI and ANALYZE toolbox, all on the Octave path at startup.
+
+  Example, from the directory holding 3D control/label NIfTI volumes:
+
+      octave-cli --eval 'images = cellstr(spm_select("FPList", pwd, "^asl.*\.nii$")); [gcbf, dvars, fd, tsnr, tsd, cbf] = LOFT_CBFquantify(images, {"m0.nii"}, 1, 2, 0, 1, 0, 1.8, 1.8, 0, 0.1, 0, 1, 1)'
+
+  See the parameter list at the top of /opt/loftcbf/LOFT_CBFquantify.m. Input
+  volumes must alternate control and label, and their file names must all be
+  the same length (as written by spm_file_split), because upstream stores them
+  in a character matrix.
+  perf_reconstruct_2D.m uses the M0 image only to build the mask. It scales
+  CBF by a fixed MoCSF of 2.1412e5 (line 347, marked for adjustment between
+  populations), so absolute CBF depends on that constant and on the data
+  scaling. Check it against your acquisition before comparing values.
+  Image paths must all have the same length (for example asl_01.nii to
+  asl_16.nii), because the toolbox stores them in a character matrix.
+  LOFT_CBFpreprocess.m and LOFT_CBFselectfiles_nii.m use file dialogs and need a
+  display. The smoke test runs the full pipeline on synthetic pCASL pairs and
+  checks mean CBF against the toolbox's own pCASL model to within 3%. It does
+  not validate quantification against reference data.
+
+  LOFT-CBF is GPL-3.0 (pinned at commit {{ context.loftcbf_commit }}), SPM12 is
+  GPL-2.0, and the NIfTI toolbox is BSD-2-Clause. Licences are in
+  /opt/licenses/loftcbf.
+  Upstream: https://github.com/kayjann/LOFT-CBF
+icon: data:image/png;base64,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
