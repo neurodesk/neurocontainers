@@ -250,7 +250,7 @@ def test_bundle_provider_dispatches_before_generic_source_validation(
     config = {
         "method": "slicer_release",
         "app_id": "a" * 24,
-        "extension": "SlicerDMRI",
+        "extensions": {"dmri": "SlicerDMRI"},
     }
     expected = update_observations.SourceObservation(
         "https://download.example/slicer.tar.gz",

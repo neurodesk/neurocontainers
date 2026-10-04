@@ -31,11 +31,19 @@ def validate_bundle(config: dict) -> None:
     if method == "libreoffice_release":
         allowed = {"method"}
     elif method == "slicer_release":
-        allowed = {"method", "app_id", "extension"}
+        allowed = {"method", "app_id", "extensions"}
         if not OBJECT_ID.fullmatch(str(config.get("app_id", ""))):
             raise ValueError("slicer_release.app_id must be a Girder object ID")
-        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", str(config.get("extension", ""))):
-            raise ValueError("slicer_release.extension must be an extension base name")
+        extensions = config.get("extensions")
+        if not isinstance(extensions, dict) or not extensions:
+            raise ValueError("slicer_release.extensions must map metadata prefixes to extension names")
+        for prefix, name in extensions.items():
+            if not isinstance(prefix, str) or not re.fullmatch(r"[a-z][a-z0-9_]*", prefix):
+                raise ValueError("extension metadata prefixes must be lowercase identifiers")
+            if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name):
+                raise ValueError("slicer_release.extensions values must be extension base names")
+        if len(set(extensions.values())) != len(extensions):
+            raise ValueError("slicer_release.extensions names must be unique")
     elif method == "freesurfer_release":
         allowed = {"method", "script", "models"}
         _repo_path(config.get("script"))
@@ -150,25 +158,31 @@ def _slicer(config: dict, session: requests.Session):
     if (meta.get("app_id") != config["app_id"] or meta.get("version") != version or meta.get("pre_release") is not False
             or meta.get("os") != "linux" or meta.get("arch") != "amd64" or not revision.isdecimal()):
         raise ValueError("Slicer package release or architecture metadata disagrees")
-    extension = _one(_json_list(session, app_url + "/extension", os="linux", arch="amd64",
-                               app_revision=revision, baseName=config["extension"], limit=0),
-                     f"{config['extension']} extension for Slicer revision {revision}")
-    ext_meta = extension.get("meta", {})
-    if (ext_meta.get("app_id") != config["app_id"] or str(ext_meta.get("app_revision")) != revision or ext_meta.get("os") != "linux"
-            or ext_meta.get("arch") != "amd64" or ext_meta.get("baseName") != config["extension"]):
-        raise ValueError("Slicer extension ABI metadata disagrees with its application")
+    extensions = {}
+    for prefix, name in config["extensions"].items():
+        extension = _one(_json_list(session, app_url + "/extension", os="linux", arch="amd64",
+                                   app_revision=revision, baseName=name, limit=0),
+                         f"{name} extension for Slicer revision {revision}")
+        ext_meta = extension.get("meta", {})
+        if (ext_meta.get("app_id") != config["app_id"] or str(ext_meta.get("app_revision")) != revision
+                or ext_meta.get("os") != "linux" or ext_meta.get("arch") != "amd64"
+                or ext_meta.get("baseName") != name):
+            raise ValueError("Slicer extension ABI metadata disagrees with its application")
+        extensions[prefix] = extension
     main_url = f"https://download.slicer.org/download?os=linux&stability=release&version={version}"
-    extension_url = f"{GIRDER}/item/{extension['_id']}/download"
     main_sha, size = _download(session, main_url, expected_sha512=meta.get("sha512"),
-                               expected_size=package.get("size"))
-    extension_sha, _ = _download(session, extension_url, expected_sha512=ext_meta.get("sha512"),
-                                 expected_size=extension.get("size"))
+                              expected_size=package.get("size"))
+    metadata = {"version": version, "revision": revision,
+                "abi": ".".join(version.split(".")[:2]), "sha256": main_sha, "size": size}
+    for prefix, extension in extensions.items():
+        ext_meta = extension["meta"]
+        extension_url = f"{GIRDER}/item/{extension['_id']}/download"
+        digest, _ = _download(session, extension_url, expected_sha512=ext_meta.get("sha512"),
+                              expected_size=extension.get("size"))
+        metadata[prefix + "_item"] = extension["_id"]
+        metadata[prefix + "_sha256"] = digest
     return SourceObservation(value=main_url, url=app_url, version=version, tag=version,
-                             metadata={"version": version, "revision": revision,
-                                       "abi": ".".join(version.split(".")[:2]),
-                                       "extension_item": extension["_id"],
-                                       "extension_sha256": extension_sha,
-                                       "sha256": main_sha, "size": size})
+                             metadata=metadata)
 
 
 def _model(session: requests.Session, raw_url: str) -> tuple[str, str]:

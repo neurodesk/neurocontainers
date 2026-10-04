@@ -67,12 +67,12 @@ def test_slicer_resolves_application_extension_and_abi_together(monkeypatch):
     slicer_lists(monkeypatch)
     downloads = []
     monkeypatch.setattr(bundles, "_download", lambda session, url, **kwargs: (downloads.append(url) or "a" * 64, 42))
-    result = bundles._slicer({"app_id": "0" * 24, "extension": "MONAILabel"}, None)
+    result = bundles._slicer({"app_id": "0" * 24, "extensions": {"monailabel": "MONAILabel"}}, None)
     assert result.version == "5.10.0"
     assert result.metadata["revision"] == "34045"
     assert result.metadata["abi"] == "5.10"
-    assert result.metadata["extension_item"] == "2" * 24
-    assert result.metadata["extension_sha256"] == "a" * 64
+    assert result.metadata["monailabel_item"] == "2" * 24
+    assert result.metadata["monailabel_sha256"] == "a" * 64
     assert len(downloads) == 2
 
 
@@ -90,7 +90,7 @@ def test_slicer_falls_back_to_the_newest_promoted_release(monkeypatch):
                   "5.12.3": [slicer_package("5.12.3", "34627")]},
     )
     monkeypatch.setattr(bundles, "_download", lambda session, url, **kwargs: ("a" * 64, 42))
-    result = bundles._slicer({"app_id": "0" * 24, "extension": "MONAILabel"}, None)
+    result = bundles._slicer({"app_id": "0" * 24, "extensions": {"monailabel": "MONAILabel"}}, None)
     assert result.version == "5.12.3"
     assert result.metadata["revision"] == "34627"
     assert result.metadata["abi"] == "5.12"
@@ -107,7 +107,7 @@ def test_slicer_refuses_an_ambiguous_package_listing(monkeypatch):
     )
     monkeypatch.setattr(bundles, "_download", lambda *args, **kwargs: pytest.fail("ambiguous bundle downloaded"))
     with pytest.raises(ValueError, match="expected one Slicer Linux package"):
-        bundles._slicer({"app_id": "0" * 24, "extension": "MONAILabel"}, None)
+        bundles._slicer({"app_id": "0" * 24, "extensions": {"monailabel": "MONAILabel"}}, None)
 
 
 def test_slicer_refuses_a_listing_with_no_promoted_release(monkeypatch):
@@ -118,7 +118,7 @@ def test_slicer_refuses_a_listing_with_no_promoted_release(monkeypatch):
     )
     monkeypatch.setattr(bundles, "_download", lambda *args, **kwargs: pytest.fail("pre-release bundle downloaded"))
     with pytest.raises(ValueError, match="promoted"):
-        bundles._slicer({"app_id": "0" * 24, "extension": "MONAILabel"}, None)
+        bundles._slicer({"app_id": "0" * 24, "extensions": {"monailabel": "MONAILabel"}}, None)
 
 
 @pytest.mark.parametrize("revision,count", [("99999", 1), ("34045", 0), ("34045", 2)])
@@ -126,7 +126,52 @@ def test_slicer_refuses_incomplete_or_mismatched_bundle_before_downloading(monke
     slicer_lists(monkeypatch, extension_revision=revision, extensions=count)
     monkeypatch.setattr(bundles, "_download", lambda *args, **kwargs: pytest.fail("incoherent bundle downloaded"))
     with pytest.raises(ValueError):
-        bundles._slicer({"app_id": "0" * 24, "extension": "MONAILabel"}, None)
+        bundles._slicer({"app_id": "0" * 24, "extensions": {"monailabel": "MONAILabel"}}, None)
+
+
+@pytest.mark.parametrize("fault", [None, "missing", "revision", "architecture", "name"])
+def test_slicer_extension_set_is_resolved_before_any_download(monkeypatch, fault):
+    names = {"monailabel": "MONAILabel", "auto3dseg": "MONAIAuto3DSeg", "pytorch": "PyTorch"}
+    queried = []
+    downloads = []
+
+    def listing(session, url, **params):
+        if url.endswith("/release"):
+            return [{"name": "5.10.0"}]
+        if url.endswith("/package"):
+            return [slicer_package("5.10.0", "34045")]
+        name = params["baseName"]
+        queried.append(name)
+        assert params["app_revision"] == "34045"
+        meta = {"app_id": "0" * 24, "app_revision": "34045", "baseName": name,
+                "os": "linux", "arch": "amd64"}
+        if name == "PyTorch":
+            if fault == "missing":
+                return []
+            if fault == "revision":
+                meta["app_revision"] = "99999"
+            if fault == "architecture":
+                meta["arch"] = "arm64"
+            if fault == "name":
+                meta["baseName"] = "Unexpected"
+        return [{"_id": str(len(queried) + 1) * 24, "meta": meta}]
+
+    monkeypatch.setattr(bundles, "_json_list", listing)
+    monkeypatch.setattr(bundles, "_download",
+                        lambda session, url, **kwargs: (downloads.append(url) or "a" * 64, 42))
+    config = {"app_id": "0" * 24, "extensions": names}
+    if fault:
+        with pytest.raises(ValueError):
+            bundles._slicer(config, None)
+        assert downloads == []
+    else:
+        result = bundles._slicer(config, None)
+        assert result.metadata["revision"] == "34045"
+        for index, prefix in enumerate(names, 2):
+            assert result.metadata[prefix + "_item"] == str(index) * 24
+            assert result.metadata[prefix + "_sha256"] == "a" * 64
+        assert len(downloads) == 4
+    assert queried == list(names.values())
 
 
 def test_download_verifies_upstream_digest_and_size():
@@ -173,8 +218,12 @@ def test_freesurfer_uses_one_release_for_script_and_models(monkeypatch):
 
 
 @pytest.mark.parametrize("config", [
-    {"method": "slicer_release", "app_id": "bad", "extension": "MONAILabel"},
-    {"method": "slicer_release", "app_id": "0" * 24, "extension": "../bad"},
+    {"method": "slicer_release", "app_id": "bad", "extensions": {"monailabel": "MONAILabel"}},
+    {"method": "slicer_release", "app_id": "0" * 24, "extensions": {"monailabel": "../bad"}},
+    {"method": "slicer_release", "app_id": "0" * 24, "extensions": {}},
+    {"method": "slicer_release", "app_id": "0" * 24, "extensions": {"../a": "PyTorch"}},
+    {"method": "slicer_release", "app_id": "0" * 24, "extensions": {"a": "PyTorch", "b": "PyTorch"}},
+    {"method": "slicer_release", "app_id": "0" * 24, "extension": "MONAILabel"},
     {"method": "freesurfer_release", "script": "../script", "models": {"a": "model.h5"}},
     {"method": "freesurfer_release", "script": "script", "models": {}},
     {"method": "freesurfer_release", "script": "script", "models": {"../a": "model.h5"}},

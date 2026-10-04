@@ -6,6 +6,13 @@ architectures:
 
 variables:
   monailabel_version: 0.8.5
+  slicer_torch_version: 2.5.1
+  slicer_monai_version: 1.4.0
+  slicer_numpy_version: 1.26.4
+  monaiauto3dseg_extension_item: 6912128aac7b1c95e7938b2c
+  monaiauto3dseg_extension_sha256: 638d4538483089434f6cb7ff0f0cc59ba512b44e69761d5162123962db27c7b2
+  pytorch_extension_item: 6912099bac7b1c95e7937be6
+  pytorch_extension_sha256: 58bd40e49ac1459a9cdd72e7e1f63b20dc91373c9518eb7a239d57123e1d010c
   slicer_revision: 34045
   monailabel_extension_item: 6912128dac7b1c95e7938b38
   upstream_version: 5.10.0
@@ -14,6 +21,7 @@ variables:
 auto_update:
   container_version: "slicer"
   method: sources
+  local: []
   sources:
   - id: monailabel-server
     dependency: true
@@ -22,18 +30,49 @@ auto_update:
     target:
       variable: monailabel_version
       fulltest_variable: monailabel_version
+  - id: slicer-torch
+    dependency: true
+    method: pypi
+    package: torch
+    version_regex: '(?P<version>2\.5\.\d+)'
+    target:
+      variable: slicer_torch_version
+      fulltest_variable: slicer_torch_version
+  - id: slicer-monai
+    dependency: true
+    method: pypi
+    package: monai
+    version_regex: '(?P<version>1\.4\.\d+)'
+    target:
+      variable: slicer_monai_version
+      fulltest_variable: slicer_monai_version
+  - id: slicer-numpy
+    dependency: true
+    method: pypi
+    package: numpy
+    version_regex: '(?P<version>1\.26\.\d+)'
+    target:
+      variable: slicer_numpy_version
+      fulltest_variable: slicer_numpy_version
   - id: slicer
     method: slicer_release
     app_id: 5f4474d0e1d8c75dfc705482
-    extension: MONAILabel
+    extensions:
+      monailabel_extension: MONAILabel
+      monaiauto3dseg_extension: MONAIAuto3DSeg
+      pytorch_extension: PyTorch
     target:
       file: download
       variables:
         upstream_version: version
         slicer_revision: revision
         slicer_abi: abi
-        monailabel_extension_item: extension_item
-        monailabel_extension_sha256: extension_sha256
+        monailabel_extension_item: monailabel_extension_item
+        monailabel_extension_sha256: monailabel_extension_sha256
+        monaiauto3dseg_extension_item: monaiauto3dseg_extension_item
+        monaiauto3dseg_extension_sha256: monaiauto3dseg_extension_sha256
+        pytorch_extension_item: pytorch_extension_item
+        pytorch_extension_sha256: pytorch_extension_sha256
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -90,6 +129,18 @@ build:
     - run:
         - mkdir -p /opt/slicer-extensions/MONAILabel
         - tar -xz -C /opt/slicer-extensions/MONAILabel --strip-components 1 -f {{ get_file("download_1") }}
+        - mkdir -p /opt/slicer-extensions/MONAIAuto3DSeg /opt/slicer-extensions/PyTorch
+        - tar -xz -C /opt/slicer-extensions/MONAIAuto3DSeg --strip-components 1 -f {{ get_file("monaiauto3dseg_extension") }}
+        - tar -xz -C /opt/slicer-extensions/PyTorch --strip-components 1 -f {{ get_file("pytorch_extension") }}
+
+    - run:
+        - /opt/Slicer-{{ context.upstream_version }}-linux-amd64/bin/PythonSlicer -m pip install --no-cache-dir torch=={{ context.slicer_torch_version }} --index-url https://download.pytorch.org/whl/cpu --constraint {{ get_file("slicer-engine-constraints.txt") }}
+        - /opt/Slicer-{{ context.upstream_version }}-linux-amd64/bin/PythonSlicer -m pip install --no-cache-dir 'monai[fire,pyyaml,nibabel,pynrrd,psutil,tensorboard,skimage,itk,tqdm]=={{ context.slicer_monai_version }}' 'numpy=={{ context.slicer_numpy_version }}' --constraint {{ get_file("slicer-engine-constraints.txt") }}
+
+    - run:
+        - /opt/Slicer-{{ context.upstream_version }}-linux-amd64/bin/PythonSlicer {{ get_file("repair_itk_metadata.py") }}
+        - /opt/Slicer-{{ context.upstream_version }}-linux-amd64/bin/PythonSlicer {{ get_file("configure_auto3dseg.py") }} /opt/slicer-extensions/MONAIAuto3DSeg/lib/Slicer-{{ context.slicer_abi }}/qt-scripted-modules
+        - /opt/Slicer-{{ context.upstream_version }}-linux-amd64/bin/PythonSlicer -m pip check
 
     - copy:
         - slicer-entrypoint.sh
@@ -97,6 +148,10 @@ build:
 
     - run:
         - chmod +x /usr/local/bin/Slicer
+
+    - copy:
+        - auto3dseg-smoke.py
+        - /opt/slicer-tests/auto3dseg-smoke.py
 
     - install:
         - nvidia-cuda-toolkit
@@ -129,58 +184,41 @@ files:
   - name: download_1
     url: https://slicer-packages.kitware.com/api/v1/item/{{ context.monailabel_extension_item }}/download
     sha256: '{{ context.monailabel_extension_sha256 }}'
+  - name: monaiauto3dseg_extension
+    url: https://slicer-packages.kitware.com/api/v1/item/{{ context.monaiauto3dseg_extension_item }}/download
+    sha256: '{{ context.monaiauto3dseg_extension_sha256 }}'
+  - name: pytorch_extension
+    url: https://slicer-packages.kitware.com/api/v1/item/{{ context.pytorch_extension_item }}/download
+    sha256: '{{ context.pytorch_extension_sha256 }}'
+  - name: slicer-engine-constraints.txt
+    filename: slicer-engine-constraints.txt
+  - name: configure_auto3dseg.py
+    filename: configure_auto3dseg.py
+  - name: auto3dseg-smoke.py
+    filename: auto3dseg-smoke.py
   - name: slicer-entrypoint.sh
     contents: |
       #!/usr/bin/env bash
-      set -u
+      set -eu
 
       SLICER_HOME="/opt/Slicer-{{ context.upstream_version }}-linux-amd64"
-      SLICER_CMD="${SLICER_HOME}/Slicer"
-      EXTENSION_REVISION="{{ context.slicer_revision }}"
-      EXTENSION_SOURCE="/opt/slicer-extensions/MONAILabel"
-      SLICER_MODULE_PATH_SUFFIX="lib/Slicer-{{ context.slicer_abi }}/qt-scripted-modules"
+      export MONAI_AUTO3DSEG_CACHE_DIR="${MONAI_AUTO3DSEG_CACHE_DIR:-${PWD}/.monaiauto3dseg}"
+      export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${MONAI_AUTO3DSEG_CACHE_DIR}/slicer-cache}"
+      export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${MONAI_AUTO3DSEG_CACHE_DIR}/slicer-config}"
+      MODULE_SUFFIX="lib/Slicer-{{ context.slicer_abi }}/qt-scripted-modules"
+      MODULE_PATHS=(
+        "/opt/slicer-extensions/MONAILabel/${MODULE_SUFFIX}"
+        "/opt/slicer-extensions/MONAIAuto3DSeg/${MODULE_SUFFIX}"
+        "/opt/slicer-extensions/PyTorch/${MODULE_SUFFIX}"
+      )
 
-      if [ -n "${HOME:-}" ] && [ -d "${HOME}" ] && [ -d "${EXTENSION_SOURCE}" ]; then
-        EXTENSION_PARENT="${HOME}/.config/NA-MIC/Extensions-${EXTENSION_REVISION}"
-        EXTENSION_TARGET="${EXTENSION_PARENT}/MONAILabel"
-        SETTINGS_FILE="${HOME}/.config/NA-MIC/Slicer-${EXTENSION_REVISION}.ini"
-
-        if [ ! -d "${EXTENSION_TARGET}" ] && mkdir -p "${EXTENSION_PARENT}" 2>/dev/null; then
-          cp -a "${EXTENSION_SOURCE}" "${EXTENSION_TARGET}" 2>/dev/null || true
-        fi
-
-        if [ -d "${EXTENSION_TARGET}" ] && [ ! -f "${SETTINGS_FILE}" ] && mkdir -p "$(dirname "${SETTINGS_FILE}")" 2>/dev/null; then
-          cat > "${SETTINGS_FILE}" <<EOF
-      [Extensions]
-      FrontendServerUrl=https://extensions.slicer.org
-      InstallPath=${HOME}/.config/NA-MIC/Extensions-${EXTENSION_REVISION}
-      LastServerAPI=Girder_v1
-      ManagerEnabled=true
-      MetadataFromServerUrl=https://slicer-packages.kitware.com
-      ServerUrl=https://slicer-packages.kitware.com
-
-      [LibraryPaths]
-      1\path=${EXTENSION_TARGET}/lib/Slicer-{{ context.slicer_abi }}
-      size=1
-
-      [Modules]
-      AdditionalPaths=${EXTENSION_TARGET}/${SLICER_MODULE_PATH_SUFFIX}
-      IgnoreModules=@Invalid()
-
-      [PYTHONPATH]
-      1\path=${EXTENSION_TARGET}/${SLICER_MODULE_PATH_SUFFIX}
-      size=1
-
-      [Paths]
-      size=0
-
-      [QT_PLUGIN_PATH]
-      size=0
-      EOF
-        fi
-      fi
-
-      exec "${SLICER_CMD}" "$@"
+      # Launcher commands do not start Slicer's application module loader.
+      for argument in "$@"; do
+        case "$argument" in
+          --launch|--launcher-*) exec "${SLICER_HOME}/Slicer" "$@" ;;
+        esac
+      done
+      exec "${SLICER_HOME}/Slicer" --additional-module-paths "${MODULE_PATHS[@]}" "$@"
 
 readme: |
   ----------------------------------
@@ -191,6 +229,12 @@ readme: |
   ```
   Slicer
   ```
+
+  MONAILabel, MONAIAuto3DSeg, and PyTorch extensions are preinstalled.
+  MONAIAuto3DSeg runs locally with the CPU engine in Slicer's Python.
+  Models download on first use. Set `MONAI_AUTO3DSEG_CACHE_DIR` to a writable,
+  persistent mounted directory to reuse them, including offline. The default is
+  `.monaiauto3dseg` in your current working directory. Extension files stay in `/opt`.
 
   More documentation can be found here: https://slicer.readthedocs.io/en/latest/user_guide/getting_started.html
 
