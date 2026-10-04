@@ -1,0 +1,131 @@
+name: kul-vbg
+version: 0.61.0_23112021_beta
+copyright:
+  - license: MPL-2.0
+    url: https://github.com/KUL-Radneuron/KUL_VBG/blob/8ec6cee1cc15f222791d807c333daf2ff2483d78/Licence.txt
+  - name: FreeSurfer software license
+    url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
+  - name: FSL license
+    url: https://fsl.fmrib.ox.ac.uk/fsl/docs/license.html
+architectures:
+  - x86_64
+variables:
+  upstream_version: 0.61_23112021_beta
+  upstream_commit: 8ec6cee1cc15f222791d807c333daf2ff2483d78
+  ants_version: 2.4.3
+  fsl_version: 6.0.7.18
+  freesurfer_version: 7.4.1
+  mrtrix_version: 3.0.8
+auto_update:
+  method: sources
+  container_version:
+    variable: upstream_version
+  sources:
+    - id: vbg
+      method: github_commit
+      repo: KUL-Radneuron/KUL_VBG
+      ref: master
+      target:
+        variable: upstream_commit
+        fulltest_variable: upstream_commit
+    - id: ants
+      method: github_release
+      repo: ANTsX/ANTs
+      dependency: true
+      target:
+        variable: ants_version
+        value: version
+    - id: fsl
+      method: webpage
+      url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/manifest.json
+      version_regex: '"latest"\s*:\s*"(?P<version>\d+(?:\.\d+)+)"'
+      dependency: true
+      target:
+        variable: fsl_version
+        value: version
+    - id: freesurfer
+      method: github_tags
+      repo: freesurfer/freesurfer
+      dependency: true
+      target:
+        variable: freesurfer_version
+        value: version
+    - id: mrtrix
+      method: github_tags
+      repo: MRtrix3/mrtrix3
+      dependency: true
+      target:
+        variable: mrtrix_version
+        value: version
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - git
+        - python3
+        - bc
+        - libncurses5
+        - libgl1
+        - libxt6
+        - libgomp1
+    - template:
+        name: fsl
+        version: '{{ context.fsl_version }}'
+    - template:
+        name: ants
+        version: '{{ context.ants_version }}'
+    - template:
+        name: freesurfer
+        version: '{{ context.freesurfer_version }}'
+    - template:
+        name: mrtrix3
+        method: source
+        version: '{{ context.mrtrix_version }}'
+        build_processes: '2'
+    - run:
+        - git clone https://github.com/KUL-Radneuron/KUL_VBG.git /opt/kul-vbg
+        - git -C /opt/kul-vbg checkout --detach {{ context.upstream_commit }}
+        - grep -Fx 'v="{{ context.upstream_version }}"' /opt/kul-vbg/KUL_VBG.sh
+        - git -C /opt/kul-vbg rev-parse HEAD > /opt/kul-vbg/UPSTREAM_COMMIT
+        - rm -rf /opt/kul-vbg/.git
+        - chmod +x /opt/kul-vbg/*.sh
+    - environment:
+        PATH: /opt/kul-vbg:$PATH
+        SUBJECTS_DIR: /tmp/vbg-subjects
+deploy:
+  bins:
+    - KUL_VBG.sh
+categories:
+  - image segmentation
+  - structural imaging
+readme: |
+  KUL_VBG performs virtual brain grafting for MRI with large lesions.
+  The scripts, templates, atlases and label tables are installed together in
+  /opt/kul-vbg. UPSTREAM_COMMIT records the exact source revision.
+
+  Run `KUL_VBG.sh -h`. Upstream returns exit code 1 after printing help.
+  The initial route uses ANTs extraction with `-B 2` and FreeSurfer with `-P 1`:
+  `KUL_VBG.sh -S subject -a /data/T1w.nii.gz -l /data/lesion.nii.gz -z T1 -B 2 -P 1 -m /output/intermediate -o /output/results`.
+  The lesion mask must occupy the same space as the T1 image.
+  Run from a writable working directory and mount writable intermediate/output paths.
+  Supply your own FreeSurfer license at a mounted path and set FS_LICENSE to it.
+  The workflow checks the license even when parcellation is not selected.
+
+  The image provides ANTs {{ context.ants_version }}, FSL {{ context.fsl_version }},
+  MRtrix {{ context.mrtrix_version }} and FreeSurfer {{ context.freesurfer_version }}.
+  HD-BET and FastSurfer routes are not packaged. Use -B 2 and -P 1 to keep the
+  workflow within this image rather than upstream's optional nested Docker paths.
+
+  Only KUL_VBG.sh is exported as a supported module command. The retained
+  KUL_VBG_cook_template.sh and KUL_synth_pats_4VBG.sh source scripts under
+  /opt/kul-vbg are unsupported upstream examples. They require HD-BET and
+  changes to hardcoded input and atlas paths before use.
+
+  The container label follows the script's recorded software version,
+  {{ context.upstream_version }}, with numeric padding. Commit updates retain that
+  software label and use the build date. Licensed end-to-end lesion filling and
+  FreeSurfer output validation remain release acceptance work.
+  https://github.com/KUL-Radneuron/KUL_VBG
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABDklEQVR4nO2ZwQ3CMBAECUoFFEERfGiEN0XxphE644EU2XEc34lbVod2flgW3MSJveGm0/lyyMyRXcC3SICNBNhIgI0E2My4r769HuXH5/WO+BXUCqyq3xwJASLQqxXhEC+wX2W4Q7CApb5Yh/S7kATYSKDGclrFnmjxK7BfX/h5DLmFelUi0gTqGWhrBWWhSX+rkEkv4Hgf8OZ79PwP1hXw5nv0/AWTgDffo8dLxgLcKz10GAh48z16fkv6XUgCbP5dwJvv0fNbxivgzffo+StMt5A336PHS6zPwO+vtDEL6X2ATXoB9Qc6qD9gRf2BGvUH3EiAjQRq1B9wo/5AB/UHrGgXYiMBNhJgIwE2b7vRiUs1dq+AAAAAAElFTkSuQmCC

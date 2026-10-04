@@ -1,0 +1,28 @@
+name: kul-vbg
+version: 0.61.0_23112021_beta
+upstream_commit: 8ec6cee1cc15f222791d807c333daf2ff2483d78
+tests:
+  - name: workflow help
+    command: KUL_VBG.sh -h
+    expected_exit_code: 1
+    expected_output_contains: ANTs-BET
+  - name: source identity
+    command: cat /opt/kul-vbg/UPSTREAM_COMMIT
+    expected_output_contains: ${upstream_commit}
+  - name: template resources
+    command: |
+      test -s /opt/kul-vbg/atlasses/Templates_update/HR_T1_MNI.nii.gz &&
+      test -s /opt/kul-vbg/atlasses/Templates_update/HR_T1_MNI_brain_mask.nii.gz &&
+      test -s /opt/kul-vbg/atlasses/Templates_update/Lt_hemi_mask.nii.gz &&
+      test -s /opt/kul-vbg/atlasses/Templates_update/Rt_hemi_mask.nii.gz &&
+      test -s /opt/kul-vbg/share/labelconvert/FreeSurferColorLUT+lesion.txt &&
+      test -s /opt/kul-vbg/share/labelconvert/fs_default+lesion.txt &&
+      echo 'VBG templates and lesion label tables available'
+    expected_output_contains: VBG templates and lesion label tables available
+  - name: imaging tools
+    command: command -v antsRegistration && command -v antsBrainExtraction.sh && command -v fslmaths && command -v mrmath && command
+      -v labelconvert && command -v recon-all
+    expected_output_contains: recon-all
+  - name: workflow shell syntax
+    command: bash -n /opt/kul-vbg/KUL_VBG.sh && bash -n /opt/kul-vbg/KUL_VBG_cook_template.sh && echo syntax-valid
+    expected_output_contains: syntax-valid
