@@ -1,6 +1,11 @@
 # Verify promoted containers
 
-Trusted main-branch promotion signs the immutable GHCR image and SIF referrer
+Artifact signing is disabled by default. After the staging acceptance below,
+set the repository Actions variable `ARTIFACT_SIGNING_ENABLED` to the literal
+value `true` to enable it. Each promotion resolves this policy once; all other
+values preserve the existing unsigned release flow.
+
+When enabled, trusted main-branch promotion signs the immutable GHCR image and SIF referrer
 digests with Cosign and GitHub OIDC. It also signs the exact tested SIF bytes and
 a promotion acceptance statement. Every signature is verified against the exact
 workflow identity before the promotion job can finalize release metadata.
@@ -27,7 +32,7 @@ signature. Signature discovery uses Cosign's registry storage conventions.
 
 ## Verify a downloaded SIF
 
-For each newly promoted `NAME.simg`, the S3 download location also contains:
+For each `NAME.simg` promoted with signing enabled, the S3 download location also contains:
 
 - `NAME.simg.sigstore.json`: signature bundle for the SIF bytes.
 - `NAME.simg.promotion.json`: promotion acceptance statement.
@@ -54,8 +59,9 @@ trusted promotion may create fresh signatures for the same immutable bytes;
 it does not alter the SIF. Signing or required sidecar publication failure stops
 release finalization. Fulcio/Rekor and registry availability are required.
 
-Before production rollout, run a trusted staging promotion with GitHub OIDC and
-test registry/S3 destinations. Local key-based fixtures exercise byte tampering
+Before enabling production signing, run a trusted staging promotion with GitHub
+OIDC and test registry/S3 destinations. Keep the repository opt-in unset until
+that acceptance succeeds; this workflow does not configure staging destinations. Local key-based fixtures exercise byte tampering
 but cannot substitute for that identity and publication round trip. Commit
 signing and repository signature rules remain a separate maintainer policy
 decision under issue #504.
