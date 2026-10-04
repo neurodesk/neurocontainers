@@ -79,9 +79,9 @@ build:
 
     - template:
         name: miniconda
-        conda_install: python=3.9 nipype={{ context.upstream_version }} traits={{ context.traits_version }} scipy scikit-learn scikit-image jupyter nb_conda_kernels h5py seaborn numpy
-        pip_install: osfclient pybids "traits=={{ context.traits_version }}"
-        version: py39_24.7.1-0
+        conda_install: python=3.10 traits={{ context.traits_version }} scipy scikit-learn scikit-image jupyter nb_conda_kernels h5py seaborn numpy
+        pip_install: nipype=={{ context.upstream_version }} osfclient pybids "traits=={{ context.traits_version }}"
+        version: py310_24.7.1-0
         install_path: /opt/miniconda-latest
 
     - install:
