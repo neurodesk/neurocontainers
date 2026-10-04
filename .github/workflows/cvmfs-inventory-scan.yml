@@ -1,0 +1,47 @@
+name: CVMFS inventory security reports
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Account for inventory without executing scanners
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: cvmfs-inventory-scan
+  cancel-in-progress: false
+jobs:
+  scan:
+    # Provision a read-only mount and pinned tools before enabling this variable.
+    if: github.repository == 'neurodesk/neurocontainers' && vars.CVMFS_SCAN_ENABLED == 'true'
+    runs-on: ${{ vars.CVMFS_SCAN_RUNNER }}
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Scan the operator inventory
+        env:
+          CVMFS_ROOT: ${{ vars.CVMFS_SCAN_ROOT }}
+          INVENTORY: ${{ vars.CVMFS_SCAN_INVENTORY }}
+          SYFT_VERSION: ${{ vars.CVMFS_SCAN_SYFT_VERSION }}
+          GRYPE_VERSION: ${{ vars.CVMFS_SCAN_GRYPE_VERSION }}
+          DRY_RUN: ${{ inputs.dry-run || false }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$DRY_RUN" = true ]; then args+=(--dry-run); fi
+          python3 -m workflows.cvmfs_scan --root "$CVMFS_ROOT" --inventory "$INVENTORY" \
+            --output "$RUNNER_TEMP/cvmfs-security" --syft-version "$SYFT_VERSION" \
+            --grype-version "$GRYPE_VERSION" "${args[@]}"
+      - name: Retain coverage, SBOMs and vulnerability reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cvmfs-security-${{ github.run_id }}
+          path: ${{ runner.temp }}/cvmfs-security/
+          if-no-files-found: error
+          retention-days: 90
