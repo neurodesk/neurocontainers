@@ -1,7 +1,7 @@
 {
   "apps": {
     "pyem 0.69.0": {
-      "version": "20261003",
+      "version": "20261004",
       "exec": "",
       "apptainer_args": []
     }
