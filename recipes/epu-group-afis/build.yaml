@@ -1,0 +1,83 @@
+name: epu-group-afis
+version: 0.3.0
+copyright:
+  - license: MIT
+    url: https://github.com/DustinMorado/EPU_group_AFIS/blob/v0.3/LICENSE.txt
+architectures:
+  - x86_64
+variables:
+  upstream_version: '0.3'
+  numpy_version: 1.26.4
+  matplotlib_version: 3.9.2
+  scikit_learn_version: 1.5.2
+auto_update:
+  method: sources
+  container_version: epu
+  sources:
+    - id: epu
+      method: artifact_listing
+      url: https://api.github.com/repos/DustinMorado/EPU_group_AFIS/tags?per_page=100
+      download_base: https://codeload.github.com/DustinMorado/EPU_group_AFIS/tar.gz/
+      version_regex: v(?P<version>\d+(?:\.\d+)+)
+      target:
+        file: epu_source
+        variables:
+          upstream_version: version
+    - id: numpy
+      method: pypi
+      package: numpy
+      dependency: true
+      target:
+        variable: numpy_version
+    - id: matplotlib
+      method: pypi
+      package: matplotlib
+      dependency: true
+      target:
+        variable: matplotlib_version
+    - id: scikit-learn
+      method: pypi
+      package: scikit-learn
+      dependency: true
+      target:
+        variable: scikit_learn_version
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - python3
+        - python3-venv
+        - ca-certificates
+    - run:
+        - mkdir -p /opt/epu-group-afis
+        - tar -xzf {{ get_file("epu_source") }} -C /opt/epu-group-afis --strip-components=1
+        - python3 -m venv /opt/epu-venv
+        - /opt/epu-venv/bin/pip install --no-cache-dir numpy=={{ context.numpy_version }} matplotlib=={{ context.matplotlib_version
+          }} scikit-learn=={{ context.scikit_learn_version }}
+        - chmod +x /opt/epu-group-afis/EPU_Group_AFIS.py
+        - ln -s /opt/epu-group-afis/EPU_Group_AFIS.py /opt/epu-venv/bin/EPU_Group_AFIS.py
+    - environment:
+        PATH: /opt/epu-venv/bin:$PATH
+        MPLBACKEND: Agg
+files:
+  - name: epu_source
+    url: https://codeload.github.com/DustinMorado/EPU_group_AFIS/tar.gz/v0.3
+    sha256: 9496696346afc86a4d198f7a24ec9435a1ab91f8fbb4aca0d4cf0a5bf91e99a0
+deploy:
+  bins:
+    - EPU_Group_AFIS.py
+categories:
+  - cryo EM
+readme: |
+  EPU_group_AFIS converts EPU AFIS XML metadata into RELION optics groups.
+
+  Run `EPU_Group_AFIS.py --xml_dir /data/xml --n_clusters 5 --quiet --output_fn /data/movies.star`.
+  Set the movie directory, pixel size and microscope parameters for your acquisition.
+  The upstream grid calculation requires at least five optics groups. `--quiet` alone
+  still prompts when the default cluster count is one; supply `--n_clusters` explicitly.
+  The plotting backend is headless. Input metadata and output files belong in a writable mounted directory.
+  Upstream release v{{ context.upstream_version }} is installed under /opt/epu-group-afis.
+  https://github.com/DustinMorado/EPU_group_AFIS
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABDklEQVR4nO2ZwQ3CMBAECUoFFEERfGiEN0XxphE644EU2XEc34lbVod2flgW3MSJveGm0/lyyMyRXcC3SICNBNhIgI0E2My4r769HuXH5/WO+BXUCqyq3xwJASLQqxXhEC+wX2W4Q7CApb5Yh/S7kATYSKDGclrFnmjxK7BfX/h5DLmFelUi0gTqGWhrBWWhSX+rkEkv4Hgf8OZ79PwP1hXw5nv0/AWTgDffo8dLxgLcKz10GAh48z16fkv6XUgCbP5dwJvv0fNbxivgzffo+StMt5A336PHS6zPwO+vtDEL6X2ATXoB9Qc6qD9gRf2BGvUH3EiAjQRq1B9wo/5AB/UHrGgXYiMBNhJgIwE2b7vRiUs1dq+AAAAAAElFTkSuQmCC

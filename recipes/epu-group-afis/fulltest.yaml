@@ -1,0 +1,36 @@
+name: epu-group-afis
+version: 0.3.0
+upstream_version: '0.3'
+tests:
+  - name: launcher help
+    command: EPU_Group_AFIS.py --help
+    expected_output_contains: Create Optics Groups
+  - name: noninteractive AFIS grid conversion
+    command: |-
+      python - <<'PY'
+      import pathlib, tempfile, subprocess
+      with tempfile.TemporaryDirectory() as directory:
+          root = pathlib.Path(directory)
+          for i, (x, y) in enumerate([(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]):
+              for j in range(2):
+                  (root / f'FoilHole_{i}_Data_{j}.xml').write_text(
+                      '<root xmlns="http://schemas.datacontract.org/2004/07/Fei.SharedObjects">'
+                      f'<microscopeData><optics><BeamShift><x>{x}</x><y>{y}</y>'
+                      '</BeamShift></optics></microscopeData></root>')
+          output = root / 'movies.star'
+          subprocess.run(['EPU_Group_AFIS.py', '--xml_dir', str(root), '--n_clusters', '5',
+                          '--quiet', '--movie_dir', str(root), '--output_fn', str(output)], check=True)
+          text = output.read_text()
+          rows = [line.split() for line in text.splitlines() if '_Fractions.mrc' in line]
+          assert len(rows) == 10, rows
+          assert set(row[1] for row in rows) == {'1', '2', '3', '4', '5'}
+          assert sum(line.startswith('opticsGroup') for line in text.splitlines()) == 5
+          groups = {}
+          for movie, group in rows:
+              foil = pathlib.Path(movie).name.split('_')[1]
+              if foil in groups:
+                  assert groups[foil] == group
+              groups[foil] = group
+          print('10 movies in 5 optics groups')
+      PY
+    expected_output_contains: 10 movies in 5 optics groups
