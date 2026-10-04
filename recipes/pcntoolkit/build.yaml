@@ -39,10 +39,6 @@ variables:
 auto_update:
   method: sources
   container_version: pcntoolkit
-  local:
-    - recipes/pcntoolkit/tutorials.md
-    - recipes/pcntoolkit/offline_blr.py
-    - recipes/pcntoolkit/check_tutorials.py
   sources:
     - id: pcntoolkit
       method: artifact_listing
