@@ -42,13 +42,13 @@ variables:
       condition: arch=="x86_64"
     - value: strace_aarch64
       condition: arch=="aarch64"
-  neurocommand_commit: "968b4beff8610aad0b4d4009a96aae69bd4e911c"
+  neurocommand_commit: "736bda3a724e57d8962ee050c4a571c05f943148"
   nf_neuro_commit: "db13b89521279b5c4685045d955185453ded8d2a"
   jupyterlab_slurm_commit: "8dccb39808f8a1b77712a9a5773a7d2601a56683"
   yarn_version: "1.22.22"
   hatchling_build_version: 1.32.0
   codex_version: "0.160.0"
-  claude_version: "2.1.288"
+  claude_version: "2.1.289"
   opencode_version: "1.18.34"
   nextflow_tag: v26.04.6
   nf_test_version: 0.9.5
