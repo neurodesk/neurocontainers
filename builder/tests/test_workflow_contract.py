@@ -338,8 +338,8 @@ def test_candidate_promotion_preserves_optional_publish_behaviour() -> None:
     assert "Make Quay repositories public" in workflow
     assert "QUAY_API_TOKEN" in workflow
     assert "/changevisibility" in workflow
-    assert workflow.count('org.opencontainers.image.title=${container}') == 2
-    assert workflow.count('org.opencontainers.image.version=${version}_${build_date}') == 2
+    assert 'python -m builder.oci_labels image' in workflow
+    assert workflow.count('"${SIF_ANNOTATION_ARGS[@]}"') == 2
 
 
 def test_candidate_promotion_refreshes_auth_after_long_publication() -> None:

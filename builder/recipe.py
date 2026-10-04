@@ -8,7 +8,7 @@ import shlex
 import urllib.error
 import urllib.request
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -175,6 +175,7 @@ class CompiledRecipe:
     readme: str
     definition: Definition
     staging_plan: StagingPlan
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def tag(self) -> str:
@@ -637,4 +638,8 @@ def compile_recipe(
         readme=readme,
         definition=definition,
         staging_plan=plan,
+        metadata=renderer.render_value({
+            "copyright": [{"license": item.get("license")} for item in recipe.get("copyright") or []],
+            "structured_readme": {"description": (recipe.get("structured_readme") or {}).get("description", "")},
+        }, context),
     )

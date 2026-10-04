@@ -428,6 +428,11 @@ jobs:
         run: |
           python3 -m builder staged-context-args "build/${CONTAINER_NAME}" > "$RUNNER_TEMP/image-context-args"
           mapfile -d '' -t IMAGE_CONTEXT_ARGS < "$RUNNER_TEMP/image-context-args"
+          python3 -m builder.oci_labels recipe "recipes/${APPLICATION}" \
+            --architecture "${ARCHITECTURE}" --variant "${VARIANT}" \
+            --build-date "${BUILDDATE}" --revision "$(git rev-parse HEAD)" \
+            --format labels > "$RUNNER_TEMP/image-label-args"
+          mapfile -d '' -t IMAGE_LABEL_ARGS < "$RUNNER_TEMP/image-label-args"
           cd "./build/${CONTAINER_NAME}"
           CACHE_REF=ghcr.io/${GH_REGISTRY}/${CONTAINER_NAME}:buildcache
           CACHE_FROM_ARGS=()
@@ -455,6 +460,7 @@ jobs:
             --tag "ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}" \
             --build-context "neurocontainer-cache=./cache" \
             "${IMAGE_CONTEXT_ARGS[@]}" \
+            "${IMAGE_LABEL_ARGS[@]}" \
             "${CACHE_FROM_ARGS[@]}" \
             "${CACHE_TO_ARGS[@]}" \
             --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
@@ -1100,12 +1106,16 @@ jobs:
       - name: Attach SIF as OCI Referrer to Quay
         run: |
           set -euo pipefail
+          subject="${QUAY_REPO}@$(oras resolve "${QUAY_REPO}:${VERSION}_${BUILDDATE}")"
+          python3 -m builder.oci_labels image "${subject}" \
+            --architecture '${{ needs.config.outputs.ARCHITECTURE }}' \
+            --format annotations > "$RUNNER_TEMP/sif-annotation-args"
+          mapfile -d '' -t SIF_ANNOTATION_ARGS < "$RUNNER_TEMP/sif-annotation-args"
           cd /mnt/tmp   # oras path-validation needs a relative SIF path
           SIF="${LEGACY_IMAGENAME}_${BUILDDATE}.simg"
           oras attach --artifact-type "${SIF_MEDIATYPE}" \
-            --annotation "org.opencontainers.image.title=${APPLICATION}" \
-            --annotation "org.opencontainers.image.version=${VERSION}_${BUILDDATE}" \
-            "${QUAY_REPO}:${VERSION}_${BUILDDATE}" \
+            "${SIF_ANNOTATION_ARGS[@]}" \
+            "${subject}" \
             "${SIF}:${SIF_MEDIATYPE}"
 
       - name: Verify public SIF and select chronological floating tags
@@ -1185,12 +1195,17 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           set -euo pipefail
+          repository="ghcr.io/${GH_REGISTRY}/${APPLICATION}"
+          subject="${repository}@$(oras resolve "${repository}:${VERSION}_${BUILDDATE}")"
+          python3 -m builder.oci_labels image "${subject}" \
+            --architecture '${{ needs.config.outputs.ARCHITECTURE }}' \
+            --format annotations > "$RUNNER_TEMP/sif-annotation-args"
+          mapfile -d '' -t SIF_ANNOTATION_ARGS < "$RUNNER_TEMP/sif-annotation-args"
           cd /mnt/tmp   # oras path-validation needs a relative SIF path
           SIF="${LEGACY_IMAGENAME}_${BUILDDATE}.simg"
           oras attach --artifact-type "${SIF_MEDIATYPE}" \
-            --annotation "org.opencontainers.image.title=${APPLICATION}" \
-            --annotation "org.opencontainers.image.version=${VERSION}_${BUILDDATE}" \
-            "ghcr.io/${GH_REGISTRY}/${APPLICATION}:${VERSION}_${BUILDDATE}" \
+            "${SIF_ANNOTATION_ARGS[@]}" \
+            "${subject}" \
             "${SIF}:${SIF_MEDIATYPE}"
 
       - name: Verify public SIF and select chronological floating tags
