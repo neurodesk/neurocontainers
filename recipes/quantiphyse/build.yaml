@@ -9,6 +9,10 @@ copyright:
   url: https://github.com/physimals/quantiphyse-asl/blob/master/LICENSE
 - license: Apache-2.0
   url: https://github.com/physimals/quantiphyse-fabber/blob/master/LICENSE
+- license: Apache-2.0
+  url: https://github.com/physimals/oxasl_mp/blob/master/LICENSE
+- license: BSD-3-Clause
+  url: https://github.com/physimals/maskslic/blob/master/LICENSE.txt
 - license: LicenseRef-FSL
   url: https://fsl.fmrib.ox.ac.uk/fsl/docs/license.html
 variables:
@@ -30,8 +34,7 @@ variables:
   nibabel_version: 4.0.2
   numpy_version: 1.23.5
   oxasl_version: 0.2.3.post2
-  oxasl_enable_version: 0.0.2.post2
-  oxasl_mp_version: 2.0.1
+  oxasl_mp_commit: 1986a97cb190471b3938f64d6ef45ef3bf567791
   oxasl_ve_version: 0.3.1
   packaging_version: '26.3'
   pandas_version: 1.5.3
@@ -202,18 +205,13 @@ auto_update:
     dependency: true
     target:
       variable: oxasl_version
-  - id: oxasl_enable
-    method: pypi
-    package: oxasl-enable
-    dependency: true
-    target:
-      variable: oxasl_enable_version
   - id: oxasl_mp
-    method: pypi
-    package: oxasl-mp
+    method: github_commit
+    repo: physimals/oxasl_mp
+    ref: master
     dependency: true
     target:
-      variable: oxasl_mp_version
+      variable: oxasl_mp_commit
   - id: oxasl_ve
     method: pypi
     package: oxasl-ve
@@ -435,7 +433,13 @@ build:
     - /opt/quantiphyse/bin/pip install --no-deps --no-cache-dir /tmp/quantiphyse/quantiphyse.tar.gz
     - tar -xOf /tmp/quantiphyse/quantiphyse.tar.gz quantiphyse-{{ context.quantiphyse_version }}/LICENSE > /opt/licenses/quantiphyse/quantiphyse-LICENSE
     - cp {{ get_file("quantiphyse_asl_archive") }} /tmp/quantiphyse/quantiphyse-asl.tar.gz
-    - /opt/quantiphyse/bin/pip install --no-deps --no-cache-dir /tmp/quantiphyse/quantiphyse-asl.tar.gz
+    - mkdir /tmp/quantiphyse/quantiphyse-asl && tar -xzf /tmp/quantiphyse/quantiphyse-asl.tar.gz -C /tmp/quantiphyse/quantiphyse-asl --strip-components=1
+    - sed -i '/^oxasl_enable$/d' /tmp/quantiphyse/quantiphyse-asl/requirements.txt /tmp/quantiphyse/quantiphyse-asl/quantiphyse_asl.egg-info/requires.txt
+    - /opt/quantiphyse/bin/pip install --no-deps --no-cache-dir /tmp/quantiphyse/quantiphyse-asl
+    - mkdir /tmp/quantiphyse/oxasl_mp && tar -xzf {{ get_file("oxasl_mp_archive") }} -C /tmp/quantiphyse/oxasl_mp --strip-components=1
+    - echo "__version__ = '2.0.1.post6'" > /tmp/quantiphyse/oxasl_mp/oxasl_mp/_version.py
+    - /opt/quantiphyse/bin/pip install --no-deps --no-cache-dir /tmp/quantiphyse/oxasl_mp
+    - cp /tmp/quantiphyse/oxasl_mp/LICENSE /opt/licenses/quantiphyse/oxasl_mp-LICENSE
     - tar -xOf /tmp/quantiphyse/quantiphyse-asl.tar.gz quantiphyse-asl-{{ context.quantiphyse_asl_version }}/LICENSE > /opt/licenses/quantiphyse/quantiphyse-asl-LICENSE
     - cp {{ get_file("quantiphyse_fabber_archive") }} /tmp/quantiphyse/quantiphyse-fabber.tar.gz
     - /opt/quantiphyse/bin/pip install --no-deps --no-cache-dir /tmp/quantiphyse/quantiphyse-fabber.tar.gz
@@ -465,6 +469,8 @@ files:
 - name: quantiphyse_fabber_archive
   url: https://files.pythonhosted.org/packages/83/a1/0150dca80e73df6a2957c89eae761171fa676f6baff334e261f8abdec48d/quantiphyse-fabber-0.9.2.tar.gz
   sha256: bb6db8afefc3be34ac4826955af0b1bc7ad1506c782d96e62acc0d3d89f162fd
+- name: oxasl_mp_archive
+  url: https://github.com/physimals/oxasl_mp/archive/{{ context.oxasl_mp_commit }}.tar.gz
 - name: micromamba
   url: https://micro.mamba.pm/api/micromamba/linux-64/2.3.2
   sha256: 5512233cdd8564a671626081026dc861537a963baa06706baab08fac6f3bb9d2
@@ -580,8 +586,6 @@ files:
     nibabel=={{ context.nibabel_version }}
     numpy=={{ context.numpy_version }}
     oxasl=={{ context.oxasl_version }}
-    oxasl-enable=={{ context.oxasl_enable_version }}
-    oxasl-mp=={{ context.oxasl_mp_version }}
     oxasl-ve=={{ context.oxasl_ve_version }}
     packaging=={{ context.packaging_version }}
     pandas=={{ context.pandas_version }}
@@ -644,6 +648,11 @@ readme: |
   The minimal backend uses an explicit artifact/checksum lock. Refresh the
   whole lock together when changing backend versions, then repeat model and
   GUI tests. Dependency source checks verify the pinned FSL artifacts.
+
+  OXASL_ENABLE is not included: its Oxford academic licence forbids
+  redistribution, and oxasl treats it as optional. oxasl_mp is built from the
+  Apache-2.0 upstream commit because the only PyPI release (2.0.1) predates
+  the relicensing and lacks the run() entrypoint that oxasl 0.2.3 calls.
 
   The bundled pyfab 0.3.6 has a Python 3.10 compatibility patch that moves
   Sequence lookups to collections.abc. The smoke test exercises the model

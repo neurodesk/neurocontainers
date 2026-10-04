@@ -14,3 +14,7 @@ tests:
   command: |
     quantiphyse --help && test -s /usr/share/applications/quantiphyse.desktop && test -s /usr/share/icons/hicolor/75x75/apps/quantiphyse.png && test -s /opt/licenses/quantiphyse/quantiphyse-LICENSE
   expected_output_contains: --batch
+- name: redistributable OXASL plugins only
+  command: |
+    quantiphyse-python -c "import importlib.util as u, oxasl_mp; assert u.find_spec('oxasl_enable') is None; assert callable(oxasl_mp.run); print('oxasl plugins OK')"
+  expected_output_contains: oxasl plugins OK
