@@ -5,8 +5,8 @@
 # and facilitates interaction between these packages within a single workflow.
 
 name: nipype
-version: "1.8.5"
-upstream_version: 1.8.5
+version: "1.11.0"
+upstream_version: "1.11.0"
 
 required_files:
   - dataset: ds000001
