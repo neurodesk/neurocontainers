@@ -97,8 +97,6 @@ build:
 deploy:
   bins:
     - KUL_VBG.sh
-    - KUL_VBG_cook_template.sh
-    - KUL_synth_pats_4VBG.sh
 categories:
   - image segmentation
   - structural imaging
@@ -119,6 +117,11 @@ readme: |
   MRtrix {{ context.mrtrix_version }} and FreeSurfer {{ context.freesurfer_version }}.
   HD-BET and FastSurfer routes are not packaged. Use -B 2 and -P 1 to keep the
   workflow within this image rather than upstream's optional nested Docker paths.
+
+  Only KUL_VBG.sh is exported as a supported module command. The retained
+  KUL_VBG_cook_template.sh and KUL_synth_pats_4VBG.sh source scripts under
+  /opt/kul-vbg are unsupported upstream examples. They require HD-BET and
+  changes to hardcoded input and atlas paths before use.
 
   The container label follows the script's recorded software version,
   {{ context.upstream_version }}, with numeric padding. Commit updates retain that
