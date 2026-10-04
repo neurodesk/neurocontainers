@@ -5,6 +5,8 @@ version: "6.0.7.23"
 
 variables:
   fsl_version: "6.0.7.23"
+  fsleyes_version: "1.20.1"
+  fsleyes_filtermain_sha256: 073845ee1c23c7b189a14c2766135f74ccc7fd2f2302f876bd10b90fd32406f5
   oxasl_mp_commit: 1986a97cb190471b3938f64d6ef45ef3bf567791
 
 copyright:
@@ -59,7 +61,7 @@ build:
   pkg-manager: apt
 
   directives:
-    - install: git ca-certificates ltrace strace wget libxml2 gcc build-essential nvidia-cuda-toolkit xdg-utils gnupg
+    - install: git ca-certificates ltrace strace wget libxml2 gcc build-essential nvidia-cuda-toolkit xdg-utils gnupg libosmesa6
 
     # Install Firefox from Mozilla's official APT repo so xdg-open has a working
     # browser. The default Ubuntu 24.04 `firefox` package is a snap transitional
@@ -135,6 +137,9 @@ build:
         - fslpython -c "import maskslic, oxasl, oxasl_ve, oxasl_mp, regtricks"
         - rm -rf /root/.cache
 
+    - run:
+        - fslpython {{ get_file("patch_fsleyes.py") }} {{ context.fsleyes_version }} {{ context.fsleyes_filtermain_sha256 }}
+
     - copy:
         - eddy
         - /opt/fsl-{{ context.fsl_version }}/bin/eddy
@@ -158,6 +163,9 @@ deploy:
     - /opt/ICA-AROMA/
 
 files:
+  - name: patch_fsleyes.py
+    filename: patch_fsleyes.py
+
   - name: v0_4_3_beta_tar_gz
     url: https://github.com/rhr-pruim/ICA-AROMA/archive/v0.4.3-beta.tar.gz
 
@@ -228,6 +236,11 @@ readme: |
   flirt
   fnirt
   ```
+
+  The default `fsleyes` command retains output filtering and restores stdout and stderr
+  safely at shutdown. The build checks the FSLeyes 1.20.1 source before patching the
+  descriptor race tracked in https://github.com/neurodesk/neurodesktop/issues/1012.
+  The container includes OSMesa for `fsleyes render` without an X display.
 
   This container also includes the [oxasl](https://github.com/physimals/oxasl) ASL (Arterial Spin Labelling) analysis pipeline from the Physimals group, along with the `oxasl_ve` (vessel-encoded ASL) and `oxasl_mp` (multi-phase ASL) extensions. The pipeline wraps FSL's BASIL toolbox and provides a single-command interface for preprocessing, kinetic model fitting, calibration, and output of perfusion maps.
 
