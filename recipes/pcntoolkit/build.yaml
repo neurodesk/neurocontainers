@@ -82,11 +82,18 @@ build:
         - /opt/pcntoolkit/tutorials/check_tutorials.py
     - run:
         - python /opt/pcntoolkit/tutorials/check_tutorials.py
+    - run:
+        - mkdir -p /opt/pcntoolkit-bin
+        - install -m 755 {{ get_file("python.sh") }} /opt/pcntoolkit-bin/python
+    - environment:
+        PATH: /opt/pcntoolkit-bin:$PATH
     - deploy:
         path: []
         bins:
           - python
 files:
+  - name: python.sh
+    filename: python.sh
   - name: tutorial_archive
     url: https://github.com/predictive-clinical-neuroscience/PCNtoolkit/archive/5b6073a1e70d2d455f615f39077a609a117eab47.tar.gz
     sha256: 6b41b4176f548921a6f54cb8ad8150ea80965d335f7bf7d596b789ffa9d88a18
@@ -108,6 +115,11 @@ readme: |-
   Toolbox for normative modelling and spatial inference of neuroimaging data. https://pcntoolkit.readthedocs.io/en/latest/
 
   PCNtoolkit is an open-source Python package for Normative Modelling of neuroimaging data.
+
+  Python uses a private temporary cache when XDG_CACHE_HOME is unset.
+  The cache is removed when Python exits, so imports and bundled tutorials
+  work without a writable home directory. Set XDG_CACHE_HOME to your own
+  writable directory to retain cache files between commands.
 
   ## Deprecation warning
 
