@@ -1,0 +1,20 @@
+{
+  "apps": {
+    "quantiphyse 0.9.10": {
+      "version": "20261004",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "quantiphyseGUI-quantiphyse 0.9.10": {
+      "version": "20261004",
+      "exec": "quantiphyse",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "arterial spin labelling",
+    "quantitative imaging",
+    "visualization",
+    "workflows"
+  ]
+}
