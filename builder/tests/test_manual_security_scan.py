@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 
-@pytest.mark.parametrize('mode', ['export-failure', 'scan-failure', 'missing-report', 'invalid-report', 'clean', 'findings'])
+@pytest.mark.parametrize('mode', ['export-failure', 'partial-export-failure', 'scan-failure', 'missing-report', 'invalid-report', 'clean', 'findings'])
 def test_semgrep_step_does_not_report_execution_failures_as_clean(tmp_path, mode):
     workflow = Path(__file__).resolve().parents[2] / '.github/workflows/manual-container-security-scan.yml'
     steps = yaml.safe_load(workflow.read_text())['jobs']['container-security-scan']['steps']
@@ -22,7 +22,8 @@ case "$1" in
   create) echo fixture-container ;;
   export)
     if [ "$MODE" = export-failure ]; then exit 2; fi
-    tar -cf - --files-from /dev/null ;;
+    tar -cf - --files-from /dev/null
+    if [ "$MODE" = partial-export-failure ]; then exit 2; fi ;;
   run)
     case "$MODE" in
       scan-failure) exit 2 ;;
@@ -37,7 +38,7 @@ esac
 ''')
     docker.chmod(0o755)
     output = tmp_path / 'outputs'
-    result = subprocess.run(['bash', '-eo', 'pipefail', '-c', script], cwd=tmp_path,
+    result = subprocess.run(['bash', '-e', '-c', script], cwd=tmp_path,
                             env={**os.environ, 'PATH': f'{tmp_path}:{os.environ["PATH"]}',
                                  'MODE': mode, 'GITHUB_OUTPUT': str(output)},
                             capture_output=True, text=True)

@@ -207,6 +207,7 @@ jobs:
         if: inputs.enable_semgrep == true
         continue-on-error: true
         run: |
+          set -o pipefail
           echo "Running Semgrep static analysis..."
 
           container_id=$(docker create "${{ inputs.container_image }}")
