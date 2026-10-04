@@ -1,0 +1,652 @@
+name: quantiphyse
+version: 0.9.10
+architectures:
+- x86_64
+copyright:
+- license: Apache-2.0
+  url: https://github.com/physimals/quantiphyse/blob/master/LICENSE
+- license: Apache-2.0
+  url: https://github.com/physimals/quantiphyse-asl/blob/master/LICENSE
+- license: Apache-2.0
+  url: https://github.com/physimals/quantiphyse-fabber/blob/master/LICENSE
+- license: LicenseRef-FSL
+  url: https://fsl.fmrib.ox.ac.uk/fsl/docs/license.html
+variables:
+  cloudpickle_version: 3.1.2
+  contourpy_version: 1.3.2
+  cycler_version: 0.12.1
+  cython_version: 0.29.36
+  dill_version: 0.4.1
+  fonttools_version: 4.65.0
+  fslpy_version: 3.12.1
+  h5py_version: 3.8.0
+  imageio_version: 2.38.0
+  joblib_version: 1.6.0
+  kiwisolver_version: 1.5.1
+  lazy_loader_version: '0.6'
+  maskslic_version: 0.3.4.post2
+  matplotlib_version: 3.6.3
+  networkx_version: 3.4.2
+  nibabel_version: 4.0.2
+  numpy_version: 1.23.5
+  oxasl_version: 0.2.3.post2
+  oxasl_enable_version: 0.0.2.post2
+  oxasl_mp_version: 2.0.1
+  oxasl_ve_version: 0.3.1
+  packaging_version: '26.3'
+  pandas_version: 1.5.3
+  pillow_version: 12.3.0
+  pyaml_version: 26.7.0
+  pyfab_version: 0.3.6
+  pyparsing_version: 3.3.3
+  pyqtgraph_version: 0.12.4
+  pyside2_version: 5.15.2.1
+  python_dateutil_version: 2.9.0.post0
+  pytz_version: '2026.4'
+  pywavelets_version: 1.8.0
+  pyyaml_version: 6.0.3
+  quantiphyse_version: 0.9.10
+  quantiphyse_asl_version: 0.9.3.post4
+  quantiphyse_fabber_version: 0.9.2
+  scikit_image_version: 0.20.0
+  scikit_learn_version: 1.2.2
+  scipy_version: 1.10.1
+  shiboken2_version: 5.15.2.1
+  six_version: 1.17.0
+  threadpoolctl_version: 3.7.0
+  tifffile_version: 2025.5.10
+  pip_version: 24.3.1
+  setuptools_version: 69.5.1
+  wheel_version: 0.45.1
+  fsl_fabber_core_sha256: 8c55182253039cd9e87ae552c24b934f59ad9508066a2923aaed4fd42f3839ae
+  fsl_avwutils_sha256: ea2a9eb89877d200c83260ce215acb16172b04dc8cdc46bf03f077a9b4e4c8bf
+  fsl_bet2_sha256: 6ee4925e2b987bc97d07dd13e2d8890f233d96ac598a78e0d20875b97365e40a
+  fsl_fabber_models_asl_sha256: ed3b17c54c5723369bff413133bd4e692a5abfe1286a29c8c7bc36edbe3b5fc4
+  fsl_flirt_sha256: f12fcd76e08db2847d0eb334fc877f2af3f991d33f65e16c9389d4c28f9bc809
+auto_update:
+  method: sources
+  container_version: quantiphyse
+  sources:
+  - id: quantiphyse
+    method: artifact_listing
+    url: https://pypi.org/simple/quantiphyse/
+    download_base: https://files.pythonhosted.org/packages/
+    version_regex: quantiphyse-(?P<version>\d+\.\d+\.\d+(?:\.post\d+)?)\.tar\.gz
+    target:
+      file: quantiphyse_archive
+      variables:
+        quantiphyse_version: version
+  - id: quantiphyse_asl
+    method: artifact_listing
+    url: https://pypi.org/simple/quantiphyse-asl/
+    download_base: https://files.pythonhosted.org/packages/
+    version_regex: quantiphyse-asl-(?P<version>\d+\.\d+\.\d+(?:\.post\d+)?)\.tar\.gz
+    target:
+      file: quantiphyse_asl_archive
+      variables:
+        quantiphyse_asl_version: version
+  - id: quantiphyse_fabber
+    method: artifact_listing
+    url: https://pypi.org/simple/quantiphyse-fabber/
+    download_base: https://files.pythonhosted.org/packages/
+    version_regex: quantiphyse-fabber-(?P<version>\d+\.\d+\.\d+(?:\.post\d+)?)\.tar\.gz
+    target:
+      file: quantiphyse_fabber_archive
+      variables:
+        quantiphyse_fabber_version: version
+  - id: cloudpickle
+    method: pypi
+    package: cloudpickle
+    dependency: true
+    target:
+      variable: cloudpickle_version
+  - id: contourpy
+    method: pypi
+    package: contourpy
+    dependency: true
+    target:
+      variable: contourpy_version
+  - id: cycler
+    method: pypi
+    package: cycler
+    dependency: true
+    target:
+      variable: cycler_version
+  - id: cython
+    method: pypi
+    package: Cython
+    dependency: true
+    target:
+      variable: cython_version
+  - id: dill
+    method: pypi
+    package: dill
+    dependency: true
+    target:
+      variable: dill_version
+  - id: fonttools
+    method: pypi
+    package: fonttools
+    dependency: true
+    target:
+      variable: fonttools_version
+  - id: fslpy
+    method: pypi
+    package: fslpy
+    dependency: true
+    target:
+      variable: fslpy_version
+  - id: h5py
+    method: pypi
+    package: h5py
+    dependency: true
+    target:
+      variable: h5py_version
+  - id: imageio
+    method: pypi
+    package: ImageIO
+    dependency: true
+    target:
+      variable: imageio_version
+  - id: joblib
+    method: pypi
+    package: joblib
+    dependency: true
+    target:
+      variable: joblib_version
+  - id: kiwisolver
+    method: pypi
+    package: kiwisolver
+    dependency: true
+    target:
+      variable: kiwisolver_version
+  - id: lazy_loader
+    method: pypi
+    package: lazy-loader
+    dependency: true
+    target:
+      variable: lazy_loader_version
+  - id: maskslic
+    method: pypi
+    package: maskslic
+    dependency: true
+    target:
+      variable: maskslic_version
+  - id: matplotlib
+    method: pypi
+    package: matplotlib
+    dependency: true
+    target:
+      variable: matplotlib_version
+  - id: networkx
+    method: pypi
+    package: networkx
+    dependency: true
+    target:
+      variable: networkx_version
+  - id: nibabel
+    method: pypi
+    package: nibabel
+    dependency: true
+    target:
+      variable: nibabel_version
+  - id: numpy
+    method: pypi
+    package: numpy
+    dependency: true
+    target:
+      variable: numpy_version
+  - id: oxasl
+    method: pypi
+    package: oxasl
+    dependency: true
+    target:
+      variable: oxasl_version
+  - id: oxasl_enable
+    method: pypi
+    package: oxasl-enable
+    dependency: true
+    target:
+      variable: oxasl_enable_version
+  - id: oxasl_mp
+    method: pypi
+    package: oxasl-mp
+    dependency: true
+    target:
+      variable: oxasl_mp_version
+  - id: oxasl_ve
+    method: pypi
+    package: oxasl-ve
+    dependency: true
+    target:
+      variable: oxasl_ve_version
+  - id: packaging
+    method: pypi
+    package: packaging
+    dependency: true
+    target:
+      variable: packaging_version
+  - id: pandas
+    method: pypi
+    package: pandas
+    dependency: true
+    target:
+      variable: pandas_version
+  - id: pillow
+    method: pypi
+    package: pillow
+    dependency: true
+    target:
+      variable: pillow_version
+  - id: pyaml
+    method: pypi
+    package: pyaml
+    dependency: true
+    target:
+      variable: pyaml_version
+  - id: pyfab
+    method: pypi
+    package: pyfab
+    dependency: true
+    target:
+      variable: pyfab_version
+  - id: pyparsing
+    method: pypi
+    package: pyparsing
+    dependency: true
+    target:
+      variable: pyparsing_version
+  - id: pyqtgraph
+    method: pypi
+    package: pyqtgraph
+    dependency: true
+    target:
+      variable: pyqtgraph_version
+  - id: pyside2
+    method: pypi
+    package: PySide2
+    dependency: true
+    target:
+      variable: pyside2_version
+  - id: python_dateutil
+    method: pypi
+    package: python-dateutil
+    dependency: true
+    target:
+      variable: python_dateutil_version
+  - id: pytz
+    method: pypi
+    package: pytz
+    dependency: true
+    target:
+      variable: pytz_version
+  - id: pywavelets
+    method: pypi
+    package: PyWavelets
+    dependency: true
+    target:
+      variable: pywavelets_version
+  - id: pyyaml
+    method: pypi
+    package: PyYAML
+    dependency: true
+    target:
+      variable: pyyaml_version
+  - id: scikit_image
+    method: pypi
+    package: scikit-image
+    dependency: true
+    target:
+      variable: scikit_image_version
+  - id: scikit_learn
+    method: pypi
+    package: scikit-learn
+    dependency: true
+    target:
+      variable: scikit_learn_version
+  - id: scipy
+    method: pypi
+    package: scipy
+    dependency: true
+    target:
+      variable: scipy_version
+  - id: shiboken2
+    method: pypi
+    package: shiboken2
+    dependency: true
+    target:
+      variable: shiboken2_version
+  - id: six
+    method: pypi
+    package: six
+    dependency: true
+    target:
+      variable: six_version
+  - id: threadpoolctl
+    method: pypi
+    package: threadpoolctl
+    dependency: true
+    target:
+      variable: threadpoolctl_version
+  - id: tifffile
+    method: pypi
+    package: tifffile
+    dependency: true
+    target:
+      variable: tifffile_version
+  - id: pip
+    method: pypi
+    package: pip
+    dependency: true
+    target:
+      variable: pip_version
+  - id: setuptools
+    method: pypi
+    package: setuptools
+    dependency: true
+    target:
+      variable: setuptools_version
+  - id: wheel
+    method: pypi
+    package: wheel
+    dependency: true
+    target:
+      variable: wheel_version
+  - id: micromamba
+    method: http_digest
+    url: https://micro.mamba.pm/api/micromamba/linux-64/2.3.2
+    dependency: true
+    target:
+      file: micromamba
+  - id: fsl_fabber_core
+    method: http_digest
+    url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-fabber_core-4.0.11-h04b8724_14.conda
+    dependency: true
+    target:
+      variable: fsl_fabber_core_sha256
+  - id: fsl_avwutils
+    method: http_digest
+    url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-avwutils-2209.8-h67d7eeb_2.conda
+    dependency: true
+    target:
+      variable: fsl_avwutils_sha256
+  - id: fsl_bet2
+    method: http_digest
+    url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-bet2-2111.9-hcdb67c3_3.conda
+    dependency: true
+    target:
+      variable: fsl_bet2_sha256
+  - id: fsl_fabber_models_asl
+    method: http_digest
+    url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-fabber_models_asl-v2.0.8-h2b5404d_13.conda
+    dependency: true
+    target:
+      variable: fsl_fabber_models_asl_sha256
+  - id: fsl_flirt
+    method: http_digest
+    url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-flirt-2111.4-h28ab0de_3.conda
+    dependency: true
+    target:
+      variable: fsl_flirt_sha256
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+  - environment:
+      DEBIAN_FRONTEND: noninteractive
+      FSLDIR: /opt/fsl
+      FABBERDIR: /opt/fsl
+      FSLOUTPUTTYPE: NIFTI_GZ
+      PATH: /opt/quantiphyse/bin:/opt/fsl/bin:$PATH
+  - install:
+    - python3
+    - python3-pip
+    - python3-venv
+    - python3-dev
+    - build-essential
+    - ca-certificates
+    - bzip2
+    - patch
+    - libgl1
+    - libfontconfig1
+    - libglib2.0-0
+    - libxcb-xinerama0
+    - libxkbcommon-x11-0
+    - xvfb
+    - xauth
+    - libxcb-icccm4
+    - libxcb-image0
+    - libxcb-util1
+    - libxcb-keysyms1
+    - libxcb-render-util0
+    - libxcb-render0
+    - libxcb-shape0
+    - libdbus-1-3
+  - run:
+    - mkdir -p /opt/quantiphyse /opt/licenses/quantiphyse /tmp/quantiphyse
+    - tar -xjf {{ get_file("micromamba") }} -C /tmp bin/micromamba
+    - MAMBA_ROOT_PREFIX=/tmp/mamba /tmp/bin/micromamba create -y -p /opt/fsl --file {{ get_file("fsl-explicit") }}
+    - python3 -m venv /opt/quantiphyse
+    - /opt/quantiphyse/bin/pip install --no-cache-dir pip=={{ context.pip_version }} setuptools=={{ context.setuptools_version
+      }} wheel=={{ context.wheel_version }} Cython=={{ context.cython_version }} numpy=={{ context.numpy_version }}
+    - /opt/quantiphyse/bin/pip install --no-cache-dir -r {{ get_file("requirements") }}
+    - cp {{ get_file("quantiphyse_archive") }} /tmp/quantiphyse/quantiphyse.tar.gz
+    - /opt/quantiphyse/bin/pip install --no-deps --no-cache-dir /tmp/quantiphyse/quantiphyse.tar.gz
+    - tar -xOf /tmp/quantiphyse/quantiphyse.tar.gz quantiphyse-{{ context.quantiphyse_version }}/LICENSE > /opt/licenses/quantiphyse/quantiphyse-LICENSE
+    - cp {{ get_file("quantiphyse_asl_archive") }} /tmp/quantiphyse/quantiphyse-asl.tar.gz
+    - /opt/quantiphyse/bin/pip install --no-deps --no-cache-dir /tmp/quantiphyse/quantiphyse-asl.tar.gz
+    - tar -xOf /tmp/quantiphyse/quantiphyse-asl.tar.gz quantiphyse-asl-{{ context.quantiphyse_asl_version }}/LICENSE > /opt/licenses/quantiphyse/quantiphyse-asl-LICENSE
+    - cp {{ get_file("quantiphyse_fabber_archive") }} /tmp/quantiphyse/quantiphyse-fabber.tar.gz
+    - /opt/quantiphyse/bin/pip install --no-deps --no-cache-dir /tmp/quantiphyse/quantiphyse-fabber.tar.gz
+    - tar -xOf /tmp/quantiphyse/quantiphyse-fabber.tar.gz quantiphyse-fabber-{{ context.quantiphyse_fabber_version }}/LICENSE
+      > /opt/licenses/quantiphyse/quantiphyse-fabber-LICENSE
+    - cd /opt/quantiphyse/lib/python3.10/site-packages && patch -p0 < {{ get_file("pyfab-python310.patch") }}
+    - /opt/quantiphyse/bin/pip check
+    - rm -rf /tmp/quantiphyse /tmp/bin /tmp/mamba
+  - run:
+    - install -m 0755 {{ get_file("quantiphyse-python") }} /usr/local/bin/quantiphyse-python
+    - ln -s /opt/quantiphyse/bin/quantiphyse /usr/local/bin/quantiphyse
+    - install -m 0644 {{ get_file("smoke_test.py") }} /opt/quantiphyse/smoke_test.py
+    - mkdir -p /usr/share/applications /usr/share/icons/hicolor/75x75/apps
+    - install -m 0644 {{ get_file("quantiphyse.desktop") }} /usr/share/applications/quantiphyse.desktop
+    - install -m 0644 {{ get_file("quantiphyse.png") }} /usr/share/icons/hicolor/75x75/apps/quantiphyse.png
+deploy:
+  bins:
+  - quantiphyse
+  - quantiphyse-python
+files:
+- name: quantiphyse_archive
+  url: https://files.pythonhosted.org/packages/d8/2c/98631248f6d7048b7e0775e9d9cee34cd6b072c9c07bec300015f6dd5497/quantiphyse-0.9.10.tar.gz
+  sha256: 7713059bf58c3da8358fb1a8095431e400473abbd1b02a7061c9f9bcfdc780b3
+- name: quantiphyse_asl_archive
+  url: https://files.pythonhosted.org/packages/14/e2/bd0f74b9763a92795daf2f96cd246a3ef63e5a06b9bdf6198b398c23743c/quantiphyse-asl-0.9.3.post4.tar.gz
+  sha256: bd15dd2e110dbb542855e847925bac4dcef08e860e444c25abfcd3fdb5fa373b
+- name: quantiphyse_fabber_archive
+  url: https://files.pythonhosted.org/packages/83/a1/0150dca80e73df6a2957c89eae761171fa676f6baff334e261f8abdec48d/quantiphyse-fabber-0.9.2.tar.gz
+  sha256: bb6db8afefc3be34ac4826955af0b1bc7ad1506c782d96e62acc0d3d89f162fd
+- name: micromamba
+  url: https://micro.mamba.pm/api/micromamba/linux-64/2.3.2
+  sha256: 5512233cdd8564a671626081026dc861537a963baa06706baab08fac6f3bb9d2
+- name: fsl-explicit
+  contents: |
+    @EXPLICIT
+    https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.3.2-h25fd6f3_3.conda#eb8a0db0aa570124f7d2a93d7c7f596e3390df5e047818d873baad32985fc736
+    https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.2.0-he0feb66_7.conda#92a0bb350c7be6a4eedcb4e111c60aefd176018e6b1c009a6e025dbe9bbcd758
+    https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_7.conda#47d682b9f6d6ec9eb1a6e6c3e75ea6273e899e78fb7fc59f81d39745009fbc60
+    https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda#1dd3fffd892081df9726d7eb7e0dea6198962ba775bd88842135a4ddb4deb3c9
+    https://conda.anaconda.org/conda-forge/linux-64/ld_impl_linux-64-2.46.1-default_hbd61a6d_102.conda#27d83f1188cd19bcb7754a078b3fa7f4cfb8527f8eb2fde54dd01fc529d1adec
+    https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.2.0-ha9f2e26_7.conda#e031634c3a928f9594eba868bc46ef5230d6571a364a0c63215b06c4563bfcea
+    https://conda.anaconda.org/conda-forge/linux-64/libev-4.33-h280c20c_3.conda#e4418f68d01a6307c4431b585c71b584f40189877364e542ee87deb777f5e85b
+    https://conda.anaconda.org/conda-forge/linux-64/c-ares-1.34.8-hebe6cf0_2.conda#9c37cc233238adf366ea75b0e845662a5be07ceadf62e458183516369340274b
+    https://conda.anaconda.org/conda-forge/linux-64/keyutils-1.6.3-h7cc23a3_1.conda#dd053c96dcb0dcfd59422aefea9d2fe937a190167f34fba7893ec1e10a7e8963
+    https://conda.anaconda.org/conda-forge/linux-64/aws-c-common-1.0.2-hebe6cf0_0.conda#d43afb04d2b4c28fd2c0efc21bdc16025c417f8d3f39a7243066d99c392172b0
+    https://conda.anaconda.org/conda-forge/linux-64/yaml-0.2.5-hebe6cf0_3.conda#d164dfa75ecd538f6fd68765defcc06aa875bc697b9b215362d79a2a73125dd0
+    https://conda.anaconda.org/conda-forge/linux-64/libgfortran5-16.2.0-h6b99dfc_7.conda#04dbab12c925b92977bb835dd2f5eda413607afa79f95a554e5a04b07a380322
+    https://conda.anaconda.org/conda-forge/linux-64/tk-8.6.13-noxft_h1df4ec4_4.conda#a1a241d172c1ccab067ba245206dd048bc3c2d1b84504b53c9468e99adfc16a1
+    https://conda.anaconda.org/conda-forge/linux-64/ncurses-6.6-hdb14827_1.conda#5d46557214ed184381dafe835b7c94a474a1c3b307a08a250b1ea4779b44ffb3
+    https://conda.anaconda.org/conda-forge/linux-64/libuuid-2.42.4-hcfc3c73_0.conda#f34b8d1de9a2bf62476d8608057d9b8a918d97444236dc53a47128f2fae79041
+    https://conda.anaconda.org/conda-forge/linux-64/libnsl-2.0.1-hb9d3cd8_1.conda#927fe72b054277cde6cb82597d0fcf6baf127dcbce2e0a9d8925a68f1265eef5
+    https://conda.anaconda.org/conda-forge/linux-64/liblzma-5.8.3-hb03c661_1.conda#9787df8c22a59c9a70d3e5a10db9ad663485e75e9ccc3f09bd092cb7b95e0dab
+    https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.2.0-h934c35e_7.conda#fa7018298629fc429971fffd6ecba3d27a7b02e4e890d6a93ea01ffebe8cb745
+    https://conda.anaconda.org/conda-forge/linux-64/libffi-3.7.0-h81df57d_1.conda#c8c7583ef063bc3c430f1d48298e5ad24f796a35c22ed5b14183325825a61106
+    https://conda.anaconda.org/conda-forge/linux-64/libexpat-2.8.5-hd2095e1_0.conda#6de73033a7c5f712c9c5a54124e4581e025691029835e5bceaf10a333a7e7bc0
+    https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_10.conda#1a0d382c515ebf55f8ee1f38c8b81bc95af5c2acc42ad53b66bc5df932032f96
+    https://conda.anaconda.org/conda-forge/linux-64/libxcrypt-4.4.38-h280c20c_0.conda#f7e9292dd219a6435bbb1223da9586c3e70d66d169c5a92f08db3f2127df04e9
+    https://conda.anaconda.org/conda-forge/linux-64/aws-checksums-1.0.1-ha404f16_0.conda#db94279f762df7cd6dd58cd9579373c69f2c024e3d91e5db0441f4726c2895cd
+    https://conda.anaconda.org/conda-forge/linux-64/aws-c-compression-1.0.0-ha404f16_1.conda#486b614563ca593b1660e46c986e0e8f4fbafb08ce6c2b45acc8dc909aafe84e
+    https://conda.anaconda.org/conda-forge/linux-64/aws-c-sdkutils-1.0.0-ha404f16_1.conda#15d23a2f6be704e2dd3682ceff9b45da1c1c599869c0805f9a8f0d2c906a8a30
+    https://conda.anaconda.org/conda-forge/linux-64/libgfortran-16.2.0-h69a702a_7.conda#9682ae4dd11487e10b904b3cb3ab6379cad25233d45fdfdf90d54349df244494
+    https://conda.anaconda.org/conda-forge/linux-64/libedit-3.1.20250104-pl5321h373387f_1.conda#6473eb8caf2aae830f37caa93db9b26dddf7ac84b63229e8bf7fc0e5c3ab95b0
+    https://conda.anaconda.org/conda-forge/linux-64/readline-8.3-hd6e31c0_1.conda#01b3fe073a66e321970d09e04b388708f8cbdca5cdfbfcb7c9eeb470ad10383d
+    https://conda.anaconda.org/conda-forge/linux-64/libaec-1.1.5-h088129d_0.conda#822e4ae421a7e9c04e841323526321185f6659222325e1a9aedec811c686e688
+    https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-py310h44b86e0_2.conda#9f07834f0c546ab14d885ce0366285f61f44e326c0edd1fc63b8294e113ae432
+    https://conda.anaconda.org/conda-forge/linux-64/libopenblas-0.3.34-pthreads_hf13c14d_2.conda#69a722751e14eab2eb3bfdcb9acb1187afbd962b0c49b48d829341e0f6787f60
+    https://conda.anaconda.org/conda-forge/linux-64/libpsl-0.23.1-hd9e3e90_1.conda#09e8effdc89bc5d021349318d32b85594f5b8d8e3ab8f90a85b81f8fe695a566
+    https://conda.anaconda.org/conda-forge/linux-64/libsqlite-3.53.4-h13e7031_1.conda#f20d70da54e5b31dd4a51fb1efeaafafd5ab6dd8d7ac9d1438eaa2526ac4ed3d
+    https://conda.anaconda.org/conda-forge/linux-64/libblas-3.11.0-11_h4a7cf45_openblas.conda#d942e0c820d60a613a6f786d074f0820fb6343e3f1ccfb110b1d98b44fb75968
+    https://conda.anaconda.org/conda-forge/linux-64/libcblas-3.11.0-11_h0358290_openblas.conda#f7d1bbdea61cf94ba219d17b2cb571a29830f8025385af799bff5a7ad1ef45e6
+    https://conda.anaconda.org/conda-forge/linux-64/liblapack-3.11.0-11_h47877c9_openblas.conda#1ad3f43c9319ef398a8ef45989f4903a06e3965b51e77fc669a4c894168a8411
+    https://conda.anaconda.org/conda-forge/noarch/tzdata-2026c-h151e31d_0.conda#b928c30ddcb0e3f544c6eade8352737e6e610e263276b90232db6a578ef899d8
+    https://conda.anaconda.org/conda-forge/noarch/ca-certificates-2026.7.22-hbd8a1cb_0.conda#0a0544cf95f64394fe4959286f5c71f5444ad58feb0602e53becb27448d24da6
+    https://conda.anaconda.org/conda-forge/noarch/python_abi-3.10-9_cp310.conda#24e01bf97a2f5e608ef2d35547bba12281b5f1c8efecfcfd3447c43abc01342b
+    https://conda.anaconda.org/conda-forge/linux-64/openssl-3.6.4-h781a0a9_0.conda#4747b2d6a8336f52343bceb8a1ebf41a9e6e665b9d2e3f989972de53a310599e
+    https://conda.anaconda.org/conda-forge/linux-64/libssh2-1.11.1-h6154650_1.conda#7e463000fa1cba3f3a6597b776f6ab301d425a96e3bc20d0d9d76a3b9f237aa3
+    https://conda.anaconda.org/conda-forge/linux-64/libnghttp2-1.68.1-h74cf4be_1.conda#11a2f54a6f391e25738bce0023e6ef499600147bbcf21c1fa69d2e251b03cc6a
+    https://conda.anaconda.org/conda-forge/linux-64/krb5-1.22.2-hbc21106_2.conda#2a5c38c85e63df84c4e69ee71439841ce570d259ae3060627bb9a49a938d66f4
+    https://conda.anaconda.org/conda-forge/linux-64/aws-c-cal-1.0.0-hcf7459e_1.conda#f56035cbb113894bb56101721bf1ac74ec8facf15ceb2ca6eedc991f11a7411f
+    https://conda.anaconda.org/conda-forge/linux-64/s2n-1.7.7-ha5dc4ae_0.conda#5b63ee4e79eaea5a1c379d8aaa51281549c4815208e04daa62777c5c288e4e01
+    https://conda.anaconda.org/conda-forge/linux-64/python-3.10.21-h267e890_0_cpython.conda#a0dbc57fe7f0ffaace6708cdb813b1c0d06b9e52dd796780e0ff989f1befa86d
+    https://conda.anaconda.org/conda-forge/linux-64/libcurl-8.22.0-ha042cf0_0.conda#483b7eb97f56fbb3a9cb7190d33012dfa0a5aaed99ede61465563cd97dd82504
+    https://conda.anaconda.org/conda-forge/linux-64/aws-c-io-1.0.0-h07ba609_0.conda#eef9e50eb04c2b13c1a116f81c7577b7b500c14d01c3b8bd4f72231d47f192c6
+    https://conda.anaconda.org/conda-forge/linux-64/aws-c-http-1.0.0-h392d1a3_1.conda#e34e5700f6d06294206dcf804a99a4413dc051ea02763234fc7c76a3521f659b
+    https://conda.anaconda.org/conda-forge/linux-64/aws-c-auth-1.0.0-h7648d90_2.conda#fa688894e3c774161b0ce2e3a396090bb60847721f52984c130e5fbd727f9a18
+    https://conda.anaconda.org/conda-forge/linux-64/aws-c-s3-1.0.0-hfe03eda_1.conda#d6d4543b0f1acc614d4245245d9760e8dcf734785bd8bbcd0e7a9cff2271b026
+    https://conda.anaconda.org/conda-forge/linux-64/hdf5-2.2.0-nompi_hdbb200c_101.conda#fb979dae9d3e7080e77d965f139caf55a1b10c7f58b4be5e1aec904f6931bbb6
+    https://conda.anaconda.org/conda-forge/noarch/packaging-26.3-pyhc364b38_0.conda#c432626b16768b8dab228bfb706f7060c2d462a21c516d240f68f2f902b5a044
+    https://conda.anaconda.org/conda-forge/noarch/setuptools-84.0.0-pyh332efcf_0.conda#9e200ee5f9ff19a4d94e4b51c4856d53dec849f91032f345cf0c6bc3d51a7183
+    https://conda.anaconda.org/conda-forge/noarch/wheel-0.48.0-pyhd8ed1ab_0.conda#ba64b29b6d418024cb565081a1799262cb2780d2534ff4c14f76aa858c4286cd
+    https://conda.anaconda.org/conda-forge/noarch/pip-26.2.1-pyh8b19718_0.conda#c205bae42eb11b364fe3663a817cbcbc20a8ef544c6b2ff6f391013487117259
+    https://conda.anaconda.org/conda-forge/noarch/cached_property-2.0.1-pyhcf101f3_0.conda#4bd96dab5a434e4ee59fb6910cae704d4c5b453907d4886272a9943d37e42b6f
+    https://conda.anaconda.org/conda-forge/noarch/zipp-4.1.0-pyhcf101f3_0.conda#210bd31c22bb88f5e2a167df24c95bb5f152b2ada7502f9b8c49d1f5366db423
+    https://conda.anaconda.org/conda-forge/noarch/typing_extensions-4.16.0-pyhcf101f3_0.conda#2d888f90af0686044882c74193ec80a90ec1943145d94a7b1b048958acda1848
+    https://conda.anaconda.org/conda-forge/noarch/dill-0.4.1-pyhcf101f3_0.conda#1ef84c0cc4efd0c2d58c3cb365945edbd9ee42a1c54514d1ccba4b641005f757
+    https://conda.anaconda.org/conda-forge/noarch/cached-property-2.0.1-pyhcf101f3_0.conda#39358005c3cc44d8315ed79789b18a960d69365be979970cc6bae8f7a6177703
+    https://conda.anaconda.org/conda-forge/noarch/importlib_resources-7.1.0-pyhd8ed1ab_0.conda#a563a51aa522998172838e867e6dedcf630bc45796e8612f5a1f6d73e9c8125a
+    https://conda.anaconda.org/conda-forge/linux-64/ruamel.yaml.clib-0.2.15-py310h83e8816_3.conda#af84a75d6a5dcdbd527ed1c23bdf24f5fbefca1e8c498918ce587fcfe597f655
+    https://conda.anaconda.org/conda-forge/linux-64/numpy-2.2.6-py310hefbff90_0.conda#0ba94a61f91d67413e60fa8daa85627a8f299b5054b0eff8f93d26da83ec755e
+    https://conda.anaconda.org/conda-forge/linux-64/pyyaml-6.0.3-py310h3406613_1.conda#f23de6cc72541c6081d3d27482dbc9fc5dd03be93126d9155f06d0cf15d6e90e
+    https://conda.anaconda.org/conda-forge/linux-64/h5py-3.16.0-nompi_py310h9313953_104.conda#0bb857d956cd89f785f41007d5a7563d884cb40cf7cd1d7905b4815dd0c75c2a
+    https://conda.anaconda.org/conda-forge/linux-64/scipy-1.15.2-py310h1d65ade_0.conda#4cb98641f870666d365594013701d5691205a0fe81ac3ba7778a23b1cc2caa8e
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/noarch/fsl-installer-3.21.0-py_0.conda#89c3ce138e69ed3f1faa9d623a5a03372f74eab6e283c8fc07ddc98e6d495019
+    https://conda.anaconda.org/conda-forge/noarch/ruamel.yaml-0.19.1-pyhcf101f3_0.conda#b48bebe297a63ae60f52e50be328262e880702db4d9b4e86731473ada459c2a1
+    https://conda.anaconda.org/conda-forge/noarch/nibabel-5.4.2-pyhcf101f3_0.conda#b69d81c1570a1a9f25fd90416428d1ad40f49c15e0c1cfe8135ba6c912c985d9
+    https://conda.anaconda.org/conda-forge/noarch/fslpy-3.27.0-pyhd8ed1ab_0.conda#637448124c0b07d38d091438ead284d1ddcf2bd3b148397bd6185a79bf7e1776
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/noarch/fsl-sub-2.11-py_0.conda#ed1ac37eb66fc79dfed1d6b02576e92a28d9a92c19c9978b96f8c26cc387b546
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/noarch/fsl-base-2608.1-pyh4616a5c_0.conda#807d9e77650de04c751b7396d2e912626b99a64da53df09c32cd820d522a424f
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/noarch/fsl-misc_tcl-2607.0-0.conda#c5a9fe23bacdb164e36aa62424ebfe3e88db1f61ab01fc7582754e0f61a4f264
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-cprob-2111.0-h9f0ab69_8.conda#94c80b8f0ee9c229e780e301bda2f8ada088b4dde254f838be05f8c5631d9f7c
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-utils-2412.6-hdf63e7b_1.conda#b6616878217f97dc07aa1358e7282b66e1b18c1236725ca0afe264d01c93b9e0
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-misc_c-2111.1-h3986bbc_1.conda#cf4cfa654c35f5aa929ffa47e5c5b4c3031553212d531ea45793fb63ca7b2c63
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-znzlib-2511.3-hcc786c9_101_zlib.conda#9722b02e530a5677a7973b24c0612d8e04994213d394743c8c956095ded44334
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-newnifti-5.0.0-h56e42e0_0.conda#b6b5305dfed3fbc30ceba9a4da37bd074136bf91373d2a2c611aa82b8f2442ad
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-miscmaths-2412.7-hb1b1de1_0.conda#e4b1b9071f3ab75b6c92f8dfcc8bed839432d8e671306f1b128c6801550df1bc
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-newimage-2601.0-h541c7df_0.conda#7e27e07cc37de25b435458a3232e0759dfb92ac67c55fa1388bc0171f4ac3c99
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-basisfield-2203.4-h465c9ab_3.conda#71c10ef8d60c778469f69fef8e891c99a672f84bc6727e1ce13fc184ce73950d
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-meshclass-2111.0-h8c873e0_12.conda#c5e71e8f99e6e9c4962dffa9735712b0db3624808fa8bc8be7589088079a54f1
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-fabber_core-4.0.11-h04b8724_14.conda#{{ context.fsl_fabber_core_sha256 }}
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-avwutils-2209.8-h67d7eeb_2.conda#{{ context.fsl_avwutils_sha256 }}
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-warpfns-2501.1-h49c61e4_0.conda#64a50e8b882beb5cca422ed24faa95daefb31aee0c9060fd8ee954442b93b008
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-bet2-2111.9-hcdb67c3_3.conda#{{ context.fsl_bet2_sha256 }}
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-fabber_models_asl-v2.0.8-h2b5404d_13.conda#{{ context.fsl_fabber_models_asl_sha256 }}
+    https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/linux-64/fsl-flirt-2111.4-h28ab0de_3.conda#{{ context.fsl_flirt_sha256 }}
+- name: requirements
+  contents: |
+    cloudpickle=={{ context.cloudpickle_version }}
+    contourpy=={{ context.contourpy_version }}
+    cycler=={{ context.cycler_version }}
+    Cython=={{ context.cython_version }}
+    dill=={{ context.dill_version }}
+    fonttools=={{ context.fonttools_version }}
+    fslpy=={{ context.fslpy_version }}
+    h5py=={{ context.h5py_version }}
+    ImageIO=={{ context.imageio_version }}
+    joblib=={{ context.joblib_version }}
+    kiwisolver=={{ context.kiwisolver_version }}
+    lazy-loader=={{ context.lazy_loader_version }}
+    maskslic=={{ context.maskslic_version }}
+    matplotlib=={{ context.matplotlib_version }}
+    networkx=={{ context.networkx_version }}
+    nibabel=={{ context.nibabel_version }}
+    numpy=={{ context.numpy_version }}
+    oxasl=={{ context.oxasl_version }}
+    oxasl-enable=={{ context.oxasl_enable_version }}
+    oxasl-mp=={{ context.oxasl_mp_version }}
+    oxasl-ve=={{ context.oxasl_ve_version }}
+    packaging=={{ context.packaging_version }}
+    pandas=={{ context.pandas_version }}
+    pillow=={{ context.pillow_version }}
+    pyaml=={{ context.pyaml_version }}
+    pyfab=={{ context.pyfab_version }}
+    pyparsing=={{ context.pyparsing_version }}
+    pyqtgraph=={{ context.pyqtgraph_version }}
+    PySide2=={{ context.pyside2_version }}
+    python-dateutil=={{ context.python_dateutil_version }}
+    pytz=={{ context.pytz_version }}
+    PyWavelets=={{ context.pywavelets_version }}
+    PyYAML=={{ context.pyyaml_version }}
+    scikit-image=={{ context.scikit_image_version }}
+    scikit-learn=={{ context.scikit_learn_version }}
+    scipy=={{ context.scipy_version }}
+    shiboken2=={{ context.shiboken2_version }}
+    six=={{ context.six_version }}
+    threadpoolctl=={{ context.threadpoolctl_version }}
+    tifffile=={{ context.tifffile_version }}
+    pip=={{ context.pip_version }}
+    setuptools=={{ context.setuptools_version }}
+    wheel=={{ context.wheel_version }}
+- name: quantiphyse-python
+  filename: quantiphyse-python
+- name: quantiphyse.desktop
+  filename: quantiphyse.desktop
+- name: smoke_test.py
+  filename: smoke_test.py
+- name: pyfab-python310.patch
+  filename: pyfab-python310.patch
+- name: quantiphyse.png
+  filename: quantiphyse.png
+categories:
+- quantitative imaging
+- visualization
+- workflows
+readme: |
+  Quantiphyse is a volumetric medical-image viewer and analysis application.
+  This recipe includes its ASL and Fabber plugins, OXASL Python extensions,
+  and a minimal FSL backend with ASL models, image utilities, BET and FLIRT.
+
+  Start the graphical application with quantiphyse. A display is required.
+  Use quantiphyse-python for Python scripts in the same environment.
+  Headless batch scripts run with quantiphyse --batch /path/to/script.yaml.
+
+  Quantiphyse: {{ context.quantiphyse_version }}
+  ASL plugin: {{ context.quantiphyse_asl_version }}
+  Fabber plugin: {{ context.quantiphyse_fabber_version }}
+
+  The smoke test checks plugin discovery, label/control subtraction, a small
+  ASL model fit and the GUI's ASL controls under Xvfb. These checks do not
+  validate clinical accuracy. This is not a complete FSL installation: standard
+  space templates, FAST, FNIRT and MCFLIRT are not bundled. OXASL workflows
+  that require those tools need a full FSL environment and separate validation.
+  The minimal backend uses an explicit artifact/checksum lock. Refresh the
+  whole lock together when changing backend versions, then repeat model and
+  GUI tests. Dependency source checks verify the pinned FSL artifacts.
+
+  The bundled pyfab 0.3.6 has a Python 3.10 compatibility patch that moves
+  Sequence lookups to collections.abc. The smoke test exercises the model
+  parameter-evaluation path that requires it.
+
+  Quantiphyse and its plugins are Apache-2.0. FSL components have separate
+  terms, including restrictions on commercial use. See the upstream licenses
+  and /opt/licenses/quantiphyse before use or redistribution.
+  Upstream: https://quantiphyse.readthedocs.io/en/latest/asl/asl.html
+icon: data:image/png;base64,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
