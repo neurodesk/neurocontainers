@@ -1,12 +1,40 @@
+import json
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from builder import oci_labels
 from builder.image_fingerprint import fingerprint_inspect_data
 from builder.ir import Definition, From
 from builder.recipe import compile_recipe
+
+
+def test_recipe_cli_resolves_repository_macros_from_another_directory(
+    tmp_path, monkeypatch, capsys
+):
+    root = Path(__file__).resolve().parents[2]
+    recipe = yaml.safe_load((root / "recipes/niimath/build.yaml").read_text())
+    recipe["build"]["directives"] = [{"include": "macros/openrecon/neurodocker.yaml"}]
+    repository = tmp_path / "repository"
+    recipe_dir = repository / "recipes/demo"
+    recipe_dir.mkdir(parents=True)
+    (repository / "pyproject.toml").write_text("")
+    macro = repository / "macros/openrecon/neurodocker.yaml"
+    macro.parent.mkdir(parents=True)
+    macro.write_text("builder: neurodocker\ndirectives:\n  - workdir: /opt/tool\n")
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", [
+        "oci-labels", "recipe", str(recipe_dir),
+        "--architecture", "x86_64", "--build-date", "20261004",
+        "--revision", "a" * 40,
+    ])
+    oci_labels.main()
+    labels = json.loads(capsys.readouterr().out)
+    assert labels[oci_labels.PREFIX + "version"] == f"{recipe['version']}_20261004"
 
 
 def compiled():
@@ -109,3 +137,31 @@ def test_image_annotations_select_project_architecture_from_index(monkeypatch, a
     monkeypatch.setattr(oci_labels, "RegistryClient", Client)
     monkeypatch.setattr(oci_labels, "resolve_credentials", lambda *args: None)
     assert oci_labels.image_labels("example.test/demo:1.2.3", architecture) == labels
+
+
+@pytest.mark.parametrize("use_cwd_repository", [False, True])
+def test_recipe_cli_supports_external_recipes(tmp_path, monkeypatch, capsys, use_cwd_repository):
+    root = Path(__file__).resolve().parents[2]
+    recipe = yaml.safe_load((root / "recipes/niimath/build.yaml").read_text())
+    recipe["build"]["directives"] = [{"workdir": "/opt/tool"}]
+    recipe_dir = tmp_path / "external"
+    recipe_dir.mkdir()
+    working_dir = tmp_path
+    if use_cwd_repository:
+        working_dir = tmp_path / "repository"
+        (working_dir / "recipes").mkdir(parents=True)
+        (working_dir / "pyproject.toml").write_text("")
+        macro = working_dir / "macros/openrecon/neurodocker.yaml"
+        macro.parent.mkdir(parents=True)
+        macro.write_text("builder: neurodocker\ndirectives:\n  - workdir: /opt/tool\n")
+        recipe["build"]["directives"] = [{"include": "macros/openrecon/neurodocker.yaml"}]
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe))
+    monkeypatch.chdir(working_dir)
+    monkeypatch.setattr(sys, "argv", [
+        "oci-labels", "recipe", str(recipe_dir),
+        "--architecture", "x86_64", "--build-date", "20261004",
+        "--revision", "a" * 40,
+    ])
+    oci_labels.main()
+    labels = json.loads(capsys.readouterr().out)
+    assert labels[oci_labels.PREFIX + "version"] == f"{recipe['version']}_20261004"
