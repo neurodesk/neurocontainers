@@ -191,13 +191,13 @@ tests:
 
   - name: Validate bundled tutorials
     description: Parse the notebooks and import their PCNtoolkit API names
-    command: python /opt/pcntoolkit/tutorials/check_tutorials.py
+    command: env HOME=/nonexistent python /opt/pcntoolkit/tutorials/check_tutorials.py
     expected_output_contains: "Tutorial JSON and PCNtoolkit imports passed"
     expected_exit_code: 0
 
   - name: Run bundled offline BLR example
     description: Fit generated data and check finite predictions and deviation scores without downloads
-    command: python /opt/pcntoolkit/tutorials/offline_blr.py ${output_dir}/offline-blr
+    command: env HOME=/nonexistent python /opt/pcntoolkit/tutorials/offline_blr.py ${output_dir}/offline-blr
     expected_output_contains: "Offline BLR fit/predict passed"
     expected_exit_code: 0
     validate:
