@@ -53,7 +53,7 @@ def test_public_sif_copy_requires_sidecars_only_when_enabled(
         {'container': 'demo', 'sif': 'demo.simg'},
     ]))
     log = tmp_path / 'calls.jsonl'
-    for command in ('aws', 'swift'):
+    for command in ('aws', 'python'):
         stub = tmp_path / command
         stub.write_text(f'#!{sys.executable}\n' + '''import json, os, pathlib, sys
 with open(os.environ['CALL_LOG'], 'a') as stream:
@@ -74,10 +74,13 @@ if os.environ['FAIL_OPERATION'] in sys.argv[1:3] and sys.argv[-1].endswith('.sig
     assert result.returncode == (23 if should_fail else 0), result.stderr
     assert copies[0] == 's3://neurocontainers/demo.simg'
     if should_fail:
-        assert not any(call[0] == 'swift' for call in calls)
+        assert not any(call[0] == 'python' for call in calls)
     else:
         suffixes = ['', '.sigstore.json', '.promotion.json', '.promotion.sigstore.json']
         if enabled != 'true':
             suffixes = ['']
         assert copies == ['s3://neurocontainers/demo.simg' + suffix for suffix in suffixes]
-        assert calls[-1][0] == 'swift'
+        assert calls[-1] == [
+            'python', '-m', 'tools.copy_swift_object', '--source-sha', 'a' * 40,
+            '--container', 'demo', '--sif', 'demo.simg',
+        ]

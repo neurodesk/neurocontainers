@@ -697,8 +697,8 @@ jobs:
                 aws s3api head-object --bucket neurocontainers --key "${sif}${suffix}" >/dev/null
               done
             fi
-            swift copy neurodesk "${staged_key}" \
-              --destination "/neurodesk/${sif}" || \
+            python -m tools.copy_swift_object --source-sha "${HEAD_SHA}" \
+              --container "${container}" --sif "${sif}" || \
               echo "::warning::Nectar object finalization failed for ${sif}"
           done
       # Candidate downloads and multi-registry publication can take longer than
