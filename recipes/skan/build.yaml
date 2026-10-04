@@ -1,0 +1,96 @@
+name: skan
+version: 0.13.1
+architectures:
+  - x86_64
+  - aarch64
+structured_readme:
+  description: >-
+    Skeleton analysis in Python. skan measures the branches and junctions of
+    skeletonised 2D and 3D images, such as vessel, neurite or fibre networks.
+  example: |
+    python - <<'PY'
+    import numpy as np
+    from skimage.morphology import skeletonize
+    from skan import Skeleton, summarize
+
+    image = np.zeros((64, 64), dtype=bool)
+    image[32, 8:56] = True
+    image[8:56, 32] = True
+
+    skeleton = Skeleton(skeletonize(image), spacing=1.0)
+    branches = summarize(skeleton, separator="-")
+    print(branches[["branch-distance", "branch-type"]])
+    PY
+  documentation: https://skeleton-analysis.org/stable/
+  citation: |-
+    Nunez-Iglesias J, Blanch AJ, Looker O, Dixon MW, Tilley L. (2018)
+    A new Python library to analyse skeleton images confirms malaria parasite
+    remodelling of the red blood cell membrane skeleton. PeerJ 6:e4312.
+    https://doi.org/10.7717/peerj.4312
+auto_update:
+  method: pypi
+  package: skan
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: py312_25.5.1-0
+        install_path: /opt/miniconda
+        pip_install: skan=={{ context.version }}
+    - deploy:
+        path: []
+        bins:
+          - python
+categories:
+  - shape analysis
+icon: data:image/png;base64,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
+
+readme: |-
+  ----------------------------------
+  ## skan/{{ context.version }} ##
+
+  Skeleton analysis in Python. skan measures the branches and junctions of
+  skeletonised 2D and 3D images, such as vessel, neurite or fibre networks:
+  branch lengths, branch types, tortuosity and the underlying pixel graph.
+  https://skeleton-analysis.org/stable/
+
+  This container provides the skan Python library together with scikit-image,
+  NumPy, SciPy, pandas and Numba. The napari plugin is not included.
+
+  Example:
+  ```
+  python - <<'PY'
+  import numpy as np
+  from skimage.morphology import skeletonize
+  from skan import Skeleton, summarize
+
+  image = np.zeros((64, 64), dtype=bool)
+  image[32, 8:56] = True
+  image[8:56, 32] = True
+
+  skeleton = Skeleton(skeletonize(image), spacing=1.0)
+  branches = summarize(skeleton, separator="-")
+  print(branches[["branch-distance", "branch-type"]])
+  PY
+  ```
+
+  More documentation can be found here: https://skeleton-analysis.org/stable/
+
+  Citation:
+  ```
+  Nunez-Iglesias J, Blanch AJ, Looker O, Dixon MW, Tilley L. (2018)
+  A new Python library to analyse skeleton images confirms malaria parasite
+  remodelling of the red blood cell membrane skeleton. PeerJ 6:e4312.
+  https://doi.org/10.7717/peerj.4312
+  ```
+
+  To run container outside of this environment: ml skan/{{ context.version }}
+
+  ----------------------------------
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/jni/skan/blob/main/LICENSE
