@@ -615,7 +615,11 @@ files:
   filename: pyfab-python310.patch
 - name: quantiphyse.png
   filename: quantiphyse.png
+gui_apps:
+- name: quantiphyseGUI
+  exec: quantiphyse
 categories:
+- arterial spin labelling
 - quantitative imaging
 - visualization
 - workflows
