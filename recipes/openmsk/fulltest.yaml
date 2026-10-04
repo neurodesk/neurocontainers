@@ -203,3 +203,67 @@ tests:
       python3 /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py -h 2>&1 | grep 'usage:'
       python3 /opt/code/python-ismrmrd-server/nifti2mrd.py -h 2>&1 | grep 'usage:'
       python3 /opt/code/python-ismrmrd-server/enhanced2singleframe.py -h 2>&1 | grep 'usage:'
+
+  - name: OpenRecon cartilage subregions
+    timeout: 1800
+    description: Verify the adapter produces regional labels and accepts cartilage-free segmentations
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PYTEST'
+      import json
+      from pathlib import Path
+      import subprocess
+      import tempfile
+
+      import numpy as np
+      import SimpleITK as sitk
+      import pymskt
+
+      reference = Path(pymskt.__file__).resolve().parent / "data" / "right_knee_example.nrrd"
+      image = sitk.ReadImage(str(reference))
+      source = sitk.GetArrayFromImage(image)
+      native = np.zeros_like(source)
+      for source_label, native_label in {5: 7, 6: 8, 7: 9, 1: 2, 2: 3, 3: 4, 4: 1}.items():
+          native[source == source_label] = native_label
+
+      with tempfile.TemporaryDirectory() as temporary:
+          root = Path(temporary)
+          config = root / "config.json"
+          config.write_text("{}")
+          for cartilage in (True, False):
+              working = root / str(cartilage)
+              working.mkdir()
+              labels = native.copy()
+              if not cartilage:
+                  labels[np.isin(labels, [1, 2, 3, 4])] = 0
+              segmentation = sitk.GetImageFromArray(labels)
+              segmentation.CopyInformation(image)
+              sitk.WriteImage(segmentation, str(working / "knee_all-labels.nii.gz"))
+              adapter = subprocess.run(
+                  [
+                      "python3", "-c",
+                      "import json, sys; from pathlib import Path; import openmsk; "
+                      "print(json.dumps(openmsk._run_kneepipeline_postprocessing("
+                      "Path(sys.argv[1]), Path(sys.argv[2]), "
+                      "compute_thickness=json.loads(sys.argv[3]), compute_t2=False)))",
+                      str(working), str(config), json.dumps(cartilage),
+                  ],
+                  capture_output=True, text=True,
+              )
+              assert adapter.returncode == 0, adapter.stderr
+              result = json.loads(adapter.stdout)
+              assert result["ok"], json.dumps(result, indent=2)
+              regional = list(working.glob("*_subregions-labels.nii.gz"))
+              if cartilage:
+                  assert len(regional) == 1, result
+                  produced = set(np.unique(sitk.GetArrayFromImage(sitk.ReadImage(str(regional[0])))))
+                  assert {11, 12, 13, 14, 15} <= produced, produced
+                  assert regional[0].with_suffix("").with_suffix(".nrrd").is_file()
+                  assert result["generate_meshes"]["has_subregions"], result
+                  metrics = result["generate_meshes"]["metrics"]
+                  for region in ("ant", "med_wb", "lat_wb", "med_post", "lat_post"):
+                      assert np.isfinite(metrics[f"{region}_fem_cart_mm_mean"]), metrics
+              else:
+                  assert result["subregions"]["skipped"], result
+                  assert not regional, regional
+              print("cartilage:", cartilage, "subregions:", result.get("subregions"))
+      PYTEST
