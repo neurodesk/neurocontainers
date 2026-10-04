@@ -187,7 +187,7 @@ The source list supports the release providers above and these providers:
 | `apt` | `package`, `urls` | Package version from the selected distribution's `Packages.gz` or `Packages.xz` indexes |
 | `libreoffice_release` | Official stable release and source listings | Released four-part build and matching archived SHA-256s for both Linux architectures |
 | `zenodo` | Published `record` ID; optional `required_files` list | Latest published record in that record's version family containing every required file |
-| `slicer_release` | See Slicer recipes | Slicer binary and extension from the same build revision |
+| `slicer_release` | See Slicer recipes | Slicer binary and named `extensions` map from the same build revision |
 | `freesurfer_release` | See SynthSeg recipe | FreeSurfer release and its corresponding model bundle |
 
 LibreOffice uses `libreoffice_release` with a variable target for its four-part

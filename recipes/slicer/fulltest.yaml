@@ -14,6 +14,9 @@
 # CLI modules are located at: /opt/Slicer-${upstream_version}-linux-amd64/lib/Slicer-${slicer_abi}/cli-modules/
 
 monailabel_version: 0.8.5
+slicer_torch_version: 2.5.1
+slicer_monai_version: 1.4.0
+slicer_numpy_version: 1.26.4
 name: slicer
 version: 5.10.0
 
@@ -38,6 +41,32 @@ setup:
     mkdir -p test_output
 
 tests:
+  - name: Fresh profile Slicer AI extensions
+    description: Import the extensions and engine using Slicer's embedded Python with no user settings.
+    command: QT_QPA_PLATFORM_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt5/plugins/platforms QT_QPA_PLATFORM=offscreen Slicer --no-splash --no-main-window --disable-settings --python-script /opt/slicer-tests/auto3dseg-smoke.py
+    expected_output_contains: SLICER_AUTO3DSEG_IMPORTS_OK
+  - name: MONAIAuto3DSeg quick model CPU inference
+    description: Segment the upstream CTLiver sample and verify nonempty output aligned with the input volume.
+    command: |
+      QT_QPA_PLATFORM_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt5/plugins/platforms QT_QPA_PLATFORM=offscreen \
+      MONAI_AUTO3DSEG_CACHE_DIR="${output_dir}/auto3dseg-cache" \
+      SLICER_AUTO3DSEG_INPUT="${output_dir}/auto3dseg-input.nrrd" \
+      SLICER_AUTO3DSEG_OUTPUT="${output_dir}/auto3dseg-labels.nrrd" \
+      SLICER_AUTO3DSEG_DOWNLOAD_SAMPLE=1 \
+      Slicer --no-splash --no-main-window --disable-settings --python-script /opt/slicer-tests/auto3dseg-smoke.py
+    timeout: 1200
+    expected_output_contains: SLICER_AUTO3DSEG_INFERENCE_OK
+    validate:
+      - output_exists: ${output_dir}/auto3dseg-labels.nrrd
+  - name: Slicer Torch version
+    command: PythonSlicer -c 'import torch; print(torch.__version__)'
+    expected_output_contains: ${slicer_torch_version}
+  - name: Slicer MONAI version
+    command: PythonSlicer -c 'import monai; print(monai.__version__)'
+    expected_output_contains: ${slicer_monai_version}
+  - name: Slicer NumPy version
+    command: PythonSlicer -c 'import numpy; print(numpy.__version__)'
+    expected_output_contains: ${slicer_numpy_version}
   - name: MONAI Label server version
     command: python -c 'from importlib.metadata import version; print(version("monailabel"))'
     expected_output_contains: ${monailabel_version}
