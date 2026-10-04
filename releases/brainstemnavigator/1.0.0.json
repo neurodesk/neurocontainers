@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "brainstemnavigator 1.0.0": {
+      "version": "20261004",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "image registration"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "chimera-brainparcellation 0.4.1": {
+      "version": "20261004",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging"
+  ]
+}
