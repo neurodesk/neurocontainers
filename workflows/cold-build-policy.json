@@ -1,0 +1,32 @@
+{
+  "cadence_days": 45,
+  "coverage_days": 60,
+  "retry_days": 7,
+  "batch_size": 8,
+  "bases": {
+    "ubuntu:22.04": {
+      "expires": "2027-05-01",
+      "vendor": "https://ubuntu.com/about/release-cycle"
+    },
+    "ubuntu:24.04": {
+      "expires": "2029-05-01",
+      "vendor": "https://ubuntu.com/about/release-cycle"
+    },
+    "ubuntu:26.04": {
+      "expires": "2031-05-01",
+      "vendor": "https://ubuntu.com/about/release-cycle"
+    },
+    "ubuntu:20.04": {
+      "expires": "2025-05-01",
+      "vendor": "https://ubuntu.com/about/release-cycle"
+    },
+    "ubuntu:18.04": {
+      "expires": "2023-05-01",
+      "vendor": "https://ubuntu.com/about/release-cycle"
+    },
+    "ubuntu:16.04": {
+      "expires": "2021-04-01",
+      "vendor": "https://ubuntu.com/about/release-cycle"
+    }
+  }
+}

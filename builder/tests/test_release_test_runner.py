@@ -19,6 +19,12 @@ from workflows.release_test_runner import (
     run_fulltest_release,
 )
 from workflows.reporting import build_comment, build_report
+from workflows.test_run_artifacts import cleanup_runs, managed_run
+
+
+def _execute_fulltest(args: SimpleNamespace):
+    with managed_run(Path(args.output_dir), results_path=Path(args.results_path)) as run:
+        return run_fulltest_release(args, run_dir=run.path)
 
 
 def test_release_build_date_reads_first_app_version(tmp_path: Path) -> None:
@@ -203,7 +209,7 @@ def test_main_writes_failure_outputs_when_fulltest_adapter_errors(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    def fail_fulltest(args: SimpleNamespace) -> None:
+    def fail_fulltest(args: SimpleNamespace, *, run_dir: Path) -> None:
         raise RuntimeError("Unable to download release container")
 
     monkeypatch.setattr(
@@ -332,7 +338,7 @@ def test_run_fulltest_release_uses_release_image_basename(
 
     monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
 
-    outcome = run_fulltest_release(
+    outcome = _execute_fulltest(
         SimpleNamespace(
             recipe="neurodesktop",
             version="20260428-arm64",
@@ -425,7 +431,7 @@ def test_run_fulltest_release_uses_local_candidate(tmp_path: Path, monkeypatch) 
     monkeypatch.setattr("workflows.release_test_runner.ContainerTester", FakeTester)
     monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
 
-    outcome = run_fulltest_release(
+    outcome = _execute_fulltest(
         SimpleNamespace(
             recipe="demo",
             version="1.2.3",
@@ -530,7 +536,7 @@ def test_run_fulltest_release_falls_back_to_docker_conversion(
 
     monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
 
-    outcome = run_fulltest_release(
+    outcome = _execute_fulltest(
         SimpleNamespace(
             recipe="bidsappbrainsuite",
             version="21a",
@@ -1041,3 +1047,108 @@ def test_main_github_output_failure_leaves_published_results(
     assert results["test_results"][0]["name"] == "help"
     assert (run.output / "status-sample.txt").read_text() == "passed\n"
     assert "Unable to write GitHub output" in capsys.readouterr().err
+
+
+def test_successfully_published_failed_execution_is_collectible(
+    repeated_fulltest: SimpleNamespace,
+) -> None:
+    run = repeated_fulltest
+    run.behavior["exit"] = 2
+    assert main(run.args) == 1
+    old = next(run.output.glob("fulltest-run-*"))
+    run.behavior["exit"] = 0
+    assert main(run.args) == 0
+    actions = {entry.path: entry.action for entry in cleanup_runs(run.output, older_than_days=0)}
+    assert actions[old] == "deleted"
+    assert list(actions.values()).count("retained") == 1
+
+
+def test_failed_publication_remains_unfinished_after_new_publication(
+    repeated_fulltest: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from workflows import reporting
+
+    run = repeated_fulltest
+    original = reporting.build_report
+
+    def fail_report(*args, **kwargs):
+        raise OSError("report disk failure")
+
+    monkeypatch.setattr(reporting, "build_report", fail_report)
+    assert main(run.args) == 1
+    old = next(run.output.glob("fulltest-run-*"))
+    assert json.loads((run.output / "results.json").read_text())["fulltest_artifacts"]
+    monkeypatch.setattr(reporting, "build_report", original)
+    assert main(run.args) == 0
+    entries = {entry.path: entry for entry in cleanup_runs(run.output, older_than_days=0)}
+    assert entries[old].reason == "unfinished run"
+    assert old.is_dir()
+
+
+@pytest.mark.parametrize("execution_fails", [False, True])
+def test_finalization_failure_preserves_publication_and_execution_reason(
+    repeated_fulltest: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str], execution_fails: bool,
+) -> None:
+    run = repeated_fulltest
+    if execution_fails:
+        run.behavior["raw"] = False
+    original = Path.replace
+
+    def fail_completion(path, target):
+        if path.name == ".fulltest-run.json.tmp":
+            raise OSError("completion disk failure")
+        return original(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_completion)
+    assert main(run.args) == 1
+    results = json.loads((run.output / "results.json").read_text())
+    assert results["container"] == str(run.source.resolve())
+    assert results["fulltest_artifacts"]
+    assert results["failed"] == int(execution_fails)
+    assert (run.output / "status-sample.txt").read_text() == ("failed\n" if execution_fails else "passed\n")
+    github_output = Path(run.args[run.args.index("--github-output") + 1]).read_text()
+    assert "status=failed" in github_output
+    assert ("failed before writing results" if execution_fails else "completion disk failure") in github_output
+    assert "Unable to finalize test run: completion disk failure" in capsys.readouterr().err
+    entry, = cleanup_runs(run.output, older_than_days=0)
+    assert entry.reason == "unfinished run"
+
+
+def test_main_holds_run_lock_through_publication_in_another_process(
+    repeated_fulltest: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import multiprocessing
+    from workflows import release_test_runner as runner
+
+    run = repeated_fulltest
+    context = multiprocessing.get_context("fork")
+    parent, child = context.Pipe()
+    publish = runner.publish_test_results
+
+    def paused_publication(**kwargs):
+        child.send("executed")
+        child.recv()
+        return publish(**kwargs)
+
+    monkeypatch.setattr(runner, "publish_test_results", paused_publication)
+    process = context.Process(target=main, args=(run.args,))
+    process.start()
+    try:
+        assert parent.poll(10), "runner did not reach publication"
+        assert parent.recv() == "executed"
+        entry, = cleanup_runs(run.output, older_than_days=0)
+        assert entry.reason == "active run or another cleaner"
+        assert list(entry.path.glob("*.log"))
+        parent.send("publish")
+        process.join(10)
+        assert not process.is_alive()
+        assert process.exitcode == 0
+        entry, = cleanup_runs(run.output, older_than_days=0)
+        assert entry.reason == "referenced by latest results"
+    finally:
+        if process.is_alive():
+            process.kill()
+            process.join()
+        parent.close()
+        child.close()

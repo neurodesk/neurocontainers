@@ -4,6 +4,23 @@ permissions:
   contents: read
 
 on:
+  workflow_call:
+    inputs:
+      debug:
+        type: boolean
+        default: false
+      recipes:
+        type: string
+        required: true
+      run-tests:
+        type: boolean
+        default: true
+      architecture:
+        type: string
+        default: x86_64
+      x86-runner:
+        type: string
+        default: neurodesk-syd-arcrunner-neurocontainers
   workflow_dispatch:
     inputs:
       debug:
@@ -149,6 +166,32 @@ jobs:
             --test-config "recipes/$RECIPE/fulltest.yaml" \
             --results-path "check/$CONTAINER/test-results.json" \
             --output-dir "check/$CONTAINER/test-output" --repo-root . --verbose
+      - name: Record native runtime observation
+        if: always() && inputs.run-tests
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          python - <<'PYTHON'
+          import hashlib, json, os, platform, subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+          directory = Path('check') / os.environ['CONTAINER'] / 'test-output'
+          directory.mkdir(parents=True, exist_ok=True)
+          result = {'container': os.environ['CONTAINER'], 'version': os.environ['VERSION'],
+                    'machine': platform.machine(), 'status': 'passed' if os.environ['JOB_STATUS'] == 'success' else 'failed',
+                    'observed_at': datetime.now(timezone.utc).isoformat(),
+                    'run_url': f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"}
+          result['recipe_sha256'] = hashlib.sha256((Path('recipes') / os.environ['RECIPE'] / 'build.yaml').read_bytes()).hexdigest()
+          if result['status'] == 'passed':
+              result['image_id'] = subprocess.check_output(['docker', 'image', 'inspect', '--format', '{{.Id}}', os.environ['NEURO_CI_IMAGE']], text=True).strip()
+              candidate = Path('check') / os.environ['CONTAINER'] / 'test-output/fulltest-containers' / f"{os.environ['CONTAINER']}_{os.environ['VERSION']}.simg"
+              digest = hashlib.sha256()
+              with candidate.open('rb') as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                      digest.update(chunk)
+              result['candidate_sha256'] = digest.hexdigest()
+          (directory / 'native-result.json').write_text(json.dumps(result, indent=2))
+          PYTHON
       - name: Retain runtime results and failure diagnostics
         if: always()
         uses: actions/upload-artifact@v4

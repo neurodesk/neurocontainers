@@ -135,6 +135,38 @@ build:
         - mkdir -p /tmp/share/qsmxt_openrecon /tmp/share/qsmxt_models
         - chmod 1777 /tmp/share /tmp/share/qsmxt_openrecon /tmp/share/qsmxt_models
 
+    - boutique:
+        name: qsmxt
+        description: Inspect the installed QSMxT version or command help.
+        tool-version: '{{ context.upstream_version }}'
+        schema-version: '0.5'
+        command-line: qsmxt [ACTION]
+        inputs:
+          - id: action
+            name: Information to show
+            description: Print the installed version or top-level command help.
+            type: String
+            value-key: '[ACTION]'
+            value-choices: ['--version', '--help']
+            default-value: '--version'
+            optional: true
+    - boutique:
+        name: qsmxt-run
+        description: Run the default QSMxT pipeline on a BIDS dataset.
+        tool-version: '{{ context.upstream_version }}'
+        schema-version: '0.5'
+        command-line: qsmxt run [BIDS_DIR] [OUTPUT_DIR]
+        inputs:
+          - id: bids_dir
+            name: BIDS input directory
+            description: BIDS dataset containing supported phase and magnitude images.
+            type: File
+            value-key: '[BIDS_DIR]'
+          - id: output_dir
+            name: Output directory
+            description: Writable parent for derivatives/qsmxt output.
+            type: String
+            value-key: '[OUTPUT_DIR]'
     - deploy:
         path:
           - /opt/qsmxt

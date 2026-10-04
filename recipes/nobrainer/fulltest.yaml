@@ -1,0 +1,46 @@
+name: nobrainer
+version: 1.2.1
+nobrainer_version: 1.2.1
+tensorflow_version: 2.15.1
+tensorflow_probability_version: 0.23.0
+tensorflow_addons_version: 0.23.0
+numpy_version: 1.26.4
+tests:
+  - name: Installed framework version
+    command: python -c 'from importlib.metadata import version; print(version("nobrainer"))'
+    expected_output_contains: ${nobrainer_version}
+  - name: Prediction CLI
+    command: nobrainer predict --help
+    expected_output_contains: --model
+  - name: Compatible environment
+    command: python -m pip check
+    expected_exit_code: 0
+  - name: CPU prediction on a synthetic volume
+    command: |
+      python - <<'PYCODE'
+      from pathlib import Path
+      from tempfile import TemporaryDirectory
+      import nibabel as nib
+      import numpy as np
+      import tensorflow as tf
+      from nobrainer.prediction import predict
+
+      tf.config.threading.set_inter_op_parallelism_threads(1)
+      tf.config.threading.set_intra_op_parallelism_threads(1)
+      assert not tf.config.list_physical_devices("GPU")
+      inputs = tf.keras.Input(shape=(8, 8, 8, 1))
+      outputs = tf.keras.layers.Conv3D(1, 1, activation="sigmoid",
+          kernel_initializer="zeros", bias_initializer="ones")(inputs)
+      model = tf.keras.Model(inputs, outputs)
+      with TemporaryDirectory() as work:
+          model_path = str(Path(work) / "model")
+          model.save(model_path)
+          image = nib.Nifti1Image(np.zeros((16, 16, 16), dtype=np.float32), np.eye(4))
+          result = predict(image, model_path, block_shape=(8, 8, 8))
+          data = np.asarray(result.dataobj)
+          assert data.shape == image.shape, data.shape
+          assert np.all(np.isfinite(data))
+          assert np.all(data == 1), np.unique(data)
+          print("CPU prediction passed", data.shape)
+      PYCODE
+    expected_output_contains: CPU prediction passed

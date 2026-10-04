@@ -57,6 +57,9 @@ setup:
     chmod +x "${fake_qsmxt}"
 
 tests:
+  - name: Packaged Boutiques descriptors
+    description: Verify the version/help and BIDS processing descriptors are shipped in the runtime image.
+    command: test -r /boutique/qsmxt.json && test -r /boutique/qsmxt-run.json
   - name: QSMxT command line tools
     description: Verify the packaged QSMxT and bundled dcm2niix entrypoints start
     script: |

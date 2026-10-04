@@ -12,6 +12,7 @@ copyright:
     url: https://fsl.fmrib.ox.ac.uk/fsl/docs/#/license
 
 categories:
+  - "arterial spin labelling"
   - "functional imaging"
   - "structural imaging"
   - "diffusion imaging"
