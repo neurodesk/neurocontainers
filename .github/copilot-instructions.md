@@ -160,6 +160,7 @@ Each recipe contains:
 ### Commit Messages
 - Use descriptive commit messages that explain what and why
 - Reference issue numbers when applicable (e.g., "Fix #123: Update AFNI recipe")
+- In a PR that completes an issue, write `Closes #123` in the description so merging closes it; `Refs #123` and `for #123` do not close issues
 - Keep commits focused on a single logical change
 
 ### Documentation
