@@ -1,3 +1,5 @@
+flux_commit: "6310101dc1957c2cf5370e1c0d21c6ff94e3457e"
+openneuro_version: "2026.9.1"
 mne_version: "1.13.2"
 autoreject_version: "0.5.1"
 mne_bids_version: "0.20.0"
@@ -417,3 +419,15 @@ tests:
 - name: VS Code wrapper forwards arguments without a home directory
   command: HOME=/proc/mneextended-no-home code --version
   expected_output_contains: ${vscode_version}
+
+- name: FLUX source revision
+  command: cat /opt/flux/SOURCE_COMMIT
+  expected_output_contains: ${flux_commit}
+- name: FLUX notebook dependency
+  command: |
+    /opt/miniconda/envs/mne-extended/bin/python -c 'import openneuro; from importlib.metadata import version; print(version("openneuro-py"))'
+  expected_output_contains: ${openneuro_version}
+- name: FLUX first-look notebook on synthetic MEG data
+  command: /opt/miniconda/envs/mne-extended/bin/python /opt/flux/flux-smoke-test.py
+  expected_output_contains: FLUX notebook loading and PSD passed
+  timeout: 120
