@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+if [ -z "${XDG_CONFIG_HOME:-}" ]; then
+    XDG_CONFIG_HOME="$(mktemp -d "${TMPDIR:-/tmp}/mneextended-config.XXXXXX")"
+    export XDG_CONFIG_HOME
+fi
+
+export JUPYTER_CONFIG_DIR="${JUPYTER_CONFIG_DIR:-$XDG_CONFIG_HOME/jupyter}"
+export JUPYTER_DATA_DIR="${JUPYTER_DATA_DIR:-$XDG_CONFIG_HOME/jupyter/data}"
+export JUPYTER_RUNTIME_DIR="${JUPYTER_RUNTIME_DIR:-$XDG_CONFIG_HOME/jupyter/runtime}"
+
+exec "$@"
