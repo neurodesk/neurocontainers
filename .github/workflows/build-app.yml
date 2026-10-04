@@ -1203,7 +1203,16 @@ jobs:
 
   create-pr:
     needs: [config, build-image, push-dockerhub, upload-nectar, upload-s3, push-quay, push-ghcr]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true'}}
+    if: >-
+      ${{ !cancelled() &&
+          needs.config.result == 'success' &&
+          needs.build-image.result == 'success' &&
+          needs.upload-s3.result == 'success' &&
+          (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true') &&
+          ((needs.config.outputs.IMAGE_SUFFIX == '' &&
+            needs.push-quay.result == 'success' && needs.push-ghcr.result == 'success') ||
+           (needs.config.outputs.IMAGE_SUFFIX != '' &&
+            needs.push-quay.result == 'skipped' && needs.push-ghcr.result == 'skipped')) }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
