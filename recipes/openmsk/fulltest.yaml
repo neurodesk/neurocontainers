@@ -211,12 +211,12 @@ tests:
       PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PYTEST'
       import json
       from pathlib import Path
+      import subprocess
       import tempfile
 
       import numpy as np
       import SimpleITK as sitk
       import pymskt
-      import openmsk
 
       reference = Path(pymskt.__file__).resolve().parent / "data" / "right_knee_example.nrrd"
       image = sitk.ReadImage(str(reference))
@@ -238,9 +238,19 @@ tests:
               segmentation = sitk.GetImageFromArray(labels)
               segmentation.CopyInformation(image)
               sitk.WriteImage(segmentation, str(working / "knee_all-labels.nii.gz"))
-              result = openmsk._run_kneepipeline_postprocessing(
-                  working, config, compute_thickness=cartilage, compute_t2=False,
+              adapter = subprocess.run(
+                  [
+                      "python3", "-c",
+                      "import json, sys; from pathlib import Path; import openmsk; "
+                      "print(json.dumps(openmsk._run_kneepipeline_postprocessing("
+                      "Path(sys.argv[1]), Path(sys.argv[2]), "
+                      "compute_thickness=json.loads(sys.argv[3]), compute_t2=False)))",
+                      str(working), str(config), json.dumps(cartilage),
+                  ],
+                  capture_output=True, text=True,
               )
+              assert adapter.returncode == 0, adapter.stderr
+              result = json.loads(adapter.stdout)
               assert result["ok"], json.dumps(result, indent=2)
               regional = list(working.glob("*_subregions-labels.nii.gz"))
               if cartilage:
