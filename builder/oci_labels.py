@@ -98,11 +98,18 @@ def main() -> None:
         from .config import default_config
         from .recipe import compile_recipe
 
+        include_dirs = ()
+        for start in (args.path, Path.cwd()):
+            try:
+                include_dirs = default_config(start).include_dirs
+                break
+            except FileNotFoundError:
+                continue
         compiled = compile_recipe(
             args.path,
             architecture=args.architecture,
             variant=args.variant,
-            include_dirs=default_config(args.path).include_dirs,
+            include_dirs=include_dirs,
         )
         labels = recipe_labels(compiled, args.build_date, args.revision)
     else:
