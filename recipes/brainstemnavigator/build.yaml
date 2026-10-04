@@ -1,0 +1,86 @@
+name: brainstemnavigator
+version: 1.0.0
+copyright:
+  - license: MIT
+    url: https://github.com/neurodesk/neurocontainers/blob/main/LICENSE
+  - name: User-supplied Brainstem Navigator atlas agreement
+    url: https://www.nitrc.org/frs/download.php/17380/BrainstemNavigatorv1.0.zip
+architectures:
+  - x86_64
+variables:
+  ants_version: 2.4.3
+  nibabel_version: 5.3.2
+  numpy_version: 1.26.4
+auto_update:
+  method: sources
+  container_version: false
+  local: []
+  sources:
+    - id: ants
+      method: github_release
+      repo: ANTsX/ANTs
+      target:
+        variable: ants_version
+        value: version
+    - id: nibabel
+      method: pypi
+      package: nibabel
+      dependency: true
+      target:
+        variable: nibabel_version
+    - id: numpy
+      method: pypi
+      package: numpy
+      dependency: true
+      target:
+        variable: numpy_version
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - python3
+        - python3-venv
+        - python3-pip
+    - template:
+        name: ants
+        version: '{{ context.ants_version }}'
+    - run:
+        - python3 -m venv /opt/brainstemnavigator
+        - /opt/brainstemnavigator/bin/pip install --no-cache-dir nibabel=={{ context.nibabel_version }}
+          numpy=={{ context.numpy_version }}
+        - install -m 755 {{ get_file("brainstemnavigator.py") }} /opt/brainstemnavigator/bin/brainstemnavigator
+    - environment:
+        PATH: /opt/brainstemnavigator/bin:$PATH
+files:
+  - name: brainstemnavigator.py
+    filename: brainstemnavigator.py
+deploy:
+  bins:
+    - brainstemnavigator
+    - antsRegistration
+    - antsApplyTransforms
+categories:
+  - structural imaging
+  - image registration
+readme: |
+  This container provides ANTs and a NIfTI inspection launcher for a user-supplied
+  Brainstem Navigator v1.0 atlas. No atlas labels, templates or tutorial scripts
+  are included. The atlas agreement prohibits redistribution outside your
+  organization and permits noncommercial research use only.
+
+  Download BrainstemNavigatorv1.0.zip yourself and accept the official agreement
+  at https://www.nitrc.org/frs/download.php/17380/BrainstemNavigatorv1.0.zip.
+  Extract it on your host and mount the extracted directory at /data/atlas.
+  Run `brainstemnavigator /data/atlas` to check NIfTI readability, dimensions,
+  voxel sizes and finite data. This inspection does not verify that the directory
+  is the official atlas or validate scientific registration accuracy.
+
+  Follow the registration tutorial included with your download using the packaged
+  ANTs {{ context.ants_version }} commands. Mount subject images and writable
+  output directories separately. Keep the atlas agreement, original notices and
+  reference list together with your private copy, and cite its required papers.
+  Atlas-specific registration testing requires your authorized private download.
+  The container version identifies this locally maintained inspection workflow.
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABDklEQVR4nO2ZwQ3CMBAECUoFFEERfGiEN0XxphE644EU2XEc34lbVod2flgW3MSJveGm0/lyyMyRXcC3SICNBNhIgI0E2My4r769HuXH5/WO+BXUCqyq3xwJASLQqxXhEC+wX2W4Q7CApb5Yh/S7kATYSKDGclrFnmjxK7BfX/h5DLmFelUi0gTqGWhrBWWhSX+rkEkv4Hgf8OZ79PwP1hXw5nv0/AWTgDffo8dLxgLcKz10GAh48z16fkv6XUgCbP5dwJvv0fNbxivgzffo+StMt5A336PHS6zPwO+vtDEL6X2ATXoB9Qc6qD9gRf2BGvUH3EiAjQRq1B9wo/5AB/UHrGgXYiMBNhJgIwE2b7vRiUs1dq+AAAAAAElFTkSuQmCC

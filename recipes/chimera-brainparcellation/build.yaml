@@ -11,7 +11,7 @@ architectures:
   - x86_64
 variables:
   upstream_version: 0.4.1
-  clabtoolkit_version: 0.4.2
+  clabtoolkit_version: 0.4.4
   ants_version: 2.4.3
   fsl_version: 6.0.7.18
   freesurfer_version: 7.4.1
@@ -156,7 +156,11 @@ readme: |
   The launcher creates a temporary pipeline configuration using FS_LICENSE.
   An explicit `--config` retains your configuration, including its license setting.
 
-  A full BIDS parcellation and scientific output validation remain required before
-  release acceptance. No FreeSurfer license is embedded in the image.
+  The HFFFFFFFFF route has been exercised on FreeSurfer's official reconstructed
+  bert sample, with native T1 geometry, integer labels and label-table coverage
+  checked. This validates atlas composition using existing recon-all outputs;
+  it does not test reconstruction from an unprocessed T1 image or other atlas codes.
+  clabtoolkit 0.4.4 supplies the physical-coordinate morphology required by CHIMERA.
+  No FreeSurfer license is embedded in the image.
   https://github.com/connectomicslab/chimera
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABDklEQVR4nO2ZwQ3CMBAECUoFFEERfGiEN0XxphE644EU2XEc34lbVod2flgW3MSJveGm0/lyyMyRXcC3SICNBNhIgI0E2My4r769HuXH5/WO+BXUCqyq3xwJASLQqxXhEC+wX2W4Q7CApb5Yh/S7kATYSKDGclrFnmjxK7BfX/h5DLmFelUi0gTqGWhrBWWhSX+rkEkv4Hgf8OZ79PwP1hXw5nv0/AWTgDffo8dLxgLcKz10GAh48z16fkv6XUgCbP5dwJvv0fNbxivgzffo+StMt5A336PHS6zPwO+vtDEL6X2ATXoB9Qc6qD9gRf2BGvUH3EiAjQRq1B9wo/5AB/UHrGgXYiMBNhJgIwE2b7vRiUs1dq+AAAAAAElFTkSuQmCC
