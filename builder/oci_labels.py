@@ -9,7 +9,13 @@ import re
 import sys
 from typing import TYPE_CHECKING
 
-from .image_fingerprint import RegistryClient, parse_image_reference, resolve_credentials, select_platform_manifest
+from .image_fingerprint import (
+    RegistryClient,
+    parse_image_reference,
+    resolve_architecture,
+    resolve_credentials,
+    select_platform_manifest,
+)
 from .ir import From
 if TYPE_CHECKING:
     from .recipe import CompiledRecipe
@@ -54,7 +60,7 @@ def image_labels(image: str, architecture: str) -> dict[str, str]:
     client = RegistryClient(ref.registry, credentials=resolve_credentials(ref.registry))
     manifest = client.get_manifest(ref.repository, ref.reference)
     if "manifests" in manifest:
-        manifest = client.get_manifest(ref.repository, select_platform_manifest(manifest["manifests"], architecture))
+        manifest = client.get_manifest(ref.repository, select_platform_manifest(manifest["manifests"], resolve_architecture(architecture)))
     config = client.get_config_blob(ref.repository, manifest["config"]["digest"])
     labels = {key: value for key, value in (config.get("config", {}).get("Labels") or {}).items() if key.startswith(PREFIX)}
     if not all(labels.get(PREFIX + key) for key in ("title", "version", "created", "revision")):

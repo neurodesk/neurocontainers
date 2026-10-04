@@ -83,3 +83,29 @@ def test_image_annotations_preserve_the_built_labels(monkeypatch):
     monkeypatch.setattr(oci_labels, "RegistryClient", Client)
     monkeypatch.setattr(oci_labels, "resolve_credentials", lambda *args: None)
     assert oci_labels.image_labels("example.test/demo:1.2.3", "amd64") == labels
+
+
+@pytest.mark.parametrize("architecture,platform", [("x86_64", "amd64"), ("aarch64", "arm64")])
+def test_image_annotations_select_project_architecture_from_index(monkeypatch, architecture, platform):
+    labels = oci_labels.recipe_labels(compiled(), "20261003", "a" * 40)
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get_manifest(self, repository, reference):
+            if reference == "1.2.3":
+                return {"manifests": [
+                    {"digest": f"sha256:{arch}", "platform": {"os": "linux", "architecture": arch}}
+                    for arch in ("amd64", "arm64")
+                ]}
+            assert reference == f"sha256:{platform}"
+            return {"config": {"digest": f"sha256:config-{platform}"}}
+
+        def get_config_blob(self, repository, digest):
+            assert digest == f"sha256:config-{platform}"
+            return {"config": {"Labels": labels}}
+
+    monkeypatch.setattr(oci_labels, "RegistryClient", Client)
+    monkeypatch.setattr(oci_labels, "resolve_credentials", lambda *args: None)
+    assert oci_labels.image_labels("example.test/demo:1.2.3", architecture) == labels
