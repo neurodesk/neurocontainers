@@ -1,0 +1,34 @@
+name: pyem
+version: 0.69.0
+upstream_version: '0.69'
+tests:
+  - name: installed release
+    command: python -c "from importlib.metadata import version; print(version('pyem'))"
+    expected_output_contains: ${upstream_version}
+  - name: CryoSPARC converter help
+    command: csparc2star.py --help
+    expected_output_contains: 'usage:'
+  - name: STAR class selection
+    command: |-
+      python - <<'PY'
+      import pathlib, tempfile, subprocess
+      from pyem import star
+      with tempfile.TemporaryDirectory() as directory:
+          root = pathlib.Path(directory)
+          source = root / 'input.star'
+          source.write_text('data_particles\n\nloop_\n_rlnImageName #1\n_rlnClassNumber #2\n'
+                            '_rlnCoordinateX #3\n_rlnCoordinateY #4\n_rlnImagePixelSize #5\n'
+                            '000001@particles.mrcs 1 10 20 1.5\n'
+                            '000002@particles.mrcs 2 30 40 1.5\n'
+                            '000003@particles.mrcs 1 50 60 1.5\n')
+          output = root / 'selected.star'
+          subprocess.run(['star.py', '--class', '1', str(source), str(output)], check=True)
+          result = star.parse_starfile(str(output))
+          assert list(result['rlnImageName']) == ['000001@particles.mrcs', '000003@particles.mrcs']
+          assert list(result['rlnCoordinateX']) == [10, 50]
+          assert list(result['rlnCoordinateY']) == [20, 60]
+          assert list(result['rlnClassNumber']) == [1, 1]
+          assert list(result['rlnImagePixelSize']) == [1.5, 1.5]
+          print('STAR selection preserves particle metadata')
+      PY
+    expected_output_contains: STAR selection preserves particle metadata
