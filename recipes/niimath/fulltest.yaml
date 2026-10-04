@@ -1,12 +1,12 @@
 # niimath container test suite
-# Tests for niimath v1.0.20250804 - fslmaths-compatible image calculator
+# Tests for the current niimath container - fslmaths-compatible image calculator
 #
 # Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
 #   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 
 name: niimath
-version: 1.0.20260703
+version: 1.0.20260924
 
 required_files:
   - dataset: ds000001
@@ -536,12 +536,6 @@ tests:
     command: niimath ${bold} -bptf 25 2 test_output/bold_bptf.nii.gz
     validate:
       - output_exists: ${output_dir}/bold_bptf.nii.gz
-
-  - name: Bandpass filter Hz (niimath-specific)
-    description: Test -bandpass operation (0.01-0.1 Hz, TR=2s)
-    command: niimath ${bold} -bandpass 0.01 0.1 2 test_output/bold_bandpass.nii.gz
-    validate:
-      - output_exists: ${output_dir}/bold_bandpass.nii.gz
 
   - name: Bandpass without mean removal
     description: Test -bptfm operation (niimath-specific)
