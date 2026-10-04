@@ -1720,6 +1720,15 @@ except Exception:
 
 if "label_remap" not in summary["errors"]:
     try:
+        from steps.subregions import run as subregions
+        summary["subregions"] = subregions(working_dir, config=config)
+    except Exception:
+        if compute_thickness:
+            summary["errors"]["subregions"] = traceback.format_exc()
+        else:
+            summary["warnings"]["subregions"] = traceback.format_exc()
+
+    try:
         from steps.generate_meshes import run as generate_meshes
         summary["generate_meshes"] = generate_meshes(
             working_dir,

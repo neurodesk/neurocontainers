@@ -1125,9 +1125,14 @@ def find_file(working_dir, pattern):
     return {"remapped": True}
 """
     )
-    (steps_dir / "generate_meshes.py").write_text(
+    (steps_dir / "subregions.py").write_text(
         """def run(_working_dir, options=None, config=None):
     raise RuntimeError("simulated offline subregion failure")
+"""
+    )
+    (steps_dir / "generate_meshes.py").write_text(
+        """def run(_working_dir, options=None, config=None):
+    return {"thickness_computed": False}
 """
     )
     (steps_dir / "t2_mapping.py").write_text(
@@ -1167,7 +1172,7 @@ def run(working_dir, config=None):
     assert result["ok"] is True
     assert result["returncode"] == 0
     assert result["t2_statistics_scope"] == "global_cartilage_compartments"
-    assert "generate_meshes" in result["warnings"]
+    assert "subregions" in result["warnings"]
     assert result["errors"] == {}
     assert (output_dir / "scan_subregions-labels.nii.gz").read_text() == (
         "canonical labels"
