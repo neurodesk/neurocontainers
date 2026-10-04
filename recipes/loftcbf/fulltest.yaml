@@ -1,0 +1,13 @@
+name: loftcbf
+version: 3.0.0
+tests:
+- name: CBF quantification on synthetic pCASL pairs
+  description: Run motion correction, subtraction and CBF quantification through SPM12 in Octave.
+  command: |
+    cd /tmp && octave-cli --no-gui /opt/loftcbf/loftcbf_smoke.m
+  expected_output_contains: LOFT-CBF smoke test passed
+  timeout: 600
+- name: licences installed
+  command: |
+    test -s /opt/licenses/loftcbf/LOFT-CBF-LICENSE && test -s /opt/licenses/loftcbf/NIfTI-LICENSE && echo licences OK
+  expected_output_contains: licences OK
