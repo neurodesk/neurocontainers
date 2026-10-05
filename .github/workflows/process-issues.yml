@@ -13,7 +13,7 @@ env:
 
 jobs:
   process-contribution:
-    if: contains(github.event.issue.title, '[CONTRIBUTION]')
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (contains(github.event.issue.title, '[CONTRIBUTION]')) }}
     runs-on: ubuntu-latest
     permissions:
       issues: write

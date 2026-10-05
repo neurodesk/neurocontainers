@@ -23,6 +23,7 @@ env:
 
 jobs:
   check:
+    if: github.repository == 'neurodesk/neurocontainers'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

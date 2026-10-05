@@ -3,13 +3,14 @@ name: on-opening-issue
 permissions:
   contents: read
   pull-requests: write
-  
+
 on:
   issues:
     types: [opened, reopened]
 
 jobs:
   add-issue-to-project:
+    if: github.repository == 'neurodesk/neurocontainers'
     uses: NeuroDesk/neurodesk.github.io/.github/workflows/add-issue-to-project.yml@main
     secrets:
       PAT: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}

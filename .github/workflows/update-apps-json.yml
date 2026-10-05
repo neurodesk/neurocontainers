@@ -23,6 +23,7 @@ env:
 
 jobs:
   update-apps-json:
+    if: github.repository == 'neurodesk/neurocontainers'
     runs-on: ubuntu-latest
 
     steps:
