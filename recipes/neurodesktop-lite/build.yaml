@@ -42,7 +42,7 @@ variables:
       condition: arch=="x86_64"
     - value: strace_aarch64
       condition: arch=="aarch64"
-  neurocommand_commit: "736bda3a724e57d8962ee050c4a571c05f943148"
+  neurocommand_commit: "7b205806622646ac0b24558caeb48ce27ae88623"
   nf_neuro_commit: "db13b89521279b5c4685045d955185453ded8d2a"
   jupyterlab_slurm_commit: "8dccb39808f8a1b77712a9a5773a7d2601a56683"
   yarn_version: "1.22.22"
