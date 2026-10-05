@@ -10,9 +10,26 @@ copyright:
 architectures:
   - x86_64
 
+variables:
+  freesurfer_version: "8.2.0"
+  virtualgl_version: "3.1.5"
+  virtualgl_sha256: df3f7788ce41b182a47c0d298e5cd6d2d63579522cb41825970b7726e825485e
+
 auto_update:
-  method: github_tags
-  repo: freesurfer/freesurfer
+  method: sources
+  container_version: freesurfer
+  sources:
+    - id: freesurfer
+      method: github_tags
+      repo: freesurfer/freesurfer
+      target:
+        variable: freesurfer_version
+    - id: virtualgl
+      dependency: true
+      method: http_digest
+      url: https://github.com/VirtualGL/virtualgl/releases/download/3.1.5/virtualgl_3.1.5_amd64.deb
+      target:
+        variable: virtualgl_sha256
 
 build:
   kind: neurodocker
@@ -111,6 +128,7 @@ build:
     - run:
         - apt-get update -qq
         - apt-get install -y -q --no-install-recommends {{ get_file("freesurfer_deb") }}
+        - apt-get install -y -q --no-install-recommends {{ get_file("virtualgl_deb") }}
         - rm -rf /var/lib/apt/lists/*
 
     - workdir: /opt/freesurfer-{{ context.version }}
@@ -215,8 +233,14 @@ build:
         - freeview_bin
         - /opt/freesurfer-{{ context.version }}/bin/freeview_bin
 
+    - copy:
+        - freeview-vgl
+        - /opt/freesurfer-{{ context.version }}/bin/freeview-vgl
+
     - run:
         - chmod a+rwx /opt/freesurfer-{{ context.version }}/bin/freeview /opt/freesurfer-{{ context.version }}/bin/freeview_bin
+        - chmod 0755 /opt/freesurfer-{{ context.version }}/bin/freeview-vgl
+        - ldconfig
 
     - workdir: /opt/freesurfer-{{ context.version }}/bin/
 
@@ -242,6 +266,10 @@ deploy:
   bins:
     - recon-all
     - freeview
+    - freeview-vgl
+    - vglrun
+    - /opt/VirtualGL/bin/eglinfo
+    - /opt/VirtualGL/bin/glxspheres64
 
 readme: |-
   ----------------------------------
@@ -261,6 +289,19 @@ readme: |-
   More documentation can be found here: https://surfer.nmr.mgh.harvard.edu/fswiki/recon-all
 
   To run container outside of this environment: ml freesurfer/{{ context.version }}
+
+  VirtualGL {{ context.virtualgl_version }} is included for GPU rendering on HPC.
+  In a GPU allocation with a working remote X display, run:
+  ```bash
+  apptainer exec --nv /path/to/freesurfer.simg /opt/VirtualGL/bin/eglinfo -e
+  apptainer exec --nv --bind /path/to/data:/data /path/to/freesurfer.simg freeview-vgl -v /data/volume.nii.gz
+  ```
+  `freeview-vgl` defaults to `VGL_DISPLAY=egl0` and `VGL_COMPRESS=proxy`.
+  Select the allocated device from `eglinfo -e`, for example with
+  `apptainer exec --nv --env VGL_DISPLAY=egl1 /path/to/freesurfer.simg freeview-vgl`.
+  Keep the remote session's DISPLAY and X authentication available inside the
+  container. The image requires compatible host graphics drivers; ordinary
+  `freeview` remains available for launches without VirtualGL.
 
   Citation: see https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferMethodsCitation
 
@@ -343,7 +384,11 @@ files:
   - name: segmentNuclei_1
     url: https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
   - name: freesurfer_deb
-    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer_ubuntu22-{{ context.version }}_amd64.deb
+    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.freesurfer_version }}/freesurfer_ubuntu22-{{ context.freesurfer_version }}_amd64.deb
+
+  - name: virtualgl_deb
+    url: https://github.com/VirtualGL/virtualgl/releases/download/{{ context.virtualgl_version }}/virtualgl_{{ context.virtualgl_version }}_amd64.deb
+    sha256: "{{ context.virtualgl_sha256 }}"
 
   - name: workbench_zip
     url: https://humanconnectome.org/storage/app/media/workbench/workbench-linux64-v2.0.1.zip
@@ -352,6 +397,15 @@ files:
     contents: |-
       #!/usr/bin/env bash
       LD_LIBRARY_PATH=/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64 segmentNuclei_mcr97 "$@"
+
+  - name: freeview-vgl
+    contents: |-
+      #!/usr/bin/env bash
+      set -e
+
+      exec /opt/VirtualGL/bin/vglrun \
+        -d "${VGL_DISPLAY:-egl0}" -c "${VGL_COMPRESS:-proxy}" \
+        /opt/freesurfer-{{ context.version }}/bin/freeview "$@"
 
   - name: freeview
     contents: |-
