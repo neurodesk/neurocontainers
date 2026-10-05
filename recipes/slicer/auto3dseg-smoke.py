@@ -4,7 +4,8 @@ Set SLICER_AUTO3DSEG_INPUT to a CT volume and SLICER_AUTO3DSEG_OUTPUT to the
 output labelmap path for inference. The declared abdominal quick model is verified
 against its SHA256 before extraction. SLICER_AUTO3DSEG_DOWNLOAD_SAMPLE=1 uses
 Slicer's checksum-verified CTLiver sample, SHA256
-e16eae0ae6fefa858c5c11e58f0f1bb81834d81b7102e021571056324ef6f37e.
+e16eae0ae6fefa858c5c11e58f0f1bb81834d81b7102e021571056324ef6f37e, resampled to
+the quick model's 3 mm spacing.
 The model downloads on first use into MONAI_AUTO3DSEG_CACHE_DIR. Reuse the input and cache without network access to
 check offline inference. This checks execution and geometry, not clinical quality.
 """
@@ -91,8 +92,17 @@ def check() -> None:
     if not Path(input_path).exists() and os.environ.get("SLICER_AUTO3DSEG_DOWNLOAD_SAMPLE") == "1":
         import SampleData
         sample = SampleData.downloadSample("CTLiver")
-        assert slicer.util.saveNode(sample, input_path)
+        # Full-resolution inference peaks near 9 GiB and kills release-test runners;
+        # resampling to 3 mm first keeps the whole check under 5 GiB.
+        resampled = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+        slicer.cli.runSync(slicer.modules.resamplescalarvolume, None, {
+            "InputVolume": sample.GetID(),
+            "OutputVolume": resampled.GetID(),
+            "outputPixelSpacing": "3,3,3",
+        })
+        assert slicer.util.saveNode(resampled, input_path)
         slicer.mrmlScene.RemoveNode(sample)
+        slicer.mrmlScene.RemoveNode(resampled)
     volume = slicer.util.loadVolume(input_path)
     assert volume is not None
     segmentation = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLSegmentationNode")
