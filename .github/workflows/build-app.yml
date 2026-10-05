@@ -1208,7 +1208,7 @@ jobs:
             "${subject}" \
             "${SIF}:${SIF_MEDIATYPE}"
 
-      - name: Verify public SIF and select chronological floating tags
+      - name: Verify published SIF and select chronological floating tags
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |

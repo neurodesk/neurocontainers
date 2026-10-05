@@ -55,6 +55,15 @@ def test_supports_referrer_tag_fallback():
     assert v2_registry.resolve_sif(image, client).layer_digest == "sha256:" + "a" * 64
 
 
+@pytest.mark.parametrize("registry_host, expected", [
+    ("ghcr.io", ("actor", "token")),
+    ("quay.io", None),
+])
+def test_only_ghcr_publication_is_verified_with_credentials(monkeypatch, registry_host, expected):
+    monkeypatch.setattr(v2_registry, "resolve_credentials", lambda registry: ("actor", "token"))
+    assert v2_registry.reader_client(registry_host).credentials == expected
+
+
 @pytest.mark.parametrize("fault", ["missing", "wrong-subject", "wrong-layer", "ambiguous", "digest"])
 def test_refuses_incomplete_or_inconsistent_publication(fault):
     image, client, paths, subject, artifact = registry()
