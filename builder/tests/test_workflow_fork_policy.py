@@ -1,7 +1,48 @@
+import re
 from pathlib import Path
 
 import pytest
 import yaml
+
+
+def _requires_upstream_repository(condition: str) -> bool:
+    condition = " ".join(condition.split())
+    if condition.startswith("${{") and condition.endswith("}}"):
+        condition = condition[3:-2].strip()
+    guard = "github.repository == 'neurodesk/neurocontainers'"
+    if condition == guard:
+        return True
+    prefix = f"{guard} && ("
+    if not condition.startswith(prefix) or not condition.endswith(")"):
+        return False
+    expression = condition[len(prefix) : -1]
+    expression = re.sub(r"'(?:[^']|'')*'", "", expression)
+    depth = 0
+    for character in expression:
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
+
+
+@pytest.mark.parametrize(
+    "expression, expected",
+    [
+        ("always()", True),
+        ("true || false", True),
+        ("contains('a) and ''b(', 'x')", True),
+        ("always()) || (true", False),
+        ("true) || (github.event_name == 'schedule'", False),
+    ],
+)
+def test_repository_guard_cannot_be_bypassed_by_an_outer_or(
+    expression: str, expected: bool
+) -> None:
+    condition = f"github.repository == 'neurodesk/neurocontainers' && ({expression})"
+    assert _requires_upstream_repository(condition) is expected
 
 
 @pytest.mark.parametrize(
@@ -26,14 +67,10 @@ import yaml
 def test_neurodesk_automation_requires_the_upstream_repository(workflow: str) -> None:
     """Every infrastructure job must skip forks, including always() reporters."""
     definition = yaml.safe_load(Path(f".github/workflows/{workflow}.yml").read_text())
-    guard = "github.repository == 'neurodesk/neurocontainers'"
     for name, job in definition["jobs"].items():
-        condition = " ".join(job.get("if", "").split())
-        if condition.startswith("${{") and condition.endswith("}}"):
-            condition = condition[3:-2].strip()
-        assert condition == guard or (
-            condition.startswith(f"{guard} && (") and condition.endswith(")")
-        ), f"{workflow}/{name} must require the upstream repository"
+        assert _requires_upstream_repository(job.get("if", "")), (
+            f"{workflow}/{name} must require the upstream repository"
+        )
 
 
 @pytest.mark.parametrize(
