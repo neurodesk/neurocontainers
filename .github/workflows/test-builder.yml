@@ -20,8 +20,8 @@ on:
       - 'requirements.txt'
       - 'pyproject.toml'
       - 'uv.lock'
-      # Changing this workflow should re-run it.
-      - '.github/workflows/test-builder.yml'
+      # Workflow changes must run the shared workflow contract and fork policy tests.
+      - '.github/workflows/**'
 
 jobs:
   test-builder:

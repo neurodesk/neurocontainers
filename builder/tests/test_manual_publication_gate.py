@@ -21,6 +21,7 @@ import yaml
 ])
 def test_release_pr_requires_publication_but_allows_intentional_arm_skips(
         suffix, quay, ghcr, s3, changed, forced, cancelled, expected, repository):
+    """Require upstream identity and successful publication before release PRs."""
     workflow = yaml.safe_load(Path('.github/workflows/build-app.yml').read_text())
     job = workflow['jobs']['create-pr']
     results = {name: 'success' for name in job['needs']}
