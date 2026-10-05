@@ -361,7 +361,7 @@ def run_single_test(
         try:
             if container_path:
                 cmd_list = [
-                    container_runtime_command(), "exec", "--writable-tmpfs",
+                    container_runtime_command(), "exec",
                     "--pwd", str(work_dir),
                 ]
                 for b in _container_binds(work_dir, variables):
@@ -531,7 +531,7 @@ def _run_container_health_check(
     binds.add(f"{work_dir}:{work_dir}")
 
     cmd_list = [
-        container_runtime_command(), "exec", "--writable-tmpfs",
+        container_runtime_command(), "exec",
         "--pwd", str(work_dir),
     ]
     for b in binds:
@@ -585,7 +585,7 @@ def _run_setup_in_container(
         os.chmod(script_path, 0o755)
 
         cmd_list = [
-            container_runtime_command(), "exec", "--writable-tmpfs",
+            container_runtime_command(), "exec",
             "--pwd", str(work_dir),
         ]
         for b in _container_binds(work_dir, variables):
