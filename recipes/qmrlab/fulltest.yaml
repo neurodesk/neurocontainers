@@ -18,7 +18,7 @@
 #   - Basic data I/O operations
 
 name: qmrlab
-version: 2.4.2
+version: 3.0.0
 
 required_files:
   - dataset: ds000001
