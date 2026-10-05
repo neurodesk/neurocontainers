@@ -16,7 +16,7 @@
 # that qsiprep relies upon for processing.
 
 name: qsiprep
-version: 1.0.1
+version: 26.0.0
 
 required_files:
   - dataset: ds000001
