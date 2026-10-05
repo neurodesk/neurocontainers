@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   plan:
+    if: github.repository == 'neurodesk/neurocontainers'
     runs-on: ubuntu-22.04
     outputs:
       targets: ${{ steps.plan.outputs.targets }}
@@ -48,7 +49,7 @@ jobs:
           retention-days: 90
   verify:
     needs: plan
-    if: needs.plan.outputs.targets != '[]'
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (needs.plan.outputs.targets != '[]') }}
     runs-on: ${{ github.repository == 'neurodesk/neurocontainers' && (matrix.architecture == 'aarch64' && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'blacksmith-8vcpu-ubuntu-2404') || (matrix.architecture == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-22.04') }}
     timeout-minutes: 360
     strategy:
@@ -107,7 +108,7 @@ jobs:
           retention-days: 90
   record:
     needs: [plan, verify]
-    if: always() && needs.plan.result == 'success'
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (always() && needs.plan.result == 'success') }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5

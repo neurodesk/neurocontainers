@@ -20,6 +20,7 @@ env:
 
 jobs:
   detect-changes:
+    if: github.repository == 'neurodesk/neurocontainers'
     runs-on: ubuntu-latest
     outputs:
       modified-releases: ${{ steps.detect.outputs.modified-releases }}
@@ -41,7 +42,7 @@ jobs:
 
   test-containers:
     needs: detect-changes
-    if: needs.detect-changes.outputs.has-changes == 'true'
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (needs.detect-changes.outputs.has-changes == 'true') }}
     runs-on: ${{ matrix.release.architecture == 'aarch64' && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'neurodesk-arcrunner-release-test' }}
     # Do not raise max-parallel. maxRunners 2 is insurance against ARC #4307, not spare
     # throughput, and keeping this at 1 is what leaves the second slot free. Revisit
@@ -450,7 +451,7 @@ jobs:
 
   summarize-results:
     needs: [detect-changes, test-containers]
-    if: always() && needs.detect-changes.outputs.has-changes == 'true'
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (always() && needs.detect-changes.outputs.has-changes == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - name: Download all test results

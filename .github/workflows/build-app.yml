@@ -69,6 +69,7 @@ env:
 
 jobs:
   config:
+    if: github.repository == 'neurodesk/neurocontainers'
     runs-on: ${{ fromJSON(inputs.runner) }}
     outputs:
       BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
@@ -260,6 +261,7 @@ jobs:
           echo "IMAGE_FINGERPRINT_CACHE=$IMAGE_FINGERPRINT_CACHE" >> "$GITHUB_OUTPUT"
 
   build-image:
+    if: github.repository == 'neurodesk/neurocontainers'
     needs: config
     runs-on: ${{ fromJSON(inputs.runner) }}
     outputs:
@@ -589,7 +591,7 @@ jobs:
 
   push-dockerhub:
     needs: [config, build-image]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_dockerhub == 'true' }}
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_dockerhub == 'true') }}
     # Docker Hub is a public mirror. GHCR, SIF generation, and object storage are
     # the release-critical outputs, so transient Docker Hub failures should not
     # block release PR creation.
@@ -662,7 +664,7 @@ jobs:
 
   push-nectar-registry:
     needs: [config, build-image]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_nectar_registry == 'true' }}
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_nectar_registry == 'true') }}
     # Nectar is a best-effort mirror; outages must not block the release path.
     continue-on-error: true
     runs-on: ubuntu-22.04
@@ -720,7 +722,7 @@ jobs:
 
   build-simg:
     needs: [config, build-image]
-    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false') }}
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false')) }}
     runs-on: ${{ fromJSON(inputs.runner) }}
     permissions:
       packages: write
@@ -872,7 +874,7 @@ jobs:
 
   upload-nectar:
     needs: [config, build-image, build-simg]
-    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true') }}
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true')) }}
     # Nectar object storage is a best-effort mirror; S3 remains the blocking upload.
     continue-on-error: true
     runs-on: ${{ fromJSON(inputs.runner) }}
@@ -959,7 +961,7 @@ jobs:
 
   upload-s3:
     needs: [config, build-image, build-simg]
-    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true') }}
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true')) }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
@@ -1008,7 +1010,7 @@ jobs:
   push-quay:
     needs: [config, build-image, build-simg]
     # Requires org secrets QUAY_USERNAME + QUAY_ROBOT_TOKEN.
-    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_quay == 'true' || inputs.force_create_pr == 'true') && needs.config.outputs.IMAGE_SUFFIX == '' }}
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_quay == 'true' || inputs.force_create_pr == 'true') && needs.config.outputs.IMAGE_SUFFIX == '') }}
     runs-on: ubuntu-22.04
     concurrency:
       group: promote-container-and-metadata
@@ -1128,7 +1130,7 @@ jobs:
 
   push-ghcr:
     needs: [config, build-image, build-simg]
-    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_ghcr == 'true' || inputs.force_create_pr == 'true') && needs.config.outputs.IMAGE_SUFFIX == '' }}
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_ghcr == 'true' || inputs.force_create_pr == 'true') && needs.config.outputs.IMAGE_SUFFIX == '') }}
     runs-on: ubuntu-22.04
     concurrency:
       group: promote-container-and-metadata
@@ -1219,15 +1221,16 @@ jobs:
   create-pr:
     needs: [config, build-image, push-dockerhub, upload-nectar, upload-s3, push-quay, push-ghcr]
     if: >-
-      ${{ !cancelled() &&
-          needs.config.result == 'success' &&
-          needs.build-image.result == 'success' &&
-          needs.upload-s3.result == 'success' &&
-          (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true') &&
-          ((needs.config.outputs.IMAGE_SUFFIX == '' &&
-            needs.push-quay.result == 'success' && needs.push-ghcr.result == 'success') ||
-           (needs.config.outputs.IMAGE_SUFFIX != '' &&
-            needs.push-quay.result == 'skipped' && needs.push-ghcr.result == 'skipped')) }}
+      ${{ github.repository == 'neurodesk/neurocontainers' &&
+          (!cancelled() &&
+           needs.config.result == 'success' &&
+           needs.build-image.result == 'success' &&
+           needs.upload-s3.result == 'success' &&
+           (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true') &&
+           ((needs.config.outputs.IMAGE_SUFFIX == '' &&
+             needs.push-quay.result == 'success' && needs.push-ghcr.result == 'success') ||
+            (needs.config.outputs.IMAGE_SUFFIX != '' &&
+             needs.push-quay.result == 'skipped' && needs.push-ghcr.result == 'skipped'))) }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
@@ -1414,7 +1417,7 @@ jobs:
 
   report-auto-build-failure:
     needs: [config, build-image, push-dockerhub, build-simg, upload-s3, create-pr]
-    if: ${{ always() && !cancelled() && github.event_name == 'push' && contains(needs.*.result, 'failure') }}
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (always() && !cancelled() && github.event_name == 'push' && contains(needs.*.result, 'failure')) }}
     runs-on: ubuntu-22.04
     permissions:
       contents: read

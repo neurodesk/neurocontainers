@@ -79,6 +79,7 @@ on:
 
 jobs:
   list-apps:
+    if: github.repository == 'neurodesk/neurocontainers'
     runs-on: ubuntu-22.04
     outputs:
       build_matrix: ${{ steps.expand_variants.outputs.build_matrix }}
@@ -147,6 +148,7 @@ jobs:
         echo "build_matrix=${build_matrix}" >> "$GITHUB_OUTPUT"
 
   build-app:
+    if: github.repository == 'neurodesk/neurocontainers'
     needs: list-apps
     strategy:
       fail-fast: false

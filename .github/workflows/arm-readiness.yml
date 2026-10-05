@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   inventory:
+    if: github.repository == 'neurodesk/neurocontainers'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -30,6 +31,7 @@ jobs:
           path: arm-reports/
           retention-days: 90
   native-cohort:
+    if: github.repository == 'neurodesk/neurocontainers'
     uses: ./.github/workflows/recipes-ci.yml
     with:
       recipes: dcm2niix,niimath,datalad
@@ -38,7 +40,7 @@ jobs:
       debug: false
   native-report:
     needs: native-cohort
-    if: always()
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (always()) }}
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5

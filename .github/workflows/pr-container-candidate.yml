@@ -20,6 +20,7 @@ env:
 
 jobs:
   detect:
+    if: github.repository == 'neurodesk/neurocontainers'
     runs-on: ubuntu-22.04
     outputs:
       recipes: ${{ steps.detect.outputs.recipes }}
@@ -104,7 +105,7 @@ jobs:
   candidate:
     name: candidate (${{ matrix.container }} | ${{ matrix.version }} | ${{ matrix.architecture }})
     needs: detect
-    if: ${{ needs.detect.outputs.recipes != '[]' }}
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (needs.detect.outputs.recipes != '[]') }}
     # ARC pods are ephemeral; untrusted recipe build commands never run on a
     # persistent self-hosted machine. The ARM64 pool must satisfy the same
     # property: Blacksmith runners are ephemeral cloud VMs, not persistent hosts.
@@ -301,7 +302,7 @@ jobs:
   gate:
     name: Container release gate
     needs: [detect, candidate]
-    if: always()
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (always()) }}
     runs-on: ubuntu-22.04
     steps:
       - name: Require all candidates to pass
