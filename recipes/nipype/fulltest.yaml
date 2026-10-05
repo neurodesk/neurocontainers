@@ -35,6 +35,11 @@ setup:
     touch test_output/original.nii.gz
 
 tests:
+  - name: Conda solver is available offline
+    description: Verify the configured solver loads after package installation and cleanup.
+    command: /opt/miniconda-latest/bin/conda create --offline --dry-run --prefix "$PWD/test_output/conda-solver" --no-default-packages
+    expected_exit_code: 0
+
   # ==========================================================================
   # CORE NIPYPE MODULE IMPORTS
   # ==========================================================================
