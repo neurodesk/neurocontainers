@@ -1,5 +1,5 @@
 name: petprep
-version: 0.0.5
+version: 0.0.10
 default_timeout: 120
 tests:
 - name: PETPrep wrapper uses CLI FreeSurfer subjects dir
