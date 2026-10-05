@@ -24,6 +24,10 @@ on:
         description: Merged recipe PR to recover or republish
         required: true
         type: number
+      signing_acceptance:
+        description: Validate signing in isolated staging without finalizing a release
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -222,10 +226,200 @@ jobs:
             }
             throw new Error(`Timed out waiting for candidate run for ${headSha}`);
 
+  signing_acceptance:
+    needs: [resolve, await_candidate]
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.signing_acceptance &&
+      needs.resolve.outputs.should_promote == 'true' &&
+      needs.resolve.outputs.recipes != '[]'
+    runs-on: neurodesk-syd-arcrunner-neurocontainers
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        artifact: ${{ fromJSON(needs.await_candidate.outputs.artifacts) }}
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Install promotion dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt python-swiftclient python-keystoneclient
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gh jq unzip
+          if ! command -v aws >/dev/null 2>&1; then
+            aws_archive="${RUNNER_TEMP}/awscliv2.zip"
+            aws_install_dir="${RUNNER_TEMP}/aws-cli"
+            curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
+              -o "${aws_archive}"
+            unzip -q "${aws_archive}" -d "${aws_install_dir}"
+            sudo "${aws_install_dir}/aws/install"
+            rm -rf "${aws_archive}" "${aws_install_dir}"
+          fi
+          aws --version
+      - name: Resolve staged candidate identity
+        id: identity
+        env:
+          ARTIFACT_NAME: ${{ matrix.artifact.name }}
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+        run: |
+          container="${ARTIFACT_NAME#candidate-}"
+          container="${container%-${HEAD_SHA}}"
+          if ! [[ "${container}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "Invalid candidate container identity: ${container}" >&2
+            exit 1
+          fi
+          echo "container=${container}" >> "${GITHUB_OUTPUT}"
+      - name: Download candidate bundle without executing it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ matrix.artifact.id }}
+          CONTAINER: ${{ steps.identity.outputs.container }}
+        run: |
+          mkdir -p "promotion-bundle/${CONTAINER}"
+          for attempt in 1 2 3 4 5; do
+            rm -f artifact.zip
+            if curl -fsSL --speed-limit 1048576 --speed-time 300 \
+                -H "Authorization: Bearer ${GH_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                -o artifact.zip \
+                "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ARTIFACT_ID}/zip"; then
+              break
+            fi
+            if [ "${attempt}" = 5 ]; then
+              echo "Failed to download candidate artifact ${ARTIFACT_ID} after ${attempt} attempts" >&2
+              exit 1
+            fi
+            sleep "$((attempt * 10))"
+          done
+          unzip -q artifact.zip -d "promotion-bundle/${CONTAINER}"
+          rm artifact.zip
+      - name: Verify candidate against merged recipes and checksums
+        env:
+          HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
+          PR_NUMBER: ${{ needs.resolve.outputs.pr_number }}
+        run: |
+          python tools/one_pr_release.py verify --bundle promotion-bundle \
+            --head-sha "${HEAD_SHA}" --merge-sha "${MERGE_SHA}" \
+            --pr-number "${PR_NUMBER}" \
+            --output verified-manifests.json
+      - name: Log in to GHCR staging
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Configure staging AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+      - name: Install pinned Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+        with:
+          cosign-release: v3.1.3
+      - name: Stage, sign and verify a registry and S3 round trip
+        env:
+          CONTAINER: ${{ steps.identity.outputs.container }}
+          MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          oras_archive="${RUNNER_TEMP}/oras_1.2.0_linux_amd64.tar.gz"
+          curl -fsSL \
+            https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz \
+            -o "${oras_archive}"
+          echo "5b3f1cbb86d869eee68120b9b45b9be983f3738442f87ee5f06b00edd0bab336  ${oras_archive}" \
+            | sha256sum -c -
+          sudo tar -xzf "${oras_archive}" -C /usr/local/bin oras
+          rm "${oras_archive}"
+          manifest="$(jq -c '.[0]' verified-manifests.json)"
+          sif="$(echo "${manifest}" | jq -r '.sif')"
+          archive="$(echo "${manifest}" | jq -r '.docker_archive')"
+          source="$(echo "${manifest}" | jq -r '.candidate_tag')"
+          repository="ghcr.io/neurodesk/signing-acceptance-${CONTAINER,,}"
+          tag="run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          key="signing-acceptance/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/${CONTAINER}"
+          docker load --input "promotion-bundle/${CONTAINER}/${archive}"
+          docker tag "${source}" "${repository}:${tag}"
+          docker push "${repository}:${tag}"
+          subject="${repository}@$(oras resolve "${repository}:${tag}")"
+          cp "promotion-bundle/${CONTAINER}/${sif}" "${RUNNER_TEMP}/${sif}"
+          (
+            cd "${RUNNER_TEMP}"
+            oras attach --artifact-type application/vnd.sylabs.sif.layer.v1.sif \
+              "${subject}" "${sif}:application/vnd.sylabs.sif.layer.v1.sif"
+          )
+          python -m tools.sign_promotion --candidate "promotion-bundle/${CONTAINER}" \
+            --manifests verified-manifests.json --merge-sha "${MERGE_SHA}" --image "${subject}"
+          mkdir -p "signing-evidence/${CONTAINER}"
+          download="${RUNNER_TEMP}/signing-roundtrip-${CONTAINER}"
+          mkdir -p "${download}"
+          for suffix in '' .sigstore.json .promotion.json .promotion.sigstore.json; do
+            file="${sif}${suffix}"
+            aws s3 cp "promotion-bundle/${CONTAINER}/${file}" \
+              "s3://neurocontainers/${key}/${file}"
+            aws s3 cp "s3://neurocontainers/${key}/${file}" "${download}/${file}"
+          done
+          identity='https://github.com/neurodesk/neurocontainers/.github/workflows/promote-container-candidate.yml@refs/heads/main'
+          issuer='https://token.actions.githubusercontent.com'
+          for suffix in '' .promotion.json; do
+            cosign verify-blob --certificate-identity "${identity}" \
+              --certificate-oidc-issuer "${issuer}" \
+              --bundle "${download}/${sif}${suffix}.sigstore.json" "${download}/${sif}${suffix}"
+          done
+          expected="$(echo "${manifest}" | jq -r '.sif_sha256')"
+          echo "${expected}  ${download}/${sif}" | sha256sum -c -
+          resolved="$(python -m tools.v2_registry resolve "${subject}" --expected-sha256 "${expected}")"
+          cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${subject}"
+          cosign verify --certificate-identity "${identity}" --certificate-oidc-issuer "${issuer}" "${resolved#oras://}"
+          printf tampered > "${download}/tampered.simg"
+          if cosign verify-blob --certificate-identity "${identity}" \
+              --certificate-oidc-issuer "${issuer}" --bundle "${download}/${sif}.sigstore.json" \
+              "${download}/tampered.simg" > "signing-evidence/${CONTAINER}/tampered.log" 2>&1; then
+            echo 'Tampered SIF incorrectly verified' >&2
+            exit 1
+          fi
+          if cosign verify-blob --certificate-identity "${identity/main/untrusted}" \
+              --certificate-oidc-issuer "${issuer}" --bundle "${download}/${sif}.sigstore.json" \
+              "${download}/${sif}" > "signing-evidence/${CONTAINER}/wrong-identity.log" 2>&1; then
+            echo 'Unexpected workflow identity incorrectly verified' >&2
+            exit 1
+          fi
+          cp "${download}/${sif}.sigstore.json" "${download}/${sif}.promotion"* "signing-evidence/${CONTAINER}/"
+          jq -n --arg workflow_sha "${GITHUB_WORKFLOW_SHA}" --arg image "${subject}" \
+            --arg sif_reference "${resolved}" --arg sif_sha256 "${expected}" \
+            --arg s3_prefix "s3://neurocontainers/${key}" --arg identity "${identity}" \
+            '{workflow_sha: $workflow_sha, image: $image, sif_reference: $sif_reference,
+              sif_sha256: $sif_sha256, s3_prefix: $s3_prefix, identity: $identity}' \
+            > "signing-evidence/${CONTAINER}/acceptance.json"
+          printf 'Validated trusted OIDC signatures for `%s` and `%s`. S3 round trip matched `%s`.\n' \
+            "${subject}" "${resolved}" "${expected}" >> "${GITHUB_STEP_SUMMARY}"
+      - name: Retain signing acceptance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: signing-acceptance-${{ steps.identity.outputs.container }}-${{ github.run_id }}
+          path: signing-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
     name: publish (${{ matrix.artifact.name }})
     needs: [resolve, await_candidate]
     if: >-
+      !inputs.signing_acceptance &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
     runs-on: neurodesk-syd-arcrunner-neurocontainers
@@ -527,6 +721,7 @@ jobs:
   finalize:
     needs: [resolve, await_candidate, publish]
     if: >-
+      !inputs.signing_acceptance &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
     runs-on: ubuntu-latest
@@ -797,6 +992,7 @@ jobs:
     needs: [resolve, await_candidate, publish, finalize, sync_openrecon]
     if: >-
       always() &&
+      !inputs.signing_acceptance &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.pr_number != ''
     runs-on: ubuntu-22.04

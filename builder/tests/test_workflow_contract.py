@@ -121,8 +121,9 @@ def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> Non
 def test_promotion_finalizer_classifies_changes_since_candidate_merge() -> None:
     workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
 
-    assert workflow.count('MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}') == 4
-    assert workflow.count('--merge-sha "${MERGE_SHA}"') == 4
+    finalizer = workflow.split('  finalize:\n', 1)[1].split('  sync_openrecon:\n', 1)[0]
+    assert finalizer.count('MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}') == 2
+    assert finalizer.count('--merge-sha "${MERGE_SHA}"') == 2
 
 
 def test_recipe_pr_validation_checks_fulltest_only_changes() -> None:
