@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import os
 import subprocess
+from pathlib import Path
+
+import pytest
 
 from builder import run_tests
 
@@ -144,7 +148,54 @@ def test_setup_preserves_container_software_and_binds_host_data(tmp_path, monkey
     )
     assert result.passed
     for command in commands:
+        assert "--writable-tmpfs" not in command
         binds = [command[index + 1] for index, arg in enumerate(command) if arg == "-B"]
         assert "/opt:/opt" not in binds
         assert f"{work}:{work}" in binds
         assert f"{data}:{data}" in binds
+
+    health = run_tests._run_container_health_check(Path("image.sif"), work, variables)
+    assert health.passed, health.message
+    assert "--writable-tmpfs" not in commands[-1]
+
+
+@pytest.mark.skipif(
+    not os.environ.get("NEUROCONTAINERS_TEST_SIF"),
+    reason="requires an Apptainer image in NEUROCONTAINERS_TEST_SIF",
+)
+def test_real_container_root_is_readonly_and_workspace_is_writable(tmp_path, monkeypatch):
+    image = str(Path(os.environ["NEUROCONTAINERS_TEST_SIF"]).resolve())
+    real_run = subprocess.run
+    checked = []
+
+    def check_root(command, **kwargs):
+        payload = command.index(image) + 1
+        probe = '''
+options=$(awk '$2 == "/" {print $4}' /proc/mounts)
+case ",$options," in
+  *,ro,*) ;;
+  *) echo "Expected read-only image root, got $options" >&2; exit 1 ;;
+esac
+exec "$@"
+'''
+        result = real_run(
+            [*command[:payload], "bash", "-c", probe, "root-probe", *command[payload:]],
+            **kwargs,
+        )
+        checked.append(result)
+        return result
+
+    monkeypatch.setattr(run_tests.subprocess, "run", check_root)
+    health = run_tests._run_container_health_check(Path(image), tmp_path, {})
+    assert health.passed, health.stderr or health.message
+    error = run_tests._run_setup_in_container(
+        "printf fixture > input", image, tmp_path, {}
+    )
+    assert error is None, error
+    result = run_tests.run_single_test(
+        {"name": "bound fixture", "command": "cat input > output"},
+        image, {}, tmp_path,
+    )
+    assert result.passed, result.stderr or result.message
+    assert (tmp_path / "output").read_text() == "fixture"
+    assert len(checked) == 3
