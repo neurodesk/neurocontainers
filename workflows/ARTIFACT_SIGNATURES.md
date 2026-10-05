@@ -60,8 +60,28 @@ it does not alter the SIF. Signing or required sidecar publication failure stops
 release finalization. Fulcio/Rekor and registry availability are required.
 
 Before enabling production signing, run a trusted staging promotion with GitHub
-OIDC and test registry/S3 destinations. Keep the repository opt-in unset until
-that acceptance succeeds; this workflow does not configure staging destinations. Local key-based fixtures exercise byte tampering
+OIDC and test registry/S3 destinations:
+
+```bash
+gh workflow run promote-container-candidate.yml --repo neurodesk/neurocontainers \
+  --ref main -f pr_number=MERGED_RECIPE_PR -f signing_acceptance=true
+```
+
+Use a merged recipe-only PR with a successful, unexpired candidate artifact.
+The acceptance job checks out the workflow's exact main commit and validates
+the candidate against its merged recipe. It publishes only to
+`ghcr.io/neurodesk/signing-acceptance-CONTAINER:run-RUN_ID-ATTEMPT` and
+`s3://neurocontainers/signing-acceptance/RUN_ID/ATTEMPT/CONTAINER/`.
+It does not finalize release tags, metadata, or lifecycle comments.
+
+The job verifies image and SIF referrer signatures, downloads the SIF and
+sidecars from S3, and verifies their signatures against the production workflow
+identity. It checks the downloaded SIF hash and rejects changed bytes and a
+different workflow identity. Download the `signing-acceptance-*` evidence
+artifact and inspect both rejection logs before enabling signing.
+
+Keep the repository opt-in unset until that acceptance succeeds. The acceptance
+input does not enable production signing. Local key-based fixtures exercise byte tampering
 but cannot substitute for that identity and publication round trip. Commit
 signing and repository signature rules remain a separate maintainer policy
 decision under issue #504.
