@@ -11,6 +11,7 @@
 
 name: freesurfer
 version: 8.2.0
+virtualgl_version: "3.1.5"
 
 required_files:
   - dataset: ds000001
@@ -480,6 +481,33 @@ tests:
   # ==========================================================================
   # FREEVIEW - GUI APPLICATION (HEADLESS CHECK)
   # ==========================================================================
+  - name: VirtualGL package version
+    description: Verify the pinned VirtualGL package is installed.
+    command: dpkg-query -W -f='${Version}' virtualgl
+    expected_output_contains: "${virtualgl_version}-"
+
+  - name: VirtualGL launch and diagnostic tools
+    description: Verify the opt-in FreeView launcher and GPU diagnostics are executable.
+    command: |
+      set -e
+      command -v freeview-vgl
+      command -v vgl-eglinfo
+      command -v vgl-glxspheres64
+      test -x /opt/VirtualGL/bin/vglrun
+      test -x /opt/VirtualGL/bin/eglinfo
+      test -x /opt/VirtualGL/bin/glxspheres64
+      test -r /usr/lib/libvglfaker.so
+    expected_output_contains: "freeview-vgl"
+
+  - name: VirtualGL preload
+    description: Verify VirtualGL can load its interposer without a GPU or X display.
+    command: |
+      /opt/VirtualGL/bin/vglrun -d egl0 -c proxy sh -c '
+        test "$VGL_ISACTIVE" = 1 &&
+        printf "%s\n" "$LD_PRELOAD"
+      '
+    expected_output_contains: "libvglfaker.so"
+
   - name: freeview version
     description: Check freeview version (headless)
     command: freeview --version 2>&1 || true
