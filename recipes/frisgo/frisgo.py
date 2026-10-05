@@ -6,6 +6,7 @@ scanner as two source-geometry 2D streams: the original time series and the
 FRISGO-corrected time series. Scanner identity and IceMiniHead handling reuse
 the helpers of the ``openreconi2iexample`` reference module.
 """
+import itertools
 import logging
 import os
 import subprocess
@@ -23,7 +24,6 @@ import openreconi2iexample as i2i
 VERSION_ENV_VAR = "FRISGO_VERSION"
 EXECUTABLE_ENV_VAR = "FRISGO_EXECUTABLE"
 ORIGINAL_SERIES_INDEX = 100
-FRISGO_SERIES_INDEX = 101
 SERIES_INDEX_STRIDE = 2
 ORIGINAL_SERIES_NAME = "openrecon_original"
 FRISGO_SERIES_NAME = "openrecon_frisgo"
@@ -32,6 +32,9 @@ FRISGO_HISTORY = ["PYTHON", "LAYNII", "LN2_FRISGO_TSHIFT"]
 MIN_REPETITIONS = 4
 SLICE_POSITION_DECIMALS = 3
 DEFAULT_REPETITION_TIME_SECONDS = 1.0
+MAX_IMAGES_PER_SERIES = 65535
+MAX_SERIES_INDEX = 65535
+SEND_BATCH_SIZE = 128
 
 
 class TimeSeries:
@@ -48,9 +51,6 @@ class TimeSeries:
     @property
     def n_slices(self):
         return len(self.grid[0])
-
-    def images(self):
-        return [image for volume in self.grid for image in volume]
 
     def volume(self):
         """Return the time series as a float32 [x, y, slice, time] array."""
@@ -84,7 +84,6 @@ def process(connection, config, metadata):
 
         send_original = i2i._config_bool(config, "sendoriginal", default=True)
         send_frisgo = i2i._config_bool(config, "sendfrisgo", default=True)
-        repetition_time = _repetition_time_seconds(metadata, input_images[0])
         logging.info(
             "Configured outputs: original=%s frisgo=%s (%d received image(s))",
             send_original,
@@ -92,52 +91,46 @@ def process(connection, config, metadata):
             len(input_images),
         )
 
-        original_images = []
-        frisgo_images = []
-        for group_index, group_images in enumerate(_source_series_groups(input_images)):
-            original_index = ORIGINAL_SERIES_INDEX + SERIES_INDEX_STRIDE * group_index
-            frisgo_index = FRISGO_SERIES_INDEX + SERIES_INDEX_STRIDE * group_index
-            series = assemble_time_series(group_images, repetition_time)
-            logging.info(
-                "Source group %d: %d repetition(s) x %d slice(s)",
-                group_index,
-                series.n_repetitions,
-                series.n_slices,
-            )
+        groups = _source_series_groups(input_images)
+        original_index = ORIGINAL_SERIES_INDEX
+        output_indexes = []
+        for group_images in groups:
+            chunk_count = (len(group_images) + MAX_IMAGES_PER_SERIES - 1) // MAX_IMAGES_PER_SERIES
+            next_index = original_index + SERIES_INDEX_STRIDE * chunk_count
+            if next_index - 1 > MAX_SERIES_INDEX:
+                raise ValueError("too many output series for the MRD series index")
+            output_indexes.append(original_index)
+            original_index = next_index
+
+        for group_index, (group_images, original_index) in enumerate(zip(groups, output_indexes)):
             if send_original:
-                original_images.extend(_original_outputs(series, original_index))
+                _send_outputs(connection, _original_outputs(group_images, original_index))
             if not send_frisgo:
                 continue
             if not _is_magnitude(group_images[0]):
                 logging.info("Source group %d is not magnitude; FRISGO skipped", group_index)
                 continue
-            if series.n_repetitions < MIN_REPETITIONS:
-                logging.warning(
-                    "Source group %d has %d repetition(s); LN2_FRISGO -tshift "
-                    "needs at least %d, FRISGO skipped",
-                    group_index,
-                    series.n_repetitions,
-                    MIN_REPETITIONS,
-                )
-                continue
             try:
+                repetition_time = _repetition_time_seconds(metadata, group_images[0])
+                series = assemble_time_series(group_images, repetition_time)
+                logging.info(
+                    "Source group %d: %d repetition(s) x %d slice(s)",
+                    group_index, series.n_repetitions, series.n_slices,
+                )
+                if series.n_repetitions < MIN_REPETITIONS:
+                    logging.warning(
+                        "Source group %d has %d repetition(s); LN2_FRISGO -tshift "
+                        "needs at least %d, FRISGO skipped",
+                        group_index, series.n_repetitions, MIN_REPETITIONS,
+                    )
+                    continue
                 corrected = run_frisgo(series)
             except Exception:
                 logging.error(traceback.format_exc())
                 connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
                 continue
-            frisgo_images.extend(_frisgo_outputs(series, corrected, frisgo_index))
-
-        _validate_outputs(original_images + frisgo_images)
-        logging.info(
-            "Sending %d original image(s) and %d FRISGO image(s)",
-            len(original_images),
-            len(frisgo_images),
-        )
-        for batch in (original_images, frisgo_images):
-            if batch:
-                logging.info(i2i._send_batch_summary(1, 1, batch))
-                connection.send_image(batch)
+            _send_outputs(connection, _frisgo_outputs(series, corrected, original_index + 1))
+            del corrected
 
     except Exception:
         logging.error(traceback.format_exc())
@@ -159,6 +152,8 @@ def run_frisgo(series):
         zooms[3] = series.repetition_time
         image.header.set_zooms(zooms)
         nib.save(image, input_path)
+        volume_shape = volume.shape
+        del image, volume
 
         command = [executable, "-input", input_path, "-tshift"]
         logging.info("Running %s", " ".join(command))
@@ -177,9 +172,9 @@ def run_frisgo(series):
             )
         corrected = np.asarray(nib.load(output_path).dataobj, dtype=np.float32)
 
-    if corrected.shape != volume.shape:
+    if corrected.shape != volume_shape:
         raise RuntimeError(
-            f"LN2_FRISGO output shape {corrected.shape} does not match the input"
+            f"LN2_FRISGO output shape {corrected.shape} does not match the input {volume_shape}"
         )
     return corrected
 
@@ -210,18 +205,15 @@ def assemble_time_series(images, repetition_time=DEFAULT_REPETITION_TIME_SECONDS
     slice_of = {position: z for z, position in enumerate(slice_positions)}
 
     repetitions = [int(image.repetition) for image in images]
-    per_slice_counts = {}
-    for position in positions:
-        per_slice_counts[position] = per_slice_counts.get(position, 0) + 1
-    repetition_counter_is_unique = len(set(zip(positions, repetitions))) == len(images)
-
-    time_of = []
-    if repetition_counter_is_unique:
+    if len(set(repetitions)) > 1:
         repetition_ids = sorted(set(repetitions))
+        if any(b != a + 1 for a, b in zip(repetition_ids, repetition_ids[1:])):
+            raise ValueError("repetition counter gap; temporal interpolation requires consecutive samples")
         rank = {repetition: t for t, repetition in enumerate(repetition_ids)}
         time_of = [rank[repetition] for repetition in repetitions]
     else:
         seen = {}
+        time_of = []
         for position in positions:
             time_of.append(seen.get(position, 0))
             seen[position] = time_of[-1] + 1
@@ -274,35 +266,41 @@ def nifti_affine(volume_images):
     return affine
 
 
-def _original_outputs(series, series_index):
-    identity = i2i._build_output_series_identity(
-        series.grid[0][0], series_index, "original", ORIGINAL_SERIES_NAME
-    )
-    outputs = []
-    for output_index, source_image in enumerate(series.images()):
-        output = _copy_with_data(source_image, np.asarray(source_image.data).copy())
-        _stamp_time_series_image(output, source_image, series_index, output_index, identity)
-        outputs.append(output)
-    return outputs
+def _original_outputs(images, series_index):
+    return _outputs(((image, image.data) for image in images), series_index)
 
 
 def _frisgo_outputs(series, corrected, series_index):
-    identity = i2i._build_output_series_identity(
-        series.grid[0][0], series_index, "frisgo", FRISGO_SERIES_NAME
+    planes = (
+        (source, i2i._cast_like(corrected[:, :, z, t].T.reshape(source.data.shape), source.data))
+        for t, volume in enumerate(series.grid)
+        for z, source in enumerate(volume)
     )
-    outputs = []
-    output_index = 0
-    for t, volume in enumerate(series.grid):
-        for z, source_image in enumerate(volume):
-            source_data = np.asarray(source_image.data)
-            plane = corrected[:, :, z, t].T.reshape(source_data.shape)
-            output = _copy_with_data(source_image, i2i._cast_like(plane, source_data))
-            _stamp_time_series_image(
-                output, source_image, series_index, output_index, identity, derived=True
+    return _outputs(planes, series_index, derived=True)
+
+
+def _outputs(source_data_pairs, series_index, derived=False):
+    suffix = "frisgo" if derived else "original"
+    fallback_name = FRISGO_SERIES_NAME if derived else ORIGINAL_SERIES_NAME
+    for offset, (source_image, data) in enumerate(source_data_pairs):
+        chunk, output_index = divmod(offset, MAX_IMAGES_PER_SERIES)
+        output_series_index = series_index + SERIES_INDEX_STRIDE * chunk
+        if output_index == 0:
+            identity = i2i._build_output_series_identity(
+                source_image, output_series_index, suffix, fallback_name
             )
-            outputs.append(output)
-            output_index += 1
-    return outputs
+        output = _copy_with_data(source_image, data)
+        _stamp_time_series_image(
+            output, source_image, output_series_index, output_index, identity, derived=derived
+        )
+        yield output
+
+
+def _send_outputs(connection, outputs):
+    outputs = iter(outputs)
+    while batch := list(itertools.islice(outputs, SEND_BATCH_SIZE)):
+        _validate_outputs(batch)
+        connection.send_image(batch)
 
 
 def _copy_with_data(source_image, data):
@@ -397,6 +395,8 @@ def _validate_outputs(images):
     errors = []
     sop_uids = set()
     for index, image in enumerate(images):
+        if int(image.image_index) < 1:
+            errors.append(f"image {index} has invalid image_index {image.image_index}")
         meta = i2i._meta_from_image(image)
         errors.extend(
             i2i._scanner_write_unsafe_field_errors(meta, i2i._image_minihead(image), index)
@@ -412,7 +412,10 @@ def _validate_outputs(images):
 def _source_series_groups(images):
     groups = {}
     for image in images:
-        key = (int(image.image_series_index), int(image.image_type), i2i._source_group_key(image))
+        key = (
+            int(image.image_series_index), int(image.image_type), i2i._source_group_key(image),
+            int(image.contrast), int(image.phase), int(image.set), int(image.average),
+        )
         groups.setdefault(key, []).append(image)
     return list(groups.values())
 
