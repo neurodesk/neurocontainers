@@ -3,9 +3,6 @@
 reviews:
   review_status: false
   auto_review:
+    # Only review when explicitly requested with "@coderabbitai review".
     enabled: false
-    labels:
-      - "!automated"
-    ignore_title_keywords:
-      - "Add release for"
-      - "Update release for"
+    auto_incremental_review: false
