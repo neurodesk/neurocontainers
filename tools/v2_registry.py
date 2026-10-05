@@ -96,9 +96,17 @@ def read_manifest(client: RegistryClient, repository: str, reference: str) -> tu
     return digest, response.json()
 
 
+def reader_client(registry: str) -> RegistryClient:
+    # Quay is the anonymous public mirror. Most GHCR packages predate public
+    # defaults and GitHub has no API to change package visibility, so GHCR
+    # publication is verified with the workflow's registry login.
+    credentials = resolve_credentials(registry) if registry == "ghcr.io" else None
+    return RegistryClient(registry, credentials=credentials)
+
+
 def resolve_sif(image: str, client: RegistryClient | None = None) -> SifReference:
     ref = parse_image_reference(image)
-    client = client or RegistryClient(ref.registry)
+    client = client or reader_client(ref.registry)
     subject_digest, _ = read_manifest(client, ref.repository, ref.reference)
     pages = registry_pages(
         client, f"/v2/{ref.repository}/referrers/{subject_digest}",
@@ -140,7 +148,7 @@ def finalize(repository: str, version: str, build_date: str, *, apply: bool) -> 
     plan = floating_tags(tags, version)
     identities = {}
     for tag in {candidate, *plan.values()}:
-        # Anonymous resolution proves readers can access the complete publication.
+        # Reader resolution proves the complete publication is pullable.
         identities[tag] = resolve_sif(f"{repository}:{tag}")
     if apply:
         for alias, tag in plan.items():
