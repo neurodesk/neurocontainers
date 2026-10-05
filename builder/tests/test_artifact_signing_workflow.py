@@ -98,6 +98,8 @@ elif command == 'aws':
             raise SystemExit(17)
         shutil.copyfile(source, remote / pathlib.Path(destination).name)
 elif command == 'cosign':
+    if args[0] == 'verify-blob':
+        pathlib.Path(args[args.index('--bundle') + 1]).read_bytes()
     if failure == 'verify':
         raise SystemExit(17)
     if pathlib.Path(args[-1]).name == 'tampered.simg':
@@ -124,11 +126,12 @@ elif command == 'cosign':
     assert all(path.startswith('s3://neurocontainers/signing-acceptance/123/2/demo/') for path in remote_paths)
     assert ['docker', 'push', 'ghcr.io/neurodesk/signing-acceptance-demo:run-123-2'] in calls
     evidence = tmp_path / 'signing-evidence/demo/acceptance.json'
-    assert evidence.exists() == (failure == '')
     if failure:
         assert result.returncode != 0
     else:
         assert result.returncode == 0, result.stderr
+    assert evidence.exists() == (failure == '')
+    if not failure:
         assert json.loads(evidence.read_text())['sif_sha256'] == digest
 
 

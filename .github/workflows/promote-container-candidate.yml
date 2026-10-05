@@ -378,7 +378,7 @@ jobs:
           for suffix in '' .promotion.json; do
             cosign verify-blob --certificate-identity "${identity}" \
               --certificate-oidc-issuer "${issuer}" \
-              --bundle "${download}/${sif}${suffix}.sigstore.json" "${download}/${sif}${suffix}"
+              --bundle "${download}/${sif}${suffix%.json}.sigstore.json" "${download}/${sif}${suffix}"
           done
           expected="$(echo "${manifest}" | jq -r '.sif_sha256')"
           echo "${expected}  ${download}/${sif}" | sha256sum -c -
