@@ -182,8 +182,8 @@ fulltest scalar together. Container version remains 8.2.0; the build date
 distinguishes the new artifact.
 [Update policies](../../workflows/AUTO_UPDATES.md).
 
-`deploy.bins` exposes `freeview-vgl`, `vglrun`, and the VirtualGL `eglinfo` and
-`glxspheres64` diagnostics. The recipe's README includes direct HPC launch
+`deploy.bins` exposes `freeview-vgl`, `vglrun`, and the VirtualGL diagnostics as
+`vgl-eglinfo` and `vgl-glxspheres64`. The recipe's README includes direct HPC launch
 commands. Release tests check the installed package and preload without a GPU.
 
 Recipe validation, update-policy validation, Dockerfile generation, and staging

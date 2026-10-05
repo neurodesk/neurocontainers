@@ -240,6 +240,8 @@ build:
     - run:
         - chmod a+rwx /opt/freesurfer-{{ context.version }}/bin/freeview /opt/freesurfer-{{ context.version }}/bin/freeview_bin
         - chmod 0755 /opt/freesurfer-{{ context.version }}/bin/freeview-vgl
+        - ln -s /opt/VirtualGL/bin/eglinfo /usr/local/bin/vgl-eglinfo
+        - ln -s /opt/VirtualGL/bin/glxspheres64 /usr/local/bin/vgl-glxspheres64
         - ldconfig
 
     - workdir: /opt/freesurfer-{{ context.version }}/bin/
@@ -268,8 +270,8 @@ deploy:
     - freeview
     - freeview-vgl
     - vglrun
-    - /opt/VirtualGL/bin/eglinfo
-    - /opt/VirtualGL/bin/glxspheres64
+    - vgl-eglinfo
+    - vgl-glxspheres64
 
 readme: |-
   ----------------------------------

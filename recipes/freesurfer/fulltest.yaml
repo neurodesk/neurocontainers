@@ -491,6 +491,8 @@ tests:
     command: |
       set -e
       command -v freeview-vgl
+      command -v vgl-eglinfo
+      command -v vgl-glxspheres64
       test -x /opt/VirtualGL/bin/vglrun
       test -x /opt/VirtualGL/bin/eglinfo
       test -x /opt/VirtualGL/bin/glxspheres64
