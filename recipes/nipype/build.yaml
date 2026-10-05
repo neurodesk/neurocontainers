@@ -1,6 +1,7 @@
 variables:
   upstream_version: "1.11.0"
   traits_version: 6.4.3
+  libmamba_version: 1.5.8
 
 name: nipype
 version: "1.11.0"
@@ -29,6 +30,13 @@ auto_update:
       version_regex: '^(?P<version>6[.][0-9]+[.][0-9]+)$'
       target:
         variable: traits_version
+    - id: libmamba
+      dependency: true
+      method: github_release
+      repo: mamba-org/mamba
+      version_regex: '^(?P<version>1[.]5[.][0-9]+)$'
+      target:
+        variable: libmamba_version
 
 build:
   kind: neurodocker
@@ -79,7 +87,7 @@ build:
 
     - template:
         name: miniconda
-        conda_install: python=3.10 traits={{ context.traits_version }} scipy scikit-learn scikit-image jupyter nb_conda_kernels h5py seaborn numpy
+        conda_install: python=3.10 traits={{ context.traits_version }} conda-forge::libmambapy={{ context.libmamba_version }} scipy scikit-learn scikit-image jupyter nb_conda_kernels h5py seaborn numpy
         pip_install: nipype=={{ context.upstream_version }} osfclient pybids "traits=={{ context.traits_version }}"
         version: py310_24.7.1-0
         install_path: /opt/miniconda-latest
