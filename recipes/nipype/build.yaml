@@ -32,7 +32,7 @@ auto_update:
         variable: traits_version
     - id: libmamba
       dependency: true
-      method: github_tag
+      method: github_tags
       repo: mamba-org/mamba
       version_regex: '^libmambapy-(?P<version>1[.]5[.][0-9]+)$'
       target:
