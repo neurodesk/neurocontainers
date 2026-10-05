@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from urllib.error import HTTPError
 
@@ -322,3 +323,94 @@ def test_auto_location_can_return_docker_tag_for_docker_runtime(
     )
 
     assert tester.find_container("globus", "3.2.8", location="auto") == "globus:3.2.8"
+
+
+@pytest.mark.parametrize("build_date", ["20250101", 20250101, 20250101.0])
+@pytest.mark.parametrize("image", [
+    None,
+    "https://example.invalid/tool_gpu_1_arm64_20250101.sif?download=1",
+])
+def test_acquisition_uses_normalized_release_metadata_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    build_date: str | int | float, image: str | None,
+) -> None:
+    release = tmp_path / "release.json"
+    release.write_text(json.dumps({"apps": {"tool": {"version": build_date, "image": image}}}))
+    tester = ContainerTester()
+    tester.release_downloader = ReleaseContainerDownloader(str(tmp_path / "cache"))
+    reads = []
+    read_metadata = container_tester.read_release_metadata
+
+    def read_once(path):
+        reads.append(path)
+        return read_metadata(path)
+
+    calls = []
+
+    def transfer(url, filename, **kwargs):
+        calls.append(url)
+        Path(filename).write_bytes(b"selected release")
+        return filename, None
+
+    monkeypatch.setattr(container_tester, "read_release_metadata", read_once)
+    monkeypatch.setattr(container_tester.urllib.request, "urlretrieve", transfer)
+    expected = "tool_gpu_1_arm64_20250101.simg" if image else "tool_1_20250101.simg"
+    with tester:
+        path = tester.find_container("tool", "1", "release", str(release))
+        assert Path(path).read_bytes() == b"selected release"
+        assert calls == [f"https://neurocontainers.s3.us-east-2.amazonaws.com/{expected}"]
+        assert reads == [release]
+
+
+@pytest.mark.parametrize("app", [20250101, 20250101.0, {"version": 20250101.0}])
+def test_docker_conversion_uses_normalized_release_date(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, app: int | float | dict,
+) -> None:
+    release = tmp_path / "release.json"
+    release.write_text(json.dumps({"apps": {"tool": app}}))
+    tester = ContainerTester()
+    calls = []
+
+    def convert(image_ref, output_name, **kwargs):
+        calls.append((image_ref, output_name))
+        image = container_tester.AcquiredImage(tmp_path / output_name)
+        image.path.write_bytes(b"converted release")
+        return image
+
+    monkeypatch.setattr(tester.docker_to_simg, "convert", convert)
+    with tester:
+        path = tester.convert_docker_image_to_simg("tool", "1", release_file=str(release))
+        assert Path(path).read_bytes() == b"converted release"
+        assert calls == [("ghcr.io/neurodesk/tool_1:20250101", "tool_1_20250101.docker.simg")]
+
+
+@pytest.mark.parametrize("metadata", [
+    None, b"\xff", "{", "[]", "null", "{}", '{"apps": []}',
+    '{"apps": {"tool": {}}}',
+    '{"apps": {"tool": {"version": 20250101.5}}}',
+    '{"apps": {"tool": {"version": "20250101", "image": "http://["}}}',
+])
+def test_invalid_metadata_preserves_acquisition_fallbacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, metadata: str | bytes | None,
+) -> None:
+    release = tmp_path / "release.json"
+    if isinstance(metadata, bytes):
+        release.write_bytes(metadata)
+    elif metadata is not None:
+        release.write_text(metadata)
+    tester = ContainerTester()
+    tester.release_downloader = ReleaseContainerDownloader(str(tmp_path / "cache"))
+    tester.selected_runtime = type("Runtime", (), {"name": "docker"})()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(tester.cvmfs, "is_available", lambda: False)
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("unusable release metadata must not request an artifact")
+
+    monkeypatch.setattr(container_tester.urllib.request, "urlretrieve", unexpected)
+    monkeypatch.setattr(tester.docker_to_simg, "convert", unexpected)
+    with tester:
+        assert tester.find_container("tool", "1", "release", str(release)) is None
+        assert tester.find_container("tool", "1", "auto", str(release)) == "tool:1"
+        with pytest.raises(RuntimeError, match="requires release metadata with a build date"):
+            tester.convert_docker_image_to_simg("tool", "1", release_file=str(release))

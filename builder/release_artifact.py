@@ -118,6 +118,9 @@ def read_release_metadata(release_file: Path) -> Tuple[str, Optional[str]]:
             f"Unable to read release metadata {release_file}: {exc}"
         ) from exc
 
+    if not isinstance(data, dict):
+        raise ReleaseArtifactError(f"Invalid release metadata object: {release_file}")
+
     apps = data.get("apps") or {}
     if not isinstance(apps, dict) or not apps:
         raise ReleaseArtifactError(f"No app entry in release metadata: {release_file}")
