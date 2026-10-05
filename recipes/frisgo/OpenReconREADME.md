@@ -14,12 +14,15 @@ repetitions, sent as one 2D image per slice (or partition) and repetition.
 ## Inputs
 
 - Reconstructed MRD `ismrmrd.Image` messages from one or more image series.
-- Images are grouped by source series. Within a series they are ordered by
+- Images are grouped by source series and by echo/contrast, phase, set and
+  average counters. Within a series they are ordered by
   physical position along the slice normal and by the MRD `repetition`
   counter. If every repetition counter is equal, arrival order per slice is
   used as time order.
-- Every repetition must contain every slice; an incomplete grid fails the job
-  before anything is sent.
+- Correction requires every repetition to contain every slice and nonconstant
+  repetition counters to be consecutive and unique per slice. Incomplete grids,
+  missing repetitions and duplicate counters skip correction for that group.
+  Requested originals are still returned, and other groups are processed.
 - FRISGO is applied to magnitude series (`IMTYPE_MAGNITUDE` or unset image
   type) with at least four repetitions. Other series are only returned as
   originals.
@@ -31,9 +34,12 @@ repetitions, sent as one 2D image per slice (or partition) and repetition.
 - `<source>-frisgo`: the LN2_FRISGO corrected time series on
   `image_series_index = 101` when `sendfrisgo` is true, with
   `ImageType = DERIVED\PRIMARY\M\FRISGO`.
-- Additional source series use `image_series_index = 102/103`, `104/105`, ...
-- Originals are sent first, then the FRISGO series, as separate MRD image
-  messages.
+- Additional source groups and chunks use `image_series_index = 102/103`,
+  `104/105`, ... Each output series contains at most 65,535 images, with a new
+  series UID and image numbering starting at 1 for every chunk. Source slice
+  and repetition counters stay intact across chunks.
+- Each group's originals are sent before correction, followed by its FRISGO
+  series, in batches of at most 128 images.
 
 ## Parameters
 
@@ -54,7 +60,10 @@ repetitions, sent as one 2D image per slice (or partition) and repetition.
   are clipped to 0.
 - The first and last two time points are averages of neighbouring volumes, as
   implemented by `LN2_FRISGO -tshift`.
-- No output is produced until the last image of the run arrives.
+- Output starts after the scanner closes the input stream. The input run is
+  buffered in memory, so available scanner memory must cover the source run
+  and LayNii's floating-point working arrays. Output copies are sent in small
+  batches; the Python input NIfTI array is released before LayNii starts.
 - Scanner logs contain a `frisgo runtime version=...` marker and the full
   LN2_FRISGO console output.
 

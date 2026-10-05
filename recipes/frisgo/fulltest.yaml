@@ -5,15 +5,6 @@ name: frisgo
 version: 2.10.0
 laynii_version: 2.10.0
 
-test_data:
-  output_dir: test_output
-
-setup:
-  script: |
-    #!/usr/bin/env bash
-    set -e
-    mkdir -p ${output_dir}
-
 tests:
   - name: LN2_FRISGO is built from LayNii
     description: Verify the LayNii release binary is installed on PATH
@@ -37,11 +28,26 @@ tests:
       print(defaults)
       PY
 
+  - name: OpenRecon scanner time-series transport
+    description: Verify original fallback, independent counters, temporal validity and long-run image numbering
+    script: python /opt/code/python-ismrmrd-server/test_frisgo_openrecon.py
+    timeout: 300
+
   - name: OpenRecon round trip returns originals and FRISGO time series
     description: Send a synthetic BOLD run through the MRD server and compare with LN2_FRISGO -tshift
     script: |
       set -euo pipefail
-      cd ${output_dir}
+      work_dir=$(mktemp -d)
+      server_pid=
+      cleanup() {
+        if [ -n "$server_pid" ]; then
+          kill "$server_pid" 2>/dev/null || true
+          wait "$server_pid" 2>/dev/null || true
+        fi
+        rm -rf "$work_dir"
+      }
+      trap cleanup EXIT
+      cd "$work_dir"
       python - <<'PY'
       import nibabel as nib
       import numpy as np
@@ -60,7 +66,6 @@ tests:
       server_pid=$!
       sleep 3
       python $server/client.py -p 9055 -c frisgo -G frisgo -o output.h5 input.h5
-      kill $server_pid || true
       python $server/frisgo_simulate.py mrd2nifti output.h5 returned --group frisgo | tee convert.log
       grep -c "images=27 " convert.log | grep -x 2
       grep "image_101: series_index=101 SeriesDescription='bold-frisgo'" convert.log

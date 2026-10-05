@@ -16,6 +16,8 @@ files:
     filename: frisgo.py
   - name: frisgo_simulate.py
     filename: frisgo_simulate.py
+  - name: test_frisgo_openrecon.py
+    filename: test_frisgo_openrecon.py
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
 
@@ -105,6 +107,7 @@ build:
         - cp {{ get_file("frisgo.py") }} /opt/code/python-ismrmrd-server/frisgo.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - install -m 0755 {{ get_file("frisgo_simulate.py") }} /opt/code/python-ismrmrd-server/frisgo_simulate.py
+        - install -m 0644 {{ get_file("test_frisgo_openrecon.py") }} /opt/code/python-ismrmrd-server/test_frisgo_openrecon.py
         - mkdir -p /tmp/share/debug
         - chmod 1777 /tmp/share /tmp/share/debug
 
@@ -136,6 +139,10 @@ readme: |-
   `Keep_image_geometry = 1`. Corrected values are rounded to the source pixel
   type, so negative values clip to 0 for unsigned scanner images. Run the
   module with fewer than 4 repetitions and only the originals are returned.
+  Incomplete runs, repetition gaps and duplicate nonconstant counters skip
+  correction for that source group while preserving requested originals.
+  Echo, phase, set and average counters define independent time series.
+  Long outputs split into new series before the 16-bit image index overflows.
 
   Simulate the OpenRecon round trip with a 4D NIfTI:
   ```bash
