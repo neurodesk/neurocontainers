@@ -961,7 +961,7 @@ jobs:
 
   upload-s3:
     needs: [config, build-image, build-simg]
-    if: ${{ github.repository == 'neurodesk/neurocontainers' && (inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true')) }}
+    if: ${{ github.repository == 'neurodesk/neurocontainers' && (inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true' || inputs.force_create_pr == 'true')) }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
