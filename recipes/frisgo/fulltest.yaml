@@ -31,6 +31,7 @@ tests:
   - name: OpenRecon scanner time-series transport
     description: Verify original fallback, independent counters, temporal validity and long-run image numbering
     script: python /opt/code/python-ismrmrd-server/test_frisgo_openrecon.py
+    timeout: 300
 
   - name: OpenRecon round trip returns originals and FRISGO time series
     description: Send a synthetic BOLD run through the MRD server and compare with LN2_FRISGO -tshift
