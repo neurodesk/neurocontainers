@@ -16,7 +16,7 @@ name: code
 version: "240320"
 vscode_version: "1.140.0"
 julia_version: "1.13.1"
-singularity_version: "4.5.1"
+singularity_version: "4.6.0"
 
 required_files:
   - dataset: ds000001
