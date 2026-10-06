@@ -201,7 +201,10 @@ fi
 
 # Create a symlink to the neurodesktop-storage directory if it doesn't exist yet:
 if [ ! -L "/neurocommand/local/containers" ]; then
-  ln -s "${NEURODESKTOP_LOCAL_CONTAINERS:-/neurodesktop-storage/containers}" "/neurocommand/local/containers"
+  # -T refuses to drop the link inside a pre-existing directory of the same name.
+  if ! ln -sT "${NEURODESKTOP_LOCAL_CONTAINERS:-/neurodesktop-storage/containers}" "/neurocommand/local/containers"; then
+    echo "[WARN] /neurocommand/local/containers is not a symlink to the local container storage; leaving it unchanged." >&2
+  fi
 fi
 
 # amd64 MATLAB Runtime applications inspect the native ARM /proc/cpuinfo when

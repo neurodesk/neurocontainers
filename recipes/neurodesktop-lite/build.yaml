@@ -726,7 +726,13 @@ build:
         - cd /neurocommand && sed -i 's|CONTAINER_PATH="${_base}"/containers|CONTAINER_PATH="${NEURODESKTOP_LOCAL_CONTAINERS:-${_base}/containers}"|g' neurodesk/fetch_and_run.sh
         - cd /neurocommand && bash build.sh --lxde --edit
         - cd /neurocommand && bash install.sh
-        - ln -s /neurodesktop-storage/containers /neurocommand/local/containers
+        # build.sh publishes bundle modulefiles into local/containers/modules, which
+        # turns the path into a real directory. The persistent storage bind mount
+        # shadows anything baked there, and fetch_and_run.sh regenerates bundle
+        # modulefiles under NEURODESKTOP_LOCAL_CONTAINERS on demand, so replace the
+        # directory with the storage symlink. -T fails instead of nesting the link.
+        - rm -rf /neurocommand/local/containers
+        - ln -sT /neurodesktop-storage/containers /neurocommand/local/containers
         - rm -rf /root/.cache /home/${NB_USER}/.cache
 
     - install:
