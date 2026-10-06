@@ -44,6 +44,9 @@ build:
     - run:
         - mkdir -p /opt/qmrlab
         - tar -xzf {{ get_file("qmrlab_archive") }} -C /opt/qmrlab --strip-components=1
+        # AMICO_Setup.m runs mkdir on this gitignored directory at every amico()
+        # construction; create it now so the model loads on a read-only root.
+        - mkdir -p /opt/qmrlab/External/AMICO/AMICO_matlab/exports
 
     - run:
         - /bin/sh -lc 'cd /opt/qmrlab && octave --no-gui --eval "qMRLabVer"'
