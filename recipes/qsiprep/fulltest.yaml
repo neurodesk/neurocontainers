@@ -1,5 +1,5 @@
 # qsiprep container test suite
-# Tests for QSIPrep v1.0.1 - q-Space Image Preprocessing workflows for diffusion MRI
+# Tests for QSIPrep - q-Space Image Preprocessing workflows for diffusion MRI
 #
 # QSIPrep is a BIDS-App for preprocessing diffusion-weighted MRI (dMRI) data.
 # Key features:
@@ -48,7 +48,7 @@ tests:
 
   - name: QSIPrep help
     description: Verify qsiprep help is accessible
-    command: qsiprep --help 2>&1 | head -20
+    command: command -v qsiprep && qsiprep --help 2>&1 | head -20
     expected_output_contains: "qsiprep"
 
   # ==========================================================================
@@ -56,7 +56,7 @@ tests:
   # ==========================================================================
   - name: MRtrix3 version (mrinfo)
     description: Verify MRtrix3 mrinfo tool runs
-    command: mrinfo --version 2>&1 | head -1
+    command: command -v mrinfo && mrinfo --version 2>&1 | head -1
     expected_output_contains: "mrinfo"
 
   - name: MRtrix3 image info
@@ -162,27 +162,27 @@ tests:
   # ==========================================================================
   - name: MRtrix3 dwidenoise help
     description: Verify dwidenoise is available for MP-PCA denoising
-    command: dwidenoise --help 2>&1 | head -10
+    command: command -v dwidenoise && dwidenoise --help 2>&1 | head -10
     expected_output_contains: "Marchenko-Pastur"
 
   - name: MRtrix3 mrdegibbs help
     description: Verify mrdegibbs (Gibbs ringing removal) is available
-    command: mrdegibbs --help 2>&1 | head -10
+    command: command -v mrdegibbs && mrdegibbs --help 2>&1 | head -10
     expected_output_contains: "Gibbs"
 
   - name: MRtrix3 dwi2mask help
     description: Verify dwi2mask for brain masking is available
-    command: dwi2mask --help 2>&1 | head -10
+    command: command -v dwi2mask && dwi2mask --help 2>&1 | head -10
     expected_output_contains: "brain mask"
 
   - name: MRtrix3 dwi2tensor help
     description: Verify dwi2tensor for DTI fitting is available
-    command: dwi2tensor --help 2>&1 | head -10
+    command: command -v dwi2tensor && dwi2tensor --help 2>&1 | head -10
     expected_output_contains: "Diffusion"
 
   - name: MRtrix3 tensor2metric help
     description: Verify tensor2metric for FA/MD extraction is available
-    command: tensor2metric --help 2>&1 | head -10
+    command: command -v tensor2metric && tensor2metric --help 2>&1 | head -10
     expected_output_contains: "tensor-derived"
 
   - name: MRtrix3 dwi2fod help
@@ -197,7 +197,7 @@ tests:
 
   - name: MRtrix3 5ttgen help
     description: Verify 5ttgen for tissue segmentation is available
-    command: 5ttgen -help 2>&1 | head -10
+    command: command -v 5ttgen && 5ttgen -help 2>&1 | head -10
     expected_output_contains: "5TT"
 
   # ==========================================================================
@@ -264,22 +264,22 @@ tests:
 
   - name: ANTs antsApplyTransforms help
     description: Verify antsApplyTransforms is available
-    command: antsApplyTransforms --help 2>&1 | head -10
+    command: command -v antsApplyTransforms && antsApplyTransforms --help 2>&1 | head -10
     expected_output_contains: "antsApplyTransforms"
 
   - name: ANTs antsRegistration help
     description: Verify antsRegistration full help is available
-    command: antsRegistration --help 2>&1 | head -10
+    command: command -v antsRegistration && antsRegistration --help 2>&1 | head -10
     expected_output_contains: "antsRegistration"
 
   - name: ANTs antsBrainExtraction help
     description: Verify antsBrainExtraction.sh is available
-    command: antsBrainExtraction.sh --help 2>&1 | head -10
+    command: command -v antsBrainExtraction.sh && antsBrainExtraction.sh --help 2>&1 | head -10
     expected_output_contains: "brain extraction"
 
   - name: ANTs Atropos help
     description: Verify Atropos segmentation tool is available
-    command: Atropos --help 2>&1 | head -10
+    command: command -v Atropos && Atropos --help 2>&1 | head -10
     expected_output_contains: "Atropos"
 
   # ==========================================================================
@@ -287,7 +287,7 @@ tests:
   # ==========================================================================
   - name: AFNI 3dcalc help
     description: Verify AFNI 3dcalc is available
-    command: 3dcalc -help 2>&1 | head -10
+    command: command -v 3dcalc && 3dcalc -help 2>&1 | head -10
     expected_output_contains: "3dcalc"
 
   - name: AFNI 3dcalc - arithmetic
@@ -334,7 +334,7 @@ tests:
 
   - name: AFNI 3drefit help
     description: Verify 3drefit for header manipulation is available
-    command: 3drefit -help 2>&1 | head -10
+    command: command -v 3drefit && 3drefit -help 2>&1 | head -10
     expected_output_contains: "3drefit"
 
   - name: AFNI 3dAutobox
@@ -424,12 +424,12 @@ tests:
   # ==========================================================================
   - name: FreeSurfer mri_info help
     description: Verify FreeSurfer mri_info is available
-    command: bash -lc '/opt/freesurfer/bin/mri_info --help 2>&1 | head -10'
+    command: bash -lc 'test -x /opt/freesurfer/bin/mri_info && /opt/freesurfer/bin/mri_info --help 2>&1 | head -10'
     expected_output_contains: "mri_info"
 
   - name: FreeSurfer mri_convert help
     description: Verify FreeSurfer mri_convert is available
-    command: bash -lc '/opt/freesurfer/bin/mri_convert --help 2>&1 | head -10'
+    command: bash -lc 'test -x /opt/freesurfer/bin/mri_convert && /opt/freesurfer/bin/mri_convert --help 2>&1 | head -10'
     expected_output_contains: "mri_convert"
 
   # ==========================================================================
@@ -437,7 +437,7 @@ tests:
   # ==========================================================================
   - name: 3Tissue ss3t_csd_beta1 help
     description: Verify 3Tissue single-shell 3-tissue CSD is available
-    command: bash -lc '/opt/3Tissue/bin/ss3t_csd_beta1 --help 2>&1 | head -10'
+    command: bash -lc 'test -x /opt/3Tissue/bin/ss3t_csd_beta1 && /opt/3Tissue/bin/ss3t_csd_beta1 --help 2>&1 | head -10'
     expected_output_contains: "ss3t"
 
   # ==========================================================================
