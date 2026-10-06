@@ -15,7 +15,7 @@
 # the bundled tools (MRtrix3, ANTs, AFNI, DSI Studio) using available test data.
 
 name: qsirecon
-version: 1.1.0
+version: 26.0.1
 
 required_files:
   - dataset: ds000001
