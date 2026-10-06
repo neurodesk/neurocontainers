@@ -1,5 +1,5 @@
 # pydeface container test suite
-# Tests for pydeface v2.0.2 - MRI defacing utility
+# Tests for pydeface - MRI defacing utility
 #
 # pydeface removes facial structure from MRI images to anonymize them while
 # preserving brain data. It uses FSL FLIRT for registration and applies a
@@ -10,7 +10,7 @@
 #   - inplaneT2: 2D structural for testing multi-image defacing
 #
 # Container includes:
-#   - pydeface 2.0.2 (main defacing tool)
+#   - pydeface (main defacing tool)
 #   - FSL 6.0.3 (flirt for registration)
 #   - nibabel utilities (nib-ls, nib-convert, parrec2nii)
 
