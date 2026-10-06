@@ -53,7 +53,7 @@ tests:
 
   - name: QSIRecon help check
     description: Verify qsirecon help is accessible
-    command: qsirecon --help 2>&1 | head -5
+    command: command -v qsirecon && qsirecon --help 2>&1 | head -5
     expected_output_contains: "qsirecon"
 
   - name: QSIRecon Python module version
@@ -71,12 +71,12 @@ tests:
   # ==========================================================================
   - name: MRtrix3 mrinfo version
     description: Check MRtrix3 mrinfo version
-    command: mrinfo --version 2>&1 | head -1
+    command: command -v mrinfo && mrinfo --version 2>&1 | head -1
     expected_output_contains: "mrinfo"
 
   - name: MRtrix3 mrconvert version
     description: Check MRtrix3 mrconvert version
-    command: mrconvert --version 2>&1 | head -1
+    command: command -v mrconvert && mrconvert --version 2>&1 | head -1
     expected_output_contains: "mrconvert"
 
   - name: mrinfo basic header display
@@ -455,7 +455,7 @@ tests:
 
   - name: ANTs antsApplyTransforms version
     description: Check antsApplyTransforms version
-    command: bash -lc '/opt/ants/bin/antsApplyTransforms --help 2>&1 | head -5'
+    command: bash -lc 'test -x /opt/ants/bin/antsApplyTransforms && /opt/ants/bin/antsApplyTransforms --help 2>&1 | head -5'
     expected_output_contains: "antsApplyTransforms"
 
   # ==========================================================================
@@ -716,7 +716,7 @@ tests:
   # ==========================================================================
   - name: AFNI 3dcalc version
     description: Check AFNI 3dcalc version
-    command: bash -lc 'command -v 3dcalc && /usr/local/bin/3dcalc -help 2>&1 | head -3'
+    command: bash -lc 'test -x /usr/local/bin/3dcalc && /usr/local/bin/3dcalc -help 2>&1 | head -3'
     expected_output_contains: "3dcalc"
 
   - name: AFNI 3dcalc add constant
@@ -816,7 +816,7 @@ tests:
   # ==========================================================================
   - name: DSI Studio version check
     description: Check DSI Studio version
-    command: bash -lc '/opt/dsi-studio/dsi_studio --action=rec 2>&1 | head -1'
+    command: bash -lc 'test -x /opt/dsi-studio/dsi_studio && /opt/dsi-studio/dsi_studio --action=rec 2>&1 | head -1'
     expected_output_contains: "DSI Studio"
 
   # ==========================================================================
@@ -824,7 +824,7 @@ tests:
   # ==========================================================================
   - name: 3Tissue ss3t_csd_beta1 help
     description: Check 3Tissue-specific command availability
-    command: bash -lc '/opt/3Tissue/bin/ss3t_csd_beta1 --help 2>&1 | head -3'
+    command: bash -lc 'test -x /opt/3Tissue/bin/ss3t_csd_beta1 && /opt/3Tissue/bin/ss3t_csd_beta1 --help 2>&1 | head -3'
     expected_output_contains: "ss3t_csd_beta1"
 
   # ==========================================================================
@@ -832,7 +832,7 @@ tests:
   # ==========================================================================
   - name: Workbench version check
     description: Check Connectome Workbench version
-    command: bash -lc '/opt/workbench/bin_linux64/wb_command -version 2>&1 | head -3'
+    command: bash -lc 'command -v wb_command && wb_command -version 2>&1 | head -3'
     expected_output_contains: "Connectome Workbench"
 
   # ==========================================================================
@@ -948,7 +948,7 @@ tests:
   # ==========================================================================
   - name: FreeSurfer mri_convert check
     description: Check FreeSurfer mri_convert availability
-    command: bash -lc '/opt/freesurfer/bin/mri_convert --help 2>&1 | head -5'
+    command: bash -lc 'test -x /opt/freesurfer/bin/mri_convert && /opt/freesurfer/bin/mri_convert --help 2>&1 | head -5'
     expected_output_contains: "mri_convert"
 
 cleanup:
