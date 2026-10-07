@@ -317,13 +317,13 @@ jobs:
             --pr-number "${PR_NUMBER}" \
             --output verified-manifests.json
       - name: Log in to GHCR staging
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Configure staging AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708  # v5.1.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
@@ -519,26 +519,26 @@ jobs:
           cp "promotion-bundle/${CONTAINER}/${release_json}" \
             "promotion-metadata/release-previews/${CONTAINER}/${release_json}"
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Log in to Docker Hub
         continue-on-error: true
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
       - name: Log in to Nectar registry
         continue-on-error: true
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: registry.rc.nectar.org.au
           username: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME }}
           password: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
       - name: Log in to Quay
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
@@ -620,7 +620,7 @@ jobs:
             fi
           done
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708  # v5.1.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
@@ -789,26 +789,26 @@ jobs:
             --head-sha "${HEAD_SHA}" --merge-sha "${MERGE_SHA}" \
             --pr-number "${PR_NUMBER}"
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Log in to Docker Hub
         continue-on-error: true
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
       - name: Log in to Nectar registry
         continue-on-error: true
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: registry.rc.nectar.org.au
           username: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME }}
           password: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
       - name: Log in to Quay
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
@@ -866,7 +866,7 @@ jobs:
             python -m tools.v2_registry finalize "${quay}" "${version}" "${build_date}" --apply
           done
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708  # v5.1.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
