@@ -1,5 +1,5 @@
 name: pydeface
-version: 2.0.2
+version: 2.1.0
 
 copyright:
   - license: MIT
@@ -9,7 +9,7 @@ architectures:
   - x86_64
 
 variables:
-  conda_version: 4.7.12.1
+  conda_version: py312_25.5.1-0
   conda_dir: /opt/miniconda-{{ context.conda_version }}
   conda_download_url: https://repo.anaconda.com/miniconda/Miniconda3-{{ context.conda_version }}-Linux-x86_64.sh
 
@@ -31,8 +31,10 @@ build:
     - run:
         - bash {{ get_file("miniconda_sh") }} -b -p {{ context.conda_dir }}
         - conda init bash
-        - python -m pip install --no-cache-dir --upgrade "pip<24.1" setuptools wheel
-        - python -m pip install --no-cache-dir "numpy==1.21.6" "nibabel==4.0.1" "nipype==1.5.1" osfclient "pydeface=={{ context.version }}"
+        - python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        # Ubuntu 16.04 base (glibc 2.23) only loads manylinux2014 wheels; pin to
+        # the newest cp312 builds that still ship them and refuse sdist fallbacks.
+        - 'python -m pip install --no-cache-dir --only-binary=:all: "numpy==2.2.6" "scipy==1.16.3" "nibabel==5.4.2" "nipype==1.12.0" osfclient "pydeface=={{ context.version }}"'
         - rm -rf /root/.cache/pip
 
 deploy:
