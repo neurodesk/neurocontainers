@@ -422,10 +422,10 @@ tests:
   # ==========================================================================
   # FREESURFER TOOLS (minimal subset in qsiprep)
   # ==========================================================================
-  - name: FreeSurfer mri_info help
-    description: Verify FreeSurfer mri_info is available
-    command: bash -lc 'test -x /opt/freesurfer/bin/mri_info && /opt/freesurfer/bin/mri_info --help 2>&1 | head -10'
-    expected_output_contains: "mri_info"
+  - name: FreeSurfer SynthStrip and SynthSeg available
+    description: Verify the FreeSurfer tools qsiprep uses for skull stripping and segmentation are executable
+    command: bash -lc 'test -x /opt/freesurfer/bin/mri_synthstrip && test -x /opt/freesurfer/bin/mri_synthseg && command -v mri_synthstrip'
+    expected_output_contains: "mri_synthstrip"
 
   - name: FreeSurfer mri_convert help
     description: Verify FreeSurfer mri_convert is available
