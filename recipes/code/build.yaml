@@ -2,7 +2,7 @@ variables:
   vscode_version: "1.140.0"
   julia_version: "1.13.1"
   go_version: "1.27.1"
-  singularity_version: "4.5.1"
+  singularity_version: "4.6.0"
 
 name: code
 version: "240320"
