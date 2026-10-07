@@ -1,0 +1,105 @@
+name: frisgokspace
+version: 0.1.0
+architectures:
+  - x86_64
+copyright:
+  - license: MIT
+    url: https://github.com/NeuroDesk/neurocontainers/blob/main/LICENSE
+files:
+  - name: launcher
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      if [[ "${1:-}" == "--version" ]]; then
+        printf 'frisgokspace {{ context.version }}\n'
+        exit 0
+      fi
+      exec python /opt/code/python-ismrmrd-server/main.py -H 0.0.0.0 -p 9002 -d frisgokspace "$@"
+  - name: frisgokspace.py
+    filename: frisgokspace.py
+  - name: configure_server.py
+    filename: configure_server.py
+  - name: smoke_frisgokspace.py
+    filename: tests/smoke_frisgokspace.py
+  - name: fire-integration-contract.json
+    filename: fire-integration-contract.json
+  - name: README.md
+    filename: README.md
+  - name: start-service.sh
+    filename: start-service.sh
+variables:
+  openrecon_server_commit: 33362f2139701fbf5ea855808a325eb59b7db2ae
+  openrecon_python_tools_commit: 17fe6fbf1bb645112e2ad0023eb4f42afb36421e
+  openrecon_siemens_commit: 055eefc09dfa77fbf11fff85979dea9ef2879ba5
+  openrecon_ismrmrd_version: 1.14.2
+  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+auto_update:
+  frozen: true
+  reason: >-
+    Experimental acquisition-return app; hold its MRD transport and runtime pins
+    until a maintainer revalidates the guarded patches and reconstruction behavior.
+  container_version: false
+  method: sources
+  local:
+    - macros/openrecon
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: ubuntu
+      tag: '22.04'
+      target:
+        variable: base_image_digest
+    - id: openrecon_ismrmrd
+      method: github_release
+      repo: ismrmrd/ismrmrd
+      target:
+        variable: openrecon_ismrmrd_version
+        value: version
+    - id: openrecon_siemens
+      method: github_commit
+      repo: ismrmrd/siemens_to_ismrmrd
+      ref: HEAD
+      target:
+        variable: openrecon_siemens_commit
+    - id: openrecon_python_tools
+      method: github_commit
+      repo: ismrmrd/ismrmrd-python-tools
+      ref: HEAD
+      target:
+        variable: openrecon_python_tools_commit
+    - id: openrecon_server
+      method: github_commit
+      repo: astewartau/python-ismrmrd-server
+      ref: fix/ismrmrd-compatibility
+      target:
+        variable: openrecon_server_commit
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install: ca-certificates git build-essential python3-pip python-is-python3
+    - include: macros/openrecon/neurodocker.yaml
+    - run:
+        - python {{ get_file("configure_server.py") }} /opt/code/python-ismrmrd-server frisgokspace
+        - cp {{ get_file("frisgokspace.py") }} /opt/code/python-ismrmrd-server/frisgokspace.py
+        - cp {{ get_file("smoke_frisgokspace.py") }} /opt/code/python-ismrmrd-server/smoke_frisgokspace.py
+        - cp {{ get_file("fire-integration-contract.json") }} /opt/code/python-ismrmrd-server/fire-integration-contract.json
+        - cp {{ get_file("README.md") }} /opt/code/python-ismrmrd-server/README.md
+        - cp {{ get_file("start-service.sh") }} /opt/code/python-ismrmrd-server/start-service.sh
+        - install -m 0755 {{ get_file("launcher") }} /usr/local/bin/frisgokspace
+    - environment:
+        FRISGOKSPACE_VERSION: '{{ context.version }}'
+deploy:
+  bins:
+    - frisgokspace
+categories:
+  - image reconstruction
+readme: |
+  frisgokspace/{{ context.version }}
+  Experimental complex temporal smoothing and ordered acquisition return over MRD.
+  Default passthrough. Requires a custom FIRE/ICE acquisition-response adapter.
+  See packaged README.md and fire-integration-contract.json for input assumptions.
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABcElEQVR4nOWZy1HEMBBE212EwGZigmDz4EY43MiDJKxMSILDVi0uIw22NCPc4t3WLc+opSmvPtPj/AxlCHEIcQhxCHEIcQhxCHEIcQhxCHEIcR7qXpvfX0tSenlrUXGQ6dBizsjtS9rtZK+BTdc3CbyGfDazVBpYB/0Z0VD3e05Hwh4zcA+UjbJTbY+Qyh4Y3fu7mi2k1KD+MgO3d0rWK1T3gNYMRCS7PSmNZapVMwaChirIA7M9KNGiBmVhtpH95TqVyj7FE1dIhDjsPPzuk0CIQ4xhYO5YP75VRIhDiEOMuif+XD62j5arFclWq19cvtXL0/U/zcBlZTfiK+QVlhCHGMNAitkuGXj9dRLiEMMYSB2ryHHpRYjD9Y8+k+C78qXRzu7BSVR2O1MIysJSi4hCitg20b2XJTVo0zcZx+tep9O+p9yj3Q9Mg9/QjHBHNsgt5SD3xCeEEIcQhxCHEIcQhxCHEIcQhxCHf92BVr4AeeWUCY1l0doAAAAASUVORK5CYII=
