@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "pydeface 2.1.0": {
+      "version": "20261006",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ]
+}
