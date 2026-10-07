@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -58,19 +59,25 @@ def format_validation_error(error: ValidationError) -> str:
 
 def validate_packaging_metadata(label: dict[str, Any]) -> list[str]:
     """Validate metadata required by the downstream OpenRecon packager."""
+    errors = []
+    version = label.get("general", {}).get("version")
+    if not isinstance(version, str) or not re.fullmatch(
+        r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}", version
+    ):
+        errors.append("general.version: must be a numeric X.Y.Z scanner version")
+
     parameters = label.get("parameters", [])
     config_parameters = [
         parameter for parameter in parameters if parameter.get("id") == "config"
     ]
     if len(config_parameters) != 1:
-        return [
+        return errors + [
             (
                 "parameters: must contain exactly one parameter with id "
                 f'"config"; found {len(config_parameters)}'
             )
         ]
 
-    errors = []
     config_parameter = config_parameters[0]
     if config_parameter.get("type") != "choice":
         errors.append('parameters: parameter "config" must have type "choice"')
