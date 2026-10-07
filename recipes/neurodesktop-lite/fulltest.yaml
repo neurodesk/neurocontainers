@@ -296,9 +296,18 @@ tests:
           start-neurodesktop-jupyterlab >"$log" 2>&1 &
         pid=$!
         cleanup() {
-          kill "$pid" >/dev/null 2>&1 || true
-          wait "$pid" >/dev/null 2>&1 || true
-          rm -rf "$tmp_home"
+          # Teardown must not decide the result: under set -e a failing command
+          # here replaces the exit status set by the readiness check.
+          set +e
+          kill "$pid" >/dev/null 2>&1
+          wait "$pid" >/dev/null 2>&1
+          # Jupyter children such as code-server can keep writing under the
+          # scratch home briefly after the server exits.
+          for _ in 1 2 3 4 5; do
+            rm -rf "$tmp_home" 2>/dev/null && break
+            sleep 1
+          done
+          rm -rf "$tmp_home" 2>/dev/null || true
         }
         trap cleanup EXIT
         deadline=$((SECONDS + 60))
@@ -384,12 +393,15 @@ tests:
     expected_output_contains: "cvmfs-runtime-ok"
 
   - name: Neurocommand installation is present
-    description: Verify neurocommand and Neurodesk module setup files exist
+    description: Verify neurocommand, its local container storage link, and Neurodesk module setup files exist
     command: |
       bash -lc '
         set -euo pipefail
         test -d /neurocommand
         test -L /neurocommand/local/containers
+        test "$(readlink /neurocommand/local/containers)" = /neurodesktop-storage/containers
+        test -r /neurocommand/local/bundles.json
+        test -x /neurocommand/local/fetch_and_run.sh
         test -r /usr/share/module.sh
         test -x /usr/share/lmod/lmod/libexec/lmod
         echo "neurocommand-ok"

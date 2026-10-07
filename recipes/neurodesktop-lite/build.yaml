@@ -42,7 +42,7 @@ variables:
       condition: arch=="x86_64"
     - value: strace_aarch64
       condition: arch=="aarch64"
-  neurocommand_commit: "736bda3a724e57d8962ee050c4a571c05f943148"
+  neurocommand_commit: "7b205806622646ac0b24558caeb48ce27ae88623"
   nf_neuro_commit: "db13b89521279b5c4685045d955185453ded8d2a"
   jupyterlab_slurm_commit: "8dccb39808f8a1b77712a9a5773a7d2601a56683"
   yarn_version: "1.22.22"
@@ -726,7 +726,13 @@ build:
         - cd /neurocommand && sed -i 's|CONTAINER_PATH="${_base}"/containers|CONTAINER_PATH="${NEURODESKTOP_LOCAL_CONTAINERS:-${_base}/containers}"|g' neurodesk/fetch_and_run.sh
         - cd /neurocommand && bash build.sh --lxde --edit
         - cd /neurocommand && bash install.sh
-        - ln -s /neurodesktop-storage/containers /neurocommand/local/containers
+        # build.sh publishes bundle modulefiles into local/containers/modules, which
+        # turns the path into a real directory. The persistent storage bind mount
+        # shadows anything baked there, and fetch_and_run.sh regenerates bundle
+        # modulefiles under NEURODESKTOP_LOCAL_CONTAINERS on demand, so replace the
+        # directory with the storage symlink. -T fails instead of nesting the link.
+        - rm -rf /neurocommand/local/containers
+        - ln -sT /neurodesktop-storage/containers /neurocommand/local/containers
         - rm -rf /root/.cache /home/${NB_USER}/.cache
 
     - install:
