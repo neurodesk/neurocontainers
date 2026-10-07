@@ -1,5 +1,5 @@
 name: qsiprep
-version: 1.0.1
+version: 26.0.0
 
 copyright:
   - license: BSD-3-Clause
@@ -19,7 +19,16 @@ build:
   base-image: pennlinc/qsiprep:{{ context.version }}
   pkg-manager: apt
 
-  directives: []
+  # The 26.x upstream image is pixi-based and ships a /tmp the apt sandbox
+  # user (_apt) cannot write to, so the default neurodocker apt layer fails
+  # with "Couldn't create temporary file /tmp/apt.conf.XXXX". The image
+  # already has everything we need; skip that layer like aslprep and xcpd do.
+  add-default-template: false
+  add-tzdata: false
+
+  directives:
+    - run:
+        - mkdir -p /tmp && chmod 1777 /tmp
 
 deploy:
   bins:
