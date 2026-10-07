@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 from workflows.validate_openrecon_labels import (
     SCHEMA_PATH,
     VERSION_PLACEHOLDER,
@@ -80,3 +82,16 @@ class OpenReconLabelValidationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@pytest.mark.parametrize(
+    "version", ["2.10.0-build20261005", "2.10.0-rc1", "2.10.0+build20261005"]
+)
+def test_scanner_rejects_semver_suffixes(tmp_path: Path, version: str) -> None:
+    source = SCHEMA_PATH.parent / "b0map" / "OpenReconLabel.json"
+    label = json.loads(source.read_text(encoding="utf-8"))
+    label["general"]["version"] = version
+    target = tmp_path / "OpenReconLabel.json"
+    target.write_text(json.dumps(label), encoding="utf-8")
+
+    assert "general.version: must be a numeric X.Y.Z scanner version" in validate_label(target)
