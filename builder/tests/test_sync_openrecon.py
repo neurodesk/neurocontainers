@@ -394,20 +394,57 @@ def test_unchanged_metadata_dispatches_openrecon_rebuild(
     ] in commands
 
 
-# Docker rejects "+", so build metadata cannot carry the post-release marker.
-DOCKER_TAG_PATTERN = __import__("re").compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
+@pytest.mark.parametrize(
+    ("container_version", "scanner_version"),
+    [
+        ("1.6.0.post1", "1.6.0"),
+        ("1.0.0.post1", "1.0.0"),
+        ("2.9.post2", "2.9.0"),
+        ("2.9", "2.9.0"),
+        ("2.10.0", "2.10.0"),
+    ],
+)
+def test_container_versions_project_to_numeric_scanner_versions(
+    container_version: str, scanner_version: str
+) -> None:
+    assert sync_openrecon.openrecon_version(container_version) == scanner_version
 
 
-@pytest.mark.parametrize("container_version", ["1.6.0.post1", "1.0.0.post1", "2.9.post2"])
-def test_post_release_versions_stay_schema_valid_and_taggable(container_version):
-    # The updater rebuilds a container as X.Y.Z.postN when only its
-    # dependencies moved, and OpenRecon publishes that version both into a
-    # schema-checked label and into a Docker tag.
-    metadata_version = sync_openrecon.openrecon_version(container_version)
-
-    assert sync_openrecon.OPENRECON_SEMVER_PATTERN.fullmatch(metadata_version)
-    assert DOCKER_TAG_PATTERN.fullmatch(f"V{metadata_version}".lower())
-    assert metadata_version != container_version
+@pytest.mark.parametrize(
+    "version",
+    [
+        "2.10.0-build20261005",
+        "2.10.0-rc1",
+        "2.10.0+build20261005",
+        "2.10.0.post1.extra",
+        "02.10.0",
+        "2.١0.0",
+    ],
+)
+@pytest.mark.parametrize("existing_target", [False, True])
+def test_invalid_scanner_version_leaves_target_unchanged(
+    tmp_path: Path, version: str, existing_target: bool
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    target = openrecon_root / "recipes" / "demo"
+    if existing_target:
+        target.mkdir(parents=True)
+        (target / "params.sh").write_text("export version=1.0.0\n")
+        (target / "OpenReconLabel.json").write_text("original label\n")
+    before = {
+        p.relative_to(tmp_path): p.read_bytes()
+        for p in tmp_path.rglob("*") if p.is_file()
+    }
+    with pytest.raises(ValueError):
+        sync_openrecon.prepare_recipe(source_root, openrecon_root, "demo", version)
+    after = {
+        p.relative_to(tmp_path): p.read_bytes()
+        for p in tmp_path.rglob("*") if p.is_file()
+    }
+    assert after == before
+    assert target.exists() == existing_target
 
 
 def test_post_release_container_version_is_kept_for_docker_operations(
@@ -422,7 +459,7 @@ def test_post_release_container_version_is_kept_for_docker_operations(
         "#!/bin/bash\n"
         "export toolName=demo\n"
         "export version=1.6.0\n"
-        "export baseDockerImage=vnmd/${toolName}_${version}\n",
+        "export baseDockerImage=vnmd/${toolName}_${version}:20261005\n",
         encoding="utf-8",
     )
 
@@ -433,4 +470,18 @@ def test_post_release_container_version_is_kept_for_docker_operations(
     assert prepared is not None
     params = (target / "params.sh").read_text(encoding="utf-8")
     assert "export version=1.6.0.post1\n" in params
-    assert "export openrecon_version=1.6.0-post1\n" in params
+    assert "export openrecon_version=1.6.0\n" in params
+    assert "export baseDockerImage=vnmd/${toolName}_${version}:20261005\n" in params
+    resolved = subprocess.run(
+        [
+            "bash", "-c",
+            'source "$1"; printf "%s\\n" "$version" "$openrecon_version" "$baseDockerImage"',
+            "bash", str(target / "params.sh"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert resolved.stdout.splitlines() == [
+        "1.6.0.post1", "1.6.0", "vnmd/demo_1.6.0.post1:20261005",
+    ]

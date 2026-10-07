@@ -422,3 +422,12 @@ The workflow requires the organization or repository secret
 `NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION` for writes. It fails clearly if the secret
 is absent, because PRs created with the default workflow token do not trigger the
 container CI workflow. Concurrent scheduled/manual updater runs are serialized.
+
+### OpenRecon scanner versions
+
+OpenRecon scanner metadata requires a numeric `X.Y.Z` version. The sync tool pads
+`X.Y` to `X.Y.0` and projects recognized `.postN` source rebuilds onto their base
+numeric version. It rejects other suffixes, including prereleases and dated build
+suffixes. The `version` parameter keeps the exact source-container version;
+`openrecon_version` supplies the scanner version when they differ. Build dates
+belong in the source image tag, not in the scanner version.
