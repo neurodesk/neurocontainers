@@ -29,7 +29,12 @@ from typing import Any, Callable, Dict, List, Optional
 
 import yaml
 
-from builder.release_artifact import normalise_image_basename, release_filename
+from builder.release_artifact import (
+    ReleaseArtifactError,
+    normalise_image_basename,
+    read_release_metadata,
+    release_filename,
+)
 
 
 class ContainerRuntime:
@@ -556,34 +561,21 @@ class ReleaseContainerDownloader:
     normalise_image_basename = staticmethod(normalise_image_basename)
     release_filename = staticmethod(release_filename)
 
+    def extract_release_metadata(
+        self, release_file: Optional[str]
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Read once; unusable metadata leaves acquisition to its normal fallback."""
+        if release_file:
+            try:
+                return read_release_metadata(Path(release_file))
+            except (ReleaseArtifactError, ValueError):
+                # Includes invalid UTF-8 and malformed image URLs.
+                pass
+        return None, None
+
     def extract_image_basename_from_release(self, release_file: str) -> Optional[str]:
-        """Extract the release image basename from release JSON metadata."""
-        try:
-            with open(release_file, "r") as f:
-                release_data = json.load(f)
-
-            apps = release_data.get("apps", {})
-            if apps:
-                first_app = list(apps.values())[0]
-                return self.normalise_image_basename(first_app.get("image"))
-        except Exception:
-            pass
-        return None
-
-    def extract_build_date_from_release(self, release_file: str) -> Optional[str]:
-        """Extract build date from release JSON file"""
-        try:
-            with open(release_file, "r") as f:
-                release_data = json.load(f)
-
-            # Get the first app's version (build date)
-            apps = release_data.get("apps", {})
-            if apps:
-                first_app = list(apps.values())[0]
-                return first_app.get("version")
-        except Exception:
-            pass
-        return None
+        """Compatibility helper for the release test runner."""
+        return self.extract_release_metadata(release_file)[1]
 
     def cleanup_downloaded_container(
         self, container_path: str, verbose: bool = False
@@ -882,18 +874,10 @@ class ContainerTester:
                     return os.path.abspath(path)
 
         if location == "auto" or location == "release":
-            # Try to download using release information
-            build_date = None
-            image_basename = None
-            if release_file and os.path.exists(release_file):
-                build_date = self.release_downloader.extract_build_date_from_release(
-                    release_file
-                )
-                image_basename = (
-                    self.release_downloader.extract_image_basename_from_release(
-                        release_file
-                    )
-                )
+            # Invalid metadata preserves the existing no-download/runtime fallback.
+            build_date, image_basename = self.release_downloader.extract_release_metadata(
+                release_file
+            )
 
             image = self.release_downloader.download_from_release(
                 name,
@@ -926,11 +910,7 @@ class ContainerTester:
         converter_source: str = None,
         verbose: bool = False,
     ) -> str:
-        build_date = None
-        if release_file and os.path.exists(release_file):
-            build_date = self.release_downloader.extract_build_date_from_release(
-                release_file
-            )
+        build_date, _ = self.release_downloader.extract_release_metadata(release_file)
 
         if not build_date:
             raise RuntimeError(

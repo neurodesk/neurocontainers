@@ -287,12 +287,8 @@ def test_repeated_cache_cleanup_keeps_all_active_readers(
     tester.release_downloader = ct.ReleaseContainerDownloader(str(tmp_path))
     cache = tmp_path / "tool_1_20261003.simg"
     cache.write_bytes(b"image")
-    monkeypatch.setattr(
-        tester.release_downloader, "extract_build_date_from_release",
-        lambda _: "20261003",
-    )
     release = tmp_path / "release.json"
-    release.write_text("{}")
+    release.write_text('{"apps": {"tool": {"version": "20261003"}}}')
     with tester:
         first = Path(tester.find_container("tool", "1", "release", str(release)))
         second = Path(tester.find_container("tool", "1", "release", str(release)))
