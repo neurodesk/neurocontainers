@@ -1,5 +1,5 @@
 name: libreoffice
-version: "26.8.0.3"
+version: "26.8.1.1"
 
 copyright:
   - license: MPL-2.0
@@ -12,9 +12,9 @@ architectures:
   - aarch64
 
 variables:
-  upstream_version: "26.8.0.3"
-  x86_64_sha256: d0a6031a3837e48f9854e6d2da6489b9fadbd814afa4741fa32a197741663a22
-  aarch64_sha256: f989b73c31e7e16b3f99475bc5befaffdf42af75f83fe882293e1a0258cc9173
+  upstream_version: "26.8.1.1"
+  x86_64_sha256: "30903df3b9f61360d9660cd707de48cd2831469114492a5008ed58a0ac77d044"
+  aarch64_sha256: "1b069c20dd237f6decad3ea02cb02f39fdf458b03d09c2a9facb7b9b71e6a27a"
   libreoffice_archive:
     try:
       - value: libreoffice_x86_64_deb
