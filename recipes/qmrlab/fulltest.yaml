@@ -1,5 +1,5 @@
 # qMRLab container test suite
-# Tests for qMRLab v2.4.2 - Quantitative MRI analysis toolbox
+# Tests for qMRLab v3.0.0 - Quantitative MRI analysis toolbox
 #
 # qMRLab is an open-source software for quantitative MR image analysis
 # providing data fitting, plotting, simulation and protocol optimization
@@ -18,7 +18,7 @@
 #   - Basic data I/O operations
 
 name: qmrlab
-version: 2.4.2
+version: 3.0.0
 
 required_files:
   - dataset: ds000001
