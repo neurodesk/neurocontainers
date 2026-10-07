@@ -1,5 +1,5 @@
 # qsirecon container test suite
-# Tests for QSIRecon v1.1.0 - Diffusion MRI reconstruction and analysis toolkit
+# Tests for QSIRecon - Diffusion MRI reconstruction and analysis toolkit
 #
 # QSIRecon is companion software for QSIPrep, designed for post-processing
 # workflows that produce biologically-interesting dMRI derivatives.
@@ -15,7 +15,7 @@
 # the bundled tools (MRtrix3, ANTs, AFNI, DSI Studio) using available test data.
 
 name: qsirecon
-version: 1.1.0
+version: 26.0.1
 
 required_files:
   - dataset: ds000001
@@ -53,7 +53,7 @@ tests:
 
   - name: QSIRecon help check
     description: Verify qsirecon help is accessible
-    command: qsirecon --help 2>&1 | head -5
+    command: command -v qsirecon && qsirecon --help 2>&1 | head -5
     expected_output_contains: "qsirecon"
 
   - name: QSIRecon Python module version
@@ -71,12 +71,12 @@ tests:
   # ==========================================================================
   - name: MRtrix3 mrinfo version
     description: Check MRtrix3 mrinfo version
-    command: mrinfo --version 2>&1 | head -1
+    command: command -v mrinfo && mrinfo --version 2>&1 | head -1
     expected_output_contains: "mrinfo"
 
   - name: MRtrix3 mrconvert version
     description: Check MRtrix3 mrconvert version
-    command: mrconvert --version 2>&1 | head -1
+    command: command -v mrconvert && mrconvert --version 2>&1 | head -1
     expected_output_contains: "mrconvert"
 
   - name: mrinfo basic header display
@@ -455,7 +455,7 @@ tests:
 
   - name: ANTs antsApplyTransforms version
     description: Check antsApplyTransforms version
-    command: bash -lc '/opt/ants/bin/antsApplyTransforms --help 2>&1 | head -5'
+    command: bash -lc 'test -x /opt/ants/bin/antsApplyTransforms && /opt/ants/bin/antsApplyTransforms --help 2>&1 | head -5'
     expected_output_contains: "antsApplyTransforms"
 
   # ==========================================================================
@@ -716,30 +716,30 @@ tests:
   # ==========================================================================
   - name: AFNI 3dcalc version
     description: Check AFNI 3dcalc version
-    command: bash -lc '/opt/afni-latest/3dcalc -help 2>&1 | head -3'
+    command: bash -lc 'test -x /usr/local/bin/3dcalc && /usr/local/bin/3dcalc -help 2>&1 | head -3'
     expected_output_contains: "3dcalc"
 
   - name: AFNI 3dcalc add constant
     description: Add constant value using 3dcalc
-    command: bash -lc '/opt/afni-latest/3dcalc -a ${t1w} -expr '\''a+100'\'' -prefix test_output/t1w_afni_add100.nii.gz 2>&1'
+    command: bash -lc '/usr/local/bin/3dcalc -a ${t1w} -expr '\''a+100'\'' -prefix test_output/t1w_afni_add100.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_afni_add100.nii.gz
 
   - name: AFNI 3dcalc multiply
     description: Multiply image by constant using 3dcalc
-    command: bash -lc '/opt/afni-latest/3dcalc -a ${t1w} -expr '\''a*2'\'' -prefix test_output/t1w_afni_mul2.nii.gz 2>&1'
+    command: bash -lc '/usr/local/bin/3dcalc -a ${t1w} -expr '\''a*2'\'' -prefix test_output/t1w_afni_mul2.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_afni_mul2.nii.gz
 
   - name: AFNI 3dcalc threshold
     description: Threshold image using 3dcalc
-    command: bash -lc '/opt/afni-latest/3dcalc -a ${t1w} -expr '\''step(a-100)*a'\'' -prefix test_output/t1w_afni_thr100.nii.gz 2>&1'
+    command: bash -lc '/usr/local/bin/3dcalc -a ${t1w} -expr '\''step(a-100)*a'\'' -prefix test_output/t1w_afni_thr100.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_afni_thr100.nii.gz
 
   - name: AFNI 3dcalc square root
     description: Compute square root using 3dcalc
-    command: bash -lc '/opt/afni-latest/3dcalc -a ${t1w} -expr '\''sqrt(a)'\'' -prefix test_output/t1w_afni_sqrt.nii.gz 2>&1'
+    command: bash -lc '/usr/local/bin/3dcalc -a ${t1w} -expr '\''sqrt(a)'\'' -prefix test_output/t1w_afni_sqrt.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_afni_sqrt.nii.gz
 
@@ -748,19 +748,19 @@ tests:
   # ==========================================================================
   - name: AFNI 3dTstat mean
     description: Compute temporal mean of BOLD data
-    command: bash -lc '/opt/afni-latest/3dTstat -mean -prefix test_output/bold_afni_tmean.nii.gz ${bold} 2>&1'
+    command: bash -lc '/usr/local/bin/3dTstat -mean -prefix test_output/bold_afni_tmean.nii.gz ${bold} 2>&1'
     validate:
       - output_exists: ${output_dir}/bold_afni_tmean.nii.gz
 
   - name: AFNI 3dTstat stdev
     description: Compute temporal standard deviation of BOLD data
-    command: bash -lc '/opt/afni-latest/3dTstat -stdev -prefix test_output/bold_afni_tstd.nii.gz ${bold} 2>&1'
+    command: bash -lc '/usr/local/bin/3dTstat -stdev -prefix test_output/bold_afni_tstd.nii.gz ${bold} 2>&1'
     validate:
       - output_exists: ${output_dir}/bold_afni_tstd.nii.gz
 
   - name: AFNI 3dTstat max
     description: Compute temporal maximum of BOLD data
-    command: bash -lc '/opt/afni-latest/3dTstat -max -prefix test_output/bold_afni_tmax.nii.gz ${bold} 2>&1'
+    command: bash -lc '/usr/local/bin/3dTstat -max -prefix test_output/bold_afni_tmax.nii.gz ${bold} 2>&1'
     validate:
       - output_exists: ${output_dir}/bold_afni_tmax.nii.gz
 
@@ -769,7 +769,7 @@ tests:
   # ==========================================================================
   - name: AFNI 3dAutomask basic
     description: Create brain mask using 3dAutomask
-    command: bash -lc '/opt/afni-latest/3dAutomask -prefix test_output/t1w_afni_automask.nii.gz ${t1w} 2>&1'
+    command: bash -lc '/usr/local/bin/3dAutomask -prefix test_output/t1w_afni_automask.nii.gz ${t1w} 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_afni_automask.nii.gz
 
@@ -778,7 +778,7 @@ tests:
   # ==========================================================================
   - name: AFNI 3dresample orientation
     description: Resample to different orientation
-    command: bash -lc '/opt/afni-latest/3dresample -orient RPI -prefix test_output/t1w_afni_rpi.nii.gz -inset ${t1w} 2>&1'
+    command: bash -lc '/usr/local/bin/3dresample -orient RPI -prefix test_output/t1w_afni_rpi.nii.gz -inset ${t1w} 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_afni_rpi.nii.gz
 
@@ -787,7 +787,7 @@ tests:
   # ==========================================================================
   - name: AFNI 3dAutobox crop
     description: Automatically crop image to brain
-    command: bash -lc '/opt/afni-latest/3dAutobox -prefix test_output/t1w_afni_autobox.nii.gz -input ${t1w} 2>&1'
+    command: bash -lc '/usr/local/bin/3dAutobox -prefix test_output/t1w_afni_autobox.nii.gz -input ${t1w} 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_afni_autobox.nii.gz
 
@@ -798,7 +798,7 @@ tests:
     description: Set image space attribute (copy then modify)
     command: |
       bash -lc 'gzip -dc ${t1w} > test_output/t1w_afni_refit.nii && \
-      /opt/afni-latest/3drefit -space ORIG test_output/t1w_afni_refit.nii 2>&1'
+      /usr/local/bin/3drefit -space ORIG test_output/t1w_afni_refit.nii 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_afni_refit.nii
 
@@ -807,7 +807,7 @@ tests:
   # ==========================================================================
   - name: AFNI 3dTcat extract volumes
     description: Extract first 5 volumes from BOLD data
-    command: bash -lc '/opt/afni-latest/3dTcat -prefix test_output/bold_afni_first5.nii.gz "${bold}[0..4]" 2>&1'
+    command: bash -lc '/usr/local/bin/3dTcat -prefix test_output/bold_afni_first5.nii.gz "${bold}[0..4]" 2>&1'
     validate:
       - output_exists: ${output_dir}/bold_afni_first5.nii.gz
 
@@ -816,7 +816,7 @@ tests:
   # ==========================================================================
   - name: DSI Studio version check
     description: Check DSI Studio version
-    command: bash -lc '/opt/dsi-studio/dsi_studio --action=rec 2>&1 | head -1'
+    command: bash -lc 'test -x /opt/dsi-studio/dsi_studio && /opt/dsi-studio/dsi_studio --action=rec 2>&1 | head -1'
     expected_output_contains: "DSI Studio"
 
   # ==========================================================================
@@ -824,7 +824,7 @@ tests:
   # ==========================================================================
   - name: 3Tissue ss3t_csd_beta1 help
     description: Check 3Tissue-specific command availability
-    command: bash -lc '/opt/3Tissue/bin/ss3t_csd_beta1 --help 2>&1 | head -3'
+    command: bash -lc 'test -x /opt/3Tissue/bin/ss3t_csd_beta1 && /opt/3Tissue/bin/ss3t_csd_beta1 --help 2>&1 | head -3'
     expected_output_contains: "ss3t_csd_beta1"
 
   # ==========================================================================
@@ -832,7 +832,7 @@ tests:
   # ==========================================================================
   - name: Workbench version check
     description: Check Connectome Workbench version
-    command: bash -lc '/opt/workbench/bin_linux64/wb_command -version 2>&1 | head -3'
+    command: bash -lc 'command -v wb_command && wb_command -version 2>&1 | head -3'
     expected_output_contains: "Connectome Workbench"
 
   # ==========================================================================
@@ -919,24 +919,28 @@ tests:
   # ==========================================================================
   # QSIRECON PIPELINE SPECS CHECK
   # ==========================================================================
+  # The upstream image moved the Python env from /opt/conda (1.x) to a pixi
+  # env under /app/.pixi (26.x). Resolve bundled data through the qsirecon
+  # package itself instead of a site-packages path so the tests follow the
+  # install location.
   - name: List available pipeline specs
     description: List QSIRecon built-in pipeline specifications
-    command: "bash -lc 'ls /opt/conda/envs/qsiprep/lib/python3.10/site-packages/qsirecon/data/pipelines/ 2>&1'"
+    command: python -c "from qsirecon.data import load; print(sorted(p.name for p in load.readable('pipelines').iterdir()))"
     expected_output_contains: "mrtrix"
 
   - name: Check mrtrix multishell pipeline spec
     description: Verify mrtrix multishell pipeline spec exists and is valid YAML
-    command: "bash -lc 'python -c \"import yaml; yaml.safe_load(open('\"'\"'/opt/conda/envs/qsiprep/lib/python3.10/site-packages/qsirecon/data/pipelines/mrtrix_multishell_msmt_noACT.yaml'\"'\"')); print('\"'\"'Valid YAML'\"'\"')\"'"
+    command: python -c "import yaml; from qsirecon.data import load; yaml.safe_load(load.readable('pipelines/mrtrix_multishell_msmt_noACT.yaml').read_text()); print('Valid YAML')"
     expected_output_contains: "Valid YAML"
 
   - name: Check dipy dki pipeline spec
     description: Verify dipy DKI pipeline spec exists and is valid YAML
-    command: "bash -lc 'python -c \"import yaml; yaml.safe_load(open('\"'\"'/opt/conda/envs/qsiprep/lib/python3.10/site-packages/qsirecon/data/pipelines/dipy_dki.yaml'\"'\"')); print('\"'\"'Valid YAML'\"'\"')\"'"
+    command: python -c "import yaml; from qsirecon.data import load; yaml.safe_load(load.readable('pipelines/dipy_dki.yaml').read_text()); print('Valid YAML')"
     expected_output_contains: "Valid YAML"
 
   - name: Check dsi_studio_gqi pipeline spec
-    description: Verify DSI Studio GQI pipeline spec exists
-    command: "bash -lc 'python -c \"import yaml; yaml.safe_load(open('\"'\"'/opt/conda/envs/qsiprep/lib/python3.10/site-packages/qsirecon/data/pipelines/dsi_studio_gqi.yaml'\"'\"')); print('\"'\"'Valid YAML'\"'\"')\"'"
+    description: Verify DSI Studio GQI pipeline spec exists and is valid YAML
+    command: python -c "import yaml; from qsirecon.data import load; yaml.safe_load(load.readable('pipelines/dsi_studio_gqi.yaml').read_text()); print('Valid YAML')"
     expected_output_contains: "Valid YAML"
 
   # ==========================================================================
@@ -944,7 +948,7 @@ tests:
   # ==========================================================================
   - name: FreeSurfer mri_convert check
     description: Check FreeSurfer mri_convert availability
-    command: bash -lc '/opt/freesurfer/bin/mri_convert --help 2>&1 | head -5'
+    command: bash -lc 'test -x /opt/freesurfer/bin/mri_convert && /opt/freesurfer/bin/mri_convert --help 2>&1 | head -5'
     expected_output_contains: "mri_convert"
 
 cleanup:
