@@ -1,0 +1,41 @@
+{
+  "service": "frisgokspace",
+  "version": "0.1.0",
+  "experimental": true,
+  "container_image": "frisgokspace:0.1.0",
+  "transport": {
+    "protocol": "ISMRMRD TCP",
+    "port": 9002,
+    "input": "acquisition message 1008",
+    "output": "acquisition message 1008"
+  },
+  "scanner_component_required": "Custom FIRE/ICE acquisition-response adapter; image injectors are insufficient",
+  "default": "passthrough",
+  "additional_config_example": {
+    "parameters": {
+      "config": "frisgokspace"
+    },
+    "frisgokspace": {
+      "mode": "centered-complex",
+      "input_domain": "aligned-cartesian-kspace",
+      "coil_basis": "fixed-physical-channels",
+      "polarity": "per-line-reverse-flag",
+      "measurement_role": "imaging",
+      "max_buffer_mib": 512,
+      "max_buffer_records": 65536
+    }
+  },
+  "preserves": [
+    "acquisition count",
+    "input record order",
+    "acquisition header bytes",
+    "trajectory",
+    "auxiliary acquisitions",
+    "waveforms",
+    "images"
+  ],
+  "filter": "Interior frames: (previous + 2*current + next)/4 in complex samples; boundary frames unchanged",
+  "latency": "Startup: first boundary repetition and preamble wait until the third repetition completes; interior correction: one complete future repetition",
+  "deployment_status": "MRD service; scanner reinjection requires separate target-hardware validation",
+  "adapter_io": "Concurrent sending and receiving required for TCP backpressure"
+}
