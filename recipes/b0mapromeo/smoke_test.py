@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -221,6 +222,7 @@ def main():
             if image.image_type == ismrmrd.IMTYPE_PHASE:
                 image.data[:] = np.rint((image.data / np.pi + 1) * 2048)
         connection = Connection(scanner_images)
+        os.environ["B0_MAP_STORE"] = str(root / "maps")
         app.WORK_ROOT = root / "work"
         app.process(
             connection,
@@ -271,6 +273,14 @@ def main():
         assert error.mean() < 0.7 and error.max() < 5.0
         assert np.all(recovered[~mask] == 0)
         assert not list(app.WORK_ROOT.iterdir())
+        from b0_artifact import read_map
+        for returned in connection.sent:
+            returned_meta = ismrmrd.Meta.deserialize(returned.attribute_string)
+            if "B0MapId" in returned_meta:
+                retained = read_map(returned_meta["B0MapId"])
+                assert retained.support.any() and retained.path.is_dir()
+                assert f"B0MapId={retained.id}" in returned_meta["ImageComment"]
+
 
         x = np.indices(expected.shape)[0].astype(float) - 9.5
         nib.save(nib.Nifti1Image((10 * x)[..., None], affine), root / "profiles.nii")

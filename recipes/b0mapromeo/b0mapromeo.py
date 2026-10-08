@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
-import json
 import logging
 import os
 import subprocess
@@ -19,12 +17,11 @@ import pydicom
 from scipy import ndimage
 
 import openreconi2iexample as helpers
-from b0mapromeo_analytic import (
-    AnalyticalShimResult,
-    DIRECT_NATIVE_FIELDS,
-    direct_native_inputs,
-)
-from b0mapromeo_shim import ShimResult, compute_shim, unavailable
+from b0_artifact import publish_map, source_context
+from b0_geometry import _image_axes, _planes, _vector, source_identity
+from b0_images import output_images
+from b0_settings import _settings
+from b0mapromeo_shim import compute_shim
 
 
 VERSION = os.environ.get("B0MAPROMEO_VERSION", "development")
@@ -151,66 +148,6 @@ def reconstruct(
     field = np.where(mask, field, 0).astype(np.float32)
     nib.save(nib.Nifti1Image(field, affine), output_dir / "b0_hz.nii")
     return field, mask
-
-
-def _vector(header, name: str) -> np.ndarray:
-    value = np.asarray(getattr(header, name), dtype=float)
-    if value.shape != (3,) or not np.all(np.isfinite(value)):
-        raise ValueError(f"Invalid MRD {name}")
-    return value
-
-
-def _image_axes(image: ismrmrd.Image) -> np.ndarray:
-    meta = ismrmrd.Meta.deserialize(image.attribute_string)
-    paired = ("ImageRowDir" in meta, "ImageColumnDir" in meta)
-    if paired[0] != paired[1] or ("ImageSliceDir" in meta and not all(paired)):
-        raise ValueError("MRD pixel orientation requires paired row and column directions")
-    if all(paired):
-        row = np.asarray(meta["ImageRowDir"], dtype=float)
-        column = np.asarray(meta["ImageColumnDir"], dtype=float)
-        if row.shape != (3,) or column.shape != (3,):
-            raise ValueError("MRD pixel directions require three components")
-        normal = np.asarray(meta.get("ImageSliceDir", np.cross(row, column)), dtype=float)
-        if normal.shape != (3,):
-            raise ValueError("MRD pixel slice direction requires three components")
-        axes = np.column_stack((row, column, normal))
-    else:
-        axes = np.column_stack([_vector(image.getHead(), n)
-                                for n in ("read_dir", "phase_dir", "slice_dir")])
-    if (not np.isfinite(axes).all()
-            or not np.allclose(axes.T @ axes, np.eye(3), rtol=0, atol=1e-4)
-):
-        raise ValueError("MRD image axes must be finite and orthonormal")
-    return axes
-
-
-def _planes(image: ismrmrd.Image) -> list[ismrmrd.Image]:
-    """Split packed MRD volumes, whose position denotes their center."""
-    data = np.asarray(image.data)
-    if data.ndim != 4 or data.shape[0] != 1:
-        raise ValueError("Input must be a single-channel reconstructed MRD image")
-    if data.shape[1] == 1:
-        return [image]
-    header = image.getHead()
-    spacing = float(header.field_of_view[2]) / data.shape[1]
-    if spacing <= 0:
-        raise ValueError("Packed MRD volume needs positive slice spacing")
-    axes = _image_axes(image)
-    planes = []
-    for z in range(data.shape[1]):
-        plane = ismrmrd.Image.from_array(data[:, z : z + 1].copy(), transpose=False)
-        head = copy.deepcopy(header)
-        head.data_type = plane.data_type
-        head.matrix_size[2] = 1
-        head.field_of_view[2] = spacing
-        head.position[:] = _vector(header, "position") + (
-            z - (data.shape[1] - 1) / 2
-        ) * spacing * axes[:, 2]
-        head.slice = z
-        plane.setHead(head)
-        plane.attribute_string = image.attribute_string
-        planes.append(plane)
-    return planes
 
 
 def assemble(
@@ -416,6 +353,9 @@ def read_dicoms(
             image.setHead(header)
             meta = ismrmrd.Meta()
             meta["EchoTime"] = str(te)
+            for key in ("StudyInstanceUID", "FrameOfReferenceUID"):
+                if getattr(dataset, key, None):
+                    meta[key] = str(getattr(dataset, key))
             image.attribute_string = meta.serialize()
             records.append((te, image))
     if set(series) != {"M", "P"} or any(len(s) != 1 for s in series.values()):
@@ -444,137 +384,6 @@ def read_dicoms(
     return [im for _, im in records], times
 
 
-def output_images(
-    field: np.ndarray, anchors: list[ismrmrd.Image], series_index: int,
-    shim_result: ShimResult | AnalyticalShimResult | None = None,
-) -> list[ismrmrd.Image]:
-    """Return unsigned scanner pixels with a reversible Hz rescale."""
-    shim_result = shim_result or unavailable()
-    maximum = float(np.max(np.abs(field)))
-    scale = min(1.0, 2046.0 / maximum) if maximum else 1.0
-    display = np.clip(np.rint(field * scale + 2048), 1, 4095).astype(np.uint16)
-    identity = helpers._build_output_series_identity_from_name(
-        anchors[0], series_index, "ROMEO B0 Hz"
-    )
-    outputs = []
-    for z, source in enumerate(anchors):
-        output = ismrmrd.Image.from_array(
-            display[:, :, z].T[None, None], transpose=False
-        )
-        header = copy.deepcopy(source.getHead())
-        header.data_type = output.data_type
-        output.setHead(header)
-        helpers._stamp_output_image(
-            output,
-            source,
-            series_index,
-            z,
-            "ROMEO B0 Hz",
-            ["Image", "Quantitative"],
-            "B0MAP_ROMEO",
-            ["ROMEO", "B0_HZ"],
-            series_identity=identity,
-            extra_meta={
-                "ImageComment": shim_result.comment,
-                "ImageComments": shim_result.comment,
-                "B0ShimStatus": shim_result.status,
-                "RescaleSlope": str(1 / scale),
-                "RescaleIntercept": str(-2048 / scale),
-                "RescaleType": "Hz",
-                "WindowCenter": "0",
-                "WindowWidth": "400",
-                "B0MapUnits": "Hz",
-                "B0MapDisplayFormula": f"Hz = (stored - 2048) / {scale}",
-                "NumberOfSlices": str(len(anchors)),
-                "ImagesInAcquisition": str(len(anchors)),
-                "slice_count": str(len(anchors)),
-                "NumberInSeries": str(z + 1),
-            },
-        )
-        source_meta = ismrmrd.Meta.deserialize(source.attribute_string)
-        if "ImageRowDir" in source_meta or "ImageColumnDir" in source_meta:
-            axes = _image_axes(source)
-            meta = ismrmrd.Meta.deserialize(output.attribute_string)
-            meta["ImageSliceDir"] = axes[:, 2].tolist()
-            meta["ImageSliceNormDir"] = axes[:, 2].tolist()
-            output.attribute_string = meta.serialize()
-        outputs.append(output)
-    return outputs
-
-
-def _settings(config, metadata) -> dict:
-    # The server can pass XML text when its optional scanner-info logging
-    # fails, even though the acquisition header itself parsed successfully.
-    if isinstance(metadata, (str, bytes)):
-        metadata = ismrmrd.xsd.CreateFromDocument(metadata)
-    if isinstance(config, str):
-        try:
-            config = json.loads(config)
-        except json.JSONDecodeError:
-            config = {}
-    config = config if isinstance(config, dict) else {}
-    parameters = config.get("parameters", config)
-    if not isinstance(parameters, dict):
-        raise ValueError("Config parameters must be an object")
-    parameters = dict(parameters)
-    shim_fields = (
-        "shimcalibration",
-        "shimcurrenta",
-        "shimanalyticalmodel",
-        "shimnativesettings",
-    ) + DIRECT_NATIVE_FIELDS
-    for key in shim_fields:
-        if isinstance(parameters.get(key), str) and not parameters[key].strip():
-            parameters.pop(key)
-    user = getattr(metadata, "userParameters", None)
-    for name in ("userParameterString", "userParameterLong", "userParameterDouble"):
-        for item in getattr(user, name, []) or []:
-            if (
-                item.name in shim_fields
-                and isinstance(item.value, str)
-                and not item.value.strip()
-            ):
-                continue
-            parameters.setdefault(item.name, item.value)
-    raw = parameters.get("echotimesms", "")
-    times = (
-        [float(t) for t in str(raw).replace(",", " ").split()]
-        if raw
-        else list(
-            getattr(getattr(metadata, "sequenceParameters", None), "TE", []) or []
-        )
-    )
-    shim_calibration = parameters.get("shimcalibration")
-    shim_current_a = parameters.get("shimcurrenta")
-    shim_analytical_model = parameters.get("shimanalyticalmodel")
-    shim_native_settings = parameters.get("shimnativesettings")
-    direct_values = tuple(parameters.get(key) for key in DIRECT_NATIVE_FIELDS)
-    if any(v is not None for v in direct_values):
-        legacy = (
-            shim_calibration,
-            shim_current_a,
-            shim_analytical_model,
-            shim_native_settings,
-        )
-        if any(v is not None for v in legacy):
-            raise ValueError(
-                "Direct HFS native inputs cannot be combined with measured or file analytical inputs"
-            )
-    direct = direct_native_inputs(*direct_values)
-    if direct is not None:
-        shim_analytical_model, shim_native_settings = direct
-    return {
-        "shim_calibration": None if shim_calibration == "" else shim_calibration,
-        "shim_current_a": None if shim_current_a == "" else shim_current_a,
-        "shim_analytical_model": None if shim_analytical_model == "" else shim_analytical_model,
-        "shim_native_settings": None if shim_native_settings == "" else shim_native_settings,
-        "times": times,
-        "phase_units": parameters.get("phaseunits", "siemens"),
-        "max_seeds": int(parameters.get("maxseeds", 4000)),
-        "send_original": helpers._config_bool(parameters, "sendoriginal", False),
-    }
-
-
 def process(connection, config, metadata):
     try:
         images = []
@@ -587,6 +396,8 @@ def process(connection, config, metadata):
         if not images:
             return
         settings = _settings(config, metadata)
+        context = source_context(settings)
+        identity = source_identity(images)
         mag, phase, affine, times, anchors = assemble(
             images, settings["times"], settings["phase_units"]
         )
@@ -595,12 +406,15 @@ def process(connection, config, metadata):
             field, mask = reconstruct(
                 mag, phase, affine, times, Path(temporary), settings["max_seeds"]
             )
+            saved = publish_map(field, mask, affine, context, identity,
+                                requested_id=settings["b0mapid"])
+            logging.info("b0mapromeo published B0MapId=%s", saved.id)
             series = max(180, max(int(im.image_series_index) for im in images) + 1)
             shim = compute_shim(field, mask, affine, settings["shim_calibration"],
                                 settings["shim_current_a"],
                                 analytical_model_path=settings["shim_analytical_model"],
                                 acquisition_native=settings["shim_native_settings"])
-            outputs = output_images(field, anchors, series, shim)
+            outputs = output_images(field, anchors, series, shim, map_id=saved.id)
         if settings["send_original"]:
             # These shared helpers also restamp scanner MiniHead storage fields.
             originals = helpers._restamp_originals(images)
@@ -629,6 +443,7 @@ def main() -> None:
     parser.add_argument(
         "--phase-units", choices=("siemens", "signed", "radians"), default="siemens"
     )
+    parser.add_argument("--b0mapid", default="")
     parser.add_argument("--max-seeds", type=int, default=4000)
     parser.add_argument("--shim-calibration", type=Path)
     parser.add_argument("--shim-current-a", help="JSON current array or channel-name object in A")
@@ -640,15 +455,18 @@ def main() -> None:
             "Output directory must be empty to avoid overwriting an earlier reconstruction"
         )
     images, times = read_dicoms(args.dicom_dir, args.phase_units)
-    magnitude, phase, affine, times, _ = assemble(images, times, "radians")
+    context = source_context(vars(args))
+    identity = source_identity(images)
+    magnitude, phase, affine, times, anchors = assemble(images, times, "radians")
     field, mask = reconstruct(
         magnitude, phase, affine, times, args.output_dir, args.max_seeds
     )
+    saved = publish_map(field, mask, affine, context, identity, requested_id=args.b0mapid)
     shim = compute_shim(field, mask, affine, args.shim_calibration, args.shim_current_a,
                         analytical_model_path=args.shim_analytical_model,
                         acquisition_native=args.shim_native_settings)
     shim.write(args.output_dir)
-    print(shim.comment)
+    print(f"{shim.comment}; B0MapId={saved.id}")
     print(
         f"B0 map complete: {len(times)} echoes, {field.shape[2]} slices, "
         f"{int(mask.sum())} foreground voxels; output units Hz"

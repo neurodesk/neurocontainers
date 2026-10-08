@@ -1,21 +1,21 @@
 {
   "general": {
     "name": {
-      "en": "ROMEO B0 mapping"
+      "en": "Shimming Toolbox target B0"
     },
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
     "information": {
-      "en": "B0 field maps in Hz from multi-echo GRE, saved to the shared directory and returned to the scanner"
+      "en": "Resampled target-space B0 and predicted shimmed B0 with absolute settings in image comments"
     },
-    "id": "b0mapromeo",
+    "id": "shim-toolbox",
     "regulatory_information": {
-      "device_trade_name": "ROMEO B0 mapping",
+      "device_trade_name": "Shimming Toolbox target B0",
       "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
       "manufacturer_address": "NeuroDesk, https://neurodesk.org",
       "made_in": "",
-      "manufacture_date": "2026/10/02",
-      "material_number": "b0mapromeo_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacture_date": "2026/10/08",
+      "material_number": "shim_toolbox_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
       "gtin": "",
       "udi": "",
       "safety_advices": "Research use",
@@ -48,13 +48,13 @@
       "type": "choice",
       "values": [
         {
-          "id": "b0mapromeo",
+          "id": "shim_toolbox",
           "name": {
-            "en": "ROMEO B0"
+            "en": "Target B0 shimming"
           }
         }
       ],
-      "default": "b0mapromeo"
+      "default": "shim_toolbox"
     },
     {
       "id": "sendoriginal",
@@ -65,55 +65,6 @@
       "default": false
     },
     {
-      "id": "phaseunits",
-      "label": {
-        "en": "Input phase scale"
-      },
-      "type": "choice",
-      "values": [
-        {
-          "id": "siemens",
-          "name": {
-            "en": "Unsigned Siemens"
-          }
-        },
-        {
-          "id": "signed",
-          "name": {
-            "en": "Signed Siemens"
-          }
-        },
-        {
-          "id": "radians",
-          "name": {
-            "en": "Radians"
-          }
-        }
-      ],
-      "default": "siemens"
-    },
-    {
-      "id": "echotimesms",
-      "label": {
-        "en": "Echo times in ms"
-      },
-      "type": "string",
-      "default": "",
-      "information": {
-        "en": "Comma-separated echo times. Leave empty to use the acquisition TE metadata."
-      }
-    },
-    {
-      "id": "maxseeds",
-      "label": {
-        "en": "Maximum seeds"
-      },
-      "type": "int",
-      "default": 4000,
-      "minimum": 1,
-      "maximum": 100000
-    },
-    {
       "id": "shimcalibration",
       "label": {
         "en": "Cima.X calibration JSON path"
@@ -121,18 +72,18 @@
       "type": "string",
       "default": "",
       "information": {
-        "en": "Registered signed Hz/A coil profiles and absolute A limits. Required with acquisition currents."
+        "en": "Registered signed Hz/A profiles on the target grid and verified absolute A limits. Requires the field-map acquisition currents. Saved measured profiles require identical target geometry."
       }
     },
     {
       "id": "shimcurrenta",
       "label": {
-        "en": "Acquisition shim currents in A"
+        "en": "Field-map acquisition shim currents in A"
       },
       "type": "string",
       "default": "",
       "information": {
-        "en": "JSON array or channel-name object of actual currents used to acquire these images."
+        "en": "JSON array or named object of actual currents used for the selected field-map acquisition. A known saved baseline cannot be replaced. Calibration profiles must match the target grid exactly."
       }
     },
     {
@@ -143,29 +94,29 @@
       "type": "string",
       "default": "",
       "information": {
-        "en": "Explicit acquisition RAS to shim LAI isocentre geometry and absolute native bounds. Ideal field estimate."
+        "en": "Explicit patient RAS to shim LAI isocentre geometry and verified absolute native bounds for the selected field map. Ideal estimate. Saved acquisition geometry remains authoritative."
       }
     },
     {
       "id": "shimnativesettings",
       "label": {
-        "en": "Acquisition native shim settings"
+        "en": "Field-map acquisition native settings"
       },
       "type": "string",
       "default": "",
       "information": {
-        "en": "JSON named object. X, Y, Z in uT/m; second-order channels in uT/m^2. Required with analytical model."
+        "en": "JSON named object for the selected B0 field map. X,Y,Z in uT/m; second order in uT/m^2. Required with the analytical model. A saved baseline cannot be replaced."
       }
     },
     {
       "id": "shimnativebaseline",
       "label": {
-        "en": "Acquisition native baseline: X,Y,Z[,Z2,ZX,ZY,X2-Y2,XY]"
+        "en": "Field-map native baseline: X,Y,Z[,Z2,ZX,ZY,X2-Y2,XY]"
       },
       "type": "string",
       "default": "",
       "information": {
-        "en": "Enter 3 or 8 comma-separated values in order X,Y,Z or X,Y,Z,Z2,ZX,ZY,X2-Y2,XY. X,Y,Z in uT/m; remaining channels in uT/m^2. All three native vectors must have the same length. Use actual acquisition values and verified limits; no values are assumed."
+        "en": "Actual settings used for the selected B0 field-map acquisition, not the target scan. Enter 3 or 8 values in order X,Y,Z or X,Y,Z,Z2,ZX,ZY,X2-Y2,XY. X,Y,Z in uT/m; remaining in uT/m^2. Requires both limits and HFS isocentre. A saved baseline cannot be replaced."
       }
     },
     {
@@ -209,7 +160,7 @@
       "type": "string",
       "default": "",
       "information": {
-        "en": "Immutable map name of 1 to 64 ASCII characters, starting with a letter or digit and using only letters, digits, underscores, or hyphens. Leave blank to generate an ID. The returned B0 image comments show the saved ID. Enter that exact ID in shim_toolbox. Existing IDs cannot be overwritten. Both containers must mount the same share at /tmp/share."
+        "en": "Required exact B0MapId shown in the source b0mapromeo image comments. Reads /tmp/share/b0maps/<ID>. Select the correct field map for this patient and unchanged coordinate frame. No latest-map fallback. Both containers must mount the same host share."
       }
     }
   ]
