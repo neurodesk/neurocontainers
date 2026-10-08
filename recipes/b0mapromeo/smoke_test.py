@@ -321,16 +321,25 @@ def main():
         assert not list(app.WORK_ROOT.iterdir())
 
         cli_output = root / "cli-output"
+        cli_env = os.environ.copy()
+        cli_env.pop("B0_MAP_STORE", None)
         subprocess.run([
             sys.executable, app.__file__, "--dicom-dir", str(root / "classic"),
             "--output-dir", str(cli_output), "--shim-calibration", str(calibration_path),
             "--shim-current-a", '{"X":0.2}',
-        ], check=True)
+        ], check=True, env=cli_env)
         prescription = json.loads((cli_output / "shim_settings.json").read_text())
         assert prescription["status"] == "available"
         assert prescription["settings_mode"] == "absolute"
         np.testing.assert_allclose(prescription["absolute_current_a"], [-0.7], atol=0.02)
         assert prescription["predicted_std_hz"] < 1.0
+        local_maps = list((cli_output / "b0maps").iterdir())
+        assert len(local_maps) == 1
+        local_map = read_map(local_maps[0].name, store=cli_output / "b0maps")
+        np.testing.assert_allclose(
+            local_map.field_hz, nib.load(cli_output / "b0_hz.nii").get_fdata()
+        )
+        assert local_map.context["kind"] == "measured"
 
         analytical_path = root / "analytical.json"
         analytical_path.write_text(
