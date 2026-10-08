@@ -62,7 +62,7 @@
         "en": "Send original images"
       },
       "type": "boolean",
-      "default": false
+      "default": true
     },
     {
       "id": "phaseunits",

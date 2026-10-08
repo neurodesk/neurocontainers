@@ -1,5 +1,5 @@
 name: b0mapromeo
-version: 1.4.0
+version: 1.4.1
 tests:
   - name: launcher version
     description: Check the deployed command and container version.
@@ -19,7 +19,7 @@ tests:
     command: python3 /opt/b0mapromeo/test_b0mapromeo_analytic.py
     expected_output_contains: "Analytical native shim tests passed"
   - name: durable shared B0 artifacts
-    description: Verify map publication, scanner comments, collision failure and persistence through subsequent failures.
+    description: Verify map publication, scanner comments, persistence, and phase validation errors with scanner severity and traceback.
     timeout: 180
     command: python3 /opt/b0mapromeo/test_b0mapromeo_artifact.py
     expected_output_contains: "Durable B0 artifact tests passed"

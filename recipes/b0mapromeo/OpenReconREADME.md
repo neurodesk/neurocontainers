@@ -49,11 +49,15 @@ for maps whose absolute values fit below 2046 Hz; wider maps have coarser
 quantization. A scanner display that ignores rescale metadata cannot be read as
 Hz. Scanner round-trip behavior still needs verification on the target system.
 
-`sendoriginal` defaults to false. Enable it to return original image copies before
-the B0 series. The shared OpenRecon helpers assign fresh returned-series identity
+The scanner's `sendoriginal` default is true. Original image copies return before
+the B0 series after reconstruction succeeds. Set it to false to return only the B0
+series. The shared OpenRecon helpers assign fresh returned-series identity
 and restamp storage metadata. Derived images also use the shared metadata helpers.
-Acquisition, unwrapping, publication, and fitting errors send an error message and close the
-connection without a derived output.
+Acquisition, unwrapping, publication, and fitting errors send the package version
+and full Python traceback to FIRE LogViewer with `ERROR` severity, then close the
+connection without a derived output. Phase validation errors include the selected
+`phaseunits`, expected bounds, and observed pixel range. Use that diagnostic and
+the acquisition's phase encoding to select the correct units.
 
 ## Shared map for a target scan
 
@@ -108,7 +112,9 @@ and ROMEO's unwrapped phase and diagnostic files. An existing nonempty output
 directory is rejected. Patient DICOM tags and source filenames are not copied
 into generated NIfTI headers. Image data and image geometry remain sensitive.
 OpenRecon removes its private reconstruction scratch directory after processing;
-the shared map bundle remains. Julia packages live under `/opt`; runtime needs no home directory or
+the shared map bundle remains. Reconstruction scratch files and Python/Julia
+temporary files use `/tmp/share/b0mapromeo`, on the share mounted by FIRE.
+Julia packages live under `/opt`; runtime needs no home directory or
 package download.
 
 Release smoke tests use generated synthetic data only. Private validation data

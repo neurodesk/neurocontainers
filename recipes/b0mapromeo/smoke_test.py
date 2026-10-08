@@ -436,9 +436,21 @@ def main():
                 direct_connection, {"parameters": parameters}, ismrmrd.xsd.ToXML(header)
             )
             assert direct_connection.closed and not direct_connection.logs
-            assert len(direct_connection.sent) == len(analytical_connection.sent)
+            direct_derived = [
+                im
+                for im in direct_connection.sent
+                if "B0MapUnits" in ismrmrd.Meta.deserialize(im.attribute_string)
+            ]
+            direct_originals = [
+                im for im in direct_connection.sent if im not in direct_derived
+            ]
+            assert len(direct_originals) == len(scanner_images)
+            assert sorted(im.data.tobytes() for im in direct_originals) == sorted(
+                im.data.tobytes() for im in scanner_images
+            )
+            assert len(direct_derived) == len(analytical_connection.sent)
             for direct_image, file_image in zip(
-                direct_connection.sent, analytical_connection.sent
+                direct_derived, analytical_connection.sent
             ):
                 direct_meta = ismrmrd.Meta.deserialize(direct_image.attribute_string)
                 file_meta = ismrmrd.Meta.deserialize(file_image.attribute_string)

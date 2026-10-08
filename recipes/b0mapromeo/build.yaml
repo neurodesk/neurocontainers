@@ -1,5 +1,5 @@
 name: b0mapromeo
-version: 1.4.0
+version: 1.4.1
 architectures:
   - x86_64
 copyright:
@@ -153,6 +153,7 @@ build:
     - environment:
         PYTHONPATH: /opt/code/python-ismrmrd-server:/opt/b0-shimming
         JULIA_NUM_THREADS: '1'
+        TMPDIR: /tmp/share/b0mapromeo
 deploy:
   bins:
     - b0mapromeo

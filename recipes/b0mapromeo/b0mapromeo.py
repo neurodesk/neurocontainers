@@ -7,9 +7,11 @@ import logging
 import os
 import subprocess
 import tempfile
+import traceback
 from collections import defaultdict
 from pathlib import Path
 
+import constants
 import ismrmrd
 import nibabel as nib
 import numpy as np
@@ -41,15 +43,33 @@ def phase_radians(values: np.ndarray, units: str) -> np.ndarray:
         raise ValueError("Phase contains non-finite values")
     if units == "siemens":
         if np.any((values < 0) | (values > 4095)):
-            raise ValueError("Siemens phase must be unsigned 12-bit counts")
+            raise ValueError(
+                "Siemens phase must be unsigned 12-bit counts in [0,4095]; "
+                f"phaseunits={units}, observed range "
+                f"[{values.min():.9g},{values.max():.9g}]. "
+                "Select phaseunits=signed or phaseunits=radians only if that scale "
+                "matches the acquisition."
+            )
         return (values * 2.0 - 4096.0) * (np.pi / 4096.0)
     if units == "signed":
         if np.any(np.abs(values) > 4096):
-            raise ValueError("Signed Siemens phase must be in [-4096,4096]")
+            raise ValueError(
+                "Signed Siemens phase must be in [-4096,4096]; "
+                f"phaseunits={units}, observed range "
+                f"[{values.min():.9g},{values.max():.9g}]. "
+                "Use phaseunits=signed only if the acquisition uses signed Siemens "
+                "counts, or phaseunits=radians only if it uses wrapped radians."
+            )
         return values * (np.pi / 4096.0)
     if units == "radians":
         if np.any(np.abs(values) > np.pi + 1e-4):
-            raise ValueError("Radian phase must be wrapped in [-pi,pi]")
+            raise ValueError(
+                "Radian phase must be wrapped in [-pi,pi] (tolerance 0.0001); "
+                f"phaseunits={units}, observed range "
+                f"[{values.min():.9g},{values.max():.9g}]. "
+                "Use phaseunits=radians only if the acquisition uses wrapped radians, "
+                "or phaseunits=signed only if it uses signed Siemens counts."
+            )
         return values
     raise ValueError("Unknown phase units")
 
@@ -396,6 +416,9 @@ def process(connection, config, metadata):
         if not images:
             return
         settings = _settings(config, metadata)
+        logging.info(
+            "b0mapromeo %s processing phaseunits=%s", VERSION, settings["phase_units"]
+        )
         context = source_context(settings)
         identity = source_identity(images)
         mag, phase, affine, times, anchors = assemble(
@@ -427,9 +450,9 @@ def process(connection, config, metadata):
         logging.info("b0mapromeo %s returned %d B0 slices in Hz", VERSION, len(outputs))
     except Exception:
         logging.exception("B0 reconstruction failed")
-        # Avoid reflecting patient metadata or file paths to the scanner log.
         connection.send_logging(
-            3, "B0 reconstruction failed; check the local server log"
+            constants.MRD_LOGGING_ERROR,
+            f"b0mapromeo {VERSION}: B0 reconstruction failed\n{traceback.format_exc()}",
         )
     finally:
         connection.send_close()
