@@ -77,3 +77,83 @@ and its derived images must stay outside the repository and build context.
 ROMEO citation: Dymerska et al., *Phase Unwrapping with a Rapid Opensource Minimum
 Spanning TreE AlgOrithm (ROMEO)*, Magnetic Resonance in Medicine,
 https://doi.org/10.1002/mrm.28563.
+
+## Calibrated Cima.X shim settings
+
+Shimming Toolbox 1.5 computes whole-volume static ABSOLUTE currents in A for a
+Siemens MAGNETOM Cima.X 3T. No scanner calibration is bundled. Supply both
+`shimcalibration` (a JSON file path) and `shimcurrenta` (a JSON current array or
+object keyed by channel name) through MRD configuration/user parameters.
+The baseline must be the actual currents used for this acquisition. It is never
+inferred from DICOM or assumed to be zero. The CLI accepts the same inputs with
+`--shim-calibration` and `--shim-current-a`.
+
+The calibration JSON has these required fields:
+
+| Field | Value |
+| --- | --- |
+| `scanner_model` | `"MAGNETOM Cima.X"` |
+| `field_strength_t` | `3` |
+| `profile_units` | `"Hz/A"` |
+| `current_units` | `"A"` |
+| `settings_mode` | `"absolute"` |
+| `calibration_id` | Nonempty identity of the measured calibration |
+| `channels` | Unique ordered channel names |
+| `coil_profiles` | Path relative to this JSON, or absolute path, to a 4D NIfTI |
+| `absolute_current_bounds_a` | One `[minimum, maximum]` pair per channel |
+| `total_absolute_current_limit_a` | Optional nonnegative sum-of-absolute-currents limit |
+
+A complete format example for a **synthetic two-channel test only** is below.
+These profiles and limits do not describe a Cima.X scanner.
+
+```json
+{
+  "scanner_model": "MAGNETOM Cima.X",
+  "field_strength_t": 3,
+  "profile_units": "Hz/A",
+  "current_units": "A",
+  "settings_mode": "absolute",
+  "calibration_id": "synthetic-only",
+  "channels": ["X", "Y"],
+  "coil_profiles": "synthetic_profiles.nii",
+  "absolute_current_bounds_a": [[-1, 1], [-1, 1]],
+  "total_absolute_current_limit_a": 1
+}
+```
+
+For example, an acquisition current argument `'{"X":0.1,"Y":-0.2}'` names two
+channels. These are illustrative acquisition values, not Cima.X defaults or a
+calibration. Obtain actual profiles, channel limits and acquisition currents from
+the scanner's validated calibration. Profiles must already be registered to the
+fieldmap's exact RAS voxel shape and affine. Each positive current increment must
+add its signed profile in Hz/A. Unsupported units, models, dependent profiles,
+missing baselines or invalid limits fail the job before shim settings are returned.
+
+The fit minimizes masked spatial variance, allowing a free constant frequency
+offset. It subtracts each profile's masked mean and the field's masked mean.
+The optimization variable is absolute current. The measured field minus the
+profile contribution of the acquisition currents is fitted with Toolbox's
+constrained least-squares SLSQP optimizer. Predictions use the measured field plus the
+profile contribution of the change in current. This follows the empirical-coil
+constrained least-squares approach in Jason Stockmann's `perform_shim_quad.m`,
+with an explicit signed profile convention, absolute-current baseline and free
+frequency objective. The attachment's hardcoded regularization is not used.
+The Toolbox 1.5 quadratic solver reverses asymmetric box constraints, so this
+application uses SLSQP with the same squared-error objective and explicit current
+constraints. Each returned solution is checked against the absolute limits.
+
+Each returned slice has identical `ImageComment` and `ImageComments` containing
+labeled ABSOLUTE A settings, calibration identity, and measured/predicted ROI
+standard deviation in Hz. `B0ShimStatus` is `available`. Settings are recommendations
+for scanner review; the application does not apply them to hardware. With neither
+input configured, B0 reconstruction remains available and comments explicitly
+state why shim settings are unavailable. Partial configuration fails the job.
+The CLI writes `shim_settings.json` for either status and prints the same summary.
+
+The container uses Ubuntu 24.04 to meet Toolbox's Python 3.11 minimum. Its source
+is pinned to the 1.5 release commit. Packaging deliberately removes upstream's
+`requirements_st-pinned.txt` before installation and uses its declared dependency
+ranges, retaining the adapter's pinned NumPy, SciPy, nibabel and OpenRecon's
+pydicom 3.0.1. This avoids replacing the validated reconstruction dependencies
+with the upstream development lock. The build runs `pip check`, and release tests
+exercise both real ROMEO reconstruction and the installed Toolbox optimizer.

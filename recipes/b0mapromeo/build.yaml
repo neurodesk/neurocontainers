@@ -1,8 +1,10 @@
 name: b0mapromeo
-version: 1.0.0
+version: 1.1.0
 architectures:
   - x86_64
 copyright:
+  - license: GPL-3.0-only
+    url: https://github.com/shimming-toolbox/shimming-toolbox/blob/master/LICENSE
   - license: MIT
     url: https://github.com/korbinian90/ROMEO.jl/blob/master/LICENSE
   - license: MIT
@@ -15,7 +17,9 @@ variables:
   upstream_commit: 0eb02bc0652a292ed80fee4a90ccdd3da4cfcd56
   julia_version: 1.12.5
   julia_sha256: 41b84d727e4e96fbf3ed9e92fa195d773d247b9097f73fad688f8b699758bae7
-  base_image_digest: sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
+  base_image_digest: sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+  openrecon_ubuntu_version: '24.04'
+  shimmingtoolbox_commit: 0afbd9e133df1eeca8deecdf37875825462dd43b
   numpy_version: 2.2.6
   scipy_version: 1.15.3
   nibabel_version: 5.4.2
@@ -32,11 +36,18 @@ auto_update:
       ref: HEAD
       target:
         variable: upstream_commit
+    - id: shimmingtoolbox
+      dependency: true
+      method: github_commit
+      repo: shimming-toolbox/shimming-toolbox
+      ref: master
+      target:
+        variable: shimmingtoolbox_commit
     - id: base_image
       dependency: true
       method: oci_digest
       image: ubuntu
-      tag: '22.04'
+      tag: '24.04'
       target:
         variable: base_image_digest
     - id: openrecon_ismrmrd
@@ -93,7 +104,7 @@ auto_update:
         variable: julia_sha256
 build:
   kind: neurodocker
-  base-image: ubuntu:22.04@{{ context.base_image_digest }}
+  base-image: ubuntu:24.04@{{ context.base_image_digest }}
   pkg-manager: apt
   directives:
     - environment:
@@ -105,7 +116,13 @@ build:
     - include: macros/openrecon/neurodocker.yaml
     - include: macros/openrecon_i2i/helpers.yaml
     - run:
-        - python3 -m pip install --no-cache-dir numpy=={{ context.numpy_version }} scipy=={{ context.scipy_version }} nibabel=={{ context.nibabel_version }}
+        - python3 -m pip install --break-system-packages --no-cache-dir numpy=={{ context.numpy_version }} scipy=={{ context.scipy_version }} nibabel=={{ context.nibabel_version }}
+    - run:
+        - mkdir -p /opt/shimming-toolbox
+        - tar -xzf {{ get_file("shimmingtoolbox_archive") }} --strip-components=1 -C /opt/shimming-toolbox
+        - rm /opt/shimming-toolbox/shimming-toolbox/requirements_st-pinned.txt
+        - python3 -m pip install --break-system-packages --no-cache-dir /opt/shimming-toolbox/shimming-toolbox numpy=={{ context.numpy_version }} scipy=={{ context.scipy_version }} nibabel=={{ context.nibabel_version }} pydicom==3.0.1
+        - python3 -m pip check
     - environment:
         JULIA_CPU_TARGET: generic
     - run:
@@ -120,6 +137,8 @@ build:
         - /opt/julia/bin/julia --startup-file=no --threads=1 --project=/opt/b0mapromeo/julia -e 'using Pkg; Pkg.precompile()'
         - chmod -R a+rX /opt/julia-depot
     - run:
+        - cp {{ get_file("b0mapromeo_shim.py") }} /opt/code/python-ismrmrd-server/b0mapromeo_shim.py
+        - cp {{ get_file("test_b0mapromeo_shim.py") }} /opt/b0mapromeo/test_b0mapromeo_shim.py
         - cp {{ get_file("b0mapromeo.py") }} /opt/code/python-ismrmrd-server/b0mapromeo.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/b0mapromeo/OpenReconREADME.md
@@ -134,7 +153,17 @@ build:
 deploy:
   bins:
     - b0mapromeo
+    - st_b0shim
+    - st_create_coil_profiles
+    - st_mask
+    - st_prepare_fieldmap
 files:
+  - name: shimmingtoolbox_archive
+    url: https://github.com/shimming-toolbox/shimming-toolbox/archive/{{ context.shimmingtoolbox_commit }}.tar.gz
+  - name: b0mapromeo_shim.py
+    filename: b0mapromeo_shim.py
+  - name: test_b0mapromeo_shim.py
+    filename: test_b0mapromeo_shim.py
   - name: b0mapromeo.py
     filename: b0mapromeo.py
   - name: b0mapromeo

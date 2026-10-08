@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import copy
+import json
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 import ismrmrd
+import nibabel as nib
 import numpy as np
 from pydicom.dataset import Dataset, FileDataset, FileMetaDataset
 from pydicom.uid import ExplicitVRLittleEndian, generate_uid
@@ -241,6 +245,9 @@ def main():
         uids = set()
         for z, image in enumerate(derived):
             meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            assert meta["B0ShimStatus"] == "unavailable"
+            assert meta["ImageComment"] == meta["ImageComments"]
+            assert "ABSOLUTE A" in meta["ImageComment"]
             assert image.data.dtype == np.uint16
             assert image.image_index == z + 1 and image.slice == z
             assert meta["RescaleType"] == "Hz" and meta["Keep_image_geometry"] == "1"
@@ -264,6 +271,56 @@ def main():
         assert error.mean() < 0.7 and error.max() < 5.0
         assert np.all(recovered[~mask] == 0)
         assert not list(app.WORK_ROOT.iterdir())
+
+        x = np.indices(expected.shape)[0].astype(float) - 9.5
+        nib.save(nib.Nifti1Image((10 * x)[..., None], affine), root / "profiles.nii")
+        calibration_path = root / "calibration.json"
+        calibration_path.write_text(json.dumps({
+            "scanner_model": "MAGNETOM Cima.X",
+            "field_strength_t": 3,
+            "profile_units": "Hz/A",
+            "current_units": "A",
+            "settings_mode": "absolute",
+            "calibration_id": "synthetic-smoke-only",
+            "channels": ["X"],
+            "coil_profiles": "profiles.nii",
+            "absolute_current_bounds_a": [[-2, 2]],
+            "total_absolute_current_limit_a": 2,
+        }))
+        metadata.userParameters.userParameterString.extend([
+            ismrmrd.xsd.userParameterStringType(
+                name="shimcalibration", value=str(calibration_path)
+            ),
+            ismrmrd.xsd.userParameterStringType(
+                name="shimcurrenta", value='{"X":0.2}'
+            ),
+        ])
+        shimmed_connection = Connection(scanner_images)
+        app.process(shimmed_connection, {"parameters": {
+            "phaseunits": "siemens", "shimcalibration": "", "shimcurrenta": "",
+        }}, ismrmrd.xsd.ToXML(metadata))
+        assert shimmed_connection.closed and not shimmed_connection.logs
+        assert len(shimmed_connection.sent) == expected.shape[2]
+        for image in shimmed_connection.sent:
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            assert meta["B0ShimStatus"] == "available"
+            assert meta["ImageComment"] == meta["ImageComments"]
+            assert "synthetic-smoke-only" in meta["ImageComments"]
+            current = float(meta["ImageComments"].split("X=")[1].split(";")[0])
+            np.testing.assert_allclose(current, -0.7, atol=0.02)
+        assert not list(app.WORK_ROOT.iterdir())
+
+        cli_output = root / "cli-output"
+        subprocess.run([
+            sys.executable, app.__file__, "--dicom-dir", str(root / "classic"),
+            "--output-dir", str(cli_output), "--shim-calibration", str(calibration_path),
+            "--shim-current-a", '{"X":0.2}',
+        ], check=True)
+        prescription = json.loads((cli_output / "shim_settings.json").read_text())
+        assert prescription["status"] == "available"
+        assert prescription["settings_mode"] == "absolute"
+        np.testing.assert_allclose(prescription["absolute_current_a"], [-0.7], atol=0.02)
+        assert prescription["predicted_std_hz"] < 1.0
 
         # Wider fields must retain sign/range with a reversible display rescale.
         wide = expected * 100

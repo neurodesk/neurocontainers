@@ -19,6 +19,7 @@ import pydicom
 from scipy import ndimage
 
 import openreconi2iexample as helpers
+from b0mapromeo_shim import ShimResult, compute_shim, unavailable
 
 
 VERSION = os.environ.get("B0MAPROMEO_VERSION", "development")
@@ -426,9 +427,11 @@ def read_dicoms(
 
 
 def output_images(
-    field: np.ndarray, anchors: list[ismrmrd.Image], series_index: int
+    field: np.ndarray, anchors: list[ismrmrd.Image], series_index: int,
+    shim_result: ShimResult | None = None,
 ) -> list[ismrmrd.Image]:
     """Return unsigned scanner pixels with a reversible Hz rescale."""
+    shim_result = shim_result or unavailable()
     maximum = float(np.max(np.abs(field)))
     scale = min(1.0, 2046.0 / maximum) if maximum else 1.0
     display = np.clip(np.rint(field * scale + 2048), 1, 4095).astype(np.uint16)
@@ -454,6 +457,9 @@ def output_images(
             ["ROMEO", "B0_HZ"],
             series_identity=identity,
             extra_meta={
+                "ImageComment": shim_result.comment,
+                "ImageComments": shim_result.comment,
+                "B0ShimStatus": shim_result.status,
                 "RescaleSlope": str(1 / scale),
                 "RescaleIntercept": str(-2048 / scale),
                 "RescaleType": "Hz",
@@ -486,6 +492,9 @@ def _settings(config, metadata) -> dict:
     if not isinstance(parameters, dict):
         raise ValueError("Config parameters must be an object")
     parameters = dict(parameters)
+    for key in ("shimcalibration", "shimcurrenta"):
+        if parameters.get(key) == "":
+            parameters.pop(key)
     user = getattr(metadata, "userParameters", None)
     for name in ("userParameterString", "userParameterLong", "userParameterDouble"):
         for item in getattr(user, name, []) or []:
@@ -498,7 +507,11 @@ def _settings(config, metadata) -> dict:
             getattr(getattr(metadata, "sequenceParameters", None), "TE", []) or []
         )
     )
+    shim_calibration = parameters.get("shimcalibration")
+    shim_current_a = parameters.get("shimcurrenta")
     return {
+        "shim_calibration": None if shim_calibration == "" else shim_calibration,
+        "shim_current_a": None if shim_current_a == "" else shim_current_a,
         "times": times,
         "phase_units": parameters.get("phaseunits", "siemens"),
         "max_seeds": int(parameters.get("maxseeds", 4000)),
@@ -523,11 +536,13 @@ def process(connection, config, metadata):
         )
         WORK_ROOT.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="run_", dir=WORK_ROOT) as temporary:
-            field, _ = reconstruct(
+            field, mask = reconstruct(
                 mag, phase, affine, times, Path(temporary), settings["max_seeds"]
             )
             series = max(180, max(int(im.image_series_index) for im in images) + 1)
-            outputs = output_images(field, anchors, series)
+            shim = compute_shim(field, mask, affine, settings["shim_calibration"],
+                                settings["shim_current_a"])
+            outputs = output_images(field, anchors, series, shim)
         if settings["send_original"]:
             # These shared helpers also restamp scanner MiniHead storage fields.
             originals = helpers._restamp_originals(images)
@@ -557,6 +572,8 @@ def main() -> None:
         "--phase-units", choices=("siemens", "signed", "radians"), default="siemens"
     )
     parser.add_argument("--max-seeds", type=int, default=4000)
+    parser.add_argument("--shim-calibration", type=Path)
+    parser.add_argument("--shim-current-a", help="JSON current array or channel-name object in A")
     args = parser.parse_args()
     if args.output_dir.exists() and any(args.output_dir.iterdir()):
         parser.error(
@@ -567,6 +584,9 @@ def main() -> None:
     field, mask = reconstruct(
         magnitude, phase, affine, times, args.output_dir, args.max_seeds
     )
+    shim = compute_shim(field, mask, affine, args.shim_calibration, args.shim_current_a)
+    shim.write(args.output_dir)
+    print(shim.comment)
     print(
         f"B0 map complete: {len(times)} echoes, {field.shape[2]} slices, "
         f"{int(mask.sum())} foreground voxels; output units Hz"
