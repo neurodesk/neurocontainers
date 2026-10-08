@@ -408,6 +408,7 @@ def process(connection, config, metadata):
             )
             saved = publish_map(field, mask, affine, context, identity,
                                 requested_id=settings["b0mapid"])
+            logging.info("b0mapromeo published B0MapId=%s", saved.id)
             series = max(180, max(int(im.image_series_index) for im in images) + 1)
             shim = compute_shim(field, mask, affine, settings["shim_calibration"],
                                 settings["shim_current_a"],

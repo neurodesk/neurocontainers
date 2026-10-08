@@ -105,21 +105,31 @@ class ProducerArtifactTests(unittest.TestCase):
         np.testing.assert_array_equal(read_map("same").field_hz, 23)
 
     def test_published_measurement_survives_optional_solver_failure(self):
-        connection = Connection(self.images)
-        with (
-            patch.object(
-                b0mapromeo, "compute_shim", side_effect=RuntimeError("solver failed")
-            ),
-            self.assertLogs(level="ERROR"),
-        ):
-            b0mapromeo.process(
-                connection, {**self.config, **PARAMETERS, "b0mapid": "retained"}, None
-            )
-        self.assertTrue(connection.closed and connection.logs and not connection.sent)
-        saved = read_map("retained")
-        self.assertEqual(saved.context["kind"], "analytical")
-        self.assertEqual(saved.context["baseline"]["X"], 0.4)
-        self.assertEqual(list(b0mapromeo.WORK_ROOT.iterdir()), [])
+        for requested_id in ("retained", ""):
+            with self.subTest(requested_id=requested_id):
+                connection = Connection(self.images)
+                with (
+                    patch.object(
+                        b0mapromeo, "compute_shim", side_effect=RuntimeError("solver failed")
+                    ),
+                    self.assertLogs(level="INFO") as captured,
+                ):
+                    b0mapromeo.process(
+                        connection, {**self.config, **PARAMETERS, "b0mapid": requested_id}, None
+                    )
+                self.assertTrue(connection.closed and connection.logs and not connection.sent)
+                published = [
+                    record.getMessage().split("=", 1)[1]
+                    for record in captured.records
+                    if record.getMessage().startswith("b0mapromeo published B0MapId=")
+                ]
+                self.assertEqual(len(published), 1)
+                saved = read_map(published[0])
+                if requested_id:
+                    self.assertEqual(saved.id, requested_id)
+                self.assertEqual(saved.context["kind"], "analytical")
+                self.assertEqual(saved.context["baseline"]["X"], 0.4)
+                self.assertEqual(list(b0mapromeo.WORK_ROOT.iterdir()), [])
 
     def test_partial_source_configuration_is_still_invalid(self):
         connection = Connection(self.images)
