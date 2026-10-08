@@ -1,5 +1,5 @@
 name: meganorm
-version: 0.2.1
+version: 0.2.2
 
 description: MEGaNorm extracts EEG/MEG-derived phenotypes with MNE-Python and fits normative models over them with PCNToolkit.
 
