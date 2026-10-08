@@ -167,6 +167,56 @@ The result is an ideal field estimate, not a scanner calibration. No current
 conversion or Cima.X hardware limits are bundled. The application does not apply
 settings to the scanner.
 
+### Direct HFS GUI inputs
+
+For a confirmed head-first supine acquisition, enter the acquisition baseline,
+absolute limits and explicit magnet isocentre in the OpenRecon GUI. These four
+controls also accept MRD string user parameters. No analytical JSON file is
+required. The existing calibration and model-file controls remain available.
+
+| Parameter | Entry |
+| --- | --- |
+| `shimnativebaseline` | Actual native settings used to acquire the images |
+| `shimnativelower` | Verified absolute lower native limits |
+| `shimnativeupper` | Verified absolute upper native limits |
+| `shimisocentrerasmm` | Explicit patient R,A,S coordinates of magnet isocentre, in mm |
+
+Use three numbers in each native vector for `X,Y,Z`, or eight for
+`X,Y,Z,Z2,ZX,ZY,X2-Y2,XY`. All three vectors must have the same count.
+`X,Y,Z` use `uT/m`; the remaining channels use `uT/m^2`.
+Separate numbers with commas or spaces. Scientific notation and precision
+smaller than 0.1 are accepted. The isocentre always requires three numbers.
+
+All four controls default to blank. Blank configured values permit MRD header
+fallback; nonblank configuration values override the same header parameter.
+Any direct input requires all four controls. An explicit `0,0,0` is supplied
+data, not an empty value. Equal lower and upper limits fix a channel.
+Baselines must lie within the supplied absolute limits. Missing values, unequal
+counts, nonfinite numbers and empty comma components fail the job.
+Direct inputs cannot be combined with measured calibration/current inputs or
+analytical model-file/native-JSON inputs, including values from the MRD header.
+
+These values are a complete **synthetic-only GUI example**, equivalent to the
+HFS model-file example below. They are invented test values, not scanner limits
+or acquisition settings to use on a real Cima.X.
+
+```text
+shimnativebaseline: .3,-.2,.1,2,-3,4,-5,6
+shimnativelower: -1000,-1000,-1000,-1000,-1000,-1000,-1000,-1000
+shimnativeupper: 1000,1000,1000,1000,1000,1000,1000,1000
+shimisocentrerasmm: 5,-7,11
+```
+
+The direct HFS transform uses `R=diag(-1,1,-1)` and translation
+`-R*p_iso`, so the entered patient-RAS isocentre maps to shim LAI zero.
+The image centre and DICOM position never substitute for magnet isocentre.
+The `entered-hfs-` configuration identity derives from the entered geometry,
+orders and limits; it identifies supplied model data, not a hardware calibration.
+The output records the actual transform, limits and acquisition baseline.
+Direct and model-file inputs share model validation and the same optimizer.
+
+### Explicit model-file inputs
+
 The CLI requires both `--shim-analytical-model PATH` and
 `--shim-native-settings JSON`. MRD uses `shimanalyticalmodel` and
 `shimnativesettings`. Native settings must be a JSON object naming exactly the
@@ -194,7 +244,8 @@ The pinned server's
 [DICOM converter](https://github.com/astewartau/python-ismrmrd-server/blob/33362f2139701fbf5ea855808a325eb59b7db2ae/dicom2mrd.py#L167)
 copies a corner ImagePositionPatient into MRD position instead, so validate the
 producer's centre and origin conventions before using its geometry.
-An explicit transform remains mandatory for both input paths.
+An explicit transform is mandatory for model-file inputs. Direct GUI inputs
+construct the HFS transform from the required explicit isocentre.
 
 Head-first alone does not establish supine orientation. Only after confirming
 head-first supine and the corresponding patient axes can the rotation be

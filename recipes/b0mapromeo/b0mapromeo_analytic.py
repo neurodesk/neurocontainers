@@ -1,9 +1,18 @@
 from dataclasses import dataclass
 from enum import Enum
+import hashlib
 import json
 from pathlib import Path
 
 import numpy as np
+
+
+DIRECT_NATIVE_FIELDS = (
+    "shimnativebaseline",
+    "shimnativelower",
+    "shimnativeupper",
+    "shimisocentrerasmm",
+)
 
 
 class NativeChannel(Enum):
@@ -112,7 +121,10 @@ def _number(value: object) -> float:
 
 
 def _read_model(path: str | Path) -> _AnalyticalModel:
-    raw = json.loads(Path(path).read_text())
+    return _validate_model(json.loads(Path(path).read_text()))
+
+
+def _validate_model(raw: object) -> _AnalyticalModel:
     keys = {
         "configuration_id",
         "scanner_model",
@@ -168,6 +180,67 @@ def _read_model(path: str | Path) -> _AnalyticalModel:
     )
 
 
+def _native_vector(value: object, name: str, lengths: tuple[int, ...]) -> list[float]:
+    message = f"{name} requires {' or '.join(map(str, lengths))} finite numbers"
+    if not isinstance(value, str):
+        raise ValueError(message)
+    if any(not part.strip() for part in value.split(",")):
+        raise ValueError(message)
+    try:
+        numbers = [_number(float(v)) for v in value.replace(",", " ").split()]
+    except ValueError as exc:
+        raise ValueError(message) from exc
+    if len(numbers) not in lengths:
+        raise ValueError(message)
+    return [v if v else 0.0 for v in numbers]
+
+
+def direct_native_inputs(
+    baseline: object, lower: object, upper: object, isocentre_ras_mm: object
+) -> tuple[dict, dict[str, float]] | None:
+    values = (baseline, lower, upper, isocentre_ras_mm)
+    supplied = tuple(
+        v is not None and not (isinstance(v, str) and not v.strip()) for v in values
+    )
+    if not any(supplied):
+        return None
+    for name, present in zip(DIRECT_NATIVE_FIELDS, supplied):
+        if not present:
+            raise ValueError(f"Direct HFS native inputs require {name}")
+    baseline, lower, upper, isocentre = (
+        _native_vector(value, name, (3,) if i == 3 else (3, 8))
+        for i, (name, value) in enumerate(zip(DIRECT_NATIVE_FIELDS, values))
+    )
+    if not len(baseline) == len(lower) == len(upper):
+        raise ValueError(
+            "shimnativebaseline, shimnativelower and shimnativeupper must have matching lengths"
+        )
+    orders = [1] if len(baseline) == 3 else [1, 2]
+    channels = tuple(c for c in NativeChannel if c.value[1] in orders)
+    transform = np.eye(4)
+    transform[:3, :3] = np.diag([-1, 1, -1])
+    transform[:3, 3] = -transform[:3, :3] @ isocentre
+    geometry = {
+        "orders": orders,
+        "patient_ras_mm_to_shim_lai_mm": transform.tolist(),
+        "absolute_native_bounds": {
+            c.label: [lo, hi] for c, lo, hi in zip(channels, lower, upper)
+        },
+    }
+    identity = hashlib.sha256(
+        json.dumps(
+            geometry, sort_keys=True, separators=(",", ":"), allow_nan=False
+        ).encode()
+    ).hexdigest()
+    model = {
+        "configuration_id": f"entered-hfs-{identity}",
+        "scanner_model": "MAGNETOM Cima.X",
+        "field_strength_t": 3,
+        **geometry,
+    }
+    return model, dict(zip((c.label for c in channels), baseline))
+
+
 def _profiles(
     shape: tuple[int, ...], affine: np.ndarray, model: _AnalyticalModel
 ) -> np.ndarray:
@@ -186,10 +259,14 @@ def _compute_analytical(
     field: np.ndarray,
     mask: np.ndarray,
     affine: np.ndarray,
-    model_path: str | Path,
+    model_path: str | Path | dict,
     acquisition_native: str | dict,
 ) -> AnalyticalShimResult:
-    model = _read_model(model_path)
+    model = (
+        _validate_model(model_path)
+        if isinstance(model_path, dict)
+        else _read_model(model_path)
+    )
     raw = (
         json.loads(acquisition_native)
         if isinstance(acquisition_native, str)

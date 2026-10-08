@@ -156,6 +156,50 @@
       "information": {
         "en": "JSON named object. X, Y, Z in uT/m; second-order channels in uT/m^2. Required with analytical model."
       }
+    },
+    {
+      "id": "shimnativebaseline",
+      "label": {
+        "en": "Acquisition native baseline: X,Y,Z[,Z2,ZX,ZY,X2-Y2,XY]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Enter 3 or 8 comma-separated values in order X,Y,Z or X,Y,Z,Z2,ZX,ZY,X2-Y2,XY. X,Y,Z in uT/m; remaining channels in uT/m^2. All three native vectors must have the same length. Use actual acquisition values and verified limits; no values are assumed."
+      }
+    },
+    {
+      "id": "shimnativelower",
+      "label": {
+        "en": "Absolute native lower limits: X,Y,Z[,Z2,ZX,ZY,X2-Y2,XY]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Enter 3 or 8 comma-separated values in order X,Y,Z or X,Y,Z,Z2,ZX,ZY,X2-Y2,XY. X,Y,Z in uT/m; remaining channels in uT/m^2. All three native vectors must have the same length. Use actual acquisition values and verified limits; no values are assumed."
+      }
+    },
+    {
+      "id": "shimnativeupper",
+      "label": {
+        "en": "Absolute native upper limits: X,Y,Z[,Z2,ZX,ZY,X2-Y2,XY]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Enter 3 or 8 comma-separated values in order X,Y,Z or X,Y,Z,Z2,ZX,ZY,X2-Y2,XY. X,Y,Z in uT/m; remaining channels in uT/m^2. All three native vectors must have the same length. Use actual acquisition values and verified limits; no values are assumed."
+      }
+    },
+    {
+      "id": "shimisocentrerasmm",
+      "label": {
+        "en": "HFS isocentre R,A,S [mm]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Explicit magnet isocentre in patient RAS mm for confirmed head-first supine: R,A,S. Enter 3 comma-separated values, including explicit zeros. Never substitute image centre. Required with direct native baseline and bounds; leave all four blank to use existing shim inputs."
+      }
     }
   ]
 }
