@@ -134,6 +134,28 @@
       "information": {
         "en": "JSON array or channel-name object of actual currents used to acquire these images."
       }
+    },
+    {
+      "id": "shimanalyticalmodel",
+      "label": {
+        "en": "Cima.X analytical model JSON path"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Explicit acquisition RAS to shim LAI isocentre geometry and absolute native bounds. Ideal field estimate."
+      }
+    },
+    {
+      "id": "shimnativesettings",
+      "label": {
+        "en": "Acquisition native shim settings"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "JSON named object. X, Y, Z in uT/m; second-order channels in uT/m^2. Required with analytical model."
+      }
     }
   ]
 }
