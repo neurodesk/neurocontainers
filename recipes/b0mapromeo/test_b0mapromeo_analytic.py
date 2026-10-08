@@ -1,5 +1,3 @@
-"""Independent polynomial oracles and the installed native optimizer."""
-
 import copy
 import json
 from pathlib import Path
@@ -154,6 +152,46 @@ class AnalyticalTests(unittest.TestCase):
         np.testing.assert_allclose(
             [s.absolute for s in self.solve().settings], self.target, atol=2e-3
         )
+
+    def test_zero_target_with_small_constrained_effects(self):
+        from scipy.optimize import lsq_linear
+
+        for size in (1, 0.1, 0.01, 0.001):
+            with self.subTest(size=size):
+                affine = self.affine.copy()
+                affine[:3, :3] *= size
+                affine[:3, 3] = -self.transform[:3, :3].T @ self.transform[:3, 3]
+                points = (
+                    self.transform[:3, :3]
+                    @ affine[:3, :3]
+                    @ np.indices(self.shape).reshape(3, -1)
+                )
+                profiles = polynomial(points).reshape(self.shape + (8,))
+                bounds = np.array([[-1, 1]] * 3 + [[1, 20]] * 5, float)
+                baseline = np.array([0, 0, 0, 10, 10, 10, 10, 10.])
+                self.config["absolute_native_bounds"] = dict(zip(self.names, bounds.tolist()))
+                self.path.write_text(json.dumps(self.config))
+                result = compute_shim(
+                    profiles @ baseline, self.mask, affine,
+                    analytical_model_path=self.path,
+                    acquisition_native=dict(zip(self.names, baseline)),
+                )
+                matrix = profiles.reshape(-1, 8)
+                matrix -= matrix.mean(axis=0)
+                channel_scale = np.sqrt(np.mean(matrix ** 2, axis=0))
+                field_scale = np.std(matrix @ np.clip(np.zeros(8), bounds[:, 0], bounds[:, 1]))
+                reference = lsq_linear(
+                    matrix / channel_scale, np.zeros(matrix.shape[0]),
+                    bounds=(bounds[:, 0] * channel_scale / field_scale,
+                            bounds[:, 1] * channel_scale / field_scale),
+                    tol=1e-14,
+                ).x * field_scale / channel_scale
+                np.testing.assert_allclose(
+                    [s.absolute for s in result.settings], reference, atol=1e-5, rtol=0
+                )
+                np.testing.assert_allclose(
+                    result.predicted_std_hz, np.std(matrix @ reference), rtol=1e-8
+                )
 
     def test_fixed_all_fixed_and_rank(self):
         self.config["absolute_native_bounds"]["XY"] = [6, 6]

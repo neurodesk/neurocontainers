@@ -204,8 +204,9 @@ verified rotation. Unknown isocentre is an error in configuration preparation.
 Never substitute the image centre or infer table-position semantics.
 
 The following model and command are a complete **synthetic-only example**.
-The identity rotation, isocentre translation, bounds, and baseline are invented
-for a test acquisition. They do not describe a real scanner or patient.
+It uses head-first supine rotation with an invented patient-RAS isocentre
+`[5,-7,11]` mm. The isocentre, bounds, and baseline are invented for a test
+acquisition. They do not describe a real scanner or patient.
 
 ```json
 {
@@ -214,7 +215,7 @@ for a test acquisition. They do not describe a real scanner or patient.
   "field_strength_t": 3,
   "orders": [1, 2],
   "patient_ras_mm_to_shim_lai_mm": [
-    [1, 0, 0, -5], [0, 1, 0, 7], [0, 0, 1, -11], [0, 0, 0, 1]
+    [-1, 0, 0, 5], [0, 1, 0, 7], [0, 0, -1, 11], [0, 0, 0, 1]
   ],
   "absolute_native_bounds": {
     "X": [-1000, 1000], "Y": [-1000, 1000], "Z": [-1000, 1000],

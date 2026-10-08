@@ -1,5 +1,3 @@
-"""Ideal Siemens fields in native units, with explicit acquisition geometry."""
-
 from dataclasses import dataclass
 from enum import Enum
 import json
@@ -259,6 +257,13 @@ def _compute_analytical(
         ):
             # A constant adds only a constant objective term for centered profiles,
             # and avoids Toolbox's zero-field shortcut that bypasses constraints.
+            feasible_zero = np.clip(np.zeros(free.sum()), bounds[free, 0], bounds[free, 1])
+            physical_effect = centered[mask][:, free] @ feasible_zero
+            seed_scale = float(np.sqrt(np.mean(physical_effect ** 2)))
+            if seed_scale > 0:
+                # Scale variables as well as the objective so tiny constrained
+                # fields retain native coefficient accuracy at SLSQP tolerance.
+                scales /= seed_scale
             target = np.ones_like(target)
         coil = Coil(
             normalized,
