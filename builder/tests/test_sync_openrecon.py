@@ -485,3 +485,46 @@ def test_post_release_container_version_is_kept_for_docker_operations(
     assert resolved.stdout.splitlines() == [
         "1.6.0.post1", "1.6.0", "vnmd/demo_1.6.0.post1:20261005",
     ]
+
+
+def write_research_source(root: Path) -> Path:
+    from workflows.validate_openrecon_labels import SCHEMA_PATH
+
+    write_source_recipe(root)
+    recipe = root / "recipes" / "demo"
+    label = json.loads((SCHEMA_PATH.parent / "b0map" / "OpenReconLabel.json").read_text())
+    label["reconstruction"].update(
+        emitter="raw", injector="raw", content_qualification_type="RESEARCH"
+    )
+    (recipe / "OpenReconLabel.json").write_text(json.dumps(label))
+    (recipe / "wip_070_fire_demo.json").write_text(
+        '{"parameters":{"config":"demo"},"research":{"enabled":true}}\n'
+    )
+    return recipe
+
+
+def test_stock_sync_declines_raw_before_any_external_access(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    write_research_source(source)
+
+    def external_access(*args, **kwargs):
+        pytest.fail("Stock sync attempted external access for experimental raw metadata")
+
+    monkeypatch.setattr(sync_openrecon, "existing_pull_request", external_access)
+    monkeypatch.setattr(sync_openrecon, "run_command", external_access)
+    assert sync_openrecon.sync_recipe(source, "demo", "1.0.0", "unused/repo") is None
+    target = tmp_path / "target"
+    assert sync_openrecon.prepare_recipe(source, target, "demo", "1.0.0") is None
+    assert not target.exists()
+
+
+def test_explicit_research_staging_preserves_raw_label_and_exact_config(tmp_path):
+    source = tmp_path / "source"
+    recipe = write_research_source(source)
+    target = tmp_path / "target"
+    prepared = sync_openrecon.prepare_recipe(
+        source, target, "demo", "1.0.0", experimental_raw_return=True
+    )
+    assert prepared is not None
+    for filename in ("OpenReconLabel.json", "wip_070_fire_demo.json"):
+        assert (target / "recipes" / "demo" / filename).read_bytes() == (recipe / filename).read_bytes()

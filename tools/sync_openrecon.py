@@ -202,6 +202,11 @@ def update_params_image_tag(contents: str, build_date: str) -> str:
     )
 
 
+def is_raw_return_label(label_path: Path) -> bool:
+    label = json.loads(label_path.read_text(encoding="utf-8"))
+    return label.get("reconstruction", {}).get("injector") == "raw"
+
+
 def prepare_recipe(
     source_root: Path,
     openrecon_root: Path,
@@ -209,6 +214,7 @@ def prepare_recipe(
     version: str,
     *,
     variant: str = "",
+    experimental_raw_return: bool = False,
 ) -> PreparedSync | None:
     """Copy one recipe's OpenRecon metadata into an existing checkout."""
     version = validate_version(version)
@@ -216,6 +222,19 @@ def prepare_recipe(
     source_recipe = source_root / "recipes" / openrecon_target.source_recipe
     if not openrecon_target.label.is_file():
         return None
+    raw_return = is_raw_return_label(openrecon_target.label)
+    if raw_return and not experimental_raw_return:
+        print(
+            "Experimental raw-return label requires explicit local research staging; "
+            "skipping stock sync."
+        )
+        return None
+    if raw_return:
+        from workflows.validate_openrecon_labels import validate_label
+
+        errors = validate_label(openrecon_target.label, experimental_raw_return=True)
+        if errors:
+            raise ValueError("Invalid research label: " + "; ".join(errors))
 
     relative_recipe = Path("recipes") / openrecon_target.container
     target_recipe = openrecon_root / relative_recipe
@@ -280,6 +299,11 @@ def prepare_recipe(
             "from neurocontainers "
             f"to `{relative_recipe.as_posix()}/README.md` for OpenRecon PDF generation"
         )
+
+    if experimental_raw_return:
+        for config_override in sorted(source_recipe.glob("wip_070_fire_*.json")):
+            shutil.copyfile(config_override, target_recipe / config_override.name)
+            paths.append((relative_recipe / config_override.name).as_posix())
 
     return PreparedSync(paths=tuple(paths), notes=tuple(notes))
 
@@ -362,6 +386,10 @@ def sync_recipe(
     container = openrecon_target.container
     if not openrecon_target.label.is_file():
         print(f"No OpenRecon label found for {container}; skipping OpenRecon PR.")
+        return None
+
+    if is_raw_return_label(openrecon_target.label):
+        print(f"Experimental raw-return label for {container}; skipping stock OpenRecon PR.")
         return None
 
     title = f"Update {container} OpenRecon metadata to {version}"
