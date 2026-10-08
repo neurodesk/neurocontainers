@@ -112,6 +112,28 @@
       "default": 4000,
       "minimum": 1,
       "maximum": 100000
+    },
+    {
+      "id": "shimcalibration",
+      "label": {
+        "en": "Cima.X calibration JSON path"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Registered signed Hz/A coil profiles and absolute A limits. Required with acquisition currents."
+      }
+    },
+    {
+      "id": "shimcurrenta",
+      "label": {
+        "en": "Acquisition shim currents in A"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "JSON array or channel-name object of actual currents used to acquire these images."
+      }
     }
   ]
 }
