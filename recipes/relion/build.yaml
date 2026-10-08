@@ -12,7 +12,7 @@ variables:
   install_version: "4.0.1.sm75"
   relion_version: "4.0.1"
   compute_capability: "75"
-  relion_commit: "ec417f5b36ce847c003723a51267116dc0a0c7ee"
+  relion_commit: "05cd1ad95e89d4e6b0424c6c158322a46a74d8aa"
   ctffind_version: 4.1.14
   motioncor2_version: 1.6.4
   cuda_version: "11.8"
