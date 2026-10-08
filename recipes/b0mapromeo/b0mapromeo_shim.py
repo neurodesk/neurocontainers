@@ -45,7 +45,7 @@ def compute_shim(
     calibration_path: str | Path | None = None,
     acquisition_current_a: str | list | dict | None = None,
     *,
-    analytical_model_path: str | Path | None = None,
+    analytical_model_path: str | Path | dict | None = None,
     acquisition_native: str | dict | None = None,
 ) -> ShimResult | AnalyticalShimResult:
     """Fit spatial variance with signed profiles; positive A adds profile Hz."""

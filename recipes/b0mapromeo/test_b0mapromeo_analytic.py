@@ -7,7 +7,12 @@ import unittest
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from b0mapromeo_analytic import _profiles, _read_model
+from b0mapromeo_analytic import (
+    DIRECT_NATIVE_FIELDS,
+    NativeChannel,
+    _profiles,
+    _read_model,
+)
 from b0mapromeo_shim import compute_shim
 
 
@@ -75,6 +80,325 @@ class AnalyticalTests(unittest.TestCase):
             analytical_model_path=self.path,
             acquisition_native=native,
         )
+
+    def direct_parameters(self, count=8):
+        return dict(
+            zip(
+                DIRECT_NATIVE_FIELDS,
+                (
+                    ",".join(map(str, self.baseline[:count])),
+                    ",".join(["-1000"] * count),
+                    ",".join(["1000"] * count),
+                    "5,-7,11",
+                ),
+            )
+        )
+
+    def test_direct_hfs_file_parity_and_landmarks(self):
+        import ismrmrd
+        from b0mapromeo import _settings, output_images
+
+        for count in (3, 8):
+            with self.subTest(count=count):
+                parameters = self.direct_parameters(count)
+                parameters["shimnativelower"] = ",".join(
+                    [str(self.baseline[0])] + ["-1000"] * (count - 1)
+                )
+                parameters["shimnativeupper"] = ",".join(
+                    [str(self.baseline[0]), str(self.target[1])]
+                    + ["1000"] * (count - 2)
+                )
+                settings = _settings(parameters, None)
+                model = settings["shim_analytical_model"]
+                native = settings["shim_native_settings"]
+                transform = np.array(
+                    [
+                        [-1, 0, 0, 5],
+                        [0, 1, 0, 7],
+                        [0, 0, -1, 11],
+                        [0, 0, 0, 1],
+                    ]
+                )
+                np.testing.assert_array_equal(
+                    model["patient_ras_mm_to_shim_lai_mm"], transform
+                )
+                np.testing.assert_array_equal(transform @ [5, -7, 11, 1], [0, 0, 0, 1])
+                voxels = np.indices(self.shape).reshape(3, -1)
+                patient = self.affine[:3, :3] @ voxels + self.affine[:3, 3, None]
+                lai = transform[:3, :3] @ patient + transform[:3, 3, None]
+                profiles = polynomial(lai, count).reshape(self.shape + (count,))
+                target = self.target[:count].copy()
+                target[0] = self.baseline[0]
+                field = 71 - profiles @ (target - self.baseline[:count])
+                direct = compute_shim(
+                    field,
+                    self.mask,
+                    self.affine,
+                    analytical_model_path=model,
+                    acquisition_native=native,
+                )
+                self.path.write_text(json.dumps(model))
+                file_result = compute_shim(
+                    field,
+                    self.mask,
+                    self.affine,
+                    analytical_model_path=self.path,
+                    acquisition_native=json.dumps(native),
+                )
+                self.assertEqual(direct.model, file_result.model)
+                self.assertEqual(direct.model.orders, (1,) if count == 3 else (1, 2))
+                np.testing.assert_allclose(
+                    [s.absolute for s in direct.settings], target, atol=2e-4
+                )
+                np.testing.assert_allclose(
+                    [s.absolute for s in direct.settings],
+                    [s.absolute for s in file_result.settings],
+                    atol=1e-12,
+                )
+                self.assertLess(direct.predicted_std_hz, 1e-6)
+                self.assertEqual(direct.settings[0].absolute, self.baseline[0])
+                anchors = [
+                    ismrmrd.Image.from_array(
+                        np.ones((1, 1, 8, 7), np.uint16), transpose=False
+                    )
+                    for _ in range(9)
+                ]
+                for image in output_images(field, anchors, 180, direct):
+                    meta = ismrmrd.Meta.deserialize(image.attribute_string)
+                    self.assertEqual(meta["ImageComment"], direct.comment)
+                    self.assertEqual(meta["ImageComments"], file_result.comment)
+
+    def test_direct_precision_identity_and_explicit_zero(self):
+        from b0mapromeo import _settings
+
+        parameters = self.direct_parameters(3)
+        parameters["shimnativebaseline"] = "1.23456789e-4 0 -0"
+        parameters["shimisocentrerasmm"] = "12.3456789, -7.000001, 0"
+        settings = _settings(parameters, None)
+        model = settings["shim_analytical_model"]
+        self.assertEqual(settings["shim_native_settings"]["X"], 0.000123456789)
+        np.testing.assert_array_equal(
+            np.array(model["patient_ras_mm_to_shim_lai_mm"])[:3, 3],
+            [12.3456789, 7.000001, 0],
+        )
+        identity = model["configuration_id"]
+        self.assertTrue(identity.startswith("entered-hfs-"))
+        parameters["shimnativebaseline"] = "0,0,0"
+        parameters["shimisocentrerasmm"] = "1.23456789e1,-7.000001,-0"
+        self.assertEqual(
+            _settings(parameters, None)["shim_analytical_model"]["configuration_id"],
+            identity,
+        )
+        for name, value in [
+            ("shimnativelower", "-999,-1000,-1000"),
+            ("shimisocentrerasmm", "12,-7,0"),
+        ]:
+            changed = {**parameters, name: value}
+            self.assertNotEqual(
+                _settings(changed, None)["shim_analytical_model"]["configuration_id"],
+                identity,
+            )
+        zero = {
+            **parameters,
+            "shimisocentrerasmm": "0,0,0",
+            "shimnativelower": "0,0,0",
+            "shimnativeupper": "0,0,0",
+        }
+        settings = _settings(zero, None)
+        result = compute_shim(
+            self.field,
+            self.mask,
+            self.affine,
+            analytical_model_path=settings["shim_analytical_model"],
+            acquisition_native=settings["shim_native_settings"],
+        )
+        self.assertEqual([s.absolute for s in result.settings], [0, 0, 0])
+
+    def test_direct_defaults_header_fallback_and_override(self):
+        import ismrmrd
+        from b0mapromeo import _settings
+
+        header_parameters = self.direct_parameters(3)
+        metadata = ismrmrd.xsd.ismrmrdHeader(
+            userParameters=ismrmrd.xsd.userParametersType(
+                userParameterString=[
+                    ismrmrd.xsd.userParameterStringType(name=k, value=v)
+                    for k, v in header_parameters.items()
+                ]
+            )
+        )
+        defaults = dict.fromkeys(DIRECT_NATIVE_FIELDS, "  ")
+        settings = _settings({"parameters": defaults}, ismrmrd.xsd.ToXML(metadata))
+        self.assertEqual(
+            settings["shim_native_settings"],
+            dict(zip(self.names[:3], self.baseline[:3])),
+        )
+        settings = _settings({**defaults, "shimnativebaseline": "0,0,0"}, metadata)
+        self.assertEqual(settings["shim_native_settings"], {"X": 0, "Y": 0, "Z": 0})
+        settings = _settings(defaults, None)
+        self.assertEqual(
+            compute_shim(
+                self.field,
+                self.mask,
+                self.affine,
+                analytical_model_path=settings["shim_analytical_model"],
+                acquisition_native=settings["shim_native_settings"],
+            ).status,
+            "unavailable",
+        )
+        for legacy in (
+            "shimcalibration",
+            "shimcurrenta",
+            "shimanalyticalmodel",
+            "shimnativesettings",
+        ):
+            with self.subTest(legacy=legacy), self.assertRaisesRegex(
+                ValueError, "cannot be combined"
+            ):
+                _settings({legacy: "configured"}, metadata)
+        metadata.userParameters.userParameterString.extend(
+            [
+                ismrmrd.xsd.userParameterStringType(name=k, value=" \t ")
+                for k in (
+                    "shimcalibration",
+                    "shimcurrenta",
+                    "shimanalyticalmodel",
+                    "shimnativesettings",
+                )
+            ]
+        )
+        settings = _settings({"parameters": defaults}, ismrmrd.xsd.ToXML(metadata))
+        result = compute_shim(
+            self.field,
+            self.mask,
+            self.affine,
+            settings["shim_calibration"],
+            settings["shim_current_a"],
+            analytical_model_path=settings["shim_analytical_model"],
+            acquisition_native=settings["shim_native_settings"],
+        )
+        self.assertEqual(result.status, "available")
+        for parameter in metadata.userParameters.userParameterString:
+            parameter.value = " \t "
+        settings = _settings({}, ismrmrd.xsd.ToXML(metadata))
+        self.assertEqual(
+            compute_shim(
+                self.field,
+                self.mask,
+                self.affine,
+                settings["shim_calibration"],
+                settings["shim_current_a"],
+                analytical_model_path=settings["shim_analytical_model"],
+                acquisition_native=settings["shim_native_settings"],
+            ).status,
+            "unavailable",
+        )
+
+    def test_direct_invalid_or_partial_vectors(self):
+        from b0mapromeo import _settings
+
+        complete = self.direct_parameters(3)
+        for field in DIRECT_NATIVE_FIELDS:
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, field):
+                _settings({**complete, field: ""}, None)
+        for invalid in (
+            "1,2",
+            "1,2,3,4",
+            "1,,3",
+            "1,2,3,",
+            ",1,2,3",
+            "1,NaN,3",
+            "1,inf,3",
+            "1,true,3",
+            "[1,2,3]",
+            0,
+        ):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                ValueError, "shimnativebaseline"
+            ):
+                _settings({**complete, "shimnativebaseline": invalid}, None)
+        with self.assertRaisesRegex(ValueError, "matching lengths"):
+            _settings({**complete, "shimnativeupper": ",".join(["1000"] * 8)}, None)
+        with self.assertRaisesRegex(ValueError, "shimisocentrerasmm"):
+            _settings({**complete, "shimisocentrerasmm": ",".join(["0"] * 8)}, None)
+        for lower, upper, message in (
+            ("2,2,2", "1,1,1", "ordered"),
+            ("0,0,0", "0,0,0", "exceed absolute bounds"),
+        ):
+            settings = _settings(
+                {**complete, "shimnativelower": lower, "shimnativeupper": upper}, None
+            )
+            with self.subTest(lower=lower), self.assertRaisesRegex(ValueError, message):
+                compute_shim(
+                    self.field,
+                    self.mask,
+                    self.affine,
+                    analytical_model_path=settings["shim_analytical_model"],
+                    acquisition_native=settings["shim_native_settings"],
+                )
+
+    def test_in_memory_model_uses_file_validation(self):
+        original = copy.deepcopy(self.config)
+        native = dict(zip(self.names, self.baseline))
+        for key, value in [
+            ("scanner_model", "other"),
+            ("orders", [2]),
+            ("absolute_native_bounds", {"X": [-1, 1]}),
+            ("extra", 0),
+            ("field_strength_t", True),
+            ("patient_ras_mm_to_shim_lai_mm", np.zeros((4, 4)).tolist()),
+        ]:
+            model = {**original, key: value}
+            self.path.write_text(json.dumps(model))
+            for source in (model, self.path):
+                with self.subTest(key=key, source=type(source)), self.assertRaises(
+                    ValueError
+                ):
+                    compute_shim(
+                        self.field,
+                        self.mask,
+                        self.affine,
+                        analytical_model_path=source,
+                        acquisition_native=native,
+                    )
+
+    def test_packaged_direct_gui_contract(self):
+        import b0mapromeo
+        from b0mapromeo import _settings
+
+        label = json.loads(
+            Path(b0mapromeo.__file__).with_name("OpenReconLabel.json").read_text()
+        )
+        parameters = label["parameters"]
+        self.assertEqual(len(parameters), 13)
+        self.assertEqual(
+            [p["id"] for p in parameters[:9]],
+            [
+                "config",
+                "sendoriginal",
+                "phaseunits",
+                "echotimesms",
+                "maxseeds",
+                "shimcalibration",
+                "shimcurrenta",
+                "shimanalyticalmodel",
+                "shimnativesettings",
+            ],
+        )
+        defaults = {p["id"]: p["default"] for p in parameters}
+        self.assertEqual(
+            [defaults[k] for k in defaults if k.startswith("shim")], [""] * 8
+        )
+        direct = {p["id"]: p for p in parameters[9:]}
+        self.assertEqual(tuple(direct), DIRECT_NATIVE_FIELDS)
+        order = ",".join(c.label for c in NativeChannel)
+        for name in DIRECT_NATIVE_FIELDS[:3]:
+            self.assertEqual(direct[name]["type"], "string")
+            self.assertIn(order, direct[name]["information"]["en"])
+            self.assertIn("uT/m^2", direct[name]["information"]["en"])
+        settings = _settings({"parameters": defaults}, None)
+        self.assertIsNone(settings["shim_analytical_model"])
+        self.assertIsNone(settings["shim_native_settings"])
 
     def test_landmarks_affine_and_isocentre(self):
         self.solve()

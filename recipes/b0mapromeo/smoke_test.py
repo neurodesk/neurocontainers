@@ -323,16 +323,26 @@ def main():
         assert prescription["predicted_std_hz"] < 1.0
 
         analytical_path = root / "analytical.json"
-        analytical_path.write_text(json.dumps({
-            "configuration_id": "synthetic-geometry-only",
-            "scanner_model": "MAGNETOM Cima.X", "field_strength_t": 3,
-            "orders": [1, 2],
-            "patient_ras_mm_to_shim_lai_mm": [
-                [1, 0, 0, -5], [0, 1, 0, 7], [0, 0, 1, -11], [0, 0, 0, 1]
-            ],
-            "absolute_native_bounds": {n: [-1000, 1000] for n in
-                ("X", "Y", "Z", "Z2", "ZX", "ZY", "X2-Y2", "XY")},
-        }))
+        analytical_path.write_text(
+            json.dumps(
+                {
+                    "configuration_id": "synthetic-geometry-only",
+                    "scanner_model": "MAGNETOM Cima.X",
+                    "field_strength_t": 3,
+                    "orders": [1, 2],
+                    "patient_ras_mm_to_shim_lai_mm": [
+                        [-1, 0, 0, 5],
+                        [0, 1, 0, 7],
+                        [0, 0, -1, 11],
+                        [0, 0, 0, 1],
+                    ],
+                    "absolute_native_bounds": {
+                        n: [-1000, 1000]
+                        for n in ("X", "Y", "Z", "Z2", "ZX", "ZY", "X2-Y2", "XY")
+                    },
+                }
+            )
+        )
         native = json.dumps({"X": .3, "Y": -.2, "Z": .1,
                              "Z2": 2, "ZX": -3, "ZY": 4, "X2-Y2": -5, "XY": 6})
         analytical_metadata = copy.deepcopy(metadata)
@@ -370,6 +380,76 @@ def main():
         assert prescription["predicted_std_hz"] < 1
         assert prescription["settings"][0]["baseline"] == .3
         assert not any("current" in k or "calibration" in k for k in prescription)
+
+        direct_parameters = {
+            "shimnativebaseline": ".3,-.2,.1,2,-3,4,-5,6",
+            "shimnativelower": ",".join(["-1000"] * 8),
+            "shimnativeupper": ",".join(["1000"] * 8),
+            "shimisocentrerasmm": "5,-7,11",
+        }
+        ideal = app.compute_shim(
+            expected,
+            mask,
+            affine,
+            analytical_model_path=analytical_path,
+            acquisition_native=native,
+        )
+        ideal_settings = np.array([s.absolute for s in ideal.settings])
+        known_absolute = np.array([0.3, -0.2, 0.1, 2, -3, 4, -5, 6])
+        known_absolute[1] += 9 / (42577478.517832555 * 1e-9)
+        np.testing.assert_allclose(ideal_settings, known_absolute, atol=2e-4)
+        assert ideal.predicted_std_hz < 1e-6
+
+        label = json.loads(
+            Path(app.__file__).with_name("OpenReconLabel.json").read_text()
+        )
+        defaults = {p["id"]: p["default"] for p in label["parameters"]}
+        direct_metadata = copy.deepcopy(analytical_metadata)
+        direct_metadata.userParameters.userParameterString = [
+            p
+            for p in direct_metadata.userParameters.userParameterString
+            if p.name not in ("shimanalyticalmodel", "shimnativesettings")
+        ]
+        header_direct = copy.deepcopy(direct_metadata)
+        header_direct.userParameters.userParameterString.extend(
+            [
+                ismrmrd.xsd.userParameterStringType(name=k, value=v)
+                for k, v in direct_parameters.items()
+            ]
+        )
+        for parameters, header in [
+            (defaults, header_direct),
+            ({**defaults, **direct_parameters}, direct_metadata),
+        ]:
+            direct_connection = Connection(scanner_images)
+            app.process(
+                direct_connection, {"parameters": parameters}, ismrmrd.xsd.ToXML(header)
+            )
+            assert direct_connection.closed and not direct_connection.logs
+            assert len(direct_connection.sent) == len(analytical_connection.sent)
+            for direct_image, file_image in zip(
+                direct_connection.sent, analytical_connection.sent
+            ):
+                direct_meta = ismrmrd.Meta.deserialize(direct_image.attribute_string)
+                file_meta = ismrmrd.Meta.deserialize(file_image.attribute_string)
+                assert direct_meta["B0ShimStatus"] == "available"
+                assert direct_meta["ImageComment"] == direct_meta["ImageComments"]
+                assert "configuration=entered-hfs-" in direct_meta["ImageComments"]
+                assert direct_meta["ImageComments"].split("; configuration=")[0] == (
+                    file_meta["ImageComments"].split("; configuration=")[0]
+                )
+            assert not list(app.WORK_ROOT.iterdir())
+        for parameters in [
+            {**defaults, "shimnativebaseline": "0,0,0"},
+            {**defaults, **direct_parameters, "shimnativesettings": native},
+        ]:
+            invalid_direct = Connection(scanner_images)
+            app.process(invalid_direct, {"parameters": parameters}, direct_metadata)
+            assert (
+                invalid_direct.closed
+                and invalid_direct.logs
+                and not invalid_direct.sent
+            )
 
         # Wider fields must retain sign/range with a reversible display rescale.
         wide = expected * 100

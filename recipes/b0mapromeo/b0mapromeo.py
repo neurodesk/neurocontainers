@@ -19,7 +19,11 @@ import pydicom
 from scipy import ndimage
 
 import openreconi2iexample as helpers
-from b0mapromeo_analytic import AnalyticalShimResult
+from b0mapromeo_analytic import (
+    AnalyticalShimResult,
+    DIRECT_NATIVE_FIELDS,
+    direct_native_inputs,
+)
 from b0mapromeo_shim import ShimResult, compute_shim, unavailable
 
 
@@ -513,14 +517,24 @@ def _settings(config, metadata) -> dict:
     if not isinstance(parameters, dict):
         raise ValueError("Config parameters must be an object")
     parameters = dict(parameters)
-    for key in (
-        "shimcalibration", "shimcurrenta", "shimanalyticalmodel", "shimnativesettings"
-    ):
-        if parameters.get(key) == "":
+    shim_fields = (
+        "shimcalibration",
+        "shimcurrenta",
+        "shimanalyticalmodel",
+        "shimnativesettings",
+    ) + DIRECT_NATIVE_FIELDS
+    for key in shim_fields:
+        if isinstance(parameters.get(key), str) and not parameters[key].strip():
             parameters.pop(key)
     user = getattr(metadata, "userParameters", None)
     for name in ("userParameterString", "userParameterLong", "userParameterDouble"):
         for item in getattr(user, name, []) or []:
+            if (
+                item.name in shim_fields
+                and isinstance(item.value, str)
+                and not item.value.strip()
+            ):
+                continue
             parameters.setdefault(item.name, item.value)
     raw = parameters.get("echotimesms", "")
     times = (
@@ -534,6 +548,21 @@ def _settings(config, metadata) -> dict:
     shim_current_a = parameters.get("shimcurrenta")
     shim_analytical_model = parameters.get("shimanalyticalmodel")
     shim_native_settings = parameters.get("shimnativesettings")
+    direct_values = tuple(parameters.get(key) for key in DIRECT_NATIVE_FIELDS)
+    if any(v is not None for v in direct_values):
+        legacy = (
+            shim_calibration,
+            shim_current_a,
+            shim_analytical_model,
+            shim_native_settings,
+        )
+        if any(v is not None for v in legacy):
+            raise ValueError(
+                "Direct HFS native inputs cannot be combined with measured or file analytical inputs"
+            )
+    direct = direct_native_inputs(*direct_values)
+    if direct is not None:
+        shim_analytical_model, shim_native_settings = direct
     return {
         "shim_calibration": None if shim_calibration == "" else shim_calibration,
         "shim_current_a": None if shim_current_a == "" else shim_current_a,
