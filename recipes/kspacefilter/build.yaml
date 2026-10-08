@@ -1,4 +1,4 @@
-name: frisgokspace
+name: kspacefilter
 version: 0.1.0
 architectures:
   - x86_64
@@ -11,16 +11,16 @@ files:
       #!/usr/bin/env bash
       set -euo pipefail
       if [[ "${1:-}" == "--version" ]]; then
-        printf 'frisgokspace {{ context.version }}\n'
+        printf 'kspacefilter {{ context.version }}\n'
         exit 0
       fi
-      exec python /opt/code/python-ismrmrd-server/main.py -H 0.0.0.0 -p 9002 -d frisgokspace "$@"
-  - name: frisgokspace.py
-    filename: frisgokspace.py
+      exec python /opt/code/python-ismrmrd-server/main.py -H 0.0.0.0 -p 9002 -d kspacefilter "$@"
+  - name: kspacefilter.py
+    filename: kspacefilter.py
   - name: configure_server.py
     filename: ../../macros/mrdserver/configure_server.py
-  - name: smoke_frisgokspace.py
-    filename: tests/smoke_frisgokspace.py
+  - name: smoke_kspacefilter.py
+    filename: tests/smoke_kspacefilter.py
   - name: fire-integration-contract.json
     filename: fire-integration-contract.json
   - name: README.md
@@ -84,23 +84,23 @@ build:
     - install: ca-certificates git build-essential python3-pip python-is-python3
     - include: macros/openrecon/neurodocker.yaml
     - run:
-        - python {{ get_file("configure_server.py") }} /opt/code/python-ismrmrd-server frisgokspace
-        - cp {{ get_file("frisgokspace.py") }} /opt/code/python-ismrmrd-server/frisgokspace.py
-        - cp {{ get_file("smoke_frisgokspace.py") }} /opt/code/python-ismrmrd-server/smoke_frisgokspace.py
+        - python {{ get_file("configure_server.py") }} /opt/code/python-ismrmrd-server kspacefilter
+        - cp {{ get_file("kspacefilter.py") }} /opt/code/python-ismrmrd-server/kspacefilter.py
+        - cp {{ get_file("smoke_kspacefilter.py") }} /opt/code/python-ismrmrd-server/smoke_kspacefilter.py
         - cp {{ get_file("fire-integration-contract.json") }} /opt/code/python-ismrmrd-server/fire-integration-contract.json
         - cp {{ get_file("README.md") }} /opt/code/python-ismrmrd-server/README.md
         - cp {{ get_file("start-service.sh") }} /opt/code/python-ismrmrd-server/start-service.sh
-        - install -m 0755 {{ get_file("launcher") }} /usr/local/bin/frisgokspace
+        - install -m 0755 {{ get_file("launcher") }} /usr/local/bin/kspacefilter
     - environment:
-        FRISGOKSPACE_VERSION: '{{ context.version }}'
+        KSPACEFILTER_VERSION: '{{ context.version }}'
 deploy:
   bins:
-    - frisgokspace
+    - kspacefilter
 categories:
   - image reconstruction
 readme: |
-  frisgokspace/{{ context.version }}
-  Experimental complex temporal smoothing and ordered acquisition return over MRD.
+  kspacefilter/{{ context.version }}
+  Immediate readout edge zeroing and ordered acquisition return over MRD.
   Default passthrough. Requires a custom FIRE/ICE acquisition-response adapter.
   See packaged README.md and fire-integration-contract.json for input assumptions.
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABcElEQVR4nOWZy1HEMBBE212EwGZigmDz4EY43MiDJKxMSILDVi0uIw22NCPc4t3WLc+opSmvPtPj/AxlCHEIcQhxCHEIcQhxCHEIcQhxCHEIcR7qXpvfX0tSenlrUXGQ6dBizsjtS9rtZK+BTdc3CbyGfDazVBpYB/0Z0VD3e05Hwh4zcA+UjbJTbY+Qyh4Y3fu7mi2k1KD+MgO3d0rWK1T3gNYMRCS7PSmNZapVMwaChirIA7M9KNGiBmVhtpH95TqVyj7FE1dIhDjsPPzuk0CIQ4xhYO5YP75VRIhDiEOMuif+XD62j5arFclWq19cvtXL0/U/zcBlZTfiK+QVlhCHGMNAitkuGXj9dRLiEMMYSB2ryHHpRYjD9Y8+k+C78qXRzu7BSVR2O1MIysJSi4hCitg20b2XJTVo0zcZx+tep9O+p9yj3Q9Mg9/QjHBHNsgt5SD3xCeEEIcQhxCHEIcQhxCHEIcQhxCHf92BVr4AeeWUCY1l0doAAAAASUVORK5CYII=
