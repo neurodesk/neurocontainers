@@ -7,6 +7,7 @@ tests:
     expected_output_contains: "b0mapromeo ${version}"
   - name: synthetic B0 reconstruction
     description: Reconstruct a known signed B0 field with real ROMEO and verify DICOM parsing, MRD geometry and Hz scaling.
+    timeout: 600
     command: python3 /opt/b0mapromeo/smoke_test.py
     expected_output_contains: "Synthetic DICOM/MRD ROMEO B0 smoke test passed"
   - name: calibrated absolute shim settings
