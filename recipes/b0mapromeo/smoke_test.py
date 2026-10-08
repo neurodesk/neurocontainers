@@ -322,6 +322,55 @@ def main():
         np.testing.assert_allclose(prescription["absolute_current_a"], [-0.7], atol=0.02)
         assert prescription["predicted_std_hz"] < 1.0
 
+        analytical_path = root / "analytical.json"
+        analytical_path.write_text(json.dumps({
+            "configuration_id": "synthetic-geometry-only",
+            "scanner_model": "MAGNETOM Cima.X", "field_strength_t": 3,
+            "orders": [1, 2],
+            "patient_ras_mm_to_shim_lai_mm": [
+                [1, 0, 0, -5], [0, 1, 0, 7], [0, 0, 1, -11], [0, 0, 0, 1]
+            ],
+            "absolute_native_bounds": {n: [-1000, 1000] for n in
+                ("X", "Y", "Z", "Z2", "ZX", "ZY", "X2-Y2", "XY")},
+        }))
+        native = json.dumps({"X": .3, "Y": -.2, "Z": .1,
+                             "Z2": 2, "ZX": -3, "ZY": 4, "X2-Y2": -5, "XY": 6})
+        analytical_metadata = copy.deepcopy(metadata)
+        analytical_metadata.userParameters.userParameterString = [
+            p for p in analytical_metadata.userParameters.userParameterString
+            if p.name not in ("shimcalibration", "shimcurrenta")
+        ] + [
+            ismrmrd.xsd.userParameterStringType(name="shimanalyticalmodel", value=str(analytical_path)),
+            ismrmrd.xsd.userParameterStringType(name="shimnativesettings", value=native),
+        ]
+        analytical_connection = Connection(scanner_images)
+        app.process(analytical_connection, {"parameters": {
+            "phaseunits": "siemens", "shimcalibration": "", "shimcurrenta": "",
+            "shimanalyticalmodel": "", "shimnativesettings": "",
+        }}, ismrmrd.xsd.ToXML(analytical_metadata))
+        assert analytical_connection.closed and not analytical_connection.logs
+        assert len(analytical_connection.sent) == expected.shape[2]
+        for image in analytical_connection.sent:
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            assert meta["B0ShimStatus"] == "available"
+            assert meta["ImageComment"] == meta["ImageComments"]
+            assert "ABSOLUTE ANALYTICAL ESTIMATE" in meta["ImageComments"]
+            assert "uT/m^2" in meta["ImageComments"]
+        assert not list(app.WORK_ROOT.iterdir())
+        analytical_output = root / "analytical-cli-output"
+        subprocess.run([
+            sys.executable, app.__file__, "--dicom-dir", str(root / "classic"),
+            "--output-dir", str(analytical_output),
+            "--shim-analytical-model", str(analytical_path), "--shim-native-settings", native,
+        ], check=True)
+        prescription = json.loads((analytical_output / "shim_settings.json").read_text())
+        assert prescription["status"] == "available"
+        assert prescription["validation"] == "ideal_field_estimate"
+        assert prescription["model_kind"] == "siemens_analytical"
+        assert prescription["predicted_std_hz"] < 1
+        assert prescription["settings"][0]["baseline"] == .3
+        assert not any("current" in k or "calibration" in k for k in prescription)
+
         # Wider fields must retain sign/range with a reversible display rescale.
         wide = expected * 100
         encoded = app.output_images(wide, anchors, 181)

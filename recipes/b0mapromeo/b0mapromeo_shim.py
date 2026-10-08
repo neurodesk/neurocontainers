@@ -5,6 +5,8 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
+from b0mapromeo_analytic import AnalyticalShimResult, _compute_analytical
+
 
 @dataclass(frozen=True)
 class ShimResult:
@@ -42,9 +44,25 @@ def compute_shim(
     affine: np.ndarray,
     calibration_path: str | Path | None = None,
     acquisition_current_a: str | list | dict | None = None,
-) -> ShimResult:
+    *,
+    analytical_model_path: str | Path | None = None,
+    acquisition_native: str | dict | None = None,
+) -> ShimResult | AnalyticalShimResult:
     """Fit spatial variance with signed profiles; positive A adds profile Hz."""
-    if calibration_path is None and acquisition_current_a is None:
+    calibration_path, acquisition_current_a, analytical_model_path, acquisition_native = (
+        None if isinstance(value, str) and value == "" else value
+        for value in (calibration_path, acquisition_current_a,
+                      analytical_model_path, acquisition_native)
+    )
+    measured = calibration_path is not None or acquisition_current_a is not None
+    analytical = analytical_model_path is not None or acquisition_native is not None
+    if measured and analytical:
+        raise ValueError("Measured and analytical shim inputs cannot be combined")
+    if analytical:
+        if analytical_model_path is None or acquisition_native is None:
+            raise ValueError("Analytical model and native acquisition settings must both be supplied")
+        return _compute_analytical(field, mask, affine, analytical_model_path, acquisition_native)
+    if not measured:
         return unavailable()
     if not calibration_path or acquisition_current_a is None:
         raise ValueError("Shim calibration and acquisition currents must both be supplied")

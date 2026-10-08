@@ -157,3 +157,121 @@ ranges, retaining the adapter's pinned NumPy, SciPy, nibabel and OpenRecon's
 pydicom 3.0.1. This avoids replacing the validated reconstruction dependencies
 with the upstream development lock. The build runs `pip check`, and release tests
 exercise both real ROMEO reconstruction and the installed Toolbox optimizer.
+
+## Analytical native Cima.X estimates
+
+When measured coil profiles are unavailable, the analytical mode fits ideal
+Siemens first-order or first- and second-order fields. `X`, `Y`, and `Z` use
+`uT/m`. `Z2`, `ZX`, `ZY`, `X2-Y2`, and `XY` use `uT/m^2`.
+The result is an ideal field estimate, not a scanner calibration. No current
+conversion or Cima.X hardware limits are bundled. The application does not apply
+settings to the scanner.
+
+The CLI requires both `--shim-analytical-model PATH` and
+`--shim-native-settings JSON`. MRD uses `shimanalyticalmodel` and
+`shimnativesettings`. Native settings must be a JSON object naming exactly the
+selected channels. Supply the actual baseline for each acquisition separately.
+The model file cannot contain a baseline. Measured and analytical inputs cannot
+be combined. Empty UI strings permit MRD header values to supply these inputs.
+All inputs empty retain the existing unavailable result. A partial mode fails.
+
+The model requires exactly these keys. `configuration_id` is a nonempty identity
+for supplied geometry and bounds. `scanner_model` is `MAGNETOM Cima.X`,
+`field_strength_t` is `3`, and `orders` is either `[1]` or `[1,2]`.
+`absolute_native_bounds` names exactly the selected channels, each with finite
+ordered `[lower, upper]` values in its native unit. Equal bounds fix a channel.
+There is no sum limit across channels with different units.
+
+`patient_ras_mm_to_shim_lai_mm` is an explicit 4 by 4 homogeneous rigid transform
+from the fieldmap's patient RAS coordinates in mm to actual Siemens shim LAI
+coordinates in mm relative to magnet isocentre. Rotation must be orthogonal with
+determinant +1, within `1e-6`. The last row must equal `[0,0,0,1]` within `1e-8`.
+The transform must match the acquisition and its producer's coordinate origin.
+DICOM ImagePositionPatient does not establish magnet isocentre. Conforming MRD
+ImageHeader.position is the volume centre relative to isocentre, per the
+[MRD image header specification](https://ismrmrd.readthedocs.io/en/stable/mrd_image_data.html#imageheader).
+The pinned server's
+[DICOM converter](https://github.com/astewartau/python-ismrmrd-server/blob/33362f2139701fbf5ea855808a325eb59b7db2ae/dicom2mrd.py#L167)
+copies a corner ImagePositionPatient into MRD position instead, so validate the
+producer's centre and origin conventions before using its geometry.
+An explicit transform remains mandatory for both input paths.
+
+Head-first alone does not establish supine orientation. Only after confirming
+head-first supine and the corresponding patient axes can the rotation be
+`R=diag(-1,1,-1)`. For a verified patient-RAS isocentre point `p_iso`, the
+homogeneous transform is `T=[R,-R*p_iso;0,1]`. Other positions require their
+verified rotation. Unknown isocentre is an error in configuration preparation.
+Never substitute the image centre or infer table-position semantics.
+
+The following model and command are a complete **synthetic-only example**.
+It uses head-first supine rotation with an invented patient-RAS isocentre
+`[5,-7,11]` mm. The isocentre, bounds, and baseline are invented for a test
+acquisition. They do not describe a real scanner or patient.
+
+```json
+{
+  "configuration_id": "synthetic-geometry-only",
+  "scanner_model": "MAGNETOM Cima.X",
+  "field_strength_t": 3,
+  "orders": [1, 2],
+  "patient_ras_mm_to_shim_lai_mm": [
+    [-1, 0, 0, 5], [0, 1, 0, 7], [0, 0, -1, 11], [0, 0, 0, 1]
+  ],
+  "absolute_native_bounds": {
+    "X": [-1000, 1000], "Y": [-1000, 1000], "Z": [-1000, 1000],
+    "Z2": [-1000, 1000], "ZX": [-1000, 1000], "ZY": [-1000, 1000],
+    "X2-Y2": [-1000, 1000], "XY": [-1000, 1000]
+  }
+}
+```
+
+```bash
+b0mapromeo --dicom-dir /input/synthetic_gre --output-dir /output/synthetic_b0 \
+  --shim-analytical-model /input/synthetic_model.json \
+  --shim-native-settings '{"X":0.3,"Y":-0.2,"Z":0.1,"Z2":2,"ZX":-3,"ZY":4,"X2-Y2":-5,"XY":6}'
+```
+
+For actual acquisition values and limits, use the scanner's native shim panel
+and validated scanner information. Toolbox's
+[scanner constraint documentation](https://shimming-toolbox.org/en/latest/miscellaneous/constraint_file.html)
+documents these commands on the scanner terminal:
+
+```text
+AdjValidate -shim -info -mp
+AdjValidate -shim -info
+```
+
+The documented paired outputs establish scanner-specific conversion factors for
+DICOM DAC values. DAC metadata must not be supplied directly as native units.
+This adapter does not read or convert that metadata automatically.
+
+The basis follows the pinned Toolbox 1.5 executable order
+`X,Y,Z,Z2,ZX,ZY,X2-Y2,XY`. At shim LAI coordinates `(x,y,z)` in mm, the fields
+are `gamma*1e-9*(x,y,z)` and
+`gamma*1e-12*(z^2-(x^2+y^2)/2,2*z*x,2*z*y,x^2-y^2,2*x*y)`, with
+`gamma=42577478.517832555 Hz/T`. Native column normalization conditions the
+real SLSQP optimizer. A clipped least-squares start protects small second-order
+sensitivities from its stopping tolerance. The fit allows a constant frequency
+offset and uses absolute bounds. Fixed channels are removed before the rank
+check; all-fixed configurations need no optimizer. Free channels without
+independent spatial effects in the ROI fail, including undersized ROIs.
+Solutions must remain finite, feasible, and no worse than the baseline's ROI
+standard deviation within `1e-6*max(1,baseline_std_hz)`.
+
+Predictions use the measured field plus ideal profiles times
+`absolute-baseline`. Both image comment keys contain identical labeled
+`ABSOLUTE ANALYTICAL ESTIMATE` settings with native units.
+`B0ShimStatus` remains `available`. The CLI JSON records
+`model_kind=siemens_analytical`, `validation=ideal_field_estimate`,
+`basis_model_id=siemens-ideal-1st2nd-v1`, the actual transform, orders, bounds,
+and per-channel name, unit, baseline, and absolute value. It contains no amp or
+calibration fields. Existing measured-mode attributes and JSON remain unchanged.
+Release tests verify ideal polynomial geometry and synthetic reconstruction;
+real scanner field deviations and scanner round-trip behavior remain unvalidated.
+
+For rotated MRD pixels, paired `ImageRowDir` and `ImageColumnDir` metadata
+identify the actual pixel axes. The adapter uses these before acquisition header
+directions. `ImageSliceDir` may supply the normal; otherwise the cross product
+of row and column gives it. All axes must be finite, orthonormal,
+and consistent across echoes. A flipped voxel grid may be left-handed. Derived orientation metadata preserves those pixel
+axes while the acquisition header directions remain unchanged.

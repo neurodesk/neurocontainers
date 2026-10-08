@@ -1,5 +1,5 @@
 name: b0mapromeo
-version: 1.1.0
+version: 1.2.0
 tests:
   - name: launcher version
     description: Check the deployed command and container version.
@@ -14,3 +14,7 @@ tests:
     description: Exercise the installed Shimming Toolbox optimizer, current constraints and MRD image comments.
     command: python3 /opt/b0mapromeo/test_b0mapromeo_shim.py
     expected_output_contains: "Calibrated absolute shim tests passed"
+  - name: analytical native shim estimates
+    description: Verify ideal Siemens polynomial geometry, native constraints and image comments with the installed optimizer.
+    command: python3 /opt/b0mapromeo/test_b0mapromeo_analytic.py
+    expected_output_contains: "Analytical native shim tests passed"

@@ -1,5 +1,5 @@
 name: b0mapromeo
-version: 1.1.0
+version: 1.2.0
 architectures:
   - x86_64
 copyright:
@@ -137,6 +137,8 @@ build:
         - /opt/julia/bin/julia --startup-file=no --threads=1 --project=/opt/b0mapromeo/julia -e 'using Pkg; Pkg.precompile()'
         - chmod -R a+rX /opt/julia-depot
     - run:
+        - cp {{ get_file("b0mapromeo_analytic.py") }} /opt/code/python-ismrmrd-server/b0mapromeo_analytic.py
+        - cp {{ get_file("test_b0mapromeo_analytic.py") }} /opt/b0mapromeo/test_b0mapromeo_analytic.py
         - cp {{ get_file("b0mapromeo_shim.py") }} /opt/code/python-ismrmrd-server/b0mapromeo_shim.py
         - cp {{ get_file("test_b0mapromeo_shim.py") }} /opt/b0mapromeo/test_b0mapromeo_shim.py
         - cp {{ get_file("b0mapromeo.py") }} /opt/code/python-ismrmrd-server/b0mapromeo.py
@@ -160,6 +162,10 @@ deploy:
 files:
   - name: shimmingtoolbox_archive
     url: https://github.com/shimming-toolbox/shimming-toolbox/archive/{{ context.shimmingtoolbox_commit }}.tar.gz
+  - name: b0mapromeo_analytic.py
+    filename: b0mapromeo_analytic.py
+  - name: test_b0mapromeo_analytic.py
+    filename: test_b0mapromeo_analytic.py
   - name: b0mapromeo_shim.py
     filename: b0mapromeo_shim.py
   - name: test_b0mapromeo_shim.py

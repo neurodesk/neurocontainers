@@ -19,6 +19,7 @@ import pydicom
 from scipy import ndimage
 
 import openreconi2iexample as helpers
+from b0mapromeo_analytic import AnalyticalShimResult
 from b0mapromeo_shim import ShimResult, compute_shim, unavailable
 
 
@@ -155,6 +156,30 @@ def _vector(header, name: str) -> np.ndarray:
     return value
 
 
+def _image_axes(image: ismrmrd.Image) -> np.ndarray:
+    meta = ismrmrd.Meta.deserialize(image.attribute_string)
+    paired = ("ImageRowDir" in meta, "ImageColumnDir" in meta)
+    if paired[0] != paired[1] or ("ImageSliceDir" in meta and not all(paired)):
+        raise ValueError("MRD pixel orientation requires paired row and column directions")
+    if all(paired):
+        row = np.asarray(meta["ImageRowDir"], dtype=float)
+        column = np.asarray(meta["ImageColumnDir"], dtype=float)
+        if row.shape != (3,) or column.shape != (3,):
+            raise ValueError("MRD pixel directions require three components")
+        normal = np.asarray(meta.get("ImageSliceDir", np.cross(row, column)), dtype=float)
+        if normal.shape != (3,):
+            raise ValueError("MRD pixel slice direction requires three components")
+        axes = np.column_stack((row, column, normal))
+    else:
+        axes = np.column_stack([_vector(image.getHead(), n)
+                                for n in ("read_dir", "phase_dir", "slice_dir")])
+    if (not np.isfinite(axes).all()
+            or not np.allclose(axes.T @ axes, np.eye(3), rtol=0, atol=1e-4)
+):
+        raise ValueError("MRD image axes must be finite and orthonormal")
+    return axes
+
+
 def _planes(image: ismrmrd.Image) -> list[ismrmrd.Image]:
     """Split packed MRD volumes, whose position denotes their center."""
     data = np.asarray(image.data)
@@ -166,6 +191,7 @@ def _planes(image: ismrmrd.Image) -> list[ismrmrd.Image]:
     spacing = float(header.field_of_view[2]) / data.shape[1]
     if spacing <= 0:
         raise ValueError("Packed MRD volume needs positive slice spacing")
+    axes = _image_axes(image)
     planes = []
     for z in range(data.shape[1]):
         plane = ismrmrd.Image.from_array(data[:, z : z + 1].copy(), transpose=False)
@@ -175,7 +201,7 @@ def _planes(image: ismrmrd.Image) -> list[ismrmrd.Image]:
         head.field_of_view[2] = spacing
         head.position[:] = _vector(header, "position") + (
             z - (data.shape[1] - 1) / 2
-        ) * spacing * _vector(header, "slice_dir")
+        ) * spacing * axes[:, 2]
         head.slice = z
         plane.setHead(head)
         plane.attribute_string = image.attribute_string
@@ -216,12 +242,9 @@ def assemble(
             "Magnitude and phase must have the same echo indices, at least two"
         )
     times = validate_echo_times(echo_times_ms, len(mag_echoes))
-    reference = groups[(ismrmrd.IMTYPE_MAGNITUDE, mag_echoes[0])][0].getHead()
-    axes = np.column_stack(
-        [_vector(reference, n) for n in ("read_dir", "phase_dir", "slice_dir")]
-    )
-    if not np.allclose(axes.T @ axes, np.eye(3), atol=1e-4):
-        raise ValueError("MRD image axes must be orthonormal")
+    reference_image = groups[(ismrmrd.IMTYPE_MAGNITUDE, mag_echoes[0])][0]
+    reference = reference_image.getHead()
+    axes = _image_axes(reference_image)
     shape = tuple(int(v) for v in reference.matrix_size[:2])
     spacing_xy = _vector(reference, "field_of_view")[:2] / shape
     if np.any(spacing_xy <= 0):
@@ -259,16 +282,7 @@ def assemble(
                         _vector(reference, "field_of_view")[:2],
                         atol=1e-3,
                     )
-                    or not np.allclose(
-                        np.column_stack(
-                            [
-                                _vector(h, n)
-                                for n in ("read_dir", "phase_dir", "slice_dir")
-                            ]
-                        ),
-                        axes,
-                        atol=1e-4,
-                    )
+                    or not np.allclose(_image_axes(im), axes, rtol=0, atol=1e-4)
                 ):
                     raise ValueError("Echoes have inconsistent geometry")
             volume = np.stack([im.data[0, 0].T for im in ordered], axis=2).astype(
@@ -428,7 +442,7 @@ def read_dicoms(
 
 def output_images(
     field: np.ndarray, anchors: list[ismrmrd.Image], series_index: int,
-    shim_result: ShimResult | None = None,
+    shim_result: ShimResult | AnalyticalShimResult | None = None,
 ) -> list[ismrmrd.Image]:
     """Return unsigned scanner pixels with a reversible Hz rescale."""
     shim_result = shim_result or unavailable()
@@ -473,6 +487,13 @@ def output_images(
                 "NumberInSeries": str(z + 1),
             },
         )
+        source_meta = ismrmrd.Meta.deserialize(source.attribute_string)
+        if "ImageRowDir" in source_meta or "ImageColumnDir" in source_meta:
+            axes = _image_axes(source)
+            meta = ismrmrd.Meta.deserialize(output.attribute_string)
+            meta["ImageSliceDir"] = axes[:, 2].tolist()
+            meta["ImageSliceNormDir"] = axes[:, 2].tolist()
+            output.attribute_string = meta.serialize()
         outputs.append(output)
     return outputs
 
@@ -492,7 +513,9 @@ def _settings(config, metadata) -> dict:
     if not isinstance(parameters, dict):
         raise ValueError("Config parameters must be an object")
     parameters = dict(parameters)
-    for key in ("shimcalibration", "shimcurrenta"):
+    for key in (
+        "shimcalibration", "shimcurrenta", "shimanalyticalmodel", "shimnativesettings"
+    ):
         if parameters.get(key) == "":
             parameters.pop(key)
     user = getattr(metadata, "userParameters", None)
@@ -509,9 +532,13 @@ def _settings(config, metadata) -> dict:
     )
     shim_calibration = parameters.get("shimcalibration")
     shim_current_a = parameters.get("shimcurrenta")
+    shim_analytical_model = parameters.get("shimanalyticalmodel")
+    shim_native_settings = parameters.get("shimnativesettings")
     return {
         "shim_calibration": None if shim_calibration == "" else shim_calibration,
         "shim_current_a": None if shim_current_a == "" else shim_current_a,
+        "shim_analytical_model": None if shim_analytical_model == "" else shim_analytical_model,
+        "shim_native_settings": None if shim_native_settings == "" else shim_native_settings,
         "times": times,
         "phase_units": parameters.get("phaseunits", "siemens"),
         "max_seeds": int(parameters.get("maxseeds", 4000)),
@@ -541,7 +568,9 @@ def process(connection, config, metadata):
             )
             series = max(180, max(int(im.image_series_index) for im in images) + 1)
             shim = compute_shim(field, mask, affine, settings["shim_calibration"],
-                                settings["shim_current_a"])
+                                settings["shim_current_a"],
+                                analytical_model_path=settings["shim_analytical_model"],
+                                acquisition_native=settings["shim_native_settings"])
             outputs = output_images(field, anchors, series, shim)
         if settings["send_original"]:
             # These shared helpers also restamp scanner MiniHead storage fields.
@@ -574,6 +603,8 @@ def main() -> None:
     parser.add_argument("--max-seeds", type=int, default=4000)
     parser.add_argument("--shim-calibration", type=Path)
     parser.add_argument("--shim-current-a", help="JSON current array or channel-name object in A")
+    parser.add_argument("--shim-analytical-model", type=Path)
+    parser.add_argument("--shim-native-settings", help="JSON named native acquisition settings")
     args = parser.parse_args()
     if args.output_dir.exists() and any(args.output_dir.iterdir()):
         parser.error(
@@ -584,7 +615,9 @@ def main() -> None:
     field, mask = reconstruct(
         magnitude, phase, affine, times, args.output_dir, args.max_seeds
     )
-    shim = compute_shim(field, mask, affine, args.shim_calibration, args.shim_current_a)
+    shim = compute_shim(field, mask, affine, args.shim_calibration, args.shim_current_a,
+                        analytical_model_path=args.shim_analytical_model,
+                        acquisition_native=args.shim_native_settings)
     shim.write(args.output_dir)
     print(shim.comment)
     print(
