@@ -187,7 +187,8 @@ def run_frisgo(series):
                 f"LN2_FRISGO failed with exit code {result.returncode}; "
                 f"expected output {output_path}"
             )
-        corrected = np.asarray(nib.load(output_path).dataobj, dtype=np.float32)
+        # Close the output before cleanup; network shares cannot unlink an open mapping.
+        corrected = np.asarray(nib.load(output_path, mmap=False).dataobj, dtype=np.float32)
 
     if corrected.shape != volume_shape:
         raise RuntimeError(

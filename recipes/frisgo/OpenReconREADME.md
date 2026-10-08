@@ -74,7 +74,9 @@ repetitions, sent as one 2D image per slice (or partition) and repetition.
   plus 64 MiB of headroom. A 236 x 228 x 208 x 10 run needs approximately 918 MiB
   free. Insufficient space skips correction with a clear log message; requested
   originals are still returned. Temporary files are removed after success or
-  failure. Concurrent runs and longer sequences need additional free space.
+  failure. Corrected NIfTIs are read without memory mapping so their files are
+  closed before deletion on network-mounted shares. Concurrent runs and longer
+  sequences need additional free space.
 
 ## Open Source Development
 

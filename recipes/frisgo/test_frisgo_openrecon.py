@@ -1,5 +1,6 @@
 """Runtime checks for scanner time-series transport using real MRD images."""
 
+import errno
 import os
 import shutil
 import tempfile
@@ -56,19 +57,34 @@ def image(repetition=0, slice_index=0, **counters):
 
 
 class FrisgoOpenReconTests(unittest.TestCase):
-    def test_correction_uses_scanner_share_and_cleans_scratch(self):
+    def test_correction_uses_scanner_share_and_closes_output_before_cleanup(self):
         series = frisgo.assemble_time_series([image(t) for t in range(8)])
         environment = dict(os.environ)
         environment.pop("FRISGO_WORKDIR", None)
+        real_directory = tempfile.TemporaryDirectory
+
+        class DirectoryRequiringClosedFiles(real_directory):
+            def __exit__(self, *args):
+                try:
+                    with open("/proc/self/maps") as mappings:
+                        if self.name + "/timeseries_Tshift.nii" in mappings.read():
+                            raise OSError(errno.ENOTEMPTY, "Directory not empty", self.name)
+                finally:
+                    super().__exit__(*args)
+
         with patch.dict(os.environ, environment, clear=True), patch.object(
             frisgo.subprocess, "run", wraps=frisgo.subprocess.run
-        ) as run:
+        ) as run, patch.object(frisgo.tempfile, "TemporaryDirectory", DirectoryRequiringClosedFiles):
             corrected = frisgo.run_frisgo(series)
         work_dir = run.call_args.kwargs["cwd"]
         self.assertTrue(work_dir.startswith("/tmp/share/frisgo/"), work_dir)
         self.assertFalse(os.path.exists(work_dir))
         self.assertEqual(corrected.shape, series.volume().shape)
         self.assertTrue(np.isfinite(corrected).all())
+        backing = corrected
+        while backing is not None:
+            self.assertNotIsInstance(backing, np.memmap)
+            backing = getattr(backing, "base", None)
 
     def test_correction_honours_scratch_override_and_cleans_on_failure(self):
         series = frisgo.assemble_time_series([image(t) for t in range(8)])
