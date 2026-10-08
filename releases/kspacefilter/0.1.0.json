@@ -1,6 +1,6 @@
 {
   "apps": {
-    "frisgokspace 0.1.0": {
+    "kspacefilter 0.1.0": {
       "version": "20261008",
       "exec": "",
       "apptainer_args": []
