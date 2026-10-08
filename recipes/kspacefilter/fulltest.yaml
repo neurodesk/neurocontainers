@@ -1,0 +1,16 @@
+name: kspacefilter
+version: 0.1.0
+
+tests:
+  - name: deployed launcher
+    command: kspacefilter --version
+    expected_output_contains: "${version}"
+  - name: server CLI
+    command: kspacefilter --help
+    expected_output_contains: "Example server for MRD streaming format"
+  - name: runtime version
+    command: printenv KSPACEFILTER_VERSION
+    expected_output_contains: "${version}"
+  - name: numerical and real MRD TCP contracts
+    command: python /opt/code/python-ismrmrd-server/smoke_kspacefilter.py
+    expected_output_contains: "KSPACEFILTER numerical and MRD transport smoke tests passed"
