@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import constants
 import ismrmrd
 import numpy as np
 
@@ -46,6 +47,63 @@ class ProducerArtifactTests(unittest.TestCase):
         self.reconstruct = reconstruct.start()
         self.addCleanup(reconstruct.stop)
         self.config = {"phaseunits": "radians", "echotimesms": "2,4"}
+
+    def test_invalid_phase_reaches_scanner_error_log_without_outputs(self):
+        for units, low, high, reason, interval in (
+            ("siemens", -1, 4095, "unsigned 12-bit counts", "[0,4095]"),
+            ("siemens", 0, 4096, "unsigned 12-bit counts", "[0,4095]"),
+            ("signed", -4097, 4096, "Signed Siemens phase", "[-4096,4096]"),
+            ("signed", -4096, 4097, "Signed Siemens phase", "[-4096,4096]"),
+            ("radians", -4, 3, "Radian phase", "[-pi,pi]"),
+            ("radians", -3, 4, "Radian phase", "[-pi,pi]"),
+        ):
+            with self.subTest(units=units, low=low, high=high):
+                images = copy.deepcopy(self.images)
+                for image in images:
+                    if image.image_type == ismrmrd.IMTYPE_PHASE:
+                        image.data[:] = low
+                        image.data.flat[-1] = high
+                connection = Connection(images)
+                with self.assertLogs(level="INFO") as captured:
+                    b0mapromeo.process(
+                        connection, {**self.config, "phaseunits": units}, None
+                    )
+                self.assertTrue(connection.closed)
+                self.assertFalse(connection.sent)
+                self.reconstruct.assert_not_called()
+                self.assertFalse((self.root / "maps").exists())
+                self.assertEqual(len(connection.logs), 1)
+                level, message = connection.logs[0]
+                self.assertEqual(level, constants.MRD_LOGGING_ERROR)
+                self.assertIn(f"b0mapromeo {b0mapromeo.VERSION}", message)
+                self.assertIn("Traceback (most recent call last)", message)
+                self.assertIn("ValueError:", message)
+                self.assertIn(reason, message)
+                self.assertIn(f"phaseunits={units}", message)
+                self.assertIn(f"observed range [{low},{high}]", message)
+                self.assertIn(interval, message)
+                self.assertIn("only if", message)
+                self.assertTrue(any(
+                    record.levelname == "ERROR" and record.exc_info
+                    for record in captured.records
+                ))
+                self.assertTrue(any(
+                    f"b0mapromeo {b0mapromeo.VERSION}" in record.getMessage()
+                    and f"phaseunits={units}" in record.getMessage()
+                    for record in captured.records
+                ))
+
+    def test_explicit_phase_scales_preserve_conversion_boundaries(self):
+        for units, values, expected in (
+            ("siemens", [0, 2048, 4095], [-np.pi, 0, 4094 * np.pi / 4096]),
+            ("signed", [-4096, 0, 4096], [-np.pi, 0, np.pi]),
+            ("radians", [-np.pi, 0, np.pi], [-np.pi, 0, np.pi]),
+        ):
+            with self.subTest(units=units):
+                np.testing.assert_allclose(
+                    b0mapromeo.phase_radians(np.array(values), units),
+                    expected, rtol=1e-6,
+                )
 
     def test_generated_and_selected_id_survive_scratch_and_scanner_comments(self):
         for selected in ("", "operator-selected"):
