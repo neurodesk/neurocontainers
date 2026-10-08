@@ -12,7 +12,8 @@ Use the OpenRecon packager with the experimental extension, from its kspacefilte
 recipe directory and an active Python virtual environment:
 
 ```sh
-BUILD_PACKAGE_SELECTION=openrecon /bin/bash ../build.sh --experimental-raw-return
+BUILD_PACKAGE_SELECTION=openrecon \
+  /bin/bash ../build.sh --experimental-raw-return
 ```
 
 Pin the exact source image in params.sh. The ordinary build rejects the honest
@@ -27,7 +28,11 @@ one acquisition per input, in order. For an initial unchanged sample exchange,
 use this JSON configuration:
 
 ```json
-{"parameters":{"config":"kspacefilter"}}
+{
+  "parameters": {
+    "config": "kspacefilter"
+  }
+}
 ```
 
 Retain each original native acquisition header, replace only the returned sample
@@ -43,7 +48,16 @@ After the adapter verifies the tap precedes the readout FFT and holds full,
 uniform, centered Cartesian raw k-space readouts, explicitly enable masking:
 
 ```json
-{"parameters":{"config":"kspacefilter"},"kspacefilter":{"mode":"readout-edge-zero","input_domain":"raw-uniform-cartesian-kspace","measurement_role":"imaging"}}
+{
+  "parameters": {
+    "config": "kspacefilter"
+  },
+  "kspacefilter": {
+    "mode": "readout-edge-zero",
+    "input_domain": "raw-uniform-cartesian-kspace",
+    "measurement_role": "imaging"
+  }
+}
 ```
 
 The existing service zeros floor(usable_samples/20) samples at each usable
