@@ -55,7 +55,7 @@ class ProducerArtifactTests(unittest.TestCase):
             magnitude: np.ndarray,
             phase: np.ndarray,
             affine: np.ndarray,
-            times: np.ndarray,
+            times: list[float],
             output_dir: Path,
             max_seeds: int,
         ) -> tuple[np.ndarray, np.ndarray]:
