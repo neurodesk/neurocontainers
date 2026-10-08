@@ -68,6 +68,29 @@ class ProducerArtifactTests(unittest.TestCase):
             self.assertTrue((saved.path / "b0_hz.nii.gz").is_file())
             self.assertEqual(list(b0mapromeo.WORK_ROOT.iterdir()), [])
 
+    def test_conflicting_phase_or_later_echo_identity_fails_before_reconstruction(self):
+        for key in ("StudyInstanceUID", "FrameOfReferenceUID"):
+            for kind, echo in (
+                (ismrmrd.IMTYPE_PHASE, 0), (ismrmrd.IMTYPE_MAGNITUDE, 1)
+            ):
+                images = copy.deepcopy(self.images)
+                for image in images:
+                    meta = ismrmrd.Meta.deserialize(image.attribute_string)
+                    conflict = image.image_type == kind and image.contrast == echo
+                    meta[key] = "other" if conflict else "source"
+                    image.attribute_string = meta.serialize()
+                connection = Connection(images)
+                with (
+                    self.subTest(key=key, kind=kind, echo=echo),
+                    self.assertLogs(level="ERROR"),
+                ):
+                    b0mapromeo.process(connection, self.config, None)
+                self.assertTrue(
+                    connection.closed and connection.logs and not connection.sent
+                )
+                self.reconstruct.assert_not_called()
+                self.assertFalse((self.root / "maps").exists())
+
     def test_collision_fails_request_without_replacing_measurement(self):
         config = {**self.config, "b0mapid": "same"}
         first = Connection(self.images)

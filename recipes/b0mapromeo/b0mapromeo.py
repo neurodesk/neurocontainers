@@ -397,6 +397,7 @@ def process(connection, config, metadata):
             return
         settings = _settings(config, metadata)
         context = source_context(settings)
+        identity = source_identity(images)
         mag, phase, affine, times, anchors = assemble(
             images, settings["times"], settings["phase_units"]
         )
@@ -405,7 +406,7 @@ def process(connection, config, metadata):
             field, mask = reconstruct(
                 mag, phase, affine, times, Path(temporary), settings["max_seeds"]
             )
-            saved = publish_map(field, mask, affine, context, source_identity(anchors),
+            saved = publish_map(field, mask, affine, context, identity,
                                 requested_id=settings["b0mapid"])
             series = max(180, max(int(im.image_series_index) for im in images) + 1)
             shim = compute_shim(field, mask, affine, settings["shim_calibration"],
@@ -454,11 +455,12 @@ def main() -> None:
         )
     images, times = read_dicoms(args.dicom_dir, args.phase_units)
     context = source_context(vars(args))
+    identity = source_identity(images)
     magnitude, phase, affine, times, anchors = assemble(images, times, "radians")
     field, mask = reconstruct(
         magnitude, phase, affine, times, args.output_dir, args.max_seeds
     )
-    saved = publish_map(field, mask, affine, context, source_identity(anchors), requested_id=args.b0mapid)
+    saved = publish_map(field, mask, affine, context, identity, requested_id=args.b0mapid)
     shim = compute_shim(field, mask, affine, args.shim_calibration, args.shim_current_a,
                         analytical_model_path=args.shim_analytical_model,
                         acquisition_native=args.shim_native_settings)
