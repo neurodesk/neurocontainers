@@ -12,9 +12,9 @@ The scanner receives images through the existing ISMRMRD image injector.
 2. Run `b0mapromeo` on the multi-echo GRE magnitude and phase images.
 3. Read `B0MapId` from the returned B0 images or their image comments.
 4. Set **Shared B0 map ID** to that exact value in `shim_toolbox`.
-5. Run `shim_toolbox` on one reconstructed magnitude target volume.
-6. If the source shim settings were not saved, enter the actual field-map
+5. If the source shim settings were not saved, enter the actual field-map
    acquisition baseline, verified limits, and explicit HFS magnet isocentre.
+6. Run `shim_toolbox` on one reconstructed magnitude target volume.
 
 The source bundle is `/tmp/share/b0maps/<ID>/`. There is no latest-map fallback.
 Map IDs select immutable acquisitions. Both applications can use `B0_MAP_STORE`

@@ -65,7 +65,8 @@ Known analytical models and measured calibration assets are saved with the map.
 The map remains readable after the reconstruction's temporary files are removed.
 
 `b0mapid` is the fourteenth GUI parameter. Leave it blank to generate an ID, or
-enter an unused name containing letters, digits, underscores, or hyphens.
+enter an unused name of 1 to 64 ASCII characters, starting with a letter or digit
+and containing only letters, digits, underscores, or hyphens.
 Use an opaque scan name rather than patient details. Existing maps cannot be
 overwritten. Each returned slice records `B0MapId` and the ID in both
 `ImageComment` and `ImageComments`.

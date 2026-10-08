@@ -209,7 +209,7 @@
       "type": "string",
       "default": "",
       "information": {
-        "en": "Immutable map name using letters, digits, underscores, or hyphens. Leave blank to generate an ID. The returned B0 image comments show the saved ID. Enter that exact ID in shim_toolbox. Existing IDs cannot be overwritten. Both containers must mount the same share at /tmp/share."
+        "en": "Immutable map name of 1 to 64 ASCII characters, starting with a letter or digit and using only letters, digits, underscores, or hyphens. Leave blank to generate an ID. The returned B0 image comments show the saved ID. Enter that exact ID in shim_toolbox. Existing IDs cannot be overwritten. Both containers must mount the same share at /tmp/share."
       }
     }
   ]
