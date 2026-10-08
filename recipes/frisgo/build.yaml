@@ -153,6 +153,11 @@ readme: |-
   python3 frisgo_simulate.py mrd2nifti /tmp/output.h5 /data/or_output --group frisgo
   ```
 
+  Temporary NIfTIs use `/tmp/share/frisgo`, on the scanner share mounted by FIRE.
+  Set `FRISGO_WORKDIR` to choose another writable scratch filesystem. Correction
+  checks free space for input and output plus 64 MiB before writing; insufficient
+  space preserves requested originals and logs the storage requirement.
+
   Run LN2_FRISGO directly:
   ```bash
   LN2_FRISGO -input NoNoise_slab.nii -tshift

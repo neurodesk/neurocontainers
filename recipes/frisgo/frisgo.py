@@ -9,6 +9,7 @@ the helpers of the ``openreconi2iexample`` reference module.
 import itertools
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 import traceback
@@ -142,10 +143,26 @@ def process(connection, config, metadata):
 def run_frisgo(series):
     """Run ``LN2_FRISGO -tshift`` on the series and return the corrected volume."""
     executable = os.environ.get(EXECUTABLE_ENV_VAR, "LN2_FRISGO")
-    with tempfile.TemporaryDirectory(prefix="frisgo_") as work_dir:
+    scratch_dir = os.environ.get("FRISGO_WORKDIR", "/tmp/share/frisgo")
+    os.makedirs(scratch_dir, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="frisgo_", dir=scratch_dir) as work_dir:
         input_path = os.path.join(work_dir, "timeseries.nii")
         output_path = os.path.join(work_dir, "timeseries_Tshift.nii")
         volume = series.volume()
+        # Two uncompressed float32 NIfTIs, their headers, and 64 MiB headroom.
+        required_bytes = 2 * (volume.nbytes + 352) + 64 * 1024**2
+        free_bytes = shutil.disk_usage(work_dir).free
+        logging.info(
+            "FRISGO scratch %s: %.1f MiB available, %.1f MiB required",
+            work_dir, free_bytes / 1024**2, required_bytes / 1024**2,
+        )
+        if free_bytes < required_bytes:
+            raise RuntimeError(
+                f"FRISGO scratch directory {scratch_dir} has "
+                f"{free_bytes / 1024**2:.1f} MiB available; "
+                f"needs at least {required_bytes / 1024**2:.1f} MiB. "
+                "Set FRISGO_WORKDIR to a writable filesystem with sufficient free space."
+            )
         image = nib.Nifti1Image(volume, series.affine())
         image.header.set_xyzt_units(xyz="mm", t="sec")
         zooms = list(image.header.get_zooms())
