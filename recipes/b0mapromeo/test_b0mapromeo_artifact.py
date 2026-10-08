@@ -50,8 +50,15 @@ class ProducerArtifactTests(unittest.TestCase):
         self.addCleanup(reconstruct.stop)
         self.config = {"phaseunits": "radians", "echotimesms": "2,4"}
 
-    def run_cli(self, output):
-        def reconstruct(magnitude, phase, affine, times, output_dir, max_seeds):
+    def run_cli(self, output: Path) -> None:
+        def reconstruct(
+            magnitude: np.ndarray,
+            phase: np.ndarray,
+            affine: np.ndarray,
+            times: list[float],
+            output_dir: Path,
+            max_seeds: int,
+        ) -> tuple[np.ndarray, np.ndarray]:
             output_dir.mkdir(parents=True)
             nib.save(nib.Nifti1Image(self.field, affine), output_dir / "b0_hz.nii")
             return self.field, self.support
