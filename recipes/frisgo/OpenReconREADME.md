@@ -66,6 +66,15 @@ repetitions, sent as one 2D image per slice (or partition) and repetition.
   batches; the Python input NIfTI array is released before LayNii starts.
 - Scanner logs contain a `frisgo runtime version=...` marker and the full
   LN2_FRISGO console output.
+- Temporary NIfTI files are stored in `/tmp/share/frisgo`, on the scanner share
+  mounted by FIRE, rather than inside its fixed-size chroot image. Set
+  `FRISGO_WORKDIR` to use another writable scratch filesystem. There is no
+  automatic fallback to `/tmp` if the selected directory is unavailable.
+- Before writing, FRISGO checks space for the float32 input and corrected output
+  plus 64 MiB of headroom. A 236 x 228 x 208 x 10 run needs approximately 918 MiB
+  free. Insufficient space skips correction with a clear log message; requested
+  originals are still returned. Temporary files are removed after success or
+  failure. Concurrent runs and longer sequences need additional free space.
 
 ## Open Source Development
 

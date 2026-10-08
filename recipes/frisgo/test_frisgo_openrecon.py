@@ -1,6 +1,10 @@
 """Runtime checks for scanner time-series transport using real MRD images."""
 
+import os
+import shutil
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import ismrmrd
 import numpy as np
@@ -52,6 +56,52 @@ def image(repetition=0, slice_index=0, **counters):
 
 
 class FrisgoOpenReconTests(unittest.TestCase):
+    def test_correction_uses_scanner_share_and_cleans_scratch(self):
+        series = frisgo.assemble_time_series([image(t) for t in range(8)])
+        environment = dict(os.environ)
+        environment.pop("FRISGO_WORKDIR", None)
+        with patch.dict(os.environ, environment, clear=True), patch.object(
+            frisgo.subprocess, "run", wraps=frisgo.subprocess.run
+        ) as run:
+            corrected = frisgo.run_frisgo(series)
+        work_dir = run.call_args.kwargs["cwd"]
+        self.assertTrue(work_dir.startswith("/tmp/share/frisgo/"), work_dir)
+        self.assertFalse(os.path.exists(work_dir))
+        self.assertEqual(corrected.shape, series.volume().shape)
+        self.assertTrue(np.isfinite(corrected).all())
+
+    def test_correction_honours_scratch_override_and_cleans_on_failure(self):
+        series = frisgo.assemble_time_series([image(t) for t in range(8)])
+        with tempfile.TemporaryDirectory() as scratch:
+            with patch.dict(os.environ, {"FRISGO_WORKDIR": scratch}), patch.object(
+                frisgo.subprocess, "run", side_effect=RuntimeError("runner failed")
+            ) as run:
+                with self.assertRaisesRegex(RuntimeError, "runner failed"):
+                    frisgo.run_frisgo(series)
+            work_dir = run.call_args.kwargs["cwd"]
+            self.assertTrue(work_dir.startswith(scratch + "/"), work_dir)
+            self.assertEqual(os.listdir(scratch), [])
+
+    def test_full_scratch_preserves_originals_without_writing_or_running(self):
+        images = [image(t) for t in range(8)]
+        connection = RecordingConnection(images)
+        with tempfile.TemporaryDirectory() as scratch:
+            usage = shutil.disk_usage(scratch)._replace(free=0)
+            with patch.dict(os.environ, {"FRISGO_WORKDIR": scratch}), patch(
+                "shutil.disk_usage", return_value=usage
+            ), patch.object(frisgo.nib, "save", wraps=frisgo.nib.save) as save, patch.object(
+                frisgo.subprocess, "run", wraps=frisgo.subprocess.run
+            ) as run:
+                frisgo.process(connection, "frisgo", None)
+            save.assert_not_called()
+            run.assert_not_called()
+            self.assertEqual(os.listdir(scratch), [])
+        self.assertTrue(connection.closed)
+        self.assertEqual(len(connection.outputs), len(images))
+        for source, output in zip(images, connection.outputs):
+            np.testing.assert_array_equal(source.data, output.data)
+        self.assertTrue(any("scratch" in log and "available" in log for log in connection.logs))
+
     def test_incomplete_series_preserves_originals_and_other_groups(self):
         images = [image(0, 0), image(0, 1), image(1, 0), image(0, contrast=1)]
         connection = RecordingConnection(images)
