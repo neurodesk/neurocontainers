@@ -1,4 +1,5 @@
 import copy
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -6,9 +7,11 @@ import unittest
 from unittest.mock import patch
 
 import ismrmrd
+import nibabel as nib
 import numpy as np
 
 import b0mapromeo
+import b0_artifact
 from b0_artifact import read_map
 from shared_mount_fixture import Connection, PARAMETERS, images_from_geometry
 
@@ -46,6 +49,60 @@ class ProducerArtifactTests(unittest.TestCase):
         self.reconstruct = reconstruct.start()
         self.addCleanup(reconstruct.stop)
         self.config = {"phaseunits": "radians", "echotimesms": "2,4"}
+
+    def run_cli(self, output):
+        def reconstruct(magnitude, phase, affine, times, output_dir, max_seeds):
+            output_dir.mkdir(parents=True)
+            nib.save(nib.Nifti1Image(self.field, affine), output_dir / "b0_hz.nii")
+            return self.field, self.support
+
+        self.reconstruct.side_effect = reconstruct
+        with (
+            patch.object(b0mapromeo, "read_dicoms", return_value=(self.images, [2, 4])),
+            patch("sys.argv", [
+                "b0mapromeo", "--dicom-dir", str(self.root / "dicoms"),
+                "--output-dir", str(output), "--b0mapid", "cli-map",
+            ]),
+        ):
+            b0mapromeo.main()
+
+    def test_cli_defaults_to_local_bundle_without_writable_shared_store(self):
+        os.environ.pop("B0_MAP_STORE", None)
+        blocked = self.root / "blocked-share"
+        blocked.write_text("not a directory")
+        resolve_store = b0_artifact._store
+
+        def isolated_store(store):
+            return blocked if store is None else resolve_store(store)
+
+        output = self.root / "output"
+        with patch.object(b0_artifact, "_store", side_effect=isolated_store):
+            self.run_cli(output)
+        saved = read_map("cli-map", store=output / "b0maps")
+        np.testing.assert_array_equal(saved.field_hz, self.field)
+        np.testing.assert_array_equal(saved.support, self.support)
+        self.assertEqual(json.loads((output / "shim_settings.json").read_text())["status"], "unavailable")
+        self.assertEqual(blocked.read_text(), "not a directory")
+
+    def test_cli_honors_explicit_shared_store(self):
+        output = self.root / "output"
+        self.run_cli(output)
+        saved = read_map("cli-map")
+        self.assertEqual(saved.path, self.root / "maps" / "cli-map")
+        np.testing.assert_array_equal(saved.field_hz, self.field)
+        self.assertTrue((output / "shim_settings.json").is_file())
+        self.assertFalse((output / "b0maps").exists())
+
+    def test_cli_retains_settings_when_explicit_store_cannot_publish(self):
+        blocked = self.root / "blocked-share"
+        blocked.write_text("not a directory")
+        os.environ["B0_MAP_STORE"] = str(blocked)
+        output = self.root / "output"
+        with self.assertRaises(OSError):
+            self.run_cli(output)
+        np.testing.assert_array_equal(nib.load(output / "b0_hz.nii").get_fdata(), self.field)
+        self.assertEqual(json.loads((output / "shim_settings.json").read_text())["status"], "unavailable")
+        self.assertFalse((output / "b0maps").exists())
 
     def test_generated_and_selected_id_survive_scratch_and_scanner_comments(self):
         for selected in ("", "operator-selected"):
