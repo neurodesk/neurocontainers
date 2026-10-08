@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "shim-toolbox 1.5.0": {
+      "version": "20261008",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "quantitative imaging",
+    "image reconstruction",
+    "phase processing"
+  ]
+}
