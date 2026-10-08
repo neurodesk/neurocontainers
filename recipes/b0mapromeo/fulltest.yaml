@@ -1,5 +1,5 @@
 name: b0mapromeo
-version: 1.3.0
+version: 1.4.0
 tests:
   - name: launcher version
     description: Check the deployed command and container version.
@@ -18,3 +18,8 @@ tests:
     description: Verify ideal Siemens polynomial geometry, native constraints and image comments with the installed optimizer.
     command: python3 /opt/b0mapromeo/test_b0mapromeo_analytic.py
     expected_output_contains: "Analytical native shim tests passed"
+  - name: durable shared B0 artifacts
+    description: Verify map publication, scanner comments, collision failure and persistence through subsequent failures.
+    timeout: 180
+    command: python3 /opt/b0mapromeo/test_b0mapromeo_artifact.py
+    expected_output_contains: "Durable B0 artifact tests passed"

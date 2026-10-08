@@ -52,8 +52,47 @@ Hz. Scanner round-trip behavior still needs verification on the target system.
 `sendoriginal` defaults to false. Enable it to return original image copies before
 the B0 series. The shared OpenRecon helpers assign fresh returned-series identity
 and restamp storage metadata. Derived images also use the shared metadata helpers.
-Acquisition, unwrapping, and fitting errors send an error message and close the
+Acquisition, unwrapping, publication, and fitting errors send an error message and close the
 connection without a derived output.
+
+## Shared map for a target scan
+
+Every successful server reconstruction publishes a persistent map bundle below
+`/tmp/share/b0maps/<ID>/` before returning its B0 images. The bundle contains the
+field in Hz, its validity mask, the patient-RAS voxel geometry in millimetres,
+and a manifest identifying the source acquisition and any supplied shim inputs.
+Known analytical models and measured calibration assets are saved with the map.
+The map remains readable after the reconstruction's temporary files are removed.
+
+`b0mapid` is the fourteenth GUI parameter. Leave it blank to generate an ID, or
+enter an unused name containing letters, digits, underscores, or hyphens.
+Use an opaque scan name rather than patient details. Existing maps cannot be
+overwritten. Each returned slice records `B0MapId` and the ID in both
+`ImageComment` and `ImageComments`.
+
+Run `shim_toolbox` on the target magnitude scan and enter that exact ID in its
+**Shared B0 map ID** control. Both containers require the same host directory
+mounted at `/tmp/share`. Creating the same directory inside separate containers
+does not share the files. FIRE's share mount must remain persistent between the
+two reconstructions. Runtime deployment can set `B0_MAP_STORE` to the same
+alternative writable map-store path in both containers.
+
+The target application resamples the saved map into the target scan's voxel
+geometry, returns it to the scanner, and returns a second predicted B0 series
+when valid shim inputs are available. The saved baseline always describes the
+field-map acquisition. If those values were unknown when this map was acquired,
+enter the actual field-map baseline, verified limits, and HFS magnet isocentre
+in the target application's GUI later. A known saved baseline cannot be replaced
+with the target scan's settings. Blank shim inputs still permit map export and
+target-space display.
+
+Maps publish as complete immutable bundles. Readers check their geometry,
+units, and payload integrity. There is no latest-map fallback or automatic
+deletion. Select the correct source acquisition and retain only the maps needed
+for the study. Image values and geometry remain sensitive. Known source/target
+identity mismatches are rejected. Missing identity metadata leaves pairing to
+the operator's explicit map selection. Resampling does not register patient
+motion or correct a changed physical coordinate frame.
 
 ## Local commands
 
@@ -67,8 +106,8 @@ The DICOM command writes `b0_hz.nii`, `mask.nii`, `magnitude.nii`, `phase.nii`,
 and ROMEO's unwrapped phase and diagnostic files. An existing nonempty output
 directory is rejected. Patient DICOM tags and source filenames are not copied
 into generated NIfTI headers. Image data and image geometry remain sensitive.
-OpenRecon uses a private temporary directory per connection and removes it after
-processing. Julia packages live under `/opt`; runtime needs no home directory or
+OpenRecon removes its private reconstruction scratch directory after processing;
+the shared map bundle remains. Julia packages live under `/opt`; runtime needs no home directory or
 package download.
 
 Release smoke tests use generated synthetic data only. Private validation data

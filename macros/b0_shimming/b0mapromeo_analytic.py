@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
 import json
@@ -66,6 +66,7 @@ class AnalyticalShimResult:
     settings: tuple[NativeChannelEstimate, ...]
     measured_std_hz: float
     predicted_std_hz: float
+    predicted_field_hz: np.ndarray | None = field(default=None, repr=False, compare=False)
     status: str = "available"
     model_kind: str = "siemens_analytical"
     validation: str = "ideal_field_estimate"
@@ -315,7 +316,8 @@ def _compute_analytical(
         from shimmingtoolbox.optimizer.slsqp_optimizer import SlsqpOptimizer
 
         scales = np.sqrt(np.mean(centered[mask][:, free] ** 2, axis=0))
-        if np.any(scales == 0) or not np.isfinite(scales).all():
+        roundoff = 64 * np.finfo(float).eps * np.max(np.abs(profiles[mask][:, free]), axis=0)
+        if np.any(scales <= roundoff) or not np.isfinite(scales).all():
             raise ValueError(
                 "Free native channels lack independent spatial effects in ROI"
             )
@@ -385,4 +387,4 @@ def _compute_analytical(
             model.channels, baseline, absolute, model.absolute_native_bounds
         )
     )
-    return AnalyticalShimResult(model, settings, before, after)
+    return AnalyticalShimResult(model, settings, before, after, predicted)

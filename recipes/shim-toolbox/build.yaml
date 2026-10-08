@@ -1,12 +1,10 @@
-name: b0mapromeo
-version: 1.4.0
+name: shim-toolbox
+version: 1.5.0
 architectures:
   - x86_64
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/shimming-toolbox/shimming-toolbox/blob/master/LICENSE
-  - license: MIT
-    url: https://github.com/korbinian90/ROMEO.jl/blob/master/LICENSE
   - license: MIT
     url: https://github.com/neurodesk/neurocontainers/blob/main/LICENSE
 variables:
@@ -14,36 +12,31 @@ variables:
   openrecon_siemens_commit: 055eefc09dfa77fbf11fff85979dea9ef2879ba5
   openrecon_python_tools_commit: 17fe6fbf1bb645112e2ad0023eb4f42afb36421e
   openrecon_server_commit: 33362f2139701fbf5ea855808a325eb59b7db2ae
-  upstream_commit: 0eb02bc0652a292ed80fee4a90ccdd3da4cfcd56
-  julia_version: 1.12.5
-  julia_sha256: 41b84d727e4e96fbf3ed9e92fa195d773d247b9097f73fad688f8b699758bae7
   base_image_digest: sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
   openrecon_ubuntu_version: '24.04'
   shimmingtoolbox_commit: 0afbd9e133df1eeca8deecdf37875825462dd43b
   numpy_version: 2.2.6
   scipy_version: 1.15.3
   nibabel_version: 5.4.2
+  shimmingtoolbox_version: '1.5'
 auto_update:
   method: sources
-  container_version: false
+  container_version:
+    variable: shimmingtoolbox_version
   local:
     - macros/openrecon
     - macros/openrecon_i2i
     - macros/b0_shimming
   sources:
-    - id: upstream
-      method: github_commit
-      repo: tbrierre/recon_me_b0map_romeo
-      ref: HEAD
-      target:
-        variable: upstream_commit
     - id: shimmingtoolbox
-      dependency: true
       method: github_commit
       repo: shimming-toolbox/shimming-toolbox
       ref: master
       target:
         variable: shimmingtoolbox_commit
+        variables:
+          shimmingtoolbox_version: version
+      version_file: shimming-toolbox/shimmingtoolbox/version.txt
     - id: base_image
       dependency: true
       method: oci_digest
@@ -97,12 +90,6 @@ auto_update:
       dependency: true
       target:
         variable: nibabel_version
-    - id: julia
-      method: http_digest
-      url: https://julialang-s3.julialang.org/bin/linux/x64/1.12/julia-1.12.5-linux-x86_64.tar.gz
-      dependency: true
-      target:
-        variable: julia_sha256
 build:
   kind: neurodocker
   base-image: ubuntu:24.04@{{ context.base_image_digest }}
@@ -110,9 +97,7 @@ build:
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
-        JULIA_DEPOT_PATH: /opt/julia-depot
-        JULIA_NUM_THREADS: '2'
-        B0MAPROMEO_VERSION: '{{ context.version }}'
+        SHIM_TOOLBOX_VERSION: '{{ context.version }}'
     - install: bzip2 ca-certificates git build-essential python3-pip python-is-python3
     - include: macros/openrecon/neurodocker.yaml
     - include: macros/openrecon_i2i/helpers.yaml
@@ -124,78 +109,44 @@ build:
         - rm /opt/shimming-toolbox/shimming-toolbox/requirements_st-pinned.txt
         - python3 -m pip install --break-system-packages --no-cache-dir /opt/shimming-toolbox/shimming-toolbox numpy=={{ context.numpy_version }} scipy=={{ context.scipy_version }} nibabel=={{ context.nibabel_version }} pydicom==3.0.1
         - python3 -m pip check
-    - environment:
-        JULIA_CPU_TARGET: generic
-    - run:
-        - mkdir -p /opt/julia /opt/b0mapromeo /opt/julia-depot
-        - tar -xzf {{ get_file("julia_archive") }} --strip-components=1 -C /opt/julia
-        - /opt/julia/bin/julia --version | grep -F 'julia version {{ context.julia_version }}'
-        - git clone https://github.com/tbrierre/recon_me_b0map_romeo /tmp/b0-upstream
-        - git -C /tmp/b0-upstream checkout {{ context.upstream_commit }}
-        - cp -r /tmp/b0-upstream/julia /opt/b0mapromeo/julia
-        - rm -rf /tmp/b0-upstream
-        - /opt/julia/bin/julia --startup-file=no --threads=1 --compile=min --project=/opt/b0mapromeo/julia -e 'using Pkg; Pkg.instantiate(;allow_autoprecomp=false)'
-        - /opt/julia/bin/julia --startup-file=no --threads=1 --project=/opt/b0mapromeo/julia -e 'using Pkg; Pkg.precompile()'
-        - chmod -R a+rX /opt/julia-depot
     - include: macros/b0_shimming/helpers.yaml
     - run:
-        - cp {{ get_file("test_b0mapromeo_analytic.py") }} /opt/b0mapromeo/test_b0mapromeo_analytic.py
-        - cp {{ get_file("test_b0mapromeo_artifact.py") }} /opt/b0mapromeo/test_b0mapromeo_artifact.py
-        - cp {{ get_file("test_b0mapromeo_shim.py") }} /opt/b0mapromeo/test_b0mapromeo_shim.py
-        - cp {{ get_file("b0mapromeo.py") }} /opt/code/python-ismrmrd-server/b0mapromeo.py
+        - mkdir -p /opt/shim_toolbox /tmp/share/b0maps
+        - chmod 1777 /tmp/share /tmp/share/b0maps
+        - cp {{ get_file("shim_toolbox.py") }} /opt/code/python-ismrmrd-server/shim_toolbox.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
-        - cp {{ get_file("OpenReconREADME.md") }} /opt/b0mapromeo/OpenReconREADME.md
-        - cp {{ get_file("romeo.jl") }} /opt/b0mapromeo/romeo.jl
-        - cp {{ get_file("smoke_test.py") }} /opt/b0mapromeo/smoke_test.py
-        - install -m 0755 {{ get_file("b0mapromeo") }} /usr/local/bin/b0mapromeo
-        - mkdir -p /tmp/share/b0mapromeo /tmp/share/b0maps
-        - chmod 1777 /tmp/share /tmp/share/b0mapromeo /tmp/share/b0maps
+        - cp {{ get_file("OpenReconREADME.md") }} /opt/shim_toolbox/OpenReconREADME.md
+        - cp {{ get_file("test_shim_toolbox.py") }} /opt/shim_toolbox/test_shim_toolbox.py
+        - install -m 0755 {{ get_file("shim_toolbox") }} /usr/local/bin/shim_toolbox
     - environment:
         PYTHONPATH: /opt/code/python-ismrmrd-server:/opt/b0-shimming
-        JULIA_NUM_THREADS: '1'
 deploy:
   bins:
-    - b0mapromeo
+    - shim_toolbox
     - st_b0shim
     - st_create_coil_profiles
     - st_mask
-    - st_prepare_fieldmap
 files:
   - name: shimmingtoolbox_archive
     url: https://github.com/shimming-toolbox/shimming-toolbox/archive/{{ context.shimmingtoolbox_commit }}.tar.gz
-  - name: test_b0mapromeo_analytic.py
-    filename: test_b0mapromeo_analytic.py
-  - name: test_b0mapromeo_artifact.py
-    filename: test_b0mapromeo_artifact.py
-  - name: test_b0mapromeo_shim.py
-    filename: test_b0mapromeo_shim.py
-  - name: b0mapromeo.py
-    filename: b0mapromeo.py
-  - name: b0mapromeo
-    filename: b0mapromeo
-  - name: romeo.jl
-    filename: romeo.jl
+  - name: shim_toolbox.py
+    filename: shim_toolbox.py
+  - name: shim_toolbox
+    filename: shim_toolbox
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
-  - name: smoke_test.py
-    filename: smoke_test.py
-  - name: julia_archive
-    url: https://julialang-s3.julialang.org/bin/linux/x64/1.12/julia-{{ context.julia_version }}-linux-x86_64.tar.gz
-    sha256: '{{ context.julia_sha256 }}'
+  - name: test_shim_toolbox.py
+    filename: test_shim_toolbox.py
 categories:
-  - image reconstruction
   - quantitative imaging
+  - image reconstruction
   - phase processing
-readme: |
-  ROMEO B0 mapping for multi-echo GRE magnitude/phase MRD images and classic/enhanced MR DICOM.
+readme: 'Resample a saved B0 field map into a target scan and estimate absolute Cima.X shims with Shimming Toolbox.
 
-  b0mapromeo --dicom-dir /input/gre_pair --output-dir /output/b0
 
-  Run the ISMRMRD server with config b0mapromeo. Input echo times are in milliseconds;
-  output field maps are in Hz. See /opt/b0mapromeo/OpenReconREADME.md for phase encoding,
-  masking, scanner scaling and runtime parameters.
+  Run the ISMRMRD server with config shim_toolbox. Both containers require the same host share mounted at /tmp/share. Select the source B0MapId and provide the field-map acquisition baseline, verified limits, and HFS isocentre when those were not saved by b0mapromeo. See /opt/shim_toolbox/OpenReconREADME.md.
 
-  Starting pipeline: https://github.com/tbrierre/recon_me_b0map_romeo
+  '
 icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiMxNDI4M2UiLz48ZWxsaXBzZSBjeD0iMzIiIGN5PSIzMiIgcng9IjE4IiByeT0iMjQiIGZpbGw9IiM4OWQ0ZDgiLz48cGF0aCBkPSJNMTggMjBjMjUtMTMgOSAyNCAyOCAxN00xNCAzMmMyMC0xNCAyMCAyMiAzNCA2TTE5IDQzYzE0LTExIDEzIDggMjMgNyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZDg1OTUxIiBzdHJva2Utd2lkdGg9IjQiLz48dGV4dCB4PSIyMiIgeT0iMzciIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjE2IiBmaWxsPSIjMTQyODNlIj5CMDwvdGV4dD48L3N2Zz4=
