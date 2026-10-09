@@ -172,4 +172,4 @@ files:
   url: https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz
 - name: afni_binary
   url: https://afni.nimh.nih.gov/pub/dist/tgz/linux_ubuntu_24_64.tgz
-  sha256: "d5b20bf8b7af281bea0341800632916d8b124145d7a9f4668d1b2896aa9d7daa"
+  sha256: "a7c1b3cbe9047e81efd7b51f50eb74e5eda5c1acf1532994d322c6353e7cdd76"
