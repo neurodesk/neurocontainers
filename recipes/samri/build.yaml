@@ -1,5 +1,5 @@
 name: samri
-version: "0.5.0"
+version: "0.5.4"
 
 copyright:
   - license: GPL-3.0-or-later
@@ -9,7 +9,7 @@ architectures:
   - x86_64
 
 variables:
-  upstream_version: "0.5"
+  upstream_version: "0.5.4"
   miniconda_version: py37_4.12.0
   bru2_version: v1.0.20180303
   ants_version: 2.3.4
