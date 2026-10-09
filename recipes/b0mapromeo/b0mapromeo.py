@@ -488,11 +488,14 @@ def main() -> None:
     field, mask = reconstruct(
         magnitude, phase, affine, times, args.output_dir, args.max_seeds
     )
-    saved = publish_map(field, mask, affine, context, identity, requested_id=args.b0mapid)
     shim = compute_shim(field, mask, affine, args.shim_calibration, args.shim_current_a,
                         analytical_model_path=args.shim_analytical_model,
                         acquisition_native=args.shim_native_settings)
     shim.write(args.output_dir)
+    saved = publish_map(
+        field, mask, affine, context, identity, requested_id=args.b0mapid,
+        store=os.environ.get("B0_MAP_STORE", args.output_dir / "b0maps"),
+    )
     print(f"{shim.comment}; B0MapId={saved.id}")
     print(
         f"B0 map complete: {len(times)} echoes, {field.shape[2]} slices, "

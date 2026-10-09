@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "b0mapromeo 1.4.1": {
+      "version": "20261008",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction",
+    "quantitative imaging",
+    "phase processing"
+  ]
+}

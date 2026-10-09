@@ -130,8 +130,12 @@ python3 /opt/code/python-ismrmrd-server/client.py -G dataset -o /output/result.h
 ```
 
 The DICOM command writes `b0_hz.nii`, `mask.nii`, `magnitude.nii`, `phase.nii`,
-and ROMEO's unwrapped phase and diagnostic files. An existing nonempty output
-directory is rejected. Patient DICOM tags and source filenames are not copied
+and ROMEO's unwrapped phase and diagnostic files. It saves `shim_settings.json`
+before publishing the persistent map bundle to `<output-dir>/b0maps/<ID>/`.
+Set `B0_MAP_STORE` to publish to an explicit shared store instead. If publication
+fails, the command reports an error and retains the local map and shim settings.
+An existing nonempty output directory is rejected. Patient DICOM tags and source
+filenames are not copied
 into generated NIfTI headers. Image data and image geometry remain sensitive.
 OpenRecon removes its private reconstruction scratch directory after processing;
 the shared map bundle remains. Reconstruction scratch files and Python/Julia
