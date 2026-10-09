@@ -65,34 +65,6 @@
       "default": true
     },
     {
-      "id": "phaseunits",
-      "label": {
-        "en": "Input phase scale"
-      },
-      "type": "choice",
-      "values": [
-        {
-          "id": "siemens",
-          "name": {
-            "en": "Unsigned Siemens"
-          }
-        },
-        {
-          "id": "signed",
-          "name": {
-            "en": "Signed Siemens"
-          }
-        },
-        {
-          "id": "radians",
-          "name": {
-            "en": "Radians"
-          }
-        }
-      ],
-      "default": "signed"
-    },
-    {
       "id": "echotimesms",
       "label": {
         "en": "Echo times in ms"

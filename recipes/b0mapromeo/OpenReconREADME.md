@@ -1,7 +1,8 @@
-# ROMEO B0 mapping
+# ROMEO B0 and T2* mapping
 
 This OpenRecon image-to-image application computes a B0 field map in Hz from
-reconstructed multi-echo GRE magnitude and phase images. It adapts the mask
+reconstructed multi-echo GRE magnitude and phase images, and a T2* map in ms
+from the magnitude echoes. It adapts the mask
 preparation and ROMEO invocation in
 [Theodore Brierre's starting pipeline](https://github.com/tbrierre/recon_me_b0map_romeo).
 The upstream Julia Project and Manifest are pinned to a full source commit.
@@ -25,31 +26,11 @@ Echo times are in milliseconds. `echotimesms` can override the MRD
 times are errors. Scanner label parameters are read from MRD user parameters;
 JSON config parameters take precedence.
 
-`phaseunits` defaults to `signed`. The default assumes incoming FIRE phase
-pixels are Siemens integer counts in -4096..4096, with the fixed conversion
-`pixel * pi / 4096`. This is an acquisition assumption that must be checked on
-the scanner. MRD float storage does not imply radians. Fractional count values
-remain fractional and are not rounded before conversion.
-
-Select the input phase scale in the OpenRecon settings for each scanner test.
-The three choices are:
-
-- `signed` uses `pixel * pi / 4096` for counts in -4096..4096.
-- `siemens` uses `(2 * pixel - 4096) * pi / 4096` for unsigned counts in 0..4095.
-- `radians` keeps wrapped radians in -pi..pi unchanged.
-
-JSON `parameters.phaseunits` overrides the MRD `phaseunits` user parameter.
-The default applies when neither source supplies a value.
-
-For FIRE, edit `parameters.phaseunits` in
-`Ice/fire/config/wip_070_fire_b0mapromeo.json` before the run. The workflow
-`Ice/wip_070_fire_b0mapromeo.xml` references this external JSON through
-`%CustomerIceProgs%\fire\config\wip_070_fire_b0mapromeo.json`.
-Choose `signed`, `siemens`, or `radians` to match the acquisition's encoding.
-
-MRD pixels must
-already use the selected scale. No conversion depends on observed extrema.
-ROMEO's additional phase rescaling is disabled.
+The scanner sends signed Siemens phase counts in -4096..4096. Scanner input
+therefore defaults to the fixed conversion `pixel * pi / 4096`. The scanner menu
+has no phase-scale selector. MRD float storage can hold those counts; fractional
+stored values are not rounded before conversion. No conversion depends on the
+observed pixel range. ROMEO's additional phase rescaling is disabled.
 
 The DICOM command defaults to `siemens` and handles the Siemens enhanced-MR
 rescale slope 2/intercept -4096 explicitly. It also accepts classic MR DICOM and
@@ -89,14 +70,14 @@ quantization. A scanner display that ignores rescale metadata cannot be read as
 Hz. Scanner round-trip behavior still needs verification on the target system.
 
 The scanner label and the B0 server fallback both default `sendoriginal` to true. Original image copies return before
-the B0 series after reconstruction succeeds. Set it to false to return only the B0
-series. The shared OpenRecon helpers assign fresh returned-series identity
+the derived B0 and T2* series after reconstruction succeeds. Set it to false to
+return only those derived series. The shared OpenRecon helpers assign fresh returned-series identity
 and restamp storage metadata. Derived images also use the shared metadata helpers.
 Acquisition, unwrapping, publication, and fitting errors send the package version
 and full Python traceback to FIRE LogViewer with `ERROR` severity, then close the
 connection without a derived output. Phase validation errors include the selected
 `phaseunits`, expected bounds, and observed pixel range. Use that diagnostic and
-the acquisition's phase encoding to select the correct units.
+the acquisition's phase encoding to check incoming values.
 
 ## Shared map for a target scan
 
@@ -107,7 +88,7 @@ and a manifest identifying the source acquisition and any supplied shim inputs.
 Known analytical models and measured calibration assets are saved with the map.
 The map remains readable after the reconstruction's temporary files are removed.
 
-`b0mapid` is the fourteenth GUI parameter. Leave it blank to generate an ID, or
+`b0mapid` identifies the shared map. Leave it blank to generate an ID, or
 enter an unused name of 1 to 64 ASCII characters, starting with a letter or digit
 and containing only letters, digits, underscores, or hyphens.
 Use an opaque scan name rather than patient details. Existing maps cannot be
