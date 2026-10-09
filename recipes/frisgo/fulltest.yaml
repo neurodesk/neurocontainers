@@ -24,17 +24,19 @@ tests:
       import json
       label = json.load(open("/opt/code/python-ismrmrd-server/OpenReconLabel.json"))
       defaults = {p["id"]: p["default"] for p in label["parameters"]}
-      assert defaults == {"config": "frisgo", "sendoriginal": True, "sendfrisgo": True}, defaults
+      assert defaults == {"config": "frisgo", "sendoriginal": True, "sendfrisgo": True, "algorithm": "spline", "lowpasswindow": 40}, defaults
+      algorithm = next(p for p in label["parameters"] if p["id"] == "algorithm")
+      assert [v["id"] for v in algorithm["values"]] == ["spline", "simple", "lpass", "runwise"]
       print(defaults)
       PY
 
   - name: OpenRecon scanner time-series transport
-    description: Verify original fallback, independent counters, temporal validity and long-run image numbering
+    description: Verify all selected algorithms against direct LayNii output, original fallback, geometry, counters and long-run numbering
     script: python /opt/code/python-ismrmrd-server/test_frisgo_openrecon.py
     timeout: 300
 
   - name: OpenRecon round trip returns originals and FRISGO time series
-    description: Send a synthetic BOLD run through the MRD server and compare with LN2_FRISGO -tshift
+    description: Send a synthetic BOLD run through the MRD server and compare all four algorithms with direct LN2_FRISGO output
     script: |
       set -euo pipefail
       work_dir=$(mktemp -d)
@@ -71,3 +73,20 @@ tests:
       grep "image_101: series_index=101 SeriesDescription='bold-frisgo'" convert.log
       python $server/frisgo_simulate.py compare returned/image_100.nii bold.nii
       python $server/frisgo_simulate.py compare returned/image_101.nii bold_Tshift.nii
+      for mode in simple lpass runwise; do
+        case "$mode" in
+          simple) LN2_FRISGO -input bold.nii -simple; suffix=frisgo-simple ;;
+          lpass) LN2_FRISGO -input bold.nii -lpass 12.5; suffix=frisgo-lpass ;;
+          runwise) LN2_FRISGO -input bold.nii -runwise; suffix=frisgo-runwise ;;
+        esac
+        python - "$mode" <<'PY'
+      import json
+      import sys
+      with open("frisgo.json", "w") as output:
+          json.dump({"parameters": {"config": "frisgo", "algorithm": sys.argv[1], "lowpasswindow": 12.5}}, output)
+      PY
+        python $server/client.py -p 9055 -c frisgo -G frisgo -o "output_$mode.h5" input.h5
+        python $server/frisgo_simulate.py mrd2nifti "output_$mode.h5" "returned_$mode" --group frisgo
+        python $server/frisgo_simulate.py compare "returned_$mode/image_100.nii" bold.nii
+        python $server/frisgo_simulate.py compare "returned_$mode/image_101.nii" "bold_$suffix.nii"
+      done
