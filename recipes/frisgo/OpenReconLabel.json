@@ -6,7 +6,7 @@
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
     "information": {
-      "en": "Fuzzy Ripple correction of BOLD time series with LayNii LN2_FRISGO -tshift"
+      "en": "Fuzzy Ripple correction of BOLD time series with selectable LayNii LN2_FRISGO algorithms"
     },
     "id": "frisgo",
     "regulatory_information": {
@@ -77,9 +77,59 @@
       },
       "type": "boolean",
       "information": {
-        "en": "Return the LN2_FRISGO -tshift Fuzzy Ripple corrected BOLD time series"
+        "en": "Return the selected LN2_FRISGO Fuzzy Ripple corrected BOLD time series"
       },
       "default": true
+    },
+    {
+      "id": "algorithm",
+      "label": {
+        "en": "FRISGO algorithm"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "spline",
+          "name": {
+            "en": "Spline"
+          }
+        },
+        {
+          "id": "simple",
+          "name": {
+            "en": "Simple"
+          }
+        },
+        {
+          "id": "lpass",
+          "name": {
+            "en": "Low-pass"
+          }
+        },
+        {
+          "id": "runwise",
+          "name": {
+            "en": "Run-wise"
+          }
+        }
+      ],
+      "default": "spline",
+      "information": {
+        "en": "Spline interpolates halfway between TRs. Simple averages neighbouring volumes. Low-pass tracks ripple changes over time. Run-wise assumes constant ripples for the run."
+      }
+    },
+    {
+      "id": "lowpasswindow",
+      "label": {
+        "en": "Low-pass window (TRs)"
+      },
+      "type": "double",
+      "default": 40,
+      "minimum": 0.1,
+      "maximum": 1000000,
+      "information": {
+        "en": "Gaussian window size in TRs, used only for Low-pass. Choose a window longer than the trial timing."
+      }
     }
   ]
 }
