@@ -1,4 +1,4 @@
-"""Multi-echo GRE B0 mapping for OpenRecon and classic/enhanced MR DICOM."""
+"""Multi-echo GRE B0 and T2* maps for OpenRecon and MR DICOM."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from b0_geometry import _image_axes, _planes, _vector, source_identity
 from b0_images import output_images
 from b0_settings import _settings as _shared_settings
 from b0mapromeo_shim import compute_shim
+from b0mapromeo_t2star import fit_t2star, output_t2star_images
 
 
 VERSION = os.environ.get("B0MAPROMEO_VERSION", "development")
@@ -433,6 +434,7 @@ def process(connection, config, metadata):
             field, mask = reconstruct(
                 mag, phase, affine, times, Path(temporary), settings["max_seeds"]
             )
+            t2star, t2star_valid = fit_t2star(mag, times, mask)
             saved = publish_map(field, mask, affine, context, identity,
                                 requested_id=settings["b0mapid"])
             logging.info("b0mapromeo published B0MapId=%s", saved.id)
@@ -442,6 +444,7 @@ def process(connection, config, metadata):
                                 analytical_model_path=settings["shim_analytical_model"],
                                 acquisition_native=settings["shim_native_settings"])
             outputs = output_images(field, anchors, series, shim, map_id=saved.id)
+            t2star_outputs = output_t2star_images(t2star, t2star_valid, anchors, series + 1)
         if settings["send_original"]:
             # These shared helpers also restamp scanner MiniHead storage fields.
             originals = helpers._restamp_originals(images)
@@ -451,6 +454,9 @@ def process(connection, config, metadata):
             for batch in by_series.values():
                 connection.send_image(batch)
         connection.send_image(outputs)
+        connection.send_image(t2star_outputs)
+        logging.info("b0mapromeo %s returned %d T2* slices in ms, %d valid voxels",
+                     VERSION, len(t2star_outputs), int(t2star_valid.sum()))
         logging.info("b0mapromeo %s returned %d B0 slices in Hz", VERSION, len(outputs))
     except Exception:
         logging.exception("B0 reconstruction failed")
@@ -488,6 +494,10 @@ def main() -> None:
     field, mask = reconstruct(
         magnitude, phase, affine, times, args.output_dir, args.max_seeds
     )
+    t2star, t2star_valid = fit_t2star(magnitude, times, mask)
+    nib.save(nib.Nifti1Image(t2star, affine), args.output_dir / "t2star_ms.nii")
+    nib.save(nib.Nifti1Image(t2star_valid.astype(np.uint8), affine),
+             args.output_dir / "t2star_valid_mask.nii")
     shim = compute_shim(field, mask, affine, args.shim_calibration, args.shim_current_a,
                         analytical_model_path=args.shim_analytical_model,
                         acquisition_native=args.shim_native_settings)
@@ -501,6 +511,7 @@ def main() -> None:
         f"B0 map complete: {len(times)} echoes, {field.shape[2]} slices, "
         f"{int(mask.sum())} foreground voxels; output units Hz"
     )
+    print(f"T2* map complete: {int(t2star_valid.sum())} valid voxels; output units ms")
 
 
 if __name__ == "__main__":

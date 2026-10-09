@@ -62,6 +62,23 @@ anatomical brain extraction. `maxseeds` defaults to the upstream setting of 4000
 
 ## Outputs
 
+A separate T2* series in milliseconds follows the B0 series. It fits
+`log(magnitude) = intercept - TE_ms / T2star_ms` by unweighted least squares
+over all positive finite magnitude echoes. At least two samples and a negative
+slope are required. Validity also requires the B0 foreground mask. Invalid fits,
+including flat or increasing signals and values outside finite positive float32
+representation, use zero padding. The fit does not correct
+the magnitude noise floor. Missing echoes can change the fit bias.
+
+T2* scanner values use unsigned codes 1..4095 with code zero reserved for padding.
+`ms = stored * RescaleSlope + RescaleIntercept`, with
+`RescaleSlope = max(1, maximum_valid_ms / 4094)` and
+`RescaleIntercept = -RescaleSlope`. Quantization error is at most half the slope.
+Very long fitted T2* values can reduce precision across the series. No physiological
+upper bound is imposed. The DICOM CLI writes `t2star_ms.nii` and
+`t2star_valid_mask.nii` with the same affine as the B0 map. The mask identifies
+valid fits. Existing B0 artifact persistence and shim prescriptions are unchanged.
+
 One derived B0 series keeps the input slice geometry. Scanner pixels are unsigned
 integers centered on 2048. DICOM/MRD `RescaleSlope` and `RescaleIntercept`
 recover Hz, with an adaptive scale to avoid clipping. `B0MapDisplayFormula`

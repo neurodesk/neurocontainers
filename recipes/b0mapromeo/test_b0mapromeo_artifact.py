@@ -112,9 +112,49 @@ class ProducerArtifactTests(unittest.TestCase):
         np.testing.assert_allclose(field_hz, 24.444580078125, rtol=1e-6)
         originals = [
             im for im in connection.sent
-            if "B0MapUnits" not in ismrmrd.Meta.deserialize(im.attribute_string)
+            if not any(key in ismrmrd.Meta.deserialize(im.attribute_string)
+                       for key in ("B0MapUnits", "T2StarMapUnits"))
         ]
         self.assertEqual(len(originals), len(images))
+
+    def test_process_returns_t2star_after_b0_and_preserves_originals(self):
+        for image in self.images:
+            if image.image_type == ismrmrd.IMTYPE_MAGNITUDE:
+                image.data[:] = 1000 * np.exp(-[2, 4][image.contrast] / 37)
+        connection = Connection(self.images)
+        b0mapromeo.process(connection, {**self.config, "sendoriginal": True}, None)
+        self.assertFalse(connection.logs)
+        self.assertTrue(connection.closed)
+        metadata = [ismrmrd.Meta.deserialize(im.attribute_string) for im in connection.sent]
+        b0 = [im for im, meta in zip(connection.sent, metadata) if "B0MapUnits" in meta]
+        t2 = [im for im, meta in zip(connection.sent, metadata) if "T2StarMapUnits" in meta]
+        originals = [im for im, meta in zip(connection.sent, metadata)
+                     if "B0MapUnits" not in meta and "T2StarMapUnits" not in meta]
+        self.assertEqual(len(b0), self.field.shape[2])
+        self.assertEqual(len(t2), len(b0))
+        self.assertEqual(connection.sent[-len(t2):], t2)
+        self.assertEqual(connection.sent[-len(t2)-len(b0):-len(t2)], b0)
+        self.assertEqual(sorted(im.data.tobytes() for im in originals),
+                         sorted(im.data.tobytes() for im in self.images))
+        for image in t2:
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            decoded = image.data * float(meta["RescaleSlope"]) + float(meta["RescaleIntercept"])
+            np.testing.assert_allclose(decoded, 37, atol=0.51)
+            self.assertNotEqual(image.image_series_index, b0[0].image_series_index)
+
+    def test_cli_saves_t2star_and_validity_with_b0_affine(self):
+        for image in self.images:
+            if image.image_type == ismrmrd.IMTYPE_MAGNITUDE:
+                image.data[:] = 1000 * np.exp(-[2, 4][image.contrast] / 37)
+        output = self.root / "t2star-cli"
+        self.run_cli(output)
+        t2star = nib.load(output / "t2star_ms.nii")
+        validity = nib.load(output / "t2star_valid_mask.nii")
+        b0 = nib.load(output / "b0_hz.nii")
+        np.testing.assert_allclose(t2star.get_fdata(), 37, rtol=1e-5)
+        np.testing.assert_array_equal(validity.get_fdata(), self.support)
+        np.testing.assert_array_equal(t2star.affine, b0.affine)
+        np.testing.assert_array_equal(validity.affine, b0.affine)
 
     def test_invalid_phase_reaches_scanner_error_log_without_outputs(self):
         for units, low, high, reason, interval in (
@@ -243,6 +283,8 @@ class ProducerArtifactTests(unittest.TestCase):
             identifiers = set()
             for image in connection.sent:
                 meta = ismrmrd.Meta.deserialize(image.attribute_string)
+                if "T2StarMapUnits" in meta:
+                    continue
                 identifiers.add(meta["B0MapId"])
                 self.assertEqual(meta["ImageComment"], meta["ImageComments"])
                 self.assertIn("B0MapId=" + meta["B0MapId"], meta["ImageComment"])

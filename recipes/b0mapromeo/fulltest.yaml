@@ -1,5 +1,5 @@
 name: b0mapromeo
-version: 1.4.2
+version: 1.4.3
 tests:
   - name: launcher version
     description: Check the deployed command and container version.
@@ -23,3 +23,7 @@ tests:
     timeout: 180
     command: python3 /opt/b0mapromeo/test_b0mapromeo_artifact.py
     expected_output_contains: "Durable B0 artifact tests passed"
+  - name: quantitative T2 star maps
+    description: Verify echo-decay fits, invalid support, scanner millisecond scaling and geometry.
+    command: python3 /opt/b0mapromeo/test_b0mapromeo_t2star.py
+    expected_output_contains: "Quantitative T2 star tests passed"
