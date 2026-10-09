@@ -1,4 +1,5 @@
 import copy
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -11,6 +12,7 @@ import numpy as np
 
 import b0mapromeo
 from b0_artifact import read_map
+from b0_settings import _settings as shared_settings
 from shared_mount_fixture import Connection, PARAMETERS, images_from_geometry
 
 
@@ -46,7 +48,71 @@ class ProducerArtifactTests(unittest.TestCase):
         )
         self.reconstruct = reconstruct.start()
         self.addCleanup(reconstruct.stop)
-        self.config = {"phaseunits": "radians", "echotimesms": "2,4"}
+        self.config = {
+            "phaseunits": "radians",
+            "echotimesms": "2,4",
+            "sendoriginal": False,
+        }
+
+    def test_phase_defaults_and_configuration_precedence(self):
+        for config in (None, {}, "b0mapromeo", '{"parameters": {}}'):
+            with self.subTest(config=config):
+                settings = b0mapromeo._settings(config, None)
+                self.assertEqual(settings["phase_units"], "signed")
+                self.assertTrue(settings["send_original"])
+        legacy = shared_settings({}, None)
+        self.assertEqual(legacy["phase_units"], "siemens")
+        self.assertFalse(legacy["send_original"])
+        label = json.loads(Path(__file__).with_name("OpenReconLabel.json").read_text())
+        defaults = {p["id"]: p["default"] for p in label["parameters"]}
+        settings = b0mapromeo._settings({"parameters": defaults}, None)
+        self.assertEqual(settings["phase_units"], "signed")
+        self.assertTrue(settings["send_original"])
+        for units in ("signed", "siemens", "radians"):
+            metadata = ismrmrd.xsd.ismrmrdHeader(
+                userParameters=ismrmrd.xsd.userParametersType(
+                    userParameterString=[
+                        ismrmrd.xsd.userParameterStringType(
+                            name="phaseunits", value=units
+                        ),
+                    ],
+                    userParameterLong=[
+                        ismrmrd.xsd.userParameterLongType(name="sendoriginal", value=0),
+                    ],
+                ),
+            )
+            xml = ismrmrd.xsd.ToXML(metadata)
+            with self.subTest(units=units):
+                settings = b0mapromeo._settings("b0mapromeo", xml)
+                self.assertEqual(settings["phase_units"], units)
+                self.assertFalse(settings["send_original"])
+                override = {
+                    "parameters": {"phaseunits": "signed", "sendoriginal": True}
+                }
+                settings = b0mapromeo._settings(json.dumps(override), xml)
+                self.assertEqual(settings["phase_units"], "signed")
+                self.assertTrue(settings["send_original"])
+
+    def test_default_signed_float_counts_reach_reconstruction_in_radians(self):
+        images = copy.deepcopy(self.images)
+        counts = (100.25, 500.75)
+        for image in images:
+            if image.image_type == ismrmrd.IMTYPE_PHASE:
+                image.data[:] = counts[image.contrast]
+        connection = Connection(images)
+        b0mapromeo.process(connection, {"echotimesms": "2,4"}, None)
+        self.assertFalse(connection.logs)
+        self.reconstruct.assert_called_once()
+        phase = self.reconstruct.call_args.args[1]
+        np.testing.assert_allclose(phase[..., 0], counts[0] * np.pi / 4096)
+        np.testing.assert_allclose(phase[..., 1], counts[1] * np.pi / 4096)
+        field_hz = (phase[..., 1] - phase[..., 0]) / (2 * np.pi * 0.002)
+        np.testing.assert_allclose(field_hz, 24.444580078125, rtol=1e-6)
+        originals = [
+            im for im in connection.sent
+            if "B0MapUnits" not in ismrmrd.Meta.deserialize(im.attribute_string)
+        ]
+        self.assertEqual(len(originals), len(images))
 
     def test_invalid_phase_reaches_scanner_error_log_without_outputs(self):
         for units, low, high, reason, interval in (

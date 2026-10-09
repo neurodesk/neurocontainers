@@ -25,13 +25,35 @@ Echo times are in milliseconds. `echotimesms` can override the MRD
 times are errors. Scanner label parameters are read from MRD user parameters;
 JSON config parameters take precedence.
 
-`phaseunits` defaults to `siemens`, unsigned 12-bit pixels in 0..4095 mapped by
-`(2 * pixel - 4096) * pi / 4096`. Choose `signed` for already rescaled Siemens
-counts in -4096..4096, or `radians` for wrapped radians in -pi..pi. MRD pixels
-must already use the selected scale. The DICOM command handles the Siemens
-enhanced-MR rescale slope 2/intercept -4096 explicitly. It also accepts classic
-MR DICOM and sorts frames by echo time and physical slice position. There is no
-observed-min/max phase scaling. ROMEO's additional phase rescaling is disabled.
+`phaseunits` defaults to `signed`. The default assumes incoming FIRE phase
+pixels are Siemens integer counts in -4096..4096, with the fixed conversion
+`pixel * pi / 4096`. This is an acquisition assumption that must be checked on
+the scanner. MRD float storage does not imply radians. Fractional count values
+remain fractional and are not rounded before conversion.
+
+Select the input phase scale in the OpenRecon settings for each scanner test.
+The three choices are:
+
+- `signed` uses `pixel * pi / 4096` for counts in -4096..4096.
+- `siemens` uses `(2 * pixel - 4096) * pi / 4096` for unsigned counts in 0..4095.
+- `radians` keeps wrapped radians in -pi..pi unchanged.
+
+JSON `parameters.phaseunits` overrides the MRD `phaseunits` user parameter.
+The default applies when neither source supplies a value.
+
+For FIRE, edit `parameters.phaseunits` in
+`Ice/fire/config/wip_070_fire_b0mapromeo.json` before the run. The workflow
+`Ice/wip_070_fire_b0mapromeo.xml` references this external JSON through
+`%CustomerIceProgs%\fire\config\wip_070_fire_b0mapromeo.json`.
+Choose `signed`, `siemens`, or `radians` to match the acquisition's encoding.
+
+MRD pixels must
+already use the selected scale. No conversion depends on observed extrema.
+ROMEO's additional phase rescaling is disabled.
+
+The DICOM command defaults to `siemens` and handles the Siemens enhanced-MR
+rescale slope 2/intercept -4096 explicitly. It also accepts classic MR DICOM and
+sorts frames by echo time and physical slice position.
 
 Masking uses the first echo's magnitude, a threshold of 0.25 times the mean,
 in-plane cross erosion, a radius-two-voxel spherical opening, the largest
@@ -49,7 +71,7 @@ for maps whose absolute values fit below 2046 Hz; wider maps have coarser
 quantization. A scanner display that ignores rescale metadata cannot be read as
 Hz. Scanner round-trip behavior still needs verification on the target system.
 
-The scanner's `sendoriginal` default is true. Original image copies return before
+The scanner label and the B0 server fallback both default `sendoriginal` to true. Original image copies return before
 the B0 series after reconstruction succeeds. Set it to false to return only the B0
 series. The shared OpenRecon helpers assign fresh returned-series identity
 and restamp storage metadata. Derived images also use the shared metadata helpers.

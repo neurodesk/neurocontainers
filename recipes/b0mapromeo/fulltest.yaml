@@ -1,5 +1,5 @@
 name: b0mapromeo
-version: 1.4.1
+version: 1.4.2
 tests:
   - name: launcher version
     description: Check the deployed command and container version.

@@ -90,7 +90,7 @@
           }
         }
       ],
-      "default": "siemens"
+      "default": "signed"
     },
     {
       "id": "echotimesms",

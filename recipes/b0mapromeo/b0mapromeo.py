@@ -22,7 +22,7 @@ import openreconi2iexample as helpers
 from b0_artifact import publish_map, source_context
 from b0_geometry import _image_axes, _planes, _vector, source_identity
 from b0_images import output_images
-from b0_settings import _settings
+from b0_settings import _settings as _shared_settings
 from b0mapromeo_shim import compute_shim
 
 
@@ -34,6 +34,10 @@ ROMEO_COMMAND = [
     "--project=/opt/b0mapromeo/julia",
     "/opt/b0mapromeo/romeo.jl",
 ]
+
+
+def _settings(config, metadata) -> dict:
+    return _shared_settings(config, metadata, phase_units="signed", send_original=True)
 
 
 def phase_radians(values: np.ndarray, units: str) -> np.ndarray:
