@@ -308,6 +308,7 @@ def main():
         shimmed_connection = Connection(scanner_images)
         app.process(shimmed_connection, {"parameters": {
             "phaseunits": "siemens", "shimcalibration": "", "shimcurrenta": "",
+            "sendoriginal": False,
         }}, ismrmrd.xsd.ToXML(metadata))
         assert shimmed_connection.closed and not shimmed_connection.logs
         assert len(shimmed_connection.sent) == expected.shape[2]
@@ -376,6 +377,7 @@ def main():
         app.process(analytical_connection, {"parameters": {
             "phaseunits": "siemens", "shimcalibration": "", "shimcurrenta": "",
             "shimanalyticalmodel": "", "shimnativesettings": "",
+            "sendoriginal": False,
         }}, ismrmrd.xsd.ToXML(analytical_metadata))
         assert analytical_connection.closed and not analytical_connection.logs
         assert len(analytical_connection.sent) == expected.shape[2]
@@ -423,6 +425,7 @@ def main():
             Path(app.__file__).with_name("OpenReconLabel.json").read_text()
         )
         defaults = {p["id"]: p["default"] for p in label["parameters"]}
+        defaults["phaseunits"] = "siemens"
         direct_metadata = copy.deepcopy(analytical_metadata)
         direct_metadata.userParameters.userParameterString = [
             p
