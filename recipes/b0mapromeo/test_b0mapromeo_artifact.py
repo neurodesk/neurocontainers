@@ -65,7 +65,7 @@ class ProducerArtifactTests(unittest.TestCase):
         legacy = shared_settings({}, None)
         self.assertEqual(legacy["phase_units"], "siemens")
         self.assertFalse(legacy["send_original"])
-        label = json.loads(Path(__file__).with_name("OpenReconLabel.json").read_text())
+        label = json.loads(Path(b0mapromeo.__file__).with_name("OpenReconLabel.json").read_text())
         defaults = {p["id"]: p["default"] for p in label["parameters"]}
         settings = b0mapromeo._settings({"parameters": defaults}, None)
         self.assertEqual(settings["phase_units"], "signed")
