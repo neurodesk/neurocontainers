@@ -497,6 +497,23 @@ class TopoFitCoreTests(unittest.TestCase):
                 "CANDIDATES_REPORTED_RESEARCH_ONLY",
             )
             self.assertEqual(set(manifest["flat_patches"]), {"LH01", "RH01"})
+            from topofit_geometry import siemens_plane_orientation
+            self.assertEqual(manifest["flat_patch_definition"]["schema_version"], 4)
+            for patch_id, patch in result.flat_patches.items():
+                saved = manifest["flat_patches"][patch_id]
+                np.testing.assert_allclose(saved["normal_lph"], patch.normal_lph)
+                np.testing.assert_allclose(saved["normal_ras"], patch.normal_ras)
+                orientation = siemens_plane_orientation(patch.normal_lph)
+                angles = saved["siemens_plane_orientation"]
+                self.assertEqual(angles["primary"], orientation.primary_text)
+                self.assertEqual(angles["primary_order"], list(orientation.primary.order))
+                self.assertIsNone(angles["in_plane_rotation_deg"])
+                self.assertEqual(len(angles["variants"]), 6)
+                for saved_pair, pair in zip(angles["variants"], orientation.variants):
+                    self.assertEqual(saved_pair["order"], list(pair.order))
+                    self.assertEqual(saved_pair["first_angle_deg"], pair.first_angle_deg)
+                    self.assertEqual(saved_pair["second_angle_deg"], pair.second_angle_deg)
+                    self.assertEqual(saved_pair["first_angle_defined"], pair.first_angle_defined)
             self.assertTrue(manifest["options"]["mock"])
             self.assertEqual(
                 manifest["sulcal_middepth_status"],

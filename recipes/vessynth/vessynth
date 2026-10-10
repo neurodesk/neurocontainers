@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+if [[ "${1:-}" == "--version" ]]; then
+  printf 'VesSynth container %s\n' "${VESSYNTH_VERSION}"
+  exit 0
+fi
+exec python /opt/VesSynth/vessynth_test.py "$@"

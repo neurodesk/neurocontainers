@@ -1,0 +1,175 @@
+{
+  "general": {
+    "name": {
+      "en": "VesSynth"
+    },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": {
+      "en": "Research vessel segmentation with official VesSynth models"
+    },
+    "id": "vessynth",
+    "regulatory_information": {
+      "device_trade_name": "VesSynth",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "Erlangen, Germany",
+      "made_in": "DE",
+      "manufacture_date": "2026/10/09",
+      "material_number": "vessynth_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "00860000171212",
+      "udi": "(01)00860000171212(21)VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "safety_advices": "",
+      "special_operating_instructions": "Research vessel segmentation",
+      "additional_relevant_information": ""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": true,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 0,
+    "min_required_memory": 20048,
+    "min_count_required_cpu_cores": 2,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": {
+        "en": "Configuration"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "vessynth",
+          "name": {
+            "en": "VesSynth"
+          }
+        }
+      ],
+      "default": "vessynth"
+    },
+    {
+      "id": "modality",
+      "label": {
+        "en": "modality"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "TOF",
+          "name": {
+            "en": "TOF"
+          }
+        },
+        {
+          "id": "T2star",
+          "name": {
+            "en": "T2star"
+          }
+        },
+        {
+          "id": "HiPCT",
+          "name": {
+            "en": "HiPCT"
+          }
+        },
+        {
+          "id": "OCT",
+          "name": {
+            "en": "OCT"
+          }
+        },
+        {
+          "id": "fibers",
+          "name": {
+            "en": "fibers"
+          }
+        }
+      ],
+      "default": "TOF"
+    },
+    {
+      "id": "output",
+      "label": {
+        "en": "output"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "binary",
+          "name": {
+            "en": "binary"
+          }
+        },
+        {
+          "id": "probability",
+          "name": {
+            "en": "probability"
+          }
+        },
+        {
+          "id": "both",
+          "name": {
+            "en": "both"
+          }
+        }
+      ],
+      "default": "binary"
+    },
+    {
+      "id": "sendoriginal",
+      "label": {
+        "en": "sendoriginal"
+      },
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "id": "gaussianweights",
+      "label": {
+        "en": "Gaussian patch weights"
+      },
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "id": "threshold",
+      "label": {
+        "en": "Vessel probability threshold"
+      },
+      "type": "string",
+      "information": {"en": "A number between 0 and 1. The upstream default is 0.3."},
+      "default": "0.3"
+    },
+    {
+      "id": "patchsize",
+      "label": {
+        "en": "Patch size"
+      },
+      "type": "int",
+      "minimum": 32,
+      "maximum": 256,
+      "information": {"en": "Use a multiple of 32."},
+      "default": 128
+    },
+    {
+      "id": "stepsize",
+      "label": {
+        "en": "Patch stride"
+      },
+      "type": "int",
+      "minimum": 1,
+      "maximum": 256,
+      "information": {"en": "Must divide the patch size."},
+      "default": 32
+    }
+  ]
+}
