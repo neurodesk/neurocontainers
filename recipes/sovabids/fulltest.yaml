@@ -1,5 +1,5 @@
 # sovabids container test suite
-# Tests for sovabids v0.4.0 - Automated EEG to BIDS conversion
+# Tests for automated EEG to BIDS conversion
 #
 # sovabids is a Python package for converting EEG data to BIDS format.
 # It uses MNE-Python and MNE-BIDS for reading and writing EEG data.
@@ -8,7 +8,7 @@
 # Documentation: https://sovabids.readthedocs.io/
 
 name: sovabids
-version: "0.3.1-alpha"
+version: "0.4.7"
 
 # Environment activation command for all tests
 env_setup: source /opt/miniconda/etc/profile.d/conda.sh && conda activate sovabids
@@ -23,6 +23,69 @@ setup:
     mkdir -p test_output
 
 tests:
+  - name: Python dependency consistency
+    description: Verify the installed conversion and GUI packages satisfy their dependency requirements.
+    command: python -m pip check
+    expected_output_contains: "No broken requirements found."
+
+  - name: CLI converts BrainVision EEG to BIDS
+    description: Generate EEG data, apply rules with sovapply, convert with sovaconvert, and read back the BIDS recording and metadata.
+    command: |
+      python - <<'PY'
+      import json
+      import subprocess
+      import tempfile
+      from pathlib import Path
+
+      import mne
+      import numpy as np
+      import pandas as pd
+      import yaml
+      from bids_validator import BIDSValidator
+
+      with tempfile.TemporaryDirectory() as directory:
+          root = Path(directory)
+          source = root / "source"
+          bids = root / "bids"
+          source.mkdir()
+          bids.mkdir()
+          data = np.random.default_rng(0).normal(size=(4, 200)) * 1e-6
+          raw = mne.io.RawArray(data, mne.create_info(["Fp1", "Fp2", "Cz", "Oz"], 100, "eeg"))
+          raw.set_annotations(mne.Annotations([0.5], [0.1], ["stimulus"]))
+          mne.export.export_raw(source / "sub-01.vhdr", raw)
+          rules = {
+              "entities": {"task": "rest"},
+              "dataset_description": {"Name": "SovaBIDS smoke test"},
+              "sidecar": {"PowerLineFrequency": 50, "EEGReference": "FCz"},
+              "non-bids": {
+                  "eeg_extension": ".vhdr",
+                  "path_analysis": {"pattern": "%ignore%/sub-%entities.subject%.vhdr"},
+              },
+          }
+          rules_path = root / "rules.yml"
+          rules_path.write_text(yaml.safe_dump(rules))
+          mappings = root / "mappings.yml"
+          subprocess.run(["sovapply", str(source), str(bids), str(rules_path), "-m", str(mappings)], check=True)
+          subprocess.run(["sovaconvert", str(mappings)], check=True)
+          eeg = bids / "sub-01" / "eeg" / "sub-01_task-rest_eeg.vhdr"
+          assert BIDSValidator().is_bids("/" + eeg.relative_to(bids).as_posix())
+          converted = mne.io.read_raw_brainvision(eeg, preload=True)
+          assert converted.ch_names == raw.ch_names
+          assert converted.info["sfreq"] == 100
+          np.testing.assert_allclose(converted.get_data(), data, atol=1e-12)
+          sidecar = json.loads(eeg.with_suffix(".json").read_text())
+          assert sidecar["PowerLineFrequency"] == 50
+          channels = pd.read_csv(eeg.with_name("sub-01_task-rest_channels.tsv"), sep="\t")
+          assert channels["name"].tolist() == raw.ch_names
+          events = pd.read_csv(eeg.with_name("sub-01_task-rest_events.tsv"), sep="\t")
+          assert len(events) == 1
+          assert "stimulus" in events.loc[0, "trial_type"]
+          description = json.loads((bids / "dataset_description.json").read_text())
+          assert description["Name"] == "SovaBIDS smoke test"
+      print("SovaBIDS CLI conversion roundtrip passed")
+      PY
+    expected_output_contains: "SovaBIDS CLI conversion roundtrip passed"
+
   - name: JSON-RPC loads a rules file
     description: Exercise the installed FastAPI endpoint and return the parsed conversion rules.
     command: |
@@ -52,7 +115,7 @@ tests:
   - name: Check sovabids version
     description: Verify sovabids is installed and check version
     command: python -c "import sovabids; print(sovabids.__version__)"
-    expected_output_contains: "${sovabids_tag}"
+    expected_output_contains: "${version}"
 
   - name: Check sovabids module import
     description: Verify sovabids module can be imported
@@ -334,10 +397,10 @@ tests:
     expected_output_contains: "True"
 
   - name: Test flatten function
-    description: Test flatten (known bug - uses deprecated collections.MutableMapping in Python 3.10)
+    description: Verify nested mapping values are preserved when flattened.
     command: |
-      python -c "from sovabids.dicts import flatten; nested = dict(a=dict(b=dict(c=1))); flat = flatten(nested); print('a.b.c' in flat)" 2>&1 || echo "flatten bug: collections.MutableMapping removed in Python 3.10"
-    expected_output_contains: "collections.MutableMapping"
+      python -c "from sovabids.dicts import flatten; nested = dict(a=dict(b=dict(c=1))); flat = flatten(nested); assert flat == {'a.b.c': 1}; print('Nested mapping flattened successfully')"
+    expected_output_contains: "Nested mapping flattened successfully"
 
   - name: Import nested_notation_to_tree
     description: Verify nested_notation_to_tree can be imported
@@ -712,5 +775,3 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
-
-sovabids_tag: v0.3.1-alpha
