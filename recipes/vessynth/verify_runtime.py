@@ -160,10 +160,24 @@ def verify_adapter():
 
 
 def verify_model():
+    import torch
+    sys.path.insert(0, '/opt/VesSynth')
+    from utils.networks import SegNet
+
     models = Path('/opt/VesSynth/models')
     for name, prefix in [('TOF', 'TOF'), ('T2star', 'T2star'), ('HiPCT', 'HiPCT'), ('OCT', 'OCT'), ('fibers', 'axons')]:
-        assert (models / f'segnet_model_{name}.json').is_file()
-        assert list((models / 'weights').glob(f'{prefix}_model*'))
+        backbone = json.loads((models / f'segnet_model_{name}.json').read_text())
+        weights = sorted((models / 'weights').glob(f'{prefix}_model*'))
+        assert len(weights) == 1, weights
+        model = SegNet(ndim=3, in_channels=1, out_channels=1,
+                       init_kernel_size=3, final_activation='Sigmoid',
+                       backbone='UNet', kwargs_backbone=backbone)
+        checkpoint = torch.load(weights[0], map_location='cpu', weights_only=True)
+        state = checkpoint.get('model_state_dict', checkpoint.get('model_state_dict_segnet'))
+        assert state is not None, f'Model state dict missing for {name}'
+        model.load_state_dict(state, strict=True)
+        del model, checkpoint, state
+        print(f'{name} official checkpoint matches packaged network')
     with tempfile.TemporaryDirectory(prefix='vessynth-model-') as directory:
         work = Path(directory)
         grid = np.indices((8, 9, 7), dtype=np.float32)

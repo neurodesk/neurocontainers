@@ -8,6 +8,8 @@ Run `vessynth -i input.nii.gz -o results -mod TOF`. Relative paths work from the
 caller directory. `vessynth --version` reports the dated container build,
 not an upstream software release. All models remain under `/opt/VesSynth/models`.
 VesSynth uses CUDA when available and otherwise runs on CPU.
+CPU inference defaults to two OpenMP threads. Set `OMP_NUM_THREADS` to change
+this limit, or `APPTAINERENV_OMP_NUM_THREADS` when running with Apptainer.
 
 Run `openrecon-vessynth --help` for server options. Select `vessynth` as the
 MRD server configuration. JSON settings may appear at the top level or inside
@@ -32,7 +34,10 @@ and float32 values between 0 and 1. Binary masks use strict probability greater
 than threshold. Derived and original output series never reuse input indices.
 The adapter invokes the upstream CLI in a temporary workspace for each volume.
 It logs failures through the MRD server and always closes the connection.
+GPU execution and physical scanner integration have not been tested. Probability
+output is verified through the MRD server but remains unvalidated on a scanner.
 
 `python /opt/VesSynth/verify_runtime.py adapter` checks MRD geometry and error
 handling with deterministic inference. `python /opt/VesSynth/verify_runtime.py model`
-runs the bundled TOF checkpoint on a small nonconstant CPU volume.
+loads all five official checkpoints against their packaged network definitions
+and runs the bundled TOF checkpoint on a small nonconstant CPU volume.
