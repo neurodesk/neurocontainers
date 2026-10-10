@@ -4,31 +4,55 @@ version: "0.5.4"
 tests:
   - name: SAMRI command line help
     script: |
+      set -e
       SAMRI --help
+      for command in diagnose bru2bids l1 generic-prep legacy-prep; do
+        SAMRI "$command" --help
+      done
 
   - name: SAMRI Python import
     script: |
+      set -e
       python - <<'PY'
+      import sys
+      from importlib.metadata import version
       import samri
       import samri.cli
+      assert sys.version.split()[0] == "${python_version}"
+      assert version("SAMRI") == "${upstream_version}"
       print(samri.__file__)
       PY
 
+  - name: Python dependencies are consistent
+    script: |
+      set -e
+      python -m pip check
+
+  - name: FSL binaries are available
+    script: |
+      set -e
+      command -v fslmaths
+      command -v melodic
+
   - name: Bru2Nii binaries are available
     script: |
+      set -e
       command -v Bru2
       command -v Bru2Nii
 
   - name: ANTs binaries are available
     script: |
+      set -e
       command -v antsRegistration
       command -v antsApplyTransforms
 
   - name: Runtime paths do not depend on home directories
     script: |
+      set -e
       test -x /opt/miniconda/envs/samri/bin/SAMRI
       test -x /opt/bru2/Bru2
       test -d /opt/SAMRI
       test -d /opt/mouse-brain-atlases_generator
 
 upstream_version: "0.5.4"
+python_version: "3.9.21"
