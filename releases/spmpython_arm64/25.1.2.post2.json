@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "spmpython_arm64 25.1.2.post2": {
+      "version": "20261010",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "image segmentation",
+    "image registration",
+    "structural imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "spmpython"
+}
