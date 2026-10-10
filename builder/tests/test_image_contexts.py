@@ -1,7 +1,6 @@
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from threading import Barrier
 from types import SimpleNamespace
 

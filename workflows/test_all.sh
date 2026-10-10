@@ -1,44 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+set -euo pipefail
 
-# Enhanced test script that includes validation
-
-echo "Running validation tests..."
-VALIDATION_FAILED=false
-
-echo "Checking OpenRecon labels..."
-python3 -m unittest builder.tests.test_openrecon_label_validation
-
-# loop through each subdirectory under recipes
-for dir in recipes/*/; do
-    name=$(basename "$dir")
-
-    # If it doesn't contain build.yaml, skip it
-    if [[ ! -f "${dir}build.yaml" ]]; then
-        continue
-    fi
-
-    echo "Checking ${name}..."
-
-    # First run validation
-    if ! python3 builder/validation.py "${dir}build.yaml" > /dev/null 2>&1; then
-        echo "  ❌ Validation failed for ${name}"
-        python3 builder/validation.py "${dir}build.yaml" 2>&1 | sed 's/^/    /'
-        VALIDATION_FAILED=true
-    else
-        echo "  ✅ Validation passed for ${name}"
-    fi
-
-    # Then run check-only Dockerfile generation
-    python3 -m builder generate "$name" --recreate --architecture x86_64 --ignore-architectures
-done
-
-if [[ "$VALIDATION_FAILED" == "true" ]]; then
-    echo ""
-    echo "❌ Some recipes failed validation! Please fix the validation errors above."
-    exit 1
-else
-    echo ""
-    echo "✅ All validation checks passed!"
-fi
+# Keep the local sweep and CI on the same architecture and variant checks.
+exec python3 -m workflows.check_recipes "$@"

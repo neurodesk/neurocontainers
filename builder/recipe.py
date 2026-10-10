@@ -7,7 +7,6 @@ import platform
 import shlex
 import urllib.error
 import urllib.request
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,8 +20,8 @@ from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
 from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT
-from .config import ARCHITECTURE_ALIASES, canonical_architecture
-from .variants import concrete_variant_specs, forced_variant_spec, variant_specs
+from .config import ARCHITECTURE_ALIASES as ARCHITECTURE_ALIASES, canonical_architecture
+from .variants import select_concrete_variant, variant_specs as variant_specs
 
 
 GLOBAL_MOUNT_POINTS = [
@@ -325,79 +324,20 @@ def compile_recipe(
     include_dirs: tuple[Path, ...] = (),
     parallel_jobs: int | None = None,
     option_overrides: dict[str, bool] | None = None,
+    resolve_readme_url: bool = True,
 ) -> CompiledRecipe:
     recipe_file = load_recipe_file(recipe_dir)
     recipe = recipe_file.data
-    specs = concrete_variant_specs(recipe)
-    requested_arch = normalize_architecture(architecture) if architecture is not None else None
-    requested_variant = variant or ""
-    selection_arch = requested_arch
-    if not requested_variant or requested_variant in (recipe.get("variants") or {}):
-        selection_arch = requested_arch or normalize_architecture(None)
-    candidates = [spec for spec in specs if spec["variant"] == requested_variant]
-    if not requested_variant:
-        candidates = [
-            spec
-            for spec in specs
-            if not spec["recipe_variant"] and spec["architecture"] == selection_arch
-        ]
-    elif requested_variant in (recipe.get("variants") or {}):
-        candidates = [
-            spec
-            for spec in specs
-            if spec["recipe_variant"] == requested_variant and spec["architecture"] == selection_arch
-        ]
-    if requested_arch is not None:
-        candidates = [spec for spec in candidates if spec["architecture"] == requested_arch]
-    if (
-        not candidates
-        and requested_arch is None
-        and not ignore_architecture
-        and selection_arch == "aarch64"
-        and platform.system() == "Darwin"
-    ):
-        variants = recipe.get("variants") or {}
-        candidates = [
-            spec
-            for spec in specs
-            if spec["architecture"] == "x86_64"
-            and (
-                (not requested_variant and not spec["recipe_variant"])
-                or (
-                    requested_variant in variants
-                    and spec["recipe_variant"] == requested_variant
-                )
-            )
-        ]
-        if candidates:
-            selection_arch = "x86_64"
-            warnings.warn(
-                f"{recipe['name']} does not support the host architecture aarch64 "
-                "on macOS; automatically selecting x86_64",
-                UserWarning,
-                stacklevel=2,
-            )
-    if not candidates and ignore_architecture:
-        forced_arch = requested_arch
-        if forced_arch is None:
-            forced_arch = (
-                "aarch64"
-                if requested_variant == "arm64" or requested_variant.endswith("_arm64")
-                else normalize_architecture(None)
-            )
-        candidates = [forced_variant_spec(recipe, requested_variant, forced_arch)]
-    if not candidates:
-        available = ", ".join(str(spec["variant"]) or "default" for spec in specs)
-        raise ValueError(
-            f"unknown variant/architecture '{requested_variant or 'default'}'/{selection_arch or 'default'} "
-            f"for {recipe['name']}; available: {available}"
-        )
-    selected_variant = candidates[0]
+    selected_variant = select_concrete_variant(
+        recipe,
+        architecture=architecture,
+        variant=variant,
+        ignore_architecture=ignore_architecture,
+        host_architecture=platform.machine(),
+        host_platform=platform.system(),
+    )
     variant_name = str(selected_variant["variant"])
     arch = str(selected_variant["architecture"])
-    allowed = [str(item) for item in recipe.get("architectures", [])]
-    if arch not in allowed and not ignore_architecture:
-        raise ValueError(f"architecture {arch} not supported by {recipe['name']}")
 
     renderer = TemplateRenderer()
     option_values = {
@@ -459,7 +399,11 @@ def compile_recipe(
         readme = _render_structured_readme(recipe, renderer, context)
     if not readme.strip() and recipe.get("readme_url"):
         readme_url = renderer.render_string(str(recipe["readme_url"]), context)
-        readme = _read_readme_url(readme_url)
+        readme = (
+            _read_readme_url(readme_url)
+            if resolve_readme_url
+            else f"README source: {readme_url}"
+        )
     if not readme.strip():
         raise ValueError(
             f"{recipe['name']}: README content cannot be empty; set readme, "

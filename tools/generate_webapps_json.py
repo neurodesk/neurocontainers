@@ -200,7 +200,7 @@ def generate_webapps_json(recipes_dir: str, releases_dir: str, output_file: str)
         json.dump(webapps_json, f, indent=2)
 
     # Print summary
-    print(f"\nGenerated webapps.json successfully!")
+    print("\nGenerated webapps.json successfully!")
     print(f"  Webapps found: {len(webapps)}")
     for name, config in webapps.items():
         print(f"    - {name}: {config.get('title', 'No title')} (port {config.get('port', '?')})")

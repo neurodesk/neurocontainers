@@ -31,15 +31,20 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
+import tempfile
+import traceback
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
 from rich.console import Console
@@ -56,8 +61,14 @@ from rich import box
 
 try:  # Imported as builder.run_tests by the test suite, run as a script by CI.
     from builder.release_artifact import resolve_suite_container
+    from builder.runtime_execution import (
+        TestSpec, evaluate_process_assertions, substitute_variables,
+    )
 except ImportError:  # pragma: no cover - exercised by `uv run builder/run_tests.py`
     from release_artifact import resolve_suite_container
+    from runtime_execution import (
+        TestSpec, evaluate_process_assertions, substitute_variables,
+    )
 
 console = Console()
 
@@ -114,23 +125,6 @@ def default_releases_dir() -> Path | None:
         if candidate.is_dir():
             return candidate
     return None
-
-
-def substitute_variables(text: str, variables: dict[str, str]) -> str:
-    """Substitute ${var} placeholders with values."""
-    if not text:
-        return text
-
-    result = text
-    for _ in range(10):
-        previous = result
-        for key, value in variables.items():
-            result = result.replace(f"${{{key}}}", str(value))
-            result = result.replace(f"${key}", str(value))
-        if result == previous:
-            break
-
-    return result
 
 
 def collect_top_level_variables(config: dict[str, Any]) -> dict[str, str]:
@@ -283,9 +277,120 @@ def _container_binds(work_dir: Path, variables: dict[str, str]) -> list[str]:
     return sorted(binds)
 
 
+class _TestPreparationError(RuntimeError):
+    """A temporary test script could not be created."""
+
+
+def _remove_test_script(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _write_test_script(
+    cleanup: ExitStack,
+    work_dir: Path,
+    prefix: str,
+    suffix: str,
+    contents: str,
+) -> Path:
+    try:
+        descriptor, filename = tempfile.mkstemp(dir=work_dir, prefix=prefix, suffix=suffix)
+        path = Path(filename)
+        cleanup.callback(_remove_test_script, path)
+        with os.fdopen(descriptor, "w") as script:
+            script.write(contents)
+        path.chmod(0o755)
+        return path
+    except OSError as error:
+        raise _TestPreparationError(f"Failed to create test script: {error}") from error
+
+
+@contextmanager
+def _prepared_test_script(
+    spec: TestSpec,
+    variables: dict[str, str],
+    work_dir: Path,
+    script_runner: str | None,
+    script_ext: str,
+) -> Iterator[Path]:
+    """Create command and payload scripts, cleaning up even on preparation errors."""
+    with ExitStack() as cleanup:
+        if spec.script and not spec.command:
+            payload_path = _write_test_script(
+                cleanup, work_dir, ".test_script_", script_ext,
+                substitute_variables(spec.script, variables),
+            )
+            if script_runner:
+                command = f"{substitute_variables(script_runner, variables)} {shlex.quote(str(payload_path))}"
+            else:
+                command = shlex.quote(str(payload_path))
+        else:
+            command = substitute_variables(spec.command, variables)
+
+        env_setup = substitute_variables(spec.env_setup or "", variables)
+        contents = "#!/usr/bin/env bash\n"
+        if env_setup:
+            contents += f"{env_setup}\n"
+        contents += f"{command}\n"
+        yield _write_test_script(cleanup, work_dir, ".test_", ".sh", contents)
+
+
+def _execute_test_script(
+    script_path: Path,
+    container_path: Path | str | None,
+    variables: dict[str, str],
+    work_dir: Path,
+    timeout: int | float | None,
+) -> subprocess.CompletedProcess[str]:
+    """Execute a prepared script locally or with the container runtime."""
+    command = []
+    if container_path:
+        command = [container_runtime_command(), "exec", "--pwd", str(work_dir)]
+        for bind in _container_binds(work_dir, variables):
+            command.extend(["-B", bind])
+        command.append(str(container_path))
+    command.extend(["bash", str(script_path)])
+    return subprocess.run(
+        command, capture_output=True, text=True, timeout=timeout, cwd=work_dir,
+    )
+
+
+def _evaluate_file_assertions(
+    spec: TestSpec, variables: dict[str, str], work_dir: Path,
+) -> str | None:
+    """Return the first filesystem assertion failure in declaration order."""
+    for validation in spec.validations:
+        if not isinstance(validation, dict):
+            continue
+        for validation_type, argument in validation.items():
+            if validation_type == "output_exists":
+                path = str(work_dir / substitute_variables(str(argument), variables))
+                if not check_file_exists(path):
+                    return f"Output file not found: {path}"
+            elif validation_type == "same_dimensions":
+                if isinstance(argument, list) and len(argument) == 2:
+                    paths = [
+                        str(work_dir / substitute_variables(str(value), variables))
+                        for value in argument
+                    ]
+                    ok, message = check_same_dimensions(*paths)
+                    if not ok:
+                        return message
+    return None
+
+
+def _timeout_output(output: str | bytes | None) -> str:
+    # TimeoutExpired can contain bytes even when subprocess.run uses text=True.
+    if isinstance(output, bytes):
+        return output.decode(errors="replace")
+    return output or ""
+
+
 def run_single_test(
     test: dict,
-    container_path: Path,
+    container_path: Path | str | None,
     variables: dict[str, str],
     work_dir: Path,
     global_env_setup: str | None = None,
@@ -293,230 +398,55 @@ def run_single_test(
     script_runner: str | None = None,
     script_ext: str = ".sh",
 ) -> TestResult:
-    """Run a single test and return result."""
-    from datetime import datetime
-
-    name = test.get("name", "Unnamed test")
+    """Run a test, containing failures so the remaining suite can continue."""
     start_timestamp = datetime.now().isoformat()
     start_time = time.time()
+    name = "Unnamed test"
+    timeout = default_timeout
+    stdout = stderr = ""
+    exit_code = 0
+    duration = 0.0
+    passed = False
 
     try:
-        # Get command or script content
-        command = test.get("command", "")
-        test_script = test.get("script", "")
-
-        if not command and not test_script:
-            return TestResult(
-                name=name,
-                passed=False,
-                duration=0,
-                start_time=start_timestamp,
-                message="No command or script specified",
-            )
-
-        # Handle script: directive — save script to temp file and build command
-        extra_script_path = None
-        if test_script and not command:
-            test_script = substitute_variables(test_script, variables)
-            ts = int(time.time() * 1e6)
-            extra_script_path = work_dir / f".test_script_{os.getpid()}_{ts}{script_ext}"
-            try:
-                with open(extra_script_path, 'w') as f:
-                    f.write(test_script)
-                os.chmod(extra_script_path, 0o755)
-            except OSError as e:
-                return TestResult(
-                    name=name, passed=False, duration=time.time() - start_time,
-                    start_time=start_timestamp, message=f"Failed to create test script: {e}",
-                )
-
-            if script_runner:
-                command = f"{substitute_variables(script_runner, variables)} {extra_script_path}"
-            else:
-                # Default: run as bash script
-                command = str(extra_script_path)
+        name = test.get("name", "Unnamed test")
+        spec = TestSpec.from_mapping(test, global_env_setup, default_timeout)
+        timeout = spec.timeout
+        if not spec.command and not spec.script:
+            message = "No command or script specified"
         else:
-            command = substitute_variables(command, variables)
-
-        # Build environment setup
-        env_setup = test.get("env_setup", global_env_setup) or ""
-        if env_setup:
-            env_setup = substitute_variables(env_setup, variables)
-
-        # Write command to temporary script file (avoids all shell quoting issues)
-        script_path = work_dir / f".test_{os.getpid()}_{int(time.time()*1e6)}.sh"
-        try:
-            with open(script_path, 'w') as f:
-                f.write("#!/usr/bin/env bash\n")
-                if env_setup:
-                    f.write(f"{env_setup}\n")
-                f.write(f"{command}\n")
-            os.chmod(script_path, 0o755)
-        except OSError as e:
-            return TestResult(
-                name=name, passed=False, duration=time.time() - start_time,
-                start_time=start_timestamp, message=f"Failed to create test script: {e}",
-            )
-
-        try:
-            if container_path:
-                cmd_list = [
-                    container_runtime_command(), "exec",
-                    "--pwd", str(work_dir),
-                ]
-                for b in _container_binds(work_dir, variables):
-                    cmd_list.extend(["-B", b])
-                cmd_list.extend([str(container_path), "bash", str(script_path)])
-            else:
-                cmd_list = ["bash", str(script_path)]
-
-            timeout = test.get("timeout", default_timeout)
-
-            result = subprocess.run(
-                cmd_list,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=work_dir,
-            )
-
+            with _prepared_test_script(spec, variables, work_dir, script_runner, script_ext) as script_path:
+                process = _execute_test_script(script_path, container_path, variables, work_dir, timeout)
             duration = time.time() - start_time
-            stdout = result.stdout
-            stderr = result.stderr
-            exit_code = result.returncode
-        finally:
-            try:
-                script_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-            if extra_script_path:
-                try:
-                    extra_script_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+            stdout, stderr, exit_code = process.stdout, process.stderr, process.returncode
+            message = evaluate_process_assertions(spec, exit_code, stdout, stderr, variables)
+            if message is None:
+                message = _evaluate_file_assertions(spec, variables, work_dir)
+            passed = message is None
+            message = message or "OK"
+    except _TestPreparationError as error:
+        duration = time.time() - start_time
+        message = str(error)
+    except subprocess.TimeoutExpired as error:
+        duration = time.time() - start_time
+        message = f"Timeout after {timeout}s"
+        stdout = _timeout_output(error.stdout)
+        stderr = _timeout_output(error.stderr)
+    except Exception as error:
+        duration = time.time() - start_time
+        message = f"Error: {error}"
+        stderr = "\n\n".join(part for part in (stderr, traceback.format_exc()) if part)
 
-        # Check expected exit code (default: expect success)
-        ignore_exit_code = test.get("ignore_exit_code", False)
-        expected_exit_code = test.get("expected_exit_code", 0)
-        expected_exit_code_not = test.get("expected_exit_code_not")
-
-        if ignore_exit_code:
-            pass  # Skip exit code validation entirely
-        elif expected_exit_code_not is not None:
-            # expected_exit_code_not takes precedence when explicitly set
-            if exit_code == expected_exit_code_not:
-                return TestResult(
-                    name=name,
-                    passed=False,
-                    duration=duration,
-                    start_time=start_timestamp,
-                    message=f"Exit code should not be {expected_exit_code_not}",
-                    stdout=stdout,
-                    stderr=stderr,
-                    exit_code=exit_code,
-                )
-        elif exit_code != expected_exit_code:
-            return TestResult(
-                name=name,
-                passed=False,
-                duration=duration,
-                start_time=start_timestamp,
-                message=f"Expected exit code {expected_exit_code}, got {exit_code}",
-                stdout=stdout,
-                stderr=stderr,
-                exit_code=exit_code,
-            )
-
-        # Check expected output
-        expected_output = test.get("expected_output_contains")
-        if expected_output:
-            combined_output = stdout + stderr
-
-            if isinstance(expected_output, str):
-                expected_list = [expected_output]
-            else:
-                expected_list = expected_output
-
-            for expected in expected_list:
-                expected = substitute_variables(str(expected), variables)
-                if expected and expected not in combined_output:
-                    return TestResult(
-                        name=name,
-                        passed=False,
-                        duration=duration,
-                        start_time=start_timestamp,
-                        message=f"Expected output not found: '{expected[:50]}...'",
-                        stdout=stdout,
-                        stderr=stderr,
-                        exit_code=exit_code,
-                    )
-
-        # Run validations
-        validations = test.get("validate", [])
-        for validation in validations:
-            if isinstance(validation, dict):
-                for val_type, val_arg in validation.items():
-                    if val_type == "output_exists":
-                        path = substitute_variables(str(val_arg), variables)
-                        path = str(work_dir / path)
-                        if not check_file_exists(path):
-                            return TestResult(
-                                name=name,
-                                passed=False,
-                                duration=duration,
-                                start_time=start_timestamp,
-                                message=f"Output file not found: {path}",
-                                stdout=stdout,
-                                stderr=stderr,
-                                exit_code=exit_code,
-                            )
-
-                    elif val_type == "same_dimensions":
-                        if isinstance(val_arg, list) and len(val_arg) == 2:
-                            path1 = substitute_variables(str(val_arg[0]), variables)
-                            path2 = substitute_variables(str(val_arg[1]), variables)
-                            path1 = str(work_dir / path1)
-                            path2 = str(work_dir / path2)
-                            ok, msg = check_same_dimensions(path1, path2)
-                            if not ok:
-                                return TestResult(
-                                    name=name,
-                                    passed=False,
-                                    duration=duration,
-                                    start_time=start_timestamp,
-                                    message=msg,
-                                    stdout=stdout,
-                                    stderr=stderr,
-                                    exit_code=exit_code,
-                                )
-
-        return TestResult(
-            name=name,
-            passed=True,
-            duration=duration,
-            start_time=start_timestamp,
-            message="OK",
-            stdout=stdout,
-            stderr=stderr,
-            exit_code=exit_code,
-        )
-
-    except subprocess.TimeoutExpired:
-        return TestResult(
-            name=name,
-            passed=False,
-            duration=time.time() - start_time,
-            start_time=start_timestamp,
-            message=f"Timeout after {test.get('timeout', default_timeout)}s",
-        )
-    except Exception as e:
-        return TestResult(
-            name=name,
-            passed=False,
-            duration=time.time() - start_time,
-            start_time=start_timestamp,
-            message=f"Error: {e}",
-        )
+    return TestResult(
+        name=name,
+        passed=passed,
+        duration=duration,
+        start_time=start_timestamp,
+        message=message,
+        stdout=stdout,
+        stderr=stderr,
+        exit_code=exit_code,
+    )
 
 
 def _run_container_health_check(
@@ -1138,7 +1068,7 @@ def main():
         ]
 
     if args.list:
-        console.print(Panel(f"[bold]Available Test Files[/] (in tests/)", box=box.ROUNDED))
+        console.print(Panel("[bold]Available Test Files[/] (in tests/)", box=box.ROUNDED))
         for f in yaml_files:
             console.print(f"  {f.name}")
         console.print(f"\n[dim]Total: {len(yaml_files)} files[/]")
@@ -1429,12 +1359,12 @@ def main():
         from datetime import datetime
 
         with open(args.log, "w") as f:
-            f.write(f"# Neurocontainer Test Results\n")
+            f.write("# Neurocontainer Test Results\n")
             f.write(f"# Generated: {datetime.now().isoformat()}\n")
             f.write(f"# Total Duration: {total_duration:.2f}s\n")
-            f.write(f"#\n")
-            f.write(f"# Format: STATE | START_TIME | DURATION | SUITE | TEST_NAME | MESSAGE\n")
-            f.write(f"#\n\n")
+            f.write("#\n")
+            f.write("# Format: STATE | START_TIME | DURATION | SUITE | TEST_NAME | MESSAGE\n")
+            f.write("#\n\n")
 
             for suite_result in sorted(all_results, key=lambda r: r.name):
                 for test in suite_result.results:

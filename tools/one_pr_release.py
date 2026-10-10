@@ -931,7 +931,7 @@ def command_materialize(args: argparse.Namespace) -> None:
     bundle = Path(args.bundle)
     manifests = json.loads(Path(args.manifests).read_text(encoding="utf-8"))
     for manifest in manifests:
-        recipe = validate_recipe_identifier(manifest.get("recipe"))
+        validate_recipe_identifier(manifest.get("recipe"))
         container = validate_recipe_identifier(manifest.get("container"))
         version = manifest.get("version")
         if not isinstance(version, str) or not VERSION_PATTERN.fullmatch(version):

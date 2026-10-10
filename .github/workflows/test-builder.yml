@@ -1,79 +1,180 @@
 name: test-builder
 
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
 permissions:
   contents: read
-  pull-requests: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-on:
-  push:
-    paths:
-      - 'builder/**'
-      - 'workflows/**'
-      - 'dashboard/**'
-      - 'recipes/**/OpenReconLabel.json'
-      - 'recipes/OpenReconSchema_1.1.0.json'
-      # A dependency change can break collection of the suites below, so it has
-      # to re-run them.
-      - 'requirements.txt'
-      - 'pyproject.toml'
-      - 'uv.lock'
-      # Workflow changes must run the shared workflow contract and fork policy tests.
-      - '.github/workflows/**'
+concurrency:
+  group: code-quality-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test-builder:
+  detect-changes:
     runs-on: ubuntu-22.04
-
+    outputs:
+      buildkit: ${{ steps.select.outputs.buildkit }}
+      recipes: ${{ steps.select.outputs.recipes }}
+      all-recipes: ${{ steps.select.outputs.all-recipes }}
+      base: ${{ steps.select.outputs.base }}
+      head: ${{ steps.select.outputs.head }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Create Virtual Environment
-        run: |
-          python3 -m venv venv
-          source venv/bin/activate
-          pip install -r requirements.txt
-          pip install -e '.[boutiques]'
-
-      - name: Run Unit Tests
-        run: |
-          source venv/bin/activate
-          pytest builder/tests
-
-      - name: Set up Buildx for OCI integration tests
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
-
-      - name: Test base image flattening with BuildKit
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select integration checks
+        id: select
         env:
-          NEUROCONTAINERS_TEST_BUILDKIT: '1'
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          source venv/bin/activate
-          pytest builder/tests/test_image_flatten.py
+          python3 -m workflows.quality_checks select \
+            --base "$BASE_SHA" --head "$HEAD_SHA" --output "$GITHUB_OUTPUT"
 
-      - name: Run Tests
+  python-quality:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -e '.[dev,boutiques]'
+      - name: Check Python and spelling
+        run: python -m workflows.quality_checks python
+      - name: Install pinned workflow checkers
         run: |
-          source venv/bin/activate
-          ./workflows/test_all.sh
+          python -m workflows.quality_checks install-workflow-tools "$RUNNER_TEMP/quality-tools"
+          echo "$RUNNER_TEMP/quality-tools" >> "$GITHUB_PATH"
+      - name: Check workflows and shell scripts
+        run: python -m workflows.quality_checks workflows
+
+  test-builder:
+    name: Python ${{ matrix.python-version }} unit tests
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -e '.[dev,boutiques]'
+      - name: Run unit tests
+        run: python -m pytest builder/tests
 
   test-go:
     runs-on: ubuntu-22.04
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.25.1'
+          cache-dependency-path: dashboard/go.sum
+      - name: Check format, vet, and test both Go programs
+        run: python3 -m workflows.quality_checks go
 
-      - name: Test dashboard
-        working-directory: dashboard
-        run: go test ./...
+  buildkit:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.buildkit == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -e '.[dev,boutiques]'
+      - name: Set up Buildx for OCI integration tests
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+      - name: Test base image flattening with BuildKit
+        env:
+          NEUROCONTAINERS_TEST_BUILDKIT: '1'
+        run: python -m pytest builder/tests/test_image_flatten.py
 
-      - name: Test docker-save-to-simg
-        working-directory: builder
-        run: go test docker-save-to-simg.go docker-save-to-simg_test.go
+  recipes:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.recipes == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt -e '.[dev,boutiques]'
+      - name: Validate and generate affected recipes
+        env:
+          BASE_SHA: ${{ needs.detect-changes.outputs.base }}
+          HEAD_SHA: ${{ needs.detect-changes.outputs.head }}
+          ALL_RECIPES: ${{ needs.detect-changes.outputs.all-recipes }}
+        run: |
+          args=(--head "$HEAD_SHA")
+          if [[ -n "$BASE_SHA" ]]; then
+            args+=(--base "$BASE_SHA")
+          fi
+          if [[ "$ALL_RECIPES" == 'true' ]]; then
+            args+=(--all)
+          fi
+          python -m workflows.check_recipes "${args[@]}" --json recipe-checks.json
+      - name: Retain recipe check report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: recipe-checks
+          path: recipe-checks.json
+          if-no-files-found: warn
+
+  code-quality:
+    name: Code quality
+    needs: [detect-changes, python-quality, test-builder, test-go, buildkit, recipes]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Require every selected check to pass
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: python3 -m workflows.quality_checks gate

@@ -7,7 +7,6 @@ import subprocess
 import sys
 import uuid
 import tarfile
-from pathlib import Path
 
 import pytest
 

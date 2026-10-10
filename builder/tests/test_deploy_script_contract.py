@@ -47,6 +47,7 @@ def test_deploy_script_requires_commands_in_deploy_path(
 ) -> None:
     deploy_dir = tmp_path / "bin"
     deploy_dir.mkdir(mode=0o755)
+    deploy_dir.chmod(0o755)
     if mode is not None:
         tool = deploy_dir / "tool"
         tool.write_text("#!/bin/sh\necho ok\n", encoding="utf-8")

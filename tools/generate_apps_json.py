@@ -234,7 +234,7 @@ def generate_apps_json(
     
     # Print summary
     total_apps = sum(len(container_data["apps"]) for container_data in apps_json.values())
-    print(f"Generated apps.json successfully!")
+    print("Generated apps.json successfully!")
     print(f"  Containers: {len(apps_json)}")
     print(f"  Total apps: {total_apps}")
 

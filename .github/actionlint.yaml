@@ -1,0 +1,16 @@
+self-hosted-runner:
+  labels:
+    - neurodesk-syd-arcrunner-neurocontainers
+# actionlint 1.7.12 predates GitHub's May 2026 concurrency queue property.
+# https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#concurrency
+# Remove this exact diagnostic exception when actionlint supports queue.
+paths:
+  .github/workflows/build-app.yml:
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'
+  .github/workflows/promote-container-candidate.yml:
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'
+  .github/workflows/repair-nectar-sif.yml:
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'

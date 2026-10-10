@@ -1339,7 +1339,7 @@ jobs:
 
         To test this container on Neurodesk (either a local installation or https://play.neurodesk.org/):
         \`\`\`bash
-        bash /neurocommand/local/fetch_and_run.sh "${CONTAINER_NAME}" "${{ needs.config.outputs.VERSION }}" "${BUILDDATE}"
+        bash /neurocommand/local/fetch_and_run.sh \"${CONTAINER_NAME}\" \"${{ needs.config.outputs.VERSION }}\" \"${BUILDDATE}\"
         \`\`\`
 
         Or, for testing directly with Apptainer/Singularity:

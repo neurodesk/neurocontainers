@@ -166,14 +166,79 @@ gh workflow run recipes-ci.yml --ref <branch> \
 
 A dispatch is limited to 256 concrete builds. For the full collection, dispatch each architecture separately or split the recipe list into batches.
 
-### Builder Linting – `.github/workflows/test-builder.yml`
+### Code quality gate – `.github/workflows/test-builder.yml`
 
-While not a runtime test, this workflow protects the builder tooling whenever builder code changes. It creates a Python virtual environment, installs `requirements.txt`, and runs `./workflows/test_all.sh`. The script validates every recipe (`builder/validation.py`) and performs check-only Dockerfile generation via `python -m builder generate …`. Failures here usually indicate malformed recipe metadata that would prevent the container tests from running downstream.
+Every pull request runs this workflow, including documentation changes and forks.
+Pushes to `main` and manual dispatches also run it. It uses GitHub-hosted runners,
+read-only repository permissions, and no secrets. `Code quality` is the stable
+required check for general code changes. `Container release gate` remains a
+separate required check for the container release process.
 
-The same script validates every `recipes/*/OpenReconLabel.json` against the
-vendored OpenRecon 1.1.0 schema before generating Dockerfiles. This catches
-scanner-UI schema errors, including the 14-parameter limit, in Neurocontainers
-before a recipe is synchronized into the OpenRecon packaging repository.
+The Python unit suite runs on Python 3.10 and 3.12. Static checks run on Python
+3.12 with Ruff's E4, E7, E9, and F rules, Ruff formatting, scoped mypy checks,
+and codespell. Go 1.25.1 runs gofmt, go vet, dashboard tests, and the standalone
+Docker-to-SIMG converter tests. actionlint 1.7.12 validates every workflow and
+uses ShellCheck 0.11.0 for inline shell. ShellCheck also checks shell scripts in
+`workflows`, `tools`, `dashboard`, and `.github`.
+
+ShellCheck warnings and errors block merges. Existing informational and style
+findings do not yet block merges; this is the baseline severity, not a list of
+disabled diagnostics. `.github/actionlint.yaml` declares the existing custom
+runner label and excludes only actionlint's unsupported `concurrency.queue`
+diagnostic in three existing workflows. GitHub supports that property. Remove
+the diagnostic exception when actionlint supports it.
+
+BuildKit integration and recipe generation run in separate jobs. Changes under
+`builder`, `workflows`, `tools`, `macros`, or `.github`, and changes to
+`requirements.txt`, `pyproject.toml`, or `uv.lock`, select both jobs. These shared
+changes validate and generate every recipe. Recipe changes select affected
+recipes and their declared architectures and variants. Shared macro consumers
+are also checked. Unrelated documentation changes skip both integrations while
+keeping the cheap checks. New branches and manual runs with no comparison base
+run the full integrations.
+
+The final `Code quality` job runs even if another job fails. It requires every
+cheap check and the selection job to succeed. Each selected integration must
+succeed, and each unselected integration must be skipped. Missing selection
+outputs, failures, cancellations, and unexpected skips fail the gate.
+
+`python -m workflows.check_recipes` audits update policies, validates recipes,
+checks OpenRecon labels against the vendored schema, and generates Dockerfiles
+for every declared architecture and variant. It aggregates failures so one
+broken recipe does not hide failures in others. With a comparison base, newly
+added recipes must have `fulltest.yaml`, including recipes in mixed code and
+recipe pull requests. A future documented exception must also address the
+update policy's fulltest contract; there is no flag that bypasses that rule.
+
+Run the same checks locally after installing Go 1.25.1 and Python dependencies:
+
+```bash
+python -m pip install -r requirements.txt -e '.[dev,boutiques]'
+python -m workflows.quality_checks python
+python -m pytest builder/tests
+python -m workflows.quality_checks go
+python -m workflows.quality_checks install-workflow-tools "$PWD/.quality-tools"
+PATH="$PWD/.quality-tools:$PATH" python -m workflows.quality_checks workflows
+python -m workflows.check_recipes --base origin/main --head HEAD --json recipe-checks.json
+```
+
+The workflow tool installer downloads Linux x86_64 binaries, verifies their
+pinned SHA256 digests, and writes only the two executables into the requested
+directory. On other platforms, install those exact versions from their upstream
+releases and place them on `PATH`. Python checker versions are pinned in the
+`dev` extra in `pyproject.toml`. Use `--all --base origin/main --head HEAD` for a
+full recipe sweep that still checks the new recipe requirement. The compatibility
+command `./workflows/test_all.sh` runs the full sweep. To run the BuildKit tests,
+first provide Docker with a Buildx builder, then run:
+
+```bash
+NEUROCONTAINERS_TEST_BUILDKIT=1 python -m pytest builder/tests/test_image_flatten.py
+```
+
+The independent `validate-recipes.yml` workflow installs the same dependencies
+and validates recipe/fulltest contracts when either file changes. Changed
+filenames move through NUL-delimited Git output and quoted shell arrays, so
+spaces, newlines, and shell metacharacters are treated as filename data.
 
 ## Reproducing CI Runs Locally
 
