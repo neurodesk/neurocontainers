@@ -43,7 +43,7 @@ jobs:
         run: python -m builder.audit_updates
 
       - name: Validate OpenRecon labels
-        run: python workflows/validate_openrecon_labels.py
+        run: python workflows/validate_openrecon_labels.py --experimental-raw-return
 
       - name: Get changed files
         id: changed-files

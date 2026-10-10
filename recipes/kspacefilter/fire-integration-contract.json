@@ -1,0 +1,28 @@
+{
+  "application": "kspacefilter",
+  "version": "0.1.0",
+  "transport": "MRD TCP",
+  "port": 9002,
+  "response_message_id": 1008,
+  "response": "one acquisition per input acquisition, in order, immediately",
+  "default": "passthrough",
+  "opt_in": {
+    "mode": "readout-edge-zero",
+    "input_domain": "raw-uniform-cartesian-kspace",
+    "measurement_role": "imaging"
+  },
+  "mask": "floor(usable_samples/20) at each usable readout end, all coils",
+  "scanner_adapter": {
+    "supplied": false,
+    "native_sdk_supplied": false,
+    "tap": "before readout FFT, full uniform centered Cartesian raw readouts",
+    "domain_assertion": "adapter must verify; MRD metadata is insufficient",
+    "native_header": "retain original; replace sample payload only",
+    "matching": "one ordered returned acquisition per retained native header",
+    "resume": "continue downstream reconstruction without recursive emission",
+    "adjustments": "bypass filtering",
+    "io": "concurrent send and receive to avoid backpressure deadlock",
+    "errors": "Early close or missing acquisition response fails the exchange; stop reinsertion",
+    "other_messages": "Text, images and waveforms do not replace native acquisition samples"
+  }
+}

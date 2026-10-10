@@ -137,8 +137,13 @@ readme: |-
 
   Both outputs keep the source 2D geometry, slice and repetition counters with
   `Keep_image_geometry = 1`. Corrected values are rounded to the source pixel
-  type, so negative values clip to 0 for unsigned scanner images. Run the
-  module with fewer than 4 repetitions and only the originals are returned.
+  type, so negative values clip to 0 for unsigned scanner images. The GUI selects
+  Spline (default), Simple, Low-pass or Run-wise. Spline requires 4 repetitions;
+  other modes require 2. Low-pass also requires at least 100 spatial voxels.
+  Its Gaussian window defaults to 40 TRs and accepts 0.1 to 1000000 TRs,
+  including fractional values. The window applies only to Low-pass. Invalid
+  selections skip correction and preserve requested originals. Nondefault
+  corrected series identify the algorithm in their suffix and processing history.
   Incomplete runs, repetition gaps and duplicate nonconstant counters skip
   correction for that source group while preserving requested originals.
   Echo, phase, set and average counters define independent time series.
@@ -152,6 +157,11 @@ readme: |-
   python3 client.py -c frisgo -p 9002 -o /tmp/output.h5 -G frisgo /tmp/input.h5
   python3 frisgo_simulate.py mrd2nifti /tmp/output.h5 /data/or_output --group frisgo
   ```
+
+  Temporary NIfTIs use `/tmp/share/frisgo`, on the scanner share mounted by FIRE.
+  Set `FRISGO_WORKDIR` to choose another writable scratch filesystem. Correction
+  checks free space for input and output plus 64 MiB before writing; insufficient
+  space preserves requested originals and logs the storage requirement.
 
   Run LN2_FRISGO directly:
   ```bash

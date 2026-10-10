@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 
 RECIPE_DIR = Path(__file__).resolve().parent
@@ -255,6 +256,7 @@ def test_reformat_outputs_use_2d_segmentation_header_contract():
         assert head.image_series_index == 4
         assert head.image_index == index + 1
         assert head.slice == index
+        assert meta["LUTFileName"] == "MicroDeltaHotMetal.pal"
         assert meta["DataRole"] == "Segmentation"
         assert meta["Keep_image_geometry"] == "1"
         assert meta["SegmentSourceGeometry"] == "1"
@@ -279,12 +281,14 @@ def _openrecon_helpers():
     return _load_runtime_helpers_for_test(
         [
             "_openrecon_run_name",
+            "_resolve_openrecon_parcellation",
             "_parse_model_list",
             "_safe_path_component",
             "iter_openrecon_parameter_combinations",
         ],
         assignments=[
             "OPENRECON_DEFAULTS",
+            "OPENRECON_PARCELLATIONS",
             "OPENRECON_COMBINATION_PARAMETER_VALUES",
             "OPENRECON_MODEL_DEFAULT",
             "OPENRECON_MODEL_VALUES",
@@ -433,6 +437,8 @@ def test_openrecon_defaults_match_the_scanner_label():
     label_ids = [parameter["id"] for parameter in label["parameters"]]
     assert len(label_ids) == len(set(label_ids)), "duplicate parameter ids in label"
     assert set(label_ids) == set(helpers["OPENRECON_DEFAULTS"])
+    assert len(label_ids) == 14
+    assert "ssdebugthresholdsegment" in label_ids
 
     for parameter in label["parameters"]:
         default = helpers["OPENRECON_DEFAULTS"][parameter["id"]]
@@ -459,15 +465,40 @@ def test_label_model_choices_have_installed_weights():
     assert helpers["OPENRECON_MODEL_DEFAULT"] in choice_ids
 
 
+@pytest.mark.parametrize("choice, expected", [
+    ("none", (False, False)),
+    ("desikan", (True, False)),
+    ("glasser", (False, True)),
+    ("both", (True, True)),
+    (False, (False, False)),
+    (True, (True, False)),
+    ("false", (False, False)),
+    ("true", (True, False)),
+])
+def test_parcellation_choice_resolves_scanner_and_saved_configs(choice, expected):
+    resolve = _openrecon_helpers()["_resolve_openrecon_parcellation"]
+    assert resolve(choice) == expected
+
+
+@pytest.mark.parametrize("choice", ["unknown", "", None, 1, [], {}])
+def test_parcellation_choice_rejects_invalid_configs(choice):
+    resolve = _openrecon_helpers()["_resolve_openrecon_parcellation"]
+    with pytest.raises(ValueError, match="Invalid ssparc choice"):
+        resolve(choice)
+
+
 def test_parameter_matrix_only_emits_runnable_combinations():
     """SynthSeg-robust forces fast mode, so the matrix must not claim otherwise."""
     helpers = _openrecon_helpers()
     combinations = list(helpers["iter_openrecon_parameter_combinations"]())
 
     assert combinations
+    choices = {"none", "desikan", "glasser", "both"}
+    assert {config["parameters"]["ssparc"] for _, config in combinations} == choices
     for name, config in combinations:
         parameters = config["parameters"]
         assert parameters["ssoutputname"] == name
+        assert f"_parc-{parameters['ssparc']}_" in name
         assert parameters["ssmodel"] in helpers["OPENRECON_MODEL_VALUES"]
         if parameters["ssmodel"] == "robust":
             assert parameters["ssfast"] is True
@@ -512,17 +543,19 @@ with (out.parent / "attempts.jsonl").open("a") as log:
     log.write(json.dumps(sys.argv[2:]) + "\\n")
 if "--cpu" not in sys.argv:
     (out / "partial.csv").write_text("incomplete")
+    (out / "base.nii.gz").write_text("incomplete")
+    (out / "desikan.nii.gz").write_text("incomplete")
     print("ResourceExhaustedError: GPU OOM", file=sys.stderr)
     sys.exit(1)
 assert os.environ["CUDA_VISIBLE_DEVICES"] == "-1"
-assert not (out / "partial.csv").exists()
+assert not any(out.iterdir())
 (out / "seg.nii.gz").write_text("completed on CPU")
 ''')
-    command = [sys.executable, str(program), str(output_dir), "--fast", "--parc", "--qc"]
+    command = [sys.executable, str(program), str(output_dir), "--fast", "--parc", "--qc", "--base-output", str(output_dir / "base.nii.gz")]
     with caplog.at_level(logging.INFO):
         helpers["_run_synthseg_command"](command, output_dir)
     attempts = [json.loads(line) for line in (tmp_path / "attempts.jsonl").read_text().splitlines()]
-    assert attempts == [["--fast", "--parc", "--qc"], ["--fast", "--parc", "--qc", "--cpu"]]
+    assert attempts == [command[3:], command[3:] + ["--cpu"]]
     assert (output_dir / "seg.nii.gz").read_text() == "completed on CPU"
     assert "GPU OOM" in (tmp_path / "synthseg_gpu.stderr.log").read_text()
     assert (tmp_path / "synthseg_cpu.stdout.log").exists()
@@ -575,3 +608,230 @@ def test_gpu_telemetry_is_best_effort(monkeypatch, caplog):
             helpers["_log_synthseg_resources"](os.getpid(), True)
         assert "GPU telemetry unavailable" in caplog.text
         assert "VmRSS:" in caplog.text
+
+
+def _output_helpers(additional=()):
+    tree = ast.parse(WRAPPER_PATH.read_text())
+    definitions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
+    assignments = {
+        target.id: node for node in tree.body if isinstance(node, ast.Assign)
+        for target in node.targets if isinstance(target, ast.Name)
+    }
+    wanted = {'_build_openrecon_output_identity', '_build_synthseg_segmentation_images',
+              '_build_synthseg_original_images', '_validate_synthseg_output_contract'}
+    wanted.update(additional)
+    constants = set()
+    while True:
+        referenced = {
+            node.id for name in wanted | constants
+            for node in ast.walk((definitions | assignments)[name])
+            if isinstance(node, ast.Name)
+        }
+        next_functions = wanted | (referenced & definitions.keys())
+        next_constants = constants | (referenced & assignments.keys())
+        if (next_functions, next_constants) == (wanted, constants):
+            break
+        wanted, constants = next_functions, next_constants
+    return _load_runtime_helpers_for_test(wanted, constants)
+
+
+@pytest.mark.parametrize("segmentation_header", [False, True])
+def test_label_products_keep_pixels_geometry_and_distinct_scanner_identity(segmentation_header):
+    helpers = _output_helpers()
+    source = _source_image(helpers)
+    head = source.getHead()
+    head.position = [12.0, -7.0, 34.0]
+    head.read_dir = [0.0, 1.0, 0.0]
+    head.phase_dir = [-1.0, 0.0, 0.0]
+    source.setHead(head)
+    source_identity = {'series_description': 'source_t1w', 'parent_grouping': 'source_group',
+                       'series_uid': '1.2.3', 'sop_uid': '1.2.3.4', 'source_type_token': 'ND'}
+    labels = np.array([0, 7, 189, 360], dtype=np.int16).reshape(2, 2, 1)
+    outputs = []
+    for series, product in [(3, 'synthseg'), (4, 'desikan'), (5, 'glasser_approx')]:
+        identity = helpers['_build_openrecon_output_identity'](
+            source_identity, series_index=series, product=product,
+        )
+        images = helpers['_build_synthseg_segmentation_images'](
+            labels, [source], source_identity, identity, series, 360,
+            segmentation_header=segmentation_header,
+        )
+        outputs.extend(images)
+        image = images[0]
+        meta = helpers['FakeMeta'].deserialize(image.attribute_string)
+        np.testing.assert_array_equal(image.data[0, 0], labels[:, :, 0])
+        np.testing.assert_array_equal(image.getHead().position, source.getHead().position)
+        assert meta['LUTFileName'] == 'MicroDeltaHotMetal.pal'
+        assert meta['SeriesDescription'] == f'source_t1w_{product}'
+        assert meta['SeriesNumberRangeNameUID'] == f'source_group_{product}'
+        if segmentation_header:
+            assert meta['ImageType'] == f'DERIVED\\PRIMARY\\SEGMENTATION\\{product}_source_geometry'
+            assert meta['ImageTypeValue4'] == f'{product}_source_geometry'
+        else:
+            assert meta['ImageType'] == 'ORIGINAL\\PRIMARY\\M\\ND'
+            assert meta['ImageTypeValue4'] == ['ND']
+        assert meta['LabelProduct'] == product
+        assert meta['ImageProcessingHistory'][1] == product.upper()
+    metas = [helpers['FakeMeta'].deserialize(image.attribute_string) for image in outputs]
+    assert metas[0]['SeriesInstanceUID'] != metas[1]['SeriesInstanceUID']
+    assert metas[0]['SOPInstanceUID'] != metas[1]['SOPInstanceUID']
+    helpers['_validate_synthseg_output_contract'](outputs, {1}, source_identity, 'test products')
+    originals = helpers['_build_synthseg_original_images']([source], [source], source_identity, 2)
+    assert 'LUTFileName' not in helpers['FakeMeta'].deserialize(originals[0].attribute_string)
+
+
+@pytest.fixture
+def process_runtime(monkeypatch, tmp_path):
+    import logging
+    import shutil
+    import sys
+    import traceback
+    import types
+    import ismrmrd
+    import nibabel as nib
+    import scipy.ndimage as ndi
+
+    helpers = _output_helpers({'process_image'})
+    helpers.update(ismrmrd=ismrmrd, nib=nib, ndi=ndi, logging=logging,
+                   shutil=shutil, traceback=traceback, debugFolder=str(tmp_path))
+    helpers['mrdhelper'] = types.SimpleNamespace(
+        get_json_config_param=lambda config, key, default=None, **kwargs: config['parameters'].get(key, default),
+        extract_minihead_string_param=lambda *args: '',
+    )
+    helpers['_resolve_synthseg_models'] = lambda *args: []
+    base = np.array([0, 2, 3, 42, 17, 53, 3, 42] * 4, dtype=np.int16).reshape(4, 4, 2)
+    # The parcellation network can disagree with the segmentation hemisphere.
+    desikan = np.array([0, 2, 2001, 1001, 17, 53, 1002, 2002] * 4, dtype=np.int16).reshape(4, 4, 2)
+    glasser = np.where(base == 3, 7, np.where(base == 42, 189, 0)).astype(np.int16)
+    maps = dict(synthseg=base, desikan=desikan, glasser_approx=glasser)
+
+    def inference(command, output_dir):
+        affine = nib.load(command[command.index('--i') + 1]).affine
+        labels = desikan if '--parc' in command else base
+        nib.save(nib.Nifti1Image(labels, affine), command[command.index('--o') + 1])
+        if '--base-output' in command:
+            nib.save(nib.Nifti1Image(base, affine), command[command.index('--base-output') + 1])
+
+    def register(input_path, segmentation, output_path, **kwargs):
+        segmentation_image = nib.load(segmentation)
+        np.testing.assert_array_equal(segmentation_image.dataobj, base)
+        nib.save(nib.Nifti1Image(glasser, segmentation_image.affine), output_path)
+
+    helpers['_run_synthseg_command'] = inference
+    monkeypatch.setitem(sys.modules, 'glasser', types.SimpleNamespace(register_glasser=register))
+    images = []
+    for index in range(2):
+        image = ismrmrd.Image.from_array(np.ones((1, 1, 4, 4), dtype=np.int16), transpose=False)
+        head = image.getHead()
+        head.field_of_view = (4., 4., 1.)
+        head.position = (0., 0., float(index))
+        head.read_dir, head.phase_dir, head.slice_dir = (1., 0., 0.), (0., 1., 0.), (0., 0., 1.)
+        head.image_series_index, head.image_index, head.slice = 1, index + 1, index
+        image.setHead(head)
+        meta = ismrmrd.Meta()
+        meta['SeriesDescription'], meta['SeriesNumberRangeNameUID'] = 't1w', 't1w_group'
+        meta['SeriesInstanceUID'] = '1.2.3'
+        meta['ImageType'], meta['ImageTypeValue4'] = 'ORIGINAL\\PRIMARY\\M\\ND', 'ND'
+        image.attribute_string = meta.serialize()
+        images.append(image)
+    return helpers, images, maps
+
+
+@pytest.mark.parametrize('choice,products', [
+    ('none', ['synthseg']), ('desikan', ['synthseg', 'desikan']),
+    ('glasser', ['synthseg', 'glasser_approx']),
+    ('both', ['synthseg', 'desikan', 'glasser_approx']),
+])
+@pytest.mark.parametrize('segment_header', [False, True])
+@pytest.mark.parametrize('extras', [False, True])
+def test_process_image_returns_base_and_selected_products(process_runtime, choice, products, segment_header, extras):
+    import ismrmrd
+    helpers, sources, maps = process_runtime
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc=choice,
+                                 sendoriginal=extras, sssegmentheader=segment_header,
+                                 ssreslicesagittal=extras, ssreslicecoronal=extras)}
+    outputs = helpers['process_image'](sources, None, config, None)
+    series = {}
+    for image in outputs:
+        series.setdefault(image.getHead().image_series_index, []).append(image)
+    metas = [ismrmrd.Meta.deserialize(images[0].attribute_string) for images in series.values()]
+    native = [(images, meta) for images, meta in zip(series.values(), metas)
+              if meta.get('LabelProduct') and not meta.get('SynthSegReformatOrientation')]
+    assert [meta['LabelProduct'] for _, meta in native] == products
+    for images, meta in native:
+        product = meta['LabelProduct']
+        np.testing.assert_array_equal(np.stack([image.data[0, 0].T for image in images], axis=-1), maps[product])
+        assert meta['SeriesDescription'] == f't1w_{product}'
+        assert meta['SeriesNumberRangeNameUID'] == f't1w_{product}'
+        assert meta['LUTFileName'] == 'MicroDeltaHotMetal.pal'
+        if product == 'glasser_approx':
+            assert meta['WindowWidth'] == '361'
+        expected_type = f'DERIVED\\PRIMARY\\SEGMENTATION\\{product}_source_geometry' if segment_header else 'ORIGINAL\\PRIMARY\\M\\ND'
+        assert meta['ImageType'] == expected_type
+        for source, image in zip(sources, images):
+            assert tuple(image.getHead().position) == tuple(source.getHead().position)
+    assert len({meta['SeriesInstanceUID'] for meta in metas}) == len(series)
+    assert len({ismrmrd.Meta.deserialize(image.attribute_string)['SOPInstanceUID'] for image in outputs}) == len(outputs)
+    assert list(series) == list(range(2, 2 + len(series)))
+    if extras:
+        assert metas[0].get('LabelProduct') is None
+        for source, image in zip(sources, next(iter(series.values()))):
+            np.testing.assert_array_equal(source.data, image.data)
+        reformats = {(meta['LabelProduct'], meta['SynthSegReformatOrientation']) for meta in metas if meta.get('SynthSegReformatOrientation')}
+        assert reformats == {(product, orientation) for product in products if product != 'glasser_approx'
+                             for orientation in ('sagittal', 'coronal')}
+
+
+@pytest.mark.parametrize('missing_name', ['input_synthseg.nii.gz', 'input_desikan.nii.gz'])
+def test_process_image_rejects_missing_required_product(process_runtime, missing_name):
+    helpers, sources, _ = process_runtime
+    inference = helpers['_run_synthseg_command']
+
+    def incomplete_inference(command, output_dir):
+        inference(command, output_dir)
+        (output_dir / missing_name).unlink()
+
+    helpers['_run_synthseg_command'] = incomplete_inference
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='desikan')}
+    with pytest.raises(FileNotFoundError, match=missing_name):
+        helpers['process_image'](sources, None, config, None)
+
+
+@pytest.mark.parametrize('invalid', ['shape', 'fractional', 'overflow'])
+def test_process_image_rejects_invalid_label_product(process_runtime, invalid):
+    import nibabel as nib
+    helpers, sources, _ = process_runtime
+    inference = helpers['_run_synthseg_command']
+
+    def invalid_inference(command, output_dir):
+        inference(command, output_dir)
+        path = output_dir / 'input_synthseg.nii.gz'
+        image = nib.load(path)
+        labels = np.asarray(image.dataobj).astype(np.float32)
+        if invalid == 'shape':
+            labels = labels[:2]
+        else:
+            labels[0, 0, 0] = 0.5 if invalid == 'fractional' else 32768
+        nib.save(nib.Nifti1Image(labels, image.affine), path)
+
+    helpers['_run_synthseg_command'] = invalid_inference
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='desikan')}
+    with pytest.raises(ValueError, match='Label product'):
+        helpers['process_image'](sources, None, config, None)
+
+
+def test_missing_source_type_uses_each_product_identity(process_runtime):
+    import ismrmrd
+    helpers, sources, _ = process_runtime
+    for source in sources:
+        meta = ismrmrd.Meta.deserialize(source.attribute_string)
+        del meta['ImageType']
+        del meta['ImageTypeValue4']
+        source.attribute_string = meta.serialize()
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='both', sendoriginal=False)}
+    outputs = helpers['process_image'](sources, None, config, None)
+    for image in outputs:
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        product = meta['LabelProduct']
+        assert meta['ImageType'] == f'DERIVED\\PRIMARY\\SEGMENTATION\\{product}_source_image_header'
+        assert meta['ImageTypeValue4'] == f'{product}_source_image_header'

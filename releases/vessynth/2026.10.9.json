@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "vessynth 2026.10.9": {
+      "version": "20261010",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "machine learning"
+  ]
+}

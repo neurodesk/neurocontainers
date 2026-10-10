@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+export PYTHONPATH="/opt/code/python-ismrmrd-server${PYTHONPATH:+:${PYTHONPATH}}"
+exec python3 /opt/code/python-ismrmrd-server/shim_toolbox.py "$@"

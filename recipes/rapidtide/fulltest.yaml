@@ -4,7 +4,7 @@
 # Documentation: https://rapidtide.readthedocs.io/en/latest/
 
 name: rapidtide
-version: 3.1.11
+version: 3.2.0
 
 tests:
   - name: rapidtide launcher available

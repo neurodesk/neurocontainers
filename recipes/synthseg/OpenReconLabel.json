@@ -80,9 +80,15 @@
     {
       "id": "ssparc",
       "label": { "en": "Cortical parcellation" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Also run the cortical parcellation network so the label map contains the 2000/2035-series Desikan-Killiany cortical parcels. Adds roughly one further inference pass." }
+      "type": "choice",
+      "values": [
+        { "id": "none", "name": { "en": "None" } },
+        { "id": "desikan", "name": { "en": "Desikan-Killiany" } },
+        { "id": "glasser", "name": { "en": "Approximate Glasser" } },
+        { "id": "both", "name": { "en": "Both" } }
+      ],
+      "default": "none",
+      "information": { "en": "The base SynthSeg segmentation is always returned. Desikan-Killiany adds a separate cortical parcel series. Approximate Glasser registers a volumetric atlas on CPU and adds a separate parcel series. Both returns all three label products. Glasser is incompatible with debug threshold segmentation; registration failure retains the other outputs." }
     },
     {
       "id": "ssfast",
@@ -114,7 +120,7 @@
       "minimum": 1,
       "maximum": 64,
       "default": 8,
-      "information": { "en": "Number of TensorFlow inter/intra-op threads. Only relevant for the CPU parts of the pipeline." }
+      "information": { "en": "Number of CPU threads for TensorFlow and optional Glasser registration." }
     },
     {
       "id": "ssvolumes",

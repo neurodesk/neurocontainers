@@ -1,17 +1,20 @@
 """OpenRecon image-to-image Fuzzy Ripple correction for BOLD time series.
 
 All reconstructed images of a run are collected, assembled into a 4D NIfTI
-time series, corrected with LayNii ``LN2_FRISGO -tshift`` and returned to the
-scanner as two source-geometry 2D streams: the original time series and the
+time series, corrected with the selected LayNii ``LN2_FRISGO`` algorithm and
+returned to the scanner as two source-geometry 2D streams: the original and the
 FRISGO-corrected time series. Scanner identity and IceMiniHead handling reuse
 the helpers of the ``openreconi2iexample`` reference module.
 """
 import itertools
 import logging
+import math
 import os
+import shutil
 import subprocess
 import tempfile
 import traceback
+from dataclasses import dataclass, replace
 
 import constants
 import ismrmrd
@@ -26,15 +29,70 @@ EXECUTABLE_ENV_VAR = "FRISGO_EXECUTABLE"
 ORIGINAL_SERIES_INDEX = 100
 SERIES_INDEX_STRIDE = 2
 ORIGINAL_SERIES_NAME = "openrecon_original"
-FRISGO_SERIES_NAME = "openrecon_frisgo"
 FRISGO_IMAGE_TYPE_TOKEN = "FRISGO"
-FRISGO_HISTORY = ["PYTHON", "LAYNII", "LN2_FRISGO_TSHIFT"]
-MIN_REPETITIONS = 4
+MIN_LOWPASS_WINDOW = 0.1
+MAX_LOWPASS_WINDOW = 1_000_000
 SLICE_POSITION_DECIMALS = 3
 DEFAULT_REPETITION_TIME_SECONDS = 1.0
 MAX_IMAGES_PER_SERIES = 65535
 MAX_SERIES_INDEX = 65535
 SEND_BATCH_SIZE = 128
+
+
+@dataclass(frozen=True)
+class _Correction:
+    arguments: tuple[str, ...]
+    output_suffix: str
+    minimum_repetitions: int
+    series_suffix: str
+    history: str
+
+
+_CORRECTIONS = {
+    "spline": _Correction(
+        ("-tshift",), "Tshift", 4, "frisgo", "LN2_FRISGO_TSHIFT"
+    ),
+    "simple": _Correction(
+        ("-simple",), "frisgo-simple", 2, "frisgo_simple", "LN2_FRISGO_SIMPLE"
+    ),
+    "lpass": _Correction(
+        ("-lpass",), "frisgo-lpass", 2, "frisgo_lpass", "LN2_FRISGO_LPASS"
+    ),
+    "runwise": _Correction(
+        ("-runwise",), "frisgo-runwise", 2, "frisgo_runwise", "LN2_FRISGO_RUNWISE"
+    ),
+}
+_DEFAULT_CORRECTION = _CORRECTIONS["spline"]
+
+
+def _correction_from_config(config) -> _Correction:
+    algorithm = i2i._config_value_any(config, ("algorithm",), default="spline")
+    if not isinstance(algorithm, str) or algorithm not in _CORRECTIONS:
+        raise ValueError(f"invalid FRISGO algorithm {algorithm!r}")
+    correction = _CORRECTIONS[algorithm]
+    if algorithm != "lpass":
+        return correction
+    raw = i2i._config_value_any(config, ("lowpasswindow",), default=40)
+    try:
+        window = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"invalid FRISGO lowpasswindow {raw!r}") from None
+    # Bound the upstream float-to-int vicinity conversion.
+    if (
+        isinstance(raw, bool)
+        or not math.isfinite(window)
+        or not MIN_LOWPASS_WINDOW <= window <= MAX_LOWPASS_WINDOW
+    ):
+        raise ValueError(
+            f"invalid FRISGO lowpasswindow {raw!r}; expected "
+            f"{MIN_LOWPASS_WINDOW} to {MAX_LOWPASS_WINDOW} TRs"
+        )
+    token = format(window, ".15g")
+    return replace(
+        correction,
+        arguments=("-lpass", token),
+        history=f"{correction.history}_WINDOW_TR={token}",
+    )
 
 
 class TimeSeries:
@@ -117,19 +175,16 @@ def process(connection, config, metadata):
                     "Source group %d: %d repetition(s) x %d slice(s)",
                     group_index, series.n_repetitions, series.n_slices,
                 )
-                if series.n_repetitions < MIN_REPETITIONS:
-                    logging.warning(
-                        "Source group %d has %d repetition(s); LN2_FRISGO -tshift "
-                        "needs at least %d, FRISGO skipped",
-                        group_index, series.n_repetitions, MIN_REPETITIONS,
-                    )
-                    continue
-                corrected = run_frisgo(series)
+                correction = _correction_from_config(config)
+                corrected = run_frisgo(series, correction)
             except Exception:
                 logging.error(traceback.format_exc())
                 connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
                 continue
-            _send_outputs(connection, _frisgo_outputs(series, corrected, original_index + 1))
+            _send_outputs(
+                connection,
+                _frisgo_outputs(series, corrected, original_index + 1, correction),
+            )
             del corrected
 
     except Exception:
@@ -139,13 +194,38 @@ def process(connection, config, metadata):
         connection.send_close()
 
 
-def run_frisgo(series):
-    """Run ``LN2_FRISGO -tshift`` on the series and return the corrected volume."""
+def run_frisgo(series, correction=_DEFAULT_CORRECTION):
+    """Run the selected correction and return the corrected volume."""
+    if series.n_repetitions < correction.minimum_repetitions:
+        raise ValueError(
+            f"LN2_FRISGO {correction.arguments[0]} needs at least "
+            f"{correction.minimum_repetitions} repetitions"
+        )
+    n_y, n_x = series.grid[0][0].data.shape[-2:]
+    # LayNii 2.10.0 divides by spatial_voxels / 100 in its low-pass progress loop.
+    if correction.arguments[0] == "-lpass" and n_x * n_y * series.n_slices < 100:
+        raise ValueError("LN2_FRISGO low-pass needs at least 100 spatial voxels")
     executable = os.environ.get(EXECUTABLE_ENV_VAR, "LN2_FRISGO")
-    with tempfile.TemporaryDirectory(prefix="frisgo_") as work_dir:
+    scratch_dir = os.environ.get("FRISGO_WORKDIR", "/tmp/share/frisgo")
+    os.makedirs(scratch_dir, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="frisgo_", dir=scratch_dir) as work_dir:
         input_path = os.path.join(work_dir, "timeseries.nii")
-        output_path = os.path.join(work_dir, "timeseries_Tshift.nii")
+        output_path = os.path.join(work_dir, f"timeseries_{correction.output_suffix}.nii")
         volume = series.volume()
+        # Two uncompressed float32 NIfTIs, their headers, and 64 MiB headroom.
+        required_bytes = 2 * (volume.nbytes + 352) + 64 * 1024**2
+        free_bytes = shutil.disk_usage(work_dir).free
+        logging.info(
+            "FRISGO scratch %s: %.1f MiB available, %.1f MiB required",
+            work_dir, free_bytes / 1024**2, required_bytes / 1024**2,
+        )
+        if free_bytes < required_bytes:
+            raise RuntimeError(
+                f"FRISGO scratch directory {scratch_dir} has "
+                f"{free_bytes / 1024**2:.1f} MiB available; "
+                f"needs at least {required_bytes / 1024**2:.1f} MiB. "
+                "Set FRISGO_WORKDIR to a writable filesystem with sufficient free space."
+            )
         image = nib.Nifti1Image(volume, series.affine())
         image.header.set_xyzt_units(xyz="mm", t="sec")
         zooms = list(image.header.get_zooms())
@@ -155,7 +235,7 @@ def run_frisgo(series):
         volume_shape = volume.shape
         del image, volume
 
-        command = [executable, "-input", input_path, "-tshift"]
+        command = [executable, "-input", input_path, *correction.arguments]
         logging.info("Running %s", " ".join(command))
         result = subprocess.run(
             command,
@@ -170,7 +250,8 @@ def run_frisgo(series):
                 f"LN2_FRISGO failed with exit code {result.returncode}; "
                 f"expected output {output_path}"
             )
-        corrected = np.asarray(nib.load(output_path).dataobj, dtype=np.float32)
+        # Close the output before cleanup; network shares cannot unlink an open mapping.
+        corrected = np.asarray(nib.load(output_path, mmap=False).dataobj, dtype=np.float32)
 
     if corrected.shape != volume_shape:
         raise RuntimeError(
@@ -270,18 +351,18 @@ def _original_outputs(images, series_index):
     return _outputs(((image, image.data) for image in images), series_index)
 
 
-def _frisgo_outputs(series, corrected, series_index):
+def _frisgo_outputs(series, corrected, series_index, correction=_DEFAULT_CORRECTION):
     planes = (
         (source, i2i._cast_like(corrected[:, :, z, t].T.reshape(source.data.shape), source.data))
         for t, volume in enumerate(series.grid)
         for z, source in enumerate(volume)
     )
-    return _outputs(planes, series_index, derived=True)
+    return _outputs(planes, series_index, correction=correction)
 
 
-def _outputs(source_data_pairs, series_index, derived=False):
-    suffix = "frisgo" if derived else "original"
-    fallback_name = FRISGO_SERIES_NAME if derived else ORIGINAL_SERIES_NAME
+def _outputs(source_data_pairs, series_index, correction=None):
+    suffix = correction.series_suffix if correction else "original"
+    fallback_name = f"openrecon_{suffix}" if correction else ORIGINAL_SERIES_NAME
     for offset, (source_image, data) in enumerate(source_data_pairs):
         chunk, output_index = divmod(offset, MAX_IMAGES_PER_SERIES)
         output_series_index = series_index + SERIES_INDEX_STRIDE * chunk
@@ -291,7 +372,7 @@ def _outputs(source_data_pairs, series_index, derived=False):
             )
         output = _copy_with_data(source_image, data)
         _stamp_time_series_image(
-            output, source_image, output_series_index, output_index, identity, derived=derived
+            output, source_image, output_series_index, output_index, identity, correction=correction
         )
         yield output
 
@@ -317,7 +398,7 @@ def _stamp_time_series_image(
     series_index,
     output_index,
     series_identity,
-    derived=False,
+    correction=None,
 ):
     """Give a returned image new series identity while keeping source geometry.
 
@@ -346,17 +427,17 @@ def _stamp_time_series_image(
     meta = i2i._meta_from_image(source_image)
     i2i._strip_source_parent_refs(meta)
     i2i._strip_scanner_write_unsafe_meta(meta)
-    if derived:
+    if correction:
         image_type = f"DERIVED\\PRIMARY\\M\\{FRISGO_IMAGE_TYPE_TOKEN}"
         for key in ("SeriesDescription", "SequenceDescription", "ProtocolName", "ImageComments"):
             meta[key] = series_name
         meta["ImageType"] = image_type
         meta["DicomImageType"] = image_type
         meta["ImageTypeValue4"] = FRISGO_IMAGE_TYPE_TOKEN
-        meta["ImageProcessingHistory"] = FRISGO_HISTORY
+        meta["ImageProcessingHistory"] = ["PYTHON", "LAYNII", correction.history]
         meta["DataRole"] = "Image"
         meta["ComplexImageComponent"] = "MAGNITUDE"
-        meta["SequenceDescriptionAdditional"] = "frisgo"
+        meta["SequenceDescriptionAdditional"] = correction.series_suffix
     else:
         for key in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
             if not i2i._meta_text(meta, key):
@@ -373,7 +454,7 @@ def _stamp_time_series_image(
         minihead, changed = i2i._patch_original_ice_minihead(
             minihead, series_grouping, series_uid, sop_uid, storage_fields
         )
-        if derived:
+        if correction:
             for name in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
                 minihead, _ = i2i._replace_or_append_minihead_string_param(
                     minihead, name, series_name

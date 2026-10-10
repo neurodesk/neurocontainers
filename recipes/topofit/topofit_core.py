@@ -27,6 +27,7 @@ from topofit_geometry import (
     SulcalHemisphere,
     identify_sulcal_middepth,
     triangle_voxel_mask,
+    siemens_plane_orientation,
     _outward_vertex_normals,
 )
 
@@ -1284,8 +1285,15 @@ def run_topofit_workflow(
     )
     manifest = asdict(result)
     for patch_id, patch in flat_patches.items():
+        orientation = siemens_plane_orientation(patch.normal_lph)
         manifest["flat_patches"][patch_id].update(
             center_lph_mm=patch.center_lph_mm, normal_lph=patch.normal_lph,
+            siemens_plane_orientation={
+                "primary": orientation.primary_text,
+                "primary_order": orientation.primary.order,
+                "variants": [asdict(pair) for pair in orientation.variants],
+                "in_plane_rotation_deg": orientation.in_plane_rotation_deg,
+            },
         )
     manifest["options"] = asdict(options)
     manifest["brainnet_command"] = command
@@ -1313,7 +1321,7 @@ def run_topofit_workflow(
         "overlap": "no_shared_vertices_within_hemisphere",
         "minimum_normal_coherence": MIN_PATCH_NORMAL_COHERENCE,
         "minimum_area_mm2": np.pi * options.patch_radius_mm**2 * options.patch_min_area_fraction,
-        "schema_version": 3,
+        "schema_version": 4,
         "patient_coordinates": "LPH: left, posterior, head; equivalent to DICOM LPS",
         "ranking": "ascending rms_distance_mm + radius_mm * (1 - normal_coherence); seed face index breaks ties",
         "numbering": "LH01/RH01 onward, independently per hemisphere after overlap suppression",

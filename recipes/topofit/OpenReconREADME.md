@@ -71,8 +71,8 @@ A dot means that the normal points toward increasing slice positions. A cross
 means that it points toward decreasing slice positions. This convention keeps
 a through-plane normal visible without drawing a false in-plane arrow. The
 result manifest stores the centers and normals in both NIfTI world RAS and
-patient LPH. QC image comments include LPH centers and unit normals up to the
-comment length limit. The separate `TopoFit_patch_table` series contains all
+patient LPH. QC image comments include LPH centers and Siemens signed plane
+angles up to the comment length limit. The separate `TopoFit_patch_table` series contains all
 accepted patches.
 
 Patch IDs such as `LH01` and `RH03` appear beside their normal glyphs. They are
@@ -127,7 +127,7 @@ hemispheres; 3 marks overlap. The mask keeps the source shape and affine.
 | Inference device | `tfdevice` | `cuda` | Run on the scanner GPU or use CPU for compatibility testing. |
 | TopoFit model | `tfmodel` | `t1w_1mm` | Select the T1w or synthetic pretrained model. |
 | Conform input | `tfconform` | `true` | Resample internally to the model grid. |
-| Find cortical patches | `tfflatpatches` | `false` | Find connected mid-cortical candidates and return patch-and-normal QC with LPH centers and outward unit normals in image comments and a DICOM table. |
+| Find cortical patches | `tfflatpatches` | `false` | Find connected mid-cortical candidates and return patch-and-normal QC with LPH centers and Siemens signed plane angles in image comments and a DICOM table. |
 | Maximum patches per hemisphere | `tfpatchcount` | `3` | Return up to 1–100 accepted patches per selected hemisphere. |
 | Cortical patch radius | `tfpatchradius` | `10 mm` | Mesh-edge radius, 2–20 mm. |
 | Patch hemisphere | `tfpatchhemisphere` | `both` | Both, `lh`, or `rh`. Reconstruction remains bilateral. |
@@ -185,7 +185,7 @@ converter. `preview_patch_qc.py` renders the selected geometry over source
 anatomy in a contact sheet with one selected plane and cortex zoom per patch.
 It requires Pillow.
 
-The multi-patch manifest uses schema version 2 in `flat_patch_definition`.
+The multi-patch manifest uses schema version 4 in `flat_patch_definition`.
 Its `flat_patches` dictionary and NPZ arrays are keyed by patch ID rather than
 hemisphere. The default count is three when analysis is enabled. A count of one
 restores the previous output count without restoring the old manifest schema.
@@ -210,13 +210,57 @@ The score favors flat patches with consistent normals; it is not RMS alone.
 When patch search is enabled, `TopoFit_patch_table` returns all accepted patches
 as a paginated DICOM image series using the OpenMSK and MuscleMap report layout
 convention. Columns contain the patch ID, center coordinates in millimeters,
-outward unit normal components, area, RMS error, and ranking score.
+the primary Siemens plane orientation, area, RMS error, and ranking score.
+Each nonempty batch has an additional page with all six equivalent ordered
+angle pairs. These descriptions refer to the same unoriented plane.
 An empty result returns a page stating that no patch met the criteria.
 
 The table and image comments use patient **LPH**: positive left, posterior, and
 head. This is equivalent to DICOM LPS, where superior means toward the head.
 RAS centers and normals convert to LPH by negating their first two components.
-Normals are dimensionless directions, not positions or angles.
+Normals are dimensionless directions. The table derives plane tilt angles
+from them without changing their outward polarity in the manifest or geometry.
 The manifest includes `center_lph_mm` and `normal_lph` alongside the RAS fields
 used for mesh calculations. These remain research outputs under the existing
 TopoFit validation status.
+
+### Siemens plane angles
+
+The primary orientation starts with the largest absolute LPH normal component.
+The second plane uses the next largest component. Ties use Sag, then Cor, then
+Tra. The text uses Siemens parentheses notation, for example
+`Tra>Sag(+6.3)>Cor(-3.8)`. Angles appear in degrees with one decimal place.
+Primary text omits angles that round to zero. Detail pages always show both
+angles, with the order named in the column header.
+
+The six orders are `Sag>Cor>Tra`, `Sag>Tra>Cor`, `Cor>Sag>Tra`, `Cor>Tra>Sag`,
+`Tra>Sag>Cor`, and `Tra>Cor>Sag`. Each order canonicalizes the normal separately.
+The base direction is negative L for Sag, positive P for Cor, and positive H
+for Tra. A normal and its reversal therefore describe the same plane.
+When the base component is exactly zero, the first nonzero ordered target
+component determines the polarity and becomes positive. This boundary rule is
+an explicit TopoFit convention, not a scanner-validated choice.
+
+Let `b`, `t`, and `r` be the canonicalized base, first target, and remaining
+components. Sag uses `atan2(t, -b)` and `atan2(r, hypot(b, t))`.
+Cor and Tra use `-atan2(t, b)` and `-atan2(r, hypot(b, t))`.
+The converter expresses both results in degrees. If `b` and `t` are both zero,
+the first angle is undefined. Detail cells show `undef*` with an explanation;
+the structured result stores zero and `first_angle_defined=false`.
+
+Each patch's `siemens_plane_orientation` manifest object contains the primary
+text, `primary_order`, all six `variants`, and `in_plane_rotation_deg=null`.
+Each variant stores its `order`, unrounded `first_angle_deg` and
+`second_angle_deg`, and `first_angle_defined`. A normal determines plane tilt,
+but cannot determine FOV rotation around that normal. Reports and comments
+state that in-plane rotation is unknown. The synthetic table image geometry
+does not supply that missing anatomical direction.
+
+The notation follows Siemens [off-center imaging examples](https://academy.siemens-healthineers.com/_/en-us/off-center-imaging-usa/).
+The sign conventions follow the
+[hcpre Siemens orientation reference](https://github.com/beOn/hcpre/blob/master/hcpre/duke_siemens/util_dicom_siemens.py).
+Two [published transverse acquisition examples](https://mvpa.blogspot.com/2016/09/multiband-acquisition-sequence-testing.html)
+independently verify the rounded Tra signs. Sag and Cor signs follow the
+reference convention and do not have equivalent measured scanner fixtures in
+this test suite. These outputs retain the research-only status and do not
+provide prescription coordinates.

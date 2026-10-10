@@ -27,6 +27,7 @@ from topofit_core import (
     run_topofit_workflow,
     validate_options,
 )
+from topofit_geometry import SIEMENS_PLANE_ORDERS, siemens_plane_orientation
 
 WORKSPACE = Path(os.environ.get("TOPOFIT_OPENRECON_WORKSPACE", "/tmp/share/topofit"))
 SEND_CHUNK_SIZE = 64
@@ -440,14 +441,15 @@ def _format_flat_patch_comment(flat_patches) -> str:
     parts = []
     for patch_id, patch in flat_patches.items():
         center = ",".join(f"{value:.2f}" for value in patch.center_lph_mm)
-        normal = ",".join(f"{value:.4f}" for value in patch.normal_lph)
+        orientation = siemens_plane_orientation(patch.normal_lph)
         parts.append(
             f"TopoFit patch {patch_id} {patch.surface} LPH_mm center=({center}) "
-            f"normal=({normal}) area_mm2={patch.area_mm2:.1f} rms_mm={patch.rms_distance_mm:.3f}"
+            f"plane={orientation.primary_text} in_plane_rotation=unknown "
+            f"area_mm2={patch.area_mm2:.1f} rms_mm={patch.rms_distance_mm:.3f}"
         )
         if sum(len(part) + 2 for part in parts) > 8000:
             parts.pop()
-            parts.append("See TopoFit_patch_table for all patch coordinates and normals.")
+            parts.append("See TopoFit_patch_table for all patch coordinates and plane angles.")
             break
     return "; ".join(parts)
 
@@ -458,47 +460,60 @@ def _render_patch_report_pages(flat_patches) -> list[np.ndarray]:
     width, height = 1200, 900
     margin, line_height, rows_per_page = 24, 28, 22
     font = ImageFont.load_default(size=18)
-    rows = []
+    rows, angle_rows = [], []
     for patch_id, patch in flat_patches.items():
+        orientation = siemens_plane_orientation(patch.normal_lph)
         rows.append((
             patch_id,
             *(f"{value:.2f}" for value in patch.center_lph_mm),
-            *(f"{value:.4f}" for value in patch.normal_lph),
+            orientation.primary_text,
             f"{patch.area_mm2:.1f}", f"{patch.rms_distance_mm:.3f}",
             f"{patch.score:.3f}",
         ))
-    page_count = max(1, (len(rows) + rows_per_page - 1) // rows_per_page)
+        angle_rows.append((patch_id, *(pair.degree_pair_text for pair in orientation.variants)))
+    batch_count = max(1, (len(rows) + rows_per_page - 1) // rows_per_page)
+    page_count = batch_count * (2 if rows else 1)
     pages = []
-    headers = ("Patch", "L mm", "P mm", "H mm", "Normal L", "Normal P", "Normal H",
-               "Area mm2", "RMS mm", "Score")
-    for page_index in range(page_count):
-        canvas = Image.new("L", (width, height), 0)
-        draw = ImageDraw.Draw(canvas)
-        title_lines = (
-            "TopoFit cortical patches",
-            "Patient LPH: +Left, +Posterior, +Head. Centers in mm; outward unit normals.",
-            "LH/RH numbered independently, lowest score first; overlapping candidates skipped.",
-            "Score = RMS plane-fit error + radius * (1 - normal coherence). Lower is flatter.",
-            f"Page {page_index + 1}/{page_count}    Accepted patches: {len(rows)}",
-        )
-        for index, line in enumerate(title_lines):
-            draw.text((margin, margin + index * line_height), line, font=font, fill=255)
-        y = margin + 6 * line_height
-        column_width = (width - 2 * margin) // len(headers)
-        for index, header in enumerate(headers):
-            draw.text((margin + index * column_width, y), header, font=font, fill=255)
-        draw.line((margin, y + line_height - 2, width - margin, y + line_height - 2), fill=160)
-        start = page_index * rows_per_page
-        for row_index, row in enumerate(rows[start:start + rows_per_page], start=1):
-            for index, value in enumerate(row):
-                draw.text((margin + index * column_width, y + row_index * line_height),
-                          value, font=font, fill=240)
-        if not rows:
-            draw.text((margin, y + line_height), "No patch met the quality criteria.",
-                      font=font, fill=240)
-        draw.text((margin, height - 2 * line_height), RESEARCH_WARNING, font=font, fill=255)
-        # OpenMSK and MuscleMap use this orientation for scanner table images.
-        pages.append(np.rot90(np.asarray(canvas, dtype=np.uint16) * 16, 2).copy())
+    main_headers = (
+        "Patch", "L mm", "P mm", "H mm", "Siemens plane", "Area mm2", "RMS mm", "Score"
+    )
+    angle_headers = ("Patch", *(">".join(order) for order in SIEMENS_PLANE_ORDERS))
+    for batch_index in range(batch_count):
+        for detail in range(2 if rows else 1):
+            canvas = Image.new("L", (width, height), 0)
+            draw = ImageDraw.Draw(canvas)
+            start = batch_index * rows_per_page
+            title_lines = (
+                "TopoFit cortical patches" if not detail else "TopoFit plane angles in degrees",
+                "Patient LPH: +Left, +Posterior, +Head. Centers in mm; Siemens signed plane tilts."
+                if not detail else "Patient LPH: +Left, +Posterior, +Head. Siemens signed plane tilts in degrees.",
+                "LH/RH numbered independently, lowest score first; overlapping candidates skipped."
+                if not detail else "Each column describes the same plane; cells give first, second signed angles.",
+                "Score = RMS plane-fit error + radius * (1 - normal coherence). Lower is flatter."
+                if not detail else "undef* = first angle undefined when base and first target components are both zero.",
+                f"Page {len(pages) + 1}/{page_count}    Accepted patches: {len(rows)}    In-plane rotation: unknown",
+            )
+            for index, line in enumerate(title_lines):
+                draw.text((margin, margin + index * line_height), line, font=font, fill=255)
+            y = margin + 6 * line_height
+            headers = angle_headers if detail else main_headers
+            widths = (
+                (84, 178, 178, 178, 178, 178, 178) if detail
+                else (85, 90, 90, 90, 385, 115, 105, 92)
+            )
+            positions = np.cumsum((margin, *widths[:-1]))
+            for x, header in zip(positions, headers):
+                draw.text((int(x), y), header, font=font, fill=255)
+            draw.line((margin, y + line_height - 2, width - margin, y + line_height - 2), fill=160)
+            page_rows = (angle_rows if detail else rows)[start:start + rows_per_page]
+            for row_index, row in enumerate(page_rows, start=1):
+                for x, value in zip(positions, row):
+                    draw.text((int(x), y + row_index * line_height), value, font=font, fill=240)
+            if not rows:
+                draw.text((margin, y + line_height), "No patch met the quality criteria.", font=font, fill=240)
+            draw.text((margin, height - 2 * line_height), RESEARCH_WARNING, font=font, fill=255)
+            # OpenMSK and MuscleMap use this orientation for scanner table images.
+            pages.append(np.rot90(np.asarray(canvas, dtype=np.uint16) * 16, 2).copy())
     return pages
 
 
@@ -520,7 +535,8 @@ def _patch_report_mrd_images(flat_patches, source_images, series_index: int) -> 
         output, source_images[0], series_index, 0, _new_series_uid(),
         "TopoFit_patch_table", ["PYTHON", "TOPOFIT", "PATCH_TABLE"],
         RESEARCH_WARNING,
-        "Patch centers in patient LPH mm; outward unit normals in LPH. "
+        "Patch centers in patient LPH mm; Siemens signed plane angles in degrees. "
+        "In-plane rotation unknown. "
         "LPH = left, posterior, head, equivalent to DICOM LPS.",
         header=header,
     )
