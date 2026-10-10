@@ -1,5 +1,5 @@
 name: meganorm
-version: 0.2.1
+version: 0.2.2
 
 description: MEGaNorm extracts EEG/MEG-derived phenotypes with MNE-Python and fits normative models over them with PCNToolkit.
 
@@ -15,10 +15,25 @@ variables:
   # Upstream requires python >= 3.12 (setup.py). Ubuntu 24.04 ships 3.12 as its
   # system python, so no conda/deadsnakes layer is needed here.
   python_package: python3.12
+  meganorm_version: "0.2.2"
+  picard_version: "0.8.2"
 
 auto_update:
-  method: pypi
-  package: meganorm
+  method: sources
+  container_version: meganorm
+  sources:
+    - id: meganorm
+      method: pypi
+      package: meganorm
+      target:
+        variable: meganorm_version
+        fulltest_variable: meganorm_version
+    - id: picard
+      dependency: true
+      method: pypi
+      package: python-picard
+      target:
+        variable: picard_version
 
 build:
   kind: neurodocker
@@ -70,25 +85,20 @@ build:
         # python-picard is not in meganorm's dependency list, but "picard" is
         # one of the three documented ica_method values and MNE needs the
         # package to run it; without it the option dies on an ImportError.
-        - . "${MEGANORM_VENV}/bin/activate" && python -m pip install --no-cache-dir "meganorm=={{ context.version }}" python-picard
+        - . "${MEGANORM_VENV}/bin/activate" && python -m pip install --no-cache-dir "meganorm=={{ context.meganorm_version }}" "python-picard=={{ context.picard_version }}"
+        - . "${MEGANORM_VENV}/bin/activate" && python -m pip check
         # Fail the build here rather than shipping an image that only breaks on
         # first use: the heavy optional stack (onnxruntime, pcntoolkit) is what
         # tends to go missing, and it is imported lazily at run time.
         - . "${MEGANORM_VENV}/bin/activate" && python -c "import importlib.metadata as md; import meganorm, mne, mne_bids, mne_icalabel, pcntoolkit, onnxruntime, picard; print('meganorm', md.version('meganorm'))"
-        # Every shipped default that stops a run is corrected here, and the
-        # defects behind them are repaired where a repair exists: GEDAI's
-        # signature mismatch, the identical EEG reject/flat thresholds, the
-        # fastica/fit_params contradiction, the parametrisation that discards
-        # every channel, the missing Delta band and the parametrisation floor
-        # above it, the unreachable "no re-referencing" option, the absent
-        # __version__, and a run that reported success after extracting
-        # nothing.
+        # Keep the compatibility fixes still needed in 0.2.2. Runtime tests
+        # check complete band definitions, usable defaults and empty-output errors.
         - . "${MEGANORM_VENV}/bin/activate" && python {{ get_file("fix_working_defaults") }}
         # Assert on the model itself, not on the patch having run: these are
         # the properties a run depends on. The end-to-end proof that they hold
         # in practice is the selftest below.
         - >-
-          . "${MEGANORM_VENV}/bin/activate" && python -c "import meganorm; from meganorm.utils.IO import Config; c=Config(); assert c.apply_gedai is False, 'gedai default still on'; assert c.ica_method=='infomax', c.ica_method; assert c.parametrization_method=='fooof', c.parametrization_method; assert c.eeg_flat_threshold < c.eeg_var_threshold/100, (c.eeg_flat_threshold, c.eeg_var_threshold); bands=set(c.freq_bands); missing=[r for r in c.power_band_ratios_list if r.numerator not in bands or r.denominator not in bands]; assert not missing, missing; assert c.fooof_freq_range_low <= min(lo for lo, hi in c.freq_bands.values()), 'a band lies below the parametrisation floor'; assert bands <= set(c.individualized_band_ranges) | {'Broadband'}, 'individualized_band_ranges misses a band'; assert Config(rereference_method=None).rereference_method is None, 'JSON null rereference rejected'; assert meganorm.__version__ == '{{ context.version }}', meganorm.__version__; print('defaults can complete a run')"
+          . "${MEGANORM_VENV}/bin/activate" && python -c "import meganorm; from meganorm.utils.IO import Config; c=Config(); assert c.ica_method=='infomax', c.ica_method; assert c.psd_parametrization_method=='specparam', c.psd_parametrization_method; assert 0 < c.eeg_flat_threshold < c.eeg_var_threshold/10, (c.eeg_flat_threshold, c.eeg_var_threshold); bands=set(c.freq_bands); missing=[r for r in c.power_band_ratios_list if r.numerator not in bands or r.denominator not in bands]; assert not missing, missing; assert c.psd_parametrization_freq_range_low <= min(lo for lo, hi in c.freq_bands.values()), 'a band lies below the parametrisation floor'; assert bands <= set(c.individualized_band_ranges) | {'Broadband'}, 'individualized_band_ranges misses a band'; assert Config(rereference_method=None).rereference_method is None, 'JSON null rereference rejected'; assert meganorm.__version__ == '{{ context.version }}', meganorm.__version__; print('defaults can complete a run')"
         # The config file is a required argument with no example anywhere in the
         # package, so the documented invocation could not be followed.
         - . "${MEGANORM_VENV}/bin/activate" && python {{ get_file("write_example_configs") }} /opt/meganorm/configs
@@ -143,13 +153,12 @@ build:
           meganorm-python -c "
           from meganorm.utils.IO import Config
           c = Config()
-          assert c.apply_gedai is False
           assert c.ica_method == 'infomax'
-          assert c.parametrization_method == 'fooof'
-          assert c.eeg_flat_threshold < c.eeg_var_threshold / 100
+          assert c.psd_parametrization_method == 'specparam'
+          assert 0 < c.eeg_flat_threshold < c.eeg_var_threshold / 10
           bands = set(c.freq_bands)
           assert all(r.numerator in bands and r.denominator in bands for r in c.power_band_ratios_list)
-          assert c.fooof_freq_range_low <= min(lo for lo, hi in c.freq_bands.values())
+          assert c.psd_parametrization_freq_range_low <= min(lo for lo, hi in c.freq_bands.values())
           assert bands <= set(c.individualized_band_ranges) | {'Broadband'}
           assert Config(rereference_method=None).rereference_method is None
           print('defaults ok')
@@ -171,102 +180,14 @@ build:
 files:
   - name: fix_working_defaults
     contents: |
-      """Make MEGaNorm's shipped configuration able to complete a run.
+      """Apply the remaining container compatibility fixes for MEGaNorm 0.2.2.
 
-      The container test drove seven configurations through the pipeline and every
-      one of them failed, producing no features at all. None of the failures needed
-      unusual settings: each is a default in `meganorm.utils.IO.Config` that cannot
-      work as shipped. This patches the defaults in the installed package so the
-      documented invocation reaches the end, and leaves every one of them
-      overridable in the user's own config.
-
-      1. `apply_gedai=True` aborts every run after ~33 s.
-
-             TypeError: Gedai.__init__() got an unexpected keyword argument
-             'epoch_size_in_cycles'
-
-         `preprocess.py` calls `Gedai(...)` with `epoch_size_in_cycles`,
-         `signal_type`, `highpass_cutoff` and
-         `preliminary_broadband_noise_multiplier`. No published gedai accepts them:
-         0.1.0 takes three wavelet arguments, 0.2.0 and 0.3.0 take none at all, and
-         MEGaNorm's requirement is an unpinned `gedai>=0.1.0`. There is no version to
-         pin that makes this call work, so GEDAI is off by default. Turning it back
-         on is one line in a config, for whenever upstream's two halves agree again.
-
-      2. `eeg_flat_threshold` equals `eeg_var_threshold` (both 40e-6), and they are
-         passed straight to `mne.Epochs` as `reject` (drop above) and `flat` (drop
-         below). Every epoch is on one side or the other of 40 µV, so every epoch is
-         dropped:
-
-             Exception: All epochs were rejected. ... Retained: 0 (0.0%)
-
-         This is arithmetic, not a property of any particular recording. The MEG
-         pairs are separated by a factor of 500; the EEG flat value looks like a copy
-         of the reject value and is set three orders of magnitude below it here.
-
-      3. `ica_method="fastica"` cannot run, because `preprocess.py` hardcodes
-         `fit_params=dict(extended=True)` -- accepted by infomax, rejected by
-         scikit-learn's FastICA:
-
-             TypeError: FastICA.__init__() got an unexpected keyword argument
-             'extended'
-
-         The code's own comment ("bc icalabel is trained with this") says infomax was
-         what it meant, and the infomax path completes and produces a full feature
-         table. So infomax is the default.
-
-      4. `parametrization_method="irasa"` produces nothing usable. Every channel's
-         fit came back with a negative R-squared (-2.9 to -40.4, i.e. worse than a
-         horizontal line) and was discarded by the `min_r_squared=0.9` gate, leaving
-         a (1, 0) feature table. FOOOF on the identical preprocessed data produced
-         the full 42 features, so the default is FOOOF until the IRASA branch is
-         fixed upstream.
-
-      5. A run that discards every channel reports success. With all channels gone
-         the pipeline still writes an 11-byte CSV, logs "feature extraction ...
-         complete" and exits 0 -- so a whole cohort can produce empty files and clean
-         exit statuses from every job, and nothing short of opening them reveals it.
-         The all-epochs-rejected path already raises; this makes the all-channels
-         path do the same.
-
-      6. Four of the ten default band ratios use Delta, which the default
-         `freq_bands` does not define, and `feature_extract` silently skips a ratio
-         whose bands are missing. Users asking for the shipped defaults got six ratio
-         features instead of ten, Delta/Theta -- a standard dementia EEG marker --
-         among the missing. Delta is defined as 1-3 Hz, contiguous with the Theta
-         band that follows it.
-
-      7. Upstream 0.2.1 accepts JSON null for no re-referencing. Keep accepting
-         the string "None" used by existing container configurations, and skip
-         re-referencing for both spellings.
-
-      8. The PSD grid must cover the default Delta band. Set the parametrisation
-         floor to 1 Hz and add Delta to the individualized band ranges. Upstream
-         0.2.1 returns linear band power and ratios, so the former patches for
-         log10 of nonpositive power are no longer needed.
-
-      9. `ica_method="fastica"` is also repaired at the cause rather than only
-         routed around: `fit_params=dict(extended=True)` is now passed to every
-         method except FastICA, the only one of the three that rejects it (MNE's
-         infomax and picard both take `extended`). All three documented values of
-         the option now run; infomax stays the default because ICLabel is trained
-         with it.
-
-      10. `import meganorm; meganorm.__version__` raised AttributeError even though
-          the wheel ships `_version.py` with the value in it -- `__init__.py` simply
-          never imports it. It does now.
-
-      11. With `apply_gedai: true` the run died ~30 s in on a `TypeError` from
-          `Gedai.__init__`, which reads like a bug in the user's config. The real
-          situation is that no released gedai matches the calls `preprocess.py`
-          makes: 0.1.0 takes three different wavelet arguments, 0.3.0's constructor
-          takes none at all, and 0.3.0's `transform_raw` no longer accepts the
-          `duration` the code passes it. The option cannot work in any build of this
-          container, so the GEDAI entry point now raises immediately with an error
-          that says exactly that and names the one-line fix.
-
-      Each anchor is asserted to exist first, so an upstream fix or rename fails the
-      build here rather than silently leaving the defect in place.
+      Upstream removed GEDAI, corrected the EEG flat threshold, creates output
+      folders, and fits extended Infomax for ICLabel. Those older patches are no
+      longer needed. Keep an Infomax default, complete the Delta band definitions
+      and spectral range, accept the legacy string "None" for re-referencing,
+      expose the installed version, and fail when no channels yield features.
+      The runtime selftest checks the resulting feature values and failure path.
       """
 
       from importlib.util import find_spec
@@ -275,207 +196,106 @@ files:
       package_spec = find_spec("meganorm")
       if package_spec is None or package_spec.submodule_search_locations is None:
           raise RuntimeError("meganorm is not installed")
-
       package_dir = Path(next(iter(package_spec.submodule_search_locations)))
 
       EDITS = {
-          "utils/IO.py": [
-              # --- the four defaults that cannot complete a run -------------------
+          'utils/IO.py': [
               (
                   '    ica_method: Literal["fastica", "infomax", "picard"] = "fastica"\n',
-                  # fit_params=dict(extended=True) is hardcoded in preprocess.py and
-                  # only infomax accepts it.
                   '    ica_method: Literal["fastica", "infomax", "picard"] = "infomax"\n',
               ),
               (
-                  "    apply_gedai: bool = True\n",
-                  # No published gedai accepts the keywords preprocess.py passes.
-                  "    apply_gedai: bool = False\n",
-              ),
-              (
-                  "    eeg_flat_threshold: float = 40e-6\n",
-                  # Was equal to eeg_var_threshold, so every epoch matched one of the
-                  # two rejection conditions and none survived.
-                  "    eeg_flat_threshold: float = 1e-7\n",
-              ),
-              (
-                  '    parametrization_method: Literal["fooof", "irasa"] = "irasa"\n',
-                  # IRASA returned negative R-squared on every channel, so the
-                  # min_r_squared gate discarded all of them.
-                  '    parametrization_method: Literal["fooof", "irasa"] = "fooof"\n',
-              ),
-              # --- the band four of the default ratios refer to -------------------
-              (
-                  '    freq_bands: Dict[str, Tuple[int, int]] = {\n        "Theta": (3, 8),\n',
                   '    freq_bands: Dict[str, Tuple[int, int]] = {\n'
-                  '        # Delta is referenced by four of the default band ratios,\n'
-                  '        # including Delta/Theta; without it they were skipped in\n'
-                  '        # silence and the shipped defaults yielded six ratios of ten.\n'
-                  '        "Delta": (1, 3),\n        "Theta": (3, 8),\n',
+                  '        "Theta": (3, 8),\n',
+                  '    freq_bands: Dict[str, Tuple[int, int]] = {\n'
+                  '        "Delta": (1, 3),\n'
+                  '        "Theta": (3, 8),\n',
               ),
-              # --- and the spectrum has to reach down to it ------------------------
               (
-                  "    fooof_freq_range_low: PositiveInt = 3\n",
-                  # The PSD grid is computed over [low, high], so with the floor at 3
-                  # a 1-3 Hz Delta band summed zero bins and log10(0) put -inf into
-                  # ten of the forty-two default EEG features.
-                  "    fooof_freq_range_low: PositiveInt = 1\n",
+                  '    psd_parametrization_freq_range_low: PositiveInt = 3\n',
+                  '    psd_parametrization_freq_range_low: PositiveInt = 1\n',
               ),
               (
                   '    individualized_band_ranges: Dict[str, Tuple[int, int]] = {\n'
                   '        "Theta": (-2, 3),\n',
                   '    individualized_band_ranges: Dict[str, Tuple[int, int]] = {\n'
-                  '        # Offsets span the 2 Hz band width around the dominant\n'
-                  '        # peak, following the pattern of the entries below; the\n'
-                  '        # dict lacked Delta just as freq_bands did.\n'
                   '        "Delta": (-1, 1),\n'
                   '        "Theta": (-2, 3),\n',
               ),
-              # --- the documented null spelling of "no re-referencing" -------------
               (
                   '    rereference_method: Literal["average", "REST", None] = "average"\n',
-                  # Preserve string "None" in existing container configurations.
                   '    rereference_method: Optional[Literal["average", "REST", "None"]] = (\n'
                   '        "average"\n'
                   '    )\n',
               ),
-              # --- and the docstrings that describe them --------------------------
               (
                   '    ica_method : {"fastica", "infomax", "picard"}, default="fastica"\n',
                   '    ica_method : {"fastica", "infomax", "picard"}, default="infomax"\n',
               ),
               (
-                  "    apply_gedai : bool, default=True\n",
-                  "    apply_gedai : bool, default=False\n",
+                  '        Canonical frequency band definitions (Theta, Alpha, Beta, Gamma).\n',
+                  '        Canonical frequency band definitions (Delta, Theta, Alpha, Beta,\n'
+                  '        Gamma).\n',
               ),
               (
-                  '    parametrization_method : {"fooof", "irasa"}, default="irasa"\n',
-                  '    parametrization_method : {"fooof", "irasa"}, default="fooof"\n',
-              ),
-              (
-                  "        Canonical frequency band definitions (Theta, Alpha, Beta, Gamma).\n",
-                  "        Canonical frequency band definitions (Delta, Theta, Alpha, Beta,\n"
-                  "        Gamma).\n",
-              ),
-              (
-                  "    fooof_freq_range_low, fooof_freq_range_high : PositiveInt, default=3, 40\n",
-                  "    fooof_freq_range_low, fooof_freq_range_high : PositiveInt, default=1, 40\n",
+                  '    psd_parametrization_freq_range_low, psd_parametrization_freq_range_high : PositiveInt, default=3, 40\n',
+                  '    psd_parametrization_freq_range_low, psd_parametrization_freq_range_high : PositiveInt, default=1, 40\n',
               ),
           ],
-          "src/mainParallel.py": [
-              (
-                  '        filtered_data.save(f"{save_prep_path}_preproc-raw.fif", overwrite=True)\n',
-                  '        os.makedirs(Path(save_prep_path).parent, exist_ok=True)\n'
-                  '        filtered_data.save(f"{save_prep_path}_preproc-raw.fif", overwrite=True)\n',
-              ),
-          ],
-          "src/preprocess.py": [
-              (
-                  '    fig.savefig(save_autoreject_plot_p, dpi=600, bbox_inches="tight")\n',
-                  '    os.makedirs(os.path.dirname(save_autoreject_plot_p), exist_ok=True)\n'
-                  '    fig.savefig(save_autoreject_plot_p, dpi=600, bbox_inches="tight")\n',
-              ),
+          'src/preprocess.py': [
               (
                   '    if which_sensor["eeg"] and rereference_method:\n',
-                  # rereference_method is annotated as the *string* "None", which is
-                  # truthy, so the documented "no re-referencing" option was passed
-                  # to mne.set_eeg_reference() and failed there.
                   '    if which_sensor["eeg"] and rereference_method not in (None, "None"):\n',
               ),
-              (
-                  "        fit_params=dict(extended=True),\n"
-                  "        verbose=False,\n"
-                  "    )  # fit_params=dict(extended=True) bc icalabel is trained with this\n",
-                  # extended is an infomax/picard parameter; scikit-learn's FastICA
-                  # rejects it, so the hardcoded dict made ica_method="fastica" --
-                  # a documented Config value -- fail unconditionally.
-                  '        fit_params=None if IcaMethod == "fastica" else dict(extended=True),\n'
-                  "        verbose=False,\n"
-                  "    )  # extended=True bc icalabel is trained with it; fastica rejects it\n",
-              ),
-              (
-                  "    gedai = Gedai(\n",
-                  # No released gedai accepts this call: 0.1.0 wants three different
-                  # wavelet arguments, 0.3.0's constructor takes none, and 0.3.0's
-                  # transform_raw no longer accepts the duration passed below. Fail
-                  # at the entry point with the actual situation and the fix, not
-                  # thirty seconds in with a TypeError that reads like a config bug.
-                  "    raise RuntimeError(\n"
-                  '        "apply_gedai: true cannot work in meganorm {{ context.version }}: preprocess.py "\n'
-                  '        "constructs Gedai() with keyword arguments no released gedai "\n'
-                  '        "accepts (0.1.0 expects different wavelet arguments; 0.3.0\'s "\n'
-                  '        "constructor takes none, and its transform_raw() has dropped "\n'
-                  '        "duration). Set apply_gedai to false in your config until a "\n'
-                  '        "meganorm release matches a gedai release."\n'
-                  "    )\n"
-                  "    gedai = Gedai(\n",
-              ),
           ],
-          "src/featureExtraction.py": [
+          'src/featureExtraction.py': [
               (
                   '    logger.info(f"The shape of the extracted features: {final_df.shape}")\n',
                   '    if final_df.shape[1] == 0:\n'
-                  '        # Every channel was discarded, usually by the min_r_squared\n'
-                  '        # gate. Upstream wrote an empty CSV, logged completion and\n'
-                  '        # exited 0, so a whole cohort could produce empty files and\n'
-                  '        # clean exit statuses. The all-epochs-rejected path raises;\n'
-                  '        # this does the same rather than reporting a success.\n'
                   '        raise Exception(\n'
                   '            "No features were extracted: every channel was discarded, "\n'
                   '            "most likely by the min_r_squared threshold during PSD "\n'
                   '            "parametrization. Lower min_r_squared or change "\n'
-                  '            "parametrization_method."\n'
-                  '        )\n\n'
+                  '            "psd_parametrization_method."\n'
+                  '        )\n'
+                  '\n'
                   '    logger.info(f"The shape of the extracted features: {final_df.shape}")\n',
               ),
           ],
-          "__init__.py": [
+          '__init__.py': [
               (
                   '__all__ = ["featureExtraction", "mainParallel", "preprocess", "psdParameterize"]\n',
-                  # _version.py ships in the wheel but __init__.py never imports it,
-                  # so meganorm.__version__ raised AttributeError.
                   '__all__ = ["featureExtraction", "mainParallel", "preprocess", "psdParameterize"]\n'
-                  "\n"
-                  "from ._version import __version__\n",
+                  '\n'
+                  'from ._version import __version__\n',
               ),
           ],
       }
 
+      pending = {}
       for relative_path, replacements in EDITS.items():
           path = package_dir / relative_path
           source = path.read_text()
           for old, new in replacements:
-              if old not in source:
+              if source.count(old) != 1:
                   raise RuntimeError(
                       f"meganorm {relative_path} changed; review this patch:\n{old!r}"
                   )
               source = source.replace(old, new, 1)
+          compile(source, str(path), "exec")
+          pending[path] = source
+
+      for path, source in pending.items():
           path.write_text(source)
-          print(f"patched {relative_path}")
+          print(f"patched {path.relative_to(package_dir)}")
   - name: write_example_configs
     contents: |
-      """Bake example configuration files into the image.
+      """Write example JSON configs from the installed pydantic model.
 
-      `meganorm` takes four positional arguments and the fourth, `configs`, is a path
-      to a JSON file that is parsed into a 106-field pydantic model with
-      `extra: forbid`. It is mandatory, upstream ships no example, and the README
-      mentions it once in the synopsis and never again -- not its format, not that it
-      is JSON, not where to get one. A user following the documentation could not
-      produce a working run without reading `meganorm/utils/IO.py` and reconstructing
-      a config from the model's defaults. Upstream carries a TODO to make the
-      argument optional (`mainParallel.py:88`).
-
-      Two files are written, both straight from the model so they cannot drift from
-      it:
-
-        default.json  every field at its default, i.e. the MEG-oriented pipeline.
-        eeg.json      the same, with the MEG-only stages turned off: oversampled
-                      temporal projection, head-movement correction and
-                      environmental-noise correction have nothing to act on in an
-                      EEG recording.
-
-      The path is deliberately outside $HOME, which does not exist at container
-      runtime.
+      The CLI requires a JSON config as its fourth positional argument. Keep
+      default.json at the model defaults; eeg.json disables the MEG-only stages
+      and saves the preprocessed recording. Round-trip both files before shipping.
+      Runtime assets belong under /opt because HOME is unavailable at runtime.
       """
 
       import sys
@@ -490,6 +310,7 @@ files:
 
       Config(
           which_sensor="eeg",
+          save_preprocessed_data=True,
           apply_oversampled_temporal_projection=False,
           apply_Head_movement_correction=False,
           apply_environmental_noise_correction=False,
@@ -562,7 +383,7 @@ files:
               pink /= pink.std()
               # Alpha rhythm so the spectral model has a peak to fit.
               alpha = np.sin(2 * np.pi * 10.0 * times + rng.uniform(0, 2 * np.pi))
-              # 3 uV of background + 1.5 uV of alpha: comfortably above the 0.1 uV
+              # 3 uV of background + 1.5 uV of alpha: comfortably above the 1 uV
               # flat threshold and, at ~20-25 uV peak-to-peak per epoch, comfortably
               # under the 40 uV rejection threshold.
               data[idx] = 3e-6 * pink + 1.5e-6 * alpha
@@ -608,7 +429,7 @@ files:
               raise SystemExit(f"pipeline exited 0 but wrote no {csv_path}")
 
           table = pd.read_csv(csv_path, index_col=0)
-          if table.empty or table.shape[1] == 0:
+          if table.shape[0] != 1 or table.shape[1] == 0:
               raise SystemExit(f"feature table is empty: shape {table.shape}")
 
           values = table.to_numpy(dtype=float)
@@ -720,7 +541,6 @@ deploy:
     - normative
     - mne
     - mne_bids
-    - gedai
 
 categories:
   - electrophysiology
@@ -753,12 +573,12 @@ readme: |-
 
   ### The config argument
 
-  `configs` is required, and it is a path to a JSON file holding a 106-field
+  `configs` is required, and it is a path to a JSON file holding a typed
   model that rejects unknown keys. Two ready-made ones ship in the image:
 
   ```
   /opt/meganorm/configs/default.json   every field at its default
-  /opt/meganorm/configs/eeg.json       the same with the MEG-only stages off
+  /opt/meganorm/configs/eeg.json       EEG stages and saved preprocessed data
   ```
 
   Copy one and edit it. `eeg.json` is the place to start for EEG: the defaults
@@ -777,8 +597,8 @@ readme: |-
 
   `python` is deliberately not exported. The environment's bin directory put
   `python`, `python3`, `python3.12` and `pip3.12` on your PATH and shadowed the
-  host interpreter for the rest of the session. `normative`, `mne`, `mne_bids`
-  and `gedai` are exported as commands.
+  host interpreter for the rest of the session. `normative`, `mne` and
+  `mne_bids` are exported as commands.
 
   ### Threads
 
@@ -795,39 +615,19 @@ readme: |-
   `--surfaces_dir`. FreeSurfer is not bundled in this container -- run it
   separately (see the `freesurfer` container) and mount the results.
 
-  ### Defaults changed in this container
+  ### Container configuration
 
-  As published, none of MEGaNorm 0.2.0's configurations completes a run: seven
-  variants were tried and all seven produced no features. These defaults are
-  corrected in the image, and every one of them can be set back in your own
-  config:
-
-  ```
-  apply_gedai              True  -> False   no released gedai matches the
-                                            calls preprocess.py makes; turning
-                                            it on fails immediately with an
-                                            error saying exactly that
-  ica_method            fastica  -> infomax ICLabel is trained with infomax;
-                                            fastica's fit_params clash is also
-                                            repaired and python-picard is
-                                            installed, so all three documented
-                                            methods now run
-  eeg_flat_threshold      40e-6  -> 1e-7    was equal to eeg_var_threshold, so
-                                            every epoch was rejected
-  parametrization_method  irasa  -> fooof   IRASA returned negative R^2 on
-                                            every channel, so all were dropped
-  freq_bands                     +  Delta   four default band ratios use it
-  fooof_freq_range_low        3  -> 1       the PSD grid starts here; with the
-                                            floor at 3 a 1-3 Hz Delta band had
-                                            no bins and its ten features came
-                                            out -inf
-  individualized_band_ranges     +  Delta   the same omission as freq_bands
-  ```
+  MEGaNorm 0.2.2 removed GEDAI, fixed the EEG flat threshold and output
+  directories, and uses extended Infomax for ICLabel. The container sets
+  `ica_method` to `infomax`, adds the missing Delta band and individualized
+  Delta range, and lowers `psd_parametrization_freq_range_low` to 1 Hz so the
+  spectrum covers every configured band. The upstream spectral method
+  default is now `specparam`.
 
   A run that discards every channel raises instead of writing an empty feature
-  table and exiting 0. MEGaNorm 0.2.1 reports band power and power ratios on a
-  linear scale. `rereference_method` accepts a JSON `null` as well as the string
-  `"None"` for "no re-referencing". `meganorm.__version__` exists and matches the
+  table and exiting 0. Absolute band powers and band ratios retain the natural
+  logarithmic units published in MEGaNorm 0.2.2. `rereference_method` accepts
+  JSON `null` and the string `"None"`. `meganorm.__version__` matches the
   installed package.
 
   Every build of this container synthesizes a short EEG recording, runs the
