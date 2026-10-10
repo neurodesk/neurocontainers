@@ -1,7 +1,9 @@
-variables: {}
+variables:
+  afni_version: "26.3.02"
+  afni_sha256: "b2f834925818d1b8b38a4ae2a337af067bd8ad160d05d39c642ecc7661840d85"
 
 name: afni
-version: "26.2.0"
+version: "26.3.02"
 # https://hub.docker.com/r/afni/afni_make_build/tags
 # https://afni.nimh.nih.gov/about_afni
 
@@ -36,15 +38,19 @@ structured_readme:
       https://pubmed.ncbi.nlm.nih.gov/9430344/'
 
 auto_update:
-  container_version: false
+  container_version: afni-binary
   method: sources
   local: []
   sources:
   - id: afni-binary
     method: http_digest
     url: https://afni.nimh.nih.gov/pub/dist/tgz/linux_ubuntu_24_64.tgz
+    version_member: linux_ubuntu_24_64/AFNI_version.txt
+    version_regex: '(?m)^AFNI_(?P<version>\d+\.\d+\.\d+)$'
     target:
-      file: afni_binary
+      variable: afni_sha256
+      variables:
+        afni_version: version
 
 build:
   kind: neurodocker
@@ -135,7 +141,7 @@ build:
         - rPkgsInstall -pkgs ALL
 
     - run:
-        - "afni -ver | grep -E 'AFNI_[0-9]+\\.[0-9]+\\.[0-9]+'"
+        - "test \"$(afni -ver | sed -n 's/.*Version AFNI_\\([0-9.]*\\).*/\\1/p')\" = '{{ context.afni_version }}'"
     - template:
         name: freesurfer
         version: 7.4.1
@@ -172,4 +178,4 @@ files:
   url: https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz
 - name: afni_binary
   url: https://afni.nimh.nih.gov/pub/dist/tgz/linux_ubuntu_24_64.tgz
-  sha256: "a7c1b3cbe9047e81efd7b51f50eb74e5eda5c1acf1532994d322c6353e7cdd76"
+  sha256: "{{ context.afni_sha256 }}"
