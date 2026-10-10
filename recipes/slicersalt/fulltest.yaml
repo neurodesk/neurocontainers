@@ -8,7 +8,7 @@
 # Note: Most tests create synthetic mesh data or use the built-in sample
 
 name: slicersalt
-version: 3.0.0
+version: "6.0.0"
 
 # Environment setup required for CLI modules
 env:
@@ -446,4 +446,4 @@ cleanup:
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
-upstream_version: 3.0.0
+upstream_version: "6.0.0"

@@ -1,5 +1,5 @@
 name: slicersalt
-version: "3.0.0"
+version: "6.0.0"
 
 # https://data.kitware.com/#collection/586fbb7b8d777f05f44a5c7b/folder/5898b7ef8d777f07219fcb14
 
@@ -101,7 +101,7 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBI
 
 files:
   - name: download
-    url: "https://data.kitware.com/api/v1/item/5f18b8fa9014a6d84e32ab6e/download"
-    sha256: b7d2caa70f36c772f11f6f634d4afc08ecba25723ad34b53eba2febd92ecb312
+    url: "https://data.kitware.com/api/v1/item/68152a78f9c66e8c473d38c8/download"
+    sha256: "84cf3372654f7257a33679120968bcade1003637a1b7c9e7cbeca28b976ae2bd"
 variables:
-  upstream_version: 3.0.0
+  upstream_version: "6.0.0"
