@@ -222,6 +222,37 @@ def test_update_params_image_tag_keeps_non_dated_tags(tag: str) -> None:
     assert sync_openrecon.update_params_image_tag(params, "20260910") == params
 
 
+@pytest.mark.parametrize(
+    ("image", "expected_image"),
+    [
+        (
+            "registry:5000/neurodesk/demo_20260907",
+            "registry:5000/neurodesk/demo_20260907",
+        ),
+        (
+            "registry:5000/neurodesk/20260907",
+            "registry:5000/neurodesk/20260907",
+        ),
+        (
+            "registry:5000/neurodesk/demo:20260907",
+            "registry:5000/neurodesk/demo:20260910",
+        ),
+        (
+            "registry:5000/neurodesk/demo:${version}_20260907",
+            "registry:5000/neurodesk/demo:${version}_20260910",
+        ),
+    ],
+)
+def test_update_params_image_tag_distinguishes_registry_ports(
+    image: str, expected_image: str,
+) -> None:
+    params = f"export baseDockerImage={image}\n"
+
+    assert sync_openrecon.update_params_image_tag(params, "20260910") == (
+        f"export baseDockerImage={expected_image}\n"
+    )
+
+
 def test_prepare_recipe_keeps_an_already_current_image_tag(tmp_path: Path) -> None:
     source_root = tmp_path / "neurocontainers"
     openrecon_root = tmp_path / "openrecon"
