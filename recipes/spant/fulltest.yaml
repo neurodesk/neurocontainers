@@ -1,6 +1,56 @@
 name: spant
 version: 4.5.0
+
 tests:
-- name: spant package version
-  command: Rscript -e "library(spant); cat(as.character(packageVersion('spant')))"
-  expected_output_contains: ${version}
+  - name: R entrypoints are available
+    command: |
+      command -v R
+      command -v Rscript
+    expected_output_contains:
+      - /usr/bin/R
+      - /usr/bin/Rscript
+
+  - name: spant package version
+    command: Rscript -e 'library(spant); cat(as.character(packageVersion("spant")))'
+    expected_output_contains: ${version}
+
+  - name: synthetic resonance processing
+    description: Simulate an MRS signal, transform it between domains, and zero-fill it.
+    command: |
+      Rscript - <<'RS'
+      library(spant)
+      signal <- sim_resonances(freq = 2, amp = 2, lw = 5,
+                               acq_paras = def_acq_paras(N = 128), fp_scale = FALSE)
+      stopifnot(Npts(signal) == 128, abs(mrs_data2vec(signal)[1] - 2) < 1e-12)
+      restored <- fd2td(td2fd(signal))
+      stopifnot(max(Mod(mrs_data2vec(restored) - mrs_data2vec(signal))) < 1e-10)
+      padded <- zf(signal, factor = 2)
+      stopifnot(Npts(padded) == 256,
+                max(Mod(mrs_data2vec(padded)[1:128] - mrs_data2vec(signal))) < 1e-12,
+                all(mrs_data2vec(padded)[129:256] == 0))
+      cat("synthetic resonance processing passed\n")
+      RS
+    expected_output_contains: synthetic resonance processing passed
+
+  - name: MRS HTML report generation
+    description: Render a small SPANT spectrum using the reporting stack required by fit_svs.
+    command: |
+      Rscript - <<'RS'
+      library(spant)
+      library(rmarkdown)
+      work <- tempfile("spant-report-")
+      dir.create(work)
+      input <- file.path(work, "spectrum.Rmd")
+      writeLines(c(
+        "---", "title: Synthetic MRS spectrum", "output: html_document", "---",
+        "```{r}", "library(spant)",
+        "signal <- sim_resonances(freq = 2, lw = 5, acq_paras = def_acq_paras(N = 128))",
+        "plot(signal)", "```"
+      ), input)
+      output <- render(input, quiet = TRUE)
+      stopifnot(file.exists(output), file.info(output)$size > 0,
+                any(grepl("Synthetic MRS spectrum", readLines(output))))
+      unlink(work, recursive = TRUE)
+      cat("MRS HTML report generated\n")
+      RS
+    expected_output_contains: MRS HTML report generated
