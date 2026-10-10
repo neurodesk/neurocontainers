@@ -45,7 +45,7 @@ class SourceObservation:
 
 VERSION_METHODS = frozenset(METHOD_FIELDS) - {"manual"}
 NEW_METHOD_FIELDS = {
-    "github_commit": frozenset({"repo", "ref", "version_file"}),
+    "github_commit": frozenset({"repo", "ref", "version_file", "version_regex"}),
     "git_commit": frozenset({"url", "ref"}),
     "oci_digest": frozenset({"image", "tag"}),
     "http_digest": frozenset({"url", "matlab_readme", "version_member", "version_regex"}),
@@ -146,7 +146,16 @@ def validate_source(config: dict) -> None:
             not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_./-]*", str(config["version_file"]))
             or ".." in config["version_file"].split("/")
         ):
-            raise ValueError("version_file must be a repository-relative plain version file")
+            raise ValueError("version_file must be a repository-relative version file")
+        if "version_regex" in config:
+            if "version_file" not in config:
+                raise ValueError("github_commit.version_regex requires version_file")
+            try:
+                pattern = re.compile(config["version_regex"])
+            except (TypeError, re.error) as exc:
+                raise ValueError("github_commit.version_regex must be a valid regular expression") from exc
+            if "version" not in pattern.groupindex:
+                raise ValueError("github_commit.version_regex requires a named version group")
     elif method == "git_commit":
         url = _https_url(config.get("url"), "git_commit.url")
         if (urlsplit(url).hostname or "").lower() in {"github.com", "www.github.com"}:
@@ -264,7 +273,8 @@ def _github_commit(
         if content.get("encoding") != "base64":
             raise ValueError("GitHub version file is not base64 text")
         encoded = content.get("content")
-        if not isinstance(encoded, str) or len(encoded) > 4096:
+        max_size = 65536 if "version_regex" in config else 256
+        if not isinstance(encoded, str) or len(encoded) > 2 * max_size + 4096:
             raise ValueError("GitHub version file is not bounded base64 text")
         compact = "".join(encoded.split())
         try:
@@ -272,9 +282,14 @@ def _github_commit(
             value = decoded.decode("utf-8").strip()
         except (binascii.Error, UnicodeDecodeError) as exc:
             raise ValueError("GitHub version file is not valid UTF-8 base64 text") from exc
-        if len(decoded) > 256:
+        if len(decoded) > max_size:
             raise ValueError("GitHub version file is too large")
-        if not re.fullmatch(r"[0-9][A-Za-z0-9._+-]*", value):
+        if regex := config.get("version_regex"):
+            matches = list(re.finditer(regex, value))
+            if len(matches) != 1:
+                raise ValueError("GitHub version file must match version_regex exactly once")
+            value = matches[0].group("version")
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9][A-Za-z0-9._+-]*", value):
             raise ValueError("GitHub version file must contain one plain version")
         metadata["version"] = value
     if current is not None:

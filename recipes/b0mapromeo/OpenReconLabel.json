@@ -6,7 +6,7 @@
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
     "information": {
-      "en": "B0 field maps in Hz from multi-echo GRE, saved to the shared directory and returned to the scanner"
+      "en": "B0 field maps in Hz and T2* maps in ms from multi-echo GRE, returned as separate scanner series"
     },
     "id": "b0mapromeo",
     "regulatory_information": {
@@ -62,35 +62,7 @@
         "en": "Send original images"
       },
       "type": "boolean",
-      "default": false
-    },
-    {
-      "id": "phaseunits",
-      "label": {
-        "en": "Input phase scale"
-      },
-      "type": "choice",
-      "values": [
-        {
-          "id": "siemens",
-          "name": {
-            "en": "Unsigned Siemens"
-          }
-        },
-        {
-          "id": "signed",
-          "name": {
-            "en": "Signed Siemens"
-          }
-        },
-        {
-          "id": "radians",
-          "name": {
-            "en": "Radians"
-          }
-        }
-      ],
-      "default": "siemens"
+      "default": true
     },
     {
       "id": "echotimesms",

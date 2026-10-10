@@ -5,7 +5,7 @@ import openreconi2iexample as helpers
 from b0mapromeo_analytic import DIRECT_NATIVE_FIELDS, direct_native_inputs
 
 
-def _settings(config, metadata) -> dict:
+def _settings(config, metadata, *, phase_units="siemens", send_original=False) -> dict:
     # The server can pass XML text when its optional scanner-info logging
     # fails, even though the acquisition header itself parsed successfully.
     if isinstance(metadata, (str, bytes)):
@@ -85,7 +85,7 @@ def _settings(config, metadata) -> dict:
         ),
         "b0mapid": str(parameters.get("b0mapid", "")).strip(),
         "times": times,
-        "phase_units": parameters.get("phaseunits", "siemens"),
+        "phase_units": parameters.get("phaseunits", phase_units),
         "max_seeds": int(parameters.get("maxseeds", 4000)),
-        "send_original": helpers._config_bool(parameters, "sendoriginal", False),
+        "send_original": helpers._config_bool(parameters, "sendoriginal", send_original),
     }

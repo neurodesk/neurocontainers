@@ -1,12 +1,12 @@
 {
   "apps": {
-    "code 240320": {
-      "version": "20261008",
+    "radtract 0.2.4": {
+      "version": "20261007",
       "exec": "",
       "apptainer_args": []
     }
   },
   "categories": [
-    "programming"
+    "diffusion imaging"
   ]
 }
