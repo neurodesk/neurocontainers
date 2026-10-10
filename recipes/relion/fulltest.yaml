@@ -576,7 +576,7 @@ tests:
 
   - name: relion_python_tomo_import SerialEM options
     description: Verify SerialEM import accepts an output directory
-    command: relion_python_tomo_import SerialEM --help 2>&1
+    command: TERM=dumb COLUMNS=160 relion_python_tomo_import SerialEM --help 2>&1
     expected_output_contains: "--output-directory"
 
   - name: Python dependency consistency
