@@ -14,7 +14,7 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 
 name: spmpython
-version: "25.1.2.post1"
+version: "25.1.2.post2"
 
 required_files:
   - dataset: ds000001
@@ -689,4 +689,4 @@ cleanup:
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
 
-upstream_version: "25.1.2.post1"
+upstream_version: "25.1.2.post2"
