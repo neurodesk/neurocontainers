@@ -272,9 +272,10 @@ verified digest. Servers without validators are downloaded and hashed again.
 The scheduled workflow preserves this metadata cache between runs.
 
 A mutable URL does not show which version it serves. When the file is a ZIP
-archive, such as a Java `.jar`, set `version_member` to one exact member and
+or TAR archive, such as a Java `.jar` or binary `.tgz`, set `version_member` to one exact member and
 `version_regex` to a pattern with a named `version` group. The archive must
-record exactly one such version. Map it with `target.variables` so the
+record exactly one such version. TAR members must be regular files, and version
+members cannot exceed 64 KiB. Map it with `target.variables` so the
 container label follows the file. A rebuilt file with the same version is then
 held rather than labelled as a release:
 

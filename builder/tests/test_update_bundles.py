@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+import tarfile
 import zipfile
 from types import SimpleNamespace
 
@@ -279,3 +280,50 @@ def test_archive_version_reads_one_version_from_an_exact_member(content, expecte
         result = bundles.read_archive_version(session, "https://example.org/tool.jar", "org/tool/Main.class", pattern)
         assert result[0] == hashlib.sha256(stream.getvalue()).hexdigest()
         assert result[3] == expected
+
+
+@pytest.mark.parametrize("compression", ["", "gz", "bz2", "xz"])
+def test_tar_archive_version_and_digest_come_from_the_same_bytes(compression):
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode="w:" + compression) as archive:
+        for name, content in (("tool/old_version.txt", b"TOOL_2.0.0"),
+                              ("tool/version.txt", b"TOOL_2.1.03\nLinux\n")):
+            entry = tarfile.TarInfo(name)
+            entry.size = len(content)
+            archive.addfile(entry, io.BytesIO(content))
+    data = stream.getvalue()
+
+    result = bundles.read_archive_version(
+        Session(data), "https://example.org/tool.tgz", "tool/version.txt",
+        r"TOOL_(?P<version>\d+\.\d+\.\d+)\b",
+    )
+
+    assert result == (hashlib.sha256(data).hexdigest(), len(data),
+                      "https://example.org/tool.tgz", "2.1.03")
+
+
+@pytest.mark.parametrize("kind", ["missing", "duplicate", "oversize", "symlink", "hardlink", "directory"])
+def test_tar_version_member_requires_one_bounded_regular_file(kind):
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode="w:gz") as archive:
+        entry = tarfile.TarInfo("tool/version.txt")
+        content = b"2.1.0"
+        if kind == "missing":
+            entry.name = "other/version.txt"
+        elif kind == "oversize":
+            content = b"x" * 65537
+        elif kind in {"symlink", "hardlink", "directory"}:
+            entry.type = {"symlink": tarfile.SYMTYPE, "hardlink": tarfile.LNKTYPE,
+                          "directory": tarfile.DIRTYPE}[kind]
+            entry.linkname = "other/version.txt"
+            content = b""
+        entry.size = len(content)
+        archive.addfile(entry, io.BytesIO(content))
+        if kind == "duplicate":
+            archive.addfile(entry, io.BytesIO(content))
+
+    with pytest.raises(ValueError, match="one bounded regular member"):
+        bundles.read_archive_version(
+            Session(stream.getvalue()), "https://example.org/tool.tgz",
+            "tool/version.txt", r"(?P<version>\d+\.\d+\.\d+)",
+        )
