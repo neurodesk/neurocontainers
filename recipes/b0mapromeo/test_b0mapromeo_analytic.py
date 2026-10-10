@@ -370,13 +370,12 @@ class AnalyticalTests(unittest.TestCase):
             Path(b0mapromeo.__file__).with_name("OpenReconLabel.json").read_text()
         )
         parameters = label["parameters"]
-        self.assertEqual(len(parameters), 14)
+        self.assertEqual(len(parameters), 13)
         self.assertEqual(
-            [p["id"] for p in parameters[:9]],
+            [p["id"] for p in parameters[:8]],
             [
                 "config",
                 "sendoriginal",
-                "phaseunits",
                 "echotimesms",
                 "maxseeds",
                 "shimcalibration",
@@ -389,7 +388,7 @@ class AnalyticalTests(unittest.TestCase):
         self.assertEqual(
             [defaults[k] for k in defaults if k.startswith("shim")], [""] * 8
         )
-        direct = {p["id"]: p for p in parameters[9:13]}
+        direct = {p["id"]: p for p in parameters if p["id"] in DIRECT_NATIVE_FIELDS}
         self.assertEqual(tuple(direct), DIRECT_NATIVE_FIELDS)
         order = ",".join(c.label for c in NativeChannel)
         for name in DIRECT_NATIVE_FIELDS[:3]:

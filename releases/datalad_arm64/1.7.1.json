@@ -1,16 +1,15 @@
 {
   "apps": {
-    "neurodesktop-lite 20260428.1.0": {
+    "datalad_arm64 1.7.1": {
       "version": "20261007",
       "exec": "",
       "apptainer_args": []
     }
   },
   "categories": [
-    "programming",
-    "visualization",
     "data organisation"
   ],
-  "show_in_menu": false,
-  "show_in_applist": false
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "datalad"
 }

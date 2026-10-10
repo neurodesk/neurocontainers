@@ -1,7 +1,8 @@
-# ROMEO B0 mapping
+# ROMEO B0 and T2* mapping
 
 This OpenRecon image-to-image application computes a B0 field map in Hz from
-reconstructed multi-echo GRE magnitude and phase images. It adapts the mask
+reconstructed multi-echo GRE magnitude and phase images, and a T2* map in ms
+from the magnitude echoes. It adapts the mask
 preparation and ROMEO invocation in
 [Theodore Brierre's starting pipeline](https://github.com/tbrierre/recon_me_b0map_romeo).
 The upstream Julia Project and Manifest are pinned to a full source commit.
@@ -25,13 +26,15 @@ Echo times are in milliseconds. `echotimesms` can override the MRD
 times are errors. Scanner label parameters are read from MRD user parameters;
 JSON config parameters take precedence.
 
-`phaseunits` defaults to `siemens`, unsigned 12-bit pixels in 0..4095 mapped by
-`(2 * pixel - 4096) * pi / 4096`. Choose `signed` for already rescaled Siemens
-counts in -4096..4096, or `radians` for wrapped radians in -pi..pi. MRD pixels
-must already use the selected scale. The DICOM command handles the Siemens
-enhanced-MR rescale slope 2/intercept -4096 explicitly. It also accepts classic
-MR DICOM and sorts frames by echo time and physical slice position. There is no
-observed-min/max phase scaling. ROMEO's additional phase rescaling is disabled.
+The scanner sends signed Siemens phase counts in -4096..4096. Scanner input
+therefore defaults to the fixed conversion `pixel * pi / 4096`. The scanner menu
+has no phase-scale selector. MRD float storage can hold those counts; fractional
+stored values are not rounded before conversion. No conversion depends on the
+observed pixel range. ROMEO's additional phase rescaling is disabled.
+
+The DICOM command defaults to `siemens` and handles the Siemens enhanced-MR
+rescale slope 2/intercept -4096 explicitly. It also accepts classic MR DICOM and
+sorts frames by echo time and physical slice position.
 
 Masking uses the first echo's magnitude, a threshold of 0.25 times the mean,
 in-plane cross erosion, a radius-two-voxel spherical opening, the largest
@@ -39,6 +42,23 @@ in-plane cross erosion, a radius-two-voxel spherical opening, the largest
 anatomical brain extraction. `maxseeds` defaults to the upstream setting of 4000.
 
 ## Outputs
+
+A separate T2* series in milliseconds follows the B0 series. It fits
+`log(magnitude) = intercept - TE_ms / T2star_ms` by unweighted least squares
+over all positive finite magnitude echoes. At least two samples and a negative
+slope are required. Validity also requires the B0 foreground mask. Invalid fits,
+including flat or increasing signals and values outside finite positive float32
+representation, use zero padding. The fit does not correct
+the magnitude noise floor. Missing echoes can change the fit bias.
+
+T2* scanner values use unsigned codes 1..4095 with code zero reserved for padding.
+`ms = stored * RescaleSlope + RescaleIntercept`, with
+`RescaleSlope = max(1, maximum_valid_ms / 4094)` and
+`RescaleIntercept = -RescaleSlope`. Quantization error is at most half the slope.
+Very long fitted T2* values can reduce precision across the series. No physiological
+upper bound is imposed. The DICOM CLI writes `t2star_ms.nii` and
+`t2star_valid_mask.nii` with the same affine as the B0 map. The mask identifies
+valid fits. Existing B0 artifact persistence and shim prescriptions are unchanged.
 
 One derived B0 series keeps the input slice geometry. Scanner pixels are unsigned
 integers centered on 2048. DICOM/MRD `RescaleSlope` and `RescaleIntercept`
@@ -49,11 +69,15 @@ for maps whose absolute values fit below 2046 Hz; wider maps have coarser
 quantization. A scanner display that ignores rescale metadata cannot be read as
 Hz. Scanner round-trip behavior still needs verification on the target system.
 
-`sendoriginal` defaults to false. Enable it to return original image copies before
-the B0 series. The shared OpenRecon helpers assign fresh returned-series identity
+The scanner label and the B0 server fallback both default `sendoriginal` to true. Original image copies return before
+the derived B0 and T2* series after reconstruction succeeds. Set it to false to
+return only those derived series. The shared OpenRecon helpers assign fresh returned-series identity
 and restamp storage metadata. Derived images also use the shared metadata helpers.
-Acquisition, unwrapping, publication, and fitting errors send an error message and close the
-connection without a derived output.
+Acquisition, unwrapping, publication, and fitting errors send the package version
+and full Python traceback to FIRE LogViewer with `ERROR` severity, then close the
+connection without a derived output. Phase validation errors include the selected
+`phaseunits`, expected bounds, and observed pixel range. Use that diagnostic and
+the acquisition's phase encoding to check incoming values.
 
 ## Shared map for a target scan
 
@@ -64,7 +88,7 @@ and a manifest identifying the source acquisition and any supplied shim inputs.
 Known analytical models and measured calibration assets are saved with the map.
 The map remains readable after the reconstruction's temporary files are removed.
 
-`b0mapid` is the fourteenth GUI parameter. Leave it blank to generate an ID, or
+`b0mapid` identifies the shared map. Leave it blank to generate an ID, or
 enter an unused name of 1 to 64 ASCII characters, starting with a letter or digit
 and containing only letters, digits, underscores, or hyphens.
 Use an opaque scan name rather than patient details. Existing maps cannot be
@@ -112,7 +136,9 @@ An existing nonempty output directory is rejected. Patient DICOM tags and source
 filenames are not copied
 into generated NIfTI headers. Image data and image geometry remain sensitive.
 OpenRecon removes its private reconstruction scratch directory after processing;
-the shared map bundle remains. Julia packages live under `/opt`; runtime needs no home directory or
+the shared map bundle remains. Reconstruction scratch files and Python/Julia
+temporary files use `/tmp/share/b0mapromeo`, on the share mounted by FIRE.
+Julia packages live under `/opt`; runtime needs no home directory or
 package download.
 
 Release smoke tests use generated synthetic data only. Private validation data
