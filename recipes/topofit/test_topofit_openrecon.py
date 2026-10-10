@@ -127,19 +127,28 @@ class TopoFitOpenReconTests(unittest.TestCase):
             outputs = topofit._patch_report_mrd_images(patches, sources, 10)
         self.assertEqual(len(outputs), 1)
         output = outputs[0]
-        self.assertEqual(output.data.shape, (1, 10, 900, 1200))
+        self.assertEqual(output.data.shape, (1, 20, 900, 1200))
         self.assertEqual(output.image_series_index, 10)
-        np.testing.assert_allclose(output.field_of_view, (1200, 900, 10))
+        np.testing.assert_allclose(output.field_of_view, (1200, 900, 20))
         np.testing.assert_allclose(output.position, (0, 0, 0))
         np.testing.assert_allclose(output.read_dir, (1, 0, 0))
         np.testing.assert_allclose(output.phase_dir, (0, 1, 0))
         for patch_id in patches:
-            self.assertEqual(drawn.count(patch_id), 1)
-        for value in ("-12.00", "34.00", "56.00", "-0.3600", "0.4800", "0.8000"):
+            self.assertEqual(drawn.count(patch_id), 2)
+        for value in ("-12.00", "34.00", "56.00"):
             self.assertEqual(drawn.count(value), 200)
+        from topofit_geometry import SIEMENS_PLANE_ORDERS, siemens_plane_orientation
+        orientation = siemens_plane_orientation(next(iter(patches.values())).normal_lph)
+        self.assertEqual(drawn.count(orientation.primary_text), 200)
+        for pair in orientation.variants:
+            self.assertEqual(drawn.count(pair.degree_pair_text), 200)
+        for order in SIEMENS_PLANE_ORDERS:
+            self.assertEqual(drawn.count(">".join(order)), 10)
+        self.assertTrue(any("In-plane rotation: unknown" in text for text in drawn))
+        self.assertEqual(drawn.count(topofit.RESEARCH_WARNING), 20)
         meta = ismrmrd.Meta.deserialize(output.attribute_string)
         self.assertEqual(meta["TopoFitPatchCount"], "200")
-        self.assertEqual(meta["NumberOfSlices"], "10")
+        self.assertEqual(meta["NumberOfSlices"], "20")
         self.assertEqual(meta["Keep_image_geometry"], "0")
         self.assertEqual(meta["TopoFitCoordinateSystem"], "LPH")
         self.assertEqual(meta["BurnedInAnnotation"], "YES")
@@ -150,6 +159,44 @@ class TopoFitOpenReconTests(unittest.TestCase):
         comments = topofit._format_flat_patch_comment(patches)
         self.assertLess(len(comments), 9000)
         self.assertIn("See TopoFit_patch_table", comments)
+        self.assertIn(orientation.primary_text, comments)
+        self.assertIn("in_plane_rotation=unknown", comments)
+
+    def test_report_angle_cells_fit_and_explain_singularities(self):
+        from PIL import ImageDraw, ImageFont
+        from topofit_core import FlatPatch
+        from topofit_geometry import siemens_plane_orientation
+
+        normals = ((0, 0, 1), (1, -1, 1), (-1, 1, 1), (1, 1, -1))
+        patches = {
+            f"LH{index:02d}": FlatPatch(
+                surface="lh.mid", patch_id=f"LH{index:02d}",
+                center_ras_mm=(12, -34, 56), normal_ras=normal,
+                radius_mm=2, area_mm2=8, rms_distance_mm=0.1, vertex_count=12,
+            )
+            for index, normal in enumerate(normals, start=1)
+        }
+        original_text = ImageDraw.ImageDraw.text
+        drawn = []
+
+        def record_text(draw, xy, text, *args, **kwargs):
+            box = draw.textbbox(xy, text, font=kwargs["font"])
+            drawn.append((xy, text, box))
+            return original_text(draw, xy, text, *args, **kwargs)
+
+        with mock.patch.object(ImageDraw.ImageDraw, "text", record_text):
+            output = topofit._patch_report_mrd_images(patches, _mrd_volume(), 10)[0]
+        self.assertEqual(output.data.shape, (1, 2, 900, 1200))
+        self.assertTrue(all(box[2] <= 1176 and box[3] < 900 for _, _, box in drawn))
+        self.assertTrue(any("undef* = first angle undefined" in text for _, text, _ in drawn))
+        self.assertTrue(any("undef*" in text and "+" not in text and ", -90.0" in text
+                            for _, text, _ in drawn))
+        font = ImageFont.load_default(size=18)
+        for patch in patches.values():
+            orientation = siemens_plane_orientation(patch.normal_lph)
+            self.assertLess(font.getlength(orientation.primary_text), 385 - 8)
+            for pair in orientation.variants:
+                self.assertLess(font.getlength(pair.degree_pair_text), 178 - 8)
 
     def test_empty_patch_table_reports_no_accepted_patches(self):
         images = topofit._patch_report_mrd_images({}, _mrd_volume(), 10)
@@ -347,7 +394,8 @@ class TopoFitOpenReconTests(unittest.TestCase):
             self.assertIn(
                 "TopoFit patch RH01 rh.mid LPH_mm", output_meta["ImageComments"]
             )
-            self.assertIn("normal=(", output_meta["ImageComments"])
+            self.assertIn("plane=", output_meta["ImageComments"])
+            self.assertIn("in_plane_rotation=unknown", output_meta["ImageComments"])
             self.assertIn(
                 "TopoFit sulcal mid-depth research voxels: lh=0, rh=0",
                 output_meta["ImageComments"],
@@ -387,9 +435,12 @@ class TopoFitOpenReconTests(unittest.TestCase):
                 np.testing.assert_allclose(patch["center_lph_mm"], center_lps)
                 np.testing.assert_allclose(patch["normal_lph"], normal_lps)
                 center_text = ",".join(f"{value:.2f}" for value in center_lps)
-                normal_text = ",".join(f"{value:.4f}" for value in normal_lps)
+                from topofit_geometry import siemens_plane_orientation
+                orientation = siemens_plane_orientation(normal_lps)
+                self.assertEqual(patch["siemens_plane_orientation"]["primary"], orientation.primary_text)
+                self.assertIsNone(patch["siemens_plane_orientation"]["in_plane_rotation_deg"])
                 self.assertIn(
-                    f"center=({center_text}) normal=({normal_text})",
+                    f"center=({center_text}) plane={orientation.primary_text}",
                     output_meta["ImageComments"],
                 )
 
