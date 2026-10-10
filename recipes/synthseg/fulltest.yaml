@@ -194,6 +194,7 @@ tests:
 
   - name: Save base tissue labels alongside Desikan-Killiany parcels
     description: Run one parcellated inference and retain its underlying tissue prediction.
+    timeout: 600
     command: |
       mri_synthseg --i "${t1w}" --o ${output_dir}/synthseg/t1w_parc.nii.gz \
         --parc --base-output ${output_dir}/synthseg/t1w_parc_base.nii.gz \
