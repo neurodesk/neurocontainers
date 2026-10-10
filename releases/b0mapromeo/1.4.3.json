@@ -1,14 +1,14 @@
 {
   "apps": {
-    "shim-toolbox 1.5.0": {
+    "b0mapromeo 1.4.3": {
       "version": "20261009",
       "exec": "",
       "apptainer_args": []
     }
   },
   "categories": [
-    "quantitative imaging",
     "image reconstruction",
+    "quantitative imaging",
     "phase processing"
   ]
 }

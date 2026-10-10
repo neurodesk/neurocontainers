@@ -839,3 +839,49 @@ def test_apt_reports_missing_package(public_session: Mock) -> None:
 def test_http_digest_archive_version_is_validated_before_network(config):
     with pytest.raises(ValueError):
         update_observations.validate_source(config)
+
+
+@pytest.mark.parametrize("version", ["5.1.1", "6.0.0"])
+def test_github_commit_extracts_version_from_source_file(version: str) -> None:
+    session = Mock()
+    sha = "a" * 40
+    contents = f'// source header\n#define TOOL_VERSION "{version}"\n' + "// comment\n" * 50
+    session.get.side_effect = [
+        response(data={"sha": sha}),
+        response(data={"encoding": "base64", "content": base64.b64encode(contents.encode()).decode()}),
+    ]
+    observed = update_observations.observe_source(
+        {"method": "github_commit", "repo": "org/tool", "version_file": "src/version.h",
+         "version_regex": r'#define TOOL_VERSION "(?P<version>[0-9.]+)"'},
+        session,
+    )
+    assert observed.value == sha
+    assert observed.metadata["version"] == version
+    assert session.get.call_args_list[1].kwargs["params"] == {"ref": sha}
+
+
+@pytest.mark.parametrize("contents", [
+    "no version", 'VERSION="1.0" VERSION="2.0"', 'VERSION="bad version"', "x" * 65537,
+])
+def test_github_commit_rejects_invalid_extracted_version(contents: str) -> None:
+    session = Mock()
+    session.get.side_effect = [
+        response(data={"sha": "a" * 40}),
+        response(data={"encoding": "base64", "content": base64.b64encode(contents.encode()).decode()}),
+    ]
+    with pytest.raises(ValueError, match="GitHub version file"):
+        update_observations.observe_source(
+            {"method": "github_commit", "repo": "org/tool", "version_file": "src/version.h",
+             "version_regex": r'VERSION="(?P<version>[^"]+)"'},
+            session,
+        )
+
+
+@pytest.mark.parametrize("extra", [
+    {"version_regex": r"(?P<version>[0-9.]+)"},
+    {"version_file": "version.h", "version_regex": "["},
+    {"version_file": "version.h", "version_regex": r"[0-9.]+"},
+])
+def test_github_commit_rejects_invalid_version_extraction_config(extra: dict) -> None:
+    with pytest.raises(ValueError, match="version_regex"):
+        update_observations.validate_source({"method": "github_commit", "repo": "org/tool", **extra})
