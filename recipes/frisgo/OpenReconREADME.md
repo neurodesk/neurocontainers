@@ -2,14 +2,15 @@
 
 `frisgo` is an OpenRecon image-to-image package that mitigates Fuzzy Ripple
 artifacts in dual-polarity (3D-)EPI BOLD time series. It waits for the complete
-run, assembles all repetitions into a 4D NIfTI time series and runs
-`LN2_FRISGO -input timeseries.nii -tshift` from LayNii. LN2_FRISGO estimates
+run, assembles all repetitions into a 4D NIfTI time series and runs the selected
+LayNii algorithm. By default, `LN2_FRISGO -input timeseries.nii -tshift` estimates
 the signal halfway between successive TRs with a cubic interpolation across
 four time points, which aligns the trigger timing with the k-space centre and
 cancels the polarity-alternating ripple.
 
-It is built for reconstructed magnitude BOLD runs with at least four
-repetitions, sent as one 2D image per slice (or partition) and repetition.
+It accepts reconstructed magnitude BOLD runs sent as one 2D image per slice
+or partition and repetition. Spline requires four repetitions; Simple,
+Low-pass and Run-wise require two.
 
 ## Inputs
 
@@ -24,8 +25,9 @@ repetitions, sent as one 2D image per slice (or partition) and repetition.
   missing repetitions and duplicate counters skip correction for that group.
   Requested originals are still returned, and other groups are processed.
 - FRISGO is applied to magnitude series (`IMTYPE_MAGNITUDE` or unset image
-  type) with at least four repetitions. Other series are only returned as
-  originals.
+  type). Spline requires four repetitions; Simple, Low-pass and Run-wise
+  require two. Low-pass requires at least 100 spatial voxels. Other series are
+  only returned as originals.
 
 ## Outputs
 
@@ -46,8 +48,23 @@ repetitions, sent as one 2D image per slice (or partition) and repetition.
 | Parameter | Default | Description |
 | --- | --- | --- |
 | `config` | `frisgo` | MRD server module to run. |
+| `algorithm` | `spline` | Spline, Simple, Low-pass (`lpass`) or Run-wise (`runwise`). |
+| `lowpasswindow` | `40` | Gaussian window size in TRs, used only for Low-pass. Values from 0.1 to 1000000, including fractional TRs. |
 | `sendoriginal` | `true` | Return the original BOLD time series. |
 | `sendfrisgo` | `true` | Return the FRISGO corrected BOLD time series. |
+
+| Algorithm | LayNii option | Correction |
+| --- | --- | --- |
+| Spline | `-tshift` | Cubic interpolation halfway between TRs. |
+| Simple | `-simple` | Weighted average of neighbouring volumes. |
+| Low-pass | `-lpass <window>` | Gaussian estimate of ripple changes over time. The window should exceed the trial timing. |
+| Run-wise | `-runwise` | Estimate of a constant ripple across the run. |
+
+Nondefault corrected series end in `frisgo_simple`, `frisgo_lpass` or
+`frisgo_runwise`. Processing history records the algorithm and effective
+low-pass window. Missing settings retain Spline defaults. Invalid algorithms
+or active low-pass windows skip correction and log the cause; requested
+originals are still returned. Other algorithms ignore the low-pass window.
 
 ## Runtime notes
 
@@ -58,7 +75,7 @@ repetitions, sent as one 2D image per slice (or partition) and repetition.
 - Corrected values are rounded to the source pixel type. For unsigned scanner
   images, the rare negative values LN2_FRISGO produces at the background edge
   are clipped to 0.
-- The first and last two time points are averages of neighbouring volumes, as
+- With Spline, the first and last two time points average neighbouring volumes, as
   implemented by `LN2_FRISGO -tshift`.
 - Output starts after the scanner closes the input stream. The input run is
   buffered in memory, so available scanner memory must cover the source run

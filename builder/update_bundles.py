@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import tarfile
 import tempfile
 import zipfile
 from urllib.parse import quote
@@ -337,7 +338,7 @@ def observe_bundle(config: dict, github_session: requests.Session, current: str 
 
 
 def read_archive_member(session: requests.Session, url: str, member: str) -> tuple[str, int, str, bytes]:
-    """Hash a downloaded ZIP archive and read one exact, bounded member from it."""
+    """Hash a downloaded ZIP or TAR archive and read one exact, bounded file."""
     from .update_observations import _https_url
 
     digest = hashlib.sha256()
@@ -352,11 +353,23 @@ def read_archive_member(session: requests.Session, url: str, member: str) -> tup
                     digest.update(chunk)
                     size += len(chunk)
         archive.seek(0)
-        with zipfile.ZipFile(archive) as package:
-            entries = [entry for entry in package.infolist() if entry.filename == member]
-            if len(entries) != 1 or entries[0].file_size > 65536:
-                raise ValueError(f"archive requires one bounded member {member}")
-            content = package.read(entries[0])
+        if zipfile.is_zipfile(archive):
+            with zipfile.ZipFile(archive) as package:
+                entries = [entry for entry in package.infolist() if entry.filename == member]
+                if len(entries) != 1 or entries[0].file_size > 65536:
+                    raise ValueError(f"archive requires one bounded member {member}")
+                content = package.read(entries[0])
+        else:
+            archive.seek(0)
+            with tarfile.open(fileobj=archive, mode="r:*") as package:
+                entries = [entry for entry in package if entry.name == member]
+                if (len(entries) != 1 or not entries[0].isfile()
+                        or not 0 <= entries[0].size <= 65536):
+                    raise ValueError(f"archive requires one bounded regular member {member}")
+                with package.extractfile(entries[0]) as stream:
+                    content = stream.read(65537)
+                if len(content) != entries[0].size:
+                    raise ValueError(f"archive member {member} has an invalid size")
     return digest.hexdigest(), size, final_url, content
 
 
