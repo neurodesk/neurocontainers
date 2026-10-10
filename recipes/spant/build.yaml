@@ -1,5 +1,5 @@
 name: spant
-version: 3.7.0
+version: 4.5.0
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/martin3141/spant?tab=GPL-3.0-1-ov-file
@@ -91,6 +91,8 @@ build:
         - libcurl4-openssl-dev
         - libssl-dev
         - libxml2-dev
+        - libuv1-dev
+        - pandoc
         - libfontconfig1-dev
         - libharfbuzz-dev
         - libfribidi-dev
@@ -100,47 +102,22 @@ build:
         - libjpeg-dev
     - run:
         - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); if (!requireNamespace('remotes', quietly = TRUE)) install.packages('remotes'); remotes::install_github('martin3141/spant@v{{ context.version }}', dependencies = TRUE, upgrade = 'never', build_vignettes = FALSE); cat('Installed spant from GitHub\n') "
+        - Rscript -e 'library(spant); stopifnot(as.character(packageVersion("spant")) == "{{ context.version }}"); library(rmarkdown); stopifnot(pandoc_available())'
     - test:
         name: verify_r_installation
         script: |-
-          # Test R installation
           R --version
-          echo "Testing R package installation..."
-          R --slave -e "
-            # Check R version
-            cat('R version:', R.version.string, '\n')
-            
-            # Test main package
-            tryCatch({
-              library("spant")
-              cat('Successfully loaded spant\n')
-              
-              # Try to get package info
-              pkg_info <- packageDescription('spant')
-              if (!is.na(pkg_info)) {
-                cat('Package version:', pkg_info[['Version']], '\n')
-                cat('Package title:', pkg_info[['Title']], '\n')
-              }
-            }, error = function(e) {
-              cat('Warning: Could not load spant:', 
-                  e[['message']], '\n')
-              cat('Installed packages:\n')
-              print(installed.packages()[,c('Package', 'Version')])
-            })
-            
-            # List key installed packages
-            key_packages <- c('spant')
-            if (length(key_packages) > 0) {
-              cat('Checking additional packages:\n')
-              for (pkg in key_packages) {
-                if (require(pkg, character.only = TRUE, quietly = TRUE)) {
-                  cat('  ✓', pkg, '\n')
-                } else {
-                  cat('  ✗', pkg, '(not found)\n')
-                }
-              }
-            }
-          "
+          Rscript - <<'RS'
+          library(spant)
+          stopifnot(as.character(packageVersion("spant")) == "{{ context.version }}")
+          cat("Package version:", as.character(packageVersion("spant")), "\n")
+          RS
+
+deploy:
+  bins:
+    - R
+    - Rscript
+
 categories:
   - spectroscopy
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAElElEQVR4AWyUXUxcRRTH/3vvQruWpVC2SNvwYG0hAquQQEiIUqJUoOEBqm+EVKxRW9SKTyYkQgKJCQ+EoDE8qIAmfVDCEwEh8CBQSEj4MEE+xEJqKrTuUj4WyveO85/LLNulN/fHOfOfmXPOnLmLsf3FWbFVcVY8/dwlNu+4xMZnMQrfp2fE+idnxFp5tFi9HS1WbpEo8eTjKLH80Wnh/dDivw8iBXl80ykeve8US2URYvG9CPHvjVMKQwgce6iR0AlqROvapyVaD7YygYCQs8eB0v1+y1rz2tf2+F6//0ijbzCbjC+D0eNGy/IvddpQqBPq2ob6HBODWazqBLRPS4J1PdaWc9qnJdQIfUL/2AmYlewcAJ4tAa9kX7aJmq6WllALJVinH3QHbI+A56lA69QO3D+v4trgWbz9ezTS7vrw7R87+PWvXVxs9eHFH9YR96NPca55A8VdW2iZ2cPSph9+GZWVa2SCoxqebAt8M7GNhxnlmHnoxdzcHBYWFjCztAoUfIlf/t7D6ehoeV/iGfruryG+/HtU3NvF/TXOsVgrrkwgwH4dyNv/07uP3zxO1NXVYXh4GLGxscjMzMTU1BSqqqrw6GQ8YLOBT01NDZKTk5Geno6Ojg6Ulpbi1GtXMbh0gO19AZ6AcdUdcMOBH3gs23Mhwc0hent74fF4MDIygoKCAgwMDMARGQVZh5pfXFxUiUdHR1FSUqIClpWV4Z8NcZhALYP8ingcIUcC4TLd0NAQ9vb2UF9fj4mJCdTW1iIqKgrZ2dkYHx+X66zX6XQiJiYGCQkJaG5ulgezobW1FSdMAUMeUl6FSipDQj0UIsNtuHBiF6mpqejs7ERiYiIqKysxPz+PsbExmKYJuVetZxu9Xi9mZ2fVCbq7u9WeV88YOGmqJTIBELiDjV0/uh/swQsnlpeXUVhYCIfDAbfbjb6+PqSlpaG6uhrC2ovGxkbk5OQoeJr8/HzcTjKR4bLBJqtl/3kPMsHhDmlMG9DQ0AD2Vw7VOzk5idzcXOzv7yMlJUVVxYnp6WlsTg0gyXMPty7tovlKmExgx+lwzh4hEwi1KUwGj3XY0NbWBsMw0N7ejoiICNUWtslut6O/vz/QIoa4/pKJCreJcll5dpwBh2nFYuWE/8fUHcgTIdwEMmJNzAx2oaWlBcXFxfD5fKpytqanpwet3zXIuH7J0cu9ekSf6DGt/IqYVXZWziRFG6jOCMfXFTfhcrlQVFSErKwshIWFIS8vD+++bGJ9ZQU2mw1NTU3y5NZe9puwakKf0A+cQMZXp3gr3o67Vx346pUNXH7QhWsHo/jpzRMYvn4SpZftaHojHM05EtnzdJehPklWShiD0Cf0D+/AqoQZhfwlnXsBeOeiiTtuO24kmMg5b+C8A4g/BbweZ8MVSbbs+aVIyC/G+h2pvaoRjHWkyQQIPMwYGAQ51AklbUN9jjVcQziWCQTYL2JV8ew4VOcaaoQ+oU+0T0uoqTtgJo3OzLH2aQm1UIJ17dMSrg18RToj7fPRfdWWJ9W+tiLwZekYx07ArMxOtE9LqBH6wVAjwRp9av8DAAD//1OJSwsAAAAGSURBVAMAupKBfEERPRMAAAAASUVORK5CYII=
