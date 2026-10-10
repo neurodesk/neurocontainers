@@ -1,6 +1,6 @@
 name: libreoffice
-version: "26.8.0.3"
-upstream_version: "26.8.0.3"
+version: "26.8.1.1"
+upstream_version: "26.8.1.1"
 default_timeout: 120
 
 tests:
