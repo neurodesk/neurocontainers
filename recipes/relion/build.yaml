@@ -12,6 +12,7 @@ variables:
   relion_version: "5.1.1"
   compute_capability: "75"
   torch_version: "2.7.1+cpu"
+  torch_cpu_sha256: "1f04a373a3f643821f721da9898ef77dce73b5b6bfc64486f0976f7fb5f90e83"
   torch_wheel: torch-{{ context.torch_version }}-cp310-cp310-manylinux_2_28_x86_64.whl
   relion_commit: "05cd1ad95e89d4e6b0424c6c158322a46a74d8aa"
   ctffind_version: 4.1.14
@@ -36,6 +37,12 @@ auto_update:
       variable: relion_commit
       variables:
         relion_version: version
+  - id: torch_cpu
+    method: http_digest
+    dependency: true
+    url: https://download.pytorch.org/whl/cpu/torch-2.7.1%2Bcpu-cp310-cp310-manylinux_2_28_x86_64.whl
+    target:
+      variable: torch_cpu_sha256
 
 build:
   kind: neurodocker
@@ -204,7 +211,7 @@ files:
     filename: python-requirements.txt
   - name: torch_cpu_wheel
     url: https://download.pytorch.org/whl/cpu/torch-{{ context.torch_version | replace("+", "%2B") }}-cp310-cp310-manylinux_2_28_x86_64.whl
-    sha256: 1f04a373a3f643821f721da9898ef77dce73b5b6bfc64486f0976f7fb5f90e83
+    sha256: "{{ context.torch_cpu_sha256 }}"
   - name: relion_source
     url: https://github.com/3dem/relion/archive/{{ context.relion_commit }}.tar.gz
   - name: cuda_pin
