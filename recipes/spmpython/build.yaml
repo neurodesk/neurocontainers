@@ -32,6 +32,9 @@ build:
         pip_install: spm-python=={{ context.upstream_version }}
     - environment:
         PATH: /opt/miniconda/envs/spmpython/bin:$PATH
+deploy:
+  bins:
+    - python
 readme: |-
   ----------------------------------
   ## spmpython/{{ context.version }} ##

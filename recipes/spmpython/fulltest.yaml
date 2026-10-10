@@ -54,6 +54,11 @@ tests:
     command: pip --version
     expected_output_contains: "pip"
 
+  - name: Python package dependency check
+    description: Verify the deployed Python environment has compatible dependencies
+    command: python -m pip check
+    expected_output_contains: "No broken requirements found."
+
   # ==========================================================================
   # CORE PACKAGE IMPORTS
   # ==========================================================================
@@ -496,13 +501,28 @@ tests:
   # MATLAB RUNTIME CONFIGURATION
   # ==========================================================================
   - name: Check MATLAB runtime version requirement
-    description: Verify MATLAB runtime version is R2025a
+    description: Verify the installed runtime matches SPM-Python's active dependency
     command: |
       python -c "
+      import re
+      from importlib.metadata import requires, version
+      from packaging.requirements import Requirement
       from spm_runtime._version import __matlab_release__
+      runtime_requirements = []
+      for dependency in requires('spm-python'):
+          requirement = Requirement(dependency)
+          if re.fullmatch(r'spm[-_]runtime[-_]r[0-9]{4}[ab]', requirement.name, re.IGNORECASE):
+              if requirement.marker is None or requirement.marker.evaluate():
+                  runtime_requirements.append(requirement)
+      assert len(runtime_requirements) == 1, runtime_requirements
+      requirement = runtime_requirements[0]
+      assert requirement.specifier.contains(version(requirement.name)), requirement
+      expected_release = requirement.name.replace('_', '-').rsplit('-', 1)[-1]
+      assert __matlab_release__.lower() == expected_release.lower(), (__matlab_release__, requirement)
       print('Required MATLAB Runtime:', __matlab_release__)
+      print('Runtime matches SPM-Python dependency')
       "
-    expected_output_contains: "Required MATLAB Runtime: R2025a"
+    expected_output_contains: "Runtime matches SPM-Python dependency"
 
   - name: Check matlab_runtime module functions
     description: Verify matlab_runtime helper functions exist
