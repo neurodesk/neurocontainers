@@ -181,6 +181,12 @@ Docker-to-SIMG converter tests. actionlint 1.7.12 validates every workflow and
 uses ShellCheck 0.11.0 for inline shell. ShellCheck also checks shell scripts in
 `workflows`, `tools`, `dashboard`, and `.github`.
 
+To keep the formatting commit out of `git blame`, configure this checkout:
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
+
 ShellCheck warnings and errors block merges. Existing informational and style
 findings do not yet block merges; this is the baseline severity, not a list of
 disabled diagnostics. `.github/actionlint.yaml` declares the existing custom
