@@ -194,8 +194,9 @@ For a `github_commit` source, `version_file` reads the version at the observed c
 It accepts a plain version file by default. To extract a version from a source header,
 add `version_regex` with a named `version` group. The file must be UTF-8, at most
 64 KiB, and match the expression exactly once. Bind `target.variables` to `version`
-and `target.fulltest_variable` to the suite's software-version scalar so the commit,
-software version, container label, and runtime assertion update together.
+and declare the same variable in `fulltest.yaml` so the commit, software version,
+container label, and runtime assertion update together. `target.fulltest_variable`
+follows the primary target value, which is the commit SHA for this provider.
 
 ```yaml
 version_file: src/version.h
@@ -204,7 +205,6 @@ target:
   variable: source_commit
   variables:
     upstream_version: version
-  fulltest_variable: upstream_version
 ```
 
 LibreOffice uses `libreoffice_release` with a variable target for its four-part
@@ -289,7 +289,8 @@ verified digest. Servers without validators are downloaded and hashed again.
 The scheduled workflow preserves this metadata cache between runs.
 
 A mutable URL does not show which version it serves. When the file is a ZIP
-or TAR archive, such as a Java `.jar` or binary `.tgz`, set `version_member` to one exact member and
+or TAR archive, such as a Java `.jar` or binary `.tgz`, set `version_member`
+to one exact member and
 `version_regex` to a pattern with a named `version` group. The archive must
 record exactly one such version. TAR members must be regular files, and version
 members cannot exceed 64 KiB. Map it with `target.variables` so the
