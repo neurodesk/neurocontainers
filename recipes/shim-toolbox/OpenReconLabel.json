@@ -1,0 +1,167 @@
+{
+  "general": {
+    "name": {
+      "en": "Shimming Toolbox target B0"
+    },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": {
+      "en": "Resampled target-space B0 and predicted shimmed B0 with absolute settings in image comments"
+    },
+    "id": "shim-toolbox",
+    "regulatory_information": {
+      "device_trade_name": "Shimming Toolbox target B0",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "NeuroDesk, https://neurodesk.org",
+      "made_in": "",
+      "manufacture_date": "2026/10/08",
+      "material_number": "shim_toolbox_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "",
+      "udi": "",
+      "safety_advices": "Research use",
+      "special_operating_instructions": "See OpenReconREADME.md",
+      "additional_relevant_information": ""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 0,
+    "min_required_memory": 8192,
+    "min_count_required_cpu_cores": 5,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": {
+        "en": "Reconstruction"
+      },
+      "type": "choice",
+      "values": [
+        {
+          "id": "shim_toolbox",
+          "name": {
+            "en": "Target B0 shimming"
+          }
+        }
+      ],
+      "default": "shim_toolbox"
+    },
+    {
+      "id": "sendoriginal",
+      "label": {
+        "en": "Send original images"
+      },
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "id": "shimcalibration",
+      "label": {
+        "en": "Cima.X calibration JSON path"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Registered signed Hz/A profiles on the target grid and verified absolute A limits. Requires the field-map acquisition currents. Saved measured profiles require identical target geometry."
+      }
+    },
+    {
+      "id": "shimcurrenta",
+      "label": {
+        "en": "Field-map acquisition shim currents in A"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "JSON array or named object of actual currents used for the selected field-map acquisition. A known saved baseline cannot be replaced. Calibration profiles must match the target grid exactly."
+      }
+    },
+    {
+      "id": "shimanalyticalmodel",
+      "label": {
+        "en": "Cima.X analytical model JSON path"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Explicit patient RAS to shim LAI isocentre geometry and verified absolute native bounds for the selected field map. Ideal estimate. Saved acquisition geometry remains authoritative."
+      }
+    },
+    {
+      "id": "shimnativesettings",
+      "label": {
+        "en": "Field-map acquisition native settings"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "JSON named object for the selected B0 field map. X,Y,Z in uT/m; second order in uT/m^2. Required with the analytical model. A saved baseline cannot be replaced."
+      }
+    },
+    {
+      "id": "shimnativebaseline",
+      "label": {
+        "en": "Field-map native baseline: X,Y,Z[,Z2,ZX,ZY,X2-Y2,XY]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Actual settings used for the selected B0 field-map acquisition, not the target scan. Enter 3 or 8 values in order X,Y,Z or X,Y,Z,Z2,ZX,ZY,X2-Y2,XY. X,Y,Z in uT/m; remaining in uT/m^2. Requires both limits and HFS isocentre. A saved baseline cannot be replaced."
+      }
+    },
+    {
+      "id": "shimnativelower",
+      "label": {
+        "en": "Absolute native lower limits: X,Y,Z[,Z2,ZX,ZY,X2-Y2,XY]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Enter 3 or 8 comma-separated values in order X,Y,Z or X,Y,Z,Z2,ZX,ZY,X2-Y2,XY. X,Y,Z in uT/m; remaining channels in uT/m^2. All three native vectors must have the same length. Use actual acquisition values and verified limits; no values are assumed."
+      }
+    },
+    {
+      "id": "shimnativeupper",
+      "label": {
+        "en": "Absolute native upper limits: X,Y,Z[,Z2,ZX,ZY,X2-Y2,XY]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Enter 3 or 8 comma-separated values in order X,Y,Z or X,Y,Z,Z2,ZX,ZY,X2-Y2,XY. X,Y,Z in uT/m; remaining channels in uT/m^2. All three native vectors must have the same length. Use actual acquisition values and verified limits; no values are assumed."
+      }
+    },
+    {
+      "id": "shimisocentrerasmm",
+      "label": {
+        "en": "HFS isocentre R,A,S [mm]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Explicit magnet isocentre in patient RAS mm for confirmed head-first supine: R,A,S. Enter 3 comma-separated values, including explicit zeros. Never substitute image centre. Required with direct native baseline and bounds; leave all four blank to use existing shim inputs."
+      }
+    },
+    {
+      "id": "b0mapid",
+      "label": {
+        "en": "Shared B0 map ID"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Required exact B0MapId shown in the source b0mapromeo image comments. Reads /tmp/share/b0maps/<ID>. Select the correct field map for this patient and unchanged coordinate frame. No latest-map fallback. Both containers must mount the same host share."
+      }
+    }
+  ]
+}

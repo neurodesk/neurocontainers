@@ -1,5 +1,5 @@
 name: b0mapromeo
-version: 1.0.0
+version: 1.4.3
 tests:
   - name: launcher version
     description: Check the deployed command and container version.
@@ -7,5 +7,23 @@ tests:
     expected_output_contains: "b0mapromeo ${version}"
   - name: synthetic B0 reconstruction
     description: Reconstruct a known signed B0 field with real ROMEO and verify DICOM parsing, MRD geometry and Hz scaling.
+    timeout: 600
     command: python3 /opt/b0mapromeo/smoke_test.py
     expected_output_contains: "Synthetic DICOM/MRD ROMEO B0 smoke test passed"
+  - name: calibrated absolute shim settings
+    description: Exercise the installed Shimming Toolbox optimizer, current constraints and MRD image comments.
+    command: python3 /opt/b0mapromeo/test_b0mapromeo_shim.py
+    expected_output_contains: "Calibrated absolute shim tests passed"
+  - name: analytical native shim estimates
+    description: Verify ideal Siemens polynomial geometry, native constraints and image comments with the installed optimizer.
+    command: python3 /opt/b0mapromeo/test_b0mapromeo_analytic.py
+    expected_output_contains: "Analytical native shim tests passed"
+  - name: durable shared B0 artifacts
+    description: Verify map publication, scanner comments, persistence, and phase validation errors with scanner severity and traceback.
+    timeout: 180
+    command: python3 /opt/b0mapromeo/test_b0mapromeo_artifact.py
+    expected_output_contains: "Durable B0 artifact tests passed"
+  - name: quantitative T2 star maps
+    description: Verify echo-decay fits, invalid support, scanner millisecond scaling and geometry.
+    command: python3 /opt/b0mapromeo/test_b0mapromeo_t2star.py
+    expected_output_contains: "Quantitative T2 star tests passed"

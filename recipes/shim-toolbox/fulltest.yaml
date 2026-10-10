@@ -1,0 +1,17 @@
+name: shim-toolbox
+version: 1.5.0
+shimmingtoolbox_version: '1.5'
+tests:
+  - name: launcher version
+    description: Verify the installed target-shimming launcher and container version.
+    command: shim_toolbox --version
+    expected_output_contains: "shim_toolbox ${version}"
+  - name: pinned Shimming Toolbox
+    description: Verify the installed primary software version independently of the adapter label.
+    command: python3 -c "from importlib.metadata import version; assert version('shimmingtoolbox') == '${shimmingtoolbox_version}'; print('Pinned Shimming Toolbox version passed')"
+    expected_output_contains: "Pinned Shimming Toolbox version passed"
+  - name: shared B0 target evaluation
+    description: Exercise persistent artifacts, MRD target geometry, full-support resampling, absolute shims, predictions and scanner image comments with the installed optimizer.
+    timeout: 180
+    command: python3 /opt/shim_toolbox/test_shim_toolbox.py
+    expected_output_contains: "Shared B0 target shimming tests passed"

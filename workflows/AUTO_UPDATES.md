@@ -190,6 +190,23 @@ The source list supports the release providers above and these providers:
 | `slicer_release` | See Slicer recipes | Slicer binary and named `extensions` map from the same build revision |
 | `freesurfer_release` | See SynthSeg recipe | FreeSurfer release and its corresponding model bundle |
 
+For a `github_commit` source, `version_file` reads the version at the observed commit.
+It accepts a plain version file by default. To extract a version from a source header,
+add `version_regex` with a named `version` group. The file must be UTF-8, at most
+64 KiB, and match the expression exactly once. Bind `target.variables` to `version`
+and declare the same variable in `fulltest.yaml` so the commit, software version,
+container label, and runtime assertion update together. `target.fulltest_variable`
+follows the primary target value, which is the commit SHA for this provider.
+
+```yaml
+version_file: src/version.h
+version_regex: '#define TOOL_VERSION "(?P<version>[0-9.]+)"'
+target:
+  variable: source_commit
+  variables:
+    upstream_version: version
+```
+
 LibreOffice uses `libreoffice_release` with a variable target for its four-part
 `upstream_version` and `target.variables` mappings for `x86_64_sha256` and
 `aarch64_sha256`. The provider selects a three-part release from the official
@@ -272,9 +289,11 @@ verified digest. Servers without validators are downloaded and hashed again.
 The scheduled workflow preserves this metadata cache between runs.
 
 A mutable URL does not show which version it serves. When the file is a ZIP
-archive, such as a Java `.jar`, set `version_member` to one exact member and
+or TAR archive, such as a Java `.jar` or binary `.tgz`, set `version_member`
+to one exact member and
 `version_regex` to a pattern with a named `version` group. The archive must
-record exactly one such version. Map it with `target.variables` so the
+record exactly one such version. TAR members must be regular files, and version
+members cannot exceed 64 KiB. Map it with `target.variables` so the
 container label follows the file. A rebuilt file with the same version is then
 held rather than labelled as a release:
 
@@ -422,3 +441,12 @@ The workflow requires the organization or repository secret
 `NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION` for writes. It fails clearly if the secret
 is absent, because PRs created with the default workflow token do not trigger the
 container CI workflow. Concurrent scheduled/manual updater runs are serialized.
+
+### OpenRecon scanner versions
+
+OpenRecon scanner metadata requires a numeric `X.Y.Z` version. The sync tool pads
+`X.Y` to `X.Y.0` and projects recognized `.postN` source rebuilds onto their base
+numeric version. It rejects other suffixes, including prereleases and dated build
+suffixes. The `version` parameter keeps the exact source-container version;
+`openrecon_version` supplies the scanner version when they differ. Build dates
+belong in the source image tag, not in the scanner version.

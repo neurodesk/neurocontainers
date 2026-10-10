@@ -9,10 +9,24 @@ copyright:
   - license: Apache-2.0
     url: https://github.com/BBillot/SynthSeg/blob/master/LICENSE.txt
 
+  - license: CC-BY-4.0
+    url: https://doi.org/10.6084/m9.figshare.3501911.v5
+  - name: ICBM2009a template redistribution notice
+    url: https://www.bic.mni.mcgill.ca/ServicesAtlases/ICBM152NLin2009
+  - license: Apache-2.0
+    url: https://github.com/ANTsX/ANTsPy/blob/master/LICENSE
+
 architectures:
   - x86_64
 
 variables:
+  antspyx_version: "0.6.3"
+  glasser_atlas_url: https://ndownloader.figshare.com/files/5594363
+  glasser_atlas_sha256: 99a6ae33753687e3ef37330dac7b6b9ececd46750938fb1c58e7ed7b157ba1a1
+  glasser_names_url: https://ndownloader.figshare.com/files/5534027
+  glasser_names_sha256: d008cea4903e4047079020cf1d31f8b1fd8ca092d6ac8b060a8e71da40836e57
+  glasser_template_url: https://www.bic.mni.mcgill.ca/~vfonov/icbm/2009/mni_icbm152_nlin_asym_09a_nifti.zip
+  glasser_template_sha256: 188e1706b0ed74a0d1b3a52ad1a2b198814815f70a65f3ded091b7ceb6296a44
   # mri_synthseg and the small label/name .npy files live in the FreeSurfer
   # source tree.
   openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
@@ -101,6 +115,31 @@ auto_update:
     target:
       variable: openrecon_server_commit
 
+  - id: antspyx
+    dependency: true
+    method: pypi
+    package: antspyx
+    target:
+      variable: antspyx_version
+  - id: glasser_atlas
+    dependency: true
+    method: http_digest
+    url: https://ndownloader.figshare.com/files/5594363
+    target:
+      variable: glasser_atlas_sha256
+  - id: glasser_names
+    dependency: true
+    method: http_digest
+    url: https://ndownloader.figshare.com/files/5534027
+    target:
+      variable: glasser_names_sha256
+  - id: glasser_template
+    dependency: true
+    method: http_digest
+    url: https://www.bic.mni.mcgill.ca/~vfonov/icbm/2009/mni_icbm152_nlin_asym_09a_nifti.zip
+    target:
+      variable: glasser_template_sha256
+
 build:
   kind: neurodocker
   # CUDA 11.8 + cuDNN 8 match the TensorFlow 2.13 build installed below, so
@@ -140,10 +179,13 @@ build:
     # the same resolve because the OpenRecon macro installs them unpinned
     # against a newer numpy.
     - run:
-        - python3 -m pip install --no-cache-dir "numpy==1.24.3" "tensorflow==2.13.1" "surfa==0.6.3" "nibabel==5.2.1" "scipy==1.10.1" "scikit-image==0.21.0" "matplotlib==3.7.5" "h5py==3.9.0"
+        - python3 -m pip install --no-cache-dir "numpy==1.24.3" "tensorflow==2.13.1" "surfa==0.6.3" "nibabel==5.2.1" "scipy==1.10.1" "scikit-image==0.21.0" "matplotlib==3.7.5" "h5py==3.9.0" "antspyx=={{ context.antspyx_version }}"
         - python3 -c "import tensorflow as tf; print('tensorflow', tf.__version__)"
         - python3 -c "import numpy, scipy, nibabel, surfa, skimage; print('numpy', numpy.__version__)"
         - python3 -c "import ismrmrd; print('ismrmrd ok')"
+
+    - install:
+        - patch
 
     # mri_synthseg resolves every model and label file relative to
     # FREESURFER_HOME, so lay out just that subtree instead of installing the
@@ -152,6 +194,7 @@ build:
         - mkdir -p {{ context.synthseg_home }}/models
         - install -m 0644 {{ get_file("FreeSurferColorLUT") }} {{ context.synthseg_home }}/FreeSurferColorLUT.txt
         - install -m 0755 {{ get_file("mri_synthseg") }} /usr/local/bin/mri_synthseg
+        - patch --batch --fuzz=0 /usr/local/bin/mri_synthseg {{ get_file("base-output.patch") }}
 
     - run:
         - install -m 0644 {{ get_file("synthseg_1.0.h5") }} {{ context.synthseg_home }}/models/synthseg_1.0.h5
@@ -194,12 +237,23 @@ build:
 
     # OpenRecon runtime: the MRD server wrapper and the NIfTI<->MRD helper.
     - run:
+        - cp {{ get_file("verify_products.py") }} /opt/code/python-ismrmrd-server/verify_products.py
         - cp {{ get_file("synthseg.py") }} /opt/code/python-ismrmrd-server/synthseg.py
         - cp {{ get_file("nifti2mrd.py") }} /opt/code/python-ismrmrd-server/nifti2mrd.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
         - mkdir -p /tmp/share/debug
         - chmod 1777 /tmp/share /tmp/share/debug
+
+    - run:
+        - mkdir -p /opt/glasser /tmp/glasser-template
+        - cp {{ get_file("glasser.py") }} /opt/code/python-ismrmrd-server/glasser.py
+        - cp {{ get_file("GlasserNOTICE.txt") }} /opt/glasser/NOTICE.txt
+        - unzip -q {{ get_file("glasser_template") }} -d /tmp/glasser-template
+        - cp /tmp/glasser-template/COPYING /opt/glasser/ICBM-COPYING.txt
+        - cp {{ get_file("glasser_atlas") }} /tmp/glasser-template/glasser.nii.gz
+        - python3 /opt/code/python-ismrmrd-server/glasser.py prepare /tmp/glasser-template/glasser.nii.gz {{ get_file("glasser_names") }} /tmp/glasser-template/mni_icbm152_nlin_asym_09a/mni_icbm152_t1_tal_nlin_asym_09a.nii /tmp/glasser-template/mni_icbm152_nlin_asym_09a/mni_icbm152_t1_tal_nlin_asym_09a_mask.nii /opt/glasser
+        - rm -rf /tmp/glasser-template
 
     - workdir: /opt
 
@@ -213,6 +267,23 @@ categories:
   - machine learning
 
 files:
+  - name: verify_products.py
+    filename: verify_products.py
+  - name: base-output.patch
+    filename: base-output.patch
+  - name: glasser.py
+    filename: glasser.py
+  - name: GlasserNOTICE.txt
+    filename: GlasserNOTICE.txt
+  - name: glasser_atlas
+    url: "{{ context.glasser_atlas_url }}"
+    sha256: "{{ context.glasser_atlas_sha256 }}"
+  - name: glasser_names
+    url: "{{ context.glasser_names_url }}"
+    sha256: "{{ context.glasser_names_sha256 }}"
+  - name: glasser_template
+    url: "{{ context.glasser_template_url }}"
+    sha256: "{{ context.glasser_template_sha256 }}"
   - name: synthseg.py
     filename: synthseg.py
   - name: nifti2mrd.py
@@ -310,7 +381,7 @@ readme: |-
   Example:
   ```
   mri_synthseg --i t1w.nii.gz --o t1w_synthseg.nii.gz --threads 8
-  mri_synthseg --i t1w.nii.gz --o seg.nii.gz --parc --vol volumes.csv --qc qc.csv
+  mri_synthseg --i t1w.nii.gz --o desikan.nii.gz --parc --base-output synthseg.nii.gz --vol volumes.csv --qc qc.csv
   mri_synthseg --i t1w.nii.gz --o seg.nii.gz --robust --keepgeom
   mri_synthseg --i indir/ --o outdir/ --fast --cpu --threads 16
   ```

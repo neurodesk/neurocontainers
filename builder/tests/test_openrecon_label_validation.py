@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 from workflows.validate_openrecon_labels import (
     SCHEMA_PATH,
     VERSION_PLACEHOLDER,
@@ -45,7 +47,7 @@ class OpenReconLabelValidationTests(unittest.TestCase):
         failures = {
             label.relative_to(SCHEMA_PATH.parents[1]): errors
             for label in labels
-            if (errors := validate_label(label))
+            if (errors := validate_label(label, experimental_raw_return=True))
         }
         self.assertFalse(
             failures,
@@ -80,3 +82,62 @@ class OpenReconLabelValidationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@pytest.mark.parametrize(
+    "version", ["2.10.0-build20261005", "2.10.0-rc1", "2.10.0+build20261005"]
+)
+def test_scanner_rejects_semver_suffixes(tmp_path: Path, version: str) -> None:
+    source = SCHEMA_PATH.parent / "b0map" / "OpenReconLabel.json"
+    label = json.loads(source.read_text(encoding="utf-8"))
+    label["general"]["version"] = version
+    target = tmp_path / "OpenReconLabel.json"
+    target.write_text(json.dumps(label), encoding="utf-8")
+
+    assert "general.version: must be a numeric X.Y.Z scanner version" in validate_label(target)
+
+
+@pytest.fixture
+def research_label():
+    label = json.loads((SCHEMA_PATH.parent / "b0map" / "OpenReconLabel.json").read_text())
+    label["reconstruction"].update(
+        emitter="raw", injector="raw", content_qualification_type="RESEARCH"
+    )
+    return label
+
+
+def test_raw_return_requires_explicit_opt_in(tmp_path, research_label):
+    target = tmp_path / "label.json"
+    target.write_text(json.dumps(research_label))
+    assert any("injector" in error for error in validate_label(target))
+    original_schema = SCHEMA_PATH.read_bytes()
+    assert validate_label(target, experimental_raw_return=True) == []
+    assert SCHEMA_PATH.read_bytes() == original_schema
+
+
+@pytest.mark.parametrize("field,value", [
+    ("emitter", "image"),
+    ("content_qualification_type", "PRODUCT"),
+    ("injector", "raww"),
+    ("port", "9002"),
+    ("can_use_gpu", "false"),
+])
+def test_raw_extension_preserves_contract_and_types(tmp_path, research_label, field, value):
+    research_label["reconstruction"][field] = value
+    target = tmp_path / "label.json"
+    target.write_text(json.dumps(research_label))
+    assert validate_label(target, experimental_raw_return=True)
+
+
+def test_research_extension_preserves_metadata_validation(tmp_path, research_label):
+    research_label["parameters"] = []
+    target = tmp_path / "label.json"
+    target.write_text(json.dumps(research_label))
+    assert validate_label(target, experimental_raw_return=True)
+
+
+def test_research_flag_preserves_stock_image_validation(tmp_path):
+    label = json.loads((SCHEMA_PATH.parent / "b0map" / "OpenReconLabel.json").read_text())
+    target = tmp_path / "label.json"
+    target.write_text(json.dumps(label))
+    assert validate_label(target, experimental_raw_return=True) == validate_label(target) == []

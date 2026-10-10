@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -e
+exec python /opt/code/python-ismrmrd-server/main.py --defaultConfig vessynth "$@"

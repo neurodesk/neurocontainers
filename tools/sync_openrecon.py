@@ -33,15 +33,10 @@ OPENRECON_VERSION_ASSIGNMENT_PATTERN = re.compile(
     r"^(?P<prefix>[ \t]*(?:export[ \t]+)?openrecon_version=).*$",
     re.MULTILINE,
 )
-OPENRECON_SEMVER_PATTERN = re.compile(
-    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
-    r"(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)"
-    r"(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
-    r"(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
-)
-TWO_PART_VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+OPENRECON_VERSION_PATTERN = re.compile(r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}")
+TWO_PART_VERSION_PATTERN = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)")
 POST_RELEASE_VERSION_PATTERN = re.compile(
-    r"^(?P<base>(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){1,2})\.post(?P<post>0|[1-9]\d*)$"
+    r"(?P<base>(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){1,2})\.post(?:0|[1-9][0-9]*)"
 )
 IMAGE_ASSIGNMENT_PATTERN = re.compile(
     r"^(?P<prefix>[ \t]*(?:export[ \t]+)?baseDockerImage=)(?P<image>\S*)$",
@@ -81,24 +76,17 @@ def validate_version(version: str) -> str:
 
 
 def openrecon_version(version: str) -> str:
-    """Return a schema-valid OpenRecon version for a container release."""
+    """Project a source-container version onto the scanner's numeric triplet."""
     validate_version(version)
-    if OPENRECON_SEMVER_PATTERN.fullmatch(version):
+    post_release = POST_RELEASE_VERSION_PATTERN.fullmatch(version)
+    if post_release:
+        version = post_release.group("base")
+    if OPENRECON_VERSION_PATTERN.fullmatch(version):
         return version
     if TWO_PART_VERSION_PATTERN.fullmatch(version):
         return f"{version}.0"
-    post_release = POST_RELEASE_VERSION_PATTERN.fullmatch(version)
-    if post_release:
-        # The updater rebuilds a container as X.Y.Z.postN when only its
-        # dependencies moved. Carry that as a semver prerelease rather than
-        # +build metadata, because OpenRecon derives a Docker tag from this
-        # version and tags reject "+".
-        base = post_release.group("base")
-        if TWO_PART_VERSION_PATTERN.fullmatch(base):
-            base = f"{base}.0"
-        return f"{base}-post{post_release.group('post')}"
     raise ValueError(
-        f"OpenRecon requires a semantic version; cannot normalize {version!r}"
+        f"OpenRecon requires a numeric X.Y.Z scanner version; cannot normalize {version!r}"
     )
 
 
@@ -188,30 +176,36 @@ def released_build_date(source_root: Path, container: str, version: str) -> str 
 
 
 def dated_image_tag(contents: str) -> str | None:
-    """Return the build-date tag a params.sh image reference pins, if any."""
+    """Return the date pinned by a date-only or version-prefixed image tag."""
     match = IMAGE_ASSIGNMENT_PATTERN.search(contents)
     if match is None:
         return None
     _, separator, tag = match.group("image").rpartition(":")
-    if not separator or not BUILD_DATE_PATTERN.fullmatch(tag):
+    build_date = tag.rsplit("_", 1)[-1]
+    if not separator or "/" in tag or not BUILD_DATE_PATTERN.fullmatch(build_date):
         return None
-    return tag
+    return build_date
 
 
 def update_params_image_tag(contents: str, build_date: str) -> str:
     """Point a dated image reference at the build published for this release."""
     if not BUILD_DATE_PATTERN.fullmatch(build_date):
         raise ValueError(f"Invalid build date: {build_date!r}")
-    if dated_image_tag(contents) is None:
+    pinned_date = dated_image_tag(contents)
+    if pinned_date is None:
         return contents
     match = IMAGE_ASSIGNMENT_PATTERN.search(contents)
     assert match is not None
-    repository = match.group("image").rpartition(":")[0]
     return (
-        contents[: match.start("image")]
-        + f"{repository}:{build_date}"
+        contents[: match.end("image") - len(pinned_date)]
+        + build_date
         + contents[match.end("image") :]
     )
+
+
+def is_raw_return_label(label_path: Path) -> bool:
+    label = json.loads(label_path.read_text(encoding="utf-8"))
+    return label.get("reconstruction", {}).get("injector") == "raw"
 
 
 def prepare_recipe(
@@ -221,6 +215,7 @@ def prepare_recipe(
     version: str,
     *,
     variant: str = "",
+    experimental_raw_return: bool = False,
 ) -> PreparedSync | None:
     """Copy one recipe's OpenRecon metadata into an existing checkout."""
     version = validate_version(version)
@@ -228,6 +223,19 @@ def prepare_recipe(
     source_recipe = source_root / "recipes" / openrecon_target.source_recipe
     if not openrecon_target.label.is_file():
         return None
+    raw_return = is_raw_return_label(openrecon_target.label)
+    if raw_return and not experimental_raw_return:
+        print(
+            "Experimental raw-return label requires explicit local research staging; "
+            "skipping stock sync."
+        )
+        return None
+    if raw_return:
+        from workflows.validate_openrecon_labels import validate_label
+
+        errors = validate_label(openrecon_target.label, experimental_raw_return=True)
+        if errors:
+            raise ValueError("Invalid research label: " + "; ".join(errors))
 
     relative_recipe = Path("recipes") / openrecon_target.container
     target_recipe = openrecon_root / relative_recipe
@@ -235,7 +243,6 @@ def prepare_recipe(
     target_params = target_recipe / "params.sh"
     target_readme = target_recipe / "README.md"
     bootstrapped = not target_recipe.is_dir()
-    target_recipe.mkdir(parents=True, exist_ok=True)
 
     notes: list[str] = []
     if bootstrapped:
@@ -243,17 +250,17 @@ def prepare_recipe(
             f"- Create `{relative_recipe.as_posix()}` in OpenRecon because it did not exist yet"
         )
 
-    if not target_params.is_file():
-        target_params.write_text(
+    params = (
+        target_params.read_text(encoding="utf-8")
+        if target_params.is_file()
+        else (
             "#!/bin/bash\n"
             "# Auto-generated by neurocontainers CI.\n"
             f"export toolName={openrecon_target.container}\n"
             f"export version={version}\n"
-            "export baseDockerImage=vnmd/${toolName}_${version}\n",
-            encoding="utf-8",
+            "export baseDockerImage=vnmd/${toolName}_${version}\n"
         )
-
-    params = target_params.read_text(encoding="utf-8")
+    )
     updated_params = update_params_version(params, version)
     pinned_tag = dated_image_tag(updated_params)
     if pinned_tag is not None:
@@ -274,7 +281,8 @@ def prepare_recipe(
                     f"- Repoint `{(relative_recipe / 'params.sh').as_posix()}` from "
                     f"image tag `{pinned_tag}` to the published `{build_date}`"
                 )
-    if updated_params != params:
+    target_recipe.mkdir(parents=True, exist_ok=True)
+    if not target_params.is_file() or updated_params != params:
         target_params.write_text(updated_params, encoding="utf-8")
 
     shutil.copyfile(openrecon_target.label, target_label)
@@ -292,6 +300,11 @@ def prepare_recipe(
             "from neurocontainers "
             f"to `{relative_recipe.as_posix()}/README.md` for OpenRecon PDF generation"
         )
+
+    if experimental_raw_return:
+        for config_override in sorted(source_recipe.glob("wip_070_fire_*.json")):
+            shutil.copyfile(config_override, target_recipe / config_override.name)
+            paths.append((relative_recipe / config_override.name).as_posix())
 
     return PreparedSync(paths=tuple(paths), notes=tuple(notes))
 
@@ -374,6 +387,10 @@ def sync_recipe(
     container = openrecon_target.container
     if not openrecon_target.label.is_file():
         print(f"No OpenRecon label found for {container}; skipping OpenRecon PR.")
+        return None
+
+    if is_raw_return_label(openrecon_target.label):
+        print(f"Experimental raw-return label for {container}; skipping stock OpenRecon PR.")
         return None
 
     title = f"Update {container} OpenRecon metadata to {version}"

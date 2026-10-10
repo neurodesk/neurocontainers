@@ -11,7 +11,7 @@
 #   - RooFit for statistical modeling
 
 name: root
-version: 6.22.02
+version: 6.24.06
 
 test_data:
   output_dir: test_output

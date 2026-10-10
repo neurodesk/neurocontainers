@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -58,19 +59,25 @@ def format_validation_error(error: ValidationError) -> str:
 
 def validate_packaging_metadata(label: dict[str, Any]) -> list[str]:
     """Validate metadata required by the downstream OpenRecon packager."""
+    errors = []
+    version = label.get("general", {}).get("version")
+    if not isinstance(version, str) or not re.fullmatch(
+        r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*)){2}", version
+    ):
+        errors.append("general.version: must be a numeric X.Y.Z scanner version")
+
     parameters = label.get("parameters", [])
     config_parameters = [
         parameter for parameter in parameters if parameter.get("id") == "config"
     ]
     if len(config_parameters) != 1:
-        return [
+        return errors + [
             (
                 "parameters: must contain exactly one parameter with id "
                 f'"config"; found {len(config_parameters)}'
             )
         ]
 
-    errors = []
     config_parameter = config_parameters[0]
     if config_parameter.get("type") != "choice":
         errors.append('parameters: parameter "config" must have type "choice"')
@@ -84,24 +91,41 @@ def validate_packaging_metadata(label: dict[str, Any]) -> list[str]:
 def validate_label(
     label_path: Path,
     schema_path: Path = SCHEMA_PATH,
+    *,
+    experimental_raw_return: bool = False,
 ) -> list[str]:
     schema = load_json(schema_path)
     Draft7Validator.check_schema(schema)
     label = prepare_label_for_validation(load_json(label_path))
+    reconstruction = label.get("reconstruction", {})
+    if not isinstance(reconstruction, dict):
+        reconstruction = {}
+    if experimental_raw_return and reconstruction.get("injector") == "raw":
+        if (
+            reconstruction.get("emitter") != "raw"
+            or reconstruction.get("content_qualification_type") != "RESEARCH"
+        ):
+            return ["Experimental raw return requires raw emitter and RESEARCH qualification"]
+        injector = schema["properties"]["reconstruction"]["properties"]["injector"]
+        injector["enum"].append("raw")
     validator = Draft7Validator(schema)
     errors = sorted(validator.iter_errors(label), key=lambda error: list(error.path))
     schema_errors = [format_validation_error(error) for error in errors]
-    return schema_errors + validate_packaging_metadata(label)
+    return schema_errors or validate_packaging_metadata(label)
 
 
 def validate_labels(
     label_paths: Iterable[Path],
     schema_path: Path = SCHEMA_PATH,
+    *,
+    experimental_raw_return: bool = False,
 ) -> dict[Path, list[str]]:
     return {
         path: errors
         for path in label_paths
-        if (errors := validate_label(path, schema_path))
+        if (errors := validate_label(
+            path, schema_path, experimental_raw_return=experimental_raw_return
+        ))
     }
 
 
@@ -121,13 +145,19 @@ def parse_args() -> argparse.Namespace:
         default=SCHEMA_PATH,
         help="OpenRecon JSON schema path.",
     )
+    parser.add_argument(
+        "--experimental-raw-return", action="store_true",
+        help="Allow research raw-return labels; stock scanner support is not implied.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     labels = args.labels or find_labels()
-    failures = validate_labels(labels, args.schema)
+    failures = validate_labels(
+        labels, args.schema, experimental_raw_return=args.experimental_raw_return
+    )
     if failures:
         for path, errors in failures.items():
             print(f"OpenRecon label validation failed: {path}")
