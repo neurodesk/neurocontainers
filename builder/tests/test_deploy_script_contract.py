@@ -10,14 +10,19 @@ from pathlib import Path
 
 import pytest
 
-from workflows.summarize_deploy_results import _summarise_builtin, summarise_results_file
+from workflows.summarize_deploy_results import (
+    _summarise_builtin,
+    summarise_results_file,
+)
 
 
 SCRIPT = Path("workflows/test_deploy.sh").resolve()
 
 
 @pytest.mark.parametrize("value", [None, "", ":", ":::"])
-def test_deploy_script_rejects_empty_deployment(tmp_path: Path, value: str | None) -> None:
+def test_deploy_script_rejects_empty_deployment(
+    tmp_path: Path, value: str | None
+) -> None:
     env = os.environ.copy()
     for name in ("DEPLOY_BINS", "DEPLOY_PATH"):
         if value is None:

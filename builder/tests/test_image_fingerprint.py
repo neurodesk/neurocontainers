@@ -142,7 +142,10 @@ def test_docker_only_config_bookkeeping_does_not_change_the_fingerprint() -> Non
 @pytest.mark.parametrize(
     ("reference", "expected"),
     [
-        ("ghcr.io/neurodesk/samri_1.0:latest", ("ghcr.io", "neurodesk/samri_1.0", "latest")),
+        (
+            "ghcr.io/neurodesk/samri_1.0:latest",
+            ("ghcr.io", "neurodesk/samri_1.0", "latest"),
+        ),
         ("ghcr.io/neurodesk/samri_1.0", ("ghcr.io", "neurodesk/samri_1.0", "latest")),
         (
             "ghcr.io/neurodesk/samri_1.0@sha256:abc",
@@ -168,7 +171,10 @@ def test_select_platform_manifest_skips_attestation_entries() -> None:
     manifests = [
         {"digest": "sha256:amd", "platform": {"os": "linux", "architecture": "amd64"}},
         {"digest": "sha256:arm", "platform": {"os": "linux", "architecture": "arm64"}},
-        {"digest": "sha256:att", "platform": {"os": "unknown", "architecture": "unknown"}},
+        {
+            "digest": "sha256:att",
+            "platform": {"os": "unknown", "architecture": "unknown"},
+        },
     ]
 
     assert select_platform_manifest(manifests, "arm64") == "sha256:arm"
@@ -198,7 +204,9 @@ class _FakeRegistry:
         self.requests.append(url)
         if url.endswith("/token"):
             self.token_requests += 1
-            return HttpResponse(200, {}, json.dumps({"token": "registry-token"}).encode())
+            return HttpResponse(
+                200, {}, json.dumps({"token": "registry-token"}).encode()
+            )
         if headers.get("Authorization") != "Bearer registry-token":
             return HttpResponse(
                 401,
@@ -214,7 +222,9 @@ class _FakeRegistry:
         return HttpResponse(404, {}, b'{"errors":[{"code":"MANIFEST_UNKNOWN"}]}')
 
 
-def _fake_ghcr(config_blob: dict[str, object], multi_arch: bool = False) -> _FakeRegistry:
+def _fake_ghcr(
+    config_blob: dict[str, object], multi_arch: bool = False
+) -> _FakeRegistry:
     repo = "/v2/neurodesk/samri_1.0"
     manifest = {
         "mediaType": "application/vnd.oci.image.manifest.v1+json",
@@ -226,8 +236,14 @@ def _fake_ghcr(config_blob: dict[str, object], multi_arch: bool = False) -> _Fak
         manifests[f"{repo}/manifests/latest"] = {
             "mediaType": "application/vnd.oci.image.index.v1+json",
             "manifests": [
-                {"digest": "sha256:att", "platform": {"os": "unknown", "architecture": "unknown"}},
-                {"digest": "sha256:amd", "platform": {"os": "linux", "architecture": "amd64"}},
+                {
+                    "digest": "sha256:att",
+                    "platform": {"os": "unknown", "architecture": "unknown"},
+                },
+                {
+                    "digest": "sha256:amd",
+                    "platform": {"os": "linux", "architecture": "amd64"},
+                },
             ],
         }
     else:
@@ -251,7 +267,9 @@ def test_remote_fingerprint_reads_config_without_fetching_layers() -> None:
 def test_remote_fingerprint_selects_the_requested_architecture() -> None:
     registry = _fake_ghcr(_remote_config(["DEPLOY_PATH=/opt/bru2"]), multi_arch=True)
 
-    remote_fingerprint("ghcr.io/neurodesk/samri_1.0:latest", "x86_64", transport=registry)
+    remote_fingerprint(
+        "ghcr.io/neurodesk/samri_1.0:latest", "x86_64", transport=registry
+    )
 
     assert any(url.endswith("/manifests/sha256:amd") for url in registry.requests)
 
@@ -260,7 +278,9 @@ def test_remote_fingerprint_raises_image_not_found_for_missing_latest() -> None:
     registry = _fake_ghcr(_remote_config(["DEPLOY_PATH=/opt/bru2"]))
 
     with pytest.raises(ImageNotFound):
-        remote_fingerprint("ghcr.io/neurodesk/other:latest", "x86_64", transport=registry)
+        remote_fingerprint(
+            "ghcr.io/neurodesk/other:latest", "x86_64", transport=registry
+        )
 
 
 def test_registry_client_reports_server_errors() -> None:
@@ -280,7 +300,13 @@ def test_cli_allow_missing_prints_empty_baseline(monkeypatch, capsys) -> None:
     monkeypatch.setattr("builder.image_fingerprint.remote_fingerprint", missing)
 
     exit_code = main(
-        ["--remote", "--allow-missing", "--architecture", "x86_64", "ghcr.io/x/y:latest"]
+        [
+            "--remote",
+            "--allow-missing",
+            "--architecture",
+            "x86_64",
+            "ghcr.io/x/y:latest",
+        ]
     )
 
     assert exit_code == 0

@@ -14,7 +14,18 @@ from typing import Any
 
 import yaml
 
-from .ir import Copy, Definition, Entrypoint, Env, From, Install, Run, RunWithMounts, User, Workdir
+from .ir import (
+    Copy,
+    Definition,
+    Entrypoint,
+    Env,
+    From,
+    Install,
+    Run,
+    RunWithMounts,
+    User,
+    Workdir,
+)
 from .staging import CopySource, DeclaredFile, StagingPlan, declared_file_from_mapping
 from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
@@ -77,7 +88,13 @@ def _render_release_recipe(
     context: RenderContext,
 ) -> dict[str, Any]:
     rendered_recipe = dict(recipe)
-    for key in ("categories", "apptainer_args", "show_in_menu", "show_in_applist", "gui_apps"):
+    for key in (
+        "categories",
+        "apptainer_args",
+        "show_in_menu",
+        "show_in_applist",
+        "gui_apps",
+    ):
         if key in rendered_recipe:
             rendered_recipe[key] = renderer.render_value(rendered_recipe[key], context)
     return rendered_recipe
@@ -107,13 +124,13 @@ def _render_structured_readme(
     if fields["description"]:
         sections.append(fields["description"])
     if fields["example"]:
-        sections.append(f'Example:\n```\n{fields["example"]}\n```')
+        sections.append(f"Example:\n```\n{fields['example']}\n```")
     if fields["documentation"]:
         sections.append(
-            f'More documentation can be found here: {fields["documentation"]}'
+            f"More documentation can be found here: {fields['documentation']}"
         )
     if fields["citation"]:
-        sections.append(f'Citation:\n```\n{fields["citation"]}\n```')
+        sections.append(f"Citation:\n```\n{fields['citation']}\n```")
     sections.extend(
         [
             f"To run container outside of this environment: ml {context.name}/{context.version}",
@@ -220,7 +237,9 @@ def _copy_parts(value: Any) -> list[str]:
     raise ValueError("copy directive must be a string or list")
 
 
-def _default_directives(definition: Definition, build: dict[str, Any], pkg_manager: str) -> None:
+def _default_directives(
+    definition: Definition, build: dict[str, Any], pkg_manager: str
+) -> None:
     definition.add(From(str(build["base-image"])))
     definition.add(User("root"))
     add_default = bool(build.get("add-default-template", True))
@@ -234,9 +253,7 @@ def _default_directives(definition: Definition, build: dict[str, Any], pkg_manag
                 }
             )
         )
-        definition.add(
-            Run(_default_template_command(pkg_manager))
-        )
+        definition.add(Run(_default_template_command(pkg_manager)))
     definition.add(Run("printf '#!/bin/bash\\nls -la' > /usr/bin/ll"))
     definition.add(Run("chmod +x /usr/bin/ll"))
     definition.add(Run("mkdir -p " + " ".join(GLOBAL_MOUNT_POINTS)))
@@ -244,7 +261,11 @@ def _default_directives(definition: Definition, build: dict[str, Any], pkg_manag
         definition.add(Env({"DEBIAN_FRONTEND": "noninteractive"}))
         definition.add(Env({"TZ": "UTC"}))
         definition.add(Install(("tzdata",)))
-        definition.add(Run("ln -snf /usr/share/zoneinfo/UTC /etc/localtime && echo UTC > /etc/timezone"))
+        definition.add(
+            Run(
+                "ln -snf /usr/share/zoneinfo/UTC /etc/localtime && echo UTC > /etc/timezone"
+            )
+        )
 
 
 def _default_template_command(pkg_manager: str) -> str:
@@ -270,8 +291,8 @@ def _default_template_command(pkg_manager: str) -> str:
             'if [ ! -f "$ND_ENTRYPOINT" ]; then\n'
             "  echo '#!/usr/bin/env bash' >> \"$ND_ENTRYPOINT\"\n"
             "  echo 'set -e' >> \"$ND_ENTRYPOINT\"\n"
-            "  echo 'export USER=\"${USER:=`whoami`}\"' >> \"$ND_ENTRYPOINT\"\n"
-            "  echo 'if [ -n \"$1\" ]; then \"$@\"; else /usr/bin/env bash; fi' >> \"$ND_ENTRYPOINT\";\n"
+            '  echo \'export USER="${USER:=`whoami`}"\' >> "$ND_ENTRYPOINT"\n'
+            '  echo \'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
             "fi\n"
             "chmod -R 777 /neurodocker && chmod a+s /neurodocker"
         )
@@ -296,8 +317,8 @@ def _default_template_command(pkg_manager: str) -> str:
             'if [ ! -f "$ND_ENTRYPOINT" ]; then\n'
             "  echo '#!/usr/bin/env bash' >> \"$ND_ENTRYPOINT\"\n"
             "  echo 'set -e' >> \"$ND_ENTRYPOINT\"\n"
-            "  echo 'export USER=\"${USER:=`whoami`}\"' >> \"$ND_ENTRYPOINT\"\n"
-            "  echo 'if [ -n \"$1\" ]; then \"$@\"; else /usr/bin/env bash; fi' >> \"$ND_ENTRYPOINT\";\n"
+            '  echo \'export USER="${USER:=`whoami`}"\' >> "$ND_ENTRYPOINT"\n'
+            '  echo \'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
             "fi\n"
             "chmod -R 777 /neurodocker && chmod a+s /neurodocker"
         )
@@ -307,8 +328,8 @@ def _default_template_command(pkg_manager: str) -> str:
         'if [ ! -f "$ND_ENTRYPOINT" ]; then\n'
         "  echo '#!/usr/bin/env bash' >> \"$ND_ENTRYPOINT\"\n"
         "  echo 'set -e' >> \"$ND_ENTRYPOINT\"\n"
-        "  echo 'export USER=\"${USER:=`whoami`}\"' >> \"$ND_ENTRYPOINT\"\n"
-        "  echo 'if [ -n \"$1\" ]; then \"$@\"; else /usr/bin/env bash; fi' >> \"$ND_ENTRYPOINT\";\n"
+        '  echo \'export USER="${USER:=`whoami`}"\' >> "$ND_ENTRYPOINT"\n'
+        '  echo \'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
         "fi\n"
         "chmod -R 777 /neurodocker && chmod a+s /neurodocker"
     )
@@ -372,7 +393,9 @@ def compile_recipe(
     file_dirs = [recipe_dir]
 
     def register_file(mapping: dict[str, Any]) -> None:
-        if "condition" in mapping and not renderer.render_condition(str(mapping["condition"]), context):
+        if "condition" in mapping and not renderer.render_condition(
+            str(mapping["condition"]), context
+        ):
             return
         name = renderer.render_string(str(mapping["name"]), context)
         rendered = dict(mapping)
@@ -411,15 +434,21 @@ def compile_recipe(
         )
 
     build = dict(recipe["build"])
-    build["base-image"] = _check_docker_image(str(renderer.render_value(build["base-image"], context)))
+    build["base-image"] = _check_docker_image(
+        str(renderer.render_value(build["base-image"], context))
+    )
     build["pkg-manager"] = renderer.render_value(build["pkg-manager"], context)
     pkg_manager = str(build["pkg-manager"])
     definition.pkg_manager = pkg_manager
     definition.fix_locale_def = bool(build.get("fix-locale-def", False))
     _default_directives(definition, build, pkg_manager)
 
-    def apply_directive(directive: dict[str, Any], local_values: dict[str, Any] | None = None) -> None:
-        if "condition" in directive and not renderer.render_condition(str(directive["condition"]), context):
+    def apply_directive(
+        directive: dict[str, Any], local_values: dict[str, Any] | None = None
+    ) -> None:
+        if "condition" in directive and not renderer.render_condition(
+            str(directive["condition"]), context
+        ):
             return
         if local_values:
             old_values = dict(context.values)
@@ -437,18 +466,30 @@ def compile_recipe(
                     rendered = [rendered]
                 elif not isinstance(rendered, list):
                     raise ValueError("run directive must render to a string or list")
-                commands = [str(item) for item in rendered if item is not None and str(item) != ""]
+                commands = [
+                    str(item)
+                    for item in rendered
+                    if item is not None and str(item) != ""
+                ]
                 command = " " + " \\\n && ".join(commands)
                 if scope.mounts:
                     definition.add(RunWithMounts(scope.mounts, command))
                 else:
                     definition.add(Run(command))
             elif "workdir" in directive:
-                definition.add(Workdir(str(renderer.render_value(directive["workdir"], context))))
+                definition.add(
+                    Workdir(str(renderer.render_value(directive["workdir"], context)))
+                )
             elif "user" in directive:
-                definition.add(User(str(renderer.render_value(directive["user"], context))))
+                definition.add(
+                    User(str(renderer.render_value(directive["user"], context)))
+                )
             elif "entrypoint" in directive:
-                definition.add(Entrypoint(str(renderer.render_value(directive["entrypoint"], context))))
+                definition.add(
+                    Entrypoint(
+                        str(renderer.render_value(directive["entrypoint"], context))
+                    )
+                )
             elif "environment" in directive:
                 env = renderer.render_value(directive["environment"], context)
                 if not isinstance(env, dict):
@@ -459,7 +500,9 @@ def compile_recipe(
                 parts = _copy_parts(renderer.render_value(directive["copy"], context))
                 if len(parts) < 2:
                     raise ValueError("copy directive requires source and destination")
-                resolved_sources = [plan.add_copy_source(source) for source in parts[:-1]]
+                resolved_sources = [
+                    plan.add_copy_source(source) for source in parts[:-1]
+                ]
                 definition.add(Copy(tuple(resolved_sources), parts[-1]))
             elif "variables" in directive:
                 values = directive["variables"]
@@ -519,9 +562,13 @@ def compile_recipe(
                         for key, value in template.items()
                         if key != "name"
                     }
-                params.setdefault("arch", "x86_64" if context.arch == "x86_64" else "aarch64")
+                params.setdefault(
+                    "arch", "x86_64" if context.arch == "x86_64" else "aarch64"
+                )
                 template_directives = []
-                apply_builtin_template(name, params, pkg_manager, template_directives.append)
+                apply_builtin_template(
+                    name, params, pkg_manager, template_directives.append
+                )
                 for item in template_directives:
                     if scope.mounts and isinstance(item, Run):
                         item = RunWithMounts(scope.mounts, item.command)
@@ -582,8 +629,18 @@ def compile_recipe(
         readme=readme,
         definition=definition,
         staging_plan=plan,
-        metadata=renderer.render_value({
-            "copyright": [{"license": item.get("license")} for item in recipe.get("copyright") or []],
-            "structured_readme": {"description": (recipe.get("structured_readme") or {}).get("description", "")},
-        }, context),
+        metadata=renderer.render_value(
+            {
+                "copyright": [
+                    {"license": item.get("license")}
+                    for item in recipe.get("copyright") or []
+                ],
+                "structured_readme": {
+                    "description": (recipe.get("structured_readme") or {}).get(
+                        "description", ""
+                    )
+                },
+            },
+            context,
+        ),
     )

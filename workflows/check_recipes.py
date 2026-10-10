@@ -102,22 +102,22 @@ def git_changes(root: Path, base: str, head: str) -> tuple[list[str], set[str]]:
         for ref in (base, head)
     ]
     commits[0] = git_output(root, "merge-base", *commits).strip()
-    changed = git_output(
-        root, "diff", "--name-only", "-z", *commits, "--"
-    ).split("\0")
+    changed = git_output(root, "diff", "--name-only", "-z", *commits, "--").split("\0")
 
     def recipe_names(commit: str) -> set[str]:
         paths = git_output(
             root, "ls-tree", "-r", "--name-only", "-z", commit, "--", "recipes/"
         ).split("\0")
         return {
-            Path(path).parent.name for path in paths
+            Path(path).parent.name
+            for path in paths
             if len(Path(path).parts) == 3 and Path(path).name == "build.yaml"
         }
 
     new_recipes = recipe_names(commits[1]) - recipe_names(commits[0])
     new_recipes = {
-        name for name in new_recipes
+        name
+        for name in new_recipes
         if (root / "recipes" / name / "build.yaml").is_file()
     }
     return [path for path in changed if path], new_recipes
@@ -139,24 +139,35 @@ def check_recipes(
         report.checked_labels.append(str(label_path))
         try:
             errors = validate_label(
-                label_path, root / "recipes" / SCHEMA_PATH.name,
+                label_path,
+                root / "recipes" / SCHEMA_PATH.name,
                 experimental_raw_return=True,
             )
             if errors:
-                report.failures.append(Failure(
-                    label_path.parent.name, "openrecon-label",
-                    f"{label_path.name}: {'; '.join(errors)}",
-                ))
+                report.failures.append(
+                    Failure(
+                        label_path.parent.name,
+                        "openrecon-label",
+                        f"{label_path.name}: {'; '.join(errors)}",
+                    )
+                )
         except Exception as exc:
-            report.failures.append(Failure(
-                label_path.parent.name, "openrecon-label", str(exc),
-            ))
+            report.failures.append(
+                Failure(
+                    label_path.parent.name,
+                    "openrecon-label",
+                    str(exc),
+                )
+            )
     for name in sorted(new_recipes or set()):
         if not (root / "recipes" / name / "fulltest.yaml").is_file():
-            report.failures.append(Failure(
-                name, "new-recipe-fulltest",
-                "new recipes require a focused fulltest.yaml runtime suite",
-            ))
+            report.failures.append(
+                Failure(
+                    name,
+                    "new-recipe-fulltest",
+                    "new recipes require a focused fulltest.yaml runtime suite",
+                )
+            )
     for name in names:
         path = root / "recipes" / name / "build.yaml"
         try:
@@ -201,15 +212,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--recipes", help="Comma-separated recipe directory names")
     parser.add_argument(
-        "--all", action="store_true", help="Check all recipes while retaining --base policy"
+        "--all",
+        action="store_true",
+        help="Check all recipes while retaining --base policy",
     )
-    parser.add_argument("--base", help="Base commit for changed selection and new recipe policy")
     parser.add_argument(
-        "--head", default="HEAD",
+        "--base", help="Base commit for changed selection and new recipe policy"
+    )
+    parser.add_argument(
+        "--head",
+        default="HEAD",
         help="Head commit for selecting changes; checks use the current checkout",
     )
     parser.add_argument(
-        "--output-root", type=Path,
+        "--output-root",
+        type=Path,
         help="Generated Dockerfile directory, default ROOT/build",
     )
     parser.add_argument("--json", type=Path, help="Write the complete check report")
@@ -222,17 +239,21 @@ def main(argv: list[str] | None = None) -> int:
         )
         requested = (
             [name.strip() for name in args.recipes.split(",") if name.strip()]
-            if args.recipes is not None else None
+            if args.recipes is not None
+            else None
         )
         names = select_recipes(
             args.root, changed_paths=None if args.all else changed, requested=requested
         )
         names = sorted(set(names) | new_recipes)
         report = check_recipes(
-            args.root.resolve(), names, new_recipes=new_recipes,
+            args.root.resolve(),
+            names,
+            new_recipes=new_recipes,
             output_root=args.output_root,
             all_labels=(
-                args.all or (changed is None and requested is None)
+                args.all
+                or (changed is None and requested is None)
                 or f"recipes/{SCHEMA_PATH.name}" in (changed or [])
                 or "workflows/validate_openrecon_labels.py" in (changed or [])
             ),
@@ -248,7 +269,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps(report.as_dict(), indent=2) + "\n", encoding="utf-8")
+        args.json.write_text(
+            json.dumps(report.as_dict(), indent=2) + "\n", encoding="utf-8"
+        )
     return int(not report.passed)
 
 

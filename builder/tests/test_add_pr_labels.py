@@ -71,10 +71,14 @@ def test_add_pr_labels_retries_only_the_idempotent_rest_update(
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "attempts").read_text() == "3"
     calls = (tmp_path / "gh.log").read_text().splitlines()
-    assert calls == [
-        "api --method POST repos/neurodesk/neurocontainers/issues/2915/labels "
-        "--raw-field labels[]=automated --raw-field labels[]=release"
-    ] * 3
+    assert (
+        calls
+        == [
+            "api --method POST repos/neurodesk/neurocontainers/issues/2915/labels "
+            "--raw-field labels[]=automated --raw-field labels[]=release"
+        ]
+        * 3
+    )
 
 
 def test_add_pr_labels_fails_after_bounded_attempts(tmp_path: Path) -> None:
@@ -87,11 +91,14 @@ def test_add_pr_labels_fails_after_bounded_attempts(tmp_path: Path) -> None:
 
 def test_create_pr_workflow_labels_after_pr_creation() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
-    create_pr_step = workflow.split("    - name: Create Release File Pull Request", 1)[1].split(
-        "    - name: Detect OpenReconLabel.json", 1
-    )[0]
+    create_pr_step = workflow.split("    - name: Create Release File Pull Request", 1)[
+        1
+    ].split("    - name: Detect OpenReconLabel.json", 1)[0]
     create_command = create_pr_step.split("gh pr create", 1)[1].split("PR_URL", 1)[0]
 
     assert '--label "automated"' not in create_command
     assert '--label "release"' not in create_command
-    assert 'bash workflows/add_pr_labels_with_retry.sh "$PR_URL" automated release' in create_pr_step
+    assert (
+        'bash workflows/add_pr_labels_with_retry.sh "$PR_URL" automated release'
+        in create_pr_step
+    )

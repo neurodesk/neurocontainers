@@ -281,7 +281,9 @@ class TestDefinitionExtractor:
     def __init__(self, runtime: ContainerRuntime):
         self.runtime = runtime
 
-    def _ensure_builtin_tests(self, tests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _ensure_builtin_tests(
+        self, tests: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Ensure core builtin checks are present in the test list"""
         default_test = {
             "name": "Simple Deploy Bins/Path Test",
@@ -527,10 +529,7 @@ class ReleaseContainerDownloader:
         def report(block_count: int, block_size: int, total_size: int) -> None:
             if total_size > 0 and state["total_size"] is None:
                 state["total_size"] = total_size
-                print(
-                    f"Download size for {filename}: "
-                    f"{self._format_size(total_size)}"
-                )
+                print(f"Download size for {filename}: {self._format_size(total_size)}")
 
             if total_size <= 0 or block_count <= 0:
                 return
@@ -707,7 +706,9 @@ class DockerToSimgConverter:
                 stat = image.path.stat()
                 if stat.st_size > 0 and stat.st_mtime >= os.path.getmtime(binary):
                     if verbose:
-                        print(f"Using cached docker-converted container: {image.cache_path}")
+                        print(
+                            f"Using cached docker-converted container: {image.cache_path}"
+                        )
                     return image
                 image.path.unlink()
 
@@ -875,8 +876,8 @@ class ContainerTester:
 
         if location == "auto" or location == "release":
             # Invalid metadata preserves the existing no-download/runtime fallback.
-            build_date, image_basename = self.release_downloader.extract_release_metadata(
-                release_file
+            build_date, image_basename = (
+                self.release_downloader.extract_release_metadata(release_file)
             )
 
             image = self.release_downloader.download_from_release(
@@ -1387,9 +1388,7 @@ def run_tests(args, tester):
 
         if not test_config or not test_config.get("tests"):
             if args.verbose:
-                print(
-                    "No test configuration found; falling back to builtin test suite"
-                )
+                print("No test configuration found; falling back to builtin test suite")
 
             inferred_name = name or "unknown"
             inferred_version = version or "unknown"
@@ -1429,7 +1428,9 @@ def run_tests(args, tester):
                 status_icon = (
                     "✓"
                     if test_result["status"] == "passed"
-                    else "✗" if test_result["status"] == "failed" else "⊝"
+                    else "✗"
+                    if test_result["status"] == "failed"
+                    else "⊝"
                 )
                 print(f"  {status_icon} {test_result['name']}: {test_result['status']}")
                 if test_result["status"] == "failed" and test_result["stderr"]:

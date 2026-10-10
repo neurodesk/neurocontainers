@@ -178,7 +178,9 @@ def test_build_metadata_is_readable_with_restrictive_umask(tmp_path):
     )
     previous_umask = os.umask(0o077)
     try:
-        build_dir, dockerfile = cli.write_build_files(tmp_path, compiled, tmp_path / "build")
+        build_dir, dockerfile = cli.write_build_files(
+            tmp_path, compiled, tmp_path / "build"
+        )
     finally:
         os.umask(previous_umask)
 
@@ -198,8 +200,12 @@ def test_flatten_base_implies_one_required_oci_staging(tmp_path, monkeypatch, co
     recipe_dir.mkdir()
     (recipe_dir / "build.yaml").write_text("name: demo\n")
     compiled = SimpleNamespace(
-        name="demo", version="1", readme="# Demo", recipe_dir=recipe_dir,
-        definition=Definition([From("example/tool:1")]), architecture="x86_64",
+        name="demo",
+        version="1",
+        readme="# Demo",
+        recipe_dir=recipe_dir,
+        definition=Definition([From("example/tool:1")]),
+        architecture="x86_64",
         recipe={"build": {"flatten-base-image": True, "convert-base-image": convert}},
         staging_plan=None,
     )
@@ -208,9 +214,13 @@ def test_flatten_base_implies_one_required_oci_staging(tmp_path, monkeypatch, co
         read_contexts(build)
     calls = []
     monkeypatch.setattr(cli, "materialize_plan", lambda *args, **kwargs: None)
-    monkeypatch.setattr(cli, "stage_image", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(
+        cli, "stage_image", lambda *args, **kwargs: calls.append((args, kwargs))
+    )
     monkeypatch.setattr(cli, "write_contexts", lambda *args, **kwargs: None)
-    cli.write_build_files(tmp_path, compiled, tmp_path / "build", stage=True, download=True)
+    cli.write_build_files(
+        tmp_path, compiled, tmp_path / "build", stage=True, download=True
+    )
     assert len(calls) == 1
     assert calls[0][0][:2] == ("example/tool:1", "x86_64")
     assert calls[0][1] == {"flatten": True}

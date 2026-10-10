@@ -28,7 +28,7 @@ class ContainerTesterAdapter:
         if request.offline_mode:
             command.extend(["--network", "none"])
         command.append(request.tag)
-        command.extend(["/bin/sh", "-lc", "test -n \"$DEPLOY_BINS$DEPLOY_PATH\""])
+        command.extend(["/bin/sh", "-lc", 'test -n "$DEPLOY_BINS$DEPLOY_PATH"'])
         return command
 
     def run(self, request: TestRequest, *, dry_run: bool = False) -> list[str]:

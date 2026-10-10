@@ -227,7 +227,9 @@ def validate_update_policy(recipe: dict, *, recipe_path: Path | None = None) -> 
         package = "[-_]".join(
             re.escape(part) for part in re.split("[-_]", config["package"])
         )
-        version_name = re.escape(version_variable) if version_variable else "(?:original_)?version"
+        version_name = (
+            re.escape(version_variable) if version_variable else "(?:original_)?version"
+        )
         pattern = re.compile(
             rf"(?<![A-Za-z0-9_-]){package}(?:\[[^]]+\])?\s*(?:==?|@)\s*['\"]?{{{{\s*context\.{version_name}",
             re.I,
@@ -239,7 +241,9 @@ def validate_update_policy(recipe: dict, *, recipe_path: Path | None = None) -> 
     elif method.startswith("github_"):
         repo = config["repo"].lower()
         name = recipe.get("name", "").lower()
-        version_name = re.escape(version_variable) if version_variable else "(?:original_)?version"
+        version_name = (
+            re.escape(version_variable) if version_variable else "(?:original_)?version"
+        )
         package_pin = re.compile(
             rf"(?<![A-Za-z0-9_-]){re.escape(name)}(?:\[[^]]+\])?\s*==?\s*{{{{\s*context\.{version_name}",
             re.I,
@@ -259,7 +263,9 @@ def validate_update_policy(recipe: dict, *, recipe_path: Path | None = None) -> 
             or (kind == "requirements" and julia_pin.search(text))
             or (
                 kind == "git"
-                and _git_clone_tracks(text, repo, config.get("tag_variable") or version_variable)
+                and _git_clone_tracks(
+                    text, repo, config.get("tag_variable") or version_variable
+                )
             )
             or (kind == "image" and repo in text.lower())
             or (kind == "template" and name.startswith(text.split()[0].lower()))

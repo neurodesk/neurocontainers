@@ -62,12 +62,16 @@ from rich import box
 try:  # Imported as builder.run_tests by the test suite, run as a script by CI.
     from builder.release_artifact import resolve_suite_container
     from builder.runtime_execution import (
-        TestSpec, evaluate_process_assertions, substitute_variables,
+        TestSpec,
+        evaluate_process_assertions,
+        substitute_variables,
     )
 except ImportError:  # pragma: no cover - exercised by `uv run builder/run_tests.py`
     from release_artifact import resolve_suite_container
     from runtime_execution import (
-        TestSpec, evaluate_process_assertions, substitute_variables,
+        TestSpec,
+        evaluate_process_assertions,
+        substitute_variables,
     )
 
 console = Console()
@@ -96,6 +100,7 @@ def _format_process_output(result: subprocess.CompletedProcess[str]) -> str:
 @dataclass
 class TestResult:
     """Result of a single test execution."""
+
     name: str
     passed: bool
     duration: float
@@ -109,6 +114,7 @@ class TestResult:
 @dataclass
 class TestSuiteResult:
     """Result of a test suite (YAML file) execution."""
+
     name: str
     container: str
     total: int = 0
@@ -149,8 +155,7 @@ def collect_top_level_variables(config: dict[str, Any]) -> dict[str, str]:
         if key not in reserved_keys and isinstance(value, (str, int, float))
     }
     return {
-        key: substitute_variables(value, variables)
-        for key, value in variables.items()
+        key: substitute_variables(value, variables) for key, value in variables.items()
     }
 
 
@@ -206,7 +211,9 @@ def prepare_required_files(
             cache_dir.mkdir(parents=True, exist_ok=True)
             result = subprocess.run(
                 [
-                    "datalad", "install", "-s",
+                    "datalad",
+                    "install",
+                    "-s",
                     f"https://github.com/OpenNeuroDatasets/{dataset}.git",
                     str(dataset_cache),
                 ],
@@ -271,7 +278,10 @@ def _container_binds(work_dir: Path, variables: dict[str, str]) -> list[str]:
         if not parent.exists():
             continue
         resolved = str(parent.resolve())
-        if any(resolved == root or resolved.startswith(root + "/") for root in container_dirs):
+        if any(
+            resolved == root or resolved.startswith(root + "/")
+            for root in container_dirs
+        ):
             continue
         binds.add(f"{parent}:{parent}")
     return sorted(binds)
@@ -296,7 +306,9 @@ def _write_test_script(
     contents: str,
 ) -> Path:
     try:
-        descriptor, filename = tempfile.mkstemp(dir=work_dir, prefix=prefix, suffix=suffix)
+        descriptor, filename = tempfile.mkstemp(
+            dir=work_dir, prefix=prefix, suffix=suffix
+        )
         path = Path(filename)
         cleanup.callback(_remove_test_script, path)
         with os.fdopen(descriptor, "w") as script:
@@ -319,7 +331,10 @@ def _prepared_test_script(
     with ExitStack() as cleanup:
         if spec.script and not spec.command:
             payload_path = _write_test_script(
-                cleanup, work_dir, ".test_script_", script_ext,
+                cleanup,
+                work_dir,
+                ".test_script_",
+                script_ext,
                 substitute_variables(spec.script, variables),
             )
             if script_runner:
@@ -353,12 +368,18 @@ def _execute_test_script(
         command.append(str(container_path))
     command.extend(["bash", str(script_path)])
     return subprocess.run(
-        command, capture_output=True, text=True, timeout=timeout, cwd=work_dir,
+        command,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        cwd=work_dir,
     )
 
 
 def _evaluate_file_assertions(
-    spec: TestSpec, variables: dict[str, str], work_dir: Path,
+    spec: TestSpec,
+    variables: dict[str, str],
+    work_dir: Path,
 ) -> str | None:
     """Return the first filesystem assertion failure in declaration order."""
     for validation in spec.validations:
@@ -415,11 +436,21 @@ def run_single_test(
         if not spec.command and not spec.script:
             message = "No command or script specified"
         else:
-            with _prepared_test_script(spec, variables, work_dir, script_runner, script_ext) as script_path:
-                process = _execute_test_script(script_path, container_path, variables, work_dir, timeout)
+            with _prepared_test_script(
+                spec, variables, work_dir, script_runner, script_ext
+            ) as script_path:
+                process = _execute_test_script(
+                    script_path, container_path, variables, work_dir, timeout
+                )
             duration = time.time() - start_time
-            stdout, stderr, exit_code = process.stdout, process.stderr, process.returncode
-            message = evaluate_process_assertions(spec, exit_code, stdout, stderr, variables)
+            stdout, stderr, exit_code = (
+                process.stdout,
+                process.stderr,
+                process.returncode,
+            )
+            message = evaluate_process_assertions(
+                spec, exit_code, stdout, stderr, variables
+            )
             if message is None:
                 message = _evaluate_file_assertions(spec, variables, work_dir)
             passed = message is None
@@ -461,8 +492,10 @@ def _run_container_health_check(
     binds.add(f"{work_dir}:{work_dir}")
 
     cmd_list = [
-        container_runtime_command(), "exec",
-        "--pwd", str(work_dir),
+        container_runtime_command(),
+        "exec",
+        "--pwd",
+        str(work_dir),
     ]
     for b in binds:
         cmd_list.extend(["-B", b])
@@ -508,15 +541,17 @@ def _run_setup_in_container(
     variables: dict[str, str],
 ) -> str | None:
     """Run setup script inside the container. Returns error message or None on success."""
-    script_path = work_dir / f".setup_{os.getpid()}_{int(time.time()*1e6)}.sh"
+    script_path = work_dir / f".setup_{os.getpid()}_{int(time.time() * 1e6)}.sh"
     try:
-        with open(script_path, 'w') as f:
+        with open(script_path, "w") as f:
             f.write(setup_script)
         os.chmod(script_path, 0o755)
 
         cmd_list = [
-            container_runtime_command(), "exec",
-            "--pwd", str(work_dir),
+            container_runtime_command(),
+            "exec",
+            "--pwd",
+            str(work_dir),
         ]
         for b in _container_binds(work_dir, variables):
             cmd_list.extend(["-B", b])
@@ -593,12 +628,15 @@ def run_test_suite(
             container=container_name,
             total=0,
             failed=1,
-            results=[TestResult(
-                name="Container lookup",
-                passed=False,
-                duration=0,
-                message=resolution.error or f"Container not found: {container_name}",
-            )],
+            results=[
+                TestResult(
+                    name="Container lookup",
+                    passed=False,
+                    duration=0,
+                    message=resolution.error
+                    or f"Container not found: {container_name}",
+                )
+            ],
         )
     container_path = resolution.path
 
@@ -606,19 +644,23 @@ def run_test_suite(
     required_files = config.get("required_files", [])
     if required_files:
         try:
-            suite_data_dir = prepare_required_files(required_files, suite_name, work_dir)
+            suite_data_dir = prepare_required_files(
+                required_files, suite_name, work_dir
+            )
         except RuntimeError as e:
             return TestSuiteResult(
                 name=suite_name,
                 container=container_name,
                 total=0,
                 failed=1,
-                results=[TestResult(
-                    name="Data preparation",
-                    passed=False,
-                    duration=0,
-                    message=str(e),
-                )],
+                results=[
+                    TestResult(
+                        name="Data preparation",
+                        passed=False,
+                        duration=0,
+                        message=str(e),
+                    )
+                ],
             )
     else:
         suite_data_dir = work_dir
@@ -697,12 +739,14 @@ def run_test_suite(
                 container=container_name,
                 total=0,
                 failed=1,
-                results=[TestResult(
-                    name="Setup (host)",
-                    passed=False,
-                    duration=0,
-                    message=f"Host setup failed: {e.stderr.decode() if e.stderr else str(e)}",
-                )],
+                results=[
+                    TestResult(
+                        name="Setup (host)",
+                        passed=False,
+                        duration=0,
+                        message=f"Host setup failed: {e.stderr.decode() if e.stderr else str(e)}",
+                    )
+                ],
             )
 
     # Container health check
@@ -732,18 +776,20 @@ def run_test_suite(
             if on_test_complete is not None:
                 on_test_complete(suite_name, container_name, r)
             if result_queue is not None:
-                result_queue.put({
-                    "suite": suite_name,
-                    "container": container_name,
-                    "test": r.name,
-                    "passed": r.passed,
-                    "start_time": r.start_time,
-                    "duration": r.duration,
-                    "message": r.message,
-                    "exit_code": r.exit_code,
-                    "stdout": r.stdout,
-                    "stderr": r.stderr,
-                })
+                result_queue.put(
+                    {
+                        "suite": suite_name,
+                        "container": container_name,
+                        "test": r.name,
+                        "passed": r.passed,
+                        "start_time": r.start_time,
+                        "duration": r.duration,
+                        "message": r.message,
+                        "exit_code": r.exit_code,
+                        "stdout": r.stdout,
+                        "stderr": r.stderr,
+                    }
+                )
 
         return TestSuiteResult(
             name=suite_name,
@@ -766,12 +812,14 @@ def run_test_suite(
                 container=container_name,
                 total=0,
                 failed=1,
-                results=[TestResult(
-                    name="Setup",
-                    passed=False,
-                    duration=0,
-                    message=setup_error,
-                )],
+                results=[
+                    TestResult(
+                        name="Setup",
+                        passed=False,
+                        duration=0,
+                        message=setup_error,
+                    )
+                ],
             )
 
     # Get and filter tests
@@ -832,18 +880,20 @@ def run_test_suite(
 
         # Put result on queue (for parallel mode)
         if result_queue is not None:
-            result_queue.put({
-                "suite": suite_name,
-                "container": container_name,
-                "test": result.name,
-                "passed": result.passed,
-                "start_time": result.start_time,
-                "duration": result.duration,
-                "message": result.message,
-                "exit_code": result.exit_code,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-            })
+            result_queue.put(
+                {
+                    "suite": suite_name,
+                    "container": container_name,
+                    "test": result.name,
+                    "passed": result.passed,
+                    "start_time": result.start_time,
+                    "duration": result.duration,
+                    "message": result.message,
+                    "exit_code": result.exit_code,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }
+            )
 
         if verbose:
             status = "[green]PASS[/]" if result.passed else "[red]FAIL[/]"
@@ -883,12 +933,29 @@ def run_test_suite(
 
 def run_test_suite_wrapper(args: tuple) -> TestSuiteResult:
     """Wrapper for parallel execution."""
-    (yaml_path, containers_dir, work_dir, test_filter, verbose, result_queue, running_tests,
-     test_names, releases_dir, container_override) = args
+    (
+        yaml_path,
+        containers_dir,
+        work_dir,
+        test_filter,
+        verbose,
+        result_queue,
+        running_tests,
+        test_names,
+        releases_dir,
+        container_override,
+    ) = args
     return run_test_suite(
-        yaml_path, containers_dir, work_dir, test_filter, verbose,
-        on_test_complete=None, result_queue=result_queue, running_tests=running_tests,
-        test_names=test_names, releases_dir=releases_dir,
+        yaml_path,
+        containers_dir,
+        work_dir,
+        test_filter,
+        verbose,
+        on_test_complete=None,
+        result_queue=result_queue,
+        running_tests=running_tests,
+        test_names=test_names,
+        releases_dir=releases_dir,
         container_override=container_override,
     )
 
@@ -912,13 +979,15 @@ def main():
         help="YAML test files to run (default: all *.yaml files)",
     )
     parser.add_argument(
-        "-j", "--jobs",
+        "-j",
+        "--jobs",
         type=int,
         default=1,
         help="Number of parallel workers (default: 1)",
     )
     parser.add_argument(
-        "-c", "--containers-dir",
+        "-c",
+        "--containers-dir",
         type=Path,
         default=Path("containers"),
         help="Directory containing container files (default: containers)",
@@ -945,17 +1014,20 @@ def main():
         help="Directory for test scratch space and cached data (default: work)",
     )
     parser.add_argument(
-        "-f", "--filter",
+        "-f",
+        "--filter",
         type=str,
         help="Filter tests by name pattern (regex)",
     )
     parser.add_argument(
-        "-q", "--quiet",
+        "-q",
+        "--quiet",
         action="store_true",
         help="Hide individual test results (only show summary)",
     )
     parser.add_argument(
-        "-l", "--list",
+        "-l",
+        "--list",
         action="store_true",
         help="List available test files",
     )
@@ -965,7 +1037,8 @@ def main():
         help="Only show failed tests in output",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=Path,
         help="Write results to JSON file",
     )
@@ -1002,6 +1075,7 @@ def main():
     # Default JSONL output path with timestamp
     if args.jsonl is None and not args.no_jsonl:
         from datetime import datetime
+
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         results_dir = Path.cwd() / "results"
         results_dir.mkdir(exist_ok=True)
@@ -1040,10 +1114,14 @@ def main():
                     test_name = record["test"]
                     retry_map.setdefault(suite, set()).add(test_name)
         if not retry_map:
-            console.print("[green]No failed tests found in retry file — nothing to re-run.[/]")
+            console.print(
+                "[green]No failed tests found in retry file — nothing to re-run.[/]"
+            )
             return 0
         total_retry = sum(len(v) for v in retry_map.values())
-        console.print(f"[bold]Retrying {total_retry} failed test(s) across {len(retry_map)} suite(s)[/]")
+        console.print(
+            f"[bold]Retrying {total_retry} failed test(s) across {len(retry_map)} suite(s)[/]"
+        )
 
     # Find YAML files in tests/ directory
     if args.yaml_files:
@@ -1062,13 +1140,12 @@ def main():
 
     # When retrying, filter to only suites that had failures
     if retry_map is not None:
-        yaml_files = [
-            yf for yf in yaml_files
-            if _yaml_suite_name(yf) in retry_map
-        ]
+        yaml_files = [yf for yf in yaml_files if _yaml_suite_name(yf) in retry_map]
 
     if args.list:
-        console.print(Panel("[bold]Available Test Files[/] (in tests/)", box=box.ROUNDED))
+        console.print(
+            Panel("[bold]Available Test Files[/] (in tests/)", box=box.ROUNDED)
+        )
         for f in yaml_files:
             console.print(f"  {f.name}")
         console.print(f"\n[dim]Total: {len(yaml_files)} files[/]")
@@ -1078,13 +1155,17 @@ def main():
         console.print(f"[red]No YAML test files found in {tests_dir}[/]")
         return 1
 
-    mode = f"Retry: {args.retry.name}" if retry_map else f"Filter: {args.filter or 'none'}"
-    console.print(Panel(
-        f"[bold]Neurocontainer Test Runner[/]\n"
-        f"Files: {len(yaml_files)} | Workers: {args.jobs} | {mode}\n"
-        f"Tests dir: {tests_dir} | Work dir: {work_dir}",
-        box=box.ROUNDED,
-    ))
+    mode = (
+        f"Retry: {args.retry.name}" if retry_map else f"Filter: {args.filter or 'none'}"
+    )
+    console.print(
+        Panel(
+            f"[bold]Neurocontainer Test Runner[/]\n"
+            f"Files: {len(yaml_files)} | Workers: {args.jobs} | {mode}\n"
+            f"Tests dir: {tests_dir} | Work dir: {work_dir}",
+            box=box.ROUNDED,
+        )
+    )
 
     all_results: list[TestSuiteResult] = []
     start_time = time.time()
@@ -1107,25 +1188,29 @@ def main():
 
     def write_test_result_callback(suite_name: str, container: str, test: TestResult):
         """Callback for sequential mode to write results immediately."""
-        write_jsonl_record({
-            "suite": suite_name,
-            "container": container,
-            "test": test.name,
-            "passed": test.passed,
-            "start_time": test.start_time,
-            "duration": test.duration,
-            "message": test.message,
-            "exit_code": test.exit_code,
-            "stdout": test.stdout,
-            "stderr": test.stderr,
-        })
+        write_jsonl_record(
+            {
+                "suite": suite_name,
+                "container": container,
+                "test": test.name,
+                "passed": test.passed,
+                "start_time": test.start_time,
+                "duration": test.duration,
+                "message": test.message,
+                "exit_code": test.exit_code,
+                "stdout": test.stdout,
+                "stderr": test.stderr,
+            }
+        )
 
     if args.jobs > 1:
         # Parallel execution at suite level (tests within a suite run sequentially
         # to preserve intra-suite dependencies on shared output files)
         import queue
 
-        console.print(f"[dim]Running {len(yaml_files)} suites with {args.jobs} parallel workers[/]")
+        console.print(
+            f"[dim]Running {len(yaml_files)} suites with {args.jobs} parallel workers[/]"
+        )
 
         # Count total tests across all suites for progress bar
         total_tests = 0
@@ -1156,12 +1241,16 @@ def main():
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
-            TextColumn("[green]{task.fields[passed]}[/] passed | [red]{task.fields[failed]}[/] failed | {task.completed}/{task.total}"),
+            TextColumn(
+                "[green]{task.fields[passed]}[/] passed | [red]{task.fields[failed]}[/] failed | {task.completed}/{task.total}"
+            ),
             TimeElapsedColumn(),
             console=console,
             refresh_per_second=4,
         ) as progress:
-            task = progress.add_task("Running tests...", total=total_tests, passed=0, failed=0)
+            task = progress.add_task(
+                "Running tests...", total=total_tests, passed=0, failed=0
+            )
 
             def drain_result_queue():
                 """Drain result queue, writing JSONL and updating progress."""
@@ -1177,8 +1266,12 @@ def main():
                     else:
                         test_counts["failed"] += 1
                     if not args.quiet:
-                        test_status = "[green]PASS[/]" if record["passed"] else "[red]FAIL[/]"
-                        progress.console.print(f"  {test_status} {record['suite']}: {record['test']} ({record['duration']:.2f}s)")
+                        test_status = (
+                            "[green]PASS[/]" if record["passed"] else "[red]FAIL[/]"
+                        )
+                        progress.console.print(
+                            f"  {test_status} {record['suite']}: {record['test']} ({record['duration']:.2f}s)"
+                        )
                         if not record["passed"]:
                             progress.console.print(f"    [dim]{record['message']}[/]")
 
@@ -1187,15 +1280,19 @@ def main():
                 while not progress_stop_event.is_set():
                     try:
                         drain_result_queue()
-                        progress.update(task, completed=test_counts["completed"],
-                                        passed=test_counts["passed"], failed=test_counts["failed"])
+                        progress.update(
+                            task,
+                            completed=test_counts["completed"],
+                            passed=test_counts["passed"],
+                            failed=test_counts["failed"],
+                        )
 
                         with running_tests_lock:
                             running = list(running_tests.keys())
                         if running:
                             display = running[:3]
                             if len(running) > 3:
-                                desc = f"Running: {', '.join(display)} (+{len(running)-3} more)"
+                                desc = f"Running: {', '.join(display)} (+{len(running) - 3} more)"
                             else:
                                 desc = f"Running: {', '.join(display)}"
                         else:
@@ -1205,16 +1302,29 @@ def main():
                         pass
                     time.sleep(0.25)
 
-            desc_thread = threading.Thread(target=update_running_description, daemon=True)
+            desc_thread = threading.Thread(
+                target=update_running_description, daemon=True
+            )
             desc_thread.start()
 
             with ThreadPoolExecutor(max_workers=args.jobs) as executor:
                 futures = {
                     executor.submit(
                         run_test_suite_wrapper,
-                        (yaml_path, containers_dir, work_dir, args.filter, False, result_queue, running_tests,
-                         retry_map.get(_yaml_suite_name(yaml_path)) if retry_map else None,
-                         releases_dir, args.container),
+                        (
+                            yaml_path,
+                            containers_dir,
+                            work_dir,
+                            args.filter,
+                            False,
+                            result_queue,
+                            running_tests,
+                            retry_map.get(_yaml_suite_name(yaml_path))
+                            if retry_map
+                            else None,
+                            releases_dir,
+                            args.container,
+                        ),
                     ): yaml_path
                     for yaml_path in yaml_files
                 }
@@ -1227,12 +1337,18 @@ def main():
             progress_stop_event.set()
             desc_thread.join(timeout=1.0)
             drain_result_queue()
-            progress.update(task, completed=test_counts["completed"],
-                            passed=test_counts["passed"], failed=test_counts["failed"])
+            progress.update(
+                task,
+                completed=test_counts["completed"],
+                passed=test_counts["passed"],
+                failed=test_counts["failed"],
+            )
     else:
         # Sequential execution
         for yaml_path in yaml_files:
-            suite_test_names = retry_map.get(_yaml_suite_name(yaml_path)) if retry_map else None
+            suite_test_names = (
+                retry_map.get(_yaml_suite_name(yaml_path)) if retry_map else None
+            )
             console.print(f"\n[bold cyan]Running: {yaml_path.name}[/]")
             result = run_test_suite(
                 yaml_path,
@@ -1248,7 +1364,9 @@ def main():
             all_results.append(result)
 
             status = "[green]PASS[/]" if result.failed == 0 else "[red]FAIL[/]"
-            console.print(f"  {status} {result.passed}/{result.total} tests passed ({result.duration:.1f}s)")
+            console.print(
+                f"  {status} {result.passed}/{result.total} tests passed ({result.duration:.1f}s)"
+            )
 
     # Close JSONL file
     if jsonl_file is not None:
@@ -1301,15 +1419,17 @@ def main():
                     console.print(f"    [dim]{test.message}[/]")
 
     # Final summary
-    console.print(Panel(
-        f"[bold]Final Summary[/]\n\n"
-        f"Suites: [green]{suites_passed} passed[/], [red]{suites_failed} failed[/] "
-        f"({len(all_results)} total)\n"
-        f"Tests:  [green]{total_passed} passed[/], [red]{total_failed} failed[/] "
-        f"({total_tests} total)\n"
-        f"Time:   {total_duration:.1f}s",
-        box=box.ROUNDED,
-    ))
+    console.print(
+        Panel(
+            f"[bold]Final Summary[/]\n\n"
+            f"Suites: [green]{suites_passed} passed[/], [red]{suites_failed} failed[/] "
+            f"({len(all_results)} total)\n"
+            f"Tests:  [green]{total_passed} passed[/], [red]{total_failed} failed[/] "
+            f"({total_tests} total)\n"
+            f"Time:   {total_duration:.1f}s",
+            box=box.ROUNDED,
+        )
+    )
 
     # Write JSON output if requested
     if args.output:
@@ -1363,7 +1483,9 @@ def main():
             f.write(f"# Generated: {datetime.now().isoformat()}\n")
             f.write(f"# Total Duration: {total_duration:.2f}s\n")
             f.write("#\n")
-            f.write("# Format: STATE | START_TIME | DURATION | SUITE | TEST_NAME | MESSAGE\n")
+            f.write(
+                "# Format: STATE | START_TIME | DURATION | SUITE | TEST_NAME | MESSAGE\n"
+            )
             f.write("#\n\n")
 
             for suite_result in sorted(all_results, key=lambda r: r.name):

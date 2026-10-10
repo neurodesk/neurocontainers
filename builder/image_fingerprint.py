@@ -87,7 +87,9 @@ def _normalize_value(value: Any) -> Any:
     return value
 
 
-def _normalize(config: dict[str, Any], diff_ids: Iterable[str] | None) -> dict[str, Any]:
+def _normalize(
+    config: dict[str, Any], diff_ids: Iterable[str] | None
+) -> dict[str, Any]:
     labels = dict(config.get("Labels") or {})
     for label in VOLATILE_LABELS:
         labels.pop(label, None)
@@ -97,7 +99,9 @@ def _normalize(config: dict[str, Any], diff_ids: Iterable[str] | None) -> dict[s
     documentation_label = "org.opencontainers.image.documentation"
     if documentation_label in labels:
         labels[documentation_label] = re.sub(
-            r"(/neurodesk/neurocontainers/tree/)[0-9a-f]{40}/", r"\1REVISION/", labels[documentation_label]
+            r"(/neurodesk/neurocontainers/tree/)[0-9a-f]{40}/",
+            r"\1REVISION/",
+            labels[documentation_label],
         )
 
     normalized_config: dict[str, Any] = {}
@@ -244,7 +248,9 @@ def _decode_docker_auth(entry: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
-def _credential_helper_credentials(registry: str, helper: str) -> tuple[str, str] | None:
+def _credential_helper_credentials(
+    registry: str, helper: str
+) -> tuple[str, str] | None:
     """Ask `docker-credential-<helper>` for the stored registry credentials."""
     try:
         result = subprocess.run(
@@ -269,7 +275,9 @@ def _credential_helper_credentials(registry: str, helper: str) -> tuple[str, str
     return None
 
 
-def docker_config_credentials(registry: str, config_dir: str | None = None) -> tuple[str, str] | None:
+def docker_config_credentials(
+    registry: str, config_dir: str | None = None
+) -> tuple[str, str] | None:
     """Read credentials written by `docker login` for `registry`."""
     base = config_dir or os.environ.get("DOCKER_CONFIG") or str(Path.home() / ".docker")
     config_path = Path(base) / "config.json"
@@ -393,14 +401,20 @@ class RegistryClient:
 
     def _url(self, path: str) -> str:
         host = DOCKER_HUB_API if self.registry == DEFAULT_REGISTRY else self.registry
-        scheme = "http" if host.startswith("localhost") or host.startswith("127.0.0.1") else "https"
+        scheme = (
+            "http"
+            if host.startswith("localhost") or host.startswith("127.0.0.1")
+            else "https"
+        )
         return f"{scheme}://{host}{path}"
 
     def _authenticate(self, challenge: dict[str, str]) -> bool:
         realm = challenge.get("realm")
         if not realm:
             return False
-        params = {key: challenge[key] for key in ("service", "scope") if challenge.get(key)}
+        params = {
+            key: challenge[key] for key in ("service", "scope") if challenge.get(key)
+        }
         headers = {"Accept": "application/json"}
         if self.credentials:
             username, password = self.credentials

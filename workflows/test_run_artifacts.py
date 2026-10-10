@@ -36,9 +36,10 @@ class CleanupEntry:
 def _same_directory(path: Path, descriptor: int) -> bool:
     current = path.lstat()
     locked = os.fstat(descriptor)
-    return stat.S_ISDIR(current.st_mode) and (
-        current.st_dev, current.st_ino
-    ) == (locked.st_dev, locked.st_ino)
+    return stat.S_ISDIR(current.st_mode) and (current.st_dev, current.st_ino) == (
+        locked.st_dev,
+        locked.st_ino,
+    )
 
 
 @contextmanager
@@ -63,7 +64,11 @@ def managed_run(output_dir: Path, *, results_path: Path) -> Iterator[ManagedRun]
             raise
         os.close(descriptor)
 
-    record = {"version": 1, "run_id": path.name, "results_path": str(results_path.absolute())}
+    record = {
+        "version": 1,
+        "run_id": path.name,
+        "results_path": str(results_path.absolute()),
+    }
     try:
         (path / _METADATA).write_text(json.dumps(record), encoding="utf-8")
         yield ManagedRun(path)
@@ -110,11 +115,17 @@ def _read_record(path: Path, now: float) -> tuple[Path, float | None]:
         {"version", "run_id", "results_path", "completed_at"},
     ):
         raise ValueError("invalid metadata fields")
-    if type(record["version"]) is not int or record["version"] != 1 or record["run_id"] != path.name:
+    if (
+        type(record["version"]) is not int
+        or record["version"] != 1
+        or record["run_id"] != path.name
+    ):
         raise ValueError("invalid metadata identity or version")
     destination = record["results_path"]
     if (
-        not isinstance(destination, str) or not destination or "\0" in destination
+        not isinstance(destination, str)
+        or not destination
+        or "\0" in destination
         or not Path(destination).is_absolute()
     ):
         raise ValueError("invalid results destination")
@@ -137,10 +148,17 @@ def _references_run(destination: Path, path: Path) -> bool:
         raise ValueError("invalid artifact references")
     references = []
     for value in artifacts.values():
-        if not isinstance(value, str) or not value or "\0" in value or not Path(value).is_absolute():
+        if (
+            not isinstance(value, str)
+            or not value
+            or "\0" in value
+            or not Path(value).is_absolute()
+        ):
             raise ValueError("invalid artifact path")
         references.append(Path(os.path.normpath(value)))
-    return any(reference == path or path in reference.parents for reference in references)
+    return any(
+        reference == path or path in reference.parents for reference in references
+    )
 
 
 def _age(value: float) -> float:
@@ -150,7 +168,10 @@ def _age(value: float) -> float:
 
 
 def cleanup_runs(
-    output_dir: Path, *, older_than_days: float = 7, dry_run: bool = False,
+    output_dir: Path,
+    *,
+    older_than_days: float = 7,
+    dry_run: bool = False,
 ) -> list[CleanupEntry]:
     """Retain uncertain records and remove only completed, superseded runs."""
     age = _age(older_than_days)
@@ -169,42 +190,72 @@ def cleanup_runs(
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
-                entries.append(CleanupEntry(path, "retained", "active run or another cleaner"))
+                entries.append(
+                    CleanupEntry(path, "retained", "active run or another cleaner")
+                )
                 continue
             if not _same_directory(path, descriptor):
-                entries.append(CleanupEntry(path, "retained", "directory identity changed"))
+                entries.append(
+                    CleanupEntry(path, "retained", "directory identity changed")
+                )
                 continue
             try:
                 destination, completed = _read_record(path, now)
             except (OSError, ValueError, OverflowError) as exc:
-                entries.append(CleanupEntry(path, "retained", f"unmanaged or invalid metadata: {exc}"))
+                entries.append(
+                    CleanupEntry(
+                        path, "retained", f"unmanaged or invalid metadata: {exc}"
+                    )
+                )
                 continue
             if completed is None:
                 entries.append(CleanupEntry(path, "retained", "unfinished run"))
                 continue
             if completed > cutoff:
-                entries.append(CleanupEntry(path, "retained", "within retention period"))
+                entries.append(
+                    CleanupEntry(path, "retained", "within retention period")
+                )
                 continue
             try:
                 with publication_guard(destination, blocking=False):
                     latest = _references_run(destination, path)
                     if latest:
-                        entries.append(CleanupEntry(path, "retained", "referenced by latest results"))
+                        entries.append(
+                            CleanupEntry(
+                                path, "retained", "referenced by latest results"
+                            )
+                        )
                     elif dry_run:
-                        entries.append(CleanupEntry(path, "would-delete", "completed and superseded"))
+                        entries.append(
+                            CleanupEntry(
+                                path, "would-delete", "completed and superseded"
+                            )
+                        )
                     else:
                         try:
                             shutil.rmtree(path)
                         except OSError as exc:
                             entries.append(CleanupEntry(path, "error", str(exc)))
                         else:
-                            entries.append(CleanupEntry(path, "deleted", "completed and superseded"))
+                            entries.append(
+                                CleanupEntry(
+                                    path, "deleted", "completed and superseded"
+                                )
+                            )
             except BlockingIOError:
-                entries.append(CleanupEntry(path, "retained", "results publication or cleanup in progress"))
+                entries.append(
+                    CleanupEntry(
+                        path, "retained", "results publication or cleanup in progress"
+                    )
+                )
             except (OSError, ValueError) as exc:
-                entries.append(CleanupEntry(
-                    path, "retained", f"latest results unavailable or invalid: {exc}",
-                ))
+                entries.append(
+                    CleanupEntry(
+                        path,
+                        "retained",
+                        f"latest results unavailable or invalid: {exc}",
+                    )
+                )
         except FileNotFoundError:
             entries.append(CleanupEntry(path, "retained", "already removed"))
         except OSError as exc:
@@ -218,15 +269,21 @@ def cleanup_runs(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--output-dir", type=Path, default=Path("builder"),
+        "--output-dir",
+        type=Path,
+        default=Path("builder"),
         help="Directory containing retained test runs (default: builder)",
     )
     parser.add_argument(
-        "--older-than-days", type=float, default=7,
+        "--older-than-days",
+        type=float,
+        default=7,
         help="Minimum days since completion (default: 7; zero selects all ages)",
     )
     parser.add_argument(
-        "--dry-run", action="store_true", help="Show eligible runs without deleting them",
+        "--dry-run",
+        action="store_true",
+        help="Show eligible runs without deleting them",
     )
     args = parser.parse_args(argv)
     try:
@@ -235,7 +292,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
     try:
         entries = cleanup_runs(
-            args.output_dir, older_than_days=args.older_than_days, dry_run=args.dry_run,
+            args.output_dir,
+            older_than_days=args.older_than_days,
+            dry_run=args.dry_run,
         )
     except OSError as exc:
         print(str(exc), file=sys.stderr)

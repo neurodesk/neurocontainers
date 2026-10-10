@@ -18,7 +18,9 @@ __all__ = [
 ]
 
 
-def resolve_path(candidate: str | Path, *, repo_root: Path, cwd: Path | None = None) -> Path:
+def resolve_path(
+    candidate: str | Path, *, repo_root: Path, cwd: Path | None = None
+) -> Path:
     """Resolve a user-supplied path against cwd and repo root."""
     path = Path(candidate)
     if path.is_absolute():

@@ -18,7 +18,13 @@ from .dockerfile import render_dockerfile
 from .image_contexts import read_contexts, stage_image, write_contexts
 from .ir import From
 from .recipe import compile_recipe, load_recipe, variant_specs
-from .release import build_date_for_recipe, release_data, release_version, write_github_release_outputs, write_release_file
+from .release import (
+    build_date_for_recipe,
+    release_data,
+    release_version,
+    write_github_release_outputs,
+    write_release_file,
+)
 from .staging import materialize_plan
 from .tester import ContainerTesterAdapter, TestRequest
 
@@ -49,7 +55,11 @@ def write_build_files(
     dockerfile_path.write_text(render_dockerfile(compiled.definition))
     (build_dir / "README.md").write_text(readme + "\n")
     shutil.copy2(compiled.recipe_dir / "build.yaml", build_dir / "build.yaml")
-    for artifact in (dockerfile_path, build_dir / "README.md", build_dir / "build.yaml"):
+    for artifact in (
+        dockerfile_path,
+        build_dir / "README.md",
+        build_dir / "build.yaml",
+    ):
         artifact.chmod(0o644)
 
     if stage:
@@ -64,9 +74,20 @@ def write_build_files(
     required = flatten or compiled.recipe["build"].get("convert-base-image", False)
     contexts = ()
     if stage and download and required:
-        reference = next(item.image for item in compiled.definition.directives if isinstance(item, From))
-        contexts = (stage_image(reference, compiled.architecture,
-                                output_root.parent / "httpcache" / "oci", build_dir, flatten=flatten),)
+        reference = next(
+            item.image
+            for item in compiled.definition.directives
+            if isinstance(item, From)
+        )
+        contexts = (
+            stage_image(
+                reference,
+                compiled.architecture,
+                output_root.parent / "httpcache" / "oci",
+                build_dir,
+                flatten=flatten,
+            ),
+        )
     write_contexts(build_dir, compiled.architecture, contexts, required=required)
     return build_dir, dockerfile_path
 
@@ -78,8 +99,12 @@ def add_common_recipe_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--ignore-architectures", action="store_true")
     parser.add_argument("--output-root", type=Path, default=None)
     parser.add_argument("--recreate", action="store_true")
-    parser.add_argument("--local", action="append", default=[], help="Named local context KEY=PATH")
-    parser.add_argument("--option", action="append", default=[], help="Set recipe option KEY=VALUE")
+    parser.add_argument(
+        "--local", action="append", default=[], help="Named local context KEY=PATH"
+    )
+    parser.add_argument(
+        "--option", action="append", default=[], help="Set recipe option KEY=VALUE"
+    )
 
 
 def local_contexts(values: list[str]) -> tuple[tuple[str, Path], ...]:
@@ -130,7 +155,9 @@ def compile_from_args(args: argparse.Namespace):
 def cmd_generate(args: argparse.Namespace) -> int:
     config, compiled = compile_from_args(args)
     output_root = args.output_root or config.output_root
-    build_dir, dockerfile_path = write_build_files(config.repo_root, compiled, output_root, recreate=args.recreate)
+    build_dir, dockerfile_path = write_build_files(
+        config.repo_root, compiled, output_root, recreate=args.recreate
+    )
     print(f"Dockerfile generated: {dockerfile_path}")
     print(f"Build directory: {build_dir}")
     return 0
@@ -219,11 +246,16 @@ def cmd_build(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
         )
     else:
-        command = adapter.run(build_inputs(compiled, build_dir, dockerfile_path, args.local), dry_run=args.dry_run)
+        command = adapter.run(
+            build_inputs(compiled, build_dir, dockerfile_path, args.local),
+            dry_run=args.dry_run,
+        )
     print(" ".join(str(part) for part in command))
     if getattr(args, "generate_release", False) and not args.dry_run:
         date = build_date_for_recipe(config.repo_root, compiled.recipe_dir)
-        version = release_version(compiled.version, compiled.architecture, compiled.variant)
+        version = release_version(
+            compiled.version, compiled.architecture, compiled.variant
+        )
         data = release_data(
             compiled.name,
             compiled.version,
@@ -256,9 +288,16 @@ def cmd_test(args: argparse.Namespace) -> int:
         download=args.build and not args.dry_run,
     )
     if args.build:
-        DockerAdapter().run(build_inputs(compiled, build_dir, dockerfile_path, args.local), dry_run=args.dry_run)
+        DockerAdapter().run(
+            build_inputs(compiled, build_dir, dockerfile_path, args.local),
+            dry_run=args.dry_run,
+        )
     command = ContainerTesterAdapter().run(
-        TestRequest(tag=compiled.tag, architecture=compiled.architecture, offline_mode=args.offline_mode),
+        TestRequest(
+            tag=compiled.tag,
+            architecture=compiled.architecture,
+            offline_mode=args.offline_mode,
+        ),
         dry_run=args.dry_run,
     )
     print(" ".join(str(part) for part in command))
@@ -377,7 +416,11 @@ def cmd_login(args: argparse.Namespace) -> int:
 
 
 def cmd_context_args(args: argparse.Namespace) -> int:
-    arguments = [argument for context in read_contexts(args.build_dir) for argument in context.buildx_args()]
+    arguments = [
+        argument
+        for context in read_contexts(args.build_dir)
+        for argument in context.buildx_args()
+    ]
     if arguments:
         sys.stdout.buffer.write(("\0".join(arguments) + "\0").encode())
     return 0
@@ -393,10 +436,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     stage = subparsers.add_parser("stage", help="Generate a Dockerfile and stage files")
     add_common_recipe_args(stage)
-    stage.add_argument("--download", action="store_true", help="Download URL-backed declared files")
+    stage.add_argument(
+        "--download", action="store_true", help="Download URL-backed declared files"
+    )
     stage.set_defaults(func=cmd_stage)
 
-    contexts = subparsers.add_parser("staged-context-args", help="Emit buildx context arguments separated by NUL bytes")
+    contexts = subparsers.add_parser(
+        "staged-context-args",
+        help="Emit buildx context arguments separated by NUL bytes",
+    )
     contexts.add_argument("build_dir", type=Path)
     contexts.set_defaults(func=cmd_context_args)
 
@@ -405,27 +453,45 @@ def build_parser() -> argparse.ArgumentParser:
     release.add_argument("--write", action="store_true", help="Write into releases/")
     release.set_defaults(func=cmd_release)
 
-    variants = subparsers.add_parser("variants", help="List concrete containers for a recipe")
+    variants = subparsers.add_parser(
+        "variants", help="List concrete containers for a recipe"
+    )
     variants.add_argument("recipe", nargs="?", help="Recipe name or recipe directory")
     variants.set_defaults(func=cmd_variants)
 
     build = subparsers.add_parser("build", help="Stage and build a recipe")
     add_common_recipe_args(build)
     build.add_argument("--method", choices=["docker", "buildkit"], default="docker")
-    build.add_argument("--dry-run", action="store_true", help="Print the build command without executing it")
-    build.add_argument("--generate-release", action="store_true", help="Write release metadata after a successful build")
+    build.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the build command without executing it",
+    )
+    build.add_argument(
+        "--generate-release",
+        action="store_true",
+        help="Write release metadata after a successful build",
+    )
     build.set_defaults(func=cmd_build)
 
     test = subparsers.add_parser("test", help="Run a built-container smoke test")
     add_common_recipe_args(test)
     test.add_argument("--build", action="store_true", help="Build before testing")
-    test.add_argument("--dry-run", action="store_true", help="Print the test command without executing it")
+    test.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the test command without executing it",
+    )
     test.add_argument("--offline-mode", action="store_true")
     test.set_defaults(func=cmd_test)
 
-    make = subparsers.add_parser("make", help="Build a Docker archive and convert it to SIF")
+    make = subparsers.add_parser(
+        "make", help="Build a Docker archive and convert it to SIF"
+    )
     add_common_recipe_args(make)
-    make.add_argument("--dry-run", action="store_true", help="Print commands without executing them")
+    make.add_argument(
+        "--dry-run", action="store_true", help="Print commands without executing them"
+    )
     make.set_defaults(func=cmd_make)
 
     init = subparsers.add_parser("init", help="Create a new recipe skeleton")
@@ -441,9 +507,17 @@ def build_parser() -> argparse.ArgumentParser:
     login = subparsers.add_parser("login", help="Build and open an interactive shell")
     add_common_recipe_args(login)
     login.add_argument("--method", choices=["docker", "buildkit"], default="docker")
-    login.add_argument("--dry-run", action="store_true", help="Print the build command without executing it")
+    login.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the build command without executing it",
+    )
     login.add_argument("--offline-mode", action="store_true")
-    login.add_argument("--generate-release", action="store_true", help="Write release metadata after a successful build")
+    login.add_argument(
+        "--generate-release",
+        action="store_true",
+        help="Write release metadata after a successful build",
+    )
     login.set_defaults(func=cmd_login)
 
     return parser
@@ -499,7 +573,11 @@ def sf_test_remote_main() -> None:
     parser.add_argument("--version")
     parser.add_argument("--release-file")
     parser.add_argument("--runtime", choices=["docker", "apptainer", "singularity"])
-    parser.add_argument("--location", choices=["auto", "cvmfs", "local", "release", "docker"], default="auto")
+    parser.add_argument(
+        "--location",
+        choices=["auto", "cvmfs", "local", "release", "docker"],
+        default="auto",
+    )
     parser.add_argument("--test-config")
     parser.add_argument("-o", "--output")
     parser.add_argument("--gpu", action="store_true")
@@ -507,13 +585,17 @@ def sf_test_remote_main() -> None:
     parser.add_argument("--auto-cleanup", action="store_true")
     parser.add_argument("--docker-to-simg", action="store_true")
     parser.add_argument("--docker-registry", default="neurodesk")
-    parser.add_argument("--docker-save-to-simg", default="builder/docker-save-to-simg.go")
+    parser.add_argument(
+        "--docker-save-to-simg", default="builder/docker-save-to-simg.go"
+    )
     parser.add_argument("--cleanup-all", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
     runner = ContainerTestRunner()
     if args.cleanup_all:
-        print(f"Cleaned up {runner.cleanup_all(verbose=args.verbose)} cached container file(s)")
+        print(
+            f"Cleaned up {runner.cleanup_all(verbose=args.verbose)} cached container file(s)"
+        )
         return
     output_path = Path(args.output).resolve() if args.output else None
     outcome = runner.run(

@@ -19,8 +19,16 @@ def build_date_for_recipe(repo_root: Path, recipe_dir: Path) -> str:
     try:
         recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text())
         result = subprocess.run(
-            ["git", "log", "-1", "--format=%ad", "--date=format:%Y%m%d", "--",
-             str(recipe_dir), *SharedInputs.from_recipe(recipe).roots],
+            [
+                "git",
+                "log",
+                "-1",
+                "--format=%ad",
+                "--date=format:%Y%m%d",
+                "--",
+                str(recipe_dir),
+                *SharedInputs.from_recipe(recipe).roots,
+            ],
             cwd=repo_root,
             check=True,
             text=True,
@@ -40,10 +48,16 @@ def normalize_architecture(architecture: str | None) -> str:
     return canonical_architecture(architecture or "x86_64")
 
 
-def release_version(version: str, architecture: str | None, variant: str | None = None) -> str:
+def release_version(
+    version: str, architecture: str | None, variant: str | None = None
+) -> str:
     if variant:
         return version
-    return f"{version}-arm64" if normalize_architecture(architecture) == "aarch64" else version
+    return (
+        f"{version}-arm64"
+        if normalize_architecture(architecture) == "aarch64"
+        else version
+    )
 
 
 def release_data(
@@ -71,9 +85,7 @@ def release_data(
     if is_arm64:
         app_data.update({"architecture": normalized_architecture, "image": image})
     data: dict[str, Any] = {
-        "apps": {
-            f"{name} {app_version}": app_data
-        },
+        "apps": {f"{name} {app_version}": app_data},
         "categories": recipe.get("categories", ["other"]),
     }
     if is_named_variant:
@@ -94,7 +106,9 @@ def release_data(
             "apptainer_args": apptainer_args,
         }
         if is_arm64:
-            gui_app_data.update({"architecture": normalized_architecture, "image": image})
+            gui_app_data.update(
+                {"architecture": normalized_architecture, "image": image}
+            )
         data["apps"][f"{gui_app['name']}-{name} {app_version}"] = gui_app_data
     return data
 
@@ -110,7 +124,9 @@ def write_github_release_outputs(name: str, version: str, data: dict[str, Any]) 
         handle.write(f"release_file_content<<EOF\n{release_json}\nEOF\n")
 
 
-def write_release_file(repo_root: Path, name: str, version: str, data: dict[str, Any]) -> Path:
+def write_release_file(
+    repo_root: Path, name: str, version: str, data: dict[str, Any]
+) -> Path:
     path = repo_root / "releases" / name / f"{version}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2))

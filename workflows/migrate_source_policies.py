@@ -5,6 +5,7 @@ Preview by default. Use --apply to update only the recorded recipe cohort. Recip
 already using source policies are left alone, including their subsequently updated
 pins. The JSON records preserve the observed baseline refs and deliberate changes.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -29,7 +30,12 @@ def set_section(text: str, key: str, value: object) -> str:
     if key not in nodes:
         return text.rstrip() + "\n\n" + rendered
     key_node, value_node = nodes[key]
-    return text[:key_node.start_mark.index] + rendered + "\n" + text[value_node.end_mark.index:]
+    return (
+        text[: key_node.start_mark.index]
+        + rendered
+        + "\n"
+        + text[value_node.end_mark.index :]
+    )
 
 
 def remove_items(text: str, *, commands: list[str], files: list[str]) -> str:
@@ -41,13 +47,19 @@ def remove_items(text: str, *, commands: list[str], files: list[str]) -> str:
                 walk(value, key.value)
         elif isinstance(node, yaml.SequenceNode):
             for item in node.value:
-                remove = role == "run" and isinstance(item, yaml.ScalarNode) and item.value in commands
+                remove = (
+                    role == "run"
+                    and isinstance(item, yaml.ScalarNode)
+                    and item.value in commands
+                )
                 if role == "files" and isinstance(item, yaml.MappingNode):
-                    remove = any(k.value == "name" and v.value in files for k, v in item.value)
+                    remove = any(
+                        k.value == "name" and v.value in files for k, v in item.value
+                    )
                 if remove:
                     start = text.rfind("\n", 0, item.start_mark.index) + 1
                     end = item.end_mark.index
-                    if text[end:end + 1] == "\n":
+                    if text[end : end + 1] == "\n":
                         end += 1
                     spans.append((start, end))
                 else:
@@ -89,7 +101,11 @@ def freeze_install_version(text: str) -> str:
             node = nodes[key][1]
             spans.append((node.start_mark.index, node.end_mark.index))
     for start, end in sorted(spans, reverse=True):
-        text = text[:start] + text[start:end].replace("context.version", "context.install_version") + text[end:]
+        text = (
+            text[:start]
+            + text[start:end].replace("context.version", "context.install_version")
+            + text[end:]
+        )
     return text
 
 
@@ -112,7 +128,11 @@ def migrate(recipe_dir: Path, plan: dict, apply: bool) -> bool:
                 break
         else:
             raise ValueError("expected installation group is missing")
-    updated = remove_items(updated, commands=plan.get("remove_commands", []), files=plan.get("remove_files", []))
+    updated = remove_items(
+        updated,
+        commands=plan.get("remove_commands", []),
+        files=plan.get("remove_files", []),
+    )
     updated = replacements(updated, plan["replacements"])
     for file in plan["files"]:
         doc = yaml.safe_load(updated)
@@ -133,7 +153,11 @@ def migrate(recipe_dir: Path, plan: dict, apply: bool) -> bool:
     yaml.safe_load(updated)
 
     suite_path = recipe_dir / "fulltest.yaml"
-    suite = suite_path.read_text() if suite_path.exists() else yaml.safe_dump(plan["new_suite"], sort_keys=False)
+    suite = (
+        suite_path.read_text()
+        if suite_path.exists()
+        else yaml.safe_dump(plan["new_suite"], sort_keys=False)
+    )
     suite = replacements(suite, plan["suite_replacements"])
     for key, value in plan["suite_scalars"].items():
         suite = set_scalar(suite, None, key, value)
@@ -154,7 +178,9 @@ def main() -> int:
     parser.add_argument("--recipe", action="append")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    plans = json.loads(Path(__file__).with_name("source_policy_migration.json").read_text())
+    plans = json.loads(
+        Path(__file__).with_name("source_policy_migration.json").read_text()
+    )
     changed = 0
     for name, plan in plans.items():
         if args.recipe and name not in args.recipe:

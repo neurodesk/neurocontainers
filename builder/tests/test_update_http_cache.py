@@ -74,9 +74,7 @@ def test_conditional_200_rehashes_and_replaces_cached_metadata() -> None:
     observed = update_http_cache.stream_sha256(session, url)
 
     assert observed[:2] == (hashlib.sha256(b"new").hexdigest(), 3)
-    assert session.get.call_args_list[1].kwargs["headers"] == {
-        "If-None-Match": '"old"'
-    }
+    assert session.get.call_args_list[1].kwargs["headers"] == {"If-None-Match": '"old"'}
     cached = json.loads(update_http_cache._cache_path(url).read_text())
     assert cached["etag"] == '"new"'
     assert cached["sha256"] == observed[0]

@@ -47,7 +47,9 @@ class DockerAdapter:
         ]
         for key, path in inputs.local_contexts:
             if key == "neurocontainer-cache":
-                raise ValueError("local context name 'neurocontainer-cache' is reserved")
+                raise ValueError(
+                    "local context name 'neurocontainer-cache' is reserved"
+                )
             command.extend(["--build-context", f"{key}={path}"])
         for context in inputs.image_contexts:
             command.extend(context.buildx_args())
@@ -87,13 +89,17 @@ class BuildKitAdapter:
         ]
         for key, path in inputs.local_contexts:
             if key == "neurocontainer-cache":
-                raise ValueError("local context name 'neurocontainer-cache' is reserved")
+                raise ValueError(
+                    "local context name 'neurocontainer-cache' is reserved"
+                )
             command.extend(["--local", f"{key}={path}"])
         for index, context in enumerate(inputs.image_contexts):
             command.extend(context.buildctl_args(f"base-image-{index}"))
         return command
 
-    def run(self, inputs: BuildInputs, output_tar: Path, *, dry_run: bool = False) -> list[str]:
+    def run(
+        self, inputs: BuildInputs, output_tar: Path, *, dry_run: bool = False
+    ) -> list[str]:
         command = self.command(inputs, output_tar)
         if dry_run:
             return command
@@ -105,7 +111,9 @@ class BuildKitAdapter:
 
 class SifAdapter:
     def command(self, docker_archive: Path, output_sif: Path) -> list[str]:
-        runtime = shutil.which("apptainer") or shutil.which("singularity") or "apptainer"
+        runtime = (
+            shutil.which("apptainer") or shutil.which("singularity") or "apptainer"
+        )
         return [
             runtime,
             "build",
@@ -114,7 +122,9 @@ class SifAdapter:
             "docker-archive://" + str(docker_archive),
         ]
 
-    def run(self, docker_archive: Path, output_sif: Path, *, dry_run: bool = False) -> list[str]:
+    def run(
+        self, docker_archive: Path, output_sif: Path, *, dry_run: bool = False
+    ) -> list[str]:
         command = self.command(docker_archive, output_sif)
         if dry_run:
             return command

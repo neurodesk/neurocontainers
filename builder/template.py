@@ -126,7 +126,9 @@ class TemplateRenderer:
                     if not isinstance(option, dict):
                         continue
                     condition = option.get("condition")
-                    if isinstance(condition, str) and self.render_condition(condition, context):
+                    if isinstance(condition, str) and self.render_condition(
+                        condition, context
+                    ):
                         return self.render_value(option.get("value"), context)
                 raise TemplateError("no try condition matched")
             return {

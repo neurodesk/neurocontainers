@@ -18,7 +18,7 @@ from builder.validation import (
     CustomCopyrightInfo,
     SPDXCopyrightInfo,
     GUIApp,
-    FileInfo
+    FileInfo,
 )
 
 VALID_ICON = (
@@ -26,8 +26,7 @@ VALID_ICON = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
 )
 VALID_SVG_ICON = (
-    "data:image/svg+xml;base64,"
-    "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4="
+    "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4="
 )
 
 
@@ -43,12 +42,10 @@ def test_valid_minimal_recipe():
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": [
-                {"install": ["curl"]}
-            ]
-        }
+            "directives": [{"install": ["curl"]}],
+        },
     }
-    
+
     result = validate_recipe_dict(recipe)
     assert isinstance(result, ContainerRecipe)
     assert result.name == "test-app"
@@ -66,16 +63,11 @@ def test_valid_complex_recipe():
         "icon": VALID_SVG_ICON,
         "copyright": [
             {"license": "MIT", "url": "https://opensource.org/licenses/MIT"},
-            {"name": "Custom License", "url": "https://example.com/license"}
+            {"name": "Custom License", "url": "https://example.com/license"},
         ],
         "categories": ["image registration", "machine learning"],
-        "gui_apps": [
-            {"name": "GUI App", "exec": "/usr/bin/gui-app"}
-        ],
-        "deploy": {
-            "path": ["/opt/app/bin"],
-            "bins": ["app-binary"]
-        },
+        "gui_apps": [{"name": "GUI App", "exec": "/usr/bin/gui-app"}],
+        "deploy": {"path": ["/opt/app/bin"], "bins": ["app-binary"]},
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -84,11 +76,11 @@ def test_valid_complex_recipe():
                 {"environment": {"PATH": "/opt/app:$PATH"}},
                 {"install": ["curl", "wget"]},
                 {"run": ["echo 'setup complete'"]},
-                {"user": "appuser"}
-            ]
-        }
+                {"user": "appuser"},
+            ],
+        },
     }
-    
+
     result = validate_recipe_dict(recipe)
     assert isinstance(result, ContainerRecipe)
     assert result.name == "complex-app"
@@ -105,7 +97,7 @@ def test_invalid_recipe_missing_required_fields():
         "name": "incomplete-app",
         # Missing version, architectures, build
     }
-    
+
     errors = get_validation_errors(recipe)
     print(f"Errors: {errors}")  # Debug output
     assert len(errors) > 0
@@ -115,7 +107,7 @@ def test_invalid_recipe_empty_name():
     """Test validation fails for empty name"""
     recipe = {
         "name": "",
-        "version": "1.0.0", 
+        "version": "1.0.0",
         "architectures": ["x86_64"],
         "categories": ["programming"],
         "icon": VALID_ICON,
@@ -123,10 +115,10 @@ def test_invalid_recipe_empty_name():
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": []
-        }
+            "directives": [],
+        },
     }
-    
+
     errors = get_validation_errors(recipe)
     assert len(errors) > 0
     assert any("name" in error.lower() and "empty" in error.lower() for error in errors)
@@ -144,14 +136,13 @@ def test_invalid_recipe_name_with_underscore():
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": []
-        }
+            "directives": [],
+        },
     }
 
     errors = get_validation_errors(recipe)
     assert any(
-        "name" in error.lower() and "underscore" in error.lower()
-        for error in errors
+        "name" in error.lower() and "underscore" in error.lower() for error in errors
     )
 
 
@@ -165,12 +156,12 @@ def test_invalid_architecture():
         "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
-            "base-image": "ubuntu:22.04", 
+            "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": []
-        }
+            "directives": [],
+        },
     }
-    
+
     errors = get_validation_errors(recipe)
     assert len(errors) > 0
     assert any("architecture" in error.lower() for error in errors)
@@ -187,8 +178,8 @@ def test_invalid_recipe_missing_categories():
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": []
-        }
+            "directives": [],
+        },
     }
 
     errors = get_validation_errors(recipe)
@@ -207,11 +198,11 @@ def test_invalid_category():
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
-            "pkg-manager": "apt", 
-            "directives": []
-        }
+            "pkg-manager": "apt",
+            "directives": [],
+        },
     }
-    
+
     errors = get_validation_errors(recipe)
     assert len(errors) > 0
     assert any("category" in error.lower() for error in errors)
@@ -229,8 +220,8 @@ def test_legacy_category_rejected_in_strict_metadata():
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": []
-        }
+            "directives": [],
+        },
     }
 
     errors = get_validation_errors(recipe)
@@ -249,8 +240,8 @@ def test_legacy_metadata_mode_allows_existing_recipe_gaps():
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": []
-        }
+            "directives": [],
+        },
     }
 
     result = validate_recipe_dict(recipe, strict_metadata=False)
@@ -268,8 +259,8 @@ def test_invalid_recipe_missing_icon():
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": []
-        }
+            "directives": [],
+        },
     }
 
     errors = get_validation_errors(recipe)
@@ -289,8 +280,8 @@ def test_invalid_recipe_icon_url():
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": []
-        }
+            "directives": [],
+        },
     }
 
     errors = get_validation_errors(recipe)
@@ -310,8 +301,8 @@ def test_invalid_recipe_icon_base64():
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": []
-        }
+            "directives": [],
+        },
     }
 
     errors = get_validation_errors(recipe)
@@ -331,14 +322,14 @@ def test_validate_recipe_file():
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": [{"install": ["curl"]}]
-        }
+            "directives": [{"install": ["curl"]}],
+        },
     }
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
         yaml.dump(recipe, f)
         temp_file = f.name
-    
+
     try:
         result = validate_recipe_file(temp_file)
         assert isinstance(result, ContainerRecipe)
@@ -363,16 +354,18 @@ def write_recipe_with_fulltest(tmp_path, fulltest: dict) -> str:
     }
     build_yaml = tmp_path / "build.yaml"
     build_yaml.write_text(yaml.safe_dump(recipe), encoding="utf-8")
-    (tmp_path / "fulltest.yaml").write_text(
-        yaml.safe_dump(fulltest), encoding="utf-8"
-    )
+    (tmp_path / "fulltest.yaml").write_text(yaml.safe_dump(fulltest), encoding="utf-8")
     return str(build_yaml)
 
 
 def test_validate_recipe_file_accepts_matching_fulltest_version(tmp_path):
     build_yaml = write_recipe_with_fulltest(
         tmp_path,
-        {"name": "file-test-app", "version": "1.2.3", "tests": [{"command": "tool --version"}]},
+        {
+            "name": "file-test-app",
+            "version": "1.2.3",
+            "tests": [{"command": "tool --version"}],
+        },
     )
 
     result = validate_recipe_file(build_yaml)
@@ -408,9 +401,17 @@ def test_validate_recipe_file_rejects_stale_fulltest_version(tmp_path):
 
 @pytest.mark.parametrize(
     "tests",
-    [None, [], {}, [None], [{}], [{"command": "  "}],
-     [{"script": "\n"}], [{"command": ["tool"]}],
-     [{"command": "  ", "script": "tool --version"}]],
+    [
+        None,
+        [],
+        {},
+        [None],
+        [{}],
+        [{"command": "  "}],
+        [{"script": "\n"}],
+        [{"command": ["tool"]}],
+        [{"command": "  ", "script": "tool --version"}],
+    ],
 )
 def test_validate_recipe_file_requires_executable_fulltest(tmp_path, tests):
     build_yaml = write_recipe_with_fulltest(
@@ -453,11 +454,11 @@ def test_directive_validation():
                 {"template": {"name": "test-template", "param": "value"}},
                 {"entrypoint": "/bin/bash"},
                 {"variables": {"VAR1": "value1"}},
-                {"file": {"name": "test.txt", "contents": "hello world"}}
-            ]
-        }
+                {"file": {"name": "test.txt", "contents": "hello world"}},
+            ],
+        },
     }
-    
+
     result = validate_recipe_dict(recipe)
     assert isinstance(result, ContainerRecipe)
     assert result.name == "directive-test"
@@ -572,32 +573,40 @@ def test_two_digit_version_yaml_parsing():
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
             "pkg-manager": "apt",
-            "directives": [{"install": ["curl"]}]
-        }
+            "directives": [{"install": ["curl"]}],
+        },
     }
-    
+
     # Create a temporary directory for the recipe
     temp_dir = tempfile.mkdtemp()
     try:
         # Write the build.yaml directly to the temp directory
         build_yaml = os.path.join(temp_dir, "build.yaml")
-        with open(build_yaml, 'w') as f:
+        with open(build_yaml, "w") as f:
             yaml.dump(recipe, f)
-        
+
         # Load using the actual function
-        with open(os.path.join(temp_dir, "build.yaml"), "r", encoding="utf-8") as handle:
+        with open(
+            os.path.join(temp_dir, "build.yaml"), "r", encoding="utf-8"
+        ) as handle:
             loaded = yaml.safe_load(handle)
-        
+
         # Version should be converted to string
-        assert isinstance(loaded["version"], str), f"Version should be string, got {type(loaded['version'])}"
-        assert loaded["version"] == "1.1", f"Version should be '1.1', got '{loaded['version']}'"
-        
+        assert isinstance(loaded["version"], str), (
+            f"Version should be string, got {type(loaded['version'])}"
+        )
+        assert loaded["version"] == "1.1", (
+            f"Version should be '1.1', got '{loaded['version']}'"
+        )
+
         # Name should also be string
-        assert isinstance(loaded["name"], str), f"Name should be string, got {type(loaded['name'])}"
-        
+        assert isinstance(loaded["name"], str), (
+            f"Name should be string, got {type(loaded['name'])}"
+        )
+
         # Should be able to call string methods on version
         assert loaded["version"].replace(":", "_") == "1.1"
-        
+
     finally:
         # Clean up
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -606,10 +615,18 @@ def test_two_digit_version_yaml_parsing():
 @pytest.mark.parametrize("value", [True, False, "true"])
 def test_flatten_base_image_requires_boolean(value):
     recipe = {
-        "name": "demo", "version": "1.0.0", "architectures": ["x86_64"],
-        "categories": ["workflows"], "icon": VALID_ICON,
-        "build": {"kind": "neurodocker", "base-image": "ubuntu:24.04",
-                  "pkg-manager": "apt", "directives": [], "flatten-base-image": value},
+        "name": "demo",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["workflows"],
+        "icon": VALID_ICON,
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:24.04",
+            "pkg-manager": "apt",
+            "directives": [],
+            "flatten-base-image": value,
+        },
     }
     if isinstance(value, bool):
         assert validate_recipe_dict(recipe).build.flatten_base_image is value

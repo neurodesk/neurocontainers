@@ -142,9 +142,9 @@ def rewrite_top_level_string(text, key, new_value):
 
     for candidate_quote in (quote, '"'):
         updated = (
-            f"{text[:match.start()]}{key}: "
+            f"{text[: match.start()]}{key}: "
             f"{candidate_quote}{new_value}{candidate_quote}{trailer}"
-            f"{text[match.end():]}"
+            f"{text[match.end() :]}"
         )
         try:
             reloaded = yaml.safe_load(updated)
@@ -207,7 +207,9 @@ def prepare_fulltest_bump(recipe_path, new_version, updated_recipe=None):
         if variable := recipe.get("auto_update", {}).get("version_variable"):
             # Existing assertions describe installed software and runtime paths.
             updated = updated.replace("${version}", "${" + variable + "}")
-            updated = set_scalar(updated, None, variable, str(recipe["variables"][variable]))
+            updated = set_scalar(
+                updated, None, variable, str(recipe["variables"][variable])
+            )
             updated = set_scalar(updated, None, "version", new_version)
     if updated == original:
         return None
@@ -265,7 +267,7 @@ def rewrite_revision(text, repo, new_sha):
             return match.group(0)
         changed.append((old_sha, new_sha))
         quote = match.group("quote")
-        return f'{match.group("indent")}revision: {quote}{new_sha}{quote}'
+        return f"{match.group('indent')}revision: {quote}{new_sha}{quote}"
 
     return REVISION_LINE.sub(replace, text), changed
 
@@ -444,17 +446,27 @@ def prepare_bump(path, current_version, new_version, repo, tag):
     from builder.update_sources import parse_release_tag
 
     release = parse_release_tag(
-        tag, "", re.compile(config["version_regex"]) if config.get("version_regex") else None,
-        config.get("version_scheme", "numeric"), config.get("include_prereleases", False),
+        tag,
+        "",
+        re.compile(config["version_regex"]) if config.get("version_regex") else None,
+        config.get("version_scheme", "numeric"),
+        config.get("include_prereleases", False),
     )
     raw_version = release.version if release else new_version
-    if str(current_version).startswith(("v", "V")) and not raw_version.startswith(("v", "V")):
+    if str(current_version).startswith(("v", "V")) and not raw_version.startswith(
+        ("v", "V")
+    ):
         raw_version = "v" + raw_version
     if config.get("version_variable") or software_version(raw_version) != raw_version:
         updated = bind_upstream_version(updated, raw_version)
     config = yaml.safe_load(updated).get("auto_update", {})
     updated, asset_changes = rewrite_release_assets(
-        updated, config, repo, tag, raw_version if config.get("version_variable") else new_version, session
+        updated,
+        config,
+        repo,
+        tag,
+        raw_version if config.get("version_variable") else new_version,
+        session,
     )
     changes.extend(asset_changes)
 
@@ -502,7 +514,8 @@ def submit_bump(
     try:
         fulltest_bump = (
             (str(plan.patches[1].path), plan.patches[1].after, current_version)
-            if plan else prepare_fulltest_bump(path, new_version, updated)
+            if plan
+            else prepare_fulltest_bump(path, new_version, updated)
         )
     except ValueError as e:
         print(f"cannot auto-bump {path}: {e}")
@@ -701,16 +714,32 @@ def main():
             if config["method"] == "sources":
                 plan = plan_sources(path, session)
                 if plan is None:
-                    row.update(status="current" if config.get("sources") else "repository", detail="Repository changes trigger candidate builds." if "local" in config else "")
+                    row.update(
+                        status="current" if config.get("sources") else "repository",
+                        detail="Repository changes trigger candidate builds."
+                        if "local" in config
+                        else "",
+                    )
                 elif plan.held:
                     row.update(
                         status="dependency-held",
-                        detail="Ships with the next software update: " + "; ".join(plan.changes),
+                        detail="Ships with the next software update: "
+                        + "; ".join(plan.changes),
                     )
                 else:
-                    release = UpstreamRelease(plan.next_version, plan.fingerprint, ", ".join(plan.upstream_urls))
-                    row.update(status="available", upstream=plan.next_version, detail="; ".join(plan.changes))
-                    candidates.append((path, data, release, plan.next_version, row, plan))
+                    release = UpstreamRelease(
+                        plan.next_version,
+                        plan.fingerprint,
+                        ", ".join(plan.upstream_urls),
+                    )
+                    row.update(
+                        status="available",
+                        upstream=plan.next_version,
+                        detail="; ".join(plan.changes),
+                    )
+                    candidates.append(
+                        (path, data, release, plan.next_version, row, plan)
+                    )
                 print(f"{row['recipe']}: {row['status']} {row['detail']}", flush=True)
                 continue
             if config["method"] == "manual":
@@ -735,7 +764,9 @@ def main():
             if config.get("mode") == "notify":
                 row.update(status="needs-recipe-change", detail=config["reason"])
                 continue
-            installed = data.get("variables", {}).get(config.get("version_variable"), row["current"])
+            installed = data.get("variables", {}).get(
+                config.get("version_variable"), row["current"]
+            )
             comparison = newer(str(installed), release.version)
             if comparison is None:
                 raise ValueError(
@@ -764,13 +795,22 @@ def main():
     open_branches = None
     for path, data, release, new_version, row, plan in candidates:
         try:
-            branch = plan.branch if plan else f"auto-update/{path.parent.name}-{new_version}"
+            branch = (
+                plan.branch if plan else f"auto-update/{path.parent.name}-{new_version}"
+            )
             if REPO:
                 if plan:
                     if open_branches is None:
                         open_branches = open_update_branches()
                     prefix = f"auto-update/{path.parent.name}-{new_version}-"
-                    existing = next((item for item in sorted(open_branches) if item.startswith(prefix)), None)
+                    existing = next(
+                        (
+                            item
+                            for item in sorted(open_branches)
+                            if item.startswith(prefix)
+                        ),
+                        None,
+                    )
                     if existing:
                         row.update(status="pr-open", detail=existing)
                         continue

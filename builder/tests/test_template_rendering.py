@@ -114,18 +114,18 @@ def test_builtin_templates_are_native_directive_format() -> None:
             method_data = data.get(method)
             if not isinstance(method_data, dict):
                 continue
-            assert (
-                method_data.get("builder") == "neurodocker"
-            ), f"{path.name}:{method} has no macro builder"
-            assert (
-                "env" not in method_data
-            ), f"{path.name}:{method} still uses legacy env"
-            assert (
-                "instructions" not in method_data
-            ), f"{path.name}:{method} still uses legacy instructions"
-            assert isinstance(
-                method_data.get("directives"), list
-            ), f"{path.name}:{method} has no directives"
+            assert method_data.get("builder") == "neurodocker", (
+                f"{path.name}:{method} has no macro builder"
+            )
+            assert "env" not in method_data, (
+                f"{path.name}:{method} still uses legacy env"
+            )
+            assert "instructions" not in method_data, (
+                f"{path.name}:{method} still uses legacy instructions"
+            )
+            assert isinstance(method_data.get("directives"), list), (
+                f"{path.name}:{method} has no directives"
+            )
 
 
 def test_bids_validator_template_installs_setuptools_on_apt() -> None:
@@ -168,7 +168,9 @@ def test_mrtrix_source_template_configure_options(options) -> None:
         arguments["configure_options"] = options
     apply_builtin_template("mrtrix3", arguments, "apt", directives.append)
     command = "\n".join(item.command for item in directives if isinstance(item, Run))
-    configure = next(line for line in command.splitlines() if "python3 configure" in line)
+    configure = next(
+        line for line in command.splitlines() if "python3 configure" in line
+    )
     expected = "-nogui" if options is None else options
     assert shlex.split(configure) == ["python3", "configure", *shlex.split(expected)]
 
@@ -217,8 +219,7 @@ def test_fsl_template_keeps_legacy_archive_installation() -> None:
     command = "\n".join(item.command for item in directives if isinstance(item, Run))
 
     assert (
-        "curl -fL https://fsl.fmrib.ox.ac.uk/fsldownloads/"
-        "fsl-6.0.5.1-centos7_64.tar.gz"
+        "curl -fL https://fsl.fmrib.ox.ac.uk/fsldownloads/fsl-6.0.5.1-centos7_64.tar.gz"
     ) in command
     assert "tar -xz -C /opt/fsl-6.0.5.1 --strip-components 1" in command
     assert "bash /opt/fsl-6.0.5.1/etc/fslconf/fslpython_install.sh" in command
@@ -417,17 +418,20 @@ def test_template_file_parameter_mounts_declared_archive(tmp_path: Path) -> None
     )
     recipe["files"] = [{"name": "archive", "filename": "archive.tar.gz"}]
     recipe["build"]["directives"] = [
-        {"template": {
-            "name": "freesurfer",
-            "version": "7.4.1",
-            "archive": '{{ get_file("archive") }}',
-        }}
+        {
+            "template": {
+                "name": "freesurfer",
+                "version": "7.4.1",
+                "archive": '{{ get_file("archive") }}',
+            }
+        }
     ]
     (tmp_path / "build.yaml").write_text(yaml.safe_dump(recipe))
     (tmp_path / "archive.tar.gz").write_bytes(b"archive fixture")
     compiled = compile_recipe(tmp_path, architecture="x86_64")
     extraction = next(
-        item for item in compiled.definition.directives
+        item
+        for item in compiled.definition.directives
         if isinstance(item, (Run, RunWithMounts)) and "tar -xzf" in item.command
     )
     assert isinstance(extraction, RunWithMounts)
@@ -436,4 +440,4 @@ def test_template_file_parameter_mounts_declared_archive(tmp_path: Path) -> None
     target = mount.split("target=", 1)[1].split(",", 1)[0]
     cache_id = target.rsplit("/", 1)[1]
     guest = compiled.staging_plan.cache_mounts[cache_id]["archive"]
-    assert f'{target}/{guest}' in extraction.command
+    assert f"{target}/{guest}" in extraction.command

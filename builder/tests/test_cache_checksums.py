@@ -37,7 +37,8 @@ def test_truncated_http_body_is_not_cached(
 
     bodies = iter(
         [b"8\r\nshort", b"8\r\ncomplete\r\n0\r\n\r\n"]
-        if chunked else [b"short", b"complete"]
+        if chunked
+        else [b"short", b"complete"]
     )
 
     def urlopen(request, timeout):
@@ -53,7 +54,9 @@ def test_truncated_http_body_is_not_cached(
         assert path.read_bytes() == b"complete"
         assert list(cache.root.iterdir()) == [path]
     else:
-        with pytest.raises(DownloadError, match="IncompleteRead" if chunked else "Content-Length"):
+        with pytest.raises(
+            DownloadError, match="IncompleteRead" if chunked else "Content-Length"
+        ):
             cache.get("https://example.com/model", retry=retry)
         assert list(cache.root.iterdir()) == []
 
@@ -146,7 +149,9 @@ def test_concurrent_downloads_use_independent_temporary_files(
     monkeypatch.setattr("builder.cache.shutil.copyfileobj", overlapping_copy)
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = [
-            executor.submit(cache.get, source.as_uri(), sha256=digest(source.read_bytes()))
+            executor.submit(
+                cache.get, source.as_uri(), sha256=digest(source.read_bytes())
+            )
             for _ in range(2)
         ]
         paths = [future.result(timeout=10) for future in futures]
@@ -195,7 +200,9 @@ def write_recipe(recipe_dir: Path, files: list[dict], variables: dict) -> None:
                     "kind": "neurodocker",
                     "base-image": "ubuntu:24.04",
                     "pkg-manager": "apt",
-                    "directives": [{"run": ['cat {{ get_file("old") }} {{ get_file("new") }}']}],
+                    "directives": [
+                        {"run": ['cat {{ get_file("old") }} {{ get_file("new") }}']}
+                    ],
                 },
             }
         )
@@ -225,15 +232,21 @@ def test_recipe_renders_checksums_and_stages_both_versions_of_one_url(
             {"name": "old", "url": url, "sha256": "{{ context.old_sha }}"},
             {"name": "new", "url": url, "sha256": "{{ context.new_sha }}"},
         ],
-        variables={"old_sha": digest(b"old release"), "new_sha": digest(b"new release")},
+        variables={
+            "old_sha": digest(b"old release"),
+            "new_sha": digest(b"new release"),
+        },
     )
 
     compiled = compile_recipe(recipe_dir, architecture="x86_64")
     assert compiled.staging_plan.files["old"].sha256 == digest(b"old release")
     assert compiled.staging_plan.files["new"].sha256 == digest(b"new release")
     staged = materialize_plan(
-        compiled.staging_plan, recipe_dir, tmp_path / "build",
-        http_cache_dir=cache.root, download=True,
+        compiled.staging_plan,
+        recipe_dir,
+        tmp_path / "build",
+        http_cache_dir=cache.root,
+        download=True,
     )
 
     mounts = list(compiled.staging_plan.cache_mounts.items())
@@ -244,11 +257,19 @@ def test_recipe_renders_checksums_and_stages_both_versions_of_one_url(
     assert (staged / mount_id / names["new"]).read_bytes() == b"new release"
 
 
-def test_recipe_rejects_invalid_rendered_checksum_before_staging(tmp_path: Path) -> None:
+def test_recipe_rejects_invalid_rendered_checksum_before_staging(
+    tmp_path: Path,
+) -> None:
     recipe_dir = tmp_path / "recipe"
     write_recipe(
         recipe_dir,
-        files=[{"name": "old", "url": "https://example.com/model", "sha256": "{{ context.bad }}"}],
+        files=[
+            {
+                "name": "old",
+                "url": "https://example.com/model",
+                "sha256": "{{ context.bad }}",
+            }
+        ],
         variables={"bad": "not-a-checksum"},
     )
     with pytest.raises(ValueError, match="64 hexadecimal"):

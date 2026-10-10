@@ -188,7 +188,7 @@ SOFTWARE_VERSIONS = {
     "cpac": (
         "1.8.7",
         "    cpac version",
-        "    cpac version\n  expected_output_contains: \"${software_version}\"",
+        '    cpac version\n  expected_output_contains: "${software_version}"',
     ),
     "lesymap": (
         "0.0.0.9221",
@@ -215,10 +215,7 @@ def replace_top_level(text: str, key: str, replacement: str) -> str:
     next_key = re.search(r"(?m)^[A-Za-z_][A-Za-z0-9_-]*:\s*", text[match.end() :])
     end = match.end() + (next_key.start() if next_key else len(text[match.end() :]))
     return (
-        text[: match.start()]
-        + replacement.rstrip()
-        + "\n\n"
-        + text[end:].lstrip("\n")
+        text[: match.start()] + replacement.rstrip() + "\n\n" + text[end:].lstrip("\n")
     )
 
 
@@ -327,7 +324,9 @@ def migrate_local(name: str, base_key: str, fsl_bet2: bool) -> None:
     text = ensure_variables(text, variables)
     text = replace_base(text, base[0], f"{base[0]}@{{{{ context.base_image_digest }}}}")
     checkout = "git -C FSL-BET2 checkout {{ context.fsl_bet2_commit }}"
-    checkout_count = len(re.findall(r"(?m)^\s*- " + re.escape(checkout) + r"\s*$", text))
+    checkout_count = len(
+        re.findall(r"(?m)^\s*- " + re.escape(checkout) + r"\s*$", text)
+    )
     if fsl_bet2 and checkout_count > 1:
         raise ValueError(f"{name}: duplicate FSL-BET2 checkout commands")
     if fsl_bet2 and checkout_count == 0:

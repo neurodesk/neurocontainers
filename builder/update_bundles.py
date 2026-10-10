@@ -12,17 +12,28 @@ from urllib.parse import quote
 import requests
 from packaging.version import InvalidVersion, Version
 
-from .update_sources import configure_read_retries, latest_version, validate_update_config
+from .update_sources import (
+    configure_read_retries,
+    latest_version,
+    validate_update_config,
+)
 
 
 GIRDER = "https://slicer-packages.kitware.com/api/v1"
 ANNEX = "https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/repo/annex.git/annex/objects"
 OBJECT_ID = re.compile(r"[0-9a-f]{24}")
-MODEL_KEY = re.compile(r"SHA256E-s(?P<size>\d+)--(?P<sha256>[0-9a-f]{64})(?:\.[A-Za-z0-9.]+)?")
+MODEL_KEY = re.compile(
+    r"SHA256E-s(?P<size>\d+)--(?P<sha256>[0-9a-f]{64})(?:\.[A-Za-z0-9.]+)?"
+)
 REPO_PATH = re.compile(r"[A-Za-z0-9_./-]+")
-BUNDLE_METHODS = frozenset({
-    "slicer_release", "freesurfer_release", "github_release_asset", "libreoffice_release",
-})
+BUNDLE_METHODS = frozenset(
+    {
+        "slicer_release",
+        "freesurfer_release",
+        "github_release_asset",
+        "libreoffice_release",
+    }
+)
 LIBREOFFICE_DOWNLOAD = "https://download.documentfoundation.org/libreoffice/"
 LIBREOFFICE_ARCHIVE = "https://downloadarchive.documentfoundation.org/libreoffice/old/"
 
@@ -37,12 +48,22 @@ def validate_bundle(config: dict) -> None:
             raise ValueError("slicer_release.app_id must be a Girder object ID")
         extensions = config.get("extensions")
         if not isinstance(extensions, dict) or not extensions:
-            raise ValueError("slicer_release.extensions must map metadata prefixes to extension names")
+            raise ValueError(
+                "slicer_release.extensions must map metadata prefixes to extension names"
+            )
         for prefix, name in extensions.items():
-            if not isinstance(prefix, str) or not re.fullmatch(r"[a-z][a-z0-9_]*", prefix):
-                raise ValueError("extension metadata prefixes must be lowercase identifiers")
-            if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name):
-                raise ValueError("slicer_release.extensions values must be extension base names")
+            if not isinstance(prefix, str) or not re.fullmatch(
+                r"[a-z][a-z0-9_]*", prefix
+            ):
+                raise ValueError(
+                    "extension metadata prefixes must be lowercase identifiers"
+                )
+            if not isinstance(name, str) or not re.fullmatch(
+                r"[A-Za-z][A-Za-z0-9_]*", name
+            ):
+                raise ValueError(
+                    "slicer_release.extensions values must be extension base names"
+                )
         if len(set(extensions.values())) != len(extensions):
             raise ValueError("slicer_release.extensions names must be unique")
     elif method == "freesurfer_release":
@@ -50,33 +71,56 @@ def validate_bundle(config: dict) -> None:
         _repo_path(config.get("script"))
         models = config.get("models")
         if not isinstance(models, dict) or not models:
-            raise ValueError("freesurfer_release.models must map metadata prefixes to model paths")
+            raise ValueError(
+                "freesurfer_release.models must map metadata prefixes to model paths"
+            )
         for prefix, path in models.items():
-            if not isinstance(prefix, str) or not re.fullmatch(r"[a-z][a-z0-9_]*", prefix):
-                raise ValueError("model metadata prefixes must be lowercase identifiers")
+            if not isinstance(prefix, str) or not re.fullmatch(
+                r"[a-z][a-z0-9_]*", prefix
+            ):
+                raise ValueError(
+                    "model metadata prefixes must be lowercase identifiers"
+                )
             _repo_path(path)
     elif method == "github_release_asset":
-        allowed = {"method", "repo", "asset", "version_regex", "version_scheme", "include_prereleases"}
+        allowed = {
+            "method",
+            "repo",
+            "asset",
+            "version_regex",
+            "version_scheme",
+            "include_prereleases",
+        }
         asset = config.get("asset")
         if (
             not isinstance(asset, str)
             or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*", asset)
             or asset in {"TODO", "TBD", "PLACEHOLDER"}
         ):
-            raise ValueError("github_release_asset.asset must be an exact asset filename")
-        validate_update_config({
-            **{key: value for key, value in config.items() if key != "asset"},
-            "method": "github_release",
-        })
+            raise ValueError(
+                "github_release_asset.asset must be an exact asset filename"
+            )
+        validate_update_config(
+            {
+                **{key: value for key, value in config.items() if key != "asset"},
+                "method": "github_release",
+            }
+        )
     else:
         raise ValueError(f"unsupported bundle method: {method!r}")
     if set(config) - allowed:
-        raise ValueError(f"unsupported {method} fields: {sorted(set(config) - allowed)}")
+        raise ValueError(
+            f"unsupported {method} fields: {sorted(set(config) - allowed)}"
+        )
 
 
 def _repo_path(value: object) -> str:
-    if (not isinstance(value, str) or not REPO_PATH.fullmatch(value)
-            or value.startswith("/") or any(p in {"", ".", ".."} for p in value.split("/"))):
+    if (
+        not isinstance(value, str)
+        or not REPO_PATH.fullmatch(value)
+        or value.startswith("/")
+        or any(p in {"", ".", ".."} for p in value.split("/"))
+    ):
         raise ValueError("bundle paths must be relative repository file paths")
     return value
 
@@ -99,8 +143,14 @@ def _one(items: list[dict], description: str) -> dict:
     return item
 
 
-def _download(session: requests.Session, url: str, *, expected_sha256: str | None = None,
-              expected_sha512: str | None = None, expected_size: int | None = None) -> tuple[str, int]:
+def _download(
+    session: requests.Session,
+    url: str,
+    *,
+    expected_sha256: str | None = None,
+    expected_sha512: str | None = None,
+    expected_size: int | None = None,
+) -> tuple[str, int]:
     from .update_observations import _https_url
 
     with session.get(url, stream=True, timeout=60) as response:
@@ -145,8 +195,14 @@ def _slicer(config: dict, session: requests.Session):
     # it finishes promoting that build, so walk down to the newest promoted package instead
     # of failing the update run on a release upstream has not finished publishing.
     for _, version in sorted(versions, reverse=True):
-        packages = _json_list(session, app_url + "/package", os="linux", arch="amd64",
-                              release_id_or_name=version, limit=0)
+        packages = _json_list(
+            session,
+            app_url + "/package",
+            os="linux",
+            arch="amd64",
+            release_id_or_name=version,
+            limit=0,
+        )
         if not packages:
             continue  # Slicer uploads per platform, so a release can predate its Linux build.
         package = _one(packages, "Slicer Linux package")
@@ -156,34 +212,69 @@ def _slicer(config: dict, session: requests.Session):
     else:
         raise ValueError("Slicer has no promoted stable Linux package")
     revision = str(meta.get("revision", ""))
-    if (meta.get("app_id") != config["app_id"] or meta.get("version") != version or meta.get("pre_release") is not False
-            or meta.get("os") != "linux" or meta.get("arch") != "amd64" or not revision.isdecimal()):
+    if (
+        meta.get("app_id") != config["app_id"]
+        or meta.get("version") != version
+        or meta.get("pre_release") is not False
+        or meta.get("os") != "linux"
+        or meta.get("arch") != "amd64"
+        or not revision.isdecimal()
+    ):
         raise ValueError("Slicer package release or architecture metadata disagrees")
     extensions = {}
     for prefix, name in config["extensions"].items():
-        extension = _one(_json_list(session, app_url + "/extension", os="linux", arch="amd64",
-                                   app_revision=revision, baseName=name, limit=0),
-                         f"{name} extension for Slicer revision {revision}")
+        extension = _one(
+            _json_list(
+                session,
+                app_url + "/extension",
+                os="linux",
+                arch="amd64",
+                app_revision=revision,
+                baseName=name,
+                limit=0,
+            ),
+            f"{name} extension for Slicer revision {revision}",
+        )
         ext_meta = extension.get("meta", {})
-        if (ext_meta.get("app_id") != config["app_id"] or str(ext_meta.get("app_revision")) != revision
-                or ext_meta.get("os") != "linux" or ext_meta.get("arch") != "amd64"
-                or ext_meta.get("baseName") != name):
-            raise ValueError("Slicer extension ABI metadata disagrees with its application")
+        if (
+            ext_meta.get("app_id") != config["app_id"]
+            or str(ext_meta.get("app_revision")) != revision
+            or ext_meta.get("os") != "linux"
+            or ext_meta.get("arch") != "amd64"
+            or ext_meta.get("baseName") != name
+        ):
+            raise ValueError(
+                "Slicer extension ABI metadata disagrees with its application"
+            )
         extensions[prefix] = extension
     main_url = f"https://download.slicer.org/download?os=linux&stability=release&version={version}"
-    main_sha, size = _download(session, main_url, expected_sha512=meta.get("sha512"),
-                              expected_size=package.get("size"))
-    metadata = {"version": version, "revision": revision,
-                "abi": ".".join(version.split(".")[:2]), "sha256": main_sha, "size": size}
+    main_sha, size = _download(
+        session,
+        main_url,
+        expected_sha512=meta.get("sha512"),
+        expected_size=package.get("size"),
+    )
+    metadata = {
+        "version": version,
+        "revision": revision,
+        "abi": ".".join(version.split(".")[:2]),
+        "sha256": main_sha,
+        "size": size,
+    }
     for prefix, extension in extensions.items():
         ext_meta = extension["meta"]
         extension_url = f"{GIRDER}/item/{extension['_id']}/download"
-        digest, _ = _download(session, extension_url, expected_sha512=ext_meta.get("sha512"),
-                              expected_size=extension.get("size"))
+        digest, _ = _download(
+            session,
+            extension_url,
+            expected_sha512=ext_meta.get("sha512"),
+            expected_size=extension.get("size"),
+        )
         metadata[prefix + "_item"] = extension["_id"]
         metadata[prefix + "_sha256"] = digest
-    return SourceObservation(value=main_url, url=app_url, version=version, tag=version,
-                             metadata=metadata)
+    return SourceObservation(
+        value=main_url, url=app_url, version=version, tag=version, metadata=metadata
+    )
 
 
 def _model(session: requests.Session, raw_url: str) -> tuple[str, str]:
@@ -202,15 +293,25 @@ def _model(session: requests.Session, raw_url: str) -> tuple[str, str]:
         raise ValueError("FreeSurfer returned an invalid SHA256 git-annex pointer")
     directory_hash = hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()
     url = f"{ANNEX}/{directory_hash[:3]}/{directory_hash[3:6]}/{key}/{key}"
-    digest, _ = _download(session, url, expected_sha256=match['sha256'], expected_size=int(match['size']))
+    digest, _ = _download(
+        session, url, expected_sha256=match["sha256"], expected_size=int(match["size"])
+    )
     return url, digest
 
 
-def _freesurfer(config: dict, github_session: requests.Session, session: requests.Session):
+def _freesurfer(
+    config: dict, github_session: requests.Session, session: requests.Session
+):
     from .update_observations import SourceObservation
 
-    release = latest_version({"method": "github_tags", "repo": "freesurfer/freesurfer",
-                              "version_regex": r"v(?P<version>\d+(?:\.\d+)+)"}, github_session)
+    release = latest_version(
+        {
+            "method": "github_tags",
+            "repo": "freesurfer/freesurfer",
+            "version_regex": r"v(?P<version>\d+(?:\.\d+)+)",
+        },
+        github_session,
+    )
     if release is None:
         raise ValueError("FreeSurfer has no stable version tag")
     raw_base = f"https://raw.githubusercontent.com/freesurfer/freesurfer/{quote(release.tag, safe='')}"
@@ -221,17 +322,27 @@ def _freesurfer(config: dict, github_session: requests.Session, session: request
         url, model_sha = _model(session, f"{raw_base}/{path}")
         metadata[prefix + "_url"] = url
         metadata[prefix + "_sha256"] = model_sha
-    return SourceObservation(value=script_url, url=release.url, version=release.version,
-                             tag=release.tag, metadata=metadata)
+    return SourceObservation(
+        value=script_url,
+        url=release.url,
+        version=release.version,
+        tag=release.tag,
+        metadata=metadata,
+    )
 
 
-def _github_release_asset(config: dict, github_session: requests.Session, session: requests.Session):
+def _github_release_asset(
+    config: dict, github_session: requests.Session, session: requests.Session
+):
     from .update_observations import SourceObservation
 
-    release = latest_version({
-        **{key: value for key, value in config.items() if key != "asset"},
-        "method": "github_release",
-    }, github_session)
+    release = latest_version(
+        {
+            **{key: value for key, value in config.items() if key != "asset"},
+            "method": "github_release",
+        },
+        github_session,
+    )
     if release is None:
         raise ValueError("GitHub repository has no suitable release")
     repo, tag = config["repo"], quote(release.tag, safe="")
@@ -244,18 +355,29 @@ def _github_release_asset(config: dict, github_session: requests.Session, sessio
         not isinstance(published, dict)
         or published.get("tag_name") != release.tag
         or published.get("draft")
-        or (published.get("prerelease") and not config.get("include_prereleases", False))
+        or (
+            published.get("prerelease") and not config.get("include_prereleases", False)
+        )
     ):
         raise ValueError("GitHub selected release changed before asset resolution")
     assets = published.get("assets")
-    if not isinstance(assets, list) or not all(isinstance(asset, dict) for asset in assets):
+    if not isinstance(assets, list) or not all(
+        isinstance(asset, dict) for asset in assets
+    ):
         raise ValueError("GitHub release assets must be an array of objects")
     matches = [asset for asset in assets if asset.get("name") == config["asset"]]
     if len(matches) != 1:
-        raise ValueError(f"expected one release asset named {config['asset']}, found {len(matches)}")
+        raise ValueError(
+            f"expected one release asset named {config['asset']}, found {len(matches)}"
+        )
     asset = matches[0]
     size, published_digest = asset.get("size"), asset.get("digest")
-    if isinstance(size, bool) or not isinstance(size, int) or size < 0 or asset.get("state") != "uploaded":
+    if (
+        isinstance(size, bool)
+        or not isinstance(size, int)
+        or size < 0
+        or asset.get("state") != "uploaded"
+    ):
         raise ValueError("GitHub asset must be uploaded with a valid size")
     if published_digest is not None and (
         not isinstance(published_digest, str)
@@ -264,22 +386,34 @@ def _github_release_asset(config: dict, github_session: requests.Session, sessio
         raise ValueError("GitHub asset has an invalid published SHA256 digest")
     url = f"https://github.com/{repo}/releases/download/{tag}/{quote(config['asset'], safe='')}"
     digest, size = _download(
-        session, url, expected_size=size,
-        expected_sha256=published_digest.removeprefix("sha256:") if published_digest else None,
+        session,
+        url,
+        expected_size=size,
+        expected_sha256=published_digest.removeprefix("sha256:")
+        if published_digest
+        else None,
     )
-    return SourceObservation(value=url, url=release.url, version=release.version,
-                             tag=release.tag, metadata={"sha256": digest, "size": size})
+    return SourceObservation(
+        value=url,
+        url=release.url,
+        version=release.version,
+        tag=release.tag,
+        metadata={"sha256": digest, "size": size},
+    )
 
 
 def _libreoffice(session: requests.Session):
     from .update_observations import SourceObservation, _https_url
 
     stable_url = LIBREOFFICE_DOWNLOAD + "stable/"
-    release = latest_version({
-        "method": "webpage",
-        "url": stable_url,
-        "version_regex": r'href="(?P<version>\d+\.\d+\.\d+)/"',
-    }, session)
+    release = latest_version(
+        {
+            "method": "webpage",
+            "url": stable_url,
+            "version_regex": r'href="(?P<version>\d+\.\d+\.\d+)/"',
+        },
+        session,
+    )
     if release is None:
         raise ValueError("LibreOffice supplied no stable release")
 
@@ -287,11 +421,16 @@ def _libreoffice(session: requests.Session):
     response = session.get(source_url, timeout=30)
     response.raise_for_status()
     _https_url(response.url, "LibreOffice source listing response URL")
-    pattern = (r"href=[\"']libreoffice-(" + re.escape(release.version)
-               + r"\.\d+)\.tar\.xz[\"']")
+    pattern = (
+        r"href=[\"']libreoffice-("
+        + re.escape(release.version)
+        + r"\.\d+)\.tar\.xz[\"']"
+    )
     builds = set(re.findall(pattern, response.text))
     if len(builds) != 1:
-        raise ValueError("LibreOffice stable source listing must identify one released build")
+        raise ValueError(
+            "LibreOffice stable source listing must identify one released build"
+        )
     build = builds.pop()
 
     def checksum(url: str) -> str:
@@ -309,21 +448,33 @@ def _libreoffice(session: requests.Session):
 
     metadata = {}
     for arch, filename_arch in (("x86_64", "x86-64"), ("aarch64", "aarch64")):
-        stable = (stable_url + f"{release.version}/deb/{arch}/"
-                  + f"LibreOffice_{release.version}_Linux_{filename_arch}_deb.tar.gz")
-        archived = (LIBREOFFICE_ARCHIVE + f"{build}/deb/{arch}/"
-                    + f"LibreOffice_{build}_Linux_{filename_arch}_deb.tar.gz")
+        stable = (
+            stable_url
+            + f"{release.version}/deb/{arch}/"
+            + f"LibreOffice_{release.version}_Linux_{filename_arch}_deb.tar.gz"
+        )
+        archived = (
+            LIBREOFFICE_ARCHIVE
+            + f"{build}/deb/{arch}/"
+            + f"LibreOffice_{build}_Linux_{filename_arch}_deb.tar.gz"
+        )
         digest = checksum(stable)
         if checksum(archived) != digest:
-            raise ValueError(f"LibreOffice {arch} archive differs from the stable release")
+            raise ValueError(
+                f"LibreOffice {arch} archive differs from the stable release"
+            )
         metadata[f"{arch}_sha256"] = digest
     return SourceObservation(
-        value=build, version=build, url=LIBREOFFICE_ARCHIVE + build + "/",
+        value=build,
+        version=build,
+        url=LIBREOFFICE_ARCHIVE + build + "/",
         metadata=metadata,
     )
 
 
-def observe_bundle(config: dict, github_session: requests.Session, current: str | None = None):
+def observe_bundle(
+    config: dict, github_session: requests.Session, current: str | None = None
+):
     """Resolve every coupled input before returning one immutable observation."""
     validate_bundle(config)
     with requests.Session() as session:
@@ -337,7 +488,9 @@ def observe_bundle(config: dict, github_session: requests.Session, current: str 
         return _freesurfer(config, github_session, session)
 
 
-def read_archive_member(session: requests.Session, url: str, member: str) -> tuple[str, int, str, bytes]:
+def read_archive_member(
+    session: requests.Session, url: str, member: str
+) -> tuple[str, int, str, bytes]:
     """Hash a downloaded ZIP or TAR archive and read one exact, bounded file."""
     from .update_observations import _https_url
 
@@ -355,7 +508,9 @@ def read_archive_member(session: requests.Session, url: str, member: str) -> tup
         archive.seek(0)
         if zipfile.is_zipfile(archive):
             with zipfile.ZipFile(archive) as package:
-                entries = [entry for entry in package.infolist() if entry.filename == member]
+                entries = [
+                    entry for entry in package.infolist() if entry.filename == member
+                ]
                 if len(entries) != 1 or entries[0].file_size > 65536:
                     raise ValueError(f"archive requires one bounded member {member}")
                 content = package.read(entries[0])
@@ -363,9 +518,14 @@ def read_archive_member(session: requests.Session, url: str, member: str) -> tup
             archive.seek(0)
             with tarfile.open(fileobj=archive, mode="r:*") as package:
                 entries = [entry for entry in package if entry.name == member]
-                if (len(entries) != 1 or not entries[0].isfile()
-                        or not 0 <= entries[0].size <= 65536):
-                    raise ValueError(f"archive requires one bounded regular member {member}")
+                if (
+                    len(entries) != 1
+                    or not entries[0].isfile()
+                    or not 0 <= entries[0].size <= 65536
+                ):
+                    raise ValueError(
+                        f"archive requires one bounded regular member {member}"
+                    )
                 with package.extractfile(entries[0]) as stream:
                     content = stream.read(65537)
                 if len(content) != entries[0].size:
@@ -373,7 +533,9 @@ def read_archive_member(session: requests.Session, url: str, member: str) -> tup
     return digest.hexdigest(), size, final_url, content
 
 
-def read_matlab_artifact(session: requests.Session, url: str, member: str) -> tuple[str, int, str, str]:
+def read_matlab_artifact(
+    session: requests.Session, url: str, member: str
+) -> tuple[str, int, str, str]:
     """Read the compiler-generated runtime requirement from one exact ZIP member."""
     digest, size, final_url, content = read_archive_member(session, url, member)
     runtimes = set(re.findall(r"\bR(20\d{2}[ab])\b", content.decode("utf-8")))
@@ -382,7 +544,9 @@ def read_matlab_artifact(session: requests.Session, url: str, member: str) -> tu
     return digest, size, final_url, runtimes.pop()
 
 
-def read_archive_version(session: requests.Session, url: str, member: str, pattern: str) -> tuple[str, int, str, str]:
+def read_archive_version(
+    session: requests.Session, url: str, member: str, pattern: str
+) -> tuple[str, int, str, str]:
     """Read the one version an archive records in an exact member."""
     digest, size, final_url, content = read_archive_member(session, url, member)
     text = content.decode("latin-1")

@@ -54,13 +54,24 @@ def test_unused_raw_tag_variable_cannot_fall_back_to_another_version_binding():
         validate_update_policy(recipe)
 
 
-@pytest.mark.parametrize("policy", [
-    {"method": "manual", "reason": "Locally maintained example without an upstream software release."},
-    {"method": "pypi", "package": "example", "mode": "notify",
-     "reason": "The package has an incompatible release process."},
-])
+@pytest.mark.parametrize(
+    "policy",
+    [
+        {
+            "method": "manual",
+            "reason": "Locally maintained example without an upstream software release.",
+        },
+        {
+            "method": "pypi",
+            "package": "example",
+            "mode": "notify",
+            "reason": "The package has an incompatible release process.",
+        },
+    ],
+)
 def test_manual_and_notification_only_policies_fail_audit(
-    tmp_path: Path, policy: dict,
+    tmp_path: Path,
+    policy: dict,
 ) -> None:
     recipe_dir = tmp_path / "bundle"
     recipe_dir.mkdir()
@@ -79,11 +90,23 @@ def test_manual_and_notification_only_policies_fail_audit(
 def test_locally_maintained_recipe_can_track_repository_inputs(tmp_path):
     recipe_dir = tmp_path / "local-example"
     recipe_dir.mkdir()
-    (recipe_dir / "build.yaml").write_text(yaml.safe_dump({
-        "name": "local-example", "version": "1.0.0",
-        "auto_update": {"method": "sources", "container_version": False, "sources": [], "local": []},
-    }))
-    (recipe_dir / "fulltest.yaml").write_text("name: local-example\nversion: 1.0.0\ntests: []\n")
+    (recipe_dir / "build.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "local-example",
+                "version": "1.0.0",
+                "auto_update": {
+                    "method": "sources",
+                    "container_version": False,
+                    "sources": [],
+                    "local": [],
+                },
+            }
+        )
+    )
+    (recipe_dir / "fulltest.yaml").write_text(
+        "name: local-example\nversion: 1.0.0\ntests: []\n"
+    )
     assert audit(tmp_path)[0]["status"] == "automatic"
 
 
@@ -129,9 +152,9 @@ def test_unused_requirements_cannot_mask_an_unpinned_install():
     }
     with pytest.raises(ValueError, match="source download"):
         validate_update_policy(recipe)
-    recipe["build"]["directives"][0][
-        "run"
-    ] = 'pip install -r {{ get_file("requirements.txt") }}'
+    recipe["build"]["directives"][0]["run"] = (
+        'pip install -r {{ get_file("requirements.txt") }}'
+    )
     validate_update_policy(recipe)
 
 
@@ -329,19 +352,32 @@ FROZEN_REASON = "Maintainer holds these pins until the app is revalidated upstre
 def write_frozen_recipe(tmp_path: Path, policy: dict) -> Path:
     recipe_dir = tmp_path / "held"
     recipe_dir.mkdir()
-    (recipe_dir / "build.yaml").write_text(yaml.safe_dump({
-        "name": "held", "version": "1.0.0",
-        "auto_update": policy,
-        "build": {"directives": [{"run": "pip install demo=={{ context.version }}"}]},
-    }))
+    (recipe_dir / "build.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "held",
+                "version": "1.0.0",
+                "auto_update": policy,
+                "build": {
+                    "directives": [{"run": "pip install demo=={{ context.version }}"}]
+                },
+            }
+        )
+    )
     (recipe_dir / "fulltest.yaml").write_text("name: held\nversion: 1.0.0\ntests: []\n")
     return recipe_dir
 
 
 def test_frozen_recipe_keeps_its_declared_tracking_and_audits_as_frozen(tmp_path):
-    write_frozen_recipe(tmp_path, {
-        "method": "pypi", "package": "demo", "frozen": True, "reason": FROZEN_REASON,
-    })
+    write_frozen_recipe(
+        tmp_path,
+        {
+            "method": "pypi",
+            "package": "demo",
+            "frozen": True,
+            "reason": FROZEN_REASON,
+        },
+    )
     row = audit(tmp_path)[0]
     assert row["status"] == "frozen"
     assert row["reason"] == FROZEN_REASON
@@ -356,25 +392,45 @@ def test_freezing_a_recipe_requires_a_recorded_reason(tmp_path):
 
 
 def test_a_frozen_recipe_still_needs_a_working_source_binding(tmp_path):
-    recipe_dir = write_frozen_recipe(tmp_path, {
-        "method": "pypi", "package": "demo", "frozen": True, "reason": FROZEN_REASON,
-    })
-    (recipe_dir / "build.yaml").write_text(yaml.safe_dump({
-        "name": "held", "version": "1.0.0",
-        "auto_update": {
-            "method": "pypi", "package": "demo", "frozen": True, "reason": FROZEN_REASON,
+    recipe_dir = write_frozen_recipe(
+        tmp_path,
+        {
+            "method": "pypi",
+            "package": "demo",
+            "frozen": True,
+            "reason": FROZEN_REASON,
         },
-        "build": {"directives": [{"run": "pip install demo"}]},
-    }))
+    )
+    (recipe_dir / "build.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "held",
+                "version": "1.0.0",
+                "auto_update": {
+                    "method": "pypi",
+                    "package": "demo",
+                    "frozen": True,
+                    "reason": FROZEN_REASON,
+                },
+                "build": {"directives": [{"run": "pip install demo"}]},
+            }
+        )
+    )
     row = audit(tmp_path)[0]
     assert row["status"] == "error"
     assert "source download" in row["reason"]
 
 
 def test_resuming_updates_removes_the_key_rather_than_setting_it_false(tmp_path):
-    write_frozen_recipe(tmp_path, {
-        "method": "pypi", "package": "demo", "frozen": False, "reason": FROZEN_REASON,
-    })
+    write_frozen_recipe(
+        tmp_path,
+        {
+            "method": "pypi",
+            "package": "demo",
+            "frozen": False,
+            "reason": FROZEN_REASON,
+        },
+    )
     row = audit(tmp_path)[0]
     assert row["status"] == "error"
     assert "delete the key to resume updates" in row["reason"]

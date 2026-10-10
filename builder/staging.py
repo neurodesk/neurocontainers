@@ -37,9 +37,13 @@ class StagingPlan:
     files: dict[str, DeclaredFile] = field(default_factory=dict)
     copy_sources: list[CopySource] = field(default_factory=list)
     recipe_dir: Path = field(default_factory=Path)
-    _cache_mounts: dict[str, dict[str, str]] = field(default_factory=dict, init=False, repr=False)
+    _cache_mounts: dict[str, dict[str, str]] = field(
+        default_factory=dict, init=False, repr=False
+    )
     _unavailable_files: set[str] = field(default_factory=set, init=False, repr=False)
-    _mount_sources: dict[str, dict[str, str]] = field(default_factory=dict, init=False, repr=False)
+    _mount_sources: dict[str, dict[str, str]] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def add_file(
         self,
@@ -50,7 +54,11 @@ class StagingPlan:
     ) -> None:
         if file.name in self.files:
             raise ValueError(f"duplicate declared file: {file.name}")
-        if file.filename is not None and relative_to is not None and relative_to != self.recipe_dir:
+        if (
+            file.filename is not None
+            and relative_to is not None
+            and relative_to != self.recipe_dir
+        ):
             filename = Path(file.filename)
             if not filename.is_absolute():
                 file = replace(file, filename=str(relative_to / filename))
@@ -60,7 +68,12 @@ class StagingPlan:
 
     def _source_identity(self, file: DeclaredFile) -> str:
         if file.url is not None:
-            return str(Path.home() / ".cache" / "neurocontainers" / download_cache_key(file.url, file.sha256))
+            return str(
+                Path.home()
+                / ".cache"
+                / "neurocontainers"
+                / download_cache_key(file.url, file.sha256)
+            )
         if file.filename is not None:
             source = Path(file.filename)
             if not source.is_absolute():
@@ -79,7 +92,8 @@ class StagingPlan:
         }
         for cache_id, guests in self._mount_sources.items():
             self._cache_mounts[cache_id] = {
-                sources[source]: guest for guest, source in guests.items()
+                sources[source]: guest
+                for guest, source in guests.items()
                 if source in sources
             }
         return self._cache_mounts
@@ -93,7 +107,14 @@ class StagingPlan:
             return f"/.neurocontainer-cache/{guest}"
         names = self._mount_sources.setdefault(cache_id, {})
         source = self._source_identity(file)
-        target = Path.home() / ".cache" / "neurocontainers" / "build-context" / cache_id / guest
+        target = (
+            Path.home()
+            / ".cache"
+            / "neurocontainers"
+            / "build-context"
+            / cache_id
+            / guest
+        )
         source_path = Path(source)
         conflicts_existing = False
         if target.exists():
@@ -109,7 +130,9 @@ class StagingPlan:
                     conflicts_existing = True
                 if conflicts_existing and source_path.exists():
                     try:
-                        conflicts_existing = source_path.read_bytes() != target.read_bytes()
+                        conflicts_existing = (
+                            source_path.read_bytes() != target.read_bytes()
+                        )
                     except OSError:
                         conflicts_existing = True
         if (guest in names and names[guest] != source) or conflicts_existing:
@@ -232,7 +255,9 @@ def materialize_plan(
         if source.declared_name is not None:
             source_path = materialized.get(source.declared_name)
             if source_path is None:
-                raise FileNotFoundError(f"declared copy source not materialized: {source.declared_name}")
+                raise FileNotFoundError(
+                    f"declared copy source not materialized: {source.declared_name}"
+                )
             link_or_copy(source_path, target)
             continue
 

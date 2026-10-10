@@ -22,7 +22,9 @@ TAGGED_URL = "https://github.com/example/tool/releases/download/v2.0.0/tool-linu
 
 
 class Response:
-    def __init__(self, *, document=None, data=b"", url="https://api.github.com/example"):
+    def __init__(
+        self, *, document=None, data=b"", url="https://api.github.com/example"
+    ):
         self.document = document
         self.data = data
         self.url = url
@@ -57,7 +59,10 @@ class PublicSession:
         assert "Authorization" not in self.headers
         self.urls.append(url)
         assert url == TAGGED_URL
-        return Response(data=self.payload, url="https://release-assets.githubusercontent.com/asset?sig=temporary")
+        return Response(
+            data=self.payload,
+            url="https://release-assets.githubusercontent.com/asset?sig=temporary",
+        )
 
     def __enter__(self):
         return self
@@ -94,7 +99,12 @@ class GitHubSession:
             "browser_download_url": "https://github.com/example/tool/releases/latest/download/tool-linux.zip",
             **self.asset_overrides,
         }
-        return Response(document={"tag_name": self.published_tag, "assets": [asset] * self.asset_count})
+        return Response(
+            document={
+                "tag_name": self.published_tag,
+                "assets": [asset] * self.asset_count,
+            }
+        )
 
 
 @pytest.fixture
@@ -113,13 +123,18 @@ def test_selects_one_stable_release_and_preserves_its_url_after_cdn_redirect(ups
     assert result.tag == "v2.0.0"
     assert result.version == "2.0.0"
     assert result.url == "https://github.com/example/tool/releases/tag/v2.0.0"
-    assert result.metadata == {"sha256": hashlib.sha256(public.payload).hexdigest(), "size": len(public.payload)}
+    assert result.metadata == {
+        "sha256": hashlib.sha256(public.payload).hexdigest(),
+        "size": len(public.payload),
+    }
     assert public.urls == [TAGGED_URL]
     assert all(urlparse(url).hostname == "api.github.com" for url in github.urls)
     assert not any("/latest" in url for url in github.urls + public.urls)
 
 
-def test_older_assets_without_a_published_digest_are_hashed_from_downloaded_bytes(upstream):
+def test_older_assets_without_a_published_digest_are_hashed_from_downloaded_bytes(
+    upstream,
+):
     github, public = upstream
     github.asset_overrides = {"digest": None}
     result = observe_source(CONFIG, github)
@@ -152,27 +167,39 @@ def test_release_metadata_must_still_identify_selected_tag(upstream):
     assert not public.urls
 
 
-@pytest.mark.parametrize("overrides,message", [
-    ({"size": -1}, "valid size"),
-    ({"size": True}, "valid size"),
-    ({"state": "new"}, "uploaded"),
-    ({"digest": "sha256:not-a-digest"}, "invalid published SHA256"),
-    ({"digest": "sha256:" + "0" * 64}, "disagrees with published digest"),
-    ({"size": 1}, "size disagrees"),
-])
-def test_incomplete_or_changed_asset_metadata_cannot_produce_an_observation(upstream, overrides, message):
+@pytest.mark.parametrize(
+    "overrides,message",
+    [
+        ({"size": -1}, "valid size"),
+        ({"size": True}, "valid size"),
+        ({"state": "new"}, "uploaded"),
+        ({"digest": "sha256:not-a-digest"}, "invalid published SHA256"),
+        ({"digest": "sha256:" + "0" * 64}, "disagrees with published digest"),
+        ({"size": 1}, "size disagrees"),
+    ],
+)
+def test_incomplete_or_changed_asset_metadata_cannot_produce_an_observation(
+    upstream, overrides, message
+):
     github, _ = upstream
     github.asset_overrides = overrides
     with pytest.raises(ValueError, match=message):
         observe_source(CONFIG, github)
 
 
-@pytest.mark.parametrize("change", [
-    {"asset": "../tool.zip"}, {"asset": "https://example.org/tool.zip"},
-    {"asset": "tool.zip\n"}, {"asset": ""}, {"asset": "TODO"},
-    {"repo": "not-a-repository"}, {"unknown": "field"},
-    {"include_prereleases": "false"},
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"asset": "../tool.zip"},
+        {"asset": "https://example.org/tool.zip"},
+        {"asset": "tool.zip\n"},
+        {"asset": ""},
+        {"asset": "TODO"},
+        {"repo": "not-a-repository"},
+        {"unknown": "field"},
+        {"include_prereleases": "false"},
+    ],
+)
 def test_invalid_source_configuration_is_rejected(change):
     with pytest.raises(ValueError):
         validate_source({**CONFIG, **change})
@@ -180,29 +207,62 @@ def test_invalid_source_configuration_is_rejected(change):
 
 def write_recipe(tmp_path: Path) -> Path:
     recipe = {
-        "name": "demo", "version": "1.0.0",
+        "name": "demo",
+        "version": "1.0.0",
         "variables": {"upstream_version": "1.0.0"},
-        "auto_update": {"method": "sources",
-            "container_version": "archive", "sources": [{
-            "id": "archive", **CONFIG,
-            "target": {"file": "archive", "variables": {"upstream_version": "version"}},
-        }]},
-        "files": [{"name": "archive", "url": TAGGED_URL.replace("v2.0.0", "v1.0.0"), "sha256": "a" * 64}],
-        "build": {"base-image": "ubuntu:22.04", "directives": [
-            {"run": ["unzip {{ get_file('archive') }} -d /opt/tool"]},
-        ]},
+        "auto_update": {
+            "method": "sources",
+            "container_version": "archive",
+            "sources": [
+                {
+                    "id": "archive",
+                    **CONFIG,
+                    "target": {
+                        "file": "archive",
+                        "variables": {"upstream_version": "version"},
+                    },
+                }
+            ],
+        },
+        "files": [
+            {
+                "name": "archive",
+                "url": TAGGED_URL.replace("v2.0.0", "v1.0.0"),
+                "sha256": "a" * 64,
+            }
+        ],
+        "build": {
+            "base-image": "ubuntu:22.04",
+            "directives": [
+                {"run": ["unzip {{ get_file('archive') }} -d /opt/tool"]},
+            ],
+        },
     }
     path = tmp_path / "build.yaml"
     path.write_text(yaml.safe_dump(recipe, sort_keys=False))
-    path.with_name("fulltest.yaml").write_text(yaml.safe_dump({
-        "name": "demo", "version": "1.0.0", "upstream_version": "1.0.0",
-        "tests": [{"name": "installed executable", "command": "test -x /opt/tool/tool"}],
-    }, sort_keys=False))
+    path.with_name("fulltest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "demo",
+                "version": "1.0.0",
+                "upstream_version": "1.0.0",
+                "tests": [
+                    {
+                        "name": "installed executable",
+                        "command": "test -x /opt/tool/tool",
+                    }
+                ],
+            },
+            sort_keys=False,
+        )
+    )
     validate_update_policy(recipe, recipe_path=path)
     return path
 
 
-def test_plan_couples_tagged_url_digest_and_version_and_reobserves_mutable_assets(tmp_path, upstream):
+def test_plan_couples_tagged_url_digest_and_version_and_reobserves_mutable_assets(
+    tmp_path, upstream
+):
     github, public = upstream
     path = write_recipe(tmp_path)
     plan = plan_sources(path, github)
@@ -211,7 +271,10 @@ def test_plan_couples_tagged_url_digest_and_version_and_reobserves_mutable_asset
     assert changed["variables"]["upstream_version"] == "2.0.0"
     assert changed["files"][0]["url"] == TAGGED_URL
     assert changed["files"][0]["sha256"] == hashlib.sha256(public.payload).hexdigest()
-    assert yaml.safe_load(path.with_name("fulltest.yaml").read_text())["upstream_version"] == "2.0.0"
+    assert (
+        yaml.safe_load(path.with_name("fulltest.yaml").read_text())["upstream_version"]
+        == "2.0.0"
+    )
     assert plan_sources(path, github) is None
     public.payload = b"replacement under exactly the same release tag and asset name"
     replaced = plan_sources(path, github)
@@ -226,7 +289,9 @@ def test_plan_couples_tagged_url_digest_and_version_and_reobserves_mutable_asset
     assert public.urls == [TAGGED_URL] * 4
 
 
-def test_observation_failure_keeps_recipe_and_runtime_suite_unchanged(tmp_path, upstream):
+def test_observation_failure_keeps_recipe_and_runtime_suite_unchanged(
+    tmp_path, upstream
+):
     github, _ = upstream
     path = write_recipe(tmp_path)
     suite = path.with_name("fulltest.yaml")

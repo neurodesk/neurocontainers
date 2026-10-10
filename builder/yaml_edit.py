@@ -18,7 +18,9 @@ def set_scalar(text: str, parent: str | None, key: str, value: str) -> str:
     nodes = mapping_nodes(text)
     if parent is None:
         if key not in nodes:
-            return text.rstrip() + "\n\n" + yaml.safe_dump({key: value}, sort_keys=False)
+            return (
+                text.rstrip() + "\n\n" + yaml.safe_dump({key: value}, sort_keys=False)
+            )
         node = nodes[key][1]
     elif parent not in nodes:
         # Variables must precede expressions that reference them during rendering.
@@ -32,12 +34,20 @@ def set_scalar(text: str, parent: str | None, key: str, value: str) -> str:
             if node.flow_style:
                 mapping = yaml.safe_load(text)[parent]
                 mapping[key] = value
-                rendered = yaml.safe_dump(mapping, default_flow_style=True, width=100000).strip()
-                return text[:node.start_mark.index] + rendered + text[node.end_mark.index:]
+                rendered = yaml.safe_dump(
+                    mapping, default_flow_style=True, width=100000
+                ).strip()
+                return (
+                    text[: node.start_mark.index]
+                    + rendered
+                    + text[node.end_mark.index :]
+                )
             start = text.rfind("\n", 0, node.start_mark.index) + 1
             line = " " * node.start_mark.column + key + ": " + json.dumps(value) + "\n"
             return text[:start] + line + text[start:]
         node = match
     if not isinstance(node, yaml.ScalarNode):
         raise ValueError(f"{parent}.{key} must be a scalar")
-    return text[:node.start_mark.index] + json.dumps(value) + text[node.end_mark.index:]
+    return (
+        text[: node.start_mark.index] + json.dumps(value) + text[node.end_mark.index :]
+    )

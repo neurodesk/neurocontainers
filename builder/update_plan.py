@@ -16,7 +16,9 @@ from .versioning import container_version
 
 # These sources pin exact bytes without naming a software version, so they can
 # never drive the container label.
-VERSIONLESS_METHODS = frozenset({"git_commit", "github_commit", "http_digest", "oci_digest"})
+VERSIONLESS_METHODS = frozenset(
+    {"git_commit", "github_commit", "http_digest", "oci_digest"}
+)
 
 
 def _validate_container_version(config: dict, ids: set[str]) -> None:
@@ -50,9 +52,7 @@ def _validate_container_version(config: dict, ids: set[str]) -> None:
         raise ValueError(
             f"container_version must name one of this recipe's sources: {sorted(ids)}"
         )
-    source = next(
-        source for source in config["sources"] if source.get("id") == driver
-    )
+    source = next(source for source in config["sources"] if source.get("id") == driver)
     if source.get("dependency"):
         raise ValueError(
             f"container_version source {driver} is marked dependency: a version driver "
@@ -65,18 +65,34 @@ def _validate_container_version(config: dict, ids: set[str]) -> None:
             f"container_version source {driver} tracks {source['method']}, which pins bytes "
             "without naming a software version"
         )
-    if source["method"] in VERSIONLESS_METHODS and "version" not in source["target"].get("variables", {}).values():
-        raise ValueError("container_version source must record version metadata in a recipe variable")
+    if (
+        source["method"] in VERSIONLESS_METHODS
+        and "version" not in source["target"].get("variables", {}).values()
+    ):
+        raise ValueError(
+            "container_version source must record version metadata in a recipe variable"
+        )
 
 
 def source_config(source: dict) -> dict:
-    return {key: value for key, value in source.items() if key not in {"id", "target", "dependency"}}
+    return {
+        key: value
+        for key, value in source.items()
+        if key not in {"id", "target", "dependency"}
+    }
 
 
 def validate_sources_config(config: dict) -> None:
     from .update_observations import validate_source
 
-    if set(config) - {"method", "sources", "local", "container_version", "frozen", "reason"}:
+    if set(config) - {
+        "method",
+        "sources",
+        "local",
+        "container_version",
+        "frozen",
+        "reason",
+    }:
         raise ValueError(
             "sources policy accepts only method, sources, local, container_version, "
             "frozen and reason"
@@ -87,8 +103,11 @@ def validate_sources_config(config: dict) -> None:
     if "local" in config:
         paths = config["local"]
         if not isinstance(paths, list) or any(
-            not isinstance(path, str) or not path or PurePosixPath(path).is_absolute()
-            or ".." in PurePosixPath(path).parts or path.startswith(".git")
+            not isinstance(path, str)
+            or not path
+            or PurePosixPath(path).is_absolute()
+            or ".." in PurePosixPath(path).parts
+            or path.startswith(".git")
             for path in paths
         ):
             raise ValueError("auto_update.local must contain repository-relative paths")
@@ -111,12 +130,20 @@ def validate_sources_config(config: dict) -> None:
         target = source.get("target")
         if not isinstance(target, dict) or len(set(target) & {"variable", "file"}) != 1:
             raise ValueError(f"{name}: target requires exactly one variable or file")
-        allowed = {"variable", "value", "fulltest_variable", "variables"} if "variable" in target else {"file", "variables"}
+        allowed = (
+            {"variable", "value", "fulltest_variable", "variables"}
+            if "variable" in target
+            else {"file", "variables"}
+        )
         if set(target) - allowed:
             raise ValueError(f"{name}: unsupported update target fields")
         kind = "variable" if "variable" in target else "file"
         key = target[kind]
-        pattern = r"[A-Za-z_][A-Za-z_0-9]*" if kind == "variable" else r"[A-Za-z0-9_][A-Za-z_0-9.-]*"
+        pattern = (
+            r"[A-Za-z_][A-Za-z_0-9]*"
+            if kind == "variable"
+            else r"[A-Za-z0-9_][A-Za-z_0-9.-]*"
+        )
         if not isinstance(key, str) or not re.fullmatch(pattern, key):
             raise ValueError(f"{name}: invalid target name")
         destination = (kind, key)
@@ -127,16 +154,27 @@ def validate_sources_config(config: dict) -> None:
             raise ValueError(f"{name}: value must select value, version or tag")
         if "variable" in target and key in {"version", "original_version"}:
             raise ValueError("independent sources cannot target the container version")
-        if "file" in target and source["method"] not in {"http_digest", "artifact_listing", "slicer_release", "freesurfer_release", "github_release_asset"}:
-            raise ValueError(f"{name}: a file target requires an artifact or digest source")
+        if "file" in target and source["method"] not in {
+            "http_digest",
+            "artifact_listing",
+            "slicer_release",
+            "freesurfer_release",
+            "github_release_asset",
+        }:
+            raise ValueError(
+                f"{name}: a file target requires an artifact or digest source"
+            )
         if "variables" in target:
             if not isinstance(target["variables"], dict) or not all(
-                isinstance(k, str) and isinstance(v, str)
+                isinstance(k, str)
+                and isinstance(v, str)
                 and re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", k)
                 and re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", v)
                 for k, v in target["variables"].items()
             ):
-                raise ValueError(f"{name}: variables must map recipe names to artifact fields")
+                raise ValueError(
+                    f"{name}: variables must map recipe names to artifact fields"
+                )
             for variable in target["variables"]:
                 destination = ("variable", variable)
                 if destination in destinations:
@@ -173,7 +211,9 @@ def _acquisition_text(recipe: dict, variable: str) -> str:
                 variables.update(item["variables"])
             if "include" in item:
                 relative = item["include"]
-                relative = relative if relative.startswith("macros/") else "macros/" + relative
+                relative = (
+                    relative if relative.startswith("macros/") else "macros/" + relative
+                )
                 root = Path(__file__).resolve().parents[1]
                 path = (root / relative).resolve()
                 if not path.is_relative_to(root / "macros"):
@@ -201,11 +241,16 @@ def _acquisition_text(recipe: dict, variable: str) -> str:
 
     walk(build.get("directives"))
     text = "\n".join(parts)
-    text = re.sub(r"{{\s*(?:context|local)\." + re.escape(variable) + r"\b[^{}]*}}", "__UPDATE_INPUT__", text)
+    text = re.sub(
+        r"{{\s*(?:context|local)\." + re.escape(variable) + r"\b[^{}]*}}",
+        "__UPDATE_INPUT__",
+        text,
+    )
     for _ in range(20):
         updated = re.sub(
             r"{{\s*(?:context|local)\.([A-Za-z_][A-Za-z_0-9]*)\s*}}",
-            lambda m: str(variables.get(m[1], m[0])), text,
+            lambda m: str(variables.get(m[1], m[0])),
+            text,
         )
         if updated == text:
             break
@@ -222,42 +267,80 @@ def validate_target_bindings(recipe: dict, recipe_path: Path | None = None) -> N
             variable = target["variable"]
             value = variables.get(variable)
             if not isinstance(value, (str, int, float)) or not str(value):
-                raise ValueError(f"{source['id']}: variables.{variable} requires a current pin")
+                raise ValueError(
+                    f"{source['id']}: variables.{variable} requires a current pin"
+                )
             if "__UPDATE_INPUT__" not in _acquisition_text(recipe, variable):
-                raise ValueError(f"{source['id']}: {variable} is not used in an acquisition input")
-            if source["method"] in {"github_commit", "git_commit"} and not re.fullmatch(r"[a-f0-9]{40}", str(value)):
-                raise ValueError(f"{source['id']}: source commits must contain all 40 hex digits")
-            if source["method"] == "oci_digest" and not re.fullmatch(r"sha256:[a-f0-9]{64}", str(value)):
-                raise ValueError(f"{source['id']}: image must be pinned to a SHA-256 digest")
-            if source["method"] == "http_digest" and not re.fullmatch(r"[a-f0-9]{64}", str(value)):
-                raise ValueError(f"{source['id']}: file digest requires 64 hexadecimal digits")
+                raise ValueError(
+                    f"{source['id']}: {variable} is not used in an acquisition input"
+                )
+            if source["method"] in {"github_commit", "git_commit"} and not re.fullmatch(
+                r"[a-f0-9]{40}", str(value)
+            ):
+                raise ValueError(
+                    f"{source['id']}: source commits must contain all 40 hex digits"
+                )
+            if source["method"] == "oci_digest" and not re.fullmatch(
+                r"sha256:[a-f0-9]{64}", str(value)
+            ):
+                raise ValueError(
+                    f"{source['id']}: image must be pinned to a SHA-256 digest"
+                )
+            if source["method"] == "http_digest" and not re.fullmatch(
+                r"[a-f0-9]{64}", str(value)
+            ):
+                raise ValueError(
+                    f"{source['id']}: file digest requires 64 hexadecimal digits"
+                )
         else:
-            matches = [file for file in recipe.get("files", []) if file.get("name") == target["file"]]
+            matches = [
+                file
+                for file in recipe.get("files", [])
+                if file.get("name") == target["file"]
+            ]
             if len(matches) != 1 or not matches[0].get("url"):
-                raise ValueError(f"{source['id']}: target requires one declared URL file")
+                raise ValueError(
+                    f"{source['id']}: target requires one declared URL file"
+                )
             if not re.fullmatch(r"[a-f0-9]{64}", str(matches[0].get("sha256", ""))):
-                raise ValueError(f"{source['id']}: file requires a verified SHA-256 baseline")
+                raise ValueError(
+                    f"{source['id']}: file requires a verified SHA-256 baseline"
+                )
             for variable in target.get("variables", {}):
-                if variable not in variables or not isinstance(variables[variable], (str, int, float)):
-                    raise ValueError(f"{source['id']}: artifact variable {variable} requires a current scalar")
+                if variable not in variables or not isinstance(
+                    variables[variable], (str, int, float)
+                ):
+                    raise ValueError(
+                        f"{source['id']}: artifact variable {variable} requires a current scalar"
+                    )
     if recipe_path is not None:
         suite = recipe_path.with_name("fulltest.yaml")
         if not suite.is_file():
-            raise ValueError("automatic updates require a sibling fulltest.yaml runtime test")
+            raise ValueError(
+                "automatic updates require a sibling fulltest.yaml runtime test"
+            )
         fulltest = yaml.safe_load(suite.read_text())
         for source in config.get("sources", []):
             target = source["target"]
             if key := target.get("fulltest_variable"):
                 if str(fulltest.get(key, "")) != str(variables[target["variable"]]):
-                    raise ValueError(f"fulltest.{key} must match variables.{target['variable']}")
+                    raise ValueError(
+                        f"fulltest.{key} must match variables.{target['variable']}"
+                    )
             for variable in target.get("variables", {}):
-                if variable in fulltest and str(fulltest[variable]) != str(variables[variable]):
-                    raise ValueError(f"fulltest.{variable} must match variables.{variable}")
+                if variable in fulltest and str(fulltest[variable]) != str(
+                    variables[variable]
+                ):
+                    raise ValueError(
+                        f"fulltest.{variable} must match variables.{variable}"
+                    )
 
 
 def _is_older(observed: str, current: str) -> bool:
     try:
-        return Version(observed.lstrip("vVrR").replace("_", ".")) < Version(current.lstrip("vVrR").replace("_", "."))
+        return Version(observed.lstrip("vVrR").replace("_", ".")) < Version(
+            current.lstrip("vVrR").replace("_", ".")
+        )
     except InvalidVersion:
         return False
 
@@ -302,12 +385,20 @@ def rewrite_scalar(text: str, path: tuple[str | int, ...], value: str) -> str:
             raise ValueError(f"invalid YAML path {path}")
     if not isinstance(node, yaml.ScalarNode) or node.style in {"|", ">"}:
         raise ValueError(f"update target must be a scalar: {path}")
-    anchored = any(isinstance(token, (yaml.tokens.AnchorToken, yaml.tokens.AliasToken))
-                   and node.start_mark.index <= token.start_mark.index < node.end_mark.index
-                   for token in yaml.scan(text))
-    if anchored or (parent is not None and node.start_mark.index < parent.start_mark.index):
+    anchored = any(
+        isinstance(token, (yaml.tokens.AnchorToken, yaml.tokens.AliasToken))
+        and node.start_mark.index <= token.start_mark.index < node.end_mark.index
+        for token in yaml.scan(text)
+    )
+    if anchored or (
+        parent is not None and node.start_mark.index < parent.start_mark.index
+    ):
         raise ValueError(f"update target cannot use YAML anchors or aliases: {path}")
-    return text[:node.start_mark.index] + json.dumps(str(value)) + text[node.end_mark.index:]
+    return (
+        text[: node.start_mark.index]
+        + json.dumps(str(value))
+        + text[node.end_mark.index :]
+    )
 
 
 @dataclass(frozen=True)
@@ -337,13 +428,17 @@ class UpdatePlan:
     def apply(self) -> None:
         for patch in self.patches:
             if patch.path.read_text() not in {patch.before, patch.after}:
-                raise ValueError(f"update plan conflicts with changed file: {patch.path}")
+                raise ValueError(
+                    f"update plan conflicts with changed file: {patch.path}"
+                )
         for patch in self.patches:
             if patch.path.read_text() != patch.after:
                 patch.path.write_text(patch.after)
 
 
-def plan_sources(recipe_path: Path, github_session=None, *, observations: Mapping | None = None) -> UpdatePlan | None:
+def plan_sources(
+    recipe_path: Path, github_session=None, *, observations: Mapping | None = None
+) -> UpdatePlan | None:
     """Resolve all components before returning any edits; failures leave files untouched."""
     from .update_observations import observe_source
 
@@ -359,9 +454,19 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
     for source in recipe["auto_update"].get("sources", []):
         before_recipe, before_suite = updated, suite_updated
         target = source["target"]
-        current = str(recipe["variables"][target["variable"]]) if "variable" in target else None
-        observation = observations[source["id"]] if observations is not None else observe_source(
-            source_config(source), github_session, current=current,
+        current = (
+            str(recipe["variables"][target["variable"]])
+            if "variable" in target
+            else None
+        )
+        observation = (
+            observations[source["id"]]
+            if observations is not None
+            else observe_source(
+                source_config(source),
+                github_session,
+                current=current,
+            )
         )
         if observation is None:
             raise ValueError(f"{source['id']}: upstream supplied no installable input")
@@ -379,9 +484,7 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
                 continue
             observed_version = fields.get(field)
             if not isinstance(observed_version, str) or not observed_version:
-                raise ValueError(
-                    f"{source['id']}: observation lacks field version"
-                )
+                raise ValueError(f"{source['id']}: observation lacks field version")
             if _is_older(observed_version, str(recipe["variables"][variable])):
                 metadata_downgrade = True
                 break
@@ -401,8 +504,15 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
             if observation.version and target.get("value") == "tag":
                 from .update_sources import parse_release_tag
 
-                previous = parse_release_tag(current, "", re.compile(source["version_regex"]) if "version_regex" in source else None,
-                                             source.get("version_scheme", "numeric"), source.get("include_prereleases", False))
+                previous = parse_release_tag(
+                    current,
+                    "",
+                    re.compile(source["version_regex"])
+                    if "version_regex" in source
+                    else None,
+                    source.get("version_scheme", "numeric"),
+                    source.get("include_prereleases", False),
+                )
                 if previous and _is_older(observation.version, previous.version):
                     continue
             # An apt version is ordered by _debian_newer above; its upstream
@@ -421,14 +531,29 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
             if variable := target.get("fulltest_variable"):
                 suite_updated = rewrite_suite_scalar(suite_updated, variable, selected)
         else:
-            index, file = next((i, f) for i, f in enumerate(recipe["files"]) if f["name"] == target["file"])
+            index, file = next(
+                (i, f)
+                for i, f in enumerate(recipe["files"])
+                if f["name"] == target["file"]
+            )
             current_version = _current_artifact_version(source, recipe, file)
-            if observation.version and current_version and _is_older(observation.version, current_version):
+            if (
+                observation.version
+                and current_version
+                and _is_older(observation.version, current_version)
+            ):
                 continue
             # New bytes under an unchanged version are a re-published build, not
             # a release: hold them for the next update like a dependency pin.
-            republished = observation.version is not None and observation.version == current_version
-            digest = observation.value if source["method"] == "http_digest" else observation.metadata["sha256"]
+            republished = (
+                observation.version is not None
+                and observation.version == current_version
+            )
+            digest = (
+                observation.value
+                if source["method"] == "http_digest"
+                else observation.metadata["sha256"]
+            )
             if not re.fullmatch(r"[a-f0-9]{64}", digest):
                 raise ValueError(f"{source['id']}: invalid observed SHA-256")
             edits.append((("files", index, "sha256"), digest))
@@ -462,8 +587,21 @@ def plan_sources(recipe_path: Path, github_session=None, *, observations: Mappin
         suite_updated = rewrite_scalar(suite_updated, ("version",), next_version)
     if updated == original and suite_updated == suite_original:
         return None
-    patches = (FilePatch(recipe_path, original, updated), FilePatch(suite_path, suite_original, suite_updated))
-    identity = json.dumps([(p.path.name, p.before, p.after) for p in patches], separators=(",", ":"))
+    patches = (
+        FilePatch(recipe_path, original, updated),
+        FilePatch(suite_path, suite_original, suite_updated),
+    )
+    identity = json.dumps(
+        [(p.path.name, p.before, p.after) for p in patches], separators=(",", ":")
+    )
     fingerprint = hashlib.sha256(identity.encode()).hexdigest()
-    return UpdatePlan(recipe_path.parent.name, current_version, next_version, patches,
-                      tuple(changes), fingerprint, tuple(sorted(set(urls))), not triggered)
+    return UpdatePlan(
+        recipe_path.parent.name,
+        current_version,
+        next_version,
+        patches,
+        tuple(changes),
+        fingerprint,
+        tuple(sorted(set(urls))),
+        not triggered,
+    )

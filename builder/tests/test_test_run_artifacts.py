@@ -23,7 +23,9 @@ def _completed(root: Path, destination: Path) -> Path:
 
 
 def _publish(destination: Path, run: Path | None = None) -> None:
-    destination.write_text(json.dumps({"fulltest_artifacts": {"log": str(run / "log")} if run else {}}))
+    destination.write_text(
+        json.dumps({"fulltest_artifacts": {"log": str(run / "log")} if run else {}})
+    )
 
 
 def _receive(connection):
@@ -55,13 +57,21 @@ def test_process_ownership_and_latest_publication(tmp_path):
     process.start()
     try:
         path = Path(_receive(parent))
-        assert artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].reason == "active run or another cleaner"
+        assert (
+            artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].reason
+            == "active run or another cleaner"
+        )
         assert path.is_dir()
         parent.send("publish")
         _join(process)
-        assert artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].reason == "referenced by latest results"
+        assert (
+            artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].reason
+            == "referenced by latest results"
+        )
         _publish(destination)
-        assert artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].action == "deleted"
+        assert (
+            artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].action == "deleted"
+        )
     finally:
         if process.is_alive():
             process.kill()
@@ -80,7 +90,9 @@ def test_age_boundary_dry_run_and_repeat(tmp_path, monkeypatch):
     assert artifacts.cleanup_runs(tmp_path)[0].reason == "within retention period"
     monkeypatch.setattr(artifacts.time, "time", lambda: 1000000 + 7 * 86400)
     assert artifacts.cleanup_runs(tmp_path, dry_run=True)[0].action == "would-delete"
-    assert {item.relative_to(path): item.read_bytes() for item in path.iterdir()} == before
+    assert {
+        item.relative_to(path): item.read_bytes() for item in path.iterdir()
+    } == before
     assert artifacts.cleanup_runs(tmp_path)[0].action == "deleted"
     assert artifacts.cleanup_runs(tmp_path) == []
 
@@ -93,20 +105,33 @@ def test_each_external_destination_protects_its_latest(tmp_path):
     second = _completed(root, two)
     _publish(one, first)
     _publish(two, second)
-    actions = {entry.path: entry.action for entry in artifacts.cleanup_runs(root, older_than_days=0)}
+    actions = {
+        entry.path: entry.action
+        for entry in artifacts.cleanup_runs(root, older_than_days=0)
+    }
     assert actions == {old: "deleted", first: "retained", second: "retained"}
 
 
-@pytest.mark.parametrize("latest", [None, "{", "[]", '{"fulltest_artifacts": null}',
-    '{"fulltest_artifacts": []}', '{"fulltest_artifacts": {"log": 1}}',
-    '{"fulltest_artifacts": {"log": "relative/log"}}',
-    '{"fulltest_artifacts": {"log": ""}}', '{"fulltest_artifacts": {"log": "\\u0000"}}'])
+@pytest.mark.parametrize(
+    "latest",
+    [
+        None,
+        "{",
+        "[]",
+        '{"fulltest_artifacts": null}',
+        '{"fulltest_artifacts": []}',
+        '{"fulltest_artifacts": {"log": 1}}',
+        '{"fulltest_artifacts": {"log": "relative/log"}}',
+        '{"fulltest_artifacts": {"log": ""}}',
+        '{"fulltest_artifacts": {"log": "\\u0000"}}',
+    ],
+)
 def test_unverifiable_latest_is_retained(tmp_path, latest):
     destination = tmp_path / "results.json"
     path = _completed(tmp_path, destination)
     if latest is not None:
         destination.write_text(latest)
-    entry, = artifacts.cleanup_runs(tmp_path, older_than_days=0)
+    (entry,) = artifacts.cleanup_runs(tmp_path, older_than_days=0)
     assert entry.action == "retained"
     assert "latest results unavailable or invalid" in entry.reason
     assert (path / "log").read_text() == "diagnostic"
@@ -121,13 +146,23 @@ def test_valid_results_without_artifacts_supersede_run(tmp_path, latest):
     assert not path.exists()
 
 
-@pytest.mark.parametrize("change", [
-    {"version": True}, {"version": 2}, {"run_id": "fulltest-run-other"},
-    {"results_path": "relative.json"}, {"results_path": None}, {"extra": 1},
-    {"completed_at": None}, {"completed_at": True}, {"completed_at": -1},
-    {"completed_at": float("nan")}, {"completed_at": float("inf")},
-    {"completed_at": 10**100},
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"version": True},
+        {"version": 2},
+        {"run_id": "fulltest-run-other"},
+        {"results_path": "relative.json"},
+        {"results_path": None},
+        {"extra": 1},
+        {"completed_at": None},
+        {"completed_at": True},
+        {"completed_at": -1},
+        {"completed_at": float("nan")},
+        {"completed_at": float("inf")},
+        {"completed_at": 10**100},
+    ],
+)
 def test_invalid_metadata_is_retained(tmp_path, change):
     destination = tmp_path / "results.json"
     _publish(destination)
@@ -136,7 +171,7 @@ def test_invalid_metadata_is_retained(tmp_path, change):
     record = json.loads(metadata.read_text())
     record.update(change)
     metadata.write_text(json.dumps(record))
-    entry, = artifacts.cleanup_runs(tmp_path, older_than_days=0)
+    (entry,) = artifacts.cleanup_runs(tmp_path, older_than_days=0)
     assert entry.action == "retained"
     assert "invalid metadata" in entry.reason
     assert path.exists()
@@ -159,9 +194,17 @@ def test_legacy_unfinished_and_symlinks_are_safe(tmp_path):
         with artifacts.managed_run(root, results_path=destination) as run:
             unfinished = run.path
             raise RuntimeError("publication failed")
-    actions = {entry.path: entry.action for entry in artifacts.cleanup_runs(root, older_than_days=0)}
+    actions = {
+        entry.path: entry.action
+        for entry in artifacts.cleanup_runs(root, older_than_days=0)
+    }
     assert actions[completed] == "deleted"
-    assert actions[legacy] == actions[unfinished] == actions[root / "fulltest-run-link"] == "retained"
+    assert (
+        actions[legacy]
+        == actions[unfinished]
+        == actions[root / "fulltest-run-link"]
+        == "retained"
+    )
     assert (target / "important").read_text() == "keep"
     assert (legacy / "log").read_text() == "old"
 
@@ -179,8 +222,12 @@ def test_symlink_metadata_and_latest_are_retained(tmp_path, loop):
     actual_results = tmp_path / "actual.json"
     destination.rename(actual_results)
     destination.symlink_to(destination.name if loop else actual_results)
-    assert {entry.path: entry.action for entry in artifacts.cleanup_runs(tmp_path, older_than_days=0)} == {
-        one: "retained", two: "retained",
+    assert {
+        entry.path: entry.action
+        for entry in artifacts.cleanup_runs(tmp_path, older_than_days=0)
+    } == {
+        one: "retained",
+        two: "retained",
     }
 
 
@@ -205,7 +252,10 @@ def test_two_cleaners_do_not_delete_under_each_other(tmp_path):
     process.start()
     try:
         assert Path(_receive(parent)) == path
-        assert artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].reason == "active run or another cleaner"
+        assert (
+            artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].reason
+            == "active run or another cleaner"
+        )
         parent.send("delete")
         assert _receive(parent)[0].action == "deleted"
         _join(process)
@@ -220,13 +270,19 @@ def test_two_cleaners_do_not_delete_under_each_other(tmp_path):
 
 def _parent_with_child(root, destination, connection, ready, proceed):
     with artifacts.managed_run(root, results_path=destination) as run:
-        child = subprocess.Popen([
-            sys.executable, "-c",
-            "import os,sys; from pathlib import Path; "
-            "os.write(int(sys.argv[1]), b'R'); os.read(int(sys.argv[2]), 1); "
-            "Path(sys.argv[3]).write_text('child survived'); os.write(int(sys.argv[1]), b'D')",
-            str(ready), str(proceed), str(run.path / "child-log"),
-        ], pass_fds=(ready, proceed))
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import os,sys; from pathlib import Path; "
+                "os.write(int(sys.argv[1]), b'R'); os.read(int(sys.argv[2]), 1); "
+                "Path(sys.argv[3]).write_text('child survived'); os.write(int(sys.argv[1]), b'D')",
+                str(ready),
+                str(proceed),
+                str(run.path / "child-log"),
+            ],
+            pass_fds=(ready, proceed),
+        )
         connection.send((str(run.path), child.pid))
         connection.recv()
 
@@ -237,9 +293,16 @@ def test_killed_parent_with_live_child_retains_unfinished(tmp_path):
     ready_read, ready_write = os.pipe()
     proceed_read, proceed_write = os.pipe()
     parent, child = CTX.Pipe()
-    process = CTX.Process(target=_parent_with_child, args=(
-        tmp_path, destination, child, ready_write, proceed_read,
-    ))
+    process = CTX.Process(
+        target=_parent_with_child,
+        args=(
+            tmp_path,
+            destination,
+            child,
+            ready_write,
+            proceed_read,
+        ),
+    )
     process.start()
     child_pid = None
     try:
@@ -250,7 +313,10 @@ def test_killed_parent_with_live_child_retains_unfinished(tmp_path):
         process.kill()
         process.join(10)
         os.kill(child_pid, 0)
-        assert artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].reason == "unfinished run"
+        assert (
+            artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].reason
+            == "unfinished run"
+        )
         os.write(proceed_write, b"G")
         assert select.select([ready_read], [], [], 10)[0]
         assert os.read(ready_read, 1) == b"D"
@@ -291,7 +357,7 @@ def test_locked_inode_must_still_match_directory_name(tmp_path, monkeypatch):
         (path / "important").write_text("replacement")
 
     monkeypatch.setattr(artifacts.fcntl, "flock", replace_after_lock)
-    entry, = artifacts.cleanup_runs(tmp_path, older_than_days=0)
+    (entry,) = artifacts.cleanup_runs(tmp_path, older_than_days=0)
     assert entry.reason == "directory identity changed"
     assert (path / "important").read_text() == "replacement"
     assert (moved / "log").read_text() == "diagnostic"
@@ -318,17 +384,22 @@ def test_creation_before_lock_is_not_collectible(tmp_path):
     destination = tmp_path / "results.json"
     _publish(destination)
     parent, child = CTX.Pipe()
-    process = CTX.Process(target=_before_creation_lock, args=(tmp_path, destination, child))
+    process = CTX.Process(
+        target=_before_creation_lock, args=(tmp_path, destination, child)
+    )
     process.start()
     try:
         path = Path(_receive(parent))
-        entry, = artifacts.cleanup_runs(tmp_path, older_than_days=0)
+        (entry,) = artifacts.cleanup_runs(tmp_path, older_than_days=0)
         assert entry.action == "retained"
         assert "unmanaged or invalid metadata" in entry.reason
         assert path.is_dir()
         parent.send("lock")
         _join(process)
-        assert artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].reason == "referenced by latest results"
+        assert (
+            artifacts.cleanup_runs(tmp_path, older_than_days=0)[0].reason
+            == "referenced by latest results"
+        )
     finally:
         if process.is_alive():
             process.kill()
@@ -344,13 +415,29 @@ def _real_main_publisher(root, destination, config, connection, *, pause=False):
     def execute(args, *, run_dir):
         (run_dir / "log").write_text("diagnostic")
         connection.send(("run", str(run_dir)))
-        return runner.RunOutcome({
-            "total_tests": 1, "passed": 1, "failed": 0,
-            "fulltest_artifacts": {"log": str(run_dir / "log")},
-            "test_results": [{"stdout": json.dumps({"tests": [{
-                "name": "deploy_bin:demo", "status": "passed", "message": "",
-            }]})}],
-        })
+        return runner.RunOutcome(
+            {
+                "total_tests": 1,
+                "passed": 1,
+                "failed": 0,
+                "fulltest_artifacts": {"log": str(run_dir / "log")},
+                "test_results": [
+                    {
+                        "stdout": json.dumps(
+                            {
+                                "tests": [
+                                    {
+                                        "name": "deploy_bin:demo",
+                                        "status": "passed",
+                                        "message": "",
+                                    }
+                                ]
+                            }
+                        )
+                    }
+                ],
+            }
+        )
 
     runner.run_fulltest_release = execute
     original_flock = artifacts.fcntl.flock
@@ -369,23 +456,41 @@ def _real_main_publisher(root, destination, config, connection, *, pause=False):
     original_builtin = summarizer._summarise_builtin
 
     def enrich(payload):
-        connection.send(("enrich", json.loads(destination.read_text()).get("fulltest_artifacts", {})))
+        connection.send(
+            (
+                "enrich",
+                json.loads(destination.read_text()).get("fulltest_artifacts", {}),
+            )
+        )
         if pause:
             connection.recv()
         return original_builtin(payload)
 
     summarizer._summarise_builtin = enrich
-    status = runner.main([
-        "--recipe", "demo", "--version", "1", "--release-file", "unused",
-        "--test-config", str(config), "--output-dir", str(root),
-        "--results-path", str(destination),
-    ])
+    status = runner.main(
+        [
+            "--recipe",
+            "demo",
+            "--version",
+            "1",
+            "--release-file",
+            "unused",
+            "--test-config",
+            str(config),
+            "--output-dir",
+            str(root),
+            "--results-path",
+            str(destination),
+        ]
+    )
     connection.send(("done", status))
 
 
 @pytest.mark.parametrize("cross_root", [False, True])
 @pytest.mark.parametrize("skipped", [False, True])
-def test_real_publication_serializes_enrichment_and_cleanup(tmp_path, cross_root, skipped):
+def test_real_publication_serializes_enrichment_and_cleanup(
+    tmp_path, cross_root, skipped
+):
     root = tmp_path / "runs"
     other = tmp_path / "other" if cross_root else root
     destination = tmp_path / "results.json"
@@ -395,11 +500,20 @@ def test_real_publication_serializes_enrichment_and_cleanup(tmp_path, cross_root
     _publish(destination, old)
     first, first_child = CTX.Pipe()
     second, second_child = CTX.Pipe()
-    a = CTX.Process(target=_real_main_publisher, args=(root, destination, config, first_child),
-                    kwargs={"pause": True})
-    b = CTX.Process(target=_real_main_publisher, args=(
-        other, destination, tmp_path / "missing" if skipped else config, second_child,
-    ))
+    a = CTX.Process(
+        target=_real_main_publisher,
+        args=(root, destination, config, first_child),
+        kwargs={"pause": True},
+    )
+    b = CTX.Process(
+        target=_real_main_publisher,
+        args=(
+            other,
+            destination,
+            tmp_path / "missing" if skipped else config,
+            second_child,
+        ),
+    )
     a.start()
     try:
         event, run_a = _receive(first)
@@ -410,7 +524,10 @@ def test_real_publication_serializes_enrichment_and_cleanup(tmp_path, cross_root
             event, run_b = _receive(second)
             assert event == "run"
         assert _receive(second) == ("blocked", None)
-        entries = {entry.path: entry for entry in artifacts.cleanup_runs(root, older_than_days=0)}
+        entries = {
+            entry.path: entry
+            for entry in artifacts.cleanup_runs(root, older_than_days=0)
+        }
         assert entries[old].reason == "results publication or cleanup in progress"
         assert old.exists()
         first.send("finish enrichment")
@@ -450,7 +567,9 @@ def test_publication_waits_for_cleanup_through_delete(tmp_path):
     cleaner, cleaner_child = CTX.Pipe()
     publisher, publisher_child = CTX.Pipe()
     a = CTX.Process(target=_paused_cleaner, args=(root, cleaner_child))
-    b = CTX.Process(target=_real_main_publisher, args=(root, destination, config, publisher_child))
+    b = CTX.Process(
+        target=_real_main_publisher, args=(root, destination, config, publisher_child)
+    )
     a.start()
     try:
         assert Path(_receive(cleaner)) == old
@@ -482,7 +601,7 @@ def test_result_parent_collision_retained_without_deadlock(tmp_path):
     record["results_path"] = str(destination)
     record_path.write_text(json.dumps(record))
     _publish(destination)
-    entry, = artifacts.cleanup_runs(tmp_path, older_than_days=0)
+    (entry,) = artifacts.cleanup_runs(tmp_path, older_than_days=0)
     assert entry.reason == "results publication or cleanup in progress"
     assert path.exists()
 

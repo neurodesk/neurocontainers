@@ -89,8 +89,7 @@ def literal_categories(recipe: Mapping[str, object]) -> list[str] | None:
     """Return categories that the catalog can publish without executing Jinja."""
     value = recipe.get("categories", [])
     if not isinstance(value, list) or not all(
-        isinstance(item, str)
-        and not any(token in item for token in ("{{", "{%", "{#"))
+        isinstance(item, str) and not any(token in item for token in ("{{", "{%", "{#"))
         for item in value
     ):
         return None
@@ -182,8 +181,7 @@ def recipe_names_from_paths(paths: list[str]) -> list[str]:
     recipes = {
         parts[1]
         for path in paths
-        if len(parts := PurePosixPath(path).parts) >= 3
-        and parts[0] == "recipes"
+        if len(parts := PurePosixPath(path).parts) >= 3 and parts[0] == "recipes"
     }
     return sorted(recipes)
 
@@ -219,10 +217,12 @@ def plan_recipe_changes(
             name: SharedInputs.from_recipe(recipe)
             for name, recipe in head_recipes.items()
         }
-        if changed_paths else {}
+        if changed_paths
+        else {}
     )
     affected.update(
-        name for name, inputs in shared_inputs.items()
+        name
+        for name, inputs in shared_inputs.items()
         if any(inputs.contains(path) for path in changed_paths)
     )
     for recipe in sorted(affected):
@@ -243,9 +243,7 @@ def plan_recipe_changes(
                 )
             # Nothing to build or publish. Releases already in releases/ stay
             # served from their own metadata, so the catalog keeps the history.
-            decisions.append(
-                RecipeDecision(recipe, "retired", ("recipe-retired",))
-            )
+            decisions.append(RecipeDecision(recipe, "retired", ("recipe-retired",)))
             continue
         if recipe in retirements:
             raise ValueError(
@@ -273,8 +271,7 @@ def plan_recipe_changes(
                 )
                 for field in DOCUMENTATION_FIELDS:
                     if all(
-                        _passive_documentation(data.get(field))
-                        for data in (base, head)
+                        _passive_documentation(data.get(field)) for data in (base, head)
                     ):
                         non_image_fields.add(field)
                 if all(literal_categories(data) is not None for data in (base, head)):

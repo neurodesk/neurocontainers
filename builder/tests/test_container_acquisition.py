@@ -26,6 +26,7 @@ def test_overlapping_release_refreshes_keep_their_own_bytes(
     destinations = []
     nested = []
     with ExitStack() as resources:
+
         def transfer(url: str, filename: str, **kwargs) -> tuple[str, None]:
             destinations.append(Path(filename))
             with open(filename, "wb") as output:
@@ -56,9 +57,7 @@ def test_overlapping_release_refreshes_keep_their_own_bytes(
         assert (tmp_path / "tool_1_20261003.simg").read_bytes() == (
             b"inner" if outer_fails else b"outer"
         )
-    assert sorted(path.name for path in tmp_path.iterdir()) == [
-        "tool_1_20261003.simg"
-    ]
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["tool_1_20261003.simg"]
 
 
 def test_reader_survives_refresh_and_explicit_cache_eviction(
@@ -74,14 +73,16 @@ def test_reader_survives_refresh_and_explicit_cache_eviction(
     monkeypatch.setattr(ct.urllib.request, "urlretrieve", transfer)
     cache = tmp_path / "tool_1_20261003.simg"
     with ExitStack() as resources:
-        first = retained_path(resources, downloader.download_from_release(
-            "tool", "1", "20261003", use_cache=False
-        ))
+        first = retained_path(
+            resources,
+            downloader.download_from_release("tool", "1", "20261003", use_cache=False),
+        )
         assert first.stat().st_ino == cache.stat().st_ino
         assert first.stat().st_dev == cache.stat().st_dev
-        second = retained_path(resources, downloader.download_from_release(
-            "tool", "1", "20261003", use_cache=False
-        ))
+        second = retained_path(
+            resources,
+            downloader.download_from_release("tool", "1", "20261003", use_cache=False),
+        )
         assert first.read_bytes() == b"first image"
         downloader.cleanup_downloaded_container(str(cache))
         assert first.read_bytes() == b"first image"
@@ -103,7 +104,9 @@ def test_failed_pull_preserves_stale_image_and_existing_reader(
     binary = tmp_path / "docker-save-to-simg"
     binary.write_bytes(b"converter")
     monkeypatch.setattr(ct.shutil, "which", lambda name: "/bin/" + name)
-    monkeypatch.setattr(converter, "_ensure_binary", lambda *args, **kwargs: str(binary))
+    monkeypatch.setattr(
+        converter, "_ensure_binary", lambda *args, **kwargs: str(binary)
+    )
 
     def fail_pull(command: list[str], **kwargs) -> None:
         assert command[:2] == ["docker", "pull"]
@@ -116,7 +119,9 @@ def test_failed_pull_preserves_stale_image_and_existing_reader(
     assert cache.read_bytes() == b"last valid image"
     assert reader.read_bytes() == b"last valid image"
     assert sorted(path.name for path in tmp_path.iterdir()) == [
-        "docker-save-to-simg", "reader.simg", "tool.simg"
+        "docker-save-to-simg",
+        "reader.simg",
+        "tool.simg",
     ]
 
 
@@ -144,7 +149,9 @@ def test_failed_converter_build_preserves_cached_binary_and_reader(
     assert binary.read_bytes() == b"last working converter"
     assert reader.read_bytes() == b"last working converter"
     assert sorted(path.name for path in tmp_path.iterdir()) == [
-        "active-converter", "converter.go", "docker-save-to-simg"
+        "active-converter",
+        "converter.go",
+        "docker-save-to-simg",
     ]
 
 
@@ -159,8 +166,11 @@ def test_conversion_failure_preserves_cache_and_reaps_children(
         f"#!{sys.executable}\n"
         "import sys, time\n"
         "if sys.argv[1] == 'save':\n"
-        + ("    time.sleep(2)\n" if failure in {"converter", "launch"}
-           else "    sys.stdout.write('archive')\n")
+        + (
+            "    time.sleep(2)\n"
+            if failure in {"converter", "launch"}
+            else "    sys.stdout.write('archive')\n"
+        )
         + ("    sys.exit(3)\n" if failure == "save" else "")
     )
     docker.chmod(0o755)
@@ -197,18 +207,23 @@ def test_conversion_failure_preserves_cache_and_reaps_children(
 
     monkeypatch.setattr(ct.subprocess, "Popen", spawn)
     if failure == "publish":
+
         def fail_replace(*args) -> None:
             raise OSError("publication failed")
+
         monkeypatch.setattr(ct.os, "replace", fail_replace)
     with pytest.raises((RuntimeError, OSError)):
         converter.convert("tool:1", "tool.simg")
     assert cache.read_bytes() == b"previous image"
     assert reader.read_bytes() == b"previous image"
     assert sorted(path.name for path in cache_dir.iterdir()) == [
-        "docker-save-to-simg", "tool.simg"
+        "docker-save-to-simg",
+        "tool.simg",
     ]
     assert all(process.poll() is not None for process in children)
-    producer = next(process for process in children if process.args[:2] == ["docker", "save"])
+    producer = next(
+        process for process in children if process.args[:2] == ["docker", "save"]
+    )
     if failure in {"converter", "launch"}:
         assert producer.returncode < 0
 
@@ -269,7 +284,8 @@ def test_runner_closes_acquisition_on_early_configuration_return(
 
     runner.tester.test_extractor = SimpleNamespace(extract_from_file=extract)
     monkeypatch.setattr(
-        runner.tester, "select_runtime",
+        runner.tester,
+        "select_runtime",
         lambda *args: SimpleNamespace(name="apptainer"),
     )
     monkeypatch.setattr(runner.tester, "find_container", acquire)
@@ -320,9 +336,12 @@ def test_overlapping_converter_builds_retain_their_own_binary_and_image(
     real_run = subprocess.run
     real_which = ct.shutil.which
     monkeypatch.setattr(
-        ct.shutil, "which", lambda name: "/fake/go" if name == "go" else real_which(name)
+        ct.shutil,
+        "which",
+        lambda name: "/fake/go" if name == "go" else real_which(name),
     )
     with ExitStack() as resources:
+
         def run(command: list[str], **kwargs) -> subprocess.CompletedProcess:
             if command[:2] != ["go", "build"]:
                 return real_run(command, **kwargs)
@@ -332,9 +351,9 @@ def test_overlapping_converter_builds_retain_their_own_binary_and_image(
             binary.write_text(f'#!/bin/sh\nprintf {generation} > "$2"\n')
             binary.chmod(0o755)
             if generation == "outer":
-                nested.append(resources.enter_context(
-                    converter.convert("tool:1", "tool.simg")
-                ))
+                nested.append(
+                    resources.enter_context(converter.convert("tool:1", "tool.simg"))
+                )
                 os.utime(nested[0].cache_path, (1, 1))
             return subprocess.CompletedProcess(command, 0)
 
@@ -347,7 +366,8 @@ def test_overlapping_converter_builds_retain_their_own_binary_and_image(
         assert "inner" in builds[1].read_text()
         assert outer.cache_path.read_bytes() == b"outer"
     assert sorted(path.name for path in cache_dir.iterdir()) == [
-        "docker-save-to-simg", "tool.simg"
+        "docker-save-to-simg",
+        "tool.simg",
     ]
 
 

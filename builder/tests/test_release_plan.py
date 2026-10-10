@@ -37,9 +37,7 @@ def test_every_validated_top_level_field_has_a_release_tier() -> None:
 
 def test_auto_update_only_change_is_source_only() -> None:
     base = recipe()
-    head = recipe(
-        auto_update={"method": "github_release", "repo": "example/demo"}
-    )
+    head = recipe(auto_update={"method": "github_release", "repo": "example/demo"})
 
     plan = plan_recipe_changes(
         ["recipes/demo/build.yaml"], {"demo": base}, {"demo": head}
@@ -82,13 +80,16 @@ def test_semantically_unchanged_yaml_is_source_only() -> None:
     assert plan.decisions[0].reasons == ("yaml-only-change",)
 
 
-@pytest.mark.parametrize("updates", [
-    {"readme": "Updated instructions for {{ context.name }}/{{ context.version }}"},
-    {"readme_url": "https://example.com/guide"},
-    {"structured_readme": {"description": "Updated instructions"}},
-    {"categories": ["workflows"]},
-    {"readme": "New help", "categories": ["workflows"], "auto_update": {}},
-])
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"readme": "Updated instructions for {{ context.name }}/{{ context.version }}"},
+        {"readme_url": "https://example.com/guide"},
+        {"structured_readme": {"description": "Updated instructions"}},
+        {"categories": ["workflows"]},
+        {"readme": "New help", "categories": ["workflows"], "auto_update": {}},
+    ],
+)
 def test_documentation_and_categories_preserve_image(updates) -> None:
     plan = plan_recipe_changes(
         ["recipes/demo/build.yaml"], {"demo": recipe()}, {"demo": recipe(**updates)}
@@ -98,13 +99,16 @@ def test_documentation_and_categories_preserve_image(updates) -> None:
     assert plan.source_only_recipes == ["demo"]
 
 
-@pytest.mark.parametrize("updates", [
-    {"readme": '{{ get_file("asset") }}'},
-    {"categories": ["{{ context.category }}"]},
-    {"readme": "Help", "version": "2.0"},
-    {"readme": "Help", "files": [{"name": "config", "contents": "changed"}]},
-    {"readme": "Help", "deploy": {"bins": ["new-command"]}},
-])
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"readme": '{{ get_file("asset") }}'},
+        {"categories": ["{{ context.category }}"]},
+        {"readme": "Help", "version": "2.0"},
+        {"readme": "Help", "files": [{"name": "config", "contents": "changed"}]},
+        {"readme": "Help", "deploy": {"bins": ["new-command"]}},
+    ],
+)
 def test_uncertain_templates_and_build_inputs_still_require_candidate(updates) -> None:
     # Check both directions, including removal of a template with side effects.
     for base, head in ((recipe(), recipe(**updates)), (recipe(**updates), recipe())):
@@ -182,10 +186,20 @@ def test_shared_macro_rebuilds_all_consumers_without_recipe_edits():
 
 
 def test_shared_watch_uses_path_boundaries():
-    watched = recipe(auto_update={"method": "sources", "container_version": False, "local": ["macros/shared"]})
+    watched = recipe(
+        auto_update={
+            "method": "sources",
+            "container_version": False,
+            "local": ["macros/shared"],
+        }
+    )
     data = {"demo": watched}
-    assert not plan_recipe_changes(["macros/shared-other/code.py"], data, data).decisions
-    assert plan_recipe_changes(["macros/shared/code.py"], data, data).candidate_recipes == ["demo"]
+    assert not plan_recipe_changes(
+        ["macros/shared-other/code.py"], data, data
+    ).decisions
+    assert plan_recipe_changes(
+        ["macros/shared/code.py"], data, data
+    ).candidate_recipes == ["demo"]
 
 
 def test_unlisted_recipe_removal_is_rejected():
@@ -239,7 +253,12 @@ def test_retirement_manifest_requires_a_named_recipe_and_reason():
         ({"retired": [{"recipe": "../escape", "reason": "x"}]}, "plain 'recipe'"),
         ({"retired": [{"recipe": "old", "reason": "  "}]}, "non-empty 'reason'"),
         (
-            {"retired": [{"recipe": "old", "reason": "a"}, {"recipe": "old", "reason": "b"}]},
+            {
+                "retired": [
+                    {"recipe": "old", "reason": "a"},
+                    {"recipe": "old", "reason": "b"},
+                ]
+            },
             "twice",
         ),
     ):

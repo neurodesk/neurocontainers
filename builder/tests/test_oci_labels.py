@@ -27,11 +27,21 @@ def test_recipe_cli_resolves_repository_macros_from_another_directory(
     macro.write_text("builder: neurodocker\ndirectives:\n  - workdir: /opt/tool\n")
     (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe))
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", [
-        "oci-labels", "recipe", str(recipe_dir),
-        "--architecture", "x86_64", "--build-date", "20261004",
-        "--revision", "a" * 40,
-    ])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "oci-labels",
+            "recipe",
+            str(recipe_dir),
+            "--architecture",
+            "x86_64",
+            "--build-date",
+            "20261004",
+            "--revision",
+            "a" * 40,
+        ],
+    )
     oci_labels.main()
     labels = json.loads(capsys.readouterr().out)
     assert labels[oci_labels.PREFIX + "version"] == f"{recipe['version']}_20261004"
@@ -39,9 +49,14 @@ def test_recipe_cli_resolves_repository_macros_from_another_directory(
 
 def compiled():
     return SimpleNamespace(
-        name="demo_arm64", base_name="demo", version="1.2.3", readme="fallback",
-        metadata={"structured_readme": {"description": 'A tool with "quotes"\nand newlines'},
-                  "copyright": [{"license": "MIT"}, {"license": "BSD-3-Clause"}]},
+        name="demo_arm64",
+        base_name="demo",
+        version="1.2.3",
+        readme="fallback",
+        metadata={
+            "structured_readme": {"description": 'A tool with "quotes"\nand newlines'},
+            "copyright": [{"license": "MIT"}, {"license": "BSD-3-Clause"}],
+        },
         definition=Definition(directives=[From("ubuntu:24.04")]),
     )
 
@@ -52,14 +67,21 @@ def test_labels_identify_recipe_and_do_not_inherit_base_version():
     assert labels[oci_labels.PREFIX + "base.name"] == "ubuntu:24.04"
     assert labels[oci_labels.PREFIX + "title"] == "demo_arm64"
     assert labels[oci_labels.PREFIX + "licenses"] == "MIT AND BSD-3-Clause"
-    assert labels[oci_labels.PREFIX + "description"] == 'A tool with "quotes" and newlines'
+    assert (
+        labels[oci_labels.PREFIX + "description"] == 'A tool with "quotes" and newlines'
+    )
     assert labels[oci_labels.PREFIX + "created"] == "2026-10-03T00:00:00Z"
 
 
 def test_missing_license_is_not_misattributed_to_base_image():
     recipe = compiled()
     recipe.metadata = {}
-    assert oci_labels.recipe_labels(recipe, "20261003", "a" * 40)[oci_labels.PREFIX + "licenses"] == "NOASSERTION"
+    assert (
+        oci_labels.recipe_labels(recipe, "20261003", "a" * 40)[
+            oci_labels.PREFIX + "licenses"
+        ]
+        == "NOASSERTION"
+    )
 
 
 @pytest.mark.parametrize("date,revision", [("20260230", "a" * 40), ("20261003", "abc")])
@@ -70,8 +92,12 @@ def test_invalid_identity_fails_before_build(date, revision):
 
 def test_date_only_rebuild_matches_but_software_change_does_not():
     recipe = compiled()
+
     def fingerprint(date, revision):
-        return fingerprint_inspect_data({"Config": {"Labels": oci_labels.recipe_labels(recipe, date, revision)}})
+        return fingerprint_inspect_data(
+            {"Config": {"Labels": oci_labels.recipe_labels(recipe, date, revision)}}
+        )
+
     previous = fingerprint("20261002", "a" * 40)
     assert previous == fingerprint("20261003", "b" * 40)
     recipe.version = "1.2.4"
@@ -82,39 +108,56 @@ def test_nul_arguments_preserve_spaces_quotes_and_shell_characters(capfdbinary):
     value = 'a "quote" $(command); spaces'
     oci_labels.emit({oci_labels.PREFIX + "description": value}, "annotations")
     assert capfdbinary.readouterr().out.split(b"\0") == [
-        b"--annotation", (oci_labels.PREFIX + "description=" + value).encode(), b"",
+        b"--annotation",
+        (oci_labels.PREFIX + "description=" + value).encode(),
+        b"",
     ]
 
 
 def test_compiler_renders_metadata_from_recipe_variables(tmp_path):
     import yaml
+
     root = Path(__file__).resolve().parents[2]
     recipe = yaml.safe_load((root / "recipes/niimath/build.yaml").read_text())
-    recipe["structured_readme"] = {"description": "Version {{ context.version }}", "example": "niimath"}
+    recipe["structured_readme"] = {
+        "description": "Version {{ context.version }}",
+        "example": "niimath",
+    }
     recipe["copyright"] = [{"license": "{{ context.license_id }}"}]
     recipe.setdefault("variables", {})["license_id"] = "MIT"
     (tmp_path / "build.yaml").write_text(yaml.safe_dump(recipe))
     result = compile_recipe(tmp_path, architecture="x86_64")
     assert result.metadata["copyright"] == [{"license": "MIT"}]
-    assert result.metadata["structured_readme"]["description"] == f"Version {result.version}"
+    assert (
+        result.metadata["structured_readme"]["description"]
+        == f"Version {result.version}"
+    )
 
 
 def test_image_annotations_preserve_the_built_labels(monkeypatch):
     labels = oci_labels.recipe_labels(compiled(), "20261003", "a" * 40)
+
     class Client:
         def __init__(self, *args, **kwargs):
             pass
+
         def get_manifest(self, repository, reference):
             return {"config": {"digest": "sha256:config"}}
+
         def get_config_blob(self, repository, digest):
             return {"config": {"Labels": labels | {"GITHUB_SHA": "abc"}}}
+
     monkeypatch.setattr(oci_labels, "RegistryClient", Client)
     monkeypatch.setattr(oci_labels, "resolve_credentials", lambda *args: None)
     assert oci_labels.image_labels("example.test/demo:1.2.3", "amd64") == labels
 
 
-@pytest.mark.parametrize("architecture,platform", [("x86_64", "amd64"), ("aarch64", "arm64")])
-def test_image_annotations_select_project_architecture_from_index(monkeypatch, architecture, platform):
+@pytest.mark.parametrize(
+    "architecture,platform", [("x86_64", "amd64"), ("aarch64", "arm64")]
+)
+def test_image_annotations_select_project_architecture_from_index(
+    monkeypatch, architecture, platform
+):
     labels = oci_labels.recipe_labels(compiled(), "20261003", "a" * 40)
 
     class Client:
@@ -123,10 +166,15 @@ def test_image_annotations_select_project_architecture_from_index(monkeypatch, a
 
         def get_manifest(self, repository, reference):
             if reference == "1.2.3":
-                return {"manifests": [
-                    {"digest": f"sha256:{arch}", "platform": {"os": "linux", "architecture": arch}}
-                    for arch in ("amd64", "arm64")
-                ]}
+                return {
+                    "manifests": [
+                        {
+                            "digest": f"sha256:{arch}",
+                            "platform": {"os": "linux", "architecture": arch},
+                        }
+                        for arch in ("amd64", "arm64")
+                    ]
+                }
             assert reference == f"sha256:{platform}"
             return {"config": {"digest": f"sha256:config-{platform}"}}
 
@@ -140,7 +188,9 @@ def test_image_annotations_select_project_architecture_from_index(monkeypatch, a
 
 
 @pytest.mark.parametrize("use_cwd_repository", [False, True])
-def test_recipe_cli_supports_external_recipes(tmp_path, monkeypatch, capsys, use_cwd_repository):
+def test_recipe_cli_supports_external_recipes(
+    tmp_path, monkeypatch, capsys, use_cwd_repository
+):
     root = Path(__file__).resolve().parents[2]
     recipe = yaml.safe_load((root / "recipes/niimath/build.yaml").read_text())
     recipe["build"]["directives"] = [{"workdir": "/opt/tool"}]
@@ -154,14 +204,26 @@ def test_recipe_cli_supports_external_recipes(tmp_path, monkeypatch, capsys, use
         macro = working_dir / "macros/openrecon/neurodocker.yaml"
         macro.parent.mkdir(parents=True)
         macro.write_text("builder: neurodocker\ndirectives:\n  - workdir: /opt/tool\n")
-        recipe["build"]["directives"] = [{"include": "macros/openrecon/neurodocker.yaml"}]
+        recipe["build"]["directives"] = [
+            {"include": "macros/openrecon/neurodocker.yaml"}
+        ]
     (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe))
     monkeypatch.chdir(working_dir)
-    monkeypatch.setattr(sys, "argv", [
-        "oci-labels", "recipe", str(recipe_dir),
-        "--architecture", "x86_64", "--build-date", "20261004",
-        "--revision", "a" * 40,
-    ])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "oci-labels",
+            "recipe",
+            str(recipe_dir),
+            "--architecture",
+            "x86_64",
+            "--build-date",
+            "20261004",
+            "--revision",
+            "a" * 40,
+        ],
+    )
     oci_labels.main()
     labels = json.loads(capsys.readouterr().out)
     assert labels[oci_labels.PREFIX + "version"] == f"{recipe['version']}_20261004"

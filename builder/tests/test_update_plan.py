@@ -1,63 +1,112 @@
-
 import pytest
 import yaml
 
 from builder.update_observations import SourceObservation
-from builder.update_plan import plan_sources, validate_sources_config, validate_target_bindings
+from builder.update_plan import (
+    plan_sources,
+    validate_sources_config,
+    validate_target_bindings,
+)
 
 
 def make_recipe(tmp_path):
-    root = tmp_path / 'demo'
+    root = tmp_path / "demo"
     root.mkdir()
     recipe = {
-        'name': 'demo', 'version': '7.3.0',
-        'variables': {'tool_version': '7.3', 'source_commit': 'a' * 40},
-        'auto_update': {'method': 'sources', 'container_version': 'tool', 'sources': [
-            {'id': 'tool', 'method': 'pypi', 'package': 'example-tool',
-             'target': {'variable': 'tool_version', 'fulltest_variable': 'tool_version'}},
-            {'id': 'helper', 'method': 'github_commit', 'repo': 'example/helper', 'ref': 'main',
-             'target': {'variable': 'source_commit'}},
-        ]},
-        'build': {'base-image': 'ubuntu:24.04', 'directives': [
-            {'run': ['pip install example-tool=={{ context.tool_version }}']}]},
-        'files': [{'name': 'helper', 'url': 'https://github.com/example/helper/archive/{{ context.source_commit }}.tar.gz'}],
+        "name": "demo",
+        "version": "7.3.0",
+        "variables": {"tool_version": "7.3", "source_commit": "a" * 40},
+        "auto_update": {
+            "method": "sources",
+            "container_version": "tool",
+            "sources": [
+                {
+                    "id": "tool",
+                    "method": "pypi",
+                    "package": "example-tool",
+                    "target": {
+                        "variable": "tool_version",
+                        "fulltest_variable": "tool_version",
+                    },
+                },
+                {
+                    "id": "helper",
+                    "method": "github_commit",
+                    "repo": "example/helper",
+                    "ref": "main",
+                    "target": {"variable": "source_commit"},
+                },
+            ],
+        },
+        "build": {
+            "base-image": "ubuntu:24.04",
+            "directives": [
+                {"run": ["pip install example-tool=={{ context.tool_version }}"]}
+            ],
+        },
+        "files": [
+            {
+                "name": "helper",
+                "url": "https://github.com/example/helper/archive/{{ context.source_commit }}.tar.gz",
+            }
+        ],
     }
-    path = root / 'build.yaml'
+    path = root / "build.yaml"
     path.write_text(yaml.safe_dump(recipe, sort_keys=False))
-    (root / 'fulltest.yaml').write_text(yaml.safe_dump({'name': 'demo', 'version': '7.3.0', 'tool_version': '7.3', 'tests': [{'name': 'version', 'command': 'example-tool --version', 'expected_output_contains': '${tool_version}'}]}, sort_keys=False))
+    (root / "fulltest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "demo",
+                "version": "7.3.0",
+                "tool_version": "7.3",
+                "tests": [
+                    {
+                        "name": "version",
+                        "command": "example-tool --version",
+                        "expected_output_contains": "${tool_version}",
+                    }
+                ],
+            },
+            sort_keys=False,
+        )
+    )
     return path
 
 
-def observations(tool='7.3', helper='a' * 40):
-    return {'tool': SourceObservation(tool, 'https://pypi.org/project/example-tool', version=tool),
-            'helper': SourceObservation(helper, 'https://github.com/example/helper')}
+def observations(tool="7.3", helper="a" * 40):
+    return {
+        "tool": SourceObservation(
+            tool, "https://pypi.org/project/example-tool", version=tool
+        ),
+        "helper": SourceObservation(helper, "https://github.com/example/helper"),
+    }
 
 
 def test_independent_versions_change_real_inputs_together_and_replay(tmp_path):
     path = make_recipe(tmp_path)
     assert plan_sources(path, observations=observations()) is None
-    found = observations('7.4', 'b' * 40)
+    found = observations("7.4", "b" * 40)
     plan = plan_sources(path, observations=found)
     assert plan == plan_sources(path, observations=found)
-    assert yaml.safe_load(path.read_text())['version'] == '7.3.0'
-    assert plan.next_version == '7.4.0'
+    assert yaml.safe_load(path.read_text())["version"] == "7.3.0"
+    assert plan.next_version == "7.4.0"
     assert len(plan.changes) == 2
     plan.apply()
     plan.apply()
     changed = yaml.safe_load(path.read_text())
-    assert changed['variables'] == {'tool_version': '7.4', 'source_commit': 'b' * 40}
-    suite = yaml.safe_load(path.with_name('fulltest.yaml').read_text())
-    assert suite['version'] == plan.next_version
-    assert suite['tool_version'] == '7.4'
+    assert changed["variables"] == {"tool_version": "7.4", "source_commit": "b" * 40}
+    suite = yaml.safe_load(path.with_name("fulltest.yaml").read_text())
+    assert suite["version"] == plan.next_version
+    assert suite["tool_version"] == "7.4"
     assert plan_sources(path, observations=found) is None
 
 
 def test_conflicting_file_prevents_all_writes(tmp_path):
     path = make_recipe(tmp_path)
-    plan = plan_sources(path, observations=observations('7.4'))
+    plan = plan_sources(path, observations=observations("7.4"))
     before = path.read_text()
-    path.with_name('fulltest.yaml').write_text('changed independently\n')
-    with pytest.raises(ValueError, match='conflicts'):
+    path.with_name("fulltest.yaml").write_text("changed independently\n")
+    with pytest.raises(ValueError, match="conflicts"):
         plan.apply()
     assert path.read_text() == before
 
@@ -65,86 +114,132 @@ def test_conflicting_file_prevents_all_writes(tmp_path):
 def test_nominated_upstream_post_release_preserves_upstream_version(tmp_path):
     path = make_recipe(tmp_path)
     recipe = yaml.safe_load(path.read_text())
-    recipe['auto_update']['container_version'] = 'tool'
+    recipe["auto_update"]["container_version"] = "tool"
     path.write_text(yaml.safe_dump(recipe, sort_keys=False))
-    plan = plan_sources(path, observations=observations('7.4.post1'))
-    assert plan.next_version == '7.4.0.post1'
+    plan = plan_sources(path, observations=observations("7.4.post1"))
+    assert plan.next_version == "7.4.0.post1"
     plan.apply()
     changed = yaml.safe_load(path.read_text())
-    assert changed['variables']['tool_version'] == '7.4.post1'
-    assert changed['version'] == '7.4.0.post1'
+    assert changed["variables"]["tool_version"] == "7.4.post1"
+    assert changed["version"] == "7.4.0.post1"
 
 
 def test_failure_of_one_component_leaves_every_file_unchanged(tmp_path):
     path = make_recipe(tmp_path)
     before = path.read_text()
     with pytest.raises(KeyError):
-        plan_sources(path, observations={'tool': observations('7.4')['tool']})
+        plan_sources(path, observations={"tool": observations("7.4")["tool"]})
     assert path.read_text() == before
 
 
 def test_versioned_inputs_do_not_downgrade(tmp_path):
     path = make_recipe(tmp_path)
-    assert plan_sources(path, observations=observations('7.2')) is None
+    assert plan_sources(path, observations=observations("7.2")) is None
 
 
 def test_duplicate_target_is_rejected(tmp_path):
     path = make_recipe(tmp_path)
     recipe = yaml.safe_load(path.read_text())
-    config = recipe['auto_update']
-    config['sources'][1]['target'] = config['sources'][0]['target']
-    with pytest.raises(ValueError, match='multiple sources'):
+    config = recipe["auto_update"]
+    config["sources"][1]["target"] = config["sources"][0]["target"]
+    with pytest.raises(ValueError, match="multiple sources"):
         validate_sources_config(config)
 
 
 def test_runtime_documentation_alone_is_not_a_source_binding(tmp_path):
     path = make_recipe(tmp_path)
     recipe = yaml.safe_load(path.read_text())
-    recipe['build']['directives'] = []
-    recipe['readme'] = '{{ context.tool_version }}'
-    with pytest.raises(ValueError, match='acquisition'):
+    recipe["build"]["directives"] = []
+    recipe["readme"] = "{{ context.tool_version }}"
+    with pytest.raises(ValueError, match="acquisition"):
         validate_target_bindings(recipe)
 
 
 def test_query_parameters_are_not_yaml_anchors():
     from builder.update_plan import rewrite_scalar
-    text = 'files:\n  - name: source\n    url: https://example.org/find?a=1&b=2\n'
-    changed = rewrite_scalar(text, ('files', 0, 'url'), 'https://example.org/find?a=2&b=3')
-    assert yaml.safe_load(changed)['files'][0]['url'].endswith('a=2&b=3')
+
+    text = "files:\n  - name: source\n    url: https://example.org/find?a=1&b=2\n"
+    changed = rewrite_scalar(
+        text, ("files", 0, "url"), "https://example.org/find?a=2&b=3"
+    )
+    assert yaml.safe_load(changed)["files"][0]["url"].endswith("a=2&b=3")
 
 
 def test_source_anchor_cannot_change_another_input_through_alias():
     from builder.update_plan import rewrite_scalar
-    text = 'variables:\n  first: &source 1.2.3\n  second: *source\n'
-    for variable in ('first', 'second'):
-        with pytest.raises(ValueError, match='anchors'):
-            rewrite_scalar(text, ('variables', variable), '2.0.0')
+
+    text = "variables:\n  first: &source 1.2.3\n  second: *source\n"
+    for variable in ("first", "second"):
+        with pytest.raises(ValueError, match="anchors"):
+            rewrite_scalar(text, ("variables", variable), "2.0.0")
 
 
 def make_apt_recipe(tmp_path):
     """A recipe whose label is the software version and whose pin is not."""
-    root = tmp_path / 'apt-demo'
+    root = tmp_path / "apt-demo"
     root.mkdir()
     recipe = {
-        'name': 'apt-demo', 'version': '2.10.36',
-        'variables': {'package_version': '2.10.36-3ubuntu0.24.04.1', 'helper_commit': 'a' * 40},
-        'auto_update': {'method': 'sources', 'container_version': 'tool', 'sources': [
-            {'id': 'tool', 'method': 'apt', 'package': 'tool',
-             'urls': ['https://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz'],
-             'target': {'variable': 'package_version', 'fulltest_variable': 'package_version'}},
-            {'id': 'helper', 'method': 'github_commit', 'repo': 'example/helper', 'ref': 'main',
-             'target': {'variable': 'helper_commit'}},
-        ]},
-        'build': {'base-image': 'ubuntu:24.04', 'directives': [
-            {'install': ['tool={{ context.package_version }}']}]},
-        'files': [{'name': 'helper', 'url': 'https://github.com/example/helper/archive/{{ context.helper_commit }}.tar.gz'}],
+        "name": "apt-demo",
+        "version": "2.10.36",
+        "variables": {
+            "package_version": "2.10.36-3ubuntu0.24.04.1",
+            "helper_commit": "a" * 40,
+        },
+        "auto_update": {
+            "method": "sources",
+            "container_version": "tool",
+            "sources": [
+                {
+                    "id": "tool",
+                    "method": "apt",
+                    "package": "tool",
+                    "urls": [
+                        "https://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.gz"
+                    ],
+                    "target": {
+                        "variable": "package_version",
+                        "fulltest_variable": "package_version",
+                    },
+                },
+                {
+                    "id": "helper",
+                    "method": "github_commit",
+                    "repo": "example/helper",
+                    "ref": "main",
+                    "target": {"variable": "helper_commit"},
+                },
+            ],
+        },
+        "build": {
+            "base-image": "ubuntu:24.04",
+            "directives": [{"install": ["tool={{ context.package_version }}"]}],
+        },
+        "files": [
+            {
+                "name": "helper",
+                "url": "https://github.com/example/helper/archive/{{ context.helper_commit }}.tar.gz",
+            }
+        ],
     }
-    path = root / 'build.yaml'
+    path = root / "build.yaml"
     path.write_text(yaml.safe_dump(recipe, sort_keys=False))
-    (root / 'fulltest.yaml').write_text(yaml.safe_dump(
-        {'name': 'apt-demo', 'version': '2.10.36', 'package_version': '2.10.36-3ubuntu0.24.04.1',
-         'tests': [{'name': 'version', 'command': 'tool --version', 'expected_output_contains': '${version}'}]},
-        sort_keys=False))
+    (root / "fulltest.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "apt-demo",
+                "version": "2.10.36",
+                "package_version": "2.10.36-3ubuntu0.24.04.1",
+                "tests": [
+                    {
+                        "name": "version",
+                        "command": "tool --version",
+                        "expected_output_contains": "${version}",
+                    }
+                ],
+            },
+            sort_keys=False,
+        )
+    )
     return path
 
 
@@ -154,75 +249,104 @@ def debian_ordering(monkeypatch):
     from builder import update_observations
 
     monkeypatch.setattr(
-        update_observations, "_debian_newer", lambda candidate, current: candidate > current
+        update_observations,
+        "_debian_newer",
+        lambda candidate, current: candidate > current,
     )
 
 
 def apt_observation(package_version):
     from builder.update_observations import debian_upstream_version
 
-    return SourceObservation(package_version, 'https://archive.ubuntu.com/ubuntu',
-                             version=debian_upstream_version(package_version))
+    return SourceObservation(
+        package_version,
+        "https://archive.ubuntu.com/ubuntu",
+        version=debian_upstream_version(package_version),
+    )
 
 
-def test_nominated_source_moves_the_container_label_to_the_software_version(tmp_path, debian_ordering):
+def test_nominated_source_moves_the_container_label_to_the_software_version(
+    tmp_path, debian_ordering
+):
     # The apt pin carries a packaging revision that must not reach the label.
     path = make_apt_recipe(tmp_path)
-    found = {'tool': apt_observation('2.10.42-1ubuntu2'),
-             'helper': SourceObservation('a' * 40, 'https://github.com/example/helper')}
+    found = {
+        "tool": apt_observation("2.10.42-1ubuntu2"),
+        "helper": SourceObservation("a" * 40, "https://github.com/example/helper"),
+    }
 
     plan = plan_sources(path, observations=found)
 
-    assert plan.next_version == '2.10.42'
+    assert plan.next_version == "2.10.42"
     plan.apply()
     changed = yaml.safe_load(path.read_text())
-    assert changed['version'] == '2.10.42'
-    assert changed['variables']['package_version'] == '2.10.42-1ubuntu2'
-    suite = yaml.safe_load(path.with_name('fulltest.yaml').read_text())
-    assert suite['version'] == '2.10.42'
+    assert changed["version"] == "2.10.42"
+    assert changed["variables"]["package_version"] == "2.10.42-1ubuntu2"
+    suite = yaml.safe_load(path.with_name("fulltest.yaml").read_text())
+    assert suite["version"] == "2.10.42"
 
 
 def test_a_dependency_moving_alone_still_rebuilds_the_same_software(tmp_path):
     path = make_apt_recipe(tmp_path)
-    found = {'tool': apt_observation('2.10.36-3ubuntu0.24.04.1'),
-             'helper': SourceObservation('b' * 40, 'https://github.com/example/helper')}
+    found = {
+        "tool": apt_observation("2.10.36-3ubuntu0.24.04.1"),
+        "helper": SourceObservation("b" * 40, "https://github.com/example/helper"),
+    }
 
     plan = plan_sources(path, observations=found)
 
-    assert plan.next_version == '2.10.36'
+    assert plan.next_version == "2.10.36"
 
 
-def test_repackaging_the_same_software_preserves_container_version(tmp_path, debian_ordering):
+def test_repackaging_the_same_software_preserves_container_version(
+    tmp_path, debian_ordering
+):
     path = make_apt_recipe(tmp_path)
-    found = {'tool': apt_observation('2.10.36-4ubuntu1'),
-             'helper': SourceObservation('a' * 40, 'https://github.com/example/helper')}
+    found = {
+        "tool": apt_observation("2.10.36-4ubuntu1"),
+        "helper": SourceObservation("a" * 40, "https://github.com/example/helper"),
+    }
 
     plan = plan_sources(path, observations=found)
 
-    assert plan.next_version == '2.10.36'
+    assert plan.next_version == "2.10.36"
     plan.apply()
-    assert yaml.safe_load(path.read_text())['variables']['package_version'] == '2.10.36-4ubuntu1'
+    assert (
+        yaml.safe_load(path.read_text())["variables"]["package_version"]
+        == "2.10.36-4ubuntu1"
+    )
 
 
 def test_container_version_must_name_a_source_that_observes_a_version():
-    policy = {'method': 'sources', 'container_version': 'helper', 'sources': [
-        {'id': 'helper', 'method': 'github_commit', 'repo': 'example/helper', 'ref': 'main',
-         'target': {'variable': 'helper_commit'}}]}
+    policy = {
+        "method": "sources",
+        "container_version": "helper",
+        "sources": [
+            {
+                "id": "helper",
+                "method": "github_commit",
+                "repo": "example/helper",
+                "ref": "main",
+                "target": {"variable": "helper_commit"},
+            }
+        ],
+    }
 
-    with pytest.raises(ValueError, match='pins bytes'):
+    with pytest.raises(ValueError, match="pins bytes"):
         validate_sources_config(policy)
 
-    policy['container_version'] = 'absent'
-    with pytest.raises(ValueError, match='must name one of'):
+    policy["container_version"] = "absent"
+    with pytest.raises(ValueError, match="must name one of"):
         validate_sources_config(policy)
 
 
 def make_artifact_recipe(tmp_path):
     """A file-target source whose fulltest records the software version unquoted."""
-    root = tmp_path / 'artifact'
+    root = tmp_path / "artifact"
     root.mkdir()
-    path = root / 'build.yaml'
-    path.write_text('''name: artifact
+    path = root / "build.yaml"
+    path.write_text(
+        """name: artifact
 version: 2.0.0
 variables:
   upstream_version: 2.0.0
@@ -247,62 +371,85 @@ build:
 files:
 - name: archive
   url: https://example.org/frs/artifact_2.0.0.zip
-  sha256: ''' + 'd' * 64 + '\n')
-    (root / 'fulltest.yaml').write_text(
-        'name: artifact\nversion: 2.0.0\ntests: []\nupstream_version: 2.0.0\n')
+  sha256: """
+        + "d" * 64
+        + "\n"
+    )
+    (root / "fulltest.yaml").write_text(
+        "name: artifact\nversion: 2.0.0\ntests: []\nupstream_version: 2.0.0\n"
+    )
     return path
 
 
-def artifact_observations(version='2.0.0', digest='d' * 64):
-    url = f'https://example.org/frs/artifact_{version}.zip'
-    return {'standalone': SourceObservation(
-        url, 'https://example.org/frs/', version=version, metadata={'sha256': digest})}
+def artifact_observations(version="2.0.0", digest="d" * 64):
+    url = f"https://example.org/frs/artifact_{version}.zip"
+    return {
+        "standalone": SourceObservation(
+            url,
+            "https://example.org/frs/",
+            version=version,
+            metadata={"sha256": digest},
+        )
+    }
 
 
 def test_repeated_artifact_observation_plans_no_update(tmp_path):
     path = make_artifact_recipe(tmp_path)
     assert plan_sources(path, observations=artifact_observations()) is None
-    assert path.with_name('fulltest.yaml').read_text().endswith('upstream_version: 2.0.0\n')
+    assert (
+        path.with_name("fulltest.yaml")
+        .read_text()
+        .endswith("upstream_version: 2.0.0\n")
+    )
 
 
 def test_new_artifact_version_still_updates_the_fulltest(tmp_path):
     path = make_artifact_recipe(tmp_path)
-    plan = plan_sources(path, observations=artifact_observations('2.1.0', 'e' * 64))
-    assert plan.next_version == '2.1.0'
+    plan = plan_sources(path, observations=artifact_observations("2.1.0", "e" * 64))
+    assert plan.next_version == "2.1.0"
     plan.apply()
-    suite = yaml.safe_load(path.with_name('fulltest.yaml').read_text())
-    assert suite['upstream_version'] == '2.1.0'
-    assert suite['version'] == '2.1.0'
-    assert plan_sources(path, observations=artifact_observations('2.1.0', 'e' * 64)) is None
+    suite = yaml.safe_load(path.with_name("fulltest.yaml").read_text())
+    assert suite["upstream_version"] == "2.1.0"
+    assert suite["version"] == "2.1.0"
+    assert (
+        plan_sources(path, observations=artifact_observations("2.1.0", "e" * 64))
+        is None
+    )
 
 
 def test_republished_artifact_of_the_same_version_is_held(tmp_path):
     path = make_artifact_recipe(tmp_path)
-    plan = plan_sources(path, observations=artifact_observations('2.0.0', 'e' * 64))
+    plan = plan_sources(path, observations=artifact_observations("2.0.0", "e" * 64))
     assert plan.held
-    assert plan.next_version == '2.0.0'
-    assert plan.changes == ('`files.0.sha256`: `' + 'd' * 64 + '` → `' + 'e' * 64 + '`',)
+    assert plan.next_version == "2.0.0"
+    assert plan.changes == (
+        "`files.0.sha256`: `" + "d" * 64 + "` → `" + "e" * 64 + "`",
+    )
 
 
 def test_archive_version_can_drive_the_container_label(tmp_path):
     path = make_artifact_recipe(tmp_path)
     recipe = yaml.safe_load(path.read_text())
-    source = recipe['auto_update']['sources'][0]
-    source.update(method='http_digest', url='https://example.org/tool.jar',
-                  version_member='Main.class', version_regex=r'(?P<version>\d+\.\d+\.\d+)')
-    del source['download_base']
-    recipe['files'][0]['url'] = source['url']
+    source = recipe["auto_update"]["sources"][0]
+    source.update(
+        method="http_digest",
+        url="https://example.org/tool.jar",
+        version_member="Main.class",
+        version_regex=r"(?P<version>\d+\.\d+\.\d+)",
+    )
+    del source["download_base"]
+    recipe["files"][0]["url"] = source["url"]
     path.write_text(yaml.safe_dump(recipe, sort_keys=False))
-    found = {'standalone': SourceObservation('e' * 64, source['url'], version='2.1.0')}
+    found = {"standalone": SourceObservation("e" * 64, source["url"], version="2.1.0")}
 
     plan = plan_sources(path, observations=found)
 
     assert not plan.held
-    assert plan.next_version == '2.1.0'
+    assert plan.next_version == "2.1.0"
     plan.apply()
     changed = yaml.safe_load(path.read_text())
-    assert changed['variables']['upstream_version'] == '2.1.0'
-    assert changed['files'][0]['sha256'] == 'e' * 64
+    assert changed["variables"]["upstream_version"] == "2.1.0"
+    assert changed["files"][0]["sha256"] == "e" * 64
     assert plan_sources(path, observations=found) is None
 
 
@@ -310,52 +457,54 @@ def dependency_recipe(tmp_path):
     """The shared helper pin rides along instead of rebuilding the container alone."""
     path = make_recipe(tmp_path)
     recipe = yaml.safe_load(path.read_text())
-    recipe['auto_update']['sources'][1]['dependency'] = True
+    recipe["auto_update"]["sources"][1]["dependency"] = True
     path.write_text(yaml.safe_dump(recipe, sort_keys=False))
     return path
 
 
 def test_dependency_alone_is_held_instead_of_opening_an_update(tmp_path):
     path = dependency_recipe(tmp_path)
-    plan = plan_sources(path, observations=observations(helper='b' * 40))
+    plan = plan_sources(path, observations=observations(helper="b" * 40))
     assert plan.held
-    assert plan.changes == ('`variables.source_commit`: `' + 'a' * 40 + '` → `' + 'b' * 40 + '`',)
-    assert yaml.safe_load(path.read_text())['variables']['source_commit'] == 'a' * 40
+    assert plan.changes == (
+        "`variables.source_commit`: `" + "a" * 40 + "` → `" + "b" * 40 + "`",
+    )
+    assert yaml.safe_load(path.read_text())["variables"]["source_commit"] == "a" * 40
 
 
 def test_dependency_rides_along_with_a_software_update(tmp_path):
     path = dependency_recipe(tmp_path)
-    plan = plan_sources(path, observations=observations('7.4', 'b' * 40))
-    assert plan.next_version == '7.4.0'
+    plan = plan_sources(path, observations=observations("7.4", "b" * 40))
+    assert plan.next_version == "7.4.0"
     plan.apply()
     changed = yaml.safe_load(path.read_text())
-    assert changed['variables'] == {'tool_version': '7.4', 'source_commit': 'b' * 40}
-    assert plan_sources(path, observations=observations('7.4', 'b' * 40)) is None
+    assert changed["variables"] == {"tool_version": "7.4", "source_commit": "b" * 40}
+    assert plan_sources(path, observations=observations("7.4", "b" * 40)) is None
 
 
 def test_dependency_flag_must_be_true(tmp_path):
-    config = yaml.safe_load(make_recipe(tmp_path).read_text())['auto_update']
-    config['sources'][1]['dependency'] = False
-    with pytest.raises(ValueError, match='dependency must be true'):
+    config = yaml.safe_load(make_recipe(tmp_path).read_text())["auto_update"]
+    config["sources"][1]["dependency"] = False
+    with pytest.raises(ValueError, match="dependency must be true"):
         validate_sources_config(config)
 
 
 def test_every_source_cannot_be_a_dependency(tmp_path):
-    config = yaml.safe_load(make_recipe(tmp_path).read_text())['auto_update']
-    for source in config['sources']:
-        source['dependency'] = True
-    with pytest.raises(ValueError, match='every source is a dependency'):
+    config = yaml.safe_load(make_recipe(tmp_path).read_text())["auto_update"]
+    for source in config["sources"]:
+        source["dependency"] = True
+    with pytest.raises(ValueError, match="every source is a dependency"):
         validate_sources_config(config)
 
 
 def test_container_version_driver_cannot_be_a_dependency(tmp_path):
-    config = yaml.safe_load(make_recipe(tmp_path).read_text())['auto_update']
-    config['sources'][0]['dependency'] = True
-    with pytest.raises(ValueError, match='must trigger its own updates'):
+    config = yaml.safe_load(make_recipe(tmp_path).read_text())["auto_update"]
+    config["sources"][0]["dependency"] = True
+    with pytest.raises(ValueError, match="must trigger its own updates"):
         validate_sources_config(config)
 
-    config['sources'][0].pop('dependency')
-    config['sources'][1]['dependency'] = True
-    config['container_version'] = {'variable': 'source_commit'}
-    with pytest.raises(ValueError, match='must trigger its own updates'):
+    config["sources"][0].pop("dependency")
+    config["sources"][1]["dependency"] = True
+    config["container_version"] = {"variable": "source_commit"}
+    with pytest.raises(ValueError, match="must trigger its own updates"):
         validate_sources_config(config)

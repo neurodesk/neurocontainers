@@ -11,9 +11,13 @@ from builder import matlab_standalone as standalone
 
 
 def request(software="fieldtrip"):
-    return {"software": software, "source_ref": "a" * 40,
-            "source_version": "20250825" if software == "fieldtrip" else "v9.1.0",
-            "spm_ref": "b" * 40 if software == "physio" else "", "runtime_release": "R2023b"}
+    return {
+        "software": software,
+        "source_ref": "a" * 40,
+        "source_version": "20250825" if software == "fieldtrip" else "v9.1.0",
+        "spm_ref": "b" * 40 if software == "physio" else "",
+        "runtime_release": "R2023b",
+    }
 
 
 def compiled_fixture(tmp_path, software="fieldtrip", *, exit_code=0, marker=True):
@@ -35,23 +39,43 @@ def compiled_fixture(tmp_path, software="fieldtrip", *, exit_code=0, marker=True
     header[18:20] = b"\x3e\x00"
     (compiled / executable).write_bytes(header)
     (compiled / executable).chmod(0o755)
-    message = standalone.MARKERS[software] if marker else "runtime did not reach its assertion"
-    (compiled / f"run_{executable}.sh").write_text(f"#!/bin/bash\nprintf '%s\\n' '{message}'\nexit {exit_code}\n")
+    message = (
+        standalone.MARKERS[software]
+        if marker
+        else "runtime did not reach its assertion"
+    )
+    (compiled / f"run_{executable}.sh").write_text(
+        f"#!/bin/bash\nprintf '%s\\n' '{message}'\nexit {exit_code}\n"
+    )
     (compiled / "readme.txt").write_text("MATLAB Runtime R2023b is required.\n")
     if software == "physio":
         (compiled / "spm12.ctf").write_bytes(b"test CTF bytes")
-    (output / "compiler-report.json").write_text(json.dumps({
-        "software": software, "runtime_release": "R2023b", "matlab_root": str(tmp_path / "matlab"),
-    }))
+    (output / "compiler-report.json").write_text(
+        json.dumps(
+            {
+                "software": software,
+                "runtime_release": "R2023b",
+                "matlab_root": str(tmp_path / "matlab"),
+            }
+        )
+    )
     return value, workspace, output
 
 
-@pytest.mark.parametrize("field,value", [
-    ("software", "samsrfx"), ("software", []), ("source_ref", "main"),
-    ("source_ref", "A" * 40), ("source_version", "latest"),
-    ("source_version", "20250825\nmalicious"), ("runtime_release", "R2020b"),
-    ("runtime_release", "latest"), ("spm_ref", "b" * 40),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("software", "samsrfx"),
+        ("software", []),
+        ("source_ref", "main"),
+        ("source_ref", "A" * 40),
+        ("source_version", "latest"),
+        ("source_version", "20250825\nmalicious"),
+        ("runtime_release", "R2020b"),
+        ("runtime_release", "latest"),
+        ("spm_ref", "b" * 40),
+    ],
+)
 def test_request_rejects_unreviewed_source_and_runtime_identifiers(field, value):
     with pytest.raises(ValueError):
         standalone.validate_request({**request(), field: value})
@@ -64,7 +88,9 @@ def test_physio_requires_both_official_source_revisions():
 
 
 @pytest.mark.parametrize("annotated", [False, True])
-def test_checkout_verifies_official_tag_resolves_to_requested_commit(monkeypatch, tmp_path, annotated):
+def test_checkout_verifies_official_tag_resolves_to_requested_commit(
+    monkeypatch, tmp_path, annotated
+):
     calls = []
 
     def check_output(command, **kwargs):
@@ -80,17 +106,28 @@ def test_checkout_verifies_official_tag_resolves_to_requested_commit(monkeypatch
     standalone.verify_checkout(tmp_path, "fieldtrip/fieldtrip", "a" * 40, "20250825")
     assert calls[1][2] == "https://github.com/fieldtrip/fieldtrip.git"
     with pytest.raises(ValueError, match="requested commit"):
-        standalone.verify_checkout(tmp_path, "fieldtrip/fieldtrip", "b" * 40, "20250825")
+        standalone.verify_checkout(
+            tmp_path, "fieldtrip/fieldtrip", "b" * 40, "20250825"
+        )
 
 
 def test_checkout_rejects_tag_moved_to_another_commit(monkeypatch, tmp_path):
-    monkeypatch.setattr(standalone.subprocess, "check_output", lambda command, **kwargs:
-                        "a" * 40 if "rev-parse" in command else f"{'b' * 40}\trefs/tags/20250825\n")
+    monkeypatch.setattr(
+        standalone.subprocess,
+        "check_output",
+        lambda command, **kwargs: (
+            "a" * 40 if "rev-parse" in command else f"{'b' * 40}\trefs/tags/20250825\n"
+        ),
+    )
     with pytest.raises(ValueError, match="official tag"):
-        standalone.verify_checkout(tmp_path, "fieldtrip/fieldtrip", "a" * 40, "20250825")
+        standalone.verify_checkout(
+            tmp_path, "fieldtrip/fieldtrip", "a" * 40, "20250825"
+        )
 
 
-@pytest.mark.parametrize("defect", ["architecture", "permission", "runtime", "readme_size", "ctf", "symlink"])
+@pytest.mark.parametrize(
+    "defect", ["architecture", "permission", "runtime", "readme_size", "ctf", "symlink"]
+)
 def test_compiled_inputs_must_match_the_runtime_and_linux_abi(tmp_path, defect):
     value, _, output = compiled_fixture(tmp_path, "physio")
     directory = output / "compiled"
@@ -112,8 +149,12 @@ def test_compiled_inputs_must_match_the_runtime_and_linux_abi(tmp_path, defect):
 
 
 @pytest.mark.parametrize("exit_code,marker", [(1, True), (0, False)])
-def test_runtime_check_requires_exit_success_and_completed_assertions(tmp_path, exit_code, marker):
-    value, workspace, output = compiled_fixture(tmp_path, exit_code=exit_code, marker=marker)
+def test_runtime_check_requires_exit_success_and_completed_assertions(
+    tmp_path, exit_code, marker
+):
+    value, workspace, output = compiled_fixture(
+        tmp_path, exit_code=exit_code, marker=marker
+    )
     with pytest.raises(ValueError, match="runtime smoke"):
         standalone.package(value, workspace, output)
     assert (output / "runtime-smoke.log").is_file()
@@ -122,12 +163,16 @@ def test_runtime_check_requires_exit_success_and_completed_assertions(tmp_path, 
 
 
 @pytest.mark.parametrize("software", ["fieldtrip", "physio"])
-def test_package_hashes_real_bytes_preserves_layout_and_is_rerunnable(tmp_path, software):
+def test_package_hashes_real_bytes_preserves_layout_and_is_rerunnable(
+    tmp_path, software
+):
     value, workspace, output = compiled_fixture(tmp_path, software)
     first = standalone.package(value, workspace, output)
     archive = output / first["archive"]
     assert first["sha256"] == hashlib.sha256(archive.read_bytes()).hexdigest()
-    assert first["swift_object"].startswith(f"matlab-candidates/{software}/{'a' * 40}/2023b/")
+    assert first["swift_object"].startswith(
+        f"matlab-candidates/{software}/{'a' * 40}/2023b/"
+    )
     prefix = "fieldtrip" if software == "fieldtrip" else "spm12"
     with tarfile.open(archive) as bundle:
         license_file = bundle.extractfile(f"{prefix}/LICENSES/source-LICENSE")
@@ -150,8 +195,22 @@ def test_archive_rejects_symlinks_without_creating_an_artifact(tmp_path):
     assert not archive.exists()
 
 
-@pytest.mark.parametrize("defect", ["bytes", "digest", "destination", "archive", "repository", "smoke", "log", "checksum"])
-def test_publisher_rejects_changed_bytes_provenance_and_release_destinations(tmp_path, defect):
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "bytes",
+        "digest",
+        "destination",
+        "archive",
+        "repository",
+        "smoke",
+        "log",
+        "checksum",
+    ],
+)
+def test_publisher_rejects_changed_bytes_provenance_and_release_destinations(
+    tmp_path, defect
+):
     value, workspace, output = compiled_fixture(tmp_path)
     manifest = standalone.package(value, workspace, output)
     if defect == "bytes":

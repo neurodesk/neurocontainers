@@ -20,20 +20,43 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from builder.update_plan import VERSIONLESS_METHODS, rewrite_scalar
-from builder.versioning import bind_upstream_version, container_version, software_version
+from builder.versioning import (
+    bind_upstream_version,
+    container_version,
+    software_version,
+)
 from builder.yaml_edit import set_scalar
 from workflows.migrate_source_policies import write_atomic
 
 # Bundles and locally maintained software have their own release identity.
 # These inputs are dependencies, not a primary application's version.
-BUNDLES = {"bidstools", "brainlesion", "code", "dicomtools", "esilpd", "flames",
-           "mneextended", "neurodesktop-lite", "syncro", "musclemap", "topofit"}
+BUNDLES = {
+    "bidstools",
+    "brainlesion",
+    "code",
+    "dicomtools",
+    "esilpd",
+    "flames",
+    "mneextended",
+    "neurodesktop-lite",
+    "syncro",
+    "musclemap",
+    "topofit",
+}
 PRIMARY_SOURCES = {
-    "bidsappaa": "upstream", "bidsapphcppipelines": "base_image_tag",
-    "connectomeworkbench": "connectome-workbench", "cpac": "base_image_tag",
-    "hnncore": "hnn_core", "irkernel": "r-irkernel", "mipav": "standalone",
-    "mitkdiffusion": "standalone", "mricron": "mricron-amd64", "nftsim": "base_image_tag",
-    "sigviewer": "sigviewer", "sovabids": "sovabids", "spinalcordtoolbox": "sct",
+    "bidsappaa": "upstream",
+    "bidsapphcppipelines": "base_image_tag",
+    "connectomeworkbench": "connectome-workbench",
+    "cpac": "base_image_tag",
+    "hnncore": "hnn_core",
+    "irkernel": "r-irkernel",
+    "mipav": "standalone",
+    "mitkdiffusion": "standalone",
+    "mricron": "mricron-amd64",
+    "nftsim": "base_image_tag",
+    "sigviewer": "sigviewer",
+    "sovabids": "sovabids",
+    "spinalcordtoolbox": "sct",
     "vesselboost": "vesselboost",
 }
 
@@ -55,10 +78,15 @@ def primary_version(recipe: dict) -> str | dict | bool:
         if variable not in variables:
             continue
         for source in sources:
-            if source["method"] in VERSIONLESS_METHODS and not source.get("version_file"):
+            if source["method"] in VERSIONLESS_METHODS and not source.get(
+                "version_file"
+            ):
                 continue
             target = source["target"]
-            if target.get("variable") == variable or target.get("variables", {}).get(variable) == "version":
+            if (
+                target.get("variable") == variable
+                or target.get("variables", {}).get(variable) == "version"
+            ):
                 return source["id"]
         return {"variable": variable}
     for source in sources:
@@ -83,9 +111,16 @@ def migrate(root: Path, *, apply: bool = False) -> dict:
                 node = yaml.compose(original)
                 policy = next(v for k, v in node.value if k.value == "auto_update")
                 at = original.rfind("\n", 0, policy.start_mark.index) + 1
-                line = " " * policy.start_mark.column + "container_version: " + json.dumps(driver) + "\n"
+                line = (
+                    " " * policy.start_mark.column
+                    + "container_version: "
+                    + json.dumps(driver)
+                    + "\n"
+                )
                 updated = original[:at] + line + original[at:]
-        elif software_version(current) != current and not config.get("version_variable"):
+        elif software_version(current) != current and not config.get(
+            "version_variable"
+        ):
             updated = bind_upstream_version(updated, current)
         version = container_version(yaml.safe_load(updated))
         if current != version:
@@ -94,11 +129,17 @@ def migrate(root: Path, *, apply: bool = False) -> dict:
         suite_original = suite_path.read_text()
         suite_updated = suite_original
         suite = yaml.safe_load(suite_original)
-        if config["method"] != "sources" and (variable := yaml.safe_load(updated)["auto_update"].get("version_variable")):
+        if config["method"] != "sources" and (
+            variable := yaml.safe_load(updated)["auto_update"].get("version_variable")
+        ):
             if variable not in suite:
-                suite_updated = suite_updated.replace("${version}", "${" + variable + "}")
+                suite_updated = suite_updated.replace(
+                    "${version}", "${" + variable + "}"
+                )
                 suite_updated = set_scalar(
-                    suite_updated, None, variable,
+                    suite_updated,
+                    None,
+                    variable,
                     str(yaml.safe_load(updated)["variables"][variable]),
                 )
         if Template(str(suite["version"])).safe_substitute(suite) != version:
@@ -111,8 +152,16 @@ def migrate(root: Path, *, apply: bool = False) -> dict:
         if updated != original or suite_updated != suite_original:
             writes[path] = updated
             writes[suite_path] = suite_updated
-            changes.append({"recipe": path.parent.name, "old": current, "new": version,
-                            "driver": yaml.safe_load(updated)["auto_update"].get("container_version")})
+            changes.append(
+                {
+                    "recipe": path.parent.name,
+                    "old": current,
+                    "new": version,
+                    "driver": yaml.safe_load(updated)["auto_update"].get(
+                        "container_version"
+                    ),
+                }
+            )
     if apply:
         for path, contents in writes.items():
             write_atomic(path, contents)

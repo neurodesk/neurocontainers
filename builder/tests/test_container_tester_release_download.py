@@ -124,7 +124,9 @@ def test_release_downloader_prefers_image_basename_from_release_metadata(
 
     assert image is not None
     with image:
-        assert str(image.cache_path) == str(tmp_path / "neurodesktop_20260428_arm64_20260519.simg")
+        assert str(image.cache_path) == str(
+            tmp_path / "neurodesktop_20260428_arm64_20260519.simg"
+        )
         assert image.path.read_text(encoding="utf-8") == "arm64 simg"
         assert calls == [
             "https://neurocontainers.s3.us-east-2.amazonaws.com/neurodesktop_20260428_arm64_20260519.simg",
@@ -215,7 +217,9 @@ def test_release_downloader_accepts_image_basename_with_build_date(
 
     assert image is not None
     with image:
-        assert str(image.cache_path) == str(tmp_path / "neurodesktop_20260428_arm64_20260519.simg")
+        assert str(image.cache_path) == str(
+            tmp_path / "neurodesktop_20260428_arm64_20260519.simg"
+        )
         assert calls == [
             "https://neurocontainers.s3.us-east-2.amazonaws.com/neurodesktop_20260428_arm64_20260519.simg",
         ]
@@ -276,7 +280,9 @@ def test_auto_location_passes_release_image_basename(
         return None
 
     monkeypatch.setattr(tester.cvmfs, "is_available", lambda: False)
-    monkeypatch.setattr(tester.release_downloader, "download_from_release", fake_download)
+    monkeypatch.setattr(
+        tester.release_downloader, "download_from_release", fake_download
+    )
 
     assert (
         tester.find_container(
@@ -326,16 +332,23 @@ def test_auto_location_can_return_docker_tag_for_docker_runtime(
 
 
 @pytest.mark.parametrize("build_date", ["20250101", 20250101, 20250101.0])
-@pytest.mark.parametrize("image", [
-    None,
-    "https://example.invalid/tool_gpu_1_arm64_20250101.sif?download=1",
-])
+@pytest.mark.parametrize(
+    "image",
+    [
+        None,
+        "https://example.invalid/tool_gpu_1_arm64_20250101.sif?download=1",
+    ],
+)
 def test_acquisition_uses_normalized_release_metadata_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    build_date: str | int | float, image: str | None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    build_date: str | int | float,
+    image: str | None,
 ) -> None:
     release = tmp_path / "release.json"
-    release.write_text(json.dumps({"apps": {"tool": {"version": build_date, "image": image}}}))
+    release.write_text(
+        json.dumps({"apps": {"tool": {"version": build_date, "image": image}}})
+    )
     tester = ContainerTester()
     tester.release_downloader = ReleaseContainerDownloader(str(tmp_path / "cache"))
     reads = []
@@ -358,13 +371,17 @@ def test_acquisition_uses_normalized_release_metadata_once(
     with tester:
         path = tester.find_container("tool", "1", "release", str(release))
         assert Path(path).read_bytes() == b"selected release"
-        assert calls == [f"https://neurocontainers.s3.us-east-2.amazonaws.com/{expected}"]
+        assert calls == [
+            f"https://neurocontainers.s3.us-east-2.amazonaws.com/{expected}"
+        ]
         assert reads == [release]
 
 
 @pytest.mark.parametrize("app", [20250101, 20250101.0, {"version": 20250101.0}])
 def test_docker_conversion_uses_normalized_release_date(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, app: int | float | dict,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    app: int | float | dict,
 ) -> None:
     release = tmp_path / "release.json"
     release.write_text(json.dumps({"apps": {"tool": app}}))
@@ -379,19 +396,34 @@ def test_docker_conversion_uses_normalized_release_date(
 
     monkeypatch.setattr(tester.docker_to_simg, "convert", convert)
     with tester:
-        path = tester.convert_docker_image_to_simg("tool", "1", release_file=str(release))
+        path = tester.convert_docker_image_to_simg(
+            "tool", "1", release_file=str(release)
+        )
         assert Path(path).read_bytes() == b"converted release"
-        assert calls == [("ghcr.io/neurodesk/tool_1:20250101", "tool_1_20250101.docker.simg")]
+        assert calls == [
+            ("ghcr.io/neurodesk/tool_1:20250101", "tool_1_20250101.docker.simg")
+        ]
 
 
-@pytest.mark.parametrize("metadata", [
-    None, b"\xff", "{", "[]", "null", "{}", '{"apps": []}',
-    '{"apps": {"tool": {}}}',
-    '{"apps": {"tool": {"version": 20250101.5}}}',
-    '{"apps": {"tool": {"version": "20250101", "image": "http://["}}}',
-])
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        None,
+        b"\xff",
+        "{",
+        "[]",
+        "null",
+        "{}",
+        '{"apps": []}',
+        '{"apps": {"tool": {}}}',
+        '{"apps": {"tool": {"version": 20250101.5}}}',
+        '{"apps": {"tool": {"version": "20250101", "image": "http://["}}}',
+    ],
+)
 def test_invalid_metadata_preserves_acquisition_fallbacks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, metadata: str | bytes | None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    metadata: str | bytes | None,
 ) -> None:
     release = tmp_path / "release.json"
     if isinstance(metadata, bytes):
@@ -412,5 +444,7 @@ def test_invalid_metadata_preserves_acquisition_fallbacks(
     with tester:
         assert tester.find_container("tool", "1", "release", str(release)) is None
         assert tester.find_container("tool", "1", "auto", str(release)) == "tool:1"
-        with pytest.raises(RuntimeError, match="requires release metadata with a build date"):
+        with pytest.raises(
+            RuntimeError, match="requires release metadata with a build date"
+        ):
             tester.convert_docker_image_to_simg("tool", "1", release_file=str(release))

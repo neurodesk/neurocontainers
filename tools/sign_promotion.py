@@ -1,4 +1,5 @@
 """Sign accepted candidate bytes without claiming trusted-build provenance."""
+
 from __future__ import annotations
 
 import argparse
@@ -34,7 +35,10 @@ def run(*arguments: str) -> None:
 
 
 def sign(candidate: Path, manifest: dict, merge_sha: str, image: str) -> list[Path]:
-    if os.environ.get("GITHUB_WORKFLOW_REF") != WORKFLOW or os.environ.get("GITHUB_REF") != "refs/heads/main":
+    if (
+        os.environ.get("GITHUB_WORKFLOW_REF") != WORKFLOW
+        or os.environ.get("GITHUB_REF") != "refs/heads/main"
+    ):
         raise ValueError("Signing requires the official main-branch promotion workflow")
     if not re.fullmatch(r"[0-9a-f]{40}", merge_sha):
         raise ValueError("Merge commit must be a full SHA")
@@ -53,22 +57,34 @@ def sign(candidate: Path, manifest: dict, merge_sha: str, image: str) -> list[Pa
     if not results.is_file():
         raise ValueError("Candidate test results are required for the signed statement")
     statement = candidate / (filename + ".promotion.json")
-    statement.write_text(json.dumps({
-        "_type": "https://in-toto.io/Statement/v1",
-        "subject": [
-            {"name": image.split("@")[0], "digest": {"sha256": resolved.subject_digest.removeprefix("sha256:")}},
-            {"name": filename, "digest": {"sha256": manifest["sif_sha256"]}},
-        ],
-        "predicateType": "https://neurodesk.org/attestations/promotion/v1",
-        "predicate": {
-            "acceptance": "Merged recipe PR and successful candidate workflow accepted for publication",
-            "build_provenance": "Candidate supplied by the PR workflow; not a trusted-build attestation",
-            "merge_sha": merge_sha,
-            "candidate": manifest,
-            "test_results_sha256": sha256(results),
-            "workflow_identity": IDENTITY,
-        },
-    }, sort_keys=True, indent=2) + "\n")
+    statement.write_text(
+        json.dumps(
+            {
+                "_type": "https://in-toto.io/Statement/v1",
+                "subject": [
+                    {
+                        "name": image.split("@")[0],
+                        "digest": {
+                            "sha256": resolved.subject_digest.removeprefix("sha256:")
+                        },
+                    },
+                    {"name": filename, "digest": {"sha256": manifest["sif_sha256"]}},
+                ],
+                "predicateType": "https://neurodesk.org/attestations/promotion/v1",
+                "predicate": {
+                    "acceptance": "Merged recipe PR and successful candidate workflow accepted for publication",
+                    "build_provenance": "Candidate supplied by the PR workflow; not a trusted-build attestation",
+                    "merge_sha": merge_sha,
+                    "candidate": manifest,
+                    "test_results_sha256": sha256(results),
+                    "workflow_identity": IDENTITY,
+                },
+            },
+            sort_keys=True,
+            indent=2,
+        )
+        + "\n"
+    )
     sif_reference = resolved.pull_uri.removeprefix("oras://")
     for reference in (image, sif_reference):
         run("sign", "--yes", reference)
@@ -77,7 +93,13 @@ def sign(candidate: Path, manifest: dict, merge_sha: str, image: str) -> list[Pa
     statement_bundle = candidate / (filename + ".promotion.sigstore.json")
     for artifact, bundle in ((sif, sif_bundle), (statement, statement_bundle)):
         run("sign-blob", "--yes", "--bundle", str(bundle), str(artifact))
-        run("verify-blob", *verification_arguments(), "--bundle", str(bundle), str(artifact))
+        run(
+            "verify-blob",
+            *verification_arguments(),
+            "--bundle",
+            str(bundle),
+            str(artifact),
+        )
     return [sif_bundle, statement, statement_bundle]
 
 

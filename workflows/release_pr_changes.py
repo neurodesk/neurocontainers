@@ -64,7 +64,9 @@ def _relative_posix(path: Path, repo_root: Path) -> str:
         return path.as_posix()
 
 
-def _release_sort_key(version: str, build_date: str, *, prefer_x86_64: bool) -> tuple[int, str, str]:
+def _release_sort_key(
+    version: str, build_date: str, *, prefer_x86_64: bool
+) -> tuple[int, str, str]:
     architecture_priority = 1
     if prefer_x86_64 and version.endswith("-arm64"):
         architecture_priority = 0
@@ -102,7 +104,9 @@ def _release_architecture(release_file: Path) -> str:
     try:
         data = json.loads(release_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise ReleaseChangeError(f"Unable to read release metadata {release_file}: {exc}") from exc
+        raise ReleaseChangeError(
+            f"Unable to read release metadata {release_file}: {exc}"
+        ) from exc
 
     architecture = data.get("architecture")
     if not architecture:
@@ -115,7 +119,9 @@ def _release_architecture(release_file: Path) -> str:
     try:
         return canonical_architecture(str(architecture))
     except ValueError as exc:
-        raise ReleaseChangeError(f"Invalid architecture in {release_file}: {architecture!r}") from exc
+        raise ReleaseChangeError(
+            f"Invalid architecture in {release_file}: {architecture!r}"
+        ) from exc
 
 
 def find_latest_release_file(
@@ -214,9 +220,7 @@ def detect_release_pr_changes(
         )
 
     candidate_recipes = {
-        match.group(1)
-        for path in paths
-        if (match := BUILD_RECIPE_PATTERN.match(path))
+        match.group(1) for path in paths if (match := BUILD_RECIPE_PATTERN.match(path))
     }
     skipped_new_recipe_tests: list[str] = []
     skipped_seen: set[str] = set()
@@ -251,12 +255,16 @@ def detect_release_pr_changes(
             skipped_seen.add(recipe)
 
     return DetectionResult(
-        entries=tuple(sorted(entries.values(), key=lambda item: (item.name, item.version))),
+        entries=tuple(
+            sorted(entries.values(), key=lambda item: (item.name, item.version))
+        ),
         skipped_new_recipe_tests=tuple(sorted(skipped_new_recipe_tests)),
     )
 
 
-def get_changed_files(base_ref: str, head_ref: str, *, repo_root: str | Path = ".") -> list[str]:
+def get_changed_files(
+    base_ref: str, head_ref: str, *, repo_root: str | Path = "."
+) -> list[str]:
     proc = subprocess.run(
         # --diff-filter=d drops deletions. A retired release (its JSON removed)
         # has no container left to download, so queueing a test for it would
@@ -305,7 +313,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        changed_files = get_changed_files(args.base_ref, args.head_ref, repo_root=args.repo_root)
+        changed_files = get_changed_files(
+            args.base_ref, args.head_ref, repo_root=args.repo_root
+        )
         result = detect_release_pr_changes(changed_files, repo_root=args.repo_root)
         if args.output:
             write_github_outputs(result, args.output)

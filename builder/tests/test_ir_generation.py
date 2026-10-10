@@ -16,9 +16,17 @@ def test_dcm2niix_ir_contains_expected_directives() -> None:
     )
     directives = compiled.definition.directives
     install_dir = f"/opt/dcm2niix-{compiled.version}"
-    assert any(isinstance(item, Workdir) and item.path == install_dir for item in directives)
-    assert any(isinstance(item, RunWithMounts) and "dcm2niix_lnx.zip" in item.command for item in directives)
-    assert any(isinstance(item, Env) and item.values.get("DEPLOY_PATH") == install_dir for item in directives)
+    assert any(
+        isinstance(item, Workdir) and item.path == install_dir for item in directives
+    )
+    assert any(
+        isinstance(item, RunWithMounts) and "dcm2niix_lnx.zip" in item.command
+        for item in directives
+    )
+    assert any(
+        isinstance(item, Env) and item.values.get("DEPLOY_PATH") == install_dir
+        for item in directives
+    )
 
 
 def test_ants_template_backend_generates_local_ir() -> None:
@@ -29,15 +37,17 @@ def test_ants_template_backend_generates_local_ir() -> None:
         include_dirs=config.include_dirs,
     )
     docker_env = [
-        item.values
-        for item in compiled.definition.directives
-        if isinstance(item, Env)
+        item.values for item in compiled.definition.directives if isinstance(item, Env)
     ]
     assert any(values.get("ANTSPATH") == "/opt/ants-2.6.5/bin" for values in docker_env)
-    assert any(isinstance(item, Run) and "cd /tmp/ants/build" in item.command for item in compiled.definition.directives)
+    assert any(
+        isinstance(item, Run) and "cd /tmp/ants/build" in item.command
+        for item in compiled.definition.directives
+    )
     assert any(
         isinstance(item, Env)
-        and item.values.get("DEPLOY_PATH") == "/opt/ants-2.6.5/bin:/opt/ants-2.6.5/Scripts"
+        and item.values.get("DEPLOY_PATH")
+        == "/opt/ants-2.6.5/bin:/opt/ants-2.6.5/Scripts"
         for item in compiled.definition.directives
     )
 
