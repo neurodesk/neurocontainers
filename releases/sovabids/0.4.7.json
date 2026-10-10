@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "sovabids 0.4.7": {
+      "version": "20261010",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "electrophysiology",
+    "bids apps"
+  ]
+}
