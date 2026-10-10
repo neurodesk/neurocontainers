@@ -182,7 +182,7 @@ def dated_image_tag(contents: str) -> str | None:
         return None
     _, separator, tag = match.group("image").rpartition(":")
     build_date = tag.rsplit("_", 1)[-1]
-    if not separator or not BUILD_DATE_PATTERN.fullmatch(build_date):
+    if not separator or "/" in tag or not BUILD_DATE_PATTERN.fullmatch(build_date):
         return None
     return build_date
 
