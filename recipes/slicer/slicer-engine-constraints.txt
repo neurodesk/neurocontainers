@@ -1,5 +1,6 @@
 # Runtime extras and their new dependencies for PythonSlicer 3.12.
 # Torch, MONAI, and NumPy are pinned by recipe variables.
+# MONAI 1.5 supports NumPy 2, required by Slicer's bundled pyjpegls decoder.
 absl-py==2.5.0
 filelock==3.32.3
 fire==0.7.1

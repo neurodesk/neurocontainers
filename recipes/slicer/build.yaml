@@ -1,5 +1,5 @@
 name: slicer
-version: 5.10.0
+version: "5.12.4"
 
 architectures:
   - x86_64
@@ -7,17 +7,17 @@ architectures:
 variables:
   monailabel_version: 0.8.5
   slicer_torch_version: 2.5.1
-  slicer_monai_version: 1.4.0
-  slicer_numpy_version: 1.26.4
-  monaiauto3dseg_extension_item: 6912128aac7b1c95e7938b2c
-  monaiauto3dseg_extension_sha256: 638d4538483089434f6cb7ff0f0cc59ba512b44e69761d5162123962db27c7b2
-  pytorch_extension_item: 6912099bac7b1c95e7937be6
-  pytorch_extension_sha256: 58bd40e49ac1459a9cdd72e7e1f63b20dc91373c9518eb7a239d57123e1d010c
-  slicer_revision: 34045
-  monailabel_extension_item: 6912128dac7b1c95e7938b38
-  upstream_version: 5.10.0
-  slicer_abi: '5.10'
-  monailabel_extension_sha256: e726478a7c2a79e78a5a507b29f4d8dea40a9b9e31175a62cffd448dbdc133b1
+  slicer_monai_version: 1.5.2
+  slicer_numpy_version: 2.4.6
+  monaiauto3dseg_extension_item: "6aa1d769ce9de556d3010f7b"
+  monaiauto3dseg_extension_sha256: "d77be3f28e33f300f37610922bd7bbc3f26f5d49fe5ffec9374ed6c9ed0b206e"
+  pytorch_extension_item: "6aa1ce4ace9de556d301093f"
+  pytorch_extension_sha256: "cf9e72b3b2ce6f5ad5554fae1c56166b8b069c065f138831ee0999bf5ce5608e"
+  slicer_revision: "34645"
+  monailabel_extension_item: "6aa1d768ce9de556d3010f6e"
+  upstream_version: "5.12.4"
+  slicer_abi: "5.12"
+  monailabel_extension_sha256: "c9f0f7883be0319f3c20999b0842d8d05056be143f3ccaab3389f44a436778cc"
 auto_update:
   container_version: "slicer"
   method: sources
@@ -42,7 +42,7 @@ auto_update:
     dependency: true
     method: pypi
     package: monai
-    version_regex: '(?P<version>1\.4\.\d+)'
+    version_regex: '(?P<version>1\.5\.\d+)'
     target:
       variable: slicer_monai_version
       fulltest_variable: slicer_monai_version
@@ -50,7 +50,7 @@ auto_update:
     dependency: true
     method: pypi
     package: numpy
-    version_regex: '(?P<version>1\.26\.\d+)'
+    version_regex: '(?P<version>2\.4\.\d+)'
     target:
       variable: slicer_numpy_version
       fulltest_variable: slicer_numpy_version
@@ -178,9 +178,9 @@ files:
   - name: repair_itk_metadata.py
     filename: repair_itk_metadata.py
   - name: download
-    url: "https://download.slicer.org/download?os=linux&stability=release&version=5.10.0"
+    url: "https://download.slicer.org/download?os=linux&stability=release&version=5.12.4"
 
-    sha256: 682129db1673dd3a0ebc35005c4f307d9dd3dc101d19fd7f48403130854f4ff5
+    sha256: "311a3d2a52046b344c44c160a7232d977d7b73cd4961dd5295eea1879c6aa370"
   - name: download_1
     url: https://slicer-packages.kitware.com/api/v1/item/{{ context.monailabel_extension_item }}/download
     sha256: '{{ context.monailabel_extension_sha256 }}'
