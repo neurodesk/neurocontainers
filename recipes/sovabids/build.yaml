@@ -4,8 +4,8 @@ variables:
   numpy_version: "1.26.4"
   pandas_version: "1.5.3"
   scipy_version: "1.11.4"
-  mne_version: "1.6.1"
-  mne_bids_version: "0.14"
+  mne_version: "1.8.0"
+  mne_bids_version: "0.15.0"
   pybv_version: "0.7.6"
   fastapi_jsonrpc_version: "2.5.2"
   pydantic_version: "1.10.12"
@@ -34,7 +34,6 @@ auto_update:
     target:
       variable: sovabids_tag
       value: tag
-      fulltest_variable: sovabids_tag
   - id: bidscoin
     dependency: true
     method: github_commit
@@ -75,14 +74,14 @@ auto_update:
     dependency: true
     method: pypi
     package: mne
-    version_regex: ^(?P<version>1\.6\.\d+)$
+    version_regex: ^(?P<version>1\.8\.\d+)$
     target:
       variable: mne_version
   - id: mne-bids
     dependency: true
     method: pypi
     package: mne-bids
-    version_regex: ^(?P<version>0\.14(?:\.\d+)?)$
+    version_regex: ^(?P<version>0\.15(?:\.\d+)?)$
     target:
       variable: mne_bids_version
   - id: pybv
