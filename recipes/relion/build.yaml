@@ -1,17 +1,18 @@
 name: relion
-version: 4.0.1.sm75
+version: 5.1.1
 
 copyright:
   - license: GPL-2.0-only
-    url: https://github.com/3dem/relion/blob/{{ context.relion_version }}/LICENSE
+    url: https://github.com/3dem/relion/blob/{{ context.relion_commit }}/LICENSE
 
 architectures:
   - x86_64
 
 variables:
-  install_version: "4.0.1.sm75"
-  relion_version: "4.0.1"
+  relion_version: "5.1.1"
   compute_capability: "75"
+  torch_version: "2.7.1+cpu"
+  torch_wheel: torch-{{ context.torch_version }}-cp310-cp310-manylinux_2_28_x86_64.whl
   relion_commit: "05cd1ad95e89d4e6b0424c6c158322a46a74d8aa"
   ctffind_version: 4.1.14
   motioncor2_version: 1.6.4
@@ -22,15 +23,19 @@ variables:
   singularity_version: 3.9.3
 
 auto_update:
-  container_version: {"variable": "install_version"}
+  container_version: relion
   method: sources
   sources:
   - id: relion
     method: github_commit
     repo: 3dem/relion
     ref: HEAD
+    version_file: src/macros.h
+    version_regex: '#define RELION_SHORT_VERSION "(?P<version>[0-9.]+)"'
     target:
       variable: relion_commit
+      variables:
+        relion_version: version
 
 build:
   kind: neurodocker
@@ -61,6 +66,7 @@ build:
         - libwxgtk3.0-gtk3-dev
         - lmod
         - tcsh
+        - python3-venv
 
     - workdir: /tmp
 
@@ -74,10 +80,20 @@ build:
         - apt-get install -y -q --no-install-recommends {{ context.cuda_package }}
         - rm -f {{ context.cuda_repo_deb }}
 
+    - copy: python-requirements.txt /tmp/relion-python-requirements.txt
+
     - run:
+        - python3 -m venv /opt/relion-{{ context.version }}/python
+        - cp {{ get_file("torch_cpu_wheel") }} /tmp/{{ context.torch_wheel }}
+        - /opt/relion-{{ context.version }}/python/bin/pip install --no-cache-dir --no-deps /tmp/{{ context.torch_wheel }}
+        - /opt/relion-{{ context.version }}/python/bin/pip install --no-cache-dir -r /tmp/relion-python-requirements.txt
+        - /opt/relion-{{ context.version }}/python/bin/pip check
+        - rm /tmp/relion-python-requirements.txt /tmp/{{ context.torch_wheel }}
         - mkdir -p relion
         - tar -xzf {{ get_file("relion_source") }} --strip-components=1 -C relion
-        - cd relion && mkdir build && cd build && cmake -DCUDA_ARCH={{ context.compute_capability }} -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-{{ context.cuda_version }} -DCMAKE_INSTALL_PREFIX=/opt/relion-{{ context.install_version }}/ -DFORCE_OWN_FLTK=ON .. && make && make install
+        - cp -r relion/src/tomography_python_programs /opt/relion-{{ context.version }}/python/lib/python3.10/site-packages/
+        - sed -i '1c\#!/opt/relion-{{ context.version }}/python/bin/python' relion/scripts/trace_amyloids.py
+        - cd relion && mkdir build && cd build && cmake -DCUDA_ARCH={{ context.compute_capability }} -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-{{ context.cuda_version }} -DCMAKE_INSTALL_PREFIX=/opt/relion-{{ context.version }}/ -DPYTHON_EXE_PATH=/opt/relion-{{ context.version }}/python/bin/python -DFETCH_WEIGHTS=OFF -DFORCE_OWN_FLTK=ON .. && make && make install
 
     - run:
         - cp {{ get_file("ctffind_archive") }} ctffind-{{ context.ctffind_version }}.tar.gz
@@ -94,16 +110,16 @@ build:
         - unzip MotionCor2_{{ context.motioncor2_version }}.zip -d /opt/motioncor2-{{ context.motioncor2_version }}/bin/
         - rm -f MotionCor2_{{ context.motioncor2_version }}.zip
 
-    - copy: load_topaz.sh /opt/relion-{{ context.install_version }}/load_topaz.sh
+    - copy: load_topaz.sh /opt/relion-{{ context.version }}/load_topaz.sh
 
     - run:
-        - chmod +x /opt/relion-{{ context.install_version }}/load_topaz.sh
+        - chmod +x /opt/relion-{{ context.version }}/load_topaz.sh
 
     - environment:
         RELION_CTFFIND_EXECUTABLE: /opt/ctffind-{{ context.ctffind_version }}/bin/ctffind
         RELION_MOTIONCOR2_EXECUTABLE: /opt/motioncor2-{{ context.motioncor2_version }}/bin/MotionCor2_{{ context.motioncor2_version }}_Cuda118_Mar312023
-        RELION_TOPAZ_EXECUTABLE: /opt/relion-{{ context.install_version }}/load_topaz.sh
-        PATH: $PATH:/opt/relion-{{ context.install_version }}/bin
+        RELION_TOPAZ_EXECUTABLE: /opt/relion-{{ context.version }}/load_topaz.sh
+        PATH: $PATH:/opt/relion-{{ context.version }}/bin:/opt/relion-{{ context.version }}/python/bin
 
     - run:
         - export GOPATH=/tmp/go && cp {{ get_file("go_archive") }} go{{ context.go_version }}.linux-amd64.tar.gz
@@ -135,7 +151,7 @@ build:
 
 deploy:
   path:
-    - /opt/relion-{{ context.install_version }}/bin/
+    - /opt/relion-{{ context.version }}/bin/
 
 categories:
   - cryo EM
@@ -146,6 +162,7 @@ readme: |-
   RELION (REgularised LIkelihood OptimisatioN) is a stand-alone program for Maximum A Posteriori refinement of 3D reconstructions and 2D class averages in cryo-electron microscopy.
 
   This container builds RELION {{ context.relion_version }} from source for CUDA compute capability {{ context.compute_capability }} and includes helper integrations for CTFFIND, MotionCor2, and Topaz.
+  The Python tomography tools and amyloid tracer use a bundled Python environment. The tracer uses CPU PyTorch; pass `--device cpu` when running it. Model weights are supplied by the user.
 
   Example:
   ```
@@ -166,8 +183,8 @@ readme: |-
   - RELION_TOPAZ_EXECUTABLE=/opt/relion-{{ context.version }}/load_topaz.sh
 
   More documentation:
-  - RELION documentation: https://relion.readthedocs.io/en/release-4.0/
-  - RELION source: https://github.com/3dem/relion/tree/{{ context.relion_version }}
+  - RELION documentation: https://relion.readthedocs.io/en/release-5.0/
+  - RELION source: https://github.com/3dem/relion/tree/{{ context.relion_commit }}
 
   To make the executables and scripts inside this container transparently available in Neurodesk environments, run:
   ```
@@ -184,6 +201,11 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: python-requirements.txt
+    filename: python-requirements.txt
+  - name: torch_cpu_wheel
+    url: https://download.pytorch.org/whl/cpu/torch-{{ context.torch_version | replace("+", "%2B") }}-cp310-cp310-manylinux_2_28_x86_64.whl
+    sha256: 1f04a373a3f643821f721da9898ef77dce73b5b6bfc64486f0976f7fb5f90e83
   - name: relion_source
     url: https://github.com/3dem/relion/archive/{{ context.relion_commit }}.tar.gz
   - name: cuda_pin
