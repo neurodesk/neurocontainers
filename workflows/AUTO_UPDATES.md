@@ -190,6 +190,23 @@ The source list supports the release providers above and these providers:
 | `slicer_release` | See Slicer recipes | Slicer binary and named `extensions` map from the same build revision |
 | `freesurfer_release` | See SynthSeg recipe | FreeSurfer release and its corresponding model bundle |
 
+For a `github_commit` source, `version_file` reads the version at the observed commit.
+It accepts a plain version file by default. To extract a version from a source header,
+add `version_regex` with a named `version` group. The file must be UTF-8, at most
+64 KiB, and match the expression exactly once. Bind `target.variables` to `version`
+and `target.fulltest_variable` to the suite's software-version scalar so the commit,
+software version, container label, and runtime assertion update together.
+
+```yaml
+version_file: src/version.h
+version_regex: '#define TOOL_VERSION "(?P<version>[0-9.]+)"'
+target:
+  variable: source_commit
+  variables:
+    upstream_version: version
+  fulltest_variable: upstream_version
+```
+
 LibreOffice uses `libreoffice_release` with a variable target for its four-part
 `upstream_version` and `target.variables` mappings for `x86_64_sha256` and
 `aarch64_sha256`. The provider selects a three-part release from the official
