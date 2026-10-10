@@ -160,8 +160,25 @@ def test_prepare_recipe_separates_two_part_container_and_openrecon_versions(
     assert "export baseDockerImage=vnmd/${toolName}_${version}\n" in params
 
 
+@pytest.mark.parametrize(
+    ("image", "published_image"),
+    [
+        (
+            "ghcr.io/neurodesk/${toolName}_${version}:20260907",
+            "ghcr.io/neurodesk/demo_0.2.0:20260910",
+        ),
+        (
+            "ghcr.io/neurodesk/${toolName}:${version}_20260907",
+            "ghcr.io/neurodesk/demo:0.2.0_20260910",
+        ),
+        (
+            "ghcr.io/neurodesk/${toolName}:0.2.0_20260907",
+            "ghcr.io/neurodesk/demo:0.2.0_20260910",
+        ),
+    ],
+)
 def test_prepare_recipe_points_dated_image_at_the_published_build(
-    tmp_path: Path,
+    tmp_path: Path, image: str, published_image: str,
 ) -> None:
     source_root = tmp_path / "neurocontainers"
     openrecon_root = tmp_path / "openrecon"
@@ -173,7 +190,7 @@ def test_prepare_recipe_points_dated_image_at_the_published_build(
         "#!/bin/bash\n"
         "export toolName=demo\n"
         "export version=0.1.0\n"
-        "export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20260907\n",
+        f"export baseDockerImage={image}\n",
         encoding="utf-8",
     )
 
@@ -183,11 +200,26 @@ def test_prepare_recipe_points_dated_image_at_the_published_build(
 
     assert prepared is not None
     params = (target / "params.sh").read_text(encoding="utf-8")
-    assert (
-        "export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20260910\n"
-        in params
+    resolved = subprocess.run(
+        [
+            "bash", "-c", 'source "$1"; printf "%s\\n" "$baseDockerImage"',
+            "bash", str(target / "params.sh"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     )
+    assert resolved.stdout.strip() == published_image
+    assert f"export baseDockerImage={image.replace('20260907', '20260910')}\n" in params
     assert any("20260907" in note and "20260910" in note for note in prepared.notes)
+
+
+@pytest.mark.parametrize("tag", ["latest", "0.2.0", "${version}", "0.2.0_20260907_extra"])
+def test_update_params_image_tag_keeps_non_dated_tags(tag: str) -> None:
+    params = f"export baseDockerImage=ghcr.io/neurodesk/demo:{tag}\n"
+
+    assert sync_openrecon.dated_image_tag(params) is None
+    assert sync_openrecon.update_params_image_tag(params, "20260910") == params
 
 
 def test_prepare_recipe_keeps_an_already_current_image_tag(tmp_path: Path) -> None:
