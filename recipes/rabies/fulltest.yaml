@@ -1,5 +1,5 @@
 # RABIES container test suite
-# Tests for RABIES v0.5.3 - Rodent Automated Bold Improvement of EPI Sequences
+# Tests for RABIES - Rodent Automated Bold Improvement of EPI Sequences
 #
 # RABIES is an open source image processing pipeline for rodent fMRI.
 # It conducts preprocessing, confound correction, and resting-state functional
@@ -15,6 +15,7 @@
 
 name: rabies
 version: "0.6.2"
+upstream_version: "0.6.2"
 
 required_files:
   - dataset: ds000001
@@ -45,6 +46,11 @@ tests:
     command: rabies --help 2>&1 | head -20
     expected_output_contains: "RABIES performs multiple stages"
 
+  - name: RABIES installed version
+    description: Verify the installed RABIES package matches the source version
+    command: python -c "from importlib.metadata import version; assert version('rabies') == '${upstream_version}'; print(version('rabies'))"
+    expected_output_contains: "${upstream_version}"
+
   - name: RABIES preprocess help
     description: Verify rabies preprocess subcommand help
     command: rabies preprocess --help 2>&1 | head -10
@@ -65,7 +71,7 @@ tests:
   # ==========================================================================
   - name: Error check utility help
     description: Verify error_check_rabies.py utility is available
-    command: error_check_rabies.py --help 2>&1 | head -5
+    command: error_check_rabies.py --help 2>&1
     expected_output_contains: "Parser to handle testing"
 
   # ==========================================================================
@@ -322,10 +328,39 @@ tests:
     command: "bash -lc 'ls -la /opt/rabies/share/rabies/vascular_mask.nii.gz 2>&1'"
     expected_output_contains: "vascular_mask.nii.gz"
 
-  - name: EPI template exists
-    description: Verify EPI reference template is available
-    command: "bash -lc 'ls -la /opt/rabies/share/rabies/EPI_template.nii.gz 2>&1'"
-    expected_output_contains: "EPI_template.nii.gz"
+  - name: EPICOMMON template exists
+    description: Verify the reference template for BOLD-only preprocessing is available
+    command: ls -la /opt/rabies/share/rabies/EPICOMMON/EPICOMMON_atlas/EPICOMMON_template.nii.gz
+    expected_output_contains: "EPICOMMON_template.nii.gz"
+
+  - name: Default atlases and seeds are complete
+    description: Load the default templates, masks, priors and seed maps used by RABIES
+    command: |
+      python - <<'PY'
+      import os
+      from pathlib import Path
+      import nibabel as nib
+      import numpy as np
+      from rabies import run_main
+
+      root = Path(os.environ['XDG_DATA_HOME']) / 'rabies'
+      assert root == Path('/opt/rabies/share/rabies')
+      images = [Path(value) for name, value in vars(run_main).items()
+                if name.startswith(('DSURQE_', 'EPICOMMON_'))
+                and isinstance(value, str) and value.endswith('.nii.gz')]
+      assert Path(run_main.DSURQE_MAPPINGS).is_file()
+      for seed in run_main.RABIES_SEED_NAMES:
+          images.append(root / 'DSURQE_seeds' / f'{seed}_left.nii.gz')
+          images.append(root / 'DSURQE_seeds' / 'EPICOMMON_resampled'
+                        / f'{seed}_left_EPICOMMON_resampled.nii.gz')
+      for path in images:
+          image = nib.load(path)
+          data = image.get_fdata()
+          assert np.isfinite(data).all() and np.any(data), path
+          assert abs(np.linalg.det(image.affine[:3, :3])) > 0, path
+      print(f'Validated {len(images)} default atlas and seed images')
+      PY
+    expected_output_contains: "default atlas and seed images"
 
   - name: Melodic ICA priors exist
     description: Verify ICA prior maps for dual regression
