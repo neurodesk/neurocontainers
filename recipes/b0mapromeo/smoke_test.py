@@ -40,7 +40,7 @@ def synthetic_dicoms(directory: Path, enhanced: bool = True):
         for echo, te in enumerate(times):
             phase = (2 * np.pi * field * te / 1000 + 0.4 + np.pi) % (2 * np.pi) - np.pi
             volume = (
-                magnitude
+                np.rint(magnitude * np.exp(-te / (25 + (x + y) * 0.5))).astype(np.uint16)
                 if kind == "M"
                 else np.rint((phase / np.pi + 1) * 2048).clip(0, 4095).astype(np.uint16)
             )
@@ -235,10 +235,13 @@ def main():
             for im in connection.sent
             if "B0MapUnits" in ismrmrd.Meta.deserialize(im.attribute_string)
         ]
-        originals = [im for im in connection.sent if im not in derived]
+        t2star_images = [im for im in connection.sent
+                         if "T2StarMapUnits" in ismrmrd.Meta.deserialize(im.attribute_string)]
+        originals = [im for im in connection.sent if im not in derived and im not in t2star_images]
         assert len(derived) == expected.shape[2]
         assert len(originals) == len(scanner_images)
-        assert connection.sent[-len(derived) :] == derived
+        assert len(t2star_images) == len(derived)
+        assert connection.sent[-len(t2star_images) :] == t2star_images
         # Pass-through may regroup echoes, but must preserve every input plane.
         assert sorted(im.data.tobytes() for im in originals) == sorted(
             im.data.tobytes() for im in scanner_images
@@ -272,6 +275,19 @@ def main():
         error = np.abs(recovered[mask] - expected[mask])
         assert error.mean() < 0.7 and error.max() < 5.0
         assert np.all(recovered[~mask] == 0)
+        t2star_recovered = []
+        for image in t2star_images:
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            assert meta["T2StarMapUnits"] == "ms" and meta["RescaleType"] == "ms"
+            assert "B0MapUnits" not in meta and "B0ShimStatus" not in meta
+            assert image.image_series_index != derived[0].image_series_index
+            t2star_recovered.append(image.data[0, 0].T * float(meta["RescaleSlope"])
+                                    + float(meta["RescaleIntercept"]))
+        t2star_recovered = np.stack(t2star_recovered, axis=2)
+        x, y, _ = np.indices(expected.shape)
+        expected_t2star = 25 + (x + y) * 0.5
+        np.testing.assert_allclose(t2star_recovered[mask], expected_t2star[mask], atol=0.8)
+        assert np.all(np.stack([im.data[0, 0].T for im in t2star_images], axis=2)[~mask] == 0)
         assert not list(app.WORK_ROOT.iterdir())
         from b0_artifact import read_map
         for returned in connection.sent:
@@ -308,10 +324,13 @@ def main():
         shimmed_connection = Connection(scanner_images)
         app.process(shimmed_connection, {"parameters": {
             "phaseunits": "siemens", "shimcalibration": "", "shimcurrenta": "",
+            "sendoriginal": False,
         }}, ismrmrd.xsd.ToXML(metadata))
         assert shimmed_connection.closed and not shimmed_connection.logs
-        assert len(shimmed_connection.sent) == expected.shape[2]
+        assert len(shimmed_connection.sent) == 2 * expected.shape[2]
         for image in shimmed_connection.sent:
+            if "T2StarMapUnits" in ismrmrd.Meta.deserialize(image.attribute_string):
+                continue
             meta = ismrmrd.Meta.deserialize(image.attribute_string)
             assert meta["B0ShimStatus"] == "available"
             assert meta["ImageComment"] == meta["ImageComments"]
@@ -328,6 +347,11 @@ def main():
             "--output-dir", str(cli_output), "--shim-calibration", str(calibration_path),
             "--shim-current-a", '{"X":0.2}',
         ], check=True, env=cli_env)
+        t2star_cli = nib.load(cli_output / "t2star_ms.nii")
+        t2star_valid_cli = nib.load(cli_output / "t2star_valid_mask.nii")
+        np.testing.assert_allclose(t2star_cli.get_fdata()[mask], expected_t2star[mask], atol=0.3)
+        np.testing.assert_array_equal(t2star_valid_cli.get_fdata(), mask)
+        np.testing.assert_allclose(t2star_cli.affine, affine)
         prescription = json.loads((cli_output / "shim_settings.json").read_text())
         assert prescription["status"] == "available"
         assert prescription["settings_mode"] == "absolute"
@@ -376,10 +400,13 @@ def main():
         app.process(analytical_connection, {"parameters": {
             "phaseunits": "siemens", "shimcalibration": "", "shimcurrenta": "",
             "shimanalyticalmodel": "", "shimnativesettings": "",
+            "sendoriginal": False,
         }}, ismrmrd.xsd.ToXML(analytical_metadata))
         assert analytical_connection.closed and not analytical_connection.logs
-        assert len(analytical_connection.sent) == expected.shape[2]
-        for image in analytical_connection.sent:
+        assert len(analytical_connection.sent) == 2 * expected.shape[2]
+        analytical_b0 = [im for im in analytical_connection.sent
+                         if "B0MapUnits" in ismrmrd.Meta.deserialize(im.attribute_string)]
+        for image in analytical_b0:
             meta = ismrmrd.Meta.deserialize(image.attribute_string)
             assert meta["B0ShimStatus"] == "available"
             assert meta["ImageComment"] == meta["ImageComments"]
@@ -423,6 +450,7 @@ def main():
             Path(app.__file__).with_name("OpenReconLabel.json").read_text()
         )
         defaults = {p["id"]: p["default"] for p in label["parameters"]}
+        defaults["phaseunits"] = "siemens"
         direct_metadata = copy.deepcopy(analytical_metadata)
         direct_metadata.userParameters.userParameterString = [
             p
@@ -445,9 +473,23 @@ def main():
                 direct_connection, {"parameters": parameters}, ismrmrd.xsd.ToXML(header)
             )
             assert direct_connection.closed and not direct_connection.logs
-            assert len(direct_connection.sent) == len(analytical_connection.sent)
+            direct_derived = [
+                im
+                for im in direct_connection.sent
+                if "B0MapUnits" in ismrmrd.Meta.deserialize(im.attribute_string)
+            ]
+            direct_originals = [
+                im for im in direct_connection.sent
+                if not any(key in ismrmrd.Meta.deserialize(im.attribute_string)
+                           for key in ("B0MapUnits", "T2StarMapUnits"))
+            ]
+            assert len(direct_originals) == len(scanner_images)
+            assert sorted(im.data.tobytes() for im in direct_originals) == sorted(
+                im.data.tobytes() for im in scanner_images
+            )
+            assert len(direct_derived) == len(analytical_b0)
             for direct_image, file_image in zip(
-                direct_connection.sent, analytical_connection.sent
+                direct_derived, analytical_b0
             ):
                 direct_meta = ismrmrd.Meta.deserialize(direct_image.attribute_string)
                 file_meta = ismrmrd.Meta.deserialize(file_image.attribute_string)
