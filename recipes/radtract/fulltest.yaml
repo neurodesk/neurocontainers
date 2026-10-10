@@ -1,5 +1,5 @@
 name: radtract
-version: 0.2.3
+version: 0.2.4
 tests:
 - name: radtract version
   command: python3 -c "from importlib.metadata import version; print(version('radtract'))"
