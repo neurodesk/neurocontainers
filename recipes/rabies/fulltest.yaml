@@ -16,6 +16,7 @@
 name: rabies
 version: "0.6.2"
 upstream_version: "0.6.2"
+nilearn_version: "0.10.2"
 
 required_files:
   - dataset: ds000001
@@ -262,8 +263,8 @@ tests:
 
   - name: nilearn import
     description: Verify nilearn is installed
-    command: python -c "import nilearn; print('nilearn', nilearn.__version__)" 2>&1
-    expected_output_contains: "nilearn"
+    command: python -c "import nilearn; assert nilearn.__version__ == '${nilearn_version}'; print('nilearn', nilearn.__version__)" 2>&1
+    expected_output_contains: "nilearn ${nilearn_version}"
 
   - name: nipype import
     description: Verify nipype is installed (workflow engine)

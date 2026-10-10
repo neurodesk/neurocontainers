@@ -59,6 +59,7 @@ readme: |
 variables:
   upstream_version: "0.6.2"
   atlas_record: "19069284"
+  nilearn_version: "0.10.2"
   dsurqe_average_sha256: 0e20c79dee9e5116742e2c1383a13ceabfcdb4aae019c2331314415770e77ee6
   dsurqe_labels_sha256: 054c61dfea665448dda54fa0c65a18ba7ad94927f74f7144494433baec7ad630
   dsurqe_mask_sha256: a4532394550109197401a3eda173fb2eab6c35f61b15f5737b3c8a0d93706b6a
@@ -75,6 +76,15 @@ auto_update:
         variable: upstream_version
         value: version
         fulltest_variable: upstream_version
+    - id: nilearn
+      dependency: true
+      method: pypi
+      package: nilearn
+      # Later releases require newer nibabel or pandas than the upstream environment.
+      version_regex: '(?P<version>0\.10\.[0-2])'
+      target:
+        variable: nilearn_version
+        fulltest_variable: nilearn_version
     - id: functional_atlas
       dependency: true
       method: zenodo
@@ -248,6 +258,7 @@ build:
         - run:
             - micromamba install -y -n base -f rabies_environment.yml
             - micromamba run -n base pip install -e .
+            - micromamba run -n base pip install nilearn=={{ context.nilearn_version }}
             - micromamba clean --all --yes
 
     # Fix FSL installation to avoid issues with libraries
