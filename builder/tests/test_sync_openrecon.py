@@ -160,8 +160,25 @@ def test_prepare_recipe_separates_two_part_container_and_openrecon_versions(
     assert "export baseDockerImage=vnmd/${toolName}_${version}\n" in params
 
 
+@pytest.mark.parametrize(
+    ("image", "published_image"),
+    [
+        (
+            "ghcr.io/neurodesk/${toolName}_${version}:20260907",
+            "ghcr.io/neurodesk/demo_0.2.0:20260910",
+        ),
+        (
+            "ghcr.io/neurodesk/${toolName}:${version}_20260907",
+            "ghcr.io/neurodesk/demo:0.2.0_20260910",
+        ),
+        (
+            "ghcr.io/neurodesk/${toolName}:0.2.0_20260907",
+            "ghcr.io/neurodesk/demo:0.2.0_20260910",
+        ),
+    ],
+)
 def test_prepare_recipe_points_dated_image_at_the_published_build(
-    tmp_path: Path,
+    tmp_path: Path, image: str, published_image: str,
 ) -> None:
     source_root = tmp_path / "neurocontainers"
     openrecon_root = tmp_path / "openrecon"
@@ -173,7 +190,7 @@ def test_prepare_recipe_points_dated_image_at_the_published_build(
         "#!/bin/bash\n"
         "export toolName=demo\n"
         "export version=0.1.0\n"
-        "export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20260907\n",
+        f"export baseDockerImage={image}\n",
         encoding="utf-8",
     )
 
@@ -183,11 +200,57 @@ def test_prepare_recipe_points_dated_image_at_the_published_build(
 
     assert prepared is not None
     params = (target / "params.sh").read_text(encoding="utf-8")
-    assert (
-        "export baseDockerImage=ghcr.io/neurodesk/${toolName}_${version}:20260910\n"
-        in params
+    resolved = subprocess.run(
+        [
+            "bash", "-c", 'source "$1"; printf "%s\\n" "$baseDockerImage"',
+            "bash", str(target / "params.sh"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     )
+    assert resolved.stdout.strip() == published_image
+    assert f"export baseDockerImage={image.replace('20260907', '20260910')}\n" in params
     assert any("20260907" in note and "20260910" in note for note in prepared.notes)
+
+
+@pytest.mark.parametrize("tag", ["latest", "0.2.0", "${version}", "0.2.0_20260907_extra"])
+def test_update_params_image_tag_keeps_non_dated_tags(tag: str) -> None:
+    params = f"export baseDockerImage=ghcr.io/neurodesk/demo:{tag}\n"
+
+    assert sync_openrecon.dated_image_tag(params) is None
+    assert sync_openrecon.update_params_image_tag(params, "20260910") == params
+
+
+@pytest.mark.parametrize(
+    ("image", "expected_image"),
+    [
+        (
+            "registry:5000/neurodesk/demo_20260907",
+            "registry:5000/neurodesk/demo_20260907",
+        ),
+        (
+            "registry:5000/neurodesk/20260907",
+            "registry:5000/neurodesk/20260907",
+        ),
+        (
+            "registry:5000/neurodesk/demo:20260907",
+            "registry:5000/neurodesk/demo:20260910",
+        ),
+        (
+            "registry:5000/neurodesk/demo:${version}_20260907",
+            "registry:5000/neurodesk/demo:${version}_20260910",
+        ),
+    ],
+)
+def test_update_params_image_tag_distinguishes_registry_ports(
+    image: str, expected_image: str,
+) -> None:
+    params = f"export baseDockerImage={image}\n"
+
+    assert sync_openrecon.update_params_image_tag(params, "20260910") == (
+        f"export baseDockerImage={expected_image}\n"
+    )
 
 
 def test_prepare_recipe_keeps_an_already_current_image_tag(tmp_path: Path) -> None:
@@ -485,3 +548,46 @@ def test_post_release_container_version_is_kept_for_docker_operations(
     assert resolved.stdout.splitlines() == [
         "1.6.0.post1", "1.6.0", "vnmd/demo_1.6.0.post1:20261005",
     ]
+
+
+def write_research_source(root: Path) -> Path:
+    from workflows.validate_openrecon_labels import SCHEMA_PATH
+
+    write_source_recipe(root)
+    recipe = root / "recipes" / "demo"
+    label = json.loads((SCHEMA_PATH.parent / "b0map" / "OpenReconLabel.json").read_text())
+    label["reconstruction"].update(
+        emitter="raw", injector="raw", content_qualification_type="RESEARCH"
+    )
+    (recipe / "OpenReconLabel.json").write_text(json.dumps(label))
+    (recipe / "wip_070_fire_demo.json").write_text(
+        '{"parameters":{"config":"demo"},"research":{"enabled":true}}\n'
+    )
+    return recipe
+
+
+def test_stock_sync_declines_raw_before_any_external_access(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    write_research_source(source)
+
+    def external_access(*args, **kwargs):
+        pytest.fail("Stock sync attempted external access for experimental raw metadata")
+
+    monkeypatch.setattr(sync_openrecon, "existing_pull_request", external_access)
+    monkeypatch.setattr(sync_openrecon, "run_command", external_access)
+    assert sync_openrecon.sync_recipe(source, "demo", "1.0.0", "unused/repo") is None
+    target = tmp_path / "target"
+    assert sync_openrecon.prepare_recipe(source, target, "demo", "1.0.0") is None
+    assert not target.exists()
+
+
+def test_explicit_research_staging_preserves_raw_label_and_exact_config(tmp_path):
+    source = tmp_path / "source"
+    recipe = write_research_source(source)
+    target = tmp_path / "target"
+    prepared = sync_openrecon.prepare_recipe(
+        source, target, "demo", "1.0.0", experimental_raw_return=True
+    )
+    assert prepared is not None
+    for filename in ("OpenReconLabel.json", "wip_070_fire_demo.json"):
+        assert (target / "recipes" / "demo" / filename).read_bytes() == (recipe / filename).read_bytes()

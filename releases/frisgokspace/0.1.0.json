@@ -1,7 +1,7 @@
 {
   "apps": {
     "frisgokspace 0.1.0": {
-      "version": "20261007",
+      "version": "20261008",
       "exec": "",
       "apptainer_args": []
     }

@@ -18,7 +18,7 @@ files:
   - name: frisgokspace.py
     filename: frisgokspace.py
   - name: configure_server.py
-    filename: configure_server.py
+    filename: ../../macros/mrdserver/configure_server.py
   - name: smoke_frisgokspace.py
     filename: tests/smoke_frisgokspace.py
   - name: fire-integration-contract.json
@@ -42,6 +42,7 @@ auto_update:
   method: sources
   local:
     - macros/openrecon
+    - macros/mrdserver
   sources:
     - id: base_image
       method: oci_digest

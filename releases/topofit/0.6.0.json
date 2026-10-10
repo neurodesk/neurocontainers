@@ -1,7 +1,7 @@
 {
   "apps": {
     "topofit 0.6.0": {
-      "version": "20260917",
+      "version": "20261010",
       "exec": "",
       "apptainer_args": []
     }

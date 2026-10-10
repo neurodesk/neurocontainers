@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import permutations
+from math import atan2, degrees, hypot
+from typing import Literal, Sequence
 
 import nibabel as nib
 import numpy as np
@@ -10,6 +13,95 @@ import numpy as np
 
 CURVATURE_SIGN_CONVENTION = "positive_convex_negative_sulcal"
 MIDDLE_DEPTH_FRACTION = 0.5
+
+
+Plane = Literal["Sag", "Cor", "Tra"]
+SIEMENS_PLANE_ORDERS = tuple(permutations(("Sag", "Cor", "Tra")))
+
+
+def _display_angle(value: float) -> str:
+    rounded = round(value, 1)
+    return f"{rounded if rounded else 0.0:+.1f}"
+
+
+@dataclass(frozen=True)
+class SiemensAnglePair:
+    """Two ordered plane tilts, including the undefined projected-angle case."""
+
+    order: tuple[Plane, Plane, Plane]
+    first_angle_deg: float
+    second_angle_deg: float
+    first_angle_defined: bool
+
+    def format(self, omit_zero: bool = False) -> str:
+        text = self.order[0]
+        angles = (self.first_angle_deg, self.second_angle_deg)
+        for plane, angle in zip(self.order[1:], angles):
+            if not omit_zero or round(angle, 1):
+                text += f">{plane}({_display_angle(angle)})"
+        return text
+
+    @property
+    def degree_pair_text(self) -> str:
+        first = _display_angle(self.first_angle_deg) if self.first_angle_defined else "undef*"
+        return f"{first}, {_display_angle(self.second_angle_deg)}"
+
+
+@dataclass(frozen=True)
+class SiemensPlaneOrientation:
+    """Six equivalent descriptions of an unoriented plane, with no FOV rotation."""
+
+    primary: SiemensAnglePair
+    variants: tuple[SiemensAnglePair, ...]
+    in_plane_rotation_deg: None = None
+
+    @property
+    def primary_text(self) -> str:
+        return self.primary.format(omit_zero=True)
+
+
+def siemens_plane_orientation(
+    normal_lph: Sequence[float] | np.ndarray,
+) -> SiemensPlaneOrientation:
+    """Convert an LPH normal into Siemens ordered plane tilts in degrees."""
+
+    raw = np.asarray(normal_lph)
+    if raw.shape != (3,) or raw.dtype.kind not in "fiu":
+        raise ValueError("plane normal must contain three finite real numbers")
+    normal = np.asarray(raw, dtype=float)
+    if not np.all(np.isfinite(normal)) or not np.any(normal):
+        raise ValueError("plane normal must contain three finite real numbers and be nonzero")
+    normal = normal / np.max(np.abs(normal))
+    planes = SIEMENS_PLANE_ORDERS[0]
+    ranked = tuple(sorted(range(3), key=lambda index: (-abs(normal[index]), index)))
+    primary_order = tuple(planes[index] for index in ranked)
+    variants = []
+    for order in SIEMENS_PLANE_ORDERS:
+        base, target, remaining = (normal[planes.index(plane)] for plane in order)
+        desired_polarity = -1 if order[0] == "Sag" else 1
+        if base:
+            polarity = desired_polarity if base > 0 else -desired_polarity
+        else:
+            polarity = 1 if (target if target else remaining) > 0 else -1
+        base, target, remaining = (
+            value * polarity for value in (base, target, remaining)
+        )
+        projected = hypot(base, target)
+        first_defined = projected != 0
+        if order[0] == "Sag":
+            first = degrees(atan2(target, -base)) if first_defined else 0.0
+            second = degrees(atan2(remaining, projected))
+        else:
+            first = -degrees(atan2(target, base)) if first_defined else 0.0
+            second = -degrees(atan2(remaining, projected))
+        pair = SiemensAnglePair(
+            order, first if first else 0.0, second if second else 0.0, first_defined
+        )
+        variants.append(pair)
+    return SiemensPlaneOrientation(
+        primary=next(pair for pair in variants if pair.order == primary_order),
+        variants=tuple(variants),
+    )
 
 
 @dataclass(frozen=True)

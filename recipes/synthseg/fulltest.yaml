@@ -7,12 +7,9 @@
 # Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
 #   - T1w: 160x192x192, 1x1.33x1.33 mm (3D structural)
 #
-# Note: mri_synthseg is a deep learning model. The one end-to-end segmentation
-# below runs with --fast --cpu and still takes several minutes on CPU-only test
-# runners; every other test is a fast asset/interface check.
-
 name: synthseg
 version: "8.2.0"
+upstream_version: "8.2.0"
 
 required_files:
   - dataset: ds000001
@@ -139,6 +136,11 @@ tests:
       assert parameters[\"ssusegpu\"][\"default\"] is False
       assert parameters[\"sscrop\"][\"default\"] == 0
       assert len(label[\"parameters\"]) <= 14
+      assert len(parameters) == 14
+      assert parameters[\"ssparc\"][\"type\"] == \"choice\"
+      assert parameters[\"ssparc\"][\"default\"] == \"none\"
+      assert {value[\"id\"] for value in parameters[\"ssparc\"][\"values\"]} == {\"none\", \"desikan\", \"glasser\", \"both\"}
+      assert \"ssdebugthresholdsegment\" in parameters
       assert Path(\"/opt/code/python-ismrmrd-server/OpenReconREADME.md\").stat().st_size > 0
       print(\"openrecon assets ok, parameters:\", len(label[\"parameters\"]))
       "'
@@ -189,4 +191,101 @@ tests:
       print(\"segmentation ok, distinct labels:\", labels.size)
       "'
     expected_output_contains: "segmentation ok"
-upstream_version: 8.2.0
+
+  - name: Save base tissue labels alongside Desikan-Killiany parcels
+    description: Run one parcellated inference and retain its underlying tissue prediction.
+    timeout: 600
+    command: |
+      mri_synthseg --i "${t1w}" --o ${output_dir}/synthseg/t1w_parc.nii.gz \
+        --parc --base-output ${output_dir}/synthseg/t1w_parc_base.nii.gz \
+        --post ${output_dir}/synthseg/t1w_parc_post.nii.gz \
+        --fast --cpu --threads 4 --keepgeom --noaddctab
+    validate:
+      - output_exists: ${output_dir}/synthseg/t1w_parc.nii.gz
+      - output_exists: ${output_dir}/synthseg/t1w_parc_base.nii.gz
+      - output_exists: ${output_dir}/synthseg/t1w_parc_post.nii.gz
+
+  - name: Base output equals the same inference tissue posteriors
+    description: Verify exact tissue labels, native geometry and preservation of subcortical labels.
+    command: |
+      python - <<'PYCODE'
+      import os, runpy
+      from pathlib import Path
+      import nibabel as nib, numpy as np, surfa as sf
+      upstream = runpy.run_path('/usr/local/bin/mri_synthseg')
+      root = Path('${output_dir}/synthseg')
+      source = nib.load('${t1w}')
+      post = nib.load(root / 't1w_parc_post.nii.gz')
+      labels = np.unique(np.load(Path(os.environ['FREESURFER_HOME']) / 'models/synthseg_segmentation_labels_2.0.npy'))
+      expected = labels[np.asarray(post.dataobj).argmax(axis=-1)].astype(np.int32)
+      expected_path = str(root / 't1w_parc_base_expected.nii.gz')
+      upstream['save_volume'](expected, post.affine, post.header, expected_path,
+                              dtype='int32', resample_like_image=sf.load_volume('${t1w}'))
+      base, parc = [nib.load(root / name) for name in ('t1w_parc_base.nii.gz', 't1w_parc.nii.gz')]
+      for image in (base, parc):
+          assert image.shape == source.shape
+          np.testing.assert_allclose(image.affine, source.affine, atol=1e-3)
+      tissue, parcels = np.asarray(base.dataobj), np.asarray(parc.dataobj)
+      np.testing.assert_array_equal(tissue, np.asarray(nib.load(expected_path).dataobj))
+      assert {3, 42, 17, 53}.issubset(set(np.unique(tissue)))
+      assert set(np.unique(tissue)).issubset(set(labels))
+      assert np.any((parcels >= 1000) & (parcels < 2000))
+      assert np.any((parcels >= 2000) & (parcels < 3000))
+      noncortex = ~np.isin(tissue, [3, 42])
+      np.testing.assert_array_equal(tissue[noncortex], parcels[noncortex])
+      print('base tissue and Desikan products verified')
+      PYCODE
+    expected_output_contains: base tissue and Desikan products verified
+
+  - name: Glasser atlas and registration assets
+    description: Check prepared hemisphere IDs, anatomical names and matched template grid.
+    command: |
+      python - <<'PY'
+      import ants, nibabel as nib, numpy as np
+      from pathlib import Path
+      root = Path('/opt/glasser')
+      atlas = nib.load(root / 'atlas.nii.gz')
+      template = nib.load(root / 'template.nii.gz')
+      mask = nib.load(root / 'mask.nii.gz')
+      assert atlas.shape == template.shape == mask.shape
+      assert np.allclose(atlas.affine, template.affine)
+      assert np.allclose(atlas.affine, mask.affine)
+      assert set(np.unique(atlas.get_fdata())) == set(range(361))
+      names = (root / 'labels.txt').read_text().splitlines()
+      assert len(names) == 361 and names[181].startswith('181 R_')
+      assert (root / 'NOTICE.txt').is_file() and (root / 'ICBM-COPYING.txt').is_file()
+      print('Glasser assets ready')
+      PY
+    expected_output_contains: Glasser assets ready
+
+  - name: Approximate Glasser native T1 registration
+    description: Register the actual atlas against the test scan using its real SynthSeg cortex.
+    command: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      from glasser import register_glasser
+      import nibabel as nib, numpy as np
+      scan = '${t1w}'
+      segmentation = '${output_dir}/synthseg/t1w_seg.nii.gz'
+      output = '${output_dir}/synthseg/t1w_glasser_approx.nii.gz'
+      register_glasser(scan, segmentation, output, threads=2)
+      source, result = nib.load(scan), nib.load(output)
+      labels = np.asarray(result.dataobj)
+      assert source.shape == result.shape
+      np.testing.assert_array_equal(source.affine, result.affine)
+      np.testing.assert_array_equal(source.get_qform(), result.get_qform())
+      np.testing.assert_array_equal(source.get_sform(), result.get_sform())
+      assert labels.dtype == np.int16 and np.any(labels)
+      assert set(np.unique(labels)).issubset(set(range(361)))
+      tissue = np.asarray(nib.load(segmentation).dataobj)
+      cortex = np.isin(tissue, [3, 42]) | ((tissue >= 1000) & (tissue <= 1035)) | ((tissue >= 2000) & (tissue <= 2035))
+      assert not np.any(labels[~cortex])
+      print('Glasser native registration ok')
+      PY
+    expected_output_contains: Glasser native registration ok
+
+  - name: MRD stream preserves base and selected parcellation products
+    description: Exercise all choices and scanner headers with cached real maps, originals and reformats.
+    command: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python /opt/code/python-ismrmrd-server/verify_products.py \
+        "${t1w}" ${output_dir}/synthseg
+    expected_output_contains: 8 actual MRD sender checks passed

@@ -6,7 +6,7 @@
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
     "information": {
-      "en": "B0 field maps in Hz from multi-echo GRE magnitude and phase images"
+      "en": "B0 field maps in Hz and T2* maps in ms from multi-echo GRE, returned as separate scanner series"
     },
     "id": "b0mapromeo",
     "regulatory_information": {
@@ -62,35 +62,7 @@
         "en": "Send original images"
       },
       "type": "boolean",
-      "default": false
-    },
-    {
-      "id": "phaseunits",
-      "label": {
-        "en": "Input phase scale"
-      },
-      "type": "choice",
-      "values": [
-        {
-          "id": "siemens",
-          "name": {
-            "en": "Unsigned Siemens"
-          }
-        },
-        {
-          "id": "signed",
-          "name": {
-            "en": "Signed Siemens"
-          }
-        },
-        {
-          "id": "radians",
-          "name": {
-            "en": "Radians"
-          }
-        }
-      ],
-      "default": "siemens"
+      "default": true
     },
     {
       "id": "echotimesms",
@@ -133,6 +105,83 @@
       "default": "",
       "information": {
         "en": "JSON array or channel-name object of actual currents used to acquire these images."
+      }
+    },
+    {
+      "id": "shimanalyticalmodel",
+      "label": {
+        "en": "Cima.X analytical model JSON path"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Explicit acquisition RAS to shim LAI isocentre geometry and absolute native bounds. Ideal field estimate."
+      }
+    },
+    {
+      "id": "shimnativesettings",
+      "label": {
+        "en": "Acquisition native shim settings"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "JSON named object. X, Y, Z in uT/m; second-order channels in uT/m^2. Required with analytical model."
+      }
+    },
+    {
+      "id": "shimnativebaseline",
+      "label": {
+        "en": "Acquisition native baseline: X,Y,Z[,Z2,ZX,ZY,X2-Y2,XY]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Enter 3 or 8 comma-separated values in order X,Y,Z or X,Y,Z,Z2,ZX,ZY,X2-Y2,XY. X,Y,Z in uT/m; remaining channels in uT/m^2. All three native vectors must have the same length. Use actual acquisition values and verified limits; no values are assumed."
+      }
+    },
+    {
+      "id": "shimnativelower",
+      "label": {
+        "en": "Absolute native lower limits: X,Y,Z[,Z2,ZX,ZY,X2-Y2,XY]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Enter 3 or 8 comma-separated values in order X,Y,Z or X,Y,Z,Z2,ZX,ZY,X2-Y2,XY. X,Y,Z in uT/m; remaining channels in uT/m^2. All three native vectors must have the same length. Use actual acquisition values and verified limits; no values are assumed."
+      }
+    },
+    {
+      "id": "shimnativeupper",
+      "label": {
+        "en": "Absolute native upper limits: X,Y,Z[,Z2,ZX,ZY,X2-Y2,XY]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Enter 3 or 8 comma-separated values in order X,Y,Z or X,Y,Z,Z2,ZX,ZY,X2-Y2,XY. X,Y,Z in uT/m; remaining channels in uT/m^2. All three native vectors must have the same length. Use actual acquisition values and verified limits; no values are assumed."
+      }
+    },
+    {
+      "id": "shimisocentrerasmm",
+      "label": {
+        "en": "HFS isocentre R,A,S [mm]"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Explicit magnet isocentre in patient RAS mm for confirmed head-first supine: R,A,S. Enter 3 comma-separated values, including explicit zeros. Never substitute image centre. Required with direct native baseline and bounds; leave all four blank to use existing shim inputs."
+      }
+    },
+    {
+      "id": "b0mapid",
+      "label": {
+        "en": "Shared B0 map ID"
+      },
+      "type": "string",
+      "default": "",
+      "information": {
+        "en": "Immutable map name of 1 to 64 ASCII characters, starting with a letter or digit and using only letters, digits, underscores, or hyphens. Leave blank to generate an ID. The returned B0 image comments show the saved ID. Enter that exact ID in shim_toolbox. Existing IDs cannot be overwritten. Both containers must mount the same share at /tmp/share."
       }
     }
   ]

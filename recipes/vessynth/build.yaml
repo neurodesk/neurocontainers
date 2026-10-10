@@ -1,0 +1,195 @@
+name: vessynth
+version: 2026.10.9
+copyright:
+  - license: MIT
+    url: https://github.com/chiara-mauri/VesSynth/blob/main/LICENSE
+architectures:
+  - x86_64
+variables:
+  vessynth_commit: 1f02f40b6d25ec062d730812073152e5f23dfc8f
+  models_sha256: 5004044f29f4b532589a8ec42b2ae2aecbb771051d6fcc356e7cbb034b5f8d75
+  base_image_digest: sha256:d8be98daa06ae251829c5c4e44a8debf5a154caee4a97dee6591beea72863ac6
+  openrecon_server_commit: 33362f2139701fbf5ea855808a325eb59b7db2ae
+  openrecon_python_tools_commit: 17fe6fbf1bb645112e2ad0023eb4f42afb36421e
+  openrecon_siemens_commit: 055eefc09dfa77fbf11fff85979dea9ef2879ba5
+  openrecon_ismrmrd_version: 1.14.2
+  cornucopia_version: 0.3.0
+  pandas_version: 2.3.3
+  tensorstore_version: 0.1.78
+  boto3_version: 1.40.69
+  numpy_version: 2.2.6
+  nibabel_version: 5.3.2
+files:
+  - name: vessynth_source
+    url: https://github.com/chiara-mauri/VesSynth/archive/{{ context.vessynth_commit }}.tar.gz
+  - name: models
+    url: https://ftp.nmr.mgh.harvard.edu/pub/dist/lcnpublic/dist/VesSynth/models.tar.gz
+    sha256: '{{ context.models_sha256 }}'
+  - name: vessynth.py
+    filename: vessynth.py
+  - name: verify_runtime.py
+    filename: verify_runtime.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+  - name: vessynth
+    filename: vessynth
+  - name: openrecon-vessynth
+    filename: openrecon-vessynth
+  - name: patch_model_path.py
+    filename: patch_model_path.py
+auto_update:
+  method: sources
+  container_version: false
+  local:
+    - macros/openrecon
+    - macros/openrecon_i2i
+  sources:
+    - id: vessynth
+      method: github_commit
+      repo: chiara-mauri/VesSynth
+      ref: HEAD
+      target:
+        variable: vessynth_commit
+    - id: models
+      method: http_digest
+      url: https://ftp.nmr.mgh.harvard.edu/pub/dist/lcnpublic/dist/VesSynth/models.tar.gz
+      target:
+        variable: models_sha256
+    - id: base_image
+      dependency: true
+      method: oci_digest
+      image: pytorch/pytorch
+      tag: 2.4.1-cuda11.8-cudnn9-runtime
+      target:
+        variable: base_image_digest
+    - id: openrecon_siemens
+      dependency: true
+      method: github_commit
+      repo: ismrmrd/siemens_to_ismrmrd
+      ref: HEAD
+      target:
+        variable: openrecon_siemens_commit
+    - id: openrecon_python_tools
+      dependency: true
+      method: github_commit
+      repo: ismrmrd/ismrmrd-python-tools
+      ref: HEAD
+      target:
+        variable: openrecon_python_tools_commit
+    - id: openrecon_server
+      dependency: true
+      method: github_commit
+      repo: astewartau/python-ismrmrd-server
+      ref: fix/ismrmrd-compatibility
+      target:
+        variable: openrecon_server_commit
+    - id: openrecon_ismrmrd
+      dependency: true
+      method: github_release
+      repo: ismrmrd/ismrmrd
+      target:
+        variable: openrecon_ismrmrd_version
+        value: version
+    - id: cornucopia
+      dependency: true
+      method: pypi
+      package: cornucopia
+      target:
+        variable: cornucopia_version
+        value: version
+    - id: pandas
+      dependency: true
+      method: pypi
+      package: pandas
+      target:
+        variable: pandas_version
+        value: version
+    - id: tensorstore
+      dependency: true
+      method: pypi
+      package: tensorstore
+      target:
+        variable: tensorstore_version
+        value: version
+    - id: boto3
+      dependency: true
+      method: pypi
+      package: boto3
+      target:
+        variable: boto3_version
+        value: version
+    - id: numpy
+      dependency: true
+      method: pypi
+      package: numpy
+      target:
+        variable: numpy_version
+        value: version
+    - id: nibabel
+      dependency: true
+      method: pypi
+      package: nibabel
+      target:
+        variable: nibabel_version
+        value: version
+build:
+  kind: neurodocker
+  base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime@{{ context.base_image_digest }}
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        VESSYNTH_VERSION: '{{ context.version }}'
+        OMP_NUM_THREADS: '2'
+    - install: bzip2 ca-certificates git build-essential
+    - include: macros/openrecon/neurodocker.yaml
+    - include: macros/openrecon_i2i/helpers.yaml
+    - workdir: /opt
+    - run:
+        - mkdir -p /opt/VesSynth
+        - tar -xzf {{ get_file("vessynth_source") }} --strip-components=1 -C /opt/VesSynth
+        - tar -xzf {{ get_file("models") }} -C /opt/VesSynth
+        - python {{ get_file("patch_model_path.py") }}
+        - python -m pip install --no-cache-dir cornucopia=={{ context.cornucopia_version }} pandas=={{ context.pandas_version }} tensorstore=={{ context.tensorstore_version }} boto3=={{ context.boto3_version }} numpy=={{ context.numpy_version }} nibabel=={{ context.nibabel_version }}
+        - cp {{ get_file("vessynth.py") }} /opt/code/python-ismrmrd-server/vessynth.py
+        - cp {{ get_file("verify_runtime.py") }} /opt/VesSynth/verify_runtime.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - install -m 0755 {{ get_file("vessynth") }} /usr/local/bin/vessynth
+        - install -m 0755 {{ get_file("openrecon-vessynth") }} /usr/local/bin/openrecon-vessynth
+        - mkdir -p /tmp/share/debug
+        - chmod 1777 /tmp/share /tmp/share/debug
+    - workdir: /tmp
+deploy:
+  bins:
+    - vessynth
+    - openrecon-vessynth
+categories:
+  - image segmentation
+  - machine learning
+readme: |
+  ## VesSynth/{{ context.version }}
+
+  Vessel segmentation with the official TOF, T2star, HiPCT, OCT, and fibers models.
+  The container pins upstream commit {{ context.vessynth_commit }} and packages
+  all models under /opt/VesSynth/models. Its date-based version identifies this
+  container bundle because upstream has no software release version.
+
+  Run NIfTI inference from your working directory:
+
+  ```bash
+  vessynth -i input.nii.gz -o results -mod TOF
+  ```
+
+  Start the OpenRecon server with `openrecon-vessynth --host 0.0.0.0 --port 9002`.
+  Select the `vessynth` configuration. JSON settings can be at the top level or
+  inside `parameters`. Defaults are `modality: TOF`, `threshold: 0.3`,
+  `patchsize: 128`, `stepsize: 32`, `output: binary`, `sendoriginal: true`, and
+  `gaussianweights: true`. Choose binary, probability, or both for output.
+  VesSynth uses CUDA when available and otherwise runs on CPU.
+
+  See OpenReconREADME.md for the supported image geometry and runtime checks.
+  Upstream documentation: https://github.com/chiara-mauri/VesSynth
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAAD+klEQVR4nO2c23EbMQxF4UwKSBnpIr+qIR2oonSgGlJePjjxeCQtlwQBXIB7z5fH8ni5PATf0MePn7+E4PiGLsDVoQAwFACGAsBQABgKAEMBYL6jCzDH779/Op8+bvewkljBCABDAWBWBfT7BHLKkoBW+3Swgl7A13qnAzVKAa81Tgc6lALeTvjoQIG+C6IDE5YG4WAH+63CZH0ayjhYxGAhRgcr2KyEi4Z/Bsy2Il4dMAhGsNwLogMFxptxdDBLxG4oHXSwF8BJ0RQuEUAH43h1QXQwiOMYcORgbw2zb+c7CB8t0HbVoDihcp8FdRbJWzpojL9axDS072AbDU8vMvheQbci+ptFG2h4W/6Rl0p0LaWuhqNij+xRxgl43O4jBSrqQM1HfIrSYBU/2Up7HLbS/AXSBY2HQv5oWKx9AY4BG/dIU+EIvh3dytqv5bQOTAqWYhZU8URzvfNppBAgwz1SEqxqX/IIaNTSYEIuAY3kDgybv+QUIIlDwbb2xVCAx1xlXEPMTMm89sVKgGumRtpoMMEgRSmm9Z068C6GR/MXkxSl/m8Mqbvh00GfIQNZoJ6eK4SVRIwahGWGTAO7c+DxdNc3cpmG7tQR+XU+DeMUpQwY6veuffFIUWrsFASuOK6EgQ7WH92ZZdjqd8kRK01/gmf+vr57QbWC4HRu7dHaDE7EHrd72kOrEbCFN7sVERm2g889ffRU1Tu9xeYZMkePnl3J+7UhxyzJGGafq9hEcX013yzJTzIEQc6LRnEnYn4vP7JTPf704FB2T1ONweS5kJOf0DPhhD1AA3joFpSmGoDuufDzzrg01UaeIOhU/dTF7EUA11KAo/Hnn+XZwgrNE/bmVG2qqm9E5wk38nREcJLejFMw0vxjSjIFJlFbGAT/QUaA4d5A0eYv2Ez5xsVDIShT3vUIt27zl+A84c6nl42D0DGgHwq6IaF08xdUnnDn06uFAmYWZOWgevMXbKJ259PrxAHguyKeUF+n8G7+T/+/8K2IPhf5Oqcj8AJE1dI36P0bKQTIhYeELAJkYJXw9uejf2VWLGcSCWhcbUhIJ0DQk59gMgqQapW4QlIBsnDNxKkATr1fXgGS4Aw9wEFqAY1xBx62vB0UECDoIcHVQQ0BMuDAVZKfgzIC4Dg5oIAJPBxQwByvDhY1UMA0r4PNigMK0PC6QFE7oAA9Jg4qCUi4QbTuoJKAPqid6kUH+wgAsuKAAmxQO6AAM3QOKMCSrw4GpwwUYEyr9/EJGwXYMzVdpgAwFACGAsBQABgKAEMBYCgADAWAoQAwFACmmICEh2KLFBPQp2L6xlYCKkIBYCgADAWAoQAwFACGAsBQABj819VcHEYAmH9I7Oe7xpmPGgAAAABJRU5ErkJggg==

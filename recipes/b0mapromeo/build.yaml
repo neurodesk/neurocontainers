@@ -1,5 +1,5 @@
 name: b0mapromeo
-version: 1.1.0
+version: 1.4.3
 architectures:
   - x86_64
 copyright:
@@ -29,6 +29,7 @@ auto_update:
   local:
     - macros/openrecon
     - macros/openrecon_i2i
+    - macros/b0_shimming
   sources:
     - id: upstream
       method: github_commit
@@ -136,20 +137,25 @@ build:
         - /opt/julia/bin/julia --startup-file=no --threads=1 --compile=min --project=/opt/b0mapromeo/julia -e 'using Pkg; Pkg.instantiate(;allow_autoprecomp=false)'
         - /opt/julia/bin/julia --startup-file=no --threads=1 --project=/opt/b0mapromeo/julia -e 'using Pkg; Pkg.precompile()'
         - chmod -R a+rX /opt/julia-depot
+    - include: macros/b0_shimming/helpers.yaml
     - run:
-        - cp {{ get_file("b0mapromeo_shim.py") }} /opt/code/python-ismrmrd-server/b0mapromeo_shim.py
+        - cp {{ get_file("test_b0mapromeo_analytic.py") }} /opt/b0mapromeo/test_b0mapromeo_analytic.py
+        - cp {{ get_file("test_b0mapromeo_artifact.py") }} /opt/b0mapromeo/test_b0mapromeo_artifact.py
         - cp {{ get_file("test_b0mapromeo_shim.py") }} /opt/b0mapromeo/test_b0mapromeo_shim.py
+        - cp {{ get_file("b0mapromeo_t2star.py") }} /opt/code/python-ismrmrd-server/b0mapromeo_t2star.py
+        - cp {{ get_file("test_b0mapromeo_t2star.py") }} /opt/b0mapromeo/test_b0mapromeo_t2star.py
         - cp {{ get_file("b0mapromeo.py") }} /opt/code/python-ismrmrd-server/b0mapromeo.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/b0mapromeo/OpenReconREADME.md
         - cp {{ get_file("romeo.jl") }} /opt/b0mapromeo/romeo.jl
         - cp {{ get_file("smoke_test.py") }} /opt/b0mapromeo/smoke_test.py
         - install -m 0755 {{ get_file("b0mapromeo") }} /usr/local/bin/b0mapromeo
-        - mkdir -p /tmp/share/b0mapromeo
-        - chmod 1777 /tmp/share /tmp/share/b0mapromeo
+        - mkdir -p /tmp/share/b0mapromeo /tmp/share/b0maps
+        - chmod 1777 /tmp/share /tmp/share/b0mapromeo /tmp/share/b0maps
     - environment:
-        PYTHONPATH: /opt/code/python-ismrmrd-server
+        PYTHONPATH: /opt/code/python-ismrmrd-server:/opt/b0-shimming
         JULIA_NUM_THREADS: '1'
+        TMPDIR: /tmp/share/b0mapromeo
 deploy:
   bins:
     - b0mapromeo
@@ -160,10 +166,16 @@ deploy:
 files:
   - name: shimmingtoolbox_archive
     url: https://github.com/shimming-toolbox/shimming-toolbox/archive/{{ context.shimmingtoolbox_commit }}.tar.gz
-  - name: b0mapromeo_shim.py
-    filename: b0mapromeo_shim.py
+  - name: test_b0mapromeo_analytic.py
+    filename: test_b0mapromeo_analytic.py
+  - name: test_b0mapromeo_artifact.py
+    filename: test_b0mapromeo_artifact.py
   - name: test_b0mapromeo_shim.py
     filename: test_b0mapromeo_shim.py
+  - name: b0mapromeo_t2star.py
+    filename: b0mapromeo_t2star.py
+  - name: test_b0mapromeo_t2star.py
+    filename: test_b0mapromeo_t2star.py
   - name: b0mapromeo.py
     filename: b0mapromeo.py
   - name: b0mapromeo
@@ -184,12 +196,12 @@ categories:
   - quantitative imaging
   - phase processing
 readme: |
-  ROMEO B0 mapping for multi-echo GRE magnitude/phase MRD images and classic/enhanced MR DICOM.
+  ROMEO B0 and magnitude T2* mapping for multi-echo GRE MRD images and MR DICOM.
 
   b0mapromeo --dicom-dir /input/gre_pair --output-dir /output/b0
 
   Run the ISMRMRD server with config b0mapromeo. Input echo times are in milliseconds;
-  output field maps are in Hz. See /opt/b0mapromeo/OpenReconREADME.md for phase encoding,
+  output field maps are in Hz and T2* maps are in ms. See /opt/b0mapromeo/OpenReconREADME.md for phase encoding,
   masking, scanner scaling and runtime parameters.
 
   Starting pipeline: https://github.com/tbrierre/recon_me_b0map_romeo

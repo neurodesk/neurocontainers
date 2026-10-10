@@ -1,0 +1,11 @@
+{
+  "version": "1.1.0",
+  "parameters": {
+    "config": "kspacefilter"
+  },
+  "kspacefilter": {
+    "mode": "readout-edge-zero",
+    "input_domain": "raw-uniform-cartesian-kspace",
+    "measurement_role": "imaging"
+  }
+}

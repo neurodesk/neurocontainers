@@ -80,6 +80,7 @@ INCLUDE_MACROS = [
     "macros/openrecon/neurodocker.yaml",  # Support both formats
     "openrecon_i2i/helpers.yaml",
     "macros/openrecon_i2i/helpers.yaml",
+    "macros/b0_shimming/helpers.yaml",
 ]
 
 

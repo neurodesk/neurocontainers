@@ -88,7 +88,7 @@ jobs:
         env:
           RECIPES: ${{ steps.detect.outputs.changed_recipes }}
         run: |
-          python workflows/validate_openrecon_labels.py
+          python workflows/validate_openrecon_labels.py --experimental-raw-return
           python - <<'PY'
           import json
           import os

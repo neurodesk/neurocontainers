@@ -1,0 +1,32 @@
+builder: neurodocker
+directives:
+  - file:
+      name: b0mapromeo_analytic.py
+      filename: b0mapromeo_analytic.py
+  - file:
+      name: b0mapromeo_shim.py
+      filename: b0mapromeo_shim.py
+  - file:
+      name: b0_geometry.py
+      filename: b0_geometry.py
+  - file:
+      name: b0_images.py
+      filename: b0_images.py
+  - file:
+      name: b0_artifact.py
+      filename: b0_artifact.py
+  - file:
+      name: b0_settings.py
+      filename: b0_settings.py
+  - file:
+      name: shared_mount_fixture.py
+      filename: shared_mount_fixture.py
+  - run:
+      - cp {{ get_file("b0mapromeo_analytic.py") }} /opt/code/python-ismrmrd-server/b0mapromeo_analytic.py
+      - cp {{ get_file("b0mapromeo_shim.py") }} /opt/code/python-ismrmrd-server/b0mapromeo_shim.py
+      - cp {{ get_file("b0_geometry.py") }} /opt/code/python-ismrmrd-server/b0_geometry.py
+      - cp {{ get_file("b0_images.py") }} /opt/code/python-ismrmrd-server/b0_images.py
+      - cp {{ get_file("b0_artifact.py") }} /opt/code/python-ismrmrd-server/b0_artifact.py
+      - cp {{ get_file("b0_settings.py") }} /opt/code/python-ismrmrd-server/b0_settings.py
+      - mkdir -p /opt/b0-shimming
+      - cp {{ get_file("shared_mount_fixture.py") }} /opt/b0-shimming/shared_mount_fixture.py

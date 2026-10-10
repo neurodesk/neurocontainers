@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def configure(server_dir: Path, app: str) -> None:
-    if app not in ("frisgokspace",):
+    if app not in ("frisgokspace", "kspacefilter"):
         raise ValueError("Unsupported FIRE POC application")
     main = server_dir / "main.py"
     server = server_dir / "server.py"

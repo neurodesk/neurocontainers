@@ -54,7 +54,7 @@ segmentation is visible without manual windowing.
 | config | `config` | choice | `synthseg` | Selects the MRD server configuration. The available GUI option is `synthseg`. |
 | Keep original images | `sendoriginal` | boolean | `true` | Return restamped original images first, before the `synthseg` label map. Disable this to return only the derived SynthSeg series. |
 | SynthSeg model | `ssmodel` | choice | `synthseg` | Trained network used for segmentation: `synthseg` (SynthSeg 2.0), `robust` (SynthSeg-robust 2.0) or `v1` (SynthSeg 1.0). |
-| Cortical parcellation | `ssparc` | boolean | `false` | Also run the cortical parcellation network, adding the Desikan-Killiany cortical parcels to the label map. |
+| Cortical parcellation | `ssparc` | choice | `none` | Choose `none`, `desikan`, `glasser`, or `both`. Always return the base SynthSeg map. Add separate Desikan-Killiany, approximate Glasser, or both parcel series. |
 | Fast mode | `ssfast` | boolean | `true` | Bypass topological refinement and left/right flipping for a faster prediction. |
 | Use GPU | `ssusegpu` | boolean | `false` | Run inference on the reconstruction GPU. CPU inference is the default to avoid GPU memory exhaustion. |
 | Crop mode or size | `sscrop` | integer | `0` | Use `-1` to disable cropping, `0` to crop automatically to the non-zero bounding box, or a positive voxel size to crop every RAS axis. Positive values are rounded up to a multiple of 32. |
@@ -62,8 +62,8 @@ segmentation is visible without manual windowing.
 | Report region volumes | `ssvolumes` | boolean | `false` | Compute per-structure volumes in mm3 and write them to the reconstruction log as CSV. |
 | Report QC scores | `ssqc` | boolean | `false` | Run the automated QC network and write per-structure QC scores to the reconstruction log as CSV. |
 | Segmentation header | `sssegmentheader` | boolean | `false` | Use the `openreconi2iexample` 2D segmentation-header delivery mode so scanner post-processing targets the segmentation stream. |
-| Sagittal reformat | `ssreslicesagittal` | boolean | `false` | Send an additional sagittal 3D reformat of the label map. |
-| Coronal reformat | `ssreslicecoronal` | boolean | `false` | Send an additional coronal 3D reformat of the label map. |
+| Sagittal reformat | `ssreslicesagittal` | boolean | `false` | Send a sagittal 3D reformat of each SynthSeg and Desikan label map. |
+| Coronal reformat | `ssreslicecoronal` | boolean | `false` | Send a coronal 3D reformat of each SynthSeg and Desikan label map. |
 | Debug threshold segmentation | `ssdebugthresholdsegment` | boolean | `false` | Skip SynthSeg inference and use the simple threshold segmentation from `openreconi2iexample` to exercise the send path quickly. |
 
 ## Model Combinations
@@ -74,7 +74,7 @@ segmentation is visible without manual windowing.
 | `robust` | `--robust` | Slower but more reliable on low-quality clinical scans. `mri_synthseg` forces fast mode for this model, so `ssfast` is reported as enabled regardless of the GUI value. |
 | `v1` | `--v1` | The original 2021 SynthSeg model with the 1.0 label set, kept for reproducing older results. |
 
-`ssparc` adds `--parc` and loads `synthseg_parc_2.0.h5`. `ssqc` adds `--qc` and
+`ssparc=desikan` or `ssparc=both` adds `--parc` and loads `synthseg_parc_2.0.h5`. `ssqc` adds `--qc` and
 loads `synthseg_qc_2.0.h5`. Every model file required by the requested
 combination is checked before the subprocess starts, so a missing weight file
 fails immediately rather than part-way through inference.
@@ -190,3 +190,55 @@ repository is preferred: https://github.com/NeuroDesk/neurocontainers/issues.
 Questions can also be posted in the Neurodesk discussion forum at
 https://github.com/orgs/neurodesk/discussions or sent via
 https://neurodesk.org/contact/.
+
+## Scanner display colours and approximate Glasser parcels
+
+Derived SynthSeg label images, sagittal/coronal reformats and optional Glasser
+images request `LUTFileName=MicroDeltaHotMetal.pal`, the scanner-provided display
+palette used by OpenMSK. The wrapper preserves every integer label value.
+The palette controls display colours. It does not assign anatomical names.
+SynthSeg names use `/opt/freesurfer-synthseg/FreeSurferColorLUT.txt`.
+Glasser names use `/opt/glasser/labels.txt`.
+
+Choose `glasser` or `both` in the `ssparc` selector to append
+`<source>_glasser_approx` after all existing output series. The default is `none`.
+The base `<source>_synthseg` series is always returned. Choose `desikan` to add
+`<source>_desikan`, or `both` for all three label products. Each product has its
+own numeric series, grouping, and UIDs. Requested sagittal and coronal
+reformats apply to both SynthSeg and Desikan. Glasser remains on the native grid.
+
+The CLI can save both tissue and Desikan labels from one inference:
+
+```bash
+mri_synthseg --i t1w.nii.gz --o desikan.nii.gz --parc --base-output synthseg.nii.gz --keepgeom
+```
+
+`--base-output` requires one input image and distinct input and output paths.
+It saves the tissue labels underlying that parcellated inference. In upstream
+fast mode, the parcellation network uses a different prediction path from
+standalone segmentation, so these tissue labels can differ from a separate
+run without `--parc`. Omitting `--base-output` retains upstream CLI behavior.
+
+Glasser registration uses the original
+scan and SynthSeg brain mask, explicit Mattes mutual information affine
+registration and coarse deformable registration in ANTsPy. The atlas uses
+nearest-neighbour interpolation onto the exact original grid and is clipped
+to the base SynthSeg cortical grey matter.
+`ssthreads` controls the registration CPU thread count.
+Registration adds processing time. A registration failure logs the exception,
+omits Glasser and retains the original and SynthSeg outputs.
+`ssparc=glasser` or `ssparc=both` with `ssdebugthresholdsegment` is rejected because the atlas needs
+a real anatomical segmentation.
+
+These are approximate volumetric parcel boundaries. They are not a replacement
+for individual-subject HCP surface parcellation. Registration and cortical
+clipping may leave gaps or lose small parcels at coarse native resolution.
+Inspect the result before using parcel locations or measurements.
+
+The matched atlas is Andreas Horn's HCP-MMP1.0 volume in asymmetric ICBM2009a
+space, licensed CC-BY-4.0. See `/opt/glasser/NOTICE.txt` for attribution and
+`/opt/glasser/ICBM-COPYING.txt` for the template redistribution notice.
+The published atlas shares IDs 1..180 between hemispheres. This container
+retains those IDs at physical MNI RAS x<=0, including labelled midline voxels,
+and adds 180 at x>0. IDs 181..360 identify right parcels. It derives right
+names from the published left table by replacing `L_` with `R_`.

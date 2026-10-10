@@ -91,24 +91,41 @@ def validate_packaging_metadata(label: dict[str, Any]) -> list[str]:
 def validate_label(
     label_path: Path,
     schema_path: Path = SCHEMA_PATH,
+    *,
+    experimental_raw_return: bool = False,
 ) -> list[str]:
     schema = load_json(schema_path)
     Draft7Validator.check_schema(schema)
     label = prepare_label_for_validation(load_json(label_path))
+    reconstruction = label.get("reconstruction", {})
+    if not isinstance(reconstruction, dict):
+        reconstruction = {}
+    if experimental_raw_return and reconstruction.get("injector") == "raw":
+        if (
+            reconstruction.get("emitter") != "raw"
+            or reconstruction.get("content_qualification_type") != "RESEARCH"
+        ):
+            return ["Experimental raw return requires raw emitter and RESEARCH qualification"]
+        injector = schema["properties"]["reconstruction"]["properties"]["injector"]
+        injector["enum"].append("raw")
     validator = Draft7Validator(schema)
     errors = sorted(validator.iter_errors(label), key=lambda error: list(error.path))
     schema_errors = [format_validation_error(error) for error in errors]
-    return schema_errors + validate_packaging_metadata(label)
+    return schema_errors or validate_packaging_metadata(label)
 
 
 def validate_labels(
     label_paths: Iterable[Path],
     schema_path: Path = SCHEMA_PATH,
+    *,
+    experimental_raw_return: bool = False,
 ) -> dict[Path, list[str]]:
     return {
         path: errors
         for path in label_paths
-        if (errors := validate_label(path, schema_path))
+        if (errors := validate_label(
+            path, schema_path, experimental_raw_return=experimental_raw_return
+        ))
     }
 
 
@@ -128,13 +145,19 @@ def parse_args() -> argparse.Namespace:
         default=SCHEMA_PATH,
         help="OpenRecon JSON schema path.",
     )
+    parser.add_argument(
+        "--experimental-raw-return", action="store_true",
+        help="Allow research raw-return labels; stock scanner support is not implied.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     labels = args.labels or find_labels()
-    failures = validate_labels(labels, args.schema)
+    failures = validate_labels(
+        labels, args.schema, experimental_raw_return=args.experimental_raw_return
+    )
     if failures:
         for path, errors in failures.items():
             print(f"OpenRecon label validation failed: {path}")

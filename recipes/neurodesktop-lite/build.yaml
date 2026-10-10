@@ -16,7 +16,7 @@ show_in_applist: false
 
 variables:
   apptainer_version: "1.5.4"
-  firefox_version: "157.0"
+  firefox_version: "157.0.1"
   code_server_version: "4.140.0"
   firefox_arch:
     try:
@@ -42,19 +42,19 @@ variables:
       condition: arch=="x86_64"
     - value: strace_aarch64
       condition: arch=="aarch64"
-  neurocommand_commit: "7b205806622646ac0b24558caeb48ce27ae88623"
+  neurocommand_commit: "5e4dd0b6fce94b7fe0924ca7a67bf167e4ffe08b"
   nf_neuro_commit: "db13b89521279b5c4685045d955185453ded8d2a"
   jupyterlab_slurm_commit: "8dccb39808f8a1b77712a9a5773a7d2601a56683"
   yarn_version: "1.22.22"
   hatchling_build_version: 1.32.0
-  codex_version: "0.160.0"
-  claude_version: "2.1.289"
-  opencode_version: "1.18.34"
+  codex_version: "0.160.1"
+  claude_version: "2.1.292"
+  opencode_version: "1.18.35"
   nextflow_tag: v26.04.6
   nf_test_version: 0.9.5
-  datalad_version: "1.6.5"
+  datalad_version: "1.7.1"
   nipype_version: 1.12.0
-  nbdev_version: "3.3.24"
+  nbdev_version: "3.3.25"
   nf_core_version: 4.1.0
   snakemake_version: "9.27.0"
   pydra_version: 1.0a7
@@ -68,7 +68,7 @@ variables:
   jupyter_server_proxy_version: "4.6.0"
   jupyterlmod_version: 5.3.2
   jupyterlab_git_version: 0.54.1
-  notebook_intelligence_version: "6.1.0"
+  notebook_intelligence_version: "6.2.0"
   jupyterlab_rise_version: 0.43.1
   jupyterlab_niivue_version: "0.2.7"
   jupyterlab_myst_version: 2.7.0
@@ -87,7 +87,7 @@ variables:
   pytest_version: 9.1.1
   requests_version: 2.34.2
   chardet_version: 5.2.0
-  base_digest: "sha256:4ef9cfd552d265799bd9e959a87fb674da8cea738145ce49e7d286cb967ad1d7"
+  base_digest: "sha256:cde41a345c3758f660527c856a47ff87bc681247d44d4bf4155c2eb151d3658e"
   go_version: "1.27.1"
   go_arch:
     try:
