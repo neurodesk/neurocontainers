@@ -1,6 +1,6 @@
 {
   "apps": {
-    "batchheudiconv 1.0.0": {
+    "batchheudiconv_arm64 1.0.0": {
       "version": "20261010",
       "exec": "",
       "apptainer_args": []
@@ -9,5 +9,8 @@
   "categories": [
     "workflows",
     "data organisation"
-  ]
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "batchheudiconv"
 }
