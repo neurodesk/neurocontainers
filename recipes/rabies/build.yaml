@@ -1,5 +1,5 @@
 name: rabies
-version: "0.5.3"
+version: "0.6.2"
 
 copyright:
   - name: ACADEMIC PUBLIC LICENSE (Non-Commercial Use)
@@ -57,8 +57,13 @@ readme: |
   To run container outside of this environment: ml rabies/{{context.version}}
 
 variables:
-  upstream_version: "0.5.3"
-  atlas_record: "5118030"
+  upstream_version: "0.6.2"
+  atlas_record: "19069284"
+  nilearn_version: "0.10.2"
+  dsurqe_average_sha256: 0e20c79dee9e5116742e2c1383a13ceabfcdb4aae019c2331314415770e77ee6
+  dsurqe_labels_sha256: 054c61dfea665448dda54fa0c65a18ba7ad94927f74f7144494433baec7ad630
+  dsurqe_mask_sha256: a4532394550109197401a3eda173fb2eab6c35f61b15f5737b3c8a0d93706b6a
+  dsurqe_mapping_sha256: 048a5e3b7d31fc086da01a82a0558c6b02885020ee6d1fa512e91f284a7f1d7f
 
 auto_update:
   container_version: "rabies"
@@ -70,42 +75,73 @@ auto_update:
       target:
         variable: upstream_version
         value: version
+        fulltest_variable: upstream_version
+    - id: nilearn
+      dependency: true
+      method: pypi
+      package: nilearn
+      # Later releases require newer nibabel or pandas than the upstream environment.
+      version_regex: '(?P<version>0\.10\.[0-2])'
+      target:
+        variable: nilearn_version
+        fulltest_variable: nilearn_version
     - id: functional_atlas
       dependency: true
       method: zenodo
-      record: "5118030"
+      record: "19069284"
       required_files:
         - melodic_IC.nii.gz
         - vascular_mask.nii.gz
-        - EPI_template.nii.gz
-        - EPI_brain_mask.nii.gz
-        - EPI_WM_mask.nii.gz
-        - EPI_CSF_mask.nii.gz
-        - EPI_vascular_mask.nii.gz
-        - EPI_labels.nii.gz
-        - melodic_IC_resampled.nii.gz
+        - EPICOMMON.zip
+        - DSURQE_seeds.zip
       target:
         variable: atlas_record
+    - id: dsurqe_average
+      dependency: true
+      method: http_digest
+      url: https://github.com/CoBrALab/RABIES/releases/download/0.5.1/DSURQE_40micron.nii.gz
+      target:
+        variable: dsurqe_average_sha256
+    - id: dsurqe_labels
+      dependency: true
+      method: http_digest
+      url: https://github.com/CoBrALab/RABIES/releases/download/0.5.1/DSURQE_40micron_labels.nii.gz
+      target:
+        variable: dsurqe_labels_sha256
+    - id: dsurqe_mask
+      dependency: true
+      method: http_digest
+      url: https://github.com/CoBrALab/RABIES/releases/download/0.5.1/DSURQE_40micron_mask.nii.gz
+      target:
+        variable: dsurqe_mask_sha256
+    - id: dsurqe_mapping
+      dependency: true
+      method: http_digest
+      url: https://github.com/CoBrALab/RABIES/releases/download/0.5.1/DSURQE_40micron_R_mapping.csv
+      target:
+        variable: dsurqe_mapping_sha256
 
 files:
   - name: melodic_IC.nii.gz
     url: https://zenodo.org/records/{{ context.atlas_record }}/files/melodic_IC.nii.gz
   - name: vascular_mask.nii.gz
     url: https://zenodo.org/records/{{ context.atlas_record }}/files/vascular_mask.nii.gz
-  - name: EPI_template.nii.gz
-    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_template.nii.gz
-  - name: EPI_brain_mask.nii.gz
-    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_brain_mask.nii.gz
-  - name: EPI_WM_mask.nii.gz
-    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_WM_mask.nii.gz
-  - name: EPI_CSF_mask.nii.gz
-    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_CSF_mask.nii.gz
-  - name: EPI_vascular_mask.nii.gz
-    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_vascular_mask.nii.gz
-  - name: EPI_labels.nii.gz
-    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPI_labels.nii.gz
-  - name: melodic_IC_resampled.nii.gz
-    url: https://zenodo.org/records/{{ context.atlas_record }}/files/melodic_IC_resampled.nii.gz
+  - name: EPICOMMON.zip
+    url: https://zenodo.org/records/{{ context.atlas_record }}/files/EPICOMMON.zip
+  - name: DSURQE_seeds.zip
+    url: https://zenodo.org/records/{{ context.atlas_record }}/files/DSURQE_seeds.zip
+  - name: DSURQE_40micron_average.nii.gz
+    url: https://github.com/CoBrALab/RABIES/releases/download/0.5.1/DSURQE_40micron.nii.gz
+    sha256: "{{ context.dsurqe_average_sha256 }}"
+  - name: DSURQE_40micron_labels.nii.gz
+    url: https://github.com/CoBrALab/RABIES/releases/download/0.5.1/DSURQE_40micron_labels.nii.gz
+    sha256: "{{ context.dsurqe_labels_sha256 }}"
+  - name: DSURQE_40micron_mask.nii.gz
+    url: https://github.com/CoBrALab/RABIES/releases/download/0.5.1/DSURQE_40micron_mask.nii.gz
+    sha256: "{{ context.dsurqe_mask_sha256 }}"
+  - name: DSURQE_40micron_R_mapping.csv
+    url: https://github.com/CoBrALab/RABIES/releases/download/0.5.1/DSURQE_40micron_R_mapping.csv
+    sha256: "{{ context.dsurqe_mapping_sha256 }}"
 
 build:
   kind: neurodocker
@@ -133,6 +169,7 @@ build:
 
         - environment:
             XDG_DATA_HOME: "{{ local.install_dir }}/share"
+            MAMBA_ROOT_PREFIX: /opt/conda
 
     - group:
         - environment:
@@ -221,6 +258,7 @@ build:
         - run:
             - micromamba install -y -n base -f rabies_environment.yml
             - micromamba run -n base pip install -e .
+            - micromamba run -n base pip install nilearn=={{ context.nilearn_version }}
             - micromamba clean --all --yes
 
     # Fix FSL installation to avoid issues with libraries
@@ -236,26 +274,29 @@ build:
             MPLBACKEND: agg
 
         - run:
-            - sed '/^curl .*zenodo\.org/d' "{{ local.install_dir }}/RABIES/scripts/install_DSURQE.sh" > /tmp/install_DSURQE.sh
-            - micromamba run -n base bash /tmp/install_DSURQE.sh "$XDG_DATA_HOME/rabies"
+            - mkdir -p "$XDG_DATA_HOME/rabies"
+            - cp {{ get_file("DSURQE_40micron_average.nii.gz") }} "$XDG_DATA_HOME/rabies/DSURQE_40micron_average.nii.gz"
+            - cp {{ get_file("DSURQE_40micron_labels.nii.gz") }} "$XDG_DATA_HOME/rabies/DSURQE_40micron_labels.nii.gz"
+            - cp {{ get_file("DSURQE_40micron_mask.nii.gz") }} "$XDG_DATA_HOME/rabies/DSURQE_40micron_mask.nii.gz"
+            - cp {{ get_file("DSURQE_40micron_R_mapping.csv") }} "$XDG_DATA_HOME/rabies/DSURQE_40micron_R_mapping.csv"
             - cp {{ get_file("melodic_IC.nii.gz") }} "$XDG_DATA_HOME/rabies/melodic_IC.nii.gz"
             - cp {{ get_file("vascular_mask.nii.gz") }} "$XDG_DATA_HOME/rabies/vascular_mask.nii.gz"
-            - cp {{ get_file("EPI_template.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_template.nii.gz"
-            - cp {{ get_file("EPI_brain_mask.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_brain_mask.nii.gz"
-            - cp {{ get_file("EPI_WM_mask.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_WM_mask.nii.gz"
-            - cp {{ get_file("EPI_CSF_mask.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_CSF_mask.nii.gz"
-            - cp {{ get_file("EPI_vascular_mask.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_vascular_mask.nii.gz"
-            - cp {{ get_file("EPI_labels.nii.gz") }} "$XDG_DATA_HOME/rabies/EPI_labels.nii.gz"
-            - cp {{ get_file("melodic_IC_resampled.nii.gz") }} "$XDG_DATA_HOME/rabies/melodic_IC_resampled.nii.gz"
+            - >-
+              micromamba run -n base gen_DSURQE_masks.py
+              "$XDG_DATA_HOME/rabies/DSURQE_40micron_labels.nii.gz"
+              "$XDG_DATA_HOME/rabies/DSURQE_40micron_R_mapping.csv"
+              "$XDG_DATA_HOME/rabies/DSURQE_40micron"
+            - unzip {{ get_file("EPICOMMON.zip") }} -d "$XDG_DATA_HOME/rabies"
+            - unzip {{ get_file("DSURQE_seeds.zip") }} -d "$XDG_DATA_HOME/rabies"
+            - rm -r "$XDG_DATA_HOME/rabies/EPICOMMON/EPICOMMON2DSURQE"
             - >-
               micromamba run -n base python -c
               'import os, pathlib, nibabel as nib;
               root = pathlib.Path(os.environ["XDG_DATA_HOME"]) / "rabies";
-              images = list(root.glob("*.nii.gz"));
-              assert len(images) >= 12;
+              images = list(root.rglob("*.nii.gz"));
+              assert len(images) >= 46;
               assert all(nib.load(str(path)).get_fdata().size > 0 for path in images);
               print("Validated", len(images), "atlas images")'
-            - rm /tmp/install_DSURQE.sh
 
     - deploy:
         bins:
