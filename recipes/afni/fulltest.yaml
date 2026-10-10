@@ -1,5 +1,6 @@
 name: afni
-version: "26.2.0"
+version: "26.3.02"
+afni_version: "26.3.02"
 required_files:
 - dataset: ds000001
   files:
@@ -24,7 +25,7 @@ tests:
   description: Verify AFNI installation and version
   command: afni -ver 2>&1 | head -5
   timeout: 900
-  expected_output_contains: AFNI
+  expected_output_contains: "Version AFNI_${afni_version} "
 - name: 3dinfo version check
   description: Verify 3dinfo is available
   command: 3dinfo -help 2>&1 | head -20
