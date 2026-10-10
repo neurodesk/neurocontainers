@@ -74,7 +74,9 @@ tests:
   - name: bh05_make_bids.sh help
     description: Display help message for BIDS conversion script
     command: bh05_make_bids.sh 2>&1 || true
-    expected_output_contains: "Convert sorted DICOM files to BIDS format"
+    expected_output_contains:
+      - "Convert sorted DICOM files to BIDS format"
+      - "--merge"
 
   # ==========================================================================
   # BATCHHEUDICONV - DIRECTORY PREPARATION
@@ -111,10 +113,53 @@ tests:
   # ==========================================================================
   # BATCHHEUDICONV - PYTHON UTILITIES
   # ==========================================================================
-  - name: bh_fix_intendedfor.py help
-    description: Display help for IntendedFor fix utility
-    command: python3 /opt/batch-heudiconv/bh_fix_intendedfor.py --help 2>&1
-    expected_output_contains: "Fix IntendedFor field"
+  - name: Populate fieldmap IntendedFor
+    description: Use the installed heuristic to link functional and diffusion fieldmaps to the correct images
+    command: |
+      NO_ET=1 python3 - "${output_dir}/batchheudiconv_out" <<'PY'
+      import json
+      import subprocess
+      import sys
+      import tempfile
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+
+      with tempfile.TemporaryDirectory(dir=sys.argv[1]) as directory:
+          dataset = Path(directory)
+          session = dataset / 'sub-01' / 'ses-01'
+          images = {
+              'func/sub-01_ses-01_task-rest_bold': {},
+              'dwi/sub-01_ses-01_dwi': {},
+              'fmap/sub-01_ses-01_acq-func_phasediff': {'EchoTime1': 0.004, 'EchoTime2': 0.006},
+              'fmap/sub-01_ses-01_acq-dwi_phasediff': {'EchoTime1': 0.004, 'EchoTime2': 0.006},
+          }
+          for name, metadata in images.items():
+              path = session / name
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.with_suffix('.json').write_text(json.dumps(metadata))
+              nib.save(nib.Nifti1Image(np.zeros((2, 2, 2), dtype=np.int16), np.eye(4)),
+                       str(path) + '.nii.gz')
+
+          subprocess.run([
+              'heudiconv', '--command', 'populate-intended-for',
+              '-o', str(dataset), '-s', '01', '-ss', '01',
+              '-f', '/opt/batch-heudiconv/code/heuristic_template.py',
+          ], check=True)
+
+          targets = {
+              'func': 'ses-01/func/sub-01_ses-01_task-rest_bold.nii.gz',
+              'dwi': 'ses-01/dwi/sub-01_ses-01_dwi.nii.gz',
+          }
+          for modality, target in targets.items():
+              fieldmap = session / 'fmap' / f'sub-01_ses-01_acq-{modality}_phasediff.json'
+              metadata = json.loads(fieldmap.read_text())
+              assert metadata.get('IntendedFor') == [target], metadata
+              assert (dataset / 'sub-01' / target).is_file(), target
+          print('IntendedFor targets verified for functional and diffusion fieldmaps')
+      PY
+    expected_output_contains: "IntendedFor targets verified"
 
   - name: bh_dcm_sort_dir.py exists
     description: Verify DICOM sorting Python script exists

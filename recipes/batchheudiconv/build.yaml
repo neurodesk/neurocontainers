@@ -7,7 +7,11 @@ architectures:
   - x86_64
   - aarch64
 structured_readme:
-  description: A set of scripts to help convert DICOM files to BIDS format using heudiconv. Each study is managed as a self-contained workspace with organized directory structure
+  description: |-
+    A set of scripts to help convert DICOM files to BIDS format using heudiconv. Each study is managed as a self-contained workspace with organized directory structure.
+
+    Fieldmap IntendedFor values are populated by heudiconv using POPULATE_INTENDED_FOR_OPTS in the heuristic. With ModalityAcquisitionLabel, fieldmap keys need acq-func, acq-dwi, or acq-anat labels. The separate bh_fix_intendedfor.py utility has been removed upstream.
+    For double-echo fieldmaps, use bh05_make_bids.sh <study_name> --merge. This replaces bh05_make_bids_double_echo_fieldmap.sh.
   example: |-
     bh01_prep_dir.sh <study_name>
     bh02_sort_dicom.sh <study_name>
@@ -75,6 +79,9 @@ readme: |-
   bh04_make_heuristic.sh <study_name>
   bh05_make_bids.sh <study_name>
   ```
+
+  Fieldmap `IntendedFor` values are populated by heudiconv using `POPULATE_INTENDED_FOR_OPTS` in the heuristic. With `ModalityAcquisitionLabel`, fieldmap keys need `acq-func`, `acq-dwi`, or `acq-anat` labels. The separate `bh_fix_intendedfor.py` utility has been removed upstream.
+  For double-echo fieldmaps, use `bh05_make_bids.sh <study_name> --merge`. This replaces `bh05_make_bids_double_echo_fieldmap.sh`.
 
   More documentation can be found here: https://github.com/kytk/batch-heudiconv
 
