@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "spant 4.5.0": {
+      "version": "20261010",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "spectroscopy"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "spant_arm64 4.5.0": {
+      "version": "20261010",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "spectroscopy"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "spant"
+}
