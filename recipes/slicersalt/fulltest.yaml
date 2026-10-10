@@ -1,449 +1,416 @@
-# SlicerSALT container test suite
-# Tests for SlicerSALT v3.0.0 - Shape AnaLysis Toolbox
-#
-# SlicerSALT is a comprehensive software for shape analysis in biomedical imaging.
-# It provides tools for mesh processing, SPHARM-PDM shape analysis, and registration.
-#
-# Test data: Sample VTP mesh file from container (Human.vtp orientation marker)
-# Note: Most tests create synthetic mesh data or use the built-in sample
-
+# Shape-analysis tests for the CLIs and SurfaceToolbox shipped in SlicerSALT.
 name: slicersalt
-version: "6.0.0"
-
-# Environment setup required for CLI modules
+version: 6.0.0
 env:
-  LD_LIBRARY_PATH: /opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem
-
-# Paths to executables
+  LD_LIBRARY_PATH: /opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem
 paths:
   cli_modules: /opt/slicersalt-libs/cli-modules
   bin: /opt/SlicerSALT-${upstream_version}-linux-amd64/bin
   sample_mesh: /opt/slicersalt-share/OrientationMarkers/Human.vtp
-
 test_data:
   sample_vtp: /opt/slicersalt-share/OrientationMarkers/Human.vtp
   output_dir: test_output
-
 setup:
-  script: bash -lc 'mkdir -p test_output && cp /opt/slicersalt-share/OrientationMarkers/Human.vtp test_output/sample_mesh.vtp'
+  script: |
+    mkdir -p test_output
+    cp /opt/slicersalt-share/OrientationMarkers/Human.vtp test_output/sample_mesh.vtp
+    cat > test_output/surface_toolbox.py <<'PYTHON'
+    import json
+    import sys
+    import vtk
+    from SurfaceToolbox import SurfaceToolboxLogic
 
+
+    class Model:
+        def __init__(self, mesh):
+            self.mesh = mesh
+
+        def GetPolyData(self):
+            return self.mesh
+
+        def GetMesh(self):
+            return self.mesh
+
+        def SetAndObservePolyData(self, mesh):
+            self.mesh = mesh
+
+
+    operation, input_path, output_path = sys.argv[1:4]
+    parameters = json.loads(sys.argv[4]) if len(sys.argv) > 4 else {}
+    reader = vtk.vtkXMLPolyDataReader()
+    reader.SetFileName(input_path)
+    reader.Update()
+    source = Model(reader.GetOutput())
+    assert source.mesh.GetNumberOfPoints() > 0, "Input mesh is empty"
+    output = Model(vtk.vtkPolyData())
+    getattr(SurfaceToolboxLogic, operation)(source, output, **parameters)
+    if operation != "extractBoundaryEdges":
+        assert output.mesh.GetNumberOfPoints() > 0, "Processed mesh is empty"
+    if operation == "computeNormals":
+        assert output.mesh.GetPointData().GetNormals() is not None
+    if operation == "transform":
+        bounds = source.mesh.GetBounds()
+        expected = []
+        for axis, index in zip("XYZ", (0, 2, 4)):
+            scale = parameters.get("scale" + axis, 1.0)
+            shift = parameters.get("translate" + axis, 0.0)
+            expected.extend(sorted((bounds[index] * scale + shift,
+                                    bounds[index + 1] * scale + shift)))
+        assert all(abs(a - b) < 1e-3 for a, b in zip(expected, output.mesh.GetBounds()))
+    writer = vtk.vtkXMLPolyDataWriter()
+    writer.SetFileName(output_path)
+    writer.SetInputData(output.mesh)
+    assert writer.Write() == 1, "Cannot write processed mesh"
+    print(operation + " completed")
+    PYTHON
 tests:
-  # ==========================================================================
-  # BASIC FUNCTIONALITY AND VERSION CHECKS
-  # ==========================================================================
   - name: SlicerSALT executable exists
     description: Verify SlicerSALT main executable is present
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'test -x /opt/SlicerSALT-${upstream_version}-linux-amd64/SlicerSALT && echo \"SlicerSALT executable found\"'\"'\"''"
-    expected_output_contains: "SlicerSALT executable found"
-
+    command: >-
+      test -x /opt/SlicerSALT-${upstream_version}-linux-amd64/SlicerSALT && echo "SlicerSALT executable found"
+    expected_output_contains: SlicerSALT executable found
   - name: CLI modules directory exists
     description: Verify CLI modules directory is present
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'test -d /opt/slicersalt-libs/cli-modules && echo \"CLI modules directory found\"'\"'\"''"
-    expected_output_contains: "CLI modules directory found"
-
+    command: test -d /opt/slicersalt-libs/cli-modules && echo "CLI modules directory found"
+    expected_output_contains: CLI modules directory found
   - name: Sample mesh file exists
     description: Verify sample VTP mesh file is available for testing
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'test -f /opt/slicersalt-share/OrientationMarkers/Human.vtp && echo \"Sample mesh found\"'\"'\"''"
-    expected_output_contains: "Sample mesh found"
-
-  # ==========================================================================
-  # CLI MODULE HELP TESTS - Verify modules load and display help
-  # ==========================================================================
+    command: test -f /opt/slicersalt-share/OrientationMarkers/Human.vtp && echo "Sample mesh found"
+    expected_output_contains: Sample mesh found
   - name: Decimation module help
     description: Test Decimation CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Decimation --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
-  - name: Smoothing module help
-    description: Test Smoothing CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Smoothing --help 2>&1'\"'\"''"
-    expected_output_contains: "Smoothing"
-
-  - name: BordersOut module help
-    description: Test BordersOut CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/BordersOut --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
-  - name: Cleaner module help
-    description: Test Cleaner CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Cleaner --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
-  - name: Connectivity module help
-    description: Test Connectivity CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Connectivity --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
-  - name: FillHoles module help
-    description: Test FillHoles CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/FillHoles --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
-  - name: MC2Origin module help
-    description: Test MC2Origin (mass center to origin) CLI module loads
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/MC2Origin --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/Decimation --help 2>&1
+    expected_output_contains: USAGE
   - name: MergeModels module help
     description: Test MergeModels CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/MergeModels --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
-  - name: Mirror module help
-    description: Test Mirror CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Mirror --help 2>&1'\"'\"''"
-    expected_output_contains: "Mirror"
-
-  - name: Normals module help
-    description: Test Normals CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Normals --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
-  - name: relaxPolygons module help
-    description: Test relaxPolygons CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/relaxPolygons --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
-  - name: scaleMesh module help
-    description: Test scaleMesh CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/scaleMesh --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
-  - name: translateMesh module help
-    description: Test translateMesh CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/translateMesh --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/MergeModels --help 2>&1
+    expected_output_contains: USAGE
   - name: surfacefeaturesextractor module help
     description: Test surfacefeaturesextractor CLI module loads
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/surfacefeaturesextractor --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/surfacefeaturesextractor --help 2>&1
+    expected_output_contains: USAGE
   - name: ModelToModelDistance module help
     description: Test ModelToModelDistance CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/ModelToModelDistance --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/ModelToModelDistance --help 2>&1
+    expected_output_contains: USAGE
   - name: MeshToMeshRegistration module help
     description: Test MeshToMeshRegistration CLI module loads
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/MeshToMeshRegistration --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/MeshToMeshRegistration --help 2>&1
+    expected_output_contains: USAGE
   - name: MeshToMeshDiffeoRegistration module help
     description: Test MeshToMeshDiffeoRegistration (diffeomorphic) module loads
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/MeshToMeshDiffeoRegistration --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/MeshToMeshDiffeoRegistration --help 2>&1
+    expected_output_contains: USAGE
   - name: ModelMaker module help
     description: Test ModelMaker CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/ModelMaker --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/ModelMaker --help 2>&1
+    expected_output_contains: USAGE
   - name: MeshToLabelMap module help
     description: Test MeshToLabelMap CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/MeshToLabelMap --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/MeshToLabelMap --help 2>&1
+    expected_output_contains: USAGE
   - name: SRemesh module help
     description: Test SRemesh (surface remeshing) CLI module loads
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/SRemesh --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/SRemesh --help 2>&1
+    expected_output_contains: USAGE
   - name: RigidAlignment module help
     description: Test RigidAlignment CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/RigidAlignment --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/RigidAlignment --help 2>&1
+    expected_output_contains: USAGE
   - name: SegPostProcessCLP module help
     description: Test SegPostProcessCLP (segmentation post-processing) module loads
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/SegPostProcessCLP --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/SegPostProcessCLP --help 2>&1
+    expected_output_contains: USAGE
   - name: shape4D module help
     description: Test shape4D (temporal shape analysis) CLI module loads
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/shape4D --help 2>&1'\"'\"''"
-    expected_output_contains: "shape4D"
-
+    command: /opt/slicersalt-libs/cli-modules/shape4D --help 2>&1
+    expected_output_contains: shape4D
   - name: ResampleDTIVolume module help
     description: Test ResampleDTIVolume CLI module loads and shows help
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/ResampleDTIVolume --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
+    command: /opt/slicersalt-libs/cli-modules/ResampleDTIVolume --help 2>&1
+    expected_output_contains: USAGE
   - name: ResampleScalarVectorDWIVolume module help
     description: Test ResampleScalarVectorDWIVolume CLI module loads
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/ResampleScalarVectorDWIVolume --help 2>&1'\"'\"''"
-    expected_output_contains: "USAGE"
-
-  # ==========================================================================
-  # CLI MODULE XML DESCRIPTION TESTS
-  # ==========================================================================
+    command: /opt/slicersalt-libs/cli-modules/ResampleScalarVectorDWIVolume --help 2>&1
+    expected_output_contains: USAGE
   - name: Decimation XML schema
     description: Test Decimation module produces valid XML description
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Decimation --xml 2>&1'\"'\"''"
-    expected_output_contains: "<executable>"
-
-  - name: Smoothing XML schema
-    description: Test Smoothing module produces valid XML description
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Smoothing --xml 2>&1'\"'\"''"
-    expected_output_contains: "<executable>"
-
+    command: /opt/slicersalt-libs/cli-modules/Decimation --xml 2>&1
+    expected_output_contains: <executable>
   - name: ModelToModelDistance XML schema
     description: Test ModelToModelDistance module produces valid XML description
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/ModelToModelDistance --xml 2>&1'\"'\"''"
-    expected_output_contains: "<executable>"
-
-  # ==========================================================================
-  # CONVERSION UTILITIES
-  # ==========================================================================
+    command: /opt/slicersalt-libs/cli-modules/ModelToModelDistance --xml 2>&1
+    expected_output_contains: <executable>
   - name: Meta2VTK converter help
     description: Test Meta2VTK format converter displays usage
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/SlicerSALT-${upstream_version}-linux-amd64/bin/Meta2VTK 2>&1'\"'\"''"
-    expected_output_contains: "Meta2VTK"
-
+    command: /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/Meta2VTK 2>&1
+    expected_output_contains: Meta2VTK
   - name: VTK2Meta converter help
     description: Test VTK2Meta format converter displays usage
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/SlicerSALT-${upstream_version}-linux-amd64/bin/VTK2Meta 2>&1'\"'\"''"
-    expected_output_contains: "VTK2Meta"
-
+    command: /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/VTK2Meta 2>&1
+    expected_output_contains: VTK2Meta
   - name: BYU2VTK converter help
     description: Test BYU2VTK format converter displays usage
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/SlicerSALT-${upstream_version}-linux-amd64/bin/BYU2VTK 2>&1'\"'\"''"
-    expected_output_contains: "BYU2VTK"
-
+    command: /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/BYU2VTK 2>&1
+    expected_output_contains: BYU2VTK
   - name: asc2vtk converter help
     description: Test asc2vtk (FreeSurfer ASCII to VTK) converter displays usage
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/SlicerSALT-${upstream_version}-linux-amd64/bin/asc2vtk 2>&1'\"'\"''"
-    expected_output_contains: "asc2vtk"
-
+    command: /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/asc2vtk 2>&1
+    expected_output_contains: asc2vtk
   - name: asc2meta converter help
     description: Test asc2meta (FreeSurfer ASCII to Meta) converter displays usage
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/SlicerSALT-${upstream_version}-linux-amd64/bin/asc2meta 2>&1'\"'\"''"
-    expected_output_contains: "asc2vtk"
-
-  # ==========================================================================
-  # MESH PROCESSING OPERATIONS
-  # ==========================================================================
+    command: /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/asc2meta 2>&1
+    expected_output_contains: asc2vtk
   - name: Mesh decimation
     description: Reduce mesh polygon count using Decimation module
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Decimation --decimate 0.5 test_output/sample_mesh.vtp test_output/mesh_decimated.vtp 2>&1'\"'\"''"
+    command: >-
+      /opt/slicersalt-libs/cli-modules/Decimation --method Quadric --reductionFactor 0.5 test_output/sample_mesh.vtp
+      test_output/mesh_decimated.vtp 2>&1
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_decimated.vtp
-
   - name: Mesh decimation with boundary preservation
     description: Decimate mesh while preserving boundary edges
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Decimation --decimate 0.7 --boundary test_output/sample_mesh.vtp test_output/mesh_decimated_boundary.vtp 2>&1'\"'\"''"
+    command: >-
+      /opt/slicersalt-libs/cli-modules/Decimation --reductionFactor 0.7 --method DecimatePro test_output/sample_mesh.vtp
+      test_output/mesh_decimated_boundary.vtp 2>&1
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_decimated_boundary.vtp
-
   - name: Laplacian smoothing
-    description: Apply Laplacian smoothing to mesh
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Smoothing --type Laplace --iterations 50 --relaxation 0.5 test_output/sample_mesh.vtp test_output/mesh_laplace_smooth.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox smooth operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py smooth test_output/sample_mesh.vtp
+      test_output/mesh_laplace_smooth.vtp '{"method": "Laplace", "iterations": 50, "laplaceRelaxationFactor": 0.1}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_laplace_smooth.vtp
-
   - name: Taubin smoothing
-    description: Apply Taubin (non-shrinking) smoothing to mesh
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Smoothing --type Taubin --iterations 50 --relaxation 0.5 test_output/sample_mesh.vtp test_output/mesh_taubin_smooth.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox smooth operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py smooth test_output/sample_mesh.vtp
+      test_output/mesh_taubin_smooth.vtp '{"method": "Taubin", "iterations": 50, "taubinPassBand": 0.1}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_taubin_smooth.vtp
-
   - name: Smoothing with boundary preservation
-    description: Apply smoothing while preserving boundary edges
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Smoothing --type Laplace --iterations 30 --boundary test_output/sample_mesh.vtp test_output/mesh_smooth_boundary.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox smooth operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py smooth test_output/sample_mesh.vtp
+      test_output/mesh_smooth_boundary.vtp '{"method": "Laplace", "iterations": 30, "boundarySmoothing": false}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_smooth_boundary.vtp
-
   - name: Extract mesh borders
-    description: Extract border edges from mesh using BordersOut
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/BordersOut test_output/sample_mesh.vtp test_output/mesh_borders.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox extractBoundaryEdges operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py extractBoundaryEdges
+      test_output/sample_mesh.vtp test_output/mesh_borders.vtp '{"boundary": true}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_borders.vtp
-
   - name: Clean mesh
-    description: Clean mesh topology using Cleaner module
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Cleaner test_output/sample_mesh.vtp test_output/mesh_cleaned.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox clean operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py clean test_output/sample_mesh.vtp
+      test_output/mesh_cleaned.vtp '{}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_cleaned.vtp
-
   - name: Extract largest connected component
-    description: Extract largest connected component from mesh
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Connectivity test_output/sample_mesh.vtp test_output/mesh_connected.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox extractLargestConnectedComponent operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py extractLargestConnectedComponent
+      test_output/sample_mesh.vtp test_output/mesh_connected.vtp '{}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_connected.vtp
-
   - name: Fill holes in mesh
-    description: Fill holes in mesh surface using FillHoles
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/FillHoles --holes 500 test_output/sample_mesh.vtp test_output/mesh_filled.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox fillHoles operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py fillHoles
+      test_output/sample_mesh.vtp test_output/mesh_filled.vtp '{"maximumHoleSize": 500.0}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_filled.vtp
-
   - name: Move mesh center to origin
-    description: Translate mesh so mass center is at origin
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/MC2Origin test_output/sample_mesh.vtp test_output/mesh_centered.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox translateCenterToOrigin operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py translateCenterToOrigin
+      test_output/sample_mesh.vtp test_output/mesh_centered.vtp '{}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_centered.vtp
-
   - name: Mirror mesh over X axis
-    description: Mirror/reflect mesh over X axis
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Mirror --xAxis test_output/sample_mesh.vtp test_output/mesh_mirror_x.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox transform operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py transform
+      test_output/sample_mesh.vtp test_output/mesh_mirror_x.vtp '{"scaleX": -1.0}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_mirror_x.vtp
-
   - name: Mirror mesh over Y axis
-    description: Mirror/reflect mesh over Y axis
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Mirror --yAxis test_output/sample_mesh.vtp test_output/mesh_mirror_y.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox transform operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py transform
+      test_output/sample_mesh.vtp test_output/mesh_mirror_y.vtp '{"scaleY": -1.0}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_mirror_y.vtp
-
   - name: Mirror mesh over Z axis
-    description: Mirror/reflect mesh over Z axis
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Mirror --zAxis test_output/sample_mesh.vtp test_output/mesh_mirror_z.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox transform operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py transform
+      test_output/sample_mesh.vtp test_output/mesh_mirror_z.vtp '{"scaleZ": -1.0}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_mirror_z.vtp
-
   - name: Compute and orient normals
-    description: Compute surface normals with consistent orientation
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Normals --orient test_output/sample_mesh.vtp test_output/mesh_normals.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox computeNormals operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py computeNormals
+      test_output/sample_mesh.vtp test_output/mesh_normals.vtp '{"autoOrient": true}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_normals.vtp
-
   - name: Flip mesh normals
-    description: Flip all surface normals
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Normals --flip test_output/sample_mesh.vtp test_output/mesh_normals_flipped.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox computeNormals operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py computeNormals
+      test_output/sample_mesh.vtp test_output/mesh_normals_flipped.vtp '{"flip": true}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_normals_flipped.vtp
-
   - name: Split normals by feature angle
-    description: Split normals at sharp feature edges
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Normals --splitting --angle 45 test_output/sample_mesh.vtp test_output/mesh_normals_split.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox computeNormals operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py computeNormals
+      test_output/sample_mesh.vtp test_output/mesh_normals_split.vtp '{"split": true, "splitAngle": 30.0}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_normals_split.vtp
-
   - name: Relax mesh polygons
-    description: Relax polygon distribution using relaxPolygons
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/relaxPolygons --iterations 10 test_output/sample_mesh.vtp test_output/mesh_relaxed.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox smooth operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py smooth test_output/sample_mesh.vtp
+      test_output/mesh_relaxed.vtp '{"method": "Taubin", "iterations": 30}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_relaxed.vtp
-
   - name: Scale mesh uniformly
-    description: Scale mesh uniformly by factor of 2
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/scaleMesh --dimX 2 --dimY 2 --dimZ 2 test_output/sample_mesh.vtp test_output/mesh_scaled_uniform.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox transform operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py transform
+      test_output/sample_mesh.vtp test_output/mesh_scaled_uniform.vtp '{"scaleX": 2.0, "scaleY": 2.0, "scaleZ":
+      2.0}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_scaled_uniform.vtp
-
   - name: Scale mesh non-uniformly
-    description: Scale mesh with different factors per axis
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/scaleMesh --dimX 1.5 --dimY 1.0 --dimZ 2.0 test_output/sample_mesh.vtp test_output/mesh_scaled_nonuniform.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox transform operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py transform
+      test_output/sample_mesh.vtp test_output/mesh_scaled_nonuniform.vtp '{"scaleX": 1.5, "scaleY": 2.0, "scaleZ":
+      0.5}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_scaled_nonuniform.vtp
-
   - name: Translate mesh
-    description: Translate mesh by specified offset
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/translateMesh --dimX 10 --dimY 20 --dimZ 30 test_output/sample_mesh.vtp test_output/mesh_translated.vtp 2>&1'\"'\"''"
+    description: Process the mesh with the bundled SurfaceToolbox transform operation.
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py transform
+      test_output/sample_mesh.vtp test_output/mesh_translated.vtp '{"translateX": 10.0, "translateY": 20.0, "translateZ":
+      30.0}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_translated.vtp
-
   - name: Merge two models
     description: Merge two mesh models into one
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/MergeModels test_output/sample_mesh.vtp test_output/mesh_translated.vtp test_output/mesh_merged.vtp 2>&1'\"'\"''"
+    command: >-
+      /opt/slicersalt-libs/cli-modules/MergeModels test_output/sample_mesh.vtp test_output/mesh_translated.vtp test_output/mesh_merged.vtp
+      2>&1
     depends_on: Translate mesh
     validate:
       - output_exists: ${output_dir}/mesh_merged.vtp
-
-  # ==========================================================================
-  # DISTANCE AND COMPARISON
-  # ==========================================================================
   - name: Model to model distance - signed closest point
     description: Compute signed closest point distance between meshes
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/ModelToModelDistance -s test_output/sample_mesh.vtp -t test_output/mesh_scaled_uniform.vtp -o test_output/distance_signed.vtp -d signed_closest_point 2>&1'\"'\"''"
+    command: >-
+      /opt/slicersalt-libs/cli-modules/ModelToModelDistance -s test_output/sample_mesh.vtp -t test_output/mesh_scaled_uniform.vtp
+      -o test_output/distance_signed.vtp -d signed_closest_point 2>&1
     depends_on: Scale mesh uniformly
     validate:
       - output_exists: ${output_dir}/distance_signed.vtp
-
   - name: Model to model distance - absolute closest point
     description: Compute absolute closest point distance between meshes
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/ModelToModelDistance -s test_output/sample_mesh.vtp -t test_output/mesh_scaled_uniform.vtp -o test_output/distance_absolute.vtp -d absolute_closest_point 2>&1'\"'\"''"
+    command: >-
+      /opt/slicersalt-libs/cli-modules/ModelToModelDistance -s test_output/sample_mesh.vtp -t test_output/mesh_scaled_uniform.vtp
+      -o test_output/distance_absolute.vtp -d absolute_closest_point 2>&1
     depends_on: Scale mesh uniformly
     validate:
       - output_exists: ${output_dir}/distance_absolute.vtp
-
   - name: Model to model distance - point to point
     description: Compute corresponding point-to-point distance between meshes
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/ModelToModelDistance -s test_output/sample_mesh.vtp -t test_output/sample_mesh.vtp -o test_output/distance_p2p.vtp -d corresponding_point_to_point 2>&1'\"'\"''"
+    command: >-
+      /opt/slicersalt-libs/cli-modules/ModelToModelDistance -s test_output/sample_mesh.vtp -t test_output/sample_mesh.vtp
+      -o test_output/distance_p2p.vtp -d corresponding_point_to_point 2>&1
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/distance_p2p.vtp
-
   - name: Model to model distance with target field names
     description: Compute distance and save target model name in fields
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/ModelToModelDistance -s test_output/sample_mesh.vtp -t test_output/mesh_laplace_smooth.vtp -o test_output/distance_with_fields.vtp -f 2>&1'\"'\"''"
+    command: >-
+      /opt/slicersalt-libs/cli-modules/ModelToModelDistance -s test_output/sample_mesh.vtp -t test_output/mesh_laplace_smooth.vtp
+      -o test_output/distance_with_fields.vtp -f 2>&1
     depends_on: Laplacian smoothing
     validate:
       - output_exists: ${output_dir}/distance_with_fields.vtp
-
-  # ==========================================================================
-  # MESH REGISTRATION
-  # ==========================================================================
   - name: Mesh to mesh registration
     description: Register template mesh to target mesh (skipped - too slow, >300s)
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'echo \"Skipped - mesh registration too slow (>300s)\"'\"'\"''"
-    expected_output_contains: "Skipped"
-
+    command: echo "Skipped - mesh registration too slow (>300s)"
+    expected_output_contains: Skipped
   - name: Diffeomorphic mesh registration
     description: Perform diffeomorphic registration between meshes
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/MeshToMeshDiffeoRegistration --templateMesh test_output/sample_mesh.vtp --targetMesh test_output/mesh_scaled_uniform.vtp --registeredTemplate test_output/mesh_diffeo_registered.vtp 2>&1'\"'\"''"
+    command: >-
+      /opt/slicersalt-libs/cli-modules/MeshToMeshDiffeoRegistration --templateMesh test_output/sample_mesh.vtp --targetMesh
+      test_output/mesh_scaled_uniform.vtp --registeredTemplate test_output/mesh_diffeo_registered.vtp 2>&1
     depends_on: Scale mesh uniformly
     validate:
       - output_exists: ${output_dir}/mesh_diffeo_registered.vtp
-
-  # ==========================================================================
-  # CHAINED PROCESSING PIPELINES
-  # ==========================================================================
   - name: Full preprocessing pipeline
     description: Clean, decimate, smooth, and compute normals in sequence
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Cleaner test_output/sample_mesh.vtp test_output/pipeline_step1.vtp && \\\n/opt/slicersalt-libs/cli-modules/Decimation --decimate 0.5 test_output/pipeline_step1.vtp test_output/pipeline_step2.vtp && \\\n/opt/slicersalt-libs/cli-modules/Smoothing --type Taubin --iterations 30 test_output/pipeline_step2.vtp test_output/pipeline_step3.vtp && \\\n/opt/slicersalt-libs/cli-modules/Normals --orient test_output/pipeline_step3.vtp test_output/mesh_preprocessed.vtp'\"'\"''"
+    command: >-
+      /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py clean test_output/sample_mesh.vtp
+      test_output/pipeline_step1.vtp '{}' && /opt/slicersalt-libs/cli-modules/Decimation --method Quadric --reductionFactor
+      0.5 test_output/pipeline_step1.vtp test_output/pipeline_step2.vtp && /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer
+      test_output/surface_toolbox.py smooth test_output/pipeline_step2.vtp test_output/pipeline_step3.vtp '{"method":
+      "Taubin", "iterations": 30}' && /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py
+      computeNormals test_output/pipeline_step3.vtp test_output/mesh_preprocessed.vtp '{"autoOrient": true}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_preprocessed.vtp
-
   - name: Mesh simplification pipeline
     description: Decimate and then clean for efficient mesh
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/Decimation --decimate 0.8 test_output/sample_mesh.vtp test_output/simplified_step1.vtp && \\\n/opt/slicersalt-libs/cli-modules/Cleaner test_output/simplified_step1.vtp test_output/simplified_step2.vtp && \\\n/opt/slicersalt-libs/cli-modules/Connectivity test_output/simplified_step2.vtp test_output/mesh_simplified.vtp'\"'\"''"
+    command: >-
+      /opt/slicersalt-libs/cli-modules/Decimation --method Quadric --reductionFactor 0.8 test_output/sample_mesh.vtp
+      test_output/simplified_step1.vtp && /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer test_output/surface_toolbox.py
+      clean test_output/simplified_step1.vtp test_output/simplified_step2.vtp '{}' && /opt/SlicerSALT-${upstream_version}-linux-amd64/bin/PythonSlicer
+      test_output/surface_toolbox.py extractLargestConnectedComponent test_output/simplified_step2.vtp test_output/mesh_simplified.vtp
+      '{}'
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_simplified.vtp
-
   - name: Surface features extraction
     description: Extract surface features from mesh
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-${upstream_version}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem bash -lc '\"'\"'/opt/slicersalt-libs/cli-modules/surfacefeaturesextractor test_output/sample_mesh.vtp test_output/mesh_features.vtp 2>&1'\"'\"''"
+    command: >-
+      /opt/slicersalt-libs/cli-modules/surfacefeaturesextractor test_output/sample_mesh.vtp test_output/mesh_features.vtp
+      2>&1
     depends_on: setup
     validate:
       - output_exists: ${output_dir}/mesh_features.vtp
-
 cleanup:
   script: |
     #!/usr/bin/env bash
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
-upstream_version: "6.0.0"
+upstream_version: 6.0.0

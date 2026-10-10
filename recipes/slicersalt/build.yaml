@@ -69,7 +69,7 @@ build:
         - set -- /opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/share/SlicerSALT-*; test "$#" -eq 1; test -d "$1"; ln
           -s "$1" /opt/slicersalt-share
     - environment:
-        LD_LIBRARY_PATH: /opt/slicersalt-libs:/opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem
+        LD_LIBRARY_PATH: /opt/slicersalt-libs/cli-modules:/opt/slicersalt-libs:/opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/lib:/opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/lib/QtPlugins:/opt/slicersalt-teem
         PATH: /usr/bin:/opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64/bin:/opt/SlicerSALT-{{ context.upstream_version }}-linux-amd64
 
 deploy:
