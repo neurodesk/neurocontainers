@@ -106,7 +106,7 @@
       "label": { "en": "Find cortical patches" },
       "type": "boolean",
       "default": false,
-      "information": { "en": "Find ranked, non-overlapping cortical patches with visible IDs and outward unit normals. Return a DICOM table with patch centers in mm and normals in patient LPH: left, posterior, head. Default: up to three per hemisphere at 50% depth. Automatic candidates are not lesion ROIs or matched controls." }
+      "information": { "en": "Find ranked, non-overlapping cortical patches with visible IDs and outward unit normals. Return a DICOM table with patient LPH centers in mm and Siemens signed plane angles in degrees for all six Sag/Cor/Tra orders. Default: up to three per hemisphere at 50% depth. Automatic candidates are not lesion ROIs or matched controls." }
     },
     {
       "id": "tfpatchcount", "label": { "en": "Maximum patches per hemisphere" },
