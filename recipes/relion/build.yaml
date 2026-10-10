@@ -135,7 +135,6 @@ build:
         - ln -sfn /usr/local/singularity/bin/singularity /bin/singularity
 
     - copy: module.sh /usr/share/module.sh
-    - copy: README.md /README.md
     - copy: license.txt /license.txt
 
     - run:

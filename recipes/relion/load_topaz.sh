@@ -1,3 +1,4 @@
-#!/bin/bash'
+#!/bin/bash
+set -e
 module load topaz/latest
-topaz '$@'
+exec topaz "$@"
