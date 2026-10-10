@@ -1,0 +1,24 @@
+name: vessynth
+version: "2026.10.9"
+tests:
+  - name: container version
+    command: vessynth --version
+    expected_output_contains: "${version}"
+  - name: upstream CLI help
+    command: vessynth --help
+    expected_output_contains: "--modality"
+  - name: MRD server help
+    command: openrecon-vessynth --help
+    expected_output_contains: "usage:"
+  - name: scanner label and adapter import
+    command: >-
+      python -c "import sys,json; sys.path.insert(0,'/opt/code/python-ismrmrd-server');
+      import vessynth; label=json.load(open('/opt/code/python-ismrmrd-server/OpenReconLabel.json'));
+      assert label['general']['id']=='vessynth'; print('scanner configuration available')"
+    expected_output_contains: "scanner configuration available"
+  - name: MRD runtime contract
+    command: python /opt/VesSynth/verify_runtime.py adapter
+    expected_output_contains: "MRD adapter geometry, grouping, output and errors passed"
+  - name: real official TOF checkpoint inference
+    command: python /opt/VesSynth/verify_runtime.py model
+    expected_output_contains: "Official TOF checkpoint CPU inference and native geometry passed"
