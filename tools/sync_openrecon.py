@@ -176,28 +176,29 @@ def released_build_date(source_root: Path, container: str, version: str) -> str 
 
 
 def dated_image_tag(contents: str) -> str | None:
-    """Return the build-date tag a params.sh image reference pins, if any."""
+    """Return the date pinned by a date-only or version-prefixed image tag."""
     match = IMAGE_ASSIGNMENT_PATTERN.search(contents)
     if match is None:
         return None
     _, separator, tag = match.group("image").rpartition(":")
-    if not separator or not BUILD_DATE_PATTERN.fullmatch(tag):
+    build_date = tag.rsplit("_", 1)[-1]
+    if not separator or "/" in tag or not BUILD_DATE_PATTERN.fullmatch(build_date):
         return None
-    return tag
+    return build_date
 
 
 def update_params_image_tag(contents: str, build_date: str) -> str:
     """Point a dated image reference at the build published for this release."""
     if not BUILD_DATE_PATTERN.fullmatch(build_date):
         raise ValueError(f"Invalid build date: {build_date!r}")
-    if dated_image_tag(contents) is None:
+    pinned_date = dated_image_tag(contents)
+    if pinned_date is None:
         return contents
     match = IMAGE_ASSIGNMENT_PATTERN.search(contents)
     assert match is not None
-    repository = match.group("image").rpartition(":")[0]
     return (
-        contents[: match.start("image")]
-        + f"{repository}:{build_date}"
+        contents[: match.end("image") - len(pinned_date)]
+        + build_date
         + contents[match.end("image") :]
     )
 

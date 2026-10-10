@@ -53,6 +53,7 @@ SYNTHSEG_SEGMENT_OUTPUT_GEOMETRY_META_KEY = "SegmentOutputGeometry"
 SYNTHSEG_REFORMAT_ORIENTATION_META_KEY = "SynthSegReformatOrientation"
 SYNTHSEG_REFORMAT_SLICE_INDEX_META_KEY = "SynthSegReformatSliceIndex"
 SYNTHSEG_REFORMAT_SLICE_COUNT_META_KEY = "SynthSegReformatSliceCount"
+LABEL_PRODUCTS = ("synthseg", "desikan", "glasser_approx")
 SYNTHSEG_SEGMENTATION_LABEL = "synthseg"
 SYNTHSEG_SEGMENTATION_TYPE_TOKEN = SYNTHSEG_SEGMENTATION_LABEL.upper()
 SYNTHSEG_SOURCE_IMAGE_HEADER_FALLBACK_TYPE = (
@@ -108,7 +109,7 @@ OPENRECON_DEFAULTS = {
     "config": "synthseg",
     "sendoriginal": True,
     "ssmodel": OPENRECON_MODEL_DEFAULT,
-    "ssparc": False,
+    "ssparc": "none",
     "ssfast": True,
     "ssusegpu": False,
     "sscrop": 0,
@@ -125,11 +126,32 @@ OPENRECON_DEFAULT_TEST_CONFIG = {
 }
 
 OPENRECON_COMBINATION_PARAMETER_VALUES = {
-    "ssparc": (False, True),
+    "ssparc": ("none", "desikan", "glasser", "both"),
     "ssfast": (False, True),
     "ssvolumes": (False, True),
     "ssqc": (False, True),
 }
+
+
+OPENRECON_PARCELLATIONS = {
+    "none": (False, False),
+    "desikan": (True, False),
+    "glasser": (False, True),
+    "both": (True, True),
+}
+
+
+def _resolve_openrecon_parcellation(choice: str | bool) -> tuple[bool, bool]:
+    if isinstance(choice, bool):
+        choice = "desikan" if choice else "none"
+    elif isinstance(choice, str):
+        choice = choice.strip().lower()
+        choice = {"false": "none", "true": "desikan"}.get(choice, choice)
+    if not isinstance(choice, str) or choice not in OPENRECON_PARCELLATIONS:
+        raise ValueError(
+            f"Invalid ssparc choice {choice!r}; expected none, desikan, glasser, or both"
+        )
+    return OPENRECON_PARCELLATIONS[choice]
 
 
 def _log_array_summary(label: str, data: np.ndarray) -> None:
@@ -496,37 +518,6 @@ def _log_affine_slice_consistency(image_headers, voxel_size):
         )
 
 
-def _is_nifti_file(path: Path) -> bool:
-    return path.is_file() and path.name.endswith((".nii", ".nii.gz"))
-
-
-def _find_output_nifti(output_dir: Path, expected_name: str) -> Path:
-    if not output_dir.exists():
-        raise FileNotFoundError(f"SynthSeg output directory does not exist: {output_dir}")
-
-    preferred_names = (
-        expected_name,
-        f"{expected_name}.gz" if expected_name.endswith(".nii") else expected_name,
-    )
-    for name in preferred_names:
-        candidate = output_dir / name
-        if candidate.exists():
-            return candidate
-
-    candidates = [
-        path for path in sorted(output_dir.iterdir())
-        if _is_nifti_file(path) and not path.name.startswith("SIGMOID_")
-    ]
-    if len(candidates) == 1:
-        return candidates[0]
-
-    output_files = sorted(path.name for path in output_dir.iterdir())
-    raise FileNotFoundError(
-        f"Could not find a SynthSeg segmentation in {output_dir}. "
-        f"Files present: {output_files}"
-    )
-
-
 def _freesurfer_home() -> Path:
     env_home = os.environ.get("FREESURFER_HOME")
     if not env_home:
@@ -713,6 +704,7 @@ def _build_synthseg_command(
     crop_size: int,
     volumes_csv_path: Path | None = None,
     qc_csv_path: Path | None = None,
+    base_output_path: Path | None = None,
 ) -> list[str]:
     """Build the mri_synthseg command for one OpenRecon image volume."""
     # --keepgeom is mandatory here: mri_synthseg segments at 1 mm isotropic
@@ -736,6 +728,10 @@ def _build_synthseg_command(
         cmd.append("--fast")
     if parcellation:
         cmd.append("--parc")
+    if base_output_path is not None:
+        if not parcellation or base_output_path == output_path:
+            raise ValueError("A separate base output requires parcellation and distinct output paths")
+        cmd.extend(["--base-output", str(base_output_path)])
     if crop_size > 0:
         cmd.extend(["--crop", str(crop_size)])
     elif autocrop:
@@ -1341,17 +1337,17 @@ def _patch_ice_minihead(
     return current_text, changed
 
 
-def _source_postprocessing_image_type_identity(source_meta, minihead_text):
+def _source_postprocessing_image_type_identity(source_meta, minihead_text, *, product="synthseg"):
     image_type = (
         _get_meta_text(source_meta, "ImageType")
         or _extract_minihead_string_value(minihead_text, "ImageType")
-        or SYNTHSEG_SOURCE_IMAGE_HEADER_FALLBACK_TYPE
+        or f"DERIVED\\PRIMARY\\SEGMENTATION\\{product}_source_image_header"
     )
     dicom_image_type = _get_meta_text(source_meta, "DicomImageType") or image_type
     image_type_value4_tokens = (
         _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4")
         or _get_meta_values(source_meta, "ImageTypeValue4")
-        or [SYNTHSEG_SOURCE_IMAGE_HEADER_FALLBACK_VALUE4]
+        or [f"{product}_source_image_header"]
     )
     return image_type, dicom_image_type, image_type_value4_tokens
 
@@ -1548,21 +1544,21 @@ def _resolve_source_series_identity(meta_obj):
     }
 
 
-def _build_synthseg_series_name(source_series_description, suffix=""):
+def _build_synthseg_series_name(source_series_description, suffix="", product="synthseg"):
     source_series_description = _first_non_empty_text(source_series_description)
     if source_series_description:
-        name = f"{source_series_description}_{SYNTHSEG_SEGMENTATION_LABEL}"
+        name = f"{source_series_description}_{product}"
     else:
-        name = SYNTHSEG_SEGMENTATION_LABEL
+        name = product
     if suffix:
         name = f"{name}_{suffix}"
     return name
 
 
-def _build_synthseg_grouping(source_parent_grouping, fallback_series_name, suffix=""):
+def _build_synthseg_grouping(source_parent_grouping, fallback_series_name, suffix="", product="synthseg"):
     source_parent_grouping = _first_non_empty_text(source_parent_grouping)
     if source_parent_grouping:
-        grouping = f"{source_parent_grouping}_{SYNTHSEG_SEGMENTATION_LABEL}"
+        grouping = f"{source_parent_grouping}_{product}"
     else:
         grouping = fallback_series_name
     if suffix:
@@ -1570,14 +1566,18 @@ def _build_synthseg_grouping(source_parent_grouping, fallback_series_name, suffi
     return grouping
 
 
-def _build_openrecon_output_identity(source_identity, orientation=None, series_index=None):
+def _build_openrecon_output_identity(source_identity, orientation=None, series_index=None, *, product="synthseg"):
+    if product not in LABEL_PRODUCTS:
+        raise ValueError(f"Unknown label product {product!r}")
     orientation = _first_non_empty_text(orientation).lower()
     base_series_description = _build_synthseg_series_name(
         source_identity.get("series_description", ""),
+        product=product,
     )
     base_grouping = _build_synthseg_grouping(
         source_identity.get("parent_grouping", ""),
         fallback_series_name=base_series_description,
+        product=product,
     )
     series_description = (
         f"{base_series_description}_{orientation}"
@@ -1586,16 +1586,16 @@ def _build_openrecon_output_identity(source_identity, orientation=None, series_i
     )
     grouping = f"{base_grouping}_{orientation}" if orientation else base_grouping
     image_comment = (
-        f"{SYNTHSEG_SEGMENTATION_LABEL}_{orientation}"
+        f"{product}_{orientation}"
         if orientation
-        else SYNTHSEG_SEGMENTATION_LABEL
+        else product
     )
     identity = {
         "series_description": series_description,
         "sequence_description": series_description,
         "grouping": grouping,
-        "display_token": SYNTHSEG_SEGMENTATION_LABEL,
-        "type_token": SYNTHSEG_SEGMENTATION_TYPE_TOKEN,
+        "display_token": product,
+        "type_token": product.upper(),
         "image_comment": image_comment,
     }
     if series_index is not None:
@@ -1773,14 +1773,17 @@ def _stamp_synthseg_output_image(
             source_image_type,
             source_dicom_image_type,
             source_image_type_value4,
-        ) = _source_postprocessing_image_type_identity(source_meta, minihead_text)
+        ) = _source_postprocessing_image_type_identity(
+            source_meta, minihead_text,
+            product=(output_identity["display_token"] if output_identity["display_token"] in LABEL_PRODUCTS else "synthseg"),
+        )
         output_image_type = source_image_type
         output_dicom_image_type = source_dicom_image_type
         output_image_type_value4 = source_image_type_value4
     elif segment_source_geometry_identity:
-        output_image_type = SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE
-        output_dicom_image_type = SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE
-        output_image_type_value4 = SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
+        output_image_type_value4 = f"{output_identity['display_token']}_source_geometry"
+        output_image_type = f"DERIVED\\PRIMARY\\SEGMENTATION\\{output_image_type_value4}"
+        output_dicom_image_type = output_image_type
     if source_geometry_identity and segment_scanner_postprocessing:
         exam_data_role = _format_exam_data_role_sequential_number(series_index)
     if source_image_header_identity and segment_scanner_mip_processing:
@@ -1788,6 +1791,9 @@ def _stamp_synthseg_output_image(
             SYNTHSEG_SCANNER_MIP_IMAGE_TYPE_VALUE3
         )
 
+    if not original_passthrough_identity:
+        tmp_meta["LUTFileName"] = "MicroDeltaHotMetal.pal"
+        tmp_meta["LabelProduct"] = output_identity["display_token"]
     tmp_meta["DataRole"] = "Image" if source_image_header_identity else data_role
     tmp_meta["ImageProcessingHistory"] = processing_history
     tmp_meta["SeriesDescription"] = series_name
@@ -2305,25 +2311,30 @@ def _validate_synthseg_output_contract(
                     f"SegmentOutputGeometry={segment_output_geometry}, expected "
                     f"{SYNTHSEG_OUTPUT_GEOMETRY_2D}"
                 )
+            product = _get_meta_text(meta_obj, "LabelProduct") or "synthseg"
+            if product not in LABEL_PRODUCTS:
+                errors.append(f"image {index}: unknown label product {product!r}")
+            expected_value4 = f"{product}_source_geometry"
+            expected_image_type = f"DERIVED\\PRIMARY\\SEGMENTATION\\{expected_value4}"
             image_type = _get_meta_text(meta_obj, "ImageType")
             dicom_image_type = _get_meta_text(meta_obj, "DicomImageType")
             image_type_value4 = _get_meta_text(meta_obj, "ImageTypeValue4")
-            if image_type != SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE:
+            if image_type != expected_image_type:
                 errors.append(
                     f"image {index}: source-geometry segment ImageType={image_type}, "
-                    f"expected {SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE}"
+                    f"expected {expected_image_type}"
                 )
-            if dicom_image_type != SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE:
+            if dicom_image_type != expected_image_type:
                 errors.append(
                     f"image {index}: source-geometry segment DicomImageType="
                     f"{dicom_image_type}, expected "
-                    f"{SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE}"
+                    f"{expected_image_type}"
                 )
-            if image_type_value4 != SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4:
+            if image_type_value4 != expected_value4:
                 errors.append(
                     f"image {index}: source-geometry segment ImageTypeValue4="
                     f"{image_type_value4}, expected "
-                    f"{SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4}"
+                    f"{expected_value4}"
                 )
             child_role = _get_meta_int(
                 meta_obj,
@@ -2410,12 +2421,12 @@ def _validate_synthseg_output_contract(
                     "ImageTypeValue4",
                 )
                 if minihead_image_type_value4 != [
-                    SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
+                    expected_value4
                 ]:
                     errors.append(
                         f"image {index}: source-geometry segment IceMiniHead "
                         f"ImageTypeValue4={minihead_image_type_value4}, expected "
-                        f"{[SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4]}"
+                        f"{[expected_value4]}"
                     )
                 for field in SCANNER_WRITE_UNSAFE_META_KEYS:
                     if (
@@ -2591,18 +2602,18 @@ def iter_openrecon_parameter_combinations(
     models: tuple[str, ...] | None = None,
 ):
     model_values = models or OPENRECON_MODEL_VALUES
-    bool_keys = ("ssparc", "ssfast", "ssvolumes", "ssqc")
-    bool_value_sets = [
-        OPENRECON_COMBINATION_PARAMETER_VALUES[key] for key in bool_keys
+    parameter_keys = ("ssparc", "ssfast", "ssvolumes", "ssqc")
+    parameter_value_sets = [
+        OPENRECON_COMBINATION_PARAMETER_VALUES[key] for key in parameter_keys
     ]
 
-    for model, bool_values in itertools.product(
+    for model, parameter_values in itertools.product(
         model_values,
-        itertools.product(*bool_value_sets),
+        itertools.product(*parameter_value_sets),
     ):
         parameters = OPENRECON_DEFAULTS.copy()
         parameters["ssmodel"] = model
-        parameters.update(dict(zip(bool_keys, bool_values)))
+        parameters.update(dict(zip(parameter_keys, parameter_values)))
         # SynthSeg-robust always runs in fast mode and rejects the v1 label set,
         # so the matrix only emits combinations mri_synthseg actually accepts.
         if model == "robust":
@@ -2610,7 +2621,7 @@ def iter_openrecon_parameter_combinations(
 
         name = (
             f"{model}"
-            f"_parc{int(parameters['ssparc'])}"
+            f"_parc-{parameters['ssparc']}"
             f"_fast{int(parameters['ssfast'])}"
             f"_vol{int(parameters['ssvolumes'])}"
             f"_qc{int(parameters['ssqc'])}"
@@ -2937,7 +2948,7 @@ def _build_reformatted_images(
             series_index,
             j,
             source_identity.get("source_type_token", ""),
-            ["PYTHON", "SYNTHSEG", f"RESLICE_{orientation.upper()}"],
+            ["PYTHON", output_identity["type_token"], f"RESLICE_{orientation.upper()}"],
             extra_meta=extra_meta,
             keep_image_geometry=1,
             patch_minihead=True,
@@ -2998,10 +3009,11 @@ def _build_synthseg_segmentation_images(
 
     use_source_geometry_identity = bool(segmentation_header)
     segment_scanner_postprocessing = bool(scanner_postprocessing)
+    product_token = output_identity["type_token"]
     processing_history = (
-        ["PYTHON", "SYNTHSEG", "SEGMENT_SOURCE_GEOMETRY_2D"]
+        ["PYTHON", product_token, "SEGMENT_SOURCE_GEOMETRY_2D"]
         if use_source_geometry_identity
-        else ["PYTHON", "SYNTHSEG", "SOURCE_IMAGE_HEADER_2D"]
+        else ["PYTHON", product_token, "SOURCE_IMAGE_HEADER_2D"]
     )
 
     outputs = []
@@ -3031,6 +3043,8 @@ def _build_synthseg_segmentation_images(
             "SynthSegOutputGeometry": SYNTHSEG_OUTPUT_GEOMETRY_2D,
             SYNTHSEG_SEGMENT_OUTPUT_GEOMETRY_META_KEY: SYNTHSEG_OUTPUT_GEOMETRY_2D,
         }
+        if output_identity["display_token"] != "synthseg":
+            del extra_meta["SynthSegOutputGeometry"]
         _stamp_synthseg_output_image(
             mrd_image,
             source_image,
@@ -3684,6 +3698,19 @@ def process_raw(group, connection, config, metadata):
     return imagesOut
 
 
+def _load_label_volume(path: Path, expected_shape: tuple[int, ...]) -> np.ndarray:
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing required label product: {path}")
+    labels = np.asarray(nib.load(str(path)).dataobj)
+    if labels.shape != expected_shape or labels.ndim != 3:
+        raise ValueError(f"Label product {path} shape {labels.shape} does not match source {expected_shape}")
+    if not np.isfinite(labels).all() or np.any(labels < 0) or np.any(labels > SYNTHSEG_MAX_LABEL_VALUE):
+        raise ValueError(f"Label product {path} contains invalid int16 labels")
+    if np.any(labels != np.rint(labels)):
+        raise ValueError(f"Label product {path} contains noninteger labels")
+    return labels.transpose((1, 0, 2)).astype(np.int16)
+
+
 def process_image(images, connection, config, metadata):
     if len(images) == 0:
         return []
@@ -3787,12 +3814,6 @@ def process_image(images, connection, config, metadata):
         )
         imagesOut.extend(original_output_images)
 
-    legacy_option = None
-    if isinstance(config, dict):
-        parameters = config.get("parameters")
-        if isinstance(parameters, dict):
-            legacy_option = parameters.get("options")
-
     _log_slice_geometry(
         "Sorted SynthSeg source",
         head,
@@ -3880,7 +3901,11 @@ def process_image(images, connection, config, metadata):
         )
         model = OPENRECON_MODEL_DEFAULT
 
-    parcellation = boolean_checker("ssparc", default_val=OPENRECON_DEFAULTS["ssparc"])
+    parcellation, glasser_enabled = _resolve_openrecon_parcellation(
+        mrdhelper.get_json_config_param(
+            config, "ssparc", default=OPENRECON_DEFAULTS["ssparc"], type='str'
+        )
+    )
     fast = boolean_checker("ssfast", default_val=OPENRECON_DEFAULTS["ssfast"])
     if model == "robust" and not fast:
         # mri_synthseg forces --fast for SynthSeg-robust, so report the value
@@ -3936,6 +3961,8 @@ def process_image(images, connection, config, metadata):
         "ssdebugthresholdsegment",
         default_val=OPENRECON_DEFAULTS["ssdebugthresholdsegment"],
     )
+    if glasser_enabled and debug_threshold_segment:
+        raise ValueError("Glasser parcellation requires real SynthSeg segmentation; disable ssdebugthresholdsegment")
     segmentation_header = boolean_checker(
         "sssegmentheader",
         default_val=OPENRECON_DEFAULTS["sssegmentheader"],
@@ -3954,6 +3981,7 @@ def process_image(images, connection, config, metadata):
     output_name = "input_synthseg.nii.gz"
     input_path = input_dir / input_name
     output_path = output_dir / output_name
+    desikan_path = output_dir / "input_desikan.nii.gz"
     volumes_csv_path = output_dir / "synthseg_volumes.csv"
     qc_csv_path = output_dir / "synthseg_qc.csv"
 
@@ -4059,7 +4087,8 @@ def process_image(images, connection, config, metadata):
         _run_synthseg_command(
             _build_synthseg_command(
                 input_path,
-                output_path,
+                desikan_path if parcellation else output_path,
+                base_output_path=output_path if parcellation else None,
                 model=model,
                 fast=fast,
                 parcellation=parcellation,
@@ -4078,158 +4107,53 @@ def process_image(images, connection, config, metadata):
             log_csv_output("QC score", qc_csv_path)
 
         print('Processing done')
-        output_image = _find_output_nifti(output_dir, output_name)
-        logging.info("Loading SynthSeg output image %s", output_image)
-        img = nib.load(str(output_image))
-        data = img.get_fdata(dtype=np.float32)
+        volume_yxz = _load_label_volume(output_path, data_nifti.shape)
 
-        # Reformat data
-        print("shape after loading with nibabel")
-        print(data.shape)
-        if data.ndim == 2:
-            data = data[:, :, None]
-        if data.ndim == 3:
-            # Bring NIfTI [x, y, z] back to OpenRecon/MRD convenience [y, x, z].
-            data = data.transpose((1, 0, 2))
-        if data.ndim != 3:
-            raise ValueError(
-                f"SynthSeg output must be 3D after squeezing, got shape {data.shape}"
-            )
-        if data.shape[-1] != len(head):
-            raise ValueError(
-                "SynthSeg output slice count does not match MRD input: "
-                f"output_z={data.shape[-1]} input_images={len(head)}. "
-                "mri_synthseg was run with --keepgeom, so this means the "
-                "segmentation was not resampled back onto the source grid."
-            )
+    products: list[tuple[str, np.ndarray]] = [("synthseg", volume_yxz)]
+    if parcellation and not debug_threshold_segment:
+        products.append(("desikan", _load_label_volume(desikan_path, data_nifti.shape)))
+    if glasser_enabled:
+        try:
+            from glasser import register_glasser
 
-        if legacy_option == "complex":
-            logging.warning(
-                "Ignoring legacy complex output request because SynthSeg returns "
-                "integer label maps."
-            )
+            glasser_path = output_dir / "glasser_approx.nii.gz"
+            register_glasser(input_path, output_path, glasser_path, threads=threads)
+            products.append(("glasser_approx", _load_label_volume(glasser_path, data_nifti.shape)))
+        except Exception:
+            logging.exception("Glasser approximate registration failed; omitting atlas series")
 
-        # SynthSeg emits FreeSurfer label indices, not intensities. They are
-        # carried through unscaled so downstream tooling can look them up in
-        # FreeSurferColorLUT.txt; only the display window is derived from them.
-        data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
-        if np.min(data) < 0:
-            logging.warning("Negative label values in SynthSeg output; clipping to zero.")
-            data = np.clip(data, 0, None)
-
-        label_max = float(np.max(data))
-        if label_max > SYNTHSEG_MAX_LABEL_VALUE:
-            raise ValueError(
-                "SynthSeg label values exceed the int16 range used for MRD "
-                f"export: max_label={label_max}"
-            )
-        if label_max <= 0:
-            logging.warning("SynthSeg output is all zeros; returning a zero-valued image.")
-        volume_yxz = np.rint(data).astype(np.int16)
-        label_values = np.unique(volume_yxz)
-        logging.info(
-            "SynthSeg label map: distinct_labels=%d max_label=%d labels=%s",
-            label_values.size,
-            int(label_max),
-            label_values.tolist()[:64],
+    series_indices = itertools.count(segmentation_series_index)
+    segmentation_images = []
+    reformat_images = []
+    for product, volume_yxz in products:
+        series_index = next(series_indices)
+        identity = _build_openrecon_output_identity(
+            source_identity, series_index=series_index, product=product,
         )
-        # Window the label range rather than the 12-bit intensity range so the
-        # segmentation is visible on the scanner without manual windowing.
-        maxVal = max(int(label_max), 1)
-
-    if volume_yxz.shape[-1] != len(head):
-        raise ValueError(
-            "SynthSeg output slice count does not match MRD input: "
-            f"output_z={volume_yxz.shape[-1]} input_images={len(head)}"
+        max_val = 360 if product == "glasser_approx" else max(int(volume_yxz.max()), 1)
+        native_images = _build_synthseg_segmentation_images(
+            volume_yxz, ordered_images, source_identity, identity, series_index,
+            max_val=max_val, segmentation_header=segmentation_header,
         )
-
-    segmentation_images = _build_synthseg_segmentation_images(
-        volume_yxz=volume_yxz,
-        ordered_source_images=ordered_images,
-        source_identity=source_identity,
-        output_identity=segmentation_identity,
-        series_index=segmentation_series_index,
-        max_val=maxVal,
-        scanner_postprocessing=True,
-        segmentation_header=segmentation_header,
-    )
-    imagesOut.extend(segmentation_images)
-
-    segmentation_contract = (
-        "source-geometry segmentation-header 2D"
-        if segmentation_header
-        else "source-image-header 2D"
-    )
-    if original_series_index is not None:
-        logging.info(
-            "SynthSeg send order is source-geometry originals first, then "
-            "%s segmentation images",
-            segmentation_contract,
-        )
-    else:
-        logging.info(
-            "SynthSeg send order is %s segmentation images",
-            segmentation_contract,
-        )
-
-    if reslice_sagittal or reslice_coronal:
-        base_series = segmentation_series_index + 1
-        reformat_images = []
-
-        if reslice_sagittal:
-            sagittal_identity = _build_openrecon_output_identity(
-                source_identity,
-                orientation="sagittal",
-                series_index=base_series,
+        imagesOut.extend(native_images)
+        segmentation_images.extend(native_images)
+        if product == "glasser_approx":
+            continue
+        for orientation, enabled in (("sagittal", reslice_sagittal), ("coronal", reslice_coronal)):
+            if not enabled:
+                continue
+            series_index = next(series_indices)
+            identity = _build_openrecon_output_identity(
+                source_identity, orientation=orientation, series_index=series_index, product=product,
             )
-            logging.info(
-                "Appending sagittal reformat output series (series_index=%d, name=%s)",
-                base_series,
-                sagittal_identity["series_description"],
+            reformatted = _build_reformatted_images(
+                volume_yxz=volume_yxz, head_template=head[0], source_image=ordered_images[0],
+                source_identity=source_identity, output_identity=identity,
+                voxel_size=voxel_size, fov=fov, orientation=orientation,
+                series_index=series_index, max_val=max_val,
             )
-            sagittal_images = _build_reformatted_images(
-                volume_yxz=volume_yxz,
-                head_template=head[0],
-                source_image=ordered_images[0],
-                source_identity=source_identity,
-                output_identity=sagittal_identity,
-                voxel_size=voxel_size,
-                fov=fov,
-                orientation="sagittal",
-                series_index=base_series,
-                max_val=maxVal,
-            )
-            imagesOut.extend(sagittal_images)
-            reformat_images.extend(sagittal_images)
-            base_series += 1
-
-        if reslice_coronal:
-            coronal_identity = _build_openrecon_output_identity(
-                source_identity,
-                orientation="coronal",
-                series_index=base_series,
-            )
-            logging.info(
-                "Appending coronal reformat output series (series_index=%d, name=%s)",
-                base_series,
-                coronal_identity["series_description"],
-            )
-            coronal_images = _build_reformatted_images(
-                volume_yxz=volume_yxz,
-                head_template=head[0],
-                source_image=ordered_images[0],
-                source_identity=source_identity,
-                output_identity=coronal_identity,
-                voxel_size=voxel_size,
-                fov=fov,
-                orientation="coronal",
-                series_index=base_series,
-                max_val=maxVal,
-            )
-            imagesOut.extend(coronal_images)
-            reformat_images.extend(coronal_images)
-    else:
-        reformat_images = []
+            imagesOut.extend(reformatted)
+            reformat_images.extend(reformatted)
 
     if segmentation_header:
         segment_header_geometry = "2d_segment_header"

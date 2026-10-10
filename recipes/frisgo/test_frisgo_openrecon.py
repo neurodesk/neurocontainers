@@ -1,13 +1,17 @@
 """Runtime checks for scanner time-series transport using real MRD images."""
 
 import errno
+import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import ismrmrd
+import nibabel as nib
 import numpy as np
 
 import frisgo
@@ -57,6 +61,90 @@ def image(repetition=0, slice_index=0, **counters):
 
 
 class FrisgoOpenReconTests(unittest.TestCase):
+    def test_selected_modes_match_direct_laynii_and_preserve_geometry(self):
+        cases = [
+            ("frisgo", ["-tshift"], "Tshift", "frisgo", "LN2_FRISGO_TSHIFT"),
+            ({"algorithm": "spline", "lowpasswindow": "ignored"}, ["-tshift"], "Tshift", "frisgo", "LN2_FRISGO_TSHIFT"),
+            ({"parameters": {"algorithm": "simple"}}, ["-simple"], "frisgo-simple", "frisgo_simple", "LN2_FRISGO_SIMPLE"),
+            (json.dumps({"algorithm": "runwise"}), ["-runwise"], "frisgo-runwise", "frisgo_runwise", "LN2_FRISGO_RUNWISE"),
+            ({"algorithm": "lpass"}, ["-lpass", "40"], "frisgo-lpass", "frisgo_lpass", "LN2_FRISGO_LPASS_WINDOW_TR=40"),
+            (json.dumps({"parameters": {"algorithm": "lpass", "lowpasswindow": "12.5"}}), ["-lpass", "12.5"], "frisgo-lpass", "frisgo_lpass", "LN2_FRISGO_LPASS_WINDOW_TR=12.5"),
+        ]
+        images = []
+        rng = np.random.default_rng(7)
+        for t in range(9):
+            source = image(t)
+            values = 1000 + rng.normal(0, 70, (10, 12)) + 40 * (t % 2)
+            replacement = ismrmrd.Image.from_array(values.astype(np.float32), transpose=False)
+            header = source.getHead()
+            header.matrix_size[:] = (12, 10, 1)
+            header.data_type = replacement.data_type
+            replacement.setHead(header)
+            replacement.attribute_string = source.attribute_string
+            images.append(replacement)
+        series = frisgo.assemble_time_series(images)
+        for config, arguments, suffix, label, history in cases:
+            with self.subTest(config=config), tempfile.TemporaryDirectory() as work:
+                direct = nib.Nifti1Image(series.volume(), series.affine())
+                direct.header.set_zooms((1, 1, 1, series.repetition_time))
+                path = os.path.join(work, "direct.nii")
+                nib.save(direct, path)
+                subprocess.run(["LN2_FRISGO", "-input", path, *arguments], check=True, capture_output=True)
+                expected = np.asarray(nib.load(os.path.join(work, f"direct_{suffix}.nii")).dataobj)
+                connection = RecordingConnection(images)
+                with patch.dict(os.environ, {"FRISGO_WORKDIR": work}):
+                    frisgo.process(connection, config, None)
+                self.assertTrue(connection.closed)
+                self.assertEqual(connection.logs, [])
+                self.assertEqual(len(connection.outputs), 2 * len(images))
+                self.assertEqual(sorted(os.listdir(work)), ["direct.nii", f"direct_{suffix}.nii"])
+                for t, source in enumerate(images):
+                    original = connection.outputs[t]
+                    corrected = connection.outputs[len(images) + t]
+                    np.testing.assert_array_equal(original.data, source.data)
+                    np.testing.assert_allclose(corrected.data.reshape(10, 12), expected[:, :, 0, t].T)
+                    for output in (original, corrected):
+                        for name in ("position", "field_of_view", "read_dir", "phase_dir", "slice_dir"):
+                            np.testing.assert_array_equal(getattr(output, name), getattr(source, name))
+                        self.assertEqual((output.slice, output.repetition), (source.slice, source.repetition))
+                    meta = ismrmrd.Meta.deserialize(corrected.attribute_string)
+                    self.assertEqual(meta["SeriesDescription"], f"BOLD-{label}")
+                    self.assertEqual(meta["ImageProcessingHistory"], ["PYTHON", "LAYNII", history])
+
+    def test_gui_options_match_runtime_modes(self):
+        label = json.loads(Path(__file__).with_name("OpenReconLabel.json").read_text())
+        parameters = {p["id"]: p for p in label["parameters"]}
+        self.assertEqual([v["id"] for v in parameters["algorithm"]["values"]], list(frisgo._CORRECTIONS))
+        self.assertEqual(parameters["algorithm"]["default"], "spline")
+        self.assertEqual(parameters["lowpasswindow"]["default"], 40)
+
+    def test_invalid_selection_and_unsafe_series_preserve_originals(self):
+        cases = [({"algorithm": value}, 4) for value in ("unknown", True, [])]
+        cases += [({"algorithm": "lpass", "lowpasswindow": value}, 4) for value in (0, -1, True, [], "nan", "inf", 1000001)]
+        cases += [({"algorithm": "spline"}, 3), ({"algorithm": "simple"}, 1), ({"algorithm": "runwise"}, 1), ({"algorithm": "lpass"}, 4)]
+        for config, repetitions in cases:
+            with self.subTest(config=config, repetitions=repetitions):
+                images = [image(t) for t in range(repetitions)]
+                connection = RecordingConnection(images)
+                with patch.object(frisgo.subprocess, "run", wraps=frisgo.subprocess.run) as run:
+                    frisgo.process(connection, config, None)
+                run.assert_not_called()
+                self.assertTrue(connection.closed)
+                self.assertTrue(connection.logs)
+                self.assertEqual(len(connection.outputs), len(images))
+                for source, output in zip(images, connection.outputs):
+                    np.testing.assert_array_equal(output.data, source.data)
+
+    def test_runner_enforces_repetition_bounds_for_direct_callers(self):
+        for algorithm, minimum in (("spline", 4), ("simple", 2), ("runwise", 2), ("lpass", 2)):
+            with self.subTest(algorithm=algorithm):
+                correction = frisgo._correction_from_config({"algorithm": algorithm})
+                with self.assertRaisesRegex(ValueError, "repetitions"):
+                    frisgo.run_frisgo(frisgo.assemble_time_series([image(t) for t in range(minimum - 1)]), correction)
+                if algorithm in ("simple", "runwise"):
+                    series = frisgo.assemble_time_series([image(t) for t in range(minimum)])
+                    self.assertEqual(frisgo.run_frisgo(series, correction).shape, series.volume().shape)
+
     def test_correction_uses_scanner_share_and_closes_output_before_cleanup(self):
         series = frisgo.assemble_time_series([image(t) for t in range(8)])
         environment = dict(os.environ)
