@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "meganorm 0.2.2": {
+      "version": "20261010",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "electrophysiology",
+    "statistics",
+    "machine learning"
+  ]
+}
