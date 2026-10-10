@@ -35,14 +35,16 @@ def load_recipe(recipe_path: Path) -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        with open(build_yaml, 'r') as f:
+        with open(build_yaml, "r") as f:
             return yaml.safe_load(f)
     except Exception as e:
         print(f"  Warning: Error loading {build_yaml}: {e}")
         return None
 
 
-def extract_webapp_config(recipe: Dict[str, Any], recipe_dir: Path) -> Optional[Dict[str, Any]]:
+def extract_webapp_config(
+    recipe: Dict[str, Any], recipe_dir: Path
+) -> Optional[Dict[str, Any]]:
     """
     Extract webapp configuration from a recipe.
 
@@ -80,7 +82,9 @@ def extract_webapp_config(recipe: Dict[str, Any], recipe_dir: Path) -> Optional[
         icon_path = recipe_dir / icon_file
         if icon_path.exists():
             # Convert to raw GitHub URL for neurodesktop to fetch at build time
-            webapp_config["icon"] = f"https://raw.githubusercontent.com/NeuroDesk/neurocontainers/main/recipes/{recipe_dir.name}/{icon_file}"
+            webapp_config["icon"] = (
+                f"https://raw.githubusercontent.com/NeuroDesk/neurocontainers/main/recipes/{recipe_dir.name}/{icon_file}"
+            )
         else:
             print(f"  Warning: Icon file not found: {icon_path}")
             del webapp_config["icon"]
@@ -110,7 +114,9 @@ def has_release_file(releases_dir: Path, recipe_name: str) -> bool:
     return any(release_dir.glob("*.json"))
 
 
-def collect_webapp_configs(recipes_dir: Path, releases_dir: Path) -> Dict[str, Dict[str, Any]]:
+def collect_webapp_configs(
+    recipes_dir: Path, releases_dir: Path
+) -> Dict[str, Dict[str, Any]]:
     """
     Collect webapp configurations from recipes that have been released.
 
@@ -149,7 +155,9 @@ def collect_webapp_configs(recipes_dir: Path, releases_dir: Path) -> Dict[str, D
 
             # Only include webapps that have been released
             if not has_release_file(releases_dir, recipe_name):
-                print(f"  Skipping webapp: {module} (no release file for {recipe_name})")
+                print(
+                    f"  Skipping webapp: {module} (no release file for {recipe_name})"
+                )
                 continue
 
             print(f"  Found webapp: {module} (from {recipe_dir.name})")
@@ -185,10 +193,7 @@ def generate_webapps_json(recipes_dir: str, releases_dir: str, output_file: str)
         # Still create an empty file for consistency
         webapps_json = {"version": "1.0", "webapps": {}}
     else:
-        webapps_json = {
-            "version": "1.0",
-            "webapps": webapps
-        }
+        webapps_json = {"version": "1.0", "webapps": webapps}
 
     # Write the generated webapps.json
     print(f"\nWriting webapps.json to: {output_path}")
@@ -196,14 +201,16 @@ def generate_webapps_json(recipes_dir: str, releases_dir: str, output_file: str)
     # Create parent directory if needed
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         json.dump(webapps_json, f, indent=2)
 
     # Print summary
-    print(f"\nGenerated webapps.json successfully!")
+    print("\nGenerated webapps.json successfully!")
     print(f"  Webapps found: {len(webapps)}")
     for name, config in webapps.items():
-        print(f"    - {name}: {config.get('title', 'No title')} (port {config.get('port', '?')})")
+        print(
+            f"    - {name}: {config.get('title', 'No title')} (port {config.get('port', '?')})"
+        )
 
 
 def main():
@@ -213,17 +220,17 @@ def main():
     parser.add_argument(
         "--recipes-dir",
         default="recipes",
-        help="Directory containing recipe subdirectories (default: recipes)"
+        help="Directory containing recipe subdirectories (default: recipes)",
     )
     parser.add_argument(
         "--releases-dir",
         default="releases",
-        help="Directory containing release files (default: releases)"
+        help="Directory containing release files (default: releases)",
     )
     parser.add_argument(
         "--output",
         default="webapps.json",
-        help="Output path for generated webapps.json (default: webapps.json)"
+        help="Output path for generated webapps.json (default: webapps.json)",
     )
 
     args = parser.parse_args()

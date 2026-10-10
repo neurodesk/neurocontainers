@@ -7,7 +7,10 @@ def test_build_app_workflow_uses_staged_cache_context() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
 
     assert '--build-context "neurocontainer-cache=./cache"' in workflow
-    assert "neurocontainer-cache=$HOME/.cache/neurocontainers/build-context" not in workflow
+    assert (
+        "neurocontainer-cache=$HOME/.cache/neurocontainers/build-context"
+        not in workflow
+    )
 
 
 def test_build_app_workflow_uses_version_stable_build_cache_ref() -> None:
@@ -17,7 +20,9 @@ def test_build_app_workflow_uses_version_stable_build_cache_ref() -> None:
     assert "CACHE_REF=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:buildcache" not in workflow
 
 
-def test_manual_workflow_expands_named_variants_and_passes_identity_to_builder() -> None:
+def test_manual_workflow_expands_named_variants_and_passes_identity_to_builder() -> (
+    None
+):
     build_workflow = Path(".github/workflows/build-app.yml").read_text()
     manual_workflow = Path(".github/workflows/manual-build.yml").read_text()
 
@@ -30,21 +35,31 @@ def test_manual_workflow_expands_named_variants_and_passes_identity_to_builder()
 
 
 def test_candidate_workflow_builds_every_declared_variant() -> None:
-    candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
+    candidate_workflow = Path(
+        ".github/workflows/pr-container-candidate.yml"
+    ).read_text()
 
-    assert "include: ${{ fromJSON(needs.detect.outputs.targets) }}" in candidate_workflow
+    assert (
+        "include: ${{ fromJSON(needs.detect.outputs.targets) }}" in candidate_workflow
+    )
     assert (
         "matrix.container }} | ${{ matrix.version }} | ${{ matrix.architecture"
         in candidate_workflow
     )
-    assert '--architecture "${ARCHITECTURE}" --variant "${VARIANT}"' in candidate_workflow
+    assert (
+        '--architecture "${ARCHITECTURE}" --variant "${VARIANT}"' in candidate_workflow
+    )
     # aarch64 candidates must not land on the x86 ARC pool.
     assert "matrix.architecture == 'aarch64'" in candidate_workflow
     assert "--architecture x86_64" not in candidate_workflow
 
 
-def test_candidate_workflow_skips_mixed_prs_without_hiding_other_detection_errors() -> None:
-    candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
+def test_candidate_workflow_skips_mixed_prs_without_hiding_other_detection_errors() -> (
+    None
+):
+    candidate_workflow = Path(
+        ".github/workflows/pr-container-candidate.yml"
+    ).read_text()
 
     assert "Automated releases require a recipe-only PR." in candidate_workflow
     assert 'echo "recipes=[]" >> "$GITHUB_OUTPUT"' in candidate_workflow
@@ -54,7 +69,9 @@ def test_candidate_workflow_skips_mixed_prs_without_hiding_other_detection_error
     assert 'exit "$status"' in candidate_workflow
 
 
-def test_promotion_workflow_skips_mixed_prs_without_hiding_other_detection_errors() -> None:
+def test_promotion_workflow_skips_mixed_prs_without_hiding_other_detection_errors() -> (
+    None
+):
     promotion_workflow = Path(
         ".github/workflows/promote-container-candidate.yml"
     ).read_text()
@@ -66,7 +83,9 @@ def test_promotion_workflow_skips_mixed_prs_without_hiding_other_detection_error
 
 
 def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> None:
-    candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
+    candidate_workflow = Path(
+        ".github/workflows/pr-container-candidate.yml"
+    ).read_text()
     reporter = Path(".github/workflows/report-container-candidate.yml").read_text()
     validator = Path(".github/workflows/validate-recipes.yml").read_text()
 
@@ -100,7 +119,10 @@ def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> Non
     assert "artifact.expires_at" in reporter
     assert "artifact.size_in_bytes" in reporter
     assert "report.tests.passedTests" in reporter
-    assert "No recipe build candidates; no container approval comment is needed" in reporter
+    assert (
+        "No recipe build candidates; no container approval comment is needed"
+        in reporter
+    )
     assert "classified the recipe changes as source-only" in reporter
     assert "file.filename.match(/^recipes\\/([^/]+)\\//)" in reporter
     assert "container-release-outcome: ${outcome}" in reporter
@@ -121,8 +143,8 @@ def test_candidate_workflow_reports_every_premerge_check_in_one_comment() -> Non
 def test_promotion_finalizer_classifies_changes_since_candidate_merge() -> None:
     workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
 
-    finalizer = workflow.split('  finalize:\n', 1)[1].split('  sync_openrecon:\n', 1)[0]
-    assert finalizer.count('MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}') == 2
+    finalizer = workflow.split("  finalize:\n", 1)[1].split("  sync_openrecon:\n", 1)[0]
+    assert finalizer.count("MERGE_SHA: ${{ needs.resolve.outputs.merge_sha }}") == 2
     assert finalizer.count('--merge-sha "${MERGE_SHA}"') == 2
 
 
@@ -135,9 +157,7 @@ def test_recipe_pr_validation_checks_fulltest_only_changes() -> None:
 
 
 def test_promotion_updates_the_existing_candidate_comment_in_place() -> None:
-    workflow = Path(
-        ".github/workflows/promote-container-candidate.yml"
-    ).read_text()
+    workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
 
     report_job = workflow.split("  report_promotion:", 1)[1]
 
@@ -155,8 +175,12 @@ def test_promotion_updates_the_existing_candidate_comment_in_place() -> None:
 
 
 def test_candidate_artifacts_and_promotion_key_off_container_identity() -> None:
-    candidate_workflow = Path(".github/workflows/pr-container-candidate.yml").read_text()
-    promote_workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
+    candidate_workflow = Path(
+        ".github/workflows/pr-container-candidate.yml"
+    ).read_text()
+    promote_workflow = Path(
+        ".github/workflows/promote-container-candidate.yml"
+    ).read_text()
     publish_steps = promote_workflow.split(
         "      - name: Publish exact tested Docker archive to unique staging tags", 1
     )[1].split("  finalize:", 1)[0]
@@ -173,13 +197,14 @@ def test_candidate_artifacts_and_promotion_key_off_container_identity() -> None:
     assert 'quay="quay.io/neurodesk/${container}:${staging_tag}"' in publish_steps
     assert 'staging_tag="candidate-${HEAD_SHA}"' in publish_steps
     assert "${recipe}" not in publish_steps
-    assert 'v2_registry finalize "${ghcr}" "${version}" "${build_date}" --apply' in finalize_steps
+    assert (
+        'v2_registry finalize "${ghcr}" "${version}" "${build_date}" --apply'
+        in finalize_steps
+    )
 
 
 def test_candidate_promotion_retries_mandatory_ghcr_pushes() -> None:
-    workflow = Path(
-        ".github/workflows/promote-container-candidate.yml"
-    ).read_text()
+    workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
     publish_steps = workflow.split(
         "      - name: Publish exact tested Docker archive to unique staging tags", 1
     )[1].split("      - name: Make Quay repositories public", 1)[0]
@@ -195,7 +220,10 @@ def test_candidate_promotion_retries_mandatory_ghcr_pushes() -> None:
     assert '"docker.io/${DOCKERHUB_ORG}/${legacy}:${staging_tag}"' in publish_steps
     assert "retag_mandatory()" in finalize_steps
     assert 'if oras tag "${source}" "${tag}"; then' in finalize_steps
-    assert 'retag_mandatory "${ghcr}:${staging_tag}" "${version}_${build_date}"' in finalize_steps
+    assert (
+        'retag_mandatory "${ghcr}:${staging_tag}" "${version}_${build_date}"'
+        in finalize_steps
+    )
     assert '"docker.io/${DOCKERHUB_ORG}/${legacy}"' in finalize_steps
 
 
@@ -215,13 +243,14 @@ def test_candidate_promotion_syncs_openrecon_from_verified_manifests() -> None:
     assert 'recipe="$(echo "${manifest}" | jq -r \'.recipe\')"' in sync_body
     assert 'variant="$(echo "${manifest}" | jq -r \'.variant\')"' in sync_body
     assert 'version="$(echo "${manifest}" | jq -r \'.version\')"' in sync_body
-    assert '--recipe "${recipe}" --variant "${variant}" --version "${version}"' in sync_body
+    assert (
+        '--recipe "${recipe}" --variant "${variant}" --version "${version}"'
+        in sync_body
+    )
 
 
 def test_candidate_promotion_waits_for_exact_candidate_before_using_arc() -> None:
-    workflow = Path(
-        ".github/workflows/promote-container-candidate.yml"
-    ).read_text()
+    workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
 
     wait_job = workflow.split("  await_candidate:", 1)[1].split("  publish:", 1)[0]
     publish_job = workflow.split("  publish:", 1)[1].split("  finalize:", 1)[0]
@@ -242,18 +271,12 @@ def test_candidate_promotion_waits_for_exact_candidate_before_using_arc() -> Non
 
 
 def test_candidate_publication_is_parallel_and_only_finalization_is_locked() -> None:
-    workflow = Path(
-        ".github/workflows/promote-container-candidate.yml"
-    ).read_text()
+    workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
 
     pre_jobs, jobs = workflow.split("jobs:", 1)
     publish_job = jobs.split("  publish:", 1)[1].split("  finalize:", 1)[0]
-    finalize_job = jobs.split("  finalize:", 1)[1].split(
-        "  sync_openrecon:", 1
-    )[0]
-    sync_job = jobs.split("  sync_openrecon:", 1)[1].split(
-        "  report_promotion:", 1
-    )[0]
+    finalize_job = jobs.split("  finalize:", 1)[1].split("  sync_openrecon:", 1)[0]
+    sync_job = jobs.split("  sync_openrecon:", 1)[1].split("  report_promotion:", 1)[0]
 
     assert "concurrency:" not in pre_jobs
     assert "strategy:" in publish_job
@@ -285,9 +308,7 @@ def test_release_paths_dispatch_unchanged_openrecon_recipes() -> None:
 
 def test_candidate_promotion_uses_trusted_main_oidc_identity() -> None:
     """Promotion resolves a main push to the tested PR head before publishing."""
-    workflow = Path(
-        ".github/workflows/promote-container-candidate.yml"
-    ).read_text()
+    workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
 
     assert "  push:\n    branches: [main]" in workflow
     assert "  workflow_dispatch:" in workflow
@@ -302,25 +323,21 @@ def test_candidate_promotion_uses_trusted_main_oidc_identity() -> None:
 
 def test_pr_and_postmerge_workflows_share_the_release_planner() -> None:
     candidate = Path(".github/workflows/pr-container-candidate.yml").read_text()
-    promotion = Path(
-        ".github/workflows/promote-container-candidate.yml"
-    ).read_text()
+    promotion = Path(".github/workflows/promote-container-candidate.yml").read_text()
 
     planner = "python tools/one_pr_release.py --repo-root . detect"
     assert "../trusted/tools/one_pr_release.py --repo-root . detect" in candidate
     assert planner in promotion
     assert "steps.detect.outputs.changed_recipes != ''" in candidate
-    assert 'steps.detect.outputs.changed_recipes != \'[]\'' in candidate
-    assert 'RECIPES: ${{ steps.detect.outputs.changed_recipes }}' in candidate
+    assert "steps.detect.outputs.changed_recipes != '[]'" in candidate
+    assert "RECIPES: ${{ steps.detect.outputs.changed_recipes }}" in candidate
     assert '- "recipes/**"' in promotion
-    assert 'needs.resolve.outputs.recipes != \'[]\'' in promotion
+    assert "needs.resolve.outputs.recipes != '[]'" in promotion
     assert "permissions: {}" in promotion
 
 
 def test_candidate_promotion_installs_aws_cli_before_s3_upload() -> None:
-    workflow = Path(
-        ".github/workflows/promote-container-candidate.yml"
-    ).read_text()
+    workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
 
     install_step = workflow.split("      - name: Install promotion dependencies", 1)[1]
     install_step = install_step.split(
@@ -331,22 +348,18 @@ def test_candidate_promotion_installs_aws_cli_before_s3_upload() -> None:
 
 
 def test_candidate_promotion_preserves_optional_publish_behaviour() -> None:
-    workflow = Path(
-        ".github/workflows/promote-container-candidate.yml"
-    ).read_text()
+    workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
 
     assert "for attempt in 1 2 3" in workflow
     assert "Make Quay repositories public" in workflow
     assert "QUAY_API_TOKEN" in workflow
     assert "/changevisibility" in workflow
-    assert 'python -m builder.oci_labels image' in workflow
+    assert "python -m builder.oci_labels image" in workflow
     assert workflow.count('"${SIF_ANNOTATION_ARGS[@]}"') == 2
 
 
 def test_candidate_promotion_refreshes_auth_after_long_publication() -> None:
-    workflow = Path(
-        ".github/workflows/promote-container-candidate.yml"
-    ).read_text()
+    workflow = Path(".github/workflows/promote-container-candidate.yml").read_text()
 
     checkout = workflow.split("      - name: Checkout trusted main", 1)[1].split(
         "      - uses: actions/setup-python@v6", 1
@@ -355,15 +368,17 @@ def test_candidate_promotion_refreshes_auth_after_long_publication() -> None:
     metadata_step = "      - name: Commit generated release metadata directly to main"
 
     assert "persist-credentials: false" in checkout
-    assert workflow.index("      - name: Attach tested SIF to staged OCI images") < workflow.index(
-        token_step
-    )
+    assert workflow.index(
+        "      - name: Attach tested SIF to staged OCI images"
+    ) < workflow.index(token_step)
     assert workflow.index(token_step) < workflow.index(metadata_step)
     metadata = workflow.split(metadata_step, 1)[1].split(
         "      - name: Sync OpenRecon metadata", 1
     )[0]
     assert "RELEASE_TOKEN: ${{ steps.metadata-token.outputs.token }}" in metadata
-    assert metadata.count('http.https://github.com/.extraheader="${git_auth_header}"') == 2
+    assert (
+        metadata.count('http.https://github.com/.extraheader="${git_auth_header}"') == 2
+    )
 
 
 def test_manual_and_candidate_release_paths_share_openrecon_sync_helper() -> None:
@@ -381,7 +396,7 @@ def test_build_app_workflow_strips_version_inline_comments() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     old_version_extractor = (
         "VERSION=$(sed -n 's/^version:[[:space:]]*//p' "
-        '"recipes/${APPLICATION}/build.yaml" | head -1 | tr -d "\\\"\'")'
+        '"recipes/${APPLICATION}/build.yaml" | head -1 | tr -d "\\"\'")'
     )
 
     assert "sed 's/[[:space:]]#.*$//'" in workflow
@@ -391,7 +406,9 @@ def test_build_app_workflow_strips_version_inline_comments() -> None:
 def test_build_app_workflow_compares_image_config_not_only_rootfs() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     config_job = workflow.split("  config:", 1)[1].split("  build-image:", 1)[0]
-    build_image_job = workflow.split("  build-image:", 1)[1].split("  push-dockerhub:", 1)[0]
+    build_image_job = workflow.split("  build-image:", 1)[1].split(
+        "  push-dockerhub:", 1
+    )[0]
 
     assert "IMAGE_FINGERPRINT_CACHE" in config_job
     assert "IMAGE_FINGERPRINT_NEW" in build_image_job
@@ -417,7 +434,9 @@ def test_config_job_fingerprints_latest_without_pulling_it() -> None:
 def test_build_image_job_fingerprints_the_new_image_locally() -> None:
     # The new image only exists in the local daemon at comparison time.
     workflow = Path(".github/workflows/build-app.yml").read_text()
-    build_image_job = workflow.split("  build-image:", 1)[1].split("  push-dockerhub:", 1)[0]
+    build_image_job = workflow.split("  build-image:", 1)[1].split(
+        "  push-dockerhub:", 1
+    )[0]
 
     assert 'python3 builder/image_fingerprint.py "$IMAGE_REF"' in build_image_job
     assert "--remote" not in build_image_job
@@ -427,7 +446,10 @@ def test_create_pr_job_generates_release_without_rebuilding() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     create_pr_job = workflow.split("  create-pr:", 1)[1]
 
-    assert 'python3 -m builder release "$APPLICATION" --write --architecture "$ARCHITECTURE"' in create_pr_job
+    assert (
+        'python3 -m builder release "$APPLICATION" --write --architecture "$ARCHITECTURE"'
+        in create_pr_job
+    )
     assert (
         'python3 -m builder build "$APPLICATION" --recreate --generate-release --architecture "$ARCHITECTURE"'
         not in create_pr_job
@@ -437,10 +459,18 @@ def test_create_pr_job_generates_release_without_rebuilding() -> None:
 def test_build_app_workflow_stages_without_hidden_docker_builds() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     config_job = workflow.split("  config:", 1)[1].split("  build-image:", 1)[0]
-    build_image_job = workflow.split("  build-image:", 1)[1].split("  push-dockerhub:", 1)[0]
+    build_image_job = workflow.split("  build-image:", 1)[1].split(
+        "  push-dockerhub:", 1
+    )[0]
 
-    assert 'python3 -m builder stage "$APPLICATION" --recreate --architecture "$ARCHITECTURE"' in config_job
-    assert 'python3 -m builder stage "$APPLICATION" --recreate --download --architecture "$ARCHITECTURE"' in build_image_job
+    assert (
+        'python3 -m builder stage "$APPLICATION" --recreate --architecture "$ARCHITECTURE"'
+        in config_job
+    )
+    assert (
+        'python3 -m builder stage "$APPLICATION" --recreate --download --architecture "$ARCHITECTURE"'
+        in build_image_job
+    )
     assert "python3 -m builder build" not in config_job
     assert "python3 -m builder build" not in build_image_job
     assert "docker buildx build" in build_image_job
@@ -460,8 +490,12 @@ def test_dive_waste_check_is_reported_on_release_pr_without_opening_an_issue() -
 
 def test_nectar_mirrors_are_best_effort() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
-    push_nectar_job = workflow.split("  push-nectar-registry:", 1)[1].split("  build-simg:", 1)[0]
-    upload_nectar_job = workflow.split("  upload-nectar:", 1)[1].split("  upload-s3:", 1)[0]
+    push_nectar_job = workflow.split("  push-nectar-registry:", 1)[1].split(
+        "  build-simg:", 1
+    )[0]
+    upload_nectar_job = workflow.split("  upload-nectar:", 1)[1].split(
+        "  upload-s3:", 1
+    )[0]
 
     assert "continue-on-error: true" in push_nectar_job
     assert "continue-on-error: true" in upload_nectar_job
@@ -469,8 +503,12 @@ def test_nectar_mirrors_are_best_effort() -> None:
 
 def test_simg_upload_jobs_are_skipped_when_simg_build_is_skipped() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
-    build_simg_header = workflow.split("  build-simg:", 1)[1].split("    runs-on:", 1)[0]
-    upload_nectar_header = workflow.split("  upload-nectar:", 1)[1].split("    # Nectar", 1)[0]
+    build_simg_header = workflow.split("  build-simg:", 1)[1].split("    runs-on:", 1)[
+        0
+    ]
+    upload_nectar_header = workflow.split("  upload-nectar:", 1)[1].split(
+        "    # Nectar", 1
+    )[0]
     upload_s3_header = workflow.split("  upload-s3:", 1)[1].split("    runs-on:", 1)[0]
 
     assert "inputs.skip_simg_build != 'true'" in build_simg_header
@@ -480,7 +518,9 @@ def test_simg_upload_jobs_are_skipped_when_simg_build_is_skipped() -> None:
 
 def test_build_simg_uses_selected_runner_pool() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
-    build_simg_job = workflow.split("  build-simg:", 1)[1].split("  upload-nectar:", 1)[0]
+    build_simg_job = workflow.split("  build-simg:", 1)[1].split("  upload-nectar:", 1)[
+        0
+    ]
 
     assert "runs-on: ${{ fromJSON(inputs.runner) }}" in build_simg_job
     assert (
@@ -491,16 +531,23 @@ def test_build_simg_uses_selected_runner_pool() -> None:
 
 def test_build_simg_sets_apptainer_paths_for_non_github_runners() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
-    build_simg_job = workflow.split("  build-simg:", 1)[1].split("  upload-nectar:", 1)[0]
-    common_setup = build_simg_job.split("      - name: Set runner base path", 1)[1].split(
+    build_simg_job = workflow.split("  build-simg:", 1)[1].split("  upload-nectar:", 1)[
+        0
+    ]
+    common_setup = build_simg_job.split("      - name: Set runner base path", 1)[
+        1
+    ].split(
         "      - name: Configure GitHub-hosted runner",
         1,
     )[0]
 
     assert "elif [ -d /home/runner/_work ]; then" in common_setup
-    assert 'BASE_PATH=/home/runner/_work' in common_setup
+    assert "BASE_PATH=/home/runner/_work" in common_setup
     assert '"$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"' in common_setup
-    assert 'sudo chown -R "$(id -u):$(id -g)" "$BASE_PATH/tmp" "$BASE_PATH/apptainer"' in common_setup
+    assert (
+        'sudo chown -R "$(id -u):$(id -g)" "$BASE_PATH/tmp" "$BASE_PATH/apptainer"'
+        in common_setup
+    )
     assert 'sudo chmod -R u+rwX "$BASE_PATH/tmp" "$BASE_PATH/apptainer"' in common_setup
     assert 'APPTAINER_CACHEDIR="$BASE_PATH/apptainer/cache"' in common_setup
     assert 'APPTAINER_TMPDIR="$BASE_PATH/apptainer/tmp"' in common_setup
@@ -510,7 +557,9 @@ def test_build_simg_sets_apptainer_paths_for_non_github_runners() -> None:
 
 def test_setup_apptainer_updates_apt_before_local_deb_install() -> None:
     action = Path(".github/actions/setup-apptainer/action.yml").read_text()
-    amd64_branch = action.split('else\n          if [[ ! -s "$deb_path" ]]', 1)[1].split(
+    amd64_branch = action.split('else\n          if [[ ! -s "$deb_path" ]]', 1)[
+        1
+    ].split(
         "        fi\n\n        echo",
         1,
     )[0]
@@ -523,7 +572,9 @@ def test_setup_apptainer_updates_apt_before_local_deb_install() -> None:
 
 def test_nectar_registry_username_is_explicit() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
-    push_nectar_job = workflow.split("  push-nectar-registry:", 1)[1].split("  build-simg:", 1)[0]
+    push_nectar_job = workflow.split("  push-nectar-registry:", 1)[1].split(
+        "  build-simg:", 1
+    )[0]
 
     assert "username: s.bollmann@uq.edu.au" in push_nectar_job
     assert "REGISTRY_RC_NECTAR_ORG_AU_USERNAME" not in workflow
@@ -557,7 +608,10 @@ def test_update_apps_json_runs_for_release_file_pushes() -> None:
     # fixed update branch with a stale release snapshot.
     workflow = Path(".github/workflows/update-apps-json.yml").read_text()
 
-    assert "  push:\n    branches: [main]\n    paths:\n      - \"releases/**/*.json\"" in workflow
+    assert (
+        '  push:\n    branches: [main]\n    paths:\n      - "releases/**/*.json"'
+        in workflow
+    )
     assert '      - "recipes/**/build.yaml"' in workflow
     assert "pull_request:" not in workflow
     assert "github.event.pull_request.merged" not in workflow
@@ -579,7 +633,9 @@ def test_release_tests_select_native_runners_and_keep_artifacts_separate() -> No
     dependencies = steps["Install dependencies"]["run"]
     assert "sudo apt-get install -y git-annex" in dependencies
     assert "datalad-installer" not in dependencies
-    assert steps["Install Apptainer"]["uses"] == "./source/.github/actions/setup-apptainer"
+    assert (
+        steps["Install Apptainer"]["uses"] == "./source/.github/actions/setup-apptainer"
+    )
     assert steps["Upload test results"]["with"]["name"] == (
         "test-results-${{ matrix.release.name }}-${{ matrix.release.version }}"
     )

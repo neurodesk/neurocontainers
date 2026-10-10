@@ -1,4 +1,5 @@
 """Stage legacy registry images as OCI contexts understood by both build backends."""
+
 from __future__ import annotations
 
 import errno
@@ -34,18 +35,27 @@ class Converter:
 def select_converter() -> Converter:
     if docker := shutil.which("docker"):
         try:
-            available = subprocess.run(
-                [docker, "info", "--format", "{{.ServerVersion}}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
-            ).returncode == 0
+            available = (
+                subprocess.run(
+                    [docker, "info", "--format", "{{.ServerVersion}}"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=10,
+                ).returncode
+                == 0
+            )
         except (OSError, subprocess.TimeoutExpired):
             available = False
         if available:
             return Converter(docker, True, SKOPEO_IMAGE)
     if skopeo := shutil.which("skopeo"):
-        identity = "skopeo-sha256:" + hashlib.sha256(Path(skopeo).read_bytes()).hexdigest()
+        identity = (
+            "skopeo-sha256:" + hashlib.sha256(Path(skopeo).read_bytes()).hexdigest()
+        )
         return Converter(skopeo, False, identity)
-    raise RuntimeError("Install skopeo or provide access to a Docker daemon to convert this legacy base image")
+    raise RuntimeError(
+        "Install skopeo or provide access to a Docker daemon to convert this legacy base image"
+    )
 
 
 @dataclass(frozen=True)
@@ -56,15 +66,24 @@ class ImageContext:
     manifest_digest: str
 
     def buildx_args(self) -> list[str]:
-        return ["--build-context", f"{self.from_ref}=oci-layout://{self.layout_dir.resolve()}@{self.manifest_digest}"]
+        return [
+            "--build-context",
+            f"{self.from_ref}=oci-layout://{self.layout_dir.resolve()}@{self.manifest_digest}",
+        ]
 
     def buildctl_args(self, name: str) -> list[str]:
-        return ["--oci-layout", f"{name}={self.layout_dir.resolve()}",
-                "--opt", f"context:{self.from_ref}=oci-layout://{name}@{self.manifest_digest}"]
+        return [
+            "--oci-layout",
+            f"{name}={self.layout_dir.resolve()}",
+            "--opt",
+            f"context:{self.from_ref}=oci-layout://{name}@{self.manifest_digest}",
+        ]
 
 
 def _validate_reference(reference: str) -> None:
-    if not isinstance(reference, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@-]*", reference):
+    if not isinstance(reference, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._:/@-]*", reference
+    ):
         raise ValueError("invalid base image reference")
 
 
@@ -76,7 +95,9 @@ def resolve_source(reference: str) -> tuple[str, str]:
     if DIGEST.fullmatch(parsed.reference):
         digest = parsed.reference
     else:
-        observed = observe_source({"method": "oci_digest", "image": image, "tag": parsed.reference}, None)
+        observed = observe_source(
+            {"method": "oci_digest", "image": image, "tag": parsed.reference}, None
+        )
         digest = observed.value
     if not DIGEST.fullmatch(digest):
         raise ValueError("base image did not resolve to a SHA-256 digest")
@@ -100,7 +121,9 @@ def _blob(layout: Path, descriptor: dict) -> Path:
 
 
 def validate_layout(layout: Path, architecture: str) -> str:
-    if json.loads((layout / "oci-layout").read_text()) != {"imageLayoutVersion": "1.0.0"}:
+    if json.loads((layout / "oci-layout").read_text()) != {
+        "imageLayoutVersion": "1.0.0"
+    }:
         raise ValueError("unsupported OCI layout version")
     index = json.loads((layout / "index.json").read_text())
     manifests = index.get("manifests", [])
@@ -114,7 +137,10 @@ def validate_layout(layout: Path, architecture: str) -> str:
     if manifest.get("mediaType") != "application/vnd.oci.image.manifest.v1+json":
         raise ValueError("converted base is not an OCI image manifest")
     config_bytes = _blob(layout, manifest["config"]).read_bytes()
-    if "sha256:" + hashlib.sha256(config_bytes).hexdigest() != manifest["config"]["digest"]:
+    if (
+        "sha256:" + hashlib.sha256(config_bytes).hexdigest()
+        != manifest["config"]["digest"]
+    ):
         raise ValueError("OCI config digest mismatch")
     config = json.loads(config_bytes)
     expected = {"x86_64": "amd64", "aarch64": "arm64"}[architecture]
@@ -125,23 +151,50 @@ def validate_layout(layout: Path, architecture: str) -> str:
     return descriptor["digest"]
 
 
-def convert_image(source: str, architecture: str, layout: Path, *, converter: Converter) -> None:
+def convert_image(
+    source: str, architecture: str, layout: Path, *, converter: Converter
+) -> None:
     arch = {"x86_64": "amd64", "aarch64": "arm64"}[architecture]
     if not converter.container:
         command = [converter.executable]
         destination = str(layout)
     else:
-        command = [converter.executable, "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
-                   "--volume", f"{layout.parent.resolve()}:/output", SKOPEO_IMAGE]
+        command = [
+            converter.executable,
+            "run",
+            "--rm",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
+            "--volume",
+            f"{layout.parent.resolve()}:/output",
+            SKOPEO_IMAGE,
+        ]
         destination = f"/output/{layout.name}"
-    command += ["--override-os", "linux", "--override-arch", arch, "copy", "--retry-times", "3",
-                "--src-no-creds", "--remove-signatures", "--format", "oci", f"docker://{source}",
-                f"oci:{destination}:base"]
+    command += [
+        "--override-os",
+        "linux",
+        "--override-arch",
+        arch,
+        "copy",
+        "--retry-times",
+        "3",
+        "--src-no-creds",
+        "--remove-signatures",
+        "--format",
+        "oci",
+        f"docker://{source}",
+        f"oci:{destination}:base",
+    ]
     subprocess.run(command, check=True)
 
 
 def stage_image(
-    reference: str, architecture: str, cache_root: Path, build_dir: Path, *, flatten: bool = False
+    reference: str,
+    architecture: str,
+    cache_root: Path,
+    build_dir: Path,
+    *,
+    flatten: bool = False,
 ) -> ImageContext:
     source, digest = resolve_source(reference)
     converter = select_converter()
@@ -159,8 +212,16 @@ def stage_image(
             manifest_digest = validate_layout(layout, architecture)
             if flatten:
                 flattened = temporary / "flattened"
-                flatten_image(ImageContext("neurocontainers-flatten-source", digest, layout, manifest_digest),
-                              architecture, flattened)
+                flatten_image(
+                    ImageContext(
+                        "neurocontainers-flatten-source",
+                        digest,
+                        layout,
+                        manifest_digest,
+                    ),
+                    architecture,
+                    flattened,
+                )
                 validate_layout(flattened, architecture)
                 shutil.rmtree(layout)
                 layout = flattened
@@ -176,16 +237,33 @@ def stage_image(
     staged = build_dir / LAYOUT_NAME
     if staged.exists():
         shutil.rmtree(staged)
-    shutil.copytree(cached, staged, copy_function=lambda a, b: link_or_copy(Path(a), Path(b)))
+    shutil.copytree(
+        cached, staged, copy_function=lambda a, b: link_or_copy(Path(a), Path(b))
+    )
     return ImageContext(reference, digest, staged, manifest_digest)
 
 
-def write_contexts(build_dir: Path, architecture: str, contexts: tuple[ImageContext, ...], *, required: bool = False) -> None:
-    data = {"version": 1, "architecture": architecture, "required": required, "images": [
-        {"from_ref": item.from_ref, "source_digest": item.source_digest,
-         "layout": item.layout_dir.relative_to(build_dir).as_posix(), "manifest_digest": item.manifest_digest}
-        for item in contexts
-    ]}
+def write_contexts(
+    build_dir: Path,
+    architecture: str,
+    contexts: tuple[ImageContext, ...],
+    *,
+    required: bool = False,
+) -> None:
+    data = {
+        "version": 1,
+        "architecture": architecture,
+        "required": required,
+        "images": [
+            {
+                "from_ref": item.from_ref,
+                "source_digest": item.source_digest,
+                "layout": item.layout_dir.relative_to(build_dir).as_posix(),
+                "manifest_digest": item.manifest_digest,
+            }
+            for item in contexts
+        ],
+    }
     (build_dir / METADATA_FILE).write_text(json.dumps(data, indent=2) + "\n")
     if contexts:
         ignore = build_dir / ".dockerignore"
@@ -199,20 +277,35 @@ def read_contexts(build_dir: Path) -> tuple[ImageContext, ...]:
     if not path.exists():
         return ()
     data = json.loads(path.read_text())
-    if data.get("version") != 1 or data.get("architecture") not in {"x86_64", "aarch64"}:
+    if data.get("version") != 1 or data.get("architecture") not in {
+        "x86_64",
+        "aarch64",
+    }:
         raise ValueError("unsupported staged image context metadata")
     if data.get("required") and not data["images"]:
-        raise ValueError("This base image requires OCI staging; run builder stage --download first")
+        raise ValueError(
+            "This base image requires OCI staging; run builder stage --download first"
+        )
     contexts = []
     for item in data["images"]:
         _validate_reference(item["from_ref"])
-        if not DIGEST.fullmatch(item["source_digest"]) or not DIGEST.fullmatch(item["manifest_digest"]):
+        if not DIGEST.fullmatch(item["source_digest"]) or not DIGEST.fullmatch(
+            item["manifest_digest"]
+        ):
             raise ValueError("invalid staged image digest")
         relative = Path(item["layout"])
         layout = (build_dir / relative).resolve()
-        if relative.is_absolute() or ".." in relative.parts or not layout.is_relative_to(build_dir.resolve()):
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or not layout.is_relative_to(build_dir.resolve())
+        ):
             raise ValueError("OCI layout must remain inside its build directory")
         if validate_layout(layout, data["architecture"]) != item["manifest_digest"]:
             raise ValueError("staged OCI manifest does not match its recorded digest")
-        contexts.append(ImageContext(item["from_ref"], item["source_digest"], layout, item["manifest_digest"]))
+        contexts.append(
+            ImageContext(
+                item["from_ref"], item["source_digest"], layout, item["manifest_digest"]
+            )
+        )
     return tuple(contexts)

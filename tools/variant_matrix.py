@@ -36,7 +36,9 @@ def build_matrix(
                     "application": application,
                     "variant": spec["variant"],
                     "architecture": architecture,
-                    "runner": arm64_runner if architecture == "aarch64" else default_runner,
+                    "runner": arm64_runner
+                    if architecture == "aarch64"
+                    else default_runner,
                 }
             )
     return matrix
@@ -44,14 +46,22 @@ def build_matrix(
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--applications", required=True, help="JSON array of recipe names")
-    parser.add_argument("--default-runner", required=True, help="JSON-encoded runner payload")
-    parser.add_argument("--arm64-runner", required=True, help="JSON-encoded ARM64 runner payload")
+    parser.add_argument(
+        "--applications", required=True, help="JSON array of recipe names"
+    )
+    parser.add_argument(
+        "--default-runner", required=True, help="JSON-encoded runner payload"
+    )
+    parser.add_argument(
+        "--arm64-runner", required=True, help="JSON-encoded ARM64 runner payload"
+    )
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     args = parser.parse_args()
 
     applications = json.loads(args.applications)
-    if not isinstance(applications, list) or not all(isinstance(item, str) for item in applications):
+    if not isinstance(applications, list) or not all(
+        isinstance(item, str) for item in applications
+    ):
         raise ValueError("--applications must be a JSON array of strings")
     print(
         json.dumps(

@@ -56,7 +56,9 @@ class TemplateMethod:
         if key == "env":
             env: dict[str, Any] = {}
             for directive in self.data.get("directives", []):
-                if isinstance(directive, dict) and isinstance(directive.get("environment"), dict):
+                if isinstance(directive, dict) and isinstance(
+                    directive.get("environment"), dict
+                ):
                     env.update(directive["environment"])
             return env
         raise AttributeError(key)
@@ -71,7 +73,9 @@ class TemplateMethod:
         return [_render_string(str(item), self) for item in values]
 
     def install(self, pkgs: list[str], opts: str | None = None) -> str:
-        return _install_command(self.pkg_manager, tuple(str(item) for item in pkgs), opts)
+        return _install_command(
+            self.pkg_manager, tuple(str(item) for item in pkgs), opts
+        )
 
     def install_dependencies(self, opts: str | None = None) -> str:
         command = ""
@@ -99,14 +103,18 @@ def _render_string(source: str, method: TemplateMethod) -> str:
 def _load_template(name: str) -> dict[str, Any]:
     path = _TEMPLATE_DIR / f"{name}.yaml"
     if not path.is_file():
-        raise NotImplementedError(f"local template backend does not yet implement template {name!r}")
+        raise NotImplementedError(
+            f"local template backend does not yet implement template {name!r}"
+        )
     data = yaml.safe_load(path.read_text())
     if not isinstance(data, dict):
         raise ValueError(f"template file must contain a mapping: {path}")
     return data
 
 
-def _method_values(method_data: dict[str, Any], params: dict[str, Any]) -> dict[str, str]:
+def _method_values(
+    method_data: dict[str, Any], params: dict[str, Any]
+) -> dict[str, str]:
     args = method_data.get("arguments", {})
     optional = args.get("optional", {}) if isinstance(args, dict) else {}
     values: dict[str, str] = {}
@@ -119,9 +127,13 @@ def _method_values(method_data: dict[str, Any], params: dict[str, Any]) -> dict[
     return values
 
 
-def apply_builtin_template(name: str, params: dict[str, Any], pkg_manager: str, add: Callable[[Any], None]) -> None:
+def apply_builtin_template(
+    name: str, params: dict[str, Any], pkg_manager: str, add: Callable[[Any], None]
+) -> None:
     template = _load_template(name)
-    method_name = str(params.get("method") or ("binaries" if "binaries" in template else "source"))
+    method_name = str(
+        params.get("method") or ("binaries" if "binaries" in template else "source")
+    )
     method_data = template.get(method_name)
     if not isinstance(method_data, dict):
         raise NotImplementedError(
@@ -129,9 +141,13 @@ def apply_builtin_template(name: str, params: dict[str, Any], pkg_manager: str, 
         )
     builder = method_data.get("builder", "neurodocker")
     if builder != "neurodocker":
-        raise ValueError(f"template {name!r} method {method_name!r} uses unsupported builder {builder!r}")
+        raise ValueError(
+            f"template {name!r} method {method_name!r} uses unsupported builder {builder!r}"
+        )
 
-    method = TemplateMethod(method_data, _method_values(method_data, params), pkg_manager)
+    method = TemplateMethod(
+        method_data, _method_values(method_data, params), pkg_manager
+    )
     method.pkg_manager = pkg_manager
 
     directives = method_data.get("directives")
@@ -144,7 +160,9 @@ def apply_builtin_template(name: str, params: dict[str, Any], pkg_manager: str, 
         if instructions:
             directives.append({"run": instructions})
     if not isinstance(directives, list):
-        raise ValueError(f"template {name!r} method {method_name!r} directives must be a list")
+        raise ValueError(
+            f"template {name!r} method {method_name!r} directives must be a list"
+        )
 
     for directive in directives:
         if not isinstance(directive, dict):
@@ -154,16 +172,33 @@ def apply_builtin_template(name: str, params: dict[str, Any], pkg_manager: str, 
             if not isinstance(env, dict):
                 raise ValueError("template environment directive must be a mapping")
             if env:
-                add(Env({str(_render_string(str(key), method)): _render_string(str(value), method) for key, value in env.items()}))
+                add(
+                    Env(
+                        {
+                            str(_render_string(str(key), method)): _render_string(
+                                str(value), method
+                            )
+                            for key, value in env.items()
+                        }
+                    )
+                )
         elif "install" in directive:
             packages = directive["install"]
             if not isinstance(packages, list):
                 raise ValueError("template install directive must be a list")
-            add(Install(tuple(_render_string(str(package), method) for package in packages)))
+            add(
+                Install(
+                    tuple(_render_string(str(package), method) for package in packages)
+                )
+            )
         elif "run" in directive:
             run = directive["run"]
             if isinstance(run, list):
-                command = " \\\n && ".join(_render_string(str(item), method) for item in run if item is not None)
+                command = " \\\n && ".join(
+                    _render_string(str(item), method)
+                    for item in run
+                    if item is not None
+                )
             else:
                 command = _render_string(str(run), method)
             if command.strip():

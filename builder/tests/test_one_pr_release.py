@@ -35,7 +35,8 @@ def write_recipe(root: Path, name: str = "demo", version: str = "1.2.3") -> Path
 
 
 def test_shared_fingerprint_preserves_overlapping_input_bytes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
     recipe_dir = write_recipe(tmp_path)
@@ -48,7 +49,9 @@ def test_shared_fingerprint_preserves_overlapping_input_bytes(
     (shared / "a.txt").write_bytes(b"first")
     (shared / "b.txt").write_bytes(b"second")
     expected = hashlib.sha256(
-        b"build.yaml\0" + recipe_file.read_bytes() + b"\0"
+        b"build.yaml\0"
+        + recipe_file.read_bytes()
+        + b"\0"
         + b"fulltest.yaml\0tests: []\n\0"
         + b"macros/shared/a.txt\0first\0"
         + b"macros/shared/b.txt\0second\0"
@@ -67,7 +70,8 @@ def test_shared_fingerprint_preserves_overlapping_input_bytes(
 
 
 def test_fingerprint_requires_declared_shared_files(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
     recipe_file = write_recipe(tmp_path) / "build.yaml"
@@ -81,6 +85,7 @@ def test_fingerprint_requires_declared_shared_files(
 
 def test_run_git_reports_command_and_stderr(monkeypatch) -> None:
     """Git failures include the attempted command and captured diagnostic."""
+
     def fail(*args, **kwargs) -> None:
         """Simulate Git returning a captured fatal diagnostic."""
         raise subprocess.CalledProcessError(
@@ -167,7 +172,9 @@ def test_detect_recipes_allows_pr_without_recipes(tmp_path: Path, monkeypatch) -
     assert one_pr_release.detect_recipes("base", "head") == []
 
 
-def test_detect_from_git_preserves_metadata_only_release(tmp_path: Path, monkeypatch) -> None:
+def test_detect_from_git_preserves_metadata_only_release(
+    tmp_path: Path, monkeypatch
+) -> None:
     """PR detection and post-merge promotion use the same non-image verdict."""
     monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
     git = one_pr_release.run_git
@@ -346,27 +353,19 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     assert verified["recipe"] == "demo"
 
     manifest["recipe_fingerprint"] = "0" * 64
-    (candidate_dir / "manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     monkeypatch.setattr(
         one_pr_release,
         "recipe_changes_since_merge_are_source_only",
         lambda recipe, merge_sha: recipe == "demo" and merge_sha == "merge123",
     )
-    verified = one_pr_release.verify_candidate(
-        candidate_dir, "abc123", 42, "merge123"
-    )
+    verified = one_pr_release.verify_candidate(candidate_dir, "abc123", 42, "merge123")
     assert verified["recipe"] == "demo"
     manifest["recipe_fingerprint"] = one_pr_release.recipe_fingerprint("demo")
-    (candidate_dir / "manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     manifest["image_name"] = "forged_image"
-    (candidate_dir / "manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     try:
         one_pr_release.verify_candidate(candidate_dir, "abc123", 42)
     except RuntimeError as error:
@@ -376,9 +375,7 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     manifest["image_name"] = "demo_1.2.3"
 
     manifest["candidate_tag"] = "attacker-controlled:latest"
-    (candidate_dir / "manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     try:
         one_pr_release.verify_candidate(candidate_dir, "abc123", 42)
     except RuntimeError as error:
@@ -388,9 +385,7 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     manifest["candidate_tag"] = "nd-candidate-demo:abc123"
 
     manifest["build_date"] = "2026-07-21"
-    (candidate_dir / "manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     try:
         one_pr_release.verify_candidate(candidate_dir, "abc123", 42)
     except RuntimeError as error:
@@ -400,9 +395,7 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     manifest["build_date"] = "20260721"
 
     manifest["docker_archive"] = "../outside.docker.tar"
-    (candidate_dir / "manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     try:
         one_pr_release.verify_candidate(candidate_dir, "abc123", 42)
     except RuntimeError as error:
@@ -412,9 +405,7 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     manifest["docker_archive"] = docker_archive.name
 
     manifest["recipe"] = "../demo"
-    (candidate_dir / "manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     try:
         one_pr_release.verify_candidate(candidate_dir, "abc123", 42)
     except RuntimeError as error:
@@ -422,9 +413,7 @@ def test_verify_candidate_binds_artifacts_to_pr_and_recipe(
     else:
         raise AssertionError("unsafe recipe identifier was accepted")
     manifest["recipe"] = "demo"
-    (candidate_dir / "manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     try:
         one_pr_release.verify_candidate(candidate_dir, "abc123", 41)
@@ -490,9 +479,7 @@ def test_verify_published_metadata_rechecks_identity_without_large_artifacts(
 
     recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text(encoding="utf-8"))
     release = release_data("demo", "1.2.3", recipe, "20260721", "x86_64")
-    (candidate_dir / "1.2.3.json").write_text(
-        json.dumps(release), encoding="utf-8"
-    )
+    (candidate_dir / "1.2.3.json").write_text(json.dumps(release), encoding="utf-8")
     manifest = {
         "recipe": "demo",
         "container": "demo",
@@ -524,9 +511,7 @@ def test_verify_published_metadata_rechecks_identity_without_large_artifacts(
     manifest["head_sha"] = "different"
     manifests_path.write_text(json.dumps([manifest]), encoding="utf-8")
     with pytest.raises(RuntimeError, match="Published head SHA mismatch"):
-        one_pr_release.verify_published_metadata(
-            bundle, manifests_path, "abc123", 42
-        )
+        one_pr_release.verify_published_metadata(bundle, manifests_path, "abc123", 42)
 
 
 def test_verify_published_metadata_allows_only_source_changes_since_merge(
@@ -586,7 +571,9 @@ def test_verify_published_metadata_allows_only_source_changes_since_merge(
         )
 
 
-def test_detect_targets_expands_declared_architectures(tmp_path: Path, monkeypatch) -> None:
+def test_detect_targets_expands_declared_architectures(
+    tmp_path: Path, monkeypatch
+) -> None:
     """Every architecture a recipe declares becomes its own build target."""
     recipe_dir = write_recipe(tmp_path)
     recipe = yaml.safe_load((recipe_dir / "build.yaml").read_text(encoding="utf-8"))
@@ -636,9 +623,7 @@ def test_candidate_report_compacts_identity_and_test_results(
         "head_sha": "a" * 40,
         "recipe_fingerprint": "1" * 64,
     }
-    (candidate_dir / "manifest.json").write_text(
-        json.dumps(manifest), encoding="utf-8"
-    )
+    (candidate_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (candidate_dir / "test-results.json").write_text(
         json.dumps(
             {
@@ -837,12 +822,12 @@ def test_candidate_manifest_requires_object_and_complete_schema(tmp_path: Path) 
 def test_one_pr_workflows_preserve_fork_reporting_contract() -> None:
     """Fork runs resolve PRs by SHA and reports render as Markdown."""
     repo_root = Path(__file__).resolve().parents[2]
-    promotion = (repo_root / ".github/workflows/promote-container-candidate.yml").read_text(
-        encoding="utf-8"
-    )
-    reporter = (repo_root / ".github/workflows/report-container-candidate.yml").read_text(
-        encoding="utf-8"
-    )
+    promotion = (
+        repo_root / ".github/workflows/promote-container-candidate.yml"
+    ).read_text(encoding="utf-8")
+    reporter = (
+        repo_root / ".github/workflows/report-container-candidate.yml"
+    ).read_text(encoding="utf-8")
 
     assert "item.head_sha === headSha" in promotion
     assert "item.pull_requests" not in promotion
@@ -861,7 +846,9 @@ def dive_report(tmp_path: Path, wasted_bytes: int, display: str, *failed: str) -
         "  userWastedPercent: 85.3592 %",
         "Results:",
     ]
-    lines += [f"  FAIL: {rule}: policy text (%-x=0.85 > threshold=0.3)" for rule in failed]
+    lines += [
+        f"  FAIL: {rule}: policy text (%-x=0.85 > threshold=0.3)" for rule in failed
+    ]
     (tmp_path / "dive-report.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return tmp_path / "dive-report.txt"
 
@@ -900,7 +887,9 @@ def test_a_second_failing_rule_is_never_waived(tmp_path: Path) -> None:
 def test_a_dive_run_that_never_completed_is_not_waived(tmp_path: Path) -> None:
     dive_report(tmp_path, 1024, "1 kB", "highestUserWastedPercent")
 
-    outcome, _ = one_pr_release.dive_gate_outcome(tmp_path / "dive-report.txt", "cancelled")
+    outcome, _ = one_pr_release.dive_gate_outcome(
+        tmp_path / "dive-report.txt", "cancelled"
+    )
 
     assert outcome == "failure"
 

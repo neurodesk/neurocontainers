@@ -21,9 +21,7 @@ def write_recipe(tmp_path: Path, recipe: dict, fulltest: dict) -> Path:
     root.mkdir()
     path = root / "build.yaml"
     path.write_text(yaml.safe_dump(recipe, sort_keys=False))
-    (root / "fulltest.yaml").write_text(
-        yaml.safe_dump(fulltest, sort_keys=False)
-    )
+    (root / "fulltest.yaml").write_text(yaml.safe_dump(fulltest, sort_keys=False))
     return path
 
 
@@ -40,9 +38,7 @@ def tagged_recipe() -> dict:
                     "id": "image",
                     "method": "dockerhub",
                     "repo": "example/demo",
-                    "version_regex": (
-                        r"release-v(?P<version>\d+\.\d+\.\d+)-r\d+"
-                    ),
+                    "version_regex": (r"release-v(?P<version>\d+\.\d+\.\d+)-r\d+"),
                     "target": {"variable": "image_tag", "value": "tag"},
                 }
             ],
@@ -234,23 +230,49 @@ def test_coupled_metadata_version_cannot_downgrade_a_source_plan(
 @pytest.mark.parametrize("release", ["1.9.0", "2.0.0", "2.1.0"])
 def test_release_tag_and_software_version_advance_together(tmp_path, release):
     recipe = {
-        "name": "demo", "version": "7.0.0",
+        "name": "demo",
+        "version": "7.0.0",
         "variables": {"source_tag": "v2.0.0", "software_version": "2.0.0"},
-        "auto_update": {"method": "sources", "container_version": False, "sources": [{
-            "id": "source", "method": "github_release", "repo": "example/demo",
-            "target": {"variable": "source_tag", "value": "tag",
-                       "variables": {"software_version": "version"}},
-        }]},
-        "build": {"directives": [{"run": [
-            "git clone --branch {{ context.source_tag }} https://github.com/example/demo"
-        ]}]},
+        "auto_update": {
+            "method": "sources",
+            "container_version": False,
+            "sources": [
+                {
+                    "id": "source",
+                    "method": "github_release",
+                    "repo": "example/demo",
+                    "target": {
+                        "variable": "source_tag",
+                        "value": "tag",
+                        "variables": {"software_version": "version"},
+                    },
+                }
+            ],
+        },
+        "build": {
+            "directives": [
+                {
+                    "run": [
+                        "git clone --branch {{ context.source_tag }} https://github.com/example/demo"
+                    ]
+                }
+            ]
+        },
     }
-    path = write_recipe(tmp_path, recipe, {
-        "name": "demo", "version": "7.0.0", "software_version": "2.0.0",
-        "tests": [],
-    })
+    path = write_recipe(
+        tmp_path,
+        recipe,
+        {
+            "name": "demo",
+            "version": "7.0.0",
+            "software_version": "2.0.0",
+            "tests": [],
+        },
+    )
     observation = SourceObservation(
-        release, "https://github.com/example/demo/releases", version=release,
+        release,
+        "https://github.com/example/demo/releases",
+        version=release,
         tag=f"v{release}",
     )
     plan = plan_sources(path, observations={"source": observation})
@@ -261,7 +283,8 @@ def test_release_tag_and_software_version_advance_together(tmp_path, release):
     changed = yaml.safe_load(path.read_text())
     suite = yaml.safe_load(path.with_name("fulltest.yaml").read_text())
     assert changed["variables"] == {
-        "source_tag": "v2.1.0", "software_version": "2.1.0",
+        "source_tag": "v2.1.0",
+        "software_version": "2.1.0",
     }
     assert suite["software_version"] == "2.1.0"
     assert suite["version"] == changed["version"] == "7.0.0"
@@ -291,12 +314,7 @@ def test_copy_destination_is_not_an_installed_source_binding() -> None:
     recipe = tagged_recipe()
     recipe["build"]["base-image"] = "ubuntu:24.04"
     recipe["build"]["directives"] = [
-        {
-            "run": [
-                "cp /opt/static/tool "
-                "/usr/local/lib/tool-{{ context.image_tag }}"
-            ]
-        }
+        {"run": ["cp /opt/static/tool /usr/local/lib/tool-{{ context.image_tag }}"]}
     ]
 
     with pytest.raises(ValueError, match="acquisition"):
@@ -354,9 +372,7 @@ def test_shared_macro_is_part_of_candidate_promotion_fingerprint(
                 },
                 "build": {
                     "base-image": "ubuntu:24.04",
-                    "directives": [
-                        {"include": "macros/shared/install.yaml"}
-                    ],
+                    "directives": [{"include": "macros/shared/install.yaml"}],
                 },
             },
             sort_keys=False,
@@ -435,9 +451,7 @@ def test_moving_source_head_reuses_existing_revision_pr_without_using_cap(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(check_version, "REPO", "owner/containers")
     monkeypatch.setattr(check_version, "plan_sources", fake_plan)
-    listed = Mock(
-        return_value={"auto-update/first-1.0.0.post1-older-head-fingerprint"}
-    )
+    listed = Mock(return_value={"auto-update/first-1.0.0.post1-older-head-fingerprint"})
     monkeypatch.setattr(check_version, "open_update_branches", listed)
     monkeypatch.setattr(
         check_version,
@@ -447,8 +461,7 @@ def test_moving_source_head_reuses_existing_revision_pr_without_using_cap(
     monkeypatch.setattr(
         check_version,
         "submit_bump",
-        lambda path, *args, **kwargs: opened.append(Path(path).parent.name)
-        or "opened",
+        lambda path, *args, **kwargs: opened.append(Path(path).parent.name) or "opened",
     )
     monkeypatch.setattr(
         check_version.sys,
@@ -468,6 +481,4 @@ def test_moving_source_head_reuses_existing_revision_pr_without_using_cap(
     listed.assert_called_once_with()
     rows = json.loads((tmp_path / "report.json").read_text())
     assert [row["status"] for row in rows] == ["pr-open", "would-open"]
-    assert rows[0]["detail"] == (
-        "auto-update/first-1.0.0.post1-older-head-fingerprint"
-    )
+    assert rows[0]["detail"] == ("auto-update/first-1.0.0.post1-older-head-fingerprint")

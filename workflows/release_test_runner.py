@@ -84,7 +84,9 @@ def _normalise_run_tests_output(
                     "status": "passed" if passed else "failed",
                     "stdout": stdout,
                     "stderr": stderr,
-                    "return_code": int(record.get("exit_code", 0 if passed else 1) or 0),
+                    "return_code": int(
+                        record.get("exit_code", 0 if passed else 1) or 0
+                    ),
                     "duration": test.get("duration", 0),
                     "message": message,
                 }
@@ -247,7 +249,9 @@ def run_fulltest_release(args: argparse.Namespace, *, run_dir: Path) -> RunOutco
             tester = images.enter_context(ContainerTester())
             runtime = tester.select_runtime(args.runtime)
             if runtime.name != "apptainer":
-                raise RuntimeError("fulltest.yaml release tests currently require Apptainer/Singularity")
+                raise RuntimeError(
+                    "fulltest.yaml release tests currently require Apptainer/Singularity"
+                )
 
             if getattr(args, "candidate_container", None):
                 source = Path(args.candidate_container)
@@ -265,8 +269,10 @@ def run_fulltest_release(args: argparse.Namespace, *, run_dir: Path) -> RunOutco
                 )
             else:
                 build_date = _release_build_date(release_file)
-                image_basename = tester.release_downloader.extract_image_basename_from_release(
-                    str(release_file)
+                image_basename = (
+                    tester.release_downloader.extract_image_basename_from_release(
+                        str(release_file)
+                    )
                 )
                 image = tester.release_downloader.download_from_release(
                     args.recipe,
@@ -306,7 +312,11 @@ def run_fulltest_release(args: argparse.Namespace, *, run_dir: Path) -> RunOutco
             declared = str(suite.pop("container", "") or "").strip()
             suite.pop("pin_container", None)
             resolved_name = source.name
-            if declared and not is_placeholder_reference(declared) and declared != resolved_name:
+            if (
+                declared
+                and not is_placeholder_reference(declared)
+                and declared != resolved_name
+            ):
                 raise RuntimeError(
                     f"{test_config} declares container '{declared}' but the release artifact "
                     f"under test is '{resolved_name}'. Remove the 'container:' key so the "
@@ -316,7 +326,14 @@ def run_fulltest_release(args: argparse.Namespace, *, run_dir: Path) -> RunOutco
 
             deploy_results = tester.run_test_suite(
                 container_ref,
-                {"tests": [{"name": "Simple Deploy Bins/Path Test", "builtin": "test_deploy.sh"}]},
+                {
+                    "tests": [
+                        {
+                            "name": "Simple Deploy Bins/Path Test",
+                            "builtin": "test_deploy.sh",
+                        }
+                    ]
+                },
                 verbose=args.verbose,
             )
 
@@ -339,7 +356,9 @@ def run_fulltest_release(args: argparse.Namespace, *, run_dir: Path) -> RunOutco
             proc = subprocess.run(command, cwd=args.repo_root, text=True, check=False)
             return_code = proc.returncode
             if not raw_results_path.is_file():
-                raise RuntimeError(f"run_tests.py failed before writing results: exit {proc.returncode}")
+                raise RuntimeError(
+                    f"run_tests.py failed before writing results: exit {proc.returncode}"
+                )
 
             raw = json.loads(raw_results_path.read_text(encoding="utf-8"))
             fulltest_results = _normalise_run_tests_output(
@@ -379,7 +398,8 @@ def run_fulltest_release(args: argparse.Namespace, *, run_dir: Path) -> RunOutco
     }
     results = (
         _combine_results(fulltest_results, deploy_results)
-        if deploy_results is not None else fulltest_results
+        if deploy_results is not None
+        else fulltest_results
     )
     return RunOutcome(results, reason)
 
@@ -403,7 +423,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Test this local SIF instead of downloading a published release",
     )
     parser.add_argument("--docker-registry", default="neurodesk")
-    parser.add_argument("--docker-save-to-simg", default="builder/docker-save-to-simg.go")
+    parser.add_argument(
+        "--docker-save-to-simg", default="builder/docker-save-to-simg.go"
+    )
     parser.add_argument("--verbose", action="store_true")
     return parser.parse_args(argv)
 
@@ -430,14 +452,19 @@ def main(argv: list[str] | None = None) -> int:
                         f"Unsupported test configuration {test_config}; only fulltest.yaml is supported"
                     )
                 else:
-                    run = runs.enter_context(managed_run(
-                        Path(args.output_dir), results_path=Path(args.results_path),
-                    ))
+                    run = runs.enter_context(
+                        managed_run(
+                            Path(args.output_dir),
+                            results_path=Path(args.results_path),
+                        )
+                    )
                     outcome = run_fulltest_release(args, run_dir=run.path)
             except Exception as exc:
                 outcome = RunOutcome(
                     _failure_results(
-                        recipe=args.recipe, version=args.version, message=str(exc),
+                        recipe=args.recipe,
+                        version=args.version,
+                        message=str(exc),
                     ),
                     str(exc),
                 )
@@ -458,7 +485,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
             status = published.status
     except Exception as exc:
-        operation = "finalize test run" if published is not None else "publish test results"
+        operation = (
+            "finalize test run" if published is not None else "publish test results"
+        )
         print(f"Unable to {operation}: {exc}", file=sys.stderr)
         status = "failed"
         if reason is None:

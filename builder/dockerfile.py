@@ -5,7 +5,20 @@ import shlex
 from pathlib import PurePosixPath
 from typing import Any
 
-from .ir import Copy, Definition, Directive, Entrypoint, Env, From, Install, LiteralFile, Run, RunWithMounts, User, Workdir
+from .ir import (
+    Copy,
+    Definition,
+    Directive,
+    Entrypoint,
+    Env,
+    From,
+    Install,
+    LiteralFile,
+    Run,
+    RunWithMounts,
+    User,
+    Workdir,
+)
 
 
 def _indent_run_instruction(string: str, indent: int = 4) -> str:
@@ -15,7 +28,9 @@ def _indent_run_instruction(string: str, indent: int = 4) -> str:
         is_last_line = index == len(lines) - 1
         already_cont = line.startswith(("&&", "&", "||", "|", "fi"))
         is_comment = line.startswith("#")
-        previous_cont = lines[index - 1].endswith("\\") or lines[index - 1].startswith("if")
+        previous_cont = lines[index - 1].endswith("\\") or lines[index - 1].startswith(
+            "if"
+        )
         if index:
             if not already_cont and not previous_cont and not is_comment:
                 line = "&& " + line
@@ -39,7 +54,9 @@ def _json_save_command(spec: dict[str, Any]) -> str:
     return f"printf '{text}' > /.reproenv.json"
 
 
-def _install_command(pkg_manager: str, packages: tuple[str, ...], opts: str | None = None) -> str:
+def _install_command(
+    pkg_manager: str, packages: tuple[str, ...], opts: str | None = None
+) -> str:
     if pkg_manager == "apt":
         sorted_packages = sorted(packages)
         opts = "-q --no-install-recommends" if opts is None else opts
@@ -100,7 +117,9 @@ def render_directive(directive: Directive, pkg_manager: str = "apt") -> list[str
     if isinstance(directive, Env):
         return _render_env(directive.values)
     if isinstance(directive, Install):
-        command = _indent_run_instruction(_install_command(pkg_manager, directive.packages, directive.opts))
+        command = _indent_run_instruction(
+            _install_command(pkg_manager, directive.packages, directive.opts)
+        )
         return [_indent_run_instruction(f"RUN {command}")]
     if isinstance(directive, Run):
         return [_indent_run_instruction(f"RUN {directive.command.strip()}")]
@@ -123,7 +142,9 @@ def render_directive(directive: Directive, pkg_manager: str = "apt") -> list[str
     raise TypeError(f"unsupported directive: {directive!r}")
 
 
-def _instruction_records(directive: Directive, pkg_manager: str = "apt") -> list[dict[str, Any]]:
+def _instruction_records(
+    directive: Directive, pkg_manager: str = "apt"
+) -> list[dict[str, Any]]:
     if isinstance(directive, From):
         return [{"name": "from_", "kwds": {"base_image": directive.image}}]
     if isinstance(directive, Env):
@@ -135,7 +156,11 @@ def _instruction_records(directive: Directive, pkg_manager: str = "apt") -> list
         }
         run = {
             "name": "run",
-            "kwds": {"command": _indent_run_instruction(_install_command(pkg_manager, directive.packages, directive.opts))},
+            "kwds": {
+                "command": _indent_run_instruction(
+                    _install_command(pkg_manager, directive.packages, directive.opts)
+                )
+            },
         }
         return [install, run]
     if isinstance(directive, Run):
@@ -145,7 +170,12 @@ def _instruction_records(directive: Directive, pkg_manager: str = "apt") -> list
         return [{"name": "run", "kwds": {"command": command}}]
     if isinstance(directive, Copy):
         source = [*directive.sources, directive.destination]
-        return [{"name": "copy", "kwds": {"source": source, "destination": directive.destination}}]
+        return [
+            {
+                "name": "copy",
+                "kwds": {"source": source, "destination": directive.destination},
+            }
+        ]
     if isinstance(directive, Workdir):
         return [{"name": "workdir", "kwds": {"path": directive.path}}]
     if isinstance(directive, User):

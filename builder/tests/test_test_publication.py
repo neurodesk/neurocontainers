@@ -148,9 +148,7 @@ def test_publication_reload_failure_obeys_caller_policy(
     results = _deploy_results()
     plan = PublicationPlan(
         tmp_path / "results.json",
-        (
-            CommentOutput(tmp_path / "comment.md", tmp_path / "status.txt"),
-        ),
+        (CommentOutput(tmp_path / "comment.md", tmp_path / "status.txt"),),
         reload_fallback=fallback,
     )
 
@@ -163,9 +161,7 @@ def test_publication_reload_failure_obeys_caller_policy(
         assert "deploy_bin:tool" in (tmp_path / "comment.md").read_text()
     else:
         with pytest.raises(json.JSONDecodeError):
-            publish_test_results(
-                results, recipe="sample", version="1.0", plan=plan
-            )
+            publish_test_results(results, recipe="sample", version="1.0", plan=plan)
         assert not (tmp_path / "comment.md").exists()
         assert not (tmp_path / "status.txt").exists()
 

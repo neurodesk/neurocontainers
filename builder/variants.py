@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 
@@ -75,7 +76,9 @@ def concrete_variant_specs(recipe: dict[str, Any]) -> list[dict[str, Any]]:
         for item in recipe.get("architectures", [])
     ]
     if not architectures:
-        raise ValueError(f"recipe {recipe.get('name', '<unknown>')} has no architectures")
+        raise ValueError(
+            f"recipe {recipe.get('name', '<unknown>')} has no architectures"
+        )
     default_architecture = "x86_64" if "x86_64" in architectures else architectures[0]
 
     specs: list[dict[str, Any]] = []
@@ -108,7 +111,9 @@ def concrete_variant_specs(recipe: dict[str, Any]) -> list[dict[str, Any]]:
         raise ValueError(f"recipe {recipe['name']} has no enabled builds")
     selectors = [str(spec["variant"]) for spec in specs]
     if len(selectors) != len(set(selectors)):
-        raise ValueError(f"recipe {recipe['name']} declares duplicate concrete variants")
+        raise ValueError(
+            f"recipe {recipe['name']} declares duplicate concrete variants"
+        )
     return specs
 
 
@@ -118,3 +123,95 @@ def variant_specs(recipe: dict[str, Any]) -> list[dict[str, str]]:
         {key: str(spec[key]) for key in ("variant", "name", "architecture")}
         for spec in concrete_variant_specs(recipe)
     ]
+
+
+def select_concrete_variant(
+    recipe: dict[str, Any],
+    *,
+    host_architecture: str,
+    host_platform: str,
+    architecture: str | None = None,
+    variant: str | None = None,
+    ignore_architecture: bool = False,
+) -> dict[str, Any]:
+    """Select a container using explicit selectors and host information."""
+    specs = concrete_variant_specs(recipe)
+    requested_arch = (
+        normalize_declared_architecture(architecture or host_architecture)
+        if architecture is not None
+        else None
+    )
+    requested_variant = variant or ""
+    selection_arch = requested_arch
+    if not requested_variant or requested_variant in (recipe.get("variants") or {}):
+        selection_arch = requested_arch or normalize_declared_architecture(
+            host_architecture
+        )
+    candidates = [spec for spec in specs if spec["variant"] == requested_variant]
+    if not requested_variant:
+        candidates = [
+            spec
+            for spec in specs
+            if not spec["recipe_variant"] and spec["architecture"] == selection_arch
+        ]
+    elif requested_variant in (recipe.get("variants") or {}):
+        candidates = [
+            spec
+            for spec in specs
+            if spec["recipe_variant"] == requested_variant
+            and spec["architecture"] == selection_arch
+        ]
+    if requested_arch is not None:
+        candidates = [
+            spec for spec in candidates if spec["architecture"] == requested_arch
+        ]
+    if (
+        not candidates
+        and requested_arch is None
+        and not ignore_architecture
+        and selection_arch == "aarch64"
+        and host_platform == "Darwin"
+    ):
+        variants = recipe.get("variants") or {}
+        candidates = [
+            spec
+            for spec in specs
+            if spec["architecture"] == "x86_64"
+            and (
+                (not requested_variant and not spec["recipe_variant"])
+                or (
+                    requested_variant in variants
+                    and spec["recipe_variant"] == requested_variant
+                )
+            )
+        ]
+        if candidates:
+            selection_arch = "x86_64"
+            warnings.warn(
+                f"{recipe['name']} does not support the host architecture aarch64 "
+                "on macOS; automatically selecting x86_64",
+                UserWarning,
+                stacklevel=2,
+            )
+    if not candidates and ignore_architecture:
+        forced_arch = requested_arch
+        if forced_arch is None:
+            forced_arch = (
+                "aarch64"
+                if requested_variant == "arm64" or requested_variant.endswith("_arm64")
+                else normalize_declared_architecture(host_architecture)
+            )
+        candidates = [forced_variant_spec(recipe, requested_variant, forced_arch)]
+    if not candidates:
+        available = ", ".join(str(spec["variant"]) or "default" for spec in specs)
+        raise ValueError(
+            f"unknown variant/architecture '{requested_variant or 'default'}'/{selection_arch or 'default'} "
+            f"for {recipe['name']}; available: {available}"
+        )
+    selected_variant = candidates[0]
+    arch = str(selected_variant["architecture"])
+    allowed = [str(item) for item in recipe.get("architectures", [])]
+    if arch not in allowed and not ignore_architecture:
+        raise ValueError(f"architecture {arch} not supported by {recipe['name']}")
+
+    return selected_variant

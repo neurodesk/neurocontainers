@@ -658,8 +658,6 @@ jobs:
           rm "${oras_archive}"
           manifest="$(jq -c '.[0]' verified-manifests.json)"
           container="$(echo "${manifest}" | jq -r '.container')"
-          version="$(echo "${manifest}" | jq -r '.version')"
-          build_date="$(echo "${manifest}" | jq -r '.build_date')"
           sif="$(echo "${manifest}" | jq -r '.sif')"
           staging_tag="candidate-${HEAD_SHA}"
           architecture="$(echo "${manifest}" | jq -r '.architecture')"

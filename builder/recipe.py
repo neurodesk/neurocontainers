@@ -7,7 +7,6 @@ import platform
 import shlex
 import urllib.error
 import urllib.request
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,14 +14,25 @@ from typing import Any
 
 import yaml
 
-from .ir import Copy, Definition, Entrypoint, Env, From, Install, Run, RunWithMounts, User, Workdir
+from .ir import (
+    Copy,
+    Definition,
+    Entrypoint,
+    Env,
+    From,
+    Install,
+    Run,
+    RunWithMounts,
+    User,
+    Workdir,
+)
 from .staging import CopySource, DeclaredFile, StagingPlan, declared_file_from_mapping
 from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
 from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT
-from .config import ARCHITECTURE_ALIASES, canonical_architecture
-from .variants import concrete_variant_specs, forced_variant_spec, variant_specs
+from .config import ARCHITECTURE_ALIASES as ARCHITECTURE_ALIASES, canonical_architecture
+from .variants import select_concrete_variant, variant_specs as variant_specs
 
 
 GLOBAL_MOUNT_POINTS = [
@@ -78,7 +88,13 @@ def _render_release_recipe(
     context: RenderContext,
 ) -> dict[str, Any]:
     rendered_recipe = dict(recipe)
-    for key in ("categories", "apptainer_args", "show_in_menu", "show_in_applist", "gui_apps"):
+    for key in (
+        "categories",
+        "apptainer_args",
+        "show_in_menu",
+        "show_in_applist",
+        "gui_apps",
+    ):
         if key in rendered_recipe:
             rendered_recipe[key] = renderer.render_value(rendered_recipe[key], context)
     return rendered_recipe
@@ -108,13 +124,13 @@ def _render_structured_readme(
     if fields["description"]:
         sections.append(fields["description"])
     if fields["example"]:
-        sections.append(f'Example:\n```\n{fields["example"]}\n```')
+        sections.append(f"Example:\n```\n{fields['example']}\n```")
     if fields["documentation"]:
         sections.append(
-            f'More documentation can be found here: {fields["documentation"]}'
+            f"More documentation can be found here: {fields['documentation']}"
         )
     if fields["citation"]:
-        sections.append(f'Citation:\n```\n{fields["citation"]}\n```')
+        sections.append(f"Citation:\n```\n{fields['citation']}\n```")
     sections.extend(
         [
             f"To run container outside of this environment: ml {context.name}/{context.version}",
@@ -221,7 +237,9 @@ def _copy_parts(value: Any) -> list[str]:
     raise ValueError("copy directive must be a string or list")
 
 
-def _default_directives(definition: Definition, build: dict[str, Any], pkg_manager: str) -> None:
+def _default_directives(
+    definition: Definition, build: dict[str, Any], pkg_manager: str
+) -> None:
     definition.add(From(str(build["base-image"])))
     definition.add(User("root"))
     add_default = bool(build.get("add-default-template", True))
@@ -235,9 +253,7 @@ def _default_directives(definition: Definition, build: dict[str, Any], pkg_manag
                 }
             )
         )
-        definition.add(
-            Run(_default_template_command(pkg_manager))
-        )
+        definition.add(Run(_default_template_command(pkg_manager)))
     definition.add(Run("printf '#!/bin/bash\\nls -la' > /usr/bin/ll"))
     definition.add(Run("chmod +x /usr/bin/ll"))
     definition.add(Run("mkdir -p " + " ".join(GLOBAL_MOUNT_POINTS)))
@@ -245,7 +261,11 @@ def _default_directives(definition: Definition, build: dict[str, Any], pkg_manag
         definition.add(Env({"DEBIAN_FRONTEND": "noninteractive"}))
         definition.add(Env({"TZ": "UTC"}))
         definition.add(Install(("tzdata",)))
-        definition.add(Run("ln -snf /usr/share/zoneinfo/UTC /etc/localtime && echo UTC > /etc/timezone"))
+        definition.add(
+            Run(
+                "ln -snf /usr/share/zoneinfo/UTC /etc/localtime && echo UTC > /etc/timezone"
+            )
+        )
 
 
 def _default_template_command(pkg_manager: str) -> str:
@@ -271,8 +291,8 @@ def _default_template_command(pkg_manager: str) -> str:
             'if [ ! -f "$ND_ENTRYPOINT" ]; then\n'
             "  echo '#!/usr/bin/env bash' >> \"$ND_ENTRYPOINT\"\n"
             "  echo 'set -e' >> \"$ND_ENTRYPOINT\"\n"
-            "  echo 'export USER=\"${USER:=`whoami`}\"' >> \"$ND_ENTRYPOINT\"\n"
-            "  echo 'if [ -n \"$1\" ]; then \"$@\"; else /usr/bin/env bash; fi' >> \"$ND_ENTRYPOINT\";\n"
+            '  echo \'export USER="${USER:=`whoami`}"\' >> "$ND_ENTRYPOINT"\n'
+            '  echo \'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
             "fi\n"
             "chmod -R 777 /neurodocker && chmod a+s /neurodocker"
         )
@@ -297,8 +317,8 @@ def _default_template_command(pkg_manager: str) -> str:
             'if [ ! -f "$ND_ENTRYPOINT" ]; then\n'
             "  echo '#!/usr/bin/env bash' >> \"$ND_ENTRYPOINT\"\n"
             "  echo 'set -e' >> \"$ND_ENTRYPOINT\"\n"
-            "  echo 'export USER=\"${USER:=`whoami`}\"' >> \"$ND_ENTRYPOINT\"\n"
-            "  echo 'if [ -n \"$1\" ]; then \"$@\"; else /usr/bin/env bash; fi' >> \"$ND_ENTRYPOINT\";\n"
+            '  echo \'export USER="${USER:=`whoami`}"\' >> "$ND_ENTRYPOINT"\n'
+            '  echo \'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
             "fi\n"
             "chmod -R 777 /neurodocker && chmod a+s /neurodocker"
         )
@@ -308,8 +328,8 @@ def _default_template_command(pkg_manager: str) -> str:
         'if [ ! -f "$ND_ENTRYPOINT" ]; then\n'
         "  echo '#!/usr/bin/env bash' >> \"$ND_ENTRYPOINT\"\n"
         "  echo 'set -e' >> \"$ND_ENTRYPOINT\"\n"
-        "  echo 'export USER=\"${USER:=`whoami`}\"' >> \"$ND_ENTRYPOINT\"\n"
-        "  echo 'if [ -n \"$1\" ]; then \"$@\"; else /usr/bin/env bash; fi' >> \"$ND_ENTRYPOINT\";\n"
+        '  echo \'export USER="${USER:=`whoami`}"\' >> "$ND_ENTRYPOINT"\n'
+        '  echo \'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi\' >> "$ND_ENTRYPOINT";\n'
         "fi\n"
         "chmod -R 777 /neurodocker && chmod a+s /neurodocker"
     )
@@ -325,79 +345,20 @@ def compile_recipe(
     include_dirs: tuple[Path, ...] = (),
     parallel_jobs: int | None = None,
     option_overrides: dict[str, bool] | None = None,
+    resolve_readme_url: bool = True,
 ) -> CompiledRecipe:
     recipe_file = load_recipe_file(recipe_dir)
     recipe = recipe_file.data
-    specs = concrete_variant_specs(recipe)
-    requested_arch = normalize_architecture(architecture) if architecture is not None else None
-    requested_variant = variant or ""
-    selection_arch = requested_arch
-    if not requested_variant or requested_variant in (recipe.get("variants") or {}):
-        selection_arch = requested_arch or normalize_architecture(None)
-    candidates = [spec for spec in specs if spec["variant"] == requested_variant]
-    if not requested_variant:
-        candidates = [
-            spec
-            for spec in specs
-            if not spec["recipe_variant"] and spec["architecture"] == selection_arch
-        ]
-    elif requested_variant in (recipe.get("variants") or {}):
-        candidates = [
-            spec
-            for spec in specs
-            if spec["recipe_variant"] == requested_variant and spec["architecture"] == selection_arch
-        ]
-    if requested_arch is not None:
-        candidates = [spec for spec in candidates if spec["architecture"] == requested_arch]
-    if (
-        not candidates
-        and requested_arch is None
-        and not ignore_architecture
-        and selection_arch == "aarch64"
-        and platform.system() == "Darwin"
-    ):
-        variants = recipe.get("variants") or {}
-        candidates = [
-            spec
-            for spec in specs
-            if spec["architecture"] == "x86_64"
-            and (
-                (not requested_variant and not spec["recipe_variant"])
-                or (
-                    requested_variant in variants
-                    and spec["recipe_variant"] == requested_variant
-                )
-            )
-        ]
-        if candidates:
-            selection_arch = "x86_64"
-            warnings.warn(
-                f"{recipe['name']} does not support the host architecture aarch64 "
-                "on macOS; automatically selecting x86_64",
-                UserWarning,
-                stacklevel=2,
-            )
-    if not candidates and ignore_architecture:
-        forced_arch = requested_arch
-        if forced_arch is None:
-            forced_arch = (
-                "aarch64"
-                if requested_variant == "arm64" or requested_variant.endswith("_arm64")
-                else normalize_architecture(None)
-            )
-        candidates = [forced_variant_spec(recipe, requested_variant, forced_arch)]
-    if not candidates:
-        available = ", ".join(str(spec["variant"]) or "default" for spec in specs)
-        raise ValueError(
-            f"unknown variant/architecture '{requested_variant or 'default'}'/{selection_arch or 'default'} "
-            f"for {recipe['name']}; available: {available}"
-        )
-    selected_variant = candidates[0]
+    selected_variant = select_concrete_variant(
+        recipe,
+        architecture=architecture,
+        variant=variant,
+        ignore_architecture=ignore_architecture,
+        host_architecture=platform.machine(),
+        host_platform=platform.system(),
+    )
     variant_name = str(selected_variant["variant"])
     arch = str(selected_variant["architecture"])
-    allowed = [str(item) for item in recipe.get("architectures", [])]
-    if arch not in allowed and not ignore_architecture:
-        raise ValueError(f"architecture {arch} not supported by {recipe['name']}")
 
     renderer = TemplateRenderer()
     option_values = {
@@ -432,7 +393,9 @@ def compile_recipe(
     file_dirs = [recipe_dir]
 
     def register_file(mapping: dict[str, Any]) -> None:
-        if "condition" in mapping and not renderer.render_condition(str(mapping["condition"]), context):
+        if "condition" in mapping and not renderer.render_condition(
+            str(mapping["condition"]), context
+        ):
             return
         name = renderer.render_string(str(mapping["name"]), context)
         rendered = dict(mapping)
@@ -459,7 +422,11 @@ def compile_recipe(
         readme = _render_structured_readme(recipe, renderer, context)
     if not readme.strip() and recipe.get("readme_url"):
         readme_url = renderer.render_string(str(recipe["readme_url"]), context)
-        readme = _read_readme_url(readme_url)
+        readme = (
+            _read_readme_url(readme_url)
+            if resolve_readme_url
+            else f"README source: {readme_url}"
+        )
     if not readme.strip():
         raise ValueError(
             f"{recipe['name']}: README content cannot be empty; set readme, "
@@ -467,15 +434,21 @@ def compile_recipe(
         )
 
     build = dict(recipe["build"])
-    build["base-image"] = _check_docker_image(str(renderer.render_value(build["base-image"], context)))
+    build["base-image"] = _check_docker_image(
+        str(renderer.render_value(build["base-image"], context))
+    )
     build["pkg-manager"] = renderer.render_value(build["pkg-manager"], context)
     pkg_manager = str(build["pkg-manager"])
     definition.pkg_manager = pkg_manager
     definition.fix_locale_def = bool(build.get("fix-locale-def", False))
     _default_directives(definition, build, pkg_manager)
 
-    def apply_directive(directive: dict[str, Any], local_values: dict[str, Any] | None = None) -> None:
-        if "condition" in directive and not renderer.render_condition(str(directive["condition"]), context):
+    def apply_directive(
+        directive: dict[str, Any], local_values: dict[str, Any] | None = None
+    ) -> None:
+        if "condition" in directive and not renderer.render_condition(
+            str(directive["condition"]), context
+        ):
             return
         if local_values:
             old_values = dict(context.values)
@@ -493,18 +466,30 @@ def compile_recipe(
                     rendered = [rendered]
                 elif not isinstance(rendered, list):
                     raise ValueError("run directive must render to a string or list")
-                commands = [str(item) for item in rendered if item is not None and str(item) != ""]
+                commands = [
+                    str(item)
+                    for item in rendered
+                    if item is not None and str(item) != ""
+                ]
                 command = " " + " \\\n && ".join(commands)
                 if scope.mounts:
                     definition.add(RunWithMounts(scope.mounts, command))
                 else:
                     definition.add(Run(command))
             elif "workdir" in directive:
-                definition.add(Workdir(str(renderer.render_value(directive["workdir"], context))))
+                definition.add(
+                    Workdir(str(renderer.render_value(directive["workdir"], context)))
+                )
             elif "user" in directive:
-                definition.add(User(str(renderer.render_value(directive["user"], context))))
+                definition.add(
+                    User(str(renderer.render_value(directive["user"], context)))
+                )
             elif "entrypoint" in directive:
-                definition.add(Entrypoint(str(renderer.render_value(directive["entrypoint"], context))))
+                definition.add(
+                    Entrypoint(
+                        str(renderer.render_value(directive["entrypoint"], context))
+                    )
+                )
             elif "environment" in directive:
                 env = renderer.render_value(directive["environment"], context)
                 if not isinstance(env, dict):
@@ -515,7 +500,9 @@ def compile_recipe(
                 parts = _copy_parts(renderer.render_value(directive["copy"], context))
                 if len(parts) < 2:
                     raise ValueError("copy directive requires source and destination")
-                resolved_sources = [plan.add_copy_source(source) for source in parts[:-1]]
+                resolved_sources = [
+                    plan.add_copy_source(source) for source in parts[:-1]
+                ]
                 definition.add(Copy(tuple(resolved_sources), parts[-1]))
             elif "variables" in directive:
                 values = directive["variables"]
@@ -575,9 +562,13 @@ def compile_recipe(
                         for key, value in template.items()
                         if key != "name"
                     }
-                params.setdefault("arch", "x86_64" if context.arch == "x86_64" else "aarch64")
+                params.setdefault(
+                    "arch", "x86_64" if context.arch == "x86_64" else "aarch64"
+                )
                 template_directives = []
-                apply_builtin_template(name, params, pkg_manager, template_directives.append)
+                apply_builtin_template(
+                    name, params, pkg_manager, template_directives.append
+                )
                 for item in template_directives:
                     if scope.mounts and isinstance(item, Run):
                         item = RunWithMounts(scope.mounts, item.command)
@@ -638,8 +629,18 @@ def compile_recipe(
         readme=readme,
         definition=definition,
         staging_plan=plan,
-        metadata=renderer.render_value({
-            "copyright": [{"license": item.get("license")} for item in recipe.get("copyright") or []],
-            "structured_readme": {"description": (recipe.get("structured_readme") or {}).get("description", "")},
-        }, context),
+        metadata=renderer.render_value(
+            {
+                "copyright": [
+                    {"license": item.get("license")}
+                    for item in recipe.get("copyright") or []
+                ],
+                "structured_readme": {
+                    "description": (recipe.get("structured_readme") or {}).get(
+                        "description", ""
+                    )
+                },
+            },
+            context,
+        ),
     )

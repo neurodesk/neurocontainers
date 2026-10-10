@@ -7,13 +7,14 @@ on:
       - 'recipes/**/*.yml'
       - 'recipes/**/OpenReconLabel.json'
       - 'recipes/OpenReconSchema_1.1.0.json'
-      - 'builder/validation.py'
-      - 'builder/update_sources.py'
-      - 'builder/update_assets.py'
-      - 'builder/audit_updates.py'
-      - '.github/workflows/validate-recipes.yml'
-      - 'workflows/validate_openrecon_labels.py'
-      - 'workflows/validate_all.sh'
+      - 'builder/**'
+      - 'workflows/**'
+      - 'tools/**'
+      - 'macros/**'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/**'
 
 permissions:
   contents: read
@@ -28,6 +29,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -36,8 +40,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install 'attrs>=23.0.0' 'pyyaml>=6.0.2' jinja2 jsonschema==4.23.0 packaging requests
+          python -m pip install -r requirements.txt -e '.[dev,boutiques]'
 
       - name: Require an update policy for every recipe
         run: python -m builder.audit_updates
@@ -45,22 +48,20 @@ jobs:
       - name: Validate OpenRecon labels
         run: python workflows/validate_openrecon_labels.py --experimental-raw-return
 
-      - name: Get changed files
-        id: changed-files
-        uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62  # v47.0.0
-        with:
-          files: |
-            recipes/**/*.yaml
-            recipes/**/*.yml
-
       - name: Validate changed recipes
-        if: steps.changed-files.outputs.any_changed == 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           echo "Validating changed recipe files..."
           
           validation_failed=false
           
-          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+          # NUL delimiters keep spaces, newlines and shell metacharacters in
+          # filenames as data. Git errors fail this step before validation starts.
+          git diff --name-only -z "$BASE_SHA...$HEAD_SHA" -- recipes/ > "$RUNNER_TEMP/changed-recipes"
+          mapfile -d '' -t changed_files < "$RUNNER_TEMP/changed-recipes"
+          for file in "${changed_files[@]}"; do
             recipe_file=""
             if [[ "$file" == *"/build.yaml" ]] || [[ "$file" == *"/build.yml" ]]; then
               recipe_file="$file"

@@ -111,9 +111,7 @@ def validate_recipe_name(instance, attribute, value):
     """Validate the published recipe name."""
     validate_non_empty_string(instance, attribute, value)
     if "_" in value:
-        raise ValueError(
-            f"{attribute.name} cannot contain underscores (got '{value}')"
-        )
+        raise ValueError(f"{attribute.name} cannot contain underscores (got '{value}')")
 
 
 def validate_url(instance, attribute, value):
@@ -145,8 +143,7 @@ def validate_container_icon(instance, attribute, value):
     match = _ICON_DATA_URI_RE.match(value.strip())
     if not match:
         raise ValueError(
-            "icon must be a base64 image data URI such as "
-            "'data:image/png;base64,...'"
+            "icon must be a base64 image data URI such as 'data:image/png;base64,...'"
         )
 
     payload = "".join(match.group("data").split())
@@ -233,7 +230,8 @@ def validate_fulltest_contract(
     for index, test in enumerate(tests, start=1):
         command = (
             test.get("command") or test.get("script")
-            if isinstance(test, dict) else None
+            if isinstance(test, dict)
+            else None
         )
         if not isinstance(command, str) or not command.strip():
             raise ValueError(
@@ -369,9 +367,13 @@ def validate_directive_template_syntax(directive_dict: Dict[str, Any], path: str
         validate_executable_template(directive_dict["variables"], f"{path}.variables")
     elif "deploy" in directive_dict and directive_dict["deploy"] is not None:
         if "bins" in directive_dict["deploy"]:
-            validate_executable_template(directive_dict["deploy"]["bins"], f"{path}.deploy.bins")
+            validate_executable_template(
+                directive_dict["deploy"]["bins"], f"{path}.deploy.bins"
+            )
         if "path" in directive_dict["deploy"]:
-            validate_executable_template(directive_dict["deploy"]["path"], f"{path}.deploy.path")
+            validate_executable_template(
+                directive_dict["deploy"]["path"], f"{path}.deploy.path"
+            )
 
 
 def validate_recipe_template_syntax(recipe_dict: Dict[str, Any]):
@@ -473,7 +475,9 @@ class WebappInfo:
     title: str = attrs.field(validator=validate_non_empty_string)
     startup_command: str = attrs.field(validator=validate_non_empty_string)
     port: int = attrs.field()
-    start_page: Optional[str] = attrs.field(default=None)  # Defaults to "/" if not specified
+    start_page: Optional[str] = attrs.field(
+        default=None
+    )  # Defaults to "/" if not specified
     module: Optional[str] = attrs.field(default=None)
     description: Optional[str] = attrs.field(default=None)
     startup_timeout: Optional[int] = attrs.field(default=None)
@@ -516,7 +520,9 @@ class FileInfo:
         if value is None:
             return
         if self.url is None or self.filename is not None or self.contents is not None:
-            raise ValueError(f"declared file {self.name!r}: sha256 requires a URL source")
+            raise ValueError(
+                f"declared file {self.name!r}: sha256 requires a URL source"
+            )
         if not isinstance(value, str):
             raise ValueError("sha256 must be a string")
         if any(marker in value for marker in ("{{", "{%", "{#")):
@@ -573,7 +579,9 @@ class Template:
 class AutoUpdate:
     method: str = attrs.field()
     sources: Optional[List[Dict[str, Any]]] = attrs.field(default=None)
-    container_version: Union[str, Dict[str, str], bool, None] = attrs.field(default=None)
+    container_version: Union[str, Dict[str, str], bool, None] = attrs.field(
+        default=None
+    )
     version_variable: Optional[str] = attrs.field(default=None)
     local: Optional[List[str]] = attrs.field(default=None)
     repo: Optional[str] = attrs.field(default=None)
@@ -590,7 +598,11 @@ class AutoUpdate:
 
     def __attrs_post_init__(self):
         validate_update_config(
-            {key: value for key, value in attrs.asdict(self).items() if value is not None}
+            {
+                key: value
+                for key, value in attrs.asdict(self).items()
+                if value is not None
+            }
         )
 
 
@@ -724,8 +736,12 @@ class NeuroDockerBuildRecipe:
     add_default_template: Optional[bool] = attrs.field(default=None)
     add_tzdata: Optional[bool] = attrs.field(default=None)
     fix_locale_def: Optional[bool] = attrs.field(default=None)
-    convert_base_image: bool = attrs.field(default=False, validator=attrs.validators.instance_of(bool))
-    flatten_base_image: bool = attrs.field(default=False, validator=attrs.validators.instance_of(bool))
+    convert_base_image: bool = attrs.field(
+        default=False, validator=attrs.validators.instance_of(bool)
+    )
+    flatten_base_image: bool = attrs.field(
+        default=False, validator=attrs.validators.instance_of(bool)
+    )
 
 
 @attrs.define
@@ -763,7 +779,9 @@ class ContainerRecipe:
     architectures: List[str] = attrs.field(validator=attrs.validators.min_len(1))
     build: NeuroDockerBuildRecipe = attrs.field()
     variants: Optional[Dict[str, VariantConfig]] = attrs.field(default=None)
-    build_default: bool = attrs.field(default=True, validator=attrs.validators.instance_of(bool))
+    build_default: bool = attrs.field(
+        default=True, validator=attrs.validators.instance_of(bool)
+    )
     auto_update: Optional[AutoUpdate] = attrs.field(default=None)
     icon: Optional[str] = attrs.field(default=None)
     copyright: Optional[List[Union[CustomCopyrightInfo, SPDXCopyrightInfo]]] = (
@@ -875,8 +893,13 @@ def parse_directive_from_dict(directive_dict: Dict[str, Any]) -> Any:
         if "webapp" in deploy_dict and deploy_dict["webapp"]:
             webapp_dict = deploy_dict["webapp"].copy()
             # Parse nested additional_proxies
-            if "additional_proxies" in webapp_dict and webapp_dict["additional_proxies"]:
-                proxies = [AdditionalProxy(**p) for p in webapp_dict["additional_proxies"]]
+            if (
+                "additional_proxies" in webapp_dict
+                and webapp_dict["additional_proxies"]
+            ):
+                proxies = [
+                    AdditionalProxy(**p) for p in webapp_dict["additional_proxies"]
+                ]
                 webapp_dict["additional_proxies"] = proxies
             deploy_dict["webapp"] = WebappInfo(**webapp_dict)
         deploy_info = DeployInfo(**deploy_dict)
@@ -1002,7 +1025,9 @@ def validate_recipe_dict(
             structured_readme_dict = recipe_copy["structured_readme"].copy()
             structured_readme_dict.setdefault("documentation", "")
             structured_readme_dict.setdefault("citation", "")
-            recipe_copy["structured_readme"] = StructuredReadme(**structured_readme_dict)
+            recipe_copy["structured_readme"] = StructuredReadme(
+                **structured_readme_dict
+            )
 
         # parse auto_update if present
         if "auto_update" in recipe_copy and recipe_copy["auto_update"]:
@@ -1060,8 +1085,13 @@ def validate_recipe_dict(
             if "webapp" in deploy_dict and deploy_dict["webapp"]:
                 webapp_dict = deploy_dict["webapp"].copy()
                 # Parse nested additional_proxies
-                if "additional_proxies" in webapp_dict and webapp_dict["additional_proxies"]:
-                    proxies = [AdditionalProxy(**p) for p in webapp_dict["additional_proxies"]]
+                if (
+                    "additional_proxies" in webapp_dict
+                    and webapp_dict["additional_proxies"]
+                ):
+                    proxies = [
+                        AdditionalProxy(**p) for p in webapp_dict["additional_proxies"]
+                    ]
                     webapp_dict["additional_proxies"] = proxies
                 deploy_dict["webapp"] = WebappInfo(**webapp_dict)
             recipe_copy["deploy"] = DeployInfo(**deploy_dict)

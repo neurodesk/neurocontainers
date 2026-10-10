@@ -48,7 +48,9 @@ NEW_METHOD_FIELDS = {
     "github_commit": frozenset({"repo", "ref", "version_file", "version_regex"}),
     "git_commit": frozenset({"url", "ref"}),
     "oci_digest": frozenset({"image", "tag"}),
-    "http_digest": frozenset({"url", "matlab_readme", "version_member", "version_regex"}),
+    "http_digest": frozenset(
+        {"url", "matlab_readme", "version_member", "version_regex"}
+    ),
     "artifact_listing": frozenset(
         {
             "url",
@@ -143,7 +145,9 @@ def validate_source(config: dict) -> None:
             raise ValueError("github_commit.repo must be an owner/repository name")
         _safe_ref(config.get("ref"), default="HEAD")
         if "version_file" in config and (
-            not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_./-]*", str(config["version_file"]))
+            not re.fullmatch(
+                r"[A-Za-z0-9_][A-Za-z0-9_./-]*", str(config["version_file"])
+            )
             or ".." in config["version_file"].split("/")
         ):
             raise ValueError("version_file must be a repository-relative version file")
@@ -153,9 +157,13 @@ def validate_source(config: dict) -> None:
             try:
                 pattern = re.compile(config["version_regex"])
             except (TypeError, re.error) as exc:
-                raise ValueError("github_commit.version_regex must be a valid regular expression") from exc
+                raise ValueError(
+                    "github_commit.version_regex must be a valid regular expression"
+                ) from exc
             if "version" not in pattern.groupindex:
-                raise ValueError("github_commit.version_regex requires a named version group")
+                raise ValueError(
+                    "github_commit.version_regex requires a named version group"
+                )
     elif method == "git_commit":
         url = _https_url(config.get("url"), "git_commit.url")
         if (urlsplit(url).hostname or "").lower() in {"github.com", "www.github.com"}:
@@ -186,7 +194,9 @@ def validate_source(config: dict) -> None:
         if not base.endswith("/"):
             raise ValueError("artifact_listing.download_base must end with /")
         if not isinstance(config.get("rebase_root_relative_links", False), bool):
-            raise ValueError("artifact_listing.rebase_root_relative_links must be boolean")
+            raise ValueError(
+                "artifact_listing.rebase_root_relative_links must be boolean"
+            )
         regex = config.get("version_regex")
         if not isinstance(regex, str) or not regex or PLACEHOLDER.search(regex):
             raise ValueError(
@@ -205,9 +215,7 @@ def validate_source(config: dict) -> None:
                 "artifact_listing.version_scheme must be numeric or year_letter"
             )
         if config.get("listing_format", "auto") not in {"auto", "girder"}:
-            raise ValueError(
-                "artifact_listing.listing_format must be auto or girder"
-            )
+            raise ValueError("artifact_listing.listing_format must be auto or girder")
     elif method == "apt":
         package = config.get("package")
         urls = config.get("urls")
@@ -229,13 +237,19 @@ def validate_source(config: dict) -> None:
             raise ValueError(f"{field_name} must be one exact relative ZIP member")
     if "matlab_readme" in config and "version_member" in config:
         raise ValueError("matlab_readme and version_member cannot be combined")
-    if method == "http_digest" and ("version_member" in config) != ("version_regex" in config):
-        raise ValueError("http_digest.version_member and version_regex must be set together")
+    if method == "http_digest" and ("version_member" in config) != (
+        "version_regex" in config
+    ):
+        raise ValueError(
+            "http_digest.version_member and version_regex must be set together"
+        )
     if method == "http_digest" and "version_regex" in config:
         try:
             pattern = re.compile(str(config["version_regex"]))
         except re.error as exc:
-            raise ValueError("http_digest.version_regex is not a valid regular expression") from exc
+            raise ValueError(
+                "http_digest.version_regex is not a valid regular expression"
+            ) from exc
         if "version" not in pattern.groupindex:
             raise ValueError("http_digest.version_regex requires a named version group")
 
@@ -281,15 +295,21 @@ def _github_commit(
             decoded = base64.b64decode(compact, validate=True)
             value = decoded.decode("utf-8").strip()
         except (binascii.Error, UnicodeDecodeError) as exc:
-            raise ValueError("GitHub version file is not valid UTF-8 base64 text") from exc
+            raise ValueError(
+                "GitHub version file is not valid UTF-8 base64 text"
+            ) from exc
         if len(decoded) > max_size:
             raise ValueError("GitHub version file is too large")
         if regex := config.get("version_regex"):
             matches = list(re.finditer(regex, value))
             if len(matches) != 1:
-                raise ValueError("GitHub version file must match version_regex exactly once")
+                raise ValueError(
+                    "GitHub version file must match version_regex exactly once"
+                )
             value = matches[0].group("version")
-        if not isinstance(value, str) or not re.fullmatch(r"[0-9][A-Za-z0-9._+-]*", value):
+        if not isinstance(value, str) or not re.fullmatch(
+            r"[0-9][A-Za-z0-9._+-]*", value
+        ):
             raise ValueError("GitHub version file must contain one plain version")
         metadata["version"] = value
     if current is not None:
@@ -378,15 +398,12 @@ def _oci_digest(config: dict, session: requests.Session) -> SourceObservation:
         DOCKER_HUB_API if parsed.registry == DEFAULT_REGISTRY else parsed.registry
     )
     manifest_url = (
-        f"https://{api_host}/v2/{parsed.repository}/manifests/"
-        f"{quote(tag, safe='')}"
+        f"https://{api_host}/v2/{parsed.repository}/manifests/{quote(tag, safe='')}"
     )
     headers = {"Accept": MANIFEST_ACCEPT}
     response = session.get(manifest_url, headers=headers, timeout=30)
     if response.status_code == 401:
-        challenge = _bearer_challenge(
-            _header(response.headers, "WWW-Authenticate")
-        )
+        challenge = _bearer_challenge(_header(response.headers, "WWW-Authenticate"))
         realm = _https_url(challenge.get("realm"), "OCI token realm")
         token_response = session.get(
             realm,
@@ -422,9 +439,7 @@ def _oci_digest(config: dict, session: requests.Session) -> SourceObservation:
     )
 
 
-def _stream_sha256(
-    session: requests.Session, url: str
-) -> tuple[str, int, str]:
+def _stream_sha256(session: requests.Session, url: str) -> tuple[str, int, str]:
     from .update_http_cache import stream_sha256
 
     return stream_sha256(session, url)
@@ -511,7 +526,9 @@ def _version_key(value: str, scheme: str) -> object:
     return parsed
 
 
-def _artifact_url(base: str, href: str, *, rebase_root_relative_links: bool = False) -> str:
+def _artifact_url(
+    base: str, href: str, *, rebase_root_relative_links: bool = False
+) -> str:
     decoded = unquote(href)
     base_parts = urlsplit(base)
     if (
@@ -533,9 +550,7 @@ def _artifact_url(base: str, href: str, *, rebase_root_relative_links: bool = Fa
     return candidate
 
 
-def _artifact_listing(
-    config: dict, session: requests.Session
-) -> SourceObservation:
+def _artifact_listing(config: dict, session: requests.Session) -> SourceObservation:
     listing_response = session.get(config["url"], timeout=30)
     listing_response.raise_for_status()
     _https_url(
@@ -559,9 +574,7 @@ def _artifact_listing(
         if match is None:
             continue
         groups = {
-            key: value
-            for key, value in match.groupdict().items()
-            if value is not None
+            key: value for key, value in match.groupdict().items() if value is not None
         }
         version = groups.get("version", "")
         try:
@@ -575,8 +588,11 @@ def _artifact_listing(
                 matched_text,
                 groups,
                 _artifact_url(
-                    config["download_base"], href,
-                    rebase_root_relative_links=config.get("rebase_root_relative_links", False),
+                    config["download_base"],
+                    href,
+                    rebase_root_relative_links=config.get(
+                        "rebase_root_relative_links", False
+                    ),
                 ),
             )
         )
@@ -593,9 +609,7 @@ def _artifact_listing(
     if member := config.get("matlab_readme"):
         from .update_bundles import read_matlab_artifact
 
-        digest, size, _, runtime = read_matlab_artifact(
-            session, artifact_url, member
-        )
+        digest, size, _, runtime = read_matlab_artifact(session, artifact_url, member)
         final_url = artifact_url
     else:
         digest, size, final_url = _stream_sha256(session, artifact_url)
@@ -738,9 +752,7 @@ def observe_source(
                 )
                 final_url = config["url"]
             else:
-                digest, size, final_url = _stream_sha256(
-                    public_session, config["url"]
-                )
+                digest, size, final_url = _stream_sha256(public_session, config["url"])
             metadata: dict[str, object] = {
                 "sha256": digest,
                 "size": size,

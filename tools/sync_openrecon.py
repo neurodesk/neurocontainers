@@ -390,7 +390,9 @@ def sync_recipe(
         return None
 
     if is_raw_return_label(openrecon_target.label):
-        print(f"Experimental raw-return label for {container}; skipping stock OpenRecon PR.")
+        print(
+            f"Experimental raw-return label for {container}; skipping stock OpenRecon PR."
+        )
         return None
 
     title = f"Update {container} OpenRecon metadata to {version}"
@@ -402,7 +404,9 @@ def sync_recipe(
     with tempfile.TemporaryDirectory(prefix="openrecon-sync-") as temp_dir:
         openrecon_root = Path(temp_dir) / "openrecon"
         run_command(["gh", "repo", "clone", repository, str(openrecon_root)])
-        run_command(["git", "config", "user.name", "neurocontainers-bot"], cwd=openrecon_root)
+        run_command(
+            ["git", "config", "user.name", "neurocontainers-bot"], cwd=openrecon_root
+        )
         run_command(
             [
                 "git",

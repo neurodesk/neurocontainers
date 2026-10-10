@@ -358,12 +358,14 @@ def test_macro_declared_file_resolves_next_to_the_macro(tmp_path) -> None:
     macro_dir.mkdir(parents=True)
     (macro_dir / "helper.py").write_text("HELPER = 1\n")
     (macro_dir / "helpers.yaml").write_text(
-        yaml.safe_dump({
-            "directives": [
-                {"file": {"name": "helper.py", "filename": "helper.py"}},
-                {"run": ['cp {{ get_file("helper.py") }} /opt/helper.py']},
-            ]
-        })
+        yaml.safe_dump(
+            {
+                "directives": [
+                    {"file": {"name": "helper.py", "filename": "helper.py"}},
+                    {"run": ['cp {{ get_file("helper.py") }} /opt/helper.py']},
+                ]
+            }
+        )
     )
     recipe_dir = tmp_path / "readme-test"
     write_minimal_recipe(
@@ -376,7 +378,9 @@ def test_macro_declared_file_resolves_next_to_the_macro(tmp_path) -> None:
     recipe["build"]["directives"] = [{"include": "macros/openrecon_i2i/helpers.yaml"}]
     (recipe_dir / "build.yaml").write_text(yaml.safe_dump(recipe, sort_keys=False))
 
-    compiled = compile_recipe(recipe_dir, architecture="x86_64", include_dirs=(tmp_path,))
+    compiled = compile_recipe(
+        recipe_dir, architecture="x86_64", include_dirs=(tmp_path,)
+    )
 
     files = compiled.staging_plan.files
     assert Path(files["helper.py"].filename) == (macro_dir / "helper.py").resolve()

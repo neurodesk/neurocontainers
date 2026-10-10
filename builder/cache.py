@@ -12,7 +12,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-DEFAULT_USER_AGENT = "NeuroContainers-builder (+https://github.com/neurodesk/neurocontainers)"
+DEFAULT_USER_AGENT = (
+    "NeuroContainers-builder (+https://github.com/neurodesk/neurocontainers)"
+)
 DEFAULT_RETRIES = 2
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_BACKOFF_SECONDS = 1.0
@@ -79,7 +81,9 @@ def _verify_checksum(path: Path, expected: str, label: str) -> None:
 def _is_retryable_download_error(exc: BaseException) -> bool:
     if isinstance(exc, urllib.error.HTTPError):
         return exc.code in RETRYABLE_HTTP_CODES
-    if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError, http.client.IncompleteRead)):
+    if isinstance(
+        exc, (urllib.error.URLError, TimeoutError, OSError, http.client.IncompleteRead)
+    ):
         return True
     return False
 
@@ -139,15 +143,22 @@ class HttpCache:
             )
             try:
                 with (
-                    urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as response,
+                    urllib.request.urlopen(
+                        request, timeout=DEFAULT_TIMEOUT_SECONDS
+                    ) as response,
                     tempfile.NamedTemporaryFile(
-                        dir=self.root, prefix=f".{path.name}.", suffix=".tmp", delete=False
+                        dir=self.root,
+                        prefix=f".{path.name}.",
+                        suffix=".tmp",
+                        delete=False,
                     ) as handle,
                 ):
                     tmp = Path(handle.name)
                     shutil.copyfileobj(response, handle)
                     content_length = response.headers.get("Content-Length")
-                    if content_length is not None and handle.tell() != int(content_length):
+                    if content_length is not None and handle.tell() != int(
+                        content_length
+                    ):
                         raise OSError(
                             f"Content-Length mismatch: expected {content_length} bytes, "
                             f"received {handle.tell()}"

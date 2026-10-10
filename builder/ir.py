@@ -59,7 +59,9 @@ class LiteralFile:
     executable: bool = False
 
 
-Directive = Union[From, Env, Install, Run, RunWithMounts, Copy, Workdir, User, Entrypoint, LiteralFile]
+Directive = Union[
+    From, Env, Install, Run, RunWithMounts, Copy, Workdir, User, Entrypoint, LiteralFile
+]
 
 
 @dataclass

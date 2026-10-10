@@ -16,8 +16,12 @@ def test_dcm2niix_release_contract_matches_existing_metadata_keys() -> None:
         include_dirs=config.include_dirs,
     )
     build_date = "20990102"
-    generated = release_data(compiled.name, compiled.version, compiled.recipe, build_date)
-    existing = json.loads((config.repo_root / "releases/dcm2niix/v1.0.20240202.json").read_text())
+    generated = release_data(
+        compiled.name, compiled.version, compiled.recipe, build_date
+    )
+    existing = json.loads(
+        (config.repo_root / "releases/dcm2niix/v1.0.20240202.json").read_text()
+    )
     app_name = f"dcm2niix {compiled.version}"
     existing_app = existing["apps"]["dcm2niix v1.0.20240202"]
     assert generated["categories"] == existing["categories"]

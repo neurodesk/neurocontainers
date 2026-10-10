@@ -138,7 +138,9 @@ def read_release_metadata(release_file: Path) -> Tuple[str, Optional[str]]:
         raw_build_date = int(raw_build_date)
     build_date = str(raw_build_date).strip()
     if not build_date:
-        raise ReleaseArtifactError(f"Build date missing in release metadata: {release_file}")
+        raise ReleaseArtifactError(
+            f"Build date missing in release metadata: {release_file}"
+        )
     if not BUILD_DATE_PATTERN.match(build_date):
         # Anything else would silently compose an artifact name that cannot exist.
         raise ReleaseArtifactError(
@@ -293,10 +295,14 @@ def locate_container(
             chosen = _newest_by_build_date(matches)
             if chosen is None:
                 listing = ", ".join(match.name for match in matches)
-                return None, (), (
-                    f"Ambiguous container lookup for {recipe} in {containers_dir}: "
-                    f"{listing}. Pin the artifact with 'container:' plus "
-                    f"'pin_container: true', or remove the extra files."
+                return (
+                    None,
+                    (),
+                    (
+                        f"Ambiguous container lookup for {recipe} in {containers_dir}: "
+                        f"{listing}. Pin the artifact with 'container:' plus "
+                        f"'pin_container: true', or remove the extra files."
+                    ),
                 )
         note = (
             f"Expected artifact {filename} was not present; using {chosen.name} "

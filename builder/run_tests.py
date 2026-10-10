@@ -31,15 +31,20 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
+import tempfile
+import traceback
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
 from rich.console import Console
@@ -56,8 +61,18 @@ from rich import box
 
 try:  # Imported as builder.run_tests by the test suite, run as a script by CI.
     from builder.release_artifact import resolve_suite_container
+    from builder.runtime_execution import (
+        TestSpec,
+        evaluate_process_assertions,
+        substitute_variables,
+    )
 except ImportError:  # pragma: no cover - exercised by `uv run builder/run_tests.py`
     from release_artifact import resolve_suite_container
+    from runtime_execution import (
+        TestSpec,
+        evaluate_process_assertions,
+        substitute_variables,
+    )
 
 console = Console()
 
@@ -85,6 +100,7 @@ def _format_process_output(result: subprocess.CompletedProcess[str]) -> str:
 @dataclass
 class TestResult:
     """Result of a single test execution."""
+
     name: str
     passed: bool
     duration: float
@@ -98,6 +114,7 @@ class TestResult:
 @dataclass
 class TestSuiteResult:
     """Result of a test suite (YAML file) execution."""
+
     name: str
     container: str
     total: int = 0
@@ -114,23 +131,6 @@ def default_releases_dir() -> Path | None:
         if candidate.is_dir():
             return candidate
     return None
-
-
-def substitute_variables(text: str, variables: dict[str, str]) -> str:
-    """Substitute ${var} placeholders with values."""
-    if not text:
-        return text
-
-    result = text
-    for _ in range(10):
-        previous = result
-        for key, value in variables.items():
-            result = result.replace(f"${{{key}}}", str(value))
-            result = result.replace(f"${key}", str(value))
-        if result == previous:
-            break
-
-    return result
 
 
 def collect_top_level_variables(config: dict[str, Any]) -> dict[str, str]:
@@ -155,8 +155,7 @@ def collect_top_level_variables(config: dict[str, Any]) -> dict[str, str]:
         if key not in reserved_keys and isinstance(value, (str, int, float))
     }
     return {
-        key: substitute_variables(value, variables)
-        for key, value in variables.items()
+        key: substitute_variables(value, variables) for key, value in variables.items()
     }
 
 
@@ -212,7 +211,9 @@ def prepare_required_files(
             cache_dir.mkdir(parents=True, exist_ok=True)
             result = subprocess.run(
                 [
-                    "datalad", "install", "-s",
+                    "datalad",
+                    "install",
+                    "-s",
                     f"https://github.com/OpenNeuroDatasets/{dataset}.git",
                     str(dataset_cache),
                 ],
@@ -277,15 +278,140 @@ def _container_binds(work_dir: Path, variables: dict[str, str]) -> list[str]:
         if not parent.exists():
             continue
         resolved = str(parent.resolve())
-        if any(resolved == root or resolved.startswith(root + "/") for root in container_dirs):
+        if any(
+            resolved == root or resolved.startswith(root + "/")
+            for root in container_dirs
+        ):
             continue
         binds.add(f"{parent}:{parent}")
     return sorted(binds)
 
 
+class _TestPreparationError(RuntimeError):
+    """A temporary test script could not be created."""
+
+
+def _remove_test_script(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _write_test_script(
+    cleanup: ExitStack,
+    work_dir: Path,
+    prefix: str,
+    suffix: str,
+    contents: str,
+) -> Path:
+    try:
+        descriptor, filename = tempfile.mkstemp(
+            dir=work_dir, prefix=prefix, suffix=suffix
+        )
+        path = Path(filename)
+        cleanup.callback(_remove_test_script, path)
+        with os.fdopen(descriptor, "w") as script:
+            script.write(contents)
+        path.chmod(0o755)
+        return path
+    except OSError as error:
+        raise _TestPreparationError(f"Failed to create test script: {error}") from error
+
+
+@contextmanager
+def _prepared_test_script(
+    spec: TestSpec,
+    variables: dict[str, str],
+    work_dir: Path,
+    script_runner: str | None,
+    script_ext: str,
+) -> Iterator[Path]:
+    """Create command and payload scripts, cleaning up even on preparation errors."""
+    with ExitStack() as cleanup:
+        if spec.script and not spec.command:
+            payload_path = _write_test_script(
+                cleanup,
+                work_dir,
+                ".test_script_",
+                script_ext,
+                substitute_variables(spec.script, variables),
+            )
+            if script_runner:
+                command = f"{substitute_variables(script_runner, variables)} {shlex.quote(str(payload_path))}"
+            else:
+                command = shlex.quote(str(payload_path))
+        else:
+            command = substitute_variables(spec.command, variables)
+
+        env_setup = substitute_variables(spec.env_setup or "", variables)
+        contents = "#!/usr/bin/env bash\n"
+        if env_setup:
+            contents += f"{env_setup}\n"
+        contents += f"{command}\n"
+        yield _write_test_script(cleanup, work_dir, ".test_", ".sh", contents)
+
+
+def _execute_test_script(
+    script_path: Path,
+    container_path: Path | str | None,
+    variables: dict[str, str],
+    work_dir: Path,
+    timeout: int | float | None,
+) -> subprocess.CompletedProcess[str]:
+    """Execute a prepared script locally or with the container runtime."""
+    command = []
+    if container_path:
+        command = [container_runtime_command(), "exec", "--pwd", str(work_dir)]
+        for bind in _container_binds(work_dir, variables):
+            command.extend(["-B", bind])
+        command.append(str(container_path))
+    command.extend(["bash", str(script_path)])
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        cwd=work_dir,
+    )
+
+
+def _evaluate_file_assertions(
+    spec: TestSpec,
+    variables: dict[str, str],
+    work_dir: Path,
+) -> str | None:
+    """Return the first filesystem assertion failure in declaration order."""
+    for validation in spec.validations:
+        if not isinstance(validation, dict):
+            continue
+        for validation_type, argument in validation.items():
+            if validation_type == "output_exists":
+                path = str(work_dir / substitute_variables(str(argument), variables))
+                if not check_file_exists(path):
+                    return f"Output file not found: {path}"
+            elif validation_type == "same_dimensions":
+                if isinstance(argument, list) and len(argument) == 2:
+                    paths = [
+                        str(work_dir / substitute_variables(str(value), variables))
+                        for value in argument
+                    ]
+                    ok, message = check_same_dimensions(*paths)
+                    if not ok:
+                        return message
+    return None
+
+
+def _timeout_output(output: str | bytes | None) -> str:
+    # TimeoutExpired can contain bytes even when subprocess.run uses text=True.
+    if isinstance(output, bytes):
+        return output.decode(errors="replace")
+    return output or ""
+
+
 def run_single_test(
     test: dict,
-    container_path: Path,
+    container_path: Path | str | None,
     variables: dict[str, str],
     work_dir: Path,
     global_env_setup: str | None = None,
@@ -293,230 +419,65 @@ def run_single_test(
     script_runner: str | None = None,
     script_ext: str = ".sh",
 ) -> TestResult:
-    """Run a single test and return result."""
-    from datetime import datetime
-
-    name = test.get("name", "Unnamed test")
+    """Run a test, containing failures so the remaining suite can continue."""
     start_timestamp = datetime.now().isoformat()
     start_time = time.time()
+    name = "Unnamed test"
+    timeout = default_timeout
+    stdout = stderr = ""
+    exit_code = 0
+    duration = 0.0
+    passed = False
 
     try:
-        # Get command or script content
-        command = test.get("command", "")
-        test_script = test.get("script", "")
-
-        if not command and not test_script:
-            return TestResult(
-                name=name,
-                passed=False,
-                duration=0,
-                start_time=start_timestamp,
-                message="No command or script specified",
-            )
-
-        # Handle script: directive — save script to temp file and build command
-        extra_script_path = None
-        if test_script and not command:
-            test_script = substitute_variables(test_script, variables)
-            ts = int(time.time() * 1e6)
-            extra_script_path = work_dir / f".test_script_{os.getpid()}_{ts}{script_ext}"
-            try:
-                with open(extra_script_path, 'w') as f:
-                    f.write(test_script)
-                os.chmod(extra_script_path, 0o755)
-            except OSError as e:
-                return TestResult(
-                    name=name, passed=False, duration=time.time() - start_time,
-                    start_time=start_timestamp, message=f"Failed to create test script: {e}",
-                )
-
-            if script_runner:
-                command = f"{substitute_variables(script_runner, variables)} {extra_script_path}"
-            else:
-                # Default: run as bash script
-                command = str(extra_script_path)
+        name = test.get("name", "Unnamed test")
+        spec = TestSpec.from_mapping(test, global_env_setup, default_timeout)
+        timeout = spec.timeout
+        if not spec.command and not spec.script:
+            message = "No command or script specified"
         else:
-            command = substitute_variables(command, variables)
-
-        # Build environment setup
-        env_setup = test.get("env_setup", global_env_setup) or ""
-        if env_setup:
-            env_setup = substitute_variables(env_setup, variables)
-
-        # Write command to temporary script file (avoids all shell quoting issues)
-        script_path = work_dir / f".test_{os.getpid()}_{int(time.time()*1e6)}.sh"
-        try:
-            with open(script_path, 'w') as f:
-                f.write("#!/usr/bin/env bash\n")
-                if env_setup:
-                    f.write(f"{env_setup}\n")
-                f.write(f"{command}\n")
-            os.chmod(script_path, 0o755)
-        except OSError as e:
-            return TestResult(
-                name=name, passed=False, duration=time.time() - start_time,
-                start_time=start_timestamp, message=f"Failed to create test script: {e}",
-            )
-
-        try:
-            if container_path:
-                cmd_list = [
-                    container_runtime_command(), "exec",
-                    "--pwd", str(work_dir),
-                ]
-                for b in _container_binds(work_dir, variables):
-                    cmd_list.extend(["-B", b])
-                cmd_list.extend([str(container_path), "bash", str(script_path)])
-            else:
-                cmd_list = ["bash", str(script_path)]
-
-            timeout = test.get("timeout", default_timeout)
-
-            result = subprocess.run(
-                cmd_list,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=work_dir,
-            )
-
-            duration = time.time() - start_time
-            stdout = result.stdout
-            stderr = result.stderr
-            exit_code = result.returncode
-        finally:
-            try:
-                script_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-            if extra_script_path:
-                try:
-                    extra_script_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
-
-        # Check expected exit code (default: expect success)
-        ignore_exit_code = test.get("ignore_exit_code", False)
-        expected_exit_code = test.get("expected_exit_code", 0)
-        expected_exit_code_not = test.get("expected_exit_code_not")
-
-        if ignore_exit_code:
-            pass  # Skip exit code validation entirely
-        elif expected_exit_code_not is not None:
-            # expected_exit_code_not takes precedence when explicitly set
-            if exit_code == expected_exit_code_not:
-                return TestResult(
-                    name=name,
-                    passed=False,
-                    duration=duration,
-                    start_time=start_timestamp,
-                    message=f"Exit code should not be {expected_exit_code_not}",
-                    stdout=stdout,
-                    stderr=stderr,
-                    exit_code=exit_code,
+            with _prepared_test_script(
+                spec, variables, work_dir, script_runner, script_ext
+            ) as script_path:
+                process = _execute_test_script(
+                    script_path, container_path, variables, work_dir, timeout
                 )
-        elif exit_code != expected_exit_code:
-            return TestResult(
-                name=name,
-                passed=False,
-                duration=duration,
-                start_time=start_timestamp,
-                message=f"Expected exit code {expected_exit_code}, got {exit_code}",
-                stdout=stdout,
-                stderr=stderr,
-                exit_code=exit_code,
+            duration = time.time() - start_time
+            stdout, stderr, exit_code = (
+                process.stdout,
+                process.stderr,
+                process.returncode,
             )
+            message = evaluate_process_assertions(
+                spec, exit_code, stdout, stderr, variables
+            )
+            if message is None:
+                message = _evaluate_file_assertions(spec, variables, work_dir)
+            passed = message is None
+            message = message or "OK"
+    except _TestPreparationError as error:
+        duration = time.time() - start_time
+        message = str(error)
+    except subprocess.TimeoutExpired as error:
+        duration = time.time() - start_time
+        message = f"Timeout after {timeout}s"
+        stdout = _timeout_output(error.stdout)
+        stderr = _timeout_output(error.stderr)
+    except Exception as error:
+        duration = time.time() - start_time
+        message = f"Error: {error}"
+        stderr = "\n\n".join(part for part in (stderr, traceback.format_exc()) if part)
 
-        # Check expected output
-        expected_output = test.get("expected_output_contains")
-        if expected_output:
-            combined_output = stdout + stderr
-
-            if isinstance(expected_output, str):
-                expected_list = [expected_output]
-            else:
-                expected_list = expected_output
-
-            for expected in expected_list:
-                expected = substitute_variables(str(expected), variables)
-                if expected and expected not in combined_output:
-                    return TestResult(
-                        name=name,
-                        passed=False,
-                        duration=duration,
-                        start_time=start_timestamp,
-                        message=f"Expected output not found: '{expected[:50]}...'",
-                        stdout=stdout,
-                        stderr=stderr,
-                        exit_code=exit_code,
-                    )
-
-        # Run validations
-        validations = test.get("validate", [])
-        for validation in validations:
-            if isinstance(validation, dict):
-                for val_type, val_arg in validation.items():
-                    if val_type == "output_exists":
-                        path = substitute_variables(str(val_arg), variables)
-                        path = str(work_dir / path)
-                        if not check_file_exists(path):
-                            return TestResult(
-                                name=name,
-                                passed=False,
-                                duration=duration,
-                                start_time=start_timestamp,
-                                message=f"Output file not found: {path}",
-                                stdout=stdout,
-                                stderr=stderr,
-                                exit_code=exit_code,
-                            )
-
-                    elif val_type == "same_dimensions":
-                        if isinstance(val_arg, list) and len(val_arg) == 2:
-                            path1 = substitute_variables(str(val_arg[0]), variables)
-                            path2 = substitute_variables(str(val_arg[1]), variables)
-                            path1 = str(work_dir / path1)
-                            path2 = str(work_dir / path2)
-                            ok, msg = check_same_dimensions(path1, path2)
-                            if not ok:
-                                return TestResult(
-                                    name=name,
-                                    passed=False,
-                                    duration=duration,
-                                    start_time=start_timestamp,
-                                    message=msg,
-                                    stdout=stdout,
-                                    stderr=stderr,
-                                    exit_code=exit_code,
-                                )
-
-        return TestResult(
-            name=name,
-            passed=True,
-            duration=duration,
-            start_time=start_timestamp,
-            message="OK",
-            stdout=stdout,
-            stderr=stderr,
-            exit_code=exit_code,
-        )
-
-    except subprocess.TimeoutExpired:
-        return TestResult(
-            name=name,
-            passed=False,
-            duration=time.time() - start_time,
-            start_time=start_timestamp,
-            message=f"Timeout after {test.get('timeout', default_timeout)}s",
-        )
-    except Exception as e:
-        return TestResult(
-            name=name,
-            passed=False,
-            duration=time.time() - start_time,
-            start_time=start_timestamp,
-            message=f"Error: {e}",
-        )
+    return TestResult(
+        name=name,
+        passed=passed,
+        duration=duration,
+        start_time=start_timestamp,
+        message=message,
+        stdout=stdout,
+        stderr=stderr,
+        exit_code=exit_code,
+    )
 
 
 def _run_container_health_check(
@@ -531,8 +492,10 @@ def _run_container_health_check(
     binds.add(f"{work_dir}:{work_dir}")
 
     cmd_list = [
-        container_runtime_command(), "exec",
-        "--pwd", str(work_dir),
+        container_runtime_command(),
+        "exec",
+        "--pwd",
+        str(work_dir),
     ]
     for b in binds:
         cmd_list.extend(["-B", b])
@@ -578,15 +541,17 @@ def _run_setup_in_container(
     variables: dict[str, str],
 ) -> str | None:
     """Run setup script inside the container. Returns error message or None on success."""
-    script_path = work_dir / f".setup_{os.getpid()}_{int(time.time()*1e6)}.sh"
+    script_path = work_dir / f".setup_{os.getpid()}_{int(time.time() * 1e6)}.sh"
     try:
-        with open(script_path, 'w') as f:
+        with open(script_path, "w") as f:
             f.write(setup_script)
         os.chmod(script_path, 0o755)
 
         cmd_list = [
-            container_runtime_command(), "exec",
-            "--pwd", str(work_dir),
+            container_runtime_command(),
+            "exec",
+            "--pwd",
+            str(work_dir),
         ]
         for b in _container_binds(work_dir, variables):
             cmd_list.extend(["-B", b])
@@ -663,12 +628,15 @@ def run_test_suite(
             container=container_name,
             total=0,
             failed=1,
-            results=[TestResult(
-                name="Container lookup",
-                passed=False,
-                duration=0,
-                message=resolution.error or f"Container not found: {container_name}",
-            )],
+            results=[
+                TestResult(
+                    name="Container lookup",
+                    passed=False,
+                    duration=0,
+                    message=resolution.error
+                    or f"Container not found: {container_name}",
+                )
+            ],
         )
     container_path = resolution.path
 
@@ -676,19 +644,23 @@ def run_test_suite(
     required_files = config.get("required_files", [])
     if required_files:
         try:
-            suite_data_dir = prepare_required_files(required_files, suite_name, work_dir)
+            suite_data_dir = prepare_required_files(
+                required_files, suite_name, work_dir
+            )
         except RuntimeError as e:
             return TestSuiteResult(
                 name=suite_name,
                 container=container_name,
                 total=0,
                 failed=1,
-                results=[TestResult(
-                    name="Data preparation",
-                    passed=False,
-                    duration=0,
-                    message=str(e),
-                )],
+                results=[
+                    TestResult(
+                        name="Data preparation",
+                        passed=False,
+                        duration=0,
+                        message=str(e),
+                    )
+                ],
             )
     else:
         suite_data_dir = work_dir
@@ -767,12 +739,14 @@ def run_test_suite(
                 container=container_name,
                 total=0,
                 failed=1,
-                results=[TestResult(
-                    name="Setup (host)",
-                    passed=False,
-                    duration=0,
-                    message=f"Host setup failed: {e.stderr.decode() if e.stderr else str(e)}",
-                )],
+                results=[
+                    TestResult(
+                        name="Setup (host)",
+                        passed=False,
+                        duration=0,
+                        message=f"Host setup failed: {e.stderr.decode() if e.stderr else str(e)}",
+                    )
+                ],
             )
 
     # Container health check
@@ -802,18 +776,20 @@ def run_test_suite(
             if on_test_complete is not None:
                 on_test_complete(suite_name, container_name, r)
             if result_queue is not None:
-                result_queue.put({
-                    "suite": suite_name,
-                    "container": container_name,
-                    "test": r.name,
-                    "passed": r.passed,
-                    "start_time": r.start_time,
-                    "duration": r.duration,
-                    "message": r.message,
-                    "exit_code": r.exit_code,
-                    "stdout": r.stdout,
-                    "stderr": r.stderr,
-                })
+                result_queue.put(
+                    {
+                        "suite": suite_name,
+                        "container": container_name,
+                        "test": r.name,
+                        "passed": r.passed,
+                        "start_time": r.start_time,
+                        "duration": r.duration,
+                        "message": r.message,
+                        "exit_code": r.exit_code,
+                        "stdout": r.stdout,
+                        "stderr": r.stderr,
+                    }
+                )
 
         return TestSuiteResult(
             name=suite_name,
@@ -836,12 +812,14 @@ def run_test_suite(
                 container=container_name,
                 total=0,
                 failed=1,
-                results=[TestResult(
-                    name="Setup",
-                    passed=False,
-                    duration=0,
-                    message=setup_error,
-                )],
+                results=[
+                    TestResult(
+                        name="Setup",
+                        passed=False,
+                        duration=0,
+                        message=setup_error,
+                    )
+                ],
             )
 
     # Get and filter tests
@@ -902,18 +880,20 @@ def run_test_suite(
 
         # Put result on queue (for parallel mode)
         if result_queue is not None:
-            result_queue.put({
-                "suite": suite_name,
-                "container": container_name,
-                "test": result.name,
-                "passed": result.passed,
-                "start_time": result.start_time,
-                "duration": result.duration,
-                "message": result.message,
-                "exit_code": result.exit_code,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-            })
+            result_queue.put(
+                {
+                    "suite": suite_name,
+                    "container": container_name,
+                    "test": result.name,
+                    "passed": result.passed,
+                    "start_time": result.start_time,
+                    "duration": result.duration,
+                    "message": result.message,
+                    "exit_code": result.exit_code,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }
+            )
 
         if verbose:
             status = "[green]PASS[/]" if result.passed else "[red]FAIL[/]"
@@ -953,12 +933,29 @@ def run_test_suite(
 
 def run_test_suite_wrapper(args: tuple) -> TestSuiteResult:
     """Wrapper for parallel execution."""
-    (yaml_path, containers_dir, work_dir, test_filter, verbose, result_queue, running_tests,
-     test_names, releases_dir, container_override) = args
+    (
+        yaml_path,
+        containers_dir,
+        work_dir,
+        test_filter,
+        verbose,
+        result_queue,
+        running_tests,
+        test_names,
+        releases_dir,
+        container_override,
+    ) = args
     return run_test_suite(
-        yaml_path, containers_dir, work_dir, test_filter, verbose,
-        on_test_complete=None, result_queue=result_queue, running_tests=running_tests,
-        test_names=test_names, releases_dir=releases_dir,
+        yaml_path,
+        containers_dir,
+        work_dir,
+        test_filter,
+        verbose,
+        on_test_complete=None,
+        result_queue=result_queue,
+        running_tests=running_tests,
+        test_names=test_names,
+        releases_dir=releases_dir,
         container_override=container_override,
     )
 
@@ -982,13 +979,15 @@ def main():
         help="YAML test files to run (default: all *.yaml files)",
     )
     parser.add_argument(
-        "-j", "--jobs",
+        "-j",
+        "--jobs",
         type=int,
         default=1,
         help="Number of parallel workers (default: 1)",
     )
     parser.add_argument(
-        "-c", "--containers-dir",
+        "-c",
+        "--containers-dir",
         type=Path,
         default=Path("containers"),
         help="Directory containing container files (default: containers)",
@@ -1015,17 +1014,20 @@ def main():
         help="Directory for test scratch space and cached data (default: work)",
     )
     parser.add_argument(
-        "-f", "--filter",
+        "-f",
+        "--filter",
         type=str,
         help="Filter tests by name pattern (regex)",
     )
     parser.add_argument(
-        "-q", "--quiet",
+        "-q",
+        "--quiet",
         action="store_true",
         help="Hide individual test results (only show summary)",
     )
     parser.add_argument(
-        "-l", "--list",
+        "-l",
+        "--list",
         action="store_true",
         help="List available test files",
     )
@@ -1035,7 +1037,8 @@ def main():
         help="Only show failed tests in output",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=Path,
         help="Write results to JSON file",
     )
@@ -1072,6 +1075,7 @@ def main():
     # Default JSONL output path with timestamp
     if args.jsonl is None and not args.no_jsonl:
         from datetime import datetime
+
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         results_dir = Path.cwd() / "results"
         results_dir.mkdir(exist_ok=True)
@@ -1110,10 +1114,14 @@ def main():
                     test_name = record["test"]
                     retry_map.setdefault(suite, set()).add(test_name)
         if not retry_map:
-            console.print("[green]No failed tests found in retry file — nothing to re-run.[/]")
+            console.print(
+                "[green]No failed tests found in retry file — nothing to re-run.[/]"
+            )
             return 0
         total_retry = sum(len(v) for v in retry_map.values())
-        console.print(f"[bold]Retrying {total_retry} failed test(s) across {len(retry_map)} suite(s)[/]")
+        console.print(
+            f"[bold]Retrying {total_retry} failed test(s) across {len(retry_map)} suite(s)[/]"
+        )
 
     # Find YAML files in tests/ directory
     if args.yaml_files:
@@ -1132,13 +1140,12 @@ def main():
 
     # When retrying, filter to only suites that had failures
     if retry_map is not None:
-        yaml_files = [
-            yf for yf in yaml_files
-            if _yaml_suite_name(yf) in retry_map
-        ]
+        yaml_files = [yf for yf in yaml_files if _yaml_suite_name(yf) in retry_map]
 
     if args.list:
-        console.print(Panel(f"[bold]Available Test Files[/] (in tests/)", box=box.ROUNDED))
+        console.print(
+            Panel("[bold]Available Test Files[/] (in tests/)", box=box.ROUNDED)
+        )
         for f in yaml_files:
             console.print(f"  {f.name}")
         console.print(f"\n[dim]Total: {len(yaml_files)} files[/]")
@@ -1148,13 +1155,17 @@ def main():
         console.print(f"[red]No YAML test files found in {tests_dir}[/]")
         return 1
 
-    mode = f"Retry: {args.retry.name}" if retry_map else f"Filter: {args.filter or 'none'}"
-    console.print(Panel(
-        f"[bold]Neurocontainer Test Runner[/]\n"
-        f"Files: {len(yaml_files)} | Workers: {args.jobs} | {mode}\n"
-        f"Tests dir: {tests_dir} | Work dir: {work_dir}",
-        box=box.ROUNDED,
-    ))
+    mode = (
+        f"Retry: {args.retry.name}" if retry_map else f"Filter: {args.filter or 'none'}"
+    )
+    console.print(
+        Panel(
+            f"[bold]Neurocontainer Test Runner[/]\n"
+            f"Files: {len(yaml_files)} | Workers: {args.jobs} | {mode}\n"
+            f"Tests dir: {tests_dir} | Work dir: {work_dir}",
+            box=box.ROUNDED,
+        )
+    )
 
     all_results: list[TestSuiteResult] = []
     start_time = time.time()
@@ -1177,25 +1188,29 @@ def main():
 
     def write_test_result_callback(suite_name: str, container: str, test: TestResult):
         """Callback for sequential mode to write results immediately."""
-        write_jsonl_record({
-            "suite": suite_name,
-            "container": container,
-            "test": test.name,
-            "passed": test.passed,
-            "start_time": test.start_time,
-            "duration": test.duration,
-            "message": test.message,
-            "exit_code": test.exit_code,
-            "stdout": test.stdout,
-            "stderr": test.stderr,
-        })
+        write_jsonl_record(
+            {
+                "suite": suite_name,
+                "container": container,
+                "test": test.name,
+                "passed": test.passed,
+                "start_time": test.start_time,
+                "duration": test.duration,
+                "message": test.message,
+                "exit_code": test.exit_code,
+                "stdout": test.stdout,
+                "stderr": test.stderr,
+            }
+        )
 
     if args.jobs > 1:
         # Parallel execution at suite level (tests within a suite run sequentially
         # to preserve intra-suite dependencies on shared output files)
         import queue
 
-        console.print(f"[dim]Running {len(yaml_files)} suites with {args.jobs} parallel workers[/]")
+        console.print(
+            f"[dim]Running {len(yaml_files)} suites with {args.jobs} parallel workers[/]"
+        )
 
         # Count total tests across all suites for progress bar
         total_tests = 0
@@ -1226,12 +1241,16 @@ def main():
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
-            TextColumn("[green]{task.fields[passed]}[/] passed | [red]{task.fields[failed]}[/] failed | {task.completed}/{task.total}"),
+            TextColumn(
+                "[green]{task.fields[passed]}[/] passed | [red]{task.fields[failed]}[/] failed | {task.completed}/{task.total}"
+            ),
             TimeElapsedColumn(),
             console=console,
             refresh_per_second=4,
         ) as progress:
-            task = progress.add_task("Running tests...", total=total_tests, passed=0, failed=0)
+            task = progress.add_task(
+                "Running tests...", total=total_tests, passed=0, failed=0
+            )
 
             def drain_result_queue():
                 """Drain result queue, writing JSONL and updating progress."""
@@ -1247,8 +1266,12 @@ def main():
                     else:
                         test_counts["failed"] += 1
                     if not args.quiet:
-                        test_status = "[green]PASS[/]" if record["passed"] else "[red]FAIL[/]"
-                        progress.console.print(f"  {test_status} {record['suite']}: {record['test']} ({record['duration']:.2f}s)")
+                        test_status = (
+                            "[green]PASS[/]" if record["passed"] else "[red]FAIL[/]"
+                        )
+                        progress.console.print(
+                            f"  {test_status} {record['suite']}: {record['test']} ({record['duration']:.2f}s)"
+                        )
                         if not record["passed"]:
                             progress.console.print(f"    [dim]{record['message']}[/]")
 
@@ -1257,15 +1280,19 @@ def main():
                 while not progress_stop_event.is_set():
                     try:
                         drain_result_queue()
-                        progress.update(task, completed=test_counts["completed"],
-                                        passed=test_counts["passed"], failed=test_counts["failed"])
+                        progress.update(
+                            task,
+                            completed=test_counts["completed"],
+                            passed=test_counts["passed"],
+                            failed=test_counts["failed"],
+                        )
 
                         with running_tests_lock:
                             running = list(running_tests.keys())
                         if running:
                             display = running[:3]
                             if len(running) > 3:
-                                desc = f"Running: {', '.join(display)} (+{len(running)-3} more)"
+                                desc = f"Running: {', '.join(display)} (+{len(running) - 3} more)"
                             else:
                                 desc = f"Running: {', '.join(display)}"
                         else:
@@ -1275,16 +1302,29 @@ def main():
                         pass
                     time.sleep(0.25)
 
-            desc_thread = threading.Thread(target=update_running_description, daemon=True)
+            desc_thread = threading.Thread(
+                target=update_running_description, daemon=True
+            )
             desc_thread.start()
 
             with ThreadPoolExecutor(max_workers=args.jobs) as executor:
                 futures = {
                     executor.submit(
                         run_test_suite_wrapper,
-                        (yaml_path, containers_dir, work_dir, args.filter, False, result_queue, running_tests,
-                         retry_map.get(_yaml_suite_name(yaml_path)) if retry_map else None,
-                         releases_dir, args.container),
+                        (
+                            yaml_path,
+                            containers_dir,
+                            work_dir,
+                            args.filter,
+                            False,
+                            result_queue,
+                            running_tests,
+                            retry_map.get(_yaml_suite_name(yaml_path))
+                            if retry_map
+                            else None,
+                            releases_dir,
+                            args.container,
+                        ),
                     ): yaml_path
                     for yaml_path in yaml_files
                 }
@@ -1297,12 +1337,18 @@ def main():
             progress_stop_event.set()
             desc_thread.join(timeout=1.0)
             drain_result_queue()
-            progress.update(task, completed=test_counts["completed"],
-                            passed=test_counts["passed"], failed=test_counts["failed"])
+            progress.update(
+                task,
+                completed=test_counts["completed"],
+                passed=test_counts["passed"],
+                failed=test_counts["failed"],
+            )
     else:
         # Sequential execution
         for yaml_path in yaml_files:
-            suite_test_names = retry_map.get(_yaml_suite_name(yaml_path)) if retry_map else None
+            suite_test_names = (
+                retry_map.get(_yaml_suite_name(yaml_path)) if retry_map else None
+            )
             console.print(f"\n[bold cyan]Running: {yaml_path.name}[/]")
             result = run_test_suite(
                 yaml_path,
@@ -1318,7 +1364,9 @@ def main():
             all_results.append(result)
 
             status = "[green]PASS[/]" if result.failed == 0 else "[red]FAIL[/]"
-            console.print(f"  {status} {result.passed}/{result.total} tests passed ({result.duration:.1f}s)")
+            console.print(
+                f"  {status} {result.passed}/{result.total} tests passed ({result.duration:.1f}s)"
+            )
 
     # Close JSONL file
     if jsonl_file is not None:
@@ -1371,15 +1419,17 @@ def main():
                     console.print(f"    [dim]{test.message}[/]")
 
     # Final summary
-    console.print(Panel(
-        f"[bold]Final Summary[/]\n\n"
-        f"Suites: [green]{suites_passed} passed[/], [red]{suites_failed} failed[/] "
-        f"({len(all_results)} total)\n"
-        f"Tests:  [green]{total_passed} passed[/], [red]{total_failed} failed[/] "
-        f"({total_tests} total)\n"
-        f"Time:   {total_duration:.1f}s",
-        box=box.ROUNDED,
-    ))
+    console.print(
+        Panel(
+            f"[bold]Final Summary[/]\n\n"
+            f"Suites: [green]{suites_passed} passed[/], [red]{suites_failed} failed[/] "
+            f"({len(all_results)} total)\n"
+            f"Tests:  [green]{total_passed} passed[/], [red]{total_failed} failed[/] "
+            f"({total_tests} total)\n"
+            f"Time:   {total_duration:.1f}s",
+            box=box.ROUNDED,
+        )
+    )
 
     # Write JSON output if requested
     if args.output:
@@ -1429,12 +1479,14 @@ def main():
         from datetime import datetime
 
         with open(args.log, "w") as f:
-            f.write(f"# Neurocontainer Test Results\n")
+            f.write("# Neurocontainer Test Results\n")
             f.write(f"# Generated: {datetime.now().isoformat()}\n")
             f.write(f"# Total Duration: {total_duration:.2f}s\n")
-            f.write(f"#\n")
-            f.write(f"# Format: STATE | START_TIME | DURATION | SUITE | TEST_NAME | MESSAGE\n")
-            f.write(f"#\n\n")
+            f.write("#\n")
+            f.write(
+                "# Format: STATE | START_TIME | DURATION | SUITE | TEST_NAME | MESSAGE\n"
+            )
+            f.write("#\n\n")
 
             for suite_result in sorted(all_results, key=lambda r: r.name):
                 for test in suite_result.results:

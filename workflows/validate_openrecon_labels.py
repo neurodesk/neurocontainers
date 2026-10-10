@@ -105,7 +105,9 @@ def validate_label(
             reconstruction.get("emitter") != "raw"
             or reconstruction.get("content_qualification_type") != "RESEARCH"
         ):
-            return ["Experimental raw return requires raw emitter and RESEARCH qualification"]
+            return [
+                "Experimental raw return requires raw emitter and RESEARCH qualification"
+            ]
         injector = schema["properties"]["reconstruction"]["properties"]["injector"]
         injector["enum"].append("raw")
     validator = Draft7Validator(schema)
@@ -123,9 +125,11 @@ def validate_labels(
     return {
         path: errors
         for path in label_paths
-        if (errors := validate_label(
-            path, schema_path, experimental_raw_return=experimental_raw_return
-        ))
+        if (
+            errors := validate_label(
+                path, schema_path, experimental_raw_return=experimental_raw_return
+            )
+        )
     }
 
 
@@ -146,7 +150,8 @@ def parse_args() -> argparse.Namespace:
         help="OpenRecon JSON schema path.",
     )
     parser.add_argument(
-        "--experimental-raw-return", action="store_true",
+        "--experimental-raw-return",
+        action="store_true",
         help="Allow research raw-return labels; stock scanner support is not implied.",
     )
     return parser.parse_args()

@@ -103,9 +103,7 @@ def _store(url: str, digest: str, size: int, headers: object) -> None:
         "sha256": digest,
         "size": size,
         "etag": _validator(_header(headers, "ETag"), 1024),
-        "last_modified": _validator(
-            _header(headers, "Last-Modified"), 128
-        ),
+        "last_modified": _validator(_header(headers, "Last-Modified"), 128),
     }
     temporary = root / f".{_cache_path(url).name}.{uuid.uuid4().hex}.tmp"
     try:
@@ -122,9 +120,7 @@ def _store(url: str, digest: str, size: int, headers: object) -> None:
             pass
 
 
-def stream_sha256(
-    session: requests.Session, url: str
-) -> tuple[str, int, str]:
+def stream_sha256(session: requests.Session, url: str) -> tuple[str, int, str]:
     """Hash a response or reuse its checksum only after an HTTP 304."""
     canonical_url = _safe_https_url(url)
     cached = _load(canonical_url)

@@ -81,13 +81,22 @@ def validate_openrecon_policy(recipe: dict) -> None:
         raise ValueError("OpenRecon requires explicit shared dependency sources")
     for required in OPENRECON_SOURCES:
         variable = required["target"]["variable"]
-        sources = [source for source in policy.get("sources", [])
-                   if source.get("target", {}).get("variable") == variable]
+        sources = [
+            source
+            for source in policy.get("sources", [])
+            if source.get("target", {}).get("variable") == variable
+        ]
         if len(sources) != 1:
             raise ValueError(f"OpenRecon requires one source targeting {variable}")
         source = sources[0]
         for key in ("method", "repo", "ref"):
             if source.get(key) != required.get(key):
-                raise ValueError(f"OpenRecon {variable} requires {key}={required.get(key)}")
-        if source["target"].get("value", "value") != required["target"].get("value", "value"):
-            raise ValueError(f"OpenRecon {variable} selects the wrong observation field")
+                raise ValueError(
+                    f"OpenRecon {variable} requires {key}={required.get(key)}"
+                )
+        if source["target"].get("value", "value") != required["target"].get(
+            "value", "value"
+        ):
+            raise ValueError(
+                f"OpenRecon {variable} selects the wrong observation field"
+            )

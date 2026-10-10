@@ -48,7 +48,15 @@ def test_builtin_tests_run_with_clean_apptainer_environment(monkeypatch) -> None
     class FakeRuntime:
         name = "apptainer"
 
-        def run_test(self, container_ref, test_script, volumes=None, gpu=False, working_dir="/test", clean_env=False):
+        def run_test(
+            self,
+            container_ref,
+            test_script,
+            volumes=None,
+            gpu=False,
+            working_dir="/test",
+            clean_env=False,
+        ):
             calls.append(
                 {
                     "container_ref": container_ref,

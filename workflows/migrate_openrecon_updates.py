@@ -27,7 +27,9 @@ def migrate(path: Path, apply: bool) -> bool:
     policy = copy.deepcopy(recipe["auto_update"])
     if policy["method"] != "sources":
         if recipe["name"] not in {"qsmxt", "meica"}:
-            raise ValueError(f"{path}: migrate the primary source before its shared dependencies")
+            raise ValueError(
+                f"{path}: migrate the primary source before its shared dependencies"
+            )
         version = str(recipe["version"])
         updated = set_scalar(updated, "variables", "upstream_version", version)
         nodes = mapping_nodes(updated)
@@ -36,21 +38,49 @@ def migrate(path: Path, apply: bool) -> bool:
                 node = nodes[name][1]
                 start, end = node.start_mark.index, node.end_mark.index
                 # Recompute marks after each replacement because lengths change.
-                updated = updated[:start] + updated[start:end].replace("context.version", "context.upstream_version") + updated[end:]
+                updated = (
+                    updated[:start]
+                    + updated[start:end].replace(
+                        "context.version", "context.upstream_version"
+                    )
+                    + updated[end:]
+                )
                 nodes = mapping_nodes(updated)
-        updated = updated.replace("packages upstream QSMxT {{ context.version }}", "packages upstream QSMxT {{ context.upstream_version }}")
-        source = {"id": recipe["name"], **policy,
-                  "target": {"variable": "upstream_version", "value": "version", "fulltest_variable": "upstream_version"}}
-        policy = {"method": "sources", "container_version": recipe["name"], "sources": [source]}
+        updated = updated.replace(
+            "packages upstream QSMxT {{ context.version }}",
+            "packages upstream QSMxT {{ context.upstream_version }}",
+        )
+        source = {
+            "id": recipe["name"],
+            **policy,
+            "target": {
+                "variable": "upstream_version",
+                "value": "version",
+                "fulltest_variable": "upstream_version",
+            },
+        }
+        policy = {
+            "method": "sources",
+            "container_version": recipe["name"],
+            "sources": [source],
+        }
         suite = set_scalar(suite, None, "upstream_version", version)
         if recipe["name"] == "qsmxt":
-            suite = suite.replace("      qsmxt --version\n", "      qsmxt --version | grep -F '${upstream_version}'\n")
+            suite = suite.replace(
+                "      qsmxt --version\n",
+                "      qsmxt --version | grep -F '${upstream_version}'\n",
+            )
         else:
-            suite = suite.replace("      meica.py -h >", "      test \"${MEICA_SOURCE_TAG}\" = '${upstream_version}'\n      test \"${MEICA_RUNTIME_TAG}\" = '${upstream_version}'\n      meica.py -h >")
+            suite = suite.replace(
+                "      meica.py -h >",
+                "      test \"${MEICA_SOURCE_TAG}\" = '${upstream_version}'\n      test \"${MEICA_RUNTIME_TAG}\" = '${upstream_version}'\n      meica.py -h >",
+            )
     for variable, value in OPENRECON_PINS.items():
         if variable not in (recipe.get("variables") or {}):
             updated = set_scalar(updated, "variables", variable, value)
-    owned = {source.get("target", {}).get("variable") for source in policy.get("sources", [])}
+    owned = {
+        source.get("target", {}).get("variable") for source in policy.get("sources", [])
+    }
     for source in OPENRECON_SOURCES:
         if source["target"]["variable"] not in owned:
             policy.setdefault("sources", []).append(copy.deepcopy(source))
@@ -75,8 +105,11 @@ def main() -> int:
     parser.add_argument("--exclude", action="append", default=[])
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    changed = sum(migrate(path, args.apply) for path in sorted((root / "recipes").glob("*/build.yaml"))
-                  if path.parent.name not in args.exclude)
+    changed = sum(
+        migrate(path, args.apply)
+        for path in sorted((root / "recipes").glob("*/build.yaml"))
+        if path.parent.name not in args.exclude
+    )
     print(f"{'Migrated' if args.apply else 'Would migrate'} {changed} recipes")
     return 0
 

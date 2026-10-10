@@ -10,14 +10,19 @@ from pathlib import Path
 
 import pytest
 
-from workflows.summarize_deploy_results import _summarise_builtin, summarise_results_file
+from workflows.summarize_deploy_results import (
+    _summarise_builtin,
+    summarise_results_file,
+)
 
 
 SCRIPT = Path("workflows/test_deploy.sh").resolve()
 
 
 @pytest.mark.parametrize("value", [None, "", ":", ":::"])
-def test_deploy_script_rejects_empty_deployment(tmp_path: Path, value: str | None) -> None:
+def test_deploy_script_rejects_empty_deployment(
+    tmp_path: Path, value: str | None
+) -> None:
     env = os.environ.copy()
     for name in ("DEPLOY_BINS", "DEPLOY_PATH"):
         if value is None:
@@ -47,6 +52,7 @@ def test_deploy_script_requires_commands_in_deploy_path(
 ) -> None:
     deploy_dir = tmp_path / "bin"
     deploy_dir.mkdir(mode=0o755)
+    deploy_dir.chmod(0o755)
     if mode is not None:
         tool = deploy_dir / "tool"
         tool.write_text("#!/bin/sh\necho ok\n", encoding="utf-8")

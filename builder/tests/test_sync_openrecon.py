@@ -124,12 +124,8 @@ def test_prepare_recipe_bootstraps_missing_target(tmp_path: Path) -> None:
 
     assert prepared is not None
     target = openrecon_root / "recipes" / "demo"
-    assert "export toolName=demo" in (target / "params.sh").read_text(
-        encoding="utf-8"
-    )
-    assert "export version=1.2.3" in (target / "params.sh").read_text(
-        encoding="utf-8"
-    )
+    assert "export toolName=demo" in (target / "params.sh").read_text(encoding="utf-8")
+    assert "export version=1.2.3" in (target / "params.sh").read_text(encoding="utf-8")
     assert prepared.notes[0].startswith("- Create `recipes/demo`")
 
 
@@ -149,9 +145,7 @@ def test_prepare_recipe_separates_two_part_container_and_openrecon_versions(
         encoding="utf-8",
     )
 
-    prepared = sync_openrecon.prepare_recipe(
-        source_root, openrecon_root, "demo", "0.2"
-    )
+    prepared = sync_openrecon.prepare_recipe(source_root, openrecon_root, "demo", "0.2")
 
     assert prepared is not None
     params = (target / "params.sh").read_text(encoding="utf-8")
@@ -178,7 +172,9 @@ def test_prepare_recipe_separates_two_part_container_and_openrecon_versions(
     ],
 )
 def test_prepare_recipe_points_dated_image_at_the_published_build(
-    tmp_path: Path, image: str, published_image: str,
+    tmp_path: Path,
+    image: str,
+    published_image: str,
 ) -> None:
     source_root = tmp_path / "neurocontainers"
     openrecon_root = tmp_path / "openrecon"
@@ -202,8 +198,11 @@ def test_prepare_recipe_points_dated_image_at_the_published_build(
     params = (target / "params.sh").read_text(encoding="utf-8")
     resolved = subprocess.run(
         [
-            "bash", "-c", 'source "$1"; printf "%s\\n" "$baseDockerImage"',
-            "bash", str(target / "params.sh"),
+            "bash",
+            "-c",
+            'source "$1"; printf "%s\\n" "$baseDockerImage"',
+            "bash",
+            str(target / "params.sh"),
         ],
         check=True,
         capture_output=True,
@@ -214,7 +213,9 @@ def test_prepare_recipe_points_dated_image_at_the_published_build(
     assert any("20260907" in note and "20260910" in note for note in prepared.notes)
 
 
-@pytest.mark.parametrize("tag", ["latest", "0.2.0", "${version}", "0.2.0_20260907_extra"])
+@pytest.mark.parametrize(
+    "tag", ["latest", "0.2.0", "${version}", "0.2.0_20260907_extra"]
+)
 def test_update_params_image_tag_keeps_non_dated_tags(tag: str) -> None:
     params = f"export baseDockerImage=ghcr.io/neurodesk/demo:{tag}\n"
 
@@ -244,7 +245,8 @@ def test_update_params_image_tag_keeps_non_dated_tags(tag: str) -> None:
     ],
 )
 def test_update_params_image_tag_distinguishes_registry_ports(
-    image: str, expected_image: str,
+    image: str,
+    expected_image: str,
 ) -> None:
     params = f"export baseDockerImage={image}\n"
 
@@ -272,9 +274,9 @@ def test_prepare_recipe_keeps_an_already_current_image_tag(tmp_path: Path) -> No
     )
 
     assert prepared is not None
-    assert "ghcr.io/neurodesk/demo_0.2.0:20260910" in (
-        target / "params.sh"
-    ).read_text(encoding="utf-8")
+    assert "ghcr.io/neurodesk/demo_0.2.0:20260910" in (target / "params.sh").read_text(
+        encoding="utf-8"
+    )
     assert not any("image tag" in note for note in prepared.notes)
 
 
@@ -296,9 +298,7 @@ def test_prepare_recipe_reports_an_unresolved_build_date(tmp_path: Path) -> None
     )
 
     assert prepared is not None
-    assert "${version}:20260907\n" in (target / "params.sh").read_text(
-        encoding="utf-8"
-    )
+    assert "${version}:20260907\n" in (target / "params.sh").read_text(encoding="utf-8")
     assert any("20260907" in note for note in prepared.notes)
 
 
@@ -378,12 +378,12 @@ def test_prepare_recipe_rejects_unsupported_params_file(tmp_path: Path) -> None:
     (target / "params.sh").write_text("#!/bin/bash\n", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="no supported version assignment"):
-        sync_openrecon.prepare_recipe(
-            source_root, openrecon_root, "demo", "1.2.3"
-        )
+        sync_openrecon.prepare_recipe(source_root, openrecon_root, "demo", "1.2.3")
 
 
-def test_existing_pull_request_matches_exact_title(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_existing_pull_request_matches_exact_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         sync_openrecon,
         "run_command",
@@ -395,9 +395,12 @@ def test_existing_pull_request_matches_exact_title(monkeypatch: pytest.MonkeyPat
         ),
     )
 
-    assert sync_openrecon.existing_pull_request(
-        "neurodesk/openrecon", "Update demo OpenRecon metadata to 1.2.3"
-    ) == "https://example.test/pr/1"
+    assert (
+        sync_openrecon.existing_pull_request(
+            "neurodesk/openrecon", "Update demo OpenRecon metadata to 1.2.3"
+        )
+        == "https://example.test/pr/1"
+    )
 
 
 def test_unchanged_metadata_dispatches_openrecon_rebuild(
@@ -498,13 +501,15 @@ def test_invalid_scanner_version_leaves_target_unchanged(
         (target / "OpenReconLabel.json").write_text("original label\n")
     before = {
         p.relative_to(tmp_path): p.read_bytes()
-        for p in tmp_path.rglob("*") if p.is_file()
+        for p in tmp_path.rglob("*")
+        if p.is_file()
     }
     with pytest.raises(ValueError):
         sync_openrecon.prepare_recipe(source_root, openrecon_root, "demo", version)
     after = {
         p.relative_to(tmp_path): p.read_bytes()
-        for p in tmp_path.rglob("*") if p.is_file()
+        for p in tmp_path.rglob("*")
+        if p.is_file()
     }
     assert after == before
     assert target.exists() == existing_target
@@ -537,16 +542,20 @@ def test_post_release_container_version_is_kept_for_docker_operations(
     assert "export baseDockerImage=vnmd/${toolName}_${version}:20261005\n" in params
     resolved = subprocess.run(
         [
-            "bash", "-c",
+            "bash",
+            "-c",
             'source "$1"; printf "%s\\n" "$version" "$openrecon_version" "$baseDockerImage"',
-            "bash", str(target / "params.sh"),
+            "bash",
+            str(target / "params.sh"),
         ],
         check=True,
         capture_output=True,
         text=True,
     )
     assert resolved.stdout.splitlines() == [
-        "1.6.0.post1", "1.6.0", "vnmd/demo_1.6.0.post1:20261005",
+        "1.6.0.post1",
+        "1.6.0",
+        "vnmd/demo_1.6.0.post1:20261005",
     ]
 
 
@@ -555,7 +564,9 @@ def write_research_source(root: Path) -> Path:
 
     write_source_recipe(root)
     recipe = root / "recipes" / "demo"
-    label = json.loads((SCHEMA_PATH.parent / "b0map" / "OpenReconLabel.json").read_text())
+    label = json.loads(
+        (SCHEMA_PATH.parent / "b0map" / "OpenReconLabel.json").read_text()
+    )
     label["reconstruction"].update(
         emitter="raw", injector="raw", content_qualification_type="RESEARCH"
     )
@@ -571,7 +582,9 @@ def test_stock_sync_declines_raw_before_any_external_access(tmp_path, monkeypatc
     write_research_source(source)
 
     def external_access(*args, **kwargs):
-        pytest.fail("Stock sync attempted external access for experimental raw metadata")
+        pytest.fail(
+            "Stock sync attempted external access for experimental raw metadata"
+        )
 
     monkeypatch.setattr(sync_openrecon, "existing_pull_request", external_access)
     monkeypatch.setattr(sync_openrecon, "run_command", external_access)
@@ -590,4 +603,6 @@ def test_explicit_research_staging_preserves_raw_label_and_exact_config(tmp_path
     )
     assert prepared is not None
     for filename in ("OpenReconLabel.json", "wip_070_fire_demo.json"):
-        assert (target / "recipes" / "demo" / filename).read_bytes() == (recipe / filename).read_bytes()
+        assert (target / "recipes" / "demo" / filename).read_bytes() == (
+            recipe / filename
+        ).read_bytes()

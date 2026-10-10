@@ -63,7 +63,9 @@ class Classification:
     update_shared: bool
 
 
-def discover_containers(requested: Sequence[str]) -> Tuple[List[ContainerSpec], List[str], int]:
+def discover_containers(
+    requested: Sequence[str],
+) -> Tuple[List[ContainerSpec], List[str], int]:
     requested_clean = [entry.strip() for entry in requested if entry.strip()]
     requested_set = set(requested_clean)
 
@@ -81,7 +83,9 @@ def discover_containers(requested: Sequence[str]) -> Tuple[List[ContainerSpec], 
             continue
 
         available_names.add(recipe)
-        release_path, version, build_date = find_latest_release_file(RELEASES_DIR / recipe)
+        release_path, version, build_date = find_latest_release_file(
+            RELEASES_DIR / recipe
+        )
         has_release = release_path is not None
         specs.append(
             ContainerSpec(
@@ -140,7 +144,9 @@ def classify_outcome(outcome: TestOutcome) -> Classification:
     if reason:
         message += f" — {reason}"
     update_shared = outcome.status == "skipped"
-    return Classification(status=outcome.status, message=message, update_shared=update_shared)
+    return Classification(
+        status=outcome.status, message=message, update_shared=update_shared
+    )
 
 
 def headline_from_totals(totals: dict) -> str:

@@ -50,14 +50,18 @@ def dated_tag(tag: str) -> tuple[str, str] | None:
 
 
 def floating_tags(tags: list[str], version: str) -> dict[str, str]:
-    releases = [(parsed[1], tag, parsed[0]) for tag in tags if (parsed := dated_tag(tag))]
+    releases = [
+        (parsed[1], tag, parsed[0]) for tag in tags if (parsed := dated_tag(tag))
+    ]
     matching = [release for release in releases if release[2] == version]
     if not matching:
         raise ValueError(f"No dated release tags for version {version}")
     return {version: max(matching)[1], "latest": max(releases)[1]}
 
 
-def registry_pages(client: RegistryClient, path: str, fallback: str | None = None) -> list[dict]:
+def registry_pages(
+    client: RegistryClient, path: str, fallback: str | None = None
+) -> list[dict]:
     pages = []
     visited = set()
     while path:
@@ -69,7 +73,9 @@ def registry_pages(client: RegistryClient, path: str, fallback: str | None = Non
             path, fallback = fallback, None
             continue
         if response.status_code != 200:
-            raise RegistryError(f"Registry read failed for {path}: HTTP {response.status_code}")
+            raise RegistryError(
+                f"Registry read failed for {path}: HTTP {response.status_code}"
+            )
         pages.append(response.json())
         next_link = re.search(r'<([^>]+)>;\s*rel="?next"?', response.header("Link"))
         path = ""
@@ -83,10 +89,14 @@ def registry_pages(client: RegistryClient, path: str, fallback: str | None = Non
     return pages
 
 
-def read_manifest(client: RegistryClient, repository: str, reference: str) -> tuple[str, dict]:
+def read_manifest(
+    client: RegistryClient, repository: str, reference: str
+) -> tuple[str, dict]:
     response = client.get(f"/v2/{repository}/manifests/{reference}", MANIFEST_ACCEPT)
     if response.status_code != 200:
-        raise RegistryError(f"Manifest {repository}:{reference}: HTTP {response.status_code}")
+        raise RegistryError(
+            f"Manifest {repository}:{reference}: HTTP {response.status_code}"
+        )
     digest = "sha256:" + hashlib.sha256(response.body).hexdigest()
     advertised = response.header("Docker-Content-Digest")
     if advertised and advertised != digest:
@@ -109,7 +119,8 @@ def resolve_sif(image: str, client: RegistryClient | None = None) -> SifReferenc
     client = client or reader_client(ref.registry)
     subject_digest, _ = read_manifest(client, ref.repository, ref.reference)
     pages = registry_pages(
-        client, f"/v2/{ref.repository}/referrers/{subject_digest}",
+        client,
+        f"/v2/{ref.repository}/referrers/{subject_digest}",
         f"/v2/{ref.repository}/manifests/{subject_digest.replace(':', '-')}",
     )
     candidates = []
@@ -122,12 +133,19 @@ def resolve_sif(image: str, client: RegistryClient | None = None) -> SifReferenc
                 raise RegistryError("Invalid SIF manifest digest")
             _, manifest = read_manifest(client, ref.repository, artifact_digest)
             layers = manifest.get("layers", [])
-            if (manifest.get("subject", {}).get("digest") != subject_digest
-                    or manifest.get("artifactType") != SIF_MEDIA_TYPE
-                    or len(layers) != 1 or layers[0].get("mediaType") != SIF_MEDIA_TYPE
-                    or not DIGEST.fullmatch(layers[0].get("digest", ""))):
+            if (
+                manifest.get("subject", {}).get("digest") != subject_digest
+                or manifest.get("artifactType") != SIF_MEDIA_TYPE
+                or len(layers) != 1
+                or layers[0].get("mediaType") != SIF_MEDIA_TYPE
+                or not DIGEST.fullmatch(layers[0].get("digest", ""))
+            ):
                 raise RegistryError("Invalid SIF referrer subject or layer")
-            candidates.append(SifReference(image, subject_digest, artifact_digest, layers[0]["digest"]))
+            candidates.append(
+                SifReference(
+                    image, subject_digest, artifact_digest, layers[0]["digest"]
+                )
+            )
     if not candidates:
         raise RegistryError(f"No SIF referrer for {image}")
     if len({candidate.layer_digest for candidate in candidates}) != 1:
@@ -135,14 +153,19 @@ def resolve_sif(image: str, client: RegistryClient | None = None) -> SifReferenc
     return min(candidates, key=lambda candidate: candidate.artifact_digest)
 
 
-def finalize(repository: str, version: str, build_date: str, *, apply: bool) -> dict[str, str]:
+def finalize(
+    repository: str, version: str, build_date: str, *, apply: bool
+) -> dict[str, str]:
     ref = parse_image_reference(repository)
     client = RegistryClient(ref.registry, credentials=resolve_credentials(ref.registry))
     candidate = f"{version}_{build_date}"
     if dated_tag(candidate) != (version, build_date):
         raise ValueError("Invalid release version or build date")
-    tags = [tag for page in registry_pages(client, f"/v2/{ref.repository}/tags/list?n=100")
-            for tag in page.get("tags", []) or []]
+    tags = [
+        tag
+        for page in registry_pages(client, f"/v2/{ref.repository}/tags/list?n=100")
+        for tag in page.get("tags", []) or []
+    ]
     if candidate not in tags:
         raise RegistryError(f"Dated candidate tag is missing: {candidate}")
     plan = floating_tags(tags, version)
@@ -156,7 +179,9 @@ def finalize(repository: str, version: str, build_date: str, *, apply: bool) -> 
             subprocess.run(["oras", "tag", source, alias], check=True)
             actual = resolve_sif(f"{repository}:{alias}")
             if actual.subject_digest != identities[tag].subject_digest:
-                raise RegistryError(f"Floating tag verification failed: {repository}:{alias}")
+                raise RegistryError(
+                    f"Floating tag verification failed: {repository}:{alias}"
+                )
     return plan
 
 
@@ -202,20 +227,34 @@ def main(argv: list[str] | None = None) -> int:
     finish.add_argument("version")
     finish.add_argument("build_date")
     finish.add_argument("--apply", action="store_true")
-    audit = commands.add_parser("audit", help="Report publication gaps without modifying registries")
+    audit = commands.add_parser(
+        "audit", help="Report publication gaps without modifying registries"
+    )
     audit.add_argument("--releases", type=Path, default=Path("releases"))
     audit.add_argument("--registry", action="append", default=[])
     args = parser.parse_args(argv)
     try:
         if args.command == "resolve":
             identity = resolve_sif(args.image)
-            if args.expected_sha256 and identity.layer_digest != "sha256:" + args.expected_sha256:
+            if (
+                args.expected_sha256
+                and identity.layer_digest != "sha256:" + args.expected_sha256
+            ):
                 raise RegistryError("SIF referrer does not match the tested artifact")
             print(identity.pull_uri)
         elif args.command == "finalize":
-            print(json.dumps(finalize(args.repository, args.version, args.build_date, apply=args.apply)))
+            print(
+                json.dumps(
+                    finalize(
+                        args.repository, args.version, args.build_date, apply=args.apply
+                    )
+                )
+            )
         else:
-            rows, failed = audit_releases(args.releases, args.registry or ["quay.io/neurodesk", "ghcr.io/neurodesk"])
+            rows, failed = audit_releases(
+                args.releases,
+                args.registry or ["quay.io/neurodesk", "ghcr.io/neurodesk"],
+            )
             print(json.dumps(rows, indent=2))
             return int(failed)
     except (RegistryError, ValueError, OSError, subprocess.CalledProcessError) as error:

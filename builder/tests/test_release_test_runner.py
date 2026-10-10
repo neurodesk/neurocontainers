@@ -23,7 +23,9 @@ from workflows.test_run_artifacts import cleanup_runs, managed_run
 
 
 def _execute_fulltest(args: SimpleNamespace):
-    with managed_run(Path(args.output_dir), results_path=Path(args.results_path)) as run:
+    with managed_run(
+        Path(args.output_dir), results_path=Path(args.results_path)
+    ) as run:
         return run_fulltest_release(args, run_dir=run.path)
 
 
@@ -60,7 +62,7 @@ def test_normalise_run_tests_output_matches_github_reporting_schema() -> None:
                 "tests": [
                     {"name": "help", "passed": True, "message": "OK"},
                     {"name": "import", "passed": False, "message": "Import failed"},
-                ]
+                ],
             }
         ],
     }
@@ -115,7 +117,9 @@ def test_normalise_run_tests_output_matches_github_reporting_schema() -> None:
 
 def test_load_jsonl_records_ignores_invalid_lines(tmp_path: Path) -> None:
     jsonl = tmp_path / "results.jsonl"
-    jsonl.write_text('{"test": "help"}\nnot-json\n{"test": "import"}\n', encoding="utf-8")
+    jsonl.write_text(
+        '{"test": "help"}\nnot-json\n{"test": "import"}\n', encoding="utf-8"
+    )
 
     assert _load_jsonl_records(jsonl) == [{"test": "help"}, {"test": "import"}]
 
@@ -375,15 +379,22 @@ def test_run_fulltest_release_uses_release_image_basename(
     assert run_dir.parent == output_dir
     assert run_commands == [
         [
-            "uv", "run", str(tmp_path / "builder/run_tests.py"), str(suite_path),
-            "--container", str(acquired[0].path),
-            "-o", str(run_dir / "fulltest-raw-neurodesktop.json"),
-            "--log", str(run_dir / "fulltest-neurodesktop.log"),
-            "--jsonl", str(run_dir / "fulltest-neurodesktop.jsonl"),
-            "--work-dir", str(run_dir / "work"),
+            "uv",
+            "run",
+            str(tmp_path / "builder/run_tests.py"),
+            str(suite_path),
+            "--container",
+            str(acquired[0].path),
+            "-o",
+            str(run_dir / "fulltest-raw-neurodesktop.json"),
+            "--log",
+            str(run_dir / "fulltest-neurodesktop.log"),
+            "--jsonl",
+            str(run_dir / "fulltest-neurodesktop.jsonl"),
+            "--work-dir",
+            str(run_dir / "work"),
         ]
     ]
-
 
     assert not acquired[0].path.exists()
     assert source.read_text() == "simg"
@@ -675,26 +686,45 @@ def test_main_publishes_child_exit_with_completed_results(
                 "failed": int(not deploy_passed),
                 "skipped": 0,
                 "test_results": [
-                    {"name": "deploy", "status": "passed" if deploy_passed else "failed"}
+                    {
+                        "name": "deploy",
+                        "status": "passed" if deploy_passed else "failed",
+                    }
                 ],
             }
 
     def fake_run(command, **kwargs) -> SimpleNamespace:
         raw = {
             "summary": summary,
-            "suites": [{"name": "sample", "tests": [{
-                "name": "help", "passed": fulltest_passed,
-                "message": test_message, "duration": 0.25,
-            }]}],
+            "suites": [
+                {
+                    "name": "sample",
+                    "tests": [
+                        {
+                            "name": "help",
+                            "passed": fulltest_passed,
+                            "message": test_message,
+                            "duration": 0.25,
+                        }
+                    ],
+                }
+            ],
         }
         Path(command[command.index("-o") + 1]).write_text(
             json.dumps(raw), encoding="utf-8"
         )
         Path(command[command.index("--jsonl") + 1]).write_text(
-            json.dumps({
-                "suite": "sample", "test": "help", "stdout": "usage\n",
-                "stderr": "diagnostic\n", "exit_code": 0 if fulltest_passed else 1,
-            }) + "\n", encoding="utf-8",
+            json.dumps(
+                {
+                    "suite": "sample",
+                    "test": "help",
+                    "stdout": "usage\n",
+                    "stderr": "diagnostic\n",
+                    "exit_code": 0 if fulltest_passed else 1,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
         )
         Path(command[command.index("--log") + 1]).write_text(
             "completed help\n", encoding="utf-8"
@@ -703,30 +733,58 @@ def test_main_publishes_child_exit_with_completed_results(
 
     monkeypatch.setattr("workflows.release_test_runner.ContainerTester", FakeTester)
     monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
-    exit_code = main([
-        "--recipe", "sample", "--version", "1.0",
-        "--release-file", str(tmp_path / "release.json"),
-        "--candidate-container", str(source), "--test-config", str(test_config),
-        "--output-dir", str(output_dir), "--results-path", str(results_path),
-        "--github-output", str(github_output), "--repo-root", str(tmp_path),
-    ])
+    exit_code = main(
+        [
+            "--recipe",
+            "sample",
+            "--version",
+            "1.0",
+            "--release-file",
+            str(tmp_path / "release.json"),
+            "--candidate-container",
+            str(source),
+            "--test-config",
+            str(test_config),
+            "--output-dir",
+            str(output_dir),
+            "--results-path",
+            str(results_path),
+            "--github-output",
+            str(github_output),
+            "--repo-root",
+            str(tmp_path),
+        ]
+    )
 
     status = "failed" if failed else "passed"
     assert exit_code == int(bool(failed))
     assert f"Status: {status}" in capsys.readouterr().out
     assert github_output.read_text(encoding="utf-8") == f"status={status}\n"
-    assert (output_dir / "status-sample.txt").read_text(encoding="utf-8") == f"{status}\n"
+    assert (output_dir / "status-sample.txt").read_text(
+        encoding="utf-8"
+    ) == f"{status}\n"
     results = json.loads(results_path.read_text(encoding="utf-8"))
-    assert (results["total_tests"], results["passed"], results["failed"], results["skipped"]) == (
-        total, passed, failed, 0,
+    assert (
+        results["total_tests"],
+        results["passed"],
+        results["failed"],
+        results["skipped"],
+    ) == (
+        total,
+        passed,
+        failed,
+        0,
     )
     assert len(results["test_results"]) == total
     assert results["fulltest_summary"] == summary
     assert results["test_results"][1] == {
-        "name": "help", "status": "passed" if fulltest_passed else "failed",
-        "stdout": "usage\n", "stderr": "diagnostic\n",
+        "name": "help",
+        "status": "passed" if fulltest_passed else "failed",
+        "stdout": "usage\n",
+        "stderr": "diagnostic\n",
         "return_code": 0 if fulltest_passed else 1,
-        "duration": 0.25, "message": test_message,
+        "duration": 0.25,
+        "message": test_message,
     }
     artifacts = results["fulltest_artifacts"]
     assert set(artifacts) == {"raw_json", "jsonl", "log", "suite"}
@@ -749,7 +807,9 @@ def test_main_publishes_child_exit_with_completed_results(
 
 
 @pytest.fixture
-def repeated_fulltest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+def repeated_fulltest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> SimpleNamespace:
     source = tmp_path / "candidate.simg"
     source.write_bytes(b"original image")
     config = tmp_path / "fulltest.yaml"
@@ -764,40 +824,88 @@ def repeated_fulltest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Simple
 
         def run_test_suite(self, container: str, *args, **kwargs) -> dict[str, object]:
             deploy_inputs.append(container)
-            return {"total_tests": 0, "passed": 0, "failed": 0,
-                    "skipped": 0, "test_results": []}
+            return {
+                "total_tests": 0,
+                "passed": 0,
+                "failed": 0,
+                "skipped": 0,
+                "test_results": [],
+            }
 
     def child(command: list[str], **kwargs) -> SimpleNamespace:
         commands.append(command)
         if behavior["raw"]:
-            Path(command[command.index("-o") + 1]).write_text(json.dumps({
-                "summary": {"total_tests": 1, "tests_passed": 1, "tests_failed": 0},
-                "suites": [{"name": "sample", "tests": [
-                    {"name": "help", "passed": True}]}],
-            }))
+            Path(command[command.index("-o") + 1]).write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "total_tests": 1,
+                            "tests_passed": 1,
+                            "tests_failed": 0,
+                        },
+                        "suites": [
+                            {
+                                "name": "sample",
+                                "tests": [{"name": "help", "passed": True}],
+                            }
+                        ],
+                    }
+                )
+            )
         if behavior["jsonl"]:
-            Path(command[command.index("--jsonl") + 1]).write_text(json.dumps({
-                "suite": "sample", "test": "help", "stdout": "old stdout",
-                "stderr": "old stderr", "exit_code": 0,
-            }) + "\n")
+            Path(command[command.index("--jsonl") + 1]).write_text(
+                json.dumps(
+                    {
+                        "suite": "sample",
+                        "test": "help",
+                        "stdout": "old stdout",
+                        "stderr": "old stderr",
+                        "exit_code": 0,
+                    }
+                )
+                + "\n"
+            )
         Path(command[command.index("--log") + 1]).write_text("child log\n")
         return SimpleNamespace(returncode=behavior["exit"])
 
     monkeypatch.setattr("workflows.release_test_runner.ContainerTester", Tester)
     monkeypatch.setattr("workflows.release_test_runner.subprocess.run", child)
     output = tmp_path / "output"
-    args = ["--recipe", "sample", "--version", "1.0", "--release-file", "missing.json",
-            "--candidate-container", str(source), "--test-config", str(config),
-            "--output-dir", str(output), "--results-path", str(output / "results.json"),
-            "--repo-root", str(tmp_path), "--github-output", str(tmp_path / "github-output")]
-    return SimpleNamespace(args=args, behavior=behavior, commands=commands,
-                           deploy_inputs=deploy_inputs, output=output, source=source,
-                           config=config)
+    args = [
+        "--recipe",
+        "sample",
+        "--version",
+        "1.0",
+        "--release-file",
+        "missing.json",
+        "--candidate-container",
+        str(source),
+        "--test-config",
+        str(config),
+        "--output-dir",
+        str(output),
+        "--results-path",
+        str(output / "results.json"),
+        "--repo-root",
+        str(tmp_path),
+        "--github-output",
+        str(tmp_path / "github-output"),
+    ]
+    return SimpleNamespace(
+        args=args,
+        behavior=behavior,
+        commands=commands,
+        deploy_inputs=deploy_inputs,
+        output=output,
+        source=source,
+        config=config,
+    )
 
 
 @pytest.mark.parametrize("child_exit", [0, 2])
 def test_repeated_fulltest_requires_current_results(
-    repeated_fulltest: SimpleNamespace, child_exit: int,
+    repeated_fulltest: SimpleNamespace,
+    child_exit: int,
 ) -> None:
     run = repeated_fulltest
     assert main(run.args) == 0
@@ -825,13 +933,17 @@ def test_repeated_fulltest_retains_private_artifacts_and_workspace(
 ) -> None:
     run = repeated_fulltest
     assert main(run.args) == 0
-    previous = json.loads((run.output / "results.json").read_text())["fulltest_artifacts"]
+    previous = json.loads((run.output / "results.json").read_text())[
+        "fulltest_artifacts"
+    ]
     contents = {path: Path(path).read_bytes() for path in previous.values()}
     old_work = Path(run.commands[-1][run.commands[-1].index("--work-dir") + 1])
     (old_work / "marker").write_text("previous work")
     run.config.write_text("name: changed\ntests: []\n")
     assert main(run.args) == 0
-    current = json.loads((run.output / "results.json").read_text())["fulltest_artifacts"]
+    current = json.loads((run.output / "results.json").read_text())[
+        "fulltest_artifacts"
+    ]
     assert set(current.values()).isdisjoint(previous.values())
     assert all(Path(path).read_bytes() == content for path, content in contents.items())
     work = Path(run.commands[-1][run.commands[-1].index("--work-dir") + 1])
@@ -849,8 +961,11 @@ def test_fulltest_uses_original_candidate_without_staging(
 ) -> None:
     run = repeated_fulltest
     monkeypatch.chdir(tmp_path)
-    source = (run.output / "fulltest-containers" if location == "legacy"
-              else tmp_path / "first") / "candidate.simg"
+    source = (
+        run.output / "fulltest-containers"
+        if location == "legacy"
+        else tmp_path / "first"
+    ) / "candidate.simg"
     source.parent.mkdir(parents=True)
     source.write_bytes(b"first image")
     second = tmp_path / "second" / source.name
@@ -866,7 +981,9 @@ def test_fulltest_uses_original_candidate_without_staging(
     checkout.mkdir()
     run.args[run.args.index("--repo-root") + 1] = str(checkout)
     for candidate in (source, second):
-        run.args[run.args.index("--candidate-container") + 1] = str(candidate.relative_to(tmp_path))
+        run.args[run.args.index("--candidate-container") + 1] = str(
+            candidate.relative_to(tmp_path)
+        )
         assert main(run.args) == 0
         command = run.commands[-1]
         assert Path(command[command.index("--container") + 1]) == candidate.resolve()
@@ -878,13 +995,21 @@ def test_fulltest_uses_original_candidate_without_staging(
         assert Path(command[2]) == checkout / "builder/run_tests.py"
     assert source.read_bytes() == b"first image"
     assert second.read_bytes() == b"second image"
-    assert list(run.output.rglob("*.simg")) == ([source] if location == "legacy" else [])
+    assert list(run.output.rglob("*.simg")) == (
+        [source] if location == "legacy" else []
+    )
 
 
-@pytest.mark.parametrize("mode,child_exit", [
-    ("missing", 0), ("missing", 2), ("malformed", 2),
-    ("invalid-shape", 2), ("launch", None),
-])
+@pytest.mark.parametrize(
+    "mode,child_exit",
+    [
+        ("missing", 0),
+        ("missing", 2),
+        ("malformed", 2),
+        ("invalid-shape", 2),
+        ("launch", None),
+    ],
+)
 def test_main_preserves_execution_failure_diagnostics(
     repeated_fulltest: SimpleNamespace,
     monkeypatch: pytest.MonkeyPatch,
@@ -896,28 +1021,46 @@ def test_main_preserves_execution_failure_diagnostics(
 
     run = repeated_fulltest
     assert main(run.args) == 0
-    previous = json.loads((run.output / "results.json").read_text())["fulltest_artifacts"]
+    previous = json.loads((run.output / "results.json").read_text())[
+        "fulltest_artifacts"
+    ]
     github_output = Path(run.args[run.args.index("--github-output") + 1])
     github_output.write_text("")
     capsys.readouterr()
-    deploy = {"name": "deploy", "status": "failed", "stdout": "checked launchers",
-              "stderr": "missing launcher", "return_code": 1}
-    monkeypatch.setattr(runner.ContainerTester, "run_test_suite", lambda *a, **k: {
-        "total_tests": 1, "passed": 0, "failed": 1, "skipped": 0,
-        "test_results": [deploy],
-    })
+    deploy = {
+        "name": "deploy",
+        "status": "failed",
+        "stdout": "checked launchers",
+        "stderr": "missing launcher",
+        "return_code": 1,
+    }
+    monkeypatch.setattr(
+        runner.ContainerTester,
+        "run_test_suite",
+        lambda *a, **k: {
+            "total_tests": 1,
+            "passed": 0,
+            "failed": 1,
+            "skipped": 0,
+            "test_results": [deploy],
+        },
+    )
     current = {}
 
     def child(command: list[str], **kwargs) -> SimpleNamespace:
-        current.update({
-            "raw_json": Path(command[command.index("-o") + 1]),
-            "jsonl": Path(command[command.index("--jsonl") + 1]),
-            "log": Path(command[command.index("--log") + 1]),
-            "suite": Path(command[3]),
-        })
+        current.update(
+            {
+                "raw_json": Path(command[command.index("-o") + 1]),
+                "jsonl": Path(command[command.index("--jsonl") + 1]),
+                "log": Path(command[command.index("--log") + 1]),
+                "suite": Path(command[3]),
+            }
+        )
         if mode == "launch":
             raise OSError("cannot launch child")
-        current["jsonl"].write_text('{"test":"partial","stdout":"current diagnostic"}\n')
+        current["jsonl"].write_text(
+            '{"test":"partial","stdout":"current diagnostic"}\n'
+        )
         current["log"].write_text("current log diagnostic\n")
         if mode == "malformed":
             current["raw_json"].write_text("{malformed")
@@ -930,7 +1073,12 @@ def test_main_preserves_execution_failure_diagnostics(
     captured = capsys.readouterr()
     results = json.loads((run.output / "results.json").read_text())
     assert results["container"] == str(run.source.resolve())
-    assert (results["total_tests"], results["passed"], results["failed"], results["skipped"]) == (2, 0, 2, 0)
+    assert (
+        results["total_tests"],
+        results["passed"],
+        results["failed"],
+        results["skipped"],
+    ) == (2, 0, 2, 0)
     assert results["test_results"][0] == deploy
     assert len(results["test_results"]) == 2
     failure = results["test_results"][1]
@@ -939,7 +1087,9 @@ def test_main_preserves_execution_failure_diagnostics(
     assert failure["stderr"] in captured.err
     assert github_output.read_text() == f"status=failed\nreason={failure['stderr']}\n"
     artifacts = results["fulltest_artifacts"]
-    assert artifacts == {key: str(path) for key, path in current.items() if path.is_file()}
+    assert artifacts == {
+        key: str(path) for key, path in current.items() if path.is_file()
+    }
     assert set(artifacts.values()).isdisjoint(previous.values())
     assert run.source.read_bytes() == b"original image"
     assert (run.output / "status-sample.txt").read_text() == "failed\n"
@@ -987,7 +1137,9 @@ def test_main_early_execution_failure_has_no_unwritten_artifacts(
     repeated_fulltest: SimpleNamespace,
 ) -> None:
     run = repeated_fulltest
-    run.args[run.args.index("--candidate-container") + 1] = str(run.source.with_name("missing.simg"))
+    run.args[run.args.index("--candidate-container") + 1] = str(
+        run.source.with_name("missing.simg")
+    )
     assert main(run.args) == 1
     results = json.loads((run.output / "results.json").read_text())
     assert results["container"] == "unresolved"
@@ -1058,13 +1210,17 @@ def test_successfully_published_failed_execution_is_collectible(
     old = next(run.output.glob("fulltest-run-*"))
     run.behavior["exit"] = 0
     assert main(run.args) == 0
-    actions = {entry.path: entry.action for entry in cleanup_runs(run.output, older_than_days=0)}
+    actions = {
+        entry.path: entry.action
+        for entry in cleanup_runs(run.output, older_than_days=0)
+    }
     assert actions[old] == "deleted"
     assert list(actions.values()).count("retained") == 1
 
 
 def test_failed_publication_remains_unfinished_after_new_publication(
-    repeated_fulltest: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
+    repeated_fulltest: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from workflows import reporting
 
@@ -1080,15 +1236,19 @@ def test_failed_publication_remains_unfinished_after_new_publication(
     assert json.loads((run.output / "results.json").read_text())["fulltest_artifacts"]
     monkeypatch.setattr(reporting, "build_report", original)
     assert main(run.args) == 0
-    entries = {entry.path: entry for entry in cleanup_runs(run.output, older_than_days=0)}
+    entries = {
+        entry.path: entry for entry in cleanup_runs(run.output, older_than_days=0)
+    }
     assert entries[old].reason == "unfinished run"
     assert old.is_dir()
 
 
 @pytest.mark.parametrize("execution_fails", [False, True])
 def test_finalization_failure_preserves_publication_and_execution_reason(
-    repeated_fulltest: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str], execution_fails: bool,
+    repeated_fulltest: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    execution_fails: bool,
 ) -> None:
     run = repeated_fulltest
     if execution_fails:
@@ -1106,17 +1266,27 @@ def test_finalization_failure_preserves_publication_and_execution_reason(
     assert results["container"] == str(run.source.resolve())
     assert results["fulltest_artifacts"]
     assert results["failed"] == int(execution_fails)
-    assert (run.output / "status-sample.txt").read_text() == ("failed\n" if execution_fails else "passed\n")
+    assert (run.output / "status-sample.txt").read_text() == (
+        "failed\n" if execution_fails else "passed\n"
+    )
     github_output = Path(run.args[run.args.index("--github-output") + 1]).read_text()
     assert "status=failed" in github_output
-    assert ("failed before writing results" if execution_fails else "completion disk failure") in github_output
-    assert "Unable to finalize test run: completion disk failure" in capsys.readouterr().err
-    entry, = cleanup_runs(run.output, older_than_days=0)
+    assert (
+        "failed before writing results"
+        if execution_fails
+        else "completion disk failure"
+    ) in github_output
+    assert (
+        "Unable to finalize test run: completion disk failure"
+        in capsys.readouterr().err
+    )
+    (entry,) = cleanup_runs(run.output, older_than_days=0)
     assert entry.reason == "unfinished run"
 
 
 def test_main_holds_run_lock_through_publication_in_another_process(
-    repeated_fulltest: SimpleNamespace, monkeypatch: pytest.MonkeyPatch,
+    repeated_fulltest: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import multiprocessing
     from workflows import release_test_runner as runner
@@ -1137,14 +1307,14 @@ def test_main_holds_run_lock_through_publication_in_another_process(
     try:
         assert parent.poll(10), "runner did not reach publication"
         assert parent.recv() == "executed"
-        entry, = cleanup_runs(run.output, older_than_days=0)
+        (entry,) = cleanup_runs(run.output, older_than_days=0)
         assert entry.reason == "active run or another cleaner"
         assert list(entry.path.glob("*.log"))
         parent.send("publish")
         process.join(10)
         assert not process.is_alive()
         assert process.exitcode == 0
-        entry, = cleanup_runs(run.output, older_than_days=0)
+        (entry,) = cleanup_runs(run.output, older_than_days=0)
         assert entry.reason == "referenced by latest results"
     finally:
         if process.is_alive():

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -14,7 +13,11 @@ from workflows.reporting import (
     ReportOutput,
     publish_test_results,
 )
-from workflows.test_utils import discover_test_config, find_latest_release_file, resolve_path
+from workflows.test_utils import (
+    discover_test_config,
+    find_latest_release_file,
+    resolve_path,
+)
 
 ARTIFACTS_DIR_NAME = "builder"
 RESULTS_PREFIX = "test-results-"
@@ -101,9 +104,13 @@ class ContainerTestRunner:
                     status="skipped",
                     message=release_reason,
                 )
-                return self._finalise(request, results, version or "", release_file, release_reason)
+                return self._finalise(
+                    request, results, version or "", release_file, release_reason
+                )
 
-            test_config_path, test_reason = self._resolve_test_config(recipe_dir, request)
+            test_config_path, test_reason = self._resolve_test_config(
+                recipe_dir, request
+            )
 
             if test_reason and request.allow_missing_tests:
                 results = self._build_stub_result(
@@ -112,7 +119,9 @@ class ContainerTestRunner:
                     status="skipped",
                     message=test_reason,
                 )
-                return self._finalise(request, results, version or "", release_file, test_reason)
+                return self._finalise(
+                    request, results, version or "", release_file, test_reason
+                )
 
             if test_config_path is None:
                 raise FileNotFoundError("Test configuration could not be resolved")
@@ -161,7 +170,9 @@ class ContainerTestRunner:
                         status="failed",
                         message=message,
                     )
-                    return self._finalise(request, results, version, release_file, message)
+                    return self._finalise(
+                        request, results, version, release_file, message
+                    )
             else:
                 container_ref = self.tester.find_container(
                     request.recipe,
@@ -171,9 +182,7 @@ class ContainerTestRunner:
                 )
 
             if not container_ref:
-                message = (
-                    f"Unable to locate container {request.recipe}:{version} (location={request.location})"
-                )
+                message = f"Unable to locate container {request.recipe}:{version} (location={request.location})"
                 results = self._build_stub_result(
                     request.recipe,
                     version,

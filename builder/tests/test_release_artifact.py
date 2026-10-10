@@ -16,12 +16,17 @@ from builder.validation import resolve_fulltest_version
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def write_release(releases_dir: Path, recipe: str, release_version: str, **app: object) -> Path:
+def write_release(
+    releases_dir: Path, recipe: str, release_version: str, **app: object
+) -> Path:
     release_file = releases_dir / recipe / f"{release_version}.json"
     release_file.parent.mkdir(parents=True, exist_ok=True)
     release_file.write_text(
         json.dumps(
-            {"apps": {f"{recipe} {release_version}": app}, "categories": ["programming"]}
+            {
+                "apps": {f"{recipe} {release_version}": app},
+                "categories": ["programming"],
+            }
         ),
         encoding="utf-8",
     )
@@ -142,7 +147,9 @@ def test_pinned_container_is_honoured_and_never_falls_back(tmp_path: Path) -> No
     assert resolution.source == "pin"
 
 
-def test_missing_pinned_container_does_not_substitute_another_build(tmp_path: Path) -> None:
+def test_missing_pinned_container_does_not_substitute_another_build(
+    tmp_path: Path,
+) -> None:
     containers = tmp_path / "containers"
     touch(containers, "tool_1.2.3_20250101.simg")
 
@@ -306,7 +313,9 @@ def test_unexpanded_version_template_is_rejected(tmp_path: Path) -> None:
     assert "unexpanded template" in resolution.error
 
 
-def test_an_older_release_never_stands_in_for_the_current_version(tmp_path: Path) -> None:
+def test_an_older_release_never_stands_in_for_the_current_version(
+    tmp_path: Path,
+) -> None:
     """A fulltest tests the container the recipe builds now, not its predecessor."""
     releases = tmp_path / "releases"
     write_release(releases, "tool", "1.2.3", version="20250101", exec="")
@@ -363,11 +372,16 @@ def test_malformed_release_metadata_is_reported(tmp_path: Path) -> None:
     )
 
     assert resolution.path is None
-    assert "Build date missing" in resolution.error or "not-a-build-date" in resolution.error
+    assert (
+        "Build date missing" in resolution.error
+        or "not-a-build-date" in resolution.error
+    )
 
 
 def recipe_version(build_yaml: Path) -> str:
-    match = re.search(r"^version:\s*(.+)$", build_yaml.read_text(encoding="utf-8"), re.M)
+    match = re.search(
+        r"^version:\s*(.+)$", build_yaml.read_text(encoding="utf-8"), re.M
+    )
     if not match:
         return ""
     return re.sub(r"\s+#.*$", "", match.group(1).strip()).strip().strip("\"'")
@@ -435,17 +449,21 @@ def test_repository_fulltests_do_not_hardcode_release_artifacts() -> None:
 def test_rebuild_selects_new_date_without_changing_software_version(tmp_path):
     from builder.release import release_data, write_release_file
 
-    containers = tmp_path / 'containers'
-    old = touch(containers, 'tool_7.1.0_20260920.simg')
-    new = touch(containers, 'tool_7.1.0_20260921.simg')
-    for date, expected in [('20260920', old), ('20260921', new)]:
-        data = release_data('tool', '7.1.0', {'categories': ['workflows']}, date)
-        write_release_file(tmp_path, 'tool', '7.1.0', data)
-        artifact = resolve_release_artifact('tool', '7.1.0', tmp_path / 'releases')
+    containers = tmp_path / "containers"
+    old = touch(containers, "tool_7.1.0_20260920.simg")
+    new = touch(containers, "tool_7.1.0_20260921.simg")
+    for date, expected in [("20260920", old), ("20260921", new)]:
+        data = release_data("tool", "7.1.0", {"categories": ["workflows"]}, date)
+        write_release_file(tmp_path, "tool", "7.1.0", data)
+        artifact = resolve_release_artifact("tool", "7.1.0", tmp_path / "releases")
         assert artifact.filename == expected.name
         result = resolve_suite_container(
-            recipe='tool', version='7.1.0', declared=None, pinned=False,
-            containers_dir=containers, releases_dir=tmp_path / 'releases',
+            recipe="tool",
+            version="7.1.0",
+            declared=None,
+            pinned=False,
+            containers_dir=containers,
+            releases_dir=tmp_path / "releases",
         )
         assert result.path == expected
     assert old.exists()

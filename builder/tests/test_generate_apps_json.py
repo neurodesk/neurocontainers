@@ -8,8 +8,12 @@ import yaml
 from tools.generate_apps_json import generate_apps_json, merge_container_releases
 
 
-@pytest.mark.parametrize("container,source", [("demo", None), ("demo_gpu_arm64", "demo")])
-def test_catalog_refresh_preserves_published_artifacts(tmp_path, container, source) -> None:
+@pytest.mark.parametrize(
+    "container,source", [("demo", None), ("demo_gpu_arm64", "demo")]
+)
+def test_catalog_refresh_preserves_published_artifacts(
+    tmp_path, container, source
+) -> None:
     release_dir = tmp_path / "releases" / container
     release_dir.mkdir(parents=True)
     release = {
@@ -23,7 +27,9 @@ def test_catalog_refresh_preserves_published_artifacts(tmp_path, container, sour
     release_path.write_text(original)
     recipe_dir = tmp_path / "recipes" / (source or container)
     recipe_dir.mkdir(parents=True)
-    (recipe_dir / "build.yaml").write_text(yaml.safe_dump({"categories": ["workflows"]}))
+    (recipe_dir / "build.yaml").write_text(
+        yaml.safe_dump({"categories": ["workflows"]})
+    )
     output = tmp_path / "apps.json"
 
     generate_apps_json(str(release_dir.parent), str(output))
@@ -34,14 +40,22 @@ def test_catalog_refresh_preserves_published_artifacts(tmp_path, container, sour
     assert release_path.read_text() == original
 
 
-@pytest.mark.parametrize("recipe", [None, {}, {"categories": ["{{ context.category }}"]}])
-def test_catalog_retains_release_categories_when_recipe_cannot_supply_them(tmp_path, recipe) -> None:
+@pytest.mark.parametrize(
+    "recipe", [None, {}, {"categories": ["{{ context.category }}"]}]
+)
+def test_catalog_retains_release_categories_when_recipe_cannot_supply_them(
+    tmp_path, recipe
+) -> None:
     release_dir = tmp_path / "releases" / "demo"
     release_dir.mkdir(parents=True)
-    (release_dir / "1.0.json").write_text(json.dumps({
-        "apps": {"demo 1.0": {"version": "20260101"}},
-        "categories": ["programming"],
-    }))
+    (release_dir / "1.0.json").write_text(
+        json.dumps(
+            {
+                "apps": {"demo 1.0": {"version": "20260101"}},
+                "categories": ["programming"],
+            }
+        )
+    )
     if recipe is not None:
         recipe_dir = tmp_path / "recipes" / "demo"
         recipe_dir.mkdir(parents=True)

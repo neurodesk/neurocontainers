@@ -39,12 +39,17 @@ def source_version(recipe: dict, source: dict) -> str:
         if source["method"] == "apt":
             from .update_observations import debian_upstream_version
 
-            return re.sub(r"\+(?:dfsg|ds)\d*(?:\.\d+)*$", "", debian_upstream_version(value))
+            return re.sub(
+                r"\+(?:dfsg|ds)\d*(?:\.\d+)*$", "", debian_upstream_version(value)
+            )
         if target.get("value") != "tag":
             return value
         release = parse_release_tag(
-            value, "", re.compile(source["version_regex"]) if "version_regex" in source else None,
-            source.get("version_scheme", "numeric"), source.get("include_prereleases", False),
+            value,
+            "",
+            re.compile(source["version_regex"]) if "version_regex" in source else None,
+            source.get("version_scheme", "numeric"),
+            source.get("include_prereleases", False),
         )
         if release is not None:
             return release.version
@@ -53,7 +58,9 @@ def source_version(recipe: dict, source: dict) -> str:
         if pattern := source.get("version_regex"):
             if match := re.search(pattern, file["url"]):
                 return match.group("version")
-    raise ValueError(f"{source['id']}: container_version requires a locally recorded software version")
+    raise ValueError(
+        f"{source['id']}: container_version requires a locally recorded software version"
+    )
 
 
 def container_version(recipe: dict) -> str:
@@ -63,7 +70,9 @@ def container_version(recipe: dict) -> str:
     if isinstance(driver, dict):
         value = str(recipe.get("variables", {}).get(driver["variable"], ""))
         if not value:
-            raise ValueError(f"container_version requires variables.{driver['variable']}")
+            raise ValueError(
+                f"container_version requires variables.{driver['variable']}"
+            )
         value = driver.get("prefix", "") + value
     elif driver:
         source = next(source for source in config["sources"] if source["id"] == driver)
@@ -91,12 +100,22 @@ def bind_upstream_version(text: str, value: str) -> str:
     if "version_variable" not in config:
         variables = yaml.safe_load(text).get("variables", {})
         if variable in variables:
-            raise ValueError(f"variables.{variable} already exists; bind auto_update.version_variable explicitly")
+            raise ValueError(
+                f"variables.{variable} already exists; bind auto_update.version_variable explicitly"
+            )
         nodes = mapping_nodes(text)
-        spans = [nodes[key][1] for key in ("build", "variables", "files", "deploy") if key in nodes]
+        spans = [
+            nodes[key][1]
+            for key in ("build", "variables", "files", "deploy")
+            if key in nodes
+        ]
         for node in sorted(spans, key=lambda node: node.start_mark.index, reverse=True):
             start, end = node.start_mark.index, node.end_mark.index
-            content = re.sub(r"context\.(?:original_)?version\b", "context." + variable, text[start:end])
+            content = re.sub(
+                r"context\.(?:original_)?version\b",
+                "context." + variable,
+                text[start:end],
+            )
             text = text[:start] + content + text[end:]
         text = set_scalar(text, "auto_update", "version_variable", variable)
     return set_scalar(text, "variables", variable, value)

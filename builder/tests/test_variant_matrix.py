@@ -76,6 +76,10 @@ variants:
 
 def test_disabling_all_builds_is_rejected() -> None:
     with pytest.raises(ValueError, match="no enabled builds"):
-        concrete_variant_specs({
-            "name": "tool", "architectures": ["x86_64"], "build_default": False,
-        })
+        concrete_variant_specs(
+            {
+                "name": "tool",
+                "architectures": ["x86_64"],
+                "build_default": False,
+            }
+        )

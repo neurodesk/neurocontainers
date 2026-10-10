@@ -205,8 +205,16 @@ def build_report(data: Dict, recipe: str, version: str) -> str:
         header.append("")
 
     sections: List[str] = []
-    failed_tests = [entry for entry in data.get("test_results", []) if entry.get("status") == "failed"]
-    passed_tests = [entry for entry in data.get("test_results", []) if entry.get("status") == "passed"]
+    failed_tests = [
+        entry
+        for entry in data.get("test_results", [])
+        if entry.get("status") == "failed"
+    ]
+    passed_tests = [
+        entry
+        for entry in data.get("test_results", [])
+        if entry.get("status") == "passed"
+    ]
 
     if failed_tests:
         sections.append("### Failed Tests:")
@@ -231,7 +239,9 @@ def build_report(data: Dict, recipe: str, version: str) -> str:
     return "\n".join(header + sections).rstrip() + "\n"
 
 
-def build_aggregate_summary(entries: Iterable[Tuple[str, Dict]]) -> Tuple[str, Dict[str, int]]:
+def build_aggregate_summary(
+    entries: Iterable[Tuple[str, Dict]],
+) -> Tuple[str, Dict[str, int]]:
     lines: List[str] = ["## Aggregated Results", ""]
     totals = {"total": 0, "passed": 0, "failed": 0, "skipped": 0}
 

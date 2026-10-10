@@ -55,5 +55,7 @@ class SharedInputs:
                 if path.is_dir():
                     continue
                 if not path.resolve().is_relative_to(repo_root.resolve()):
-                    raise RuntimeError(f"Shared build input escapes the repository: {path}")
+                    raise RuntimeError(
+                        f"Shared build input escapes the repository: {path}"
+                    )
                 yield path

@@ -174,9 +174,13 @@ def _summarise_builtin(payload: Dict) -> Tuple[Dict, bool]:
                     for path in paths:
                         missing_paths.add(path)
                     if bin_name:
-                        binary = binaries.setdefault(bin_name, BinarySummary(name=bin_name))
+                        binary = binaries.setdefault(
+                            bin_name, BinarySummary(name=bin_name)
+                        )
                         binary.status = "failed"
-                        binary.missing_libs.append((lib_name, paths[0] if paths else None))
+                        binary.missing_libs.append(
+                            (lib_name, paths[0] if paths else None)
+                        )
             continue
 
         if (
@@ -193,7 +197,9 @@ def _summarise_builtin(payload: Dict) -> Tuple[Dict, bool]:
                     path_to_binary[file_path] = target_binary
             if status == "failed":
                 if target_binary:
-                    binary = binaries.setdefault(target_binary, BinarySummary(name=target_binary))
+                    binary = binaries.setdefault(
+                        target_binary, BinarySummary(name=target_binary)
+                    )
                     binary.status = "failed"
                     binary.additional_messages.append(message.strip())
                 else:

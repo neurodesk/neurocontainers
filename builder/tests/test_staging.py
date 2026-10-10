@@ -44,7 +44,9 @@ class FakeResponse(io.BytesIO):
 
 def test_url_guest_filename_uses_url_basename() -> None:
     assert (
-        get_guest_filename("downloaded_file", "https://example.com/releases/tool.tar.gz")
+        get_guest_filename(
+            "downloaded_file", "https://example.com/releases/tool.tar.gz"
+        )
         == "tool.tar.gz"
     )
 
@@ -92,7 +94,9 @@ def test_http_cache_retries_retryable_errors_with_backoff(
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     monkeypatch.setattr("builder.cache.time.sleep", lambda delay: sleeps.append(delay))
 
-    path = HttpCache(tmp_path / "httpcache").get("https://example.com/tool.tar.gz", retry=2)
+    path = HttpCache(tmp_path / "httpcache").get(
+        "https://example.com/tool.tar.gz", retry=2
+    )
 
     assert path.read_bytes() == b"ok"
     assert calls == 3
@@ -120,7 +124,9 @@ def test_materialize_plan_reports_declared_file_context_on_download_failure(
     monkeypatch.setattr("builder.cache.time.sleep", lambda delay: None)
 
     plan = StagingPlan()
-    plan.add_file(declared_file_from_mapping("tinytex_install", {"url": url, "retry": 1}))
+    plan.add_file(
+        declared_file_from_mapping("tinytex_install", {"url": url, "retry": 1})
+    )
 
     with pytest.raises(DownloadError) as exc_info:
         materialize_plan(
@@ -155,12 +161,16 @@ def test_stage_dcm2niix_creates_placeholder_without_download(tmp_path: Path) -> 
     )
     assert (cache_dir / "dcm2niix_lnx.zip").exists()
     mounted = list(cache_dir.glob("h*/dcm2niix_lnx.zip"))
-    assert mounted, "declared files used via get_file() must be staged under their cache mount id"
+    assert mounted, (
+        "declared files used via get_file() must be staged under their cache mount id"
+    )
 
 
 def test_stage_literal_file(tmp_path: Path) -> None:
     plan = StagingPlan()
-    plan.add_file(DeclaredFile(name="script.sh", contents="#!/bin/sh\necho ok", executable=True))
+    plan.add_file(
+        DeclaredFile(name="script.sh", contents="#!/bin/sh\necho ok", executable=True)
+    )
     cache_dir = materialize_plan(
         plan,
         tmp_path,
@@ -215,9 +225,12 @@ def test_staged_inputs_are_readable_without_changing_sources(
     payload = "#!/bin/sh\nprintf staged-input-ok\n"
     source.write_text(payload)
     source.chmod(0o600)
-    mapping = {source_kind: payload if source_kind == "contents" else (
-        url if source_kind == "url" else "tool.dat"
-    ), "executable": executable}
+    mapping = {
+        source_kind: payload
+        if source_kind == "contents"
+        else (url if source_kind == "url" else "tool.dat"),
+        "executable": executable,
+    }
     plan = StagingPlan()
     plan.add_file(declared_file_from_mapping("tool.dat", mapping))
     plan.cache_mounts["input"] = {"tool.dat": "tool.dat"}
@@ -235,31 +248,46 @@ def test_staged_inputs_are_readable_without_changing_sources(
     assert source.read_text() == payload
 
 
-def test_staging_preserves_local_executable_without_changing_its_mode(tmp_path: Path) -> None:
+def test_staging_preserves_local_executable_without_changing_its_mode(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "tool.sh"
     source.write_text("#!/bin/sh\nprintf staged-input-ok\n")
     source.chmod(0o700)
     plan = StagingPlan()
     plan.add_file(DeclaredFile(name="tool.sh", filename=str(source)))
-    cache = materialize_plan(plan, tmp_path, tmp_path / "build", http_cache_dir=tmp_path / "http")
+    cache = materialize_plan(
+        plan, tmp_path, tmp_path / "build", http_cache_dir=tmp_path / "http"
+    )
     assert stat.S_IMODE((cache / "tool.sh").stat().st_mode) == 0o755
     assert stat.S_IMODE(source.stat().st_mode) == 0o700
 
 
-def test_new_downloads_remain_hardlinked_when_staged(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: FakeResponse(b"asset"))
+def test_new_downloads_remain_hardlinked_when_staged(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda *args, **kwargs: FakeResponse(b"asset")
+    )
     plan = StagingPlan()
     url = "https://example.org/asset.dat"
     plan.add_file(declared_file_from_mapping("asset.dat", {"url": url}))
     http_cache_dir = tmp_path / "http"
-    staged = materialize_plan(plan, tmp_path, tmp_path / "build", http_cache_dir=http_cache_dir, download=True)
+    staged = materialize_plan(
+        plan, tmp_path, tmp_path / "build", http_cache_dir=http_cache_dir, download=True
+    )
     source = HttpCache(http_cache_dir).path_for(url)
     assert stat.S_IMODE(source.stat().st_mode) == 0o644
     assert source.samefile(staged / "asset.dat")
 
 
-@pytest.mark.parametrize("replacement", [{"contents": "replacement"}, {"url": "https://example.org/input.txt"}])
-def test_restaging_a_different_source_does_not_modify_old_hardlinks(tmp_path: Path, replacement) -> None:
+@pytest.mark.parametrize(
+    "replacement",
+    [{"contents": "replacement"}, {"url": "https://example.org/input.txt"}],
+)
+def test_restaging_a_different_source_does_not_modify_old_hardlinks(
+    tmp_path: Path, replacement
+) -> None:
     source = tmp_path / "input.txt"
     source.write_text("original")
     source.chmod(0o644)
@@ -269,7 +297,9 @@ def test_restaging_a_different_source_does_not_modify_old_hardlinks(tmp_path: Pa
     staged = materialize_plan(plan, tmp_path, tmp_path / "build", **kwargs)
     assert source.samefile(staged / "input.txt")
     next_plan = StagingPlan()
-    next_plan.add_file(declared_file_from_mapping("input.txt", {**replacement, "executable": True}))
+    next_plan.add_file(
+        declared_file_from_mapping("input.txt", {**replacement, "executable": True})
+    )
     materialize_plan(next_plan, tmp_path, tmp_path / "build", **kwargs)
     assert source.read_text() == "original"
     assert stat.S_IMODE(source.stat().st_mode) == 0o644
@@ -292,20 +322,33 @@ def test_macro_file_commands_use_staged_bytes_and_local_contexts(
     archive_bytes = archive.read_bytes()
     output = '{{ get_local("src") }}/installed'
     if directive_kind == "run":
-        directive = {"run": [
-            f'mkdir -p "{output}"',
-            'tar -xzf "{{ get_file("archive") }}" '
-            f'-C "{output}" --strip-components=1',
-        ]}
+        directive = {
+            "run": [
+                f'mkdir -p "{output}"',
+                'tar -xzf "{{ get_file("archive") }}" '
+                f'-C "{output}" --strip-components=1',
+            ]
+        }
     else:
-        directive = {"template": {
-            "name": "freesurfer", "version": "7.4.1",
-            "archive": '{{ get_file("archive") }}', "install_path": output,
-        }}
-    (macro_dir / "helpers.yaml").write_text(yaml.safe_dump({"directives": [
-        {"file": {"name": "archive", "filename": "archive.tar.gz"}},
-        directive, directive,
-    ]}))
+        directive = {
+            "template": {
+                "name": "freesurfer",
+                "version": "7.4.1",
+                "archive": '{{ get_file("archive") }}',
+                "install_path": output,
+            }
+        }
+    (macro_dir / "helpers.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "directives": [
+                    {"file": {"name": "archive", "filename": "archive.tar.gz"}},
+                    directive,
+                    directive,
+                ]
+            }
+        )
+    )
     recipe = yaml.safe_load(
         (Path(__file__).parent / "fixtures/conditional/build.yaml").read_text()
     )
@@ -317,13 +360,16 @@ def test_macro_file_commands_use_staged_bytes_and_local_contexts(
         tmp_path, architecture="x86_64", include_dirs=(tmp_path,), local_keys={"src"}
     )
     commands = [
-        item for item in compiled.definition.directives
+        item
+        for item in compiled.definition.directives
         if isinstance(item, RunWithMounts)
     ]
     assert len(commands) == 2
     for _ in range(2):
         cache = materialize_plan(
-            compiled.staging_plan, tmp_path, tmp_path / "build",
+            compiled.staging_plan,
+            tmp_path,
+            tmp_path / "build",
             http_cache_dir=tmp_path / "http",
         )
         for item in commands:
@@ -336,7 +382,8 @@ def test_macro_file_commands_use_staged_bytes_and_local_contexts(
                 )
                 source = (
                     cache / fields["source"].lstrip("/")
-                    if fields["from"] == "neurocontainer-cache" else local_dir
+                    if fields["from"] == "neurocontainer-cache"
+                    else local_dir
                 )
                 command = command.replace(fields["target"], str(source))
             subprocess.run(["bash", "-e", "-c", command], check=True)
@@ -357,12 +404,15 @@ def test_colliding_download_names_resolve_to_their_staged_bytes(
         "https://example.org/second/input.txt",
     ]
     recipe["files"] = [
-        {"name": name, "url": url}
-        for name, url in zip(["first", "second"], urls)
+        {"name": name, "url": url} for name, url in zip(["first", "second"], urls)
     ]
-    recipe["build"]["directives"] = [{"run": [
-        'cat "{{ get_file("first") }}" "{{ get_file("second") }}" "{{ get_file("first") }}"',
-    ]}]
+    recipe["build"]["directives"] = [
+        {
+            "run": [
+                'cat "{{ get_file("first") }}" "{{ get_file("second") }}" "{{ get_file("first") }}"',
+            ]
+        }
+    ]
     (tmp_path / "build.yaml").write_text(yaml.safe_dump(recipe))
     http = HttpCache(tmp_path / "http")
     for url, payload in zip(urls, ["first\n", "second\n"]):
@@ -371,25 +421,32 @@ def test_colliding_download_names_resolve_to_their_staged_bytes(
         initial = compile_recipe(tmp_path, architecture="x86_64")
         cache_id = next(iter(initial.staging_plan.cache_mounts))
         old = (
-            Path.home() / ".cache/neurocontainers/build-context"
-            / cache_id / "input.txt"
+            Path.home()
+            / ".cache/neurocontainers/build-context"
+            / cache_id
+            / "input.txt"
         )
         old.parent.mkdir(parents=True)
         old.write_text("older build\n")
     compiled = compile_recipe(tmp_path, architecture="x86_64")
     item = next(
-        item for item in compiled.definition.directives
+        item
+        for item in compiled.definition.directives
         if isinstance(item, RunWithMounts)
     )
     for _ in range(2):
         cache = materialize_plan(
-            compiled.staging_plan, tmp_path, tmp_path / "build",
+            compiled.staging_plan,
+            tmp_path,
+            tmp_path / "build",
             http_cache_dir=http.root,
         )
         command = item.command.replace("/.neurocontainer-cache/", str(cache) + "/")
         result = subprocess.run(
-            ["bash", "-e", "-c", command], check=True,
-            capture_output=True, text=True,
+            ["bash", "-e", "-c", command],
+            check=True,
+            capture_output=True,
+            text=True,
         )
         assert result.stdout == "first\nsecond\nfirst\n"
         staged_paths = shlex.split(command)[1:]

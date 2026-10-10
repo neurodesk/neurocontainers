@@ -58,9 +58,7 @@ CANDIDATE_REPORT_SCHEMA_VERSION = 3
 DIVE_STATUSES = {"success", "failure", "cancelled", "skipped", "unknown"}
 LAUNCHER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/+:-]*$")
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-DIVE_EFFICIENCY_PATTERN = re.compile(
-    r"\befficiency:\s*([0-9]+(?:\.[0-9]+)?)\s*%"
-)
+DIVE_EFFICIENCY_PATTERN = re.compile(r"\befficiency:\s*([0-9]+(?:\.[0-9]+)?)\s*%")
 DIVE_WASTED_BYTES_PATTERN = re.compile(
     r"\bwastedBytes:\s*([0-9]+)\s+bytes\s+\(([^)]+)\)"
 )
@@ -80,7 +78,9 @@ DIVE_PERCENT_FAILURE_PATTERN = re.compile(
 # nothing actionable; above it, waste is worth a maintainer's attention.
 DIVE_RATIO_FLOOR_BYTES = 200 * 1024 * 1024
 DIVE_RATIO_RULE = "highestUserWastedPercent"
-DIVE_FAILED_RULE_PATTERN = re.compile(r"^\s*FAIL:\s*([A-Za-z][A-Za-z0-9_]*)", re.MULTILINE)
+DIVE_FAILED_RULE_PATTERN = re.compile(
+    r"^\s*FAIL:\s*([A-Za-z][A-Za-z0-9_]*)", re.MULTILINE
+)
 DIVE_INEFFICIENT_FILE_PATTERN = re.compile(
     r"^\s*(\d+)\s+([0-9]+(?:\.[0-9]+)?\s+[kKMGT]?B)\s+(/\S.*)$"
 )
@@ -194,7 +194,14 @@ def release_plan(base: str, head: str) -> ReleasePlan:
     names = recipe_names_from_paths(paths)
     if any(path.startswith("macros/") for path in paths):
         tree = run_git("ls-tree", "-r", "--name-only", head, "--", "recipes")
-        names = sorted(set(names) | {path.split("/")[1] for path in tree.splitlines() if re.fullmatch(r"recipes/[^/]+/build.yaml", path)})
+        names = sorted(
+            set(names)
+            | {
+                path.split("/")[1]
+                for path in tree.splitlines()
+                if re.fullmatch(r"recipes/[^/]+/build.yaml", path)
+            }
+        )
     base_recipes = {recipe: load_recipe_at(base, recipe) for recipe in names}
     head_recipes = {recipe: load_recipe_at(head, recipe) for recipe in names}
     # Reading the manifest costs a Git call, so only consult it when a recipe
@@ -213,16 +220,18 @@ def release_plan(base: str, head: str) -> ReleasePlan:
         return plan
 
     allowed = tuple(
-        f"recipes/{recipe}/"
-        for recipe in plan.changed_recipes + plan.retired_recipes
+        f"recipes/{recipe}/" for recipe in plan.changed_recipes + plan.retired_recipes
     )
     shared_inputs = [
-        SharedInputs.from_recipe(head_recipes[name])
-        for name in plan.candidate_recipes
+        SharedInputs.from_recipe(head_recipes[name]) for name in plan.candidate_recipes
     ]
-    unrelated = [path for path in paths if not path.startswith(allowed)
-                 and path != RETIREMENT_MANIFEST
-                 and not any(inputs.contains(path) for inputs in shared_inputs)]
+    unrelated = [
+        path
+        for path in paths
+        if not path.startswith(allowed)
+        and path != RETIREMENT_MANIFEST
+        and not any(inputs.contains(path) for inputs in shared_inputs)
+    ]
     if unrelated:
         raise RuntimeError(
             "Automated releases require a recipe-only PR. Unrelated paths: "
@@ -306,7 +315,9 @@ def resolve_variant(recipe: str, variant: str) -> dict[str, Any]:
     for spec in concrete_variant_specs(data):
         if str(spec["variant"]) == variant:
             return spec
-    declared = ", ".join(str(spec["variant"]) or "default" for spec in concrete_variant_specs(data))
+    declared = ", ".join(
+        str(spec["variant"]) or "default" for spec in concrete_variant_specs(data)
+    )
     raise RuntimeError(
         f"Recipe {recipe} does not declare variant {variant or 'default'!r}; declared: {declared}"
     )
@@ -569,7 +580,9 @@ def build_candidate_report(
             f"Unable to read candidate test results {results_path}: {error}"
         ) from error
     if not isinstance(results, dict):
-        raise RuntimeError(f"Candidate test results must be a JSON object: {results_path}")
+        raise RuntimeError(
+            f"Candidate test results must be a JSON object: {results_path}"
+        )
 
     total = _result_count(results, "total_tests")
     passed = _result_count(results, "passed")
@@ -680,7 +693,9 @@ def load_candidate_manifest(candidate_dir: Path) -> dict[str, Any]:
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise RuntimeError(f"Unable to read candidate manifest {path}: {error}") from error
+        raise RuntimeError(
+            f"Unable to read candidate manifest {path}: {error}"
+        ) from error
     if not isinstance(manifest, dict):
         raise RuntimeError(f"Candidate manifest must be a JSON object: {path}")
     missing = [field for field in CANDIDATE_MANIFEST_FIELDS if field not in manifest]
@@ -847,8 +862,8 @@ def verify_published_metadata(
             raise RuntimeError(f"Published head SHA mismatch for {container}")
         if manifest.get("pr_number") != expected_pr_number:
             raise RuntimeError(f"Published PR number mismatch for {container}")
-        fingerprint_changed = (
-            manifest.get("recipe_fingerprint") != recipe_fingerprint(recipe)
+        fingerprint_changed = manifest.get("recipe_fingerprint") != recipe_fingerprint(
+            recipe
         )
         source_only_change = (
             expected_merge_sha is not None
@@ -931,7 +946,7 @@ def command_materialize(args: argparse.Namespace) -> None:
     bundle = Path(args.bundle)
     manifests = json.loads(Path(args.manifests).read_text(encoding="utf-8"))
     for manifest in manifests:
-        recipe = validate_recipe_identifier(manifest.get("recipe"))
+        validate_recipe_identifier(manifest.get("recipe"))
         container = validate_recipe_identifier(manifest.get("container"))
         version = manifest.get("version")
         if not isinstance(version, str) or not VERSION_PATTERN.fullmatch(version):

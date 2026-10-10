@@ -1,4 +1,5 @@
 """Generate recipe labels before a build and copy image labels to SIF annotations."""
+
 from __future__ import annotations
 
 import argparse
@@ -17,6 +18,7 @@ from .image_fingerprint import (
     select_platform_manifest,
 )
 from .ir import From
+
 if TYPE_CHECKING:
     from .recipe import CompiledRecipe
 
@@ -24,19 +26,38 @@ if TYPE_CHECKING:
 PREFIX = "org.opencontainers.image."
 
 
-def recipe_labels(compiled: CompiledRecipe, build_date: str, revision: str) -> dict[str, str]:
+def recipe_labels(
+    compiled: CompiledRecipe, build_date: str, revision: str
+) -> dict[str, str]:
     created = datetime.strptime(build_date, "%Y%m%d").strftime("%Y-%m-%dT00:00:00Z")
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("Image revision must be a full Git commit SHA")
     structured = compiled.metadata.get("structured_readme") or {}
     description = str(structured.get("description") or "").strip()
     if not description:
-        description = next((line.strip() for line in compiled.readme.splitlines()
-                            if line.strip() and not line.lstrip().startswith(("#", "---", "```"))), compiled.name)
-    licenses = list(dict.fromkeys(str(item["license"]).strip()
-                                 for item in compiled.metadata.get("copyright") or [] if item.get("license")))
-    license_expression = " AND ".join(f"({item})" if " " in item else item for item in licenses)
-    base = next(directive.image for directive in compiled.definition.directives if isinstance(directive, From))
+        description = next(
+            (
+                line.strip()
+                for line in compiled.readme.splitlines()
+                if line.strip() and not line.lstrip().startswith(("#", "---", "```"))
+            ),
+            compiled.name,
+        )
+    licenses = list(
+        dict.fromkeys(
+            str(item["license"]).strip()
+            for item in compiled.metadata.get("copyright") or []
+            if item.get("license")
+        )
+    )
+    license_expression = " AND ".join(
+        f"({item})" if " " in item else item for item in licenses
+    )
+    base = next(
+        directive.image
+        for directive in compiled.definition.directives
+        if isinstance(directive, From)
+    )
     values = {
         "title": compiled.name,
         "ref.name": compiled.name,
@@ -60,11 +81,24 @@ def image_labels(image: str, architecture: str) -> dict[str, str]:
     client = RegistryClient(ref.registry, credentials=resolve_credentials(ref.registry))
     manifest = client.get_manifest(ref.repository, ref.reference)
     if "manifests" in manifest:
-        manifest = client.get_manifest(ref.repository, select_platform_manifest(manifest["manifests"], resolve_architecture(architecture)))
+        manifest = client.get_manifest(
+            ref.repository,
+            select_platform_manifest(
+                manifest["manifests"], resolve_architecture(architecture)
+            ),
+        )
     config = client.get_config_blob(ref.repository, manifest["config"]["digest"])
-    labels = {key: value for key, value in (config.get("config", {}).get("Labels") or {}).items() if key.startswith(PREFIX)}
-    if not all(labels.get(PREFIX + key) for key in ("title", "version", "created", "revision")):
-        raise ValueError("Published image is missing recipe identity labels; rebuild it before SIF publication")
+    labels = {
+        key: value
+        for key, value in (config.get("config", {}).get("Labels") or {}).items()
+        if key.startswith(PREFIX)
+    }
+    if not all(
+        labels.get(PREFIX + key) for key in ("title", "version", "created", "revision")
+    ):
+        raise ValueError(
+            "Published image is missing recipe identity labels; rebuild it before SIF publication"
+        )
     return labels
 
 
@@ -92,7 +126,9 @@ def main() -> None:
     image.add_argument("reference")
     image.add_argument("--architecture", default="amd64")
     for command in (recipe, image):
-        command.add_argument("--format", choices=("json", "labels", "annotations"), default="json")
+        command.add_argument(
+            "--format", choices=("json", "labels", "annotations"), default="json"
+        )
     args = parser.parse_args()
     if args.command == "recipe":
         from .config import default_config

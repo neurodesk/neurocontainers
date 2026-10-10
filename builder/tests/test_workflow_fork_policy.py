@@ -1,5 +1,4 @@
 import re
-from fnmatch import fnmatchcase
 from pathlib import Path
 
 import pytest
@@ -13,10 +12,10 @@ def test_workflow_edits_trigger_the_fork_policy_checks() -> None:
     """Run the policy checks whenever any workflow definition changes."""
     definition = yaml.safe_load((WORKFLOWS / "test-builder.yml").read_text())
     triggers = definition.get("on", definition.get(True))
-    patterns = triggers["push"]["paths"]
-    for workflow in WORKFLOWS.glob("*.yml"):
-        path = f".github/workflows/{workflow.name}"
-        assert any(fnmatchcase(path, pattern) for pattern in patterns), path
+    for event in ("pull_request", "push"):
+        assert event in triggers
+        assert not (triggers[event] or {}).get("paths")
+        assert not (triggers[event] or {}).get("paths-ignore")
 
 
 def _requires_upstream_repository(condition: object) -> bool:

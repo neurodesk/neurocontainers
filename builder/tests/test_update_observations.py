@@ -208,9 +208,7 @@ def test_zenodo_rejects_incomplete_record_payload(
     monkeypatch.setattr(update_records.requests, "Session", factory)
 
     with pytest.raises(ValueError, match="Zenodo"):
-        update_observations.observe_source(
-            {"method": "zenodo", "record": "1"}, Mock()
-        )
+        update_observations.observe_source({"method": "zenodo", "record": "1"}, Mock())
 
 
 def test_zenodo_selects_latest_compatible_asset_layout(public_session: Mock) -> None:
@@ -364,8 +362,7 @@ def test_github_commit_resolves_head_and_proves_forward_ancestry() -> None:
     assert observed.metadata == {"ref": "HEAD", "ancestry": "ahead", "ahead_by": 3}
     assert github_session.get.call_args_list[0].args[0].endswith("/commits/HEAD")
     assert (
-        f"/compare/{current}...{latest}"
-        in github_session.get.call_args_list[1].args[0]
+        f"/compare/{current}...{latest}" in github_session.get.call_args_list[1].args[0]
     )
 
 
@@ -585,12 +582,15 @@ def test_artifact_listing_reads_html_links(public_session: Mock) -> None:
 
 @pytest.mark.parametrize("prefix", ["", "/project"])
 def test_artifact_listing_rebases_misplaced_root_links_when_configured(
-    public_session: Mock, prefix: str,
+    public_session: Mock,
+    prefix: str,
 ) -> None:
     public_session.get.side_effect = [
         response(
-            content=(f'<a href="{prefix}/download/12/">tool-1.2.zip</a>'
-                     f'<a href="{prefix}/download/15/">tool-1.3.zip</a>').encode(),
+            content=(
+                f'<a href="{prefix}/download/12/">tool-1.2.zip</a>'
+                f'<a href="{prefix}/download/15/">tool-1.3.zip</a>'
+            ).encode(),
             headers={"Content-Type": "text/html"},
         ),
         response(content=b"new", url="https://vendor.example/project/download/15/"),
@@ -609,7 +609,9 @@ def test_artifact_listing_rebases_misplaced_root_links_when_configured(
     assert observed.version == "1.3"
 
 
-@pytest.mark.parametrize("href", ["//other.example/tool.zip", "/../tool.zip", "/%2e%2e/tool.zip"])
+@pytest.mark.parametrize(
+    "href", ["//other.example/tool.zip", "/../tool.zip", "/%2e%2e/tool.zip"]
+)
 def test_rebased_artifact_links_cannot_escape_the_download_base(href: str) -> None:
     with pytest.raises(ValueError, match="escapes download_base"):
         update_observations._artifact_url(
@@ -689,8 +691,7 @@ def test_artifact_listing_resolves_bounded_girder_item_download(
         response(
             content=artifact,
             url=(
-                "https://data.kitware.com/api/v1/item/"
-                "68152a78f9c66e8c473d38c8/download"
+                "https://data.kitware.com/api/v1/item/68152a78f9c66e8c473d38c8/download"
             ),
         ),
     ]
@@ -713,8 +714,7 @@ def test_artifact_listing_resolves_bounded_girder_item_download(
     )
 
     assert observed.value == (
-        "https://data.kitware.com/api/v1/item/"
-        "68152a78f9c66e8c473d38c8/download"
+        "https://data.kitware.com/api/v1/item/68152a78f9c66e8c473d38c8/download"
     )
     assert observed.version == "6.0.0"
     assert observed.metadata["sha256"] == hashlib.sha256(artifact).hexdigest()
@@ -798,8 +798,7 @@ Version: 1:2.0-1ubuntu2
             "method": "apt",
             "package": "demo",
             "urls": [
-                "https://archive.example/dists/noble/main/"
-                "binary-amd64/Packages.gz"
+                "https://archive.example/dists/noble/main/binary-amd64/Packages.gz"
             ],
         },
         Mock(),
@@ -829,13 +828,40 @@ def test_apt_reports_missing_package(public_session: Mock) -> None:
         )
 
 
-@pytest.mark.parametrize("config", [
-    {"method": "http_digest", "url": "https://example.org/tool.jar", "version_member": "Main.class"},
-    {"method": "http_digest", "url": "https://example.org/tool.jar", "version_regex": r"(?P<version>\d+)"},
-    {"method": "http_digest", "url": "https://example.org/tool.jar", "version_member": "../Main.class", "version_regex": r"(?P<version>\d+)"},
-    {"method": "http_digest", "url": "https://example.org/tool.jar", "version_member": "Main.class", "version_regex": r"\d+"},
-    {"method": "http_digest", "url": "https://example.org/tool.jar", "matlab_readme": "readme.txt", "version_member": "Main.class", "version_regex": r"(?P<version>\d+)"},
-])
+@pytest.mark.parametrize(
+    "config",
+    [
+        {
+            "method": "http_digest",
+            "url": "https://example.org/tool.jar",
+            "version_member": "Main.class",
+        },
+        {
+            "method": "http_digest",
+            "url": "https://example.org/tool.jar",
+            "version_regex": r"(?P<version>\d+)",
+        },
+        {
+            "method": "http_digest",
+            "url": "https://example.org/tool.jar",
+            "version_member": "../Main.class",
+            "version_regex": r"(?P<version>\d+)",
+        },
+        {
+            "method": "http_digest",
+            "url": "https://example.org/tool.jar",
+            "version_member": "Main.class",
+            "version_regex": r"\d+",
+        },
+        {
+            "method": "http_digest",
+            "url": "https://example.org/tool.jar",
+            "matlab_readme": "readme.txt",
+            "version_member": "Main.class",
+            "version_regex": r"(?P<version>\d+)",
+        },
+    ],
+)
 def test_http_digest_archive_version_is_validated_before_network(config):
     with pytest.raises(ValueError):
         update_observations.validate_source(config)
@@ -845,14 +871,25 @@ def test_http_digest_archive_version_is_validated_before_network(config):
 def test_github_commit_extracts_version_from_source_file(version: str) -> None:
     session = Mock()
     sha = "a" * 40
-    contents = f'// source header\n#define TOOL_VERSION "{version}"\n' + "// comment\n" * 50
+    contents = (
+        f'// source header\n#define TOOL_VERSION "{version}"\n' + "// comment\n" * 50
+    )
     session.get.side_effect = [
         response(data={"sha": sha}),
-        response(data={"encoding": "base64", "content": base64.b64encode(contents.encode()).decode()}),
+        response(
+            data={
+                "encoding": "base64",
+                "content": base64.b64encode(contents.encode()).decode(),
+            }
+        ),
     ]
     observed = update_observations.observe_source(
-        {"method": "github_commit", "repo": "org/tool", "version_file": "src/version.h",
-         "version_regex": r'#define TOOL_VERSION "(?P<version>[0-9.]+)"'},
+        {
+            "method": "github_commit",
+            "repo": "org/tool",
+            "version_file": "src/version.h",
+            "version_regex": r'#define TOOL_VERSION "(?P<version>[0-9.]+)"',
+        },
         session,
     )
     assert observed.value == sha
@@ -860,28 +897,48 @@ def test_github_commit_extracts_version_from_source_file(version: str) -> None:
     assert session.get.call_args_list[1].kwargs["params"] == {"ref": sha}
 
 
-@pytest.mark.parametrize("contents", [
-    "no version", 'VERSION="1.0" VERSION="2.0"', 'VERSION="bad version"', "x" * 65537,
-])
+@pytest.mark.parametrize(
+    "contents",
+    [
+        "no version",
+        'VERSION="1.0" VERSION="2.0"',
+        'VERSION="bad version"',
+        "x" * 65537,
+    ],
+)
 def test_github_commit_rejects_invalid_extracted_version(contents: str) -> None:
     session = Mock()
     session.get.side_effect = [
         response(data={"sha": "a" * 40}),
-        response(data={"encoding": "base64", "content": base64.b64encode(contents.encode()).decode()}),
+        response(
+            data={
+                "encoding": "base64",
+                "content": base64.b64encode(contents.encode()).decode(),
+            }
+        ),
     ]
     with pytest.raises(ValueError, match="GitHub version file"):
         update_observations.observe_source(
-            {"method": "github_commit", "repo": "org/tool", "version_file": "src/version.h",
-             "version_regex": r'VERSION="(?P<version>[^"]+)"'},
+            {
+                "method": "github_commit",
+                "repo": "org/tool",
+                "version_file": "src/version.h",
+                "version_regex": r'VERSION="(?P<version>[^"]+)"',
+            },
             session,
         )
 
 
-@pytest.mark.parametrize("extra", [
-    {"version_regex": r"(?P<version>[0-9.]+)"},
-    {"version_file": "version.h", "version_regex": "["},
-    {"version_file": "version.h", "version_regex": r"[0-9.]+"},
-])
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"version_regex": r"(?P<version>[0-9.]+)"},
+        {"version_file": "version.h", "version_regex": "["},
+        {"version_file": "version.h", "version_regex": r"[0-9.]+"},
+    ],
+)
 def test_github_commit_rejects_invalid_version_extraction_config(extra: dict) -> None:
     with pytest.raises(ValueError, match="version_regex"):
-        update_observations.validate_source({"method": "github_commit", "repo": "org/tool", **extra})
+        update_observations.validate_source(
+            {"method": "github_commit", "repo": "org/tool", **extra}
+        )
