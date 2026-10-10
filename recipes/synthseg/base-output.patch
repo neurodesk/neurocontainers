@@ -1,0 +1,56 @@
+--- a/mri_synthseg
++++ b/mri_synthseg
+@@ -40,6 +40,7 @@
+     # input/outputs
+     parser.add_argument("--i", help="Image(s) to segment. Can be a path to an image or to a folder.")
+     parser.add_argument("--o", help="Segmentation output(s). Must be a folder if --i designates a folder.")
++    parser.add_argument("--base-output", help="(optional) Save underlying tissue segmentation as well; requires --parc and one input image.")
+     parser.add_argument("--parc", action="store_true", help="(optional) Whether to perform cortex parcellation.")
+     parser.add_argument("--robust", action="store_true", help="(optional) Whether to use robust predictions (slower).")
+     parser.add_argument("--fast", action="store_true", help="(optional) Bypass some processing for faster prediction.")
+@@ -202,7 +203,8 @@
+         ct=args.ct,
+         keepgeom=args.keepgeom,
+         labels=labels,
+-        autocrop=args.autocrop
++        autocrop=args.autocrop,
++        path_base_segmentation=args.base_output
+     )
+ 
+ 
+@@ -238,10 +240,24 @@
+             ct,
+             keepgeom=False,
+             labels=None,
+-            autocrop=False):
++            autocrop=False,
++            path_base_segmentation=None):
+     '''
+     Prediction pipeline.
+     '''
++
++    if path_base_segmentation is not None:
++        if not do_parcellation or not os.path.isfile(path_images) or not path_images.endswith(('.nii', '.nii.gz', '.mgz')):
++            raise ValueError('--base-output requires --parc and one input image file')
++        if not path_base_segmentation.endswith(('.nii', '.nii.gz', '.mgz')):
++            raise ValueError('--base-output must name an output image file')
++        if not path_segmentations.endswith(('.nii', '.nii.gz', '.mgz')):
++            raise ValueError('--base-output requires --o to name an output image file')
++        paths = [os.path.realpath(path) for path in
++                 (path_images, path_segmentations, path_posteriors, path_resampled, path_volumes, path_qc_scores)
++                 if path is not None]
++        if os.path.realpath(path_base_segmentation) in paths or paths[0] == paths[1]:
++            raise ValueError('--base-output, input and other output paths must be distinct')
+ 
+     # prepare input/output filepaths
+     outputs = prepare_output_files(path_images, path_segmentations, path_posteriors, path_resampled,
+@@ -368,6 +384,9 @@
+             sfimage = None;
+             if(keepgeom): sfimage = sf.load_volume(path_images[i]);
+             save_volume(seg, aff, h, path_segmentations[i], dtype='int32', resample_like_image=sfimage, labels=labels)
++            if path_base_segmentation is not None:
++                base_seg = labels_segmentation[posteriors.argmax(axis=-1)].astype('int32')
++                save_volume(base_seg, aff, h, path_base_segmentation, dtype='int32', resample_like_image=sfimage, labels=labels)
+             if path_posteriors[i] is not None:
+                 save_volume(posteriors, aff, h, path_posteriors[i], dtype='float32')
+ 

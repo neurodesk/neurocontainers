@@ -1,0 +1,24 @@
+Glasser volumetric atlas attribution
+
+HCP-MMP1.0 projected onto MNI152 ICBM2009a nonlinear asymmetric space
+by Andreas Horn, available at https://doi.org/10.6084/m9.figshare.3501911.v5.
+Licensed under Creative Commons Attribution 4.0 International.
+https://creativecommons.org/licenses/by/4.0/
+
+Original cortical parcellation:
+Glasser MF et al. A multi-modal parcellation of human cerebral cortex.
+Nature 536, 171-178 (2016). https://doi.org/10.1038/nature18933
+
+This container changes the shared hemisphere IDs of the distributed volume.
+Original IDs 1..180 are retained at physical MNI RAS x<=0. At x>0, 180 is
+added, giving right IDs 181..360. Labelled x=0 voxels belong to the left.
+Right parcel names are derived by replacing L_ with R_ in the published
+left parcel table. The resulting table is /opt/glasser/labels.txt.
+
+The optional native-volume output is an approximate spatial registration,
+clipped to SynthSeg cortical grey matter. It is not an individual-subject
+HCP multimodal surface parcellation.
+
+ICBM152 nonlinear asymmetric 2009a T1 and brain mask:
+https://www.bic.mni.mcgill.ca/ServicesAtlases/ICBM152NLin2009
+The original redistribution notice is retained in ICBM-COPYING.txt.
