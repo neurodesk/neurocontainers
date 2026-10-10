@@ -1,5 +1,5 @@
 # 3D Slicer container test suite
-# Tests for 3D Slicer v5.10.0 - Medical image visualization and analysis platform
+# Tests for 3D Slicer - Medical image visualization and analysis platform
 #
 # 3D Slicer is a free, open source software for visualization, processing,
 # segmentation, registration, and analysis of medical, biomedical, and other 3D
@@ -15,8 +15,8 @@
 
 monailabel_version: 0.8.5
 slicer_torch_version: 2.5.1
-slicer_monai_version: 1.4.0
-slicer_numpy_version: 1.26.4
+slicer_monai_version: 1.5.2
+slicer_numpy_version: 2.4.6
 name: slicer
 version: "5.12.4"
 
@@ -67,6 +67,34 @@ tests:
   - name: Slicer NumPy version
     command: PythonSlicer -c 'import numpy; print(numpy.__version__)'
     expected_output_contains: ${slicer_numpy_version}
+  - name: Slicer embedded Python dependencies
+    command: PythonSlicer -m pip check
+    expected_output_contains: No broken requirements found.
+  - name: Slicer JPEG-LS DICOM decoding
+    description: Round-trip a lossless JPEG-LS DICOM image through the bundled pixel decoder.
+    command: |
+      PythonSlicer - <<'PY'
+      import numpy as np
+      from pydicom.dataset import Dataset, FileMetaDataset
+      from pydicom.uid import ExplicitVRLittleEndian, JPEGLSLossless
+
+      pixels = np.arange(256, dtype=np.uint16).reshape(16, 16)
+      dataset = Dataset()
+      dataset.file_meta = FileMetaDataset()
+      dataset.file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+      dataset.Rows, dataset.Columns = pixels.shape
+      dataset.SamplesPerPixel = 1
+      dataset.PhotometricInterpretation = "MONOCHROME2"
+      dataset.BitsAllocated = dataset.BitsStored = 16
+      dataset.HighBit = 15
+      dataset.PixelRepresentation = 0
+      dataset.PixelData = pixels.tobytes()
+      dataset.compress(JPEGLSLossless, encoding_plugin="pyjpegls")
+      dataset.decompress(decoding_plugin="pyjpegls")
+      np.testing.assert_array_equal(dataset.pixel_array, pixels)
+      print("SLICER_JPEGLS_ROUNDTRIP_OK")
+      PY
+    expected_output_contains: SLICER_JPEGLS_ROUNDTRIP_OK
   - name: MONAI Label server version
     command: python -c 'from importlib.metadata import version; print(version("monailabel"))'
     expected_output_contains: ${monailabel_version}

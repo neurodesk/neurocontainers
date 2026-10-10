@@ -7,8 +7,8 @@ architectures:
 variables:
   monailabel_version: 0.8.5
   slicer_torch_version: 2.5.1
-  slicer_monai_version: 1.4.0
-  slicer_numpy_version: 1.26.4
+  slicer_monai_version: 1.5.2
+  slicer_numpy_version: 2.4.6
   monaiauto3dseg_extension_item: "6aa1d769ce9de556d3010f7b"
   monaiauto3dseg_extension_sha256: "d77be3f28e33f300f37610922bd7bbc3f26f5d49fe5ffec9374ed6c9ed0b206e"
   pytorch_extension_item: "6aa1ce4ace9de556d301093f"
@@ -42,7 +42,7 @@ auto_update:
     dependency: true
     method: pypi
     package: monai
-    version_regex: '(?P<version>1\.4\.\d+)'
+    version_regex: '(?P<version>1\.5\.\d+)'
     target:
       variable: slicer_monai_version
       fulltest_variable: slicer_monai_version
@@ -50,7 +50,7 @@ auto_update:
     dependency: true
     method: pypi
     package: numpy
-    version_regex: '(?P<version>1\.26\.\d+)'
+    version_regex: '(?P<version>2\.4\.\d+)'
     target:
       variable: slicer_numpy_version
       fulltest_variable: slicer_numpy_version
