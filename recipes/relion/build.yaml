@@ -11,9 +11,15 @@ architectures:
 variables:
   relion_version: "5.1.1"
   compute_capability: "75"
-  torch_version: "2.7.1+cpu"
-  torch_cpu_sha256: "1f04a373a3f643821f721da9898ef77dce73b5b6bfc64486f0976f7fb5f90e83"
+  torch_version: "2.7.1+cu128"
+  torch_cuda_sha256: "d6c3cba198dc93f93422a8545f48a6697890366e4b9701f54351fc27e2304bd3"
   torch_wheel: torch-{{ context.torch_version }}-cp310-cp310-manylinux_2_28_x86_64.whl
+  classranker_commit: "352adf8b690ba56e9f4073cfee41c8fcad3dfb81"
+  blush_commit: "ab48e6380e66b9aaf52362e86e060e9b9d8a40fd"
+  dynamight_commit: "358db04d5c2ec2997f3f17060a456293f0b02185"
+  topaz_commit: "c8dd487cbf9d27139d0d430068033fb90dd9a393"
+  modelangelo_commit: "994945bdfa6e5368e0d62349a47792f4864eebc3"
+  torch_home: /opt/relion-{{ context.version }}/torch
   relion_commit: "05cd1ad95e89d4e6b0424c6c158322a46a74d8aa"
   ctffind_version: 4.1.14
   motioncor2_version: 1.6.4
@@ -37,12 +43,47 @@ auto_update:
       variable: relion_commit
       variables:
         relion_version: version
-  - id: torch_cpu
+  - id: torch_cuda
     method: http_digest
     dependency: true
-    url: https://download.pytorch.org/whl/cpu/torch-2.7.1%2Bcpu-cp310-cp310-manylinux_2_28_x86_64.whl
+    url: https://download.pytorch.org/whl/cu128/torch-2.7.1%2Bcu128-cp310-cp310-manylinux_2_28_x86_64.whl
     target:
-      variable: torch_cpu_sha256
+      variable: torch_cuda_sha256
+  - id: classranker
+    method: github_commit
+    dependency: true
+    repo: 3dem/relion-classranker
+    ref: HEAD
+    target:
+      variable: classranker_commit
+  - id: blush
+    method: github_commit
+    dependency: true
+    repo: 3dem/relion-blush
+    ref: HEAD
+    target:
+      variable: blush_commit
+  - id: dynamight
+    method: github_commit
+    dependency: true
+    repo: 3dem/DynaMight
+    ref: HEAD
+    target:
+      variable: dynamight_commit
+  - id: topaz
+    method: github_commit
+    dependency: true
+    repo: 3dem/topaz
+    ref: HEAD
+    target:
+      variable: topaz_commit
+  - id: modelangelo
+    method: github_commit
+    dependency: true
+    repo: 3dem/model-angelo
+    ref: HEAD
+    target:
+      variable: modelangelo_commit
 
 build:
   kind: neurodocker
@@ -91,9 +132,10 @@ build:
 
     - run:
         - python3 -m venv /opt/relion-{{ context.version }}/python
-        - cp {{ get_file("torch_cpu_wheel") }} /tmp/{{ context.torch_wheel }}
+        - cp {{ get_file("torch_cuda_wheel") }} /tmp/{{ context.torch_wheel }}
         - /opt/relion-{{ context.version }}/python/bin/pip install --no-cache-dir --no-deps /tmp/{{ context.torch_wheel }}
         - /opt/relion-{{ context.version }}/python/bin/pip install --no-cache-dir -r /tmp/relion-python-requirements.txt
+        - SETUPTOOLS_SCM_PRETEND_VERSION=0+g{{ context.dynamight_commit[:7] }} /opt/relion-{{ context.version }}/python/bin/pip install --no-cache-dir --no-deps {{ get_file("classranker_source") }} {{ get_file("blush_source") }} {{ get_file("dynamight_source") }} {{ get_file("topaz_source") }} {{ get_file("modelangelo_source") }}
         - /opt/relion-{{ context.version }}/python/bin/pip check
         - rm /tmp/relion-python-requirements.txt /tmp/{{ context.torch_wheel }}
         - mkdir -p relion
@@ -101,6 +143,15 @@ build:
         - cp -r relion/src/tomography_python_programs /opt/relion-{{ context.version }}/python/lib/python3.10/site-packages/
         - sed -i '1c\#!/opt/relion-{{ context.version }}/python/bin/python' relion/scripts/trace_amyloids.py
         - cd relion && mkdir build && cd build && cmake -DCUDA_ARCH={{ context.compute_capability }} -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-{{ context.cuda_version }} -DCMAKE_INSTALL_PREFIX=/opt/relion-{{ context.version }}/ -DPYTHON_EXE_PATH=/opt/relion-{{ context.version }}/python/bin/python -DFETCH_WEIGHTS=OFF -DFORCE_OWN_FLTK=ON .. && make && make install
+
+    - run:
+        - mkdir -p {{ context.torch_home }}/hub/checkpoints/relion_class_ranker {{ context.torch_home }}/hub/checkpoints/relion_blush
+        - gunzip -c {{ get_file("classranker_weights") }} > {{ context.torch_home }}/hub/checkpoints/relion_class_ranker/v1.0.ckpt
+        - echo "Successfully downloaded model" > {{ context.torch_home }}/hub/checkpoints/relion_class_ranker/v1.0_installed.txt
+        - gunzip -c {{ get_file("blush_weights") }} > {{ context.torch_home }}/hub/checkpoints/relion_blush/v1.0.ckpt
+        - echo "Successfully downloaded model" > {{ context.torch_home }}/hub/checkpoints/relion_blush/v1.0_installed.txt
+        - gunzip -c {{ get_file("blush_amy_weights") }} > {{ context.torch_home }}/hub/checkpoints/relion_blush/amy-v1.0.ckpt
+        - echo "Successfully downloaded model" > {{ context.torch_home }}/hub/checkpoints/relion_blush/amy-v1.0_installed.txt
 
     - run:
         - cp {{ get_file("ctffind_archive") }} ctffind-{{ context.ctffind_version }}.tar.gz
@@ -117,15 +168,10 @@ build:
         - unzip MotionCor2_{{ context.motioncor2_version }}.zip -d /opt/motioncor2-{{ context.motioncor2_version }}/bin/
         - rm -f MotionCor2_{{ context.motioncor2_version }}.zip
 
-    - copy: load_topaz.sh /opt/relion-{{ context.version }}/load_topaz.sh
-
-    - run:
-        - chmod +x /opt/relion-{{ context.version }}/load_topaz.sh
-
     - environment:
         RELION_CTFFIND_EXECUTABLE: /opt/ctffind-{{ context.ctffind_version }}/bin/ctffind
         RELION_MOTIONCOR2_EXECUTABLE: /opt/motioncor2-{{ context.motioncor2_version }}/bin/MotionCor2_{{ context.motioncor2_version }}_Cuda118_Mar312023
-        RELION_TOPAZ_EXECUTABLE: /opt/relion-{{ context.version }}/load_topaz.sh
+        TORCH_HOME: "{{ context.torch_home }}"
         PATH: $PATH:/opt/relion-{{ context.version }}/bin:/opt/relion-{{ context.version }}/python/bin
 
     - run:
@@ -148,7 +194,6 @@ build:
         - mkdir -p /neurodesk
 
     - copy: ctffind.cpp /neurodesk/ctffind.cpp
-    - copy: load_topaz.sh /neurodesk/load_topaz.sh
     - copy: module.sh /neurodesk/module.sh
     - copy: license.txt /neurodesk/license.txt
 
@@ -167,8 +212,11 @@ readme: |-
   ## relion/{{ context.version }} ##
   RELION (REgularised LIkelihood OptimisatioN) is a stand-alone program for Maximum A Posteriori refinement of 3D reconstructions and 2D class averages in cryo-electron microscopy.
 
-  This container builds RELION {{ context.relion_version }} from source for CUDA compute capability {{ context.compute_capability }} and includes helper integrations for CTFFIND, MotionCor2, and Topaz.
-  The Python tomography tools and amyloid tracer use a bundled Python environment. The tracer uses CPU PyTorch; pass `--device cpu` when running it. Model weights are supplied by the user.
+  This container builds RELION {{ context.relion_version }} from source for CUDA compute capability {{ context.compute_capability }} and includes helper integrations for CTFFIND and MotionCor2.
+
+  A bundled Python environment with CUDA PyTorch {{ context.torch_version }} provides the RELION Python programs: Blush regularisation, the 2D class ranker, DynaMight, Topaz, ModelAngelo, the tomography tools and the amyloid tracer.
+  The Blush and class ranker model weights are installed in `TORCH_HOME={{ context.torch_home }}`.
+  ModelAngelo and the amyloid tracer download their model weights on first use, which needs a writable `TORCH_HOME`, for example `export TORCH_HOME=~/.cache/torch`. Blush and the class ranker then download their weights there too.
 
   Example:
   ```
@@ -186,7 +234,7 @@ readme: |-
   Environment variables configured in the container:
   - RELION_CTFFIND_EXECUTABLE=/opt/ctffind-{{ context.ctffind_version }}/bin/ctffind
   - RELION_MOTIONCOR2_EXECUTABLE=/opt/motioncor2-{{ context.motioncor2_version }}/bin/MotionCor2_{{ context.motioncor2_version }}_Cuda118_Mar312023
-  - RELION_TOPAZ_EXECUTABLE=/opt/relion-{{ context.version }}/load_topaz.sh
+  - TORCH_HOME={{ context.torch_home }}
 
   More documentation:
   - RELION documentation: https://relion.readthedocs.io/en/release-5.0/
@@ -209,9 +257,28 @@ readme: |-
 files:
   - name: python-requirements.txt
     filename: python-requirements.txt
-  - name: torch_cpu_wheel
-    url: https://download.pytorch.org/whl/cpu/torch-{{ context.torch_version | replace("+", "%2B") }}-cp310-cp310-manylinux_2_28_x86_64.whl
-    sha256: "{{ context.torch_cpu_sha256 }}"
+  - name: torch_cuda_wheel
+    url: https://download.pytorch.org/whl/cu128/torch-{{ context.torch_version | replace("+", "%2B") }}-cp310-cp310-manylinux_2_28_x86_64.whl
+    sha256: "{{ context.torch_cuda_sha256 }}"
+  - name: classranker_source
+    url: https://github.com/3dem/relion-classranker/archive/{{ context.classranker_commit }}.tar.gz
+  - name: blush_source
+    url: https://github.com/3dem/relion-blush/archive/{{ context.blush_commit }}.tar.gz
+  - name: dynamight_source
+    url: https://github.com/3dem/DynaMight/archive/{{ context.dynamight_commit }}.tar.gz
+  - name: topaz_source
+    url: https://github.com/3dem/topaz/archive/{{ context.topaz_commit }}.tar.gz
+  - name: modelangelo_source
+    url: https://github.com/3dem/model-angelo/archive/{{ context.modelangelo_commit }}.tar.gz
+  - name: classranker_weights
+    url: https://zenodo.org/records/14618982/files/classranker_v1.0.ckpt.gz
+    sha256: "68a9855c16d7bab64b7e73e1e1442c7bf898f227ffd9a19c48ddfd2cf0646d73"
+  - name: blush_weights
+    url: https://zenodo.org/records/10072731/files/blush_v1.0.ckpt.gz
+    sha256: "6e42a7d80231418bb77170619eeedf67b59be84078972a25a39fc3b82cd9c34e"
+  - name: blush_amy_weights
+    url: https://zenodo.org/records/17938327/files/blush_amy-v1.0.ckpt.gz
+    sha256: "bcae2807f1f3dd778c64bcb88ca9efa49eb72f024488e505e36edadc76791cb5"
   - name: relion_source
     url: https://github.com/3dem/relion/archive/{{ context.relion_commit }}.tar.gz
   - name: cuda_pin

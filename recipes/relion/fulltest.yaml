@@ -13,7 +13,7 @@
 name: relion
 version: 5.1.1
 relion_version: 5.1.1
-torch_version: 2.7.1+cpu
+torch_version: 2.7.1+cu128
 
 tests:
   # ==========================================================================
@@ -584,10 +584,48 @@ tests:
     command: /opt/relion-${version}/python/bin/pip check
     expected_output_contains: "No broken requirements found"
 
-  - name: CPU PyTorch runtime
-    description: Verify the tracer can run tensor operations without a GPU
-    command: /opt/relion-${version}/python/bin/python -c "import torch; assert torch.ones(2).sum().item() == 2; print(torch.__version__)"
-    expected_output_contains: "${torch_version}"
+  - name: CUDA PyTorch build
+    description: Verify the bundled PyTorch is the CUDA build and runs tensor operations
+    command: /opt/relion-${version}/python/bin/python -c "import torch; assert torch.ones(2).sum().item() == 2; print(torch.__version__, torch.version.cuda)"
+    expected_output_contains: "${torch_version} 12.8"
+
+  # ==========================================================================
+  # RELION PYTHON PROGRAMS
+  # ==========================================================================
+  - name: Class ranker loads bundled weights
+    description: Verify the class ranker wrapper loads the installed checkpoint without downloading
+    command: relion_python_classranker 2>&1
+    expected_output_contains: "loaded successfully from checkpoint /opt/relion-${version}/torch/hub/checkpoints/relion_class_ranker/v1.0.ckpt"
+
+  - name: Blush loads bundled weights
+    description: Verify Blush loads the installed checkpoint without downloading
+    command: /opt/relion-${version}/python/bin/python -c "from relion_blush.util import install_and_load_model; print(install_and_load_model('v1.0')[1])"
+    expected_output_contains: "/opt/relion-${version}/torch/hub/checkpoints/relion_blush/v1.0.ckpt"
+
+  - name: relion_python_blush help
+    description: Verify the Blush wrapper reaches the Blush command line
+    command: relion_python_blush --help 2>&1
+    expected_output_contains: "usage"
+
+  - name: relion_python_dynamight help
+    description: Verify the DynaMight wrapper and its imports work
+    command: TERM=dumb COLUMNS=160 relion_python_dynamight --help 2>&1
+    expected_output_contains: "optimize-deformations"
+
+  - name: relion_python_topaz help
+    description: Verify the Topaz wrapper used by RELION's AutoPick job
+    command: relion_python_topaz --help 2>&1
+    expected_output_contains: "extract"
+
+  - name: relion_python_modelangelo help
+    description: Verify the ModelAngelo wrapper reaches its build command
+    command: relion_python_modelangelo --help 2>&1
+    expected_output_contains: "build"
+
+  - name: relion_python_tomo_view help
+    description: Verify the napari tomogram viewer imports
+    command: TERM=dumb COLUMNS=160 relion_python_tomo_view --help 2>&1
+    expected_output_contains: "Usage"
 
   - name: Amyloid tracer help
     description: Verify the tracer interpreter and its imported dependencies work
