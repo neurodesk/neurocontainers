@@ -8,7 +8,7 @@
 # Test data uses included sample files from the container
 
 name: surfice
-version: 1.0.20210730
+version: 1.0.20211006
 
 # Environment setup for headless rendering
 env:
