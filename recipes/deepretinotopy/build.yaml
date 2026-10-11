@@ -1,6 +1,15 @@
 name: deepretinotopy
 version: 1.1.0
 
+auto_update:
+  # Regenerated and PR'd by the upstream release workflow on each version tag
+  # (felenitaribeiro/deepRetinotopy_TheToolbox .github/workflows/publish_recipe.yml);
+  # version, commit, and model pins all come from container/manifest.yaml there.
+  container_version: false
+  method: sources
+  local:
+    - recipes/deepretinotopy
+
 copyright:
   - license: GPL-3.0
     url: https://github.com/felenitaribeiro/deepRetinotopy_TheToolbox/blob/main/LICENSE
