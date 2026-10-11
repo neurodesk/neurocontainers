@@ -7,8 +7,7 @@ auto_update:
   # version, commit, and model pins all come from container/manifest.yaml there.
   container_version: false
   method: sources
-  local:
-    - recipes/deepretinotopy
+  local: []
 
 copyright:
   - license: GPL-3.0
