@@ -67,13 +67,17 @@ tests:
           end
           [predictions, accuracy] = cosmo_crossvalidate(ds, @cosmo_classify_lda, partitions, opt);
           assert(isequal(size(predictions), [8, 4]));
-          assert(all(accuracy(:) == 1));
-          assert(all(sum(isfinite(predictions), 2) == 1));
+              assert(all(sum(isfinite(predictions), 2) == 1));
           for fold = 1:4
               mask = ds.sa.chunks == fold;
               assert(isequal(predictions(mask, fold), ds.sa.targets(mask)));
               assert(all(isnan(predictions(~mask, fold))));
           end
+          % Matrix right division of fold counts may round the redundant metric.
+          % Every held-out class label above still requires exact equality.
+          fprintf('Reported accuracy: %.17g\n', accuracy);
+          assert(isscalar(accuracy) && isfinite(accuracy));
+          assert(abs(accuracy - 1) <= 8 * eps(1));
       end
       fprintf('Exact LDA predictions verified for all four held-out chunks, raw and zscore\n');
       OCTAVE
