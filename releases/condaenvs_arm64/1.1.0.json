@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "condaenvs_arm64 1.1.0": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "condaenvs"
+}
