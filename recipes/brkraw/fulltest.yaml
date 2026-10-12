@@ -16,6 +16,7 @@
 
 name: brkraw
 version: 0.5.7
+scipy_version: "1.15.3"
 
 required_files:
   - dataset: ds000001
@@ -218,8 +219,9 @@ tests:
 
   - name: nib-diff different images
     description: Compare T1w and T2 images (will show differences)
-    command: nib-diff ${t1w} ${t2} 2>&1 || true
-    expected_exit_code: 0
+    command: nib-diff ${t1w} ${t2}
+    expected_exit_code: 1
+    expected_output_contains: "These files are different."
 
   - name: nib-diff verbose comparison
     description: Verbose comparison of two images
@@ -332,40 +334,118 @@ tests:
       - "--orientation"
 
   - name: nib-conform T1w to 1mm isotropic
-    description: Conform T1w to 1mm isotropic (scipy missing in container)
-    command: nib-conform --voxel-size 1 1 1 -f ${t1w} ${output_dir}/t1w_conform_1mm.nii.gz 2>&1
-    ignore_exit_code: true
-    expected_output_contains: "scipy"
+    description: Conform T1w to 1mm isotropic; require the requested grid and finite nonempty image.
+    command: |
+      set -e
+      nib-conform --voxel-size 1 1 1 -f ${t1w} ${output_dir}/t1w_conform_1mm.nii.gz
+      python3 -c "
+      import nibabel as nib, numpy as np
+      img = nib.load('${output_dir}/t1w_conform_1mm.nii.gz')
+      assert img.shape == (256, 256, 256)
+      assert tuple(img.header.get_zooms()) == (1.0, 1.0, 1.0)
+      assert nib.aff2axcodes(img.affine) == tuple('RAS')
+      data = img.get_fdata()
+      assert np.isfinite(data).all() and np.count_nonzero(data) > 0
+      print('Conformed grid and finite intensities verified')
+      "
+    expected_output_contains: "Conformed grid and finite intensities verified"
+    validate:
+      - output_exists: ${output_dir}/t1w_conform_1mm.nii.gz
 
   - name: nib-conform T1w to 2mm isotropic
-    description: Conform T1w to 2mm isotropic (scipy missing in container)
-    command: nib-conform --voxel-size 2 2 2 -f ${t1w} ${output_dir}/t1w_conform_2mm.nii.gz 2>&1
-    ignore_exit_code: true
-    expected_output_contains: "scipy"
+    description: Conform T1w to 2mm isotropic; require the requested grid and finite nonempty image.
+    command: |
+      set -e
+      nib-conform --voxel-size 2 2 2 -f ${t1w} ${output_dir}/t1w_conform_2mm.nii.gz
+      python3 -c "
+      import nibabel as nib, numpy as np
+      img = nib.load('${output_dir}/t1w_conform_2mm.nii.gz')
+      assert img.shape == (256, 256, 256)
+      assert tuple(img.header.get_zooms()) == (2.0, 2.0, 2.0)
+      assert nib.aff2axcodes(img.affine) == tuple('RAS')
+      data = img.get_fdata()
+      assert np.isfinite(data).all() and np.count_nonzero(data) > 0
+      print('Conformed grid and finite intensities verified')
+      "
+    expected_output_contains: "Conformed grid and finite intensities verified"
+    validate:
+      - output_exists: ${output_dir}/t1w_conform_2mm.nii.gz
 
   - name: nib-conform T1w custom shape
-    description: Conform T1w to custom shape (scipy missing in container)
-    command: nib-conform --out-shape 128 128 128 --voxel-size 2 2 2 -f ${t1w} ${output_dir}/t1w_conform_custom.nii.gz 2>&1
-    ignore_exit_code: true
-    expected_output_contains: "scipy"
+    description: Conform T1w to custom shape; require the requested grid and finite nonempty image.
+    command: |
+      set -e
+      nib-conform --out-shape 128 128 128 --voxel-size 2 2 2 -f ${t1w} ${output_dir}/t1w_conform_custom.nii.gz
+      python3 -c "
+      import nibabel as nib, numpy as np
+      img = nib.load('${output_dir}/t1w_conform_custom.nii.gz')
+      assert img.shape == (128, 128, 128)
+      assert tuple(img.header.get_zooms()) == (2.0, 2.0, 2.0)
+      assert nib.aff2axcodes(img.affine) == tuple('RAS')
+      data = img.get_fdata()
+      assert np.isfinite(data).all() and np.count_nonzero(data) > 0
+      print('Conformed grid and finite intensities verified')
+      "
+    expected_output_contains: "Conformed grid and finite intensities verified"
+    validate:
+      - output_exists: ${output_dir}/t1w_conform_custom.nii.gz
 
   - name: nib-conform T1w RAS orientation
-    description: Conform T1w to RAS orientation (scipy missing in container)
-    command: nib-conform --orientation RAS -f ${t1w} ${output_dir}/t1w_conform_ras.nii.gz 2>&1
-    ignore_exit_code: true
-    expected_output_contains: "scipy"
+    description: Conform T1w to RAS orientation; require the requested grid and finite nonempty image.
+    command: |
+      set -e
+      nib-conform --orientation RAS -f ${t1w} ${output_dir}/t1w_conform_ras.nii.gz
+      python3 -c "
+      import nibabel as nib, numpy as np
+      img = nib.load('${output_dir}/t1w_conform_ras.nii.gz')
+      assert img.shape == (256, 256, 256)
+      assert tuple(img.header.get_zooms()) == (1.0, 1.0, 1.0)
+      assert nib.aff2axcodes(img.affine) == tuple('RAS')
+      data = img.get_fdata()
+      assert np.isfinite(data).all() and np.count_nonzero(data) > 0
+      print('Conformed grid and finite intensities verified')
+      "
+    expected_output_contains: "Conformed grid and finite intensities verified"
+    validate:
+      - output_exists: ${output_dir}/t1w_conform_ras.nii.gz
 
   - name: nib-conform T1w LPS orientation
-    description: Conform T1w to LPS orientation (scipy missing in container)
-    command: nib-conform --orientation LPS -f ${t1w} ${output_dir}/t1w_conform_lps.nii.gz 2>&1
-    ignore_exit_code: true
-    expected_output_contains: "scipy"
+    description: Conform T1w to LPS orientation; require the requested grid and finite nonempty image.
+    command: |
+      set -e
+      nib-conform --orientation LPS -f ${t1w} ${output_dir}/t1w_conform_lps.nii.gz
+      python3 -c "
+      import nibabel as nib, numpy as np
+      img = nib.load('${output_dir}/t1w_conform_lps.nii.gz')
+      assert img.shape == (256, 256, 256)
+      assert tuple(img.header.get_zooms()) == (1.0, 1.0, 1.0)
+      assert nib.aff2axcodes(img.affine) == tuple('LPS')
+      data = img.get_fdata()
+      assert np.isfinite(data).all() and np.count_nonzero(data) > 0
+      print('Conformed grid and finite intensities verified')
+      "
+    expected_output_contains: "Conformed grid and finite intensities verified"
+    validate:
+      - output_exists: ${output_dir}/t1w_conform_lps.nii.gz
 
   - name: nib-conform T2 to standard space
-    description: Conform T2 to standard space (scipy missing in container)
-    command: nib-conform --out-shape 256 256 256 --voxel-size 1 1 1 --orientation RAS -f ${t2} ${output_dir}/t2_conform_standard.nii.gz 2>&1
-    ignore_exit_code: true
-    expected_output_contains: "scipy"
+    description: Conform T2 to standard space; require the requested grid and finite nonempty image.
+    command: |
+      set -e
+      nib-conform --out-shape 256 256 256 --voxel-size 1 1 1 --orientation RAS -f ${t2} ${output_dir}/t2_conform_standard.nii.gz
+      python3 -c "
+      import nibabel as nib, numpy as np
+      img = nib.load('${output_dir}/t2_conform_standard.nii.gz')
+      assert img.shape == (256, 256, 256)
+      assert tuple(img.header.get_zooms()) == (1.0, 1.0, 1.0)
+      assert nib.aff2axcodes(img.affine) == tuple('RAS')
+      data = img.get_fdata()
+      assert np.isfinite(data).all() and np.count_nonzero(data) > 0
+      print('Conformed grid and finite intensities verified')
+      "
+    expected_output_contains: "Conformed grid and finite intensities verified"
+    validate:
+      - output_exists: ${output_dir}/t2_conform_standard.nii.gz
 
   # ==========================================================================
   # NIBABEL TOOLS - nib-convert (Image Conversion)
@@ -448,7 +528,7 @@ tests:
 
   - name: nibabel Python import
     description: Verify nibabel Python module is available
-    command: python3 -c "import nibabel as nib; print('nibabel version:', nib.__version__)"
+    command: python3 -c "import nibabel as nib, scipy; assert scipy.__version__ == '${scipy_version}'; print('nibabel version:', nib.__version__, 'SciPy:', scipy.__version__)"
     expected_output_contains: "nibabel version"
 
   - name: nibabel load T1w
@@ -523,18 +603,33 @@ tests:
       - output_exists: ${output_dir}/workflow_t1w_crop.nii.gz
 
   - name: workflow - conform and convert
-    description: Convert T1w to float32 (conform skipped - no scipy)
+    description: Conform T1w to 1mm RAS and convert the real resampled image to float32.
     command: |
-      nib-convert --out-dtype float32 -f ${t1w} ${output_dir}/workflow_t1w_final.nii.gz
+      set -e
+      nib-conform --voxel-size 1 1 1 --orientation RAS -f ${t1w} ${output_dir}/workflow_t1w_conformed.nii.gz
+      nib-convert --out-dtype float32 -f ${output_dir}/workflow_t1w_conformed.nii.gz ${output_dir}/workflow_t1w_final.nii.gz
+      python3 -c "
+      import nibabel as nib, numpy as np
+      img = nib.load('${output_dir}/workflow_t1w_final.nii.gz')
+      assert img.shape == (256, 256, 256)
+      assert tuple(img.header.get_zooms()) == (1.0, 1.0, 1.0)
+      assert nib.aff2axcodes(img.affine) == tuple('RAS')
+      data = img.get_fdata()
+      assert np.isfinite(data).all() and np.count_nonzero(data) > 0
+      assert img.get_data_dtype() == np.dtype('float32')
+      print('Conformed grid and finite intensities verified')
+      "
+    expected_output_contains: "Conformed grid and finite intensities verified"
     validate:
       - output_exists: ${output_dir}/workflow_t1w_final.nii.gz
 
   - name: workflow - BOLD preprocessing
     description: Extract temporal subset and compare dimensions
     command: |
-      nib-roi -t 5:55 ${bold} ${output_dir}/workflow_bold_subset.nii.gz && \
-      nib-ls -v ${output_dir}/workflow_bold_subset.nii.gz && \
-      nib-diff ${bold} ${output_dir}/workflow_bold_subset.nii.gz || true
+      set -e
+      nib-roi -t 5:55 ${bold} ${output_dir}/workflow_bold_subset.nii.gz
+      nib-ls -v ${output_dir}/workflow_bold_subset.nii.gz
+      python3 -c "import nibabel as nib, numpy as np; source = nib.load('${bold}'); output = nib.load('${output_dir}/workflow_bold_subset.nii.gz'); assert output.shape == source.shape[:3] + (50,); assert np.array_equal(output.get_fdata(), source.get_fdata()[..., 5:55]); assert np.array_equal(output.affine, source.affine); print('Exact BOLD temporal subset verified')"
     validate:
       - output_exists: ${output_dir}/workflow_bold_subset.nii.gz
 
@@ -605,18 +700,21 @@ tests:
   # ==========================================================================
   - name: error - nib-roi invalid slice
     description: Test error handling for invalid slice specification
-    command: nib-roi -i 1000:2000 ${t1w} ${output_dir}/invalid_roi.nii.gz 2>&1 || echo "Expected error for out-of-bounds slice"
-    expected_exit_code: 0
+    command: nib-roi -i 1000:2000 ${t1w} ${output_dir}/invalid_roi.nii.gz
+    expected_exit_code: 1
+    expected_output_contains: "Cannot take zero-length slices"
 
   - name: error - nib-convert nonexistent file
     description: Test error handling for nonexistent input file
-    command: nib-convert -f nonexistent_file.nii.gz ${output_dir}/error_test.nii.gz 2>&1 || echo "Expected error for missing file"
-    expected_output_contains: "Expected error"
+    command: nib-convert -f nonexistent_file.nii.gz ${output_dir}/error_test.nii.gz
+    expected_exit_code: 1
+    expected_output_contains: "No such file or no access"
 
   - name: error - nib-conform invalid orientation
     description: Test error handling for invalid orientation code
-    command: nib-conform --orientation XYZ -f ${t1w} ${output_dir}/invalid_orient.nii.gz 2>&1 || echo "Expected error for invalid orientation"
-    expected_exit_code: 0
+    command: nib-conform --orientation XYZ -f ${t1w} ${output_dir}/invalid_orient.nii.gz
+    expected_exit_code: 1
+    expected_output_contains: "Not all axis codes"
 
 cleanup:
   script: |
