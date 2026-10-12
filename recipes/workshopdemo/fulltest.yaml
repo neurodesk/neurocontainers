@@ -31,6 +31,29 @@ tests:
     command: hello --version
     expected_output_contains: "hello"
 
+  - name: Complete greeting output and option precedence
+    description: Verify exact output bytes, clean stderr and documented greeting options
+    command: |
+      set -eu
+      export LC_ALL=C
+      work=$(mktemp -d)
+      trap 'rm -rf "$work"' EXIT
+      hello > "$work/actual" 2> "$work/stderr"
+      printf 'Hello, world!\n' > "$work/expected"
+      cmp "$work/expected" "$work/actual"
+      test ! -s "$work/stderr"
+      greeting='Neurodesk ARM64: café and spaces'
+      hello --traditional --greeting="$greeting" > "$work/actual" 2> "$work/stderr"
+      printf '%s\n' "$greeting" > "$work/expected"
+      cmp "$work/expected" "$work/actual"
+      test ! -s "$work/stderr"
+      hello --greeting="$greeting" --traditional > "$work/actual" 2> "$work/stderr"
+      printf 'hello, world\n' > "$work/expected"
+      cmp "$work/expected" "$work/actual"
+      test ! -s "$work/stderr"
+      echo 'Complete greeting bytes and documented option precedence verified'
+    expected_output_contains: 'Complete greeting bytes and documented option precedence verified'
+
 cleanup:
   script: |
     #!/usr/bin/env bash
