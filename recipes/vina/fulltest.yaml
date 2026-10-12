@@ -64,7 +64,7 @@ tests:
   description: Verify finite repulsive and attractive scores for known carbon-pair geometries.
   command: |
     set -euo pipefail
-    work="$(mktemp -d "$(pwd)/${output_dir}/vina-score.XXXXXX")"
+    work="$(mktemp -d "${output_dir}/vina-score.XXXXXX")"
     write_atom() {
         printf 'ATOM      1  C   UNL     1    %8.3f%8.3f%8.3f  0.00  0.00    +0.000 C\n' "$1" 0 0
     }
