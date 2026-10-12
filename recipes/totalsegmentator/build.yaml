@@ -1,5 +1,5 @@
 name: totalsegmentator
-version: 2.5.0
+version: 2.18.0
 copyright:
   - license: Apache-2.0
     url: https://github.com/wasserth/TotalSegmentator?tab=Apache-2.0-1-ov-file
@@ -22,6 +22,8 @@ structured_readme:
     - Additional conda packages: none
     - Additional pip packages: none
     - Deployed binaries: none
+
+    Deployed command-line tools cache configuration and downloaded weights in a private /tmp/totalsegmentator-<uid> directory. Set TOTALSEG_HOME_DIR to a writable persistent directory to retain configuration across temporary-directory cleanup; TOTALSEG_WEIGHTS_PATH can select a separate weights directory. Direct Python API callers must set TOTALSEG_HOME_DIR themselves.
 
     For detailed package documentation, see: https://github.com/wasserth/TotalSegmentator
   citation: "Wasserthal, J., Breit, H.-C., Meyer, M.T., Pradella, M., Hinck, D., Sauter, A.W., Heye, T., Boll, D., Cyriac, J., Yang, S., Bach, M., Segeroth, M., 2023. TotalSegmentator: Robust Segmentation of 104 Anatomic Structures in CT Images. Radiology: Artificial Intelligence. https://doi.org/10.1148/ryai.230024"
@@ -47,6 +49,8 @@ readme: |-
   - Additional conda packages: none
   - Additional pip packages: none
   - Deployed binaries: none
+
+  Deployed command-line tools use a private /tmp/totalsegmentator-<uid> cache. Set TOTALSEG_HOME_DIR to a writable persistent directory, and optionally TOTALSEG_WEIGHTS_PATH for separate weights storage. Direct Python API callers must set TOTALSEG_HOME_DIR themselves.
 
   For detailed package documentation, see: https://github.com/wasserth/TotalSegmentator
 
@@ -74,8 +78,12 @@ build:
         env_exists: "false"
         conda_install: python=3.12
         pip_install: setuptools TotalSegmentator=={{ context.version }} torch torchvision
+    - run:
+        - mkdir -p /opt/totalsegmentator/bin
+        - install -m 755 {{ get_file("launch.py") }} /opt/totalsegmentator/launch.py
+        - for command in TotalSegmentator totalseg_combine_masks totalseg_download_weights crop_to_body; do ln -s /opt/totalsegmentator/launch.py /opt/totalsegmentator/bin/$command; done
     - environment:
-        PATH: /opt/miniconda-latest/envs/totalsegmentator/bin:/opt/miniconda-latest/bin:$PATH
+        PATH: /opt/totalsegmentator/bin:/opt/miniconda-latest/envs/totalsegmentator/bin:/opt/miniconda-latest/bin:$PATH
     - deploy:
         bins: []
     - test:
@@ -125,6 +133,9 @@ build:
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
+files:
+  - name: launch.py
+    filename: launch.py
 categories:
   - image segmentation
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEqElEQVR4AWxUW0ycVRD+zu4CC0hoBboKVGqxvijKRdRs0kJ90hhjTAhBbTTVolRrm/TFB8qTvHirqRcstMaghjSS+IZBw4MxZoNJuYQGQ4wuratG6IXbtlzW3XG+c/4fsOVkv505Z+bMzDdzdgPJz/Jk6WyeLJ7Jk4WePJnvzrWYO50r1z7NlatdYbnySVguf+ww+1FYZj4Myz+nciz+/iBHiL9OZsuf72dL4r1s+ePdbLn0TpZFQMQAIOAtA56JeFtrc3aeEb7F1ykJWF94i3cMNIFoQAIqCeoEdSCToU5gS7toZAfaZZO/0wPQpT72sqrr8madex+irMVjKKrDq1zsmasc3gpsVOgysppMBpsqoU6IJhc9h5XOT6zOGATPCOoEdWWwVc+99CpcVarox9cpV1MGV5LA9VUmVKNlwVjUCerGzeDftGBgPI3bDy+j6LVlFL++jJIjKxaRoysg7ji2iqoTa/gilsbxcyk88FYW3oztx+NnSvFsTwqDF9JIrjhGLIDVEzpkrK+6ujpLmYatkFHPr8aK8fbXcSwtLWFwcBDT09P44ZdVjN/2Cnp+TGPuBiv3WcExYL8ymnZiYgK1tbUWHR0dGg5oamqy+5qaGm2HQWz0V5SUlKC5uRnBYBAVFRUYHR1FV1cXrt35PL6fTGM15ZhwlnYGsP0DUqkUxsbGLOLxOLgmJyftfnx8HG8cO46CggIbvL+/H4/uBnJWEohGo5ZRZ2cnfp4WzC+TgeF12FcUMIInqoLQXygSJ3Nw6rmQNfpfXQdCeLUhiMbGRlvEwMAAel4IovdgEH2tQTTVAsPDw4hEIojPAnPXHQO2WRn4YTakeIz8k3TGaG/FtmZtbQ0P7TLYEzEIBYFwlkFJAZBOp23LbqSgLSIDBztk9opzYEbqlH5wSq0HQWWcSCSQn5+P/O1l9sXwzor2+2oSqK+vRzKZRI4mDQb0hmxKwCCEzpniFmTppUihwdDQkLXtf/oQ+s8Lzl8Evr2QwXe/FaKoqAgjIyMo3w5sy9VqrCegDJiNcBn1nfLjmZ0IaUXVOw2+/Pw0FhcX0d7ejnDVIbSey8Pg5UfAh0DWbW1tePhug8JcaAzRX73AzkD0/0SUkgtnnNj0HTAG95UaPFMTQHV1NWZnZ9Hd3Y2FhQXEYjEUFhaioaEBO+R3RHcb5IR4mXEM9BW5bKyAPSWYrK+vD8YYTE1N2Wq25Qpa9xpEd1xCWVkZSktL0dLSgsrKSjuX+fhPONJotEWuchdnnQGTQJfRoEDNXQa9L4fQ+5IDXwxZlG8P4MSTAXxzOIgXH5xB8Uw/ntp1Ed0HAjirqC43riVwi4XeNAOBgaCyBGi412CfYu8eYKcOTkuwTEIB4H5t18GowdHHDNr2qd89BgVhsXYGdXB7TWA0HaEhRFVNAQt4S1NumhEvewYN6Gu+3IgjegcaRxOInbbfs//Pwtl4Rvi/Efo6nUU5H7d3On0J+ilheIvZWa231eyuCgYhaPdtG1Isa7f3dUqCp/qKRKk6MCMz0+gkzxmcoE5QJ8Qyd75u7+5QJ8TGVQasjGA+wrHgRe586esbe94hGIygTtCTYByD/wAAAP//4X4w3AAAAAZJREFUAwBWs1biPfkC3wAAAABJRU5ErkJggg==
