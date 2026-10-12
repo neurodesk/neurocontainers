@@ -70,7 +70,9 @@ build:
     # same runtime repairs already used by the x86_64 recipe.
     - condition: arch == "aarch64"
       run:
-        - tar -xzf {{ get_file("laynii_arm_source") }} --strip-components=1
+        # The tag includes an unrelated macOS WIP binary, absent from the
+        # Linux release and make all. Keep it out of the Linux runtime path.
+        - tar -xzf {{ get_file("laynii_arm_source") }} --strip-components=1 --exclude="*/LayNii_IDA"
         - if [ "{{ context.version }}" = "2.10.0" ]; then patch -p1 < {{ get_file("runtime_fixes") }}; fi
         - make -j2 all
         # This derived example exists only in the official release ZIP.
