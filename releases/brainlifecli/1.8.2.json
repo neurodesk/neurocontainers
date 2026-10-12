@@ -1,7 +1,7 @@
 {
   "apps": {
     "brainlifecli 1.8.2": {
-      "version": "20260913",
+      "version": "20261012",
       "exec": "",
       "apptainer_args": []
     }
