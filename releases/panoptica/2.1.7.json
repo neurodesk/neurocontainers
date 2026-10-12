@@ -1,7 +1,7 @@
 {
   "apps": {
     "panoptica 2.1.7": {
-      "version": "20260822",
+      "version": "20261012",
       "exec": "",
       "apptainer_args": []
     }

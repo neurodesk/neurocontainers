@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "panoptica_arm64 2.1.7": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "quality control",
+    "image segmentation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "panoptica"
+}
