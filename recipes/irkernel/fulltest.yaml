@@ -84,8 +84,14 @@ tests:
                       stdout.append(content['text'])
                   if kind == 'status' and content['execution_state'] == 'idle':
                       break
-              reply = client.get_shell_msg(timeout=10)
-              assert reply['parent_header'].get('msg_id') == request, reply
+              reply_deadline = time.monotonic() + 10
+              while True:
+                  remaining = reply_deadline - time.monotonic()
+                  assert remaining > 0, 'R kernel did not reply to execution'
+                  reply = client.get_shell_msg(timeout=remaining)
+                  if reply['parent_header'].get('msg_id') == request:
+                      break
+              assert reply['header']['msg_type'] == 'execute_reply', reply
               assert reply['content']['status'] == 'ok', reply
               result = ''.join(stdout)
               assert result == 'R kernel sum=10; mean=2.5\n', repr(result)
