@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shlex
 import urllib.error
 import urllib.request
@@ -385,6 +386,7 @@ def compile_recipe(
         staging_plan=plan,
     )
     definition = Definition()
+    copy_stages: dict[tuple[str, str | None], str] = {}
     deploy_bins: list[Any] = []
     deploy_path: list[Any] = []
 
@@ -500,10 +502,33 @@ def compile_recipe(
                 parts = _copy_parts(renderer.render_value(directive["copy"], context))
                 if len(parts) < 2:
                     raise ValueError("copy directive requires source and destination")
-                resolved_sources = [
-                    plan.add_copy_source(source) for source in parts[:-1]
-                ]
-                definition.add(Copy(tuple(resolved_sources), parts[-1]))
+                from_image = renderer.render_value(directive.get("from_image"), context)
+                from_platform = renderer.render_value(
+                    directive.get("from_platform"), context
+                )
+                from_stage = None
+                if from_platform and not from_image:
+                    raise ValueError("copy from_platform requires from_image")
+                if from_image:
+                    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@-]*", from_image):
+                        raise ValueError("copy from_image must be an image reference")
+                    if from_platform and not re.fullmatch(
+                        r"[a-z0-9]+/[a-z0-9]+(?:/[a-z0-9]+)?", from_platform
+                    ):
+                        raise ValueError("copy from_platform must be an OCI platform")
+                    key = (from_image, from_platform)
+                    if key not in copy_stages:
+                        copy_stages[key] = f"copy-source-{len(copy_stages)}"
+                        definition.directives.insert(
+                            0, From(from_image, from_platform, copy_stages[key])
+                        )
+                    from_stage = copy_stages[key]
+                    resolved_sources = parts[:-1]
+                else:
+                    resolved_sources = [
+                        plan.add_copy_source(source) for source in parts[:-1]
+                    ]
+                definition.add(Copy(tuple(resolved_sources), parts[-1], from_stage))
             elif "variables" in directive:
                 values = directive["variables"]
                 if not isinstance(values, dict):

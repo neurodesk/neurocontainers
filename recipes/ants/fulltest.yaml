@@ -752,9 +752,10 @@ tests:
       - output_exists: ${output_dir}/t1w_permuted.nii.gz
 
   - name: Reset direction
-    description: Reset image direction to identity (known segfault in ANTs 2.6.0)
-    command: ResetDirection 3 ${t1w} ${output_dir}/t1w_reset_dir.nii.gz
-    ignore_exit_code: true
+    description: Reset image direction to identity using the input/output filename CLI.
+    command: ResetDirection ${t1w} ${output_dir}/t1w_reset_dir.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_reset_dir.nii.gz
 
   - name: Set origin
     description: Set image origin
@@ -785,9 +786,11 @@ tests:
     command: ImageMath 4 ${output_dir}/bold_subset.nii.gz TimeSeriesSubset ${bold} 5
 
   - name: Time series disassemble
-    description: Disassemble 4D into individual 3D volumes (known crash in ANTs 2.6.0)
-    command: ImageMath 4 ${output_dir}/bold_vol_ TimeSeriesDisassemble ${bold}
-    ignore_exit_code: true
+    description: Disassemble real 4D BOLD into individual 3D volumes with a valid NIfTI filename.
+    command: ImageMath 4 ${output_dir}/bold_vol_.nii.gz TimeSeriesDisassemble ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_vol_1000.nii.gz
+      - output_exists: ${output_dir}/bold_vol_1001.nii.gz
 
   # ==========================================================================
   # ADD NOISE OPERATIONS

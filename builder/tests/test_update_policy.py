@@ -434,3 +434,26 @@ def test_resuming_updates_removes_the_key_rather_than_setting_it_false(tmp_path)
     row = audit(tmp_path)[0]
     assert row["status"] == "error"
     assert "delete the key to resume updates" in row["reason"]
+
+
+def test_oci_tracking_accepts_foreign_copy_image_as_acquisition():
+    validate_update_policy(
+        {
+            "name": "demo",
+            "version": "1.0.0",
+            "auto_update": {
+                "method": "oci",
+                "url": "https://registry.example/v2/vendor/runtime/tags/list",
+            },
+            "build": {
+                "base-image": "ubuntu:22.04",
+                "directives": [
+                    {
+                        "copy": ["/app/src", "/opt/src"],
+                        "from_image": "registry.example/vendor/runtime:{{ context.version }}",
+                        "from_platform": "linux/amd64",
+                    }
+                ],
+            },
+        }
+    )

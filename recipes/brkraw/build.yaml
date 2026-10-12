@@ -9,9 +9,28 @@ architectures:
   - x86_64
   - aarch64
 
+variables:
+  brkraw_version: "0.5.7"
+  scipy_version: "1.15.3"
+
 auto_update:
-  method: pypi
-  package: brkraw
+  method: sources
+  container_version: brkraw
+  sources:
+    - id: brkraw
+      method: pypi
+      package: brkraw
+      target:
+        variable: brkraw_version
+    - id: scipy
+      method: pypi
+      package: scipy
+      # SciPy 1.15 supports Ubuntu 22.04's Python 3.10 on both architectures.
+      version_regex: '(?P<version>1\.15\.\d+)'
+      dependency: true
+      target:
+        variable: scipy_version
+        fulltest_variable: scipy_version
 
 build:
   kind: neurodocker
@@ -22,7 +41,7 @@ build:
         - python3-pip
         - python3-tk
     - run:
-        - pip install "brkraw[SimpleITK]=={{ context.version }}"
+        - pip install "brkraw[SimpleITK]=={{ context.brkraw_version }}" "scipy=={{ context.scipy_version }}"
     - environment:
         PATH: $PATH:/usr/local/bin/
 

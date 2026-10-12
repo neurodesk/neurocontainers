@@ -16,7 +16,6 @@ from .adapters import (
 from .config import default_config, resolve_recipe
 from .dockerfile import render_dockerfile
 from .image_contexts import read_contexts, stage_image, write_contexts
-from .ir import From
 from .recipe import compile_recipe, load_recipe, variant_specs
 from .release import (
     build_date_for_recipe,
@@ -74,11 +73,7 @@ def write_build_files(
     required = flatten or compiled.recipe["build"].get("convert-base-image", False)
     contexts = ()
     if stage and download and required:
-        reference = next(
-            item.image
-            for item in compiled.definition.directives
-            if isinstance(item, From)
-        )
+        reference = compiled.definition.runtime_base.image
         contexts = (
             stage_image(
                 reference,

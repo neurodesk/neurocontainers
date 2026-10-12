@@ -1,0 +1,51 @@
+name: nomis
+version: "20220225"
+upstream_commit: 65938bed37cecaa5133e917ef19cca8f18c74983
+
+tests:
+  - name: nomis launcher available
+    command: nomis -h
+    expected_output_contains: "-csv"
+
+  - name: source revision
+    command: cat /opt/nomis/source-revision
+    expected_output_contains: ${upstream_commit}
+
+  - name: reproduces the upstream example output
+    description: >-
+      The normative models are scikit-learn 0.21 pickles, so a dependency drift
+      shows up as an unpickling error or shifted Z-scores. Run the shipped
+      two-subject example and compare every Z-score with the reference output
+      upstream published alongside it.
+    timeout: 600
+    command: |
+      set -e
+      out="$(mktemp -d)"
+      cd "$out"
+      nomis -csv /opt/nomis/Example/csv_example_ageandsex.csv -s /opt/nomis/Example/freesurfer_dir -o "$out/run" -v off
+      python - /opt/nomis/Example/out "$out/run" <<'PY'
+      import glob, os, sys
+      import numpy as np, pandas as pd
+      ref, out = sys.argv[1], sys.argv[2]
+      files = sorted(glob.glob(os.path.join(ref, "normative_z_scores", "*.csv")))
+      assert len(files) == 12, files
+      n = 0
+      for f in files:
+          a = pd.read_csv(f, index_col=0).apply(pd.to_numeric, errors="coerce")
+          b = pd.read_csv(os.path.join(out, "normative_z_scores", os.path.basename(f)), index_col=0).apply(pd.to_numeric, errors="coerce")
+          assert list(a.index) == list(b.index) and list(a.columns) == list(b.columns), f
+          assert np.allclose(a.values, b.values, atol=1e-6, equal_nan=True), f
+          n += int(a.notna().values.sum())
+      assert n > 900, n
+      print(f"z-scores match reference: {n}")
+      PY
+      rm -rf "$out"
+    expected_output_contains: "z-scores match reference:"
+
+  - name: defaults output outside the read-only install
+    command: |
+      set -e
+      cd "$(mktemp -d)"
+      nomis -csv /opt/nomis/Example/csv_example_noage_nosex.csv -s /opt/nomis/Example/freesurfer_dir -v off
+      ls nomis_out/normative_z_scores/aseg.csv
+    expected_output_contains: "nomis_out/normative_z_scores/aseg.csv"

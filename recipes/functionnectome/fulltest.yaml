@@ -161,3 +161,62 @@ tests:
     assert labels[fun.PRIORS_H5[0].split(" - ")[0]] == fun.PRIORS_H5[0]
     assert paths[fun.PRIORS_H5[0]] == str(priors_dir / "fake_priors.h5")
     PY
+
+
+- name: Compute disconnectomes from synthetic voxelwise priors
+  description: Exercise real QuickDisco CLI and serial/parallel HDF5 aggregation with exact probability, NIfTI geometry and dtype assertions
+  command: |
+    python - <<'PY'
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    import h5py
+    import nibabel as nib
+    import numpy as np
+    from Functionnectome import quickDisco
+    from Functionnectome.makeHDF5prior import header2string
+
+    with tempfile.TemporaryDirectory() as directory:
+        work = Path(directory)
+        shape = (3, 3, 3)
+        affine = np.diag([-2., 2., 2., 1.])
+        roi = np.zeros(shape, dtype=np.uint8)
+        roi[0, 0, 0] = roi[1, 0, 0] = 1
+        first = np.zeros(shape, dtype=np.float32)
+        first[0, 0, 0], first[1, 1, 1] = 0.25, 0.75
+        second = np.zeros(shape, dtype=np.float32)
+        second[0, 0, 0], second[1, 1, 1] = 0.5, 0.25
+        lesion = work / 'lesion.nii.gz'
+        image = nib.Nifti1Image(roi, affine)
+        nib.save(image, lesion)
+        priors = work / 'priors.h5'
+        with h5py.File(priors, 'w') as handle:
+            handle.create_dataset('template', data=np.ones(shape, dtype=np.uint8))
+            group = handle.create_group('tract_voxel')
+            group.attrs['header'] = header2string(image.header)
+            group.create_dataset('0_0_0_vox', data=first, compression='gzip')
+            group.create_dataset('1_0_0_vox', data=second, compression='gzip')
+            # A valid but unselected seed must not contribute to the result.
+            group.create_dataset('0_1_0_vox', data=np.ones(shape, dtype=np.float32), compression='gzip')
+        environment = dict(os.environ, FUNCTIONNECTOME_CONFIG_DIR=str(work / 'config'))
+        for processes in (1, 2):
+            destination = work / str(processes)
+            destination.mkdir()
+            subprocess.run([
+                'QuickDisco', '-i', str(lesion), '-p', str(priors),
+                '-o', str(destination), '-pp', str(processes),
+            ], check=True, env=environment)
+            result = nib.load(destination / 'qdisco_lesion.nii.gz')
+            assert result.shape == shape, result.shape
+            np.testing.assert_array_equal(result.affine, affine)
+            values = result.get_fdata()
+            assert np.isfinite(values).all()
+            np.testing.assert_array_equal(values, np.maximum(first, second))
+            summed = quickDisco.probaMap_fromROI(roi, str(priors), shape, proc=processes, maxVal=False)
+            np.testing.assert_array_equal(summed, first + second)
+        print('QuickDisco serial/parallel probabilities and physical geometry verified')
+    PY
+  expected_output_contains: QuickDisco serial/parallel probabilities and physical geometry verified
+  expected_exit_code: 0
+  timeout: 120
