@@ -3,12 +3,15 @@ version: "1.1.0"
 
 variables:
   upstream_version: "1.1"
+  atlas_sha256: d24f9d17dc62643779330bebfd80dea28821413f0a56c8396f6a26a8fbb632ca
   weights_md5: be5b6dfcd66b55c2e6dc6db9a5880f7f
   hdbet_fold0_md5: 46ed703cae7611c4f3a60d7b9d8fd666
 
 copyright:
   - license: Apache-2.0
     url: https://github.com/ezequieldlrosa/DeepIsles/blob/main/LICENSE
+  - license: CC-BY-4.0
+    url: https://zenodo.org/records/3379848
 
 architectures:
   - x86_64
@@ -39,7 +42,13 @@ readme: |-
 
   The lesion mask is written to `results/lesion_msk.nii.gz`. Add `--skull-strip`
   if the inputs still contain the skull, and `--save-team-outputs` or
-  `--results-mni` for the per-model and MNI-space results.
+  `--results-mni` for the per-model and MNI-space results. MNI results require
+  `--flair`. Use a fresh output directory for each run.
+
+  The bundled MNI FLAIR atlas is licensed CC-BY-4.0. If used, cite Schirmer,
+  Markus D., et al. "Spatial signature of white matter hyperintensities in
+  stroke patients." Frontiers in Neurology 10 (2019), 208.
+  https://zenodo.org/records/3379848
 
   Without a GPU, inference runs on the CPU. The full FLAIR ensemble includes a
   CUDA-only model, so CPU runs with `--flair` need `--fast`, which uses only the
@@ -63,9 +72,21 @@ readme: |-
   ----------------------------------
 
 auto_update:
-  version_variable: "upstream_version"
-  method: github_release
-  repo: ezequieldlrosa/DeepIsles
+  method: sources
+  container_version: deepisles
+  sources:
+    - id: deepisles
+      method: github_release
+      repo: ezequieldlrosa/DeepIsles
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: mni_atlas
+      method: http_digest
+      url: https://zenodo.org/records/3379848/files/caa_flair_in_mni_template_smooth_brain_intres.nii.gz?download=1
+      dependency: true
+      target:
+        variable: atlas_sha256
 
 build:
   kind: neurodocker
@@ -179,7 +200,15 @@ build:
         name: hdbet_fold0.model
         url: https://zenodo.org/record/2540695/files/0.model?download=1
 
+    - file:
+        name: flair_mni.nii.gz
+        url: https://zenodo.org/records/3379848/files/caa_flair_in_mni_template_smooth_brain_intres.nii.gz?download=1
+        sha256: "{{ context.atlas_sha256 }}"
+
     - run:
+        - python {{ get_file("patch_runtime.py") }} /opt/DeepIsles
+        - mkdir -p /opt/DeepIsles/data/atlas
+        - cp {{ get_file("flair_mni.nii.gz") }} /opt/DeepIsles/data/atlas/flair_mni.nii.gz
         # Without nvidia-smi the GPU probe raises FileNotFoundError instead of
         # reporting no GPU, which aborts CPU-only runs.
         - sed -i 's/except subprocess.CalledProcessError as e:/except (subprocess.CalledProcessError, FileNotFoundError) as e:/' /opt/DeepIsles/src/utils.py
@@ -207,6 +236,8 @@ build:
         builtin: test_deploy.sh
 
 files:
+  - name: patch_runtime.py
+    filename: patch_runtime.py
   - name: deepisles.py
     filename: deepisles.py
   - name: deepisles

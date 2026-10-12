@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--save-team-outputs", action="store_true",
                         help="also write each team's individual prediction")
     parser.add_argument("--results-mni", action="store_true",
-                        help="also write results in MNI space")
+                        help="also write results in MNI space (requires --flair)")
     parser.add_argument("--no-parallel", action="store_true",
                         help="run the team models one after another (always the case on CPU)")
     return parser.parse_args()
@@ -53,13 +53,20 @@ def main() -> None:
         if path is not None and not os.path.isfile(path):
             sys.exit(f"deepisles: {flag} {path}: no such file")
 
+    if args.results_mni and not args.flair:
+        sys.exit("deepisles: --results-mni requires --flair")
+
+    output = os.path.abspath(args.output)
+    for name in ("lesion_msk.nii.gz", "output_screenshot.png", "output_teams", "output_mni"):
+        if os.path.lexists(os.path.join(output, name)):
+            sys.exit(f"deepisles: {output} already contains results; choose a fresh output directory")
+
     import torch
     gpu = torch.cuda.is_available()
     if not gpu and args.flair and not args.fast:
         sys.exit("deepisles: no CUDA GPU found. The full ensemble with FLAIR needs a GPU "
                  "(the NVAUTO model is CUDA-only); rerun with --fast to use SEALS alone.")
 
-    output = os.path.abspath(args.output)
     os.makedirs(output, exist_ok=True)
 
     workdir = tempfile.mkdtemp(prefix="deepisles-")
@@ -94,7 +101,6 @@ def main() -> None:
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
-    # The team models run as shell subprocesses whose failures upstream ignores.
     mask = os.path.join(output, "lesion_msk.nii.gz")
     if not os.path.isfile(mask):
         sys.exit(f"deepisles: no lesion mask was written to {mask}")
