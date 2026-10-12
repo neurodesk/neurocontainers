@@ -617,6 +617,36 @@ tests:
     command: relion_python_topaz --help 2>&1
     expected_output_contains: "extract"
 
+  - name: Topaz bundled pretrained detector
+    description: Verify Topaz loads the bundled resnet16 weights and runs CPU inference
+    command: >-
+      /opt/relion-${version}/python/bin/python -c
+      "import torch; from topaz.model.factory import load_model;
+      torch.set_num_threads(1); torch.set_grad_enabled(False);
+      model = load_model('resnet16').eval(); output = model(torch.zeros((1, 1, 256, 256)));
+      assert torch.isfinite(output).all(); print(tuple(output.shape))"
+    expected_output_contains: "(1, 1, 42, 42)"
+
+  - name: Topaz bundled pretrained 2D denoiser
+    description: Verify Topaz loads the bundled unet weights and runs CPU inference
+    command: >-
+      /opt/relion-${version}/python/bin/python -c
+      "import torch; from topaz.denoise import load_model;
+      torch.set_num_threads(1); torch.set_grad_enabled(False);
+      model = load_model('unet').eval(); output = model(torch.zeros((1, 1, 64, 64)));
+      assert torch.isfinite(output).all(); print(tuple(output.shape))"
+    expected_output_contains: "(1, 1, 64, 64)"
+
+  - name: Topaz bundled pretrained 3D denoiser
+    description: Verify Topaz loads the bundled unet-3d weights and runs CPU inference
+    command: >-
+      /opt/relion-${version}/python/bin/python -c
+      "import torch; from topaz.commands.denoise3d import load_model;
+      torch.set_num_threads(1); torch.set_grad_enabled(False);
+      model = load_model('unet-3d').eval(); output = model(torch.zeros((1, 1, 32, 32, 32)));
+      assert torch.isfinite(output).all(); print(tuple(output.shape))"
+    expected_output_contains: "(1, 1, 32, 32, 32)"
+
   - name: relion_python_modelangelo help
     description: Verify the ModelAngelo wrapper reaches its build command
     command: relion_python_modelangelo --help 2>&1
