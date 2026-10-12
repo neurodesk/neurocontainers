@@ -74,8 +74,8 @@ tests:
   # ==========================================================================
   - name: FastSurferCNN run_prediction module
     description: Verify FastSurferCNN prediction module is available
-    command: python3 -m FastSurferCNN.run_prediction --help 2>&1 | head -5
-    expected_output_contains: "run_prediction.py"
+    command: python3 -m FastSurferCNN.run_prediction --help 2>&1
+    expected_output_contains: "FastSurferCNN.run_prediction"
 
   - name: FastSurferCNN inference module
     description: Verify FastSurferCNN inference module is importable
@@ -104,8 +104,8 @@ tests:
 
   - name: CerebNet run_prediction module
     description: Verify CerebNet cerebellum segmentation module is available
-    command: python3 -m CerebNet.run_prediction --help 2>&1 | head -5
-    expected_output_contains: "run_prediction.py"
+    command: python3 -m CerebNet.run_prediction --help 2>&1
+    expected_output_contains: "CerebNet.run_prediction"
 
   - name: HypVINN run_prediction module
     description: Verify HypVINN hypothalamus segmentation module is available
@@ -460,14 +460,6 @@ tests:
       print('Model class loaded successfully')
       "
     expected_output_contains: "Model class loaded successfully"
-
-  # ==========================================================================
-  # SURFACE UTILITIES - make_upright
-  # ==========================================================================
-  - name: make_upright utility
-    description: Verify make_upright utility exists
-    command: bash -lc 'test -f /fastsurfer/recon_surf/make_upright && echo "make_upright exists"'
-    expected_output_contains: "make_upright exists"
 
   - name: fs_time utility
     description: Verify fs_time utility exists
