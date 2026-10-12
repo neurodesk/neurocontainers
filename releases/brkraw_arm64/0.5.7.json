@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "brkraw_arm64 0.5.7": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "brkraw"
+}
