@@ -7,15 +7,62 @@ copyright:
 
 architectures:
     - x86_64
+    - aarch64
+
+variables:
+  quickshear_version: "1.2.0"
+  synthstrip_script_sha256: "bbc2ff8f8779862039401b05d5cd6039fb4f3583e0032a793ac9adb3f4521590"
+  synthstrip_model_sha256: "37417f802196186441aae3e7f385d94f8a98c64a88acaeaa2723af995c653e33"
+  synthstrip_nocsf_model_sha256: "62bf01137c45b5f0cc04d59dbaed5b9ac138b3f25b766c062a7c1a0d696ecb28"
+  synthstrip_version: "8.2.0"
+  arm_torch_version: "2.2.2"
+  arm_surfa_version: "0.6.3"
 
 auto_update:
-  method: pypi
-  package: quickshear
+  method: sources
+  container_version: quickshear
+  sources:
+    - id: quickshear
+      method: pypi
+      package: quickshear
+      target:
+        variable: quickshear_version
+        fulltest_variable: quickshear_version
+    - id: arm_torch
+      method: pypi
+      package: torch
+      dependency: true
+      target:
+        variable: arm_torch_version
+    - id: arm_surfa
+      method: pypi
+      package: surfa
+      dependency: true
+      target:
+        variable: arm_surfa_version
+    - id: synthstrip_script
+      method: http_digest
+      url: https://raw.githubusercontent.com/freesurfer/freesurfer/v8.2.0/mri_synthstrip/mri_synthstrip
+      dependency: true
+      target:
+        variable: synthstrip_script_sha256
+    - id: synthstrip_model
+      method: http_digest
+      url: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.1.pt
+      dependency: true
+      target:
+        variable: synthstrip_model_sha256
+    - id: synthstrip_nocsf_model
+      method: http_digest
+      url: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.nocsf.1.pt
+      dependency: true
+      target:
+        variable: synthstrip_nocsf_model_sha256
 
 build:
     kind: neurodocker
 
-    base-image: freesurfer/synthstrip:1.6
+    base-image: "{{ 'freesurfer/synthstrip:1.6' if arch == 'x86_64' else 'ubuntu:22.04' }}"
     pkg-manager: apt
 
     directives:
@@ -29,11 +76,35 @@ build:
               - git
               - curl
               - ca-certificates
+              - python-is-python3
               - python3
               - python3-pip
 
+        - condition: arch == "aarch64"
+          install:
+              - build-essential
+              - python3-dev
+              - python3-packaging
+
+        - condition: arch == "aarch64"
+          run:
+              - python3 -m pip install --no-cache-dir 'numpy<2' surfa=={{ context.arm_surfa_version }}
+              - python3 -m pip install --no-cache-dir torch=={{ context.arm_torch_version }}
+
+        - condition: arch == "aarch64"
+          run:
+              - mkdir -p /freesurfer/models
+              - cp {{ get_file("mri_synthstrip_arm64") }} /usr/bin/mri_synthstrip
+              - cp {{ get_file("synthstrip_model_arm64") }} /freesurfer/models/synthstrip.1.pt
+              - cp {{ get_file("synthstrip_nocsf_model_arm64") }} /freesurfer/models/synthstrip.nocsf.1.pt
+              - chmod 755 /usr/bin/mri_synthstrip
+
+        - condition: arch == "aarch64"
+          environment:
+              FREESURFER_HOME: /freesurfer
+
         - run:
-              - pip install quickshear=={{ context.version }}
+              - pip install quickshear=={{ context.quickshear_version }}
 
         - install:
               - build-essential
@@ -127,6 +198,18 @@ readme: |
 files:
     - name: invertcontrast.py
       filename: invertcontrast.py
+    - name: mri_synthstrip_arm64
+      condition: arch == "aarch64"
+      url: https://raw.githubusercontent.com/freesurfer/freesurfer/v{{ context.synthstrip_version }}/mri_synthstrip/mri_synthstrip
+      sha256: "{{ context.synthstrip_script_sha256 }}"
+    - name: synthstrip_model_arm64
+      condition: arch == "aarch64"
+      url: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.1.pt
+      sha256: "{{ context.synthstrip_model_sha256 }}"
+    - name: synthstrip_nocsf_model_arm64
+      condition: arch == "aarch64"
+      url: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.nocsf.1.pt
+      sha256: "{{ context.synthstrip_nocsf_model_sha256 }}"
 
 categories:
   - "data organisation"
