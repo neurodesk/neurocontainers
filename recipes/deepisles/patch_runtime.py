@@ -12,6 +12,14 @@ def replace_once(path: Path, before: str, after: str) -> None:
 
 
 def main(root: Path) -> None:
+    replace_once(
+        root / "src/utils.py",
+        '        return False\n\n    except subprocess.CalledProcessError as e:\n'
+        '        print(f"Error occurred while trying to check GPU memory: {e.stderr}")\n',
+        '        return False\n\n    except FileNotFoundError:\n'
+        '        return False\n    except subprocess.CalledProcessError as e:\n'
+        '        print(f"Error occurred while trying to check GPU memory: {e.stderr}")\n',
+    )
     ensemble = root / "src/isles22_ensemble.py"
     replace_once(
         ensemble,

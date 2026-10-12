@@ -4,6 +4,7 @@ version: "1.1.0"
 variables:
   upstream_version: "1.1"
   atlas_sha256: d24f9d17dc62643779330bebfd80dea28821413f0a56c8396f6a26a8fbb632ca
+  weights_sha256: 74935bf9511dcb9f556c0a6ab7f6674f2da84214cab748c9fb986f33b6f3b3e7
   weights_md5: be5b6dfcd66b55c2e6dc6db9a5880f7f
   hdbet_fold0_md5: 46ed703cae7611c4f3a60d7b9d8fd666
 
@@ -97,7 +98,8 @@ build:
   directives:
     - file:
         name: weights.7z
-        url: https://zenodo.org/api/records/14026715/files/stroke_ensemble_weights.7z/content
+        url: https://zenodo.org/records/14026715/files/stroke_ensemble_weights.7z?download=1
+        sha256: "{{ context.weights_sha256 }}"
     - run:
         - echo "{{ context.weights_md5 }}  {{ get_file("weights.7z") }}" | md5sum --check --status
 
@@ -209,10 +211,6 @@ build:
         - python {{ get_file("patch_runtime.py") }} /opt/DeepIsles
         - mkdir -p /opt/DeepIsles/data/atlas
         - cp {{ get_file("flair_mni.nii.gz") }} /opt/DeepIsles/data/atlas/flair_mni.nii.gz
-        # Without nvidia-smi the GPU probe raises FileNotFoundError instead of
-        # reporting no GPU, which aborts CPU-only runs.
-        - sed -i 's/except subprocess.CalledProcessError as e:/except (subprocess.CalledProcessError, FileNotFoundError) as e:/' /opt/DeepIsles/src/utils.py
-        - grep -q 'except (subprocess.CalledProcessError, FileNotFoundError)' /opt/DeepIsles/src/utils.py
         # HD-BET downloads its parameters into the home directory on first use,
         # which is not available at runtime; ship the fast-mode fold instead.
         - sed -i "s|^folder_with_parameter_files = .*|folder_with_parameter_files = '/opt/hd-bet_params'|" /opt/DeepIsles/src/HD-BET/HD_BET/paths.py
