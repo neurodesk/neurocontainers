@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "gigaconnectome_arm64 0.6.0": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "bids apps"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "gigaconnectome"
+}
