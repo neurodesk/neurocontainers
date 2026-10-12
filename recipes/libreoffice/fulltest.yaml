@@ -33,7 +33,12 @@ tests:
       test -s "$conversion_dir/probe.odt"
       libreoffice "-env:UserInstallation=file://$conversion_dir/profile" --headless \
         --cat "$conversion_dir/probe.odt" > "$conversion_dir/roundtrip.txt"
-      grep -Fxq 'NeuroContainers document conversion probe.' "$conversion_dir/roundtrip.txt"
+      # Text export may start with the optional UTF-8 byte-order mark.
+      LC_ALL=C sed '1s/^\xEF\xBB\xBF//' "$conversion_dir/roundtrip.txt" > "$conversion_dir/normalized.txt"
+      if ! grep -Fxq 'NeuroContainers document conversion probe.' "$conversion_dir/normalized.txt"; then
+        od -An -tx1c "$conversion_dir/roundtrip.txt" >&2
+        exit 1
+      fi
       libreoffice "-env:UserInstallation=file://$conversion_dir/profile" --headless \
         --convert-to pdf --outdir "$conversion_dir" "$conversion_dir/probe.odt"
       test -s "$conversion_dir/probe.pdf"
