@@ -402,12 +402,19 @@ def command_detect(args: argparse.Namespace) -> None:
     """Implement the detect CLI command."""
     plan = release_plan(args.base, args.head)
     recipes = plan.candidate_recipes
+    paths = set(changed_files(args.base, args.head))
+    runtime_recipes = [
+        recipe
+        for recipe in plan.changed_recipes
+        if recipe not in recipes and f"recipes/{recipe}/fulltest.yaml" in paths
+    ]
     write_output(
         {
             "recipes": json.dumps(recipes),
             "targets": json.dumps(detect_targets(recipes)),
             "changed_recipes": json.dumps(plan.changed_recipes),
             "source_only_recipes": json.dumps(plan.source_only_recipes),
+            "runtime_recipes": json.dumps(runtime_recipes),
             "retired_recipes": json.dumps(plan.retired_recipes),
             "release_plan": json.dumps(plan.as_dict(), separators=(",", ":")),
         }

@@ -81,7 +81,11 @@ render Jinja or execute any code from the pull request. Changes that affect only
 `auto_update`, `copyright`, `draft`, `icon`, documentation (`readme`, `readme_url`,
 `structured_readme`), literal `categories`, semantically unchanged YAML, or
 `fulltest.yaml` are currently classified as source-only. The workflow validates
-them, but preserves the existing container and builds or promotes no candidate.
+them and preserves the existing release. When `fulltest.yaml` changes without an
+image change, Recipes CI builds each declared variant and runs deploy checks and
+the changed runtime suite against the freshly built SIF. These verification
+builds are required by the Container release gate and are not promoted. Other
+source-only changes build or promote no candidate.
 This is a behavioural release projection, not a claim that rebuilding would
 produce byte-identical images; the current image still embeds the raw
 `build.yaml` and README.
