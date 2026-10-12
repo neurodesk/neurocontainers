@@ -1,7 +1,7 @@
 {
   "apps": {
     "laynii 2.10.0": {
-      "version": "20260929",
+      "version": "20261012",
       "exec": "",
       "apptainer_args": []
     }
