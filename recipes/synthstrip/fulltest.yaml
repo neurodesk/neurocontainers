@@ -20,7 +20,7 @@
 # License: FreeSurfer Software License Agreement
 
 name: synthstrip
-version: 7.4.1
+version: 8.2.0
 
 required_files:
   - dataset: ds000001
@@ -47,6 +47,12 @@ tests:
   # ==========================================================================
   # BASIC FUNCTIONALITY - mri_synthstrip
   # ==========================================================================
+  - name: Reports installed version
+    description: Verify SynthStrip reports the installed software version
+    command: mri_synthstrip --version
+    expected_output_contains: "${version}"
+    expected_exit_code: 1
+
   - name: Help display
     description: Verify mri_synthstrip binary runs and shows help message
     command: mri_synthstrip --help 2>&1 || true
