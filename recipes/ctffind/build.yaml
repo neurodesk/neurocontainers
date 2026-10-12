@@ -1,0 +1,126 @@
+name: ctffind
+version: 4.1.14
+copyright:
+  - name: Janelia Research Campus Software License 1.2
+    url: https://www.janelia.org/open-science/software-licensing
+architectures:
+  - x86_64
+variables:
+  upstream_version: 4.1.14
+auto_update:
+  method: sources
+  container_version: ctffind
+  sources:
+    - id: ctffind
+      method: artifact_listing
+      url: https://grigoriefflab.umassmed.edu/ctf_estimation_ctffind_ctftilt
+      download_base: https://grigoriefflab.umassmed.edu/system/
+      version_regex: https://grigoriefflab\.umassmed\.edu/system/tdf\?path=ctffind-(?P<version>4\.\d+\.\d+)\.tar\.gz&file=1
+      target:
+        file: ctffind_source
+        variables:
+          upstream_version: version
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - libwxbase3.0-0v5
+        - libfftw3-single3
+        - libtiff5
+        - libjpeg-turbo8
+        - zlib1g
+        - libgomp1
+        - python3-numpy
+    - workdir: /tmp
+    - run:
+        - apt-get update -qq
+        - apt-get install -y -q --no-install-recommends g++ make libwxbase3.0-dev libfftw3-dev libtiff-dev libjpeg-dev zlib1g-dev
+        - mkdir /tmp/ctffind-src
+        - tar -xzf {{ get_file("ctffind_source") }} -C /tmp/ctffind-src --strip-components=1
+        - cd /tmp/ctffind-src
+        - sed -i -E 's/^bool (ComputeRotationalAverageOfPowerSpectrum|RescaleSpectrumAndRotationalAverage)\(/void \1(/' src/programs/ctffind/ctffind.cpp
+        - test "$(grep -cE '^void (ComputeRotationalAverageOfPowerSpectrum|RescaleSpectrumAndRotationalAverage)\(' src/programs/ctffind/ctffind.cpp)" -eq 4
+        - ./configure --disable-debugmode --enable-openmp --prefix=/opt/ctffind-{{ context.upstream_version }}
+        - make -j4
+        - make install
+        - install -D -m 644 COPYING /opt/ctffind-{{ context.upstream_version }}/share/doc/ctffind/COPYING
+        - cd /
+        - rm -rf /tmp/ctffind-src
+        - apt-get purge -y -q --auto-remove g++ make libwxbase3.0-dev libfftw3-dev libtiff-dev libjpeg-dev zlib1g-dev
+        - rm -rf /var/lib/apt/lists/*
+        - "! ldd /opt/ctffind-{{ context.upstream_version }}/bin/ctffind | grep 'not found'"
+    - environment:
+        PATH: /opt/ctffind-{{ context.upstream_version }}/bin:$PATH
+files:
+  - name: ctffind_source
+    url: https://grigoriefflab.umassmed.edu/system/tdf?path=ctffind-4.1.14.tar.gz&file=1
+    sha256: db17b2ebeb3c3b2b3764e42b820cd50d19ccccf6956c64257bfe5d5ba6b40cb5
+deploy:
+  bins:
+    - ctffind
+categories:
+  - cryo EM
+readme: |
+  ## ctffind/{{ context.version }}
+
+  CTFFIND estimates the defocus, astigmatism and optional phase shift of
+  electron micrographs by fitting the contrast transfer function (CTF) to
+  their amplitude spectra. This container builds CTFFIND
+  {{ context.upstream_version }} from the official source release with
+  FFTW and OpenMP threading. It runs on the CPU and needs no GPU.
+
+  CTFFIND {{ context.upstream_version }} is the release that RELION drives
+  through its "Use CTFFIND-4.1?" option. CTFFIND 5 adds an extra
+  "Determine sample thickness?" prompt that RELION does not answer, so
+  RELION jobs stop at the expert-options prompt.
+
+  Run `ctffind` and answer the prompts, or script them from standard input:
+
+  ```
+  ctffind <<EOF
+  micrograph.mrc
+  diagnostic_output.mrc
+  1.0
+  300
+  2.7
+  0.07
+  512
+  30
+  5
+  5000
+  50000
+  100
+  no
+  yes
+  yes
+  500
+  no
+  no
+  EOF
+  ```
+
+  The answers are: input micrograph, diagnostic output, pixel size (A),
+  voltage (kV), spherical aberration (mm), amplitude contrast, spectrum
+  size, minimum and maximum resolution (A), minimum and maximum defocus (A),
+  defocus step (A), known astigmatism, exhaustive search, astigmatism
+  restraint, tolerated astigmatism (A), phase shift and expert options.
+  CTFFIND writes `diagnostic_output.txt` with the fitted defocus values
+  and `diagnostic_output_avrot.txt` with the 1D fit profiles.
+
+  To run CTFFIND from a RELION container, set
+  `RELION_CTFFIND_EXECUTABLE` to this container's `ctffind` executable.
+
+  CTFFIND is distributed under the Janelia Research Campus Software
+  License 1.2. The licence text is installed at
+  `/opt/ctffind-{{ context.upstream_version }}/share/doc/ctffind/COPYING`.
+
+  Citation: Rohou A, Grigorieff N. CTFFIND4: Fast and accurate defocus
+  estimation from electron micrographs. J Struct Biol. 2015;192(2):216-221.
+  https://doi.org/10.1016/j.jsb.2015.08.008
+
+  Documentation: https://grigoriefflab.umassmed.edu/ctffind4
+icon: data:image/png;base64,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

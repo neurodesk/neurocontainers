@@ -1,5 +1,5 @@
 name: bcbtoolkit
-version: 5.3.0
+version: 5.4.1
 tests:
   - name: Python launcher version without a home directory
     command: HOME=/nonexistent bcbtoolkit --version && HOME=/nonexistent BCBToolKit.sh --version
@@ -86,3 +86,40 @@ tests:
       PY
     timeout: 60
     expected_output_contains: Browser interface available
+
+  - name: Bundled ANTs and dcm2niix are found
+    command: |-
+      export BCBTOOLKIT_HOME="$(mktemp -d)"
+      bcbtoolkit status > "$BCBTOOLKIT_HOME/status.txt" 2>&1
+      cat "$BCBTOOLKIT_HOME/status.txt"
+      grep -E '^ANTs.*/opt/ants-' "$BCBTOOLKIT_HOME/status.txt" && grep -E '^dcm2niix.*/opt/dcm2niix/dcm2niix' "$BCBTOOLKIT_HOME/status.txt" && echo "externals found"
+    expected_output_contains: externals found
+
+  - name: Disconnectome maps an MNI lesion with the bundled tractograms
+    timeout: 3600
+    command: |-
+      set -e
+      work="$(mktemp -d)"
+      export BCBTOOLKIT_HOME="$work/settings"
+      mkdir -p "$work/lesions"
+      python3 - "$work" <<'PY'
+      import sys
+      import nibabel as nib
+      import numpy as np
+      ref = nib.load("/opt/BCBToolKit/data/MNI152.nii.gz")
+      lesion = np.zeros(ref.shape[:3], dtype=np.uint8)
+      i, j, k = np.round(np.linalg.inv(ref.affine) @ [30, -20, 25, 1])[:3].astype(int)
+      lesion[i-6:i+6, j-6:j+6, k-6:k+6] = 1
+      nib.Nifti1Image(lesion, ref.affine).to_filename(sys.argv[1] + "/lesions/sub-01_lesion.nii.gz")
+      PY
+      bcbtoolkit disconnectome -l "$work/lesions" -r "$work/disco" --jobs 2
+      python3 - "$work" <<'PY'
+      import glob, sys
+      import nibabel as nib
+      import numpy as np
+      maps = glob.glob(sys.argv[1] + "/disco/*.nii*")
+      assert maps, "no disconnectome map written"
+      assert np.asarray(nib.load(maps[0]).dataobj).max() > 0, "empty disconnectome map"
+      print("disconnectome map ok")
+      PY
+    expected_output_contains: disconnectome map ok

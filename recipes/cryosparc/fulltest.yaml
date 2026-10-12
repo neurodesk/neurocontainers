@@ -1,0 +1,171 @@
+name: cryosparc
+version: 1.0.0
+
+# CryoSPARC is licence-gated and not shipped in the image, so these tests cover
+# the launcher contract without a licence: argument validation, failures on an
+# unreachable or rejecting licence server, and a full install/start/stop round
+# trip against a local stand-in for get.cryosparc.com whose installer records
+# the arguments it receives.
+tests:
+  - name: launcher help documents the licensed install
+    command: cryosparc help
+    expected_output_contains:
+      - "cryosparc install --license ID --dir PATH --email EMAIL"
+      - "does not contain CryoSPARC"
+
+  - name: installer and service prerequisites are present
+    command: |-
+      for tool in bash curl tar gzip zip unzip ss getent ping ps pkill lsof ssh rsync realpath sed; do
+        command -v "$tool" >/dev/null || { echo "missing $tool"; exit 1; }
+      done
+      getent hosts localhost >/dev/null || { echo "localhost does not resolve"; exit 1; }
+      curl --version | head -n 1
+      echo prerequisites-ok
+    expected_output_contains: prerequisites-ok
+
+  - name: missing licence is reported before any download
+    command: env -u CRYOSPARC_LICENSE_ID cryosparc install --dir /tmp/cryosparc-unused --master-only
+    expected_exit_code: 1
+    expected_output_contains: "no licence ID given"
+
+  - name: malformed licence ID is rejected offline
+    command: cryosparc install --license not-a-licence --dir /tmp/cryosparc-unused --master-only
+    expected_exit_code: 1
+    expected_output_contains: "is not a CryoSPARC licence ID"
+
+  - name: releases needing a system CUDA are refused
+    command: cryosparc install --license 00000000-0000-0000-0000-000000000000 --dir /tmp/cryosparc-unused --version v4.3.1 --master-only
+    expected_exit_code: 1
+    expected_output_contains: "choose v4.4.0 or newer"
+
+  - name: base ports in the host's ephemeral range are refused
+    command: |-
+      read -r low high < /proc/sys/net/ipv4/ip_local_port_range
+      cryosparc install --license 00000000-0000-0000-0000-000000000000 \
+        --dir /tmp/cryosparc-unused --port "$((low + 100))" --master-only
+    expected_exit_code: 1
+    expected_output_contains: "overlap this host's ephemeral port range"
+
+  - name: unreachable licence server fails cleanly
+    command: |-
+      dir=$(mktemp -d)
+      CRYOSPARC_DOWNLOAD_BASE=http://127.0.0.1:9 cryosparc install \
+        --license 00000000-0000-0000-0000-000000000000 --dir "$dir/install" --master-only
+      status=$?
+      test ! -e "$dir/install/cryosparc_master" || echo "unexpected files left behind"
+      rm -rf "$dir"
+      exit $status
+    expected_exit_code: 1
+    expected_output_contains: "could not reach the CryoSPARC licence server"
+
+  - name: rejected licence stops before downloading
+    command: |-
+      dir=$(mktemp -d)
+      mkdir -p "$dir/server/checklicenseexists"
+      echo '{"success": false}' > "$dir/server/checklicenseexists/00000000-0000-0000-0000-000000000000"
+      CRYOSPARC_DOWNLOAD_BASE="file://$dir/server" cryosparc install \
+        --license 00000000-0000-0000-0000-000000000000 --dir "$dir/install" --master-only
+      status=$?
+      test ! -e "$dir/install/cryosparc_master" || echo "unexpected files left behind"
+      rm -rf "$dir"
+      exit $status
+    expected_exit_code: 1
+    expected_output_contains: "was not accepted by the CryoSPARC licence server"
+
+  - name: shims explain a missing installation
+    command: env -u CRYOSPARC_DIR cryosparcm status
+    expected_exit_code: 1
+    expected_output_contains: "no installation directory given"
+
+  - name: standalone install, start and stop against a stand-in server
+    timeout: 300
+    script: |
+      set -eu
+      root=$(realpath "$(mktemp -d)")
+      trap 'rm -rf "$root"' EXIT
+      licence=0123abcd-4567-89ab-cdef-0123456789ab
+      server="$root/server"
+      mkdir -p "$server/checklicenseexists" "$server/download/master-v4.7.1" "$server/download/worker-v4.7.1"
+      echo '{"success": true}' > "$server/checklicenseexists/$licence"
+
+      # Stand-in packages: each installer and CLI records how it was called.
+      build_package() {
+        kind=$1 tool=$2
+        pkg="$root/pkg/cryosparc_$kind"
+        mkdir -p "$pkg/bin"
+        cat > "$pkg/install.sh" <<'EOF'
+      #!/bin/bash
+      here=$(cd "$(dirname "$0")" && pwd)
+      printf '%s\n' "$@" > "$here/install-args"
+      printf '%s\n' "$HOME" > "$here/install-home"
+      printf '%s\n' "${CRYOSPARC_FORCE_HOSTNAME:-unset}" > "$here/install-force-hostname"
+      echo "export CRYOSPARC_LICENSE_ID=recorded" > "$here/config.sh"
+      if [ -n "${STANDIN_FAIL_AFTER_START:-}" ]; then
+        "$here/bin/cryosparcm" start >/dev/null
+        exit 1
+      fi
+      EOF
+        cat > "$pkg/bin/$tool" <<'EOF'
+      #!/bin/bash
+      echo "$(basename "$0") $*" >> "$(dirname "$0")/../calls"
+      echo "stand-in $(basename "$0") $*"
+      EOF
+        chmod +x "$pkg/install.sh" "$pkg/bin/$tool"
+        tar -czf "$server/download/$kind-v4.7.1/$licence" -C "$root/pkg" "cryosparc_$kind"
+      }
+      build_package master cryosparcm
+      build_package worker cryosparcw
+
+      mkdir -p "$root/gpu"
+      printf '#!/bin/sh\necho "GPU 0: Stand-in GPU"\n' > "$root/gpu/nvidia-smi"
+      chmod +x "$root/gpu/nvidia-smi"
+
+      install_dir="$root/my cryosparc"
+      export CRYOSPARC_DOWNLOAD_BASE="file://$server"
+      export CRYOSPARC_INITIAL_PASSWORD=secret-pass
+      PATH="$root/gpu:$PATH" cryosparc install --license "$licence" --dir "$install_dir" \
+        --version 4.7.1 --port 61010 --email user@example.org --username tester
+
+      master="$install_dir/cryosparc_master"
+      args=$(cat "$master/install-args")
+      for expected in --standalone "--license
+      $licence" "--worker_path
+      $install_dir/cryosparc_worker" "--dbpath
+      $install_dir/cryosparc_database" "--port
+      61010" --nossd "--hostname
+      localhost" "--initial_email
+      user@example.org" "--initial_username
+      tester" "--initial_password
+      secret-pass" --yes; do
+        case $args in *"$expected"*) ;; *) echo "installer missing argument: $expected"; exit 1 ;; esac
+      done
+      [ "$(cat "$master/install-home")" = "$install_dir/.installer-home" ] || { echo "installer saw the user's HOME"; exit 1; }
+      [ "$(cat "$master/install-force-hostname")" = true ] || { echo "installer ran without the hostname override"; exit 1; }
+      grep -qx 'export CRYOSPARC_FORCE_HOSTNAME=true' "$master/config.sh"
+      [ -f "$install_dir/cryosparc_worker/install.sh" ]
+      [ ! -e "$install_dir/downloads" ]
+
+      export CRYOSPARC_DIR="$install_dir"
+      cryosparc start | grep -q 'stand-in cryosparcm start'
+      cryosparcm status --verbose | grep -q 'stand-in cryosparcm status --verbose'
+      cryosparcw connect --help | grep -q 'stand-in cryosparcw connect --help'
+      cryosparc stop >/dev/null
+      grep -qx 'cryosparcm stop' "$master/calls"
+
+      if cryosparc install --license "$licence" --master-only 2>"$root/again"; then
+        echo "second install was not refused"; exit 1
+      fi
+      grep -q 'already installed' "$root/again"
+
+      # An installer failing after it started the master must not leave it running.
+      failed="$root/failed"
+      if STANDIN_FAIL_AFTER_START=1 PATH="$root/gpu:$PATH" cryosparc install --license "$licence" \
+          --dir "$failed" --version 4.7.1 --port 61010 --email user@example.org 2>"$root/failure"; then
+        echo "failed installer was reported as success"; exit 1
+      fi
+      grep -q 'the CryoSPARC installer failed' "$root/failure"
+      [ "$(cat "$failed/cryosparc_master/calls")" = "cryosparcm start
+      cryosparcm stop" ] || { echo "services left running after a failed install"; exit 1; }
+      [ ! -e "$failed/.neurodesk-cryosparc" ]
+      echo standalone-contract-ok
+    expected_output_contains: standalone-contract-ok

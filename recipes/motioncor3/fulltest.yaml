@@ -1,0 +1,48 @@
+name: motioncor3
+version: 1.2.4
+upstream_version: "1.2.4"
+
+tests:
+  - name: runtime libraries resolve
+    description: Every shared library except the host-supplied NVIDIA driver resolves inside the image.
+    command: |-
+      bin=$(command -v MotionCor3)
+      for lib in libcufft.so libcudart.so libnvToolsExt.so libtiff.so; do
+        ldd "$bin" | grep -q "$lib[^ ]* => /" || { echo "unresolved $lib"; exit 1; }
+      done
+      missing=$(ldd "$bin" | awk '/not found/ && $1 != "libcuda.so.1" {print $1}')
+      [ -z "$missing" ] || { echo "missing: $missing"; exit 1; }
+      echo "runtime libraries resolve"
+    expected_output_contains: runtime libraries resolve
+
+  - name: reports its version
+    description: The binary loads and runs; the CUDA driver stub stands in for the host driver when no GPU is present.
+    command: |-
+      stub=$(mktemp -d)
+      ln -s /usr/local/cuda/lib64/stubs/libcuda.so "$stub/libcuda.so.1"
+      LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$stub" MotionCor3 --version
+    expected_output_contains: MotionCor3 version ${upstream_version}
+
+  - name: lists movie input options
+    description: The option parser offers MRC, TIFF and EER movie inputs.
+    command: |-
+      stub=$(mktemp -d)
+      ln -s /usr/local/cuda/lib64/stubs/libcuda.so "$stub/libcuda.so.1"
+      LD_LIBRARY_PATH="${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$stub" MotionCor3 --help > "$stub/help.txt"
+      for tag in -InMrc -InTiff -InEer -OutMrc -Gain -Patch -FmDose -Gpu; do
+        grep -q -- "$tag" "$stub/help.txt" || { echo "missing option $tag"; exit 1; }
+      done
+      echo "movie input options listed"
+    expected_output_contains: movie input options listed
+
+  - name: GPU kernels for supported architectures
+    description: The binary carries native kernels from Volta to Blackwell and PTX for newer GPUs.
+    command: |-
+      bin=$(command -v MotionCor3)
+      elf=$(cuobjdump --list-elf "$bin")
+      for arch in 70 75 80 86 87 89 90 100 120; do
+        echo "$elf" | grep -q "\.sm_$arch\.cubin" || { echo "no sm_$arch kernels"; exit 1; }
+      done
+      cuobjdump --list-ptx "$bin" | grep -q '\.sm_120\.ptx' || { echo "no PTX"; exit 1; }
+      echo "kernels for sm_70 to sm_120 and PTX present"
+    expected_output_contains: kernels for sm_70 to sm_120 and PTX present

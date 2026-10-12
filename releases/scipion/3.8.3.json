@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "scipion 3.8.3": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "cryo EM",
+    "workflows"
+  ]
+}
