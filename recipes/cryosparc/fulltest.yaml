@@ -38,6 +38,14 @@ tests:
     expected_exit_code: 1
     expected_output_contains: "choose v4.4.0 or newer"
 
+  - name: base ports in the host's ephemeral range are refused
+    command: |-
+      read -r low high < /proc/sys/net/ipv4/ip_local_port_range
+      cryosparc install --license 00000000-0000-0000-0000-000000000000 \
+        --dir /tmp/cryosparc-unused --port "$((low + 100))" --master-only
+    expected_exit_code: 1
+    expected_output_contains: "overlap this host's ephemeral port range"
+
   - name: unreachable licence server fails cleanly
     command: |-
       dir=$(mktemp -d)
@@ -90,6 +98,7 @@ tests:
       here=$(cd "$(dirname "$0")" && pwd)
       printf '%s\n' "$@" > "$here/install-args"
       printf '%s\n' "$HOME" > "$here/install-home"
+      printf '%s\n' "${CRYOSPARC_FORCE_HOSTNAME:-unset}" > "$here/install-force-hostname"
       echo "export CRYOSPARC_LICENSE_ID=recorded" > "$here/config.sh"
       EOF
         cat > "$pkg/bin/$tool" <<'EOF'
@@ -111,7 +120,7 @@ tests:
       export CRYOSPARC_DOWNLOAD_BASE="file://$server"
       export CRYOSPARC_INITIAL_PASSWORD=secret-pass
       PATH="$root/gpu:$PATH" cryosparc install --license "$licence" --dir "$install_dir" \
-        --version 4.7.1 --port 39010 --email user@example.org --username tester
+        --version 4.7.1 --port 61010 --email user@example.org --username tester
 
       master="$install_dir/cryosparc_master"
       args=$(cat "$master/install-args")
@@ -119,7 +128,7 @@ tests:
       $licence" "--worker_path
       $install_dir/cryosparc_worker" "--dbpath
       $install_dir/cryosparc_database" "--port
-      39010" --nossd "--hostname
+      61010" --nossd "--hostname
       localhost" "--initial_email
       user@example.org" "--initial_username
       tester" "--initial_password
@@ -127,6 +136,7 @@ tests:
         case $args in *"$expected"*) ;; *) echo "installer missing argument: $expected"; exit 1 ;; esac
       done
       [ "$(cat "$master/install-home")" = "$install_dir/.installer-home" ] || { echo "installer saw the user's HOME"; exit 1; }
+      [ "$(cat "$master/install-force-hostname")" = true ] || { echo "installer ran without the hostname override"; exit 1; }
       grep -qx 'export CRYOSPARC_FORCE_HOSTNAME=true' "$master/config.sh"
       [ -f "$install_dir/cryosparc_worker/install.sh" ]
       [ ! -e "$install_dir/downloads" ]

@@ -9,7 +9,7 @@ set -euo pipefail
 
 LAUNCHER_VERSION=1.0.0
 DOWNLOAD_BASE=${CRYOSPARC_DOWNLOAD_BASE:-https://get.cryosparc.com}
-DEFAULT_PORT=39000
+DEFAULT_PORT=61000
 MARKER=.neurodesk-cryosparc
 
 die() {
@@ -154,6 +154,12 @@ cmd_install() {
   version=$(normalise_version "$version")
   [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1024 && port <= 65525 )) ||
     die "invalid --port '$port'; choose 1024-65525 so that ten consecutive ports are available"
+  # CryoSPARC refuses base ports whose range overlaps the ephemeral ports.
+  local ephemeral_low ephemeral_high
+  if read -r ephemeral_low ephemeral_high 2>/dev/null </proc/sys/net/ipv4/ip_local_port_range &&
+      (( port <= ephemeral_high && port + 9 >= ephemeral_low )); then
+    die "ports $port-$((port + 9)) overlap this host's ephemeral port range $ephemeral_low-$ephemeral_high; choose another --port, e.g. $DEFAULT_PORT"
+  fi
   getent hosts "$hostname" >/dev/null || die "hostname '$hostname' does not resolve inside the container"
   # CryoSPARC v4 installers check the hostname with ping, which needs the
   # host to allow unprivileged ICMP (sysctl net.ipv4.ping_group_range).
@@ -204,11 +210,14 @@ cmd_install() {
       args+=(--nossd)
     fi
   fi
+  # A container's hostname can differ from the configured master hostname
+  # (localhost by default) and change between sessions. The standalone
+  # installer starts the master itself, so the override must already apply.
   note "running the CryoSPARC installer in $dir/cryosparc_master"
-  (cd "$dir/cryosparc_master" && HOME=$installer_home ./install.sh "${args[@]}") ||
+  (cd "$dir/cryosparc_master" &&
+    HOME=$installer_home CRYOSPARC_FORCE_HOSTNAME=true ./install.sh "${args[@]}") ||
     die "the CryoSPARC installer failed; see its output above"
 
-  # A container's hostname can change between sessions; keep the configured one.
   local config="$dir/cryosparc_master/config.sh"
   [[ -f "$config" ]] || die "the CryoSPARC installer did not write $config"
   grep -q '^export CRYOSPARC_FORCE_HOSTNAME=' "$config" ||

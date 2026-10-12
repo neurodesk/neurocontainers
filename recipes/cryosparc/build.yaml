@@ -94,14 +94,14 @@ readme: |
   ```
   This runs Structura's single-workstation installer: master, database and a
   GPU worker in `$CRYOSPARC_DIR`. Add `--version v4.7.1` to pin a release,
-  `--port N` to change the base port (default 39000, uses ten ports),
+  `--port N` to change the base port (default 61000, uses ten ports),
   `--ssd /fast/local/disk` for a particle cache, or `--master-only` to install
   only the master, without a GPU. Run `cryosparc help` for every option.
 
   ### Run
   ```
   export CRYOSPARC_DIR=/path/to/cryosparc
-  cryosparc start        # then open http://localhost:39000 in a browser
+  cryosparc start        # then open http://localhost:61000 in a browser
   cryosparc status
   cryosparcm ...         # upstream master CLI, e.g. cryosparcm log command_core
   cryosparcw ...         # upstream worker CLI
