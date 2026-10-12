@@ -1,0 +1,139 @@
+name: scipion
+version: 3.8.3
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://github.com/scipion-em/scipion-app/blob/devel/LICENSE.txt
+architectures:
+  - x86_64
+variables:
+  upstream_version: 3.8.3
+  pyworkflow_version: 3.11.7
+  pwem_version: 3.11.1
+  installer_version: 2.1.1
+  python_version: 3.10.22
+auto_update:
+  method: sources
+  container_version: scipion-app
+  sources:
+    - id: scipion-app
+      method: pypi
+      package: scipion-app
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: scipion-pyworkflow
+      method: pypi
+      package: scipion-pyworkflow
+      target:
+        variable: pyworkflow_version
+        fulltest_variable: pyworkflow_version
+    - id: scipion-em
+      method: pypi
+      package: scipion-em
+      target:
+        variable: pwem_version
+        fulltest_variable: pwem_version
+    - id: scipion-installer
+      method: pypi
+      package: scipion-installer
+      dependency: true
+      target:
+        variable: installer_version
+    - id: miniforge
+      method: github_release_asset
+      repo: conda-forge/miniforge
+      asset: Miniforge3-Linux-x86_64.sh
+      dependency: true
+      target:
+        file: miniforge_installer
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - ca-certificates
+        - libx11-6
+    - run:
+        - bash {{ get_file("miniforge_installer") }} -b -p /opt/miniforge3
+        - export PATH=/opt/miniforge3/bin:$PATH PIP_NO_CACHE_DIR=1 PIP_CONSTRAINT={{ get_file("scipion-constraints.txt") }}
+        - export CONDA_ACTIVATION_CMD='. /opt/miniforge3/etc/profile.d/conda.sh'
+        - python -m venv /tmp/scipion-installer
+        - /tmp/scipion-installer/bin/pip install scipion-installer=={{ context.installer_version }}
+        - /tmp/scipion-installer/bin/python -m scipioninstaller /opt/scipion -conda -noAsk -python {{ context.python_version
+          }}
+        - /opt/miniforge3/envs/scipion3/bin/python -m pip check
+        - rm -rf /tmp/scipion-installer
+        - conda clean -afy
+        - install -D -m 755 {{ get_file("scipion3.sh") }} /opt/scipion-bin/scipion3
+        - chmod -R a+rX /opt/scipion /opt/miniforge3
+    - environment:
+        SCIPION_HOME: /opt/scipion
+        PATH: /opt/scipion-bin:$PATH
+deploy:
+  bins:
+    - scipion3
+files:
+  - name: scipion-constraints.txt
+    contents: |
+      scipion-app=={{ context.upstream_version }}
+      scipion-pyworkflow=={{ context.pyworkflow_version }}
+      scipion-em=={{ context.pwem_version }}
+  - name: scipion3.sh
+    filename: scipion3.sh
+  - name: miniforge_installer
+    url: https://github.com/conda-forge/miniforge/releases/download/26.7.2-0/Miniforge3-Linux-x86_64.sh
+    sha256: 281b0ac7d550802efc81af633225a5e6116d29ae72f3ab4eae7168c3931a4c05
+categories:
+  - cryo EM
+  - workflows
+readme: |
+  ## scipion/{{ context.version }}
+
+  Scipion is an image processing framework for cryo-electron microscopy. It
+  integrates many cryo-EM packages into reproducible, traceable workflows that
+  you build and run from a graphical project manager or from Python.
+
+  This container installs Scipion {{ context.upstream_version }} with
+  scipion-installer {{ context.installer_version }} into a conda environment
+  (Python {{ context.python_version }}) under /opt/scipion:
+
+  - scipion-app {{ context.upstream_version }}
+  - scipion-pyworkflow {{ context.pyworkflow_version }}
+  - scipion-em (pwem) {{ context.pwem_version }}
+
+  Run `scipion3` to open the project manager (Tk GUI). Other useful commands:
+
+  - `scipion3 version` prints the installed package versions
+  - `scipion3 protocols` lists the available protocols
+  - `scipion3 printenv` shows the effective configuration
+  - `scipion3 python script.py` runs a script with pyworkflow and pwem importable
+  - `scipion3 tests --help` lists the built-in test runner options
+
+  Projects are stored in `SCIPION_USER_DATA`, which defaults to
+  `~/ScipionUserData`. If your home directory is not writable, the launcher
+  falls back to `${TMPDIR:-/tmp}/ScipionUserData-<uid>` and prints a warning.
+  Set `SCIPION_USER_DATA` to a persistent directory to keep projects in that
+  case. Test datasets downloaded by `scipion3 testdata` go to
+  `$SCIPION_USER_DATA/data/tests` unless `SCIPION_TESTS` is set. A personal
+  configuration file at `~/.config/scipion/scipion.conf`, or the file named by
+  `SCIPION_LOCAL_CONFIG`, overrides the defaults.
+
+  The container provides the Scipion core and the protocols bundled with pwem
+  (data import, subsets, masks and others). It does not include plugins that
+  wrap external programs (Xmipp, RELION, CTFFIND, MotionCor2, ...). The
+  installation is read-only, so `scipion3 installp` and the plugin manager
+  cannot add plugins at runtime. Use the dedicated Neurodesk containers for
+  those programs.
+
+  Documentation: https://scipion-em.github.io/docs/
+
+  Citation:
+  de la Rosa-Trevin JM, et al. Scipion: A software framework toward
+  integration, reproducibility and validation in 3D electron microscopy.
+  J Struct Biol. 2016;195(1):93-99. doi:10.1016/j.jsb.2016.04.010
+
+  License: GPL-3.0-or-later
+icon: data:image/png;base64,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
