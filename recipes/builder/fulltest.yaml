@@ -6,3 +6,89 @@ tests:
     description: Verify the packaged BuildKit and Apptainer build launcher is deployed.
     command: command -v sf-make
     expected_output_contains: sf-make
+
+  - name: Actual recipe compilation and file staging
+    description: Run the packaged sf-build and sf-make planning interfaces on a real local recipe; check native platform, exact staged binary data and deterministic Dockerfile/SIF inputs. This checks preparation, not privileged nested image execution.
+    command: |
+      python3 - <<'PYTHON'
+      import hashlib
+      import json
+      import platform
+      import subprocess
+      import tempfile
+      from pathlib import Path
+
+      architecture = {'arm64': 'aarch64', 'aarch64': 'aarch64', 'x86_64': 'x86_64'}[platform.machine()]
+      with tempfile.TemporaryDirectory(prefix='builder-staging-') as directory:
+          root = Path(directory)
+          recipe = root / 'fixture'
+          recipe.mkdir()
+          payload = bytes(range(256))
+          (recipe / 'payload.dat').write_bytes(payload)
+          (recipe / 'build.yaml').write_text("""name: stagedfixture
+      version: '1.0.0'
+      architectures: [x86_64, aarch64]
+      auto_update:
+        frozen: true
+        reason: Analytical staging fixture without external software downloads.
+      readme: Staging fixture verifies real asset bytes and architecture compilation.
+      files:
+        - name: payload
+          filename: payload.dat
+      build:
+        kind: neurodocker
+        base-image: ubuntu:24.04
+        pkg-manager: apt
+        add-default-template: false
+        add-tzdata: false
+        directives:
+          - copy: '{{ get_file("payload") }} /opt/payload.dat'
+          - condition: arch == "aarch64"
+            run: printf '%s' arm64-compilation-marker
+          - condition: arch == "x86_64"
+            run: printf '%s' x86-compilation-marker
+      """)
+          output = root / 'generated'
+          args = [str(recipe), '--architecture', architecture, '--output-root', str(output), '--recreate']
+          result = subprocess.run(['sf-build', *args, '--method', 'buildkit', '--dry-run'], text=True, capture_output=True, check=True, timeout=60)
+          print(result.stdout, result.stderr)
+          expected_platform = 'linux/arm64' if architecture == 'aarch64' else 'linux/amd64'
+          assert 'buildctl build --frontend=dockerfile.v0' in result.stdout
+          assert 'platform=' + expected_platform in result.stdout
+          files = list(output.rglob('*.Dockerfile'))
+          assert len(files) == 1, files
+          dockerfile = files[0].read_text()
+          assert 'FROM ubuntu:24.04' in dockerfile
+          assert '/opt/payload.dat' in dockerfile
+          assert ('arm64-compilation-marker' in dockerfile) == (architecture == 'aarch64')
+          assert ('x86-compilation-marker' in dockerfile) == (architecture == 'x86_64')
+          assets = list(output.rglob('payload.dat'))
+          assert len(assets) == 1 and assets[0].read_bytes() == payload, assets
+          assert hashlib.sha256((recipe / 'payload.dat').read_bytes()).digest() == hashlib.sha256(payload).digest()
+          build_dir = files[0].parent
+          assert (build_dir / 'README.md').read_text().strip() == 'Staging fixture verifies real asset bytes and architecture compilation.'
+          assert (build_dir / 'build.yaml').read_bytes() == (recipe / 'build.yaml').read_bytes()
+          before = dockerfile
+          result = subprocess.run(['sf-make', *args, '--dry-run'], text=True, capture_output=True, check=True, timeout=60)
+          print(result.stdout, result.stderr)
+          assert 'build --force' in result.stdout and 'docker-archive://' in result.stdout
+          assert 'stagedfixture' in result.stdout and result.stdout.rstrip().endswith('.docker.tar')
+          assert files[0].read_text() == before
+          assert len(list(output.rglob('payload.dat'))) == 1
+          assert assets[0].read_bytes() == payload
+      print('Real recipe staging preserves native architecture, exact assets and deterministic Docker/SIF plans')
+      PYTHON
+    expected_output_contains: Real recipe staging preserves native architecture, exact assets and deterministic Docker/SIF plans
+    expected_exit_code: 0
+    timeout: 150
+
+  - name: Packaged build engines execute natively
+    description: Execute both shipped engines independently of the command planner
+    command: |
+      set -e
+      buildctl --version
+      apptainer --version
+    expected_output_contains:
+      - buildctl
+      - apptainer
+    expected_exit_code: 0
