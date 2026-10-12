@@ -1,5 +1,5 @@
 # heudiconv container test suite
-# Tests for heudiconv v1.3.1 - flexible DICOM converter for organizing brain imaging data
+# Tests for heudiconv - flexible DICOM converter for organizing brain imaging data
 #
 # This container includes:
 #   - heudiconv: DICOM to BIDS converter
@@ -30,6 +30,76 @@ test_data:
   output_dir: test_output
 
 setup:
+  host_script: |
+    python3 - <<'PYTHON'
+    from pathlib import Path
+    import struct
+
+    root = Path('${output_dir}') / 'heud-dicom-phantom'
+    source = root / 'dicom'
+    source.mkdir(parents=True, exist_ok=True)
+    (root / 'converted').mkdir(exist_ok=True)
+
+    def element(group, tag, vr, value):
+        if vr == 'US':
+            raw = struct.pack('<H', value)
+        elif isinstance(value, bytes):
+            raw = value
+        else:
+            raw = str(value).encode('ascii')
+        if len(raw) % 2:
+            raw += b'\0' if vr in ('UI', 'OB', 'OW') else b' '
+        prefix = struct.pack('<HH', group, tag) + vr.encode('ascii')
+        if vr in ('OB', 'OW'):
+            return prefix + b'\0\0' + struct.pack('<I', len(raw)) + raw
+        return prefix + struct.pack('<H', len(raw)) + raw
+
+    sop = '1.2.840.10008.5.1.4.1.1.4'
+    for index in range(2):
+        uid = '1.2.826.0.1.3680043.10.543.1.' + str(index + 1)
+        meta = b''.join([
+            element(2, 1, 'OB', b'\0\1'),
+            element(2, 2, 'UI', sop),
+            element(2, 3, 'UI', uid),
+            element(2, 0x10, 'UI', '1.2.840.10008.1.2.1'),
+            element(2, 0x12, 'UI', '1.2.826.0.1.3680043.10.543'),
+        ])
+        # Synthetic MR storage, explicit VR little endian, unsigned16-bit pixels.
+        records = [
+            (8, 8, 'CS', 'ORIGINAL\\PRIMARY\\M'),
+            (8, 0x16, 'UI', sop), (8, 0x18, 'UI', uid),
+            (8, 0x20, 'DA', '20260101'), (8, 0x30, 'TM', '120000'),
+            (8, 0x60, 'CS', 'MR'), (8, 0x70, 'LO', 'Synthetic'),
+            (8, 0x103e, 'LO', 'Native conversion phantom'),
+            (0x10, 0x10, 'PN', 'Synthetic^Phantom'), (0x10, 0x20, 'LO', 'SYNTHETIC'),
+            (0x18, 0x50, 'DS', '3'), (0x18, 0x80, 'DS', '1000'),
+            (0x18, 0x81, 'DS', '10'), (0x18, 0x87, 'DS', '3'),
+            (0x18, 0x88, 'DS', '3'),
+            (0x20, 0xd, 'UI', '1.2.826.0.1.3680043.10.543.2'),
+            (0x20, 0xe, 'UI', '1.2.826.0.1.3680043.10.543.3'),
+            (0x20, 0x11, 'IS', '1'), (0x20, 0x13, 'IS', str(index + 1)),
+            (0x20, 0x32, 'DS', '0\\0\\' + str(index * 3)),
+            (0x20, 0x37, 'DS', '1\\0\\0\\0\\1\\0'),
+            (0x20, 0x52, 'UI', '1.2.826.0.1.3680043.10.543.4'),
+            (0x28, 2, 'US', 1), (0x28, 4, 'CS', 'MONOCHROME2'),
+            (0x28, 0x10, 'US', 2), (0x28, 0x11, 'US', 3),
+            (0x28, 0x30, 'DS', '2\\1.5'),
+            (0x28, 0x100, 'US', 16), (0x28, 0x101, 'US', 16),
+            (0x28, 0x102, 'US', 15), (0x28, 0x103, 'US', 0),
+            (0x7fe0, 0x10, 'OW', struct.pack('<6H', *range(index * 6 + 1, index * 6 + 7))),
+        ]
+        payload = b''.join(element(*record) for record in records)
+        (source / f'slice-{index}.dcm').write_bytes(
+            bytes(128) + b'DICM' + element(2, 0, 'UL', struct.pack('<I', len(meta))) + meta + payload
+        )
+    # NIfTI y-axis row flip preserves the DICOM physical orientation.
+    (root / 'expected-pixels.bin').write_bytes(struct.pack('<12H', 4,5,6,1,2,3,10,11,12,7,8,9))
+    (root / 'heuristic.py').write_text(
+        'def infotodict(seqinfo):\n'
+        '    key = ("sub-{subject}/anat/sub-{subject}_T1w", ("nii.gz",), None)\n'
+        '    return {key: [sequence.series_id for sequence in seqinfo]}\n'
+    )
+    PYTHON
   script: |
     #!/usr/bin/env bash
     set -e
@@ -81,7 +151,7 @@ tests:
   - name: dcm2niix version check
     description: Verify dcm2niix binary runs and reports version
     command: dcm2niix --version 2>&1
-    ignore_exit_code: true
+    expected_exit_code: 3
     expected_output_contains: "v1.0.20220720"
 
   - name: dcm2niix help
@@ -143,19 +213,19 @@ tests:
   - name: nib-diff different files
     description: Compare different NIfTI files (exit 1 = files differ)
     command: nib-diff ${t1w} ${t2} 2>&1
-    ignore_exit_code: true
+    expected_exit_code: 1
     expected_output_contains: "dim"
 
   - name: nib-diff with header fields
     description: Compare files showing specific header fields (exit 1 = files differ)
     command: nib-diff -H "pixdim" ${t1w} ${t2} 2>&1
-    ignore_exit_code: true
+    expected_exit_code: 1
     expected_output_contains: "pixdim"
 
   - name: nib-diff verbose
     description: Compare files with verbose output (exit 1 = files differ)
     command: nib-diff -v ${t1w} ${t2} 2>&1
-    ignore_exit_code: true
+    expected_exit_code: 1
     expected_output_contains: "dim"
 
   # ==========================================================================
@@ -397,7 +467,37 @@ tests:
   # ==========================================================================
   - name: Heudiconv populate templates
     description: Test populate-templates command functionality
-    command: heudiconv --command populate-templates 2>&1 || true
+    command: |
+      NO_ET=1 python3 - <<'PY'
+      import json
+      import subprocess
+      import tempfile
+      from pathlib import Path
+      from heudiconv.bids import BIDS_VERSION
+
+      with tempfile.TemporaryDirectory(prefix='heud-templates-', dir='${output_dir}') as tmp:
+          root = Path(tmp)
+          command = ['heudiconv', '--command', 'populate-templates',
+                     '-f', 'convertall', '--files', str(root)]
+          subprocess.run(command, check=True)
+          description = root / 'dataset_description.json'
+          metadata = json.loads(description.read_text())
+          assert metadata['BIDSVersion'] == BIDS_VERSION, metadata
+          assert metadata['Name'] and metadata['Authors'] and metadata['License'], metadata
+          assert (root / 'README').stat().st_size > 0
+          assert (root / 'CHANGES').stat().st_size > 0
+          metadata['Name'] = 'Synthetic existing dataset'
+          metadata['CustomField'] = {'preserve': [1, 2, 3]}
+          description.write_text(json.dumps(metadata))
+          before = {str(p.relative_to(root)): p.read_bytes()
+                    for p in root.rglob('*') if p.is_file()}
+          subprocess.run(command, check=True)
+          after = {str(p.relative_to(root)): p.read_bytes()
+                   for p in root.rglob('*') if p.is_file()}
+          assert after == before, 'Existing dataset templates changed'
+      print('Real BIDS template creation and exact existing metadata preservation passed')
+      PY
+    expected_output_contains: "Real BIDS template creation and exact existing metadata preservation passed"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -464,20 +564,81 @@ tests:
   # DIAGNOSTICS AND VALIDATION
   # ==========================================================================
   - name: Validate all test outputs
-    description: Run NIfTI diagnostics on all generated outputs
+    description: Require every generated NIfTI1 or NIfTI2 image to pass the matching header diagnostics.
     command: |
-      for f in test_output/nibabel_out/*.nii.gz test_output/nibabel_out/*.nii; do
-        if [ -f "$f" ]; then
-          echo "Checking: $f"
-          nib-nifti-dx "$f" 2>&1 || echo "Warning: $f may have issues"
-        fi
-      done
-    expected_output_contains: "Checking"
+      python3 - <<'PY'
+      import subprocess
+      from pathlib import Path
+      import nibabel as nib
+
+      directory = Path('${output_dir}') / 'nibabel_out'
+      paths = sorted(set(directory.glob('*.nii')) | set(directory.glob('*.nii.gz')))
+      assert paths, 'No generated NIfTI images to validate'
+      for path in paths:
+          header = nib.load(path).header
+          size = int(header['sizeof_hdr'])
+          assert size in (348, 540), (path, size)
+          mode = '-2' if size == 540 else '-1'
+          result = subprocess.run(['nib-nifti-dx', mode, str(path)],
+                                  check=True, text=True, capture_output=True)
+          print('Checking:', path)
+          assert result.stdout.strip() == f'Header for "{path}" is clean', result.stdout
+      print('All generated NIfTI headers are clean')
+      PY
+    expected_output_contains: ["Checking", "All generated NIfTI headers are clean"]
+    expected_exit_code: 0
 
   - name: List all generated outputs
     description: List all files generated by tests
     command: ls -la test_output/nibabel_out/
     expected_output_contains: "nii"
+
+  - name: Convert synthetic DICOM through the real heuristic into BIDS
+    description: Require exact converted signal and geometry plus real BIDS paths timing participant and scan records
+    command: |
+      NO_ET=1 python3 - <<'PY'
+      import csv
+      import json
+      from pathlib import Path
+      import subprocess
+      import nibabel as nib
+      import numpy as np
+      from heudiconv.bids import BIDS_VERSION
+
+      root = Path('${output_dir}') / 'heud-dicom-phantom'
+      output = root / 'bids'
+      subprocess.run([
+          'heudiconv', '--files', str(root / 'dicom'), '-s', '01',
+          '-f', str(root / 'heuristic.py'), '-c', 'dcm2niix', '-b',
+          '--minmeta', '-o', str(output),
+      ], check=True)
+      images = sorted(output.glob('sub-01/anat/*.nii.gz'))
+      assert len(images) == 1 and images[0].name == 'sub-01_T1w.nii.gz', images
+      image = nib.load(images[0])
+      assert image.shape == (3, 2, 2) and image.get_data_dtype() == np.dtype('uint16')
+      pixels = image.get_fdata()
+      assert np.isfinite(pixels).all()
+      expected = np.frombuffer((root / 'expected-pixels.bin').read_bytes(), dtype='<u2')
+      np.testing.assert_array_equal(pixels.ravel(order='F'), expected)
+      np.testing.assert_array_equal(image.affine, [[-1.5, 0, 0, 0], [0, 2, 0, -2], [0, 0, 3, 0], [0, 0, 0, 1]])
+      np.testing.assert_array_equal(image.header.get_zooms(), [1.5, 2, 3])
+      metadata = json.loads(images[0].with_name('sub-01_T1w.json').read_text())
+      assert metadata['Modality'] == 'MR' and metadata['MagneticFieldStrength'] == 3
+      assert metadata['EchoTime'] == 0.01 and metadata['RepetitionTime'] == 1
+      assert 'PatientName' not in metadata and 'PatientID' not in metadata
+      description = json.loads((output / 'dataset_description.json').read_text())
+      assert description['BIDSVersion'] == BIDS_VERSION
+      with (output / 'participants.tsv').open() as stream:
+          participants = list(csv.DictReader(stream, delimiter='\t'))
+      assert len(participants) == 1 and participants[0]['participant_id'] == 'sub-01', participants
+      with (output / 'sub-01/sub-01_scans.tsv').open() as stream:
+          scans = list(csv.DictReader(stream, delimiter='\t'))
+      assert len(scans) == 1 and scans[0]['filename'] == 'anat/sub-01_T1w.nii.gz', scans
+      print('Real Heudiconv DICOM-to-BIDS conversion: exact pixels geometry timing and records')
+      PY
+    expected_output_contains: "Real Heudiconv DICOM-to-BIDS conversion: exact pixels geometry timing and records"
+    expected_exit_code: 0
+    timeout: 120
 
 cleanup:
   script: |
