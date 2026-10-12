@@ -769,6 +769,8 @@ tests:
     command: |
       set -e
       dcm2bids_scaffold -o ${output_dir}/bids-phantom
+      # The scaffold contains example subjects; initialize this synthetic cohort.
+      python -c "from pathlib import Path; Path('${output_dir}/bids-phantom/participants.tsv').write_text('participant_id\n')"
       dcm2bids -d ${output_dir}/dicom-phantom/dicom -p phantom -s 01 -c ${output_dir}/dicom-phantom/config.json -o ${output_dir}/bids-phantom
       python - <<'PYTHON'
       import json
