@@ -23,6 +23,27 @@ setup:
     mkdir -p test_output
 
 tests:
+  - name: Packages work without a writable home
+    description: Use the default launcher with an unavailable home and verify a private writable depot and local worker inheritance.
+    command: |
+      HOME=/proc/neurocontainers-unavailable-home julia --startup-file=no -e '
+        using Distributed
+        @assert !startswith(first(DEPOT_PATH), homedir())
+        @assert "/opt/julia_depot" in DEPOT_PATH
+        @assert filemode(first(DEPOT_PATH)) & 0o777 == 0o700
+        path, io = mktemp(first(DEPOT_PATH)); close(io); rm(path)
+        ids = addprocs(1)
+        try
+            @assert remotecall_fetch(() -> DEPOT_PATH, only(ids)) == DEPOT_PATH
+            @assert remotecall_fetch(getpid, only(ids)) != getpid()
+        finally
+            rmprocs(ids)
+        end
+        println("Packages and workers work without home")
+      '
+    expected_output_contains: "Packages and workers work without home"
+    expected_exit_code: 0
+
   # ==========================================================================
   # BASIC FUNCTIONALITY AND VERSION INFO
   # ==========================================================================

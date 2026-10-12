@@ -109,15 +109,18 @@ build:
         JULIA_DEPOT_PATH: /opt/julia_depot
 
     - run:
-        - julia install_packages.jl
+        - JULIA_CPU_TARGET=generic julia install_packages.jl
+        - JULIA_CPU_TARGET=generic julia -e 'using Pkg; Pkg.precompile("IJulia"; strict=true)'
 
     - environment:
         JULIA_DEPOT_PATH: ~/.julia:/opt/julia_depot
 
+    - copy: julia /usr/local/bin/julia
+
     - copy: code /usr/local/sbin/
 
     - run:
-        - chmod a+x /usr/local/sbin/code
+        - chmod a+x /usr/local/bin/julia /usr/local/sbin/code
         - chmod a+rwx /opt/vscode-extensions/ -R
         - chmod a+rwx /opt/vscode-data -R
 
@@ -140,6 +143,10 @@ readme: |-
   julia
   ```
 
+  The `julia` launcher uses a writable home depot when available, otherwise a private
+  temporary depot under `TMPDIR` or `/tmp`, followed by the installed `/opt/julia_depot`.
+  Set `JULIA_DEPOT_PATH` explicitly to select a persistent writable depot.
+
   More documentation can be found here: https://docs.julialang.org/en/v1/
 
   To run container outside of this environment: ml julia/{{ context.version }}
@@ -147,6 +154,8 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: julia
+    filename: julia
   - name: vscode_linux_deb_x64
     url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
   - name: vscode_linux_deb_arm64
@@ -163,15 +172,13 @@ files:
       Pkg.add("ArgParse")
       Pkg.add("FFTW")
       Pkg.add("IJulia")
-      if Sys.ARCH == :aarch64
-          # ZMQ's socket workload segfaults during precompilation on Julia 1.13 ARM64.
-          # Keep normal package compilation and runtime messaging enabled.
-          project_path = Base.active_project()
-          project = TOML.parsefile(project_path)
-          get!(project, "extras", Dict())["ZMQ"] = "c2297ded-f4af-51ae-bb23-16f91089e4e1"
-          get!(project, "preferences", Dict())["ZMQ"] = Dict("precompile_workload" => false)
-          open(io -> TOML.print(io, project), project_path, "w")
-      end
+      # ZMQ's socket workload segfaults during Julia 1.13 precompilation.
+      # Keep normal package compilation and runtime messaging enabled.
+      project_path = Base.active_project()
+      project = TOML.parsefile(project_path)
+      get!(project, "extras", Dict())["ZMQ"] = "c2297ded-f4af-51ae-bb23-16f91089e4e1"
+      get!(project, "preferences", Dict())["ZMQ"] = Dict("precompile_workload" => false)
+      open(io -> TOML.print(io, project), project_path, "w")
 
   - name: code
     contents: |-
