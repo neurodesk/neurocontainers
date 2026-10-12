@@ -26,17 +26,17 @@ tests:
 
   - name: CoSMoMVPA tree exists
     description: Verify the CoSMoMVPA source tree was installed
-    command: ls -d /opt/cosmomvpa-1.1.0/CoSMoMVPA
-    expected_output_contains: "/opt/cosmomvpa-1.1.0/CoSMoMVPA"
+    command: ls -d /opt/cosmomvpa-${version}/CoSMoMVPA
+    expected_output_contains: "/opt/cosmomvpa-${version}/CoSMoMVPA"
 
   - name: cosmo_wtf resolves
     description: Verify Octave can resolve the main CoSMoMVPA diagnostic function
-    command: octave --no-gui --eval "addpath(genpath('/opt/cosmomvpa-1.1.0/CoSMoMVPA')); which cosmo_wtf"
+    command: octave --no-gui --eval "addpath(genpath('/opt/cosmomvpa-${version}/CoSMoMVPA')); which cosmo_wtf"
     expected_output_contains: "cosmo_wtf.m"
 
   - name: cosmo_wtf runs
     description: Verify the CoSMoMVPA diagnostic function executes
-    command: octave --no-gui --eval "addpath(genpath('/opt/cosmomvpa-1.1.0/CoSMoMVPA')); cosmo_wtf();"
+    command: octave --no-gui --eval "addpath(genpath('/opt/cosmomvpa-${version}/CoSMoMVPA')); cosmo_wtf();"
     expected_output_contains: "warning: Using cosmo_config"
 
   - name: Exact held-out LDA classification
@@ -45,7 +45,7 @@ tests:
       set -e
       work="$(mktemp -d "$(pwd)/test_output/cosmomvpa/classification.XXXXXX")"
       cat > "$work/classification.m" <<'OCTAVE'
-      addpath(genpath('/opt/cosmomvpa-1.1.0/CoSMoMVPA'));
+      addpath(genpath('/opt/cosmomvpa-${version}/CoSMoMVPA'));
       ds.samples = [-10.3; 9.7; -10.1; 9.9; -9.9; 10.1; -9.7; 10.3];
       ds.sa.targets = repmat([1; 2], 4, 1);
       ds.sa.chunks = kron((1:4)', ones(2, 1));
