@@ -1,10 +1,13 @@
 # rapidtide container test suite
-# Tests for rapidtide v3.1.11 - time delay analysis of fMRI data (RIPTiDe)
+# Tests for rapidtide - time delay analysis of fMRI data (RIPTiDe)
 #
 # Documentation: https://rapidtide.readthedocs.io/en/latest/
 
 name: rapidtide
 version: 3.2.0
+
+test_data:
+  output_dir: test_output
 
 tests:
   - name: rapidtide launcher available
@@ -30,3 +33,69 @@ tests:
     command: python -c "import rapidtide; print(rapidtide.__version__)"
     expected_output_contains: "${version}"
     expected_exit_code: 0
+
+  - name: Recover known voxelwise delays from NIfTI data
+    description: Fit real Gaussian correlation peaks and require accurate delays, valid fits and preserved image geometry
+    command: |
+      python - <<'PY'
+      import json
+      from pathlib import Path
+      import subprocess
+      import tempfile
+      import nibabel as nib
+      import numpy as np
+
+      output = Path("${output_dir}")
+      output.mkdir(parents=True, exist_ok=True)
+      with tempfile.TemporaryDirectory(prefix="rapidtide-lags-", dir=output) as directory:
+          directory = Path(directory)
+          time = np.arange(512, dtype=np.float64)
+          probe = np.exp(-0.5 * ((time - 160) / 4) ** 2) + 0.7 * np.exp(-0.5 * ((time - 352) / 6) ** 2)
+          known_lags = np.array([-2, 0, 2, 4, -2, 0, 2, 4]).reshape(2, 2, 2)
+          data = np.stack([1000 + 50 * np.roll(probe, lag) for lag in known_lags.flat]).reshape(2, 2, 2, 512)
+          affine = np.array([[2, 0, 0, 10], [0, 3, 0, -12], [0, 0, 4, 8], [0, 0, 0, 1]], dtype=float)
+          image = nib.Nifti1Image(data.astype(np.float32), affine)
+          image.header.set_zooms((2, 3, 4, 1))
+          image.header.set_xyzt_units("mm", "sec")
+          input_file = directory / "bold.nii.gz"
+          mask_file = directory / "mask.nii.gz"
+          regressor = directory / "probe.txt"
+          nib.save(image, input_file)
+          nib.save(nib.Nifti1Image(np.ones((2, 2, 2), dtype=np.uint8), affine), mask_file)
+          np.savetxt(regressor, probe, fmt="%.17g")
+          prefix = directory / "fit"
+          subprocess.run([
+              "rapidtide", str(input_file), str(prefix),
+              "--regressor", str(regressor), "--regressorfreq", "1",
+              "--corrmask", str(mask_file), "--filterband", "None",
+              "--spatialfilt", "0", "--detrendorder", "0", "--windowfunc", "None",
+              "--corrweighting", "None", "--zeropadding", "0",
+              "--searchrange", "-16", "16", "--peakfittype", "gauss",
+              "--passes", "1", "--despecklepasses", "0", "--numnull", "0",
+              "--norefineoffset", "--norefinedelay", "--nodenoise",
+              "--nprocs", "1", "--outputlevel", "min",
+          ], check=True)
+          maps = {}
+          for suffix in ("maxtime_map", "maxcorr_map", "corrfit_mask", "corrfitfailreason_info"):
+              path = Path(str(prefix) + "_desc-" + suffix + ".nii.gz")
+              result = nib.load(path)
+              values = result.get_fdata()
+              assert values.shape == known_lags.shape, (suffix, values.shape)
+              np.testing.assert_array_equal(result.affine, affine)
+              np.testing.assert_array_equal(result.header.get_zooms()[:3], (2, 3, 4))
+              assert np.isfinite(values).all(), suffix
+              maps[suffix] = values
+          np.testing.assert_array_equal(maps["corrfit_mask"], np.ones_like(known_lags))
+          np.testing.assert_array_equal(maps["corrfitfailreason_info"], np.zeros_like(known_lags))
+          # Sub-TR Gaussian peak fitting must locate these integer shifts within 1/4 TR.
+          np.testing.assert_allclose(maps["maxtime_map"], known_lags, rtol=0, atol=0.25)
+          assert np.all((maps["maxcorr_map"] > 0.95) & (maps["maxcorr_map"] <= 1.01)), maps["maxcorr_map"]
+          assert Path(str(prefix) + "_DONE.txt").is_file()
+          assert not Path(str(prefix) + "_ISRUNNING.txt").exists()
+          metadata = json.loads(Path(str(prefix) + "_desc-maxtime_map.json").read_text())
+          assert metadata["Units"] == "second", metadata
+          print("Verified all8 real NIfTI delay fits: -2,0,2,4seconds and exact geometry")
+      PY
+    expected_output_contains: "Verified all8 real NIfTI delay fits: -2,0,2,4seconds and exact geometry"
+    expected_exit_code: 0
+    timeout: 300
