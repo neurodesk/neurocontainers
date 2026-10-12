@@ -1,0 +1,78 @@
+name: gautomatch
+version: 0.56.0
+upstream_version: "0.56"
+
+tests:
+  - name: help reports the packaged release
+    description: The launcher starts without a GPU and prints its version banner and option reference.
+    command: Gautomatch --help
+    expected_output_contains:
+      - "v${upstream_version}"
+      - "Kai Zhang@MRC Laboratory of Molecular Biology"
+      - "--diameter"
+
+  - name: CUDA libraries resolve from the bundled runtime
+    description: Every shared library the binary needs resolves, with the CUDA 10.1 libraries taken from the image.
+    script: |
+      set -e
+      binary=$(readlink -f "$(command -v Gautomatch)")
+      out=$(ldd "$binary")
+      echo "$out"
+      if echo "$out" | grep -q "not found"; then
+        echo "unresolved shared libraries" >&2
+        exit 1
+      fi
+    expected_output_contains:
+      - "libcufft.so.10 => /opt/gautomatch-${upstream_version}/lib/libcufft.so.10"
+      - "libcublas.so.10 => /opt/gautomatch-${upstream_version}/lib/libcublas.so.10"
+      - "libnpps.so.10 => /opt/gautomatch-${upstream_version}/lib/libnpps.so.10"
+      - "libcurand.so.10 => /opt/gautomatch-${upstream_version}/lib/libcurand.so.10"
+
+  - name: picking a micrograph reaches the CUDA runtime
+    description: >-
+      Picks particles on a synthetic 256x256 MRC micrograph. With a GPU the run must write a box file.
+      Without one, the run must get as far as CUDA initialisation and stop with the CUDA runtime error,
+      which proves the statically linked runtime and the bundled libraries load.
+    script: |
+      work=$(mktemp -d)
+      cd "$work"
+      perl -e '
+        my ($n, $apix) = (256, 1.34);
+        srand(56);
+        my @data;
+        for my $y (0 .. $n - 1) {
+          for my $x (0 .. $n - 1) {
+            my $v = rand() - 0.5;
+            for my $c ([64, 64], [192, 64], [128, 128], [64, 192], [192, 192]) {
+              my $d2 = ($x - $c->[0]) ** 2 + ($y - $c->[1]) ** 2;
+              $v -= 3 * exp(-$d2 / 200);
+            }
+            push @data, $v;
+          }
+        }
+        my ($min, $max, $sum, $sq) = ($data[0], $data[0], 0, 0);
+        for (@data) { $min = $_ if $_ < $min; $max = $_ if $_ > $max; $sum += $_; }
+        my $mean = $sum / @data;
+        $sq += ($_ - $mean) ** 2 for @data;
+        my $rms = sqrt($sq / @data);
+        my $h = pack("l<3 l< l<3 l<3 f<3 f<3 l<3 f<3", $n, $n, 1, 2, 0, 0, 0, $n, $n, 1,
+                     $n * $apix, $n * $apix, $apix, 90, 90, 90, 1, 2, 3, $min, $max, $mean);
+        $h .= "\0" x (108 - length $h) . pack("l<", 20140);
+        $h .= "\0" x (208 - length $h);
+        $h .= "MAP " . pack("C4", 0x44, 0x44, 0, 0) . pack("f<", $rms);
+        $h .= "\0" x (1024 - length $h);
+        open(my $fh, ">:raw", "mic.mrc") or die;
+        print $fh $h, pack("f<*", @data);
+      '
+      Gautomatch --apixM 1.34 --diameter 40 --speed 4 mic.mrc > run.log 2>&1
+      status=$?
+      cat run.log
+      if [ "$status" -eq 0 ] && [ -s mic_automatch.box ]; then
+        echo "GAUTOMATCH_PICK_OK picked $(wc -l < mic_automatch.box) particles on GPU"
+      elif grep -qE "CUDA driver version is insufficient|no CUDA-capable device is detected" run.log; then
+        echo "GAUTOMATCH_PICK_OK reached CUDA initialisation without a usable GPU"
+      else
+        echo "unexpected Gautomatch result (exit $status)" >&2
+        exit 1
+      fi
+    expected_output_contains: "GAUTOMATCH_PICK_OK"
