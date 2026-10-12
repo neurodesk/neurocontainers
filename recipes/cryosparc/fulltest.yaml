@@ -100,6 +100,10 @@ tests:
       printf '%s\n' "$HOME" > "$here/install-home"
       printf '%s\n' "${CRYOSPARC_FORCE_HOSTNAME:-unset}" > "$here/install-force-hostname"
       echo "export CRYOSPARC_LICENSE_ID=recorded" > "$here/config.sh"
+      if [ -n "${STANDIN_FAIL_AFTER_START:-}" ]; then
+        "$here/bin/cryosparcm" start >/dev/null
+        exit 1
+      fi
       EOF
         cat > "$pkg/bin/$tool" <<'EOF'
       #!/bin/bash
@@ -152,5 +156,16 @@ tests:
         echo "second install was not refused"; exit 1
       fi
       grep -q 'already installed' "$root/again"
+
+      # An installer failing after it started the master must not leave it running.
+      failed="$root/failed"
+      if STANDIN_FAIL_AFTER_START=1 PATH="$root/gpu:$PATH" cryosparc install --license "$licence" \
+          --dir "$failed" --version 4.7.1 --port 61010 --email user@example.org 2>"$root/failure"; then
+        echo "failed installer was reported as success"; exit 1
+      fi
+      grep -q 'the CryoSPARC installer failed' "$root/failure"
+      [ "$(cat "$failed/cryosparc_master/calls")" = "cryosparcm start
+      cryosparcm stop" ] || { echo "services left running after a failed install"; exit 1; }
+      [ ! -e "$failed/.neurodesk-cryosparc" ]
       echo standalone-contract-ok
     expected_output_contains: standalone-contract-ok

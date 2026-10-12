@@ -214,9 +214,16 @@ cmd_install() {
   # (localhost by default) and change between sessions. The standalone
   # installer starts the master itself, so the override must already apply.
   note "running the CryoSPARC installer in $dir/cryosparc_master"
-  (cd "$dir/cryosparc_master" &&
-    HOME=$installer_home CRYOSPARC_FORCE_HOSTNAME=true ./install.sh "${args[@]}") ||
+  if ! (cd "$dir/cryosparc_master" &&
+      HOME=$installer_home CRYOSPARC_FORCE_HOSTNAME=true ./install.sh "${args[@]}"); then
+    # The standalone installer starts the master before installing the worker;
+    # do not leave its services holding the ports after a later failure.
+    if [[ -x "$dir/cryosparc_master/bin/cryosparcm" && -f "$dir/cryosparc_master/config.sh" ]]; then
+      note "stopping CryoSPARC services started by the failed installer"
+      CRYOSPARC_FORCE_HOSTNAME=true "$dir/cryosparc_master/bin/cryosparcm" stop >/dev/null 2>&1 || true
+    fi
     die "the CryoSPARC installer failed; see its output above"
+  fi
 
   local config="$dir/cryosparc_master/config.sh"
   [[ -f "$config" ]] || die "the CryoSPARC installer did not write $config"
