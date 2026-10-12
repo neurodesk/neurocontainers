@@ -349,6 +349,9 @@ def validate_directive_template_syntax(directive_dict: Dict[str, Any], path: str
             validate_executable_template(value, f"{path}.template.{key}")
     elif "copy" in directive_dict:
         validate_executable_template(directive_dict["copy"], f"{path}.copy")
+        for field in ("from_image", "from_platform"):
+            if field in directive_dict:
+                validate_template_syntax(directive_dict[field], f"{path}.{field}")
     elif "group" in directive_dict:
         if "with" in directive_dict and directive_dict["with"] is not None:
             for key, value in directive_dict["with"].items():
@@ -662,6 +665,8 @@ class UserDirective:
 @attrs.define
 class CopyDirective:
     copy: Union[List[str], str] = attrs.field()
+    from_image: Optional[str] = attrs.field(default=None)
+    from_platform: Optional[str] = attrs.field(default=None)
     condition: Optional[str] = attrs.field(default=None)
 
 
@@ -907,7 +912,11 @@ def parse_directive_from_dict(directive_dict: Dict[str, Any]) -> Any:
     elif "user" in directive_dict:
         return UserDirective(condition=condition, user=directive_dict["user"])
     elif "copy" in directive_dict:
-        return CopyDirective(condition=condition, copy=directive_dict["copy"])
+        return CopyDirective(
+            condition=condition, copy=directive_dict["copy"],
+            from_image=directive_dict.get("from_image"),
+            from_platform=directive_dict.get("from_platform"),
+        )
     elif "file" in directive_dict:
         file_info = FileInfo(**directive_dict["file"])
         return FileDirective(condition=condition, file=file_info)

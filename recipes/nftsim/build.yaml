@@ -10,7 +10,6 @@ structured_readme:
   citation: ''
 variables:
   base_image_tag: 1.0.2
-  source_commit: 0bd35df203e9e713018ce94c45119f1c794d61a2
   base_image:
     try:
       - value: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
@@ -22,12 +21,6 @@ auto_update:
   container_version: "base_image_tag"
   method: sources
   sources:
-    - id: source
-      method: github_commit
-      repo: BrainDynamicsUSYD/nftsim
-      ref: master
-      target:
-        variable: source_commit
     - id: base_image_tag
       method: oci
       url: https://ghcr.io/v2/farwa-abbas/nftsim/tags/list
@@ -35,6 +28,7 @@ auto_update:
       target:
         variable: base_image_tag
         value: tag
+        fulltest_variable: vendor_version
 
 build:
   kind: neurodocker
@@ -46,13 +40,44 @@ build:
         - build-essential
         - ca-certificates
     - condition: arch == "aarch64"
+      copy:
+        - /app/src
+        - /tmp/nftsim/src
+      from_image: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+      from_platform: linux/amd64
+    - condition: arch == "aarch64"
+      copy:
+        - /app/configs
+        - /app/configs
+      from_image: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+      from_platform: linux/amd64
+    - condition: arch == "aarch64"
+      copy:
+        - /app/Makefile
+        - /app/conditions.txt
+        - /tmp/nftsim/
+      from_image: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+      from_platform: linux/amd64
+    - condition: arch == "aarch64"
+      copy:
+        - /app/.git/refs/heads/master
+        - /app/source-commit
+      from_image: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+      from_platform: linux/amd64
+    - condition: arch == "aarch64"
       run:
-        - tar -xzf '{{ get_file("source") }}' -C /tmp
-        - make -C /tmp/nftsim-{{ context.source_commit }} -j2 CXXFLAGS='-std=c++11 -lm -Wall -Wextra -pedantic -O3' nftsim
-        - mkdir -p /app/bin /app/configs
-        - cp /tmp/nftsim-{{ context.source_commit }}/bin/nftsim /app/bin/nftsim
-        - cp -a /tmp/nftsim-{{ context.source_commit }}/configs/. /app/configs/
-        - rm -rf /tmp/nftsim-{{ context.source_commit }}
+        - mkdir -p /app/bin
+        - test "$(wc -c < /app/source-commit)" -eq 41
+        - grep -Eq '^[0-9a-f]{40}$' /app/source-commit
+        - make -C /tmp/nftsim -j2 CXXFLAGS='-std=c++11 -lm -Wall -Wextra -pedantic -O3' nftsim
+        - cp /tmp/nftsim/bin/nftsim /app/bin/nftsim
+        - cp /tmp/nftsim/conditions.txt /app/conditions.txt
+        - rm -rf /tmp/nftsim
+    - condition: arch == "x86_64"
+      run:
+        - cp /app/.git/refs/heads/master /app/source-commit
+    - run:
+        - printf '%s\n' '{{ context.base_image_tag }}' > /app/vendor-version
     - environment:
         PATH: /app/bin:$PATH
     - workdir: /app
@@ -124,8 +149,3 @@ readme: |-
   To run container outside of this environment: ml nftsim/1.0.2
 
   ----------------------------------
-
-files:
-  - name: source
-    condition: arch == "aarch64"
-    url: https://github.com/BrainDynamicsUSYD/nftsim/archive/{{ context.source_commit }}.tar.gz

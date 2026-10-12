@@ -215,6 +215,23 @@ build:
         DEBIAN_FRONTEND: noninteractive
 ```
 
+To copy files from another image, set `from_image` on a `copy` directive.
+Set `from_platform` when the source image uses a different architecture from the
+container being built. The builder creates a source stage and copies files
+without executing the source image or looking for those files locally.
+
+```yaml
+- copy:
+    - /app/src
+    - /opt/tool/src
+  from_image: ghcr.io/example/tool:{{ context.upstream_version }}
+  from_platform: linux/amd64
+```
+
+`from_platform` requires `from_image`. Repeated copies from the same image and
+platform share one source stage. Image references participate in automatic
+update binding checks.
+
 ### Deploy
 
 NeuroDesk includes Transparent Singularity to automatically generate loadable modules from Singularity/Apptainer containers. The deploy section adds environment variables to the container to control this.

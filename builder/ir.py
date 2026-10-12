@@ -7,6 +7,8 @@ from typing import Union
 @dataclass(frozen=True)
 class From:
     image: str
+    platform: str | None = None
+    alias: str | None = None
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,7 @@ class RunWithMounts:
 class Copy:
     sources: tuple[str, ...]
     destination: str
+    from_stage: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +72,16 @@ class Definition:
     directives: list[Directive] = field(default_factory=list)
     pkg_manager: str = "apt"
     fix_locale_def: bool = False
+
+    @property
+    def runtime_base(self) -> From:
+        bases = [
+            item for item in self.directives
+            if isinstance(item, From) and item.alias is None
+        ]
+        if len(bases) != 1:
+            raise ValueError("definition requires exactly one runtime base image")
+        return bases[0]
 
     def add(self, directive: Directive) -> None:
         self.directives.append(directive)

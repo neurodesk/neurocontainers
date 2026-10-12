@@ -10,6 +10,7 @@
 
 name: nftsim
 version: 1.0.2
+vendor_version: 1.0.2
 
 test_data:
   # Built-in configuration files from the container
@@ -61,7 +62,10 @@ tests:
   # ==========================================================================
   - name: Help output
     description: Verify nftsim binary runs and displays help information
-    command: nftsim --help 2>&1
+    command: |
+      test "$(cat /app/vendor-version)" = "${vendor_version}" &&
+      grep -Eq '^[0-9a-f]{40}$' /app/source-commit &&
+      nftsim --help 2>&1
     expected_output_contains: "Usage: nftsim"
 
   - name: Help flag short form
@@ -219,6 +223,7 @@ tests:
 
   - name: EIRS BCM plasticity
     description: Run EIRS model with BCM plasticity
+    timeout: 300
     command: nftsim -i ${plasticity_eirs_bcm} -o test_output/plasticity-eirs-bcm.output
     validate:
       - output_exists: ${output_dir}/plasticity-eirs-bcm.output

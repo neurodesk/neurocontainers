@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+import yaml
+
 from builder.config import default_config, resolve_recipe
 from builder.dockerfile import render_dockerfile
 from builder.recipe import compile_recipe
@@ -19,3 +24,54 @@ def test_dockerfile_generation_without_neurodocker_dependency() -> None:
     assert "dcm2niix_lnx.zip" in dockerfile
     assert "DEPLOY_PATH" in dockerfile
     assert "# Save specification to JSON." in dockerfile
+
+
+
+def _foreign_copy_recipe(tmp_path: Path, copy_options: dict) -> Path:
+    recipe_dir = tmp_path / "foreign-source"
+    recipe_dir.mkdir()
+    (recipe_dir / "build.yaml").write_text(yaml.safe_dump({
+        "name": "foreign-source",
+        "version": "1.0.0",
+        "readme": "Foreign source fixture",
+        "architectures": ["aarch64"],
+        "categories": ["programming"],
+        "variables": {"vendor": "example.org/vendor:1.2.3"},
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": [
+                {"copy": ["/app/src", "/opt/src"], **copy_options},
+                {"copy": ["/app/Makefile", "/opt/Makefile"], **copy_options},
+            ],
+        },
+    }))
+    return recipe_dir
+
+
+def test_copy_from_foreign_image_uses_explicit_platform_without_local_staging(
+    tmp_path: Path,
+) -> None:
+    recipe_dir = _foreign_copy_recipe(tmp_path, {
+        "from_image": "{{ context.vendor }}", "from_platform": "linux/amd64",
+    })
+    compiled = compile_recipe(recipe_dir, architecture="aarch64")
+    dockerfile = render_dockerfile(compiled.definition)
+    stage = "FROM --platform=linux/amd64 example.org/vendor:1.2.3 AS copy-source-0"
+    assert dockerfile.count(stage) == 1
+    assert dockerfile.index(stage) < dockerfile.index("FROM ubuntu:22.04")
+    assert 'COPY --from=copy-source-0 ["/app/src",' in dockerfile
+    assert 'COPY --from=copy-source-0 ["/app/Makefile",' in dockerfile
+
+
+@pytest.mark.parametrize("options, message", [
+    ({"from_platform": "linux/amd64"}, "requires from_image"),
+    ({"from_image": "vendor\nFROM evil"}, "must be an image reference"),
+    ({"from_image": "vendor", "from_platform": "linux/arm64 --evil"},
+     "must be an OCI platform"),
+])
+def test_copy_rejects_invalid_image_options(tmp_path: Path, options, message) -> None:
+    recipe_dir = _foreign_copy_recipe(tmp_path, options)
+    with pytest.raises(ValueError, match=message):
+        compile_recipe(recipe_dir, architecture="aarch64")

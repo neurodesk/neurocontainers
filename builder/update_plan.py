@@ -222,7 +222,7 @@ def _acquisition_text(recipe: dict, variable: str) -> str:
                     included.add(path)
                     macro = yaml.safe_load(path.read_text())
                     walk(macro.get("directives", []))
-            for key in ("install", "template", "file"):
+            for key in ("install", "template", "file", "from_image"):
                 if key in item:
                     parts.append(json.dumps(item[key]))
             commands = item.get("run", [])

@@ -192,7 +192,10 @@ def test_build_metadata_is_readable_with_restrictive_umask(tmp_path):
 
 
 @pytest.mark.parametrize("convert", [False, True])
-def test_flatten_base_implies_one_required_oci_staging(tmp_path, monkeypatch, convert):
+@pytest.mark.parametrize("foreign", [False, True])
+def test_flatten_base_implies_one_required_oci_staging(
+    tmp_path, monkeypatch, convert, foreign
+):
     from builder.ir import Definition, From
     from builder.image_contexts import read_contexts
 
@@ -204,7 +207,10 @@ def test_flatten_base_implies_one_required_oci_staging(tmp_path, monkeypatch, co
         version="1",
         readme="# Demo",
         recipe_dir=recipe_dir,
-        definition=Definition([From("example/tool:1")]),
+        definition=Definition(
+            ([From("vendor/source:1", "linux/amd64", "copy-source-0")] if foreign else [])
+            + [From("example/tool:1")]
+        ),
         architecture="x86_64",
         recipe={"build": {"flatten-base-image": True, "convert-base-image": convert}},
         staging_plan=None,

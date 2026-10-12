@@ -59,6 +59,8 @@ def versioned_source_inputs(recipe: dict) -> list[tuple[str, str]]:
                 directives(directive["group"], scope)
             if "file" in directive:
                 file_input(directive["file"], scope)
+            if "from_image" in directive:
+                inputs.append(("image", expand(directive["from_image"], scope)))
             if "copy" in directive:
                 copy = directive["copy"]
                 parts = shlex.split(copy) if isinstance(copy, str) else copy
