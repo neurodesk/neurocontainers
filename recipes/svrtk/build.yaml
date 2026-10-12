@@ -28,6 +28,7 @@ build:
   kind: neurodocker
   base-image: fetalsvrtk/svrtk:general_auto_amd@{{ context.base_image_digest }}
   pkg-manager: apt
+  flatten-base-image: true
   add-default-template: false
   add-tzdata: false
 
