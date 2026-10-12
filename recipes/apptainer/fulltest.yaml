@@ -1,18 +1,17 @@
-# apptainer container test suite
-# Tests for apptainer v1.4.4 on ARM64.
-#
-# This suite validates the built CLI surface that the image actually exposes
-# and avoids heavyweight nested-runtime workflows that are not needed to prove
-# the ARM64 port is complete.
+# Apptainer CLI, local SIF construction and native nested execution.
+# No network downloads or elevated privileges are needed by the fixture.
 
 name: apptainer
 version: 1.5.3
+
+test_data:
+  output_dir: test_output/apptainer
 
 setup:
   script: |
     #!/usr/bin/env bash
     set -e
-    mkdir -p test_output/apptainer
+    mkdir -p ${output_dir}
 
 tests:
   - name: apptainer version
@@ -39,6 +38,45 @@ tests:
     description: Verify the build subcommand help is available
     command: apptainer build --help
     expected_output_contains: "Build an Apptainer image"
+
+
+  - name: build and execute a native nested SIF
+    description: Pack a minimal local rootfs and verify its marker and CPU architecture through nested unprivileged execution
+    command: |
+      set -euo pipefail
+      task_dir=$(mktemp -d "${output_dir}/nested.XXXXXX")
+      rootfs="$task_dir/rootfs"
+      mkdir -p "$rootfs"/{etc,proc,sys,dev,tmp,var/tmp,root}
+      # Copy native executables and their resolved shared libraries. This uses
+      # the tested image itself and cannot accidentally fetch another image.
+      for executable in /bin/sh "$(command -v uname)"; do
+        cp -L --parents "$executable" "$rootfs"
+        ldd "$executable" > "$task_dir/ldd.txt"
+        awk '/=> \// {print $3} /^[[:space:]]*\// {print $1}' "$task_dir/ldd.txt" > "$task_dir/libraries.txt"
+        test -s "$task_dir/libraries.txt"
+        while IFS= read -r library; do
+          test -f "$library"
+          cp -L --parents "$library" "$rootfs"
+        done < "$task_dir/libraries.txt"
+      done
+      printf 'nested native execution\n' > "$rootfs/etc/neurocontainers-nested"
+      # Outer Apptainer binds must not be propagated to the nested runtime.
+      unset APPTAINER_BIND APPTAINER_BINDPATH SINGULARITY_BIND SINGULARITY_BINDPATH
+      export APPTAINER_CACHEDIR="$task_dir/cache"
+      export APPTAINER_TMPDIR="$task_dir/tmp"
+      mkdir -p "$APPTAINER_CACHEDIR" "$APPTAINER_TMPDIR"
+      apptainer build --disable-cache --mksquashfs-args '-processors 2' "$task_dir/nested.sif" "$rootfs"
+      test -s "$task_dir/nested.sif"
+      apptainer sif list "$task_dir/nested.sif" > "$task_dir/sif-list.txt"
+      grep -q 'FS (Squashfs' "$task_dir/sif-list.txt"
+      # Separate PID namespaces require unmasked /proc on the host runner.
+      apptainer exec --userns --contain --no-home --cleanenv --pwd / "$task_dir/nested.sif" /bin/sh -c \
+        'IFS= read -r marker < /etc/neurocontainers-nested; printf "%s\n" "$marker"; uname -m' > "$task_dir/actual.txt"
+      printf 'nested native execution\n%s\n' "$(uname -m)" > "$task_dir/expected.txt"
+      cmp "$task_dir/expected.txt" "$task_dir/actual.txt"
+      echo 'Native nested SIF construction and execution verified'
+    expected_output_contains: Native nested SIF construction and execution verified
+    timeout: 300
 
 cleanup:
   script: |

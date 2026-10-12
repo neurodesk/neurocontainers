@@ -1,6 +1,10 @@
 name: apptainer
 version: 1.5.3
 
+variables:
+  go_version: "1.25.7"
+  go_arm64_sha256: ba611a53534135a81067240eff9508cd7e256c560edd5d8c2fef54f083c07129
+
 architectures:
   - x86_64
   - aarch64
@@ -66,7 +70,8 @@ build:
 
     - file:
         name: go.tar.gz
-        url: "https://dl.google.com/go/go1.23.6.linux-arm64.tar.gz"
+        url: "https://dl.google.com/go/go{{ context.go_version }}.linux-arm64.tar.gz"
+        sha256: "{{ context.go_arm64_sha256 }}"
       condition: arch == "aarch64"
 
     - run:
