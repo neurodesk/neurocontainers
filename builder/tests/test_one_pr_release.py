@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -597,6 +598,106 @@ def test_detect_targets_expands_declared_architectures(
             "container": "demo_arm64",
         },
     ]
+
+
+@pytest.mark.parametrize("image_changed", [False, True])
+@pytest.mark.parametrize("tests_changed", [False, True])
+def test_detect_requires_changed_runtime_tests_without_promoting_source_only(
+    tmp_path: Path, monkeypatch, image_changed: bool, tests_changed: bool
+) -> None:
+    """Test-only edits require runtime proof but cannot enter release promotion."""
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    directory = write_recipe(tmp_path)
+    git("add", "recipes/demo/build.yaml", "recipes/demo/fulltest.yaml")
+    git("commit", "-m", "Baseline recipe")
+    base = git("rev-parse", "HEAD")
+    recipe = yaml.safe_load((directory / "build.yaml").read_text())
+    recipe["readme"] = "Updated documentation"
+    if image_changed:
+        recipe["build"]["base-image"] = "ubuntu:22.04"
+    (directory / "build.yaml").write_text(yaml.safe_dump(recipe))
+    if tests_changed:
+        (directory / "fulltest.yaml").write_text(
+            "tests:\n  - name: operation\n    command: test -d /opt\n"
+        )
+    git("commit", "-am", "Update recipe")
+    outputs = {}
+    monkeypatch.setattr(one_pr_release, "write_output", outputs.update)
+
+    one_pr_release.command_detect(SimpleNamespace(base=base, head="HEAD"))
+
+    assert json.loads(outputs["recipes"]) == (["demo"] if image_changed else [])
+    assert json.loads(outputs["runtime_recipes"]) == (
+        ["demo"] if tests_changed and not image_changed else []
+    )
+    assert json.loads(outputs["source_only_recipes"]) == (
+        [] if image_changed else ["demo"]
+    )
+
+
+def test_detect_keeps_test_only_recipe_out_of_another_recipes_release(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A mixed recipe PR must not promote its independent test-only build."""
+    monkeypatch.setattr(one_pr_release, "REPO_ROOT", tmp_path)
+    git = one_pr_release.run_git
+    git("init", "-b", "main")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "test")
+    image_directory = write_recipe(tmp_path, "image")
+    test_directory = write_recipe(tmp_path, "suite")
+    git("add", "recipes/image", "recipes/suite")
+    git("commit", "-m", "Baseline recipes")
+    base = git("rev-parse", "HEAD")
+    recipe = yaml.safe_load((image_directory / "build.yaml").read_text())
+    recipe["version"] = "1.2.4"
+    (image_directory / "build.yaml").write_text(yaml.safe_dump(recipe))
+    (test_directory / "fulltest.yaml").write_text(
+        "tests:\n  - name: operation\n    command: test -d /opt\n"
+    )
+    git("commit", "-am", "Update image and independent suite")
+    outputs = {}
+    monkeypatch.setattr(one_pr_release, "write_output", outputs.update)
+
+    one_pr_release.command_detect(SimpleNamespace(base=base, head="HEAD"))
+
+    assert json.loads(outputs["recipes"]) == ["image"]
+    assert json.loads(outputs["runtime_recipes"]) == ["suite"]
+    assert {target["recipe"] for target in json.loads(outputs["targets"])} == {"image"}
+
+
+@pytest.mark.parametrize(
+    "runtime_result", ["success", "failure", "cancelled", "skipped"]
+)
+def test_release_gate_requires_runtime_success_for_test_only_pr(
+    runtime_result: str,
+) -> None:
+    """An empty release plan cannot bypass a failing test-only runtime suite."""
+    workflow = yaml.safe_load(
+        (
+            Path(__file__).resolve().parents[2]
+            / ".github/workflows/pr-container-candidate.yml"
+        ).read_text()
+    )
+    script = workflow["jobs"]["gate"]["steps"][0]["run"]
+    result = subprocess.run(
+        ["bash", "-e", "-c", script],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "DETECT_RESULT": "success",
+            "CANDIDATE_RESULT": "skipped",
+            "RECIPES": "[]",
+            "RUNTIME_RECIPES": '["demo"]',
+            "RUNTIME_RESULT": runtime_result,
+        },
+    )
+    assert (result.returncode == 0) == (runtime_result == "success")
 
 
 def test_candidate_report_compacts_identity_and_test_results(

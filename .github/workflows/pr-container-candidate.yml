@@ -27,6 +27,7 @@ jobs:
       targets: ${{ steps.detect.outputs.targets }}
       changed_recipes: ${{ steps.detect.outputs.changed_recipes }}
       source_only_recipes: ${{ steps.detect.outputs.source_only_recipes }}
+      runtime_recipes: ${{ steps.detect.outputs.runtime_recipes }}
     steps:
       # Run detection from the trusted base revision. A fork cannot change the
       # policy script before it decides that the PR is recipe-only.
@@ -71,6 +72,7 @@ jobs:
               echo "targets=[]" >> "$GITHUB_OUTPUT"
               echo "changed_recipes=[]" >> "$GITHUB_OUTPUT"
               echo "source_only_recipes=[]" >> "$GITHUB_OUTPUT"
+              echo "runtime_recipes=[]" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             printf '%s\n' "$detection" >&2
@@ -299,9 +301,23 @@ jobs:
           test "${FULLTEST_OUTCOME}" = success
           test "${DIVE_OUTCOME}" = success
 
+  runtime:
+    name: Runtime recipe tests
+    needs: detect
+    if: >-
+      github.repository == 'neurodesk/neurocontainers' && (
+      needs.detect.outputs.runtime_recipes != '' &&
+      needs.detect.outputs.runtime_recipes != '[]')
+    uses: ./.github/workflows/recipes-ci.yml
+    with:
+      debug: false
+      recipes: ${{ join(fromJSON(needs.detect.outputs.runtime_recipes), ',') }}
+      architecture: all
+      run-tests: true
+
   gate:
     name: Container release gate
-    needs: [detect, candidate]
+    needs: [detect, candidate, runtime]
     if: ${{ github.repository == 'neurodesk/neurocontainers' && (always()) }}
     runs-on: ubuntu-22.04
     steps:
@@ -310,8 +326,13 @@ jobs:
           DETECT_RESULT: ${{ needs.detect.result }}
           CANDIDATE_RESULT: ${{ needs.candidate.result }}
           RECIPES: ${{ needs.detect.outputs.recipes }}
+          RUNTIME_RECIPES: ${{ needs.detect.outputs.runtime_recipes }}
+          RUNTIME_RESULT: ${{ needs.runtime.result }}
         run: |
           test "${DETECT_RESULT}" = success
+          if [ -n "${RUNTIME_RECIPES}" ] && [ "${RUNTIME_RECIPES}" != "[]" ]; then
+            test "${RUNTIME_RESULT}" = success
+          fi
           if [ "${RECIPES}" = "[]" ]; then
             echo "The release planner requires no candidate builds for this pull request."
             exit 0
