@@ -7,6 +7,7 @@ copyright:
     
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   method: github_release
@@ -15,7 +16,7 @@ auto_update:
 build:
   kind: neurodocker
 
-  base-image: docker.io/nvidia/cuda:12.0.0-devel-ubuntu22.04
+  base-image: "{{ 'docker.io/nvidia/cuda:12.0.0-devel-ubuntu22.04' if arch == 'x86_64' else 'ubuntu:22.04' }}"
   pkg-manager: apt
 
   directives:
@@ -35,8 +36,13 @@ build:
     - run:
         - tar -xz -C /opt/bart-{{ context.version }}/ --strip-components 1 -f {{ get_file("v0_9_00_tar_gz") }}
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         - CC=gcc-12 CXX=g++-12 CUDA_BASE=/usr/local/cuda/ CUDA_LIB=lib64 CUDA=1 make -j 8
+
+    - condition: arch == "aarch64"
+      run:
+        - CC=gcc-12 CXX=g++-12 CUDA=0 make -j 8
 
     - environment:
         PATH: /opt/bart-{{ context.version }}:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
