@@ -19,11 +19,12 @@ import os
 import shutil
 import sys
 import tempfile
+from typing import Any
 
 DEEPISLES_ROOT = "/opt/DeepIsles"
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="deepisles",
         description="Segment ischemic stroke lesions with the DeepISLES ensemble.",
@@ -45,7 +46,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
+def main() -> None:
     args = parse_args()
 
     for flag, path in (("--dwi", args.dwi), ("--adc", args.adc), ("--flair", args.flair)):
@@ -72,7 +73,7 @@ def main():
         import src.utils as utils
 
         # extract_brain is imported by name and always called with gpu=1.
-        def extract_brain(*a, **kw):
+        def extract_brain(*a: Any, **kw: Any) -> Any:
             kw["gpu"] = gpu
             return utils.extract_brain(*a, **kw)
         ensemble.extract_brain = extract_brain
