@@ -42,7 +42,7 @@ variables:
       condition: arch=="x86_64"
     - value: strace_aarch64
       condition: arch=="aarch64"
-  neurocommand_commit: "8f645f7a6df3b3fe91fa5dd95695f9ed94589695"
+  neurocommand_commit: "bc789a389c60ccc8a7d5835bacff26daf9d9d1b3"
   nf_neuro_commit: "c2909599fbf995031dbeb70d2d7f0f62f9238064"
   jupyterlab_slurm_commit: "8dccb39808f8a1b77712a9a5773a7d2601a56683"
   yarn_version: "1.22.22"
@@ -87,7 +87,7 @@ variables:
   pytest_version: 9.1.1
   requests_version: 2.34.2
   chardet_version: 5.2.0
-  base_digest: "sha256:cde41a345c3758f660527c856a47ff87bc681247d44d4bf4155c2eb151d3658e"
+  base_digest: "sha256:9a1e1e8f6042ccb397e1f422b8574bf468bc6c00860e7f21c6899d08cc8c7b6b"
   go_version: "1.27.2"
   go_arch:
     try:
