@@ -58,6 +58,7 @@ setup:
     from pathlib import Path
 
     import bidsme
+    import bidsschematools.schema as bids_schema
     import nibabel as nib
     import numpy as np
     import yaml
@@ -99,13 +100,14 @@ setup:
         metadata = dict(Manufacturer='Synthetic', SeriesNumber=7,
                         SeriesDescription='SyntheticT1', ProtocolName='SyntheticT1',
                         PatientID='fixture', MagneticFieldStrength=3.,
-                        EchoTime=0.01, RepetitionTime=1.)
+                        EchoTime=0.01, RepetitionTime=1.,
+                        NonlinearGradientCorrection=False, MRAcquisitionType='3D',
+                        DwellTime=0.00001, FlipAngle=8.)
         (images / 'phantom.json').write_text(json.dumps(metadata))
         participants = root / 'participants-template.json'
         participants.write_text(json.dumps({
             'participant_id': {'Description': 'Synthetic participant identifier'}}))
-        default = Path(bidsme.__file__).parent / 'heuristics/bidsmap_template.yaml'
-        bids_version = yaml.safe_load(default.read_text())['__bids__']
+        bids_version = bids_schema.load_schema()['bids_version']
         template = root / 'template.yaml'
         template.write_text("__bids__: '" + bids_version + "'\n" + '''
     __templates__: {}
@@ -120,7 +122,11 @@ setup:
             bids: !!omap []
             json: !!omap
               - EchoTime: <EchoTime>
-              - RepetitionTime: <RepetitionTime>
+              - RepetitionTimeExcitation: <RepetitionTime>
+          - NonlinearGradientCorrection: <NonlinearGradientCorrection>
+          - MRAcquisitionType: <MRAcquisitionType>
+          - DwellTime: <DwellTime>
+          - FlipAngle: <FlipAngle>
               - MagneticFieldStrength: <MagneticFieldStrength>
               - Manufacturer: <Manufacturer>
     ''')
@@ -150,8 +156,10 @@ setup:
         assert list(destination.rglob('*.nii.gz')) == [expected]
         image_matches(expected)
         metadata = json.loads(expected.with_name('sub-01_ses-01_T1w.json').read_text())
-        for key, value in dict(EchoTime=0.01, RepetitionTime=1.,
-                               MagneticFieldStrength=3., Manufacturer='Synthetic').items():
+        for key, value in dict(EchoTime=0.01, RepetitionTimeExcitation=1.,
+                               MagneticFieldStrength=3., Manufacturer='Synthetic',
+                               NonlinearGradientCorrection=False, MRAcquisitionType='3D',
+                               DwellTime=0.00001, FlipAngle=8.).items():
             assert metadata[key] == value, (key, metadata)
         participant_matches(destination / 'participants.tsv')
         print('BIDSIFY_EXACT_PIXELS_GEOMETRY_METADATA_OK')
@@ -175,8 +183,18 @@ tests:
 
   - name: bidsme BIDS version check
     description: Verify BIDS schema version
-    command: bidsme --version-bids
-    expected_output_contains: "1.11.1"
+    command: |
+      python3 - <<'PY'
+      import re
+      import subprocess
+      from bidsschematools.schema import load_schema
+      actual = subprocess.check_output(['bidsme', '--version-bids'], text=True).strip()
+      expected = load_schema()['bids_version']
+      assert re.fullmatch(r'\d+\.\d+\.\d+', actual), actual
+      assert actual == expected, (actual, expected)
+      print('BIDS_SCHEMA_VERSION_EXACT_OK')
+      PY
+    expected_output_contains: BIDS_SCHEMA_VERSION_EXACT_OK
 
   - name: bidsme main help
     description: Display main help showing available subcommands
