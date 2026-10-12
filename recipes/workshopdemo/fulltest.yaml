@@ -35,7 +35,7 @@ tests:
     description: Verify exact output bytes, clean stderr and documented greeting options
     command: |
       set -eu
-      export LC_ALL=C
+      export LC_ALL=C.UTF-8
       work=$(mktemp -d)
       trap 'rm -rf "$work"' EXIT
       hello > "$work/actual" 2> "$work/stderr"
