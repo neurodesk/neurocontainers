@@ -2,6 +2,27 @@ name: dwidenoise2
 version: 1.0.0
 default_timeout: 120
 
+test_data:
+  output_dir: test_output/dwidenoise2
+
+setup:
+  host_script: |
+    python3 - <<'PY'
+    from pathlib import Path
+    import random
+    import struct
+
+    directory = Path('${output_dir}')
+    directory.mkdir(parents=True, exist_ok=True)
+    header = (b'mrtrix image\ndim: 9,9,9,32\nvox: 1,1,1,1\n'
+              b'layout: +0,+1,+2,+3\ndatatype: Float32LE\nfile: . 4096\nEND\n')
+    generator = random.Random(42)
+    samples = [100.0 + generator.gauss(0.0, 1.0) for _ in range(9 * 9 * 9 * 32)]
+    with (directory / 'noisy.mif').open('wb') as output:
+        output.write(header.ljust(4096, b'\0'))
+        output.write(struct.pack('<' + 'f' * len(samples), *samples))
+    PY
+
 tests:
   - name: dwidenoise2 help
     description: Verify the container runtime smoke test for this tool.
@@ -25,3 +46,40 @@ tests:
       test -s /opt/mrtrix3/share/mrtrix3/dwi2noise/default.txt
       echo "bundled schedules available"
     expected_output_contains: "bundled schedules available"
+
+  - name: Denoise a seeded image and reduce its noise variance
+    description: Denoise a constant signal with Gaussian noise; preserve dimensions and mean, reduce variance, and require finite output.
+    timeout: 300
+    command: |
+      set -eu
+      dwidenoise2 "${output_dir}/noisy.mif" "${output_dir}/denoised.mif" \
+        -noise_out "${output_dir}/noise.mif" -nthreads 2
+      test -s "${output_dir}/noise.mif"
+      mrconvert "${output_dir}/denoised.mif" "${output_dir}/verified.mif" -datatype float32
+      awk '/^datatype:/ { if ($2 != "Float32LE") exit 1; found=1 } /^END$/ { exit !found }' "${output_dir}/verified.mif"
+      awk '/^dim:/ { if ($2 != "9,9,9,32") exit 1; found=1 } /^END$/ { exit !found }' "${output_dir}/verified.mif"
+      mif_statistics() {
+        data_offset=$(awk '/^file:/ {print $3} /^END$/ {exit}' "$1")
+        case "$data_offset" in ''|*[!0-9]*) exit 1 ;; esac
+        od -An -v -j "$data_offset" -t f4 "$1" | awk '
+          { for (i=1; i<=NF; i++) {
+              if (tolower($i) ~ /nan|inf/) bad=1
+              count++; sum+=$i; squares+=$i*$i
+          } }
+          END {
+              if (bad || count != 23328) exit 1
+              mean=sum/count
+              printf "%.12g %.12g\n", mean, squares/count-mean*mean
+          }'
+      }
+      input_statistics=$(mif_statistics "${output_dir}/noisy.mif")
+      output_statistics=$(mif_statistics "${output_dir}/verified.mif")
+      printf '%s\n%s\n' "$input_statistics" "$output_statistics" | awk '
+        NR==1 { input_mean=$1; input_variance=$2; next }
+        NR==2 {
+          # For this constant signal, preserve the mean within one input noise
+          # standard deviation while requiring an actual variance reduction.
+          if (!(input_variance>0 && $2<input_variance && ($1-input_mean)^2<input_variance)) exit 1
+          print "MP-PCA finite output, preserved mean and reduced variance verified"
+        }'
+    expected_output_contains: MP-PCA finite output, preserved mean and reduced variance verified
