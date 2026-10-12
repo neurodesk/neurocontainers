@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "brats 0.1.13": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging",
+    "workflows"
+  ]
+}
