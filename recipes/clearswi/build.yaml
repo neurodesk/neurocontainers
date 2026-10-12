@@ -98,6 +98,7 @@ build:
         - tar -xzf {{ get_file(context.julia_archive) }} -C /opt
         - julia --startup-file=no --cpu-target={{ context.sysimage_cpu_target }} /opt/install_packages.jl
         - rm -f /opt/build_sysimage.jl /opt/precompile_workload.jl
+        - chmod -R a+rX /opt/julia_depot
 
     # The Julia entry script is named "clearswi" (no extension) because ArgParse
     # derives the program name in its usage output from basename(PROGRAM_FILE);
@@ -114,9 +115,17 @@ build:
     # mounted read-only, so the depot has to be world-readable and fully
     # precompiled at build time. The sysimage is handled in the layer that
     # creates it, so that this recursive chmod never touches the Julia tree.
-    - run:
+    - condition: arch == "x86_64"
+      run:
         - chmod a+rx /opt/clearswi/bin/clearswi
         - chmod -R a+rX /opt/julia_depot /opt/clearswi
+
+    # Set depot permissions in its installation layer on ARM64 to avoid
+    # duplicating the precompiled stock-sysimage cache in a later layer.
+    - condition: arch == "aarch64"
+      run:
+        - chmod a+rx /opt/clearswi/bin/clearswi
+        - chmod -R a+rX /opt/clearswi
 
 deploy:
   path:

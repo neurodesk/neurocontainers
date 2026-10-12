@@ -1039,6 +1039,7 @@ tests:
 
   - name: CLI unwrapping algorithms
     description: All three values of --unwrapping-algorithm
+    timeout: 300
     command: |
       D=$(cat ${output_dir}/datadir)
       for a in laplacian romeo laplacianslice; do
@@ -1076,6 +1077,7 @@ tests:
 
   - name: CLI phase scaling strength
     description: --phase-scaling-strength across the useful range
+    timeout: 300
     command: |
       D=$(cat ${output_dir}/datadir)
       for n in 2 4 6; do
