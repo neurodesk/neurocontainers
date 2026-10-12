@@ -249,6 +249,15 @@ build:
         - python -m pip install --no-index --no-deps --no-cache-dir "{{ get_file("simpleelastix.whl") }}"
         - python -c 'import SimpleITK as s; from importlib.metadata import version; assert version("SimpleITK-SimpleElastix") == "{{ context.simpleelastix_version }}"; assert hasattr(s, "ElastixImageFilter") and hasattr(s, "TransformixImageFilter")'
 
+    - run:
+        # Run the upstream CLI directly: the editable-install shim resolves the
+        # standard SimpleITK distribution before HD-BET can import the fork.
+        - install -m 0755 /opt/DeepIsles/src/HD-BET/HD_BET/hd-bet /opt/miniconda/envs/deepisles/bin/hd-bet
+        - sed -i '1c\#!/opt/miniconda/envs/deepisles/bin/python' /opt/miniconda/envs/deepisles/bin/hd-bet
+        # HD-BET's offline branch uses a separate fixed parameter directory.
+        - mkdir -p /opt/ml/model/weights
+        - ln -s /opt/hd-bet_params /opt/ml/model/weights/hd_bet
+
     - deploy:
         path: []
         bins:
