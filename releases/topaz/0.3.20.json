@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "topaz 0.3.20": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "cryo EM",
+    "machine learning"
+  ]
+}
