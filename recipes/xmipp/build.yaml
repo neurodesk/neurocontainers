@@ -1,0 +1,182 @@
+name: xmipp
+version: 6.0.0
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://github.com/I2PC/xmipp/blob/{{ context.xmipp_tag }}/LICENSE
+  - license: BSD-2-Clause
+    url: https://github.com/I2PC/libcifpp/blob/ms_feature_ciflibrary/LICENSE
+  - license: BSD-3-Clause
+    url: https://github.com/cossorzano/libsvm/blob/master/COPYRIGHT
+  - license: Apache-2.0
+    url: https://github.com/vit-vit/CTPL/blob/master/LICENSE
+architectures:
+  - x86_64
+variables:
+  upstream_version: 6.0.0
+  xmipp_tag: v6.0.0-Cas9
+  xmipp_core_version: 4.1.0
+  xmipp_viz_version: 4.0.2
+  pyxmipp3_version: 0.4.0
+  googletest_version: 1.13.0
+auto_update:
+  method: sources
+  container_version: xmipp
+  sources:
+    - id: xmipp
+      method: artifact_listing
+      url: https://api.github.com/repos/I2PC/xmipp/tags?per_page=100
+      download_base: https://codeload.github.com/I2PC/xmipp/tar.gz/
+      version_regex: v(?P<version>\d+\.\d+\.\d+)-[A-Za-z][A-Za-z0-9-]*
+      target:
+        file: xmipp_source
+        variables:
+          upstream_version: version
+          xmipp_tag: tag
+    - id: xmippCore
+      method: artifact_listing
+      dependency: true
+      url: https://api.github.com/repos/I2PC/xmippCore/tags?per_page=100
+      download_base: https://codeload.github.com/I2PC/xmippCore/tar.gz/
+      version_regex: v(?P<version>\d+\.\d+\.\d+)
+      target:
+        file: xmipp_core_source
+        variables:
+          xmipp_core_version: version
+    - id: xmippViz
+      method: artifact_listing
+      dependency: true
+      url: https://api.github.com/repos/I2PC/xmippViz/tags?per_page=100
+      download_base: https://codeload.github.com/I2PC/xmippViz/tar.gz/
+      version_regex: v(?P<version>\d+\.\d+\.\d+)
+      target:
+        file: xmipp_viz_source
+        variables:
+          xmipp_viz_version: version
+    - id: pyxmipp3
+      method: pypi
+      package: pyxmipp3
+      dependency: true
+      target:
+        variable: pyxmipp3_version
+    - id: libcifpp
+      method: http_digest
+      dependency: true
+      url: https://codeload.github.com/I2PC/libcifpp/tar.gz/refs/heads/ms_feature_ciflibrary
+      target:
+        file: libcifpp_source
+    - id: ctpl
+      method: http_digest
+      dependency: true
+      url: https://codeload.github.com/vit-vit/CTPL/tar.gz/refs/heads/master
+      target:
+        file: ctpl_source
+    - id: libsvm
+      method: http_digest
+      dependency: true
+      url: https://codeload.github.com/cossorzano/libsvm/tar.gz/refs/heads/master
+      target:
+        file: libsvm_source
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - ca-certificates
+        - build-essential
+        - cmake
+        - default-jdk
+        - libfftw3-dev
+        - libhdf5-dev
+        - libjpeg-dev
+        - libopenmpi-dev
+        - libsqlite3-dev
+        - libtiff-dev
+        - openmpi-bin
+        - python3-dev
+        - python3-numpy
+        - python3-pip
+        - python3-setuptools
+        - zlib1g-dev
+    - run:
+        - mkdir -p /tmp/xmipp/src/xmippCore /tmp/xmipp/src/xmippViz /tmp/xmipp-deps/libcifpp /tmp/xmipp-deps/googletest
+        - tar -xzf {{ get_file("xmipp_source") }} -C /tmp/xmipp --strip-components=1
+        - tar -xzf {{ get_file("xmipp_core_source") }} -C /tmp/xmipp/src/xmippCore --strip-components=1
+        - tar -xzf {{ get_file("xmipp_viz_source") }} -C /tmp/xmipp/src/xmippViz --strip-components=1
+        - tar -xzf {{ get_file("libcifpp_source") }} -C /tmp/xmipp-deps/libcifpp --strip-components=1
+        - tar -xzf {{ get_file("googletest_source") }} -C /tmp/xmipp-deps/googletest --strip-components=1
+        - cp {{ get_file("ctpl_source") }} /tmp/xmipp-deps/ctpl.tar.gz
+        - cp {{ get_file("libsvm_source") }} /tmp/xmipp-deps/libsvm.tar.gz
+        - cd /tmp/xmipp
+        - sed -i -e 's|GIT_REPOSITORY https://github.com/vit-vit/CTPL.git|URL /tmp/xmipp-deps/ctpl.tar.gz|' -e '/GIT_TAG master/d' cmake/fetch_ctpl.cmake
+        - sed -i -e 's|GIT_REPOSITORY https://github.com/cossorzano/libsvm.git|URL /tmp/xmipp-deps/libsvm.tar.gz|' -e '/GIT_TAG master/d' cmake/fetch_libsvm.cmake
+        - grep -q 'URL /' cmake/fetch_ctpl.cmake
+        - grep -q 'URL /' cmake/fetch_libsvm.cmake
+        - cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/xmipp -DCMAKE_INSTALL_RPATH=/opt/xmipp/lib
+          -DXMIPP_USE_CUDA=OFF -DXMIPP_USE_MPI=ON -DXMIPP_USE_MATLAB=OFF -DXMIPP_LINK_TO_SCIPION=OFF -DBUILD_TESTING=OFF
+          -DINSTALL_GTEST=OFF -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_SOURCE_DIR_LIBCIFPP=/tmp/xmipp-deps/libcifpp
+          -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST=/tmp/xmipp-deps/googletest
+        - cmake --build build -j 4
+        - cmake --install build
+        - python3 -m pip install --no-cache-dir --no-deps --target /opt/xmipp/pyxmipp3 pyxmipp3=={{ context.pyxmipp3_version }}
+        - cd /
+        - rm -rf /tmp/xmipp /tmp/xmipp-deps
+    - environment:
+        XMIPP_HOME: /opt/xmipp
+        PATH: /opt/xmipp/bin:$PATH
+        LD_LIBRARY_PATH: /opt/xmipp/lib:/opt/xmipp/bindings/python
+        PYTHONPATH: /opt/xmipp/bindings/python:/opt/xmipp/pylib:/opt/xmipp/pyxmipp3
+files:
+  - name: xmipp_source
+    url: https://codeload.github.com/I2PC/xmipp/tar.gz/v6.0.0-Cas9
+    sha256: ca067971a3a10058a306e2444842bdb44beee89cb22b685d2b719364e1f431d1
+  - name: xmipp_core_source
+    url: https://codeload.github.com/I2PC/xmippCore/tar.gz/v4.1.0
+    sha256: 8fcea815ded1e0bbaa2314d71040e7e7bd9f03a40dc7191ce6c893d37fe74444
+  - name: xmipp_viz_source
+    url: https://codeload.github.com/I2PC/xmippViz/tar.gz/v4.0.2
+    sha256: 2dd3c90a4b3e574bfeaf65fb23d2bd9eb6ca1a15afc67521e17b61bdb3d7e10f
+  - name: libcifpp_source
+    url: https://codeload.github.com/I2PC/libcifpp/tar.gz/refs/heads/ms_feature_ciflibrary
+    sha256: 4e8ff6bd49e287a2e1c16db9413386d6ae289f797ccb10df4f868d9565791800
+  - name: ctpl_source
+    url: https://codeload.github.com/vit-vit/CTPL/tar.gz/refs/heads/master
+    sha256: 9af8de32442efcb0bfe843788d3139072a280fb93454d753b11ea5244afedba4
+  - name: libsvm_source
+    url: https://codeload.github.com/cossorzano/libsvm/tar.gz/refs/heads/master
+    sha256: 9285f65f21ecf66872a5aa9f47bccb81a5727cb3a49b5a1b9a2a31b8b1773a5e
+  - name: googletest_source
+    url: https://codeload.github.com/google/googletest/tar.gz/v{{ context.googletest_version }}
+    sha256: ad7fdba11ea011c1d925b3289cf4af2c66a352e18d4c7264392fead75e919363
+deploy:
+  path:
+    - /opt/xmipp/bin
+categories:
+  - cryo EM
+readme: |
+  ## xmipp/{{ context.version }}
+
+  Xmipp is a suite of image processing programs for cryo-electron microscopy:
+  micrograph and particle handling, CTF estimation, 2D classification, 3D
+  reconstruction, volume analysis and metadata utilities.
+  https://github.com/I2PC/xmipp
+
+  This container builds Xmipp {{ context.upstream_version }} standalone, not as a Scipion plugin,
+  with xmippCore {{ context.xmipp_core_version }} and xmippViz {{ context.xmipp_viz_version }}.
+  It is a CPU build with OpenMPI support. CUDA programs are not included.
+  All `xmipp_*` programs are installed in /opt/xmipp/bin, for example:
+
+      xmipp_phantom_create -i phantom.descr -o phantom.mrc
+      xmipp_image_header -i phantom.mrc
+      xmipp_image_statistics -i phantom.mrc
+
+  MPI programs (`xmipp_mpi_*`) run with `mpirun -np N`. The Python binding
+  `xmippLib` (pyxmipp3 {{ context.pyxmipp3_version }}) is on PYTHONPATH. The Java
+  viewer `xmipp_showj` needs a graphical desktop. Deep-learning programs that
+  need Xmipp's separate conda environments are not set up, and some Python
+  scripts need extra packages (for example PyWavelets) that are not installed.
+
+  The build runs CMake directly with the options of upstream's `./xmipp` installer.
+  Every source, including those CMake would clone from moving branches, comes
+  from a pinned, checksummed archive.
+icon: data:image/png;base64,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

@@ -1,0 +1,39 @@
+name: xmipp
+version: 6.0.0
+tests:
+  - name: program usage
+    command: xmipp_image_statistics --help
+    expected_output_contains: Display statistics of 2D/3Dimages
+  - name: phantom volume header
+    command: |-
+      set -e
+      cd "$(mktemp -d)"
+      printf '%s\n' '32 32 32 0' 'sph + 1 0 0 0 8' > phantom.descr
+      xmipp_phantom_create -i phantom.descr -o phantom.mrc
+      xmipp_image_header -i phantom.mrc
+    expected_output_contains: 1 x 32 x 32 x 32
+  - name: phantom volume statistics
+    command: |-
+      set -e
+      cd "$(mktemp -d)"
+      printf '%s\n' '32 32 32 0' 'sph + 1 0 0 0 8' > phantom.descr
+      xmipp_phantom_create -i phantom.descr -o phantom.mrc
+      xmipp_image_statistics -i phantom.mrc
+    expected_output_contains: 'min=  0.000000 max=  1.000000 avg=  0.065826'
+  - name: Python binding reads the phantom
+    command: |-
+      set -e
+      cd "$(mktemp -d)"
+      printf '%s\n' '32 32 32 0' 'sph + 1 0 0 0 8' > phantom.descr
+      xmipp_phantom_create -i phantom.descr -o phantom.mrc
+      python3 -c 'import xmippLib; d = xmippLib.Image("phantom.mrc").getData(); print("voxels", d.shape, int(d.sum()))'
+    expected_output_contains: voxels (32, 32, 32) 2157
+  - name: MPI resize
+    command: |-
+      set -e
+      cd "$(mktemp -d)"
+      printf '%s\n' '32 32 32 0' 'sph + 1 0 0 0 8' > phantom.descr
+      xmipp_phantom_create -i phantom.descr -o phantom.mrc
+      env OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 mpirun --oversubscribe -np 2 xmipp_mpi_image_resize -i phantom.mrc -o small.mrc --dim 16
+      xmipp_image_header -i small.mrc
+    expected_output_contains: 1 x 16 x 16 x 16
