@@ -5,6 +5,9 @@ version: "1.3.0"
 heudiconv_version: "1.5.1"
 traits_version: 7.1.0
 
+test_data:
+  output_dir: test_output
+
 setup:
   host_script: |
     python3 - <<'PYTHON'
