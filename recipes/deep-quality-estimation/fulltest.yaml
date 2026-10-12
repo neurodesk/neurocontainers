@@ -108,7 +108,7 @@ tests:
       assert isinstance(d['mean_score'], float), d
       assert len(d['view_scores']) == 3, d
       assert math.isfinite(d['mean_score']), d
-      assert all(math.isfinite(score) for score in d['view_scores']), d
+      assert all(math.isfinite(score) for score in d['view_scores'].values()), d
       print('rated-ok', round(d['mean_score'], 2))
       "
     expected_output_contains: "rated-ok"
