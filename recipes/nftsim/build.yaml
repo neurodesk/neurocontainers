@@ -2,6 +2,7 @@ name: nftsim
 version: 1.0.2
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: NFTsim is a neural field simulation framework for large-scale brain dynamics. This container allows users to simulate various neural models including corticothalamic and cortical circuits using configuration files.
   example: nftsim -i /app/configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
@@ -9,11 +10,24 @@ structured_readme:
   citation: ''
 variables:
   base_image_tag: 1.0.2
+  source_commit: 0bd35df203e9e713018ce94c45119f1c794d61a2
+  base_image:
+    try:
+      - value: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+        condition: arch == "x86_64"
+      - value: ubuntu:22.04
+        condition: arch == "aarch64"
 
 auto_update:
   container_version: "base_image_tag"
   method: sources
   sources:
+    - id: source
+      method: github_commit
+      repo: BrainDynamicsUSYD/nftsim
+      ref: master
+      target:
+        variable: source_commit
     - id: base_image_tag
       method: oci
       url: https://ghcr.io/v2/farwa-abbas/nftsim/tags/list
@@ -24,9 +38,21 @@ auto_update:
 
 build:
   kind: neurodocker
-  base-image: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+  base-image: "{{ context.base_image }}"
   pkg-manager: apt
   directives:
+    - condition: arch == "aarch64"
+      install:
+        - build-essential
+        - ca-certificates
+    - condition: arch == "aarch64"
+      run:
+        - tar -xzf '{{ get_file("source") }}' -C /tmp
+        - make -C /tmp/nftsim-{{ context.source_commit }} -j2 CXXFLAGS='-std=c++11 -lm -Wall -Wextra -pedantic -O3' nftsim
+        - mkdir -p /app/bin /app/configs
+        - cp /tmp/nftsim-{{ context.source_commit }}/bin/nftsim /app/bin/nftsim
+        - cp -a /tmp/nftsim-{{ context.source_commit }}/configs/. /app/configs/
+        - rm -rf /tmp/nftsim-{{ context.source_commit }}
     - environment:
         PATH: /app/bin:$PATH
     - workdir: /app
@@ -98,3 +124,8 @@ readme: |-
   To run container outside of this environment: ml nftsim/1.0.2
 
   ----------------------------------
+
+files:
+  - name: source
+    condition: arch == "aarch64"
+    url: https://github.com/BrainDynamicsUSYD/nftsim/archive/{{ context.source_commit }}.tar.gz
