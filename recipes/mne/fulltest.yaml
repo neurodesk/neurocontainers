@@ -99,6 +99,8 @@ tests:
       export MPLCONFIGDIR="$mne_gui_scratch/matplotlib"
       export MNE_DONTWRITE_HOME=true
       export LIBGL_ALWAYS_SOFTWARE=1
+      export VTK_DEFAULT_OPENGL_WINDOW=vtkOSOpenGLRenderWindow
+      export LP_NUM_THREADS=0
       mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CACHE_HOME" "$MPLCONFIGDIR"
       chmod 700 "$XDG_RUNTIME_DIR"
       xvfb-run -a /opt/miniconda-latest/envs/mne-${version}/bin/python - <<'PY'
@@ -122,7 +124,8 @@ tests:
           app.processEvents()
       mne.viz.set_3d_backend("pyvistaqt")
       image_path = Path(os.environ["XDG_CACHE_HOME"]) / "sphere.png"
-      with pv.Plotter(off_screen=True, window_size=(128, 128)) as plot:
+      plot = pv.Plotter(off_screen=True, window_size=(128, 128))
+      try:
           plot.set_background("black")
           plot.add_mesh(pv.Sphere(theta_resolution=12, phi_resolution=12), color="white", lighting=False)
           plot.show(auto_close=False)
@@ -131,6 +134,8 @@ tests:
           assert np.isfinite(image).all() and np.any(image[..., :3] > 0)
           assert np.any(np.all(image[..., :3] == 0, axis=-1)), "Rendered image has no background"
           assert image_path.read_bytes().startswith(bytes([137, 80, 78, 71, 13, 10, 26, 10]))
+      finally:
+          plot.close()
       print("MNE Qt browser and native 3D rendering verified")
       PY
     expected_output_contains: "MNE Qt browser and native 3D rendering verified"

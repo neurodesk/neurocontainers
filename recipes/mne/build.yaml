@@ -82,6 +82,7 @@ build:
         - xvfb
         - xauth
         - libgl1-mesa-glx
+        - libosmesa6
 
     - template:
         name: miniconda
@@ -124,6 +125,10 @@ build:
     - environment:
         RUNLEVEL: "3"
         XDG_RUNTIME_DIR: ~/.vscode
+
+    - environment:
+        LD_PRELOAD: /opt/miniconda-latest/envs/mne-{{ context.version }}/lib/libgomp.so.1
+      condition: arch == "aarch64"
 
     - user: neuro
 
