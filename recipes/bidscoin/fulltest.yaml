@@ -710,13 +710,12 @@ tests:
       import subprocess
       import numpy as np
       import nibabel as nib
-      from ruamel.yaml import YAML
+      import yaml
       from bidscoin import bidsmap_template
 
       hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.glob('*.dcm')}
-      yaml = YAML()
       with Path(bidsmap_template).open() as f:
-          template = yaml.load(f)
+          template = yaml.safe_load(f)
       run = template['DICOM']['anat'][0]
       run['attributes'] = {'SeriesDescription': 'Synthetic T1w'}
       run['bids']['acq'] = ''
@@ -726,7 +725,7 @@ tests:
       template['Options']['plugins'] = {'dcm2niix2bids': template['Options']['plugins']['dcm2niix2bids']}
       custom = root / 'template.yaml'
       with custom.open('w') as f:
-          yaml.dump(template, f)
+          yaml.safe_dump(template, f, sort_keys=False)
       (target / 'README').write_text('Synthetic analytical MR conversion test. No human data.\n')
       (target / 'dataset_description.json').write_text(json.dumps({'Name': 'Synthetic MR phantom', 'BIDSVersion': '1.9.0', 'DatasetType': 'raw'}))
       for command in [
