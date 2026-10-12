@@ -59,3 +59,39 @@ tests:
   description: Verify datalad finds a working git-annex
   command: git annex version 2>&1 | head -1
   expected_output_contains: git-annex version
+
+- name: clone and retrieve real annex content offline
+  description: Retrieve an annexed binary from a local dataset clone and require exact bytes and matching content keys
+  command: |
+    set -euo pipefail
+    task_dir=$(mktemp -d "${output_dir}/annex.XXXXXX")
+    task_dir=$(cd "$task_dir" && pwd)
+    datalad create "$task_dir/source"
+    python - "$task_dir/source/signal.bin" <<'PYTHON'
+    import sys
+    from pathlib import Path
+    Path(sys.argv[1]).write_bytes(bytes(range(256)) * 256)
+    PYTHON
+    # Force annex storage so this tests content retrieval, not plain Git data.
+    git -C "$task_dir/source" annex add --force-large signal.bin
+    datalad save -d "$task_dir/source" -m 'Add deterministic binary signal' signal.bin
+    source_key=$(git -C "$task_dir/source" annex lookupkey signal.bin)
+    test -n "$source_key"
+    datalad clone "$task_dir/source" "$task_dir/clone"
+    clone_key=$(git -C "$task_dir/clone" annex lookupkey signal.bin)
+    test "$source_key" = "$clone_key"
+    # A normal clone has the annex pointer, but has not fetched its content.
+    test ! -f "$task_dir/clone/signal.bin"
+    datalad get -d "$task_dir/clone" signal.bin
+    cmp "$task_dir/source/signal.bin" "$task_dir/clone/signal.bin"
+    python - "$task_dir/clone/signal.bin" <<'PYTHON'
+    import sys
+    from pathlib import Path
+    data = Path(sys.argv[1]).read_bytes()
+    assert data == bytes(range(256)) * 256
+    assert len(data) == 65536
+    PYTHON
+    echo 'Offline annex clone and exact signal retrieval verified'
+  expected_output_contains: Offline annex clone and exact signal retrieval verified
+  expected_exit_code: 0
+  timeout: 120
