@@ -38,6 +38,70 @@ test_data:
   output_dir: test_output
 
 setup:
+  host_script: |
+    python3 - <<'PYTHON'
+    from pathlib import Path
+    import struct
+
+    root = Path('${output_dir}') / 'dicom-byteorder'
+    source = root / 'dicom'
+    source.mkdir(parents=True, exist_ok=True)
+
+    def element(group, tag, vr, value):
+        if vr == 'US':
+            raw = struct.pack('<H', value)
+        elif isinstance(value, bytes):
+            raw = value
+        else:
+            raw = str(value).encode('ascii')
+        if len(raw) % 2:
+            raw += b'\0' if vr in ('UI', 'OB', 'OW') else b' '
+        prefix = struct.pack('<HH', group, tag) + vr.encode('ascii')
+        if vr in ('OB', 'OW'):
+            return prefix + b'\0\0' + struct.pack('<I', len(raw)) + raw
+        return prefix + struct.pack('<H', len(raw)) + raw
+
+    pixels = (0, 1, 255, 256, 4095, 65535)
+    (root / 'expected-pixels.bin').write_bytes(struct.pack('<6H', *pixels))
+    sop = '1.2.840.10008.5.1.4.1.1.4'
+    for index in range(1):
+        uid = '1.2.826.0.1.3680043.10.543.1.' + str(index + 1)
+        meta = b''.join([
+            element(2, 1, 'OB', b'\0\1'),
+            element(2, 2, 'UI', sop),
+            element(2, 3, 'UI', uid),
+            element(2, 0x10, 'UI', '1.2.840.10008.1.2.1'),
+            element(2, 0x12, 'UI', '1.2.826.0.1.3680043.10.543'),
+        ])
+        # Synthetic MR storage, explicit VR little endian, unsigned16-bit pixels.
+        records = [
+            (8, 8, 'CS', 'ORIGINAL\\PRIMARY\\M'),
+            (8, 0x16, 'UI', sop), (8, 0x18, 'UI', uid),
+            (8, 0x20, 'DA', '20260101'), (8, 0x30, 'TM', '120000'),
+            (8, 0x60, 'CS', 'MR'), (8, 0x70, 'LO', 'Synthetic'),
+            (8, 0x103e, 'LO', 'Native conversion phantom'),
+            (0x10, 0x10, 'PN', 'Synthetic^Phantom'), (0x10, 0x20, 'LO', 'SYNTHETIC'),
+            (0x18, 0x50, 'DS', '3'), (0x18, 0x80, 'DS', '1000'),
+            (0x18, 0x81, 'DS', '10'), (0x18, 0x87, 'DS', '3'),
+            (0x18, 0x88, 'DS', '3'),
+            (0x20, 0xd, 'UI', '1.2.826.0.1.3680043.10.543.2'),
+            (0x20, 0xe, 'UI', '1.2.826.0.1.3680043.10.543.3'),
+            (0x20, 0x11, 'IS', '1'), (0x20, 0x13, 'IS', str(index + 1)),
+            (0x20, 0x32, 'DS', '0\\0\\' + str(index * 3)),
+            (0x20, 0x37, 'DS', '1\\0\\0\\0\\1\\0'),
+            (0x20, 0x52, 'UI', '1.2.826.0.1.3680043.10.543.4'),
+            (0x28, 2, 'US', 1), (0x28, 4, 'CS', 'MONOCHROME2'),
+            (0x28, 0x10, 'US', 2), (0x28, 0x11, 'US', 3),
+            (0x28, 0x30, 'DS', '2\\1.5'),
+            (0x28, 0x100, 'US', 16), (0x28, 0x101, 'US', 16),
+            (0x28, 0x102, 'US', 15), (0x28, 0x103, 'US', 0),
+            (0x7fe0, 0x10, 'OW', struct.pack('<6H', *pixels)),
+        ]
+        payload = b''.join(element(*record) for record in records)
+        (source / f'slice-{index}.dcm').write_bytes(
+            bytes(128) + b'DICM' + element(2, 0, 'UL', struct.pack('<I', len(meta))) + meta + payload
+        )
+    PYTHON
   script: |
     #!/usr/bin/env bash
     set -e
@@ -1019,6 +1083,39 @@ tests:
     description: Apply multiple transforms in sequence
     command: medcon -f ${t1w} -fh -fv -sqr -g -c png -o test_output/dicomtools/medcon/complex 2>&1
     expected_exit_code: 0
+
+
+  - name: Preserve exact unsigned pixels across DICOM transfer syntaxes
+    description: Convert real synthetic MR DICOM to explicit big endian and implicit little endian, verify transfer syntax and metadata, then extract and compare all unsigned16-bit pixel bytes
+    command: |
+      set -euo pipefail
+      root="${output_dir}/dicom-byteorder"
+      original="$root/dicom/slice-0.dcm"
+      dcmconv +tb "$original" "$root/big.dcm"
+      dcmconv +ti "$root/big.dcm" "$root/implicit.dcm"
+      dcmconv +te "$root/implicit.dcm" "$root/restored.dcm"
+      dcmdump +P 0002,0010 "$root/big.dcm" | grep -F '=BigEndianExplicit'
+      dcmdump +P 0002,0010 "$root/implicit.dcm" | grep -F '=LittleEndianImplicit'
+      dcmdump +P 0002,0010 "$root/restored.dcm" | grep -F '=LittleEndianExplicit'
+      for encoding_mode in big implicit restored; do
+        directory="$root/$encoding_mode-pixels"
+        mkdir -p "$directory"
+        dcmdump +P 0028,0010 +P 0028,0011 "$root/$encoding_mode.dcm" > "$root/$encoding_mode-shape.txt"
+        grep -Eq '\(0028,0010\) US 2[[:space:]]' "$root/$encoding_mode-shape.txt"
+        grep -Eq '\(0028,0011\) US 3[[:space:]]' "$root/$encoding_mode-shape.txt"
+        dcmdump +P 0008,0018 "$original" > "$root/original-uid.txt"
+        dcmdump +P 0008,0018 "$root/$encoding_mode.dcm" > "$root/$encoding_mode-uid.txt"
+        cmp "$root/original-uid.txt" "$root/$encoding_mode-uid.txt"
+        dcmdump +W "$directory" "$root/$encoding_mode.dcm" > "$root/$encoding_mode-dump.txt"
+        set -- "$directory"/*.raw
+        test "$#" = 1
+        test -f "$1"
+        cmp "$root/expected-pixels.bin" "$1"
+      done
+      echo "DICOM transfer syntaxes preserve dimensions, UID and exact unsigned pixels"
+    expected_output_contains: DICOM transfer syntaxes preserve dimensions, UID and exact unsigned pixels
+    expected_exit_code: 0
+    timeout: 120
 
 cleanup:
   script: |
