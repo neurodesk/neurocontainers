@@ -1,5 +1,5 @@
 # RELION container test suite
-# Tests for RELION v4.0.1 - REgularised LIkelihood OptimisatioN for cryo-EM
+# Tests for RELION - REgularised LIkelihood OptimisatioN for cryo-EM
 #
 # RELION is a stand-alone computer program for Maximum A Posteriori (MAP)
 # refinement of (multiple) 3D reconstructions or 2D class averages in
@@ -11,7 +11,9 @@
 #   - CUDA Toolkit 11.8
 
 name: relion
-version: 4.0.1.sm75
+version: 5.1.1
+relion_version: 5.1.1
+torch_version: 2.7.1+cu128
 
 tests:
   # ==========================================================================
@@ -20,7 +22,7 @@ tests:
   - name: RELION version check
     description: Verify RELION binary runs and reports version
     command: relion --version
-    expected_output_contains: "RELION version"
+    expected_output_contains: "RELION version: ${relion_version}"
 
   - name: RELION GUI help
     description: Check RELION GUI command line options
@@ -454,10 +456,10 @@ tests:
     command: relion_run_ctffind --help 2>&1
     expected_output_contains: "--is_ctffind4"
 
-  - name: relion_run_ctffind Gctf option
-    description: Verify Gctf wrapper option
+  - name: relion_run_ctffind CTFFIND executable option
+    description: Verify the bundled CTFFIND executable can be selected
     command: relion_run_ctffind --help 2>&1
-    expected_output_contains: "--use_gctf"
+    expected_output_contains: "--ctffind_exe"
 
   - name: relion_run_ctffind phase shift option
     description: Verify phase shift estimation option
@@ -567,15 +569,68 @@ tests:
   # ==========================================================================
   # RELION TOMOGRAPHY TOOLS
   # ==========================================================================
-  - name: relion_tomo_import_tomograms help
-    description: Check tomogram import help
-    command: relion_tomo_import_tomograms --help 2>&1 | head -20
-    expected_output_contains: "General options"
+  - name: relion_python_tomo_import help
+    description: Verify the Python tomography importer runs and offers SerialEM import
+    command: relion_python_tomo_import --help 2>&1
+    expected_output_contains: "SerialEM"
 
-  - name: relion_tomo_import_tomograms IMOD options
-    description: Verify IMOD import options
-    command: relion_tomo_import_tomograms --help 2>&1
-    expected_output_contains: "--nc"
+  - name: relion_python_tomo_import SerialEM options
+    description: Verify SerialEM import accepts an output directory
+    command: TERM=dumb COLUMNS=160 relion_python_tomo_import SerialEM --help 2>&1
+    expected_output_contains: "--output-directory"
+
+  - name: Python dependency consistency
+    description: Verify the bundled Python packages have compatible dependencies
+    command: /opt/relion-${version}/python/bin/pip check
+    expected_output_contains: "No broken requirements found"
+
+  - name: CUDA PyTorch build
+    description: Verify the bundled PyTorch is the CUDA build and runs tensor operations
+    command: /opt/relion-${version}/python/bin/python -c "import torch; assert torch.ones(2).sum().item() == 2; print(torch.__version__, torch.version.cuda)"
+    expected_output_contains: "${torch_version} 12.8"
+
+  # ==========================================================================
+  # RELION PYTHON PROGRAMS
+  # ==========================================================================
+  - name: Class ranker loads bundled weights
+    description: Verify the class ranker wrapper loads the installed checkpoint without downloading
+    command: relion_python_classranker 2>&1
+    expected_output_contains: "loaded successfully from checkpoint /opt/relion-${version}/torch/hub/checkpoints/relion_class_ranker/v1.0.ckpt"
+
+  - name: Blush loads bundled weights
+    description: Verify Blush loads the installed checkpoint without downloading
+    command: /opt/relion-${version}/python/bin/python -c "from relion_blush.util import install_and_load_model; print(install_and_load_model('v1.0')[1])"
+    expected_output_contains: "/opt/relion-${version}/torch/hub/checkpoints/relion_blush/v1.0.ckpt"
+
+  - name: relion_python_blush help
+    description: Verify the Blush wrapper reaches the Blush command line
+    command: relion_python_blush --help 2>&1
+    expected_output_contains: "usage"
+
+  - name: relion_python_dynamight help
+    description: Verify the DynaMight wrapper and its imports work
+    command: TERM=dumb COLUMNS=160 relion_python_dynamight --help 2>&1
+    expected_output_contains: "optimize-deformations"
+
+  - name: relion_python_topaz help
+    description: Verify the Topaz wrapper used by RELION's AutoPick job
+    command: relion_python_topaz --help 2>&1
+    expected_output_contains: "extract"
+
+  - name: relion_python_modelangelo help
+    description: Verify the ModelAngelo wrapper reaches its build command
+    command: relion_python_modelangelo --help 2>&1
+    expected_output_contains: "build"
+
+  - name: relion_python_tomo_view help
+    description: Verify the napari tomogram viewer imports
+    command: TERM=dumb COLUMNS=160 relion_python_tomo_view --help 2>&1
+    expected_output_contains: "Usage"
+
+  - name: Amyloid tracer help
+    description: Verify the tracer interpreter and its imported dependencies work
+    command: relion_trace_amyloids.py --help 2>&1
+    expected_output_contains: "--model_path"
 
   - name: relion_tomo_reconstruct_tomogram exists
     description: Check tomogram reconstruction tool exists
