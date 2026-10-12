@@ -9,9 +9,16 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 variables:
   install_dir: /opt/modsort
+  modsort_appimage:
+    try:
+      - value: modsort_linux_x86_64_appimage
+        condition: arch == "x86_64"
+      - value: modsort_linux_arm64_appimage
+        condition: arch == "aarch64"
 
 auto_update:
   method: github_release
@@ -58,19 +65,27 @@ build:
         - xdg-utils
         - xvfb
         - zlib1g
+        # The AppImage runtime itself links against the unversioned zlib
+        # development linker name while extracting. Runtime zlib alone only
+        # provides libz.so.1 on Ubuntu ARM64.
+        - zlib1g-dev
 
     # Upstream publishes a prebuilt Linux AppImage per release, so the container
     # needs no node/npm toolchain to build the app from source.
     - file:
-        name: modsort.AppImage
+        name: modsort_linux_x86_64_appimage
         url: "https://github.com/BrainLesion/modsort/releases/download/v{{ context.version }}/modsort-Linux-x86_64-{{ context.version }}.AppImage"
+
+    - file:
+        name: modsort_linux_arm64_appimage
+        url: "https://github.com/BrainLesion/modsort/releases/download/v{{ context.version }}/modsort-Linux-arm64-{{ context.version }}.AppImage"
 
     - run:
         # Extract rather than execute the AppImage: running one mounts a
         # squashfs through FUSE, which is not available inside the container.
         # --appimage-extract unpacks it with no FUSE involved.
         - mkdir -p /tmp/modsort-extract
-        - cp {{ get_file("modsort.AppImage") }} /tmp/modsort-extract/modsort.AppImage
+        - cp {{ get_file(context.modsort_appimage) }} /tmp/modsort-extract/modsort.AppImage
         - chmod +x /tmp/modsort-extract/modsort.AppImage
         - cd /tmp/modsort-extract
         - ./modsort.AppImage --appimage-extract
