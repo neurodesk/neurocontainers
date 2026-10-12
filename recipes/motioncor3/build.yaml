@@ -1,0 +1,153 @@
+name: motioncor3
+version: 1.2.4
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/czimaginginstitute/MotionCor3/blob/{{ context.motioncor3_commit }}/LICENSE.md
+
+architectures:
+  - x86_64
+
+variables:
+  upstream_version: "1.2.4"
+  motioncor3_commit: dd8b6831ae66ef016fb7ef3b9b6172f8b56c79aa
+  cuda_version: "12.8"
+  cuda_package_suffix: "12-8"
+  base_image_digest: sha256:133c78a0575303be34164d0b90137a042172bdf60696af01a3c424ab402d86e2
+  install_dir: /opt/motioncor3-{{ context.upstream_version }}
+  # Native kernels for Volta through Blackwell, plus PTX for newer GPUs.
+  cuda_flags: >-
+    -Xptxas -dlcm=ca -O2
+    -gencode arch=compute_70,code=sm_70
+    -gencode arch=compute_75,code=sm_75
+    -gencode arch=compute_80,code=sm_80
+    -gencode arch=compute_86,code=sm_86
+    -gencode arch=compute_87,code=sm_87
+    -gencode arch=compute_89,code=sm_89
+    -gencode arch=compute_90,code=sm_90
+    -gencode arch=compute_100,code=sm_100
+    -gencode arch=compute_120,code=sm_120
+    -gencode arch=compute_120,code=compute_120
+
+auto_update:
+  method: sources
+  container_version: motioncor3
+  sources:
+    - id: motioncor3
+      method: github_commit
+      repo: czimaginginstitute/MotionCor3
+      ref: HEAD
+      version_file: CMotionCor3.cpp
+      version_regex: 'MotionCor3 version (?P<version>[0-9]+(?:\.[0-9]+)+)'
+      target:
+        variable: motioncor3_commit
+        variables:
+          upstream_version: version
+    - id: cuda_base_image
+      method: oci_digest
+      dependency: true
+      image: nvidia/cuda
+      tag: 12.8.1-base-ubuntu24.04
+      target:
+        variable: base_image_digest
+
+build:
+  kind: neurodocker
+  base-image: nvidia/cuda:12.8.1-base-ubuntu24.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    # Runtime libraries MotionCor3 links against. libcuda.so.1 is not
+    # installed: the host NVIDIA driver supplies it (apptainer --nv or the
+    # NVIDIA container runtime). cuobjdump and the driver stub let the
+    # fulltest inspect the GPU kernels and run --version without a GPU.
+    - install:
+        - ca-certificates
+        - libtiff6
+        - libcufft-{{ context.cuda_package_suffix }}
+        - cuda-nvtx-{{ context.cuda_package_suffix }}
+        - cuda-cuobjdump-{{ context.cuda_package_suffix }}
+        - cuda-driver-dev-{{ context.cuda_package_suffix }}
+
+    - run:
+        - apt-get update -qq
+        - apt-get install -y -q --no-install-recommends cuda-nvcc-{{ context.cuda_package_suffix }} cuda-cudart-dev-{{ context.cuda_package_suffix }} libcufft-dev-{{ context.cuda_package_suffix }} libcurand-dev-{{ context.cuda_package_suffix }} libtiff-dev g++ make
+        - mkdir -p /tmp/motioncor3
+        - tar -xzf {{ get_file("motioncor3_source") }} --strip-components=1 -C /tmp/motioncor3
+        - cd /tmp/motioncor3
+        # Rebuild the bundled static libraries from source; the shipped
+        # archives are not position independent and fail to link as PIE.
+        - rm -f LibSrc/Lib/libmrcfile.a LibSrc/Lib/libutil.a
+        - (cd LibSrc/Util && make -j4)
+        - (cd LibSrc/Mrcfile && make -j4)
+        - LIBRARY_PATH=/usr/local/cuda-{{ context.cuda_version }}/lib64/stubs make -j4 -f makefile11 exe CUDAHOME=/usr/local/cuda-{{ context.cuda_version }} CONDA=/usr CUFLAG="{{ context.cuda_flags }}"
+        - install -D -m 755 MotionCor3 {{ context.install_dir }}/bin/MotionCor3
+        - install -D -m 644 LICENSE.md {{ context.install_dir }}/LICENSE.md
+        - cd /
+        - rm -rf /tmp/motioncor3
+        - apt-get purge -y -q --auto-remove cuda-nvcc-{{ context.cuda_package_suffix }} cuda-cudart-dev-{{ context.cuda_package_suffix }} libcufft-dev-{{ context.cuda_package_suffix }} libcurand-dev-{{ context.cuda_package_suffix }} libtiff-dev g++ make
+        - rm -rf /var/lib/apt/lists/*
+
+    - environment:
+        PATH: "{{ context.install_dir }}/bin:$PATH"
+
+deploy:
+  bins:
+    - MotionCor3
+
+files:
+  - name: motioncor3_source
+    url: https://github.com/czimaginginstitute/MotionCor3/archive/{{ context.motioncor3_commit }}.tar.gz
+
+categories:
+  - cryo EM
+
+readme: |-
+  ----------------------------------
+  ## motioncor3/{{ context.version }} ##
+  MotionCor3 corrects beam-induced motion in cryo-EM and cryo-ET movies on NVIDIA GPUs.
+  It is the open-source (BSD-3-Clause) successor of UCSF MotionCor2. It reads MRC, TIFF and EER movies.
+  It performs whole-frame and local patch alignment, dose weighting and gain/defect correction, and estimates CTF.
+
+  This container builds MotionCor3 {{ context.upstream_version }} (commit {{ context.motioncor3_commit }})
+  from source with CUDA {{ context.cuda_version }}. It contains native kernels for compute capability
+  7.0 to 12.0 (Volta to Blackwell) and PTX for newer GPUs.
+
+  MotionCor2 is not included: its UCSF licence forbids redistribution without written permission.
+  MotionCor3 is an improved implementation of MotionCor2 and keeps its option names (-InMrc, -OutMrc, -Patch, ...).
+
+  Requirements:
+  - An NVIDIA GPU with a CUDA 12 capable driver (525 or newer). The driver library
+    (libcuda.so.1) comes from the host, so run the container with GPU support,
+    for example `apptainer exec --nv`.
+  - Without a GPU only `MotionCor3 --help` style inspection is possible; alignment needs a GPU.
+
+  Example:
+  ```
+  MotionCor3 --help
+  MotionCor3 -InTiff movie.tif -OutMrc aligned.mrc -Gain gain.mrc -PixSize 0.83 -FmDose 1.2 -Patch 5 5 -Gpu 0
+  MotionCor3 -InTiff movies/ -InSuffix .tif -OutMrc aligned/ -Serial 1 -PixSize 0.83 -Gpu 0
+  ```
+
+  MotionCor3 writes a GPU lock file to /tmp/MotionCor2_FreeGpus.txt and all
+  other output beside the paths you pass. It needs no home directory.
+
+  To make the executable available in Neurodesk environments, run:
+  ```
+  ml motioncor3/{{ context.version }}
+  ```
+
+  Documentation: https://github.com/czimaginginstitute/MotionCor3
+
+  Citation:
+  ```
+  Zheng SQ, Palovcak E, Armache JP, Verba KA, Cheng Y, Agard DA. MotionCor2: anisotropic correction of beam-induced motion for improved cryo-electron microscopy. Nature Methods 14, 331-332 (2017). doi:10.1038/nmeth.4193
+  ```
+
+  License: BSD-3-Clause
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAEwElEQVR42u2dTWgcdRjGn5ndJrspNaVaNR7UHmxotRQFQdRSv4gtKY2CeIgKgiLEQ2rBQ1SkqxeLiNZA/QARiphrmqCHpkhAqghqKbhQoYeiF0lq0tBNd9edzMbDYmvThd1tZzI78/5+sBB2wi47z/N/3vedGWYkAAAAsIgT1gfffM/eZXZvsMzmJ522NgCix88MDqLbNoOL+PHnenRwEN52GriIbzsNXMS3bQIX8W2bwEV82yZwEd+2CVx2kW1cVr/tFHAR37YJKAHGSYf1wbmxieeStrNygwNfm+gBiH87ZSAd9peOHvw09jtueGTI5hQABsdA4t9WGUizS6Ln0S2eXtpR1r13+Fq/tqpCydEvZ9P6+HhWP58NVyIMEDGv9ZX0xp6Szl90NH6yU+cKjrb0+OrfXtFjWz29+MU6TeXXJNMAwyNDD8dqDBybaNjR5gYHmu4Ye3t8jfSX9Mecq10fdGv+4uVrOZ65v6LDLyzq3aeLmsp30wQmkd3bKnIc6cvvM1eIL0nHfqut+k0bfXWEuEzbogRYHRUPTWV1aCpbd9tDd3mSpLlFR5UlegATdGeXtWmjrx2bl7SvryRJ+mw6SxNohVceKev13TXhC2VHB7/NavR4BgNY4ejJDs0WXO3s9XTfnUsqe07o34kB2ogzMymdmUnpyIlOvbmnpNxTRbmOdPi7jF0DDI8MxepAfG5sovH/DA4o5dZqvufX4n4lX/3YqX19Jb28sxyqARgDI2LD2qpOv3de3+y/UHf73GLNFLetryZ/DLQ4Kp4ruJq54Grzrb5uWlfV34Ur12Jvjy9JKlbCHQNJgAgZ/7VDriO9/2xRa1KX3892LOvtvaVLjSFNYMT89Mngpb8feHUssM/96FhWT9ztqX97RSfeWtD06drRv8e3err9xqpO/ZnWO0e7MEA7CL/yvSCMsFB01P/hDdr/ZEm7tlX0/IP/yPMd/f5XSp9PZ3Tkh4w8nzEw0SwUHR0Y79KB8a5Ivp8eoIXV38r2uIABjIMBMEC8Y/q/V9A0avKCnAaiJB1X4cPszi3BFNDEKg/rOAAGCKk7D1qkJKcKTSBNIGCAGNZli3GNAYAm0Ep3jgGMd+eUAMAAQAlYFSz3EmmEr/+eFSNQAugBWP3Xsh0DAAYADBBbOKdAAoD1MZBzChwIMik6JQAwAGAAwACQ6CaQK4bawABRPGyBs3yUAIg6AZp5wFIzd98OYvWv3E4KkACAASCRBuAsHwkAcTsOEPSoyFm+mBkgqnIAERugmQcsNXP3baAHAAwAGAAwACR0CkjyI9xJAIiMq55WxOPjk89sftIhAQADAAbAAOyCcJkZnccAmGC+bY2AAYynAQYwngYYwHgaYADjaYABjKdB2uKPbmcT3DK8gQTACBiA3mCVjMA9gtqQ1SwDJIBh8SNNgNX+oe1e06PaHySAwVVPD4DwJADikwD0PiQAje9VCTCbn3S4Mji5wv//imASgHEXA1jHbSYmIBnU05UEIAEAA1AGTMZ/wwTABMkWnxIAjQ1ACiR39TedAJggmeK3VAIwQfLEb7kHwATJEv+amkBMkBzxpTr3CGoFzhrGV/hAxkDSIN7iX3cCkAjxFD00A2CGeIgOAAAg6V9oPbkG62WjSAAAAABJRU5ErkJggg==
