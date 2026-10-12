@@ -123,10 +123,10 @@ setup:
             json: !!omap
               - EchoTime: <EchoTime>
               - RepetitionTimeExcitation: <RepetitionTime>
-          - NonlinearGradientCorrection: <NonlinearGradientCorrection>
-          - MRAcquisitionType: <MRAcquisitionType>
-          - DwellTime: <DwellTime>
-          - FlipAngle: <FlipAngle>
+              - NonlinearGradientCorrection: <NonlinearGradientCorrection>
+              - MRAcquisitionType: <MRAcquisitionType>
+              - DwellTime: <DwellTime>
+              - FlipAngle: <FlipAngle>
               - MagneticFieldStrength: <MagneticFieldStrength>
               - Manufacturer: <Manufacturer>
     ''')
