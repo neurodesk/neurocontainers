@@ -14,7 +14,7 @@ tests:
     expected_output_contains: ${version}
 
   - name: Real CSV import cleaning and export
-    description: Use the shipped Java server and CSRF-protected API to import and transform a synthetic table; require every original and cleaned CSV cell exactly
+    description: Use the shipped Java server and CSRF-protected API to import and transform a synthetic table; require every original cell through the rows API and the cleaned CSV exactly
     command: |
       set -euo pipefail
       workspace="$(mktemp -d "${output_dir}/openrefine.XXXXXXXX")"
@@ -28,7 +28,12 @@ tests:
       cleanup() {
         test_status=$?
         trap - EXIT
-        if [ "$test_status" -ne 0 ]; then cat "$workspace/server.log"; fi
+        if [ "$test_status" -ne 0 ]; then
+          cat "$workspace/server.log"
+          for diagnostic in before.json before.cells after.csv; do
+            if [ -f "$workspace/$diagnostic" ]; then cat "$workspace/$diagnostic"; fi
+          done
+        fi
         if kill -0 -- "-$server_pid" 2>/dev/null; then
           kill -TERM -- "-$server_pid"
           for _ in $(seq 1 10); do
@@ -81,8 +86,18 @@ tests:
           --data-urlencode 'engine={"facets":[],"mode":"row-based"}' \
           "$base/command/core/export-rows/project.csv?project=$project&format=csv&csrf_token=$token"
       }
-      export_csv | tr -d '\r' > "$workspace/before.csv"
-      cmp "$workspace/input.csv" "$workspace/before.csv"
+      # The CSV writer trims whitespace. Inspect stored cells before cleaning.
+      curl -fsS --max-time 30 --get \
+        --data-urlencode "project=$project" \
+        --data-urlencode 'start=0' --data-urlencode 'limit=10' \
+        --data-urlencode 'engine={"facets":[],"mode":"row-based"}' \
+        "$base/command/core/get-rows" > "$workspace/before.json"
+      grep -Eq '"total"[[:space:]]*:[[:space:]]*3([,}])' "$workspace/before.json"
+      # These controlled fixture values contain no JSON escapes or quotes.
+      grep -oE '"v"[[:space:]]*:[[:space:]]*"[^"\\]*"' "$workspace/before.json" \
+        | sed 's/^"v"[[:space:]]*:[[:space:]]*"//; s/"$//' > "$workspace/before.cells"
+      printf '%s\n' sub-01 ' alpha ' 2 sub-02 beta 4 sub-03 ' alpha ' 6 > "$workspace/expected.cells"
+      cmp "$workspace/expected.cells" "$workspace/before.cells"
       curl -fsS --max-time 30 \
         --data-urlencode "project=$project" \
         --data-urlencode 'columnName=label' \
