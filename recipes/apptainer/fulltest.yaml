@@ -69,7 +69,8 @@ tests:
       test -s "$task_dir/nested.sif"
       apptainer sif list "$task_dir/nested.sif" > "$task_dir/sif-list.txt"
       grep -q 'FS (Squashfs' "$task_dir/sif-list.txt"
-      apptainer exec --userns --containall --no-home --cleanenv --pwd / "$task_dir/nested.sif" /bin/sh -c \
+      # Separate PID namespaces require unmasked /proc on the host runner.
+      apptainer exec --userns --contain --no-home --cleanenv --pwd / "$task_dir/nested.sif" /bin/sh -c \
         'IFS= read -r marker < /etc/neurocontainers-nested; printf "%s\n" "$marker"; uname -m' > "$task_dir/actual.txt"
       printf 'nested native execution\n%s\n' "$(uname -m)" > "$task_dir/expected.txt"
       cmp "$task_dir/expected.txt" "$task_dir/actual.txt"
