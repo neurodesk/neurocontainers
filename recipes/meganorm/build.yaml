@@ -104,6 +104,10 @@ build:
         # package, so the documented invocation could not be followed.
         - . "${MEGANORM_VENV}/bin/activate" && python {{ get_file("write_example_configs") }} /opt/meganorm/configs
         - chmod -R a+rX /opt/meganorm/configs
+        # Normalize permissions in the installation layer: doing this later
+        # copies the entire scientific environment into another image layer.
+        - chmod -R a+rX "${MEGANORM_VENV}"
+        - rm -rf /root/.cache/pip
 
     - copy:
         - meganorm
@@ -123,8 +127,7 @@ build:
         - chmod 755 /usr/local/bin/meganorm /usr/local/bin/meganorm-python
         - chmod 644 /opt/meganorm/selftest.py
         - meganorm-python -c "import meganorm; print('meganorm-python ok')"
-        - chmod -R a+rX "${MEGANORM_VENV}"
-        - rm -rf /root/.cache/pip /tmp/matplotlib-meganorm /tmp/cache-meganorm /tmp/numba-meganorm
+        - rm -rf /tmp/matplotlib-meganorm /tmp/cache-meganorm /tmp/numba-meganorm
 
     - workdir: /opt
 
