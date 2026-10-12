@@ -1,0 +1,11 @@
+--- a/topaz/denoising/models.py
++++ b/topaz/denoising/models.py
+@@ -612,7 +612,7 @@
+     # load model parameters/state
+     if pretrained:
+         print('# loading pretrained model:', name, file=log)
+-        pkg = __name__
++        pkg = __package__
+         path = f'../pretrained/denoise/{name}'
+         state_dict = load_state_dict_from_pkg(pkg, path)
+         model.load_state_dict(state_dict)
