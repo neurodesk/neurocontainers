@@ -617,6 +617,14 @@ tests:
     command: relion_python_topaz --help 2>&1
     expected_output_contains: "extract"
 
+  - name: Topaz bundled pretrained detector
+    description: Verify RELION can load Topaz's bundled resnet16 detector
+    command: >-
+      /opt/relion-${version}/python/bin/python -c
+      "from topaz.model.factory import load_model;
+      model = load_model('resnet16'); print(type(model).__name__)"
+    expected_output_contains: "LinearClassifier"
+
   - name: relion_python_modelangelo help
     description: Verify the ModelAngelo wrapper reaches its build command
     command: relion_python_modelangelo --help 2>&1
