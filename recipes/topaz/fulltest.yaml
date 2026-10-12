@@ -19,7 +19,7 @@ tests:
   - name: Version check
     description: Verify topaz binary runs and reports version
     command: topaz --version
-    expected_output_contains: "TOPAZ"
+    expected_output_contains: "${version}"
 
   - name: Main help
     description: Display main help message
