@@ -775,21 +775,26 @@ tests:
       python - <<'PYTHON'
       import json
       from pathlib import Path
-      import nibabel as nib
-      import numpy as np
+      import gzip
+      import struct
 
       root = Path('${output_dir}') / 'bids-phantom'
       folder = root / 'sub-phantom' / 'ses-01' / 'anat'
       images = list(folder.glob('*.nii.gz'))
       image = folder / 'sub-phantom_ses-01_T1w.nii.gz'
       assert images == [image], images
-      img = nib.load(image)
-      assert img.shape == (3, 2, 2), img.shape
-      assert img.get_data_dtype() == np.dtype('uint16')
-      expected = np.frombuffer((Path('${output_dir}') / 'dicom-phantom' / 'expected-pixels.bin').read_bytes(), dtype='<u2').reshape((3, 2, 2), order='F')
-      assert np.array_equal(img.get_fdata(), expected)
-      assert tuple(img.header.get_zooms()) == (1.5, 2.0, 3.0)
-      assert np.array_equal(img.affine, [[-1.5, 0, 0, 0], [0, 2, 0, -2], [0, 0, 3, 0], [0, 0, 0, 1]])
+      raw = gzip.decompress(image.read_bytes())
+      assert struct.unpack_from('<I', raw, 0) == (348,)
+      assert struct.unpack_from('<4h', raw, 40) == (3, 3, 2, 2)
+      assert struct.unpack_from('<2h', raw, 70) == (512, 16)
+      assert struct.unpack_from('<3f', raw, 80) == (1.5, 2.0, 3.0)
+      offset = int(struct.unpack_from('<f', raw, 108)[0])
+      assert struct.unpack_from('<2f', raw, 112) == (1.0, 0.0)
+      assert raw[123] & 7 == 2  # Spatial units are millimetres.
+      assert struct.unpack_from('<h', raw, 254)[0] > 0
+      assert struct.unpack_from('<12f', raw, 280) == (-1.5, 0, 0, 0, 0, 2, 0, -2, 0, 0, 3, 0)
+      expected = (Path('${output_dir}') / 'dicom-phantom' / 'expected-pixels.bin').read_bytes()
+      assert raw[offset:offset + len(expected)] == expected
       sidecar = json.loads(image.with_name('sub-phantom_ses-01_T1w.json').read_text())
       assert sidecar['SeriesDescription'] == 'Native conversion phantom'
       assert sidecar['ProtocolName'] == 'Verified phantom'
