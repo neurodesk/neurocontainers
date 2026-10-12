@@ -14,3 +14,39 @@ tests:
         conda run -p "$environment" python -c 'import pyedflib; print(pyedflib.__version__)' && exit 0
       done
       exit 1
+
+  - name: MNE environment preserves EDF signals and channel metadata
+    description: Write and reread a two-channel EDF through the compiled library, asserting exact digital samples.
+    command: |
+      set -eu
+      edf_environment=''
+      for candidate_environment in /opt/miniconda*/envs/mne-eeg-meg*; do
+        if test -x "$candidate_environment/bin/python"; then
+          edf_environment="$candidate_environment"
+          break
+        fi
+      done
+      test -n "$edf_environment"
+      conda run --no-capture-output -p "$edf_environment" python - <<'PY'
+      from pathlib import Path
+      from tempfile import TemporaryDirectory
+      import numpy as np
+      from pyedflib import highlevel
+
+      ramp = np.arange(256, dtype=np.int32)
+      samples = np.vstack([ramp - 128, 127 - ramp])
+      headers = highlevel.make_signal_headers(['Fz', 'Cz'], sample_frequency=128)
+      with TemporaryDirectory() as directory:
+          path = Path(directory) / 'signals.edf'
+          assert highlevel.write_edf(str(path), samples, headers, digital=True)
+          assert path.is_file() and path.stat().st_size > samples.nbytes // 2
+          restored, channel_headers, _ = highlevel.read_edf(str(path), digital=True)
+          np.testing.assert_array_equal(restored, samples)
+          assert [h['label'] for h in channel_headers] == ['Fz', 'Cz']
+          assert all(h['sample_frequency'] == 128 for h in channel_headers)
+          assert all(h['dimension'] == 'uV' for h in channel_headers)
+          physical, _, _ = highlevel.read_edf(str(path), digital=False)
+          assert physical.shape == (2, 256) and np.isfinite(physical).all()
+      print('EDF samples, channels and sample frequency verified')
+      PY
+    expected_output_contains: EDF samples, channels and sample frequency verified
