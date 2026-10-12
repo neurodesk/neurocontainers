@@ -75,6 +75,45 @@ tests:
   # ==========================================================================
   # NIBABEL TOOLS - nib-ls (List/Summary)
   # ==========================================================================
+  - name: Bruker parameter parsing
+    description: Parse a Bruker parameter file and assert dimensions, spacing, and orientation.
+    command: |
+      python3 - <<'PYTHON'
+      import json
+      from pathlib import Path
+      from brkraw.core.jcamp import parse_jcamp_from_path
+
+      output = Path('${output_dir}')
+      source = output / 'synthetic_method'
+      source.write_text("""##TITLE=ARM64 conversion metadata fixture
+      ##JCAMPDX=4.24
+      ##$PVM_Matrix=( 3 )
+      16 12 8
+      ##$PVM_SpatResol=( 3 )
+      0.25 0.5 1.0
+      ##$PVM_RepetitionTime=2000
+      ##$PVM_SPackArrGradOrient=( 3, 3 )
+      1 0 0 0 1 0 0 0 1
+      ##END=
+      """)
+      parsed = parse_jcamp_from_path(source)
+      assert parsed['exceptions'] == [], parsed['exceptions']
+      params = parsed['params']
+      assert params['$PVM_Matrix']['shape'] == (3,)
+      assert params['$PVM_Matrix']['data'] == [16, 12, 8]
+      assert params['$PVM_SpatResol']['data'] == [0.25, 0.5, 1.0]
+      assert params['$PVM_RepetitionTime']['data'] == 2000
+      assert params['$PVM_SPackArrGradOrient']['shape'] == (3, 3)
+      assert params['$PVM_SPackArrGradOrient']['data'] == [1, 0, 0, 0, 1, 0, 0, 0, 1]
+      result = output / 'parsed_method.json'
+      result.write_text(json.dumps(params))
+      assert json.loads(result.read_text())['$PVM_Matrix']['data'] == [16, 12, 8]
+      print('Bruker dimensions, spacing, and orientation verified')
+      PYTHON
+    expected_output_contains: "Bruker dimensions, spacing, and orientation verified"
+    validate:
+      - output_exists: ${output_dir}/parsed_method.json
+
   - name: nib-ls version
     description: Check nibabel nib-ls tool version
     command: nib-ls --version
