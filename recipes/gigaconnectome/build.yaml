@@ -104,6 +104,10 @@ files:
     url: https://github.com/SIMEXP/mist2templateflow/archive/61ac290bbbcde5a2bf2a7304c74ad69915710950.tar.gz
     sha256: 3d0c25d11ecf758b1278cfff16c04796f46625768ea59bf9f34d4ec8d5133266
 
+deploy:
+  bins:
+    - giga_connectome
+
 categories:
   - functional imaging
   - bids apps

@@ -859,8 +859,9 @@ tests:
 
   - name: giga_connectome invalid bids dir
     description: Verify proper error for non-existent BIDS directory
-    command: giga_connectome /nonexistent/path test_output participant 2>&1 || true
-    expected_output_contains: "error"
+    command: giga_connectome /nonexistent/path test_output participant --participant-label 01
+    expected_exit_code: 1
+    expected_output_contains: "BIDS root does not exist: /nonexistent/path"
 
   - name: nib-ls nonexistent file
     description: Verify proper error for nonexistent file
