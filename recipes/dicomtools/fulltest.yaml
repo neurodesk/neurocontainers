@@ -1097,16 +1097,16 @@ tests:
       dcmdump +P 0002,0010 "$root/big.dcm" | grep -F '=BigEndianExplicit'
       dcmdump +P 0002,0010 "$root/implicit.dcm" | grep -F '=LittleEndianImplicit'
       dcmdump +P 0002,0010 "$root/restored.dcm" | grep -F '=LittleEndianExplicit'
-      for name in big implicit restored; do
-        directory="$root/$name-pixels"
+      for encoding_mode in big implicit restored; do
+        directory="$root/$encoding_mode-pixels"
         mkdir -p "$directory"
-        dcmdump +P 0028,0010 +P 0028,0011 "$root/$name.dcm" > "$root/$name-shape.txt"
-        grep -Eq '\(0028,0010\) US 2[[:space:]]' "$root/$name-shape.txt"
-        grep -Eq '\(0028,0011\) US 3[[:space:]]' "$root/$name-shape.txt"
+        dcmdump +P 0028,0010 +P 0028,0011 "$root/$encoding_mode.dcm" > "$root/$encoding_mode-shape.txt"
+        grep -Eq '\(0028,0010\) US 2[[:space:]]' "$root/$encoding_mode-shape.txt"
+        grep -Eq '\(0028,0011\) US 3[[:space:]]' "$root/$encoding_mode-shape.txt"
         dcmdump +P 0008,0018 "$original" > "$root/original-uid.txt"
-        dcmdump +P 0008,0018 "$root/$name.dcm" > "$root/$name-uid.txt"
-        cmp "$root/original-uid.txt" "$root/$name-uid.txt"
-        dcmdump +W "$directory" "$root/$name.dcm" > "$root/$name-dump.txt"
+        dcmdump +P 0008,0018 "$root/$encoding_mode.dcm" > "$root/$encoding_mode-uid.txt"
+        cmp "$root/original-uid.txt" "$root/$encoding_mode-uid.txt"
+        dcmdump +W "$directory" "$root/$encoding_mode.dcm" > "$root/$encoding_mode-dump.txt"
         set -- "$directory"/*.raw
         test "$#" = 1
         test -f "$1"
