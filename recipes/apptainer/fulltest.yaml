@@ -4,11 +4,14 @@
 name: apptainer
 version: 1.5.3
 
+test_data:
+  output_dir: test_output/apptainer
+
 setup:
   script: |
     #!/usr/bin/env bash
     set -e
-    mkdir -p test_output/apptainer
+    mkdir -p ${output_dir}
 
 tests:
   - name: apptainer version
