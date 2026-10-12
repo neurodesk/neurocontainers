@@ -24,6 +24,34 @@ setup:
     mkdir -p test_output
 
 tests:
+  - name: Binarize a segmentation image and preserve its affine
+    description: Exercise fsqc image processing and verify the saved label mask.
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+      from tempfile import TemporaryDirectory
+      import nibabel as nib
+      import numpy as np
+      from fsqc.fsqcUtils import binarizeImage
+
+      data = np.arange(24, dtype=np.int16).reshape(2, 3, 4)
+      affine = np.diag([1.5, 2.0, 2.5, 1.0])
+      affine[:3, 3] = [-3.0, 4.0, 5.0]
+      with TemporaryDirectory() as directory:
+          source = Path(directory) / 'segmentation.nii.gz'
+          target = Path(directory) / 'mask.nii.gz'
+          nib.save(nib.Nifti1Image(data, affine), source)
+          binarizeImage(str(source), str(target), match=[2, 7, 19])
+          assert target.is_file() and target.stat().st_size > 0
+          result = nib.load(target)
+          np.testing.assert_array_equal(result.get_fdata(), np.isin(data, [2, 7, 19]))
+          np.testing.assert_array_equal(result.affine, affine)
+          assert result.get_data_dtype() == np.dtype('uint8')
+          assert np.count_nonzero(result.get_fdata()) == 3
+      print('FSQC segmentation mask and affine verified')
+      PY
+    expected_output_contains: 'FSQC segmentation mask and affine verified'
+
   # ==========================================================================
   # VERSION AND SYSTEM INFORMATION
   # ==========================================================================
