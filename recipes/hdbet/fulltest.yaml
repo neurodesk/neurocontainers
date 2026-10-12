@@ -81,21 +81,24 @@ tests:
       assert nib.aff2axcodes(oriented.affine) == ('L', 'A', 'S')
       input_file = work / 'input.nii.gz'
       output_file = work / 'brain.nii.gz'
-      nib.save(oriented, input_file)
+      header = oriented.header.copy()
+      header.set_data_dtype(np.float32)
+      nib.save(nib.Nifti1Image(oriented.get_fdata(dtype=np.float32), oriented.affine, header), input_file)
+      reference = nib.load(input_file)
       subprocess.run([
           'hd-bet', '-i', str(input_file), '-o', str(output_file),
           '-device', 'cpu', '--disable_tta', '--save_bet_mask',
       ], check=True)
       mask_image = nib.load(work / 'brain_bet.nii.gz')
       brain_image = nib.load(output_file)
-      assert mask_image.shape == brain_image.shape == oriented.shape
+      assert mask_image.shape == brain_image.shape == reference.shape
       # NIfTI stores affine fields at float32 precision; SimpleITK rewrites
       # direction/spacing, so allow only a small serialization roundoff.
-      np.testing.assert_allclose(mask_image.affine, oriented.affine, rtol=0, atol=1e-5)
-      np.testing.assert_allclose(brain_image.affine, oriented.affine, rtol=0, atol=1e-5)
+      np.testing.assert_allclose(mask_image.affine, reference.affine, rtol=0, atol=1e-5)
+      np.testing.assert_allclose(brain_image.affine, reference.affine, rtol=0, atol=1e-5)
       mask = mask_image.get_fdata()
       brain = brain_image.get_fdata()
-      values = oriented.get_fdata()
+      values = reference.get_fdata()
       assert np.isfinite(mask).all() and np.isfinite(brain).all()
       assert set(np.unique(mask)) == {0., 1.}, np.unique(mask)
       assert np.count_nonzero(brain) > 0
