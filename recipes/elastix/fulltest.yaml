@@ -1,5 +1,5 @@
 # elastix container test suite
-# Tests for elastix v5.1.0 - medical image registration toolbox
+# Tests for elastix v5.3.1 - medical image registration toolbox
 #
 # elastix is open source software based on ITK for rigid and nonrigid
 # registration of images. It provides a modular design allowing users to
@@ -663,17 +663,20 @@ tests:
   # ==========================================================================
   - name: Missing fixed image error
     description: Verify proper error when fixed image is missing
-    command: mkdir -p test_output/elastix/error_test && elastix -m ${t2} -out test_output/elastix/error_test -p test_output/params/quick_rigid.txt 2>&1 || true
+    command: mkdir -p test_output/elastix/error_test && elastix -m ${t2} -out test_output/elastix/error_test -p test_output/params/quick_rigid.txt 2>&1
+    expected_exit_code: 1
     expected_output_contains: "-f"
 
   - name: Missing parameter file error
     description: Verify proper error when parameter file is missing
-    command: mkdir -p test_output/elastix/error_test && elastix -f ${t1w} -m ${t2} -out test_output/elastix/error_test 2>&1 || true
+    command: mkdir -p test_output/elastix/error_test && elastix -f ${t1w} -m ${t2} -out test_output/elastix/error_test 2>&1
+    expected_exit_code: 1
     expected_output_contains: "-p"
 
   - name: Transformix missing transform parameters error
     description: Verify proper error when transform parameters are missing
-    command: mkdir -p test_output/transformix/error_test && transformix -in ${t2} -out test_output/transformix/error_test 2>&1 || true
+    command: mkdir -p test_output/transformix/error_test && transformix -in ${t2} -out test_output/transformix/error_test 2>&1
+    expected_exit_code: 1
     expected_output_contains: "-tp"
 
 cleanup:
