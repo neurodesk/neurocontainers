@@ -172,15 +172,13 @@ files:
       Pkg.add("ArgParse")
       Pkg.add("FFTW")
       Pkg.add("IJulia")
-      if Sys.ARCH == :aarch64
-          # ZMQ's socket workload segfaults during precompilation on Julia 1.13 ARM64.
-          # Keep normal package compilation and runtime messaging enabled.
-          project_path = Base.active_project()
-          project = TOML.parsefile(project_path)
-          get!(project, "extras", Dict())["ZMQ"] = "c2297ded-f4af-51ae-bb23-16f91089e4e1"
-          get!(project, "preferences", Dict())["ZMQ"] = Dict("precompile_workload" => false)
-          open(io -> TOML.print(io, project), project_path, "w")
-      end
+      # ZMQ's socket workload segfaults during Julia 1.13 precompilation.
+      # Keep normal package compilation and runtime messaging enabled.
+      project_path = Base.active_project()
+      project = TOML.parsefile(project_path)
+      get!(project, "extras", Dict())["ZMQ"] = "c2297ded-f4af-51ae-bb23-16f91089e4e1"
+      get!(project, "preferences", Dict())["ZMQ"] = Dict("precompile_workload" => false)
+      open(io -> TOML.print(io, project), project_path, "w")
 
   - name: code
     contents: |-
