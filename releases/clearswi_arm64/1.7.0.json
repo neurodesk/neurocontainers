@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "clearswi_arm64 1.7.0": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "phase processing",
+    "structural imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "clearswi"
+}
