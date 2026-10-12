@@ -175,7 +175,7 @@ tomli-w==1.2.0
 toolz==1.2.0
 torchvision==0.22.1+cu128
 tornado==6.5.10
-tqdm==4.65.0
+tqdm==4.66.3
 traitlets==5.16.1
 triton==3.3.1
 tsnecuda==3.0.1
