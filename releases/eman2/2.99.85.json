@@ -1,0 +1,22 @@
+{
+  "apps": {
+    "eman2 2.99.85": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "e2projectmanagerGUI-eman2 2.99.85": {
+      "version": "20261012",
+      "exec": "e2projectmanager.py",
+      "apptainer_args": []
+    },
+    "e2displayGUI-eman2 2.99.85": {
+      "version": "20261012",
+      "exec": "e2display.py",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "cryo EM"
+  ]
+}
