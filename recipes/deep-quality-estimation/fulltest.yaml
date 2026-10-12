@@ -103,10 +103,12 @@ tests:
           -fla fla.nii.gz -s seg.nii.gz --json -o score.json --verbose 2>verbose.log
       grep -q 'Using device' verbose.log && echo "verbose-ok"
       python -c "
-      import json
+      import json, math
       d = json.load(open('score.json'))
       assert isinstance(d['mean_score'], float), d
       assert len(d['view_scores']) == 3, d
+      assert math.isfinite(d['mean_score']), d
+      assert all(math.isfinite(score) for score in d['view_scores']), d
       print('rated-ok', round(d['mean_score'], 2))
       "
     expected_output_contains: "rated-ok"
