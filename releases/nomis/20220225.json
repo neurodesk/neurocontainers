@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "nomis 20220225": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "statistics"
+  ]
+}
