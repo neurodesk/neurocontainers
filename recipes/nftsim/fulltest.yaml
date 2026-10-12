@@ -236,10 +236,10 @@ tests:
       - output_exists: ${output_dir}/plasticity-network.output
 
   - name: PAS plasticity
-    description: Run PAS plasticity model (fCaP coupling type not available in this version)
+    description: Reject bundled PAS configuration because fCaP coupling is unavailable in this version
     command: nftsim -i ${plasticity_pas} -o test_output/plasticity-pas.output 2>&1
-    ignore_exit_code: true
-    expected_output_contains: "fCaP"
+    expected_exit_code: 1
+    expected_output_contains: "Invalid coupling type 'fCaP'"
 
   - name: Basic plasticity
     description: Run basic plasticity configuration
