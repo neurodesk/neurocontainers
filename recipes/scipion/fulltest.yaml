@@ -1,0 +1,64 @@
+name: scipion
+version: 3.8.3
+upstream_version: 3.8.3
+pyworkflow_version: 3.11.7
+pwem_version: 3.11.1
+tests:
+  - name: Scipion release
+    command: scipion3 version
+    expected_output_contains: Scipion v${upstream_version}
+  - name: pyworkflow release
+    command: scipion3 version
+    expected_output_contains: pyworkflow - ${pyworkflow_version}
+  - name: pwem release
+    command: scipion3 version
+    expected_output_contains: pwem - ${pwem_version}
+  - name: projects fall back to a writable directory without a home
+    command: env -u SCIPION_USER_DATA HOME=/nonexistent TMPDIR=/tmp scipion3 printenv 2>/dev/null | grep '^SCIPION_USER_DATA='
+    expected_output_contains: SCIPION_USER_DATA="/tmp/ScipionUserData-
+  - name: protocol catalogue
+    command: env HOME=/nonexistent scipion3 protocols 2>/dev/null
+    expected_output_contains: ProtImportVolumes
+  - name: Tk GUI toolkit loads
+    command: |-
+      script=$(mktemp)
+      cat > "$script" <<'PY'
+      import tkinter
+      import pyworkflow.gui.project
+      print('Tk', tkinter.Tcl().eval('info patchlevel'), 'ready')
+      PY
+      env HOME=/nonexistent scipion3 python "$script"
+      rm -f "$script"
+    expected_output_contains: ready
+  - name: headless project runs an import protocol
+    command: |-
+      work=$(mktemp -d)
+      cat > "$work/smoke.py" <<'PY'
+      import os
+      import mrcfile
+      import numpy as np
+      from pyworkflow.project import Manager
+      from pwem.protocols import ProtImportVolumes
+
+      work = os.path.dirname(os.path.abspath(__file__))
+      volume = os.path.join(work, 'volume.mrc')
+      with mrcfile.new(volume) as mrc:
+          mrc.set_data(np.arange(24 * 20 * 16, dtype=np.float32).reshape(16, 20, 24))
+          mrc.voxel_size = 1.5
+      project = Manager().createProject('neurodesk_smoke')
+      os.chdir(project.getPath())
+      protocol = project.newProtocol(ProtImportVolumes, filesPath=volume, samplingRate=1.5)
+      project.launchProtocol(protocol, wait=True)
+      protocol = project.getProtocol(protocol.getObjId())
+      assert protocol.isFinished(), protocol.getStatus()
+      output = protocol.outputVolume
+      assert output.getDim() == (24, 20, 16), output.getDim()
+      assert output.getSamplingRate() == 1.5, output.getSamplingRate()
+      assert project.getPath().startswith(os.environ['SCIPION_USER_DATA'])
+      print('imported volume', output.getDim(), 'at', output.getSamplingRate(), 'A/px')
+      PY
+      env HOME=/nonexistent SCIPION_USER_DATA="$work/userdata" scipion3 python "$work/smoke.py"
+      status=$?
+      rm -rf "$work"
+      exit $status
+    expected_output_contains: imported volume (24, 20, 16) at 1.5 A/px

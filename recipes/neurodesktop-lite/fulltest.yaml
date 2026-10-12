@@ -5,12 +5,12 @@
 name: neurodesktop-lite
 version: "20260428.1.0"
 yarn_version: "1.22.22"
-claude_version: "2.1.292"
+claude_version: "2.1.296"
 apptainer_version: "1.5.4"
 ipywidgets_version: 8.1.9
 jupyterlab_widgets_version: 3.0.17
 nb_conda_kernels_version: 2.5.1
-nextflow_tag: v26.04.6
+nextflow_tag: "v26.04.7"
 nf_test_version: 0.9.5
 default_timeout: 120
 
