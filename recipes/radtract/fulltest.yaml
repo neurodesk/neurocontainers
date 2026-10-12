@@ -31,7 +31,7 @@ tests:
         affine = np.diag([2.0, 1.0, 1.0, 1.0])
         affine[:3, 3] = [4, -2, 6]
         # A quantitative density reference must retain physical segment lengths.
-    reference = nib.Nifti1Image(np.zeros((10, 5, 5), dtype=np.float32), affine)
+        reference = nib.Nifti1Image(np.zeros((10, 5, 5), dtype=np.float32), affine)
         ref_path = work / "reference.nii.gz"
         nib.save(reference, ref_path)
         fibers = [nib.affines.apply_affine(affine, [[1, y, 2], [end, y, 2]]).astype(np.float32)
@@ -108,7 +108,7 @@ tests:
         assert set(table["feature_type"]) == {"firstorder"}
         assert set(table["extractor"]) == {"pyradiomics"}
         # The upstream parser preserves double quotes from __version__ in this CSV field.
-    assert {json.loads(v) for v in table["radtract_version"]} == {version("radtract")}
+        assert {json.loads(v) for v in table["radtract_version"]} == {version("radtract")}
         assert set(table["map"]) == {str(map_path)} and set(table["parcellation"]) == {str(parcel_path)}
         assert np.isfinite(table["value"].to_numpy()).all()
         expected = {"GLOBAL": {"Mean": 15, "Minimum": 10, "Maximum": 20},
