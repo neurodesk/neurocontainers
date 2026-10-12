@@ -15,7 +15,7 @@ tests:
 
   - name: installer and service prerequisites are present
     command: |-
-      for tool in bash curl tar gzip zip unzip ss getent ps pkill lsof ssh rsync realpath sed; do
+      for tool in bash curl tar gzip zip unzip ss getent ping ps pkill lsof ssh rsync realpath sed; do
         command -v "$tool" >/dev/null || { echo "missing $tool"; exit 1; }
       done
       getent hosts localhost >/dev/null || { echo "localhost does not resolve"; exit 1; }

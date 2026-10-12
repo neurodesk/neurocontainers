@@ -155,6 +155,10 @@ cmd_install() {
   [[ "$port" =~ ^[0-9]+$ ]] && (( port >= 1024 && port <= 65525 )) ||
     die "invalid --port '$port'; choose 1024-65525 so that ten consecutive ports are available"
   getent hosts "$hostname" >/dev/null || die "hostname '$hostname' does not resolve inside the container"
+  # CryoSPARC v4 installers check the hostname with ping, which needs the
+  # host to allow unprivileged ICMP (sysctl net.ipv4.ping_group_range).
+  ping -c 1 -W 2 "$hostname" >/dev/null 2>&1 ||
+    note "warning: 'ping $hostname' fails here; CryoSPARC v4 installers may stop at their hostname check (ask your administrator about net.ipv4.ping_group_range)"
   if ! $master_only; then
     [[ -n "$email" ]] || die "--email is required to create the initial CryoSPARC user"
     command -v nvidia-smi >/dev/null && nvidia-smi -L >/dev/null 2>&1 ||

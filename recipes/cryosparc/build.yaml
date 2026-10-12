@@ -39,6 +39,7 @@ build:
         - zip
         - unzip
         - iproute2
+        - iputils-ping
         - procps
         - psmisc
         - lsof
