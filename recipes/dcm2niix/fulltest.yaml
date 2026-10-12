@@ -41,6 +41,71 @@ test_data:
   output_dir: test_output
 
 setup:
+  host_script: |
+    python3 - <<'PYTHON'
+    from pathlib import Path
+    import struct
+
+    root = Path('${output_dir}') / 'dicom-phantom'
+    source = root / 'dicom'
+    source.mkdir(parents=True, exist_ok=True)
+    (root / 'converted').mkdir(exist_ok=True)
+
+    def element(group, tag, vr, value):
+        if vr == 'US':
+            raw = struct.pack('<H', value)
+        elif isinstance(value, bytes):
+            raw = value
+        else:
+            raw = str(value).encode('ascii')
+        if len(raw) % 2:
+            raw += b'\0' if vr in ('UI', 'OB', 'OW') else b' '
+        prefix = struct.pack('<HH', group, tag) + vr.encode('ascii')
+        if vr in ('OB', 'OW'):
+            return prefix + b'\0\0' + struct.pack('<I', len(raw)) + raw
+        return prefix + struct.pack('<H', len(raw)) + raw
+
+    sop = '1.2.840.10008.5.1.4.1.1.4'
+    for index in range(2):
+        uid = '1.2.826.0.1.3680043.10.543.1.' + str(index + 1)
+        meta = b''.join([
+            element(2, 1, 'OB', b'\0\1'),
+            element(2, 2, 'UI', sop),
+            element(2, 3, 'UI', uid),
+            element(2, 0x10, 'UI', '1.2.840.10008.1.2.1'),
+            element(2, 0x12, 'UI', '1.2.826.0.1.3680043.10.543'),
+        ])
+        # Synthetic MR storage, explicit VR little endian, unsigned16-bit pixels.
+        records = [
+            (8, 8, 'CS', 'ORIGINAL\\PRIMARY\\M'),
+            (8, 0x16, 'UI', sop), (8, 0x18, 'UI', uid),
+            (8, 0x20, 'DA', '20260101'), (8, 0x30, 'TM', '120000'),
+            (8, 0x60, 'CS', 'MR'), (8, 0x70, 'LO', 'Synthetic'),
+            (8, 0x103e, 'LO', 'Native conversion phantom'),
+            (0x10, 0x10, 'PN', 'Synthetic^Phantom'), (0x10, 0x20, 'LO', 'SYNTHETIC'),
+            (0x18, 0x50, 'DS', '3'), (0x18, 0x80, 'DS', '1000'),
+            (0x18, 0x81, 'DS', '10'), (0x18, 0x87, 'DS', '3'),
+            (0x18, 0x88, 'DS', '3'),
+            (0x20, 0xd, 'UI', '1.2.826.0.1.3680043.10.543.2'),
+            (0x20, 0xe, 'UI', '1.2.826.0.1.3680043.10.543.3'),
+            (0x20, 0x11, 'IS', '1'), (0x20, 0x13, 'IS', str(index + 1)),
+            (0x20, 0x32, 'DS', '0\\0\\' + str(index * 3)),
+            (0x20, 0x37, 'DS', '1\\0\\0\\0\\1\\0'),
+            (0x20, 0x52, 'UI', '1.2.826.0.1.3680043.10.543.4'),
+            (0x28, 2, 'US', 1), (0x28, 4, 'CS', 'MONOCHROME2'),
+            (0x28, 0x10, 'US', 2), (0x28, 0x11, 'US', 3),
+            (0x28, 0x30, 'DS', '2\\1.5'),
+            (0x28, 0x100, 'US', 16), (0x28, 0x101, 'US', 16),
+            (0x28, 0x102, 'US', 15), (0x28, 0x103, 'US', 0),
+            (0x7fe0, 0x10, 'OW', struct.pack('<6H', *range(index * 6 + 1, index * 6 + 7))),
+        ]
+        payload = b''.join(element(*record) for record in records)
+        (source / f'slice-{index}.dcm').write_bytes(
+            bytes(128) + b'DICM' + element(2, 0, 'UL', struct.pack('<I', len(meta))) + meta + payload
+        )
+    # NIfTI y-axis row flip preserves the DICOM physical orientation.
+    (root / 'expected-pixels.bin').write_bytes(struct.pack('<12H', 4,5,6,1,2,3,10,11,12,7,8,9))
+    PYTHON
   script: |
     #!/usr/bin/env bash
     set -e
@@ -645,6 +710,37 @@ tests:
     description: Test conversion with maximum verbosity and all features
     command: dcm2niix -b y -ba n -v 2 --progress y -o test_output/dcm2niix ${anat_dir} 2>&1 || true
     expected_output_contains: "Unable to find any DICOM"
+
+
+  - name: Convert a synthetic MR series with exact pixels and physical geometry
+    description: Convert two real DICOM slices through internal gzip and verify NIfTI voxel values, dimensions, RAS affine and BIDS timing units
+    command: |
+      set -euo pipefail
+      root="${output_dir}/dicom-phantom"
+      dcm2niix -b y -z i -f phantom -o "$root/converted" "$root/dicom"
+      image="$root/converted/phantom.nii"
+      gzip -dc "$image.gz" > "$image"
+      test "$(od -An -v -tu4 -j0 -N4 "$image" | xargs)" = "348"
+      test "$(od -An -v -tu2 -j40 -N8 "$image" | xargs)" = "3 3 2 2"
+      test "$(od -An -v -tu2 -j70 -N4 "$image" | xargs)" = "512 16"
+      od -An -v -tf4 -j80 -N12 "$image" | awk 'NF { ok = (NF == 3 && $1 == 1.5 && $2 == 2 && $3 == 3) } END { exit !ok }'
+      od -An -v -tf4 -j108 -N4 "$image" | awk 'NF { ok = (NF == 1 && $1 == 352) } END { exit !ok }'
+      od -An -v -tf4 -j280 -N48 "$image" | awk '
+        BEGIN { split("-1.5 0 0 0 0 2 0 -2 0 0 3 0", expected, " ") }
+        { for (i = 1; i <= NF; i++) { n++; if (($i + 0) != (expected[n] + 0)) exit 1 } }
+        END { if (n != 12) exit 1 }
+      '
+      dd if="$image" of="$root/actual-pixels.bin" bs=1 skip=352 status=none
+      cmp "$root/expected-pixels.bin" "$root/actual-pixels.bin"
+      sidecar="$root/converted/phantom.json"
+      grep -Eq '"Modality":[[:space:]]*"MR"' "$sidecar"
+      grep -Eq '"MagneticFieldStrength":[[:space:]]*3,' "$sidecar"
+      grep -Eq '"EchoTime":[[:space:]]*0[.]01,' "$sidecar"
+      grep -Eq '"RepetitionTime":[[:space:]]*1,' "$sidecar"
+      echo "Synthetic DICOM conversion pixels, geometry and BIDS timing verified"
+    expected_output_contains: Synthetic DICOM conversion pixels, geometry and BIDS timing verified
+    expected_exit_code: 0
+    timeout: 120
 
 cleanup:
   script: |
