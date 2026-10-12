@@ -46,6 +46,60 @@ tests:
     expected_output_contains: "TRUE"
     expected_exit_code: 0
 
+
+  - name: execute R through the registered Jupyter kernel
+    description: Start the IR kernel and require an exact arithmetic result over the real Jupyter protocol
+    command: |
+      python - <<'PYTHON'
+      import os
+      import tempfile
+      import time
+      from jupyter_client import KernelManager
+
+      with tempfile.TemporaryDirectory(dir='${output_dir}') as work:
+          env = dict(os.environ, JUPYTER_RUNTIME_DIR=work)
+          manager = KernelManager(kernel_name='ir', connection_file=os.path.join(work, 'kernel.json'))
+          client = None
+          try:
+              manager.start_kernel(cwd=work, env=env)
+              client = manager.client()
+              client.start_channels()
+              client.wait_for_ready(timeout=60)
+              request = client.execute(
+                  'x <- c(1, 2, 3, 4); cat("R kernel sum=", sum(x), "; mean=", mean(x), "\\n", sep="")',
+                  allow_stdin=False, store_history=False, stop_on_error=True,
+              )
+              stdout = []
+              deadline = time.monotonic() + 45
+              while True:
+                  remaining = deadline - time.monotonic()
+                  assert remaining > 0, 'R kernel did not finish execution'
+                  message = client.get_iopub_msg(timeout=remaining)
+                  if message['parent_header'].get('msg_id') != request:
+                      continue
+                  kind = message['header']['msg_type']
+                  content = message['content']
+                  assert kind != 'error', content
+                  if kind == 'stream' and content['name'] == 'stdout':
+                      stdout.append(content['text'])
+                  if kind == 'status' and content['execution_state'] == 'idle':
+                      break
+              reply = client.get_shell_msg(timeout=10)
+              assert reply['parent_header'].get('msg_id') == request, reply
+              assert reply['content']['status'] == 'ok', reply
+              result = ''.join(stdout)
+              assert result == 'R kernel sum=10; mean=2.5\n', repr(result)
+              print('Jupyter IR kernel arithmetic verified')
+          finally:
+              if manager.has_kernel:
+                  manager.shutdown_kernel(now=True)
+              if client is not None:
+                  client.stop_channels()
+      PYTHON
+    expected_output_contains: Jupyter IR kernel arithmetic verified
+    expected_exit_code: 0
+    timeout: 180
+
 cleanup:
   script: |
     #!/usr/bin/env bash
