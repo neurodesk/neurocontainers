@@ -2,6 +2,7 @@ name: gingerale
 version: "4.0.0"
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: |-
     GingerALE performs meta-analyses via the activation likelihood estimation (ALE) method. It also includes the transforms for icbm2tal conversions.
