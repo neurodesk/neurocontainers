@@ -39,6 +39,52 @@ tests:
     command: octave --no-gui --eval "addpath(genpath('/opt/cosmomvpa-1.1.0/CoSMoMVPA')); cosmo_wtf();"
     expected_output_contains: "warning: Using cosmo_config"
 
+  - name: Exact held-out LDA classification
+    description: Verify real classification and training-only normalization across four balanced folds.
+    command: |
+      set -e
+      work="$(mktemp -d "$(pwd)/test_output/cosmomvpa/classification.XXXXXX")"
+      cat > "$work/classification.m" <<'OCTAVE'
+      addpath(genpath('/opt/cosmomvpa-1.1.0/CoSMoMVPA'));
+      ds.samples = [-10.3; 9.7; -10.1; 9.9; -9.9; 10.1; -9.7; 10.3];
+      ds.sa.targets = repmat([1; 2], 4, 1);
+      ds.sa.chunks = kron((1:4)', ones(2, 1));
+      partitions = cosmo_nfold_partitioner(ds);
+      assert(numel(partitions.train_indices) == 4);
+      assert(numel(partitions.test_indices) == 4);
+      for fold = 1:4
+          train = partitions.train_indices{fold};
+          test = partitions.test_indices{fold};
+          assert(numel(train) == 6 && numel(test) == 2);
+          assert(isempty(intersect(train, test)));
+          assert(all(ds.sa.chunks(test) == fold));
+          assert(all(ds.sa.chunks(train) ~= fold));
+      end
+      for normalize = 0:1
+          opt = struct();
+          if normalize
+              opt.normalization = 'zscore';
+          end
+          [predictions, accuracy] = cosmo_crossvalidate(ds, @cosmo_classify_lda, partitions, opt);
+          assert(isequal(size(predictions), [8, 4]));
+              assert(all(sum(isfinite(predictions), 2) == 1));
+          for fold = 1:4
+              mask = ds.sa.chunks == fold;
+              assert(isequal(predictions(mask, fold), ds.sa.targets(mask)));
+              assert(all(isnan(predictions(~mask, fold))));
+          end
+          % Matrix right division of fold counts may round the redundant metric.
+          % Every held-out class label above still requires exact equality.
+          fprintf('Reported accuracy: %.17g\n', accuracy);
+          assert(isscalar(accuracy) && isfinite(accuracy));
+          assert(abs(accuracy - 1) <= 8 * eps(1));
+      end
+      fprintf('Exact LDA predictions verified for all four held-out chunks, raw and zscore\n');
+      OCTAVE
+      octave --no-gui --quiet "$work/classification.m"
+    expected_output_contains: "Exact LDA predictions verified for all four held-out chunks, raw and zscore"
+    timeout: 120
+
 cleanup:
   script: |
     #!/usr/bin/env bash
