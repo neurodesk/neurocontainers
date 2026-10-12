@@ -1061,6 +1061,7 @@ tests:
 
   - name: CLI phase scaling types
     description: All five values of --phase-scaling-type, including negativetanh
+    timeout: 300
     command: |
       D=$(cat ${output_dir}/datadir)
       for s in tanh negativetanh positive negative triangular; do
