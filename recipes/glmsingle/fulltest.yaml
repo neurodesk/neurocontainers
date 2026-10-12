@@ -780,6 +780,63 @@ tests:
     command: "python3 -c \"from glmsingle.design.construct_stim_matrices import construct_stim_matrices; print('construct_stim_matrices function available')\""
     expected_output_contains: "available"
 
+
+  - name: Fit known single-trial amplitudes and save both GLM models
+    description: Fit two synthetic runs with known responses, checking amplitudes, finite R2 and saved estimates.
+    command: |
+      python3 - <<'PYTHON'
+      from pathlib import Path
+      import os
+      import tempfile
+      import numpy as np
+      from glmsingle.glmsingle import GLM_single
+
+      # Four isolated trials per run; a fixed unit-peak HRF produces known amplitudes.
+      amplitude = np.arange(1, 9, dtype=np.float32).reshape(2, 2, 2)
+      hrf = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+      designs, runs = [], []
+      for shift in (0, 4):
+          design = np.zeros((80, 1), dtype=np.float32)
+          design[np.array([6, 26, 46, 66]) + shift, 0] = 1
+          response = np.convolve(design[:, 0], hrf)[:80]
+          # This zero-mean residual is orthogonal to every trial regressor/intercept.
+          residual = np.zeros(80, dtype=np.float32)
+          residual[1], residual[3] = 0.25, -0.25
+          # Use normalized signals to keep float32 fitting well conditioned.
+          data = amplitude[..., None] * response + residual
+          designs.append(design)
+          runs.append(data.astype(np.float32))
+      params = {
+          'wantlibrary': 0, 'wantglmdenoise': 0, 'wantfracridge': 0,
+          'wantfileoutputs': [1, 1, 0, 0], 'wantmemoryoutputs': [1, 1, 0, 0],
+          'hrftoassume': hrf, 'wantpercentbold': 0, 'maxpolydeg': [[0], [0]],
+          'brainR2': 0.0, 'pcR2cutoff': 0.0,
+      }
+      root = Path('${output_dir}').resolve()
+      root.mkdir(parents=True, exist_ok=True)
+      with tempfile.TemporaryDirectory(prefix='known-glm-', dir=root) as work:
+          os.chdir(work)
+          output = Path(work) / 'model'
+          result = GLM_single(params).fit(designs, runs, 1.0, 1.0, outputdir=str(output))
+          print('Result keys',result.keys())
+          for key, expected in [('typea', amplitude[..., None]), ('typeb', np.repeat(amplitude[..., None], 8, axis=-1))]:
+              model = result[key]
+              print(key,[(k,np.asarray(v).shape) for k,v in model.items()])
+              beta = np.asarray(model['betasmd'])
+              assert beta.shape == expected.shape, (key, beta.shape, expected.shape)
+              assert np.isfinite(beta).all()
+              # Published implementation stores float32 estimates; allow 32 float32 rounding epsilons.
+              np.testing.assert_allclose(beta, expected, rtol=32*np.finfo(np.float32).eps, atol=0)
+              quality = np.asarray(model['onoffR2'] if key=='typea' else model['R2'])
+              assert np.isfinite(quality).all() and np.all(quality > 95) and np.all(quality <= 100)
+              filename = 'TYPEA_ONOFF.npy' if key=='typea' else 'TYPEB_FITHRF.npy'
+              saved = np.load(output / filename, allow_pickle=True).item()
+              assert np.array_equal(saved['betasmd'], beta)
+          print('Known GLM amplitudes, finite fits and saved estimates verified')
+      PYTHON
+    expected_output_contains: "Known GLM amplitudes, finite fits and saved estimates verified"
+    timeout: 300
+
 cleanup:
   script: |
     #!/usr/bin/env bash
