@@ -1,5 +1,6 @@
 name: deepisles
 version: "1.1.0"
+upstream_version: '1.1'
 default_timeout: 60
 tests:
 - name: Python imports gdown
@@ -303,4 +304,34 @@ tests:
   command: case "$PATH" in /opt/miniconda/envs/deepisles/bin:*) exit 0;; *) exit 1;; esac
   expected_exit_code: 0
 
-upstream_version: '1.1'
+- name: deepisles CLI is on PATH
+  command: deepisles --help
+  expected_output_contains: "--dwi"
+- name: GPU probe tolerates a missing nvidia-smi
+  command: cd /opt/DeepIsles && PATH=/opt/miniconda/envs/deepisles/bin python -c 'from src.utils import check_gpu_memory; assert check_gpu_memory() is False'
+  expected_exit_code: 0
+- name: HD-BET parameters are bundled
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import os; from HD_BET.paths import folder_with_parameter_files as d; assert os.path.isfile(os.path.join(d, "0.model")), d'
+  expected_exit_code: 0
+- name: Segments the bundled sample case on CPU
+  timeout: 3600
+  command: |-
+    set -e
+    out="$(mktemp -d)"
+    d=/opt/DeepIsles/data
+    CUDA_VISIBLE_DEVICES= deepisles --fast -o "$out" \
+      --dwi $d/sub-strokecase0001_ses-0001_dwi.nii.gz \
+      --adc $d/sub-strokecase0001_ses-0001_adc.nii.gz \
+      --flair $d/sub-strokecase0001_ses-0001_flair.nii.gz
+    /opt/miniconda/envs/deepisles/bin/python - "$out/lesion_msk.nii.gz" "$d/sub-strokecase0001_ses-0001_dwi.nii.gz" <<'PY'
+    import sys, nibabel as nib, numpy as np
+    mask, dwi = nib.load(sys.argv[1]), nib.load(sys.argv[2])
+    assert mask.shape == dwi.shape, (mask.shape, dwi.shape)
+    data = np.asarray(mask.dataobj)
+    assert set(np.unique(data)) <= {0, 1}, np.unique(data)
+    frac = data.mean()
+    assert 0 < frac < 0.05, frac
+    print('lesion voxels', int(data.sum()))
+    PY
+    rm -rf "$out"
+  expected_output_contains: lesion voxels
