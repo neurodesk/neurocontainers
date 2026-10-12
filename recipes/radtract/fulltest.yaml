@@ -1,5 +1,7 @@
 name: radtract
 version: 0.2.4
+test_data:
+  output_dir: /tmp/radtract-test-output
 tests:
 - name: radtract version
   command: python3 -c "from importlib.metadata import version; print(version('radtract'))"
@@ -7,3 +9,118 @@ tests:
 - name: radtract launcher
   command: command -v radtract_parcellate
   expected_output_contains: radtract_parcellate
+- name: Actual length filtering and tract density
+  description: Run deployed CLIs on 4/8/12mm fibers; require exactly the 8mm fiber and every physical density/envelope voxel.
+  command: |
+    python3 - "${output_dir}" <<'PY'
+    import hashlib
+    from pathlib import Path
+    import subprocess
+    import sys
+    import tempfile
+
+    import nibabel as nib
+    import numpy as np
+    from dipy.io.stateful_tractogram import Space, StatefulTractogram
+    from dipy.io.streamline import load_trk, save_trk
+
+    root = Path(sys.argv[1])
+    root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="tract-", dir=root) as tmp:
+        work = Path(tmp)
+        affine = np.diag([2.0, 1.0, 1.0, 1.0])
+        affine[:3, 3] = [4, -2, 6]
+        # A quantitative density reference must retain physical segment lengths.
+        reference = nib.Nifti1Image(np.zeros((10, 5, 5), dtype=np.float32), affine)
+        ref_path = work / "reference.nii.gz"
+        nib.save(reference, ref_path)
+        fibers = [nib.affines.apply_affine(affine, [[1, y, 2], [end, y, 2]]).astype(np.float32)
+                  for y, end in [(1, 3), (2, 5), (3, 7)]]
+        source = work / "input.trk"
+        save_trk(StatefulTractogram(fibers, reference, Space.RASMM), str(source))
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        filtered = work / "filtered.trk"
+        subprocess.run(["radtract_filter_length", "--streamlines", str(source),
+                        "--absolute", "--min", "7", "--max", "9", "--output", str(filtered)],
+                       check=True, timeout=120)
+        result = load_trk(str(filtered), "same", bbox_valid_check=False)
+        assert len(result.streamlines) == 1
+        np.testing.assert_array_equal(result.streamlines[0], fibers[1])
+        np.testing.assert_array_equal(result.affine, affine)
+        assert hashlib.sha256(source.read_bytes()).hexdigest() == digest
+        expected = np.zeros(reference.shape)
+        expected[1:6, 2, 2] = [1, 2, 2, 2, 1]
+        for binary in [False, True]:
+            output = work / ("envelope.nii.gz" if binary else "density.nii.gz")
+            command = ["radtract_tdi", "--streamlines", str(filtered), "--reference", str(ref_path),
+                       "--output", str(output)]
+            if binary:
+                command.append("--binary")
+            subprocess.run(command, check=True, timeout=120)
+            image = nib.load(output)
+            np.testing.assert_array_equal(image.affine, affine)
+            assert image.shape == reference.shape
+            values = image.get_fdata()
+            assert np.isfinite(values).all()
+            np.testing.assert_array_equal(values, (expected > 0).astype(float) if binary else expected)
+            assert values.sum() == (5 if binary else 8)
+    print("Exact 8mm tract, segment density and binary envelope verified")
+    PY
+  expected_output_contains: Exact 8mm tract, segment density and binary envelope verified
+- name: Actual parcel and global radiomics
+  description: Run deployed features CLI through PyRadiomics/SimpleITK on two constant parcels; assert every Mean/Minimum/Maximum and unchanged NIfTIs.
+  command: |
+    python3 - "${output_dir}" <<'PY'
+    import hashlib
+    import json
+    from importlib.metadata import version
+    from pathlib import Path
+    import subprocess
+    import sys
+    import tempfile
+
+    import nibabel as nib
+    import numpy as np
+    import pandas as pd
+
+    root = Path(sys.argv[1])
+    root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="features-", dir=root) as tmp:
+        work = Path(tmp)
+        affine = np.diag([2.0, 1.0, 1.0, 1.0])
+        affine[:3, 3] = [4, -2, 6]
+        labels = np.zeros((10, 6, 6), dtype=np.uint8)
+        labels[1:4, 1:4, 1:4] = 1
+        labels[6:9, 1:4, 1:4] = 2
+        values = (labels * 10).astype(np.float32)
+        parcel_path, map_path = work / "parcels.nii.gz", work / "map.nii.gz"
+        nib.save(nib.Nifti1Image(labels, affine), parcel_path)
+        nib.save(nib.Nifti1Image(values, affine), map_path)
+        digests = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in [parcel_path, map_path]}
+        params = work / "features.yaml"
+        params.write_text("imageType:\n  Original: {}\nfeatureClass:\n  firstorder: [Mean, Minimum, Maximum]\nsetting:\n  binWidth: 1\n  normalize: false\n")
+        output = work / "features.csv"
+        subprocess.run(["radtract_features", "--parcellation", str(parcel_path), "--map", str(map_path),
+                        "--pyrad_params", str(params), "--output", str(output)], check=True, timeout=240)
+        table = pd.read_csv(output)
+        assert len(table) == 9 and set(table["parcel"]) == {"GLOBAL", "P1", "P2"}
+        assert set(table["filter"]) == {"original"}
+        assert set(table["feature_type"]) == {"firstorder"}
+        assert set(table["extractor"]) == {"pyradiomics"}
+        # The upstream parser preserves double quotes from __version__ in this CSV field.
+        assert {json.loads(v) for v in table["radtract_version"]} == {version("radtract")}
+        assert set(table["map"]) == {str(map_path)} and set(table["parcellation"]) == {str(parcel_path)}
+        assert np.isfinite(table["value"].to_numpy()).all()
+        expected = {"GLOBAL": {"Mean": 15, "Minimum": 10, "Maximum": 20},
+                    "P1": {"Mean": 10, "Minimum": 10, "Maximum": 10},
+                    "P2": {"Mean": 20, "Minimum": 20, "Maximum": 20}}
+        for parcel, features in expected.items():
+            rows = table[table["parcel"] == parcel]
+            assert len(rows) == 3 and set(rows["feature"]) == set(features)
+            for feature, value in features.items():
+                observed = rows.loc[rows["feature"] == feature, "value"].to_numpy()
+                np.testing.assert_array_equal(observed, [value])
+        assert all(hashlib.sha256(p.read_bytes()).hexdigest() == digest for p, digest in digests.items())
+    print("All nine real parcel/global radiomics features equal analytical values")
+    PY
+  expected_output_contains: All nine real parcel/global radiomics features equal analytical values
