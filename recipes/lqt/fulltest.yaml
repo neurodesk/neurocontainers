@@ -7,6 +7,9 @@
 name: lqt
 version: 0.1.0
 
+test_data:
+  output_dir: test_output/lqt
+
 setup:
   script: |
     #!/usr/bin/env bash
@@ -38,6 +41,69 @@ tests:
     description: Verify the installed namespace exports at least one symbol
     command: R --slave -e "library(LQT); cat(length(getNamespaceExports('LQT')) > 0, '\\n')"
     expected_output_contains: "TRUE"
+
+
+  - name: Actual parcel damage maps and table
+    description: Run LQT parcel damage on a synthetic lesion and three parcels; require exact damage percentages, labelled CSV, NIfTI geometry and preserved input masks
+    command: |
+      Rscript --vanilla - <<'RSCRIPT'
+      library(LQT)
+      workspace <- tempfile(pattern="parcel-damage-", tmpdir="${output_dir}")
+      dir.create(workspace)
+      shape <- c(4L, 3L, 3L)
+      labels <- array(c(rep(0, 4), rep(1, 8), rep(2, 12), rep(3, 12)), dim=shape)
+      lesion <- array(0, dim=shape)
+      lesion[c(5, 6, 13:18, 25:36)] <- 1
+      make_volume <- function(values) {
+        oro.nifti::nifti(values, datatype=16L, sform_code=2L,
+                         srow_x=c(1, 0, 0, 6), srow_y=c(0, 1, 0, -8),
+                         srow_z=c(0, 0, 1, 12))
+      }
+      parcel_path <- file.path(workspace, "parcels.nii.gz")
+      lesion_path <- file.path(workspace, "lesion.nii.gz")
+      neurobase::writenii(make_volume(labels), parcel_path)
+      neurobase::writenii(make_volume(lesion), lesion_path)
+      original_hashes <- tools::md5sum(c(parcel_path, lesion_path))
+      cfg <- list(pat_id="synthetic", lesion_path=lesion_path,
+                  parcel_path=parcel_path, out_path=file.path(workspace, "results"),
+                  file_suffix="three-parcels", node_label=c("A", "B", "C"),
+                  node_group=c("left", "right", "right"))
+      get_parcel_damage(cfg, cores=1, verbose=FALSE)
+      base <- file.path(cfg$out_path, cfg$pat_id, "Parcel_Damage",
+                        "synthetic_three-parcels_percent_damage")
+      table <- read.csv(paste0(base, ".csv"), stringsAsFactors=FALSE)
+      stopifnot(nrow(table) == 3L, identical(table$Parcel, cfg$node_label),
+                identical(table$ParcelGroup, cfg$node_group),
+                identical(as.numeric(table$PercentDamage), c(25, 50, 100)))
+      output <- neurobase::readnii(paste0(base, ".nii.gz"))
+      expected <- labels
+      expected[labels == 1] <- 25
+      expected[labels == 2] <- 50
+      expected[labels == 3] <- 100
+      stopifnot(identical(dim(output), shape), all(is.finite(output)),
+                identical(as.numeric(output), as.numeric(expected)),
+                identical(as.numeric(output@srow_x), c(1, 0, 0, 6)),
+                identical(as.numeric(output@srow_y), c(0, 1, 0, -8)),
+                identical(as.numeric(output@srow_z), c(0, 0, 1, 12)),
+                identical(tools::md5sum(c(parcel_path, lesion_path)), original_hashes))
+      copied_lesion <- neurobase::readnii(file.path(cfg$out_path, cfg$pat_id,
+                                                  "synthetic_lesion.nii.gz"))
+      stopifnot(identical(as.numeric(copied_lesion), as.numeric(lesion)))
+      # Dimension mismatch must fail with the application's actual diagnostic.
+      small <- file.path(workspace, "mismatched.nii.gz")
+      neurobase::writenii(make_volume(array(1, dim=c(2L, 2L, 2L))), small)
+      bad_cfg <- cfg
+      bad_cfg$parcel_path <- small
+      failure <- tryCatch({get_parcel_damage(bad_cfg, cores=1, verbose=FALSE); NULL},
+                          error=function(e) conditionMessage(e))
+      stopifnot(is.character(failure), length(failure) == 1L,
+                grepl("Lesion and parcel volumes have different dimensions", failure,
+                      fixed=TRUE))
+      cat("LQT_EXACT_PARCEL_DAMAGE_OK\n")
+      RSCRIPT
+    expected_output_contains: LQT_EXACT_PARCEL_DAMAGE_OK
+    expected_exit_code: 0
+    timeout: 120
 
 cleanup:
   script: |
