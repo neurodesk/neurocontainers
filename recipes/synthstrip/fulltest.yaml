@@ -20,7 +20,7 @@
 # License: FreeSurfer Software License Agreement
 
 name: synthstrip
-version: 7.4.1
+version: 8.2.0
 
 required_files:
   - dataset: ds000001
