@@ -1,5 +1,5 @@
 name: totalsegmentator
-version: 2.5.0
+version: 2.18.0
 tests:
 - name: TotalSegmentator version
   command: python -c "from importlib.metadata import version; print(version('TotalSegmentator'))"
