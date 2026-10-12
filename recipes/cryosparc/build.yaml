@@ -1,0 +1,128 @@
+name: cryosparc
+version: 1.0.0
+copyright:
+  - license: MIT
+    url: https://github.com/NeuroDesk/neurocontainers/blob/main/LICENSE
+  - name: CryoSPARC licence (not included; installed with each user's own licence ID)
+    url: https://guide.cryosparc.com/licensing
+architectures:
+  - x86_64
+variables:
+  base_image_digest: sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+auto_update:
+  # The image ships only the launcher and operating system prerequisites.
+  # CryoSPARC itself is licence-gated and chosen by the user at install time,
+  # so the label is the launcher version and rebuilds follow the base image.
+  method: sources
+  container_version: false
+  local: []
+  sources:
+    - id: base_image
+      method: oci_digest
+      image: ubuntu
+      tag: '24.04'
+      target:
+        variable: base_image_digest
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04@{{ context.base_image_digest }}
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - bash
+        - ca-certificates
+        - curl
+        - tar
+        - gzip
+        - zip
+        - unzip
+        - iproute2
+        - procps
+        - psmisc
+        - lsof
+        - netbase
+        - openssh-client
+        - rsync
+        - less
+    - run:
+        - install -d /opt/cryosparc-launcher/bin
+        - install -m 755 {{ get_file("cryosparc.sh") }} /opt/cryosparc-launcher/bin/cryosparc
+        - ln -s cryosparc /opt/cryosparc-launcher/bin/cryosparcm
+        - ln -s cryosparc /opt/cryosparc-launcher/bin/cryosparcw
+    - environment:
+        PATH: /opt/cryosparc-launcher/bin:$PATH
+files:
+  - name: cryosparc.sh
+    filename: cryosparc.sh
+deploy:
+  bins:
+    - cryosparc
+    - cryosparcm
+    - cryosparcw
+categories:
+  - cryo EM
+readme: |
+  ## cryosparc/{{ context.version }}
+
+  CryoSPARC (Structura Biotechnology) is a GPU-accelerated platform for
+  single-particle cryo-EM: motion and CTF correction, particle picking,
+  2D classification, ab-initio reconstruction and refinement, run through a
+  browser-based interface. https://cryosparc.com
+
+  **This container does not include CryoSPARC.** CryoSPARC needs a licence ID
+  (free for non-profit academic research, commercial licence otherwise), and
+  its licence forbids redistributing the software. The container provides the
+  Ubuntu 24.04 runtime and tools that CryoSPARC's installer and services need,
+  plus the `cryosparc` launcher. The launcher downloads CryoSPARC with your own
+  licence ID into a directory you can write to and runs it from there.
+  The container version {{ context.version }} is the launcher version, not a
+  CryoSPARC version. You choose the CryoSPARC release at install time; the
+  default is the latest release.
+
+  ### Install once
+  1. Request a licence ID: https://cryosparc.com/download
+  2. Pick a writable directory with several GB free that keeps the same path in
+     future sessions (not inside the container image). Run the container with
+     GPU access (`apptainer exec --nv`), then:
+  ```
+  export CRYOSPARC_DIR=/path/to/cryosparc
+  export CRYOSPARC_INITIAL_PASSWORD='choose-a-password'   # or omit to be prompted
+  cryosparc install --license <licence-id> --email you@example.org
+  ```
+  This runs Structura's single-workstation installer: master, database and a
+  GPU worker in `$CRYOSPARC_DIR`. Add `--version v4.7.1` to pin a release,
+  `--port N` to change the base port (default 39000, uses ten ports),
+  `--ssd /fast/local/disk` for a particle cache, or `--master-only` to install
+  only the master, without a GPU. Run `cryosparc help` for every option.
+
+  ### Run
+  ```
+  export CRYOSPARC_DIR=/path/to/cryosparc
+  cryosparc start        # then open http://localhost:39000 in a browser
+  cryosparc status
+  cryosparcm ...         # upstream master CLI, e.g. cryosparcm log command_core
+  cryosparcw ...         # upstream worker CLI
+  cryosparc stop         # stop it before leaving the session
+  ```
+  The CryoSPARC services keep running in the background after `cryosparc start`
+  returns. To keep one container instance alive for them on HPC, start it with
+  `apptainer instance start --nv <image> cryosparc` and run the commands with
+  `apptainer exec instance://cryosparc ...`.
+
+  ### Notes
+  - `cryosparcm update` updates the installation in `$CRYOSPARC_DIR`.
+  - CryoSPARC needs internet access to verify the licence and to install.
+  - Releases before v4.4.0 need a system CUDA toolkit and are not supported.
+    Newer releases bundle CUDA and need only an NVIDIA driver on the host
+    (520.61.05 or newer for v4.4 to v4.7, 570.26 or newer for v5).
+  - Project directories must be on a file system that supports symbolic links.
+  - The launcher never edits your shell startup files.
+
+  Documentation: https://guide.cryosparc.com
+
+  Citation: Punjani, A., Rubinstein, J. L., Fleet, D. J., Brubaker, M. A.
+  cryoSPARC: algorithms for rapid unsupervised cryo-EM structure determination.
+  Nat Methods 14, 290-296 (2017). https://doi.org/10.1038/nmeth.4169
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACIAAAAiCAYAAAA6RwvCAAAABGdBTUEAALGPC/xhBQAABM5JREFUWAnFlgmI1VUUh8fdbJGsRmy0mTQsnMDMbEFIyijItSxsNU0KEiXb1CxTW0SC9kiiRdRWs2g3LWGaFEKiJMYRhBYNtEWzxnJEUvs+vGf6v39vrKdj/eDjnnPu+r/33PteWVnLq5Yh66FLyw9dOOIQ3POgQ2G4yfsRay/MaIocAqMzY+4BJ/oWWkNecwhY/wM0t9h8n7I2f4v8FRiE6aA9oBH80p2wAhpgLSyHvDyWSXAUbICv4FU4AVZBybqJHn5ZsAV7CUyEasirisB0cNeeB/utgwHJ3k3ZCw5IlfS6DhaAXxeLsvwJ6sAvVc+A8YXgQqPtcOxvkn8LZYuoJ6OMhxdgGzjZHaDGgv4uqIClya+hHAzvwclwwGpFz3vhbhgI7UCNBSceB6o9bAJjD4KTa8vZcNA6nBHi6x30N1gGL4H+BAjdiWHsF6gC2+qvhpJ0Iq2vhfy183EaBU+Ct8XBg9uwQ0djxOQmt2287rOhmJ4guDhfMZLAdrDzmFR5JeUpyc4W5TgzwbYzwPfEK/oUeLOMi4saBqoNXA4ddVB/sE0NFGg9nhVeuUp4M/l/ULqgrKbh+IbYfg5kb4k7YHwznA6h2zGMx1gmr765VKCheFOhH9SBjbJ4PQ8D9RlE3SPYThi+5RroDqEjMLzu5o7HZ/La7mMoqquIxvG4rePBLY9JXGAf8GhqU9xz7pts270PR4LvSxzDdGzr7gH1Ieifq5OVyTkPYkIT0gld+cYUjy3/Hd8Feo0nQm/w/B+Dmcn29nikD0Nn+Bm2gs++kzuPi1E99xX7nt3PcWIRi7C9spNhV4q7rfqxGNvOhWJaQDDGehbbo9M3r1QN6PuRY5J9MWXZ+uQ0Ut4A3oDXUswO/lB53l7BmMDyIyimdwhm22n7O7MS3kh1JqraADugQudF+BRO00HZxHsI3yNQxt+CR8HMNw+a0zFUDAZviuPXg0flotzVs6AVvA2ToKg87wngQHm1JTAQZsHrcCpk5cTm10K4HrIPYyf8CyCuL2Zpqqb5zeCWN0B222/FNwEvAT/gA8jW+8YctLxy5k12YO2dKeb1Pg4iOadiX5TqbLcJBoGqhFHwAPgTUpJ8MxzwV1iV7OWUU5LtrekGcbO+x+4INWA/82IpeOP0A3OlPexXbvEKKAcT086XwdXJ9jY52RAwX+6DmMDS/ufkYlHvQt+Fa+AfFVdvJC39GgcZDuOS7Q0IuaD42rnYL8PxqdLbYN/vwMX1AFUJHpG54+5uhU+grV+VVfief2S8Wx9bqR1yl45NTm9Kz95XV90F7lp3GA03whkQ7TGbVIXllS7Q+XiPQztYCX6VMe+69tMQ+hLD2I5UfkHpxKFlGNbn8Yh80GbDMPDW7VerqXUQ340rku2XqvC3YPsQfg223QxngvKNsb4O7geP+yQoWWvo4eADoDWYhHFEkT8NxJzYLa8F2zdCP8jqUpxYrM98SaqntQP3LdKrgti6VO/Eo8FFPgfm0YWQ1SIcx5JXshX/xl6bOvZqprETz09tnGAW+PsRSY7ZpC5YQ6EP2KYkmfXTmunhAkzWapgCu8HF+Ccq/sVhHnrFY7eNqcyPEbAdXIxJ3g3+E/lL6ln7YJWnGc2ljeBivPr/q7oy+xLwjShJfwI3HYPNnBnLhAAAAABJRU5ErkJggg==
