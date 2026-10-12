@@ -175,6 +175,7 @@ tests:
     import nibabel as nib
     import numpy as np
     from Functionnectome import quickDisco
+    from Functionnectome.makeHDF5prior import header2string
 
     with tempfile.TemporaryDirectory() as directory:
         work = Path(directory)
@@ -193,7 +194,7 @@ tests:
         with h5py.File(priors, 'w') as handle:
             handle.create_dataset('template', data=np.ones(shape, dtype=np.uint8))
             group = handle.create_group('tract_voxel')
-            group.attrs['header'] = repr({key: image.header[key].tolist() for key in image.header.keys()})
+            group.attrs['header'] = header2string(image.header)
             group.create_dataset('0_0_0_vox', data=first, compression='gzip')
             group.create_dataset('1_0_0_vox', data=second, compression='gzip')
             # A valid but unselected seed must not contribute to the result.
