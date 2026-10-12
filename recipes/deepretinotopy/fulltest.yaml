@@ -1,5 +1,5 @@
 # deepretinotopy container test suite
-# Tests for deepretinotopy v1.0.19 - Deep learning-based retinotopic mapping
+# Tests for deepretinotopy v1.1.0 - Deep learning-based retinotopic mapping
 #
 # NOTE: This file is GENERATED from container/fulltest.yaml.tmpl in
 # felenitaribeiro/deepRetinotopy_TheToolbox via container/render_fulltest.py.
@@ -19,7 +19,7 @@
 #   - BOLD: functional MRI timeseries
 
 name: deepretinotopy
-version: 1.0.19
+version: 1.1.0
 
 required_files:
   - dataset: ds000001
@@ -62,8 +62,9 @@ tests:
 
   - name: signMaps usage
     description: Verify signMaps command displays usage information
-    command: signMaps 2>&1 | head -10 || true
-    expected_output_contains: "sign"
+    command: signMaps -h 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "script usage: signMaps"
 
   # ===========================================================================
   # PYTHON ENVIRONMENT TESTS
