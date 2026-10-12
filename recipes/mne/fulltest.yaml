@@ -1,5 +1,7 @@
 name: mne
 version: 1.13.2
+mne_version: "1.13.2"
+vscode_version: "1.141.0"
 
 test_data:
   output_dir: test_output
@@ -18,7 +20,7 @@ tests:
   - name: MNE version check
     description: Verify MNE imports from the shipped conda environment
     command: /opt/miniconda-latest/envs/mne-${version}/bin/python -c "import mne; print(mne.__version__)"
-    expected_output_contains: "${version}"
+    expected_output_contains: "${mne_version}"
 
   - name: MNE core dependencies import
     description: Verify core MNE dependencies are available
@@ -27,21 +29,109 @@ tests:
     expected_output_contains: "dependencies ok"
 
   - name: MNE creates synthetic raw data
-    description: Exercise a small in-memory MNE workflow
+    description: Require exact signal samples and recording metadata after real double-precision FIF export and reload
     command: |
       /opt/miniconda-latest/envs/mne-${version}/bin/python - <<'PY'
+      from pathlib import Path
+      import tempfile
       import numpy as np
       import mne
 
-      data = np.zeros((3, 1000))
-      info = mne.create_info(["Fz", "Cz", "Pz"], sfreq=1000, ch_types="eeg")
-      raw = mne.io.RawArray(data, info)
-      print(raw.info["sfreq"])
-      print(len(raw.ch_names))
+      data = (np.arange(3000).reshape(3, 1000) - 1500) * 2.0 ** -20
+      info = mne.create_info(["Fz", "Cz", "Pz"], sfreq=256, ch_types="eeg")
+      raw = mne.io.RawArray(data, info, first_samp=32)
+      raw.info["bads"] = ["Cz"]
+      raw.set_annotations(mne.Annotations([0.25], [0.125], ["BAD_fixture"]))
+      assert np.isfinite(raw.get_data()).all()
+      np.testing.assert_array_equal(raw.get_data(), data)
+      assert raw.n_times == 1000 and len(raw.ch_names) == 3
+      output = Path("${output_dir}")
+      output.mkdir(parents=True, exist_ok=True)
+      with tempfile.TemporaryDirectory(prefix="mne-fif-", dir=output) as directory:
+          path = Path(directory) / "fixture_raw.fif"
+          raw.save(path, fmt="double", overwrite=False)
+          assert path.stat().st_size > data.nbytes
+          restored = mne.io.read_raw_fif(path, preload=True)
+          np.testing.assert_array_equal(restored.get_data(), data)
+          np.testing.assert_array_equal(restored.times, raw.times)
+          assert restored.first_samp == raw.first_samp == 32
+          assert restored.n_times == raw.n_times == 1000
+          assert restored.info["sfreq"] == raw.info["sfreq"] == 256
+          assert restored.ch_names == raw.ch_names
+          assert restored.get_channel_types() == ["eeg"] * 3
+          assert restored.info["bads"] == raw.info["bads"] == ["Cz"]
+          for field in ("onset", "duration", "description"):
+              np.testing.assert_array_equal(getattr(restored.annotations, field), getattr(raw.annotations, field))
+      print("MNE exact FIF signal and metadata roundtrip verified: 3 channels")
       PY
-    expected_output_contains: "3"
+    expected_output_contains: "MNE exact FIF signal and metadata roundtrip verified: 3 channels"
 
   - name: VS Code wrapper resolves
     description: Verify the deployed code wrapper is present
     command: which code
     expected_output_contains: "/usr/local/sbin/code"
+
+  - name: VS Code version and bundled extensions
+    description: Exercise the deployed wrapper with forwarded arguments and writable private configuration
+    command: |
+      set -eu
+      mne_code_scratch=$(mktemp -d "${output_dir}/mne-code.XXXXXX")
+      trap 'rm -rf "$mne_code_scratch"' EXIT
+      export XDG_CONFIG_HOME="$mne_code_scratch"
+      code --version --no-sandbox > "$mne_code_scratch/version.txt"
+      grep -Fx "${vscode_version}" "$mne_code_scratch/version.txt"
+      code --list-extensions --no-sandbox > "$mne_code_scratch/extensions.txt"
+      for extension in ms-python.python ms-python.vscode-pylance ms-toolsai.jupyter ms-toolsai.jupyter-keymap ms-toolsai.jupyter-renderers; do
+        grep -Fx "$extension" "$mne_code_scratch/extensions.txt"
+      done
+      echo "VS Code version and bundled extensions verified"
+    expected_output_contains: "VS Code version and bundled extensions verified"
+    timeout: 120
+
+  - name: MNE Qt browser and 3D rendering
+    description: Open the real Qt signal browser and render a nonempty VTK sphere on a native software display
+    command: |
+      set -eu
+      mne_gui_scratch=$(mktemp -d "${output_dir}/mne-gui.XXXXXX")
+      trap 'rm -rf "$mne_gui_scratch"' EXIT
+      export XDG_RUNTIME_DIR="$mne_gui_scratch/runtime"
+      export XDG_CACHE_HOME="$mne_gui_scratch/cache"
+      export MPLCONFIGDIR="$mne_gui_scratch/matplotlib"
+      export MNE_DONTWRITE_HOME=true
+      export LIBGL_ALWAYS_SOFTWARE=1
+      mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CACHE_HOME" "$MPLCONFIGDIR"
+      chmod 700 "$XDG_RUNTIME_DIR"
+      xvfb-run -a /opt/miniconda-latest/envs/mne-${version}/bin/python - <<'PY'
+      import os
+      from pathlib import Path
+      import mne
+      import numpy as np
+      import pyvista as pv
+      from qtpy import QtWidgets
+
+      app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+      mne.viz.set_browser_backend("qt")
+      signal = np.arange(768).reshape(3, 256) * 2.0 ** -20
+      raw = mne.io.RawArray(signal, mne.create_info(["Fz", "Cz", "Pz"], 256, "eeg"))
+      browser = raw.plot(block=False, show=True, duration=1, n_channels=3)
+      try:
+          app.processEvents()
+          assert browser.isVisible(), "Qt signal browser did not open"
+      finally:
+          browser.close()
+          app.processEvents()
+      mne.viz.set_3d_backend("pyvistaqt")
+      image_path = Path(os.environ["XDG_CACHE_HOME"]) / "sphere.png"
+      with pv.Plotter(off_screen=True, window_size=(128, 128)) as plot:
+          plot.set_background("black")
+          plot.add_mesh(pv.Sphere(theta_resolution=12, phi_resolution=12), color="white", lighting=False)
+          plot.show(auto_close=False)
+          image = plot.screenshot(image_path, return_img=True)
+          assert image.shape[:2] == (128, 128) and image.dtype == np.uint8
+          assert np.isfinite(image).all() and np.any(image[..., :3] > 0)
+          assert np.any(np.all(image[..., :3] == 0, axis=-1)), "Rendered image has no background"
+          assert image_path.read_bytes().startswith(bytes([137, 80, 78, 71, 13, 10, 26, 10]))
+      print("MNE Qt browser and native 3D rendering verified")
+      PY
+    expected_output_contains: "MNE Qt browser and native 3D rendering verified"
+    timeout: 180

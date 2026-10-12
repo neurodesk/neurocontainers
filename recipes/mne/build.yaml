@@ -6,10 +6,43 @@ copyright:
     url: https://github.com/mne-tools/mne-bids-pipeline/blob/main/LICENSE.txt
 architectures:
   - x86_64
+  - aarch64
+
+variables:
+  mne_version: "1.13.2"
+  vscode_version: "1.141.0"
+  pipeline_commit: d811935b8397749f86d86f54f1685224bbfebf3a
+  miniconda_version: py311_25.5.1-0
+  vscode_arch:
+    try:
+      - value: x64
+        condition: arch == "x86_64"
+      - value: arm64
+        condition: arch == "aarch64"
 
 auto_update:
-  method: github_release
-  repo: mne-tools/mne-python
+  method: sources
+  container_version: mne
+  sources:
+    - id: mne
+      method: github_release
+      repo: mne-tools/mne-python
+      target:
+        variable: mne_version
+        fulltest_variable: mne_version
+    - id: vscode
+      method: webpage
+      url: https://update.code.visualstudio.com/api/update/linux-x64/stable/latest
+      version_regex: '"productVersion":\s*"(?P<version>\d+(?:\.\d+)+)"'
+      target:
+        variable: vscode_version
+        fulltest_variable: vscode_version
+    - id: bids_pipeline
+      method: github_commit
+      repo: mne-tools/mne-bids-pipeline
+      ref: main
+      target:
+        variable: pipeline_commit
 
 build:
   kind: neurodocker
@@ -46,14 +79,17 @@ build:
         - libglu1-mesa
         - libgl1-mesa-dri
         - mesa-utils
+        - xvfb
+        - xauth
         - libgl1-mesa-glx
 
     - template:
         name: miniconda
-        version: latest
+        version: "{{ context.miniconda_version }}"
+        install_path: /opt/miniconda-latest
         env_name: mne-{{ context.version }}
         env_exists: "false"
-        conda_install: mne={{ context.version }} python=3.13
+        conda_install: mne={{ context.mne_version }} python=3.13
 
     - run:
         - cp {{ get_file("download") }} vscode.deb
@@ -74,6 +110,7 @@ build:
 
     - run:
         - tar xz -f {{ get_file("main_tar_gz") }}
+        - mv /opt/mne-bids-pipeline-{{ context.pipeline_commit }} /opt/mne-bids-pipeline-main
 
     - run:
         - chmod a+rwx /opt/mne-bids-pipeline-main -R
@@ -119,13 +156,16 @@ readme: |-
 
 files:
   - name: main_tar_gz
-    url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz
+    url: https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.pipeline_commit }}.tar.gz
   - name: download
-    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+    url: https://update.code.visualstudio.com/{{ context.vscode_version }}/linux-deb-{{ context.vscode_arch }}/stable
   - name: code
     contents: |-
       #!/usr/bin/env sh
-      /usr/bin/code --extensions-dir=/opt/vscode-extensions
+      set -eu
+      mne_vscode_data="${XDG_CONFIG_HOME:-${TMPDIR:-/tmp}}/mne-vscode-$(id -u)"
+      mkdir -p "$mne_vscode_data"
+      exec /usr/bin/code --extensions-dir=/opt/vscode-extensions --user-data-dir="$mne_vscode_data" "$@"
 
 categories:
   - "electrophysiology"
