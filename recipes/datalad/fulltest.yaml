@@ -74,7 +74,7 @@ tests:
     PYTHON
     # Force annex storage so this tests content retrieval, not plain Git data.
     git -C "$task_dir/source" annex add --force-large signal.bin
-    datalad save -d "$task_dir/source" -m 'Add deterministic binary signal' signal.bin
+    (cd "$task_dir/source" && datalad save -m 'Add deterministic binary signal' signal.bin)
     source_key=$(git -C "$task_dir/source" annex lookupkey signal.bin)
     test -n "$source_key"
     datalad clone "$task_dir/source" "$task_dir/clone"
@@ -82,7 +82,7 @@ tests:
     test "$source_key" = "$clone_key"
     # A normal clone has the annex pointer, but has not fetched its content.
     test ! -f "$task_dir/clone/signal.bin"
-    datalad get -d "$task_dir/clone" signal.bin
+    (cd "$task_dir/clone" && datalad get signal.bin)
     cmp "$task_dir/source/signal.bin" "$task_dir/clone/signal.bin"
     python - "$task_dir/clone/signal.bin" <<'PYTHON'
     import sys
