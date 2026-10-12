@@ -7,9 +7,16 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 variables:
   julia_version: 1.12.6
+  julia_archive:
+    try:
+      - value: julia_linux_x86_64_tar_gz
+        condition: arch == "x86_64"
+      - value: julia_linux_aarch64_tar_gz
+        condition: arch == "aarch64"
   julia_series: "1.12"
   julia_root: /opt/julia-1.12.6
   tgv_version: 0.5.0
@@ -63,8 +70,14 @@ build:
         - build_sysimage.jl
         - /opt/build_sysimage.jl
 
-    # Unpacking Julia, installing the packages and writing the sysimage all
-    # happen in one layer on purpose. build_sysimage.jl replaces the
+    # Unpacking Julia and installing the packages happen before the optional
+    # x86_64 sysimage step. ARM64 uses Julia's stock sysimage: the
+    # upstream PackageCompiler/LLVM path fails while selecting an ARM64 vscale
+    # instruction for a custom sysimage, while the regular interpreter remains
+    # a supported execution path.
+    #
+    # On x86_64, unpacking Julia, installing the packages and writing the
+    # sysimage all happen in one layer on purpose. build_sysimage.jl replaces the
     # interpreter's own sys.so, so if the unpack lived in an earlier layer the
     # image would carry both the stock 299 MB sysimage and the 732 MB
     # replacement. Docker keeps the shadowed copy, and Dive counts that
@@ -73,11 +86,19 @@ build:
     # The build steps are scripts rather than julia -e because neurodocker
     # backslash escapes parentheses when it records the run command into
     # /.reproenv.json, which leaves invalid JSON behind in the image.
-    - run:
-        - tar -xzf {{ get_file("julia_linux_x86_64_tar_gz") }} -C /opt
+    - condition: arch == "x86_64"
+      run:
+        - tar -xzf {{ get_file(context.julia_archive) }} -C /opt
         - julia --startup-file=no --cpu-target={{ context.sysimage_cpu_target }} /opt/install_packages.jl
         - julia --startup-file=no --cpu-target={{ context.sysimage_cpu_target }} /opt/build_sysimage.jl
         - rm -f /opt/build_sysimage.jl /opt/precompile_workload.jl
+
+    - condition: arch == "aarch64"
+      run:
+        - tar -xzf {{ get_file(context.julia_archive) }} -C /opt
+        - julia --startup-file=no --cpu-target={{ context.sysimage_cpu_target }} /opt/install_packages.jl
+        - rm -f /opt/build_sysimage.jl /opt/precompile_workload.jl
+        - chmod -R a+rX /opt/julia_depot
 
     # The Julia entry script is named "clearswi" (no extension) because ArgParse
     # derives the program name in its usage output from basename(PROGRAM_FILE);
@@ -94,9 +115,17 @@ build:
     # mounted read-only, so the depot has to be world-readable and fully
     # precompiled at build time. The sysimage is handled in the layer that
     # creates it, so that this recursive chmod never touches the Julia tree.
-    - run:
+    - condition: arch == "x86_64"
+      run:
         - chmod a+rx /opt/clearswi/bin/clearswi
         - chmod -R a+rX /opt/julia_depot /opt/clearswi
+
+    # Set depot permissions in its installation layer on ARM64 to avoid
+    # duplicating the precompiled stock-sysimage cache in a later layer.
+    - condition: arch == "aarch64"
+      run:
+        - chmod a+rx /opt/clearswi/bin/clearswi
+        - chmod -R a+rX /opt/clearswi
 
 deploy:
   path:
@@ -106,7 +135,13 @@ deploy:
 
 files:
   - name: julia_linux_x86_64_tar_gz
+    condition: arch == "x86_64"
     url: https://julialang-s3.julialang.org/bin/linux/x64/{{ context.julia_series }}/julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+
+  - name: julia_linux_aarch64_tar_gz
+    condition: arch == "aarch64"
+    url: https://julialang-s3.julialang.org/bin/linux/aarch64/{{ context.julia_series }}/julia-{{ context.julia_version }}-linux-aarch64.tar.gz
+    sha256: 029b93b857bd0ffd627f9a8580d3bbaa63daf008d7b7aed02fbceb8fd57c4899
 
   - name: install_packages.jl
     contents: |
