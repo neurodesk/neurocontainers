@@ -20,6 +20,7 @@ tests:
       workspace="$(mktemp -d "${output_dir}/openrefine.XXXXXXXX")"
       export OPENREFINE_DATA_DIR="$workspace/projects"
       export OPENREFINE_INTERFACE=127.0.0.1
+      export JAVA_HOME=/nonexistent/openrefine-host-java
       export NEURODESK_WEBAPP_PORT="$(shuf -i 20000-50000 -n 1)"
       base="http://127.0.0.1:$NEURODESK_WEBAPP_PORT"
       setsid openrefine start > "$workspace/server.log" 2>&1 &
