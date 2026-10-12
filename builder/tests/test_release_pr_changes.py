@@ -128,6 +128,38 @@ def test_existing_recipe_legacy_test_yaml_is_ignored(
     assert result.matrix() == []
 
 
+@pytest.mark.parametrize("published", [False, True])
+def test_candidate_runtime_gate_owns_test_only_changes(
+    tmp_path: Path, published: bool
+) -> None:
+    if published:
+        write_release(tmp_path, "libreoffice", "26.2.4")
+    result = detect_release_pr_changes(
+        ["recipes/libreoffice/fulltest.yaml"],
+        repo_root=tmp_path,
+        recipe_tests_in_candidate=True,
+    )
+    assert not result.has_changes
+    assert result.matrix() == []
+    assert result.skipped_new_recipe_tests == ()
+
+
+def test_candidate_runtime_mode_preserves_explicit_release_targets(
+    tmp_path: Path,
+) -> None:
+    write_release(tmp_path, "libreoffice", "26.2.4")
+    release = write_release(tmp_path, "libreoffice", "26.8.1.1")
+    result = detect_release_pr_changes(
+        [release.relative_to(tmp_path).as_posix(), "recipes/libreoffice/fulltest.yaml"],
+        repo_root=tmp_path,
+        recipe_tests_in_candidate=True,
+    )
+    assert result.has_changes
+    assert len(result.entries) == 1
+    assert result.entries[0].version == "26.8.1.1"
+    assert result.entries[0].file == release.relative_to(tmp_path).as_posix()
+
+
 def test_release_metadata_can_be_paired_with_fulltest_yaml(tmp_path: Path) -> None:
     write_release(tmp_path, "cat12", "26.0.rc3")
     result = detect_release_pr_changes(

@@ -176,6 +176,7 @@ def detect_release_pr_changes(
     changed_files: Iterable[str],
     *,
     repo_root: str | Path = ".",
+    recipe_tests_in_candidate: bool = False,
 ) -> DetectionResult:
     """Return released container test targets for changed release/test files.
 
@@ -230,6 +231,10 @@ def detect_release_pr_changes(
             continue
 
         recipe = match.group(1)
+        # Current recipe suites belong to the all-variant native candidate gate.
+        # A historical published image may have a different software version.
+        if recipe_tests_in_candidate:
+            continue
         if any(entry.recipe == recipe for entry in entries.values()):
             continue
         # A build.yaml change is tested against the exact newly built candidate
@@ -310,13 +315,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--head-ref", default="HEAD")
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--output", default=os.environ.get("GITHUB_OUTPUT"))
+    parser.add_argument(
+        "--recipe-tests-in-candidate",
+        action="store_true",
+        help="Leave recipe-only runtime changes to PR container candidate.",
+    )
     args = parser.parse_args(argv)
 
     try:
         changed_files = get_changed_files(
             args.base_ref, args.head_ref, repo_root=args.repo_root
         )
-        result = detect_release_pr_changes(changed_files, repo_root=args.repo_root)
+        result = detect_release_pr_changes(
+            changed_files,
+            repo_root=args.repo_root,
+            recipe_tests_in_candidate=args.recipe_tests_in_candidate,
+        )
         if args.output:
             write_github_outputs(result, args.output)
         else:

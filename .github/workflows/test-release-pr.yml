@@ -36,7 +36,10 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
+          # Current fulltests run against fresh images in PR container candidate.
+          # This workflow owns only explicitly changed release metadata.
           python -m workflows.release_pr_changes \
+            --recipe-tests-in-candidate \
             --base-ref "origin/${BASE_REF}" \
             --output "${GITHUB_OUTPUT}"
 
@@ -482,7 +485,9 @@ jobs:
           WASTED_SPACE_RECIPES=0
           DIVE_ERROR_RECIPES=0
 
-          for file in test-results-*/test-results-*.json; do
+          # A single matching artifact is extracted directly into this directory;
+          # multiple artifacts retain their per-artifact subdirectories.
+          for file in test-results-*.json test-results-*/test-results-*.json; do
             if [ -f "$file" ]; then
               TOTAL_RECIPES=$((TOTAL_RECIPES + 1))
               
@@ -496,7 +501,7 @@ jobs:
             fi
           done
 
-          for file in test-results-*/dive-status-*.txt; do
+          for file in dive-status-*.txt test-results-*/dive-status-*.txt; do
             if [ -f "$file" ]; then
               DIVE_STATUS="$(tr -d '[:space:]' < "$file")"
               if [ "$DIVE_STATUS" = "failed" ]; then
