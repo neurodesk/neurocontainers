@@ -27,16 +27,51 @@ tests:
   command: gimp -i -b '(gimp-quit 0)' >/tmp/gimp-batch.log 2>&1
   expected_exit_code: 0
 - name: gimp headless PNG export
-  description: Verify GIMP can create and export an image in batch mode
-  command: 'gimp -i -b ''(let* ((image (car (gimp-image-new 32 32 RGB))) (layer (car (gimp-layer-new image 32 32 RGB-IMAGE
-    "bg" 100 LAYER-MODE-NORMAL)))) (gimp-image-insert-layer image layer 0 0) (gimp-context-set-foreground (list 255 0 0))
-    (gimp-drawable-fill layer FILL-FOREGROUND) (file-png-save RUN-NONINTERACTIVE image layer "test_output/gimp/red.png" "red.png"
-    0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))'' >/tmp/gimp-export.log 2>&1
-
+  description: Verify exact dimensions and all RGB pixels after real PNG export and reload.
+  command: |
+    set -e
+    profile="$(mktemp -d "$(pwd)/test_output/gimp/profile.XXXXXX")"
+    rm -f test_output/gimp/red.png
+    GIMP2_DIRECTORY="$profile" gimp -i --console-messages -b '
+    (let* ((image (car (gimp-image-new 32 32 RGB)))
+           (layer (car (gimp-layer-new image 32 32 RGB-IMAGE "bg" 100 LAYER-MODE-NORMAL))))
+      (gimp-image-insert-layer image layer 0 0)
+      (gimp-context-set-foreground (list 255 0 0))
+      (gimp-drawable-fill layer FILL-FOREGROUND)
+      (file-png-save RUN-NONINTERACTIVE image layer
+                     "test_output/gimp/red.png" "red.png" 0 9 1 1 1 1 1)
+      (let* ((restored (car (gimp-file-load RUN-NONINTERACTIVE
+                                          "test_output/gimp/red.png" "red.png")))
+             (decoded (car (gimp-image-get-active-layer restored))))
+        (if (not (and (= (car (gimp-image-width restored)) 32)
+                      (= (car (gimp-image-height restored)) 32)))
+            (error "PNG dimensions changed"))
+        (let rows ((y 0))
+          (if (< y 32)
+              (begin
+                (let columns ((x 0))
+                  (if (< x 32)
+                      (begin
+                        (let* ((pixel (gimp-drawable-get-pixel decoded x y))
+                               (rgb (cadr pixel)))
+                          (if (not (and (= (car pixel) 3)
+                                        (= (vector-ref rgb 0) 255)
+                                        (= (vector-ref rgb 1) 0)
+                                        (= (vector-ref rgb 2) 0)))
+                              (error "PNG pixel changed")))
+                        (columns (+ x 1)))))
+                (rows (+ y 1)))))
+        (gimp-image-delete restored))
+      (gimp-image-delete image)
+      (gimp-message "Exact RGB PNG roundtrip verified: 1024 red pixels"))
+    ' -b '(gimp-quit 0)' >"$profile/export.log" 2>&1
+    cat "$profile/export.log"
+    test -s test_output/gimp/red.png
     ls -l test_output/gimp/red.png
-
-    '
-  expected_output_contains: red.png
+  expected_output_contains:
+    - red.png
+    - "Exact RGB PNG roundtrip verified: 1024 red pixels"
+  timeout: 120
 - name: installed distribution version
   command: dpkg-query -W -f='${Version}\n' gimp
   expected_output_contains: ${package_version}
