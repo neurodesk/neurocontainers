@@ -27,6 +27,7 @@ auto_update:
       package: quickshear
       target:
         variable: quickshear_version
+        fulltest_variable: quickshear_version
     - id: arm_torch
       method: pypi
       package: torch
