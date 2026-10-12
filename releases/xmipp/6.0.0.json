@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "xmipp 6.0.0": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "cryo EM"
+  ]
+}
