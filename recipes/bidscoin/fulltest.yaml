@@ -723,6 +723,10 @@ tests:
       run['meta'] = {'TestProvenance': 'synthetic analytical phantom'}
       template['DICOM']['anat'] = [run]
       template['Options']['plugins'] = {'dcm2niix2bids': template['Options']['plugins']['dcm2niix2bids']}
+      # Documented uncompressed output avoids the validator compressed-size floor.
+      plugin = template['Options']['plugins']['dcm2niix2bids']
+      assert '-z y' in plugin['args'], plugin['args']
+      plugin['args'] = plugin['args'].replace('-z y', '-z n')
       custom = root / 'template.yaml'
       with custom.open('w') as f:
           yaml.safe_dump(template, f, sort_keys=False)
@@ -739,8 +743,9 @@ tests:
       for name in ['bidsmapper', 'bidscoiner']:
           log = (target / 'code' / 'bidscoin' / (name + '.errors')).read_text()
           assert 'ERROR' not in log, log
-      images = list(target.rglob('*.nii.gz'))
-      expected_path = target / 'sub-phantom' / 'ses-01' / 'anat' / 'sub-phantom_ses-01_T1w.nii.gz'
+      images = list(target.rglob('*.nii'))
+      assert not list(target.rglob('*.nii.gz'))
+      expected_path = target / 'sub-phantom' / 'ses-01' / 'anat' / 'sub-phantom_ses-01_T1w.nii'
       assert images == [expected_path], images
       image = nib.load(expected_path)
       assert image.shape == (3, 2, 2), image.shape
