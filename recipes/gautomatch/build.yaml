@@ -1,0 +1,153 @@
+name: gautomatch
+version: 0.56.0
+
+copyright:
+  - name: Gautomatch freeware binary (Kai Zhang, MRC-LMB); no licence published
+    url: https://web.archive.org/web/20230429192932/https://www2.mrc-lmb.cam.ac.uk/download/gautomatch-056/
+  - name: NVIDIA CUDA Toolkit EULA (redistributable cuFFT, cuBLAS, cuRAND, NPP runtime libraries)
+    url: https://docs.nvidia.com/cuda/archive/10.1/eula/index.html
+
+architectures:
+  - x86_64
+
+variables:
+  upstream_version: "0.56"
+  gautomatch_binary: Gautomatch_v0.56_sm30-75_cu10.1
+  cuda_libs: /opt/gautomatch-{{ context.upstream_version }}/lib
+
+auto_update:
+  frozen: true
+  reason: >-
+    Gautomatch is unmaintained: v0.56 is the final release and the MRC-LMB
+    download page was withdrawn. The binary comes from the Scipion mirror and
+    links against CUDA 10.1 libraries, so both stay pinned.
+  method: sources
+  container_version: gautomatch
+  sources:
+    - id: gautomatch
+      method: artifact_listing
+      url: https://scipion.cnb.csic.es/downloads/scipion/software/em/
+      download_base: https://scipion.cnb.csic.es/downloads/scipion/software/em/
+      version_regex: '[Gg]automatch_v(?P<version>\d+\.\d+)\.tgz'
+      target:
+        file: gautomatch_archive
+        variables:
+          upstream_version: version
+    - id: cufft
+      method: http_digest
+      url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-cufft-10-1_10.1.243-1_amd64.deb
+      dependency: true
+      target:
+        file: cufft_deb
+    - id: curand
+      method: http_digest
+      url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-curand-10-1_10.1.243-1_amd64.deb
+      dependency: true
+      target:
+        file: curand_deb
+    - id: npp
+      method: http_digest
+      url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-npp-10-1_10.1.243-1_amd64.deb
+      dependency: true
+      target:
+        file: npp_deb
+    - id: cublas
+      method: http_digest
+      url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/libcublas10_10.2.1.243-1_amd64.deb
+      dependency: true
+      target:
+        file: cublas_deb
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - run:
+        - mkdir -p /opt/gautomatch-{{ context.upstream_version }}/bin {{ context.cuda_libs }} /tmp/gautomatch-build/cuda
+        - tar -xzf {{ get_file("gautomatch_archive") }} -C /tmp/gautomatch-build
+        - install -m 0755 /tmp/gautomatch-build/gautomatch_v{{ context.upstream_version }}/bin/{{ context.gautomatch_binary }} /opt/gautomatch-{{ context.upstream_version }}/bin/
+        - ln -s {{ context.gautomatch_binary }} /opt/gautomatch-{{ context.upstream_version }}/bin/Gautomatch
+        - dpkg-deb -x {{ get_file("cufft_deb") }} /tmp/gautomatch-build/cuda
+        - dpkg-deb -x {{ get_file("curand_deb") }} /tmp/gautomatch-build/cuda
+        - dpkg-deb -x {{ get_file("npp_deb") }} /tmp/gautomatch-build/cuda
+        - dpkg-deb -x {{ get_file("cublas_deb") }} /tmp/gautomatch-build/cuda
+        - cp -a /tmp/gautomatch-build/cuda/usr/local/cuda-10.1/targets/x86_64-linux/lib/libcufft.so.10* /tmp/gautomatch-build/cuda/usr/local/cuda-10.1/targets/x86_64-linux/lib/libcurand.so.10* /tmp/gautomatch-build/cuda/usr/local/cuda-10.1/targets/x86_64-linux/lib/libnpps.so.10* /tmp/gautomatch-build/cuda/usr/local/cuda-10.1/targets/x86_64-linux/lib/libnppc.so.10* {{ context.cuda_libs }}/
+        - cp -a /tmp/gautomatch-build/cuda/usr/lib/x86_64-linux-gnu/libcublas.so.10* /tmp/gautomatch-build/cuda/usr/lib/x86_64-linux-gnu/libcublasLt.so.10* {{ context.cuda_libs }}/
+        - rm -rf /tmp/gautomatch-build
+
+    - environment:
+        PATH: /opt/gautomatch-{{ context.upstream_version }}/bin:$PATH
+        LD_LIBRARY_PATH: "{{ context.cuda_libs }}"
+
+deploy:
+  bins:
+    - Gautomatch
+    - "{{ context.gautomatch_binary }}"
+
+files:
+  - name: gautomatch_archive
+    url: https://scipion.cnb.csic.es/downloads/scipion/software/em/gautomatch_v0.56.tgz
+    sha256: f975fc2837222d88571851343663cf91acf83a7a04bec7f758a9aae910a6389f
+  - name: cufft_deb
+    url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-cufft-10-1_10.1.243-1_amd64.deb
+    sha256: 7d61cd423774bf6fd601b063697b5728c3fd2183ef8287d203f7ae5b1ae9a4fd
+  - name: curand_deb
+    url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-curand-10-1_10.1.243-1_amd64.deb
+    sha256: c6910b07716e1eef5758f8aa275121dc1705d37de1d01271189bfebb52379ac2
+  - name: npp_deb
+    url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-npp-10-1_10.1.243-1_amd64.deb
+    sha256: 5efd2d20b435204189d5269a86e8a9bf840371861907ed6bb7b5f96bf3041a80
+  - name: cublas_deb
+    url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/libcublas10_10.2.1.243-1_amd64.deb
+    sha256: 038fca37eaa299f43e2d48f2ba2d9738d8206da36f91cc5e4ddde0b9c784065c
+
+categories:
+  - cryo EM
+
+readme: |
+  ----------------------------------
+  ## gautomatch/{{ context.version }} ##
+
+  Gautomatch is a GPU-accelerated program by Kai Zhang (MRC Laboratory of Molecular Biology)
+  for fully automatic particle picking in cryo-EM micrographs, with or without 2D templates.
+
+  This container installs Gautomatch v{{ context.upstream_version }}, binary `{{ context.gautomatch_binary }}`.
+  The binary was compiled for CUDA 10.1 and compute capabilities sm_30 to sm_75. It also embeds sm_75 PTX,
+  which the NVIDIA driver JIT-compiles for newer GPUs. The CUDA 10.1 runtime libraries it links against
+  (cuFFT, cuBLAS, cuRAND and NPP) are bundled in {{ context.cuda_libs }}.
+  The host must provide an NVIDIA GPU and a driver that supports CUDA 10.1 or newer (418.39+).
+  Run Apptainer/Singularity with `--nv`.
+
+  Example:
+  ```
+  Gautomatch --help
+  Gautomatch --apixM 1.34 --diameter 400 --T templates.mrcs --apixT 3.2 Micrographs/*.mrc
+  ```
+
+  Outputs (`*_automatch.box`, `*_automatch.star`) are written next to the input micrographs.
+  Keep data in a writable mounted directory.
+
+  Upstream is no longer maintained. The original MRC-LMB download page is offline. This build uses the
+  archive that the Scipion project (I2PC, CNB-CSIC) redistributes for its Gautomatch plugin:
+  https://scipion.cnb.csic.es/downloads/scipion/software/em/gautomatch_v0.56.tgz
+
+  Licence: Gautomatch is closed-source freeware that the author distributed publicly at no cost.
+  The author never published licence terms.
+  The bundled CUDA libraries are redistributable under the NVIDIA CUDA Toolkit EULA.
+
+  Citation (Gautomatch has no journal publication; cite the software):
+  ```
+  Zhang, K. Gautomatch. Unpublished software, MRC Laboratory of Molecular Biology.
+  https://www2.mrc-lmb.cam.ac.uk/research/locally-developed-software/zhang-software/#gauto
+  ```
+
+  To run container outside of this environment: ml gautomatch/{{ context.version }}
+
+  ----------------------------------
+
+icon: "data:image/png;base64,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"
