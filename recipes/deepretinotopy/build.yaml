@@ -2,12 +2,8 @@ name: deepretinotopy
 version: 1.1.0
 
 auto_update:
-  # Regenerated and PR'd by the upstream release workflow on each version tag
-  # (felenitaribeiro/deepRetinotopy_TheToolbox .github/workflows/publish_recipe.yml);
-  # version, commit, and model pins all come from container/manifest.yaml there.
-  container_version: false
-  method: sources
-  local: []
+  method: github_release
+  repo: felenitaribeiro/deepRetinotopy_TheToolbox
 
 copyright:
   - license: GPL-3.0
@@ -53,9 +49,8 @@ build:
     - workdir: /opt
 
     - run:
-        - git clone https://github.com/felenitaribeiro/deepRetinotopy_TheToolbox.git
+        - git clone --branch v{{ context.version }} https://github.com/felenitaribeiro/deepRetinotopy_TheToolbox.git
         - cd deepRetinotopy_TheToolbox
-        - git checkout 72558d692cc29be070db7297416b29e3276e9926
         - for file in osfstorage/models/v3/deepRetinotopy_visualCoord_LH_model1.pt osfstorage/models/v3/deepRetinotopy_pRFsize_LH_model5.pt osfstorage/models/v3/deepRetinotopy_visualCoord_RH_model1.pt osfstorage/models/v3/deepRetinotopy_pRFsize_RH_model2.pt; do path="models/$(basename "$file")"; mkdir -p models; chmod 777 models; osf -p ermbz fetch "$file" "$path"; echo "$file"; new_path=$(echo "$path" | sed -E 's/model[0-9]+/model/'); mv "$path" "$new_path"; echo "Renamed $path to $new_path"; done
 
     - run:
