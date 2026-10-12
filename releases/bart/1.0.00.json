@@ -1,7 +1,7 @@
 {
   "apps": {
     "bart 1.0.00": {
-      "version": "20260911",
+      "version": "20261012",
       "exec": "",
       "apptainer_args": []
     }
