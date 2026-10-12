@@ -9,8 +9,16 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 variables:
+  arm_torch_version: "2.5.1"
+  torch_install_args:
+    try:
+      - value: --extra-index-url https://download.pytorch.org/whl/cu124 torch
+        condition: arch == "x86_64"
+      - value: --index-url https://pypi.org/simple torch=={{ context.arm_torch_version }}
+        condition: arch == "aarch64"
   # Version of the model weights baked into the image. Bumping this is a
   # deliberate act: the build asserts the archive Zenodo serves matches, so new
   # upstream weights fail the build here instead of silently changing results.
@@ -49,11 +57,11 @@ build:
     - run:
         - python3 -m venv "${VENV}"
         - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
-        # CUDA wheels: these are GPU inference tools and the default index
-        # already resolves to CUDA builds, so pin the index explicitly rather
-        # than letting the resolver choose a different one on a rebuild.
+        # Preserve the x86 CUDA wheel path. ARM64 uses the official PyPI CPU
+        # wheel and upstream's supported CPU fallback with the same model weights.
+        # Keep installation and permissions in one layer on both architectures.
         - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir
-          --extra-index-url https://download.pytorch.org/whl/cu124 torch
+          {{ context.torch_install_args }}
         - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "brainles_aurora=={{ context.version }}"
         # Import at build time so a broken resolve fails here rather than on
         # first use; read the version from distribution metadata because these
