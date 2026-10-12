@@ -955,6 +955,43 @@ tests:
     expected_output_contains: "Least-squares solution verified"
     expected_exit_code: 0
 
+  - name: Distributed native worker computations
+    description: Execute exact numerical operations in two real native Julia worker processes and gather their results
+    command: |
+      julia --startup-file=no - <<'JL'
+      using Distributed, FFTW
+      @assert nprocs() == 1
+      let worker_ids = addprocs(2; exeflags=["--startup-file=no", "--threads=1"], enable_threaded_blas=false)
+          try
+              @assert length(worker_ids) == 2 && length(unique(worker_ids)) == 2
+              @everywhere worker_ids using FFTW
+              chunks = [Int64[1, -2, 3, -4], Int64[5, -6, 7, -8]]
+              results = map(zip(worker_ids, chunks)) do (worker, samples)
+                  remotecall_fetch(worker, samples) do values
+                      (worker=myid(), pid=getpid(), arch=Sys.ARCH,
+                       sum_squares=sum(abs2, values),
+                       product=[1.0 2.0; 3.0 4.0] * [2.0 0.0; 0.0 4.0],
+                       spectrum=FFTW.fft([1.0, 0.0, 0.0, 0.0]))
+                  end
+              end
+              @assert [r.worker for r in results] == worker_ids
+              @assert length(unique([r.pid for r in results])) == 2
+              @assert all(r.pid != getpid() && r.arch == Sys.ARCH for r in results)
+              @assert [r.sum_squares for r in results] == [30, 174]
+              @assert sum(r.sum_squares for r in results) == 204
+              @assert all(r.product == [2.0 8.0; 6.0 16.0] for r in results)
+              @assert all(r.spectrum == fill(1.0 + 0.0im, 4) for r in results)
+          finally
+              rmprocs(worker_ids; waitfor=30)
+          end
+      end
+      @assert nprocs() == 1
+      println("Two native Julia workers verified: exact signal energy, matrix product and FFT")
+      JL
+    expected_output_contains: "Two native Julia workers verified: exact signal energy, matrix product and FFT"
+    expected_exit_code: 0
+    timeout: 180
+
 cleanup:
   script: |
     #!/usr/bin/env bash
