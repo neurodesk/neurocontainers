@@ -1,0 +1,69 @@
+name: ctffind
+version: 4.1.14
+upstream_version: 4.1.14
+tests:
+  - name: reports its version
+    command: printf 'x\n' | ctffind 2>&1 | head -n 20
+    expected_output_contains: 'Version : ${upstream_version}'
+  - name: estimates defocus of a synthetic micrograph
+    command: |-
+      set -e
+      work=$(mktemp -d)
+      cd "$work"
+      env HOME=/nonexistent python3 - <<'PY'
+      import struct
+      import numpy as np
+      n, apix, kv, cs, ac, defocus = 512, 1.0, 300.0, 2.7e7, 0.07, 15000.0
+      wavelength = 12.2639 / np.sqrt(kv * 1e3 + 0.97845e-6 * (kv * 1e3) ** 2)
+      freq = np.fft.fftfreq(n, d=apix)
+      k2 = freq[:, None] ** 2 + freq[None, :] ** 2
+      chi = np.pi * wavelength * defocus * k2 - 0.5 * np.pi * cs * wavelength ** 3 * k2 ** 2
+      ctf = -(np.sqrt(1 - ac ** 2) * np.sin(chi) + ac * np.cos(chi))
+      rng = np.random.default_rng(0)
+      image = np.fft.ifft2(np.fft.fft2(rng.standard_normal((n, n))) * ctf * np.exp(-20 * k2)).real
+      image = (image + 0.2 * rng.standard_normal((n, n))).astype(np.float32)
+      header = bytearray(1024)
+      struct.pack_into('<10i6f3i3f', header, 0, n, n, 1, 2, 0, 0, 0, n, n, 1,
+                       n * apix, n * apix, apix, 90, 90, 90, 1, 2, 3,
+                       float(image.min()), float(image.max()), float(image.mean()))
+      header[208:216] = b'MAP DD\0\0'
+      struct.pack_into('<f', header, 216, float(image.std()))
+      with open('micrograph.mrc', 'wb') as handle:
+          handle.write(header)
+          handle.write(image.tobytes())
+      PY
+      env LC_ALL=C HOME=/nonexistent ctffind > ctffind.log <<'EOF'
+      micrograph.mrc
+      diagnostic.mrc
+      1.0
+      300
+      2.7
+      0.07
+      256
+      30
+      5
+      5000
+      30000
+      100
+      no
+      yes
+      yes
+      500
+      no
+      no
+      EOF
+      test -s diagnostic.mrc
+      test -s diagnostic_avrot.txt
+      python3 - <<'PY'
+      import numpy as np
+      values = np.loadtxt('diagnostic.txt', comments='#', ndmin=2)
+      defocus_1, defocus_2 = values[0, 1], values[0, 2]
+      print(f'Fitted defocus: {defocus_1:.0f} {defocus_2:.0f} A')
+      assert abs(defocus_1 - 15000) < 500 and abs(defocus_2 - 15000) < 500
+      print('defocus within 500 A of 15000 A')
+      PY
+      grep 'Estimated defocus values' ctffind.log
+      rm -rf "$work"
+    expected_output_contains:
+      - 'Estimated defocus values'
+      - 'defocus within 500 A of 15000 A'
