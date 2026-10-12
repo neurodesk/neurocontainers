@@ -208,7 +208,11 @@ def test_flatten_base_implies_one_required_oci_staging(
         readme="# Demo",
         recipe_dir=recipe_dir,
         definition=Definition(
-            ([From("vendor/source:1", "linux/amd64", "copy-source-0")] if foreign else [])
+            (
+                [From("vendor/source:1", "linux/amd64", "copy-source-0")]
+                if foreign
+                else []
+            )
             + [From("example/tool:1")]
         ),
         architecture="x86_64",

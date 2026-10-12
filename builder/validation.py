@@ -913,7 +913,8 @@ def parse_directive_from_dict(directive_dict: Dict[str, Any]) -> Any:
         return UserDirective(condition=condition, user=directive_dict["user"])
     elif "copy" in directive_dict:
         return CopyDirective(
-            condition=condition, copy=directive_dict["copy"],
+            condition=condition,
+            copy=directive_dict["copy"],
             from_image=directive_dict.get("from_image"),
             from_platform=directive_dict.get("from_platform"),
         )

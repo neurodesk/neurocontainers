@@ -76,7 +76,8 @@ class Definition:
     @property
     def runtime_base(self) -> From:
         bases = [
-            item for item in self.directives
+            item
+            for item in self.directives
             if isinstance(item, From) and item.alias is None
         ]
         if len(bases) != 1:
