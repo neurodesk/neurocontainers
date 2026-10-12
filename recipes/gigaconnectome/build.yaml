@@ -2,6 +2,7 @@ name: gigaconnectome
 version: 0.6.0
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: >-
     Functional connectivity is a common approach in analysing resting state fMRI
@@ -64,9 +65,44 @@ auto_update:
 
 build:
   kind: neurodocker
-  base-image: bids/giga_connectome:{{ context.version }}
+  base-image: "{{ 'bids/giga_connectome:' + context.version if arch == 'x86_64' else 'python:3.9-slim-bookworm' }}"
   pkg-manager: apt
-  directives: []
+  directives:
+    - condition: arch == "aarch64"
+      install:
+        - ca-certificates
+        - git
+
+    - condition: arch == "aarch64"
+      workdir: /code
+
+    - condition: arch == "aarch64"
+      run:
+        - mkdir -p /code /code/tools/mist2templateflow /templateflow
+        - tar -xzf {{ get_file("giga_connectome_source") }} -C /code --strip-components 1
+        - tar -xzf {{ get_file("mist2templateflow_source") }} -C /code/tools/mist2templateflow --strip-components 1
+        - pip3 install --no-cache-dir pip==24.0
+        - pip3 install --no-cache-dir --requirement /code/requirements.txt
+        - pip3 install --no-cache-dir --no-deps /code
+        - TEMPLATEFLOW_HOME=/templateflow python3 /code/tools/download_templates.py
+        - rm -rf /root/.cache/pip /code/tools/mist2templateflow
+
+    - condition: arch == "aarch64"
+      environment:
+        TEMPLATEFLOW_HOME: /templateflow
+
+    - condition: arch == "aarch64"
+      entrypoint: /usr/local/bin/giga_connectome
+
+files:
+  - name: giga_connectome_source
+    condition: arch == "aarch64"
+    url: https://github.com/bids-apps/giga_connectome/archive/refs/tags/0.6.0.tar.gz
+    sha256: 769dce189a1734839f9f0ff716bb55eaea351472503bdef03ef571aada469c49
+  - name: mist2templateflow_source
+    condition: arch == "aarch64"
+    url: https://github.com/SIMEXP/mist2templateflow/archive/61ac290bbbcde5a2bf2a7304c74ad69915710950.tar.gz
+    sha256: 3d0c25d11ecf758b1278cfff16c04796f46625768ea59bf9f34d4ec8d5133266
 
 categories:
   - functional imaging
