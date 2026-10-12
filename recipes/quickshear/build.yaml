@@ -10,13 +10,53 @@ architectures:
     - aarch64
 
 variables:
+  quickshear_version: "1.2.0"
+  synthstrip_script_sha256: "bbc2ff8f8779862039401b05d5cd6039fb4f3583e0032a793ac9adb3f4521590"
+  synthstrip_model_sha256: "37417f802196186441aae3e7f385d94f8a98c64a88acaeaa2723af995c653e33"
+  synthstrip_nocsf_model_sha256: "62bf01137c45b5f0cc04d59dbaed5b9ac138b3f25b766c062a7c1a0d696ecb28"
   synthstrip_version: "8.2.0"
   arm_torch_version: "2.2.2"
   arm_surfa_version: "0.6.3"
 
 auto_update:
-  method: pypi
-  package: quickshear
+  method: sources
+  container_version: quickshear
+  sources:
+    - id: quickshear
+      method: pypi
+      package: quickshear
+      target:
+        variable: quickshear_version
+    - id: arm_torch
+      method: pypi
+      package: torch
+      dependency: true
+      target:
+        variable: arm_torch_version
+    - id: arm_surfa
+      method: pypi
+      package: surfa
+      dependency: true
+      target:
+        variable: arm_surfa_version
+    - id: synthstrip_script
+      method: http_digest
+      url: https://raw.githubusercontent.com/freesurfer/freesurfer/v8.2.0/mri_synthstrip/mri_synthstrip
+      dependency: true
+      target:
+        variable: synthstrip_script_sha256
+    - id: synthstrip_model
+      method: http_digest
+      url: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.1.pt
+      dependency: true
+      target:
+        variable: synthstrip_model_sha256
+    - id: synthstrip_nocsf_model
+      method: http_digest
+      url: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.nocsf.1.pt
+      dependency: true
+      target:
+        variable: synthstrip_nocsf_model_sha256
 
 build:
     kind: neurodocker
@@ -63,7 +103,7 @@ build:
               FREESURFER_HOME: /freesurfer
 
         - run:
-              - pip install quickshear=={{ context.version }}
+              - pip install quickshear=={{ context.quickshear_version }}
 
         - install:
               - build-essential
@@ -160,15 +200,15 @@ files:
     - name: mri_synthstrip_arm64
       condition: arch == "aarch64"
       url: https://raw.githubusercontent.com/freesurfer/freesurfer/v{{ context.synthstrip_version }}/mri_synthstrip/mri_synthstrip
-      sha256: bbc2ff8f8779862039401b05d5cd6039fb4f3583e0032a793ac9adb3f4521590
+      sha256: "{{ context.synthstrip_script_sha256 }}"
     - name: synthstrip_model_arm64
       condition: arch == "aarch64"
       url: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.1.pt
-      sha256: 37417f802196186441aae3e7f385d94f8a98c64a88acaeaa2723af995c653e33
+      sha256: "{{ context.synthstrip_model_sha256 }}"
     - name: synthstrip_nocsf_model_arm64
       condition: arch == "aarch64"
       url: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.nocsf.1.pt
-      sha256: 62bf01137c45b5f0cc04d59dbaed5b9ac138b3f25b766c062a7c1a0d696ecb28
+      sha256: "{{ context.synthstrip_nocsf_model_sha256 }}"
 
 categories:
   - "data organisation"
