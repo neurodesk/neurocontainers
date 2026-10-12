@@ -131,10 +131,12 @@ def run(output):
     with (output / 'host.txt').open('w') as dest:
         for cmd in (['uname', '-a'], ['lscpu'], ['uptime'], ['nproc'], ['free', '-m'], ['apptainer', '--version']):
             subprocess.run(cmd, stdout=dest, stderr=subprocess.STDOUT, check=True)
+    repetitions = int(os.environ.get('DIAGNOSTIC_REPETITIONS', '1'))
+    assert repetitions in (1, 2)
     results = []
     modes = ['launcher', 'direct-tilde', 'direct-canonical']
     try:
-        for repetition in range(5):
+        for repetition in range(repetitions):
             # Rotate order to expose drift without parallel compilation contention.
             order = modes[repetition % 3:] + modes[:repetition % 3]
             for mode in order:

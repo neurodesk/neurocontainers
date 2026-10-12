@@ -1,6 +1,12 @@
 name: Julia ARM IJulia diagnostic
 on:
   workflow_dispatch:
+    inputs:
+      repetitions:
+        description: Number of diagnostic repetitions per mode
+        type: choice
+        default: '1'
+        options: ['1', '2']
 permissions:
   contents: read
   actions: read
@@ -8,7 +14,7 @@ jobs:
   diagnose:
     if: github.repository == 'neurodesk/neurocontainers'
     runs-on: blacksmith-8vcpu-ubuntu-2404-arm
-    timeout-minutes: 110
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
         with:
@@ -27,6 +33,8 @@ jobs:
           python3 tools/diagnose_julia_arm_ijulia.py extract "$RUNNER_TEMP/candidate.zip" "$RUNNER_TEMP/ijulia-diagnostic"
           rm "$RUNNER_TEMP/candidate.zip"
       - name: Run cold and warm imports
+        env:
+          DIAGNOSTIC_REPETITIONS: ${{ inputs.repetitions }}
         run: python3 tools/diagnose_julia_arm_ijulia.py run "$RUNNER_TEMP/ijulia-diagnostic"
       - name: Retain all diagnostic logs
         if: always()
