@@ -53,3 +53,66 @@ tests:
     description: Verify the DICOM conversion backend is exposed.
     command: dcm2niix --help 2>&1 | head -20
     expected_output_contains: "dcm2niiX"
+
+  - name: Create and reopen dataset workspace
+    description: Create a real BIDS workspace, reopen it idempotently and adopt existing user metadata without overwriting it.
+    command: |
+      python - <<'PY'
+      import json
+      import subprocess
+      import tempfile
+      from pathlib import Path
+      from bidsmgr.project import Project
+      from bidsmgr.schema import bids_version
+
+      def create(path, name, description):
+          subprocess.run(['bidsmgr-create', str(path), '--name', name,
+                          '--description', description], check=True)
+
+      def snapshot(path):
+          return {str(p.relative_to(path)): p.read_bytes()
+                  for p in path.rglob('*') if p.is_file()}
+
+      with tempfile.TemporaryDirectory(prefix='bidsmanager-', dir='${output_dir}') as tmp:
+          root = Path(tmp) / 'fresh'
+          create(root, 'Synthetic study', 'Offline workspace fixture')
+          desc = json.loads((root / 'dataset_description.json').read_text())
+          assert desc['Name'] == 'Synthetic study', desc
+          assert desc['BIDSVersion'] == bids_version(), desc
+          assert desc['DatasetType'] == 'raw', desc
+          assert 'Synthetic study' in (root / 'README').read_text()
+          assert {'.bidsmgr/', '.tmp_bidsmgr/'} <= set((root / '.bidsignore').read_text().splitlines())
+          bundle = root / '.bidsmgr' / 'project'
+          meta = json.loads((bundle / 'meta.json').read_text())
+          assert meta['name'] == 'Synthetic study', meta
+          assert meta['description'] == 'Offline workspace fixture', meta
+          assert meta['bidsmgr_version'] == '${version}', meta
+          assert meta['bids_schema_version'] == bids_version(), meta
+          assert len((bundle / 'events.jsonl').read_text().splitlines()) == 1
+          assert Project.open(bundle).state().name == 'Synthetic study'
+          before = snapshot(root)
+          create(root, 'Do not rename existing dataset', 'Do not replace provenance')
+          assert snapshot(root) == before, 'Reopening changed dataset or project bytes'
+
+          existing = Path(tmp) / 'existing'
+          existing.mkdir()
+          original = {'Name': 'Existing study', 'BIDSVersion': bids_version(),
+                      'DatasetType': 'raw', 'Authors': ['Synthetic Author'],
+                      'License': 'CC0', 'CustomField': {'preserve': [1, 2, 3]}}
+          (existing / 'dataset_description.json').write_text(json.dumps(original))
+          readme = b'User-authored README: preserve exact bytes.\n'
+          (existing / 'README').write_bytes(readme)
+          payload = bytes(range(256)) * 4
+          (existing / 'user-data.bin').write_bytes(payload)
+          create(existing, 'Ignored replacement name', 'Adopt existing workspace')
+          assert json.loads((existing / 'dataset_description.json').read_text()) == original
+          assert (existing / 'README').read_bytes() == readme
+          assert (existing / 'user-data.bin').read_bytes() == payload
+          Project.open(existing / '.bidsmgr' / 'project')
+          before = snapshot(existing)
+          create(existing, 'Another ignored name', 'Another ignored description')
+          assert snapshot(existing) == before, 'Repeated adoption changed user or project data'
+      print('Dataset creation, event replay, idempotent reopen and metadata preservation passed')
+      PY
+    expected_output_contains: Dataset creation, event replay, idempotent reopen and metadata preservation passed
+    timeout: 120
