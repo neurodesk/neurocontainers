@@ -1,0 +1,41 @@
+name: eman2
+version: 2.99.85
+upstream_version: 2.99.85
+tests:
+  - name: reports its version
+    command: e2version.py
+    expected_output_contains: EMAN ${upstream_version}
+  - name: processes 2D and 3D images on the CPU
+    command: |-
+      set -e
+      cd "$(mktemp -d)"
+      python -c "from EMAN2 import test_image, test_image_3d; test_image(type=1, size=(64, 64)).write_image('image.hdf'); test_image_3d(type=1, size=(48, 48, 48)).write_image('volume.hdf')"
+      e2proc2d.py image.hdf image_bin.mrc --meanshrink 2 --process filter.lowpass.gauss:cutoff_freq=0.1
+      e2proc3d.py volume.hdf volume_clip.mrc --clip 32 --process normalize.edgemean
+      e2iminfo.py volume_clip.mrc
+      python - <<'PY'
+      from EMAN2 import EMData
+      image = EMData("image_bin.mrc")
+      volume = EMData("volume_clip.mrc")
+      assert (image["nx"], image["ny"], image["nz"]) == (32, 32, 1), image.get_attr_dict()
+      assert (volume["nx"], volume["ny"], volume["nz"]) == (32, 32, 32), volume.get_attr_dict()
+      assert abs(volume["sigma"] - 1.0) < 1e-3, volume["sigma"]
+      print("EMAN2 processing produced expected dimensions")
+      PY
+    expected_output_contains: EMAN2 processing produced expected dimensions
+  - name: GUI programs start without a display
+    command: |-
+      cd "$(mktemp -d)"
+      export HOME="$PWD" QT_QPA_PLATFORM=offscreen
+      python -c "from EMAN2 import test_image; test_image(type=1, size=(64, 64)).write_image('image.hdf')"
+      for program in "e2display.py image.hdf" "e2projectmanager.py"; do
+        timeout 20 $program > gui.log 2>&1
+        status=$?
+        if [ "$status" -ne 124 ] || grep -q Traceback gui.log; then
+          cat gui.log
+          echo "$program exited with status $status"
+          exit 1
+        fi
+      done
+      echo "EMAN2 GUI programs stayed running"
+    expected_output_contains: EMAN2 GUI programs stayed running
