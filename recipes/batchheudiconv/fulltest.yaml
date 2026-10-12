@@ -53,27 +53,32 @@ tests:
   # ==========================================================================
   - name: bh01_prep_dir.sh help
     description: Display help message for directory preparation script
-    command: bh01_prep_dir.sh 2>&1 || true
+    command: bh01_prep_dir.sh 2>&1
+    expected_exit_code: 1
     expected_output_contains: "Create a new BIDS conversion study"
 
   - name: bh02_sort_dicom.sh help
     description: Display help message for DICOM sorting script
-    command: bh02_sort_dicom.sh 2>&1 || true
+    command: bh02_sort_dicom.sh 2>&1
+    expected_exit_code: 1
     expected_output_contains: "Sort DICOM files into series-based directories"
 
   - name: bh03_make_subjlist.sh help
     description: Display help message for subject list creation script
-    command: bh03_make_subjlist.sh 2>&1 || true
+    command: bh03_make_subjlist.sh 2>&1
+    expected_exit_code: 1
     expected_output_contains: "Create subject list from directory names"
 
   - name: bh04_make_heuristic.sh help
     description: Display help message for heuristic creation script
-    command: bh04_make_heuristic.sh 2>&1 || true
+    command: bh04_make_heuristic.sh 2>&1
+    expected_exit_code: 1
     expected_output_contains: "Create heuristic file"
 
   - name: bh05_make_bids.sh help
     description: Display help message for BIDS conversion script
-    command: bh05_make_bids.sh 2>&1 || true
+    command: bh05_make_bids.sh 2>&1
+    expected_exit_code: 1
     expected_output_contains:
       - "Convert sorted DICOM files to BIDS format"
       - "--merge"
@@ -222,12 +227,42 @@ tests:
 
   - name: Get heuristic info - bids_ME
     description: Get information about multi-echo BIDS heuristic
-    command: heudiconv --command heuristic-info -f bids_ME 2>&1 || true
+    command: heudiconv --command heuristic-info -f bids_ME 2>&1
     expected_output_contains: "Multi-Echo"
 
   - name: Heudiconv populate templates
     description: Test populate-templates command functionality
-    command: heudiconv --command populate-templates 2>&1 || true
+    command: |
+      NO_ET=1 python3 - <<'PY'
+      import json
+      import subprocess
+      import tempfile
+      from pathlib import Path
+      from heudiconv.bids import BIDS_VERSION
+
+      with tempfile.TemporaryDirectory(prefix='heud-templates-', dir='${output_dir}') as tmp:
+          root = Path(tmp)
+          command = ['heudiconv', '--command', 'populate-templates',
+                     '-f', 'convertall', '--files', str(root)]
+          subprocess.run(command, check=True)
+          description = root / 'dataset_description.json'
+          metadata = json.loads(description.read_text())
+          assert metadata['BIDSVersion'] == BIDS_VERSION, metadata
+          assert metadata['Name'] and metadata['Authors'] and metadata['License'], metadata
+          assert (root / 'README').stat().st_size > 0
+          assert (root / 'CHANGES').stat().st_size > 0
+          metadata['Name'] = 'Synthetic existing dataset'
+          metadata['CustomField'] = {'preserve': [1, 2, 3]}
+          description.write_text(json.dumps(metadata))
+          before = {str(p.relative_to(root)): p.read_bytes()
+                    for p in root.rglob('*') if p.is_file()}
+          subprocess.run(command, check=True)
+          after = {str(p.relative_to(root)): p.read_bytes()
+                   for p in root.rglob('*') if p.is_file()}
+          assert after == before, 'Existing dataset templates changed'
+      print('Real BIDS template creation and exact existing metadata preservation passed')
+      PY
+    expected_output_contains: Real BIDS template creation and exact existing metadata preservation passed
     expected_exit_code: 0
 
   # ==========================================================================
@@ -386,9 +421,10 @@ tests:
     expected_output_contains: "clean"
 
   - name: nib-nifti-dx NIfTI2 mode
-    description: Check diagnostics in NIfTI2 mode
-    command: nib-nifti-dx -2 ${t2} 2>&1 || true
+    description: Diagnose the known NIfTI1 input as NIfTI2 and require the header-size mismatch report.
+    command: nib-nifti-dx -2 ${t2} 2>&1
     expected_exit_code: 0
+    expected_output_contains: sizeof_hdr
 
   # ==========================================================================
   # NIBABEL - nib-roi (Region of Interest extraction)
@@ -597,12 +633,12 @@ tests:
 
   - name: dcmstack list translators
     description: List available DICOM translators
-    command: dcmstack --list-translators 2>&1 || true
+    command: dcmstack --list-translators 2>&1
     expected_output_contains: "CsaImage"
 
   - name: dcmstack default regexes
     description: Show default include/exclude regular expressions
-    command: dcmstack --default-regexes 2>&1 || true
+    command: dcmstack --default-regexes 2>&1
     expected_output_contains: "Default exclude"
 
   # ==========================================================================
@@ -704,15 +740,30 @@ tests:
   # DIAGNOSTICS AND VALIDATION
   # ==========================================================================
   - name: Validate all test outputs
-    description: Run NIfTI diagnostics on all generated outputs
+    description: Require every generated NIfTI1 or NIfTI2 image to pass the matching header diagnostics.
     command: |
-      for f in ${output_dir}/nibabel_out/*.nii.gz ${output_dir}/nibabel_out/*.nii; do
-        if [ -f "$f" ]; then
-          echo "Checking: $f"
-          nib-nifti-dx "$f" 2>&1 || echo "Warning: $f may have issues"
-        fi
-      done
-    expected_output_contains: "Checking"
+      python3 - <<'PY'
+      import subprocess
+      from pathlib import Path
+      import nibabel as nib
+
+      directory = Path('${output_dir}') / 'nibabel_out'
+      paths = sorted(set(directory.glob('*.nii')) | set(directory.glob('*.nii.gz')))
+      assert paths, 'No generated NIfTI images to validate'
+      for path in paths:
+          header = nib.load(path).header
+          size = int(header['sizeof_hdr'])
+          assert size in (348, 540), (path, size)
+          mode = '-2' if size == 540 else '-1'
+          result = subprocess.run(['nib-nifti-dx', mode, str(path)],
+                                  check=True, text=True, capture_output=True)
+          print('Checking:', path)
+          assert result.stdout.strip() == f'Header for "{path}" is clean', result.stdout
+      print('All generated NIfTI headers are clean')
+      PY
+    expected_output_contains:
+      - Checking
+      - All generated NIfTI headers are clean
 
   - name: List all generated outputs
     description: List all files generated by tests
