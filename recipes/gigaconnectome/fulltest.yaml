@@ -15,6 +15,7 @@
 
 name: gigaconnectome
 version: 0.6.0
+upstream_version: 0.6.0
 
 required_files:
   - dataset: ds000001
@@ -47,7 +48,7 @@ tests:
   - name: giga_connectome version check
     description: Verify giga_connectome binary runs and reports version
     command: giga_connectome --version
-    expected_output_contains: "${version}"
+    expected_output_contains: "${upstream_version}"
 
   - name: giga_connectome help
     description: Verify giga_connectome displays help information
@@ -858,9 +859,15 @@ tests:
     expected_output_contains: "required"
 
   - name: giga_connectome invalid bids dir
-    description: Verify proper error for non-existent BIDS directory
-    command: giga_connectome /nonexistent/path test_output participant 2>&1 || true
-    expected_output_contains: "error"
+    description: Reject a regular file passed as the BIDS dataset directory.
+    command: |
+      set -e
+      printf 'not a BIDS directory\n' > ${output_dir}/invalid_bids_root
+      giga_connectome ${output_dir}/invalid_bids_root ${output_dir}/invalid_bids_output participant --participant-label 01
+    expected_exit_code: 1
+    expected_output_contains:
+      - "FileExistsError"
+      - "invalid_bids_root"
 
   - name: nib-ls nonexistent file
     description: Verify proper error for nonexistent file
