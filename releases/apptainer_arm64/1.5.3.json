@@ -1,7 +1,7 @@
 {
   "apps": {
     "apptainer_arm64 1.5.3": {
-      "version": "20260910",
+      "version": "20261012",
       "exec": "",
       "apptainer_args": []
     }
