@@ -85,7 +85,7 @@ build:
         - rm -rf /tmp/itk-src /tmp/itk-build /tmp/elastix-src /tmp/elastix-build
     - environment:
         PATH: $PATH:/opt/{{ context.name }}-{{ context.version }}/bin
-        LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/opt/{{ context.name }}-{{ context.version }}/lib
+        LD_LIBRARY_PATH: '{{ "/opt/itk/lib:" if arch == "aarch64" else "" }}$LD_LIBRARY_PATH:/opt/{{ context.name }}-{{ context.version }}/lib'
 
 deploy:
   path:
