@@ -57,11 +57,11 @@ setup:
     import sys
     from pathlib import Path
 
-    import bidsme
+    from bidsme.schema import BIDSschema
+    from ruamel.yaml import YAML
     import bidsschematools.schema as bids_schema
     import nibabel as nib
     import numpy as np
-    import yaml
 
     root = Path(sys.argv[2]).resolve()
     source = root / 'raw'
@@ -143,9 +143,40 @@ setup:
         participant_matches(prepared / 'participants.tsv')
         run('map', prepared, destination, '--template', template,
             '--bidsmap', 'study.yaml')
-        study = yaml.safe_load(mapping.read_text())
+        # Perform the documented Step10 review before confirming this one run.
+        loader = YAML()
+        study = loader.load(mapping)
         runs = study['MRI']['jsonNIFTI']['anat']
-        assert len(runs) == 1 and runs[0]['suffix'] == 'T1w', runs
+        assert len(runs) == 1, runs
+        entry = runs[0]
+        assert entry['model'] == 'anat:T1w' and entry['suffix'] == 'T1w', entry
+        assert entry['example'] == 'anat/sub-01_ses-01_T1w', entry
+        assert Path(entry['provenance']).resolve() == copies[0], entry
+        assert entry['attributes']['SeriesDescription'] == 'SyntheticT1', entry
+        expected_sidecar = dict(EchoTime=0.01, RepetitionTimeExcitation=1.,
+                                MagneticFieldStrength=3., Manufacturer='Synthetic',
+                                NonlinearGradientCorrection=False, MRAcquisitionType='3D',
+                                DwellTime=0.00001, FlipAngle=8.)
+        for key, value in expected_sidecar.items():
+            source_key = 'RepetitionTime' if key == 'RepetitionTimeExcitation' else key
+            assert metadata[source_key] == value
+            assert entry['json'][key] in ('<' + source_key + '>', value), entry
+        # Optional empty fields are removed as instructed by the upstream guide.
+        for key in list(entry['json']):
+            if entry['json'][key] is None or entry['json'][key] == '':
+                del entry['json'][key]
+        schema = BIDSschema('mri', ['anat'])
+        assert schema.validate(entry['example'] + '.nii.gz', expected_sidecar,
+                               modalities=['mri'], datatypes=['anat'])
+        entry['template'] = False
+        entry['checked'] = True
+        with mapping.open('w') as stream:
+            loader.dump(study, stream)
+        run('map', prepared, destination, '--template', template,
+            '--bidsmap', mapping)
+        reviewed = loader.load(mapping)['MRI']['jsonNIFTI']['anat']
+        assert len(reviewed) == 1 and reviewed[0]['checked'] is True
+        assert not reviewed[0].get('template', False)
         run('process', prepared, prepared, '--bidsmap', mapping)
         image_matches(copies[0])
         assert copies[0].read_bytes() == original.read_bytes()
@@ -161,6 +192,9 @@ setup:
                                NonlinearGradientCorrection=False, MRAcquisitionType='3D',
                                DwellTime=0.00001, FlipAngle=8.).items():
             assert metadata[key] == value, (key, metadata)
+        schema = BIDSschema('mri', ['anat'])
+        assert schema.validate('anat/' + expected.name, metadata,
+                               modalities=['mri'], datatypes=['anat'])
         participant_matches(destination / 'participants.tsv')
         print('BIDSIFY_EXACT_PIXELS_GEOMETRY_METADATA_OK')
     else:
