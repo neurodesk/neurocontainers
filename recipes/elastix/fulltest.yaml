@@ -670,14 +670,16 @@ tests:
   - name: Missing parameter file error
     description: Verify proper error when parameter file is missing
     command: mkdir -p test_output/elastix/error_test && elastix -f ${t1w} -m ${t2} -out test_output/elastix/error_test 2>&1
-    expected_exit_code: 1
-    expected_output_contains: "-p"
+    # The released CLI returns -1 here, which POSIX exposes as 255.
+    expected_exit_code: 255
+    expected_output_contains: 'ERROR: No CommandLine option "-p" given!'
 
   - name: Transformix missing transform parameters error
     description: Verify proper error when transform parameters are missing
     command: mkdir -p test_output/transformix/error_test && transformix -in ${t2} -out test_output/transformix/error_test 2>&1
-    expected_exit_code: 1
-    expected_output_contains: "-tp"
+    # The released CLI returns -1 here, which POSIX exposes as 255.
+    expected_exit_code: 255
+    expected_output_contains: 'ERROR: No CommandLine option "-tp" given!'
 
 cleanup:
   script: |
