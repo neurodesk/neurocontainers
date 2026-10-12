@@ -636,7 +636,7 @@ tests:
 
 
   - name: Map and coin synthetic MR DICOM to BIDS
-    description: Run actual automated bidsmapper and bidscoiner with an explicit template; verify every voxel, RAS affine, BIDS timing, anonymization, participant and scans records, mapping provenance and unchanged DICOM sources
+    description: Run actual automated bidsmapper and bidscoiner with an explicit template; verify every voxel, RAS affine, BIDS timing, anonymization, participant and scans records, mapping provenance, unchanged DICOM sources and zero-error BIDS validation
     command: |
       python - <<'PYTHON'
       from pathlib import Path
@@ -763,6 +763,12 @@ tests:
       assert rows[0]['acq_time'] == '1925-01-01T12:00:00', rows
       assert {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.glob('*.dcm')} == hashes
       assert (target / 'code' / 'bidscoin' / 'bidsmap.yaml').is_file()
+      validation = subprocess.run(['bids-validator', str(target), '--json'], text=True, capture_output=True, timeout=120)
+      print(validation.stdout, validation.stderr)
+      assert validation.returncode == 0, validation.stdout + validation.stderr
+      report = json.loads(validation.stdout)
+      assert report['issues']['errors'] == []
+      assert report['summary']['totalFiles'] > 0
       print('BIDScoin mapped and converted exact MR voxels, geometry, timing and participant metadata')
       PYTHON
     expected_output_contains: BIDScoin mapped and converted exact MR voxels, geometry, timing and participant metadata
