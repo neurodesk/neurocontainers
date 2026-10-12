@@ -46,7 +46,6 @@ tests:
 - name: autodock4 version
   description: Verify autodock4 binary is present
   command: autodock4 --version
-  ignore_exit_code: true
   expected_output_contains: AutoDock
 - name: split multi-model pdbqt
   description: Verify vina_split can split a simple multi-model PDBQT file
@@ -61,6 +60,47 @@ tests:
 - name: installed distribution version
   command: dpkg-query -W -f='${Version}\n' autodock-vina
   expected_output_contains: ${package_version}
+- name: Molecular scoring and translation invariance
+  description: Verify finite repulsive and attractive scores for known carbon-pair geometries.
+  command: |
+    set -euo pipefail
+    work="$(mktemp -d "$(pwd)/${output_dir}/vina-score.XXXXXX")"
+    write_atom() {
+        printf 'ATOM      1  C   UNL     1    %8.3f%8.3f%8.3f  0.00  0.00    +0.000 C\n' "$1" 0 0
+    }
+    score_case() {
+        local case_name="$1" receptor_x="$2" ligand_x="$3" line energy="" matches=0
+        write_atom "$receptor_x" > "$work/$case_name-receptor.pdbqt"
+        {
+            printf 'ROOT\n'
+            write_atom "$ligand_x"
+            printf 'ENDROOT\nTORSDOF 0\n'
+        } > "$work/$case_name-ligand.pdbqt"
+        vina --receptor "$work/$case_name-receptor.pdbqt" \
+            --ligand "$work/$case_name-ligand.pdbqt" --score_only --cpu 1 --seed 43 \
+            --center_x "$receptor_x" --center_y 0 --center_z 0 \
+            --size_x 20 --size_y 20 --size_z 20 > "$work/$case_name.log" 2>&1 || return "$?"
+        cat "$work/$case_name.log" >&2
+        while IFS= read -r line; do
+            if [[ "$line" == "Estimated Free Energy of Binding"* ]]; then
+                [[ "$line" =~ :[[:space:]]+([-+]?[0-9]+\.[0-9]+)[[:space:]]+\(kcal/mol\) ]] || return 1
+                energy="${BASH_REMATCH[1]}"
+                matches=$((matches + 1))
+            fi
+        done < "$work/$case_name.log"
+        test "$matches" -eq 1 || return 1
+        printf '%s\n' "$energy"
+    }
+    clash="$(score_case clash 0 1)"
+    contact="$(score_case contact 0 4)"
+    translated="$(score_case translated 8 12)"
+    [[ "$clash" != -* && "$clash" != 0.000 && "$clash" != +0.000 ]]
+    [[ "$contact" == -* && "$contact" != -0.000 ]]
+    [[ "$contact" == "$translated" ]]
+    printf 'Vina scores (kcal/mol): clash=%s contact=%s translated=%s\n' "$clash" "$contact" "$translated"
+    printf 'Molecular scoring and translation invariance verified\n'
+  expected_output_contains: "Molecular scoring and translation invariance verified"
+  timeout: 120
 cleanup:
   script: '#!/usr/bin/env bash
 
