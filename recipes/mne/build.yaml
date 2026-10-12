@@ -127,7 +127,7 @@ build:
         XDG_RUNTIME_DIR: ~/.vscode
 
     - environment:
-        LD_PRELOAD: /opt/miniconda-latest/envs/mne-{{ context.version }}/lib/libgomp.so.1
+        LD_PRELOAD: /opt/miniconda-latest/envs/mne-{{ context.version }}/lib/libgomp.so.1:/usr/lib/aarch64-linux-gnu/libglapi.so.0
       condition: arch == "aarch64"
 
     - user: neuro

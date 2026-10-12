@@ -122,6 +122,9 @@ tests:
       finally:
           browser.close()
           app.processEvents()
+      # VTK hides dlopen errors; expose the actual installed-library failure before rendering.
+      import ctypes
+      ctypes.CDLL("libOSMesa.so.8", mode=ctypes.RTLD_GLOBAL)
       mne.viz.set_3d_backend("pyvistaqt")
       image_path = Path(os.environ["XDG_CACHE_HOME"]) / "sphere.png"
       plot = pv.Plotter(off_screen=True, window_size=(128, 128))
