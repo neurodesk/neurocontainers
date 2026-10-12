@@ -112,12 +112,26 @@ setup:
         } else if (mode === 'spa') {
           await exactFile('/fixture-routing/nonexistent/path', '/index.html');
         } else if (mode === 'bundle') {
-          const references = [...index.toString().matchAll(/\b(?:src|href)="([^"]+)"/g)]
-            .map(match => match[1]).filter(value => !/^(?:https?:|data:|#)/.test(value));
+          // A base href controls resolution; browsers do not request it as an asset.
+          const html = index.toString();
+          const baseHref = html.match(/<base\b[^>]*\bhref=["']([^"']+)["']/i)?.[1] || '/';
+          const documentBase = new URL(baseHref, base + '/');
+          const references = [];
+          for (const match of html.matchAll(/<(script|link)\b([^>]*)>/gi)) {
+            const [, tag, attributes] = match;
+            if (tag.toLowerCase() === 'link') {
+              const rel = attributes.match(/\brel=["']([^"']+)["']/i)?.[1] || '';
+              if (!rel.split(/\s+/).some(value => ['stylesheet', 'modulepreload', 'preload', 'icon', 'apple-touch-icon', 'manifest'].includes(value))) continue;
+            }
+            const reference = tag.toLowerCase() === 'script'
+              ? attributes.match(/\bsrc=["']([^"']+)["']/i)?.[1]
+              : attributes.match(/\bhref=["']([^"']+)["']/i)?.[1];
+            if (reference && !/^(?:https?:|data:|#|\/\/)/.test(reference)) references.push(reference);
+          }
           assert(references.some(value => /\.js(?:\?|$)/.test(value)), 'No application JavaScript');
           assert(references.some(value => /\.css(?:\?|$)/.test(value)), 'No application CSS');
           for (const reference of references) {
-            const resource = new URL(reference, base + '/').pathname;
+            const resource = new URL(reference, documentBase).pathname;
             const result = await exactFile(resource);
             assert.notDeepEqual(result.body, index, `Asset returned SPA HTML: ${resource}`);
             if (resource.endsWith('.js')) assert.match(result.type, /javascript/);
