@@ -1,7 +1,13 @@
 name: hdbet
 version: 2.0.1
 
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+
 test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
   output_dir: test_output
 
 setup:
@@ -55,3 +61,50 @@ tests:
     description: Verify the command starts without importing errors
     command: hd-bet --help 2>&1 | head -20
     expected_output_contains: "usage: hd-bet"
+
+
+  - name: Extract a real T1 brain on CPU with bundled weights
+    description: Run the documented CPU inference mode and require a nonempty binary mask plus exact masked image voxels in the original physical space
+    command: |
+      python - <<'PY'
+      import subprocess
+      from pathlib import Path
+      import nibabel as nib
+      import numpy as np
+
+      work = Path('${output_dir}') / 'cpu-extraction'
+      work.mkdir(parents=True, exist_ok=True)
+      original = nib.load('${t1w}')
+      target = nib.orientations.axcodes2ornt(('L', 'A', 'S'))
+      transform = nib.orientations.ornt_transform(nib.orientations.io_orientation(original.affine), target)
+      oriented = original.as_reoriented(transform)
+      assert nib.aff2axcodes(oriented.affine) == ('L', 'A', 'S')
+      input_file = work / 'input.nii.gz'
+      output_file = work / 'brain.nii.gz'
+      header = oriented.header.copy()
+      header.set_data_dtype(np.float32)
+      nib.save(nib.Nifti1Image(oriented.get_fdata(dtype=np.float32), oriented.affine, header), input_file)
+      reference = nib.load(input_file)
+      subprocess.run([
+          'hd-bet', '-i', str(input_file), '-o', str(output_file),
+          '-device', 'cpu', '--disable_tta', '--save_bet_mask',
+      ], check=True)
+      mask_image = nib.load(work / 'brain_bet.nii.gz')
+      brain_image = nib.load(output_file)
+      assert mask_image.shape == brain_image.shape == reference.shape
+      # NIfTI stores affine fields at float32 precision; SimpleITK rewrites
+      # direction/spacing, so allow only a small serialization roundoff.
+      np.testing.assert_allclose(mask_image.affine, reference.affine, rtol=0, atol=1e-5)
+      np.testing.assert_allclose(brain_image.affine, reference.affine, rtol=0, atol=1e-5)
+      mask = mask_image.get_fdata()
+      brain = brain_image.get_fdata()
+      values = reference.get_fdata()
+      assert np.isfinite(mask).all() and np.isfinite(brain).all()
+      assert set(np.unique(mask)) == {0., 1.}, np.unique(mask)
+      assert np.count_nonzero(brain) > 0
+      np.testing.assert_array_equal(brain, np.where(mask == 1, values, 0))
+      print('HD-BET CPU inference, binary brain mask and exact masked voxels verified')
+      PY
+    expected_output_contains: HD-BET CPU inference, binary brain mask and exact masked voxels verified
+    expected_exit_code: 0
+    timeout: 900
