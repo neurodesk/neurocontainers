@@ -22,6 +22,34 @@ test_data:
   output_dir: test_output
 
 setup:
+  host_script: |
+    python3 - <<"PYTHON"
+    from pathlib import Path
+    import struct
+
+    root = Path('${output_dir}') / 'arithmetic-phantom'
+    root.mkdir(parents=True, exist_ok=True)
+
+    def write_nifti(name, frames):
+        header = bytearray(352)
+        struct.pack_into('<i', header, 0, 348)
+        struct.pack_into('<8h', header, 40, 4 if len(frames) > 1 else 3, 3, 2, 2, len(frames), 1, 1, 1)
+        struct.pack_into('<2h', header, 70, 16, 32)
+        struct.pack_into('<8f', header, 76, 1, 2, 3, 4, 1, 0, 0, 0)
+        struct.pack_into('<3f', header, 108, 352, 1, 0)
+        header[123] = 10  # millimetres and seconds
+        struct.pack_into('<h', header, 254, 1)
+        struct.pack_into('<12f', header, 280, -2, 0, 0, 10, 0, 3, 0, -20, 0, 0, 4, 30)
+        header[344:348] = b'n+1\0'
+        values = [value for frame in frames for value in frame]
+        (root / name).write_bytes(header + struct.pack('<' + 'f' * len(values), *values))
+
+    values = list(range(-6, 6))
+    write_nifti('input.nii', [values])
+    write_nifti('timeseries.nii', [[value + frame for value in values] for frame in range(4)])
+    (root / 'expected-arithmetic.bin').write_bytes(struct.pack('<12f', *(2 * value + 5 for value in values)))
+    (root / 'expected-mean.bin').write_bytes(struct.pack('<12f', *(value + 1.5 for value in values)))
+    PYTHON
   script: |
     #!/usr/bin/env bash
     set -e
@@ -794,6 +822,33 @@ tests:
     command: niimath ${t1w} -range test_output/t1w_range.nii.gz
     validate:
       - output_exists: ${output_dir}/t1w_range.nii.gz
+
+
+  - name: Exact arithmetic chain and temporal mean on synthetic NIfTI
+    description: Require exact float32 voxel values, spatial shape and physical affine after ordered arithmetic and four-frame temporal averaging
+    command: |
+      set -euo pipefail
+      export FSLOUTPUTTYPE=NIFTI
+      root="${output_dir}/arithmetic-phantom"
+      niimath "$root/input.nii" -add 3 -mul 2 -sub 1 "$root/arithmetic.nii" -odt float
+      niimath "$root/timeseries.nii" -Tmean "$root/mean.nii" -odt float
+      for operation in arithmetic mean; do
+        image="$root/$operation.nii"
+        test "$(od -An -v -tu2 -j42 -N8 "$image" | xargs)" = "3 2 2 1"
+        test "$(od -An -v -tu2 -j70 -N4 "$image" | xargs)" = "16 32"
+        od -An -v -tf4 -j108 -N4 "$image" | awk 'NF { ok = (NF == 1 && $1 == 352) } END { exit !ok }'
+        od -An -v -tf4 -j280 -N48 "$image" | awk '
+          BEGIN { split("-2 0 0 10 0 3 0 -20 0 0 4 30", expected, " ") }
+          { for (i = 1; i <= NF; i++) { n++; if (($i + 0) != (expected[n] + 0)) exit 1 } }
+          END { if (n != 12) exit 1 }
+        '
+        dd if="$image" of="$root/actual-$operation.bin" bs=1 skip=352 status=none
+        cmp "$root/expected-$operation.bin" "$root/actual-$operation.bin"
+      done
+      echo "NIfTI arithmetic order, exact temporal mean and physical geometry verified"
+    expected_output_contains: NIfTI arithmetic order, exact temporal mean and physical geometry verified
+    expected_exit_code: 0
+    timeout: 120
 
 cleanup:
   script: |
