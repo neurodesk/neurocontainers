@@ -2,6 +2,7 @@ name: gigaconnectome
 version: 0.6.0
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: >-
     Functional connectivity is a common approach in analysing resting state fMRI
@@ -57,16 +58,97 @@ structured_readme:
         url = {https://github.com/nilearn/nilearn},
         doi = {https://doi.org/10.5281/zenodo.8397156}
     }
+variables:
+  upstream_version: 0.6.0
+  source_url: https://codeload.github.com/bids-apps/giga_connectome/tar.gz/refs/tags/0.6.0
+  source_sha256: 769dce189a1734839f9f0ff716bb55eaea351472503bdef03ef571aada469c49
+  mist2templateflow_commit: 61ac290bbbcde5a2bf2a7304c74ad69915710950
+  pip_version: "24.0"
+  python_base_digest: sha256:a02e9c5406c416c504d6c9a1a306ff4080c3173f1008d192f953bd20382a2d5c
+
 auto_update:
-  method: dockerhub
-  repo: bids/giga_connectome
-  version_regex: ^(?P<version>[0-9]+\.[0-9]+\.[0-9]+)$
+  method: sources
+  container_version: giga_connectome
+  sources:
+    - id: giga_connectome
+      method: artifact_listing
+      url: https://api.github.com/repos/bids-apps/giga_connectome/tags
+      download_base: https://codeload.github.com/bids-apps/giga_connectome/tar.gz/refs/tags/
+      version_regex: '(?P<version>\d+\.\d+\.\d+)'
+      target:
+        variable: source_url
+        variables:
+          upstream_version: version
+          source_sha256: sha256
+    - id: mist2templateflow
+      method: github_commit
+      repo: SIMEXP/mist2templateflow
+      # Match the 0.6.0 upstream submodule; its compatibility branch was removed and main diverged.
+      ref: 61ac290bbbcde5a2bf2a7304c74ad69915710950
+      dependency: true
+      target:
+        variable: mist2templateflow_commit
+    - id: python_base
+      method: oci_digest
+      image: python
+      tag: 3.9-slim-bookworm
+      dependency: true
+      target:
+        variable: python_base_digest
+    - id: pip
+      method: pypi
+      package: pip
+      dependency: true
+      version_regex: '(?P<version>24\.\d+(?:\.\d+)?)'
+      target:
+        variable: pip_version
 
 build:
   kind: neurodocker
-  base-image: bids/giga_connectome:{{ context.version }}
+  base-image: "{% if arch == 'x86_64' %}bids/giga_connectome:{{ context.upstream_version }}{% else %}python:3.9-slim-bookworm@{{ context.python_base_digest }}{% endif %}"
   pkg-manager: apt
-  directives: []
+  # The upstream x86 image needs no extra packages; its Bullseye security pool returns 404s.
+  add-default-template: false
+  add-tzdata: false
+  directives:
+    - condition: arch == "aarch64"
+      install:
+        - ca-certificates
+        - git
+
+    - condition: arch == "aarch64"
+      workdir: /code
+
+    - condition: arch == "aarch64"
+      run:
+        - mkdir -p /code /code/tools/mist2templateflow /templateflow
+        - tar -xzf {{ get_file("giga_connectome_source") }} -C /code --strip-components 1
+        - git -C /code/tools/mist2templateflow init
+        - git -C /code/tools/mist2templateflow remote add origin https://github.com/SIMEXP/mist2templateflow.git
+        - git -C /code/tools/mist2templateflow fetch --depth 1 origin {{ context.mist2templateflow_commit }}
+        - git -C /code/tools/mist2templateflow checkout --detach {{ context.mist2templateflow_commit }}
+        - pip3 install --no-cache-dir pip=={{ context.pip_version }}
+        - pip3 install --no-cache-dir --requirement /code/requirements.txt
+        - pip3 install --no-cache-dir --no-deps /code
+        - TEMPLATEFLOW_HOME=/templateflow python3 /code/tools/download_templates.py
+        - rm -rf /root/.cache/pip /code/tools/mist2templateflow
+
+    - condition: arch == "aarch64"
+      environment:
+        TEMPLATEFLOW_HOME: /templateflow
+
+    - condition: arch == "aarch64"
+      entrypoint: /usr/local/bin/giga_connectome
+
+files:
+  - name: giga_connectome_source
+    condition: arch == "aarch64"
+    url: "{{ context.source_url }}"
+    sha256: "{{ context.source_sha256 }}"
+
+deploy:
+  bins:
+    - giga_connectome
 
 categories:
   - functional imaging

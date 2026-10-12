@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "gingerale_arm64 4.0.0": {
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "statistics"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "gingerale"
+}

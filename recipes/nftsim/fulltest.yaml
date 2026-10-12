@@ -10,6 +10,7 @@
 
 name: nftsim
 version: 1.0.2
+vendor_version: 1.0.2
 
 test_data:
   # Built-in configuration files from the container
@@ -61,7 +62,10 @@ tests:
   # ==========================================================================
   - name: Help output
     description: Verify nftsim binary runs and displays help information
-    command: nftsim --help 2>&1
+    command: |
+      test "$(cat /app/vendor-version)" = "${vendor_version}" &&
+      grep -Eq '^[0-9a-f]{40}$' /app/source-commit &&
+      nftsim --help 2>&1
     expected_output_contains: "Usage: nftsim"
 
   - name: Help flag short form
@@ -219,6 +223,7 @@ tests:
 
   - name: EIRS BCM plasticity
     description: Run EIRS model with BCM plasticity
+    timeout: 300
     command: nftsim -i ${plasticity_eirs_bcm} -o test_output/plasticity-eirs-bcm.output
     validate:
       - output_exists: ${output_dir}/plasticity-eirs-bcm.output
@@ -236,10 +241,10 @@ tests:
       - output_exists: ${output_dir}/plasticity-network.output
 
   - name: PAS plasticity
-    description: Run PAS plasticity model (fCaP coupling type not available in this version)
+    description: Reject bundled PAS configuration because fCaP coupling is unavailable in this version
     command: nftsim -i ${plasticity_pas} -o test_output/plasticity-pas.output 2>&1
-    ignore_exit_code: true
-    expected_output_contains: "fCaP"
+    expected_exit_code: 1
+    expected_output_contains: "Invalid coupling type 'fCaP'"
 
   - name: Basic plasticity
     description: Run basic plasticity configuration
@@ -525,6 +530,30 @@ tests:
       grep -q "Time" test_output/workflow-test.output && \
       echo "Complete workflow successful"
     expected_output_contains: "Complete workflow successful"
+
+  - name: Finite corticothalamic time series
+    description: Require consistent numeric columns, finite samples, increasing timestamps and more than nine seconds of EIRS output.
+    depends_on: EIRS corticothalamic simulation
+    command: |
+      awk '
+        /^=+$/ { data_started = 1; next }
+        data_started && $1 == "Time" { header_rows = 2; next }
+        header_rows == 2 && NF > 0 { header_rows = 1; next }
+        data_started && header_rows == 1 && NF > 0 {
+          if (sample_rows == 0) { output_width = NF; first_time = $1 + 0 }
+          if (NF < 2 || NF != output_width || (sample_rows > 0 && $1 + 0 <= last_time)) { bad = 1; exit 1 }
+          for (column_idx = 1; column_idx <= NF; column_idx++) {
+            if ($column_idx !~ /^[-+]?[0-9]+[.][0-9]+[eE][-+]?[0-9]+$/) { bad = 1; exit 1 }
+          }
+          last_time = $1 + 0
+          sample_rows++
+        }
+        END {
+          if (bad || sample_rows < 1000 || last_time <= first_time + 9) exit 1
+          print "Finite corticothalamic time series validated"
+        }
+      ' test_output/eirs-corticothalamic.output
+    expected_output_contains: Finite corticothalamic time series validated
 
 cleanup:
   script: |

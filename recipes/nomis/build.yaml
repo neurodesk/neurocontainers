@@ -1,0 +1,145 @@
+name: nomis
+version: "20220225"
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://git.valeria.science/medics/archives/github/nomis/-/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  # Upstream publishes no version numbers; the label is the date of the
+  # NOMIS.zip release inside this archived repository.
+  upstream_commit: 65938bed37cecaa5133e917ef19cca8f18c74983
+  base_image_digest: sha256:b53f496ca43e5af6994f8e316cf03af31050bf7944e0e4a308ad86c001cf028b
+
+auto_update:
+  method: sources
+  container_version: false
+  sources:
+    - id: upstream
+      method: git_commit
+      url: https://git.valeria.science/medics/archives/github/nomis.git
+      ref: refs/heads/main
+      target:
+        variable: upstream_commit
+        fulltest_variable: upstream_commit
+    - id: base_image
+      method: oci_digest
+      image: python
+      tag: 3.7.17-slim-bookworm
+      dependency: true
+      target:
+        variable: base_image_digest
+
+structured_readme:
+  description: >-
+    NOMIS (NOrmative Morphometry Image Statistics) computes normative Z-scores
+    for FreeSurfer 6.0 morphometry, adjusted for age, sex, head size and image
+    quality, from models of 6,909 healthy adults aged 18-100.
+  example: nomis -csv subjects.csv -s $SUBJECTS_DIR -o nomis_out -a DK
+  documentation: https://git.valeria.science/medics/archives/github/nomis
+  citation: |-
+    Potvin O, Dieumegarde L, Duchesne S. NOMIS: Quantifying morphometric deviations
+    from normality over the lifetime of the adult human brain. bioRxiv
+    2021.01.25.428063. https://doi.org/10.1101/2021.01.25.428063
+
+readme: |-
+  ----------------------------------
+  ## nomis/{{ context.version }} ##
+
+  NOMIS (NOrmative Morphometry Image Statistics) computes normative Z-scores for
+  FreeSurfer 6.0 morphometry: 1,344 measures (aseg, wmparc, DK/DKT/Destrieux
+  cortical parcellations, ex vivo Brodmann areas, hippocampal and brainstem
+  subfields) modelled on 6,909 cognitively healthy adults aged 18-100. Z-scores
+  are adjusted for head size and image quality (contrast-to-noise ratio and
+  surface holes), and for age and sex when the CSV provides them.
+
+  **Only FreeSurfer 6.0 output is valid.** The norms are calibrated on FreeSurfer
+  6.0 `recon-all -all` run without manual edits or expert options. NOMIS will
+  happily read FreeSurfer 7 or FastSurfer output and return plausible-looking
+  but biased Z-scores, so check which version produced your subjects and check
+  segmentation quality first.
+
+  Usage:
+  ```
+  nomis -csv subjects.csv -s $SUBJECTS_DIR -o nomis_out [-a DK|DKT|Destrieux]
+  ```
+
+  `subjects.csv` has an `id` column matching the FreeSurfer subject folder
+  names, and optionally `age` and `sex` (M/F). Rows with missing values are
+  skipped. Results land in `nomis_out/normative_z_scores/`, with the extracted
+  raw values in `raw_scores/` and contrast-to-noise ratios in `CNR/`. Without
+  `-o`, output goes to `./nomis_out`.
+
+  A worked example with two FreeSurfer subjects and the expected output ships
+  in the container:
+  ```
+  nomis -csv /opt/nomis/Example/csv_example_ageandsex.csv -s /opt/nomis/Example/freesurfer_dir -o nomis_example
+  ```
+
+  More documentation: https://git.valeria.science/medics/archives/github/nomis
+
+  Citation:
+  ```
+  Potvin O, Dieumegarde L, Duchesne S. NOMIS: Quantifying morphometric deviations
+  from normality over the lifetime of the adult human brain. bioRxiv
+  2021.01.25.428063. https://doi.org/10.1101/2021.01.25.428063
+  ```
+
+  To run container outside of this environment: ml nomis/{{ context.version }}
+
+  ----------------------------------
+
+build:
+  kind: neurodocker
+  base-image: python:3.7.17-slim-bookworm@{{ context.base_image_digest }}
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PYTHONDONTWRITEBYTECODE: "1"
+
+    - install: git unzip
+
+    - run:
+        # The normative models are scikit-learn 0.21 LinearRegression pickles
+        # (sklearn.linear_model.base, removed in 0.24), so the stack NOMIS was
+        # built with is pinned exactly; it reproduces the shipped example output.
+        - 'pip install --no-cache-dir --only-binary=:all: numpy==1.17.2 scipy==1.3.1 joblib==0.13.2 scikit-learn==0.21.3 pandas==0.25.1 python-dateutil==2.8.0 pytz==2019.2 six==1.12.0 nibabel==2.5.1'
+        - git clone https://git.valeria.science/medics/archives/github/nomis.git /tmp/nomis-src
+        - git -C /tmp/nomis-src checkout {{ context.upstream_commit }}
+        - unzip -q /tmp/nomis-src/NOMIS.zip -d /tmp/nomis-src/unpacked -x "__MACOSX/*"
+        - mv /tmp/nomis-src/unpacked/NOMIS /opt/nomis
+        - mv /tmp/nomis-src/Example /tmp/nomis-src/LICENSE /opt/nomis/
+        - echo {{ context.upstream_commit }} > /opt/nomis/source-revision
+        - find /opt/nomis \( -name .DS_Store -o -name __pycache__ \) -prune -exec rm -rf {} +
+        - rm -rf /tmp/nomis-src
+        - cp {{ get_file("nomis") }} /usr/local/bin/nomis
+        - chmod 0755 /usr/local/bin/nomis
+        - chmod -R a+rX /opt/nomis
+
+    - deploy:
+        bins:
+          - nomis
+
+files:
+  - name: nomis
+    contents: |
+      #!/bin/sh
+      # Without -o, NOMIS writes into its own install directory, which is
+      # read-only in the container; default to ./nomis_out instead.
+      case " $* " in
+        *" -o "*|*" -h "*|*" --help "*) ;;
+        *) set -- "$@" -o "$PWD/nomis_out"
+           echo "nomis: no -o given, writing to $PWD/nomis_out" >&2 ;;
+      esac
+      exec python /opt/nomis/NOMIS.py "$@"
+
+categories:
+  - structural imaging
+  - statistics
+
+icon: data:image/png;base64,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

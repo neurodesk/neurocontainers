@@ -113,7 +113,9 @@ def render_directive(directive: Directive, pkg_manager: str = "apt") -> list[str
     if isinstance(directive, From):
         if not directive.image:
             raise ValueError("FROM image cannot be empty")
-        return [f"FROM {directive.image}"]
+        platform = f"--platform={directive.platform} " if directive.platform else ""
+        alias = f" AS {directive.alias}" if directive.alias else ""
+        return [f"FROM {platform}{directive.image}{alias}"]
     if isinstance(directive, Env):
         return _render_env(directive.values)
     if isinstance(directive, Install):
@@ -130,7 +132,10 @@ def render_directive(directive: Directive, pkg_manager: str = "apt") -> list[str
         if not directive.sources:
             raise ValueError("COPY requires at least one source")
         parts = [*directive.sources, directive.destination]
-        return ['COPY ["{}"]'.format('", \\\n      "'.join(parts))]
+        prefix = (
+            f"COPY --from={directive.from_stage}" if directive.from_stage else "COPY"
+        )
+        return [(prefix + ' ["{}"]').format('", \\\n      "'.join(parts))]
     if isinstance(directive, Workdir):
         return [f"WORKDIR {directive.path}"]
     if isinstance(directive, User):
@@ -146,7 +151,12 @@ def _instruction_records(
     directive: Directive, pkg_manager: str = "apt"
 ) -> list[dict[str, Any]]:
     if isinstance(directive, From):
-        return [{"name": "from_", "kwds": {"base_image": directive.image}}]
+        kwds = {"base_image": directive.image}
+        if directive.platform:
+            kwds["platform"] = directive.platform
+        if directive.alias:
+            kwds["alias"] = directive.alias
+        return [{"name": "from_", "kwds": kwds}]
     if isinstance(directive, Env):
         return [{"name": "env", "kwds": dict(directive.values)}]
     if isinstance(directive, Install):
@@ -170,10 +180,13 @@ def _instruction_records(
         return [{"name": "run", "kwds": {"command": command}}]
     if isinstance(directive, Copy):
         source = [*directive.sources, directive.destination]
+        kwds = {"source": source, "destination": directive.destination}
+        if directive.from_stage:
+            kwds["from_stage"] = directive.from_stage
         return [
             {
                 "name": "copy",
-                "kwds": {"source": source, "destination": directive.destination},
+                "kwds": kwds,
             }
         ]
     if isinstance(directive, Workdir):
