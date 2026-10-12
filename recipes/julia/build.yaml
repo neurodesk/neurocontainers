@@ -109,7 +109,8 @@ build:
         JULIA_DEPOT_PATH: /opt/julia_depot
 
     - run:
-        - julia install_packages.jl
+        - JULIA_CPU_TARGET=generic julia install_packages.jl
+        - JULIA_CPU_TARGET=generic julia -e 'using Pkg; Pkg.precompile("IJulia"; strict=true)'
 
     - environment:
         JULIA_DEPOT_PATH: ~/.julia:/opt/julia_depot
