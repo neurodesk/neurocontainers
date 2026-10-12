@@ -46,6 +46,7 @@ build:
 
     - environment:
         FREESURFER_HOME: /freesurfer
+        SYNTHSTRIP_VERSION: "{{ context.version }}"
 
     - entrypoint: /bin/bash
 
