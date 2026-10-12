@@ -114,10 +114,12 @@ build:
     - environment:
         JULIA_DEPOT_PATH: ~/.julia:/opt/julia_depot
 
+    - copy: julia /usr/local/bin/julia
+
     - copy: code /usr/local/sbin/
 
     - run:
-        - chmod a+x /usr/local/sbin/code
+        - chmod a+x /usr/local/bin/julia /usr/local/sbin/code
         - chmod a+rwx /opt/vscode-extensions/ -R
         - chmod a+rwx /opt/vscode-data -R
 
@@ -140,6 +142,10 @@ readme: |-
   julia
   ```
 
+  The `julia` launcher uses a writable home depot when available, otherwise a private
+  temporary depot under `TMPDIR` or `/tmp`, followed by the installed `/opt/julia_depot`.
+  Set `JULIA_DEPOT_PATH` explicitly to select a persistent writable depot.
+
   More documentation can be found here: https://docs.julialang.org/en/v1/
 
   To run container outside of this environment: ml julia/{{ context.version }}
@@ -147,6 +153,8 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: julia
+    filename: julia
   - name: vscode_linux_deb_x64
     url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
   - name: vscode_linux_deb_arm64
