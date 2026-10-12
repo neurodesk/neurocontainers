@@ -1,6 +1,107 @@
 name: openrefine
 version: 3.10.1
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
 tests:
-- name: OpenRefine version
-  command: openrefine --version
-  expected_output_contains: ${version}
+  - name: OpenRefine version
+    command: openrefine --version
+    expected_output_contains: ${version}
+
+  - name: Real CSV import cleaning and export
+    description: Use the shipped Java server and CSRF-protected API to import and transform a synthetic table; require every original and cleaned CSV cell exactly
+    command: |
+      set -euo pipefail
+      workspace="$(mktemp -d "${output_dir}/openrefine.XXXXXXXX")"
+      export OPENREFINE_DATA_DIR="$workspace/projects"
+      export OPENREFINE_INTERFACE=127.0.0.1
+      export NEURODESK_WEBAPP_PORT="$(shuf -i 20000-50000 -n 1)"
+      base="http://127.0.0.1:$NEURODESK_WEBAPP_PORT"
+      setsid openrefine start > "$workspace/server.log" 2>&1 &
+      server_pid=$!
+      cleanup() {
+        test_status=$?
+        trap - EXIT
+        if [ "$test_status" -ne 0 ]; then cat "$workspace/server.log"; fi
+        if kill -0 -- "-$server_pid" 2>/dev/null; then
+          kill -TERM -- "-$server_pid"
+          for _ in $(seq 1 10); do
+            if ! kill -0 -- "-$server_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if kill -0 -- "-$server_pid" 2>/dev/null; then kill -KILL -- "-$server_pid"; fi
+        fi
+        if wait "$server_pid"; then
+          :
+        else
+          server_status=$?
+          case "$server_status" in
+            143|137) ;;
+            *) if [ "$test_status" -eq 0 ]; then test_status=$server_status; fi ;;
+          esac
+        fi
+        exit "$test_status"
+      }
+      trap cleanup EXIT
+      ready=false
+      for _ in $(seq 1 90); do
+        kill -0 "$server_pid"
+        if curl -fsS --max-time 2 "$base/command/core/get-csrf-token" > "$workspace/token.json" 2>/dev/null; then
+          ready=true
+          break
+        fi
+        sleep 1
+      done
+      [ "$ready" = true ]
+      token="$(sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([[:alnum:]_-]*\)".*/\1/p' "$workspace/token.json")"
+      [[ "$token" =~ ^[[:alnum:]_-]+$ ]]
+      cat > "$workspace/input.csv" <<'CSV'
+      subject_id,label,value
+      sub-01, alpha ,2
+      sub-02,beta,4
+      sub-03, alpha ,6
+      CSV
+      status="$(curl -fsS --max-time 30 -D "$workspace/import.headers" -o "$workspace/import.body" -w '%{http_code}' \
+        -F "project-file=@$workspace/input.csv;type=text/csv" \
+        -F 'project-name=Synthetic runtime cleaning' \
+        -F 'format=text/line-based/*sv' \
+        -F 'options={"encoding":"UTF-8","separator":",","ignoreLines":-1,"headerLines":1,"skipDataLines":0,"limit":-1,"guessCellValueTypes":false,"trimStrings":false,"storeBlankRows":false}' \
+        "$base/command/core/create-project-from-upload?csrf_token=$token")"
+      [ "$status" = 302 ]
+      project="$(sed -n 's/^[Ll]ocation:.*[?&]project=\([0-9]*\).*/\1/p' "$workspace/import.headers" | tr -d '\r')"
+      [[ "$project" =~ ^[0-9]+$ ]]
+      export_csv() {
+        curl -fsS --max-time 30 \
+          --data-urlencode 'engine={"facets":[],"mode":"row-based"}' \
+          "$base/command/core/export-rows/project.csv?project=$project&format=csv&csrf_token=$token"
+      }
+      export_csv | tr -d '\r' > "$workspace/before.csv"
+      cmp "$workspace/input.csv" "$workspace/before.csv"
+      curl -fsS --max-time 30 \
+        --data-urlencode "project=$project" \
+        --data-urlencode 'columnName=label' \
+        --data-urlencode 'expression=grel:value.trim().toUppercase()' \
+        --data-urlencode 'onError=keep-original' \
+        --data-urlencode 'repeat=false' \
+        --data-urlencode 'engine={"facets":[],"mode":"row-based"}' \
+        "$base/command/core/text-transform?csrf_token=$token" > "$workspace/transform.json"
+      grep -Eq '"code"[[:space:]]*:[[:space:]]*"ok"' "$workspace/transform.json"
+      export_csv | tr -d '\r' > "$workspace/after.csv"
+      cat > "$workspace/expected.csv" <<'CSV'
+      subject_id,label,value
+      sub-01,ALPHA,2
+      sub-02,BETA,4
+      sub-03,ALPHA,6
+      CSV
+      cmp "$workspace/expected.csv" "$workspace/after.csv"
+      kill -0 "$server_pid"
+      test -d "$OPENREFINE_DATA_DIR"
+      printf '%s\n' 'OPENREFINE_IMPORT_TRANSFORM_EXPORT_EXACT_OK'
+    expected_output_contains: OPENREFINE_IMPORT_TRANSFORM_EXPORT_EXACT_OK
+    expected_exit_code: 0
+    timeout: 180
