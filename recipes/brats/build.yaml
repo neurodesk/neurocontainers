@@ -225,11 +225,30 @@ files:
       """
       import argparse
       import os
+      import re
       import sys
       import tempfile
       from pathlib import Path
 
       import yaml
+
+
+      def cpu_runtime_hints(text: str) -> dict:
+          """Map algorithm key -> the runtime noted after its cpu_compatible flag.
+
+          Upstream records CPU runtimes, which differ by over two orders of
+          magnitude, only as YAML comments (cpu_compatible: true # ~ 7 min/ subject),
+          and safe_load drops comments, so they are read from the raw text."""
+          hints, key = {}, None
+          for line in text.splitlines():
+              m = re.match(r"^  (\w+):\s*$", line)
+              if m:
+                  key = m.group(1)
+                  continue
+              m = re.match(r"^\s+cpu_compatible:\s*\S+\s*#\s*(.+?)\s*$", line)
+              if m and key:
+                  hints[key] = m.group(1)
+          return hints
 
 
       def meta_dir() -> Path:
@@ -254,11 +273,17 @@ files:
               prog="brats-algorithms",
               description="List BraTS algorithms and how to pre-pull them.",
               epilog="Nothing is bundled: each algorithm is a separate multi-GB "
-                     "container, so pull the ones you need with brats-pull.",
+                     "container, so pull the ones you need with brats-pull. "
+                     "Algorithms marked GPU-only cannot run on a CPU node; CPU "
+                     "runtimes range from about a minute to several hours per "
+                     "subject.",
           )
           p.add_argument("-t", "--task", help="Only show this task, e.g. meningioma")
           p.add_argument("--images-only", action="store_true",
                          help="Print just the docker image references, one per line")
+          p.add_argument("--cpu-only", action="store_true",
+                         help="Only list algorithms that run without a GPU "
+                              "(the rest cannot run on a CPU node at all)")
           a = p.parse_args(argv)
 
           tmp = tempfile.gettempdir()
@@ -293,26 +318,43 @@ files:
               print("  export APPTAINERENV_TMPDIR=/neurodesktop-storage/brats-cache\n")
 
           for f in files:
-              data = yaml.safe_load(f.read_text()) or {}
+              text = f.read_text()
+              data = yaml.safe_load(text) or {}
               algos = data.get("algorithms", {}) or {}
-              if not a.images_only:
-                  print(f"=== {f.stem} ({len(algos)} algorithms) ===")
+              hints = cpu_runtime_hints(text)
+              rows = []
               for key, spec in algos.items():
-                  image = (spec.get("run_args") or {}).get("docker_image")
+                  run_args = spec.get("run_args") or {}
+                  image = run_args.get("docker_image")
                   if not image:
                       continue
-                  if a.images_only:
-                      print(image)
+                  cpu_ok = bool(run_args.get("cpu_compatible", False))
+                  if a.cpu_only and not cpu_ok:
                       continue
+                  rows.append((key, spec, image, cpu_ok))
+              if a.images_only:
+                  for _, _, image, _ in rows:
+                      print(image)
+                  continue
+              n_cpu = sum(1 for row in rows if row[3])
+              if a.cpu_only:
+                  print(f"=== {f.stem} ({n_cpu} of {len(algos)} algorithms CPU-compatible) ===")
+              else:
+                  print(f"=== {f.stem} ({len(algos)} algorithms, {n_cpu} CPU-compatible) ===")
+              if not rows:
+                  print("  none run without a GPU")
+              for key, spec, image, cpu_ok in rows:
                   meta = spec.get("meta") or {}
                   rank = meta.get("rank", "?")
                   year = meta.get("year", "?")
+                  cpu = "CPU-OK" if cpu_ok else "GPU-only"
                   ready = sandbox_complete(image)
                   mark = "[cached]" if ready else "[not pulled]"
-                  print(f"  {key:12} {rank:>4} {year}  {image}")
+                  print(f"  {key:12} {rank:>4} {year}  {cpu:8}  {image}")
+                  if key in hints:
+                      print(f"               CPU runtime: {hints[key]}")
                   print(f"               {mark}  brats-pull {image}")
-              if not a.images_only:
-                  print()
+              print()
           return 0
 
 
@@ -441,11 +483,15 @@ readme: |-
   the 8 task defaults are GPU-only, so on a CPU node `brats -t <task>` without
   `-a` fails for every task except `africa`. The `adult-glioma-pre`,
   `pediatric` and `goat` tasks have no CPU-compatible algorithm at all.
-  `brats-algorithms` lists the keys; pick a CPU-capable one with `-a`.
-  Incompatibility is now detected before anything is downloaded.
+  `brats-algorithms` marks each algorithm `CPU-OK` or `GPU-only`, and
+  `brats-algorithms --cpu-only` lists just the ones a CPU node can run; pick
+  one with `-a`. Incompatibility is also detected before anything is
+  downloaded.
 
-  Expect roughly 20 minutes per subject for CPU inference on 8 cores; size
-  Slurm walltimes accordingly.
+  CPU runtimes differ by more than two orders of magnitude between
+  algorithms, from about a minute to several hours per subject.
+  `brats-algorithms` shows the estimate where upstream records one; size Slurm
+  walltimes accordingly.
 
   **Step 1 -- point the cache at persistent storage.** The cache lives under
   `$TMPDIR` inside the container; anything in `/tmp` is lost with the session.
@@ -459,11 +505,12 @@ readme: |-
   rather than through the module, plain `TMPDIR` is fine.)
 
   **Step 2 -- find the algorithm you want.** This lists every algorithm for
-  every task, with its rank, year, image, whether it is already cached, and the
-  exact command to fetch it:
+  every task, with its rank, year, whether it runs on CPU, its image, whether
+  it is already cached, and the exact command to fetch it:
   ```
   brats-algorithms
   brats-algorithms --task africa
+  brats-algorithms --cpu-only
   ```
 
   **Step 3 -- pull it.** Once per algorithm, per machine:
