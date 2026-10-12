@@ -195,6 +195,39 @@ tests:
       echo "meningioma=$m adult-glioma-pre=$g adult-glioma-pre-post=$pp"
     expected_output_contains: "meningioma=5 adult-glioma-pre=3 adult-glioma-pre-post=7"
 
+  - name: the lister shows which algorithms run on CPU
+    description: >-
+      brats --help sends users to brats-algorithms to find the CPU-compatible
+      algorithms, but it never showed them, so CPU users picked by rank and
+      pulled multi-GB GPU-only images. --cpu-only must list exactly the images
+      the packaged metadata flags cpu_compatible, and every algorithm in the
+      full listing must be marked one way or the other.
+    command: |
+      python - <<'PYTEST'
+      import subprocess
+      from pathlib import Path
+      import brats, yaml
+
+      expected = []
+      for f in sorted((Path(brats.__file__).parent / "data" / "meta").glob("*.yml")):
+          for spec in (yaml.safe_load(f.read_text()).get("algorithms") or {}).values():
+              run_args = spec.get("run_args") or {}
+              if run_args.get("docker_image") and run_args.get("cpu_compatible"):
+                  expected.append(run_args["docker_image"])
+      actual = subprocess.check_output(["brats-algorithms", "--cpu-only", "--images-only"], text=True).splitlines()
+      assert sorted(actual) == sorted(expected), (actual, expected)
+
+      listing = subprocess.check_output(["brats-algorithms", "--task", "adult-glioma-pre-post"], text=True)
+      rows = [l for l in listing.splitlines() if l.startswith("  BraTS")]
+      assert rows and all(("CPU-OK" in l) != ("GPU-only" in l) for l in rows), rows
+      assert "CPU runtime:" in listing, listing
+
+      none = subprocess.check_output(["brats-algorithms", "--task", "adult-glioma-pre", "--cpu-only"], text=True)
+      assert "none run without a GPU" in none, none
+      print(f"cpu-compatible algorithms listed: {len(actual)}")
+      PYTEST
+    expected_output_contains: "cpu-compatible algorithms listed:"
+
   - name: brats-pull builds atomically
     description: >-
       It built straight into the final cache path, so a failed or interrupted
