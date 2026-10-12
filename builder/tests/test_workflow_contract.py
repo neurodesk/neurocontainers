@@ -643,3 +643,48 @@ def test_release_tests_select_native_runners_and_keep_artifacts_separate() -> No
     assert summary_steps[0]["with"]["merge-multiple"] is False
     assert "test-results-*/test-results-*.json" in summary_steps[1]["run"]
     assert "test-results-*/dive-status-*.txt" in summary_steps[1]["run"]
+
+
+def test_release_summary_counts_single_and_multiple_artifact_layouts(tmp_path) -> None:
+    import json
+    import os
+    import subprocess
+
+    import yaml
+
+    workflow = yaml.safe_load(Path(".github/workflows/test-release-pr.yml").read_text())
+    steps = workflow["jobs"]["summarize-results"]["steps"]
+    script = next(step["run"] for step in steps if step.get("id") == "summary")
+    # download-artifact extracts a single match directly into path, while
+    # multiple matches use per-artifact directories with merge-multiple=false.
+    for layout in ("single", "multiple", "missing"):
+        workspace = tmp_path / layout
+        workspace.mkdir()
+        folder = workspace / "test-results"
+        folder.mkdir()
+        expected_total = 0 if layout == "missing" else (1 if layout == "single" else 2)
+        for index in range(expected_total):
+            destination = (
+                folder if layout == "single" else folder / f"test-results-tool{index}"
+            )
+            destination.mkdir(exist_ok=True)
+            (destination / f"test-results-tool{index}.json").write_text(
+                json.dumps({"failed": index})
+            )
+            (destination / f"dive-status-tool{index}.txt").write_text(
+                "passed" if index == 0 else "failed"
+            )
+        output = workspace / "outputs"
+        subprocess.run(
+            ["bash", "-e", "-c", script],
+            cwd=workspace,
+            env={**os.environ, "GITHUB_OUTPUT": str(output)},
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+        assert int(values["total"]) == expected_total
+        assert int(values["passed"]) == (0 if layout == "missing" else 1)
+        assert int(values["failed"]) == (0 if layout == "single" else 1)
+        assert int(values["wasted_space"]) == (1 if layout == "multiple" else 0)
