@@ -11,6 +11,7 @@ tests:
     description: Run the packaged sf-build and sf-make planning interfaces on a real local recipe; check native platform, exact staged binary data and deterministic Dockerfile/SIF inputs. This checks preparation, not privileged nested image execution.
     command: |
       python3 - <<'PYTHON'
+      import builder
       import hashlib
       import json
       import platform
@@ -28,12 +29,10 @@ tests:
           (recipe / 'build.yaml').write_text("""name: stagedfixture
       version: '1.0.0'
       architectures: [x86_64, aarch64]
-      auto_update:
-        frozen: true
-        reason: Analytical staging fixture without external software downloads.
+      categories: [programming]
       readme: Staging fixture verifies real asset bytes and architecture compilation.
       files:
-        - name: payload
+        - name: payload.dat
           filename: payload.dat
       build:
         kind: neurodocker
@@ -42,7 +41,7 @@ tests:
         add-default-template: false
         add-tzdata: false
         directives:
-          - copy: '{{ get_file("payload") }} /opt/payload.dat'
+          - copy: '{{ get_file("payload.dat") }} /opt/payload.dat'
           - condition: arch == "aarch64"
             run: printf '%s' arm64-compilation-marker
           - condition: arch == "x86_64"
@@ -50,7 +49,7 @@ tests:
       """)
           output = root / 'generated'
           args = [str(recipe), '--architecture', architecture, '--output-root', str(output), '--recreate']
-          result = subprocess.run(['sf-build', *args, '--method', 'buildkit', '--dry-run'], text=True, capture_output=True, check=True, timeout=60)
+          result = subprocess.run(['sf-build', *args, '--method', 'buildkit', '--dry-run'], text=True, capture_output=True, check=True, timeout=60, cwd=Path(builder.__file__).resolve().parent.parent)
           print(result.stdout, result.stderr)
           expected_platform = 'linux/arm64' if architecture == 'aarch64' else 'linux/amd64'
           assert 'buildctl build --frontend=dockerfile.v0' in result.stdout
@@ -69,7 +68,7 @@ tests:
           assert (build_dir / 'README.md').read_text().strip() == 'Staging fixture verifies real asset bytes and architecture compilation.'
           assert (build_dir / 'build.yaml').read_bytes() == (recipe / 'build.yaml').read_bytes()
           before = dockerfile
-          result = subprocess.run(['sf-make', *args, '--dry-run'], text=True, capture_output=True, check=True, timeout=60)
+          result = subprocess.run(['sf-make', *args, '--dry-run'], text=True, capture_output=True, check=True, timeout=60, cwd=Path(builder.__file__).resolve().parent.parent)
           print(result.stdout, result.stderr)
           assert 'build --force' in result.stdout and 'docker-archive://' in result.stdout
           assert 'stagedfixture' in result.stdout and result.stdout.rstrip().endswith('.docker.tar')
