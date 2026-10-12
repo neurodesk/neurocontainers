@@ -11,7 +11,7 @@ architectures:
   - x86_64
 
 variables:
-  base_image_digest: sha256:d0ee22d6476277d172276ca33ee2a3f6334e1bf773c789d6012c8c23804460de
+  base_image_digest: "sha256:caf26e96521de3406296eb4fde40d67fbd04ceca466aeada54261b1079c0c169"
 
 auto_update:
   container_version: false
@@ -28,6 +28,7 @@ build:
   kind: neurodocker
   base-image: fetalsvrtk/svrtk:general_auto_amd@{{ context.base_image_digest }}
   pkg-manager: apt
+  flatten-base-image: true
   add-default-template: false
   add-tzdata: false
 
