@@ -37,3 +37,47 @@ tests:
       PY
       MPLBACKEND=Agg segmentator synthetic.nii.gz --nogui --gramag numpy
       test -f synthetic_volHist_pcMax97pt5_pcMin2pt5_sc400.npy
+
+  - name: Exact intensity-gradient histogram
+    description: Verify all histogram bins against a linear image with a known gradient.
+    command: |
+      SEGMENTATOR_TEST_ROOT="${output_dir}" python - <<'PY'
+      import os
+      from pathlib import Path
+      import subprocess
+      import tempfile
+      import nibabel as nib
+      import numpy as np
+
+      root = Path(os.environ['SEGMENTATOR_TEST_ROOT']).resolve()
+      root.mkdir(parents=True, exist_ok=True)
+      with tempfile.TemporaryDirectory(prefix='segmentator-histogram-', dir=root) as work:
+          work = Path(work)
+          x, y, z = np.indices((4, 4, 4))
+          data = (1 + x + 2 * y + 2 * z).astype(np.float32)
+          affine = np.diag([1.5, 2.0, 3.0, 1.0])
+          nib.save(nib.Nifti1Image(data, affine), work / 'plane.nii.gz')
+          command = ['segmentator', 'plane.nii.gz', '--nogui', '--gramag', 'numpy',
+                     '--percmin', '0', '--percmax', '100', '--scale', '64']
+          subprocess.run(command, cwd=work, env={**os.environ, 'MPLBACKEND': 'Agg'},
+                         check=True, timeout=60)
+          counts = np.load(work / 'plane_volHist_pcMax100pt0_pcMin0pt0_sc64.npy',
+                           allow_pickle=False)
+          # The intensity range is 1..16; scaling maps it to 0..63.9999.
+          # The linear ramp has gradient (1, 2, 2), hence magnitude 3.
+          # Its scaled gradient is 12.79998 and always lies in bin 12.
+          # Segmentator excludes the single zero-valued scaled minimum.
+          # The remaining intensities span 4.26666..63.9999, giving edges 4..64.
+          expected = np.zeros((60, 60), dtype=np.float64)
+          for value in data.ravel():
+              if value != 1:
+                  intensity_bin = int((float(value) - 1) * (64 - 0.0001) / 15)
+                  expected[intensity_bin - 4, 8] += 1
+          assert counts.shape == (60, 60), counts.shape
+          assert np.isfinite(counts).all()
+          assert counts.sum() == 63, counts.sum()
+          np.testing.assert_array_equal(counts, expected)
+      print('Exact intensity-gradient histogram verified: 63 voxels, 60 x 60 bins')
+      PY
+    expected_output_contains: "Exact intensity-gradient histogram verified: 63 voxels, 60 x 60 bins"
+    timeout: 120
