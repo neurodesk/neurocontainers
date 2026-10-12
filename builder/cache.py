@@ -135,57 +135,92 @@ class HttpCache:
         attempts = retries + 1
         last_error: BaseException | None = None
 
-        for attempt in range(1, attempts + 1):
-            tmp: Path | None = None
-            request = urllib.request.Request(
-                url,
-                headers={"User-Agent": DEFAULT_USER_AGENT},
-            )
-            try:
-                with (
-                    urllib.request.urlopen(
-                        request, timeout=DEFAULT_TIMEOUT_SECONDS
-                    ) as response,
-                    tempfile.NamedTemporaryFile(
-                        dir=self.root,
-                        prefix=f".{path.name}.",
-                        suffix=".tmp",
-                        delete=False,
-                    ) as handle,
-                ):
-                    tmp = Path(handle.name)
-                    shutil.copyfileobj(response, handle)
-                    content_length = response.headers.get("Content-Length")
-                    if content_length is not None and handle.tell() != int(
-                        content_length
-                    ):
-                        raise OSError(
-                            f"Content-Length mismatch: expected {content_length} bytes, "
-                            f"received {handle.tell()}"
-                        )
-                if expected is not None:
-                    _verify_checksum(tmp, expected, label)
-                tmp.chmod(0o644)
-                tmp.replace(path)
-                return path
-            except (
-                urllib.error.HTTPError,
-                urllib.error.URLError,
-                TimeoutError,
-                OSError,
-                http.client.IncompleteRead,
-            ) as exc:
-                last_error = exc
-                if attempt >= attempts or not _is_retryable_download_error(exc):
-                    break
-                delay = min(
-                    DEFAULT_BACKOFF_SECONDS * (2 ** (attempt - 1)),
-                    MAX_BACKOFF_SECONDS,
+        with tempfile.NamedTemporaryFile(
+            dir=self.root, prefix=f".{path.name}.", suffix=".tmp", delete=False
+        ) as handle:
+            tmp = Path(handle.name)
+        total: int | None = None
+        validator: str | None = None
+        try:
+            for attempt in range(1, attempts + 1):
+                offset = (
+                    tmp.stat().st_size
+                    if (validator or expected) and total is not None
+                    else 0
                 )
-                time.sleep(delay)
-            finally:
-                if tmp is not None:
-                    tmp.unlink(missing_ok=True)
+                headers = {"User-Agent": DEFAULT_USER_AGENT}
+                if offset:
+                    headers["Range"] = f"bytes={offset}-"
+                    if validator:
+                        headers["If-Range"] = validator
+                request = urllib.request.Request(url, headers=headers)
+                try:
+                    with (
+                        urllib.request.urlopen(
+                            request, timeout=DEFAULT_TIMEOUT_SECONDS
+                        ) as response,
+                        tmp.open("r+b") as handle,
+                    ):
+                        content_length = response.headers.get("Content-Length")
+                        length = (
+                            int(content_length) if content_length is not None else None
+                        )
+                        etag = response.headers.get("ETag")
+                        if getattr(response, "status", None) == 206:
+                            expected_range = (
+                                f"bytes {offset}-{total - 1}/{total}"
+                                if total is not None
+                                else None
+                            )
+                            if (
+                                not offset
+                                or total is None
+                                or response.headers.get("Content-Range")
+                                != expected_range
+                                or (validator is not None and etag != validator)
+                                or length != total - offset
+                            ):
+                                raise OSError("Invalid response to resumed download")
+                            handle.seek(offset)
+                        else:
+                            handle.seek(0)
+                            handle.truncate()
+                            offset = 0
+                            total = length
+                            validator = (
+                                etag
+                                if etag and re.fullmatch(r'"[^"\r\n]*"', etag)
+                                else None
+                            )
+                        shutil.copyfileobj(response, handle)
+                        received = handle.tell() - offset
+                        if length is not None and received != length:
+                            raise OSError(
+                                f"Content-Length mismatch: expected {length} bytes, "
+                                f"received {received}"
+                            )
+                    if expected is not None:
+                        _verify_checksum(tmp, expected, label)
+                    tmp.chmod(0o644)
+                    tmp.replace(path)
+                    return path
+                except (
+                    urllib.error.HTTPError,
+                    urllib.error.URLError,
+                    TimeoutError,
+                    OSError,
+                    http.client.IncompleteRead,
+                ) as exc:
+                    last_error = exc
+                    if attempt >= attempts or not _is_retryable_download_error(exc):
+                        break
+                    delay = min(
+                        DEFAULT_BACKOFF_SECONDS * (2 ** (attempt - 1)),
+                        MAX_BACKOFF_SECONDS,
+                    )
+                    time.sleep(delay)
+        finally:
+            tmp.unlink(missing_ok=True)
 
         assert last_error is not None
         raise DownloadError(
