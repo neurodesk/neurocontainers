@@ -4,11 +4,11 @@ copyright:
   - license: GPL-3.0-or-later
     url: https://github.com/I2PC/xmipp/blob/{{ context.xmipp_tag }}/LICENSE
   - license: BSD-2-Clause
-    url: https://github.com/I2PC/libcifpp/blob/{{ context.libcifpp_commit }}/LICENSE
+    url: https://github.com/I2PC/libcifpp/blob/ms_feature_ciflibrary/LICENSE
   - license: BSD-3-Clause
-    url: https://github.com/cossorzano/libsvm/blob/{{ context.libsvm_commit }}/COPYRIGHT
+    url: https://github.com/cossorzano/libsvm/blob/master/COPYRIGHT
   - license: Apache-2.0
-    url: https://github.com/vit-vit/CTPL/blob/{{ context.ctpl_commit }}/LICENSE
+    url: https://github.com/vit-vit/CTPL/blob/master/LICENSE
 architectures:
   - x86_64
 variables:
@@ -17,9 +17,6 @@ variables:
   xmipp_core_version: 4.1.0
   xmipp_viz_version: 4.0.2
   pyxmipp3_version: 0.4.0
-  libcifpp_commit: 06832ece843d33a14e17b6d99ba9162bbb014179
-  ctpl_commit: 437e135dbd94eb65b45533d9ce8ee28b5bd37b6d
-  libsvm_commit: 09c3aa364799ff4704850e9c5a2e8e4ccf0dc218
   googletest_version: 1.13.0
 auto_update:
   method: sources
@@ -61,6 +58,24 @@ auto_update:
       dependency: true
       target:
         variable: pyxmipp3_version
+    - id: libcifpp
+      method: http_digest
+      dependency: true
+      url: https://codeload.github.com/I2PC/libcifpp/tar.gz/refs/heads/ms_feature_ciflibrary
+      target:
+        file: libcifpp_source
+    - id: ctpl
+      method: http_digest
+      dependency: true
+      url: https://codeload.github.com/vit-vit/CTPL/tar.gz/refs/heads/master
+      target:
+        file: ctpl_source
+    - id: libsvm
+      method: http_digest
+      dependency: true
+      url: https://codeload.github.com/cossorzano/libsvm/tar.gz/refs/heads/master
+      target:
+        file: libsvm_source
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -122,14 +137,14 @@ files:
     url: https://codeload.github.com/I2PC/xmippViz/tar.gz/v4.0.2
     sha256: 2dd3c90a4b3e574bfeaf65fb23d2bd9eb6ca1a15afc67521e17b61bdb3d7e10f
   - name: libcifpp_source
-    url: https://codeload.github.com/I2PC/libcifpp/tar.gz/{{ context.libcifpp_commit }}
-    sha256: 1beda9b42e59da2a92d4cb1fc953d50af47c5e1fa7d45e676ac40b58a338644f
+    url: https://codeload.github.com/I2PC/libcifpp/tar.gz/refs/heads/ms_feature_ciflibrary
+    sha256: 4e8ff6bd49e287a2e1c16db9413386d6ae289f797ccb10df4f868d9565791800
   - name: ctpl_source
-    url: https://codeload.github.com/vit-vit/CTPL/tar.gz/{{ context.ctpl_commit }}
-    sha256: 745d4197fa08fd4df526b0c411066442e45c5a8b05ede45e2861dcc353f38d6d
+    url: https://codeload.github.com/vit-vit/CTPL/tar.gz/refs/heads/master
+    sha256: 9af8de32442efcb0bfe843788d3139072a280fb93454d753b11ea5244afedba4
   - name: libsvm_source
-    url: https://codeload.github.com/cossorzano/libsvm/tar.gz/{{ context.libsvm_commit }}
-    sha256: 09c3344c415e52d9d88105a627dc7eeaaae475e28e9406514eb5fc30a5843513
+    url: https://codeload.github.com/cossorzano/libsvm/tar.gz/refs/heads/master
+    sha256: 9285f65f21ecf66872a5aa9f47bccb81a5727cb3a49b5a1b9a2a31b8b1773a5e
   - name: googletest_source
     url: https://codeload.github.com/google/googletest/tar.gz/v{{ context.googletest_version }}
     sha256: ad7fdba11ea011c1d925b3289cf4af2c66a352e18d4c7264392fead75e919363
