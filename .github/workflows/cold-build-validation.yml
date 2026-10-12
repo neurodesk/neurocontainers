@@ -27,9 +27,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/ijulia-diagnostic"
-          gh api repos/neurodesk/neurocontainers/actions/artifacts/11773907482 > "$RUNNER_TEMP/ijulia-diagnostic/artifact.json"
-          python3 -c 'import json,os; a=json.load(open(os.environ["RUNNER_TEMP"]+"/ijulia-diagnostic/artifact.json")); assert a["workflow_run"]["id"] == 38306507750 and not a["expired"]'
-          gh api repos/neurodesk/neurocontainers/actions/artifacts/11773907482/zip > "$RUNNER_TEMP/candidate.zip"
+          gh api repos/neurodesk/neurocontainers/actions/artifacts/11777141263 > "$RUNNER_TEMP/ijulia-diagnostic/artifact.json"
+          python3 -c 'import json,os; a=json.load(open(os.environ["RUNNER_TEMP"]+"/ijulia-diagnostic/artifact.json")); assert a["workflow_run"]["id"] == 38314938865 and not a["expired"]'
+          gh api repos/neurodesk/neurocontainers/actions/artifacts/11777141263/zip > "$RUNNER_TEMP/candidate.zip"
           python3 tools/diagnose_julia_arm_ijulia.py extract "$RUNNER_TEMP/candidate.zip" "$RUNNER_TEMP/ijulia-diagnostic"
           rm "$RUNNER_TEMP/candidate.zip"
       - name: Run cold and warm imports
