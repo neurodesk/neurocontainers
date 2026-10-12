@@ -102,6 +102,7 @@ build:
     - install:
         - ca-certificates
         - unzip
+        - patch
         - cmake
         - build-essential
         - mpi-default-bin
@@ -136,6 +137,7 @@ build:
         - /opt/relion-{{ context.version }}/python/bin/pip install --no-cache-dir --no-deps /tmp/{{ context.torch_wheel }}
         - /opt/relion-{{ context.version }}/python/bin/pip install --no-cache-dir -r /tmp/relion-python-requirements.txt
         - SETUPTOOLS_SCM_PRETEND_VERSION=0+g{{ context.dynamight_commit[:7] }} /opt/relion-{{ context.version }}/python/bin/pip install --no-cache-dir --no-deps {{ get_file("classranker_source") }} {{ get_file("blush_source") }} {{ get_file("dynamight_source") }} {{ get_file("topaz_source") }} {{ get_file("modelangelo_source") }}
+        - patch --batch --forward --fuzz=0 -d /opt/relion-{{ context.version }}/python/lib/python3.10/site-packages -p1 < {{ get_file("topaz_resources.patch") }}
         - /opt/relion-{{ context.version }}/python/bin/pip check
         - rm /tmp/relion-python-requirements.txt /tmp/{{ context.torch_wheel }}
         - mkdir -p relion
@@ -255,6 +257,8 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: topaz_resources.patch
+    filename: topaz-resources.patch
   - name: python-requirements.txt
     filename: python-requirements.txt
   - name: torch_cuda_wheel

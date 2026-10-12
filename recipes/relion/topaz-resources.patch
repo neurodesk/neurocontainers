@@ -1,0 +1,53 @@
+--- a/topaz/model/factory.py
++++ b/topaz/model/factory.py
+@@ -55,12 +55,10 @@
+         return model
+ 
+     # load the pretrained model
+-    import pkg_resources
+-    pkg = topaz.__name__
++    from importlib.resources import files
+     path = 'pretrained/detector/' + name
+-    f = pkg_resources.resource_stream(pkg, path)
+-
+-    state_dict = torch.load(f)
++    with files('topaz').joinpath(path).open('rb') as f:
++        state_dict = torch.load(f)
+     model.load_state_dict(state_dict)
+ 
+     return model
+--- a/topaz/denoise.py
++++ b/topaz/denoise.py
+@@ -45,11 +45,10 @@
+         return torch.load(name)
+ 
+     # load the pretrained model parameters
+-    import pkg_resources
+-    pkg = __name__
++    from importlib.resources import files
+     path = 'pretrained/denoise/' + name
+-    f = pkg_resources.resource_stream(pkg, path)
+-    state_dict = torch.load(f) # load the parameters
++    with files('topaz').joinpath(path).open('rb') as f:
++        state_dict = torch.load(f)
+ 
+     model.load_state_dict(state_dict)
+ 
+--- a/topaz/commands/denoise3d.py
++++ b/topaz/commands/denoise3d.py
+@@ -530,11 +530,10 @@
+     if pretrained:
+         print('# loading pretrained model:', name, file=log)
+ 
+-        import pkg_resources
+-        pkg = __name__
+-        path = '../pretrained/denoise/' + name
+-        f = pkg_resources.resource_stream(pkg, path)
+-        state_dict = torch.load(f) # load the parameters
++        from importlib.resources import files
++        path = 'pretrained/denoise/' + name
++        with files('topaz').joinpath(path).open('rb') as f:
++            state_dict = torch.load(f)
+ 
+         model.load_state_dict(state_dict)
+ 
