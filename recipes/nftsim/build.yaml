@@ -2,6 +2,7 @@ name: nftsim
 version: 1.0.2
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: NFTsim is a neural field simulation framework for large-scale brain dynamics. This container allows users to simulate various neural models including corticothalamic and cortical circuits using configuration files.
   example: nftsim -i /app/configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
@@ -9,6 +10,12 @@ structured_readme:
   citation: ''
 variables:
   base_image_tag: 1.0.2
+  base_image:
+    try:
+      - value: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+        condition: arch == "x86_64"
+      - value: ubuntu:22.04
+        condition: arch == "aarch64"
 
 auto_update:
   container_version: "base_image_tag"
@@ -21,12 +28,56 @@ auto_update:
       target:
         variable: base_image_tag
         value: tag
+        fulltest_variable: vendor_version
 
 build:
   kind: neurodocker
-  base-image: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+  base-image: "{{ context.base_image }}"
   pkg-manager: apt
   directives:
+    - condition: arch == "aarch64"
+      install:
+        - build-essential
+        - ca-certificates
+    - condition: arch == "aarch64"
+      copy:
+        - /app/src
+        - /tmp/nftsim/src
+      from_image: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+      from_platform: linux/amd64
+    - condition: arch == "aarch64"
+      copy:
+        - /app/configs
+        - /app/configs
+      from_image: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+      from_platform: linux/amd64
+    - condition: arch == "aarch64"
+      copy:
+        - /app/Makefile
+        - /app/conditions.txt
+        - /tmp/nftsim/
+      from_image: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+      from_platform: linux/amd64
+    - condition: arch == "aarch64"
+      copy:
+        - /app/.git/refs/heads/master
+        - /app/source-commit
+      from_image: ghcr.io/farwa-abbas/nftsim:{{ context.base_image_tag }}
+      from_platform: linux/amd64
+    - condition: arch == "aarch64"
+      run:
+        - mkdir -p /app/bin
+        - test "$(wc -c < /app/source-commit)" -eq 41
+        - grep -Eq '^[0-9a-f]{40}$' /app/source-commit
+        - make -C /tmp/nftsim -j2 CXXFLAGS='-std=c++11 -lm -Wall -Wextra -pedantic -O3' nftsim
+        - cp /tmp/nftsim/bin/nftsim /app/bin/nftsim
+        - cp /tmp/nftsim/conditions.txt /app/conditions.txt
+        - rm -rf /tmp/nftsim
+    - condition: arch == "x86_64"
+      run:
+        - cp /app/.git/refs/heads/master /app/source-commit
+    - run:
+        - printf '%s\n' '{{ context.base_image_tag }}' > /app/vendor-version
     - environment:
         PATH: /app/bin:$PATH
     - workdir: /app
