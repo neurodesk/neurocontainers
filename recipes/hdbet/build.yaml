@@ -44,6 +44,17 @@ build:
         - chmod -R a+rX /opt/HD-BET/hd-bet_params
         - /opt/miniconda-latest/envs/hdbet/bin/python -m pip install -e .
 
+    # Load the wheel's OpenMP runtime at startup to avoid ARM64 static TLS
+    # exhaustion when scikit-learn is imported after PyTorch.
+    - condition: arch == "aarch64"
+      run:
+        - set -- /opt/miniconda-latest/envs/hdbet/lib/python3.10/site-packages/scikit_learn.libs/libgomp-*.so*
+        - test "$#" -eq 1 && test -f "$1"
+        - ln -s "$1" /opt/miniconda-latest/envs/hdbet/lib/libgomp-hdbet.so.1
+        - mv /opt/miniconda-latest/envs/hdbet/bin/hd-bet /opt/miniconda-latest/envs/hdbet/bin/hd-bet-original
+        - cp {{ get_file("arm64_launcher") }} /opt/miniconda-latest/envs/hdbet/bin/hd-bet
+        - chmod +x /opt/miniconda-latest/envs/hdbet/bin/hd-bet
+
     - environment:
         PATH: /opt/miniconda-latest/envs/hdbet/bin:$PATH
 
@@ -82,3 +93,10 @@ readme: |
 files:
   - name: release_v1_5_0_zip
     url: https://zenodo.org/records/14445620/files/release_v1.5.0.zip?download=1
+  - name: arm64_launcher
+    condition: arch == "aarch64"
+    contents: |
+      #!/bin/sh
+      set -eu
+      export LD_PRELOAD="/opt/miniconda-latest/envs/hdbet/lib/libgomp-hdbet.so.1${LD_PRELOAD:+:$LD_PRELOAD}"
+      exec /opt/miniconda-latest/envs/hdbet/bin/hd-bet-original "$@"
