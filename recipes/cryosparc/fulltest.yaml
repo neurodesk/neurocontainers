@@ -81,7 +81,7 @@ tests:
     timeout: 300
     script: |
       set -eu
-      root=$(mktemp -d)
+      root=$(realpath "$(mktemp -d)")
       trap 'rm -rf "$root"' EXIT
       licence=0123abcd-4567-89ab-cdef-0123456789ab
       server="$root/server"
