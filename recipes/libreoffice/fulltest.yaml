@@ -20,3 +20,24 @@ tests:
       command -v lobase
       command -v lomath
     expected_exit_code: 0
+
+  - name: Headless document conversion preserves text and exports PDF
+    description: Convert a real document with a private writable profile and assert its content and PDF output.
+    command: |
+      set -eu
+      conversion_dir=$(mktemp -d /tmp/libreoffice-fulltest.XXXXXX)
+      trap 'rm -rf "$conversion_dir"' EXIT
+      printf '%s\n' 'NeuroContainers document conversion probe.' > "$conversion_dir/probe.txt"
+      libreoffice "-env:UserInstallation=file://$conversion_dir/profile" --headless \
+        --convert-to odt --outdir "$conversion_dir" "$conversion_dir/probe.txt"
+      test -s "$conversion_dir/probe.odt"
+      libreoffice "-env:UserInstallation=file://$conversion_dir/profile" --headless \
+        --cat "$conversion_dir/probe.odt" > "$conversion_dir/roundtrip.txt"
+      grep -Fxq 'NeuroContainers document conversion probe.' "$conversion_dir/roundtrip.txt"
+      libreoffice "-env:UserInstallation=file://$conversion_dir/profile" --headless \
+        --convert-to pdf --outdir "$conversion_dir" "$conversion_dir/probe.odt"
+      test -s "$conversion_dir/probe.pdf"
+      test "$(head -c 5 "$conversion_dir/probe.pdf")" = '%PDF-'
+      tail -c 1024 "$conversion_dir/probe.pdf" | grep -aq '%%EOF'
+      echo 'LibreOffice document text and PDF verified'
+    expected_output_contains: LibreOffice document text and PDF verified
