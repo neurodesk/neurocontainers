@@ -806,6 +806,12 @@ tests:
       # Combine compartments
       S_total = ICVF * S_ic + ECVF * S_ec + ISOVF * S_iso
 
+      # Fail on broken synthesis, including NaN outputs that printing can hide.
+      for signal in (S_ic, S_ec, S_iso, S_total):
+          assert signal.shape == (scheme.nS,), signal.shape
+          assert np.isfinite(signal).all(), signal
+      assert S_total[scheme.b < 10].mean() > S_total[(scheme.b > 500) & (scheme.b < 1500)].mean() > S_total[scheme.b > 1500].mean() > 0
+
       print('Synthesized NODDI signal with', len(S_total), 'measurements')
       print('Signal range: [%.4f, %.4f]' % (S_total.min(), S_total.max()))
       print('Mean b0 signal: %.4f' % S_total[scheme.b < 10].mean())
@@ -858,6 +864,15 @@ tests:
       affine[3, 3] = 1
       img = nib.Nifti1Image(dwi_data, affine)
       nib.save(img, '${output_dir}/synthetic_dwi.nii.gz')
+
+      reloaded = nib.load('${output_dir}/synthetic_dwi.nii.gz')
+      result = np.asanyarray(reloaded.dataobj)
+      assert result.shape == (nx, ny, nz, nv), result.shape
+      assert result.dtype == np.dtype('float32'), result.dtype
+      assert np.isfinite(result).all()
+      np.testing.assert_array_equal(result, dwi_data)
+      np.testing.assert_array_equal(reloaded.affine, affine)
+      assert reloaded.header.get_zooms()[:3] == (2.0, 2.0, 2.0)
 
       print('Created synthetic DWI:', dwi_data.shape)
       print('Voxel dimensions: 2mm isotropic')
