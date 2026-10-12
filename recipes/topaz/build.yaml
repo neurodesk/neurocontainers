@@ -25,6 +25,7 @@ build:
         - curl
         - ca-certificates
         - unzip
+        - patch
 
     - template:
         name: miniconda
@@ -38,6 +39,11 @@ build:
 
     - run:
         - /opt/miniconda-latest/envs/topaz/bin/python -m pip install --no-cache-dir topaz-em=={{ context.version }}
+        - patch --batch --forward --fuzz=0 /opt/miniconda-latest/envs/topaz/lib/python3.10/site-packages/topaz/denoising/models.py < {{ get_file("denoiser-resources.patch") }}
+
+files:
+  - name: denoiser-resources.patch
+    filename: denoiser-resources.patch
 
 deploy:
   bins:
@@ -60,9 +66,9 @@ readme: |
 
   The packages included in this container:
   - topaz - {{ context.version }}
-  - miniconda3 - 4.7.12.1
-  - python - 3.6
-  - cudatoolkit - 10.2
+  - Miniconda
+  - Python - 3.10
+  - PyTorch
 
   Citation:
   ```

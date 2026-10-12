@@ -6,13 +6,75 @@
 # It also includes methods for micrograph and tomogram denoising.
 #
 # Note: Many topaz commands require actual cryo-EM data (MRC files, particle coordinates)
-# which are not included in this test suite. These tests focus on CLI validation,
-# help messages, and option parsing.
+# which are not included in this test suite. Synthetic inputs exercise bundled
+# pretrained models on CPU alongside CLI and help checks.
 
 name: topaz
 version: 0.3.20
 
 tests:
+  - name: Pretrained detector CPU inference
+    description: Load bundled weights and verify finite predictions with the expected shape.
+    command: |
+      python - <<'PY'
+      import torch
+      from topaz.model.factory import load_model
+
+      torch.set_num_threads(1)
+      torch.manual_seed(17)
+      model = load_model('resnet16').cpu().eval()
+      x = torch.linspace(-1, 1, 65536).reshape((1, 1, 256, 256))
+      with torch.no_grad():
+          output = model(x)
+      assert tuple(output.shape) == (1, 1, 42, 42), output.shape
+      assert bool(torch.isfinite(output).all())
+      print("resnet16 inference passed")
+      print("detector passed")
+      PY
+    expected_output_contains: "detector passed"
+
+  - name: Pretrained 2D denoisers CPU inference
+    description: Load bundled weights and verify finite predictions with the expected shape.
+    command: |
+      python - <<'PY'
+      import torch
+      from topaz.denoising.models import load_model
+
+      torch.set_num_threads(1)
+      torch.manual_seed(17)
+      for name in ('unet', 'unet-small', 'fcnn', 'affine', 'unet-v0.2.1'):
+          model = load_model(name).cpu().eval()
+          x = torch.linspace(-1, 1, 4096).reshape((1, 1, 64, 64))
+          with torch.no_grad():
+              output = model(x)
+          assert tuple(output.shape) == (1, 1, 64, 64), (name, output.shape)
+          assert bool(torch.isfinite(output).all()), name
+          print(name, "inference passed")
+      print("2D denoisers passed")
+      PY
+    expected_output_contains: "2D denoisers passed"
+
+  - name: Pretrained 3D denoisers CPU inference
+    description: Load bundled weights and verify finite predictions with the expected shape.
+    command: |
+      python - <<'PY'
+      import torch
+      from topaz.denoising.models import load_model
+
+      torch.set_num_threads(1)
+      torch.manual_seed(17)
+      for name in ('unet-3d', 'unet-3d-20a'):
+          model = load_model(name).cpu().eval()
+          x = torch.linspace(-1, 1, 32768).reshape((1, 1, 32, 32, 32))
+          with torch.no_grad():
+              output = model(x)
+          assert tuple(output.shape) == (1, 1, 32, 32, 32), (name, output.shape)
+          assert bool(torch.isfinite(output).all()), name
+          print(name, "inference passed")
+      print("3D denoisers passed")
+      PY
+    expected_output_contains: "3D denoisers passed"
+
   # ==========================================================================
   # BASIC FUNCTIONALITY AND VERSION
   # ==========================================================================
