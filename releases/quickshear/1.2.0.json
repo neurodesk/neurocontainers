@@ -1,7 +1,7 @@
 {
   "apps": {
     "quickshear 1.2.0": {
-      "version": "20260629",
+      "version": "20261012",
       "exec": "",
       "apptainer_args": []
     }
