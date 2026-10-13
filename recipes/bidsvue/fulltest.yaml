@@ -1,49 +1,225 @@
-# BIDSvue container test suite
-# Tests for BIDSvue v0.1.20260704 - desktop UI for creating, inspecting, and modifying BIDS datasets.
-
 name: bidsvue
 version: 0.1.20260704
-
 test_data:
   output_dir: test_output/bidsvue
-
 setup:
   script: |
     #!/usr/bin/env bash
     set -e
     mkdir -p ${output_dir}
 
+    cat > "${output_dir}/webdriver-check.py" <<'PYGUI'
+    # Mirrors upstream happy-path and strict viewer E2E assertions; BSD-2-Clause.
+    # https://github.com/niivue/BIDSvue/tree/v0.1.20260704/tests/e2e
+    # Direct native WebKit capabilities and automation env match tauri-driver2.1.0.
+    import hashlib
+    import json
+    import os
+    from pathlib import Path
+    import shutil
+    import signal
+    import socket
+    import subprocess
+    import tempfile
+    import time
+    import urllib.error
+    import urllib.request
+
+    with tempfile.TemporaryDirectory(prefix="bidsvue-webdriver-") as scratch:
+        root = Path(scratch)
+        dataset = root / "tiny-bids"
+        shutil.copytree('/opt/bidsvue-testdata/tiny-bids', dataset)
+        hashes = {p.relative_to(dataset): hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in dataset.rglob('*') if p.is_file()}
+        env = dict(os.environ)
+        env.pop('HOME', None)
+        env.update(XDG_CACHE_HOME=str(root/'cache'), XDG_CONFIG_HOME=str(root/'config'),
+                   XDG_DATA_HOME=str(root/'data'), XDG_RUNTIME_DIR=str(root/'runtime'),
+                   TAURI_AUTOMATION='true', TAURI_WEBVIEW_AUTOMATION='true',
+                   BIDSVUE_TEST_OPEN_DATASET=str(dataset), LIBGL_ALWAYS_SOFTWARE='1',
+                   WEBKIT_DISABLE_DMABUF_RENDERER='1', LANG='C.UTF-8', LC_ALL='C.UTF-8')
+        (root/'runtime').mkdir(mode=0o700)
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', 0))
+            port = sock.getsockname()[1]
+        base = f'http://127.0.0.1:{port}'
+        log_path = root/'webdriver.log'
+        with log_path.open('w') as log:
+            driver = subprocess.Popen(['WebKitWebDriver', f'--port={port}'],
+                                      env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            session = None
+            def request(method, path, value=None):
+                data = None if value is None else json.dumps(value).encode()
+                req = urllib.request.Request(base+path, data=data, method=method,
+                                             headers={'Content-Type':'application/json'})
+                with urllib.request.urlopen(req, timeout=90) as response:
+                    result = json.load(response)['value']
+                assert not isinstance(result, dict) or 'error' not in result, result
+                return result
+            try:
+                deadline = time.monotonic()+30
+                while True:
+                    assert driver.poll() is None, log_path.read_text()
+                    try:
+                        if request('GET', '/status')['ready']:
+                            break
+                    except urllib.error.URLError:
+                        pass
+                    assert time.monotonic()<deadline, log_path.read_text()
+                    time.sleep(0.2)
+                response = request('POST', '/session', {'capabilities': {'alwaysMatch': {
+                    'webkitgtk:browserOptions': {'binary':'/usr/bin/bidsvue', 'args':[]}}}})
+                session = '/session/'+response['sessionId']
+                request('POST', session+'/timeouts', {'script':45000})
+                def execute(script, args=None):
+                    return request('POST', session+'/execute/sync', {'script':script,'args':args or []})
+                def wait(script):
+                    deadline = time.monotonic()+45
+                    while time.monotonic()<deadline:
+                        value = execute(script)
+                        if value:
+                            return value
+                        assert driver.poll() is None, log_path.read_text()
+                        time.sleep(0.2)
+                    raise AssertionError((script,execute('return document.body.innerText'),log_path.read_text()))
+                def click(css):
+                    element = request('POST', session+'/element', {'using':'css selector','value':css})
+                    key = 'element-6066-11e4-a52e-4f735466cecf'
+                    request('POST', session+'/element/'+element[key]+'/click', {})
+                def expand():
+                    selector = 'button[aria-label="Expand next level"]'
+                    for _ in range(8):
+                        if execute('return document.querySelector(arguments[0]).disabled', [selector]):
+                            return
+                        click(selector)
+                    assert execute('return document.querySelector(arguments[0]).disabled',[selector])
+                wait('return !!document.querySelector("[role=tree]")')
+                expand()
+                count = execute('return document.querySelectorAll("[role=treeitem]").length')
+                text = execute('return document.querySelector("[role=tree]").innerText')
+                assert count>=5 and 'sub-01' in text and 'sub-02' in text, (count,text)
+                click('button[aria-label="Collapse all"]')
+                wait(f'return document.querySelectorAll("[role=treeitem]").length < {count}')
+                expand()
+                element = request('POST',session+'/element',{'using':'xpath','value':'//*[@role="treeitem" and contains(., "T1w")]'})
+                request('POST',session+'/element/'+element['element-6066-11e4-a52e-4f735466cecf']+'/click',{})
+                wait('return !!document.querySelector("[role=tab][title*=\".nii\"]")')
+                click('[role="tab"][title*=".nii"]')
+                wait('return !!document.querySelector("[aria-label=\"NiiVue controls\"]")')
+                assert not execute('return !!document.querySelector(".niivue .error")')
+                assert execute('''const c=document.querySelector('.niivue canvas');
+                    const g=c&&c.getContext('webgl2');
+                    return !!g&&g.drawingBufferWidth>10&&g.drawingBufferHeight>10;''')
+                deadline = time.monotonic()+30
+                while True:
+                    screenshot = request('GET',session+'/screenshot')
+                    probe = request('POST',session+'/execute/async',{'args':[screenshot], 'script': '''
+                        const done=arguments[arguments.length-1], image=new Image();
+                        image.onerror=()=>done({ok:false,error:'screenshot decode failed'});
+                        image.onload=()=>{try {
+                            const rect=document.querySelector('.niivue canvas').getBoundingClientRect();
+                            const sx=image.naturalWidth/(window.visualViewport?.width??document.documentElement.clientWidth);
+                            const sy=image.naturalHeight/(window.visualViewport?.height??document.documentElement.clientHeight);
+                            const c=document.createElement('canvas');
+                            c.width=Math.max(1,Math.floor(rect.width*sx)); c.height=Math.max(1,Math.floor(rect.height*sy));
+                            const ctx=c.getContext('2d',{willReadFrequently:true});
+                            ctx.drawImage(image,Math.max(0,Math.floor(rect.left*sx)),Math.max(0,Math.floor(rect.top*sy)),c.width,c.height,0,0,c.width,c.height);
+                            const pixels=ctx.getImageData(0,0,c.width,c.height).data;
+                            const bins=new Set();let nonBlack=0,minLum=765,maxLum=0;
+                            const stride=Math.max(1,Math.floor(c.width*c.height/16384));
+                            for(let i=0;i<c.width*c.height;i+=stride){const o=i*4,r=pixels[o],g=pixels[o+1],b=pixels[o+2],lum=r+g+b;
+                                if(lum>24)nonBlack++;minLum=Math.min(minLum,lum);maxLum=Math.max(maxLum,lum);
+                                bins.add(((r>>4)<<8)|((g>>4)<<4)|(b>>4));}
+                            done({ok:nonBlack>16&&bins.size>=3&&maxLum-minLum>=10,nonBlack,bins:bins.size,luminanceRange:maxLum-minLum});
+                        }catch(error){done({ok:false,error:String(error)});}};
+                        image.src='data:image/png;base64,'+arguments[0];'''})
+                    if probe['ok'] or time.monotonic()>=deadline:
+                        break
+                    time.sleep(0.2)
+                assert probe['ok'], probe
+                assert all(hashlib.sha256((dataset/p).read_bytes()).hexdigest()==digest for p,digest in hashes.items())
+                request('DELETE',session)
+                session = None
+                print('BIDSvue real BIDS tree, expand/collapse and nonblank NIfTI WebGL2 view passed',probe)
+            finally:
+                if session is not None:
+                    try:
+                        request('DELETE',session)
+                    except Exception:
+                        pass  # Cleanup only: the original assertion still fails.
+                try:
+                    os.killpg(driver.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass  # Process already exited; no test assertion is changed.
+                try:
+                    driver.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(driver.pid, signal.SIGKILL)
+                    driver.wait(timeout=10)
+    PYGUI
 tests:
   - name: BIDSvue package version
     description: Verify the upstream Debian package is installed at the recipe version.
     command: |
+      set -euo pipefail
       expected_version="$(awk '/^version:/{print $2; exit}' /build.yaml)"
       actual_version="$(dpkg-query -W -f='${Version}\n' bidsvue)"
       test "$actual_version" = "$expected_version"
       echo "bidsvue package version ok"
-    expected_output_contains: "bidsvue package version ok"
-
+    expected_output_contains: bidsvue package version ok
   - name: BIDSvue launcher available
     description: Verify the GUI launcher is installed on PATH.
-    command: command -v bidsvue
-    expected_output_contains: "/usr/bin/bidsvue"
-
+    command: |-
+      set -euo pipefail
+      command -v bidsvue
+    expected_output_contains: /usr/bin/bidsvue
   - name: BIDSvue desktop metadata installed
     description: Verify the desktop entry and official icon are installed.
     command: |
+      set -euo pipefail
       test -f /usr/share/applications/BIDSvue.desktop
       grep -q "Name=BIDSvue" /usr/share/applications/BIDSvue.desktop
       grep -q "Exec=bidsvue" /usr/share/applications/BIDSvue.desktop
       test -f /usr/share/icons/hicolor/32x32/apps/bidsvue.png
       echo "bidsvue desktop metadata ok"
-    expected_output_contains: "bidsvue desktop metadata ok"
-
+    expected_output_contains: bidsvue desktop metadata ok
   - name: BIDSvue runtime libraries resolved
     description: Verify the launcher has no missing shared-library dependencies.
     command: |
+      set -euo pipefail
       ldd /usr/bin/bidsvue | tee "${output_dir}/bidsvue-ldd.txt"
       if grep -q "not found" "${output_dir}/bidsvue-ldd.txt"; then
         exit 1
       fi
       echo "bidsvue runtime libraries resolved"
-    expected_output_contains: "bidsvue runtime libraries resolved"
+    expected_output_contains: bidsvue runtime libraries resolved
+  - name: BIDSvue real BIDS tree and NIfTI rendering
+    description: Open the official tiny BIDS dataset through the native backend, expand/collapse subjects and require a nonblank
+      WebGL2 NIfTI view with unchanged source files, using official software-Mesa E2E settings and HOME unset.
+    command: |-
+      set -euo pipefail
+      xvfb-run -a -s "-screen 0 1280x1024x24" python3 "${output_dir}/webdriver-check.py"
+    expected_output_contains: BIDSvue real BIDS tree, expand/collapse and nonblank NIfTI WebGL2 view passed
+    timeout: 240
+  - name: BIDSvue packaged native sidecars and resources
+    description: Require the launcher and all three packaged sidecars to match the running CPU, and retain the bundled templates
+      and model resources.
+    command: |
+      set -euo pipefail
+      python3 - <<'PYNATIVE'
+      import platform, struct, subprocess
+      from pathlib import Path
+      paths = [Path(p) for p in subprocess.check_output(['dpkg-query', '-L', 'bidsvue'], text=True).splitlines()]
+      names = {'bidsvue', 'dcm2niix', 'niimath', 'bids-validator'}
+      expected = {'aarch64': 183, 'x86_64': 62}[platform.machine()]
+      for name in names:
+          files = [p for p in paths if p.name == name and p.is_file()]
+          assert len(files) == 1, (name, files)
+          header = files[0].read_bytes()[:20]
+          assert header[:6] == b'\x7fELF\x02\x01', (name, header)
+          assert struct.unpack_from('<H', header, 18)[0] == expected, name
+      assert any(p.name == 'avg152T1.nii.gz' and p.is_file() for p in paths)
+      assert any(p.suffix == '.safetensors' and p.is_file() for p in paths)
+      print('BIDSvue packaged native sidecars and resources verified')
+      PYNATIVE
+    expected_output_contains: BIDSvue packaged native sidecars and resources verified
