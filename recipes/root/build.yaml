@@ -7,6 +7,7 @@ copyright:
     
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   method: dockerhub
@@ -16,10 +17,50 @@ auto_update:
 build:
   kind: neurodocker
 
-  base-image: rootproject/root:{{ context.version }}-centos7
-  pkg-manager: yum
+  base-image: "{% if arch == 'aarch64' %}ubuntu:24.04{% else %}rootproject/root:{{ context.version }}-centos7{% endif %}"
+  pkg-manager: "{{ 'apt' if arch == 'aarch64' else 'yum' }}"
 
-  directives: []
+  directives:
+    - condition: arch == "aarch64"
+      install:
+        - libglu1-mesa
+        - libgl1
+        - libx11-6
+        - libxext6
+        - libxft2
+        - libxpm4
+    - condition: arch == "aarch64"
+      template:
+        name: miniconda
+        version: py310_25.5.1-0
+        install_path: /opt/miniconda
+    - condition: arch == "aarch64"
+      run:
+        - conda create --yes --override-channels -c conda-forge --strict-channel-priority --prefix /opt/root "python=3.10" "root_base={{ context.version }}"
+        - conda clean --all --yes
+        - mkdir -p /opt/root-wrapper/bin
+    - condition: arch == "aarch64"
+      copy:
+        - root-conda-wrapper
+        - /opt/root-wrapper/bin/root
+    - condition: arch == "aarch64"
+      run:
+        - chmod 0755 /opt/root-wrapper/bin/root
+        - for executable in root-config rootls rootmkdir rootcp hadd rooteventselector rootslimtree rootdrawtree rootcling genreflex python python3; do ln -s root "/opt/root-wrapper/bin/$executable"; done
+    - condition: arch == "aarch64"
+      environment:
+        PATH: /opt/root-wrapper/bin:/opt/root/bin:/opt/miniconda/bin:$PATH
+
+files:
+  - name: root-conda-wrapper
+    condition: arch == "aarch64"
+    executable: true
+    contents: |-
+      #!/usr/bin/env bash
+      set -e
+      . /opt/miniconda/etc/profile.d/conda.sh
+      conda activate /opt/root
+      exec "/opt/root/bin/$(basename "$0")" "$@"
 
 deploy:
   bins:
