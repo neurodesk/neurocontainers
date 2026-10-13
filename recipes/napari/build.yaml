@@ -16,6 +16,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 variables:
   install_path: /opt/napari-{{ context.version }}
@@ -25,7 +26,12 @@ variables:
   wheel_version: 0.47.0
   torch_version: 2.8.0
   torchvision_version: 0.23.0
-  pytorch_wheel_channel: cu126
+  pytorch_wheel_channel:
+    try:
+      - value: cu126
+        condition: arch == "x86_64"
+      - value: cpu
+        condition: arch == "aarch64"
   napari_voxtell_version: 0.1.0
   voxtell_version: 0.1.0
   napari_nninteractive_version: 2.5.3
@@ -83,6 +89,9 @@ build:
         - libxtst6
         - python3
         - python3-venv
+        - libgl1-mesa-dri
+        - xvfb
+        - xauth
 
     - run:
         - python3 -m venv "{{ context.venv_path }}"
@@ -90,6 +99,9 @@ build:
         - python -m pip install --no-cache-dir --upgrade pip=={{ context.pip_version }} setuptools=={{ context.setuptools_version }} wheel=={{ context.wheel_version }}
         - python -m pip install --no-cache-dir torch=={{ context.torch_version }} torchvision=={{ context.torchvision_version }} --index-url https://download.pytorch.org/whl/{{ context.pytorch_wheel_channel }}
         - python -m pip install --no-cache-dir "napari[all]=={{ context.version }}" "napari-voxtell=={{ context.napari_voxtell_version }}" "voxtell=={{ context.voxtell_version }}" "napari-nninteractive[local]=={{ context.napari_nninteractive_version }}" "nnInteractive=={{ context.nninteractive_version }}"
+
+    - run:
+        - "{{ context.venv_path }}/bin/python -m pip check"
 
     - copy:
         - napari-wrapper
@@ -187,7 +199,7 @@ readme: |-
   napari is an interactive multi-dimensional image viewer. This container includes:
   - napari-VoxTell {{ context.napari_voxtell_version }} for free-text-prompted 3D medical image segmentation
   - napari-nnInteractive {{ context.napari_nninteractive_version }} for point, scribble, box, and lasso-prompted 3D segmentation
-  - CUDA {{ context.pytorch_wheel_channel }} PyTorch {{ context.torch_version }} and the nnInteractive {{ context.nninteractive_version }} local backend
+  - {{ context.pytorch_wheel_channel }} PyTorch {{ context.torch_version }} and the nnInteractive {{ context.nninteractive_version }} local backend
   - napari-nifti for NIfTI image loading
 
   Launch napari or open either plugin directly:
@@ -197,7 +209,7 @@ readme: |-
   napari-nninteractive
   ```
 
-  Local inference is intended for an NVIDIA GPU. nnInteractive can also connect to a remote `nninteractive-server`. VoxTell and nnInteractive download model weights on first initialization. By default, writable runtime state and downloaded models are stored under `${TMPDIR:-/tmp}/napari-$(id -u)`, because a home directory is not available at runtime. To retain models in another writable location, set:
+  The x86_64 image retains CUDA PyTorch; ARM64 uses the official CPU wheels. Both backends support CPU inference, which can be substantially slower than an NVIDIA GPU. nnInteractive can also connect to a remote `nninteractive-server`. VoxTell and nnInteractive download model weights on first initialization. By default, writable runtime state and downloaded models are stored under `${TMPDIR:-/tmp}/napari-$(id -u)`, because a home directory is not available at runtime. To retain models in another writable location, set:
   ```
   export NAPARI_CACHE_DIR=/path/to/persistent/napari-cache
   ```

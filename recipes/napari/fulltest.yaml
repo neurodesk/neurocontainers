@@ -2,10 +2,19 @@ name: napari
 version: 0.9.2
 default_timeout: 120
 
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    set -eu
+    mkdir -p "${output_dir}/napari-cache" "${output_dir}/napari-config" "${output_dir}/napari-data" "${output_dir}/napari-models"
+
 tests:
   - name: napari launchers are available
     description: Verify napari, both bundled plugin launchers, and the nnInteractive service tools are exposed.
     command: |
+      set -euo pipefail
       command -v napari
       command -v napari-voxtell
       command -v napari-nninteractive
@@ -22,6 +31,13 @@ tests:
   - name: segmentation plugins are installed and discoverable
     description: Verify both segmentation packages import and publish napari manifests.
     command: |
+      set -euo pipefail
+      export XDG_CACHE_HOME="${output_dir}/napari-cache"
+      export XDG_CONFIG_HOME="${output_dir}/napari-config"
+      export XDG_DATA_HOME="${output_dir}/napari-data"
+      export NNINTERACTIVE_MODEL_DIR="${output_dir}/napari-models"
+      export MPLCONFIGDIR="${output_dir}/napari-cache/matplotlib"
+      export NUMBA_CACHE_DIR="${output_dir}/napari-cache/numba"
       export QT_QPA_PLATFORM=offscreen
       python - <<'PY'
       from importlib.metadata import entry_points
@@ -48,3 +64,160 @@ tests:
       print("VoxTell and nnInteractive napari plugins are installed")
       PY
     expected_output_contains: "VoxTell and nnInteractive napari plugins are installed"
+
+  - name: Scientific and plugin dependency closure
+    description: Require a compatible installed runtime and the current pinned CPU-capable scientific and segmentation packages
+    command: |
+      set -euo pipefail
+      python -m pip check
+      python - <<'PYTHON'
+      from importlib.metadata import version
+      for package, expected in [('napari', '${version}'), ('torch', '2.8.0'), ('torchvision', '0.23.0'), ('voxtell', '0.1.0'), ('nnInteractive', '2.5.1'), ('napari-voxtell', '0.1.0'), ('napari-nninteractive', '2.5.3')]:
+          assert version(package).split('+')[0] == expected, (package, version(package))
+      print('Pinned napari, PyTorch and segmentation plugin versions are compatible')
+      PYTHON
+    expected_output_contains:
+      - No broken requirements found
+      - Pinned napari, PyTorch and segmentation plugin versions are compatible
+    expected_exit_code: 0
+  - name: Real OpenGL viewer and exact segmentation editing roundtrip
+    description: Render a real software OpenGL canvas, paint one analytically specified voxel with undo/redo, preserve physical coordinates, save and reopen every label voxel
+    timeout: 180
+    command: |
+      set -euo pipefail
+      export XDG_CACHE_HOME="${output_dir}/napari-cache"
+      export XDG_CONFIG_HOME="${output_dir}/napari-config"
+      export XDG_DATA_HOME="${output_dir}/napari-data"
+      export NNINTERACTIVE_MODEL_DIR="${output_dir}/napari-models"
+      export MPLCONFIGDIR="${output_dir}/napari-cache/matplotlib"
+      export NUMBA_CACHE_DIR="${output_dir}/napari-cache/numba"
+      env -u HOME QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a python - <<'PYTHON'
+      import os
+      from pathlib import Path
+      import numpy as np
+      import napari
+      from qtpy.QtWidgets import QApplication
+      from vispy import gloo
+
+      root = Path('${output_dir}').resolve()
+      app = QApplication.instance() or QApplication([])
+      z, y, x = np.indices((8, 32, 48))
+      image = (100*z + 2*y + x).astype(np.float32)
+      before = image.copy()
+      scale = (2.0, 1.5, 0.75)
+      viewer = napari.Viewer(show=True)
+      try:
+          layer = viewer.add_image(image, name='Analytical volume', scale=scale,
+                                   colormap='gray', contrast_limits=(300, 410))
+          labels = viewer.add_labels(np.zeros(image.shape, dtype=np.uint16),
+                                     name='Edited segmentation', scale=scale)
+          viewer.dims.set_current_step(0, 3)
+          labels.brush_size = 1
+          labels.paint((3, 12, 20), 7)
+          expected = np.zeros(image.shape, dtype=np.uint16)
+          expected[3, 12, 20] = 7
+          np.testing.assert_array_equal(labels.data, expected)
+          labels.undo()
+          np.testing.assert_array_equal(labels.data, np.zeros_like(expected))
+          labels.redo()
+          np.testing.assert_array_equal(labels.data, expected)
+          np.testing.assert_array_equal(layer.data_to_world((3, 12, 20)), (6, 18, 15))
+          np.testing.assert_array_equal(labels.data_to_world((3, 12, 20)), (6, 18, 15))
+          path = root / 'napari-edited-labels.tif'
+          written = labels.save(str(path))
+          assert written and path.is_file()
+          reopened = viewer.open(str(path), layer_type='labels')[0]
+          np.testing.assert_array_equal(reopened.data, expected)
+          viewer.layers.remove(reopened)
+          viewer.reset_view()
+          for _ in range(30):
+              app.processEvents()
+          renderer = gloo.gl.glGetParameter(gloo.gl.GL_RENDERER)
+          assert renderer, 'No real OpenGL renderer'
+          shot = viewer.screenshot(path=str(root/'napari-viewer.png'), canvas_only=True, flash=False)
+          assert shot.ndim == 3 and shot.shape[2] == 4 and min(shot.shape[:2]) >= 200, shot.shape
+          rgb = shot[::2, ::2, :3].reshape(-1, 3)
+          assert np.unique(rgb, axis=0).shape[0] >= 32, 'Blank or unrendered canvas'
+          np.testing.assert_array_equal(image, before)
+          print('OpenGL renderer:', renderer)
+          print('Napari rendered the analytical volume, edited one exact voxel with undo/redo, and saved/reloaded every label voxel')
+      finally:
+          viewer.close()
+          app.processEvents()
+      PYTHON
+    expected_output_contains: Napari rendered the analytical volume, edited one exact voxel with undo/redo, and saved/reloaded every label voxel
+    expected_exit_code: 0
+  - name: Official nnInteractive checkpoint performs actual CPU segmentation
+    description: Download the immutable checksummed official model and run its unchanged trained network on a nonconstant 3D image using a positive point prompt, requiring a nontrivial binary output and unchanged input and checkpoint
+    timeout: 1800
+    command: |
+      set -euo pipefail
+      export XDG_CACHE_HOME="${output_dir}/napari-cache"
+      export XDG_CONFIG_HOME="${output_dir}/napari-config"
+      export XDG_DATA_HOME="${output_dir}/napari-data"
+      export NNINTERACTIVE_MODEL_DIR="${output_dir}/napari-models"
+      export MPLCONFIGDIR="${output_dir}/napari-cache/matplotlib"
+      export NUMBA_CACHE_DIR="${output_dir}/napari-cache/numba"
+      env -u HOME CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python - <<'PYTHON'
+      import hashlib
+      import urllib.request
+      from pathlib import Path
+      import numpy as np
+      import torch
+      from nnInteractive.inference.inference_session import nnInteractiveInferenceSession
+
+      root = Path('${output_dir}').resolve() / 'nninteractive-official-model'
+      revision = '3f308d751c00644e4fde6f09c600264b393b21b5'
+      files = {
+          'fold_0/checkpoint_final.pth': 'b3ac4421f85457bbd1aa0d87f5e67bcb7bc8e2ce6b824b6ac45077cc5d630ea9',
+          'plans.json': '64a30a430438302a692a3edadd345a207b3428bea2e5cdc125298757da21f4d4',
+          'dataset.json': 'e090394ac539b2823b2135173658190245c462cb042d3442487e4829f08252c4',
+          'inference_session_class.json': '8f43587a9d139fcf7af8776219e9432dab079f985cb0d7da72a4c851b39a4f09',
+          'LICENSE': '4f60f5747c5506020923866690c2a41a3c74ffa85b7371eac2b02e23185f91d5',
+      }
+      def digest(path):
+          h = hashlib.sha256()
+          with path.open('rb') as stream:
+              for chunk in iter(lambda: stream.read(1024*1024), b''):
+                  h.update(chunk)
+          return h.hexdigest()
+      for name, checksum in files.items():
+          path = root/name
+          path.parent.mkdir(parents=True, exist_ok=True)
+          if not path.exists():
+              url = f'https://huggingface.co/MIC-DKFZ/nnInteractive/resolve/{revision}/nnInteractive_v1.0/{name}'
+              with urllib.request.urlopen(url, timeout=180) as source, path.open('wb') as target:
+                  while chunk := source.read(1024*1024):
+                      target.write(chunk)
+          assert digest(path) == checksum, name
+
+      # Run the unchanged trained network with the documented CPU session configuration.
+      # This checks actual inference and its output contract, not clinical prediction accuracy.
+      x, y, z = np.indices((48, 48, 48), dtype=np.float32)
+      radius = (x-24)**2 + (y-24)**2 + (z-24)**2
+      image = (np.exp(-radius/100) + 0.005*x + 0.003*y + 0.001*z)[None].astype(np.float32)
+      before = image.copy()
+      target = np.zeros(image.shape[1:], dtype=np.uint8)
+      session = nnInteractiveInferenceSession(device=torch.device('cpu'), use_torch_compile=False,
+          torch_n_threads=2, do_autozoom=False, enable_undo=False)
+      try:
+          session.initialize_from_trained_model_folder(str(root), use_fold=0)
+          assert next(session.network.parameters()).device.type == 'cpu'
+          session.set_image(image)
+          session.set_target_buffer(target)
+          bbox = session.add_point_interaction((24, 24, 24), include_interaction=True)
+          assert bbox is not None and len(bbox) == 3, bbox
+          assert target.shape == (48, 48, 48) and target.dtype == np.uint8
+          assert np.isfinite(target).all() and set(np.unique(target)) == {0, 1}
+          assert 0 < np.count_nonzero(target) < target.size
+          np.testing.assert_array_equal(image, before)
+          np.save(Path('${output_dir}')/'nninteractive-cpu-segmentation.npy', target)
+          for name, checksum in files.items():
+              assert digest(root/name) == checksum, name
+          print('Actual nnInteractive trained CPU inference returned a finite nontrivial binary segmentation with unchanged input and checkpoint',
+                'foreground_voxels=', np.count_nonzero(target), 'bbox=', bbox)
+      finally:
+          session.executor.shutdown(wait=True)
+      PYTHON
+    expected_output_contains: Actual nnInteractive trained CPU inference returned a finite nontrivial binary segmentation with unchanged input and checkpoint
+    expected_exit_code: 0
