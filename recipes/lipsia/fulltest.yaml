@@ -1,6 +1,65 @@
 name: lipsia
 version: 4.1.1
 default_timeout: 60
+test_data:
+  output_dir: test_output/lipsia
+
+setup:
+  script: |
+    set -eu
+    mkdir -p "${output_dir}"
+    cat > "${output_dir}/voxel-check.c" <<'C'
+    #include <assert.h>
+    #include <stdio.h>
+    #include <string.h>
+    #include <viaio/Vlib.h>
+    #include <viaio/VImage.h>
+
+    int main(int argc, char **argv) {
+        FILE *stream;
+        VImage image, *images;
+        VAttrList attributes;
+        int band, row, column, index = 0;
+        assert(argc == 3);
+        if (strcmp(argv[1], "create") == 0) {
+            image = VCreateImage(3, 4, 5, VFloatRepn);
+            assert(image != NULL);
+            for (band = 0; band < 3; band++)
+                for (row = 0; row < 4; row++)
+                    for (column = 0; column < 5; column++)
+                        VSetPixel(image, band, row, column, index++ - 30);
+            stream = fopen(argv[2], "wb");
+            assert(stream != NULL);
+            attributes = VCreateAttrList();
+            assert(VWriteImages(stream, attributes, 1, &image));
+            assert(fclose(stream) == 0);
+            return 0;
+        }
+        stream = fopen(argv[2], "rb");
+        assert(stream != NULL);
+        assert(VReadImages(stream, &attributes, &images) == 1);
+        assert(fclose(stream) == 0);
+        image = images[0];
+        assert(VImageNBands(image) == 3);
+        assert(VImageNRows(image) == 4);
+        assert(VImageNColumns(image) == 5);
+        assert(VPixelRepn(image) == (strcmp(argv[1], "mask") == 0 ? VBitRepn : VFloatRepn));
+        for (band = 0; band < 3; band++)
+            for (row = 0; row < 4; row++)
+                for (column = 0; column < 5; column++) {
+                    double value = index++ - 30;
+                    int selected = value >= -2 && value <= 3;
+                    double expected = strcmp(argv[1], "mask") == 0 ? selected :
+                        strcmp(argv[1], "masked") == 0 ? (selected ? value : 0) : value;
+                    assert(VGetPixel(image, band, row, column) == expected);
+                }
+        assert(index == 60);
+        printf("Verified all60 %s voxels and dimensions\n", argv[1]);
+        return 0;
+    }
+    C
+    cc -std=c99 -Wall -Wextra -Werror -I/opt/lipsia/include "${output_dir}/voxel-check.c" -L/opt/lipsia/lib -Wl,-rpath,/opt/lipsia/lib -lviaio3.0 -lm -o "${output_dir}/voxel-check"
+
 tests:
 - name: vbcm resolves on PATH
   command: command -v vbcm
@@ -9,7 +68,11 @@ tests:
   command: test -x "$(command -v vbcm)"
   expected_exit_code: 0
 - name: vbcm has resolved shared libraries
-  command: '! ldd "$(command -v vbcm)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vbcm)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vbinarize resolves on PATH
   command: command -v vbinarize
@@ -18,7 +81,11 @@ tests:
   command: test -x "$(command -v vbinarize)"
   expected_exit_code: 0
 - name: vbinarize has resolved shared libraries
-  command: '! ldd "$(command -v vbinarize)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vbinarize)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vccm resolves on PATH
   command: command -v vccm
@@ -27,7 +94,11 @@ tests:
   command: test -x "$(command -v vccm)"
   expected_exit_code: 0
 - name: vccm has resolved shared libraries
-  command: '! ldd "$(command -v vccm)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vccm)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vcuttrials resolves on PATH
   command: command -v vcuttrials
@@ -36,7 +107,11 @@ tests:
   command: test -x "$(command -v vcuttrials)"
   expected_exit_code: 0
 - name: vcuttrials has resolved shared libraries
-  command: '! ldd "$(command -v vcuttrials)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vcuttrials)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vdenoise resolves on PATH
   command: command -v vdenoise
@@ -45,7 +120,11 @@ tests:
   command: test -x "$(command -v vdenoise)"
   expected_exit_code: 0
 - name: vdenoise has resolved shared libraries
-  command: '! ldd "$(command -v vdenoise)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vdenoise)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vdetrend resolves on PATH
   command: command -v vdetrend
@@ -54,7 +133,11 @@ tests:
   command: test -x "$(command -v vdetrend)"
   expected_exit_code: 0
 - name: vdetrend has resolved shared libraries
-  command: '! ldd "$(command -v vdetrend)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vdetrend)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vdicom resolves on PATH
   command: command -v vdicom
@@ -63,7 +146,11 @@ tests:
   command: test -x "$(command -v vdicom)"
   expected_exit_code: 0
 - name: vdicom has resolved shared libraries
-  command: '! ldd "$(command -v vdicom)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vdicom)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vecm resolves on PATH
   command: command -v vecm
@@ -72,7 +159,11 @@ tests:
   command: test -x "$(command -v vecm)"
   expected_exit_code: 0
 - name: vecm has resolved shared libraries
-  command: '! ldd "$(command -v vecm)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vecm)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vhubness resolves on PATH
   command: command -v vhubness
@@ -81,7 +172,11 @@ tests:
   command: test -x "$(command -v vhubness)"
   expected_exit_code: 0
 - name: vhubness has resolved shared libraries
-  command: '! ldd "$(command -v vhubness)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vhubness)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vlisa_2ndlevel resolves on PATH
   command: command -v vlisa_2ndlevel
@@ -90,7 +185,11 @@ tests:
   command: test -x "$(command -v vlisa_2ndlevel)"
   expected_exit_code: 0
 - name: vlisa_2ndlevel has resolved shared libraries
-  command: '! ldd "$(command -v vlisa_2ndlevel)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vlisa_2ndlevel)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vlisa_applythreshold resolves on PATH
   command: command -v vlisa_applythreshold
@@ -99,7 +198,11 @@ tests:
   command: test -x "$(command -v vlisa_applythreshold)"
   expected_exit_code: 0
 - name: vlisa_applythreshold has resolved shared libraries
-  command: '! ldd "$(command -v vlisa_applythreshold)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vlisa_applythreshold)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vlisa_generic resolves on PATH
   command: command -v vlisa_generic
@@ -108,7 +211,11 @@ tests:
   command: test -x "$(command -v vlisa_generic)"
   expected_exit_code: 0
 - name: vlisa_generic has resolved shared libraries
-  command: '! ldd "$(command -v vlisa_generic)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vlisa_generic)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vlisa_onesample resolves on PATH
   command: command -v vlisa_onesample
@@ -117,7 +224,11 @@ tests:
   command: test -x "$(command -v vlisa_onesample)"
   expected_exit_code: 0
 - name: vlisa_onesample has resolved shared libraries
-  command: '! ldd "$(command -v vlisa_onesample)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vlisa_onesample)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vlisa_precoloring resolves on PATH
   command: command -v vlisa_precoloring
@@ -126,7 +237,11 @@ tests:
   command: test -x "$(command -v vlisa_precoloring)"
   expected_exit_code: 0
 - name: vlisa_precoloring has resolved shared libraries
-  command: '! ldd "$(command -v vlisa_precoloring)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vlisa_precoloring)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vlisa_prewhitening resolves on PATH
   command: command -v vlisa_prewhitening
@@ -135,7 +250,11 @@ tests:
   command: test -x "$(command -v vlisa_prewhitening)"
   expected_exit_code: 0
 - name: vlisa_prewhitening has resolved shared libraries
-  command: '! ldd "$(command -v vlisa_prewhitening)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vlisa_prewhitening)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vlisa_twosample resolves on PATH
   command: command -v vlisa_twosample
@@ -144,7 +263,11 @@ tests:
   command: test -x "$(command -v vlisa_twosample)"
   expected_exit_code: 0
 - name: vlisa_twosample has resolved shared libraries
-  command: '! ldd "$(command -v vlisa_twosample)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vlisa_twosample)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vnifti resolves on PATH
   command: command -v vnifti
@@ -153,7 +276,11 @@ tests:
   command: test -x "$(command -v vnifti)"
   expected_exit_code: 0
 - name: vnifti has resolved shared libraries
-  command: '! ldd "$(command -v vnifti)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vnifti)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vpreprocess resolves on PATH
   command: command -v vpreprocess
@@ -162,7 +289,11 @@ tests:
   command: test -x "$(command -v vpreprocess)"
   expected_exit_code: 0
 - name: vpreprocess has resolved shared libraries
-  command: '! ldd "$(command -v vpreprocess)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vpreprocess)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vreadconnectome resolves on PATH
   command: command -v vreadconnectome
@@ -171,7 +302,11 @@ tests:
   command: test -x "$(command -v vreadconnectome)"
   expected_exit_code: 0
 - name: vreadconnectome has resolved shared libraries
-  command: '! ldd "$(command -v vreadconnectome)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vreadconnectome)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vsml resolves on PATH
   command: command -v vsml
@@ -180,7 +315,11 @@ tests:
   command: test -x "$(command -v vsml)"
   expected_exit_code: 0
 - name: vsml has resolved shared libraries
-  command: '! ldd "$(command -v vsml)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vsml)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vsml_statistics resolves on PATH
   command: command -v vsml_statistics
@@ -189,7 +328,11 @@ tests:
   command: test -x "$(command -v vsml_statistics)"
   expected_exit_code: 0
 - name: vsml_statistics has resolved shared libraries
-  command: '! ldd "$(command -v vsml_statistics)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vsml_statistics)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vspectralecm resolves on PATH
   command: command -v vspectralecm
@@ -198,7 +341,11 @@ tests:
   command: test -x "$(command -v vspectralecm)"
   expected_exit_code: 0
 - name: vspectralecm has resolved shared libraries
-  command: '! ldd "$(command -v vspectralecm)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vspectralecm)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vsrad resolves on PATH
   command: command -v vsrad
@@ -207,7 +354,11 @@ tests:
   command: test -x "$(command -v vsrad)"
   expected_exit_code: 0
 - name: vsrad has resolved shared libraries
-  command: '! ldd "$(command -v vsrad)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vsrad)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vted resolves on PATH
   command: command -v vted
@@ -216,7 +367,11 @@ tests:
   command: test -x "$(command -v vted)"
   expected_exit_code: 0
 - name: vted has resolved shared libraries
-  command: '! ldd "$(command -v vted)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vted)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vtedfdr resolves on PATH
   command: command -v vtedfdr
@@ -225,7 +380,11 @@ tests:
   command: test -x "$(command -v vtedfdr)"
   expected_exit_code: 0
 - name: vtedfdr has resolved shared libraries
-  command: '! ldd "$(command -v vtedfdr)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vtedfdr)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: vapplymask resolves on PATH
   command: command -v vapplymask
@@ -234,7 +393,11 @@ tests:
   command: test -x "$(command -v vapplymask)"
   expected_exit_code: 0
 - name: vapplymask has resolved shared libraries
-  command: '! ldd "$(command -v vapplymask)" | grep "not found"'
+  command: |
+    set -eu
+    linkage=$(ldd "$(command -v vapplymask)")
+    printf '%s\n' "$linkage"
+    if printf '%s\n' "$linkage" | grep -F 'not found'; then exit 1; fi
   expected_exit_code: 0
 - name: LIPSIA installation directory exists
   command: test -d /opt/lipsia
@@ -301,4 +464,38 @@ tests:
   expected_exit_code: 0
 - name: LIPSIA PATH points to its binaries
   command: case "$PATH" in */opt/lipsia/bin/*|*/opt/lipsia/bin) exit 0;; *) exit 1;; esac
+  expected_exit_code: 0
+
+- name: LIPSIA exact threshold and mask processing
+  description: Execute released native tools on a known3D float image and assert every output voxel and input checksum
+  command: |
+    set -eu
+    "${output_dir}/voxel-check" create "${output_dir}/known.v"
+    sha256sum "${output_dir}/known.v" > "${output_dir}/input.sha256"
+    env -u HOME vbinarize -in "${output_dir}/known.v" -out "${output_dir}/mask.v" -min -2 -max 3
+    env -u HOME vapplymask -in "${output_dir}/known.v" -out "${output_dir}/masked.v" -mask "${output_dir}/mask.v"
+    "${output_dir}/voxel-check" mask "${output_dir}/mask.v"
+    "${output_dir}/voxel-check" masked "${output_dir}/masked.v"
+    "${output_dir}/voxel-check" original "${output_dir}/known.v"
+    sha256sum -c "${output_dir}/input.sha256"
+    echo 'Native LIPSIA threshold and mask results verified'
+  expected_output_contains: Native LIPSIA threshold and mask results verified
+  expected_exit_code: 0
+
+- name: LIPSIA native executable architectures
+  description: Confirm the processing tools and file converter use the declared native ELF architecture
+  command: |
+    set -eu
+    case "$(uname -m)" in
+      aarch64) machine=AArch64 ;;
+      x86_64) machine='Advanced Micro Devices X86-64' ;;
+      *) exit 1 ;;
+    esac
+    for tool in vbinarize vapplymask vnifti; do
+      header=$(readelf -h "$(command -v "$tool")")
+      printf '%s\n' "$header" | grep -F ELF64
+      printf '%s\n' "$header" | grep -F "$machine"
+    done
+    echo 'Native LIPSIA ELF architectures verified'
+  expected_output_contains: Native LIPSIA ELF architectures verified
   expected_exit_code: 0
