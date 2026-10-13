@@ -1,6 +1,7 @@
 name: mimosa
 version: 0.5.8
 default_timeout: 240
+arm_fsl_version: "6.0.7.22"
 
 test_data:
   output_dir: test_output
@@ -264,3 +265,131 @@ tests:
       RS
     validate:
       - output_exists: ${output_dir}/mimosa_session.txt
+
+  - name: Analytical primary model training and prediction
+    description: Fit the actual mimosa_fit API to600 known binomial trials, verify analytical log-odds coefficients and25 held-out probabilities, and serialize/reload the fitted model without losing predictions.
+    timeout: 300
+    command: |
+      R --slave - <<'RS'
+      suppressPackageStartupMessages(library(mimosa))
+      # 200 trials at each x: probabilities1/5,1/2,4/5 imply exactly
+      # intercept=-log(4) and slope=log(4). Both classes occur at every x.
+      x <- rep(0:2, each = 200)
+      y <- unlist(lapply(c(40, 100, 160), function(n) c(rep(1, n), rep(0, 200 - n))))
+      fit <- mimosa_fit(data.frame(FLAIR = x, gold_standard = y), gold_standard ~ FLAIR)
+      stopifnot(inherits(fit, 'glm'), fit$converged)
+      stopifnot(max(abs(coef(fit) - c(-log(4), log(4)))) < 1e-8)
+      held_out <- seq(-2, 4, length.out = 25)
+      expected <- 1 / (1 + 4^(1 - held_out))
+      observed <- as.numeric(predict(fit, data.frame(FLAIR = held_out), type = 'response'))
+      stopifnot(max(abs(observed - expected)) < 1e-10)
+      path <- tempfile(fileext = '.rds')
+      saveRDS(fit, path)
+      stopifnot(identical(observed, as.numeric(predict(readRDS(path), data.frame(FLAIR = held_out), type = 'response'))))
+      unlink(path)
+      if (Sys.info()[['machine']] == 'aarch64') {
+          stopifnot(trimws(readLines(file.path(Sys.getenv('FSLDIR'), 'etc/fslversion'))[1]) == '${arm_fsl_version}')
+      }
+      cat('MIMoSA analytical training and held-out prediction passed', coef(fit), '\n')
+      RS
+    expected_exit_code: 0
+    expected_output_contains: MIMoSA analytical training and held-out prediction passed
+
+  - name: Full MRI features and bundled model probabilities
+    description: Run documented full-volume tissue/candidate selection, normalization, native FSL smoothing, ANTsR neighborhood coupling and bundled two-modality model prediction on complete public MS MRIs. Compare every probability with an independent logistic oracle, preserve original geometry and inputs/model hashes. This does not claim clinical accuracy or verify a chosen lesion threshold.
+    timeout: 7200
+    command: |
+      R --slave - <<'RS'
+      suppressPackageStartupMessages(library(mimosa))
+      suppressPackageStartupMessages(library(neurobase))
+      suppressPackageStartupMessages(library(fslr))
+      options(timeout = 120)
+      fixtures <- list(
+          flair = list(url = "https://raw.githubusercontent.com/muschellij2/open_ms_data/65704901f60650824565aa5a4818611aa89716f4/cross_sectional/MNI/patient01/FLAIR_N4_noneck_reduced_winsor_regtoFLAIR_brain_N4_regtoMNI.nii.gz", sha256 = "312253bbc7cea9adcd78a98c66e18ba1253b1a2183f31492f6a9f9ce5086e745"),
+          reference = list(url = "https://raw.githubusercontent.com/muschellij2/open_ms_data/65704901f60650824565aa5a4818611aa89716f4/cross_sectional/MNI/patient01/GOLD_STANDARD_N4_noneck_reduced_winsor_regtoFLAIR_regtoMNI.nii.gz", sha256 = "f35bd723ac2af1b179522f53de48e45ce485c5864e4f6954d24d684140ba0533"),
+          t1 = list(url = "https://raw.githubusercontent.com/muschellij2/open_ms_data/65704901f60650824565aa5a4818611aa89716f4/cross_sectional/MNI/patient01/T1_N4_noneck_reduced_winsor_regtoFLAIR_brain_N4_regtoMNI.nii.gz", sha256 = "904cdf44f2f0de750b30986dbc25cd7ee4ea2934830b454bf8c8538dcf59fdc0")
+      )
+      directory <- tempfile('mimosa-full-ms-')
+      dir.create(directory)
+      paths <- list()
+      for (kind in names(fixtures)) {
+          item <- fixtures[[kind]]
+          path <- file.path(directory, paste0(kind, '.nii.gz'))
+          download.file(item$url, path, mode = 'wb', quiet = TRUE)
+          stopifnot(identical(digest::digest(file = path, algo = 'sha256'), item$sha256))
+          paths[[kind]] <- path
+      }
+      before_inputs <- tools::md5sum(unlist(paths))
+      model_files <- list.files(system.file('data', package = 'mimosa'), full.names = TRUE)
+      stopifnot(length(model_files) > 0)
+      before_models <- tools::md5sum(model_files)
+      flair <- readnii(paths$flair, reorient = FALSE)
+      t1 <- readnii(paths$t1, reorient = FALSE)
+      reference <- readnii(paths$reference, reorient = FALSE)
+      stopifnot(identical(dim(flair), c(182L, 218L, 182L)))
+      stopifnot(identical(dim(t1), dim(flair)), identical(dim(reference), dim(flair)))
+      stopifnot(all(is.finite(flair)), all(is.finite(t1)), sum(reference > 0) > 0)
+      spatial_slots <- c('pixdim', 'qform_code', 'sform_code', 'quatern_b', 'quatern_c',
+                         'quatern_d', 'qoffset_x', 'qoffset_y', 'qoffset_z',
+                         'srow_x', 'srow_y', 'srow_z')
+      for (slot_name in spatial_slots) {
+          stopifnot(identical(slot(flair, slot_name), slot(t1, slot_name)))
+      }
+      # Follow the documented full-volume two-modality path: supplied preprocessed
+      # MRIs, a brain mask from their union, default tissue/candidate selection and
+      # z-score normalization. Do not crop, resample or remove difficult voxels.
+      brain_mask <- datatyper((flair > 0) | (t1 > 0))
+      started <- proc.time()[['elapsed']]
+      features <- mimosa_data(brain_mask = brain_mask, FLAIR = flair, T1 = t1,
+                             T2 = NULL, PD = NULL, tissue = FALSE,
+                             normalize = 'Z', cores = 1, verbose = TRUE)
+      frame <- features$mimosa_dataframe
+      stopifnot(nrow(frame) == sum(features$top_voxels == 1), nrow(frame) > 0)
+      data('mimosa_model_No_PD_T2', package = 'mimosa')
+      model <- mimosa_model_No_PD_T2
+      stopifnot(inherits(model, 'glm'))
+      design <- model.matrix(delete.response(terms(model)), frame,
+                             contrasts.arg = model$contrasts, xlev = model$xlevels)
+      coefficients <- coef(model)
+      stopifnot(all(is.finite(design)), all(is.finite(coefficients)))
+      stopifnot(identical(colnames(design), names(coefficients)))
+      # Compare every bundled-model prediction with the independent scalar logistic
+      # definition and coefficient sum. This is a numerical, not clinical, oracle.
+      linear <- rowSums(sweep(design, 2, coefficients, '*'))
+      expected <- numeric(length(linear))
+      positive <- linear >= 0
+      expected[positive] <- 1 / (1 + exp(-linear[positive]))
+      exp_linear <- exp(linear[!positive])
+      expected[!positive] <- exp_linear / (1 + exp_linear)
+      predictions <- as.numeric(predict(model, newdata = frame, type = 'response'))
+      stopifnot(length(predictions) == nrow(frame), all(is.finite(predictions)))
+      stopifnot(max(abs(predictions - expected)) < 1e-12)
+      stopifnot(all(predictions >= 0 & predictions <= 1), any(predictions > 0))
+      probability <- niftiarr(brain_mask, 0)
+      probability[features$top_voxels == 1] <- predictions
+      # Preserve the vignette's probability smoothing, including its mask correction.
+      probability <- fslsmooth(probability, sigma = 1.25, mask = brain_mask,
+                               retimg = TRUE, smooth_mask = TRUE)
+      stopifnot(identical(dim(probability), dim(flair)), all(is.finite(probability)))
+      # Float32 smoothing can differ from its mathematical [0,1] range by storage
+      # roundoff. This bound does not change model predictions or lesion thresholds.
+      storage_bound <- 8 * 2^-23
+      stopifnot(min(probability) >= -storage_bound, max(probability) <= 1 + storage_bound)
+      stopifnot(sum(probability > 0) > 0)
+      output <- file.path(directory, 'probability')
+      writenii(probability, filename = output)
+      reloaded <- readnii(paste0(output, '.nii.gz'), reorient = FALSE)
+      stopifnot(identical(dim(reloaded), dim(flair)))
+      for (slot_name in spatial_slots) {
+          stopifnot(identical(slot(reloaded, slot_name), slot(flair, slot_name)))
+      }
+      stopifnot(max(abs(as.numeric(reloaded) - as.numeric(probability))) <= storage_bound)
+      stopifnot(identical(before_inputs, tools::md5sum(unlist(paths))))
+      stopifnot(identical(before_models, tools::md5sum(model_files)))
+      cat('full MIMoSA MRI probability workflow passed; candidates', nrow(frame),
+          'known-lesion probability mean', mean(probability[reference > 0]),
+          'range', range(probability), 'seconds', proc.time()[['elapsed']] - started, '\n')
+      unlink(directory, recursive = TRUE)
+      RS
+    expected_exit_code: 0
+    expected_output_contains: full MIMoSA MRI probability workflow passed
