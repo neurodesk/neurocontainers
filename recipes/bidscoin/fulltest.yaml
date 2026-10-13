@@ -13,8 +13,8 @@
 #   - T1w: 3D structural MRI
 #   - BOLD: 4D functional MRI
 #
-# Note: Full DICOM conversion tests require DICOM source data which is not
-# included in this test dataset. Tests focus on utility functions and validation.
+# A small synthetic MR series exercises actual DICOM mapping and BIDS conversion.
+# The external dataset also exercises validation and utility commands.
 
 name: bidscoin
 version: 4.6.2
@@ -44,6 +44,29 @@ setup:
     mkdir -p ${output_dir}
     mkdir -p ${output_dir}/bids_test
     mkdir -p ${output_dir}/dicom_test
+
+    cat > "${output_dir}/validate-bids.py" <<'PYTHON'
+    import json
+    import subprocess
+    import sys
+
+    args = sys.argv[1:]
+    text = subprocess.run(['bids-validator', *args], text=True, capture_output=True, timeout=120)
+    report = subprocess.run(['bids-validator', *args, '--json'], text=True, capture_output=True, timeout=120)
+    print(text.stdout, text.stderr)
+    assert 'Traceback' not in text.stdout + text.stderr
+    result = json.loads(report.stdout)
+    errors = result['issues']['errors']
+    assert isinstance(errors, list)
+    assert result['summary']['totalFiles'] > 0
+    # A partial external dataset may contain BIDS errors. Require the documented
+    # validation status to agree with its complete structured diagnostic report.
+    expected = int(bool(errors))
+    assert report.returncode == expected, (report.returncode, result)
+    assert text.returncode == expected, (text.returncode, result)
+    print(json.dumps(result))
+    print('Summary:', result['summary']['totalFiles'], 'Files; validation status', expected)
+    PYTHON
 
 tests:
   # ==========================================================================
@@ -159,25 +182,27 @@ tests:
     expected_output_contains: "dataset_directory"
 
   - name: bids-validator on test dataset
+    expected_exit_code: 0
     description: Validate the test BIDS dataset (ds000001)
-    command: bids-validator ${bids_dataset} 2>&1
-    ignore_exit_code: true
+    command: python "${output_dir}/validate-bids.py" "${bids_dataset}"
     expected_output_contains: "Files"
 
   - name: bids-validator with JSON output
+    expected_exit_code: 0
     description: Test JSON output format
-    command: bids-validator ${bids_dataset} --json 2>&1 | head -5
-    expected_output_contains: "{"
+    command: python "${output_dir}/validate-bids.py" "${bids_dataset}"
+    expected_output_contains: "validation status"
 
   - name: bids-validator ignore warnings
+    expected_exit_code: 0
     description: Test ignoring non-critical warnings
-    command: bids-validator ${bids_dataset} --ignoreWarnings 2>&1
-    ignore_exit_code: true
+    command: python "${output_dir}/validate-bids.py" "${bids_dataset}" --ignoreWarnings
+    expected_output_contains: "validation status"
 
   - name: bids-validator verbose mode
+    expected_exit_code: 0
     description: Test verbose validation output
-    command: bids-validator ${bids_dataset} --verbose 2>&1
-    ignore_exit_code: true
+    command: python "${output_dir}/validate-bids.py" "${bids_dataset}" --verbose
     expected_output_contains: "Files"
 
   # ==========================================================================
@@ -468,23 +493,30 @@ tests:
   # BIDSCOIN TEST SUITE
   # ==========================================================================
   - name: bidscoin test basic
-    description: Run BIDScoin built-in test suite
-    command: bidscoin -t 2>&1 | head -20
-    expected_output_contains: "Testing"
+    description: Assert the complete headless core, template and plugin checks; this case does not claim an interactive display
+    command: |
+      python - <<'PYTHON'
+      from bidscoin import bcoin, bidsmap_template
+      bcoin.setup_logging()
+      assert bcoin.test_bidscoin(bidsmap_template, testgui=False) == 0
+      print('BIDScoin core, template and all installed plugin checks passed')
+      PYTHON
+    expected_output_contains: BIDScoin core, template and all installed plugin checks passed
+    expected_exit_code: 0
 
   # ==========================================================================
   # INTEGRATION TESTS - BIDS VALIDATION
   # ==========================================================================
   - name: Validate ds000001 complete
+    expected_exit_code: 0
     description: Run full BIDS validation on test dataset
-    command: bids-validator ${bids_dataset} --ignoreWarnings 2>&1
-    ignore_exit_code: true
+    command: python "${output_dir}/validate-bids.py" "${bids_dataset}" --ignoreWarnings
     expected_output_contains: "Summary"
 
   - name: Validate ds000001 strict MRI
+    expected_exit_code: 0
     description: Validate with MRI-specific checks
-    command: bids-validator ${bids_dataset} --ignoreNiftiHeaders 2>&1
-    ignore_exit_code: true
+    command: python "${output_dir}/validate-bids.py" "${bids_dataset}" --ignoreNiftiHeaders
     expected_output_contains: "Files"
 
   - name: Check dataset description
@@ -601,6 +633,160 @@ tests:
     description: Verify BIDS schema tools available
     command: python -c "import bidsschematools; print('OK')" 2>&1
     expected_output_contains: "OK"
+
+
+  - name: Map and coin synthetic MR DICOM to BIDS
+    description: Run actual automated bidsmapper and bidscoiner with an explicit template; verify every voxel, RAS affine, BIDS timing, anonymization, participant and scans records, mapping provenance, unchanged DICOM sources and zero-error BIDS validation
+    command: |
+      python - <<'PYTHON'
+      from pathlib import Path
+      import struct
+
+      root = Path('${output_dir}') / 'bidscoin-phantom'
+      source = root / 'raw' / 'sub-phantom' / 'ses-01' / 'T1w'
+      source.mkdir(parents=True, exist_ok=True)
+      target = root / 'bids'
+      target.mkdir(exist_ok=True)
+
+      def element(group, tag, vr, value):
+          if vr == 'US':
+              raw = struct.pack('<H', value)
+          elif isinstance(value, bytes):
+              raw = value
+          else:
+              raw = str(value).encode('ascii')
+          if len(raw) % 2:
+              raw += b'\0' if vr in ('UI', 'OB', 'OW') else b' '
+          prefix = struct.pack('<HH', group, tag) + vr.encode('ascii')
+          if vr in ('OB', 'OW'):
+              return prefix + b'\0\0' + struct.pack('<I', len(raw)) + raw
+          return prefix + struct.pack('<H', len(raw)) + raw
+
+      sop = '1.2.840.10008.5.1.4.1.1.4'
+      for index in range(2):
+          uid = '1.2.826.0.1.3680043.10.543.1.' + str(index + 1)
+          meta = b''.join([
+              element(2, 1, 'OB', b'\0\1'),
+              element(2, 2, 'UI', sop),
+              element(2, 3, 'UI', uid),
+              element(2, 0x10, 'UI', '1.2.840.10008.1.2.1'),
+              element(2, 0x12, 'UI', '1.2.826.0.1.3680043.10.543'),
+          ])
+          # Synthetic MR storage, explicit VR little endian, unsigned16-bit pixels.
+          records = [
+              (8, 8, 'CS', 'ORIGINAL\\PRIMARY\\M'),
+              (8, 0x16, 'UI', sop), (8, 0x18, 'UI', uid),
+              (8, 0x20, 'DA', '20260101'), (8, 0x30, 'TM', '120000'),
+              (8, 0x60, 'CS', 'MR'), (8, 0x70, 'LO', 'Synthetic'),
+              (8, 0x103e, 'LO', 'Synthetic T1w'),
+              (8, 0x22, 'DA', '20260101'), (8, 0x32, 'TM', '120000'),
+              (0x18, 0x1030, 'LO', 'Synthetic T1w'),
+              (0x18, 0x23, 'CS', '3D'),
+              (0x10, 0x10, 'PN', 'Synthetic^Phantom'), (0x10, 0x20, 'LO', 'SYNTHETIC'),
+              (0x18, 0x50, 'DS', '3'), (0x18, 0x80, 'DS', '1000'),
+              (0x18, 0x81, 'DS', '10'), (0x18, 0x87, 'DS', '3'),
+              (0x18, 0x88, 'DS', '3'),
+              (0x20, 0xd, 'UI', '1.2.826.0.1.3680043.10.543.2'),
+              (0x20, 0xe, 'UI', '1.2.826.0.1.3680043.10.543.3'),
+              (0x20, 0x11, 'IS', '1'), (0x20, 0x13, 'IS', str(index + 1)),
+              (0x20, 0x32, 'DS', '0\\0\\' + str(index * 3)),
+              (0x20, 0x37, 'DS', '1\\0\\0\\0\\1\\0'),
+              (0x20, 0x52, 'UI', '1.2.826.0.1.3680043.10.543.4'),
+              (0x28, 2, 'US', 1), (0x28, 4, 'CS', 'MONOCHROME2'),
+              (0x28, 0x10, 'US', 2), (0x28, 0x11, 'US', 3),
+              (0x28, 0x30, 'DS', '2\\1.5'),
+              (0x28, 0x100, 'US', 16), (0x28, 0x101, 'US', 16),
+              (0x28, 0x102, 'US', 15), (0x28, 0x103, 'US', 0),
+              (0x7fe0, 0x10, 'OW', struct.pack('<6H', *range(index * 6 + 1, index * 6 + 7))),
+          ]
+          payload = b''.join(element(*record) for record in sorted(records, key=lambda r: r[:2]))
+          (source / f'slice-{index}.dcm').write_bytes(
+              bytes(128) + b'DICM' + element(2, 0, 'UL', struct.pack('<I', len(meta))) + meta + payload
+          )
+
+      import csv
+      import hashlib
+      import json
+      import subprocess
+      import numpy as np
+      import nibabel as nib
+      import yaml
+      from bidscoin import bidsmap_template
+
+      hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.glob('*.dcm')}
+      with Path(bidsmap_template).open() as f:
+          template = yaml.safe_load(f)
+      run = template['DICOM']['anat'][0]
+      run['attributes'] = {'SeriesDescription': 'Synthetic T1w'}
+      run['bids']['acq'] = ''
+      run['bids']['run'] = ''
+      run['meta'] = {'TestProvenance': 'synthetic analytical phantom'}
+      template['DICOM']['anat'] = [run]
+      template['Options']['plugins'] = {'dcm2niix2bids': template['Options']['plugins']['dcm2niix2bids']}
+      # Documented uncompressed output avoids the validator compressed-size floor.
+      plugin = template['Options']['plugins']['dcm2niix2bids']
+      assert '-z y' in plugin['args'], plugin['args']
+      plugin['args'] = plugin['args'].replace('-z y', '-z n')
+      custom = root / 'template.yaml'
+      with custom.open('w') as f:
+          yaml.safe_dump(template, f, sort_keys=False)
+      (target / 'README').write_text('Synthetic analytical MR conversion test. No human data.\n')
+      (target / 'dataset_description.json').write_text(json.dumps({'Name': 'Synthetic MR phantom', 'BIDSVersion': '1.9.0', 'DatasetType': 'raw'}))
+      for command in [
+          ['bidsmapper', str(root / 'raw'), str(target), '--automated', '--template', str(custom), '--plugins', 'dcm2niix2bids'],
+          ['bidscoiner', str(root / 'raw'), str(target)],
+      ]:
+          result = subprocess.run(command, text=True, capture_output=True, timeout=180)
+          print(result.stdout, result.stderr)
+          assert result.returncode == 0, result.returncode
+          assert 'Traceback' not in result.stdout + result.stderr
+      for name in ['bidsmapper', 'bidscoiner']:
+          log = (target / 'code' / 'bidscoin' / (name + '.errors')).read_text()
+          assert 'ERROR' not in log, log
+      images = list(target.rglob('*.nii'))
+      assert not list(target.rglob('*.nii.gz'))
+      expected_path = target / 'sub-phantom' / 'ses-01' / 'anat' / 'sub-phantom_ses-01_T1w.nii'
+      assert images == [expected_path], images
+      image = nib.load(expected_path)
+      assert image.shape == (3, 2, 2), image.shape
+      # The default 3D reorientation produces RAS storage by flipping both LPS axes.
+      np.testing.assert_array_equal(image.affine, [[1.5,0,0,-3],[0,2,0,-2],[0,0,3,0],[0,0,0,1]])
+      voxels = np.asarray(image.dataobj)
+      np.testing.assert_array_equal(voxels.ravel(order='F'), [6,5,4,3,2,1,12,11,10,9,8,7])
+      # Check every original DICOM sample at its exact physical RAS coordinate.
+      for section in range(2):
+          for row in range(2):
+              for column in range(3):
+                  index = (2 - column, 1 - row, section)
+                  assert voxels[index] == section * 6 + row * 3 + column + 1
+                  np.testing.assert_array_equal(image.affine @ [*index, 1], [-1.5 * column, -2 * row, 3 * section, 1])
+      meta = json.loads(expected_path.with_suffix('').with_suffix('.json').read_text())
+      assert meta['TestProvenance'] == 'synthetic analytical phantom'
+      assert meta['Modality'] == 'MR'
+      assert meta['RepetitionTime'] == 1
+      assert meta['EchoTime'] == 0.01
+      assert 'PatientName' not in meta and 'PatientID' not in meta
+      with (target / 'participants.tsv').open() as f:
+          rows = list(csv.DictReader(f, delimiter='\t'))
+      assert len(rows) == 1 and rows[0]['participant_id'] == 'sub-phantom', rows
+      scans = target / 'sub-phantom' / 'ses-01' / 'sub-phantom_ses-01_scans.tsv'
+      with scans.open() as f:
+          rows = list(csv.DictReader(f, delimiter='\t'))
+      assert len(rows) == 1 and rows[0]['filename'] == 'anat/' + expected_path.name, rows
+      assert rows[0]['acq_time'] == '1925-01-01T12:00:00', rows
+      assert {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.glob('*.dcm')} == hashes
+      assert (target / 'code' / 'bidscoin' / 'bidsmap.yaml').is_file()
+      validation = subprocess.run(['bids-validator', str(target), '--json'], text=True, capture_output=True, timeout=120)
+      print(validation.stdout, validation.stderr)
+      assert validation.returncode == 0, validation.stdout + validation.stderr
+      report = json.loads(validation.stdout)
+      assert report['issues']['errors'] == []
+      assert report['summary']['totalFiles'] > 0
+      print('BIDScoin mapped and converted exact MR voxels, geometry, timing and participant metadata')
+      PYTHON
+    expected_output_contains: BIDScoin mapped and converted exact MR voxels, geometry, timing and participant metadata
+    expected_exit_code: 0
+    timeout: 420
 
 cleanup:
   script: |
