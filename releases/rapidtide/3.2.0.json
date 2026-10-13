@@ -1,7 +1,7 @@
 {
   "apps": {
     "rapidtide 3.2.0": {
-      "version": "20261008",
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     }
