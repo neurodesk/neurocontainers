@@ -856,8 +856,11 @@ def test_update_params_version_rejects_assignments_it_cannot_rewrite(
         sync_openrecon.update_params_version(params, "2.11.0")
 
 
-def test_resolve_image_digest_refuses_a_non_https_token_realm(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    "realm", ["http://127.0.0.1/token", "https://:secret@auth.example/token"]
+)
+def test_resolve_image_digest_refuses_an_unsafe_token_realm(
+    monkeypatch: pytest.MonkeyPatch, realm: str
 ) -> None:
     import email.message
     import urllib.error
@@ -865,7 +868,7 @@ def test_resolve_image_digest_refuses_a_non_https_token_realm(
     def open_url(request, timeout):
         assert not isinstance(request, str), "token realm must not be requested"
         challenge = email.message.Message()
-        challenge["WWW-Authenticate"] = 'Bearer realm="http://127.0.0.1/token"'
+        challenge["WWW-Authenticate"] = f'Bearer realm="{realm}"'
         raise urllib.error.HTTPError(request.full_url, 401, "", challenge, None)
 
     monkeypatch.setattr(sync_openrecon.REGISTRY_OPENER, "open", open_url)
@@ -892,3 +895,45 @@ def test_registry_redirects_stay_on_https_without_leaking_tokens() -> None:
         request, None, 307, "", {}, "https://pkg.example/v2/demo/manifests/1"
     )
     assert redirected.get_header("Authorization") is None
+
+
+def test_prepare_recipe_rejects_a_dated_tag_hidden_in_a_variable(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    write_release_metadata(source_root, "demo", "2.10.0", "20261010")
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    params = (
+        "export toolName=demo\n"
+        "export version=2.10.0\n"
+        "export build_date=20261009\n"
+        "export baseDockerImage=vnmd/${toolName}_${version}:${build_date}"
+        f"@{OLD_DIGEST}\n"
+    )
+    (target / "params.sh").write_text(params, encoding="utf-8")
+
+    def resolve_digest(image_reference: str) -> str:
+        raise AssertionError("a stale tag must not be resolved")
+
+    with pytest.raises(RuntimeError, match="write the build date literally"):
+        sync_openrecon.prepare_recipe(
+            source_root, openrecon_root, "demo", "2.10.0", resolve_digest=resolve_digest
+        )
+    assert (target / "params.sh").read_text(encoding="utf-8") == params
+
+
+@pytest.mark.parametrize("code", [301, 302, 307, 308])
+def test_registry_redirects_keep_the_head_method(code: int) -> None:
+    import urllib.request
+
+    request = urllib.request.Request(
+        "https://ghcr.io/v2/demo/manifests/1", method="HEAD"
+    )
+    redirected = sync_openrecon.SameOriginHTTPSRedirectHandler().redirect_request(
+        request, None, code, "", {}, "https://ghcr.io/v2/demo/manifests/2"
+    )
+
+    assert redirected.get_method() == "HEAD"

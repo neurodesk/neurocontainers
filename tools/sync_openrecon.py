@@ -348,9 +348,11 @@ class SameOriginHTTPSRedirectHandler(urllib.request.HTTPRedirectHandler):
         if target.scheme != "https":
             raise RuntimeError(f"Refusing non-HTTPS registry redirect to {newurl}")
         request = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if request is not None and target.netloc != urllib.parse.urlsplit(
-            req.full_url
-        ).netloc:
+        if request is None:
+            return None
+        if req.get_method() == "HEAD":
+            request.method = "HEAD"
+        if target.netloc != urllib.parse.urlsplit(req.full_url).netloc:
             request.remove_header("Authorization")
         return request
 
@@ -393,7 +395,12 @@ def resolve_image_digest(reference: str) -> str:
                 raise
             challenge = parse_bearer_challenge(error.headers.get("WWW-Authenticate", ""))
             realm = urllib.parse.urlsplit(challenge.get("realm", ""))
-            if realm.scheme != "https" or not realm.hostname or realm.username:
+            if (
+                realm.scheme != "https"
+                or not realm.hostname
+                or realm.username is not None
+                or realm.password is not None
+            ):
                 raise RuntimeError(
                     f"Refusing registry token realm {challenge.get('realm')!r}"
                 )
@@ -516,6 +523,12 @@ def prepare_recipe(
     pinned_digest = pinned_image_digest(updated_params)
     if pinned_digest is not None:
         reference = pinned_image_reference(updated_params)
+        expanded_date = reference.rpartition(":")[2].rsplit("_", 1)[-1]
+        if pinned_tag is None and BUILD_DATE_PATTERN.fullmatch(expanded_date):
+            raise RuntimeError(
+                f"Cannot advance the dated tag of {reference}; write the build "
+                "date literally in baseDockerImage"
+            )
         digest = resolve_digest(reference)
         updated_params = update_params_image_digest(updated_params, digest)
         if digest != pinned_digest:
