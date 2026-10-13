@@ -344,13 +344,37 @@ voxels enter those calculations.
 The mask preset remains active when an algorithm pipeline preset is selected;
 the pipeline preset only overrides unwrapping, background removal, and QSM
 inversion. Mask controls expose the threshold input and method, BET fractional
-intensity, percentile cutoff, and a cleanup preset. **Mask percentile**
+intensity and percentile cutoff. **Mask percentile**
 (`maskthresholdpercentile`) defaults to 65% and applies when **Threshold method**
 is Percentile.
 Magnitude thresholding is the safer choice for single-echo data because a
-single echo provides no inter-echo phase-coherence information. Closing and
-hole filling run before erosion; erosion defaults to zero so repaired gaps are
-not reopened.
+single echo provides no inter-echo phase-coherence information. Each mask section
+closes gaps with radius 1 and fills all holes by default (`close:1,fill-holes:0`).
+Dilation and erosion default to zero. Mask cleanup is no longer a scanner control.
+Historical cleanup presets and numeric refinement overrides remain supported.
+As before, `maskcleanup: none` selects the default close-and-fill behavior.
+Numeric overrides can disable individual refinements.
+
+### Homogeneity correction
+
+The scanner control **Homogeneity correction** (`inhomogeneitycorrection`) selects
+one profile for magnitude intensity correction.
+
+| Profile | Smoothing sigma | Local segmentation boxes per dimension |
+| --- | --- | --- |
+| `standard` (default) | 7 mm | 3 |
+| `fine` | 7 mm | 15 |
+| `off` | Correction disabled | None |
+
+Enabled profiles pass `--inhomogeneity-correction`, `--homogeneity-sigma-mm 7`, and
+`--homogeneity-nbox 3` or `--homogeneity-nbox 15` to QSMxT.
+Off passes only `--no-inhomogeneity-correction`, without numeric homogeneity flags.
+The box count controls local segmentation, not smoothing passes. Fine provides a
+comparison setting. Its effect on a particular acquisition requires image review.
+Historical Boolean values and Boolean strings map true to Standard and false to
+Off. Numeric Boolean inputs keep their previous true/false interpretation.
+Missing, null, and blank values select Standard. Profile IDs ignore case and
+surrounding whitespace. Unknown nonblank values raise a configuration error.
 
 <!-- BEGIN QSM-CI benchmarks -->
 

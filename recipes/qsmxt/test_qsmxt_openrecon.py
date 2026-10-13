@@ -912,9 +912,9 @@ def test_openrecon_processing_defaults_can_be_overridden():
 
 def test_openrecon_label_exposes_processing_defaults():
     label_path = Path(qsmxt.__file__).with_name("OpenReconLabel.json")
+    label = qsmxt.json.loads(label_path.read_text())
     parameters = {
-        parameter["id"]: parameter
-        for parameter in qsmxt.json.loads(label_path.read_text())["parameters"]
+        parameter["id"]: parameter for parameter in label["parameters"]
     }
 
     pipeline_preset = parameters["pipelinepreset"]
@@ -943,7 +943,14 @@ def test_openrecon_label_exposes_processing_defaults():
     }
     assert parameters["maskinginput"]["default"] == "magnitude"
     assert parameters["betfractionalintensity"]["default"] == 0.5
-    assert parameters["maskcleanup"]["default"] == "close-fill"
+    assert len(label["parameters"]) == len(parameters) == 14
+    assert "maskcleanup" not in parameters
+    correction = parameters["inhomogeneitycorrection"]
+    assert correction["type"] == "choice"
+    assert correction["label"]["en"] == "Homogeneity correction"
+    assert correction["default"] == qsmxt.DEFAULT_HOMOGENEITY_PROFILE == "standard"
+    assert {value["id"] for value in correction["values"]} == set(qsmxt.HOMOGENEITY_PROFILES)
+    assert [value["name"]["en"] for value in correction["values"]] == ["Off", "Standard", "Fine"]
     assert "sendoriginal" not in parameters
     assert parameters["maskthresholdpercentile"]["default"] == 65.0
     assert "voxelsizemm" not in parameters
@@ -2310,3 +2317,68 @@ def test_ep3d_configs_enable_preprocessing_and_keep_user_controls(
     assert settings["ep3d_denoise"] is denoise
     assert settings["qsm_algorithm"] == "rts"
     assert qsmxt._settings_from_config({}, FakeMetadata())["ep3d_dual_polarity"] is False
+
+
+@pytest.mark.parametrize("params,nbox", [
+    ({}, 3), ({"inhomogeneitycorrection": None}, 3),
+    ({"inhomogeneitycorrection": " "}, 3),
+    ({"inhomogeneitycorrection": "standard"}, 3),
+    ({"inhomogeneitycorrection": "fine"}, 15),
+    ({"inhomogeneitycorrection": " FiNe "}, 15),
+    ({"inhomogeneitycorrection": "off"}, None),
+    ({"inhomogeneitycorrection": True}, 3),
+    ({"inhomogeneitycorrection": False}, None),
+    ({"inhomogeneitycorrection": 1}, 3),
+    ({"inhomogeneitycorrection": 0}, None),
+    ({"inhomogeneitycorrection": 1.0}, 3),
+    ({"inhomogeneitycorrection": 0.0}, None),
+    *[({"inhomogeneitycorrection": value}, 3)
+      for value in ("true", "1", "yes", "y", "on", " TRUE ")],
+    *[({"inhomogeneitycorrection": value}, None)
+      for value in ("false", "0", "no", "n", " OFF ")],
+])
+def test_homogeneity_config_reaches_command(params, nbox, tmp_path, monkeypatch):
+    settings = qsmxt._settings_from_config({"parameters": params})
+    commands = []
+
+    def capture(command, **kwargs):
+        commands.append(command)
+        return qsmxt.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", capture)
+    qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
+    command = commands[0]
+    assert command.count("--inhomogeneity-correction") == (nbox is not None)
+    assert command.count("--no-inhomogeneity-correction") == (nbox is None)
+    if nbox is None:
+        assert "--homogeneity-sigma-mm" not in command
+        assert "--homogeneity-nbox" not in command
+    else:
+        assert command[command.index("--homogeneity-sigma-mm") + 1] == "7"
+        assert command[command.index("--homogeneity-nbox") + 1] == str(nbox)
+
+
+@pytest.mark.parametrize("value", ["fnie", "2", [], {}])
+def test_homogeneity_config_rejects_invalid_choice(value, monkeypatch):
+    def unexpected_run(*args, **kwargs):
+        pytest.fail("invalid correction choice launched QSMxT")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", unexpected_run)
+    with pytest.raises(ValueError, match="inhomogeneitycorrection.*off.*standard.*fine"):
+        qsmxt._settings_from_config({"parameters": {"inhomogeneitycorrection": value}})
+
+
+@pytest.mark.parametrize("preset,sections", [
+    ("bet", ["magnitude,bet:0.5,close:1,fill-holes:0"]),
+    ("robust-threshold", ["magnitude,threshold:otsu,close:1,fill-holes:0"]),
+    ("combined", ["magnitude,bet:0.5,close:1,fill-holes:0",
+                  "magnitude,threshold:otsu,close:1,fill-holes:0"]),
+])
+def test_mask_defaults_close_and_fill_each_section(preset, sections):
+    settings = qsmxt._settings_from_config({"parameters": {"maskpreset": preset}})
+    assert qsmxt._mask_sections(settings) == sections
+
+
+def test_legacy_mask_cleanup_none_retains_close_fill_default():
+    settings = qsmxt._settings_from_config({"parameters": {"maskcleanup": "none"}})
+    assert qsmxt._mask_sections(settings) == ["magnitude,bet:0.5,close:1,fill-holes:0"]

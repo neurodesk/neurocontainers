@@ -33,7 +33,14 @@ With the QSMxT package installed in OpenRecon:
 
 **Both** returns separate `DC` and `ND` result series and takes roughly twice as long as processing one pair. If reconstruction reports missing input images, check that both magnitude and unfiltered phase are available for the selected correction setting.
 
-For clearQsm GRE acquisitions, the adapter selects the matching `Aspire_M` and `Aspire_P` source series. It excludes the accompanying ROMEO mask, unwrapped phase, B0 map, sensitivity-corrected magnitude, and CLEAR-SWI products from QSM input. These processed companions are also excluded from original image return. Genuine magnitude and phase sources return with their pixels, voxel geometry, and echo identities preserved, including both DC and ND sources when only one variant is reconstructed. If several complete source pairs remain, reconstruction reports an ambiguity instead of choosing by arrival order. Selected magnitude and phase must have matching echoes and voxel geometry.
+For clearQsm GRE acquisitions, the adapter selects the matching `Aspire_M` and `Aspire_P` source
+series. It excludes the accompanying ROMEO mask, unwrapped phase, B0 map, sensitivity-corrected
+magnitude, and CLEAR-SWI products from QSM input. These processed companions are also excluded from
+original image return. Genuine magnitude and phase sources return with their pixels, voxel geometry,
+and echo identities preserved, including both DC and ND sources when only one variant is
+reconstructed. If several complete source pairs remain, reconstruction reports an ambiguity instead
+of choosing by arrival order. Selected magnitude and phase must have matching echoes and voxel
+geometry.
 
 ## Process dual-polarity 3D EPI data
 
@@ -114,7 +121,18 @@ Start with **BET (recommended)**. If the mask excludes brain tissue, lower **BET
 
 For threshold-based masking, choose **Robust threshold** or **BET + threshold union** under **Mask preset**. The union includes regions selected by either method. **Threshold input** selects the image used for thresholding, and **Threshold method** selects Otsu or Percentile. **Mask percentile** sets the cutoff when you choose Percentile, with a default of **65%**.
 
-**Mask cleanup** can fill holes and close small gaps. Its default is **Close and fill holes**. Mask settings apply independently of the pipeline preset.
+Masks automatically close small gaps and fill holes, without dilation or erosion.
+Mask settings apply independently of the pipeline preset.
+
+## Adjust homogeneity correction
+
+**Homogeneity correction** corrects magnitude intensity inhomogeneity.
+**Standard** is the default. It uses 7 mm smoothing and 3 local segmentation boxes per dimension.
+**Fine** uses the same 7 mm smoothing and 15 boxes per dimension for comparison.
+SWI and SMWI use the corrected magnitude image.
+The box count controls local segmentation, not the number of smoothing passes.
+Select **Off** to disable correction.
+Compare the profiles on your acquisition before choosing a setting.
 
 ## Citation
 Stewart, Ashley Wilton, Simon Daniel Robinson, Kieran O’Brien, et al. “QSMxT: Robust Masking and Artifact Reduction for Quantitative Susceptibility Mapping.” Magnetic Resonance in Medicine 87, no. 3 (2022): 1289–300. https://doi.org/10.1002/mrm.29048.

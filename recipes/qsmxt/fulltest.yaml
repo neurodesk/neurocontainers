@@ -258,7 +258,8 @@ tests:
                       'EchoTime': te, 'MagneticFieldStrength': 3.0, 'B0_dir': [0, 0, 1],
                   }))
           settings = qsmxt._settings_from_config({'parameters': {
-              'sendoutputs': 'smwi', 'maskpreset': 'robust-threshold',
+              'sendoutputs': 'smwi', 'inhomogeneitycorrection': 'fine',
+              'maskpreset': 'robust-threshold',
               'maskcleanup': 'none', 'qsmalgorithm': 'tkd',
           }})
           output = root / 'output'
@@ -459,20 +460,24 @@ tests:
       }
       assert parameters["unwrappingalgorithm"]["default"] == "romeo"
       assert parameters["bfalgorithm"]["default"] == "vsharp"
-      if "inputseries" in parameters:
-          assert parameters["inputseries"]["default"] == "distortion-corrected"
-          assert [
-              value["id"] for value in parameters["inputseries"]["values"]
-          ] == [
-              "distortion-corrected",
-              "non-distortion-corrected",
-              "both",
-          ]
-      if "maskcleanup" in parameter_ids:
-          assert parameters["maskpreset"]["default"] == "bet"
-          assert parameters["maskinginput"]["default"] == "magnitude"
-          assert parameters["betfractionalintensity"]["default"] == 0.5
-          assert parameters["maskcleanup"]["default"] == "close-fill"
+      assert parameters["inputseries"]["default"] == "distortion-corrected"
+      assert [
+          value["id"] for value in parameters["inputseries"]["values"]
+      ] == [
+          "distortion-corrected",
+          "non-distortion-corrected",
+          "both",
+      ]
+      assert len(data["parameters"]) == len(parameters) == 14
+      assert "maskcleanup" not in parameter_ids
+      assert parameters["maskpreset"]["default"] == "bet"
+      assert parameters["maskinginput"]["default"] == "magnitude"
+      assert parameters["betfractionalintensity"]["default"] == 0.5
+      correction = parameters["inhomogeneitycorrection"]
+      assert correction["default"] == qsmxt.DEFAULT_HOMOGENEITY_PROFILE == "standard"
+      assert correction["label"]["en"] == "Homogeneity correction"
+      assert {value["id"] for value in correction["values"]} == set(qsmxt.HOMOGENEITY_PROFILES)
+      assert [value["name"]["en"] for value in correction["values"]] == ["Off", "Standard", "Fine"]
       assert "sendoriginal" not in parameter_ids
       assert parameters["maskthresholdpercentile"]["default"] == 65.0
       assert "minip" not in parameter_ids
