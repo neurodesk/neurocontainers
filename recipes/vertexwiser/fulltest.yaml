@@ -179,9 +179,41 @@ tests:
       stopifnot(all(c("cluster_level_results", "tstat_map", "fdr_pmap") %in% names(fit)))
       stopifnot(length(fit$tstat_map) == 20484)
       stopifnot(all(is.finite(fit$tstat_map)))
+      # Independently compute every unthresholded age t-statistic with base R OLS.
+      design <- cbind(intercept = 1, age = age, sex = sex)
+      decomposition <- qr(design)
+      coefficients <- qr.coef(decomposition, smoothed)
+      residuals <- qr.resid(decomposition, smoothed)
+      variance <- colSums(residuals^2) / (n - ncol(design))
+      coefficient_variance <- chol2inv(qr.R(decomposition))[2, 2]
+      expected <- coefficients[2, ] / sqrt(variance * coefficient_variance)
+      stopifnot(all(is.finite(expected)))
+      stopifnot(all(abs(fit$tstat_map - expected) <= 1e-9 * (1 + abs(expected))))
+      cat("All20484 age t-statistics match independent OLS\n")
       saveRDS(fit, "${output_dir}/vertexwiser_rft_result.rds")
       cat("rft vertices", length(fit$tstat_map), "\n")
       RS
     expected_output_contains: rft vertices 20484
     validate:
       - output_exists: ${output_dir}/vertexwiser_rft_result.rds
+
+  - name: Native VTK version and package dependency closure
+    description: Verify exact architecture-specific published VTK and unchanged scientific dependency pins
+    command: |
+      set -eu
+      python -m pip check
+      python - <<'PYTHON'
+      import importlib.metadata as md
+      import platform
+      import vtk
+      expected = {"aarch64": "9.7.0", "x86_64": "9.3.1"}[platform.machine()]
+      assert md.version("vtk") == expected
+      assert vtk.vtkVersion.GetVTKVersion() == expected
+      assert md.version("brainstat") == "0.4.2"
+      assert md.version("numpy") == "1.26.4"
+      assert md.version("nilearn") == "0.12.0"
+      assert md.version("netneurotools") == "0.2.5"
+      print("Native VTK and scientific dependency pins verified", expected)
+      PYTHON
+    expected_output_contains: Native VTK and scientific dependency pins verified
+    expected_exit_code: 0
