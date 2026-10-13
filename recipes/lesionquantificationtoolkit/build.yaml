@@ -88,7 +88,10 @@ build:
         - R CMD INSTALL {{ get_file("gsl_tar_gz") }}
         - R CMD INSTALL {{ get_file("aws_methods_tar_gz") }}
         - R CMD INSTALL {{ get_file("aws_tar_gz") }}
-        - git clone https://github.com/jdwor/LQT.git /opt/LQT && git -C /opt/LQT checkout {{ context.upstream_commit }} && R CMD INSTALL /opt/LQT
+        - git clone https://github.com/jdwor/LQT.git /opt/LQT
+        - git -C /opt/LQT checkout {{ context.upstream_commit }}
+        - Rscript {{ get_file("fix_lqt_node_columns") }} /opt/LQT/R/get_patient_sspl.R
+        - R CMD INSTALL /opt/LQT
         - R --slave -e 'library(LQT); stopifnot(length(getNamespaceExports("LQT")) > 0)'
     - test:
         name: verify_r_installation
@@ -98,6 +101,16 @@ build:
           echo "Testing R package installation..."
           R --slave -e 'library(LQT); stopifnot(length(getNamespaceExports("LQT")) > 0)'
 files:
+  - name: fix_lqt_node_columns
+    contents: |
+      args <- commandArgs(trailingOnly=TRUE)
+      stopifnot(length(args) == 1L)
+      lines <- readLines(args[1], warn=FALSE)
+      old <- 'write(t(C), OutputFile, sep="\\t")'
+      new <- 'write(t(C), OutputFile, ncolumns=ncol(C), sep="\\t")'
+      stopifnot(sum(grepl(old, lines, fixed=TRUE)) == 2L)
+      lines <- gsub(old, new, lines, fixed=TRUE)
+      writeLines(lines, args[1])
   - name: gsl_tar_gz
     url: https://cloud.r-project.org/src/contrib/Archive/gsl/gsl_2.1-8.tar.gz
   - name: aws_methods_tar_gz
