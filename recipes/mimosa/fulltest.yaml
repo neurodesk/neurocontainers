@@ -329,12 +329,10 @@ tests:
       stopifnot(identical(dim(flair), c(182L, 218L, 182L)))
       stopifnot(identical(dim(t1), dim(flair)), identical(dim(reference), dim(flair)))
       stopifnot(all(is.finite(flair)), all(is.finite(t1)), sum(reference > 0) > 0)
-      spatial_slots <- c('pixdim', 'qform_code', 'sform_code', 'quatern_b', 'quatern_c',
-                         'quatern_d', 'qoffset_x', 'qoffset_y', 'qoffset_z',
-                         'srow_x', 'srow_y', 'srow_z')
-      for (slot_name in spatial_slots) {
-          stopifnot(identical(slot(flair, slot_name), slot(t1, slot_name)))
-      }
+      source_affine <- RNifti::xform(paths$flair, useQuaternionFirst = FALSE)
+      t1_affine <- RNifti::xform(paths$t1, useQuaternionFirst = FALSE)
+      stopifnot(max(abs(source_affine - t1_affine)) == 0)
+      spatial_bound <- 8 * 2^-23 * max(1, abs(source_affine))
       # Follow the documented full-volume two-modality path: supplied preprocessed
       # MRIs, a brain mask from their union, default tissue/candidate selection and
       # z-score normalization. Do not crop, resample or remove difficult voxels.
@@ -380,9 +378,11 @@ tests:
       writenii(probability, filename = output)
       reloaded <- readnii(paste0(output, '.nii.gz'), reorient = FALSE)
       stopifnot(identical(dim(reloaded), dim(flair)))
-      for (slot_name in spatial_slots) {
-          stopifnot(identical(slot(reloaded, slot_name), slot(flair, slot_name)))
-      }
+      # The source uses qform only; FSL may also populate an equivalent sform.
+      # Check the actual physical grid, not whether those header codes match.
+      saved_affine <- RNifti::xform(paste0(output, '.nii.gz'), useQuaternionFirst = FALSE)
+      stopifnot(max(abs(saved_affine - source_affine)) <= spatial_bound)
+      stopifnot(identical(reloaded@pixdim[2:4], flair@pixdim[2:4]))
       stopifnot(max(abs(as.numeric(reloaded) - as.numeric(probability))) <= storage_bound)
       stopifnot(identical(before_inputs, tools::md5sum(unlist(paths))))
       stopifnot(identical(before_models, tools::md5sum(model_files)))
