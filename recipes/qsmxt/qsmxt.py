@@ -21,6 +21,7 @@ import time
 import traceback
 import uuid
 from pathlib import Path
+from typing import NamedTuple
 
 import ismrmrd
 import nibabel as nib
@@ -42,6 +43,20 @@ DEFAULT_ECHO_TIME_MS = 20.0
 DEFAULT_ECHO_SPACING_MS = 5.0
 DEFAULT_FIELD_STRENGTH_T = 3.0
 DEFAULT_B0_DIR = (0.0, 0.0, 1.0)
+
+
+class HomogeneityParameters(NamedTuple):
+    sigma_mm: int
+    nbox: int
+
+
+HOMOGENEITY_PROFILES = {
+    "off": None,
+    "standard": HomogeneityParameters(sigma_mm=7, nbox=3),
+    "fine": HomogeneityParameters(sigma_mm=7, nbox=15),
+}
+DEFAULT_HOMOGENEITY_PROFILE = "standard"
+
 DEFAULT_QSM_ALGORITHM = "rts"
 DEFAULT_UNWRAPPING_ALGORITHM = "romeo"
 DEFAULT_BF_ALGORITHM = "vsharp"
@@ -793,8 +808,15 @@ def _run_qsmxt(bids_dir, output_dir, settings):
         cmd.append("--do-r2starmap")
     if do_smwi:
         cmd.append("--do-smwi")
-    if not settings["inhomogeneity_correction"]:
+    homogeneity = HOMOGENEITY_PROFILES[settings["inhomogeneity_correction"]]
+    if homogeneity is None:
         cmd.append("--no-inhomogeneity-correction")
+    else:
+        cmd.extend([
+            "--inhomogeneity-correction",
+            "--homogeneity-sigma-mm", str(homogeneity.sigma_mm),
+            "--homogeneity-nbox", str(homogeneity.nbox),
+        ])
 
     logging.info("Running QSMxT: %s", " ".join(cmd))
     started_at = time.monotonic()
@@ -1788,6 +1810,28 @@ def _b0_dir_from_affine(affine):
     return tuple(float(value) for value in image_b0)
 
 
+def _homogeneity_profile(params):
+    value = params.get("inhomogeneitycorrection")
+    if value is None:
+        return DEFAULT_HOMOGENEITY_PROFILE
+    if isinstance(value, (bool, int, float)):
+        return "standard" if value else "off"
+    if isinstance(value, str):
+        choice = value.strip().lower()
+        if not choice:
+            return DEFAULT_HOMOGENEITY_PROFILE
+        if choice in HOMOGENEITY_PROFILES:
+            return choice
+        if choice in {"1", "true", "yes", "y", "on"}:
+            return "standard"
+        if choice in {"0", "false", "no", "n"}:
+            return "off"
+    choices = ", ".join(HOMOGENEITY_PROFILES)
+    raise ValueError(
+        f"unknown inhomogeneitycorrection {value!r}; expected {choices}"
+    )
+
+
 def _settings_from_config(config, metadata=None):
     params = _config_parameters(config)
     input_series = _config_text(
@@ -1903,7 +1947,7 @@ def _settings_from_config(config, metadata=None):
         "do_swi": _config_bool(params, "doswi", False),
         "do_t2starmap": _config_bool(params, "dot2starmap", False),
         "do_r2starmap": _config_bool(params, "dor2starmap", False),
-        "inhomogeneity_correction": _config_bool(params, "inhomogeneitycorrection", True),
+        "inhomogeneity_correction": _homogeneity_profile(params),
         "ep3d_dual_polarity": _config_bool(params, "ep3ddualpolarity", False),
         "ep3d_denoise": _config_bool(params, "ep3ddenoise", False),
     }

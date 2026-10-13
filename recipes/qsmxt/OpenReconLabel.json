@@ -253,17 +253,16 @@
       "information": { "en": "Percentile cutoff when Threshold method is Percentile." }
     },
     {
-      "id": "maskcleanup",
-      "label": { "en": "Mask cleanup" },
+      "id": "inhomogeneitycorrection",
+      "label": { "en": "Homogeneity correction" },
       "type": "choice",
       "values": [
-        { "id": "close-fill", "name": { "en": "Close and fill holes" } },
-        { "id": "fill", "name": { "en": "Fill holes" } },
-        { "id": "robust", "name": { "en": "Dilate, fill, and erode" } },
-        { "id": "none", "name": { "en": "None" } }
+        { "id": "off", "name": { "en": "Off" } },
+        { "id": "standard", "name": { "en": "Standard" } },
+        { "id": "fine", "name": { "en": "Fine" } }
       ],
-      "default": "close-fill",
-      "information": { "en": "Morphological cleanup applied after mask generation. Close and fill holes bridges narrow gaps without shrinking the repaired mask." }
+      "default": "standard",
+      "information": { "en": "Correct magnitude intensity inhomogeneity. Standard uses 7 mm smoothing and 3 local segmentation boxes per dimension. Fine uses 7 mm smoothing and 15 boxes per dimension for comparison. The corrected magnitude is used for SWI and SMWI. Off disables correction." }
     }
   ]
 }
