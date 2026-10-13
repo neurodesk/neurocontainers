@@ -587,7 +587,7 @@ tests:
           env=os.environ.copy()
           env.pop('HOME',None)
           env['GLOBUS_LOCATION']=str(toolkit)
-      env['GLOBUS_HOSTNAME']='127.0.0.1'
+          env['GLOBUS_HOSTNAME']='127.0.0.1'
           env['LD_LIBRARY_PATH']=str(toolkit/'lib')+':'+env.get('LD_LIBRARY_PATH','')
           command=[str(server),'-no-detach','-no-fork','-single','-allow-anonymous',
               '-control-interface','127.0.0.1','-data-interface','127.0.0.1',
