@@ -61,7 +61,7 @@ build:
         - mkdir -p /opt/fetalsynthseg
         - tar -xzf {{ get_file("fetalsynthseg_source") }} -C /opt/fetalsynthseg --strip-components=1
         - python3 {{ get_file("fix_fss_output_geometry") }} /opt/fetalsynthseg/src/data/loader.py
-        - python -m pip install --no-cache-dir -r requirements.txt
+        - python3 -m pip install --no-cache-dir -r requirements.txt
         - mkdir -p weights
         - install -m 0644 {{ get_file("fss_weights") }} weights/KISPI-all_fss.ckpt
         - install -m 0755 {{ get_file("fss_arm64_launcher") }} /opt/fetalsynthseg/fetalsynthseg
