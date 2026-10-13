@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "mricron 1.2.20211006": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "structural imaging",
+    "data organisation"
+  ]
+}
