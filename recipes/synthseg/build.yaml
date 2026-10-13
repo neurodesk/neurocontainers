@@ -15,6 +15,9 @@ copyright:
     url: https://www.bic.mni.mcgill.ca/ServicesAtlases/ICBM152NLin2009
   - license: Apache-2.0
     url: https://github.com/ANTsX/ANTsPy/blob/master/LICENSE
+  # brainquant_norms.json is fitted to SynthSeg volumes of the IXI cohort.
+  - license: CC-BY-SA-3.0
+    url: https://brain-development.org/ixi-dataset/
 
 architectures:
   - x86_64
