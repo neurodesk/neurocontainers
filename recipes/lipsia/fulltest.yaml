@@ -58,7 +58,7 @@ setup:
         return 0;
     }
     C
-    cc -std=c99 -Wall -Wextra -Werror -I/opt/lipsia/include "${output_dir}/voxel-check.c" -L/opt/lipsia/lib -Wl,-rpath,/opt/lipsia/lib -lviaio3.0 -lm -o "${output_dir}/voxel-check"
+    cc -std=c99 -Wall -Wextra -Werror -I/opt/lipsia/include "${output_dir}/voxel-check.c" -L/opt/lipsia/lib -Wl,-rpath,/opt/lipsia/lib -lviaio3.0 -lm -lz -o "${output_dir}/voxel-check"
 
 tests:
 - name: vbcm resolves on PATH
