@@ -33,7 +33,7 @@ With the QSMxT package installed in OpenRecon:
 
 **Both** returns separate `DC` and `ND` result series and takes roughly twice as long as processing one pair. If reconstruction reports missing input images, check that both magnitude and unfiltered phase are available for the selected correction setting.
 
-For clearQsm GRE acquisitions, the adapter selects the matching `Aspire_M` and `Aspire_P` source series. It excludes the accompanying ROMEO mask, unwrapped phase, B0 map, sensitivity-corrected magnitude, and CLEAR-SWI products from QSM input. All received series still return as originals. If several complete source pairs remain, reconstruction reports an ambiguity instead of choosing by arrival order. Selected magnitude and phase must have matching echoes and voxel geometry.
+For clearQsm GRE acquisitions, the adapter selects the matching `Aspire_M` and `Aspire_P` source series. It excludes the accompanying ROMEO mask, unwrapped phase, B0 map, sensitivity-corrected magnitude, and CLEAR-SWI products from QSM input. These processed companions are also excluded from original image return. Genuine magnitude and phase sources return with their pixels, voxel geometry, and echo identities preserved, including both DC and ND sources when only one variant is reconstructed. If several complete source pairs remain, reconstruction reports an ambiguity instead of choosing by arrival order. Selected magnitude and phase must have matching echoes and voxel geometry.
 
 ## Process dual-polarity 3D EPI data
 
