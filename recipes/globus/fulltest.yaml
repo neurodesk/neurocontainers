@@ -547,13 +547,13 @@ tests:
   # STATUS CHECK (without authentication)
   # ==========================================================================
   - name: Status check without running instance
-    description: Test status check when no instance is running
+    description: Require the documented exit1 setup-prerequisite diagnostic in a new private configuration without a home directory
     command: |
       set -euo pipefail
       config_dir=$(mktemp -d /tmp/globus-status-XXXXXX)
       trap 'rm -rf "$config_dir"' EXIT
       env -u HOME globusconnectpersonal -dir "$config_dir" -status 2>&1
-    expected_output_contains: "No Globus Connect Personal connected to Globus Online Service"
+    expected_output_contains: "first completing setup"
     expected_exit_code: 1
 
   - name: Real native GridFTP transfer and path isolation
@@ -587,6 +587,7 @@ tests:
           env=os.environ.copy()
           env.pop('HOME',None)
           env['GLOBUS_LOCATION']=str(toolkit)
+      env['GLOBUS_HOSTNAME']='127.0.0.1'
           env['LD_LIBRARY_PATH']=str(toolkit/'lib')+':'+env.get('LD_LIBRARY_PATH','')
           command=[str(server),'-no-detach','-no-fork','-single','-allow-anonymous',
               '-control-interface','127.0.0.1','-data-interface','127.0.0.1',
