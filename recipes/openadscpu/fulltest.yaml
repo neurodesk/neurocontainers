@@ -58,10 +58,17 @@ tests:
      np.testing.assert_allclose(result.affine,affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(affine).max(),1))
      assert [digest(p) for p in paths]==before
      data=np.arange(np.prod(shape),dtype=np.float32).reshape(shape)
-     image=ants.from_numpy(data,spacing=(.8,.9,2.5),origin=(-2.4,-3.6,-5.))
+     # Integer-grid identity must remain exactly equal at every voxel.
+     image=ants.from_numpy(data,spacing=(1.,1.,1.),origin=(-3.,-4.,-2.))
      same=ants.resample_image_to_target(image,image,interp_type='linear')
      np.testing.assert_array_equal(same.numpy(),data)
      assert same.spacing==image.spacing and same.origin==image.origin
+     # Fractional physical coordinates incur interpolation/float32 output roundoff.
+     # Bound it by eight float32 eps times the known field range, with no relative allowance.
+     anisotropic=ants.from_numpy(data,spacing=(.8,.9,2.5),origin=(-2.4,-3.6,-5.))
+     resampled=ants.resample_image_to_target(anisotropic,anisotropic,interp_type='linear')
+     np.testing.assert_allclose(resampled.numpy(),data,rtol=0,atol=8*np.finfo(np.float32).eps*float(data.max()))
+     assert resampled.spacing==anisotropic.spacing and resampled.origin==anisotropic.origin
      print('Actual OpenADS315-voxel analytical ADC, serialized geometry and native ANTs identity verified')
     PY
   expected_exit_code: 0
@@ -110,7 +117,9 @@ tests:
      dwi_root=root/'results'/subject/'DWI';pp=dwi_root/'preprocess';reg=dwi_root/'registration';seg=dwi_root/'segment';rep=dwi_root/'reporting'
      def image(path):
       assert path.is_file(),f'Missing actual output{path}'
-      obj=nib.load(path);data=obj.get_fdata();assert np.isfinite(data).all(),path
+      # Compare the same world grid: the pipeline legitimately reorients LPI to RAS.
+      # Canonicalization only permutes/flips axes; it performs no voxel interpolation.
+      obj=nib.as_closest_canonical(nib.load(path));data=obj.get_fdata();assert np.isfinite(data).all(),path
       return obj,data
      original,raw=image(pp/f'{subject}_DWI.nii.gz');mask,brainmask=image(pp/f'{subject}_DWIbrain-mask.nii.gz');stripped,brain=image(pp/f'{subject}_DWI_brain.nii.gz')
      assert brainmask.shape==raw.shape==brain.shape and np.isin(brainmask,[0,1]).all() and 0<brainmask.sum()<brainmask.size
