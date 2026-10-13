@@ -3,6 +3,7 @@ version: 1.11.10
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   container_version: "standalone"
@@ -17,10 +18,16 @@ auto_update:
       file: TeraStitcher_portable_1_11_10_Linux_tar_gz
       variables:
         upstream_version: version
+  - id: source
+    method: github_commit
+    repo: abria/TeraStitcher
+    ref: master
+    target:
+      variable: terastitcher_source_commit
 build:
   kind: neurodocker
-  base-image: fedora:35
-  pkg-manager: yum
+  base-image: "{{ 'fedora:35' if arch == 'x86_64' else 'ubuntu:24.04' }}"
+  pkg-manager: "{{ 'yum' if arch == 'x86_64' else 'apt' }}"
 
   directives:
     - environment:
@@ -28,10 +35,34 @@ build:
 
     - workdir: /opt/terastitcher-{{ context.upstream_version }}
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         - tar -xz -C /opt/terastitcher-{{ context.upstream_version }} --strip-components 1 -f {{ get_file("TeraStitcher_portable_1_11_10_Linux_tar_gz") }}
         - chmod a+rx /opt
         - chmod -R a+rX /opt/terastitcher-{{ context.upstream_version }}
+
+    - condition: arch == "aarch64"
+      install:
+        - ca-certificates
+        - cmake
+        - g++
+        - make
+
+    - condition: arch == "aarch64"
+      workdir: /tmp
+
+    - condition: arch == "aarch64"
+      run:
+        - tar -xzf {{ get_file("terastitcher_source_tar_gz") }}
+        - cmake -S /tmp/TeraStitcher-{{ context.terastitcher_source_commit }}/src -B /tmp/terastitcher-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=11 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_INSTALL_PREFIX=/opt/terastitcher-{{ context.upstream_version }} -DWITH_UTILITY_MODULE_volumeconverter=ON -DWITH_UTILITY_MODULE_teraconverter=ON -DWITH_UTILITY_MODULE_mdatagenerator=ON
+        - cmake --build /tmp/terastitcher-build --parallel
+        - cmake --install /tmp/terastitcher-build
+        - cp /opt/terastitcher-{{ context.upstream_version }}/bin/terastitcher /opt/terastitcher-{{ context.upstream_version }}/
+        - cp /opt/terastitcher-{{ context.upstream_version }}/bin/teraconverter /opt/terastitcher-{{ context.upstream_version }}/
+        - cp /opt/terastitcher-{{ context.upstream_version }}/bin/mdatagenerator /opt/terastitcher-{{ context.upstream_version }}/
+        - /opt/terastitcher-{{ context.upstream_version }}/terastitcher --version | grep -F "{{ context.arm64_stitcher_version }}"
+        - chmod a+rx /opt/terastitcher-{{ context.upstream_version }}/terastitcher /opt/terastitcher-{{ context.upstream_version }}/teraconverter /opt/terastitcher-{{ context.upstream_version }}/mdatagenerator
+        - rm -rf /tmp/TeraStitcher-{{ context.terastitcher_source_commit }} /tmp/terastitcher-build /opt/terastitcher-{{ context.upstream_version }}/bin
 
     - environment:
         PATH: $PATH:/opt/terastitcher-{{ context.upstream_version }}
@@ -63,5 +94,11 @@ files:
   - name: TeraStitcher_portable_1_11_10_Linux_tar_gz
     url: "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TeraStitcher-portable-1.11.10-Linux.tar.gz"
     sha256: 858d8be2d03250ba46e8f924b81780690f5cc58ea42fd46431bae92778d83033
+  - name: terastitcher_source_tar_gz
+    url: https://github.com/abria/TeraStitcher/archive/{{ context.terastitcher_source_commit }}.tar.gz
+    condition: arch == "aarch64"
+    sha256: 16ad2988d68c5c976b0bc34165defce3994ea4c3194c5b9f4224167f52cfc7a4
 variables:
   upstream_version: 1.11.10
+  terastitcher_source_commit: 294430d7908e1776b020107777c1825804bc7090
+  arm64_stitcher_version: 1.11.11

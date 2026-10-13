@@ -5,6 +5,33 @@ test_data:
   output_dir: test_output/terastitcher
 
 setup:
+  host_script: |
+    python3 - <<'PYTHON'
+    from pathlib import Path
+    import struct
+    root = Path('${output_dir}') / 'phantom'
+    source = root / 'tiff'
+    source.mkdir(parents=True, exist_ok=True)
+    # Eight uncompressed 8x8 grayscale TIFF slices; every voxel has a known value.
+    for z in range(8):
+        pixels = bytes(4*x + 12*y + 20*z for y in range(8) for x in range(8))
+        tags = [(256,4,1,8),(257,4,1,8),(258,3,1,8),(259,3,1,1),
+                (262,3,1,1),(273,4,1,134),(277,3,1,1),(278,4,1,8),
+                (279,4,1,64),(284,3,1,1)]
+        header = b'II' + struct.pack('<HIH',42,8,len(tags))
+        entries = b''.join(struct.pack('<HHII',*tag) for tag in tags)
+        (source / f'slice-{z:03d}.tif').write_bytes(header+entries+struct.pack('<I',0)+pixels)
+
+    def raw(name, dims, values):
+        header = b'raw_image_stack_by_hpengL'+struct.pack('<H4I',1,*dims,1)
+        assert len(header)==43
+        (root / (name+'.raw')).write_bytes(header+bytes(values))
+
+    raw('expected-full',(8,8,8),(4*x+12*y+20*z for z in range(8) for y in range(8) for x in range(8)))
+    # Exact average of each disjoint 2x2x2 neighborhood; all means are integers.
+    raw('expected-mean',(4,4,4),(8*x+24*y+40*z+18 for z in range(4) for y in range(4) for x in range(4)))
+    raw('expected-crop',(4,6,2),(4*x+12*y+20*z for z in range(1,3) for y in range(1,7) for x in range(2,6)))
+    PYTHON
   script: |
     set -e
     mkdir -p ${output_dir}
@@ -17,16 +44,93 @@ tests:
 
   - name: terastitcher help renders
     description: Verify the main stitching CLI starts and prints usage
-    command: terastitcher --help 2>&1 | sed -n '1,20p'
+    command: terastitcher --help 2>&1
     expected_output_contains: "terastitcher  [--isotropic]"
 
   - name: teraconverter help renders
     description: Verify the volume conversion CLI is available
-    command: teraconverter --help 2>&1 | sed -n '1,20p'
+    command: teraconverter --help 2>&1
     expected_output_contains: "teraconverter  -s=<string>"
 
   - name: mdatagenerator help renders
     description: Verify the metadata generator CLI is available
-    command: mdatagenerator --help 2>&1 | sed -n '1,20p'
+    command: mdatagenerator --help 2>&1
     expected_output_contains: "mdatagenerator"
+
+  - name: Native executable architecture and source version
+    description: Require actual ELF machine headers for all three deployed native utilities and the architecture-specific upstream stitcher version
+    command: |
+      set -euo pipefail
+      case "$(uname -m)" in
+        aarch64) machine=183; expected="${arm64_stitcher_version}" ;;
+        x86_64) machine=62; expected="${upstream_version}" ;;
+        *) exit 1 ;;
+      esac
+      for tool in terastitcher teraconverter mdatagenerator; do
+        binary=$(command -v "$tool")
+        test "$(od -An -v -tx1 -N4 "$binary" | xargs)" = "7f 45 4c 46"
+        test "$(od -An -v -tu2 -j18 -N2 "$binary" | xargs)" = "$machine"
+      done
+      output=$(terastitcher --version 2>&1)
+      printf '%s\n' "$output"
+      printf '%s\n' "$output" | grep -F "$expected"
+      echo "Native utilities and actual upstream source version verified"
+    expected_output_contains: Native utilities and actual upstream source version verified
+    expected_exit_code: 0
+
+  - name: Full TIFF volume conversion
+    description: Execute real TeraConverter on a known8x8x8 TIFF volume and require every output byte, dimensions, channel count and voxel type
+    command: |
+      set -euo pipefail
+      root="${output_dir}/phantom"
+      sha256sum "$root"/tiff/*.tif > "$root/full-inputs.sha256"
+      mkdir -p "$root/full"
+      teraconverter -s="$root/tiff" -d="$root/full" --sfmt="TIFF (series, 2D)" --dfmt="Vaa3D raw (tiled, 3D)" --resolutions=0 --height=256 --width=256 --depth=256 --halve=mean
+      mapfile -t images < <(find "$root/full" -type f -name '*.raw')
+      test "${#images[@]}" -eq 1
+      cmp "$root/expected-full.raw" "${images[0]}"
+      sha256sum -c "$root/full-inputs.sha256"
+      echo "Full TIFF volume conversion exact pixels and volume header verified"
+    expected_output_contains: Full TIFF volume conversion exact pixels and volume header verified
+    expected_exit_code: 0
+    timeout: 120
+
+  - name: Analytical mean pyramid
+    description: Execute real TeraConverter on a known8x8x8 TIFF volume and require every output byte, dimensions, channel count and voxel type
+    command: |
+      set -euo pipefail
+      root="${output_dir}/phantom"
+      sha256sum "$root"/tiff/*.tif > "$root/mean-inputs.sha256"
+      mkdir -p "$root/mean"
+      teraconverter -s="$root/tiff" -d="$root/mean" --sfmt="TIFF (series, 2D)" --dfmt="Vaa3D raw (tiled, 3D)" --resolutions=1 --height=256 --width=256 --depth=256 --halve=mean
+      mapfile -t images < <(find "$root/mean" -type f -name '*.raw')
+      test "${#images[@]}" -eq 1
+      cmp "$root/expected-mean.raw" "${images[0]}"
+      sha256sum -c "$root/mean-inputs.sha256"
+      echo "Analytical mean pyramid exact pixels and volume header verified"
+    expected_output_contains: Analytical mean pyramid exact pixels and volume header verified
+    expected_exit_code: 0
+    timeout: 120
+
+  - name: Exact subvolume extraction
+    description: Execute real TeraConverter on a known8x8x8 TIFF volume and require every output byte, dimensions, channel count and voxel type
+    command: |
+      set -euo pipefail
+      root="${output_dir}/phantom"
+      sha256sum "$root"/tiff/*.tif > "$root/crop-inputs.sha256"
+      mkdir -p "$root/crop"
+      teraconverter -s="$root/tiff" -d="$root/crop" --sfmt="TIFF (series, 2D)" --dfmt="Vaa3D raw (tiled, 3D)" --resolutions=0 --height=256 --width=256 --depth=256 --halve=mean --H0=2 --H1=6 --V0=1 --V1=7 --D0=1 --D1=3
+      mapfile -t images < <(find "$root/crop" -type f -name '*.raw')
+      test "${#images[@]}" -eq 1
+      cmp "$root/expected-crop.raw" "${images[0]}"
+      sha256sum -c "$root/crop-inputs.sha256"
+      echo "Exact subvolume extraction exact pixels and volume header verified"
+    expected_output_contains: Exact subvolume extraction exact pixels and volume header verified
+    expected_exit_code: 0
+    timeout: 120
+
 upstream_version: 1.11.10
+
+# The container release retains the x86 archive version. ARM source reports its
+# own upstream version rather than inheriting the archive's version label.
+arm64_stitcher_version: 1.11.11
