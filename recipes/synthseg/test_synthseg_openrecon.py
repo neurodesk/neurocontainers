@@ -644,6 +644,9 @@ def test_label_products_keep_pixels_geometry_and_distinct_scanner_identity(segme
     head.read_dir = [0.0, 1.0, 0.0]
     head.phase_dir = [-1.0, 0.0, 0.0]
     source.setHead(head)
+    source_meta = helpers['FakeMeta'].deserialize(source.attribute_string)
+    source_meta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
+    source.attribute_string = source_meta.serialize()
     source_identity = {'series_description': 'source_t1w', 'parent_grouping': 'source_group',
                        'series_uid': '1.2.3', 'sop_uid': '1.2.3.4', 'source_type_token': 'ND'}
     labels = np.array([0, 7, 189, 360], dtype=np.int16).reshape(2, 2, 1)
@@ -676,7 +679,8 @@ def test_label_products_keep_pixels_geometry_and_distinct_scanner_identity(segme
     assert metas[0]['SeriesInstanceUID'] != metas[1]['SeriesInstanceUID']
     assert metas[0]['SOPInstanceUID'] != metas[1]['SOPInstanceUID']
     helpers['_validate_synthseg_output_contract'](outputs, {1}, source_identity, 'test products')
-    originals = helpers['_build_synthseg_original_images']([source], [source], source_identity, 2)
+    clean_source = _source_image(helpers)
+    originals = helpers['_build_synthseg_original_images']([clean_source], [clean_source], source_identity, 2)
     assert 'LUTFileName' not in helpers['FakeMeta'].deserialize(originals[0].attribute_string)
 
 
