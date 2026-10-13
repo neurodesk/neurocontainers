@@ -60,6 +60,7 @@ build:
     - run:
         - mkdir -p /opt/fetalsynthseg
         - tar -xzf {{ get_file("fetalsynthseg_source") }} -C /opt/fetalsynthseg --strip-components=1
+        - python3 {{ get_file("fix_fss_output_geometry") }} /opt/fetalsynthseg/src/data/loader.py
         - python -m pip install --no-cache-dir -r requirements.txt
         - mkdir -p weights
         - install -m 0644 {{ get_file("fss_weights") }} weights/KISPI-all_fss.ckpt
@@ -89,6 +90,16 @@ files:
       set -e
       cd /opt/fetalsynthseg
       exec python3 src/scripts/inference.py "$@"
+  - name: fix_fss_output_geometry
+    contents: |
+      from pathlib import Path
+      import sys
+      path=Path(sys.argv[1]);text=path.read_text()
+      old='result_image = nib.Nifti1Image(pred_lab_array[0], affine=pred_lab.affine)'
+      new="result_image = nib.Nifti1Image(pred_lab_array[0], affine=data['label'].affine)"
+      assert text.count(old)==1, 'Pinned FetalSynthSeg output writer changed; review instead of applying an ambiguous patch'
+      path.write_text(text.replace(old,new))
+
 structured_readme:
   description: >-
     FetalSynthSeg is a deep-learning fetal brain MRI tissue segmentation tool

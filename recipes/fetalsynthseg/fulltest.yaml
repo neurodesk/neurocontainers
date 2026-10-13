@@ -49,11 +49,18 @@ tests:
        return h.hexdigest()
       before=[digest(p) for p in [source,reference,checkpoint]]
       with tempfile.TemporaryDirectory(prefix='fetal-inference-') as tmp:
-       work=Path(tmp);out=work/'segmentation.nii.gz';home=work/'home';home.mkdir()
+       work=Path(tmp);outputs=work/'outputs';outputs.mkdir();home=work/'home';home.mkdir()
+       original_image=nib.load(source)
+       original_data=np.asanyarray(original_image.dataobj)
+       flip=np.eye(4);flip[0,0]=-1;flip[0,3]=original_image.shape[0]-1
+       mirrored=work/'mirrored_full_field.nii.gz'
+       nib.save(nib.Nifti1Image(original_data[::-1,:,:],original_image.affine@flip,header=original_image.header.copy()),mirrored)
+       mirror_hash=digest(mirrored)
+       out=outputs/source.name
        env={**os.environ,'HOME':str(home),'MPLCONFIGDIR':str(work/'mpl'),'XDG_CACHE_HOME':str(work/'cache'),'OMP_NUM_THREADS':'2','MKL_NUM_THREADS':'2','CUDA_VISIBLE_DEVICES':'','PYTHONUNBUFFERED':'1'}
        start=time.monotonic();log_path=work/'inference.log'
        with log_path.open('w') as log:
-        proc=subprocess.Popen(['fetalsynthseg','--chkp_path',str(checkpoint),'--input',str(source),'--output',str(out)],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+        proc=subprocess.Popen(['fetalsynthseg','--chkp_path',str(checkpoint),'--input',str(source),str(mirrored),'--output',str(outputs)],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
         try:
          while proc.poll() is None:
           elapsed=time.monotonic()-start
@@ -79,8 +86,14 @@ tests:
        bound=4*np.finfo(np.float32).eps*max(np.abs(image.affine).max(),1)
        np.testing.assert_allclose(seg.affine,image.affine,rtol=0,atol=bound)
        np.testing.assert_allclose(seg.header.get_zooms(),image.header.get_zooms(),rtol=0,atol=4*np.finfo(np.float32).eps*max(image.header.get_zooms()))
+       mirrored_result=nib.load(outputs/mirrored.name);mirrored_input=nib.load(mirrored)
+       mirrored_labels=mirrored_result.get_fdata()
+       assert mirrored_result.shape==mirrored_input.shape and np.isfinite(mirrored_labels).all()
+       np.testing.assert_allclose(mirrored_result.affine,mirrored_input.affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(np.abs(mirrored_input.affine).max(),1))
+       np.testing.assert_array_equal(mirrored_labels,data[::-1,:,:])
+       assert digest(mirrored)==mirror_hash
        assert [digest(p) for p in [source,reference,checkpoint]]==before
-       print(f'Actual FetalSynthSeg trained CPU inference on full official fetal MRI verified in{time.monotonic()-start:.1f}s; shape{data.shape}, labels{labels.tolist()}, unchanged image/reference/checkpoint hashes')
+       print(f'Actual FetalSynthSeg trained CPU inference on full official fetal MRI verified in{time.monotonic()-start:.1f}s; shape{data.shape}, labels{labels.tolist()}, exact full-field axis-flip label correspondence, unchanged image/reference/checkpoint hashes')
       PY
     expected_exit_code: 0
     expected_output_contains: "Actual FetalSynthSeg trained CPU inference"
