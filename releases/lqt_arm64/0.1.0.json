@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "lqt_arm64 0.1.0": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "lqt"
+}
