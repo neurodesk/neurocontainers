@@ -416,7 +416,7 @@ tests:
 
   - name: pydeface with invalid cost function
     description: Test error handling for invalid cost function
-    command: pydeface ${t1w} --cost invalid_cost 2>&1
+    command: pydeface ${t1w} --outfile ${output_dir}/invalid-cost-result.nii.gz --force --cost invalid_cost 2>&1
     expected_exit_code: 1
     expected_output_contains: ["cost_func", "invalid_cost"]
 
