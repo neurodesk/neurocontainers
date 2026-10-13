@@ -389,16 +389,19 @@ def _group_echo_into_timepoints(images):
         return [[image] for image in sorted(images, key=_image_time_sort_key)]
 
     candidate_keys = [_time_identity(image) for image in images]
+    use_slice_index = any(int(image.getHead().slice) != 0 for image in images)
     if len(set(candidate_keys)) > 1:
         groups = {}
         for image, key in zip(images, candidate_keys):
             groups.setdefault(key, []).append(image)
         timepoints = [groups[key] for key in sorted(groups)]
-        _validate_timepoint_slices(timepoints)
+        _validate_timepoint_slices(timepoints, use_slice_index=use_slice_index)
         return timepoints
 
     ordered = sorted(images, key=_image_index_sort_key)
-    slice_ids = [_slice_identity(image) for image in ordered]
+    slice_ids = [
+        _slice_identity(image, use_slice_index=use_slice_index) for image in ordered
+    ]
     slice_count = len(set(slice_ids))
     if slice_count <= 1:
         return [[image] for image in ordered]
@@ -410,14 +413,22 @@ def _group_echo_into_timepoints(images):
         ordered[index:index + slice_count]
         for index in range(0, len(ordered), slice_count)
     ]
-    _validate_timepoint_slices(timepoints)
+    _validate_timepoint_slices(timepoints, use_slice_index=use_slice_index)
     return timepoints
 
 
-def _validate_timepoint_slices(timepoints):
-    expected = {_slice_identity(image) for image in timepoints[0]}
+def _validate_timepoint_slices(
+    timepoints: list[list[ismrmrd.Image]], *, use_slice_index: bool
+) -> None:
+    expected = {
+        _slice_identity(image, use_slice_index=use_slice_index)
+        for image in timepoints[0]
+    }
     for index, timepoint in enumerate(timepoints):
-        identities = [_slice_identity(image) for image in timepoint]
+        identities = [
+            _slice_identity(image, use_slice_index=use_slice_index)
+            for image in timepoint
+        ]
         actual = set(identities)
         if len(identities) != len(actual):
             raise ValueError(
@@ -427,7 +438,7 @@ def _validate_timepoint_slices(timepoints):
         if actual != expected:
             raise ValueError(
                 f"ME-ICA time point {index + 1} has {len(actual)} slices; "
-                f"expected {len(expected)} with matching positions "
+                f"expected {len(expected)} with matching slice identities "
                 f"({len(expected - actual)} missing, {len(actual - expected)} unexpected)"
             )
 
@@ -514,8 +525,8 @@ def _is_magnitude(image):
     return image_type in (0, int(getattr(ismrmrd, "IMTYPE_MAGNITUDE", 1)))
 
 
-def _select_bold_images(images):
-    """Keep fMRI magnitude images while preserving all originals for passthrough."""
+def _select_bold_images(images: list[ismrmrd.Image]) -> list[ismrmrd.Image]:
+    """Keep magnitude fMRI images, excluding reference and noise images."""
     selected = []
     excluded = {}
     for image in images:
@@ -531,7 +542,7 @@ def _select_bold_images(images):
     return selected
 
 
-def _input_exclusion_reason(image):
+def _input_exclusion_reason(image: ismrmrd.Image) -> str | None:
     if not _is_magnitude(image):
         return "non-magnitude"
     meta = _meta(image)
@@ -656,15 +667,23 @@ def _image_index_sort_key(image):
     return (int(image.getHead().image_index), _slice_identity(image))
 
 
-def _slice_identity(image):
+def _slice_identity(image, *, use_slice_index=True):
     header = image.getHead()
-    slice_index = int(getattr(header, "slice", 0))
+    if use_slice_index:
+        return (0, int(getattr(header, "slice", 0)))
     position = tuple(round(float(value), 5) for value in header.position)
-    return (slice_index, position)
+    return (1, position)
 
 
 def _ordered_slices(images):
-    return sorted(images, key=lambda image: (_slice_identity(image), int(image.getHead().image_index)))
+    use_slice_index = any(int(image.getHead().slice) != 0 for image in images)
+    return sorted(
+        images,
+        key=lambda image: (
+            _slice_identity(image, use_slice_index=use_slice_index),
+            int(image.getHead().image_index),
+        ),
+    )
 
 
 def _affine_from_image(image, shape_xyz):

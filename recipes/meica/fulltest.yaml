@@ -387,6 +387,12 @@ tests:
           for echo in range(1, 4)
           for slice_index in range(3)
       ]
+      # Some streams expose the reference label only in the minihead.
+      meta = ismrmrd.Meta.deserialize(references[0].attribute_string)
+      del meta["SequenceDescription"]
+      minihead = '<ParamString."SequenceDescription">{ "multi_echo_epi_SBRef" }'
+      meta["IceMiniHead"] = base64.b64encode(minihead.encode()).decode()
+      references[0].attribute_string = meta.serialize()
       noise = [
           scanner_slice(echo, 2, slice_index, "noise")
           for echo in range(1, 4)
@@ -425,6 +431,40 @@ tests:
           Path(os.environ["OUTPUT_DIR"]) / "scanner-fallback-inputs", settings,
       )
       for baseline, actual in zip(conversion["datasets"], fallback["datasets"]):
+          assert np.array_equal(nib.load(baseline).get_fdata(), nib.load(actual).get_fdata())
+
+      # Slice indices remain stable when the scanner updates volume positions.
+      moving = copy.deepcopy(bold)
+      for image in moving:
+          header = image.getHead()
+          header.position[0] += 0.5 * header.repetition
+          image.setHead(header)
+      for counters in (True, False):
+          if not counters:
+              for image in moving:
+                  header = image.getHead()
+                  header.repetition = 0
+                  image.setHead(header)
+          shifted = meica.write_meica_inputs(
+              moving, Metadata(),
+              Path(os.environ["OUTPUT_DIR"]) / f"scanner-moving-{counters}", settings,
+          )
+          for baseline, actual in zip(conversion["datasets"], shifted["datasets"]):
+              assert np.array_equal(
+                  nib.load(baseline).get_fdata(), nib.load(actual).get_fdata()
+              )
+
+      # Without slice indices, fixed positions provide the slice identities.
+      position_only = copy.deepcopy(bold)
+      for image in position_only:
+          header = image.getHead()
+          header.slice = 0
+          image.setHead(header)
+      positions = meica.write_meica_inputs(
+          position_only, Metadata(),
+          Path(os.environ["OUTPUT_DIR"]) / "scanner-position-inputs", settings,
+      )
+      for baseline, actual in zip(conversion["datasets"], positions["datasets"]):
           assert np.array_equal(nib.load(baseline).get_fdata(), nib.load(actual).get_fdata())
 
       scanner = Connection(scanner_images)
