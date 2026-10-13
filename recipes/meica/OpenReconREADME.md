@@ -14,6 +14,11 @@ from the MRD sequence header. The adapter uses `EchoTime`, `EchoNumber`, MRD
 series. It reports an error if the sequence header does not contain echo times.
 ME-ICA runs with 24 CPU workers.
 
+Single-band reference series identified by `SBRef` and acquisitions marked
+`NOISE` in `ImageTypeValue4` or the Siemens `IceMiniHead` are excluded from
+the fMRI inputs. Each time point must contain the same unique slices, including
+slice zero. Missing or duplicate slices produce an explicit error.
+
 If AFNI cannot skull-strip the optimally combined functional reference, the
 adapter treats every nonzero voxel as phantom foreground, closes one-voxel
 gaps, and fills enclosed holes so that the complete phantom interior is
@@ -26,6 +31,8 @@ denoised BOLD-like time series expressed as apparent `dR2*` in `s^-1`. The
 selectable in the scanner GUI. By default, the adapter also returns the
 incoming reconstructed echo images before the two derived series. Disable
 `sendoriginal` to return only the ME-ICA outputs.
+Originals include reference, noise, and phase images and are sent before
+ME-ICA input conversion, so they remain available if processing fails.
 
 Derived results are stored as 12-bit `uint16` pixels with DICOM
 `RescaleSlope` and `RescaleIntercept`, so viewers that apply DICOM rescaling
