@@ -5,6 +5,14 @@ copyright:
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
   - license: BSD-2-Clause
     url: https://github.com/rordenlab/dcm2niix/blob/master/license.txt
+  - name: ep3d-highres-preprocessing (no license file upstream; packaged with the author's permission)
+    url: https://github.com/mrphysics-bonn/ep3d-highres-preprocessing
+  - name: fsl license
+    url: https://fsl.fmrib.ox.ac.uk/fsl/docs/#/license
+  - license: Apache-2.0
+    url: https://github.com/nipy/nipype/blob/master/LICENSE
+  - license: Apache-2.0
+    url: https://github.com/ANTsX/ANTsPy/blob/master/LICENSE
 architectures:
   - x86_64
 
@@ -15,6 +23,10 @@ variables:
   openrecon_ismrmrd_version: "1.14.2"
   upstream_version: "9.22.0"
   model_revision: 31b08225f3adf2d732dafad4e3c5a94c350ef51b
+  ep3d_preprocessing_commit: 8062dc1a6e368f3d1c329c50dbea42c8fdc5c3e8
+  nipype_version: "1.12.0"
+  antspyx_version: "0.6.3"
+  fsl_packages: fsl-mcflirt=2111.0=h465c9ab_11 fsl-flirt=2111.4=h28ab0de_3 fsl-avwutils=2209.8=h67d7eeb_2
   qsmxt_tarball:
     try:
       - value: qsmxt_x86_64_tar_gz
@@ -62,6 +74,31 @@ auto_update:
     ref: fix/ismrmrd-compatibility
     target:
       variable: openrecon_server_commit
+  - id: ep3d_preprocessing
+    dependency: true
+    method: github_commit
+    repo: mrphysics-bonn/ep3d-highres-preprocessing
+    ref: HEAD
+    target:
+      variable: ep3d_preprocessing_commit
+  - id: nipype
+    dependency: true
+    method: pypi
+    package: nipype
+    target:
+      variable: nipype_version
+  - id: antspyx
+    dependency: true
+    method: pypi
+    package: antspyx
+    target:
+      variable: antspyx_version
+  - id: micromamba
+    dependency: true
+    method: http_digest
+    url: https://micro.mamba.pm/api/micromamba/linux-64/2.3.2
+    target:
+      file: micromamba
   local:
   - macros/openrecon
 
@@ -127,11 +164,34 @@ build:
         QSM_MODEL_DIR: /opt/qsmxt/models
         QSM_MODEL_CACHE: /tmp/share/qsmxt_models
 
+    # 3D EPI dual polarity QSM: complex preprocessing from
+    # mrphysics-bonn/ep3d-highres-preprocessing needs nipype, ANTsPy and the
+    # FSL motion-correction tools. FSL lives in its own prefix; only the tools
+    # nipype calls are linked onto PATH so its python never shadows the system one.
+    - run:
+        - tar -xjf {{ get_file("micromamba") }} -C /tmp bin/micromamba
+        - MAMBA_ROOT_PREFIX=/tmp/mamba /tmp/bin/micromamba create -y -p /opt/fsl -c https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/ -c conda-forge {{ context.fsl_packages }}
+        - rm -rf /tmp/mamba /tmp/bin/micromamba
+        - mkdir -p /opt/fsl-tools
+        - ln -s /opt/fsl/bin/mcflirt /opt/fsl/bin/flirt /opt/fsl/bin/fslsplit /opt/fsl/bin/fslmerge /opt/fsl/bin/fslcpgeom /opt/fsl-tools/
+        - python3 -m pip install --break-system-packages --no-cache-dir nipype=={{ context.nipype_version }} antspyx=={{ context.antspyx_version }}
+        - git clone https://github.com/mrphysics-bonn/ep3d-highres-preprocessing.git /opt/ep3d-highres-preprocessing
+        - git -C /opt/ep3d-highres-preprocessing checkout {{ context.ep3d_preprocessing_commit }}
+        - rm -rf /opt/ep3d-highres-preprocessing/.git
+
+    - environment:
+        FSLDIR: /opt/fsl
+        FSLOUTPUTTYPE: NIFTI_GZ
+        PATH: $PATH:/opt/fsl-tools
+
     - run:
         - cp {{ get_file("qsmxt.py") }} /opt/code/python-ismrmrd-server/qsmxt.py
+        - cp {{ get_file("ep3d_preproc.py") }} /opt/code/python-ismrmrd-server/ep3d_preproc.py
+        - cp {{ get_file("qsmxt_ep3d.py") }} /opt/code/python-ismrmrd-server/qsmxt_ep3d.py
+        - cp {{ get_file("qsmxt_ep3d_denoise.py") }} /opt/code/python-ismrmrd-server/qsmxt_ep3d_denoise.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
-        - chmod 644 /opt/code/python-ismrmrd-server/qsmxt.py /opt/code/python-ismrmrd-server/OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - chmod 644 /opt/code/python-ismrmrd-server/qsmxt.py /opt/code/python-ismrmrd-server/ep3d_preproc.py /opt/code/python-ismrmrd-server/qsmxt_ep3d.py /opt/code/python-ismrmrd-server/qsmxt_ep3d_denoise.py /opt/code/python-ismrmrd-server/OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconREADME.md
         - mkdir -p /tmp/share/qsmxt_openrecon /tmp/share/qsmxt_models
         - chmod 1777 /tmp/share /tmp/share/qsmxt_openrecon /tmp/share/qsmxt_models
 
@@ -255,8 +315,17 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzUlE
 files:
   - name: qsmxt.py
     filename: qsmxt.py
+  - name: ep3d_preproc.py
+    filename: ep3d_preproc.py
+  - name: qsmxt_ep3d.py
+    filename: qsmxt_ep3d.py
+  - name: qsmxt_ep3d_denoise.py
+    filename: qsmxt_ep3d_denoise.py
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
+  - name: micromamba
+    url: https://micro.mamba.pm/api/micromamba/linux-64/2.3.2
+    sha256: 5512233cdd8564a671626081026dc861537a963baa06706baab08fac6f3bb9d2
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
   - name: qsmxt_x86_64_tar_gz

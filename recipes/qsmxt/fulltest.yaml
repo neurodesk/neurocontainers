@@ -675,4 +675,104 @@ tests:
       print("sent derived images:", len(connection.sent_batches[-1]))
       PY
 
+  - name: 3D EPI dual polarity preprocessing
+    description: Motion-correct, phase-match and complex-average a synthetic dual-polarity 3D EPI series with FSL MCFLIRT and nipype, then run QSMxT on the average
+    script: |
+      set -euo pipefail
+      python - <<'PYCODE'
+      import subprocess
+      import sys
+      import tempfile
+      from pathlib import Path
+
+      import ismrmrd
+      import nibabel as nib
+      import numpy as np
+      from scipy.ndimage import gaussian_filter, shift
+
+      sys.path.insert(0, "/opt/code/python-ismrmrd-server")
+      import qsmxt
+
+      import importlib.util
+      for config in ("qsmxt_ep3d", "qsmxt_ep3d_denoise"):
+          assert importlib.util.find_spec(config), config
+
+      rng = np.random.default_rng(0)
+      shape = (48, 48, 32)
+      x, y, z = np.meshgrid(*[np.linspace(-1, 1, n) for n in shape], indexing="ij")
+      inside = x**2 / 0.8 + y**2 / 0.8 + z**2 / 0.7 < 1
+      magnitude = np.where(inside, 1000 + 400 * gaussian_filter(rng.standard_normal(shape), 2), 0)
+      tissue_phase = gaussian_filter(rng.standard_normal(shape), 2.5) / 0.05 * 0.4
+      field_phase = 1.2 * x + 0.8 * z
+      polarity_phase = 1.3 * (0.5 + y)
+      truth = magnitude * np.exp(1j * (field_phase + tissue_phase + polarity_phase))
+      motion = [(0, 0, 0), (0, 0, 0), (1.5, -1.0, 0), (1.5, -1.0, 0)]
+
+      def mrd_volume(series, repetition, data_xyz, image_type):
+          image = ismrmrd.Image.from_array(np.transpose(data_xyz, (2, 1, 0)).astype(np.float32), transpose=False)
+          header = image.getHead()
+          header.image_series_index = series
+          header.image_index = repetition + 1
+          header.image_type = image_type
+          header.repetition = repetition
+          for field, values in (
+              ("matrix_size", shape), ("field_of_view", [float(n) for n in shape]),
+              ("position", [0.0, 0.0, 0.0]), ("read_dir", [1.0, 0.0, 0.0]),
+              ("phase_dir", [0.0, 1.0, 0.0]), ("slice_dir", [0.0, 0.0, 1.0]),
+          ):
+              for index, value in enumerate(values):
+                  getattr(header, field)[index] = value
+          image.setHead(header)
+          meta = ismrmrd.Meta()
+          meta["SequenceDescription"] = "ep3d_qsm" if image_type == ismrmrd.IMTYPE_MAGNITUDE else "ep3d_qsm_Pha"
+          meta["EchoNumber"] = "1"
+          image.attribute_string = meta.serialize()
+          return image
+
+      images, volumes = [], []
+      for repetition, offset in enumerate(motion):
+          sign = 1 if repetition % 2 == 0 else -1
+          signal = magnitude * np.exp(1j * (field_phase + tissue_phase + sign * polarity_phase))
+          signal = shift(signal.real, offset, order=3) + 1j * shift(signal.imag, offset, order=3)
+          signal += 80 * (rng.standard_normal(shape) + 1j * rng.standard_normal(shape))
+          volumes.append(signal)
+          counts = np.round((np.angle(signal) + np.pi) / (2 * np.pi) * 4096) % 4096
+          images.append(mrd_volume(1, repetition, np.abs(signal), ismrmrd.IMTYPE_MAGNITUDE))
+          images.append(mrd_volume(2, repetition, counts, ismrmrd.IMTYPE_PHASE))
+
+      class Metadata:
+          class acquisitionSystemInformation:
+              systemFieldStrength_T = 7.0
+          class measurementInformation:
+              protocolName = "ep3d_qsm"
+          class sequenceParameters:
+              TE = [15.0]
+
+      settings = qsmxt._settings_from_config({"parameters": {"ep3ddualpolarity": "true"}}, Metadata())
+      with tempfile.TemporaryDirectory() as work:
+          bids = Path(work) / "bids"
+          result = qsmxt.write_bids_dataset(images, Metadata(), bids, settings)
+          assert result["n_echoes"] == 1
+          averaged = (
+              nib.load(result["magnitude_paths"][0]).get_fdata()
+              * np.exp(1j * nib.load(result["phase_paths"][0]).get_fdata())
+          )
+          core = inside & (x**2 / 0.8 + y**2 / 0.8 + z**2 / 0.7 < 0.6)
+          residual = np.angle(averaged * np.conj(truth))[core]
+          single = np.angle(volumes[0] * np.conj(truth))[core]
+          naive = np.mean(volumes, axis=0)
+          magnitude_error = np.median(np.abs(np.abs(averaged[core]) - magnitude[core]) / magnitude[core])
+          naive_error = np.median(np.abs(np.abs(naive[core]) - magnitude[core]) / magnitude[core])
+          print(f"tissue phase std {tissue_phase[core].std():.3f}, phase residual std {residual.std():.4f} rad (single volume {single.std():.4f}), "
+                f"magnitude error {magnitude_error:.3f} (naive mean {naive_error:.3f})")
+          assert residual.std() < 0.7 * single.std()
+          assert magnitude_error < 0.05 < naive_error
+
+          output = Path(work) / "out"
+          subprocess.run(["qsmxt", "run", str(bids), str(output), "--force"], check=True, capture_output=True)
+          chimaps = list(output.rglob("*_Chimap.nii*"))
+          assert chimaps and np.isfinite(nib.load(chimaps[0]).get_fdata()).all()
+      print("3D EPI dual polarity motion correction, phase matching, averaging and QSMxT verified")
+      PYCODE
+
 upstream_version: 9.22.0
