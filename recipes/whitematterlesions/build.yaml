@@ -1,0 +1,163 @@
+name: whitematterlesions
+version: "0.2.20261009"
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/neurodesk/webapps/blob/white-matter-lesions-v{{ context.flames_version }}/LICENSE
+  - license: CC-BY-4.0
+    url: https://doi.org/10.5281/zenodo.17955359
+  - name: FreeSurfer Software License Agreement
+    url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
+
+architectures:
+  - x86_64
+
+variables:
+  openrecon_server_commit: "33362f2139701fbf5ea855808a325eb59b7db2ae"
+  openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
+  openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
+  openrecon_ismrmrd_version: "1.14.2"
+  flames_version: "0.2.20261009"
+
+auto_update:
+  container_version: flames
+  method: sources
+  local:
+  - macros/openrecon
+  sources:
+  - id: flames
+    method: github_release_asset
+    repo: neurodesk/webapps
+    asset: flames-{version}-linux-x64.tar.gz
+    version_regex: 'white-matter-lesions-v(?P<version>\d+\.\d+\.\d+)'
+    target:
+      file: flames_archive
+      variables:
+        flames_version: version
+  - id: openrecon_ismrmrd
+    dependency: true
+    method: github_release
+    repo: ismrmrd/ismrmrd
+    target:
+      variable: openrecon_ismrmrd_version
+      value: version
+  - id: openrecon_siemens
+    dependency: true
+    method: github_commit
+    repo: ismrmrd/siemens_to_ismrmrd
+    ref: HEAD
+    target:
+      variable: openrecon_siemens_commit
+  - id: openrecon_python_tools
+    dependency: true
+    method: github_commit
+    repo: ismrmrd/ismrmrd-python-tools
+    ref: HEAD
+    target:
+      variable: openrecon_python_tools_commit
+  - id: openrecon_server
+    dependency: true
+    method: github_commit
+    repo: astewartau/python-ismrmrd-server
+    ref: fix/ismrmrd-compatibility
+    target:
+      variable: openrecon_server_commit
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        WHITEMATTERLESIONS_WORKSPACE: /tmp/share/whitematterlesions
+        FLAMES_EXECUTABLE: /opt/flames/flames
+
+    - install:
+        - ca-certificates
+        - python3
+        - python3-pip
+
+    - include: macros/openrecon/neurodocker.yaml
+
+    # The web app's standalone release: its own Node.js runtime, SynthStrip and
+    # all five FLAMeS folds, so the scanner runs the browser's exact pipeline.
+    - run:
+        - mkdir -p /opt/flames
+        - tar -xzf {{ get_file("flames_archive") }} -C /opt/flames --strip-components=1
+        - ln -s /opt/flames/flames /usr/local/bin/flames
+        - flames self-check
+
+    - run:
+        - install -m 0755 {{ get_file("whitematterlesions.py") }} /opt/code/python-ismrmrd-server/whitematterlesions.py
+        - install -m 0644 {{ get_file("test_whitematterlesions_openrecon.py") }} /opt/code/python-ismrmrd-server/test_whitematterlesions_openrecon.py
+        - install -m 0644 {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - install -m 0644 {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - mkdir -p /tmp/share/whitematterlesions
+        - chmod 1777 /tmp/share /tmp/share/whitematterlesions
+
+    - workdir: /opt
+
+deploy:
+  bins:
+    - flames
+
+files:
+  - name: flames_archive
+    url: https://github.com/neurodesk/webapps/releases/download/white-matter-lesions-v0.2.20261009/flames-0.2.20261009-linux-x64.tar.gz
+    sha256: 9c355432b43f5e679e6457960c01a5dfe96d712221b9dd407b666d67930b250d
+  - name: whitematterlesions.py
+    filename: whitematterlesions.py
+  - name: test_whitematterlesions_openrecon.py
+    filename: test_whitematterlesions_openrecon.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+
+categories:
+  - image segmentation
+  - machine learning
+
+readme: |-
+  ----------------------------------
+  ## whitematterlesions/{{ context.version }} ##
+
+  FLAMeS white matter lesion segmentation from one FLAIR image, as the
+  Neurodesk White matter lesions web app runs it. SynthStrip finds the brain,
+  then FLAMeS (nnU-Net, converted to ONNX) segments the lesions on the CPU.
+  It needs no GPU and no network connection.
+
+  Segment a FLAIR:
+  ```bash
+  flames flair.nii.gz results
+  flames flair.nii.gz results --folds 5          # five-fold ensemble
+  flames flair.nii.gz results --skull-stripped   # brain-only input
+  ```
+
+  `results/` receives `flair_lesions.nii` (lesion mask),
+  `flair_lesion_probability.nii` and `flair_lesions.tsv` (one row per
+  26-connected lesion: voxels, volume in ml and centroid in scanner
+  coordinates). Every output keeps the input grid and affine.
+
+  The container also holds an OpenRecon image-to-image adapter that returns a
+  lesion overlay and a lesion mask to the scanner.
+
+  FLAMeS is research software. Review the lesion masks before use.
+
+  Citation:
+  ```
+  Dereskewicz E, La Rosa F, dos Santos Silva J, et al. FLAMeS: a robust deep
+  learning model for automated multiple sclerosis lesion segmentation. medRxiv.
+  2025. doi:10.1101/2025.05.19.25327707
+  Hoopes A, Mora JS, Dalca AV, Fischl B, Hoffmann M. SynthStrip: skull-stripping
+  for any brain image. NeuroImage 260 (2022): 119474.
+  ```
+
+  More information: https://github.com/neurodesk/webapps/tree/white-matter-lesions-v{{ context.flames_version }}/packages/white-matter-lesions
+
+  To run applications outside this container: ml whitematterlesions/{{ context.version }}
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABmElEQVR42u2a60ZAURCFT/f7vadLEkkkkUSSSCKJJJJEEkkkkSSSSCKJXmi1XqHZt5lpL76fM3vW4vw4e0/TVFVVVVVVVVUVEn7G4d/k9xik2DX9RQORsWH8cxSp0Wv+gwNmQpfxdw5ViPLm30ZQmnLmXzmAEvKbfxmGNvKZf+aBSklv/okHKSed+cchWCFNAA9sboT45u/Z2BjxzN8NwipxArhlM6OEm78ZgHXCArhmE+OEBXDFJsaRm7/shxdkAVyw2AmyAM774AVZAGcsdoIsgFMWO0EWwEkvvCAL4JjFTvi7+SMWOuPvIRz2wAuyT+CAxU6QBbDfDS/IAthjsRNkAeyy2AmyAHa64AVZANssdoL8l3irE9YJuxDZZBPjhAWwwSbGCb8YXe+AVeJci6+xmVHiPY6ssqEx4j+PrbTDCmkeR5fZ3AjpnsiX2qCd9EsSizxIKfnWZBZ4oDLyL0rNt0IL5Vbl5jhAYcovS862oBS6VmZnOFQm9C5MT3PAxNhYm59qEJvGqjBJA0Ia78LEPzBZVaVXvz8sqJKht8VsAAAAAElFTkSuQmCC
