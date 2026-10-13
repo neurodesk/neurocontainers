@@ -8,6 +8,7 @@ copyright:
     url: https://github.com/farialab/OpenADS/blob/main/LICENSE
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: |-
     OpenADS is an end-to-end medical imaging pipeline for stroke analysis, covering preprocessing, registration, segmentation, and report generation for DWI and PWI workflows.
@@ -117,6 +118,13 @@ build:
   pkg-manager: apt
   directives:
     - install: git libgomp1 build-essential
+    - condition: arch == "aarch64"
+      install:
+        - cmake
+        - libjpeg-dev
+        - libpng-dev
+        - libtiff-dev
+        - zlib1g-dev
     - template:
         name: miniconda
         version: latest
@@ -134,6 +142,12 @@ build:
         - ln -s /opt/openads/scripts /opt/miniconda-latest/lib/python3.11/scripts
         - ln -s /opt/openads/assets /opt/miniconda-latest/lib/python3.11/assets
         - ln -s /opt/openads/configs /opt/miniconda-latest/lib/python3.11/configs
+    - environment:
+        PYTHONPATH: /opt/openads:/opt/openads/src:/opt/openads/scripts:/opt/openads/docker
+        MPLBACKEND: Agg
+        MPLCONFIGDIR: /tmp/openads-matplotlib
+        XDG_CACHE_HOME: /tmp/openads-cache
+        ADS_CACHE_DIR: /tmp/openads-cache/ads
     - deploy:
         bins:
           - ads
