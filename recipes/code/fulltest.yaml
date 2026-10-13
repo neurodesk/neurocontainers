@@ -47,7 +47,7 @@ setup:
   # contents in a regular file on these ephemeral runners; retain DNS and the
   # complete native SIF execution test. No runtime source patch is applied.
   host_script: |
-    set -euo pipefail
+    set -eu
     case "${GITHUB_ACTIONS:-}:${GITHUB_REPOSITORY:-}" in
       true:Vbitz/neurocontainers-arm64|true:neurodesk/neurocontainers)
         sudo -n python3 - <<'PYTHON'
