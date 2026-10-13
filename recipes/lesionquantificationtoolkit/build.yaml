@@ -8,6 +8,7 @@ copyright:
     url: https://github.com/jdwor/LQT
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: |-
     LQT is an R implementation of the lesion quantification toolkit, based on the paper “Lesion Quantification Toolkit: A MATLAB software tool for estimating grey matter damage and white matter disconnections in patients with focal brain lesions” by Griffis et al. The LQT is “a publicly available software package for quantifying the structural impacts of focal brain lesions. It uses atlas-based approaches to estimate parcel-level grey matter lesion loads and multiple measures of white matter disconnection severity that include tract-level disconnection measures, voxel-wise disconnection maps, and parcel-wise disconnection matrices. The toolkit also estimates lesion-induced increases in the lengths of the shortest structural paths between parcel pairs, which provide information about changes in higher-order structural network topology.”
@@ -87,7 +88,10 @@ build:
         - R CMD INSTALL {{ get_file("gsl_tar_gz") }}
         - R CMD INSTALL {{ get_file("aws_methods_tar_gz") }}
         - R CMD INSTALL {{ get_file("aws_tar_gz") }}
-        - git clone https://github.com/jdwor/LQT.git /opt/LQT && git -C /opt/LQT checkout {{ context.upstream_commit }} && R CMD INSTALL /opt/LQT
+        - git clone https://github.com/jdwor/LQT.git /opt/LQT
+        - git -C /opt/LQT checkout {{ context.upstream_commit }}
+        - Rscript {{ get_file("fix_lqt_node_columns") }} /opt/LQT/R/get_patient_sspl.R
+        - R CMD INSTALL /opt/LQT
         - R --slave -e 'library(LQT); stopifnot(length(getNamespaceExports("LQT")) > 0)'
     - test:
         name: verify_r_installation
@@ -97,6 +101,16 @@ build:
           echo "Testing R package installation..."
           R --slave -e 'library(LQT); stopifnot(length(getNamespaceExports("LQT")) > 0)'
 files:
+  - name: fix_lqt_node_columns
+    contents: |
+      args <- commandArgs(trailingOnly=TRUE)
+      stopifnot(length(args) == 1L)
+      lines <- readLines(args[1], warn=FALSE)
+      old <- 'write(t(C), OutputFile, sep="\\t")'
+      new <- 'write(t(C), OutputFile, ncolumns=ncol(C), sep="\\t")'
+      stopifnot(sum(grepl(old, lines, fixed=TRUE)) == 2L)
+      lines <- gsub(old, new, lines, fixed=TRUE)
+      writeLines(lines, args[1])
   - name: gsl_tar_gz
     url: https://cloud.r-project.org/src/contrib/Archive/gsl/gsl_2.1-8.tar.gz
   - name: aws_methods_tar_gz
@@ -106,3 +120,8 @@ files:
 categories:
   - structural imaging
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAyJJREFUSEulll9IU1Ecx79ndxvUmjHRCBL/oNlT9FApBT1kKtGLFS3mWzA3m/Um+JT1ZCb44kNIFgQxFUsspz70ZCy1f1rkhAjci8EUBE3BbVCeG+fcu3vPvXdbWIPLHff+7u9zvt9zzu93iGMqJhNZhizLQOYCtP/sufZeeM5jWRilIDxc+F7IQ5yTi2qkEpALlIHz92aQkND8PXFMfDUANBXCCC0JTQoNyik1DIA4GUAdOZdqCtCsEK0SrVTjc1lJHONfLBb9j+dmkALIMrniJO7Fc5gtcrz6rAPSSeyOh0FHBnhOUlIB2+17IOXVkBMroI/uQ/6+qHic5UfONoBcDwIHC7VVSBwvF3SLUjug42E8rDsJv98PZ0W1Aig7qgAGurH1aQZut9uSPhaL4cTNdtgYoMDDVyObU2Ifm9f3QToJGhlE/4VTaGlpgb2sCqStEzamYJUp6MbW/CyWlpbQ0dFhgKytrSFeXA7iDZgUjM3rFqWS2I2E0V9/WgPY2joVBQww8IADpqen0dTUZFFBztQrgAKPYhFXMPpRsCgJOjEoACpBQndByqoABnjcwwGbm5uIRCIGQF9fH+LnLoPU1gGSpAMcKoB7xhSYALaQoEAFuFwupNNpA8Dn82Gq6BhQcx6w2/VJtr/4IKyilKKgoYZbJJVWwha6A1LKFPwAfdKDrYW53BbdaOcAIklKyeEWPX9vtGhySAe43LBd8wOHS4CNddDXo9j+tpgbcKkZpOEqsP+AMAcj76yAxloEAgF4vV6DDdFoFPF4HMvLy+jq6rKsorntX0DzLaCwWLCIATI7OZ0CZQoaaxEMBi2rpLW1Fb29vVn3QSKRQMnFKyDNbUDhIWUfsEsanpW1ep5KQp4aBh17mnO35n1xvAbEFwI8qgI+B8OzuoLd36ArceDnBqurSi6q3lM7kNdXgX0uwFMEEDasTGNS7sTphHykQolRXSHS0Iyx2JmK1V8bTI7yrgHsg2/5EPO2xv/oF0QKRw0KLKAsivbSLywAcz3P26NzdUCx6UvP3libvjZ5ppNCntOD4VCQDyAG/lOPVpNnrP4DyBU6yJdc+PAAAAAASUVORK5CYII=
+
+deploy:
+  bins:
+    - R
+    - Rscript
