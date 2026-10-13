@@ -281,7 +281,7 @@ build:
               echo "Initializing PostgreSQL database..."
 
               # Initialize the database cluster with specific options to avoid permission issues
-              # The superuser will be the current system user (jovyan)
+              # Use an explicit database role independently of the runtime account name.
               /usr/lib/postgresql/12/bin/initdb -D "${PGDATA}" --username=postgres --auth-local=trust --auth-host=md5
 
               # Update PostgreSQL configuration to use local directories
@@ -289,7 +289,7 @@ build:
               # Custom settings for containerized environment
               unix_socket_directories = '${PGDATA}'
               port = 5432
-              listen_addresses = 'localhost,127.0.0.1'
+              listen_addresses = 'localhost'
               EOF
 
               # Update pg_hba.conf to allow local connections
@@ -307,7 +307,7 @@ build:
               # Wait for PostgreSQL to start
               echo "Waiting for PostgreSQL to start..."
               for i in {1..30}; do
-                  if /usr/lib/postgresql/12/bin/pg_isready -h "${PGDATA}" -p 5432 >/dev/null 2>&1; then
+                  if /usr/lib/postgresql/12/bin/pg_isready -h "${PGDATA}" -p 5432 -U postgres -d postgres >/dev/null 2>&1; then
                       break
                   fi
                   sleep 1
@@ -426,7 +426,7 @@ build:
               # Wait for PostgreSQL to be ready
               echo "Waiting for PostgreSQL to be ready..."
               for i in {1..30}; do
-                  if /usr/lib/postgresql/12/bin/pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+                  if /usr/lib/postgresql/12/bin/pg_isready -h localhost -p 5432 -U xnat -d xnat >/dev/null 2>&1; then
                       echo "PostgreSQL is ready!"
                       break
                   fi

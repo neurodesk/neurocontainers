@@ -611,6 +611,7 @@ tests:
       import json
       import os
       import signal
+      import socket
       import subprocess
       import tempfile
       import time
@@ -647,7 +648,7 @@ tests:
                           body,kind,url=request('/')
                           assert b'XNAT' in body and 'text/html' in kind,(kind,url,body[:500])
                           break
-                      except (urllib.error.URLError,TimeoutError,AssertionError) as error:
+                      except (urllib.error.URLError,TimeoutError,socket.timeout,AssertionError) as error:
                           last=repr(error);time.sleep(5)
                   else: raise AssertionError(('XNAT did not become ready',last,log.read_text(errors='replace')[-20000:]))
                   root=d/'xnat-runtime';home=root/'xnat-home';pgdata=root/'postgresql'
