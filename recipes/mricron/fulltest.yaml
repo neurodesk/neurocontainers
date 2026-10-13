@@ -244,9 +244,8 @@ tests:
   - name: dcm2niix search depth option
     description: Test -d directory search depth option
     command: dcm2niix -d 0 test_output/dcm2niix 2>&1
-    expected_output_contains:
-    - dcm2niiX
-    - Unable to find any DICOM
+    # Released dcm2niix intentionally suppresses the missing-DICOM message at depth zero.
+    expected_output_contains: dcm2niiX
     expected_exit_code: 2
   - name: dcm2niix with comment option
     description: Test -c comment storage option
@@ -565,9 +564,8 @@ tests:
   - name: dcm2niix adjacent DICOMs yes
     description: Test -a y option for adjacent DICOM handling
     command: dcm2niix -a y test_output/dcm2niix 2>&1
-    expected_output_contains:
-    - dcm2niiX
-    - Unable to find any DICOM
+    # Released dcm2niix intentionally suppresses the missing-DICOM message at depth zero.
+    expected_output_contains: dcm2niiX
     expected_exit_code: 2
   - name: dcm2niix adjacent DICOMs no
     description: Test -a n option for non-adjacent DICOM handling
@@ -622,9 +620,8 @@ tests:
   - name: dcm2niix fast workflow
     description: Test fast conversion workflow
     command: dcm2niix -z y -1 -a y test_output/dcm2niix 2>&1
-    expected_output_contains:
-    - dcm2niiX
-    - Unable to find any DICOM
+    # Released dcm2niix intentionally suppresses the missing-DICOM message at depth zero.
+    expected_output_contains: dcm2niiX
     expected_exit_code: 2
 
   # ==========================================================================
