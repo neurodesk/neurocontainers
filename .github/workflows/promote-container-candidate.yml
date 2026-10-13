@@ -28,6 +28,13 @@ on:
         description: Validate signing in isolated staging without finalizing a release
         default: false
         type: boolean
+      runner:
+        description: Runner pool for publishing the tested candidate
+        default: neurodesk-syd-arcrunner-neurocontainers
+        type: choice
+        options:
+          - neurodesk-syd-arcrunner-neurocontainers
+          - blacksmith-8vcpu-ubuntu-2404
 
 permissions: {}
 
@@ -234,7 +241,7 @@ jobs:
       github.event_name == 'workflow_dispatch' && inputs.signing_acceptance &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
-    runs-on: neurodesk-syd-arcrunner-neurocontainers
+    runs-on: ${{ inputs.runner == 'blacksmith-8vcpu-ubuntu-2404' && 'blacksmith-8vcpu-ubuntu-2404' || 'neurodesk-syd-arcrunner-neurocontainers' }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -424,7 +431,7 @@ jobs:
       !inputs.signing_acceptance &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
-    runs-on: neurodesk-syd-arcrunner-neurocontainers
+    runs-on: ${{ inputs.runner == 'blacksmith-8vcpu-ubuntu-2404' && 'blacksmith-8vcpu-ubuntu-2404' || 'neurodesk-syd-arcrunner-neurocontainers' }}
     timeout-minutes: 720
     strategy:
       fail-fast: false
