@@ -40,9 +40,9 @@ DEFAULT_ECHO_TIME_MS = 20.0
 DEFAULT_ECHO_SPACING_MS = 5.0
 DEFAULT_FIELD_STRENGTH_T = 3.0
 DEFAULT_B0_DIR = (0.0, 0.0, 1.0)
-DEFAULT_QSM_ALGORITHM = "hdqsm"
+DEFAULT_QSM_ALGORITHM = "whqsm"
 DEFAULT_UNWRAPPING_ALGORITHM = "romeo"
-DEFAULT_BF_ALGORITHM = "ismv"
+DEFAULT_BF_ALGORITHM = "harperella"
 ALGORITHM_PIPELINE_PRESETS = {
     "romeo-resharp-rts": {
         "unwrapping_algorithm": "romeo",
@@ -423,17 +423,11 @@ def write_bids_dataset(
     magnitude_echo_groups = _echo_image_groups(magnitude_group["images"])
     phase_echo_groups = _echo_image_groups(phase_group["images"])
 
-    n_echoes = min(len(magnitude_echo_groups), len(phase_echo_groups))
-    if n_echoes == 0:
-        raise ValueError("QSMxT requires at least one magnitude and one phase image")
-    if len(magnitude_echo_groups) != len(phase_echo_groups):
-        logging.warning(
-            "Magnitude/phase echo group count mismatch; using first %d pair(s): "
-            "%d magnitude, %d phase",
-            n_echoes,
-            len(magnitude_echo_groups),
-            len(phase_echo_groups),
-        )
+    magnitude_echo_groups, phase_echo_groups = _align_source_echo_groups(
+        magnitude_echo_groups, phase_echo_groups,
+        magnitude_group["name"], phase_group["name"],
+    )
+    n_echoes = len(magnitude_echo_groups)
 
     if settings["max_echoes"] > 0:
         n_echoes = min(n_echoes, settings["max_echoes"])
@@ -524,7 +518,17 @@ def write_bids_dataset(
         if mag_volume.shape != phase_volume.shape:
             raise ValueError(
                 "Magnitude and phase echo volumes have different shapes for "
-                f"echo {echo_number}: {mag_volume.shape} vs {phase_volume.shape}"
+                f"echo {echo_number} ({magnitude_group['name']!r} vs "
+                f"{phase_group['name']!r}): {mag_volume.shape} vs {phase_volume.shape}"
+            )
+        if (
+            not np.all(np.isfinite(affine))
+            or not np.all(np.isfinite(phase_affine))
+            or not np.allclose(affine, phase_affine, rtol=0, atol=1e-4)
+        ):
+            raise ValueError(
+                f"Magnitude/phase affine geometry mismatch for echo {echo_number}: "
+                f"{magnitude_group['name']!r} vs {phase_group['name']!r}"
             )
         b0_dir, b0_dir_source = _b0_dir_for_affine(phase_affine, settings)
         if resolved_b0_dir is None:
@@ -1970,14 +1974,51 @@ def _select_magnitude_phase_pairs(groups, selection):
     return pairs
 
 
-def _select_magnitude_phase_groups(groups, variant):
-    magnitude_groups = [group for group in groups if group["kind"] == "magnitude"]
-    phase_groups = [group for group in groups if group["kind"] == "phase"]
+def _source_name_tokens(name):
+    tokens = tuple(
+        token for token in re.split(r"[_\\\s-]+", str(name or "").lower()) if token
+    )
+    return tokens[:-1] if tokens and tokens[-1] in ("nd", "dc") else tokens
 
-    if not phase_groups and len(groups) == 2:
-        sorted_groups = sorted(groups, key=_series_signal_range)
-        sorted_groups[0]["kind"] = "phase"
-        sorted_groups[1]["kind"] = "magnitude"
+
+def _source_product_reason(group):
+    tokens = _source_name_tokens(group["name"])
+    for suffix in (
+        ("romeo", "p"), ("romeo", "mask"), ("romeo", "b0"),
+        ("sensitivity", "corrected", "mag"),
+        ("clear", "swi"), ("clear", "swi", "mip"),
+    ):
+        if tokens[-len(suffix):] == suffix:
+            return "_".join(suffix)
+    return None
+
+
+def _source_family(group):
+    tokens = _source_name_tokens(group["name"])
+    markers = (
+        ("m", "mag", "magnitude")
+        if group["kind"] == "magnitude" else ("p", "pha", "phase")
+    )
+    if tokens and tokens[-1] in markers:
+        tokens = tokens[:-1]
+    return tokens or None
+
+
+def _select_magnitude_phase_groups(groups, variant):
+    eligible = []
+    for group in groups:
+        reason = _source_product_reason(group)
+        if reason:
+            logging.info(
+                "Excluding processed QSMxT input series %r (%s)", group["name"], reason,
+            )
+        else:
+            eligible.append(group)
+    magnitude_groups = [group for group in eligible if group["kind"] == "magnitude"]
+    phase_groups = [group for group in eligible if group["kind"] == "phase"]
+
+    if not phase_groups and len(eligible) == 2:
+        sorted_groups = sorted(eligible, key=_series_signal_range)
         phase_groups = [sorted_groups[0]]
         magnitude_groups = [sorted_groups[1]]
         logging.warning(
@@ -1997,14 +2038,77 @@ def _select_magnitude_phase_groups(groups, variant):
             f"No phase image series found for {variant} input; "
             f"available series: {_available_series_summary(groups)}"
         )
-    if len(magnitude_groups) != 1 or len(phase_groups) != 1:
-        raise ValueError(
-            f"Ambiguous {variant} input: found {len(magnitude_groups)} "
-            f"magnitude and {len(phase_groups)} phase series; available series: "
-            f"{_available_series_summary(groups)}"
-        )
+    if len(magnitude_groups) == 1 and len(phase_groups) == 1:
+        return magnitude_groups[0], phase_groups[0]
 
-    return magnitude_groups[0], phase_groups[0]
+    matches = [
+        (magnitude, phase)
+        for magnitude in magnitude_groups
+        for phase in phase_groups
+        if _source_family(magnitude)
+        and _source_family(magnitude) == _source_family(phase)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    raise ValueError(
+        f"Ambiguous {variant} input: found {len(magnitude_groups)} "
+        f"magnitude and {len(phase_groups)} phase series with "
+        f"{len(matches)} matching source pairs; available series: "
+        f"{_available_series_summary(groups)}"
+    )
+
+
+def _echo_group_identities(groups, name, namespace):
+    values = [
+        {
+            _source_echo_number(image) if namespace == "EchoNumber"
+            else int(getattr(image.getHead(), "contrast", 0))
+            for image in group
+        }
+        for group in groups
+    ]
+    present = {value for group in values for value in group if value is not None}
+    if not present or (namespace == "contrast" and len(present) == 1):
+        return None
+    if any(None in group or len(group) != 1 for group in values):
+        raise ValueError(
+            f"Incomplete or mixed echo {namespace} identities in {name!r}: {values}"
+        )
+    identities = [next(iter(group)) for group in values]
+    if len(set(identities)) != len(identities):
+        raise ValueError(f"Duplicate echo {namespace} identities in {name!r}: {identities}")
+    return identities
+
+
+def _align_source_echo_groups(magnitude, phase, magnitude_name, phase_name):
+    if not magnitude or len(magnitude) != len(phase):
+        raise ValueError(
+            f"Magnitude/phase echo count mismatch: {magnitude_name!r} has "
+            f"{len(magnitude)}, {phase_name!r} has {len(phase)}"
+        )
+    namespace = "EchoNumber"
+    magnitude_ids = _echo_group_identities(magnitude, magnitude_name, namespace)
+    phase_ids = _echo_group_identities(phase, phase_name, namespace)
+    if magnitude_ids is None or phase_ids is None:
+        namespace = "contrast"
+        magnitude_ids = _echo_group_identities(magnitude, magnitude_name, namespace)
+        phase_ids = _echo_group_identities(phase, phase_name, namespace)
+    if magnitude_ids is None or phase_ids is None:
+        logging.info(
+            "No shared explicit echo identity namespace for %r and %r; "
+            "using positional pairing",
+            magnitude_name, phase_name,
+        )
+        return magnitude, phase
+    if set(magnitude_ids) != set(phase_ids):
+        raise ValueError(
+            f"Magnitude/phase echo {namespace} mismatch: {magnitude_name!r} "
+            f"has {magnitude_ids}, {phase_name!r} has {phase_ids}"
+        )
+    return (
+        [group for _, group in sorted(zip(magnitude_ids, magnitude))],
+        [group for _, group in sorted(zip(phase_ids, phase))],
+    )
 
 
 def _available_series_summary(groups):
