@@ -1,5 +1,6 @@
 name: openadscpu
 version: 1.0.0
+upstream_commit: 6c378d1ae36278c9351c247e00286f19e0a893ac
 tests:
 - name: OpenADS launcher
   command: command -v ads
@@ -9,4 +10,133 @@ tests:
   command: cat /opt/openads/source-revision
   expected_exit_code: 0
   expected_output_contains: ${upstream_commit}
-upstream_commit: 6c378d1ae36278c9351c247e00286f19e0a893ac
+- name: Actual CPU dependency and source configuration
+  command: |
+    set -eu
+    python - <<'PY'
+    import importlib.metadata as md
+    import pathlib,subprocess,torch,ants,ads
+    assert md.version('ads')=='${version}'
+    assert md.version('torch').split('+')[0]=='2.5.1' and not torch.cuda.is_available() and torch.version.cuda is None
+    assert md.version('antspyx')=='0.5.4'
+    assert pathlib.Path(ads.__file__).resolve().is_relative_to('/opt/openads/src')
+    from ads.core.config import load_config
+    cfg=load_config(pathlib.Path('/opt/openads/configs/dwi_pipeline.yaml'))
+    assert pathlib.Path(cfg['model']['path']).is_file() and pathlib.Path(cfg['paths']['templates']['root']).is_dir()
+    subprocess.run(['python','-m','pip','check'],check=True)
+    print('Actual OpenADS CPU package/source/config/model closure verified')
+    PY
+  expected_exit_code: 0
+  expected_output_contains: "Actual OpenADS CPU package/source/config/model closure verified"
+  timeout: 120
+- name: Analytical ADC calculation and native ANTs operation
+  command: |
+    set -eu
+    python - <<'PY'
+    from pathlib import Path
+    import tempfile,hashlib
+    import numpy as np
+    import nibabel as nib
+    import ants
+    from ads.services.preprocessing.adc_calculator import ADCCalculator
+    with tempfile.TemporaryDirectory(prefix='ads-adc-') as tmp:
+     root=Path(tmp);shape=(7,9,5)
+     expected=(np.arange(np.prod(shape)).reshape(shape)%3+1)*.0005
+     b0=np.full(shape,1000,dtype=np.float32);dwi=(b0*np.exp(-1000*expected)).astype(np.float32)
+     expected.flat[:9]=0;b0.flat[:9]=0;dwi.flat[:9]=0
+     affine=np.diag([.8,.9,2.5,1.]);affine[:3,3]=[-2.4,-3.6,-5.]
+     paths=[root/'dwi.nii.gz',root/'b0.nii.gz']
+     for p,data in zip(paths,[dwi,b0]):nib.save(nib.Nifti1Image(data,affine),p)
+     digest=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+     before=[digest(p) for p in paths]
+     out=root/'adc.nii.gz';ADCCalculator(bvalue=1000).compute_from_paths(*paths,out)
+     result=nib.load(out);actual=result.get_fdata()
+     assert result.shape==shape and np.isfinite(actual).all()
+     # Input storage, log and output storage use float32; eight eps covers their roundoff.
+     tolerance=8*np.finfo(np.float32).eps*float(expected.max())
+     np.testing.assert_allclose(actual,expected,rtol=0,atol=tolerance)
+     np.testing.assert_allclose(result.affine,affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(affine).max(),1))
+     assert [digest(p) for p in paths]==before
+     data=np.arange(np.prod(shape),dtype=np.float32).reshape(shape)
+     image=ants.from_numpy(data,spacing=(.8,.9,2.5),origin=(-2.4,-3.6,-5.))
+     same=ants.resample_image_to_target(image,image,interp_type='linear')
+     np.testing.assert_array_equal(same.numpy(),data)
+     assert same.spacing==image.spacing and same.origin==image.origin
+     print('Actual OpenADS315-voxel analytical ADC, serialized geometry and native ANTs identity verified')
+    PY
+  expected_exit_code: 0
+  expected_output_contains: "Actual OpenADS315-voxel analytical ADC"
+  timeout: 120
+- name: Complete public CPU DWI segmentation and reporting workflow
+  command: |
+    set -eu
+    python -u - <<'PY'
+    from pathlib import Path
+    import os,json,hashlib,subprocess,tempfile,time,signal
+    import numpy as np
+    import nibabel as nib
+    from PIL import Image
+    source=Path('/opt/openads');subject='sub-02e8eb42'
+    assets=sorted(p for p in (source/'assets').rglob('*') if p.is_file())
+    def digest(path):
+     h=hashlib.sha256()
+     with path.open('rb') as f:
+      for b in iter(lambda:f.read(1024*1024),b''):h.update(b)
+     return h.hexdigest()
+    before={str(p):digest(p) for p in assets}
+    with tempfile.TemporaryDirectory(prefix='openads-dwi-') as tmp:
+     root=Path(tmp);home=root/'home';home.mkdir()
+     env={**os.environ,'HOME':str(home),'MPLCONFIGDIR':str(root/'mpl'),'XDG_CACHE_HOME':str(root/'cache'),'ADS_CACHE_DIR':str(root/'cache/ads'),'OMP_NUM_THREADS':'2','MKL_NUM_THREADS':'2','ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS':'2','CUDA_VISIBLE_DEVICES':'','PYTHONUNBUFFERED':'1'}
+     log_path=root/'pipeline.log';start=time.monotonic()
+     with log_path.open('w') as log:
+      proc=subprocess.Popen(['ads','dwi','--subject-path',str(source/'assets/examples/dwi'/subject),'--all','--gpu','0','--output-root',str(root/'results')],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+      try:
+       while proc.poll() is None:
+        elapsed=time.monotonic()-start
+        if elapsed>10800:raise AssertionError('Full unchanged OpenADS DWI workflow exceeded3-hour CPU allowance')
+        print(f'Actual full DWI workflow still running after{elapsed:.0f}s',flush=True)
+        try:proc.wait(timeout=300)
+        except subprocess.TimeoutExpired:pass
+       log_text=log_path.read_text(errors='replace');tail='\n'.join(log_text.splitlines()[-120:])
+       assert proc.returncode==0,f'Public OpenADS DWI CLI failed{proc.returncode}:\n{tail}'
+       assert 'DWI Pipeline Finished Successfully' in log_text,tail
+      finally:
+       try:os.killpg(proc.pid,signal.SIGTERM)
+       except ProcessLookupError:pass
+       if proc.poll() is None:
+        try:proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+         os.killpg(proc.pid,signal.SIGKILL);proc.wait(timeout=10)
+     dwi_root=root/'results'/subject/'DWI';pp=dwi_root/'preprocess';reg=dwi_root/'registration';seg=dwi_root/'segment';rep=dwi_root/'reporting'
+     def image(path):
+      assert path.is_file(),f'Missing actual output{path}'
+      obj=nib.load(path);data=obj.get_fdata();assert np.isfinite(data).all(),path
+      return obj,data
+     original,raw=image(pp/f'{subject}_DWI.nii.gz');mask,brainmask=image(pp/f'{subject}_DWIbrain-mask.nii.gz');stripped,brain=image(pp/f'{subject}_DWI_brain.nii.gz')
+     assert brainmask.shape==raw.shape==brain.shape and np.isin(brainmask,[0,1]).all() and 0<brainmask.sum()<brainmask.size
+     np.testing.assert_allclose(mask.affine,original.affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(original.affine).max(),1))
+     np.testing.assert_allclose(stripped.affine,original.affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(original.affine).max(),1))
+     np.testing.assert_allclose(brain,raw*brainmask,rtol=4*np.finfo(np.float32).eps,atol=0)
+     pred,prediction=image(seg/f'{subject}_stroke-mask.nii.gz');mni,mni_prediction=image(seg/f'{subject}_stroke-mask_space-MNI152.nii.gz');reference,_=image(reg/f'{subject}_DWI_space-MNI152_aff.nii.gz')
+     for data in [prediction,mni_prediction]:assert np.isin(data,[0,1]).all() and 0<data.sum()<data.size
+     assert prediction.shape==raw.shape and mni_prediction.shape==reference.shape
+     np.testing.assert_allclose(pred.affine,original.affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(original.affine).max(),1))
+     np.testing.assert_allclose(mni.affine,reference.affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(reference.affine).max(),1))
+     metrics=json.loads((seg/f'{subject}_metrics.json').read_text())
+     for space,data,target_path in [('orig',prediction,pp/f'{subject}_stroke.nii.gz'),('mni',mni_prediction,reg/f'{subject}_stroke_space-MNI152_aff.nii.gz')]:
+      _,truth=image(target_path);assert truth.shape==data.shape
+      positive=data>.5;target=truth>.5;tp=int(np.count_nonzero(positive&target));fp=int(np.count_nonzero(positive&~target));fn=int(np.count_nonzero(~positive&target))
+      actual=metrics[space];assert actual['pred_volume']==int(positive.sum()) and actual['true_volume']==int(target.sum())
+      wanted={'dice':(2*tp+1e-6)/(2*tp+fp+fn+1e-6),'precision':(tp+1e-6)/(tp+fp+1e-6) if tp+fp else 1.,'sensitivity':(tp+1e-6)/(tp+fn+1e-6) if tp+fn else 1.,'sdr':1.}
+      for k,v in wanted.items():assert np.isfinite(actual[k]) and abs(actual[k]-v)<=8*np.finfo(np.float32).eps,(space,k,actual[k],v)
+     text=(rep/f'{subject}_automatic_radiological_report.txt').read_text()
+     assert len(text)>200 and 'Arterial territories affected' in text and 'Anatomical structures affected' in text
+     for name in [f'{subject}_DWIstroke.png',f'{subject}_DWIstroke_space-MNI152.png']:
+      with Image.open(rep/name) as obj:
+       pixels=np.asarray(obj.convert('RGB'));assert pixels.shape[0]>10 and pixels.shape[1]>10 and np.unique(pixels.reshape(-1,3),axis=0).shape[0]>=8
+     assert {str(p):digest(p) for p in assets}==before,'Bundled clinical images/models/atlases changed'
+     print(f'Actual OpenADS full CPU DWI preprocessing/SynthStrip/ANTs registration/trained DAGMNet/reporting workflow verified in{time.monotonic()-start:.1f}s; native lesion voxels{int(prediction.sum())}, all asset hashes unchanged')
+    PY
+  expected_exit_code: 0
+  expected_output_contains: "Actual OpenADS full CPU DWI"
+  timeout: 11000
