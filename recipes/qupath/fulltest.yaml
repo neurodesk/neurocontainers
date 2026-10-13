@@ -501,8 +501,8 @@ tests:
   # ERROR HANDLING
   # ==========================================================================
   - name: Invalid command error
-    description: Test error message for invalid command
-    command: QuPath invalidcommand 2>&1
+    description: Require an explicit parser diagnostic for an unknown script option; the top-level launcher otherwise starts the GUI
+    command: QuPath script --invalid-option 2>&1
     expected_exit_code: 0
     expected_output_contains: "An error has occurred"
 
@@ -820,9 +820,20 @@ tests:
       import qupath.lib.objects.PathObjects
       import qupath.lib.roi.ROIs
       import qupath.lib.regions.ImagePlane
+      import qupath.lib.projects.Projects
+      import qupath.lib.scripting.QP
+      import java.awt.image.BufferedImage
 
       def imageData=getCurrentImageData()
       assert imageData != null
+      def projectDir=new File(System.getenv('QUPATH_TEST_OUTPUT'),'cellpose-integration-project')
+      assert projectDir.isDirectory() || projectDir.mkdirs()
+      def project=Projects.createProject(projectDir,BufferedImage.class)
+      assert project != null
+      QP.setBatchProjectAndImage(project,imageData)
+      def entry=project.addImage(imageData.getServer().getBuilder())
+      entry.saveImageData(imageData)
+      project.syncChanges()
       setImageType('FLUORESCENCE')
       def server=imageData.getServer()
       assert server.getWidth()>0 && server.getHeight()>0
