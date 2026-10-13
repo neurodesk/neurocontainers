@@ -678,7 +678,7 @@ tests:
   # BATCH PROCESSING EXAMPLE
   # ==========================================================================
   - name: Generate batch script template
-    description: Test qMRgenBatch to create processing script
+    description: Verify model input and protocol metadata used by batch templates
     command: |
       octave --no-gui --eval "
         addpath(genpath('/opt/qmrlab'));
@@ -688,7 +688,8 @@ tests:
         disp('Batch generation test:');
         disp(['Model: ' class(Model)]);
         disp(['Required inputs: ' strjoin(Model.MRIinputs, ', ')]);
-        disp(['Protocol format: ' Model.Prot.IRData.Format{1}]);
+        assert(ischar(Model.Prot.IRData.Format) && strcmp(Model.Prot.IRData.Format, 'TI(ms)'));
+        disp(['Protocol format: ' Model.Prot.IRData.Format]);
       " 2>&1 | grep -E "^(Batch|Model:|Required|Protocol)"
     expected_output_contains: "Batch generation test"
     expected_exit_code: 0
