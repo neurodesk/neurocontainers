@@ -937,3 +937,31 @@ def test_registry_redirects_keep_the_head_method(code: int) -> None:
     )
 
     assert redirected.get_method() == "HEAD"
+
+
+@pytest.mark.parametrize("published", [False, True])
+def test_prepare_recipe_rejects_a_digest_pin_hidden_in_an_alias(
+    tmp_path: Path, published: bool
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    if published:
+        write_release_metadata(source_root, "demo", "2.10.0", "20261010")
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    params = (
+        "export version=2.10.0\n"
+        f"export pinned_image=vnmd/demo_2.10.0:20261009@{OLD_DIGEST}\n"
+        "export baseDockerImage=${pinned_image}\n"
+    )
+    (target / "params.sh").write_text(params, encoding="utf-8")
+
+    def resolve_digest(image_reference: str) -> str:
+        raise AssertionError("a stale tag must not be resolved")
+
+    with pytest.raises(RuntimeError, match="write the pinned reference directly"):
+        sync_openrecon.prepare_recipe(
+            source_root, openrecon_root, "demo", "2.10.0", resolve_digest=resolve_digest
+        )
+    assert (target / "params.sh").read_text(encoding="utf-8") == params

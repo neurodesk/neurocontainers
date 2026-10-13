@@ -521,6 +521,12 @@ def prepare_recipe(
                     f"image tag `{pinned_tag}` to the published `{build_date}`"
                 )
     pinned_digest = pinned_image_digest(updated_params)
+    expanded_image = literal_assignments(updated_params).get("baseDockerImage", "")
+    if pinned_digest is None and "@" in expanded_image:
+        raise RuntimeError(
+            f"Cannot refresh the digest of {expanded_image!r}; write the pinned "
+            "reference directly in baseDockerImage"
+        )
     if pinned_digest is not None:
         reference = pinned_image_reference(updated_params)
         expanded_date = reference.rpartition(":")[2].rsplit("_", 1)[-1]
