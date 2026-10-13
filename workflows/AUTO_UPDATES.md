@@ -459,5 +459,7 @@ a maintainer bumps it when a rebuild should install as a new scanner package.
 When `baseDockerImage` pins a digest (`name:tag@sha256:...`), the sync advances the
 dated tag and resolves the digest that the registry serves for the new tag. The
 reference must expand to a literal `name:tag` from `params.sh` assignments. When the
-digest cannot be resolved, the sync fails without opening a PR, so a stale digest is
-never kept and the pin is never silently dropped.
+release metadata or the digest cannot be resolved, the sync fails without opening a
+PR, so a stale digest is never kept and the pin is never silently dropped. The sync
+also refuses `params.sh` files that assign `version`, `openrecon_version` or
+`baseDockerImage` more than once, because it could not rewrite the effective value.

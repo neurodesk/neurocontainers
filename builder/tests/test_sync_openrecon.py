@@ -747,6 +747,10 @@ def test_pinned_image_reference_requires_a_resolvable_tag(image: str) -> None:
             "ubuntu:24.04",
             "https://registry-1.docker.io/v2/library/ubuntu/manifests/24.04",
         ),
+        (
+            "index.docker.io/ubuntu:24.04",
+            "https://registry-1.docker.io/v2/library/ubuntu/manifests/24.04",
+        ),
     ],
 )
 def test_resolve_image_digest_follows_the_registry_token_challenge(
@@ -780,7 +784,111 @@ def test_resolve_image_digest_follows_the_registry_token_challenge(
             raise urllib.error.HTTPError(request.full_url, 401, "", challenge, None)
         return Response(headers={"Docker-Content-Digest": NEW_DIGEST})
 
-    monkeypatch.setattr(sync_openrecon.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(sync_openrecon.REGISTRY_OPENER, "open", urlopen)
 
     assert sync_openrecon.resolve_image_digest(reference) == NEW_DIGEST
     assert requests == [(manifest_url, None), (manifest_url, "Bearer anonymous")]
+
+
+def test_prepare_recipe_requires_release_metadata_for_a_digest_pin(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    params = (
+        "export version=2.10.0\n"
+        f"export baseDockerImage=ghcr.io/neurodesk/demo_2.10.0:20261009@{OLD_DIGEST}\n"
+    )
+    (target / "params.sh").write_text(params, encoding="utf-8")
+
+    def resolve_digest(image_reference: str) -> str:
+        raise AssertionError("a stale tag must not be resolved")
+
+    with pytest.raises(RuntimeError, match="No release metadata"):
+        sync_openrecon.prepare_recipe(
+            source_root, openrecon_root, "demo", "2.10.0", resolve_digest=resolve_digest
+        )
+    assert sorted(path.name for path in target.iterdir()) == ["params.sh"]
+    assert (target / "params.sh").read_text(encoding="utf-8") == params
+
+
+@pytest.mark.parametrize(
+    "assignment",
+    [
+        "export baseDockerImage={image} # pinned",
+        "export baseDockerImage={image}  ",
+        'export baseDockerImage="{image}"',
+        "export baseDockerImage='{image}'",
+    ],
+)
+def test_digest_pin_is_refreshed_whatever_the_assignment_form(assignment: str) -> None:
+    image = f"ghcr.io/neurodesk/demo_2.10.0:20261009@{OLD_DIGEST}"
+    params = assignment.format(image=image) + "\n"
+
+    updated = sync_openrecon.update_params_image_digest(
+        sync_openrecon.update_params_image_tag(params, "20261010"), NEW_DIGEST
+    )
+
+    assert sync_openrecon.pinned_image_reference(updated) == (
+        "ghcr.io/neurodesk/demo_2.10.0:20261010"
+    )
+    assert updated == params.replace("20261009", "20261010").replace(
+        OLD_DIGEST, NEW_DIGEST
+    )
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        "export version=1.0.0\nexport version=2.0.0\n",
+        "export version=1.0.0\nexport openrecon_version=1.0.0\nopenrecon_version=2.9.0\n",
+        "export version=1.0.0\nexport baseDockerImage=a:1\nexport baseDockerImage=b:2\n",
+        "export version=1.0.0\nexport baseDockerImage=$(printf demo)\n",
+    ],
+)
+def test_update_params_version_rejects_assignments_it_cannot_rewrite(
+    params: str,
+) -> None:
+    with pytest.raises(RuntimeError):
+        sync_openrecon.update_params_version(params, "2.11.0")
+
+
+def test_resolve_image_digest_refuses_a_non_https_token_realm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import email.message
+    import urllib.error
+
+    def open_url(request, timeout):
+        assert not isinstance(request, str), "token realm must not be requested"
+        challenge = email.message.Message()
+        challenge["WWW-Authenticate"] = 'Bearer realm="http://127.0.0.1/token"'
+        raise urllib.error.HTTPError(request.full_url, 401, "", challenge, None)
+
+    monkeypatch.setattr(sync_openrecon.REGISTRY_OPENER, "open", open_url)
+
+    with pytest.raises(RuntimeError, match="Refusing registry token realm"):
+        sync_openrecon.resolve_image_digest("ghcr.io/neurodesk/demo:20261010")
+
+
+def test_registry_redirects_stay_on_https_without_leaking_tokens() -> None:
+    import urllib.request
+
+    handler = sync_openrecon.SameOriginHTTPSRedirectHandler()
+    request = urllib.request.Request(
+        "https://ghcr.io/v2/demo/manifests/1",
+        headers={"Authorization": "Bearer anonymous"},
+        method="HEAD",
+    )
+
+    with pytest.raises(RuntimeError, match="non-HTTPS"):
+        handler.redirect_request(
+            request, None, 307, "", {}, "http://ghcr.io/v2/demo/manifests/1"
+        )
+    redirected = handler.redirect_request(
+        request, None, 307, "", {}, "https://pkg.example/v2/demo/manifests/1"
+    )
+    assert redirected.get_header("Authorization") is None
