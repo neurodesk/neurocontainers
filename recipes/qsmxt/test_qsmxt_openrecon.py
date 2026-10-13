@@ -1885,6 +1885,22 @@ def test_ep3d_dual_polarity_rejects_a_single_repetition(tmp_path):
         )
 
 
+def test_ep3d_dual_polarity_rejects_mismatched_repetitions(tmp_path):
+    images = _dual_polarity_images()
+    for image in images:
+        header = image.getHead()
+        if image.image_type == ismrmrd.IMTYPE_MAGNITUDE and header.repetition == 3:
+            header.repetition = 4
+            image.setHead(header)
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"ep3ddualpolarity": "true"}},
+        FakeMetadata(),
+    )
+
+    with pytest.raises(ValueError, match="keys differ"):
+        qsmxt.write_bids_dataset(images, FakeMetadata(), tmp_path / "bids", settings)
+
+
 @pytest.mark.parametrize(
     ("counts", "expected"),
     [

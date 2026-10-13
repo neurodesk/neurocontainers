@@ -616,13 +616,13 @@ def _ep3d_dual_polarity_average(magnitude_images, phase_images, work_dir, settin
     Returns the first repetition as the single echo group that supplies echo
     time and output geometry, plus the averaged (magnitude, phase, affine).
     """
-    magnitude_volumes = _repetition_image_groups(magnitude_images)
-    phase_volumes = _repetition_image_groups(phase_images)
-    if len(magnitude_volumes) != len(phase_volumes):
+    magnitude_keys, magnitude_volumes = _repetition_image_groups(magnitude_images)
+    phase_keys, phase_volumes = _repetition_image_groups(phase_images)
+    if magnitude_keys != phase_keys:
         raise ValueError(
             "3D EPI dual polarity QSM needs one phase volume per magnitude "
-            f"volume; got {len(magnitude_volumes)} magnitude and "
-            f"{len(phase_volumes)} phase"
+            "volume; (repetition, set, average) keys differ: "
+            f"magnitude={magnitude_keys} phase={phase_keys}"
         )
     if len(magnitude_volumes) < 2:
         raise ValueError(
@@ -691,7 +691,8 @@ def _repetition_image_groups(images):
         )
 
     ordered = sorted(images, key=lambda image: (volume_key(image), _image_sort_key(image)))
-    return _group_images_by_ordered_key(ordered, [volume_key(image) for image in ordered])
+    keys = [volume_key(image) for image in ordered]
+    return sorted(set(keys)), _group_images_by_ordered_key(ordered, keys)
 
 
 def _phase_to_radians(phase_volume, phase_wrap):
