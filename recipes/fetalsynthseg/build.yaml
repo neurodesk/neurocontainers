@@ -7,9 +7,11 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 variables:
   base_image_digest: sha256:380b4ce81cb13f67ce8a09391e557f964eb6b1befbdbb405dd8e08dc474c620f
+  source_commit: 03c439edef02fc830e31a38169c5aa09ca98eeb4
 
 auto_update:
   container_version: false
@@ -21,24 +23,52 @@ auto_update:
       tag: latest
       target:
         variable: base_image_digest
+    - id: upstream
+      method: github_commit
+      repo: Medical-Image-Analysis-Laboratory/FetalSynthSeg
+      ref: HEAD
+      target:
+        variable: source_commit
+        fulltest_variable: source_commit
+    - id: source_archive_digest
+      dependency: true
+      method: http_digest
+      url: https://github.com/Medical-Image-Analysis-Laboratory/FetalSynthSeg/archive/{{ context.source_commit }}.tar.gz
+      target:
+        file: fetalsynthseg_source
 
 build:
   kind: neurodocker
-  base-image: vzalevskyi/fetalsynthseg:latest@{{ context.base_image_digest }}
+  base-image: >-
+    {%- if arch == "x86_64" -%}
+    vzalevskyi/fetalsynthseg:latest@{{ context.base_image_digest }}
+    {%- else -%}
+    python:3.10-slim-bookworm
+    {%- endif -%}
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false
 
   directives:
+    - condition: arch == "aarch64"
+      install:
+        - ca-certificates
+        - libgomp1
+
+    - workdir: /opt/fetalsynthseg
+
     - run:
-        # Locate the bundled inference script at build time and expose it as a
-        # stable `fetalsynthseg` launcher (see files: below for the logic). If
-        # the code lives under /home (masked at runtime in Neurodesk) it is
-        # copied into /opt first.
-        - bash {{ get_file("setup_fetalsynthseg.sh") }}
+        - mkdir -p /opt/fetalsynthseg
+        - tar -xzf {{ get_file("fetalsynthseg_source") }} -C /opt/fetalsynthseg --strip-components=1
+        - python -m pip install --no-cache-dir -r requirements.txt
+        - mkdir -p weights
+        - install -m 0644 {{ get_file("fss_weights") }} weights/KISPI-all_fss.ckpt
+        - install -m 0755 {{ get_file("fss_arm64_launcher") }} /opt/fetalsynthseg/fetalsynthseg
 
     - environment:
         PATH: /opt/fetalsynthseg:$PATH
+        PYTHONPATH: /opt/fetalsynthseg
+        MPLCONFIGDIR: /tmp/fetalsynthseg-mpl
 
     - deploy:
         path:
@@ -47,32 +77,18 @@ build:
           - fetalsynthseg
 
 files:
-  - name: setup_fetalsynthseg.sh
+  - name: fetalsynthseg_source
+    url: https://github.com/Medical-Image-Analysis-Laboratory/FetalSynthSeg/archive/{{ context.source_commit }}.tar.gz
+    sha256: 830229f658aebc84404ea0ab2df1f5c8c3e4306965c1a7b2925f7aac76f6442e
+  - name: fss_weights
+    url: https://drive.usercontent.google.com/download?id=1zCHN8OS2gSmVPF_S408BOqDxFbZqEHKb&export=download&confirm=t
+    sha256: d991edbb1295797f59973867ec3724ba6ebaddb44387f09da38bc5ab98b2fe52
+  - name: fss_arm64_launcher
     contents: |
       #!/usr/bin/env bash
-      # Expose the FetalSynthSeg inference script (predict.py) as a stable
-      # `fetalsynthseg` launcher, relocating it out of /home if necessary.
       set -e
-      mkdir -p /opt/fetalsynthseg
-      PREDICT="$(find / -maxdepth 6 -name predict.py 2>/dev/null | head -n1)"
-      if [ -z "$PREDICT" ]; then
-        echo "ERROR: predict.py not found in image" >&2
-        exit 1
-      fi
-      WD="$(dirname "$PREDICT")"
-      case "$WD" in
-        /home/*)
-          cp -a "$WD" /opt/fetalsynthseg/app
-          WD=/opt/fetalsynthseg/app
-          ;;
-      esac
-      cat > /opt/fetalsynthseg/fetalsynthseg <<EOF
-      #!/usr/bin/env bash
-      cd "$WD"
-      exec python3 predict.py "\$@"
-      EOF
-      chmod +x /opt/fetalsynthseg/fetalsynthseg
-
+      cd /opt/fetalsynthseg
+      exec python3 src/scripts/inference.py "$@"
 structured_readme:
   description: >-
     FetalSynthSeg is a deep-learning fetal brain MRI tissue segmentation tool
@@ -85,7 +101,7 @@ structured_readme:
     is possible but slow. Licensed for academic non-commercial research only.
   example: |-
     # Segment a reconstructed fetal brain volume
-    fetalsynthseg --model MODEL --input /data/recon.nii.gz --output /data --gpu
+    fetalsynthseg --input /data/recon.nii.gz --output /data/recon_dseg.nii.gz
   documentation: https://github.com/Medical-Image-Analysis-Laboratory/FetalSynthSeg
   citation: >-
     Zalevskyi, V., Sanchez, T., Roulet, M., Aviles Verdera, J., Hutter, J.,
