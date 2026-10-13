@@ -1,7 +1,7 @@
 package_version: 0.6.4-1
 name: sigviewer
 version: 0.6.4
-environment:
+env:
   QT_QPA_PLATFORM: offscreen
 test_data:
   edf_file: test_data/sample.edf
@@ -83,6 +83,12 @@ setup:
                         found.append((wid, title, "_NET_WM_WINDOW_TYPE_DIALOG" in kind))
                     return found
 
+                def press(window, key):
+                    # Send both key events to X's focused window. A modal dialog can
+                    # disappear on keydown, so targeting its ID on keyup races deletion.
+                    subprocess.run(["xdotool", "windowfocus", "--sync", window[0]], check=True)
+                    subprocess.run(["xdotool", "key", "--clearmodifiers", key], check=True)
+
                 def wait_for(predicate):
                     deadline = time.monotonic() + 15
                     while time.monotonic() < deadline:
@@ -96,14 +102,22 @@ setup:
                 if mode == "open":
                     assert Path(file_path).is_file() and Path(file_path).stat().st_size > 0
                     input_hash = hashlib.sha256(Path(file_path).read_bytes()).hexdigest()
-                    dialog = wait_for(lambda item: item[1] == "Select Channels" and item[2])
-                    subprocess.run(["xdotool", "key", "--window", dialog[0], "Return"], check=True)
+                    # Command-line files use openFileImpl(instantly=true): all channels
+                    # load directly. XDF can first request its documented resampling.
                     expected_title = Path(file_path).name + " - SigViewer"
-                    window = wait_for(lambda item: item[1] == expected_title and not item[2])
+                    state = wait_for(lambda item: (item[1] == expected_title and not item[2])
+                                     or (Path(file_path).suffix == ".xdf"
+                                         and item[1] == "Resampling" and item[2]))
+                    if state[2]:
+                        press(state, "Return")
+                        window = wait_for(lambda item: item[1] == expected_title and not item[2])
+                    else:
+                        window = state
+                    assert not any(item[2] for item in windows()), windows()
                 elif mode == "reject":
                     dialog = wait_for(lambda item: item[2])
                     assert dialog[1] != "Select Channels", ("Invalid input was accepted", dialog)
-                    subprocess.run(["xdotool", "key", "--window", dialog[0], "Return"], check=True)
+                    press(dialog, "Return")
                     window = wait_for(lambda item: item[1] == "SigViewer" and not item[2])
                 elif mode == "startup":
                     window = wait_for(lambda item: item[1] == "SigViewer" and not item[2])
@@ -114,7 +128,7 @@ setup:
                 for field in ("WIDTH", "HEIGHT"):
                     match = re.search(r"^" + field + r"=(\d+)$", geometry, re.MULTILINE)
                     assert match and int(match[1]) > 0, geometry
-                subprocess.run(["xdotool", "key", "--window", window[0], "ctrl+q"], check=True)
+                press(window, "ctrl+q")
                 assert proc.wait(timeout=10) == 0, log_path.read_text()
                 if mode == "open":
                     assert hashlib.sha256(Path(file_path).read_bytes()).hexdigest() == input_hash

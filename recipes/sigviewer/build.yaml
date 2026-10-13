@@ -38,7 +38,7 @@ auto_update:
   - id: sigviewer-xdf
     dependency: true
     method: http_digest
-    url: https://raw.githubusercontent.com/xdf-modules/example-files/354bfe26c92cfac8d1f0454dbe046721df043153/minimal.xdf
+    url: https://raw.githubusercontent.com/sccn/xdf/3af6e43702d433f28fa399fc3a0d14350bf310cd/xdf_sample.xdf
     target:
       file: sigviewer_xdf
 
@@ -82,8 +82,8 @@ files:
   url: https://raw.githubusercontent.com/EEGKit/biosig/15e7caaa1c2b199bac11e333543617e074ee79bc/biosig/t310_ERDSMaps/sample.gdf
   sha256: ec71e5eab48c217fb40a4f0dc41657f25701071e36e1d41d9b7bc434b4beae4f
 - name: sigviewer_xdf
-  url: https://raw.githubusercontent.com/xdf-modules/example-files/354bfe26c92cfac8d1f0454dbe046721df043153/minimal.xdf
-  sha256: cd1b4f2171b1b165b17528c75131bd912c9bee209182b60d8cc07f4cb63fccea
+  url: https://raw.githubusercontent.com/sccn/xdf/3af6e43702d433f28fa399fc3a0d14350bf310cd/xdf_sample.xdf
+  sha256: 8f4db09c7325f86d5cce0de1481d98795ee0f67f577bfcb821e02c6b51532155
 
 deploy:
   bins:
