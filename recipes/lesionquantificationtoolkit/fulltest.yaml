@@ -312,8 +312,11 @@ tests:
       parcels <- oro.nifti::nifti(array(rep(1:4, each=2), dim=c(8,6,4)))
       parcels@sform_code <- 1L; parcels@qform_code <- 0L
       parcels@srow_x <- c(1,0,0,-4); parcels@srow_y <- c(0,1,0,-3); parcels@srow_z <- c(0,0,1,-2)
-      lesion <- parcels; lesion[] <- 0
-      lesion[1:2,,] <- 1; lesion[3:4,1:3,] <- 1; lesion[5:6,1:3,1:2] <- 1
+      lesion_data <- array(0,dim=c(8,6,4))
+      lesion_data[1:2,,] <- 1; lesion_data[3:4,1:3,] <- 1; lesion_data[5:6,1:3,1:2] <- 1
+      lesion <- oro.nifti::nifti(lesion_data)
+      lesion@sform_code <- parcels@sform_code; lesion@qform_code <- parcels@qform_code
+      lesion@srow_x <- parcels@srow_x; lesion@srow_y <- parcels@srow_y; lesion@srow_z <- parcels@srow_z
       lp <- file.path(root,'lesion.nii.gz'); pp <- file.path(root,'parcels.nii.gz')
       writenii(lesion,lp); writenii(parcels,pp)
       before <- tools::md5sum(c(lp,pp))
