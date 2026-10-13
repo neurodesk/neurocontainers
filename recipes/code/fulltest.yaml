@@ -960,8 +960,9 @@ tests:
       import time
       from PIL import Image
 
-      with tempfile.TemporaryDirectory(dir=Path('${output_dir}').resolve()) as directory:
+      with tempfile.TemporaryDirectory(prefix='code-gui-',dir='/tmp') as directory:
           root=Path(directory);home=root/'home';home.mkdir();runtime=root/'runtime';runtime.mkdir(mode=0o700)
+          assert len(os.fsencode(str(runtime)))<50, 'Keep editor Unix sockets below the Linux107-byte pathname limit'
           source=root/'neurocontainers-proof.py';source.write_text('values = [1, 2, 3, 4, 5]\nassert sum(values) == 15\nprint("Native ARM and x86 editor proof")\n')
           original=hashlib.sha256(source.read_bytes()).hexdigest()
           env=os.environ.copy();env.update(HOME=str(home),XDG_RUNTIME_DIR=str(runtime),XDG_CACHE_HOME=str(home/'.cache'),XDG_CONFIG_HOME=str(home/'.config'))
