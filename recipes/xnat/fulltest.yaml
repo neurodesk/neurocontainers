@@ -694,9 +694,29 @@ tests:
               finally:
                   try: os.killpg(process.pid,signal.SIGTERM)
                   except ProcessLookupError: pass
-                  try: process.wait(timeout=15)
-                  except subprocess.TimeoutExpired:
-                      os.killpg(process.pid,signal.SIGKILL);process.wait(timeout=10)
+                  # The launcher can exit before its JVM finishes shutdown.
+                  # Wait for the entire owned group, then kill remaining members.
+                  def live_group():
+                      members=[]
+                      for entry in Path('/proc').iterdir():
+                          if not entry.name.isdigit(): continue
+                          try: fields=(entry/'stat').read_text().rsplit(') ',1)[1].split()
+                          except (OSError,IndexError): continue
+                          if int(fields[2])==process.pid and fields[0]!='Z': members.append(int(entry.name))
+                      return members
+                  deadline=time.monotonic()+15
+                  while live_group() and time.monotonic()<deadline:
+                      process.poll()
+                      time.sleep(.25)
+                  if live_group():
+                      try: os.killpg(process.pid,signal.SIGKILL)
+                      except ProcessLookupError: pass
+                  deadline=time.monotonic()+10
+                  while live_group() and time.monotonic()<deadline:
+                      process.poll()
+                      time.sleep(.25)
+                  process.wait(timeout=5)
+                  assert not live_group(), ('Owned service processes survived cleanup',live_group())
       PYTHON
 
 cleanup:
