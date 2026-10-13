@@ -1,0 +1,32 @@
+{
+  "apps": {
+    "napari_arm64 0.9.2": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "napari GUI-napari_arm64 0.9.2": {
+      "version": "20261013",
+      "exec": "napari",
+      "apptainer_args": []
+    },
+    "VoxTell-napari_arm64 0.9.2": {
+      "version": "20261013",
+      "exec": "napari-voxtell",
+      "apptainer_args": []
+    },
+    "nnInteractive-napari_arm64 0.9.2": {
+      "version": "20261013",
+      "exec": "napari-nninteractive",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "image segmentation",
+    "machine learning"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "napari"
+}
