@@ -42,7 +42,7 @@ variables:
       condition: arch=="x86_64"
     - value: strace_aarch64
       condition: arch=="aarch64"
-  neurocommand_commit: "bc789a389c60ccc8a7d5835bacff26daf9d9d1b3"
+  neurocommand_commit: "5e13a89bf48b8b4344b370e402a4a3482f31e69c"
   nf_neuro_commit: "c2909599fbf995031dbeb70d2d7f0f62f9238064"
   jupyterlab_slurm_commit: "8dccb39808f8a1b77712a9a5773a7d2601a56683"
   yarn_version: "1.22.22"
@@ -50,7 +50,7 @@ variables:
   codex_version: "0.162.1"
   claude_version: "2.1.296"
   opencode_version: "1.19.0"
-  nextflow_tag: "v26.04.7"
+  nextflow_tag: "v26.10.0"
   nf_test_version: 0.9.5
   datalad_version: "1.7.1"
   nipype_version: 1.12.0
@@ -87,7 +87,7 @@ variables:
   pytest_version: 9.1.1
   requests_version: 2.34.2
   chardet_version: 5.2.0
-  base_digest: "sha256:9a1e1e8f6042ccb397e1f422b8574bf468bc6c00860e7f21c6899d08cc8c7b6b"
+  base_digest: "sha256:3fc2b8023bb7e3f11a09bd77aa07575c1ece16a0b9b64556757e34c52f667a1a"
   go_version: "1.27.2"
   go_arch:
     try:
