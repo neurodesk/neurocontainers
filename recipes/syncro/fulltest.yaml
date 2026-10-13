@@ -17,6 +17,8 @@
 
 name: syncro
 version: "0.2.0"
+numpy_version: 1.26.4
+tensorflow_version: 2.21.0
 arm_torch_version: 2.1.2
 arm_antspyx_version: 0.5.4
 synthstrip_script_sha256: fa18eb301568dc7c99bd9f69805545a7ce6d68e3fa3e1775c68053c9069cc4a1
@@ -416,7 +418,7 @@ tests:
       import hashlib,platform,shutil,subprocess
       from importlib.metadata import version
       import torch,tensorflow as tf,numpy as np,ants,surfa
-      assert version('numpy')=='1.26.4' and version('tensorflow')=='2.21.0'
+      assert version('numpy')=='${numpy_version}' and version('tensorflow')=='${tensorflow_version}'
       assert not torch.cuda.is_available()
       assert torch.ones(9,device='cpu').sum().item()==9
       with tf.device('/CPU:0'):

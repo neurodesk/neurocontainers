@@ -42,12 +42,14 @@ auto_update:
     version_regex: '^(?P<version>1[.][0-9]+[.][0-9]+)$'
     target:
       variable: numpy_version
+      fulltest_variable: numpy_version
   - id: tensorflow
     dependency: true
     method: pypi
     package: tensorflow
     target:
       variable: tensorflow_version
+      fulltest_variable: tensorflow_version
   - id: synthsr_commit
     method: github_commit
     repo: neurolabusc/py_synthsr
