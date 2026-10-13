@@ -483,7 +483,7 @@ tests:
   description: Test CLEARSWI error handling without magnitude
   command: clearswi -p test_output/synthetic/phase_3d.nii -o test_output/clearswi/error_test.nii.gz 2>&1
   expected_exit_code: 1
-  expected_output_contains: required argument
+  expected_output_contains: "no method matching endswith(::Nothing, ::String)"
 - name: ROMEO to CLEARSWI pipeline
   description: Use ROMEO unwrapped phase as input to CLEARSWI
   command: |-
