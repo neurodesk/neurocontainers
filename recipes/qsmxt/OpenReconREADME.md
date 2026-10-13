@@ -8,7 +8,7 @@ The package supports single-echo and multi-echo data, a choice of reconstruction
 
 Use a plain gradient-echo (GRE) sequence with both magnitude and **unfiltered phase** reconstruction enabled. Filtered phase from an SWI sequence is not a suitable input. Magnitude and phase images must have matching echoes and the same distortion-correction setting.
 
-An [example Siemens 3 T GRE protocol](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/gre_qsm.pro) is available as a starting point. It acquires five echoes at 5, 10, 15, 20, and 25 ms. Review the acquisition and safety settings on your scanner before use. The example saves Robust threshold masking instead of the package default BET mask. Check the OpenRecon mask controls after loading it.
+An [example Siemens 3 T GRE protocol](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/gre_qsm.pro) is available as a starting point. It acquires five echoes at 5, 10, 15, 20, and 25 ms. Review the acquisition and safety settings on your scanner before use. The example saves WH-QSM, HARPERELLA, and Robust threshold masking instead of the package defaults RTS, V-SHARP, and BET. Check the OpenRecon algorithm and mask controls after loading it.
 
 ## Run a reconstruction
 
@@ -16,7 +16,7 @@ With the QSMxT package installed in OpenRecon:
 
 1. Select **qsmxt** as the reconstruction package. Leave **config** set to **standard GRE**.
 2. Set **Input images** to match your acquisition. The default is **Distortion corrected**.
-3. For an initial reconstruction, leave **Pipeline preset** on **Custom algorithm controls** with **QSM algorithm** set to **WH-QSM**, **Unwrap** to **ROMEO**, and **Background** to **HARPERELLA**.
+3. For an initial reconstruction, leave **Pipeline preset** on **Custom algorithm controls** with **QSM algorithm** set to **RTS**, **Unwrap** to **ROMEO**, and **Background** to **V-SHARP**.
 4. Leave **Mask preset** on **BET (recommended)** to identify the brain from the magnitude image.
 5. Leave **Output maps** on **QSM**. The source magnitude and phase series are always returned to the scanner database.
 6. Run the acquisition with OpenRecon enabled. When reconstruction finishes, look for the **QSMxT QSM** series alongside the original images.
@@ -33,7 +33,7 @@ With the QSMxT package installed in OpenRecon:
 
 **Both** returns separate `DC` and `ND` result series and takes roughly twice as long as processing one pair. If reconstruction reports missing input images, check that both magnitude and unfiltered phase are available for the selected correction setting.
 
-For clearQsm GRE acquisitions, the adapter selects the matching `Aspire_M` and `Aspire_P` source series. It excludes the accompanying ROMEO mask, unwrapped phase, B0 map, sensitivity-corrected magnitude, and CLEAR-SWI products from QSM input. All received series still return as originals. If several complete source pairs remain, reconstruction reports an ambiguity instead of choosing by arrival order. Selected magnitude and phase must have matching echoes and voxel geometry.
+For clearQsm GRE acquisitions, the adapter selects the matching `Aspire_M` and `Aspire_P` source series. It excludes the accompanying ROMEO mask, unwrapped phase, B0 map, sensitivity-corrected magnitude, and CLEAR-SWI products from QSM input. These processed companions are also excluded from original image return. Genuine magnitude and phase sources return with their pixels, voxel geometry, and echo identities preserved, including both DC and ND sources when only one variant is reconstructed. If several complete source pairs remain, reconstruction reports an ambiguity instead of choosing by arrival order. Selected magnitude and phase must have matching echoes and voxel geometry.
 
 ## Process dual-polarity 3D EPI data
 
@@ -96,11 +96,11 @@ Use **Pipeline preset** to choose a predefined combination of processing methods
 A preset overrides **QSM algorithm**, **Unwrap**, and **Background**. To choose those stages yourself, select **Custom algorithm controls**:
 
 - **Unwrap** removes phase jumps. The OpenRecon default is ROMEO.
-- **Background** removes background-field contributions. The default is HARPERELLA.
-- **QSM algorithm** calculates susceptibility. The default is WH-QSM.
+- **Background** removes background-field contributions. The default is V-SHARP.
+- **QSM algorithm** calculates susceptibility. The default is RTS.
 
-With **Custom algorithm controls**, **Default (WH-QSM)** uses WH-QSM, **Default (ROMEO)** uses
-ROMEO, and **Default (HARPERELLA)** uses HARPERELLA. Any other **Pipeline preset** overrides all three
+With **Custom algorithm controls**, **Default (RTS)** uses RTS, **Default (ROMEO)** uses
+ROMEO, and **Default (V-SHARP)** uses V-SHARP. Any other **Pipeline preset** overrides all three
 choices, even if you change their displayed values. Reconstruction time and results depend on
 the method, acquisition, and available hardware. See the [QSMxT algorithm
 reference](https://qsmxt.github.io/QSMxT/reference/algorithms/) for descriptions of the

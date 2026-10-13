@@ -34,7 +34,8 @@ series names. When several candidates remain, the wrapper selects a pair only
 if their normalized source family identifies exactly one magnitude and phase
 match. For example, `Aspire_M` and `Aspire_P` share the `Aspire` family.
 Multiple complete families or duplicate candidates fail with an ambiguity.
-Original passthrough still includes every received series.
+Original passthrough applies the same processed-series exclusions and retains
+all genuine sources, including correction variants not selected for QSM.
 
 Before applying `maxechoes`, the BIDS writer requires equal echo counts and
 checks source echo identities when both components provide them. It aligns
@@ -59,9 +60,15 @@ the MRD image stream.
 
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
 QSMxT derivatives that exist after the run. The original magnitude and phase
-series are always sent back before the derived output. There is no
-`sendoriginal` control; an older configuration containing that key cannot
-disable original image return.
+source series are sent back before the derived output, including unselected DC
+and ND variants. The same source-name filter excludes ROMEO phase, mask, and B0,
+sensitivity-corrected magnitude, CLEAR-SWI, and CLEAR-SWI mIP companions from
+both reconstruction input and original image return. Original pixels, physical
+geometry, and echo identities are preserved while return series and instance
+identities are reassigned. All incoming series identities remain reserved,
+including excluded companions. Original metadata validation remains strict for
+eligible sources. There is no `sendoriginal` control; an older configuration
+containing that key cannot disable original image return.
 
 Derived outputs are converted to unsigned 12-bit display values in the valid
 `0..4095` range. Binary masks use `0` and `4095`. QSM storage scaling preserves

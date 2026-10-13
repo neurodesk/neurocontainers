@@ -129,7 +129,7 @@
       "label": { "en": "QSM algorithm" },
       "type": "choice",
       "values": [
-        { "id": "default", "name": { "en": "Default (WH-QSM)" } },
+        { "id": "default", "name": { "en": "Default (RTS)" } },
         { "id": "whqsm", "name": { "en": "WH-QSM" } },
         { "id": "hdqsm", "name": { "en": "HD-QSM" } },
         { "id": "rts", "name": { "en": "RTS" } },
@@ -162,8 +162,8 @@
         { "id": "iqsm", "name": { "en": "iQSM" } },
         { "id": "iqsm-plus", "name": { "en": "iQSM+" } }
       ],
-      "default": "whqsm",
-      "information": { "en": "Used only with the Custom pipeline preset. Default uses WH-QSM. Any other Pipeline preset overrides this choice." }
+      "default": "rts",
+      "information": { "en": "Used only with the Custom pipeline preset. Default uses RTS. Any other Pipeline preset overrides this choice." }
     },
     {
       "id": "unwrappingalgorithm",
@@ -182,7 +182,7 @@
       "label": { "en": "Background" },
       "type": "choice",
       "values": [
-        { "id": "default", "name": { "en": "Default (HARPERELLA)" } },
+        { "id": "default", "name": { "en": "Default (V-SHARP)" } },
         { "id": "vsharp", "name": { "en": "V-SHARP" } },
         { "id": "pdf", "name": { "en": "PDF" } },
         { "id": "lbv", "name": { "en": "LBV" } },
@@ -194,8 +194,8 @@
         { "id": "bfrnet", "name": { "en": "BFRnet" } },
         { "id": "iqfm", "name": { "en": "iQFM" } }
       ],
-      "default": "harperella",
-      "information": { "en": "Used only with the Custom pipeline preset. Default uses HARPERELLA. Any other Pipeline preset overrides this choice." }
+      "default": "vsharp",
+      "information": { "en": "Used only with the Custom pipeline preset. Default uses V-SHARP. Any other Pipeline preset overrides this choice." }
     },
     {
       "id": "maskpreset",

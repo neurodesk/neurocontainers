@@ -298,9 +298,9 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
             if nprocs_index + 1 >= len(sys.argv) or sys.argv[nprocs_index + 1] != "24":
                 raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
             for flag, expected in (
-                ("--qsm-algorithm", "whqsm"),
+                ("--qsm-algorithm", "rts"),
                 ("--unwrapping-algorithm", "romeo"),
-                ("--bf-algorithm", "harperella"),
+                ("--bf-algorithm", "vsharp"),
             ):
                 try:
                     flag_index = sys.argv.index(flag)
@@ -326,15 +326,15 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
     return fake
 
 
-def test_openrecon_defaults_select_whqsm_romeo_and_harperella():
+def test_openrecon_defaults_select_rts_romeo_and_vsharp():
     assert qsmxt.QSMXT_DERIVATIVE_ROOT == Path("derivatives/qsmxt")
 
     settings = qsmxt._settings_from_config({}, FakeMetadata())
 
     assert settings["pipeline_preset"] == "custom"
-    assert settings["qsm_algorithm"] == "whqsm"
+    assert settings["qsm_algorithm"] == "rts"
     assert settings["unwrapping_algorithm"] == "romeo"
-    assert settings["bf_algorithm"] == "harperella"
+    assert settings["bf_algorithm"] == "vsharp"
     assert settings["mask_preset"] == "bet"
     assert settings["masking_input"] == "magnitude"
     assert settings["bet_fractional_intensity"] == 0.5
@@ -639,9 +639,22 @@ def test_write_bids_dataset_aligns_source_echo_identities(tmp_path, identity_nam
         np.testing.assert_array_equal(nib.load(str(phase_path)).get_fdata(), 2000 + echo)
 
 
-def test_process_clearqsm_products_preserves_all_original_series(tmp_path, monkeypatch):
+@pytest.mark.parametrize("corrected_suffix", ["", "_DC"])
+def test_process_clearqsm_products_returns_only_genuine_original_series(
+    tmp_path, monkeypatch, corrected_suffix,
+):
     monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
-    connection = FakeConnection(_clearqsm_input_images())
+    images = []
+    for suffix, series_offset in ((corrected_suffix, 0), ("_ND", 10)):
+        for image in _clearqsm_input_images():
+            header = image.getHead()
+            header.image_series_index += series_offset
+            image.setHead(header)
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            meta["SequenceDescription"] += suffix
+            image.attribute_string = meta.serialize()
+            images.append(image)
+    connection = FakeConnection(images)
 
     qsmxt.process(
         connection,
@@ -651,17 +664,84 @@ def test_process_clearqsm_products_preserves_all_original_series(tmp_path, monke
 
     assert connection.closed is True
     assert connection.logs == []
-    assert len(connection.sent_batches) == 9
+    assert len(connection.sent_batches) == 5
+    expected_names = {
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_M" + corrected_suffix,
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_P" + corrected_suffix,
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_M_ND",
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_P_ND",
+    }
+    sources = {
+        (meta["SequenceDescription"], meta["EchoNumber"]): image
+        for image in images
+        for meta in [ismrmrd.Meta.deserialize(image.attribute_string)]
+        if meta["SequenceDescription"] in expected_names
+    }
     originals = [image for batch in connection.sent_batches[:-1] for image in batch]
-    assert len(originals) == len(connection.images)
-    for original, source in zip(originals, connection.images):
-        np.testing.assert_array_equal(original.data, source.data)
+    assert len(originals) == 20
+    returned_keys = set()
+    for original in originals:
         meta = ismrmrd.Meta.deserialize(original.attribute_string)
-        assert meta["SeriesDescription"] == qsmxt._source_series_name(source) + "_original"
+        assert meta["SeriesDescription"].endswith("_original")
+        key = (meta["SeriesDescription"].removesuffix("_original"), meta["EchoNumber"])
+        returned_keys.add(key)
+        source = sources[key]
+        np.testing.assert_array_equal(original.data, source.data)
+        for field in ("matrix_size", "field_of_view", "position", "read_dir", "phase_dir", "slice_dir"):
+            np.testing.assert_array_equal(
+                getattr(original.getHead(), field), getattr(source.getHead(), field),
+            )
+        assert original.getHead().contrast == source.getHead().contrast
+    assert returned_keys == set(sources)
     assert len(connection.sent_batches[-1]) == 2
     for image in connection.sent_batches[-1]:
         meta = ismrmrd.Meta.deserialize(image.attribute_string)
         assert meta["QSMxTOutput"] == "qsm"
+        assert np.count_nonzero(image.data) == image.data.size
+
+
+@pytest.mark.parametrize("companion_name", ["gre_Romeo_Mask", "gre_other_M"])
+def test_process_rejects_invalid_original_metadata_only_for_genuine_sources(
+    tmp_path, monkeypatch, companion_name,
+):
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    companion = _image(
+        100, 1, companion_name, np.ones((2, 3, 4)),
+        meta_values={"SliceNo": "2", "NumberOfSlices": "2"},
+    )
+    connection = FakeConnection(_input_images() + [companion])
+
+    qsmxt.process(
+        connection,
+        {"parameters": {"qsmxtbinary": str(_fake_qsmxt_binary(tmp_path))}},
+        FakeMetadata(),
+    )
+
+    assert connection.closed is True
+    if companion_name == "gre_other_M":
+        assert connection.sent_batches == []
+        assert len(connection.logs) == 1
+        assert "Invalid qsmxt original passthrough contract" in connection.logs[0][1]
+        assert "SliceNo 2 outside [0..2)" in connection.logs[0][1]
+        return
+
+    assert connection.logs == []
+    assert len(connection.sent_batches) == 3
+    originals = [image for batch in connection.sent_batches[:-1] for image in batch]
+    assert len(originals) == 4
+    assert {
+        ismrmrd.Meta.deserialize(image.attribute_string)["SeriesDescription"]
+        for image in originals
+    } == {"gre_qsm_original", "gre_qsm_Pha_original"}
+    for original, source in zip(originals, connection.images[:4]):
+        np.testing.assert_array_equal(original.data, source.data)
+    assert {int(image.getHead().image_series_index) for image in originals}.isdisjoint(
+        {1, 2, 100},
+    )
+    assert len(connection.sent_batches[-1]) == 2
+    for image in connection.sent_batches[-1]:
+        assert ismrmrd.Meta.deserialize(image.attribute_string)["QSMxTOutput"] == "qsm"
+        assert np.count_nonzero(image.data) == image.data.size
 
 
 def test_openrecon_pipeline_presets_select_all_three_algorithms():
@@ -844,13 +924,13 @@ def test_openrecon_label_exposes_processing_defaults():
         "custom",
         *qsmxt.ALGORITHM_PIPELINE_PRESETS,
     ]
-    assert parameters["qsmalgorithm"]["default"] == "whqsm"
+    assert parameters["qsmalgorithm"]["default"] == "rts"
     qsm_algorithms = {
         value["id"] for value in parameters["qsmalgorithm"]["values"]
     }
     assert {"hdqsm", "whqsm"} <= qsm_algorithms
     assert parameters["unwrappingalgorithm"]["default"] == "romeo"
-    assert parameters["bfalgorithm"]["default"] == "harperella"
+    assert parameters["bfalgorithm"]["default"] == "vsharp"
     bf_algorithms = {
         value["id"] for value in parameters["bfalgorithm"]["values"]
     }

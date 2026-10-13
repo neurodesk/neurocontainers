@@ -42,9 +42,9 @@ DEFAULT_ECHO_TIME_MS = 20.0
 DEFAULT_ECHO_SPACING_MS = 5.0
 DEFAULT_FIELD_STRENGTH_T = 3.0
 DEFAULT_B0_DIR = (0.0, 0.0, 1.0)
-DEFAULT_QSM_ALGORITHM = "whqsm"
+DEFAULT_QSM_ALGORITHM = "rts"
 DEFAULT_UNWRAPPING_ALGORITHM = "romeo"
-DEFAULT_BF_ALGORITHM = "harperella"
+DEFAULT_BF_ALGORITHM = "vsharp"
 ALGORITHM_PIPELINE_PRESETS = {
     "romeo-resharp-rts": {
         "unwrapping_algorithm": "romeo",
@@ -934,6 +934,8 @@ def _build_original_passthrough_images(input_images, reserved_images=None):
 
     output_images = []
     for group_index, group_images in enumerate(_passthrough_source_groups(input_images)):
+        if _source_product_reason(_source_series_name(group_images[0])):
+            continue
         series_index = _reserve_series_index(
             used_series,
             ORIGINAL_SERIES_START + group_index,
@@ -2138,8 +2140,8 @@ def _source_name_tokens(name):
     return tokens[:-1] if tokens and tokens[-1] in ("nd", "dc") else tokens
 
 
-def _source_product_reason(group):
-    tokens = _source_name_tokens(group["name"])
+def _source_product_reason(name):
+    tokens = _source_name_tokens(name)
     for suffix in (
         ("romeo", "p"), ("romeo", "mask"), ("romeo", "b0"),
         ("sensitivity", "corrected", "mag"),
@@ -2164,7 +2166,7 @@ def _source_family(group):
 def _select_magnitude_phase_groups(groups, variant):
     eligible = []
     for group in groups:
-        reason = _source_product_reason(group)
+        reason = _source_product_reason(group["name"])
         if reason:
             logging.info(
                 "Excluding processed QSMxT input series %r (%s)", group["name"], reason,
