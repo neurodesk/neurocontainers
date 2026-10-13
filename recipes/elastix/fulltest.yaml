@@ -415,21 +415,25 @@ tests:
   - name: Direct deployed binaries resolve all libraries
     description: Check the exposed raw executables independently of PATH wrappers, with no unresolved ldd entries and successful version execution
     command: |
-      python3 - <<'PYTHON'
-      import glob
-      import subprocess
-      for tool in ['elastix', 'transformix']:
-          matches = glob.glob('/opt/elastix*/bin/' + tool)
-          assert len(matches) == 1, matches
-          binary = matches[0]
-          linkage = subprocess.run(['ldd', binary], text=True, capture_output=True, check=True)
-          print(linkage.stdout, linkage.stderr)
-          assert 'not found' not in linkage.stdout + linkage.stderr
-          version = subprocess.run([binary, '--version'], text=True, capture_output=True, check=True)
-          print(version.stdout, version.stderr)
-          assert '${version}' in version.stdout + version.stderr
-      print('Both directly deployed executables resolve all libraries and run')
-      PYTHON
+      set -eu
+      export LC_ALL=C
+      for tool in elastix transformix; do
+        set -- /opt/elastix*/bin/"$tool"
+        test "$#" -eq 1
+        test -x "$1"
+        linkage=$(ldd "$1" 2>&1)
+        printf '%s\n' "$linkage"
+        if printf '%s\n' "$linkage" | grep -qF 'not found'; then
+          exit 1
+        fi
+        version_output=$("$1" --version 2>&1)
+        printf '%s\n' "$version_output"
+        case "$version_output" in
+          *'${version}'*) ;;
+          *) exit 1 ;;
+        esac
+      done
+      echo 'Both directly deployed executables resolve all libraries and run'
     expected_output_contains: Both directly deployed executables resolve all libraries and run
     expected_exit_code: 0
 
