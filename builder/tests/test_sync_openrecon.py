@@ -606,3 +606,181 @@ def test_explicit_research_staging_preserves_raw_label_and_exact_config(tmp_path
         assert (target / "recipes" / "demo" / filename).read_bytes() == (
             recipe / filename
         ).read_bytes()
+
+
+OLD_DIGEST = "sha256:" + "0" * 64
+NEW_DIGEST = "sha256:" + "1" * 64
+
+
+@pytest.mark.parametrize(
+    ("params", "version", "expected_scanner"),
+    [
+        (
+            "export version=2.10.0-build20261009\nexport openrecon_version=2.10.3\n",
+            "2.10.0",
+            "2.10.3",
+        ),
+        ("export version=2.10.3\n", "2.10.0", "2.10.3"),
+        (
+            "export version=2.10.0-build20261009\nexport openrecon_version=2.10.3\n",
+            "2.11",
+            "2.11.0",
+        ),
+        ("export version=2.10.0\nexport openrecon_version=2.10.3\n", "2.11.0", None),
+    ],
+)
+def test_update_params_version_never_regresses_the_scanner_version(
+    params: str, version: str, expected_scanner: str | None
+) -> None:
+    updated = sync_openrecon.update_params_version(params, version)
+
+    assert f"export version={version}\n" in updated
+    if expected_scanner is None:
+        assert "openrecon_version" not in updated
+    else:
+        assert f"export openrecon_version={expected_scanner}\n" in updated
+    assert sync_openrecon.scanner_version(updated) == (expected_scanner or version)
+
+
+@pytest.mark.parametrize(
+    ("params", "version", "image", "reference"),
+    [
+        (
+            "export toolName=demo\n"
+            "export version=2.10.0-build20261009\n"
+            "export openrecon_version=2.10.3\n",
+            "2.10.0",
+            "ghcr.io/neurodesk/demo_2.10.0:20261009",
+            "ghcr.io/neurodesk/demo_2.10.0:20261010",
+        ),
+        (
+            "export toolName=demo\nexport version=2.10.0\n",
+            "2.10.0",
+            "vnmd/${toolName}_${version}:20261009",
+            "vnmd/demo_2.10.0:20261010",
+        ),
+    ],
+)
+def test_prepare_recipe_repins_a_digest_to_the_published_build(
+    tmp_path: Path, params: str, version: str, image: str, reference: str
+) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    write_release_metadata(source_root, "demo", version, "20261010")
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    (target / "params.sh").write_text(
+        f"#!/bin/bash\n{params}export baseDockerImage={image}@{OLD_DIGEST}\n",
+        encoding="utf-8",
+    )
+    resolved: list[str] = []
+
+    def resolve_digest(image_reference: str) -> str:
+        resolved.append(image_reference)
+        return NEW_DIGEST
+
+    prepared = sync_openrecon.prepare_recipe(
+        source_root, openrecon_root, "demo", version, resolve_digest=resolve_digest
+    )
+
+    assert prepared is not None
+    assert resolved == [reference]
+    updated = (target / "params.sh").read_text(encoding="utf-8")
+    assert (
+        f"export baseDockerImage={image.replace('20261009', '20261010')}@{NEW_DIGEST}\n"
+        in updated
+    )
+    assert sync_openrecon.scanner_version(updated) == sync_openrecon.scanner_version(
+        params
+    )
+    assert any(NEW_DIGEST in note for note in prepared.notes)
+
+
+def test_prepare_recipe_fails_rather_than_keep_a_stale_digest(tmp_path: Path) -> None:
+    source_root = tmp_path / "neurocontainers"
+    openrecon_root = tmp_path / "openrecon"
+    write_source_recipe(source_root)
+    write_release_metadata(source_root, "demo", "2.10.0", "20261010")
+    target = openrecon_root / "recipes" / "demo"
+    target.mkdir(parents=True)
+    params = (
+        "export version=2.10.0\n"
+        f"export baseDockerImage=ghcr.io/neurodesk/demo_2.10.0:20261009@{OLD_DIGEST}\n"
+    )
+    (target / "params.sh").write_text(params, encoding="utf-8")
+
+    def resolve_digest(image_reference: str) -> str:
+        raise RuntimeError(f"Cannot resolve the digest of {image_reference}")
+
+    with pytest.raises(RuntimeError, match="demo_2.10.0:20261010"):
+        sync_openrecon.prepare_recipe(
+            source_root, openrecon_root, "demo", "2.10.0", resolve_digest=resolve_digest
+        )
+    assert (target / "params.sh").read_text(encoding="utf-8") == params
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        f"ghcr.io/neurodesk/demo@{OLD_DIGEST}",
+        f"ghcr.io/neurodesk/demo:${{unknown}}@{OLD_DIGEST}",
+    ],
+)
+def test_pinned_image_reference_requires_a_resolvable_tag(image: str) -> None:
+    with pytest.raises(RuntimeError, match="Cannot refresh"):
+        sync_openrecon.pinned_image_reference(f"export baseDockerImage={image}\n")
+
+
+@pytest.mark.parametrize(
+    ("reference", "manifest_url"),
+    [
+        (
+            "ghcr.io/neurodesk/demo_2.10.0:20261010",
+            "https://ghcr.io/v2/neurodesk/demo_2.10.0/manifests/20261010",
+        ),
+        (
+            "vnmd/demo_2.10.0:20261010",
+            "https://registry-1.docker.io/v2/vnmd/demo_2.10.0/manifests/20261010",
+        ),
+        (
+            "ubuntu:24.04",
+            "https://registry-1.docker.io/v2/library/ubuntu/manifests/24.04",
+        ),
+    ],
+)
+def test_resolve_image_digest_follows_the_registry_token_challenge(
+    monkeypatch: pytest.MonkeyPatch, reference: str, manifest_url: str
+) -> None:
+    import email.message
+    import io
+    import urllib.error
+
+    requests: list[tuple[str, str | None]] = []
+
+    class Response(io.BytesIO):
+        def __init__(self, body: bytes = b"", headers: dict[str, str] | None = None):
+            super().__init__(body)
+            self.headers = email.message.Message()
+            for key, value in (headers or {}).items():
+                self.headers[key] = value
+
+    def urlopen(request, timeout):
+        if isinstance(request, str):
+            assert request.startswith("https://auth.example/token?")
+            assert "scope=repository" in request
+            return Response(b'{"token": "anonymous"}')
+        requests.append((request.full_url, request.get_header("Authorization")))
+        if request.get_header("Authorization") is None:
+            challenge = email.message.Message()
+            challenge["WWW-Authenticate"] = (
+                'Bearer realm="https://auth.example/token",service="registry",'
+                'scope="repository:demo:pull"'
+            )
+            raise urllib.error.HTTPError(request.full_url, 401, "", challenge, None)
+        return Response(headers={"Docker-Content-Digest": NEW_DIGEST})
+
+    monkeypatch.setattr(sync_openrecon.urllib.request, "urlopen", urlopen)
+
+    assert sync_openrecon.resolve_image_digest(reference) == NEW_DIGEST
+    assert requests == [(manifest_url, None), (manifest_url, "Bearer anonymous")]
