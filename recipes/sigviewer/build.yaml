@@ -11,6 +11,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   container_version: "sigviewer"
@@ -22,9 +23,24 @@ auto_update:
     package: sigviewer
     urls:
     - https://deb.debian.org/debian/dists/bullseye/main/binary-amd64/Packages.xz
+    - https://deb.debian.org/debian/dists/bullseye/main/binary-arm64/Packages.xz
     target:
       variable: package_version
       fulltest_variable: package_version
+
+  - id: sigviewer-gdf
+    dependency: true
+    method: http_digest
+    url: https://raw.githubusercontent.com/EEGKit/biosig/15e7caaa1c2b199bac11e333543617e074ee79bc/biosig/t310_ERDSMaps/sample.gdf
+    target:
+      file: sigviewer_gdf
+
+  - id: sigviewer-xdf
+    dependency: true
+    method: http_digest
+    url: https://raw.githubusercontent.com/xdf-modules/example-files/354bfe26c92cfac8d1f0454dbe046721df043153/minimal.xdf
+    target:
+      file: sigviewer_xdf
 
 build:
   kind: neurodocker
@@ -46,11 +62,28 @@ build:
 
     - install:
         - "sigviewer={{ context.package_version }}"
+        - python3
+        - xvfb
+        - xauth
+        - xdotool
+        - x11-utils
+
+    # Small official fixtures make format tests independent of network access.
+    - run:
+        - mkdir -p /opt/sigviewer-testdata
+        - cp {{ get_file("sigviewer_gdf") }} /opt/sigviewer-testdata/reference.gdf
+        - cp {{ get_file("sigviewer_xdf") }} /opt/sigviewer-testdata/reference.xdf
 
 files:
 - name: debian_ca_certificates
   url: https://snapshot.debian.org/archive/debian-security/{{ context.debian_security_snapshot }}/pool/updates/main/c/ca-certificates/ca-certificates_20250419~deb12u1~deb11u1_all.deb
   sha256: a588acf469f96e272fe3e83225f68ddcda72a95e2dd139086d5edc165d3939e3
+- name: sigviewer_gdf
+  url: https://raw.githubusercontent.com/EEGKit/biosig/15e7caaa1c2b199bac11e333543617e074ee79bc/biosig/t310_ERDSMaps/sample.gdf
+  sha256: ec71e5eab48c217fb40a4f0dc41657f25701071e36e1d41d9b7bc434b4beae4f
+- name: sigviewer_xdf
+  url: https://raw.githubusercontent.com/xdf-modules/example-files/354bfe26c92cfac8d1f0454dbe046721df043153/minimal.xdf
+  sha256: cd1b4f2171b1b165b17528c75131bd912c9bee209182b60d8cc07f4cb63fccea
 
 deploy:
   bins:
