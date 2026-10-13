@@ -258,13 +258,15 @@ tests:
 
   - name: FSL fslsplit check
     description: Check fslsplit is available
-    command: fslsplit 2>&1 | head -5 || true
-    expected_output_contains: ""
+    command: fslsplit 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "Usage: fslsplit"
 
   - name: FSL fslmerge check
     description: Check fslmerge is available
-    command: fslmerge 2>&1 | head -5 || true
-    expected_output_contains: ""
+    command: fslmerge 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "Usage: fslmerge"
 
   - name: FSL bet brain extraction
     description: Simple brain extraction using BET
@@ -395,7 +397,9 @@ tests:
       import nibabel as nib
       orig = nib.load('${t1w}')
       defaced = nib.load('test_output/t1w_defaced_default.nii.gz')
-      assert orig.affine.shape == defaced.affine.shape, 'Affine shape mismatch'
+      import numpy as np
+      np.testing.assert_array_equal(orig.affine, defaced.affine)
+      np.testing.assert_array_equal(orig.header.get_zooms(), defaced.header.get_zooms())
       print(f'Header preserved: affine shape {orig.affine.shape}')
       "
     depends_on: Basic defacing with default output
@@ -407,13 +411,14 @@ tests:
   - name: pydeface with missing input
     description: Test error handling for missing input file
     command: pydeface nonexistent_file.nii.gz 2>&1
-    ignore_exit_code: true
-    expected_output_contains: "Traceback"
+    expected_exit_code: 1
+    expected_output_contains: ["Traceback", "nonexistent_file.nii.gz"]
 
   - name: pydeface with invalid cost function
     description: Test error handling for invalid cost function
-    command: pydeface ${t1w} --cost invalid_cost 2>&1 || true
-    expected_output_contains: ""
+    command: pydeface ${t1w} --cost invalid_cost 2>&1
+    expected_exit_code: 1
+    expected_output_contains: ["cost_func", "invalid_cost"]
 
   # ==========================================================================
   # TEMPLATE AND FACEMASK LOCATIONS
@@ -470,9 +475,84 @@ tests:
     depends_on: Basic defacing with default output
     expected_output_contains: "Original T1w stats"
 
+
+  - name: Exact architecture-specific runtime versions
+    description: Require the current PyDeface/scientific pins and official architecture-specific FSL version without changing the x86 base
+    command: |
+      set -euo pipefail
+      case "$(uname -m)" in
+        aarch64) expected="${fsl_arm64_version}" ;;
+        x86_64) expected=6.0.3 ;;
+        *) exit 1 ;;
+      esac
+      test "$(cat "$FSLDIR/etc/fslversion")" = "$expected"
+      python -m pip check
+      python - <<'PYTHON'
+      from importlib.metadata import version
+      expected={'pydeface':'${pydeface_version}','numpy':'2.2.6','scipy':'1.16.3','nibabel':'5.4.2','nipype':'1.12.0'}
+      for package,wanted in expected.items():
+          assert version(package)==wanted,(package,version(package),wanted)
+      print('Exact PyDeface scientific versions and official FSL runtime verified')
+      PYTHON
+    expected_output_contains: Exact PyDeface scientific versions and official FSL runtime verified
+    expected_exit_code: 0
+
+  - name: Every defaced voxel matches the actual registered mask
+    description: Run real registration/defacing on a private image copy and assert its full mask product within NIfTI storage quantization, nontrivial removed/retained tissue and exact physical geometry
+    timeout: 600
+    command: |
+      env -u HOME OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python - <<'PYTHON'
+      import hashlib
+      import os
+      from pathlib import Path
+      import shutil
+      import subprocess
+      import tempfile
+      import nibabel as nib
+      import numpy as np
+      with tempfile.TemporaryDirectory(dir=Path('${output_dir}').resolve()) as directory:
+          root = Path(directory)
+          original = root/'anatomical.nii.gz'
+          output = root/'anatomical-defaced.nii.gz'
+          shutil.copyfile('${t1w}',original)
+          before = hashlib.sha256(original.read_bytes()).hexdigest()
+          environment = dict(os.environ,TMPDIR=str(root))
+          subprocess.run(['pydeface',str(original),'--outfile',str(output),'--cost','corratio','--nocleanup','--verbose'],env=environment,check=True)
+          mask_path = root/'anatomical_pydeface_mask.nii.gz'
+          assert mask_path.is_file() and (root/'anatomical_pydeface.mat').is_file()
+          source = nib.load(original)
+          result = nib.load(output)
+          mask_image = nib.load(mask_path)
+          values = np.asanyarray(source.dataobj)
+          mask = np.asanyarray(mask_image.dataobj)
+          actual = result.get_fdata()
+          expected = np.asarray(values*mask,dtype=np.float64)
+          assert source.shape==result.shape==mask_image.shape
+          np.testing.assert_array_equal(source.affine,result.affine)
+          np.testing.assert_array_equal(source.header.get_zooms(),result.header.get_zooms())
+          assert np.isfinite(mask).all() and np.isfinite(actual).all()
+          assert mask.min()>=0 and mask.max()<=1+8*np.finfo(np.float32).eps
+          # PyDeface preserves the input storage type. Bound the documented NIfTI
+          # integer quantization by half a stored bin, plus float32 scaling roundoff.
+          step = abs(float(result.dataobj.slope)) if np.issubdtype(result.get_data_dtype(),np.integer) else 0.0
+          bound = step/2+8*np.finfo(np.float32).eps*max(1.0,float(np.max(np.abs(expected))))
+          assert np.max(np.abs(actual-expected))<=bound
+          removed = np.count_nonzero((values!=0)&(mask==0))
+          retained = np.count_nonzero((values!=0)&(mask==1))
+          assert removed>1000 and retained>1000
+          assert removed<np.count_nonzero(values)
+          assert hashlib.sha256(original.read_bytes()).hexdigest()==before
+          print('Mask product checked for',values.size,'voxels; removed',removed,'retained',retained,'NIfTI storage bound',bound)
+      print('Actual PyDeface registration and mask application agree at every voxel with unchanged input and spatial geometry')
+      PYTHON
+    expected_output_contains: Actual PyDeface registration and mask application agree at every voxel with unchanged input and spatial geometry
+    expected_exit_code: 0
+
 cleanup:
   script: |
     #!/usr/bin/env bash
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"
+fsl_arm64_version: "6.0.7.23"
+pydeface_version: "2.1.0"
