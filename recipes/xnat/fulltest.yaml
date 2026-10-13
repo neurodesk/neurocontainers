@@ -29,6 +29,9 @@ test_data:
   events: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
   output_dir: test_output
 
+env_setup: |
+  set -euo pipefail
+
 setup:
   script: |
     #!/usr/bin/env bash
@@ -52,12 +55,12 @@ tests:
 
   - name: Java runtime environment
     description: Check Java runtime environment details
-    command: java -version 2>&1 | head -3
+    command: java -version 2>&1
     expected_exit_code: 0
 
   - name: Java classpath functionality
     description: Verify Java can display classpath
-    command: java -XshowSettings:all 2>&1 | head -20
+    command: java -XshowSettings:all -version 2>&1
     expected_exit_code: 0
 
   # ==========================================================================
@@ -75,12 +78,12 @@ tests:
 
   - name: PostgreSQL pg_isready help
     description: Verify pg_isready utility is available
-    command: pg_isready --help 2>&1 | head -5
+    command: pg_isready --help 2>&1
     expected_output_contains: "pg_isready"
 
   - name: PostgreSQL createdb help
     description: Verify createdb utility is available
-    command: createdb --help 2>&1 | head -5
+    command: createdb --help 2>&1
     expected_output_contains: "createdb"
 
   - name: PostgreSQL pg_dump version
@@ -95,7 +98,7 @@ tests:
 
   - name: PostgreSQL pg_ctl help
     description: Verify pg_ctl control utility is available
-    command: /usr/lib/postgresql/12/bin/pg_ctl --help 2>&1 | head -10
+    command: /usr/lib/postgresql/12/bin/pg_ctl --help 2>&1
     expected_output_contains: "pg_ctl"
 
   - name: PostgreSQL configuration
@@ -273,7 +276,7 @@ tests:
   # ==========================================================================
   - name: Wget availability
     description: Verify wget is available for downloads
-    command: wget --version 2>&1 | head -1
+    command: wget --version 2>&1
     expected_output_contains: "GNU Wget"
 
   - name: Sudo availability
@@ -283,12 +286,12 @@ tests:
 
   - name: Unzip availability
     description: Verify unzip is available
-    command: unzip -v 2>&1 | head -1
+    command: unzip -v 2>&1
     expected_output_contains: "UnZip"
 
   - name: Bash availability
     description: Verify bash shell is available
-    command: bash --version | head -1
+    command: bash --version
     expected_output_contains: "GNU bash"
 
   # ==========================================================================
@@ -500,7 +503,7 @@ tests:
   # ==========================================================================
   - name: HTTP connector address
     description: Verify HTTP connector configuration exists
-    command: grep -i "Connector" /usr/share/tomcat9/conf/server.xml | head -3
+    command: grep -i "Connector" /usr/share/tomcat9/conf/server.xml
     expected_output_contains: "Connector"
 
   - name: Connection timeout configured
@@ -515,7 +518,7 @@ tests:
 
   - name: URI encoding configured
     description: Verify URI encoding is UTF-8
-    command: grep -i "encoding" /usr/share/tomcat9/conf/server.xml | head -3
+    command: grep -i "encoding" /usr/share/tomcat9/conf/server.xml
     expected_exit_code: 0
 
   # ==========================================================================
@@ -559,7 +562,7 @@ tests:
   # ==========================================================================
   - name: Tomcat webapps directory
     description: Verify Tomcat webapps directory exists
-    command: test -d /var/lib/tomcat9/webapps && echo "webapps directory exists" || echo "using CATALINA_BASE"
+    command: test -d /var/lib/tomcat9/webapps && echo "webapps directory exists"
     expected_exit_code: 0
 
   - name: Tomcat lib directory
@@ -577,18 +580,123 @@ tests:
   # ==========================================================================
   - name: Java JAR command
     description: Verify jar command availability (JDK-only tool, not in JRE)
-    command: command -v jar 2>/dev/null && jar --help 2>&1 || echo "jar not available (JRE only)"
+    command: "if command -v jar >/dev/null 2>&1; then jar -help; else test ! -e \"$JAVA_HOME/bin/jar\"; echo 'jar not available (JRE only)'; fi"
     expected_output_contains: "jar"
 
   - name: Java keytool command
     description: Verify keytool command is available
-    command: keytool -help 2>&1 | head -5
+    command: keytool -help 2>&1
     expected_exit_code: 0
 
   - name: Java jarsigner command
     description: Verify jarsigner command availability (JDK-only tool, not in JRE)
-    command: command -v jarsigner 2>/dev/null && jarsigner -help 2>&1 || echo "jarsigner not available (JRE only)"
+    command: "if command -v jarsigner >/dev/null 2>&1; then jarsigner -help; else test ! -e \"$JAVA_HOME/bin/jarsigner\"; echo 'jarsigner not available (JRE only)'; fi"
     expected_output_contains: "jarsigner"
+
+  - name: Real XNAT database and authenticated NIfTI resource roundtrip
+    description: >-
+      Start the deployed service as the real unprivileged runtime UID, complete the
+      official initial setup API, create a project, upload/download the complete
+      required T2 NIfTI and compare every byte and catalog size. Confirm the project
+      in native PostgreSQL and deny unauthenticated private-file access. Use private
+      writable runtime directories and terminate all owned service processes.
+    timeout: 900
+    expected_exit_code: 0
+    expected_output_contains: Actual XNAT server initialized its database, accepted authenticated project creation, preserved every uploaded NIfTI byte and metadata, and rejected unauthenticated private-file access
+    command: |
+      python3 - <<'PYTHON'
+      import base64
+      import hashlib
+      import http.cookiejar
+      import json
+      import os
+      import signal
+      import subprocess
+      import tempfile
+      import time
+      import urllib.error
+      import urllib.request
+      from pathlib import Path
+
+      assert os.geteuid()!=0, 'PostgreSQL must run as an ordinary user'
+      source=Path('${t2}');payload=source.read_bytes();digest=hashlib.sha256(payload).hexdigest()
+      assert payload[:2]==b'\x1f\x8b' and len(payload)>1024
+      with tempfile.TemporaryDirectory(prefix='xnat-ci-',dir='/tmp') as scratch:
+          d=Path(scratch);log=d/'service.log'
+          env=dict(os.environ,HOME=str(d/'home'));Path(env['HOME']).mkdir()
+          auth='Basic '+base64.b64encode(b'admin:admin').decode()
+          opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,req,fp,code,msg,headers,newurl): return None
+          anonymous=urllib.request.build_opener(NoRedirect())
+          def request(path,method='GET',body=None,content_type=None,authenticated=True):
+              headers={'Accept':'application/json'}
+              if authenticated: headers['Authorization']=auth
+              if content_type: headers['Content-Type']=content_type
+              req=urllib.request.Request('http://127.0.0.1:8080'+path,data=body,headers=headers,method=method)
+              with (opener if authenticated else anonymous).open(req,timeout=30) as response:
+                  assert 200<=response.status<300,(path,response.status)
+                  return response.read(),response.headers.get('Content-Type',''),response.geturl()
+          with log.open('wb') as out:
+              process=subprocess.Popen(['xnat'],cwd=d,env=env,stdout=out,stderr=subprocess.STDOUT,start_new_session=True)
+              try:
+                  deadline=time.monotonic()+600;last='no HTTP response'
+                  while time.monotonic()<deadline:
+                      assert process.poll() is None, ('XNAT exited',process.returncode,log.read_text(errors='replace')[-20000:])
+                      try:
+                          body,kind,url=request('/')
+                          assert b'XNAT' in body and 'text/html' in kind,(kind,url,body[:500])
+                          break
+                      except (urllib.error.URLError,TimeoutError,AssertionError) as error:
+                          last=repr(error);time.sleep(5)
+                  else: raise AssertionError(('XNAT did not become ready',last,log.read_text(errors='replace')[-20000:]))
+                  root=d/'xnat-runtime';home=root/'xnat-home';pgdata=root/'postgresql'
+                  config={'siteId':'NCNativeCI','siteUrl':'http://127.0.0.1:8080','adminEmail':'native-ci@example.invalid','initialized':'true'}
+                  for property_name,folder in [('archivePath','archive'),('prearchivePath','prearchive'),('cachePath','cache'),('buildPath','build')]:
+                      directory=home/folder;directory.mkdir(exist_ok=True);config[property_name]=str(directory)
+                  request('/xapi/siteConfig','POST',json.dumps(config).encode(),'application/json')
+                  body,kind,url=request('/xapi/siteConfig')
+                  assert 'json' in kind,(kind,url,body[:1000])
+                  actual=json.loads(body)
+                  assert actual['siteId']=='NCNativeCI' and str(actual['initialized']).lower()=='true',actual
+                  project=b'<xnat:Project xmlns:xnat="http://nrg.wustl.edu/xnat" ID="NCNativeCI" secondary_ID="NCNativeCI" name="Native runtime verification"/>'
+                  request('/data/projects?accessibility=private','POST',project,'application/xml')
+                  body,kind,url=request('/data/projects?format=json')
+                  projects=json.loads(body)['ResultSet']['Result']
+                  assert any(row['ID']=='NCNativeCI' and row['name']=='Native runtime verification' for row in projects),projects
+                  resource='/data/projects/NCNativeCI/resources/NIFTI'
+                  request(resource,'PUT',b'')
+                  request(resource+'/files/input.nii.gz?inbody=true','PUT',payload,'application/octet-stream')
+                  recovered,_,_=request(resource+'/files/input.nii.gz')
+                  assert recovered==payload and hashlib.sha256(recovered).hexdigest()==digest
+                  body,_,_=request('/data/projects/NCNativeCI/files?format=json')
+                  files=json.loads(body)['ResultSet']['Result'];entry=next(row for row in files if row['Name']=='input.nii.gz')
+                  assert int(entry['Size'])==len(payload),entry
+                  psql=['psql','-h','127.0.0.1','-p','5432','-U','xnat','-d','xnat','-v','ON_ERROR_STOP=1','-tA','-c']
+                  sql_env=dict(env,PGPASSWORD='xnat')
+                  count=subprocess.check_output(psql+["SELECT count(*) FROM xnat_projectdata WHERE id='NCNativeCI'"],env=sql_env,text=True).strip()
+                  assert count=='1',count
+                  try: request(resource+'/files/input.nii.gz',authenticated=False)
+                  except urllib.error.HTTPError as error:
+                      assert error.code in (401,403) or (error.code in (302,303) and 'login' in error.headers.get('Location','').lower()),(error.code,error.headers.get('Location'))
+                      assert error.read()!=payload
+                  else: raise AssertionError('Unauthenticated access to a private project unexpectedly succeeded')
+                  assert hashlib.sha256(source.read_bytes()).hexdigest()==digest
+                  assert process.poll() is None
+                  subprocess.run(['/usr/lib/postgresql/12/bin/pg_ctl','-D',str(pgdata),'-m','fast','-w','stop'],check=True,timeout=30,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+                  print('Actual XNAT server initialized its database, accepted authenticated project creation, preserved every uploaded NIfTI byte and metadata, and rejected unauthenticated private-file access',flush=True)
+              except BaseException:
+                  print(log.read_text(errors='replace')[-30000:],flush=True)
+                  for p in (d/'xnat-runtime').rglob('*.log'):
+                      print(str(p),p.read_text(errors='replace')[-12000:],flush=True)
+                  raise
+              finally:
+                  try: os.killpg(process.pid,signal.SIGTERM)
+                  except ProcessLookupError: pass
+                  try: process.wait(timeout=15)
+                  except subprocess.TimeoutExpired:
+                      os.killpg(process.pid,signal.SIGKILL);process.wait(timeout=10)
+      PYTHON
 
 cleanup:
   script: |
