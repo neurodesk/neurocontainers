@@ -1,7 +1,7 @@
 {
   "apps": {
     "qmrlab 3.0.0": {
-      "version": "20261006",
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     }
