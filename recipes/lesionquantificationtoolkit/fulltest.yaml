@@ -357,7 +357,7 @@ tests:
       expected_delta <- matrix(c(0,0,1,1,0,0,0,0,1,0,0,0,1,0,0,0),4,4,byrow=TRUE)
       expected_indirect <- matrix(0,4,4);expected_indirect[1,4] <- 1;expected_indirect[4,1] <- 1
       stopifnot(identical(unname(p$sspl_matrix),expected_patient),identical(unname(p$delta_sspl_matrix),expected_delta),identical(unname(p$idc_matrix),expected_indirect),identical(p$node_label,cfg$node_label),identical(p$node_group,cfg$node_group))
-      edge <- as.matrix(read.table(file.path(ps,'analytical_four_delta_SSPL.edge')));stopifnot(identical(unname(edge),expected_delta))
+      edge <- as.matrix(read.table(file.path(ps,'analytical_four_delta_SSPL.edge')));stopifnot(identical(as.numeric(edge),as.numeric(expected_delta)))
       avg <- read.csv(file.path(ps,'analytical_four_parcel_average_sspl.csv'));stopifnot(identical(avg$ParcelAvgSSPL,c(.375,0,.25,.125)))
       node <- read.table(file.path(ps,'analytical_four_delta_SSPL.node'));stopifnot(nrow(node)==4,ncol(node)==6,identical(as.character(node[,6]),cfg$node_label),all(is.finite(as.matrix(node[,1:5]))),identical(tools::md5sum(inputs),before))
       cat('LQT exact atlas/patient shortest paths, direct/indirect disconnection matrices and parcel averages verified\n')
