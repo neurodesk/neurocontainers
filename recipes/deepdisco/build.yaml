@@ -8,6 +8,7 @@ copyright:
  
 architectures:
   - x86_64
+  - aarch64
  
 variables:
   install_version: "20251008"
