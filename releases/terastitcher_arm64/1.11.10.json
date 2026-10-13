@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "terastitcher_arm64 1.11.10": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "terastitcher"
+}
