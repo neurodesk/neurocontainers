@@ -190,9 +190,11 @@ jobs:
                 workflow_id: workflow.id, head_sha: headSha,
                 event: 'pull_request', per_page: 50,
               });
-              const run = response.data.workflow_runs.find(item =>
-                item.head_sha === headSha && item.event === 'pull_request'
-              );
+              // Events for the same head can create superseded runs. API order
+              // is not a reliable tie-breaker when their timestamps are equal.
+              const run = response.data.workflow_runs
+                .filter(item => item.head_sha === headSha && item.event === 'pull_request')
+                .sort((left, right) => right.id - left.id)[0];
               if (run && run.status === 'completed') {
                 if (run.conclusion !== 'success') {
                   throw new Error(

@@ -450,3 +450,16 @@ numeric version. It rejects other suffixes, including prereleases and dated buil
 suffixes. The `version` parameter keeps the exact source-container version;
 `openrecon_version` supplies the scanner version when they differ. Build dates
 belong in the source image tag, not in the scanner version.
+
+A scanner version never regresses during sync. When `params.sh` already publishes
+a higher scanner version than the projection, because a maintainer released a
+scanner package ahead of the container, the sync keeps it and notes this in the PR;
+a maintainer bumps it when a rebuild should install as a new scanner package.
+
+When `baseDockerImage` pins a digest (`name:tag@sha256:...`), the sync advances the
+dated tag and resolves the digest that the registry serves for the new tag. The
+reference must expand to a literal `name:tag` from `params.sh` assignments. When the
+release metadata or the digest cannot be resolved, the sync fails without opening a
+PR, so a stale digest is never kept and the pin is never silently dropped. The sync
+also refuses `params.sh` files that assign `version`, `openrecon_version` or
+`baseDockerImage` more than once, because it could not rewrite the effective value.

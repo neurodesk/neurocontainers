@@ -109,6 +109,11 @@ files:
       #!/usr/bin/env bash
       set -euo pipefail
 
+      # Apptainer can inherit a host JAVA_HOME that is absent inside this image.
+      if [ -n "${JAVA_HOME:-}" ] && [ ! -x "$JAVA_HOME/bin/java" ]; then
+        unset JAVA_HOME
+      fi
+
       case "${1:-start}" in
         start|server)
           if [ "$#" -gt 0 ]; then

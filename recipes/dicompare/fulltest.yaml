@@ -1,5 +1,5 @@
 # dicompare container test suite
-# Tests for dicompare v0.5.4 - MRI protocol validation webapp
+# Tests for dicompare - MRI protocol validation webapp
 #
 # dicompare is a web-based tool for validating DICOM files against
 # community-defined MRI acquisition protocols. It runs as a static
@@ -29,6 +29,149 @@ setup:
     #!/usr/bin/env bash
     set -e
     mkdir -p test_output
+    cat > test_output/check-http.cjs <<'JS'
+    const assert = require('node:assert/strict');
+    const fs = require('node:fs');
+    const net = require('node:net');
+    const { spawn } = require('node:child_process');
+    const { setTimeout: sleep } = require('node:timers/promises');
+
+    async function main() {
+      const root = '/opt/dicompare/dist';
+      const mode = process.argv[2];
+      const reservation = net.createServer();
+      await new Promise((resolve, reject) => {
+        reservation.once('error', reject);
+        reservation.listen(0, '127.0.0.1', resolve);
+      });
+      const port = reservation.address().port;
+      await new Promise((resolve, reject) => reservation.close(error => error ? reject(error) : resolve()));
+      const child = spawn('dicompare', ['start'], {
+        env: { ...process.env, NEURODESK_WEBAPP_PORT: String(port) },
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let logs = '';
+      let ended = false;
+      let spawnError;
+      child.stdout.on('data', data => { logs += data; });
+      child.stderr.on('data', data => { logs += data; });
+      child.once('error', error => { spawnError = error; });
+      const exited = new Promise(resolve => child.once('exit', () => { ended = true; resolve(); }));
+      const base = `http://127.0.0.1:${port}`;
+      const index = fs.readFileSync(root + '/index.html');
+      async function exactFile(urlPath, diskPath = urlPath) {
+        const response = await fetch(base + urlPath, { signal: AbortSignal.timeout(3000) });
+        assert.equal(response.status, 200, urlPath);
+        const body = Buffer.from(await response.arrayBuffer());
+        assert.deepEqual(body, fs.readFileSync(root + diskPath), `Wrong HTTP bytes for ${urlPath}`);
+        assert(body.length > 0, `Empty HTTP response for ${urlPath}`);
+        return { body, type: response.headers.get('content-type') || '' };
+      }
+      try {
+        let ready = false;
+        let lastError;
+        const deadline = Date.now() + 8000;
+        while (Date.now() < deadline) {
+          if (spawnError) throw spawnError;
+          assert(!ended, `Deployed launcher exited before readiness: ${logs}`);
+          try {
+            const result = await exactFile('/', '/index.html');
+            assert.match(result.type, /text\/html/);
+            ready = true;
+            break;
+          } catch (error) {
+            lastError = error;
+            await sleep(100);
+          }
+        }
+        assert(ready, `Deployed server failed readiness: ${lastError}\n${logs}`);
+        if (mode === 'start' || mode === 'index') {
+          const result = await exactFile('/', '/index.html');
+          assert.match(result.body.toString(), /<!doctype html>/i);
+        } else if (mode === 'favicon') {
+          const result = await exactFile('/favicon.ico');
+          assert.notDeepEqual(result.body, index, 'Favicon incorrectly returned SPA HTML');
+        } else if (mode === 'manifest') {
+          JSON.parse((await exactFile('/manifest.json')).body.toString());
+        } else if (mode === 'schemas') {
+          const entries = JSON.parse((await exactFile('/schemas/index.json')).body.toString());
+          assert(Array.isArray(entries) && entries.length > 0);
+          for (const entry of entries) {
+            assert(entry.startsWith('/schemas/') && !entry.includes('..'), entry);
+            JSON.parse((await exactFile(entry)).body.toString());
+          }
+        } else if (mode === 'functions') {
+          const entries = JSON.parse((await exactFile('/validation-functions/index.json')).body.toString());
+          assert(Array.isArray(entries) && entries.includes('echo_count.json'));
+          for (const entry of entries) {
+            assert(entry.endsWith('.json') && !entry.includes('/') && !entry.includes('..'), entry);
+            const definition = JSON.parse((await exactFile('/validation-functions/' + entry)).body.toString());
+            assert(typeof definition.implementation === 'string' && definition.implementation.trim(), entry);
+          }
+        } else if (mode === 'spa') {
+          await exactFile('/fixture-routing/nonexistent/path', '/index.html');
+        } else if (mode === 'bundle') {
+          // A base href controls resolution; browsers do not request it as an asset.
+          const html = index.toString();
+          const baseHref = html.match(/<base\b[^>]*\bhref=["']([^"']+)["']/i)?.[1] || '/';
+          const documentBase = new URL(baseHref, base + '/');
+          const references = [];
+          for (const match of html.matchAll(/<(script|link)\b([^>]*)>/gi)) {
+            const [, tag, attributes] = match;
+            if (tag.toLowerCase() === 'link') {
+              const rel = attributes.match(/\brel=["']([^"']+)["']/i)?.[1] || '';
+              if (!rel.split(/\s+/).some(value => ['stylesheet', 'modulepreload', 'preload', 'icon', 'apple-touch-icon', 'manifest'].includes(value))) continue;
+            }
+            const reference = tag.toLowerCase() === 'script'
+              ? attributes.match(/\bsrc=["']([^"']+)["']/i)?.[1]
+              : attributes.match(/\bhref=["']([^"']+)["']/i)?.[1];
+            if (reference && !/^(?:https?:|data:|#|\/\/)/.test(reference)) references.push(reference);
+          }
+          assert(references.some(value => /\.js(?:\?|$)/.test(value)), 'No application JavaScript');
+          assert(references.some(value => /\.css(?:\?|$)/.test(value)), 'No application CSS');
+          for (const reference of references) {
+            const resource = new URL(reference, documentBase).pathname;
+            const result = await exactFile(resource);
+            assert.notDeepEqual(result.body, index, `Asset returned SPA HTML: ${resource}`);
+            if (resource.endsWith('.js')) assert.match(result.type, /javascript/);
+            if (resource.endsWith('.css')) assert.match(result.type, /text\/css/);
+          }
+          const workers = fs.readdirSync(root + '/assets').filter(name => /pyodide.*\.js$/.test(name));
+          assert(workers.length > 0, 'No built Pyodide worker');
+          for (const worker of workers) {
+            const result = await exactFile('/assets/' + worker);
+            assert.match(result.type, /javascript/);
+            assert.notDeepEqual(result.body, index, 'Worker incorrectly returned SPA HTML');
+          }
+        } else {
+          throw new Error(`Unknown HTTP check ${mode}`);
+        }
+        assert(!ended, `Deployed launcher exited during requests: ${logs}`);
+        console.log(`Verified deployed Dicompare HTTP: ${mode}`);
+      } finally {
+        if (child.pid) {
+          // Only this test's detached process group is owned by this test.
+          try { process.kill(-child.pid, 'SIGTERM'); }
+          catch (error) { if (error.code !== 'ESRCH') throw error; }
+          if (!ended) {
+            let timer;
+            try {
+              await Promise.race([exited, new Promise((resolve, reject) => {
+                timer = setTimeout(() => {
+                  try { process.kill(-child.pid, 'SIGKILL'); }
+                  catch (error) { if (error.code !== 'ESRCH') reject(error); }
+                  resolve();
+                }, 2000);
+              })]);
+              await exited;
+            } finally { clearTimeout(timer); }
+          }
+        }
+      }
+    }
+    main().catch(error => { console.error(error); process.exitCode = 1; });
+    JS
 
 tests:
   # ==========================================================================
@@ -414,46 +557,53 @@ tests:
   # WEB SERVER STARTUP AND PORT BINDING TESTS
   # ==========================================================================
   - name: Web server can start
-    description: Test that serve can start serving files
-    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3002 >/tmp/dicompare-3002.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/ || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
-    expected_output_contains: "200"
-    timeout: 10
+    description: Start the deployed launcher on a private port and require exact real index bytes
+    command: node ${output_dir}/check-http.cjs start
+    expected_output_contains: "Verified deployed Dicompare HTTP: start"
+    expected_exit_code: 0
+    timeout: 30
 
   - name: Web server serves index.html
-    description: Test that serve returns HTML content
-    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3003 >/tmp/dicompare-3003.log 2>&1 &\npid=$!\nsleep 2\ncurl -s http://localhost:3003/ | head -1 || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
-    expected_output_contains: "<!DOCTYPE html>"
-    timeout: 10
+    description: Require successful HTML response and byte equality with the built application
+    command: node ${output_dir}/check-http.cjs index
+    expected_output_contains: "Verified deployed Dicompare HTTP: index"
+    expected_exit_code: 0
+    timeout: 30
 
   - name: Web server serves favicon
-    description: Test that serve returns favicon
-    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3004 >/tmp/dicompare-3004.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3004/favicon.ico || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
-    expected_output_contains: "200"
-    timeout: 10
+    description: Require the real favicon bytes instead of an SPA fallback
+    command: node ${output_dir}/check-http.cjs favicon
+    expected_output_contains: "Verified deployed Dicompare HTTP: favicon"
+    expected_exit_code: 0
+    timeout: 30
 
   - name: Web server serves manifest.json
-    description: Test that serve returns manifest.json
-    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3005 >/tmp/dicompare-3005.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3005/manifest.json || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
-    expected_output_contains: "200"
-    timeout: 10
+    description: Require exact manifest bytes and valid JSON
+    command: node ${output_dir}/check-http.cjs manifest
+    expected_output_contains: "Verified deployed Dicompare HTTP: manifest"
+    expected_exit_code: 0
+    timeout: 30
 
   - name: Web server serves schema files
-    description: Test that serve returns schema index
-    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3006 >/tmp/dicompare-3006.log 2>&1 &\npid=$!\nsleep 2\ncurl -s http://localhost:3006/schemas/index.json | head -1 || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
-    expected_output_contains: "["
-    timeout: 10
+    description: Fetch and parse every advertised schema with exact bundled-file byte equality
+    command: node ${output_dir}/check-http.cjs schemas
+    expected_output_contains: "Verified deployed Dicompare HTTP: schemas"
+    expected_exit_code: 0
+    timeout: 30
 
   - name: Web server serves validation functions
-    description: Test that serve returns validation function
-    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3007 >/tmp/dicompare-3007.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3007/validation-functions/echo_count.json || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
-    expected_output_contains: "200"
-    timeout: 10
+    description: Fetch every advertised Python validation definition with exact bytes and a nonempty implementation
+    command: node ${output_dir}/check-http.cjs functions
+    expected_output_contains: "Verified deployed Dicompare HTTP: functions"
+    expected_exit_code: 0
+    timeout: 30
 
   - name: Web server single page mode works
-    description: Test that SPA routing redirects to index.html
-    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3008 >/tmp/dicompare-3008.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3008/nonexistent/path || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
-    expected_output_contains: "200"
-    timeout: 10
+    description: Require an unknown application route to return the exact built index
+    command: node ${output_dir}/check-http.cjs spa
+    expected_output_contains: "Verified deployed Dicompare HTTP: spa"
+    expected_exit_code: 0
+    timeout: 30
 
   # ==========================================================================
   # SCHEMA CONTENT VALIDATION
@@ -556,11 +706,17 @@ tests:
     depends_on: Export schema to test_output
     expected_exit_code: 0
 
+  - name: Browser application and Pyodide worker assets are served
+    description: Require actual JavaScript CSS and worker bytes with correct browser MIME types via the deployed launcher
+    command: node ${output_dir}/check-http.cjs bundle
+    expected_output_contains: "Verified deployed Dicompare HTTP: bundle"
+    expected_exit_code: 0
+    timeout: 30
+
 cleanup:
   script: |
     #!/usr/bin/env bash
-    # Kill any lingering serve processes
-    pkill -f "serve.*300[0-9]" 2>/dev/null || true
+    # HTTP checks stop their own server process groups in finally.
     # Optionally remove test outputs
     # rm -rf test_output
     echo "Test outputs preserved in test_output/"

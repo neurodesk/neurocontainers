@@ -671,6 +671,40 @@ tests:
       - output_exists: ${output_dir}/coarse_affine.txt
       - output_exists: ${output_dir}/coarse_result.nii.gz
 
+
+  - name: Exact affine inversion and composition order
+    description: Verify analytical anisotropic scale/translation inversion and noncommuting composition without numerical tolerances.
+    command: |
+      set -euo pipefail
+      work=$(mktemp -d "${output_dir}/niftyreg-affine.XXXXXX")
+      trap 'rm -rf "$work"' EXIT
+      printf '%s\n' '2 0 0 4' '0 4 0 -8' '0 0 0.5 2' '0 0 0 1' > "$work/a.txt"
+      printf '%s\n' '1 0 0 -4' '0 1 0 8' '0 0 1 -2' '0 0 0 1' > "$work/b.txt"
+      check_matrix() {
+        awk -v expected="$2" '
+          BEGIN { split(expected, values, " ") }
+          NF != 4 { exit 1 }
+          { for (i=1; i<=NF; i++) {
+              n++
+              if ($i !~ /^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$/) exit 1
+              if ($i+0 != values[n]+0) exit 1
+            }
+          }
+          END { if (n != 16) exit 1 }
+        ' "$1"
+      }
+      reg_transform -invAff "$work/a.txt" "$work/inverse.txt"
+      check_matrix "$work/inverse.txt" '0.5 0 0 -2 0 0.25 0 2 0 0 2 -4 0 0 0 1'
+      reg_transform -comp "$work/a.txt" "$work/b.txt" "$work/b_after_a.txt"
+      check_matrix "$work/b_after_a.txt" '2 0 0 0 0 4 0 0 0 0 0.5 0 0 0 0 1'
+      reg_transform -comp "$work/b.txt" "$work/a.txt" "$work/a_after_b.txt"
+      check_matrix "$work/a_after_b.txt" '2 0 0 -4 0 4 0 24 0 0 0.5 1 0 0 0 1'
+      reg_transform -comp "$work/a.txt" "$work/inverse.txt" "$work/identity.txt"
+      check_matrix "$work/identity.txt" '1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1'
+      echo 'Exact inverse and noncommuting affine composition order verified'
+    expected_output_contains: Exact inverse and noncommuting affine composition order verified
+    timeout: 120
+
 cleanup:
   script: |
     #!/usr/bin/env bash

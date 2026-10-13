@@ -1,5 +1,9 @@
 variables:
   upstream_commit: 15e981551693a479753b29ce39f2745420c1facf
+  neuroharmonize_commit: c03e409eae5956f290916548fecf4ab0cc351932
+  miniconda_version: py310_25.5.1-0
+  pandas_version: "1.5.3"
+  numpy_version: "1.26.4"
 
 name: eharmonize
 version: 1.0.0
@@ -22,6 +26,32 @@ auto_update:
     target:
       variable: upstream_commit
 
+  - id: neuroharmonize
+    method: github_commit
+    repo: ahzhu/neuroHarmonize
+    ref: HEAD
+    dependency: true
+    target:
+      variable: neuroharmonize_commit
+  # The pinned application calls Series.iteritems (removed in pandas 2).
+  - id: pandas
+    method: pypi
+    package: pandas
+    version_regex: '(?P<version>1\.5\.\d+)'
+    dependency: true
+    target:
+      variable: pandas_version
+      fulltest_variable: pandas_version
+  # pandas 1.5 binary wheels require the NumPy 1 ABI.
+  - id: numpy
+    method: pypi
+    package: numpy
+    version_regex: '(?P<version>1\.26\.\d+)'
+    dependency: true
+    target:
+      variable: numpy_version
+      fulltest_variable: numpy_version
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -33,7 +63,7 @@ build:
         - ssh-keyscan github.com >> ~/.ssh/known_hosts
     - template:
         name: miniconda
-        version: latest
+        version: "{{ context.miniconda_version }}"
         install_path: /opt/miniconda
         env_name: eharmonize
         env_exists: "false"
@@ -42,8 +72,8 @@ build:
         - git clone https://github.com/ahzhu/eharmonize.git && git -C eharmonize checkout {{ context.upstream_commit }}
         - cd eharmonize
         # Replace git+ssh://git@ with https:// in setup.py to avoid SSH issues
-        - sed -i "s/git+ssh:\/\/git@/git+https:\/\//" setup.py
-        - python -m pip install --no-cache-dir "setuptools<81" .
+        - sed -i "s|git+ssh://git@github.com/ahzhu/neuroHarmonize.git|git+https://github.com/ahzhu/neuroHarmonize.git@{{ context.neuroharmonize_commit }}|" setup.py
+        - python -m pip install --no-cache-dir "setuptools<81" "numpy=={{ context.numpy_version }}" "pandas=={{ context.pandas_version }}" .
     - deploy:
         path: []
         bins:

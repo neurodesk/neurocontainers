@@ -1,7 +1,7 @@
 {
   "apps": {
     "radtract 0.2.4": {
-      "version": "20261007",
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     }

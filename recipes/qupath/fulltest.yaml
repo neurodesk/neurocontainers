@@ -501,24 +501,28 @@ tests:
   # ERROR HANDLING
   # ==========================================================================
   - name: Invalid command error
-    description: Test error message for invalid command
-    command: QuPath invalidcommand 2>&1
-    expected_exit_code_not: 0
+    description: Require an explicit parser diagnostic for an unknown script option; the top-level launcher otherwise starts the GUI
+    command: QuPath script --invalid-option 2>&1
+    expected_exit_code: 0
+    expected_output_contains: "An error has occurred"
 
   - name: Missing input file for convert-ome
     description: Test error when input file is missing
     command: QuPath convert-ome nonexistent.tiff output.ome.tiff 2>&1
-    ignore_exit_code: true
+    expected_exit_code: 255
+    expected_output_contains: "Error while creating image"
 
   - name: Script syntax error handling
     description: Test handling of Groovy syntax errors
     command: QuPath script --cmd "invalid groovy syntax {{{" 2>&1
-    ignore_exit_code: true
+    expected_exit_code: 1
+    expected_output_contains: "MultipleCompilationErrorsException"
 
   - name: Script missing file error
     description: Test error when script file is missing
     command: QuPath script nonexistent_script.groovy 2>&1
-    ignore_exit_code: true
+    expected_exit_code: 1
+    expected_output_contains: "nonexistent_script.groovy"
 
   # ==========================================================================
   # LOGGING LEVELS
@@ -746,6 +750,124 @@ tests:
     description: Verify University of Edinburgh copyright
     command: QuPath --help 2>&1
     expected_output_contains: "University of Edinburgh"
+
+  - name: Exact analytical OME-TIFF pixel roundtrip
+    description: Convert a generated RGB image with the actual QuPath CLI, verify all9216 output samples and OME metadata, and preserve the source file
+    timeout: 180
+    command: |
+      set -euo pipefail
+      env -u HOME QUPATH_PREFS_ROOT="${output_dir}/qupath-private-prefs" /opt/cellpose/bin/python - <<'PYTHON'
+      import hashlib
+      import struct
+      import subprocess
+      import zlib
+      from pathlib import Path
+      import numpy as np
+      import tifffile
+
+      root = Path('${output_dir}').resolve()
+      w, h = 64, 48
+      y, x = np.indices((h, w))
+      expected = np.stack(((3*x+y)%256, (x+5*y)%256, (7*x+11*y)%256), axis=-1).astype(np.uint8)
+      def chunk(kind, data):
+          return struct.pack('>I',len(data))+kind+data+struct.pack('>I',zlib.crc32(kind+data)&0xffffffff)
+      raw = b''.join(b'\0'+row.tobytes() for row in expected)
+      image = root/'qupath-analytical.png'
+      image.write_bytes(b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>2I5B',w,h,8,2,0,0,0))+
+                       chunk(b'IDAT',zlib.compress(raw))+chunk(b'IEND',b''))
+      before = hashlib.sha256(image.read_bytes()).hexdigest()
+      output = root/'qupath-analytical.ome.tif'
+      subprocess.run(['QuPath','convert-ome',str(image),str(output),'--overwrite'],check=True)
+      with tifffile.TiffFile(output) as tif:
+          assert tif.is_ome and tif.ome_metadata
+          series=tif.series[0]
+          actual=series.asarray()
+          axes=series.axes
+          assert axes in ('YXS','YXC','CYX','SYX'), (axes,actual.shape)
+          if axes[0] in 'CS':actual=actual.transpose(1,2,0)
+          assert actual.dtype==np.uint8 and actual.shape==expected.shape
+          np.testing.assert_array_equal(actual,expected)
+      assert hashlib.sha256(image.read_bytes()).hexdigest()==before
+      print('QuPath converted all9216 analytical RGB samples to valid OME-TIFF without changing any pixel or source byte')
+      PYTHON
+    expected_output_contains: QuPath converted all9216 analytical RGB samples to valid OME-TIFF without changing any pixel or source byte
+    expected_exit_code: 0
+  - name: Actual QuPath Cellpose extension CPU segmentation
+    description: Use the immutable checksummed official microscopy example and bundled trained cyto3 model through the real QuPath extension, require nonempty valid detection objects and unchanged source/model bytes
+    timeout: 600
+    command: |
+      set -euo pipefail
+      env -u HOME QUPATH_PREFS_ROOT="${output_dir}/qupath-private-prefs" OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 /opt/cellpose/bin/python - <<'PYTHON'
+      import hashlib
+      import subprocess
+      import urllib.request
+      from pathlib import Path
+
+      root=Path('${output_dir}').resolve()
+      image=root/'qupath-cellpose-img02.png'
+      url='https://www.cellpose.org/static/images/img02.png'
+      with urllib.request.urlopen(url,timeout=120) as stream:
+          data=stream.read()
+      checksum='c5feed1a3f9ca7d3ac62655856d5d3b52f5f7aa4a52e7cb371e5462d9b0551e1'
+      assert hashlib.sha256(data).hexdigest()==checksum
+      image.write_bytes(data)
+      model=Path('/opt/cellpose/models/cyto3')
+      model_hash=hashlib.sha256(model.read_bytes()).hexdigest()
+      script=root/'qupath-cellpose-integration.groovy'
+      script.write_text('''
+      import qupath.ext.biop.cellpose.Cellpose2D
+      import qupath.ext.biop.cellpose.CellposeSetup
+      import qupath.lib.objects.PathObjects
+      import qupath.lib.roi.ROIs
+      import qupath.lib.regions.ImagePlane
+      import qupath.lib.projects.Projects
+      import qupath.lib.scripting.QP
+      import java.awt.image.BufferedImage
+
+      def imageData=getCurrentImageData()
+      assert imageData != null
+      def projectDir=new File(System.getenv('QUPATH_TEST_OUTPUT'),'cellpose-integration-project')
+      assert projectDir.isDirectory() || projectDir.mkdirs()
+      def project=Projects.createProject(projectDir,BufferedImage.class)
+      assert project != null
+      QP.setBatchProjectAndImage(project,imageData)
+      def entry=project.addImage(imageData.getServer().getBuilder())
+      entry.saveImageData(imageData)
+      project.syncChanges()
+      setImageType('FLUORESCENCE')
+      def server=imageData.getServer()
+      assert server.getWidth()>0 && server.getHeight()>0
+      assert server.nChannels()==3
+      CellposeSetup.getInstance().setCellposePythonPath('/opt/cellpose/bin/python')
+      def parent=PathObjects.createAnnotationObject(ROIs.createRectangleROI(0,0,server.getWidth(),server.getHeight(),ImagePlane.getDefaultPlane()))
+      imageData.getHierarchy().addObject(parent)
+      def cellpose=Cellpose2D.builder('/opt/cellpose/models/cyto3')
+          .channels(1,2).cellposeChannels(1,2).diameter(30).disableGPU()
+          .tempDirectory(new File(System.getenv('QUPATH_TEST_OUTPUT'),'cellpose-extension-work'))
+          .tileSize(512).nThreads(2).measureShape().build()
+      cellpose.detectObjects(imageData,[parent])
+      def detected=parent.getChildObjects()
+      assert detected.size()>0 : 'Cellpose extension returned no actual detections'
+      for (def object : detected) {
+          def roi=object.getROI()
+          assert roi != null && roi.getArea()>0 && Double.isFinite(roi.getArea())
+          assert roi.getBoundsX()>=0 && roi.getBoundsY()>=0
+          assert roi.getBoundsX()+roi.getBoundsWidth()<=server.getWidth()+1e-6
+          assert roi.getBoundsY()+roi.getBoundsHeight()<=server.getHeight()+1e-6
+      }
+      println('Actual QuPath Cellpose extension completed CPU segmentation and imported valid detection objects: '+detected.size())
+      ''')
+      import os
+      env=os.environ.copy();env['QUPATH_TEST_OUTPUT']=str(root)
+      subprocess.run(['QuPath','script','--image',str(image),str(script)],check=True,env=env)
+      assert hashlib.sha256(image.read_bytes()).hexdigest()==checksum
+      assert hashlib.sha256(model.read_bytes()).hexdigest()==model_hash
+      print('QuPath Cellpose integration preserved the original sample and trained model')
+      PYTHON
+    expected_output_contains:
+      - Actual QuPath Cellpose extension completed CPU segmentation and imported valid detection objects
+      - QuPath Cellpose integration preserved the original sample and trained model
+    expected_exit_code: 0
 
 cleanup:
   script: |

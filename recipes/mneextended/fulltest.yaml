@@ -417,7 +417,23 @@ tests:
     PYTHON
   expected_output_contains: BIDS EEG round trip succeeded
 - name: VS Code wrapper forwards arguments without a home directory
-  command: env -u XDG_CONFIG_HOME HOME=/proc/mneextended-no-home code --version
+  command: |
+    /opt/miniconda/envs/mne-extended/bin/python - <<'PYTHON'
+    import os
+    import platform
+    import subprocess
+    env = dict(os.environ)
+    env.pop("HOME", None)
+    env.pop("XDG_CONFIG_HOME", None)
+    result = subprocess.run(["code", "--version"], env=env, capture_output=True, text=True, check=True)
+    lines = result.stdout.strip().splitlines()
+    machine = platform.machine()
+    assert machine in ("x86_64", "aarch64"), machine
+    expected_arch = {"x86_64": "x64", "aarch64": "arm64"}[machine]
+    assert len(lines) == 3 and lines[0] == "${vscode_version}" and lines[2] == expected_arch, result
+    assert len(lines[1]) == 40, result
+    print("VS Code ${vscode_version} native launcher passed without HOME:", expected_arch)
+    PYTHON
   expected_output_contains: ${vscode_version}
 
 - name: FLUX source revision
@@ -429,7 +445,7 @@ tests:
   expected_output_contains: ${openneuro_version}
 - name: FLUX first-look notebook on synthetic MEG data
   command: |
-    env -u XDG_CONFIG_HOME HOME=/proc/mneextended-no-home /usr/local/bin/mneextended-run /opt/miniconda/envs/mne-extended/bin/python - <<'PYTHON'
+    env -u XDG_CONFIG_HOME -u HOME /usr/local/bin/mneextended-run /opt/miniconda/envs/mne-extended/bin/python - <<'PYTHON'
     import os
     import runpy
     import stat
@@ -446,7 +462,7 @@ tests:
   command: |
     config_root="$(mktemp -d)"
     trap 'rm -rf "$config_root"' EXIT
-    HOME=/proc/mneextended-no-home XDG_CONFIG_HOME="$config_root" EXPECTED_CONFIG="$config_root" /usr/local/bin/mneextended-run /opt/miniconda/envs/mne-extended/bin/python - <<'PYTHON'
+    env -u HOME XDG_CONFIG_HOME="$config_root" EXPECTED_CONFIG="$config_root" /usr/local/bin/mneextended-run /opt/miniconda/envs/mne-extended/bin/python - <<'PYTHON'
     import os
     from pathlib import Path
 
@@ -457,3 +473,46 @@ tests:
     print("OpenNeuro uses supplied configuration directory")
     PYTHON
   expected_output_contains: OpenNeuro uses supplied configuration directory
+
+- name: PyEDFlib EDF and BDF signal roundtrip
+  description: Write and reread exact digital EEG samples, channel metadata and an event using the installed native library.
+  command: |
+    /opt/miniconda/envs/mne-extended/bin/python - <<'PYTHON'
+    from datetime import datetime
+    from pathlib import Path
+    import tempfile
+    import numpy as np
+    import pyedflib
+
+    with tempfile.TemporaryDirectory(prefix="mneextended-edf-") as scratch:
+        signals = [np.arange(-50, 50, dtype=np.int32), np.arange(49, -51, -1, dtype=np.int32)]
+        for extension, kind, digital_min, digital_max in (
+            ("edf", pyedflib.FILETYPE_EDFPLUS, -32768, 32767),
+            ("bdf", pyedflib.FILETYPE_BDFPLUS, -8388608, 8388607),
+        ):
+            target = Path(scratch) / ("signals." + extension)
+            headers = [dict(label=label, dimension="uV", sample_frequency=100,
+                            physical_min=-100, physical_max=100,
+                            digital_min=digital_min, digital_max=digital_max,
+                            transducer="", prefilter="") for label in ("EEG Fp1", "EEG Fp2")]
+            with pyedflib.EdfWriter(str(target), 2, file_type=kind) as writer:
+                writer.setStartdatetime(datetime(2020, 1, 1))
+                writer.setSignalHeaders(headers)
+                writer.writeSamples(signals, digital=True)
+                writer.writeAnnotation(0.25, 0.1, "test event")
+            assert target.stat().st_size > 768
+            with pyedflib.EdfReader(str(target)) as reader:
+                assert reader.signals_in_file == 2
+                assert reader.getSignalLabels() == ["EEG Fp1", "EEG Fp2"]
+                np.testing.assert_array_equal(reader.getNSamples(), [100, 100])
+                for index, expected in enumerate(signals):
+                    assert reader.getSampleFrequency(index) == 100
+                    np.testing.assert_array_equal(reader.readSignal(index, digital=True), expected)
+                onsets, durations, labels = reader.readAnnotations()
+                np.testing.assert_array_equal(onsets, [0.25])
+                np.testing.assert_array_equal(durations, [0.1])
+                assert list(labels) == ["test event"]
+            print(extension, "two-channel 100Hz samples and event roundtrip passed")
+    PYTHON
+  expected_exit_code: 0
+  expected_output_contains: bdf two-channel 100Hz samples and event roundtrip passed

@@ -1,8 +1,9 @@
 {
   "apps": {
     "gigaconnectome 0.6.0": {
-      "version": "20250630",
-      "exec": ""
+      "version": "20261012",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [

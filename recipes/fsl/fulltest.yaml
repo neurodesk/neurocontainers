@@ -147,8 +147,9 @@ tests:
 
   - name: fslmaths usage
     description: Verify fslmaths binary runs
-    command: fslmaths 2>&1 || true
+    command: fslmaths --help
     expected_exit_code: 0
+    expected_output_contains: "Usage: fslmaths"
 
   # ==========================================================================
   # HEADER AND METADATA TOOLS
@@ -990,6 +991,62 @@ tests:
       fslmaths ${t1w} -mas test_output/t1w_brain_pipeline_mask.nii.gz test_output/t1w_brain_final.nii.gz
     validate:
       - output_exists: ${output_dir}/t1w_brain_final.nii.gz
+
+  - name: Analytical voxel arithmetic and identity registration
+    description: Run actual FSL CLIs and assert every output voxel, physical volume, ROI affine and unchanged input.
+    command: |
+      fslpython - "${output_dir}" <<'PYTHON'
+      import hashlib
+      from pathlib import Path
+      import subprocess
+      import sys
+      import tempfile
+
+      import nibabel as nib
+      import numpy as np
+
+      root = Path(sys.argv[1])
+      root.mkdir(parents=True, exist_ok=True)
+      with tempfile.TemporaryDirectory(prefix="analytical-", dir=root) as tmp:
+          work = Path(tmp)
+          affine = np.diag([-2.0, 3.0, 4.0, 1.0])
+          affine[:3, 3] = [10, -9, 12]
+          values = np.arange(120, dtype=np.float32).reshape((6, 5, 4))
+          source = work / "input.nii.gz"
+          nib.save(nib.Nifti1Image(values, affine), source)
+          digest = hashlib.sha256(source.read_bytes()).hexdigest()
+          transformed = work / "arithmetic.nii.gz"
+          subprocess.run(["fslmaths", str(source), "-mul", "2", "-add", "3", str(transformed)],
+                         check=True, timeout=60)
+          image = nib.load(transformed)
+          assert image.get_data_dtype() == np.dtype("float32")
+          np.testing.assert_array_equal(image.get_fdata(), values * 2 + 3)
+          np.testing.assert_array_equal(image.affine, affine)
+          stats = subprocess.run(["fslstats", str(transformed), "-R", "-M", "-V"],
+                                 check=True, capture_output=True, text=True, timeout=60)
+          np.testing.assert_array_equal([float(v) for v in stats.stdout.split()], [3, 241, 122, 120, 2880])
+          roi_path = work / "roi.nii.gz"
+          subprocess.run(["fslroi", str(transformed), str(roi_path), "1", "3", "1", "3", "0", "4"],
+                         check=True, timeout=60)
+          roi = nib.load(roi_path)
+          np.testing.assert_array_equal(roi.get_fdata(), (values * 2 + 3)[1:4, 1:4, :])
+          expected_affine = affine.copy()
+          expected_affine[:3, 3] = nib.affines.apply_affine(affine, [1, 1, 0])
+          np.testing.assert_array_equal(roi.affine, expected_affine)
+          identity_path = work / "identity.mat"
+          np.savetxt(identity_path, np.eye(4), fmt="%d")
+          registered_path = work / "registered.nii.gz"
+          subprocess.run(["flirt", "-in", str(source), "-ref", str(source), "-applyxfm",
+                          "-init", str(identity_path), "-interp", "nearestneighbour", "-out", str(registered_path)],
+                         check=True, timeout=60)
+          registered = nib.load(registered_path)
+          np.testing.assert_array_equal(registered.get_fdata(), values)
+          np.testing.assert_array_equal(registered.affine, affine)
+          assert hashlib.sha256(source.read_bytes()).hexdigest() == digest
+      print("Exact FSL arithmetic, physical statistics, ROI geometry and identity registration verified")
+      PYTHON
+    expected_output_contains: Exact FSL arithmetic, physical statistics, ROI geometry and identity registration verified
+
 
 cleanup:
   script: |

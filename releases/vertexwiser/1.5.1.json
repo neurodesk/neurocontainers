@@ -1,7 +1,7 @@
 {
   "apps": {
     "vertexwiser 1.5.1": {
-      "version": "20260608",
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     }

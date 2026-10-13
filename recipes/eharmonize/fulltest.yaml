@@ -1,8 +1,10 @@
 # eharmonize container test suite
-# Minimal no-rebuild verification for the shipped eharmonize CLI and Python package.
+# Verify the shipped CLI and real reference-based harmonization.
 
 name: eharmonize
 version: 1.0.0
+pandas_version: "1.5.3"
+numpy_version: "1.26.4"
 
 test_data:
   output_dir: test_output
@@ -21,12 +23,12 @@ tests:
 
   - name: eharmonize help output
     description: Verify the main CLI help text renders
-    command: eharmonize --help 2>&1 | sed -n '1,20p'
+    command: eharmonize --help 2>&1
     expected_output_contains: "Usage: eharmonize [OPTIONS] COMMAND [ARGS]..."
 
   - name: harmonize-fa help output
     description: Verify the harmonize-fa subcommand is exposed
-    command: eharmonize harmonize-fa --help 2>&1 | sed -n '1,20p'
+    command: eharmonize harmonize-fa --help 2>&1
     expected_output_contains: "Usage: eharmonize harmonize-fa"
 
   - name: Python runtime available
@@ -38,3 +40,98 @@ tests:
     description: Verify the installed Python package metadata matches the shipped runtime
     command: python -c "from importlib.metadata import distribution; d = distribution('eharmonize'); assert d.version; print(d.metadata['Name'])"
     expected_output_contains: eharmonize
+
+  - name: Actual reference harmonization and saved model
+    description: Fit ComBat-GAM against bundled reference curves and verify reduced site offsets, exact covariates, finite FA, saved-model application and QC images
+    command: |
+      python - <<'PY'
+      import json
+      import os
+      import subprocess
+      from pathlib import Path
+
+      import numpy as np
+      import pandas as pd
+      from PIL import Image
+
+      from eharmonize.funcs import utils
+      from neuroHarmonize import harmonizationApply, loadHarmonizationModel
+
+      root = Path('${output_dir}/eharmonize').resolve()
+      root.mkdir(parents=True, exist_ok=True)
+      os.environ['MPLCONFIGDIR'] = str(root / 'matplotlib')
+      os.environ['MPLBACKEND'] = 'Agg'
+      os.environ.setdefault('USER', 'neurocontainers-test')
+      settings, reference = utils.load_version('v0.1', 'FA')
+      rois = [c for c in reference.columns[3:] if c in ['AverageFA_FA', 'CC_FA', 'CST_FA']]
+      assert len(rois) == 3
+      baseline = reference.loc[(reference.Quantile == 0.5) &
+                               reference.Age.isin(range(20, 61, 3)), ['Age', 'Sex'] + rois]
+      assert len(baseline) == 28, baseline.shape
+      frames = []
+      for site_index, site in enumerate(['scannerA', 'scannerB']):
+          frame = baseline.reset_index(drop=True).copy()
+          frame['SITE'] = site
+          frame['subjectID'] = [f'synthetic-{site}-{i:02d}' for i in range(len(frame))]
+          phase = np.arange(len(frame))[:, None] * 1.7 + np.arange(len(rois))[None, :] * 0.8
+          noise = 0.005 * np.sin(phase + site_index * 0.4)
+          frame.loc[:, rois] = frame[rois].to_numpy() + (0.04 if site_index else -0.04) + noise
+          frames.append(frame)
+      original = pd.concat(frames, ignore_index=True)
+      input_file = root / 'synthetic.csv'
+      original.to_csv(input_file, index=False)
+      original = pd.read_csv(input_file)
+      destination = root / 'results'
+      subprocess.run(['eharmonize', 'harmonize-fa', '--incsv', str(input_file),
+                      '--outdir', str(destination), '--reference', 'v0.1'], check=True)
+      base = destination / 'harmonized_FA_v0.1'
+      output = pd.read_csv(Path(str(base) + '.csv'))
+      assert list(output.subjectID) == list(original.subjectID)
+      for column in ['Age', 'Sex', 'SITE']:
+          pd.testing.assert_series_equal(output[column], original[column])
+      values = output[rois].to_numpy()
+      assert values.shape == (56, 3) and np.isfinite(values).all()
+      assert ((values > 0) & (values < 1)).all()
+      raw_gap = np.abs(original.groupby('SITE')[rois].mean().diff().iloc[1].to_numpy())
+      adjusted_gap = np.abs(output.groupby('SITE')[rois].mean().diff().iloc[1].to_numpy())
+      assert (adjusted_gap < raw_gap / 2).all(), (raw_gap, adjusted_gap)
+      log = json.loads(Path(str(base) + '.json').read_text())
+      assert log['reference'] == 'v0.1'
+      assert log['N_controls'] == 56 and log['N_Females'] == log['N_Males'] == 28
+      assert set(log['FA']['ROIs']) == set(rois)
+      assert 'Successful Completion!' in Path(str(base) + '.txt').read_text()
+      model = loadHarmonizationModel(str(Path(str(base) + '.model')))
+      assert model['smooth_model']['perform_smoothing']
+      assert model['smooth_model']['smooth_terms'] == ['Age']
+      ref = reference[['Age', 'Sex'] + rois].copy()
+      ref['SITE'] = 'reference'
+      combined = pd.concat([original[['Age', 'Sex', 'SITE'] + rois], ref], ignore_index=True)
+      reapplied = harmonizationApply(combined[rois].to_numpy(), combined[['Age', 'Sex', 'SITE']], model)
+      assert np.isfinite(reapplied).all()
+      # Training and saved-model application use the same fitted coefficients.
+      # Allow only floating point algebra/CSV roundtrip error, scaled to the output.
+      roundoff = 256 * np.finfo(np.float64).eps * (1 + np.max(np.abs(values)))
+      np.testing.assert_allclose(reapplied[:len(original)], values, rtol=0, atol=roundoff)
+      for roi in rois:
+          with Image.open(destination / 'QC_images' / (roi + '.png')) as image:
+              image.load()
+              assert image.format == 'PNG' and min(image.size) >= 100
+              pixels = np.asarray(image.convert('RGB'))
+              assert pixels.max() > pixels.min()
+      print('HARMONIZATION_SAVED_MODEL_SITE_EFFECT_QC_OK')
+      PY
+    expected_output_contains: HARMONIZATION_SAVED_MODEL_SITE_EFFECT_QC_OK
+    expected_exit_code: 0
+    timeout: 900
+
+  - name: Compatible pandas and NumPy runtimes
+    command: |
+      python - <<'PY'
+      import numpy as np
+      import pandas as pd
+      assert pd.__version__ == '${pandas_version}'
+      assert np.__version__ == '${numpy_version}'
+      assert list(pd.Series([2, 3]).iteritems()) == [(0, 2), (1, 3)]
+      print('PANDAS_NUMPY_COMPATIBILITY_OK')
+      PY
+    expected_output_contains: PANDAS_NUMPY_COMPATIBILITY_OK

@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "workshopdemo 1.0.0": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "workflows"
+  ],
+  "show_in_menu": false,
+  "show_in_applist": false
+}

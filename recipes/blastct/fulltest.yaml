@@ -1,5 +1,5 @@
 # blastct container test suite
-# Minimal no-rebuild verification for the installed BLAST-CT Python package.
+# Package and actual pretrained CPU segmentation checks.
 
 name: blastct
 version: 2.0.0
@@ -26,7 +26,7 @@ tests:
 
   - name: BLAST-CT package metadata
     description: Verify pip metadata reports the installed blast_ct package
-    command: python3 -m pip show blast_ct 2>&1 | sed -n '1,12p'
+    command: python3 -m pip show blast_ct
     expected_output_contains: "Home-page: https://github.com/biomedia-mira/blast_ct"
 
   - name: SimpleITK version
@@ -38,3 +38,70 @@ tests:
     description: Verify the module is installed under the Miniconda site-packages tree
     command: python3 -c "import blast_ct; print(blast_ct.__file__)"
     expected_output_contains: "/opt/miniconda/lib/python3.11/site-packages/blast_ct/"
+
+  - name: Official pretrained CPU segmentation
+    description: Run the shipped DeepMedic inference engine and official checkpoint on a deterministic patch and verify all five-class segmentation outputs
+    command: |
+      python3 - <<'PYTHON'
+      import hashlib
+      import json
+      import os
+      from pathlib import Path
+      import tempfile
+
+      import numpy as np
+      import torch
+
+      with tempfile.TemporaryDirectory(prefix="blastct-cpu-", dir="${output_dir}") as scratch:
+          os.environ["BLAST_CT_CACHE_DIR"] = str(Path(scratch) / "assets")
+          from blast_ct.assets import ASSETS_REF, get_config_path, get_model_path
+          from blast_ct.read_config import get_model
+          from blast_ct.trainer.inference import ModelInference
+
+          assert ASSETS_REF == "ccfa6efb6ee269b97d971a96658d78953381c08e"
+          checkpoint = Path(get_model_path(1))
+          checkpoint_hash = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+          assert checkpoint_hash == "f15cb328b1948a3cf47386cf8b5e3fa1f9931d9c69b8d2ad413e853d4bb23d39"
+          config_path = Path(get_config_path())
+          config_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()
+          config = json.loads(config_path.read_text())
+          assert config["data"]["class_names"] == ["foreground", "IPH", "EAH", "oedema", "IVH"]
+          torch.set_num_threads(2)
+          model = get_model(config)
+          input_shape = model.calculate_input_size((5, 5, 5))
+          assert input_shape == (85, 85, 85)
+          assert model.get_output_size(input_shape) == (5, 5, 5)
+          image = torch.linspace(-1.0, 1.0, 85 ** 3, dtype=torch.float32).reshape(1, 1, *input_shape)
+          original_image = image.clone()
+          runner = ModelInference(scratch, torch.device("cpu"), model, None, str(checkpoint), "segmentation")
+          states = list(runner.inference([{"image": image}]))
+          assert len(states) == 1
+          state = states[0]
+          logits = state["logits"].numpy()
+          probabilities = state["prob"].numpy()
+          labels = state["pred"].numpy()
+          assert logits.shape == probabilities.shape == (1, 5, 5, 5, 5)
+          assert labels.shape == (1, 5, 5, 5)
+          assert logits.dtype == probabilities.dtype == np.float32
+          assert np.isfinite(logits).all() and np.isfinite(probabilities).all()
+          assert np.ptp(logits) > 0 and np.ptp(logits, axis=2).max() > 0
+          # Independently compute softmax in float64; eight float32 epsilons
+          # cover rounding in the shipped float32 normalization of five classes.
+          shifted = logits.astype(np.float64) - logits.max(axis=1, keepdims=True)
+          exponentials = np.exp(shifted)
+          expected = exponentials / exponentials.sum(axis=1, keepdims=True)
+          bound = 8 * np.finfo(np.float32).eps
+          np.testing.assert_allclose(probabilities, expected, rtol=0, atol=bound)
+          np.testing.assert_allclose(probabilities.sum(axis=1), 1, rtol=0, atol=bound)
+          assert (probabilities >= 0).all() and (probabilities <= 1).all()
+          np.testing.assert_array_equal(labels, logits.argmax(axis=1))
+          assert ((labels >= 0) & (labels < 5)).all()
+          assert torch.equal(image, original_image)
+          assert hashlib.sha256(checkpoint.read_bytes()).hexdigest() == checkpoint_hash
+          assert hashlib.sha256(config_path.read_bytes()).hexdigest() == config_hash
+
+      print("BLAST-CT official pretrained CPU inference verified all125 five-class segmentation voxels")
+      PYTHON
+    expected_output_contains: BLAST-CT official pretrained CPU inference verified all125 five-class segmentation voxels
+    expected_exit_code: 0
+    timeout: 180

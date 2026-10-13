@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "sovabids_arm64 0.4.7": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "electrophysiology",
+    "bids apps"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "sovabids"
+}

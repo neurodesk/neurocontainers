@@ -20,6 +20,9 @@
 name: qmrlab
 version: 3.0.0
 
+# Preserve Octave failure codes through existing output filters.
+env_setup: set -o pipefail
+
 required_files:
   - dataset: ds000001
     files:
@@ -675,7 +678,7 @@ tests:
   # BATCH PROCESSING EXAMPLE
   # ==========================================================================
   - name: Generate batch script template
-    description: Test qMRgenBatch to create processing script
+    description: Verify model input and protocol metadata used by batch templates
     command: |
       octave --no-gui --eval "
         addpath(genpath('/opt/qmrlab'));
@@ -685,7 +688,8 @@ tests:
         disp('Batch generation test:');
         disp(['Model: ' class(Model)]);
         disp(['Required inputs: ' strjoin(Model.MRIinputs, ', ')]);
-        disp(['Protocol format: ' Model.Prot.IRData.Format{1}]);
+        assert(ischar(Model.Prot.IRData.Format) && strcmp(Model.Prot.IRData.Format, 'TI(ms)'));
+        disp(['Protocol format: ' Model.Prot.IRData.Format]);
       " 2>&1 | grep -E "^(Batch|Model:|Required|Protocol)"
     expected_output_contains: "Batch generation test"
     expected_exit_code: 0
@@ -898,7 +902,8 @@ tests:
         x.rb = -2000;
         x.ra = 1000;
 
-        % Simulate with SNR=100
+        % Reproduce the same existing SNR=100 simulation on both architectures.
+        rng(0);
         Opt.SNR = 100;
         Opt.T1 = true_T1;
         Opt.M0 = 1000;
@@ -916,13 +921,11 @@ tests:
         disp(['Fitted T1: ' num2str(FitResult.T1, '%.1f') ' ms']);
         disp(['Error: ' num2str(error_pct, '%.2f') '%%']);
 
-        if error_pct < 10
-          disp('TEST STATUS: PASSED (error < 10%%)');
-        else
-          disp('TEST STATUS: WARNING (error >= 10%%)');
-        end
+        assert(isscalar(FitResult.T1) && isfinite(FitResult.T1) && FitResult.T1 > 0);
+        assert(isfinite(error_pct) && error_pct < 10, 'IR fit must meet the existing 10-percent accuracy criterion');
+        disp('TEST STATUS: PASSED (error < 10%%)');
       " 2>&1 | grep -E "^(===|True|Fitted|Error|TEST)"
-    expected_output_contains: "Full IR Workflow Test"
+    expected_output_contains: "TEST STATUS: PASSED (error < 10%%)"
     expected_exit_code: 0
 
 cleanup:

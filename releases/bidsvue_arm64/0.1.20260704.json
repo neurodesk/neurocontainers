@@ -1,0 +1,21 @@
+{
+  "apps": {
+    "bidsvue_arm64 0.1.20260704": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "BIDSvue-bidsvue_arm64 0.1.20260704": {
+      "version": "20261013",
+      "exec": "bidsvue",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation",
+    "bids apps"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "bidsvue"
+}

@@ -1,0 +1,22 @@
+{
+  "apps": {
+    "qupath_arm64 0.7.0": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "qupathGUI-qupath_arm64 0.7.0": {
+      "version": "20261013",
+      "exec": "QuPath",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging",
+    "data organisation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "qupath"
+}

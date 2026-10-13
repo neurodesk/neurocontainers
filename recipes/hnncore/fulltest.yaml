@@ -652,10 +652,13 @@ tests:
     expected_output_contains: "No broken requirements found"
 
   - name: Serial and MPI dipole simulation
-    description: Run a driven cortical model and compare serial and two-process MPI results
+    description: Compare serial and two-process MPI cortical signals and require an exact HDF5 export/readback of the real simulated dipole.
     command: |
       python3 - <<'PYTHON'
       import numpy as np
+      import tempfile
+      from pathlib import Path
+      from hnn_core import read_dipole
       from hnn_core import JoblibBackend, MPIBackend, neymotin_2020_model, simulate_dipole
 
       net = neymotin_2020_model(mesh_shape=(3, 3))
@@ -665,15 +668,35 @@ tests:
       with MPIBackend(n_procs=2):
           parallel = simulate_dipole(net.copy(), tstop=5, n_trials=1, verbose=False)[0]
       assert len(serial.times) == 201
+      assert serial.times.shape == parallel.times.shape == (201,)
+      assert np.isfinite(serial.times).all() and np.all(np.diff(serial.times) > 0)
+      assert serial.times[0] == 0
+      np.testing.assert_array_equal(parallel.times, serial.times)
       assert np.isclose(serial.times[-1], 5)
       for component in ("agg", "L2", "L5"):
           assert np.isfinite(serial.data[component]).all()
           assert np.ptp(serial.data[component]) > 0
           np.testing.assert_allclose(parallel.data[component], serial.data[component],
                                      rtol=1e-8, atol=1e-14)
+      with tempfile.TemporaryDirectory(prefix='hnn-dipole-', dir='${output_dir}') as tmp:
+          path = Path(tmp) / 'simulated.hdf5'
+          serial.write(path, overwrite=False)
+          assert path.read_bytes()[:8] == bytes([137, 72, 68, 70, 13, 10, 26, 10])
+          restored = read_dipole(path)
+          np.testing.assert_array_equal(restored.times, serial.times)
+          assert set(restored.data) == set(serial.data) == {'agg', 'L2', 'L5'}
+          for component in serial.data:
+              assert serial.data[component].shape == (201,)
+              np.testing.assert_array_equal(restored.data[component], serial.data[component])
+          assert restored.sfreq == serial.sfreq > 0
+          assert restored.nave == serial.nave == 1
+          assert restored.scale_applied == serial.scale_applied
       print("Serial and MPI simulations agree on 201 finite dipole samples")
+      print("HDF5 roundtrip preserves every dipole sample, time and scale")
       PYTHON
-    expected_output_contains: "Serial and MPI simulations agree on 201 finite dipole samples"
+    expected_output_contains:
+      - "Serial and MPI simulations agree on 201 finite dipole samples"
+      - "HDF5 roundtrip preserves every dipole sample, time and scale"
 
   - name: Browser GUI without a home directory
     description: Verify the deployed GUI renders its notebook using writable temporary application directories

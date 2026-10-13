@@ -1,12 +1,16 @@
 name: mritools
 version: 4.9.0
 
+variables:
+  julia_version: 1.10.12
+
 copyright:
   - license: MIT
     url: https://github.com/korbinian90/CompileMRI.jl/blob/master/LICENSE
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   method: github_release
@@ -25,10 +29,26 @@ build:
         - curl
         - ca-certificates
 
+    - install:
+        - build-essential
+        - git
+      condition: arch == "aarch64"
+
     - workdir: /opt/mritools-{{ context.version }}/
 
     - run:
         - tar -xz -C /opt/mritools-{{ context.version }}/ --strip-components 1 -f {{ get_file("v") }}
+      condition: arch == "x86_64"
+
+    - run:
+        - mkdir -p /opt/mritools-{{ context.version }}/source
+        - tar -xz -C /opt/mritools-{{ context.version }}/source --strip-components 1 -f {{ get_file("compilemri_source") }}
+        - tar -xz -C /opt -f {{ get_file("julia") }}
+        - /opt/julia-{{ context.julia_version }}/bin/julia --project=/opt/mritools-{{ context.version }}/source -e 'using Pkg; Pkg.instantiate(); Pkg.build("CompileMRI")'
+        - /opt/julia-{{ context.julia_version }}/bin/julia --project=/opt/mritools-{{ context.version }}/source -e 'using CompileMRI; CompileMRI.compile("/tmp/mritools-compiled")'
+        - cp -a /tmp/mritools-compiled/. /opt/mritools-{{ context.version }}/
+        - rm -rf /opt/mritools-{{ context.version }}/source /opt/julia-{{ context.julia_version }} /tmp/mritools-compiled
+      condition: arch == "aarch64"
 
     - environment:
         PATH: /opt/mritools-{{ context.version }}/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
@@ -78,4 +98,13 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBI
 
 files:
   - name: v
+    condition: arch == "x86_64"
     url: "https://github.com/korbinian90/CompileMRI.jl/releases/download/v{{ context.version }}/mritools_linux_x64_{{ context.version }}.tar.gz"
+  - name: compilemri_source
+    condition: arch == "aarch64"
+    url: https://github.com/korbinian90/CompileMRI.jl/archive/refs/tags/v{{ context.version }}.tar.gz
+    sha256: 0810bc99b08536757330f8dc52e5abb8acc22dd99fda6aaea91a74fe2b826fe5
+  - name: julia
+    condition: arch == "aarch64"
+    url: https://julialang-s3.julialang.org/bin/linux/aarch64/1.10/julia-{{ context.julia_version }}-linux-aarch64.tar.gz
+    sha256: cc257b21967049642bfe17de1aff7dae17477eba4f423f98cb400c002080e5a2

@@ -1,5 +1,6 @@
 name: deepisles
 version: "1.1.0"
+upstream_version: '1.1'
 default_timeout: 60
 tests:
 - name: Python imports gdown
@@ -303,4 +304,68 @@ tests:
   command: case "$PATH" in /opt/miniconda/envs/deepisles/bin:*) exit 0;; *) exit 1;; esac
   expected_exit_code: 0
 
-upstream_version: '1.1'
+- name: deepisles CLI is on PATH
+  command: deepisles --help
+  expected_output_contains: "--dwi"
+- name: GPU probe tolerates a missing nvidia-smi
+  command: cd /opt/DeepIsles && PATH=/opt/miniconda/envs/deepisles/bin python -c 'from src.utils import check_gpu_memory; assert check_gpu_memory() is False'
+  expected_exit_code: 0
+- name: HD-BET parameters are bundled
+  command: /opt/miniconda/envs/deepisles/bin/python -c 'import os; from HD_BET.paths import folder_with_parameter_files as d; assert os.path.isfile(os.path.join(d, "0.model")), d'
+  expected_exit_code: 0
+- name: Segments the bundled sample case on CPU with MNI and team outputs
+  timeout: 3600
+  command: |-
+    set -e
+    out="$(mktemp -d)"
+    d=/opt/DeepIsles/data
+    CUDA_VISIBLE_DEVICES= deepisles --fast --results-mni --save-team-outputs -o "$out" \
+      --dwi $d/sub-strokecase0001_ses-0001_dwi.nii.gz \
+      --adc $d/sub-strokecase0001_ses-0001_adc.nii.gz \
+      --flair $d/sub-strokecase0001_ses-0001_flair.nii.gz
+    /opt/miniconda/envs/deepisles/bin/python - "$out/lesion_msk.nii.gz" "$d/sub-strokecase0001_ses-0001_dwi.nii.gz" <<'PY'
+    import sys, nibabel as nib, numpy as np
+    mask, dwi = nib.load(sys.argv[1]), nib.load(sys.argv[2])
+    assert mask.shape == dwi.shape, (mask.shape, dwi.shape)
+    data = np.asarray(mask.dataobj)
+    assert set(np.unique(data)) <= {0, 1}, np.unique(data)
+    frac = data.mean()
+    assert 0 < frac < 0.05, frac
+    print('lesion voxels', int(data.sum()))
+    from pathlib import Path
+    output = Path(sys.argv[1]).parent
+    atlas = nib.load('/opt/DeepIsles/data/atlas/flair_mni.nii.gz')
+    mni = nib.load(output / 'output_mni/lesion_msk-mni.nii.gz')
+    assert mni.shape == atlas.shape, (mni.shape, atlas.shape)
+    np.testing.assert_allclose(mni.affine, atlas.affine, atol=1e-4)
+    assert set(np.unique(np.asarray(mni.dataobj))) <= {0, 1}
+    assert list((output / 'output_teams/seals').glob('*.nii.gz'))
+    PY
+    rm -rf "$out"
+  expected_output_contains: lesion voxels
+
+- name: MNI results require FLAIR before inference
+  command: deepisles --results-mni --dwi /opt/DeepIsles/data/sub-strokecase0001_ses-0001_dwi.nii.gz --adc /opt/DeepIsles/data/sub-strokecase0001_ses-0001_adc.nii.gz -o /tmp/deepisles-missing-flair
+  expected_exit_code: 1
+  expected_output_contains: "--results-mni requires --flair"
+- name: Skull strips and segments DWI and ADC without FLAIR on CPU
+  timeout: 7200
+  command: |-
+    set -e
+    out="$(mktemp -d)"
+    d=/opt/DeepIsles/data
+    CUDA_VISIBLE_DEVICES= deepisles --skull-strip -o "$out" \
+      --dwi $d/sub-strokecase0001_ses-0001_dwi.nii.gz \
+      --adc $d/sub-strokecase0001_ses-0001_adc.nii.gz
+    /opt/miniconda/envs/deepisles/bin/python - "$out/lesion_msk.nii.gz" "$d/sub-strokecase0001_ses-0001_dwi.nii.gz" <<'PYTEST'
+    import sys, nibabel as nib, numpy as np
+    mask, dwi = nib.load(sys.argv[1]), nib.load(sys.argv[2])
+    assert mask.shape == dwi.shape, (mask.shape, dwi.shape)
+    np.testing.assert_allclose(mask.affine, dwi.affine, atol=1e-4)
+    data = np.asarray(mask.dataobj)
+    assert set(np.unique(data)) <= {0, 1}, np.unique(data)
+    assert 0 < data.mean() < 0.05, data.mean()
+    print('skull-stripped lesion voxels', int(data.sum()))
+    PYTEST
+    rm -rf "$out"
+  expected_output_contains: skull-stripped lesion voxels

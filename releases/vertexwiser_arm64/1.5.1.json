@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "vertexwiser_arm64 1.5.1": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "workflows"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "vertexwiser"
+}

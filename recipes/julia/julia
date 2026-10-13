@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+case ${JULIA_DEPOT_PATH-'~/.julia:/opt/julia_depot'} in
+    '~/.julia:/opt/julia_depot')
+        if [ -n "${HOME:-}" ] && mkdir -p "$HOME/.julia" 2>/dev/null && [ -w "$HOME/.julia" ]; then
+            depot="$HOME/.julia"
+        else
+            depot=$(mktemp -d "${TMPDIR:-/tmp}/julia-depot.XXXXXXXXXX")
+        fi
+        export JULIA_DEPOT_PATH="$depot:/opt/julia_depot"
+        ;;
+esac
+
+exec /opt/julia-latest/bin/julia "$@"

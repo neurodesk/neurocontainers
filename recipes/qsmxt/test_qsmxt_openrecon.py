@@ -2075,3 +2075,158 @@ def test_nonuniform_echo_spacing_is_only_rejected_for_r2star_qsm(method, tmp_pat
             qsmxt.write_bids_dataset(_scanner_echo_slice_images(), FakeMetadata(), tmp_path, settings)
     else:
         qsmxt.write_bids_dataset(_scanner_echo_slice_images(), FakeMetadata(), tmp_path, settings)
+
+
+def _dual_polarity_images(repetitions=4, slices=2):
+    images = []
+    for series_index, sequence, image_type, base in (
+        (1, "ep3d_qsm", ismrmrd.IMTYPE_MAGNITUDE, 1000.0),
+        (2, "ep3d_qsm_Pha", getattr(ismrmrd, "IMTYPE_PHASE", 2), 0.0),
+    ):
+        for repetition in range(repetitions):
+            for slice_index in range(slices):
+                images.append(
+                    _image(
+                        series_index,
+                        repetition * slices + slice_index + 1,
+                        sequence,
+                        np.full((1, 3, 4), base + 100 * repetition + slice_index),
+                        image_type=image_type,
+                        meta_values={"EchoNumber": "1"},
+                        header_values={"repetition": repetition, "slice": slice_index},
+                    )
+                )
+    return images
+
+
+def test_ep3d_dual_polarity_averages_repetitions_into_one_echo(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_preprocessing(magnitude_path, phase_path, work_dir, settings):
+        magnitude = nib.load(str(magnitude_path)).get_fdata()
+        phase = nib.load(str(phase_path)).get_fdata()
+        seen.update(magnitude=magnitude, phase=phase, denoise=settings["ep3d_denoise"])
+        mean_magnitude = work_dir / "mean_magnitude.nii.gz"
+        mean_phase = work_dir / "mean_phase.nii.gz"
+        nib.save(nib.Nifti1Image(magnitude.mean(axis=-1), np.eye(4)), mean_magnitude)
+        nib.save(nib.Nifti1Image(phase.mean(axis=-1), np.eye(4)), mean_phase)
+        return {"magnitude": str(mean_magnitude), "phase": str(mean_phase)}
+
+    monkeypatch.setattr(qsmxt, "_run_ep3d_preprocessing", fake_preprocessing)
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"ep3ddualpolarity": "true", "ep3ddenoise": "true"}},
+        FakeMetadata(),
+    )
+
+    result = qsmxt.write_bids_dataset(
+        _dual_polarity_images(), FakeMetadata(), tmp_path / "bids", settings
+    )
+
+    assert seen["magnitude"].shape == (4, 3, 2, 4)
+    np.testing.assert_allclose(seen["magnitude"][0, 0, 1, :], [1001, 1101, 1201, 1301])
+    np.testing.assert_allclose(
+        seen["phase"][0, 0, 1, :],
+        [(1 + 100 * k) * np.pi / 2048 for k in range(4)],
+        rtol=0,
+        atol=1e-5,
+    )
+    assert seen["denoise"] is True
+    assert result["n_echoes"] == 1
+    magnitude = nib.load(str(result["magnitude_paths"][0]))
+    assert magnitude.shape == (4, 3, 2)
+    np.testing.assert_allclose(magnitude.get_fdata()[0, 0, :], [1150, 1151])
+
+
+def test_ep3d_dual_polarity_rejects_a_single_repetition(tmp_path):
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"ep3ddualpolarity": "true"}},
+        FakeMetadata(),
+    )
+
+    with pytest.raises(ValueError, match="at least two repetitions"):
+        qsmxt.write_bids_dataset(
+            _dual_polarity_images(repetitions=1), FakeMetadata(), tmp_path / "bids", settings
+        )
+
+
+def test_ep3d_dual_polarity_rejects_mismatched_repetitions(tmp_path):
+    images = _dual_polarity_images()
+    for image in images:
+        header = image.getHead()
+        if image.image_type == ismrmrd.IMTYPE_MAGNITUDE and header.repetition == 3:
+            header.repetition = 4
+            image.setHead(header)
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"ep3ddualpolarity": "true"}},
+        FakeMetadata(),
+    )
+
+    with pytest.raises(ValueError, match="keys differ"):
+        qsmxt.write_bids_dataset(images, FakeMetadata(), tmp_path / "bids", settings)
+
+
+@pytest.mark.parametrize(
+    ("counts", "expected"),
+    [
+        ([0, 1024, 3072], [0.0, np.pi / 2, -np.pi / 2]),
+        ([1000, 1512, 3000], [1000 * np.pi / 2048, 1512 * np.pi / 2048, 3000 * np.pi / 2048 - 2 * np.pi]),
+        ([-3.0, 0.5, 3.1], [-3.0, 0.5, 3.1]),
+    ],
+)
+def test_phase_to_radians_uses_fixed_count_cycle(counts, expected):
+    np.testing.assert_allclose(
+        qsmxt._phase_to_radians(np.array(counts, dtype=np.float32), 4096.0),
+        expected,
+        atol=1e-5,
+    )
+
+
+def test_phase_to_radians_rejects_phase_wider_than_one_cycle():
+    with pytest.raises(ValueError, match="set phasewrap"):
+        qsmxt._phase_to_radians(np.array([-4096.0, 4094.0]), 4096.0)
+
+
+def test_openrecon_config_choices_load_ep3d_modules():
+    label_path = Path(qsmxt.__file__).with_name("OpenReconLabel.json")
+    config = next(
+        parameter
+        for parameter in qsmxt.json.loads(label_path.read_text())["parameters"]
+        if parameter["id"] == "config"
+    )
+    assert [value["id"] for value in config["values"]] == [
+        "qsmxt",
+        "qsmxt_ep3d",
+        "qsmxt_ep3d_denoise",
+    ]
+    for value in config["values"]:
+        assert Path(qsmxt.__file__).with_name(f"{value['id']}.py").is_file()
+
+
+@pytest.mark.parametrize(
+    ("module_name", "denoise"),
+    [("qsmxt_ep3d", False), ("qsmxt_ep3d_denoise", True)],
+)
+def test_ep3d_configs_enable_preprocessing_and_keep_user_controls(
+    module_name, denoise, monkeypatch
+):
+    import importlib
+
+    module = importlib.import_module(module_name)
+    received = {}
+    monkeypatch.setattr(
+        qsmxt,
+        "process",
+        lambda connection, config, metadata: received.update(config=config),
+    )
+
+    module.process(
+        FakeConnection([]),
+        {"parameters": {"config": module_name, "qsmalgorithm": "rts"}},
+        FakeMetadata(),
+    )
+
+    settings = qsmxt._settings_from_config(received["config"], FakeMetadata())
+    assert settings["ep3d_dual_polarity"] is True
+    assert settings["ep3d_denoise"] is denoise
+    assert settings["qsm_algorithm"] == "rts"
+    assert qsmxt._settings_from_config({}, FakeMetadata())["ep3d_dual_polarity"] is False

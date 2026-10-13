@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "radtract_arm64 0.2.4": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "radtract"
+}

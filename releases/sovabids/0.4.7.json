@@ -1,7 +1,7 @@
 {
   "apps": {
     "sovabids 0.4.7": {
-      "version": "20261010",
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     }

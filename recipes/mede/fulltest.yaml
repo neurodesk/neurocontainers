@@ -1,6 +1,9 @@
 name: mede
 version: 0.0.12
 
+test_data:
+  output_dir: test_output/mede
+
 tests:
   - name: MEDE command line help
     script: |
@@ -20,3 +23,178 @@ tests:
       PY
       test -s /opt/easyocr/model/craft_mlt_25k.pth
       test -s /opt/easyocr/model/english_g2.pth
+
+  - name: Actual synthetic DICOM metadata de-identification
+    description: Run the packaged CLI on two slices and assert identity removal, consistent replacement UIDs, recursive private-tag removal, exact pixels and geometry, unchanged sources, and safe-private rejection
+    command: |
+      python - <<'PYTHON'
+      from pathlib import Path
+      import hashlib
+      import struct
+      import subprocess
+      import tempfile
+
+      import pydicom
+      from mede.dicom_deidentification import DicomDeidentifier
+      from pydicom.dataset import Dataset, FileDataset, FileMetaDataset
+      from pydicom.sequence import Sequence
+      from pydicom.uid import ExplicitVRLittleEndian, MRImageStorage, UID
+
+      STUDY = '1.2.826.0.1.3680043.10.543.20'
+      SERIES = '1.2.826.0.1.3680043.10.543.21'
+      FRAME = '1.2.826.0.1.3680043.10.543.22'
+      SECRETS = ['Synthetic^IdentityMarker', 'SYNTHETIC-ID-0042', 'Synthetic Institution Marker', 'SYNTH-ACC-0042']
+
+
+      def generate(root):
+          source = root / 'input'
+          source.mkdir()
+          sop_uids = [SERIES + '.' + str(n + 1) for n in range(2)]
+          for n in range(2):
+              meta = FileMetaDataset()
+              meta.TransferSyntaxUID = ExplicitVRLittleEndian
+              meta.MediaStorageSOPClassUID = MRImageStorage
+              meta.MediaStorageSOPInstanceUID = sop_uids[n]
+              meta.ImplementationClassUID = '1.2.826.0.1.3680043.10.543'
+              path = source / ('slice-' + str(n) + '.dcm')
+              ds = FileDataset(str(path), {}, file_meta=meta, preamble=bytes(128))
+              ds.SOPClassUID = MRImageStorage
+              ds.SOPInstanceUID = sop_uids[n]
+              ds.StudyInstanceUID = STUDY
+              ds.SeriesInstanceUID = SERIES
+              ds.FrameOfReferenceUID = FRAME
+              ds.PatientName, ds.PatientID, ds.InstitutionName, ds.AccessionNumber = SECRETS
+              ds.DeviceSerialNumber = 'SYNTHETIC-DEVICE-42'
+              ds.PatientBirthDate = '19990101'
+              ds.StudyDate = '20260101'
+              ds.Modality = 'MR'
+              ds.InstanceNumber = n + 1
+              ds.Rows, ds.Columns = 2, 3
+              ds.SamplesPerPixel = 1
+              ds.PhotometricInterpretation = 'MONOCHROME2'
+              ds.BitsAllocated = ds.BitsStored = 16
+              ds.HighBit, ds.PixelRepresentation = 15, 0
+              ds.PixelSpacing = [2, 1.5]
+              ds.SliceThickness = 3
+              ds.ImagePositionPatient = [0, 0, n * 3]
+              ds.ImageOrientationPatient = [1, 0, 0, 0, 1, 0]
+              ds.PixelData = struct.pack('<6H', *range(n * 6 + 1, n * 6 + 7))
+              reference = Dataset()
+              reference.ReferencedSOPClassUID = MRImageStorage
+              reference.ReferencedSOPInstanceUID = sop_uids[1 - n]
+              ds.ReferencedImageSequence = Sequence([reference])
+              for group in [0x0011, 0x0013]:
+                  ds.add_new((group, 0x0010), 'LO', SECRETS[1])
+                  ds.add_new((group, 0x0011), 'LO', SECRETS[2])
+                  ds.add_new((group, 0x1010), 'LO', SECRETS[0])
+                  ds.add_new((group, 0x1110), 'UL', 424242)
+              ds.add_new((0x7777, 0x1001), 'UL', 737373)
+              nested = Dataset()
+              nested.add_new((0x0019, 0x0010), 'LO', SECRETS[1])
+              nested.add_new((0x0019, 0x1010), 'PN', SECRETS[0])
+              nested.add_new((0x0019, 0x1011), 'UL', 989898)
+              measures = Dataset()
+              measures.PixelSpacing = ds.PixelSpacing
+              measures.SliceThickness = ds.SliceThickness
+              measures.add_new((0x0021, 0x0010), 'LO', SECRETS[2])
+              measures.add_new((0x0021, 0x1010), 'LO', SECRETS[3])
+              nested.PixelMeasuresSequence = Sequence([measures])
+              ds.SharedFunctionalGroupsSequence = Sequence([nested])
+              private_item = Dataset()
+              private_item.PatientName = SECRETS[0]
+              ds.add_new((0x0011, 0x1020), 'SQ', Sequence([private_item]))
+              ds.save_as(path, enforce_file_format=True)
+          return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.iterdir()}
+
+
+      def verify(root, hashes, indices=(0, 1), retain_device=False):
+          outputs = list((root / 'output').glob('*.dcm'))
+          assert len(outputs) == len(indices), outputs
+          seen = set()
+          common = {key: set() for key in ['StudyInstanceUID', 'SeriesInstanceUID', 'FrameOfReferenceUID']}
+          sop_uids = set()
+          for path in outputs:
+              out = pydicom.dcmread(path)
+              n = int(out.InstanceNumber) - 1
+              assert n in indices and n not in seen
+              seen.add(n)
+              original = pydicom.dcmread(root / 'input' / ('slice-' + str(n) + '.dcm'))
+              for key in ['PatientName', 'PatientID', 'PatientBirthDate', 'AccessionNumber', 'StudyDate']:
+                  assert str(out.get(key, '')) == '', (key, out.get(key))
+              assert 'InstitutionName' not in out and 'ReferencedImageSequence' not in out
+              for secret in SECRETS:
+                  assert secret.encode() not in path.read_bytes(), secret
+              private_tags = [str(element.tag) for element in out.iterall() if element.tag.is_private]
+              assert not private_tags, private_tags
+              measures = out.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0]
+              assert list(measures.PixelSpacing) == [2, 1.5]
+              assert measures.SliceThickness == 3
+              if retain_device:
+                  assert out.DeviceSerialNumber == 'SYNTHETIC-DEVICE-42'
+              else:
+                  assert 'DeviceSerialNumber' not in out
+              assert out.PixelData == original.PixelData
+              assert struct.unpack('<6H', out.PixelData) == tuple(range(n * 6 + 1, n * 6 + 7))
+              for key in ['Rows', 'Columns', 'PixelSpacing', 'SliceThickness', 'ImagePositionPatient', 'ImageOrientationPatient', 'BitsAllocated', 'BitsStored', 'HighBit', 'PixelRepresentation', 'PhotometricInterpretation', 'Modality', 'SOPClassUID']:
+                  assert out[key].value == original[key].value, key
+              assert out.file_meta.TransferSyntaxUID == ExplicitVRLittleEndian
+              for key in common:
+                  value = str(out.get(key, ''))
+                  assert UID(value).is_valid and value != str(original[key].value), (key, value)
+                  common[key].add(value)
+              sop = str(out.SOPInstanceUID)
+              assert UID(sop).is_valid and sop != str(original.SOPInstanceUID)
+              assert str(out.file_meta.MediaStorageSOPInstanceUID) == sop
+              sop_uids.add(sop)
+          assert seen == set(indices) and len(sop_uids) == len(indices)
+          assert all(len(values) == 1 for values in common.values()), common
+          assert {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (root / 'input').iterdir()} == hashes
+          print('MEDE removed synthetic identity fields with consistent UIDs and exact pixels and geometry')
+
+
+      if __name__ == '__main__':
+          workspace = Path('${output_dir}')
+          workspace.mkdir(parents=True, exist_ok=True)
+          for mode in ['directory', 'file']:
+              for profiles in [['basicProfile'], ['basicProfile', 'rtnDevIdOpt'], ['rtnDevIdOpt', 'basicProfile']]:
+                  with tempfile.TemporaryDirectory(prefix='metadata-', dir=workspace) as folder:
+                      root = Path(folder)
+                      hashes = generate(root)
+                      source = root / 'input' if mode == 'directory' else root / 'input' / 'slice-0.dcm'
+                      (root / 'output').mkdir()
+                      result = subprocess.run(['mede-deidentify', '-i', str(source), '-o', str(root / 'output'), '-d', *profiles, '-p', '1'], text=True, capture_output=True, timeout=180)
+                      print(mode, profiles, result.stdout, result.stderr)
+                      assert result.returncode == 0, result.returncode
+                      assert 'Traceback' not in result.stdout + result.stderr
+                      verify(root, hashes, indices=(0, 1) if mode == 'directory' else (0,), retain_device='rtnDevIdOpt' in profiles)
+              for profiles in [['rtnSafePrivOpt'], ['basicProfile', 'rtnSafePrivOpt'], ['rtnSafePrivOpt', 'basicProfile']]:
+                  with tempfile.TemporaryDirectory(prefix='rejected-', dir=workspace) as folder:
+                      root = Path(folder)
+                      hashes = generate(root)
+                      source = root / 'input' if mode == 'directory' else root / 'input' / 'slice-0.dcm'
+                      output = root / 'output'
+                      expected_files = {}
+                      if len(profiles) > 1:
+                          output.mkdir()
+                          (output / 'existing.txt').write_bytes(b'unchanged')
+                          expected_files = {'existing.txt': b'unchanged'}
+                      result = subprocess.run(['mede-deidentify', '-i', str(source), '-o', str(output), '-d', *profiles, '-p', '1'], text=True, capture_output=True, timeout=180)
+                      assert result.returncode == 1, (profiles, result.stdout, result.stderr)
+                      assert 'rtnSafePrivOpt is unsupported' in result.stderr, result.stderr
+                      assert output.exists() == (len(profiles) > 1)
+                      assert {p.name: p.read_bytes() for p in output.glob('*')} == expected_files
+                      assert {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (root / 'input').iterdir()} == hashes
+                      try:
+                          DicomDeidentifier(profiles, out_path=str(output))(str(source))
+                      except ValueError as error:
+                          assert 'rtnSafePrivOpt is unsupported' in str(error), error
+                      else:
+                          raise AssertionError('Python API accepted unsupported safe-private option')
+                      assert output.exists() == (len(profiles) > 1)
+                      assert {p.name: p.read_bytes() for p in output.glob('*')} == expected_files
+                      assert {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in (root / 'input').iterdir()} == hashes
+                      print(mode, profiles, 'CLI and Python API rejected before output mutation')
+      PYTHON
+    expected_output_contains: MEDE removed synthetic identity fields with consistent UIDs and exact pixels and geometry
+    expected_exit_code: 0
+    timeout: 240

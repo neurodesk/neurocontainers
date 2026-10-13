@@ -1,6 +1,84 @@
 name: rshrf
 version: 1.7.0
 tests:
-- name: rsHRF help
-  command: rsHRF --help
-  expected_output_contains: bids_dir
+  - name: rsHRF help
+    command: rsHRF --help
+    expected_output_contains: bids_dir
+  - name: rsHRF exact runtime version
+    command: |-
+      set -euo pipefail
+      rsHRF --version
+    expected_output_contains: rsHRF version ${version}
+  - name: rsHRF analytical response and actual two-model deconvolution
+    description: Independently verify the double-gamma response, then process240 deterministic BOLD samples through actual
+      canon2dd and Hanning CLI estimators; require finite nonzero13-sample HRFs,240-sample deconvolution, positive events/height
+      and exact TR/model metadata without altering input.
+    command: |-
+      set -euo pipefail
+      env -u HOME MPLCONFIGDIR="${output_dir}/matplotlib" python "${output_dir}/functional-check.py"
+    expected_output_contains: rsHRF analytical response and real two-model CLI deconvolution verified
+    timeout: 240
+test_data:
+  output_dir: test_output/rshrf
+setup:
+  script: |
+    set -euo pipefail
+    mkdir -p ${output_dir}
+    cat > "${output_dir}/functional-check.py" <<'PYHRF'
+    import hashlib
+    import os
+    from pathlib import Path
+    import subprocess
+    import tempfile
+    import numpy as np
+    from scipy.io import loadmat
+    from scipy.stats import gamma
+    from rsHRF.spm_dep.spm import spm_hrf
+
+    # Independent continuous double-gamma response evaluated at the same sample times.
+    t = np.arange(0.0, 33.0, 2.0)
+    expected = gamma.pdf(t, 6)-gamma.pdf(t, 16)/6
+    expected /= expected.sum()
+    hrf = spm_hrf(2.0)
+    np.testing.assert_allclose(hrf, expected, rtol=2e-13, atol=2e-15)
+    assert 4 <= 2*np.argmax(hrf) <= 8 and hrf.min() < 0
+
+    with tempfile.TemporaryDirectory(prefix='rshrf-functional-') as scratch:
+        root = Path(scratch)
+        impulses = np.zeros(240)
+        impulses[np.arange(15,225,23)] = 1
+        # Nonzero deterministic periodic events and small independent noise.
+        bold = np.convolve(impulses, expected)[:240]
+        bold += 0.001*np.random.default_rng(20261013).normal(size=bold.shape)
+        source = root/'synthetic_bold.txt'
+        np.savetxt(source,bold,delimiter=',')
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        env = dict(os.environ)
+        env.pop('HOME', None)
+        env.update(MPLBACKEND='Agg', MPLCONFIGDIR=str(root/'matplotlib'),
+                   OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1')
+        for model in ('canon2dd','hanning'):
+            output = root/model
+            output.mkdir()
+            subprocess.run(['rsHRF',str(source),str(output),'--no-bids','--TR','2',
+                            '--T','1','--n_jobs','1','--estimation',model],
+                           env=env,check=True,timeout=90)
+            result = loadmat(output/'synthetic_hrf_deconv.mat',struct_as_record=False,squeeze_me=False)
+            estimated = result['hrfa']
+            deconvolved = result['data_deconv']
+            params = result['PARA']
+            events = result['event_number']
+            metadata = result['para'][0,0]
+            assert estimated.shape == (13,1), estimated.shape
+            assert deconvolved.shape == (240,1), deconvolved.shape
+            assert params.shape == (3,1) and events.shape == (1,1)
+            for array in (estimated,deconvolved,params,events):
+                assert np.isfinite(array).all(), (model,array)
+            assert np.linalg.norm(estimated)>0 and np.std(deconvolved)>0
+            assert 0 < events[0,0] < 240 and params[0,0]>0
+            assert float(metadata.TR[0,0])==2 and float(metadata.dt[0,0])==2
+            assert str(metadata.estimation[0])==model
+            assert hashlib.sha256(source.read_bytes()).hexdigest()==digest
+            print(model,'real HRF/deconvolution',estimated.shape,deconvolved.shape, 'events',events[0,0])
+    print('rsHRF analytical response and real two-model CLI deconvolution verified')
+    PYHRF

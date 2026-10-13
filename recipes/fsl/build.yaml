@@ -34,6 +34,7 @@ options:
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   container_version: "fsl"
@@ -61,7 +62,11 @@ build:
   pkg-manager: apt
 
   directives:
-    - install: git ca-certificates ltrace strace wget libxml2 gcc build-essential nvidia-cuda-toolkit xdg-utils gnupg libosmesa6
+    - install: git ca-certificates ltrace strace wget libxml2 gcc build-essential xdg-utils gnupg libosmesa6
+
+    - condition: arch == "x86_64"
+      install:
+        - nvidia-cuda-toolkit
 
     # Install Firefox from Mozilla's official APT repo so xdg-open has a working
     # browser. The default Ubuntu 24.04 `firefox` package is a snap transitional
@@ -159,7 +164,7 @@ build:
 
 deploy:
   path:
-    - /opt/{{ context.name }}-{{ context.fsl_version }}/bin
+    - /opt/fsl-{{ context.fsl_version }}/bin
     - /opt/ICA-AROMA/
 
 files:

@@ -1,12 +1,12 @@
 {
   "apps": {
     "qupath 0.7.0": {
-      "version": "20260723",
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     },
     "qupathGUI-qupath 0.7.0": {
-      "version": "20260723",
+      "version": "20261013",
       "exec": "QuPath",
       "apptainer_args": []
     }

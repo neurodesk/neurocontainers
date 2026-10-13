@@ -1,12 +1,12 @@
 {
   "apps": {
     "bidsvue 0.1.20260704": {
-      "version": "20260707",
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     },
     "BIDSvue-bidsvue 0.1.20260704": {
-      "version": "20260707",
+      "version": "20261013",
       "exec": "bidsvue",
       "apptainer_args": []
     }

@@ -53,7 +53,7 @@ tests:
 
   - name: Java environment check
     description: Verify Java is available for nighresjava backend
-    command: java -version 2>&1 | head -1
+    command: java -version 2>&1
     expected_output_contains: "version"
 
   - name: JCC module check
@@ -907,6 +907,63 @@ tests:
     description: Check nighres documentation directory exists
     command: ls /opt/nighres/doc/
     expected_output_contains: "index.rst"
+
+
+  - name: Actual Java FLASH T2star fitting
+    description: Fit four synthetic echo volumes through Nighres Java; verify spatially varying T2star, R2star, S0, fit quality and saved geometry
+    command: |
+      python - <<'PYTHON'
+      from pathlib import Path
+      import tempfile
+
+      import nibabel as nib
+      import numpy as np
+      from nighres.intensity import flash_t2s_fitting
+
+      workspace = Path(tempfile.mkdtemp(prefix='nighres-flash-', dir='${output_dir}'))
+      shape = (4, 3, 3)
+      index = np.arange(np.prod(shape), dtype=np.float64).reshape(shape)
+      s0 = 800. + 25. * index
+      t2s = 0.025 + 0.001 * index
+      echo_times = [0.005, 0.015, 0.025, 0.035]
+      affine = np.diag([-1.5, 2., 3., 1.])
+      affine[:3, 3] = [6., -8., 12.]
+      images = []
+      for number, te in enumerate(echo_times):
+          signal = (s0 * np.exp(-te / t2s)).astype(np.float32)
+          signal[0, 0, 0] = 0.
+          path = workspace / f'echo-{number}.nii.gz'
+          nib.save(nib.Nifti1Image(signal, affine), path)
+          images.append(str(path))
+      result = flash_t2s_fitting(images, echo_times, save_data=True,
+                                output_dir=str(workspace), file_name='synthetic.nii.gz')
+      assert set(result) == {'t2s', 'r2s', 's0', 'residuals'}, result
+      foreground = np.ones(shape, dtype=bool)
+      foreground[0, 0, 0] = False
+      # Inputs, Java echo times and returned maps use float32. This small bound
+      # covers quantization and log-linear fitting; it is below 8 parts/million.
+      tolerance = 64 * np.finfo(np.float32).eps
+      expected = {'t2s': t2s, 'r2s': 1. / t2s, 's0': s0,
+                  'residuals': np.ones(shape)}  # backend reports R-squared here
+      for key, path in result.items():
+          assert Path(path).is_file(), path
+          image = nib.load(path)
+          data = image.get_fdata()
+          assert image.shape == shape and image.get_data_dtype() == np.dtype('float32')
+          np.testing.assert_array_equal(image.affine, affine)
+          assert np.isfinite(data).all() and data[0, 0, 0] == 0., (key, data)
+          np.testing.assert_allclose(data[foreground], expected[key][foreground],
+                                     rtol=tolerance, atol=0., err_msg=key)
+      # Fitting may not modify any of the original echoes.
+      for path, te in zip(images, echo_times):
+          expected_signal = (s0 * np.exp(-te / t2s)).astype(np.float32)
+          expected_signal[0, 0, 0] = 0.
+          np.testing.assert_array_equal(nib.load(path).get_fdata(), expected_signal)
+      print('NIGHRES_JAVA_T2STAR_ANALYTICAL_FIT_OK')
+      PYTHON
+    expected_output_contains: NIGHRES_JAVA_T2STAR_ANALYTICAL_FIT_OK
+    expected_exit_code: 0
+    timeout: 180
 
 cleanup:
   script: |

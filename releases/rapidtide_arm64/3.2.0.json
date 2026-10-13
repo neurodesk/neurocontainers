@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "rapidtide_arm64 3.2.0": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "rapidtide"
+}

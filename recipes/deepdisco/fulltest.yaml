@@ -1,6 +1,12 @@
 name: deepdisco
 version: "20251008"
 default_timeout: 120
+test_data:
+  output_dir: test_output
+setup:
+  script: |
+    set -eu
+    mkdir -p "${output_dir}/deepdisco-cache" "${output_dir}/deepdisco-config"
 tests:
 - name: DeepDisco installation smoke test
   description: Verify the container runtime smoke test for this tool.
@@ -41,3 +47,103 @@ tests:
 
     print("DeepDisco imports and model weights load successfully")
     PY
+
+- name: DeepDisco package closure and CLI contract
+  description: Require compatible installed scientific packages and the actual deployed inference frontend
+  command: |
+    set -euo pipefail
+    python -m pip check
+    deepdisco-cli --help
+  expected_output_contains:
+    - No broken requirements found
+    - Headless DeepDisco
+  expected_exit_code: 0
+- name: Actual four-model CPU inference and spatial output contracts
+  description: Execute the deployed CLI with all four bundled trained models, requiring complete finite nonempty probability maps, exact physical geometry, correct hemisphere masking and unchanged input/weights
+  timeout: 1200
+  command: |
+    env -u HOME CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 python - <<'PYTHON'
+    import hashlib
+    import os
+    from pathlib import Path
+    import subprocess
+    import tempfile
+    import numpy as np
+    import nibabel as nib
+
+    source = Path(os.environ['DEEPDISCO_HOME'])
+    resources = source / 'resources'
+    reference = nib.load(resources / 'affine_image.nii.gz')
+    left = nib.load(resources / 'Left_mask.nii.gz').get_fdata()
+    right = nib.load(resources / 'Right_mask.nii.gz').get_fdata()
+    assert left.shape == right.shape == reference.shape == (91, 109, 91)
+    assert np.isfinite(left).all() and np.isfinite(right).all()
+    assert np.isin(left, [0, 1]).all() and np.isin(right, [0, 1]).all()
+    lesion = ((left > 0) & (right == 0)).astype(np.uint8)
+    assert np.count_nonzero(lesion) > 1000
+    assert float(np.sum(lesion*left)) > float(np.sum(lesion*right))
+    weights = ['model_ASS.pt','model_PRO.pt','model_COM.pt','trained_model.pt']
+    weight_hashes = {name:hashlib.sha256((resources/name).read_bytes()).hexdigest() for name in weights}
+    with tempfile.TemporaryDirectory(dir=Path('${output_dir}').resolve()) as scratch:
+        scratch = Path(scratch)
+        input_path = scratch / 'left-lesion.nii.gz'
+        output = scratch / 'outputs'
+        nib.save(nib.Nifti1Image(lesion, reference.affine), input_path)
+        input_hash = hashlib.sha256(input_path.read_bytes()).hexdigest()
+        subprocess.run(['deepdisco-cli','--input',str(input_path),'--all','--outdir',str(output)],check=True)
+        names = ['ASSOCIATION_FIBERS','PROJECTION_FIBERS','COMMISSURAL_FIBERS','WHOLE_BRAIN']
+        expected_paths = [output/f'left-lesion_deep_disco_{name}.nii.gz' for name in names]
+        assert set(output.glob('*.nii.gz')) == set(expected_paths)
+        for name, path in zip(names, expected_paths):
+            result = nib.load(path)
+            values = result.get_fdata()
+            assert result.shape == reference.shape
+            assert result.get_data_dtype() == np.dtype('float32')
+            np.testing.assert_array_equal(result.affine, reference.affine)
+            np.testing.assert_array_equal(result.header.get_zooms(), reference.header.get_zooms())
+            assert np.isfinite(values).all()
+            assert np.min(values) >= 0 and np.max(values) <= 1
+            assert np.count_nonzero(values) > 0
+            if name in ('ASSOCIATION_FIBERS','PROJECTION_FIBERS'):
+                assert np.count_nonzero(values[left == 0]) == 0
+            print(name, 'verified', result.shape, 'nonzero', int(np.count_nonzero(values)), 'range', float(values.min()), float(values.max()))
+        assert hashlib.sha256(input_path.read_bytes()).hexdigest() == input_hash
+        np.testing.assert_array_equal(nib.load(input_path).get_fdata(), lesion)
+    assert {name:hashlib.sha256((resources/name).read_bytes()).hexdigest() for name in weights} == weight_hashes
+    print('DeepDisco actual CLI completed all four trained CPU inference models with valid probability maps, geometry and hemisphere masks')
+    PYTHON
+  expected_output_contains: DeepDisco actual CLI completed all four trained CPU inference models with valid probability maps, geometry and hemisphere masks
+  expected_exit_code: 0
+- name: DeepDisco real Qt desktop renders
+  description: Initialize the actual application with Qt's supported offscreen backend, require nonblank rendering and a normal event-loop exit
+  timeout: 120
+  command: |
+    env -u HOME QT_QPA_PLATFORM=offscreen python - <<'PYTHON'
+    import os
+    import sys
+    from pathlib import Path
+    output = Path('${output_dir}').resolve()
+    os.environ['XDG_CACHE_HOME'] = str(output/'deepdisco-cache')
+    os.environ['XDG_CONFIG_HOME'] = str(output/'deepdisco-config')
+    sys.path.insert(0, os.environ['DEEPDISCO_HOME'])
+    os.chdir(os.environ['DEEPDISCO_HOME'])
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QApplication
+    import part
+    app = QApplication([])
+    window = part.DisconnectomeApp()
+    window.show()
+    app.processEvents()
+    assert window.isVisible()
+    image = window.grab().toImage()
+    assert image.width() >= 300 and image.height() >= 300
+    colors = {image.pixelColor(x,y).rgb() for y in range(0,image.height(),4) for x in range(0,image.width(),4)}
+    assert len(colors) >= 16
+    assert image.save(str(output/'deepdisco-window.png'))
+    QTimer.singleShot(250, app.quit)
+    assert app.exec() == 0
+    window.close()
+    print('Actual DeepDisco desktop rendered a nonblank window and exited normally')
+    PYTHON
+  expected_output_contains: Actual DeepDisco desktop rendered a nonblank window and exited normally
+  expected_exit_code: 0

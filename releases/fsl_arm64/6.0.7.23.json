@@ -1,0 +1,25 @@
+{
+  "apps": {
+    "fsl_arm64 6.0.7.23": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "fsleyesGUI-fsl_arm64 6.0.7.23": {
+      "version": "20261013",
+      "exec": "fsleyes",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "arterial spin labelling",
+    "functional imaging",
+    "structural imaging",
+    "diffusion imaging",
+    "image segmentation",
+    "image registration"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "fsl"
+}

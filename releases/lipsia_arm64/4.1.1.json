@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "lipsia_arm64 4.1.1": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "machine learning"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "lipsia"
+}

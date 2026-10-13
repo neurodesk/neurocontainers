@@ -1,7 +1,7 @@
 package_version: 0.6.4-1
 name: sigviewer
-version: "0.6.4"
-environment:
+version: 0.6.4
+env:
   QT_QPA_PLATFORM: offscreen
 test_data:
   edf_file: test_data/sample.edf
@@ -10,19 +10,142 @@ test_data:
   xdf_file: test_data/sample.xdf
   output_dir: test_output
 setup:
-  script: '#!/usr/bin/env bash
+  script: |
+    #!/usr/bin/env bash
+    set -eu
+    mkdir -p test_output test_data
+    python3 - <<'GENERATE'
+    from pathlib import Path
 
-    set -e
+    root = Path("test_data")
+    root.mkdir(exist_ok=True)
 
-    mkdir -p test_output
+    def field(value, width):
+        data = str(value).encode("ascii")
+        assert len(data) <= width
+        return data.ljust(width, b" ")
 
-    mkdir -p test_data
+    for extension, first, minimum, maximum, byte_count in (
+        ("edf", b"0       ", -32768, 32767, 2),
+        ("bdf", b"\xffBIOSEMI", -8388608, 8388607, 3),
+    ):
+        header = first + field("Synthetic test", 80) + field("Signal viewer fixture", 80)
+        header += b"01.01.2000.00.00" + field(768, 8) + field("", 44)
+        header += field(1, 8) + field(1, 8) + field(2, 4)
+        for values, width in (
+            (("EEG Fp1", "EEG Fp2"), 16), (("", ""), 80), (("uV", "uV"), 8),
+            ((-100, -100), 8), ((100, 100), 8), ((minimum, minimum), 8),
+            ((maximum, maximum), 8), (("", ""), 80), ((100, 100), 8), (("", ""), 32),
+        ):
+            header += b"".join(field(value, width) for value in values)
+        assert len(header) == 768
+        values = list(range(-50, 50)) + list(range(49, -51, -1))
+        payload = b"".join(value.to_bytes(byte_count, "little", signed=True) for value in values)
+        target = root / ("sample." + extension)
+        target.write_bytes(header + payload)
+        assert target.stat().st_size == 768 + 200 * byte_count
+    GENERATE
+    cp /opt/sigviewer-testdata/reference.gdf test_data/sample.gdf
+    cp /opt/sigviewer-testdata/reference.xdf test_data/sample.xdf
+    printf '%s\n' 'not a valid biosignal file' > test_output/invalid.txt
+    printf '%s\n' 'not readable' > test_output/unreadable.edf
+    cat > test_output/viewer_check.py <<'CHECK'
+    import os
+    import hashlib
+    from pathlib import Path
+    import re
+    import subprocess
+    import sys
+    import tempfile
+    import time
 
-    # Create a minimal test EDF file if none exists
+    mode = sys.argv[1]
+    file_path = str(Path(sys.argv[2]).resolve()) if len(sys.argv) > 2 and sys.argv[2] else ""
+    with tempfile.TemporaryDirectory(prefix="sigviewer-gui-") as scratch:
+        env = dict(os.environ)
+        env.update(QT_QPA_PLATFORM="xcb", XDG_CONFIG_HOME=scratch,
+                   XDG_CACHE_HOME=scratch, XDG_RUNTIME_DIR=scratch, LC_ALL="C.UTF-8")
+        args = ["sigviewer"] + ([file_path] if len(sys.argv) > 2 else [])
+        log_path = Path(scratch) / "viewer.log"
+        with log_path.open("w") as log:
+            proc = subprocess.Popen(args, env=env, stdout=log, stderr=subprocess.STDOUT)
+            try:
+                def windows():
+                    result = subprocess.run(
+                        ["xdotool", "search", "--onlyvisible", "--pid", str(proc.pid), "--name", ".*"],
+                        text=True, capture_output=True,
+                    )
+                    assert result.returncode in (0, 1), result.stderr
+                    found = []
+                    for wid in result.stdout.split():
+                        title = subprocess.check_output(["xdotool", "getwindowname", wid], text=True).strip()
+                        kind = subprocess.check_output(["xprop", "-id", wid, "_NET_WM_WINDOW_TYPE"], text=True)
+                        found.append((wid, title, "_NET_WM_WINDOW_TYPE_DIALOG" in kind))
+                    return found
 
-    # Note: Proper EEG test data should be downloaded separately
+                def press(window, key):
+                    # Send both key events to X's focused window. A modal dialog can
+                    # disappear on keydown, so targeting its ID on keyup races deletion.
+                    subprocess.run(["xdotool", "windowfocus", "--sync", window[0]], check=True)
+                    subprocess.run(["xdotool", "key", "--clearmodifiers", key], check=True)
 
-    '
+                def wait_for(predicate):
+                    deadline = time.monotonic() + 15
+                    while time.monotonic() < deadline:
+                        assert proc.poll() is None, log_path.read_text()
+                        for item in windows():
+                            if predicate(item):
+                                return item
+                        time.sleep(0.1)
+                    raise AssertionError(("Expected viewer state did not appear", windows(), log_path.read_text()))
+
+                if mode == "open":
+                    assert Path(file_path).is_file() and Path(file_path).stat().st_size > 0
+                    input_hash = hashlib.sha256(Path(file_path).read_bytes()).hexdigest()
+                    # Command-line files use openFileImpl(instantly=true): all channels
+                    # load directly. XDF can first request its documented resampling.
+                    expected_title = Path(file_path).name + " - SigViewer"
+                    state = wait_for(lambda item: (item[1] == expected_title and not item[2])
+                                     or (Path(file_path).suffix == ".xdf"
+                                         and item[1] == "Resampling" and item[2]))
+                    if state[2]:
+                        press(state, "Return")
+                        window = wait_for(lambda item: item[1] == expected_title and not item[2])
+                    else:
+                        window = state
+                    assert not any(item[2] for item in windows()), windows()
+                elif mode == "reject":
+                    dialog = wait_for(lambda item: item[2])
+                    assert dialog[1] != "Select Channels", ("Invalid input was accepted", dialog)
+                    press(dialog, "Return")
+                    if len(sys.argv) > 2 and sys.argv[2] == "":
+                        # BioSigReader shows its missing-file warning, then the
+                        # factory's default-handler branch reports "non-exist".
+                        dialog = wait_for(lambda item: item[1] == "File Opening" and item[2])
+                        press(dialog, "Return")
+                    window = wait_for(lambda item: item[1] == "SigViewer" and not item[2]
+                                      and not any(candidate[2] for candidate in windows()))
+                elif mode == "startup":
+                    window = wait_for(lambda item: item[1] == "SigViewer" and not item[2])
+                else:
+                    raise AssertionError(mode)
+                geometry = subprocess.check_output(
+                    ["xdotool", "getwindowgeometry", "--shell", window[0]], text=True)
+                for field in ("WIDTH", "HEIGHT"):
+                    match = re.search(r"^" + field + r"=(\d+)$", geometry, re.MULTILINE)
+                    assert match and int(match[1]) > 0, geometry
+                press(window, "ctrl+q")
+                assert proc.wait(timeout=10) == 0, log_path.read_text()
+                if mode == "open":
+                    assert hashlib.sha256(Path(file_path).read_bytes()).hexdigest() == input_hash
+                assert "Segmentation fault" not in log_path.read_text()
+                assert "Aborted" not in log_path.read_text()
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=5)
+        print("SigViewer verified", mode, Path(file_path).name if file_path else "empty input", "and clean application exit")
+    CHECK
 tests:
 - name: Version check
   description: Verify sigviewer binary runs and reports version
@@ -30,74 +153,89 @@ tests:
   expected_output_contains: ${package_version}
 - name: Help information
   description: Display command-line help
-  command: QT_QPA_PLATFORM=offscreen sigviewer --help 2>&1 | grep -v "QStandardPaths"
+  command: sigviewer --help
   expected_output_contains: SigViewer - a biosignal viewer
+  expected_exit_code: 0
 - name: Help shows file argument
   description: Verify help shows file input option
-  command: QT_QPA_PLATFORM=offscreen sigviewer --help 2>&1 | grep -v "QStandardPaths"
+  command: sigviewer --help
   expected_output_contains: Input file (optional)
+  expected_exit_code: 0
 - name: Full help with Qt options
   description: Display all options including Qt-specific options
-  command: QT_QPA_PLATFORM=offscreen sigviewer --help-all 2>&1 | grep -v "QStandardPaths"
+  command: sigviewer --help-all
   expected_output_contains: --platform
+  expected_exit_code: 0
 - name: Invalid option handling
   description: Test behavior with invalid command-line option
-  command: QT_QPA_PLATFORM=offscreen sigviewer --invalid-option 2>&1 | grep -v "QStandardPaths" || true
+  command: sigviewer --invalid-option
   expected_output_contains: Unknown option
+  expected_exit_code: 1
 - name: Platform option test
   description: Verify Qt platform option is accepted
-  command: QT_QPA_PLATFORM=offscreen sigviewer --platform offscreen --help 2>&1 | grep -v "QStandardPaths"
+  command: sigviewer --platform offscreen --help
   expected_output_contains: SigViewer
+  expected_exit_code: 0
 - name: Offscreen startup test
   description: Test that sigviewer can start in offscreen mode
-  command: 'timeout 5 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer 2>&1'' || true
-
-    '
+  command: |
+    python3 - <<'PY'
+    import os, signal, subprocess, tempfile, time
+    with tempfile.TemporaryDirectory(prefix="sigviewer-offscreen-") as scratch:
+     env = dict(os.environ)
+     env.update(QT_QPA_PLATFORM="offscreen", XDG_CONFIG_HOME=scratch, XDG_RUNTIME_DIR=scratch)
+     proc = subprocess.Popen(["sigviewer"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+     try:
+      time.sleep(1)
+      assert proc.poll() is None, proc.communicate()
+      proc.terminate()
+      stdout, stderr = proc.communicate(timeout=5)
+      assert proc.returncode == -signal.SIGTERM, (proc.returncode,stdout,stderr)
+     finally:
+      if proc.poll() is None:
+       proc.kill(); proc.communicate(timeout=5)
+    print("SigViewer offscreen event loop remained alive until intentional termination")
+    PY
   expected_exit_code: 0
+  expected_output_contains: SigViewer offscreen event loop remained alive until intentional termination
 - name: Minimal platform startup
   description: Test startup with minimal Qt platform
-  command: 'timeout 5 bash -c ''QT_QPA_PLATFORM=minimal sigviewer --help 2>&1'' || true
-
-    '
+  command: QT_QPA_PLATFORM=minimal sigviewer --help
   expected_output_contains: SigViewer
+  expected_exit_code: 0
 - name: Nonexistent file handling
   description: Test behavior when opening nonexistent file
-  command: 'timeout 5 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer /nonexistent/file.edf 2>&1'' || true
-
-    '
+  command: xvfb-run -a python3 test_output/viewer_check.py reject "/nonexistent/file.edf"
+  expected_output_contains: SigViewer verified reject
+  expected_exit_code: 0
 - name: Invalid file format handling
   description: Test behavior when opening non-biosignal file
-  command: 'echo "not a valid biosignal file" > test_output/invalid.txt
-
-    timeout 5 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer test_output/invalid.txt 2>&1'' || true
-
-    '
+  command: xvfb-run -a python3 test_output/viewer_check.py reject "test_output/invalid.txt"
+  expected_output_contains: SigViewer verified reject
+  expected_exit_code: 0
 - name: Window geometry option
   description: Test window geometry specification
-  command: 'timeout 5 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer --qwindowgeometry 800x600+100+100 --help 2>&1'' | grep
-    -v "QStandardPaths" || true
-
-    '
+  command: sigviewer --qwindowgeometry 800x600+100+100 --help
   expected_output_contains: SigViewer
+  expected_exit_code: 0
 - name: Window title option
   description: Test custom window title option
-  command: 'timeout 5 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer --qwindowtitle "Test SigViewer" --help 2>&1'' | grep -v
-    "QStandardPaths" || true
-
-    '
+  command: sigviewer --qwindowtitle "Test SigViewer" --help
   expected_output_contains: SigViewer
+  expected_exit_code: 0
 - name: Binary exists
   description: Verify sigviewer binary is in expected location
   command: ls -la /usr/bin/sigviewer
   expected_output_contains: sigviewer
 - name: Libbiosig present
   description: Verify libbiosig library is available
-  command: bash -lc 'ls -la /usr/lib/x86_64-linux-gnu/libbiosig.so*'
+  command: dpkg -L libbiosig3 | grep -E '/libbiosig\.so\.3(\.|$)'
   expected_output_contains: libbiosig.so.3
 - name: Qt libraries present
   description: Verify Qt platform plugins are available
-  command: QT_QPA_PLATFORM=offscreen sigviewer --help 2>&1 | grep -i "platform plugins" || echo "Qt plugins available"
+  command: sigviewer --help
   expected_exit_code: 0
+  expected_output_contains: SigViewer
 - name: README available
   description: Verify container README is accessible
   command: dpkg-query -W -f='${Version}\n' sigviewer
@@ -107,50 +245,65 @@ tests:
   command: ls /usr/share/doc/sigviewer/
   expected_output_contains: README
 - name: Open EDF file
-  description: Test opening EDF format file (requires test data)
-  command: 'test -f ${edf_file} && timeout 10 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer ${edf_file} 2>&1'' || echo "SKIP:
-    test data file ${edf_file} not found"
-
-    '
-  expected_output_contains: SKIP
+  description: Load a real EDF signal, select channels, require its visualization window and exit normally
+  command: xvfb-run -a python3 test_output/viewer_check.py open ${edf_file}
+  expected_output_contains: SigViewer verified open sample.edf
   expected_exit_code: 0
+  timeout: 60
 - name: Open GDF file
-  description: Test opening GDF format file (requires test data)
-  command: 'test -f ${gdf_file} && timeout 10 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer ${gdf_file} 2>&1'' || echo "SKIP:
-    test data file ${gdf_file} not found"
-
-    '
-  expected_output_contains: SKIP
+  description: Load a real GDF signal, select channels, require its visualization window and exit normally
+  command: xvfb-run -a python3 test_output/viewer_check.py open ${gdf_file}
+  expected_output_contains: SigViewer verified open sample.gdf
   expected_exit_code: 0
+  timeout: 60
 - name: Open BDF file
-  description: Test opening BDF format file (requires test data)
-  command: 'test -f ${bdf_file} && timeout 10 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer ${bdf_file} 2>&1'' || echo "SKIP:
-    test data file ${bdf_file} not found"
-
-    '
-  expected_output_contains: SKIP
+  description: Load a real BDF signal, select channels, require its visualization window and exit normally
+  command: xvfb-run -a python3 test_output/viewer_check.py open ${bdf_file}
+  expected_output_contains: SigViewer verified open sample.bdf
   expected_exit_code: 0
+  timeout: 60
 - name: Open XDF file
-  description: Test opening XDF format file (requires test data)
-  command: 'test -f ${xdf_file} && timeout 10 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer ${xdf_file} 2>&1'' || echo "SKIP:
-    test data file ${xdf_file} not found"
-
-    '
-  expected_output_contains: SKIP
+  description: Load a real XDF signal, select channels, require its visualization window and exit normally
+  command: xvfb-run -a python3 test_output/viewer_check.py open ${xdf_file}
+  expected_output_contains: SigViewer verified open sample.xdf
   expected_exit_code: 0
+  timeout: 60
 - name: Multiple help invocations
   description: Test stability with repeated invocations
-  command: dpkg-query -W -f='${Version}\n' sigviewer
-  expected_output_contains: ${package_version}
+  command: |
+    python3 - <<'PY'
+    import subprocess
+    for _ in range(3):
+     result = subprocess.run(["sigviewer", "--help"], capture_output=True, text=True, check=True)
+     assert "SigViewer - a biosignal viewer" in result.stdout, result
+    print("Three SigViewer help invocations passed")
+    PY
+  expected_output_contains: Three SigViewer help invocations passed
+  expected_exit_code: 0
 - name: Rapid startup shutdown
   description: Test rapid application cycling
-  command: "for i in 1 2 3; do\n  timeout 2 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer --help 2>&1' || true\ndone | grep\
-    \ -c \"SigViewer\" || echo \"3\"\n"
+  command: |
+    python3 - <<'PY'
+    import subprocess
+    for _ in range(3):
+     result = subprocess.run(["sigviewer", "--help"], capture_output=True, text=True, check=True)
+     assert "SigViewer - a biosignal viewer" in result.stdout, result
+    print("Three SigViewer help invocations passed")
+    PY
   expected_exit_code: 0
+  expected_output_contains: Three SigViewer help invocations passed
 - name: Check shared libraries
   description: Verify all required shared libraries are present
-  command: ldd /usr/bin/sigviewer 2>&1 | grep -c "not found" || echo "0"
-  expected_output_contains: '0'
+  command: |
+    python3 - <<'PY'
+    import subprocess
+    result = subprocess.run(["ldd", "/usr/bin/sigviewer"], text=True, capture_output=True, check=True)
+    assert "not found" not in result.stdout + result.stderr, result
+    assert "libbiosig.so.3" in result.stdout and "libQt5Core" in result.stdout, result
+    print("0 unresolved SigViewer libraries")
+    PY
+  expected_output_contains: 0 unresolved SigViewer libraries
+  expected_exit_code: 0
 - name: Qt core library
   description: Verify Qt5Core library is linked
   command: ldd /usr/bin/sigviewer | grep -i qt5core
@@ -169,26 +322,23 @@ tests:
   expected_output_contains: libbiosig.so.3
 - name: Empty filename handling
   description: Test behavior with empty string filename
-  command: 'timeout 5 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer "" 2>&1'' || true
-
-    '
+  command: xvfb-run -a python3 test_output/viewer_check.py reject ""
   expected_exit_code: 0
+  expected_output_contains: SigViewer verified reject
 - name: Directory as input
   description: Test behavior when directory is provided instead of file
-  command: 'timeout 5 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer /tmp 2>&1'' || true
-
-    '
+  command: xvfb-run -a python3 test_output/viewer_check.py reject "/tmp"
+  expected_output_contains: SigViewer verified reject
+  expected_exit_code: 0
 - name: Permission denied handling
   description: Test behavior with unreadable file
-  command: 'touch test_output/unreadable.edf
-
+  command: |
+    set -e
     chmod 000 test_output/unreadable.edf
-
-    timeout 5 bash -c ''QT_QPA_PLATFORM=offscreen sigviewer test_output/unreadable.edf 2>&1'' || true
-
+    xvfb-run -a python3 test_output/viewer_check.py reject test_output/unreadable.edf
     chmod 644 test_output/unreadable.edf
-
-    '
+  expected_output_contains: SigViewer verified reject
+  expected_exit_code: 0
 - name: Module load message
   description: Verify module loading instructions are documented
   command: dpkg-query -W -f='${Version}\n' sigviewer
@@ -205,18 +355,12 @@ tests:
   command: dpkg-query -W -f='${Version}\n' sigviewer
   expected_output_contains: ${package_version}
 cleanup:
-  script: '#!/usr/bin/env bash
-
+  script: |
+    #!/usr/bin/env bash
     # Clean up test artifacts
-
     rm -f test_output/invalid.txt
-
     rm -f test_output/unreadable.edf
-
     # Optionally remove all test outputs
-
     # rm -rf test_output
-
     echo "Test outputs preserved in test_output/"
-
-    '
+env_setup: set -o pipefail
