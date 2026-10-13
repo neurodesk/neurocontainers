@@ -52,8 +52,11 @@ setup:
                 data = None if value is None else json.dumps(value).encode()
                 req = urllib.request.Request(base+path, data=data, method=method,
                                              headers={'Content-Type':'application/json'})
-                with urllib.request.urlopen(req, timeout=90) as response:
-                    result = json.load(response)['value']
+                try:
+                    with urllib.request.urlopen(req, timeout=90) as response:
+                        result = json.load(response)['value']
+                except urllib.error.HTTPError as error:
+                    raise AssertionError((error.code, error.read().decode(), log_path.read_text())) from error
                 assert not isinstance(result, dict) or 'error' not in result, result
                 return result
             try:
@@ -73,10 +76,10 @@ setup:
                 request('POST', session+'/timeouts', {'script':45000})
                 def execute(script, args=None):
                     return request('POST', session+'/execute/sync', {'script':script,'args':args or []})
-                def wait(script):
+                def wait(script, args=None):
                     deadline = time.monotonic()+45
                     while time.monotonic()<deadline:
-                        value = execute(script)
+                        value = execute(script,args)
                         if value:
                             return value
                         assert driver.poll() is None, log_path.read_text()
@@ -103,9 +106,9 @@ setup:
                 expand()
                 element = request('POST',session+'/element',{'using':'xpath','value':'//*[@role="treeitem" and contains(., "T1w")]'})
                 request('POST',session+'/element/'+element['element-6066-11e4-a52e-4f735466cecf']+'/click',{})
-                wait('return !!document.querySelector("[role=tab][title*=\".nii\"]")')
+                wait('return !!document.querySelector(arguments[0])', ['[role="tab"][title*=".nii"]'])
                 click('[role="tab"][title*=".nii"]')
-                wait('return !!document.querySelector("[aria-label=\"NiiVue controls\"]")')
+                wait('return !!document.querySelector(arguments[0])', ['[aria-label="NiiVue controls"]'])
                 assert not execute('return !!document.querySelector(".niivue .error")')
                 assert execute('''const c=document.querySelector('.niivue canvas');
                     const g=c&&c.getContext('webgl2');
@@ -163,7 +166,8 @@ tests:
     command: |
       set -euo pipefail
       expected_version="$(awk '/^version:/{print $2; exit}' /build.yaml)"
-      actual_version="$(dpkg-query -W -f='${Version}\n' bidsvue)"
+      package="$(dpkg-query -S /usr/bin/bidsvue | cut -d: -f1)"
+      actual_version="$(dpkg-query -W -f='${Version}\n' "$package")"
       test "$actual_version" = "$expected_version"
       echo "bidsvue package version ok"
     expected_output_contains: bidsvue package version ok
@@ -209,7 +213,8 @@ tests:
       python3 - <<'PYNATIVE'
       import platform, struct, subprocess
       from pathlib import Path
-      paths = [Path(p) for p in subprocess.check_output(['dpkg-query', '-L', 'bidsvue'], text=True).splitlines()]
+      owner = subprocess.check_output(['dpkg-query', '-S', '/usr/bin/bidsvue'], text=True).strip().split(':')[0]
+      paths = [Path(p) for p in subprocess.check_output(['dpkg-query', '-L', owner], text=True).splitlines()]
       names = {'bidsvue', 'dcm2niix', 'niimath', 'bids-validator'}
       expected = {'aarch64': 183, 'x86_64': 62}[platform.machine()]
       for name in names:
