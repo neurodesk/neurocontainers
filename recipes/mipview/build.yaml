@@ -2,6 +2,7 @@ name: mipview
 version: 0.6.2
 architectures:
 - x86_64
+- aarch64
 copyright:
 - license: Apache-2.0
   url: https://github.com/KMarshallX/MipView/blob/v{{ context.version }}/LICENSE
