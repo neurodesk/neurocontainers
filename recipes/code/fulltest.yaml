@@ -42,6 +42,44 @@ env_setup: |
   mkdir -p "$JULIA_DEPOT_PATH"
 
 setup:
+  # SingularityCE4.6.0's sandboxed SIF extractor dereferences a nil session
+  # layer when a CI host's resolver is a /run symlink. Keep the same resolver
+  # contents in a regular file on these ephemeral runners; retain DNS and the
+  # complete native SIF execution test. No runtime source patch is applied.
+  host_script: |
+    set -euo pipefail
+    case "${GITHUB_ACTIONS:-}:${GITHUB_REPOSITORY:-}" in
+      true:Vbitz/neurocontainers-arm64|true:neurodesk/neurocontainers)
+        sudo -n python3 - <<'PYTHON'
+    import os
+    from pathlib import Path
+    import stat
+    import tempfile
+
+    resolver=Path('/etc/resolv.conf')
+    if resolver.is_symlink():
+        original=resolver.read_bytes()
+        attributes=resolver.stat()
+        assert original, 'Do not replace an empty or inaccessible CI resolver'
+        descriptor, name=tempfile.mkstemp(prefix='.code-ci-resolv-',dir=resolver.parent)
+        try:
+            with os.fdopen(descriptor,'wb') as stream:
+                stream.write(original)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.chmod(name,stat.S_IMODE(attributes.st_mode))
+            os.chown(name,attributes.st_uid,attributes.st_gid)
+            os.replace(name,resolver)
+        finally:
+            if Path(name).exists():Path(name).unlink()
+        assert resolver.is_file() and not resolver.is_symlink()
+        assert resolver.read_bytes()==original
+        print('CI resolver symlink normalized with every DNS configuration byte preserved')
+    else:
+        print('CI resolver is already a regular file')
+    PYTHON
+        ;;
+    esac
   script: |
     #!/usr/bin/env bash
     set -e
