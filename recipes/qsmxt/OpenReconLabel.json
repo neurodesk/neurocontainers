@@ -44,10 +44,18 @@
         {
           "id": "qsmxt",
           "name": { "en": "qsmxt" }
+        },
+        {
+          "id": "qsmxt_ep3d",
+          "name": { "en": "3D EPI dual polarity QSM" }
+        },
+        {
+          "id": "qsmxt_ep3d_denoise",
+          "name": { "en": "3D EPI dual polarity QSM + NLM denoise" }
         }
       ],
       "default": "qsmxt",
-      "information": { "en": "Define the config to be executed by the MRD server." }
+      "information": { "en": "qsmxt reconstructs GRE magnitude and phase. 3D EPI dual polarity QSM first motion corrects (FSL MCFLIRT), phase matches and complex averages the repetitions of a single-TE 3D EPI series with alternating readout polarity, using ep3d-highres-preprocessing. The NLM denoise variant also denoises the average (ANTs), which takes longer." }
     },
     {
       "id": "inputseries",

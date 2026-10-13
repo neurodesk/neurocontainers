@@ -33,6 +33,18 @@ With the QSMxT package installed in OpenRecon:
 
 **Both** returns separate `DC` and `ND` result series and takes roughly twice as long as processing one pair. If reconstruction reports missing input images, check that both magnitude and unfiltered phase are available for the selected correction setting.
 
+## Process dual-polarity 3D EPI data
+
+Set **config** to **3D EPI dual polarity QSM** for a single-TE 3D EPI acquisition that repeats the volume with alternating readout polarity. The package needs at least two repetitions in both the magnitude and the phase series.
+
+Before QSMxT runs, the repetitions are combined with the basic preprocessing pipeline from [ep3d-highres-preprocessing](https://github.com/mrphysics-bonn/ep3d-highres-preprocessing):
+
+1. FSL MCFLIRT estimates motion on the magnitude images. The same transforms are applied to the real and imaginary parts.
+2. The smooth phase differences between repetitions, including the polarity-dependent offset, are removed relative to the first repetition.
+3. The repetitions are averaged as complex images.
+
+QSMxT then reconstructs the averaged magnitude and phase as a single-echo dataset with the other controls as set. Choose **3D EPI dual polarity QSM + NLM denoise** to also apply complex non-local-means denoising (ANTs) to the average. This increases the processing time. Source separation needs three echoes, so it is not available in this mode.
+
 ## Choose the output maps
 
 Use **Output maps** to select what returns to the scanner database:
@@ -104,6 +116,8 @@ For threshold-based masking, choose **Robust threshold** or **BET + threshold un
 
 ## Citation
 Stewart, Ashley Wilton, Simon Daniel Robinson, Kieran O’Brien, et al. “QSMxT: Robust Masking and Artifact Reduction for Quantitative Susceptibility Mapping.” Magnetic Resonance in Medicine 87, no. 3 (2022): 1289–300. https://doi.org/10.1002/mrm.29048.
+
+For 3D EPI dual polarity QSM, also cite the [ep3d-highres-preprocessing](https://github.com/mrphysics-bonn/ep3d-highres-preprocessing) pipeline by Rüdiger Stirnberg (DZNE).
 
 ## Help and further reading
 
