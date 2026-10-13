@@ -1,13 +1,23 @@
 name: brainles-preprocessing
-version: "0.6.13"
+version: "0.6.14"
 
 variables:
-  upstream_version: "0.6.13"
+  upstream_version: "0.6.14"
+  niftyreg_version: "1.5.77"
+  antspyx_version: "0.5.4"
+  arm_torch_version: "2.13.0"
+  base_image:
+    try:
+      - value: ubuntu:22.04
+        condition: arch == "x86_64"
+      - value: ubuntu:24.04
+        condition: arch == "aarch64"
   hdbet_record: "2540695"
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABOUlEQVR42u3dsRHCMAwF0CxBywhUDMQajMIATMQSrAAVC3CHogQnsp9OdYp39p2U4nualFK7rMPxVKiJbOrVE83KTL3SrMM0gk7eaBydjNFoOvOMxtSZYQSIzgIjQHQWGKEBBAjQZkBcfhglvnK5v6t0U6BCLmmpPFBpnbhREqgDnaARIEDtgbrRiRg5Qa4YoD0CmYNM0naxlkC2eUCAAAECBAgQIEBf+/y4VemmQIVc0lJ5oNI6caMkUAc6QSNAgNoDdaMTMXKCXDFAewQyB5mk7WK2eb87AAECBAgQIECANgd6Xl9VuilQIZe0VB6otE7cKAnUgU7QCBCg9kDd6ESMnCBXDNAegcxBJmm7mPAF2R2AAAESYyYFDxAjSZx/AhJ2y2ixjsBtRmvoCP33bIRnNlqKKKXm1wc7XnMcuYuNogAAAABJRU5ErkJggg==
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   container_version: "brainles-preprocessing"
@@ -27,9 +37,32 @@ auto_update:
       target:
         variable: hdbet_record
 
+    - id: native-niftyreg
+      dependency: true
+      method: github_tags
+      repo: KCL-BMEIS/niftyreg
+      version_regex: 'v(?P<version>1\.5\.\d+)'
+      target:
+        variable: niftyreg_version
+        fulltest_variable: niftyreg_version
+    - id: native-antspyx
+      dependency: true
+      method: pypi
+      package: antspyx
+      target:
+        variable: antspyx_version
+        fulltest_variable: antspyx_version
+    - id: arm-cpu-torch
+      dependency: true
+      method: pypi
+      package: torch
+      target:
+        variable: arm_torch_version
+        fulltest_variable: arm_torch_version
+
 build:
   kind: neurodocker
-  base-image: ubuntu:22.04
+  base-image: "{{ context.base_image }}"
   pkg-manager: apt
 
   directives:
@@ -39,12 +72,35 @@ build:
         - ca-certificates
         - unzip
 
+    - condition: arch == "aarch64"
+      install:
+        - build-essential
+        - cmake
+        - libjpeg-dev
+        - libpng-dev
+        - libstdc++6
+        - libtiff-dev
+        - zlib1g-dev
+    - condition: arch == "aarch64"
+      run:
+        - git clone --branch v{{ context.niftyreg_version }} --depth 1 https://github.com/KCL-BMEIS/niftyreg.git /tmp/brainles-niftyreg-source
+        - cmake -S /tmp/brainles-niftyreg-source -B /tmp/brainles-niftyreg-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/brainles-niftyreg-{{ context.niftyreg_version }} -DUSE_SSE=OFF -DUSE_CUDA=OFF -DUSE_OPENCL=OFF
+        - cmake --build /tmp/brainles-niftyreg-build --parallel 2
+        - cmake --install /tmp/brainles-niftyreg-build
+        - rm -rf /tmp/brainles-niftyreg-source /tmp/brainles-niftyreg-build
+
     - template:
         name: miniconda
         version: py311_24.9.2-0
         conda_install: "python=3.11.10 pip=24.2"
         env_name: brainles
         env_exists: "false"
+
+    - condition: arch == "aarch64"
+      run:
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir "torch=={{ context.arm_torch_version }}" --index-url https://download.pytorch.org/whl/cpu
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir --no-binary=antspyx "antspyx=={{ context.antspyx_version }}"
+        - ln -sf /usr/lib/aarch64-linux-gnu/libstdc++.so.6 /opt/miniconda-py311_24.9.2-0/envs/brainles/lib/libstdc++.so.6
 
     - run:
         # Core library. antspyx (registration) + SimpleITK ship self-contained
@@ -65,6 +121,12 @@ build:
         # lands on an unsatisfiable pair. 24.1.x accepts numpy>=1.21.
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir "nitransforms>=24.1,<25" "nipreps-synthstrip>=0.0.1,<0.0.2"
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "from brainles_preprocessing.brain_extraction.synthstrip import SynthStripExtractor; print('synthstrip extractor ok')"
+
+    - condition: arch == "aarch64"
+      run:
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python {{ get_file("install_native_niftyreg.py") }}
+    - run:
+        - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip check
 
     - run:
         # The `preprocessor` console script fails on every invocation as
@@ -165,6 +227,22 @@ build:
         PATH: /opt/miniconda-py311_24.9.2-0/envs/brainles/bin:$PATH
 
 files:
+  - name: install_native_niftyreg.py
+    contents: |
+      import importlib.util
+      import shutil
+      from pathlib import Path
+      root=Path(importlib.util.find_spec('brainles_preprocessing').origin).parent/'registration'/'niftyreg'/'niftyreg_scripts'
+      prefix=Path('/opt/brainles-niftyreg-{{ context.niftyreg_version }}')
+      for name in ['reg_aladin','reg_resample']:
+          target=root/name
+          target.unlink()
+          target.symlink_to(prefix/'bin'/name)
+      # The unused x86 SDK must not remain falsely presented as an ARM installation.
+      for sdk in root.glob('niftyreg_*'):
+          if sdk.is_dir(): shutil.rmtree(sdk)
+      (root/'niftyreg_{{ context.niftyreg_version }}').symlink_to(prefix,target_is_directory=True)
+      print('BrainLesion NiftyReg backend points to the native released SDK')
   - name: install_hdbet_models.py
     contents: |
       import shutil
@@ -315,6 +393,8 @@ categories:
   - structural imaging
 
 readme: |
+  ARM64 uses official CPU PyTorch {{ context.arm_torch_version }}, ANTsPy {{ context.antspyx_version }} built from released source, and native NiftyReg {{ context.niftyreg_version }} with the supported USE_SSE=OFF configuration. The x86_64 backend keeps the package-provided NiftyReg binaries. Both actual registration backends, HD-BET CPU inference and SynthStrip inference are exercised in the runtime suite; synthetic operations do not establish clinical accuracy.
+
   ----------------------------------
   ## brainles-preprocessing/{{ context.version }} ##
   brainles-preprocessing provides a preprocessing pipeline
