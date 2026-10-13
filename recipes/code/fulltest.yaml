@@ -967,11 +967,11 @@ tests:
           env=os.environ.copy();env.update(HOME=str(home),XDG_RUNTIME_DIR=str(runtime),XDG_CACHE_HOME=str(home/'.cache'),XDG_CONFIG_HOME=str(home/'.config'))
           log_path=root/'editor.log'
           with log_path.open('wb') as log:
-              process=subprocess.Popen(['/usr/local/sbin/code','--user-data-dir='+str(root/'profile'),'--disable-gpu','--skip-welcome','--skip-release-notes','--new-window','--wait',str(source)],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+              process=subprocess.Popen(['/usr/local/sbin/code','--verbose','--user-data-dir='+str(root/'profile'),'--disable-gpu','--skip-welcome','--skip-release-notes','--new-window','--wait',str(source)],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
               try:
                   deadline=time.monotonic()+90
                   while True:
-                      assert process.poll() is None,log_path.read_text(errors='replace')
+                      assert process.poll() is None,('Code CLI early exit',process.returncode,log_path.read_text(errors='replace'))
                       found=subprocess.run(['xdotool','search','--onlyvisible','--name','neurocontainers-proof.py'],capture_output=True,text=True)
                       if found.returncode==0 and found.stdout.strip():break
                       assert time.monotonic()<deadline,log_path.read_text(errors='replace')
@@ -1028,7 +1028,7 @@ tests:
       export SINGULARITY_CACHEDIR="$task_dir/cache"
       export SINGULARITY_TMPDIR="$task_dir/tmp"
       mkdir -p "$SINGULARITY_CACHEDIR" "$SINGULARITY_TMPDIR"
-      singularity build --disable-cache --mksquashfs-args '-processors 2' "$task_dir/nested.sif" "$rootfs"
+      singularity build --disable-cache "$task_dir/nested.sif" "$rootfs"
       test -s "$task_dir/nested.sif"
       singularity sif list "$task_dir/nested.sif" > "$task_dir/sif-list.txt"
       grep -q 'FS (Squashfs' "$task_dir/sif-list.txt"
