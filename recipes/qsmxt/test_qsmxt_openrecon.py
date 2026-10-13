@@ -298,9 +298,9 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
             if nprocs_index + 1 >= len(sys.argv) or sys.argv[nprocs_index + 1] != "24":
                 raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
             for flag, expected in (
-                ("--qsm-algorithm", "whqsm"),
+                ("--qsm-algorithm", "rts"),
                 ("--unwrapping-algorithm", "romeo"),
-                ("--bf-algorithm", "harperella"),
+                ("--bf-algorithm", "vsharp"),
             ):
                 try:
                     flag_index = sys.argv.index(flag)
@@ -326,15 +326,15 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
     return fake
 
 
-def test_openrecon_defaults_select_whqsm_romeo_and_harperella():
+def test_openrecon_defaults_select_rts_romeo_and_vsharp():
     assert qsmxt.QSMXT_DERIVATIVE_ROOT == Path("derivatives/qsmxt")
 
     settings = qsmxt._settings_from_config({}, FakeMetadata())
 
     assert settings["pipeline_preset"] == "custom"
-    assert settings["qsm_algorithm"] == "whqsm"
+    assert settings["qsm_algorithm"] == "rts"
     assert settings["unwrapping_algorithm"] == "romeo"
-    assert settings["bf_algorithm"] == "harperella"
+    assert settings["bf_algorithm"] == "vsharp"
     assert settings["mask_preset"] == "bet"
     assert settings["masking_input"] == "magnitude"
     assert settings["bet_fractional_intensity"] == 0.5
@@ -844,13 +844,13 @@ def test_openrecon_label_exposes_processing_defaults():
         "custom",
         *qsmxt.ALGORITHM_PIPELINE_PRESETS,
     ]
-    assert parameters["qsmalgorithm"]["default"] == "whqsm"
+    assert parameters["qsmalgorithm"]["default"] == "rts"
     qsm_algorithms = {
         value["id"] for value in parameters["qsmalgorithm"]["values"]
     }
     assert {"hdqsm", "whqsm"} <= qsm_algorithms
     assert parameters["unwrappingalgorithm"]["default"] == "romeo"
-    assert parameters["bfalgorithm"]["default"] == "harperella"
+    assert parameters["bfalgorithm"]["default"] == "vsharp"
     bf_algorithms = {
         value["id"] for value in parameters["bfalgorithm"]["values"]
     }
