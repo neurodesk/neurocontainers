@@ -17,6 +17,7 @@ version: "240320"
 vscode_version: "1.141.0"
 julia_version: "1.13.1"
 singularity_version: "4.6.0"
+go_version: "1.27.2"
 
 required_files:
   - dataset: ds000001
@@ -30,11 +31,15 @@ test_data:
   output_dir: test_output
 
 env_setup: |
+  set -euo pipefail
   export MPLCONFIGDIR=/tmp/matplotlib
   export JUPYTER_CONFIG_DIR=/tmp/jupyter-config
   export JUPYTER_DATA_DIR=/tmp/jupyter-data
   export JUPYTER_RUNTIME_DIR=/tmp/jupyter-runtime
   mkdir -p "$MPLCONFIGDIR" "$JUPYTER_CONFIG_DIR" "$JUPYTER_DATA_DIR" "$JUPYTER_RUNTIME_DIR"
+
+  export JULIA_DEPOT_PATH="${output_dir}/julia-depot"
+  mkdir -p "$JULIA_DEPOT_PATH"
 
 setup:
   script: |
@@ -63,22 +68,26 @@ tests:
 
   - name: VSCode list extensions
     description: List installed VSCode extensions
-    command: bash -lc '/usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1'
+    command: |
+      env -u HOME /usr/local/sbin/code --user-data-dir="${output_dir}/vscode-data" --list-extensions 2>&1
     expected_output_contains: "ms-python.python"
 
   - name: VSCode Python extension
     description: Verify Python extension is installed
-    command: bash -lc '/usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1'
+    command: |
+      env -u HOME /usr/local/sbin/code --user-data-dir="${output_dir}/vscode-data" --list-extensions 2>&1
     expected_output_contains: "ms-python.vscode-pylance"
 
   - name: VSCode Julia extension
     description: Verify Julia extension is installed
-    command: bash -lc '/usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1'
+    command: |
+      env -u HOME /usr/local/sbin/code --user-data-dir="${output_dir}/vscode-data" --list-extensions 2>&1
     expected_output_contains: "julialang.language-julia"
 
   - name: VSCode Jupyter extension
     description: Verify Jupyter extension is installed
-    command: bash -lc '/usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1'
+    command: |
+      env -u HOME /usr/local/sbin/code --user-data-dir="${output_dir}/vscode-data" --list-extensions 2>&1
     expected_output_contains: "ms-toolsai.jupyter"
 
   # ==========================================================================
@@ -96,7 +105,8 @@ tests:
 
   - name: Python help
     description: Verify Python help works
-    command: python --help 2>&1 | head -3
+    command: |
+      python --help 2>&1
     expected_output_contains: "usage: python"
 
   - name: Python execution
@@ -119,7 +129,8 @@ tests:
 
   - name: Pip list packages
     description: Verify pip can list packages
-    command: pip list 2>&1 | head -5
+    command: |
+      pip list 2>&1
     expected_output_contains: "Package"
 
   - name: Conda version
@@ -430,39 +441,49 @@ tests:
   # ==========================================================================
   - name: Julia version
     description: Verify Julia version
-    command: bash -lc '/opt/julia-${julia_version}/bin/julia --version 2>&1'
+    command: |
+      /opt/julia-${julia_version}/bin/julia --startup-file=no --version 2>&1
     expected_output_contains: "julia version ${julia_version}"
 
   - name: Julia help
     description: Verify Julia help works
-    command: bash -lc '/opt/julia-${julia_version}/bin/julia --help 2>&1 | head -5'
+    command: |
+      /opt/julia-${julia_version}/bin/julia --startup-file=no --help 2>&1
     expected_output_contains: "julia"
 
   - name: Julia basic execution
     description: Test basic Julia execution
-    command: bash -lc '/opt/julia-${julia_version}/bin/julia -e '\''println(2 + 2)'\'''
+    command: |
+      /opt/julia-${julia_version}/bin/julia --startup-file=no - <<'JULIA'
+      println(2 + 2)
+      JULIA
     expected_output_contains: "4"
 
   - name: Julia array operations
     description: Test Julia array creation and sum
-    command: "bash -lc '/opt/julia-${julia_version}/bin/julia -e '\"'\"'a = [1, 2, 3, 4, 5]; println(\"Sum: \", sum(a))'\"'\"''"
+    command: |
+      /opt/julia-${julia_version}/bin/julia --startup-file=no - <<'JULIA'
+      a=[1,2,3,4,5]; println("Sum: ",sum(a))
+      JULIA
     expected_output_contains: "Sum: 15"
 
   - name: Julia matrix operations
     description: Test Julia matrix multiplication
-    command: "bash -lc '/opt/julia-${julia_version}/bin/julia -e '\"'\"'using LinearAlgebra; A = [1 2; 3 4]; println(\"Det: \", det(A))'\"'\"''"
+    command: |
+      /opt/julia-${julia_version}/bin/julia --startup-file=no - <<'JULIA'
+      using LinearAlgebra; A=[1 2;3 4]; println("Det: ",det(A))
+      JULIA
     expected_output_contains: "Det: -2.0"
 
   - name: Julia file I/O
     description: Test Julia can write and read files
     command: |
-      bash -lc '/opt/julia-${julia_version}/bin/julia -e '\''
-      open("${output_dir}/julia_test.txt", "w") do f
-          write(f, "Hello from Julia!")
+      /opt/julia-${julia_version}/bin/julia --startup-file=no - <<'JULIA'
+      open("${output_dir}/julia_test.txt","w") do f
+          write(f,"Hello from Julia!")
       end
-      content = read("${output_dir}/julia_test.txt", String)
-      println(content)
-      '\'''
+      println(read("${output_dir}/julia_test.txt",String))
+      JULIA
     expected_output_contains: "Hello from Julia"
     validate:
       - output_exists: ${output_dir}/julia_test.txt
@@ -878,6 +899,148 @@ tests:
       - output_exists: ${output_dir}/pipeline_tsnr.nii.gz
       - output_exists: ${output_dir}/pipeline_global_signal.csv
       - output_exists: ${output_dir}/pipeline_summary.png
+
+  - name: Execute a real native Jupyter kernel
+    description: Execute a Python notebook through the installed kernel, independently verify analytical least-squares coefficients
+      and every HDF5 voxel written by that kernel
+    command: |
+      python - <<'PYTHON'
+      import json
+      import os
+      from pathlib import Path
+      import sys
+      import tempfile
+      import nbformat
+      from nbclient import NotebookClient
+      import numpy as np
+
+      with tempfile.TemporaryDirectory(dir=Path('${output_dir}').resolve()) as directory:
+          root=Path(directory)
+          notebook=nbformat.v4.new_notebook(cells=[nbformat.v4.new_code_cell("""
+      import json,sys,platform
+      from pathlib import Path
+      import numpy as np
+      import h5py
+      x=np.array([-2,-1,0,1,2],dtype=np.float64)
+      y=2+3*x
+      coefficients=np.linalg.lstsq(np.column_stack([np.ones(5),x]),y,rcond=None)[0]
+      data=np.arange(9*11*13,dtype=np.float32).reshape((9,11,13))
+      with h5py.File('kernel-data.h5','w') as stream:stream['image']=data
+      Path('kernel-result.json').write_text(json.dumps({'python':sys.version_info[:2],'machine':platform.machine(),'coefficients':coefficients.tolist(),'sum':int(data.sum())}))
+      print('Native Jupyter kernel executed the analytical fit and HDF5 operation')
+      """)])
+          client=NotebookClient(notebook,timeout=120,kernel_name='python3',resources={'metadata':{'path':str(root)}})
+          executed=client.execute()
+          assert executed.cells[0].execution_count==1
+          assert not any(output.output_type=='error' for output in executed.cells[0].outputs)
+          import platform,h5py
+          result=json.loads((root/'kernel-result.json').read_text())
+          assert result['python']==[3,11] and result['machine']==platform.machine()
+          np.testing.assert_allclose(result['coefficients'],[2,3],rtol=0,atol=64*np.finfo(np.float64).eps)
+          expected=np.arange(9*11*13,dtype=np.float32).reshape((9,11,13))
+          assert result['sum']==int(expected.sum())
+          with h5py.File(root/'kernel-data.h5','r') as stream:np.testing.assert_array_equal(stream['image'][:],expected)
+          print('Real native Python Jupyter kernel recovered the exact analytical coefficients and every1287 HDF5 image voxel')
+      PYTHON
+    timeout: 180
+    expected_exit_code: 0
+    expected_output_contains: Real native Python Jupyter kernel recovered the exact analytical coefficients and every1287 HDF5
+      image voxel
+  - name: Render the real VSCode editor document
+    description: Launch the actual installed editor under native Xvfb, require the named document window and a nonblank rendered
+      image, preserve source bytes and clean up the private process group
+    command: |
+      env -u HOME xvfb-run -a python - <<'PYTHON'
+      import hashlib
+      import os
+      from pathlib import Path
+      import signal
+      import subprocess
+      import tempfile
+      import time
+      from PIL import Image
+
+      with tempfile.TemporaryDirectory(dir=Path('${output_dir}').resolve()) as directory:
+          root=Path(directory);home=root/'home';home.mkdir();runtime=root/'runtime';runtime.mkdir(mode=0o700)
+          source=root/'neurocontainers-proof.py';source.write_text('values = [1, 2, 3, 4, 5]\nassert sum(values) == 15\nprint("Native ARM and x86 editor proof")\n')
+          original=hashlib.sha256(source.read_bytes()).hexdigest()
+          env=os.environ.copy();env.update(HOME=str(home),XDG_RUNTIME_DIR=str(runtime),XDG_CACHE_HOME=str(home/'.cache'),XDG_CONFIG_HOME=str(home/'.config'))
+          log_path=root/'editor.log'
+          with log_path.open('wb') as log:
+              process=subprocess.Popen(['/usr/local/sbin/code','--user-data-dir='+str(root/'profile'),'--disable-gpu','--skip-welcome','--skip-release-notes','--new-window','--wait',str(source)],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+              try:
+                  deadline=time.monotonic()+90
+                  while True:
+                      assert process.poll() is None,log_path.read_text(errors='replace')
+                      found=subprocess.run(['xdotool','search','--onlyvisible','--name','neurocontainers-proof.py'],capture_output=True,text=True)
+                      if found.returncode==0 and found.stdout.strip():break
+                      assert time.monotonic()<deadline,log_path.read_text(errors='replace')
+                      time.sleep(0.5)
+                  window=found.stdout.splitlines()[0]
+                  title=subprocess.check_output(['xdotool','getwindowname',window],text=True)
+                  assert 'neurocontainers-proof.py' in title and 'Visual Studio Code' in title,title
+                  # Wait for the editor renderer to paint the mapped document window.
+                  time.sleep(2)
+                  screenshot=root/'editor.png'
+                  subprocess.run(['import','-window',window,str(screenshot)],check=True,timeout=30)
+                  with Image.open(screenshot) as image:
+                      assert image.width>=400 and image.height>=300
+                      assert len(set(image.convert('RGB').resize((256,256)).getdata()))>32
+                  assert process.poll() is None
+                  assert hashlib.sha256(source.read_bytes()).hexdigest()==original
+                  print('Actual native VSCode mapped and rendered the named Python document with unchanged file bytes')
+              except BaseException:
+                  print(log_path.read_text(errors='replace'))
+                  raise
+              finally:
+                  if process.poll() is None:
+                      os.killpg(process.pid,signal.SIGTERM)
+                      try:process.wait(timeout=10)
+                      except subprocess.TimeoutExpired:
+                          os.killpg(process.pid,signal.SIGKILL);process.wait(timeout=10)
+      PYTHON
+    timeout: 150
+    expected_exit_code: 0
+    expected_output_contains: Actual native VSCode mapped and rendered the named Python document with unchanged file bytes
+  - name: Build and execute a native nested Singularity SIF
+    description: Use the packaged SingularityCE to build a local native rootfs/SquashFS SIF, then actually execute its exact
+      marker/CPU architecture in userns/contain/cleanenv; no registry or emulation. Separate PID/IPC namespaces are not claimed.
+    command: |
+      set -euo pipefail
+      task_dir=$(mktemp -d "${output_dir}/nested.XXXXXX")
+      rootfs="$task_dir/rootfs"
+      mkdir -p "$rootfs"/{etc,proc,sys,dev,tmp,var/tmp,root}
+      # Copy native executables and their resolved shared libraries. This uses
+      # the tested image itself and cannot accidentally fetch another image.
+      for executable in /bin/sh "$(command -v uname)"; do
+        cp -L --parents "$executable" "$rootfs"
+        ldd "$executable" > "$task_dir/ldd.txt"
+        awk '/=> \// {print $3} /^[[:space:]]*\// {print $1}' "$task_dir/ldd.txt" > "$task_dir/libraries.txt"
+        test -s "$task_dir/libraries.txt"
+        while IFS= read -r library; do
+          test -f "$library"
+          cp -L --parents "$library" "$rootfs"
+        done < "$task_dir/libraries.txt"
+      done
+      printf 'nested native execution\n' > "$rootfs/etc/neurocontainers-nested"
+      # Outer Apptainer binds must not be propagated to the nested runtime.
+      unset APPTAINER_BIND APPTAINER_BINDPATH SINGULARITY_BIND SINGULARITY_BINDPATH
+      export SINGULARITY_CACHEDIR="$task_dir/cache"
+      export SINGULARITY_TMPDIR="$task_dir/tmp"
+      mkdir -p "$SINGULARITY_CACHEDIR" "$SINGULARITY_TMPDIR"
+      singularity build --disable-cache --mksquashfs-args '-processors 2' "$task_dir/nested.sif" "$rootfs"
+      test -s "$task_dir/nested.sif"
+      singularity sif list "$task_dir/nested.sif" > "$task_dir/sif-list.txt"
+      grep -q 'FS (Squashfs' "$task_dir/sif-list.txt"
+      # Separate PID namespaces require unmasked /proc on the host runner.
+      singularity exec --userns --contain --no-home --cleanenv --pwd / "$task_dir/nested.sif" /bin/sh -c \
+        'IFS= read -r marker < /etc/neurocontainers-nested; printf "%s\n" "$marker"; uname -m' > "$task_dir/actual.txt"
+      printf 'nested native execution\n%s\n' "$(uname -m)" > "$task_dir/expected.txt"
+      cmp "$task_dir/expected.txt" "$task_dir/actual.txt"
+      echo 'Native nested SIF construction and execution verified'
+    timeout: 300
+    expected_exit_code: 0
+    expected_output_contains: Native nested SIF construction and execution verified
 
 cleanup:
   script: |
