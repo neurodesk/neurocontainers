@@ -154,7 +154,7 @@ build:
     - condition: arch == "aarch64"
       run:
         - python -m pip install --no-cache-dir "numpy=={{ context.numpy_version }}" scipy setuptools wheel Cython
-        - python -m pip install --no-cache-dir "torch=={{ context.arm_torch_version }}" --index-url https://download.pytorch.org/whl/cpu
+        - python -m pip install --no-cache-dir "torch=={{ context.arm_torch_version }}" --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
         - unzip -q {{ get_file("surfa_source") }} -d /tmp
         - python -m pip install --no-cache-dir /tmp/surfa-{{ context.surfa_commit }}
         - rm -rf /tmp/surfa-{{ context.surfa_commit }}
