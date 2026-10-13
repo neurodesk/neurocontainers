@@ -426,9 +426,9 @@ tests:
         if printf '%s\n' "$linkage" | grep -qF 'not found'; then
           exit 1
         fi
-        version_output=$("$1" --version 2>&1)
-        printf '%s\n' "$version_output"
-        case "$version_output" in
+        actual_tool_version=$("$1" --version 2>&1)
+        printf '%s\n' "$actual_tool_version"
+        case "$actual_tool_version" in
           *'${version}'*) ;;
           *) exit 1 ;;
         esac
