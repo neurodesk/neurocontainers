@@ -1,5 +1,10 @@
 name: pals
 version: 2.0.1
+env_setup: |
+  set -euo pipefail
+  export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=2 MPLBACKEND=Agg
+  export MPLCONFIGDIR=/tmp/pals-matplotlib
+  mkdir -p "$MPLCONFIGDIR"
 tests:
 - name: source revision
   command: git -C /opt/pals-2.0.1 rev-parse HEAD
@@ -9,4 +14,178 @@ tests:
   command: command -v flirt
   expected_exit_code: 0
   expected_output_contains: flirt
+- name: PALS lesion overlap workflow
+  command: |-
+    set -eu
+    work=$(mktemp -d)
+    mkdir -p "$work/out"
+    cp /opt/pals-2.0.1/ROIs/roi_L_CST_2mm.nii.gz "$work/image.nii.gz"
+    cp /opt/pals-2.0.1/ROIs/roi_L_CST_2mm.nii.gz "$work/lesion.nii.gz"
+    cat > "$work/config.json" <<EOF
+    {
+      "session_id": "arm64-fulltest",
+      "im_path": "$work/image.nii.gz",
+      "les_path": "$work/lesion.nii.gz",
+      "out_dir": "$work/out",
+      "run": "pals",
+      "space": "mni",
+      "ants_path": "/opt/ants-2.4.3",
+      "fsl_path": "/opt/miniconda/bin",
+      "rois_path": "/opt/pals-2.0.1/ROIs",
+      "template_directory": "/opt/pals-2.0.1/templates",
+      "out_format": "json",
+      "reg_method": "fsl",
+      "reg_costfn": "corratio",
+      "reg_partmask": false,
+      "reg_nomask": false,
+      "bet_g": -0.25,
+      "gif_duration": 0.5
+    }
+    EOF
+    python /opt/pals-2.0.1/run_pals.py -c "$work/config.json"
+    result=$(find "$work/out/PALS/arm64-fulltest/results" -name '*_desc-lesionload_results.json' -print -quit)
+    test -s "$result"
+    python - "$result" <<'PY'
+    import json
+    import sys
+
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        result = json.load(handle)
+    assert result["PALS_version"] == "2.0.1"
+    assert result["LesionVolume(mm)"] > 0
+    assert result["roi_L_CST_2mm"] > 0
+    print("PALS lesion overlap", result["LesionVolume(mm)"], result["roi_L_CST_2mm"])
+    PY
+  expected_exit_code: 0
+  expected_output_contains: PALS lesion overlap
+
+- name: Native scientific dependency closure
+  command: |
+    python -m pip check
+    python - <<'PYTHON'
+    import json
+    import platform
+    import struct
+    import subprocess
+    from pathlib import Path
+    config=json.loads(Path('/opt/pals-2.0.1/presets.json').read_text())
+    path=Path(config['ants_path'])/'N4BiasFieldCorrection'
+    with path.open('rb') as stream:header=stream.read(20)
+    assert header[:4]==b'\x7fELF' and header[5]==1
+    assert struct.unpack('<H',header[18:20])[0]==(183 if platform.machine()=='aarch64' else 62)
+    version=subprocess.check_output([str(path),'--version'],text=True,stderr=subprocess.STDOUT)
+    assert '2.4.3' in version,version
+    for package,version in [('fsl-base','2604.1'),('fsl-avwutils','2209.6'),('fsl-bet2','2111.9'),('fsl-flirt','2111.4')]:
+        files=list(Path('/opt/miniconda/conda-meta').glob(package+'-'+version+'-*.json'));assert len(files)==1,(package,files)
+        meta=json.loads(files[0].read_text());assert meta['version']==version
+        if package!='fsl-base':assert meta['subdir']==('linux-aarch64' if platform.machine()=='aarch64' else 'linux-64'),meta
+    print('PALS dependency closure and native same-version ANTs/FSL packages verified')
+    PYTHON
+  timeout: 120
+  expected_output_contains: PALS dependency closure and native same-version ANTs/FSL packages verified
+  expected_exit_code: 0
+
+- name: Exact analytical lesion volume and complete ROI overlap
+  command: |
+    python - <<'PYTHON'
+    import hashlib
+    import json
+    import os
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    import nibabel as nib
+    import numpy as np
+
+    root=Path('/opt/pals-2.0.1')
+    with tempfile.TemporaryDirectory(prefix='pals-analytical-') as scratch:
+        d=Path(scratch);(d/'out').mkdir();(d/'rois').mkdir()
+        shape=(17,19,23);affine=np.diag([1.5,2,2.5,1]);affine[:3,3]=[-12,-18,-27.5]
+        lesion=np.zeros(shape,np.float32);lesion[4:10,6:11,8:14]=1
+        roi=np.zeros(shape,np.float32);roi[2:14,4:14,6:18]=1
+        half=np.zeros(shape,np.float32);half[4:7,6:11,8:14]=1
+        disjoint=np.zeros(shape,np.float32);disjoint[12:15,14:17,16:19]=1
+        for name,data in [('region',roi),('half',half),('probabilistic',roi*.25),('disjoint',disjoint)]:
+            nib.save(nib.Nifti1Image(data,affine),d/'rois'/(name+'.nii.gz'))
+        source=d/'lesion.nii.gz';nib.save(nib.Nifti1Image(lesion,affine),source)
+        before={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in [source,*sorted((d/'rois').glob('*.nii.gz'))]}
+        config=json.loads((root/'presets.json').read_text())
+        config.update(session_id='analytical',im_path=str(source),les_path=str(source),out_dir=str(d/'out'),run='pals',space='mni',rois_path=str(d/'rois'),out_format='json',reg_method='fsl',reg_costfn='corratio',reg_partmask=False,reg_nomask=False,bet_g=-.25,gif_duration=.5)
+        path=d/'config.json';path.write_text(json.dumps(config))
+        subprocess.run(['python',str(root/'run_pals.py'),'-c',str(path)],check=True,timeout=120)
+        paths=list((d/'out'/'PALS'/'analytical'/'results').glob('*_desc-lesionload_results.json'));assert len(paths)==1,paths
+        result=json.loads(paths[0].read_text())
+        assert result['PALS_version']=='2.0.1' and result['SESSION_ID']=='analytical'
+        expected={'LesionVolume':180,'LesionVolume(mm)':1350,'region':180,'region_pct':12.5,'half':90,'half_pct':100,'probabilistic':45,'probabilistic_pct':12.5,'disjoint':0,'disjoint_pct':0}
+        for key,value in expected.items():assert result[key]==value,(key,result[key],value)
+        assert all(hashlib.sha256(p.read_bytes()).hexdigest()==digest for p,digest in before.items())
+        print('PALS analytical lesion workflow returned the exact180-voxel1350mm3 volume and every binary, partial, probabilistic and disjoint ROI overlap without changing inputs')
+    PYTHON
+  timeout: 180
+  expected_output_contains: PALS analytical lesion workflow returned the exact180-voxel1350mm3 volume and every binary, partial,
+    probabilistic and disjoint ROI overlap without changing inputs
+  expected_exit_code: 0
+
+- name: Complete native PALS preprocessing and quality control
+  command: |
+    python - <<'PYTHON'
+    import hashlib
+    import json
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    import nibabel as nib
+    from nibabel.processing import resample_from_to
+    import numpy as np
+    from PIL import Image
+
+    root=Path('/opt/pals-2.0.1');template=root/'templates'/'mni_icbm152_t1_tal_nlin_sym_09a.nii';roi=root/'ROIs'/'roi_L_CST_2mm.nii.gz'
+    tracked=[template,*sorted((root/'ROIs').glob('*.nii*'))]
+    original={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in tracked}
+    with tempfile.TemporaryDirectory(prefix='pals-full-') as scratch:
+        d=Path(scratch);(d/'out').mkdir();grid=nib.load(roi)
+        # Preserve the complete anatomical field of view on the shipped2mm ROI grid.
+        image=resample_from_to(nib.load(template),grid,order=1)
+        source=d/'T1.nii.gz';nib.save(image,source)
+        lesion_data=(grid.get_fdata()>0).astype(np.uint8)
+        assert 0<lesion_data.sum()<lesion_data.size
+        lesion=d/'lesion.nii.gz';nib.save(nib.Nifti1Image(lesion_data,grid.affine),lesion)
+        before={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in [source,lesion]}
+        config=json.loads((root/'presets.json').read_text());config.update(session_id='full-pipeline',im_path=str(source),les_path=str(lesion),out_dir=str(d/'out'),run='all',space='orig',out_format='json',reg_method='fsl',reg_costfn='corratio',reg_partmask=False,reg_nomask=False,bet_g=-.25,gif_duration=.5)
+        path=d/'config.json';path.write_text(json.dumps(config));subprocess.run(['python',str(root/'run_pals.py'),'-c',str(path)],check=True,timeout=1800)
+        work=d/'out'/'PALS'/'full-pipeline'
+        saved=list((work/'config').glob('*_desc-PALS_config.json'));assert len(saved)==1,saved
+        actual=json.loads(saved[0].read_text())
+        for key in ['im_std','les_std','n4_path','im_brain_path','im_skull_path','im_mni','les_mni','im_brain_mask']:
+            p=Path(actual[key]);assert p.is_file(),(key,p)
+            values=nib.load(p).get_fdata();assert np.isfinite(values).all() and np.count_nonzero(values)>0,(key,p)
+        for key in ['les_std','les_mni','im_brain_mask']:
+            values=nib.load(actual[key]).get_fdata();assert set(np.unique(values))=={0,1},(key,np.unique(values))
+        matrix=np.loadtxt(actual['im_to_mni_xfm']);assert matrix.shape==(4,4) and np.isfinite(matrix).all() and np.linalg.det(matrix[:3,:3])>0
+        reference=nib.load(template)
+        for key in ['im_mni','les_mni']:
+            output=nib.load(actual[key]);assert output.shape==reference.shape
+            np.testing.assert_array_equal(output.header.get_zooms(),reference.header.get_zooms())
+            np.testing.assert_allclose(output.affine,reference.affine,rtol=0,atol=4*np.finfo(np.float32).eps*np.max(np.abs(reference.affine)))
+        results=list((work/'results').glob('*_desc-lesionload_results.json'));assert len(results)==1
+        result=json.loads(results[0].read_text());assert result['PALS_version']=='2.0.1' and result['LesionVolume(mm)']>0
+        assert all(np.isfinite(v) for v in result.values() if isinstance(v,(int,float)))
+        assert result['roi_L_CST_2mm']>0
+        pngs=list((work/'qc').glob('*.png'));gifs=list((work/'qc').glob('*.gif'));assert len(pngs)>=6 and len(gifs)==3,(pngs,gifs)
+        for p in pngs+gifs:
+            with Image.open(p) as visual:
+                assert visual.width>100 and visual.height>100
+                assert any(low<high for low,high in visual.convert('RGB').getextrema())
+                if p.suffix=='.gif':
+                    assert visual.n_frames==2,(p,visual.n_frames)
+                    first=np.asarray(visual.convert('RGB'));visual.seek(1)
+                    assert not np.array_equal(first,np.asarray(visual.convert('RGB')))
+        assert all(hashlib.sha256(p.read_bytes()).hexdigest()==digest for p,digest in {**original,**before}.items())
+        print('Actual PALS full workflow executed native reorientation, N4, BET, FLIRT, lesion transformation, atlas overlap and decoded all QC outputs with unchanged source images and ROIs')
+    PYTHON
+  timeout: 2100
+  expected_output_contains: Actual PALS full workflow executed native reorientation, N4, BET, FLIRT, lesion transformation,
+    atlas overlap and decoded all QC outputs with unchanged source images and ROIs
+  expected_exit_code: 0
+
 upstream_commit: b3699e951ba929d5822bd98a8b65414f075f02a8
