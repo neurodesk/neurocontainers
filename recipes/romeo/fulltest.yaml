@@ -19,8 +19,7 @@ setup:
     set -e
     mkdir -p test_output/romeo
 
-    # Generate synthetic phase data if Python with nibabel is available
-    # This is optional - basic tests will still work without it
+    # Generate mandatory synthetic phase data from the resolved host input.
     python3 -c "import nibabel, numpy"
       echo "Generating synthetic phase data..."
       python3 << 'PYTHON_SCRIPT'
@@ -28,7 +27,7 @@ setup:
     import numpy as np
 
     # Load T1w as magnitude reference
-    t1w = nib.load('ds000001/sub-01/anat/sub-01_T1w.nii.gz')
+    t1w = nib.load('${t1w}')
     mag_data = t1w.get_fdata()
 
     # Create synthetic phase with wraps
