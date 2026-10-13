@@ -2,23 +2,24 @@
 
 Maintainer tool, not installed in the container. Reproduce the shipped
 brainquant_norms.json from the IXI T1 images
-(https://brain-development.org/ixi-dataset/, CC BY-SA 3.0). Uncropped CPU
-SynthSeg needs more than 9 GB of RAM, and its --crop box is centred on the
-field of view, which clips the occipital lobe of the off-centre IXI heads. So
-each image is first trimmed to its SynthStrip brain box, which centres the
-crop on the brain. For every IXI-T1/<subject>.nii.gz:
+(https://brain-development.org/ixi-dataset/, CC BY-SA 3.0). CPU SynthSeg on
+the full IXI field of view needs more than 9 GB of RAM, and its --crop box is
+centred on the field of view, which clips the occipital lobe of the
+off-centre IXI heads. So each image is first trimmed to its SynthStrip brain
+box plus a margin, which SynthSeg then segments whole.
+For every IXI-T1/<subject>.nii.gz:
 
     mri_synthstrip -i IXI-T1/<subject>.nii.gz -m mask/<subject>.nii.gz
     python fit_brainquant_norms.py trim IXI-T1/<subject>.nii.gz mask/<subject>.nii.gz trimmed/<subject>.nii.gz
     mri_synthseg --i trimmed/<subject>.nii.gz --o seg/<subject>_synthseg.nii.gz \
-        --vol vol/<subject>.csv --fast --crop 192 --cpu
+        --vol vol/<subject>.csv --fast --cpu
 
 then, with the per-subject CSVs concatenated under one header:
 
-    python fit_brainquant_norms.py assemble ixi_synthseg_vol.csv IXI.xls seg/ brainquant_ixi_volumes.csv
+    python fit_brainquant_norms.py assemble ixi_synthseg_vol.csv IXI.xls brainquant_ixi_volumes.csv
     python fit_brainquant_norms.py fit brainquant_ixi_volumes.csv brainquant_norms.json
 
-trim and assemble need nibabel, assemble also pandas and xlrd; fit needs numpy and scipy.
+trim needs nibabel, assemble needs pandas and xlrd, fit needs numpy and scipy.
 """
 
 from __future__ import annotations
@@ -38,8 +39,6 @@ ICV_COLUMN = "total intracranial"
 AGE_CENTER = 50.0
 AGE_SCALE = 10.0
 REFERENCE_ICV_MM3 = 1500000.0
-CROP_SIZE = 192
-CROP_MARGIN_VOXELS = 3
 SEXES = ("female", "male", "all")
 
 BILATERAL_TISSUE = (
@@ -81,23 +80,7 @@ def trim(image_path: Path, mask_path: Path, out_path: Path) -> None:
     nib.save(image.slicer[low[0]:high[0], low[1]:high[1], low[2]:high[2]], str(out_path))
 
 
-def _crop_margin(seg_path: Path) -> int:
-    """Smallest distance in voxels from labelled tissue to a face of the centred crop box."""
-    import nibabel as nib
-
-    labels = np.asarray(nib.load(str(seg_path)).dataobj)
-    occupied = np.argwhere(labels > 0)
-    margin = CROP_SIZE
-    for axis, size in enumerate(labels.shape):
-        if size <= CROP_SIZE:
-            continue
-        low = int(round((size - CROP_SIZE) / 2))
-        high = low + CROP_SIZE - 1
-        margin = min(margin, int(occupied[:, axis].min()) - low, high - int(occupied[:, axis].max()))
-    return margin
-
-
-def assemble(volumes_csv: Path, demographics_xls: Path, seg_dir: Path, out_csv: Path) -> None:
+def assemble(volumes_csv: Path, demographics_xls: Path, out_csv: Path) -> None:
     import pandas as pd
 
     volumes = pd.read_csv(volumes_csv)
@@ -118,9 +101,6 @@ def assemble(volumes_csv: Path, demographics_xls: Path, seg_dir: Path, out_csv: 
         else:
             row["sex"] = {1: "male", 2: "female"}[int(demographics.at[ixi_id, "sex_id"])]
             row["age"] = round(float(demographics.at[ixi_id, "age"]), 2)
-        margin = _crop_margin(seg_dir / f"{record['subject']}_synthseg.nii.gz")
-        if margin < CROP_MARGIN_VOXELS and not row["exclude"]:
-            row["exclude"] = f"tissue within {margin} voxels of the {CROP_SIZE} mm crop"
         row.update({name: record[name] for name in volumes.columns if name != "subject"})
         rows.append(row)
 
@@ -217,7 +197,7 @@ def fit(table_csv: Path, out_json: Path) -> None:
             "sites": sorted(set(site)),
             "age_min": round(float(age.min()), 1),
             "age_max": round(float(age.max()), 1),
-            "synthseg": "SynthSeg 2.0, fast mode, FreeSurfer 8.2.0 mri_synthseg --vol --crop 192",
+            "synthseg": "SynthSeg 2.0, fast mode, FreeSurfer 8.2.0 mri_synthseg --vol",
         },
         "age_center": AGE_CENTER,
         "age_scale": AGE_SCALE,
@@ -236,7 +216,7 @@ def main() -> None:
     for name in ("image", "mask", "out"):
         trim_parser.add_argument(name, type=Path)
     assemble_parser = commands.add_parser("assemble")
-    for name in ("volumes_csv", "demographics_xls", "seg_dir", "out_csv"):
+    for name in ("volumes_csv", "demographics_xls", "out_csv"):
         assemble_parser.add_argument(name, type=Path)
     fit_parser = commands.add_parser("fit")
     fit_parser.add_argument("table_csv", type=Path)
@@ -245,7 +225,7 @@ def main() -> None:
     if args.command == "trim":
         trim(args.image, args.mask, args.out)
     elif args.command == "assemble":
-        assemble(args.volumes_csv, args.demographics_xls, args.seg_dir, args.out_csv)
+        assemble(args.volumes_csv, args.demographics_xls, args.out_csv)
     else:
         fit(args.table_csv, args.out_json)
 
