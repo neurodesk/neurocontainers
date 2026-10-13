@@ -621,7 +621,7 @@ tests:
                   try:
                       ftp.retrbinary('RETR /etc/passwd',lambda block: None)
                   except ftplib.error_perm as error:
-                      assert str(error).startswith('550'),error
+                      assert str(error).startswith('500') and 'Path not allowed' in str(error),error
                   else:
                       raise AssertionError('GridFTP allowed access outside its private path restriction')
                   ftp.quit()
