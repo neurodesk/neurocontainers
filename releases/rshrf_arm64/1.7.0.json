@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "rshrf_arm64 1.7.0": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "bids apps"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "rshrf"
+}
