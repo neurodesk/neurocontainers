@@ -23,7 +23,7 @@ build:
   directives:
     - workdir: /opt
     - install:
-      - openjdk-11-jre
+      - openjdk-11-jdk
       - fontconfig
       - fonts-dejavu-core
       - libfreetype6
