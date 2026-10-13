@@ -19,6 +19,7 @@ architectures:
   - aarch64
 
 variables:
+  napari_version: 0.9.2
   install_path: /opt/napari-{{ context.version }}
   venv_path: /opt/napari-{{ context.version }}/venv
   pip_version: 26.1.1
@@ -38,8 +39,56 @@ variables:
   nninteractive_version: 2.5.1
 
 auto_update:
-  method: pypi
-  package: napari
+  method: sources
+  container_version: napari
+  sources:
+  - id: napari
+    method: pypi
+    package: napari
+    target:
+      variable: napari_version
+  - id: torch
+    dependency: true
+    method: pypi
+    package: torch
+    target:
+      variable: torch_version
+      fulltest_variable: torch_version
+  - id: torchvision
+    dependency: true
+    method: pypi
+    package: torchvision
+    target:
+      variable: torchvision_version
+      fulltest_variable: torchvision_version
+  - id: voxtell
+    dependency: true
+    method: pypi
+    package: voxtell
+    target:
+      variable: voxtell_version
+      fulltest_variable: voxtell_version
+  - id: nninteractive
+    dependency: true
+    method: pypi
+    package: nnInteractive
+    target:
+      variable: nninteractive_version
+      fulltest_variable: nninteractive_version
+  - id: napari_voxtell
+    dependency: true
+    method: pypi
+    package: napari-voxtell
+    target:
+      variable: napari_voxtell_version
+      fulltest_variable: napari_voxtell_version
+  - id: napari_nninteractive
+    dependency: true
+    method: pypi
+    package: napari-nninteractive
+    target:
+      variable: napari_nninteractive_version
+      fulltest_variable: napari_nninteractive_version
 
 build:
   kind: neurodocker
@@ -98,7 +147,7 @@ build:
         - . "{{ context.venv_path }}/bin/activate"
         - python -m pip install --no-cache-dir --upgrade pip=={{ context.pip_version }} setuptools=={{ context.setuptools_version }} wheel=={{ context.wheel_version }}
         - python -m pip install --no-cache-dir torch=={{ context.torch_version }} torchvision=={{ context.torchvision_version }} --index-url https://download.pytorch.org/whl/{{ context.pytorch_wheel_channel }}
-        - python -m pip install --no-cache-dir "napari[all]=={{ context.version }}" "napari-voxtell=={{ context.napari_voxtell_version }}" "voxtell=={{ context.voxtell_version }}" "napari-nninteractive[local]=={{ context.napari_nninteractive_version }}" "nnInteractive=={{ context.nninteractive_version }}"
+        - python -m pip install --no-cache-dir "napari[all]=={{ context.napari_version }}" "napari-voxtell=={{ context.napari_voxtell_version }}" "voxtell=={{ context.voxtell_version }}" "napari-nninteractive[local]=={{ context.napari_nninteractive_version }}" "nnInteractive=={{ context.nninteractive_version }}"
 
     - run:
         - "{{ context.venv_path }}/bin/python -m pip check"

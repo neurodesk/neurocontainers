@@ -1,5 +1,11 @@
 name: napari
 version: 0.9.2
+torch_version: "2.8.0"
+torchvision_version: "0.23.0"
+voxtell_version: "0.1.0"
+nninteractive_version: "2.5.1"
+napari_voxtell_version: "0.1.0"
+napari_nninteractive_version: "2.5.3"
 default_timeout: 120
 
 test_data:
@@ -72,7 +78,7 @@ tests:
       python -m pip check
       python - <<'PYTHON'
       from importlib.metadata import version
-      for package, expected in [('napari', '${version}'), ('torch', '2.8.0'), ('torchvision', '0.23.0'), ('voxtell', '0.1.0'), ('nnInteractive', '2.5.1'), ('napari-voxtell', '0.1.0'), ('napari-nninteractive', '2.5.3')]:
+      for package, expected in [('napari', '${version}'), ('torch', '${torch_version}'), ('torchvision', '${torchvision_version}'), ('voxtell', '${voxtell_version}'), ('nnInteractive', '${nninteractive_version}'), ('napari-voxtell', '${napari_voxtell_version}'), ('napari-nninteractive', '${napari_nninteractive_version}')]:
           assert version(package).split('+')[0] == expected, (package, version(package))
       print('Pinned napari, PyTorch and segmentation plugin versions are compatible')
       PYTHON
