@@ -44,7 +44,7 @@ tests:
   # ==========================================================================
   - name: Octave version check
     description: Verify Octave is installed and reports version
-    command: octave --version 2>/dev/null | head -1
+    command: octave --version 2>&1
     expected_output_contains: "GNU Octave"
     expected_exit_code: 0
 
@@ -752,6 +752,92 @@ tests:
         exit(0);
       " 2>&1
     expected_output_contains: "Max correlation:"
+
+  - name: NiiStat exact multiple-comparison correction
+    description: Check unsorted matrix BH and BY decisions and adjusted p-values against independent analytical values
+    command: |
+      env -u HOME octave --no-gui --eval "
+        addpath('/opt/niistat-${version}');
+        p = [0.2 0.001; 0.9 0.02; 0.008 0.5]; original = p;
+        [h, critical, adjusted] = fdr_bh(p, 0.05, 'pdep', 'no');
+        expected = [0.3 0.006; 0.9 0.04; 0.024 0.6];
+        assert(isequal(h, logical([0 1; 0 1; 1 0])));
+        assert(critical == 0.02);
+        assert(max(abs(adjusted(:)-expected(:))) < 32*eps);
+        [h, critical, adjusted] = fdr_bh(p, 0.05, 'dep', 'no');
+        assert(isequal(h, logical([0 1; 0 0; 0 0])));
+        assert(critical == 0.001);
+        assert(max(abs(adjusted(:)-(49/20)*expected(:))) < 32*eps);
+        assert(isequal(p, original));
+        disp('NiiStat analytical BH and BY correction verified');
+      " 2>&1
+    expected_output_contains: NiiStat analytical BH and BY correction verified
+    expected_exit_code: 0
+
+  - name: Native LibSVM classification and sparse file roundtrip
+    description: Execute all four compiled Octave MEX interfaces and classify independent held-out points
+    command: |
+      env -u HOME octave --no-gui --eval "
+        addpath('/opt/niistat-${version}/libsvm');
+        assert(exist('svmtrain', 'file') == 3);
+        assert(exist('svmpredict', 'file') == 3);
+        assert(exist('libsvmwrite', 'file') == 3);
+        assert(exist('libsvmread', 'file') == 3);
+        train = [-4 -2; -3 -1; -2 -3; 2 3; 3 1; 4 2];
+        labels = [-1; -1; -1; 1; 1; 1];
+        model = svmtrain(labels, train, '-t 0 -c 10 -q');
+        targets = [-1; 1; -1; 1]; points = [-5 -1; 5 1; -1 -4; 1 4];
+        [prediction, accuracy, decision] = svmpredict(targets, points, model, '-q');
+        assert(isequal(prediction, targets)); assert(accuracy(1) == 100);
+        assert(all(isfinite(decision(:))));
+        assert(all(abs(decision(:)) > 0));
+        scratch = tempname(); mkdir(scratch);
+        unwind_protect
+          filename = fullfile(scratch, 'training.libsvm');
+          libsvmwrite(filename, labels, sparse(train));
+          assert(exist(filename, 'file') == 2);
+          [restored_labels, restored_train] = libsvmread(filename);
+          assert(isequal(restored_labels, labels));
+          assert(isequal(full(restored_train), train));
+        unwind_protect_cleanup
+          rmdir(scratch, 's');
+        end_unwind_protect
+        disp('Native LibSVM held-out classification and I/O verified');
+      " 2>&1
+    expected_output_contains: Native LibSVM held-out classification and I/O verified
+    expected_exit_code: 0
+
+  - name: SPM native NIfTI voxel and spatial roundtrip
+    description: Write and reread all known voxels and affine through native SPM MEX and file_array
+    command: |
+      env -u HOME octave --no-gui --eval "
+        addpath('/opt/spm12-r7771');
+        scratch = tempname(); mkdir(scratch);
+        unwind_protect
+          values = reshape(-30:29, [4 5 3]); original = values;
+          affine = [2 0 0 -10; 0 3 0 5; 0 0 4 2; 0 0 0 1];
+          header = struct('fname', fullfile(scratch, 'known.nii'), ...
+            'dim', [4 5 3], 'dt', [16 0], 'mat', affine, ...
+            'pinfo', [1;0;0], 'n', [1 1], 'descrip', 'NiiStat native SPM fixture');
+          spm_write_vol(header, values);
+          assert(exist(header.fname, 'file') == 2);
+          restored = spm_vol(header.fname);
+          actual = spm_read_vols(restored);
+          assert(isequal(restored.dim, [4 5 3]));
+          assert(isequal(actual, values));
+          assert(max(abs(restored.mat(:)-affine(:))) < 32*eps);
+          mapped = nifti(header.fname);
+          assert(isa(mapped.dat, 'file_array'));
+          assert(isequal(double(mapped.dat(:,:,:)), values));
+          assert(isequal(values, original));
+        unwind_protect_cleanup
+          rmdir(scratch, 's');
+        end_unwind_protect
+        disp('SPM all60 voxels and spatial affine roundtrip verified');
+      " 2>&1
+    expected_output_contains: SPM all60 voxels and spatial affine roundtrip verified
+    expected_exit_code: 0
+
 
 cleanup:
   script: |
