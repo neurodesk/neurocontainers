@@ -26,12 +26,12 @@ tests:
 
   - name: FitLins CLI on PATH
     description: Verify the fitlins launcher renders its shipped help text
-    command: bash -lc "fitlins --help 2>&1 | sed -n '1,18p'"
+    command: fitlins --help
     expected_output_contains: "usage: fitlins [-h] [--version] [-v] [-q]"
 
   - name: FitLins package metadata
     description: Verify pip metadata reports the installed fitlins package
-    command: python -m pip show fitlins 2>&1 | sed -n '1,12p'
+    command: python -m pip show fitlins
     expected_output_contains: "Author: Christopher J. Markiewicz"
 
   - name: PyTables HDF5 writer available
@@ -54,3 +54,80 @@ tests:
     description: Verify the module is installed under the Miniconda site-packages tree
     command: python -c "import fitlins; print(fitlins.__file__)"
     expected_output_contains: "/opt/miniconda/lib/python3.9/site-packages/fitlins/__init__.py"
+
+  - name: Actual analytical group model
+    description: Fit the released second-level estimator on four synthetic subjects and require every effect, variance, t-statistic, tail probability and physical affine
+    command: |
+      python - <<'PYTHON'
+      from pathlib import Path
+      import hashlib
+      import math
+      import tempfile
+
+      import nibabel as nib
+      import numpy as np
+      import pandas as pd
+      from fitlins.interfaces.nistats import SecondLevelModel
+
+      workspace = Path('${output_dir}')
+      workspace.mkdir(parents=True, exist_ok=True)
+      with tempfile.TemporaryDirectory(prefix='group-model-', dir=workspace.resolve()) as folder:
+          root = Path(folder)
+          affine = np.array([[2,0,0,-10],[0,3,0,-12],[0,0,4,-16],[0,0,0,1]], dtype=float)
+          region = np.s_[1:4,1:4,1:4]
+          means = np.arange(1,28,dtype=float).reshape(3,3,3) / 2
+          effects, variances, metadata = [], [], []
+          for i, deviation in enumerate([-3,-1,1,3]):
+              data = np.zeros((5,5,5), dtype=np.float64)
+              data[region] = means + deviation
+              effect = root / ('subject-' + str(i) + '-effect.nii.gz')
+              variance = root / ('subject-' + str(i) + '-variance.nii.gz')
+              nib.Nifti1Image(data, affine).to_filename(effect)
+              data[region] = 1
+              nib.Nifti1Image(data, affine).to_filename(variance)
+              effects.append(str(effect))
+              variances.append(str(variance))
+              metadata.append({'subject':'s'+str(i), 'contrast':'activation'})
+          sources = {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in effects + variances}
+          spec = {
+              'name':'analytical_group', 'level':'dataset', 'model':{'type':'glm'},
+              'entities':{'contrast':'activation'},
+              'metadata':pd.DataFrame([{'subject':'s'+str(i)} for i in range(4)]),
+              'X':pd.DataFrame({'intercept':np.ones(4)}),
+              'contrasts':[{'name':'mean', 'conditions':['intercept'], 'weights':[1], 'test':'t', 'entities':{'contrast':'mean'}}],
+          }
+          run = root / 'run'
+          run.mkdir()
+          result = SecondLevelModel(effect_maps=[effects], variance_maps=[variances], stat_metadata=[metadata], spec=spec).run(cwd=str(run))
+          assert result.outputs.contrast_metadata == [{'name':'analytical_group','level':'dataset','stat':'t','contrast':'mean'}]
+          maps = {}
+          outside = np.ones((5,5,5),dtype=bool)
+          outside[region] = False
+          for key in ['effect_maps','variance_maps','stat_maps','zscore_maps','pvalue_maps']:
+              files = getattr(result.outputs,key)
+              assert len(files) == 1 and Path(files[0]).is_file(), (key, files)
+              image = nib.load(files[0])
+              assert image.shape == (5,5,5)
+              np.testing.assert_array_equal(image.affine, affine)
+              values = image.get_fdata()
+              assert np.isfinite(values).all(), key
+              np.testing.assert_array_equal(values[outside], 0)
+              maps[key] = values[region]
+          # Residual sum of squares20 with3 degrees of freedom gives mean variance5/3.
+          expected_variance = np.full((3,3,3),5/3)
+          expected_t = means / math.sqrt(5/3)
+          u = expected_t / math.sqrt(3)
+          expected_p = .5 - (np.arctan(u) + u/(1+u*u)) / math.pi
+          # Allow only a64-double-epsilon bound for small well-conditioned OLS arithmetic.
+          rounding = 64 * np.finfo(np.float64).eps
+          for key, expected in [('effect_maps',means),('variance_maps',expected_variance),('stat_maps',expected_t),('pvalue_maps',expected_p)]:
+              np.testing.assert_allclose(maps[key],expected,rtol=rounding,atol=rounding)
+          # Independently require each reported Gaussian z-score to encode the same tail probability.
+          tails = np.array([.5*math.erfc(z/math.sqrt(2)) for z in maps['zscore_maps'].ravel()]).reshape(3,3,3)
+          np.testing.assert_allclose(tails,expected_p,rtol=rounding,atol=rounding)
+          assert {p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in sources} == sources
+          print('FitLins fitted all27 voxels with analytical group effects, variance, t and tail probabilities')
+      PYTHON
+    expected_output_contains: FitLins fitted all27 voxels with analytical group effects, variance, t and tail probabilities
+    expected_exit_code: 0
+    timeout: 180
