@@ -283,6 +283,12 @@ that reports a version. Missing, duplicate or incomplete assets fail the check. 
 combine an independent release selector with a `releases/latest` digest source;
 those selectors can resolve different releases.
 
+When the asset filename contains the release version, write `{version}` in its
+place, for example `asset: flames-{version}-linux-x64.tar.gz`. The provider
+substitutes the version parsed from the selected tag, after any `version_regex`,
+so a repository that publishes several tag families can still pin one family's
+asset and digest. The filename may contain one placeholder.
+
 Snapshot hashing uses conditional HTTP requests when the server supplies an ETag
 or Last-Modified value. Only an explicit `304 Not Modified` reuses the previous
 verified digest. Servers without validators are downloaded and hashed again.
