@@ -27,9 +27,9 @@ setup:
     if nprocs_index + 1 >= len(sys.argv) or sys.argv[nprocs_index + 1] != "24":
         raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
     for flag, expected in (
-        ("--qsm-algorithm", "hdqsm"),
+        ("--qsm-algorithm", "whqsm"),
         ("--unwrapping-algorithm", "romeo"),
-        ("--bf-algorithm", "ismv"),
+        ("--bf-algorithm", "harperella"),
     ):
         try:
             flag_index = sys.argv.index(flag)
@@ -453,12 +453,12 @@ tests:
       }
       assert parameters["sourceseparation"]["default"] == "off"
       assert {value["id"] for value in parameters["sourceseparation"]["values"]} == set(qsmxt.SOURCE_SEPARATION_METHODS)
-      assert parameters["qsmalgorithm"]["default"] == "hdqsm"
+      assert parameters["qsmalgorithm"]["default"] == "whqsm"
       assert "whqsm" in {
           value["id"] for value in parameters["qsmalgorithm"]["values"]
       }
       assert parameters["unwrappingalgorithm"]["default"] == "romeo"
-      assert parameters["bfalgorithm"]["default"] == "ismv"
+      assert parameters["bfalgorithm"]["default"] == "harperella"
       if "inputseries" in parameters:
           assert parameters["inputseries"]["default"] == "distortion-corrected"
           assert [
@@ -510,7 +510,7 @@ tests:
       PY
 
   - name: OpenRecon bridge sends derived QSM images
-    description: Run the qsmxt OpenRecon bridge against generated MRD images with a fake QSMxT derivative writer
+    description: Select GRE sources among processed products and return originals and QSM images
     timeout: 180
     script: |
       set -euo pipefail
@@ -586,6 +586,8 @@ tests:
           image(1, 2, "gre_qsm", np.full(shape_zyx, 1002, dtype=np.float32)),
           image(2, 1, "gre_qsm_Pha", np.full(shape_zyx, 2001, dtype=np.float32), getattr(ismrmrd, "IMTYPE_PHASE", 2)),
           image(2, 2, "gre_qsm_Pha", np.full(shape_zyx, 2002, dtype=np.float32), getattr(ismrmrd, "IMTYPE_PHASE", 2)),
+          image(3, 1, "gre_qsm_Romeo_Mask", np.ones(shape_zyx, dtype=np.float32)),
+          image(4, 1, "gre_qsm_Romeo_P", np.full(shape_zyx, 3001, dtype=np.float32), getattr(ismrmrd, "IMTYPE_PHASE", 2)),
       ]
       connection = FakeConnection(images)
       qsmxt.OPENRECON_WORK_ROOT = Path(os.environ["OUTPUT_DIR"]) / "openrecon-work"
@@ -606,11 +608,11 @@ tests:
 
       assert connection.closed is True
       assert connection.logs == []
-      assert len(connection.sent_batches) == 3
+      assert len(connection.sent_batches) == 5
       assert len(connection.sent_batches[-1]) == 2
 
       for original, source in zip(
-          [image for batch in connection.sent_batches[:2] for image in batch], images,
+          [image for batch in connection.sent_batches[:-1] for image in batch], images,
       ):
           np.testing.assert_array_equal(original.data, source.data)
       first = connection.sent_batches[-1][0]

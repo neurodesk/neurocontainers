@@ -22,6 +22,26 @@ metadata, or source series names such as `phase`, `pha`, or `_Pha`. It recognize
 always paired within the same distortion-correction variant. A missing or
 ambiguous requested pair fails explicitly instead of selecting by arrival order.
 
+Within each correction variant, source selection excludes the known processed
+series suffixes `Romeo_Mask`, `Romeo_P`, `Romeo_B0`,
+`sensitivity_corrected_mag`, `CLEAR-SWI`, and `CLEAR-SWI_mIP`. Matching is
+case-insensitive and uses complete suffix tokens. A terminal `ND` or `DC` token
+does not prevent product detection. The DICOM `DERIVED` flag alone does not
+exclude an input, because coil-combined source images can carry that flag.
+
+A single eligible magnitude and phase pair remains valid regardless of its
+series names. When several candidates remain, the wrapper selects a pair only
+if their normalized source family identifies exactly one magnitude and phase
+match. For example, `Aspire_M` and `Aspire_P` share the `Aspire` family.
+Multiple complete families or duplicate candidates fail with an ambiguity.
+Original passthrough still includes every received series.
+
+Before applying `maxechoes`, the BIDS writer requires equal echo counts and
+checks source echo identities when both components provide them. It aligns
+explicit echo identities and validates the converted magnitude and phase
+volume shapes and affines before saving each echo. Incompatible input fails
+before QSMxT starts.
+
 For each derived magnitude/phase echo group the wrapper writes:
 
 ```text
@@ -109,25 +129,27 @@ adapter; for example, `t2_swi_tra_wave4_2mm` does not provide the required
 unfiltered phase data and should not be used for QSMxT. Start from a plain GRE
 sequence instead, and enable both phase and magnitude reconstruction.
 
-OpenRecon selects HD-QSM with ROMEO and iSMV explicitly:
+OpenRecon selects WH-QSM with ROMEO and HARPERELLA explicitly:
 
 ```text
-qsmxt run <bids_dir> --qsm-algorithm hdqsm --unwrapping-algorithm romeo --bf-algorithm ismv
+qsmxt run <bids_dir> --qsm-algorithm whqsm --unwrapping-algorithm romeo --bf-algorithm harperella
 ```
 
 The OpenRecon wrapper also supplies the output directory and resource settings.
-Its custom-pipeline defaults are ROMEO phase unwrapping, iSMV background-field
-removal, HD-QSM inversion, and BET magnitude masking. BET uses a 0.5 fractional
+Its custom-pipeline defaults are ROMEO phase unwrapping, HARPERELLA background-field
+removal, WH-QSM inversion, and BET magnitude masking. BET uses a 0.5 fractional
 intensity threshold, closing radius 1, and automatic hole filling. This differs
 from the upstream QSMxT inversion default, which is RTS. The QSM map is the only
 derived output returned by default. The source magnitude and phase series
 are always stored alongside it.
 
-The default prioritizes speed while retaining good similarity in the QSM-CI
-in silico 2019 benchmark: ROMEO + iSMV + HD-QSM achieved xSIM 0.361 in about
-1.4 minutes. The matching WH-QSM combination scored 0.388 but took about
-3.6 minutes. These are benchmark measurements, not scanner runtime guarantees.
-See the linked full-pipeline results below.
+The current [QSM-CI ROMEO + HARPERELLA + WH-QSM phantom run](https://qsmxt.github.io/QSM-CI/submission.html?run=romeo-qsmrs~harperella-qsmrs~whqsm-qsmrs-cmp)
+reports xSIM 0.3843, NRMSE 73.73%, and runtime 344.3 seconds, about 5.7 minutes.
+This is phantom evidence, not scanner or clinical validation. In that CI run,
+HARPERELLA jointly unwraps and removes the background field from wrapped phase.
+The OpenRecon adapter calls the packaged `qsmxt run` command with the flags above.
+These benchmark results do not establish equivalent processing or runtime for
+the adapter.
 
 ### GRE source separation
 
@@ -180,7 +202,7 @@ within the 16-character DICOM limit.
 The **Pipeline preset** selection box contains ten scanner-tested combinations
 and six complete-method presets. A pipeline preset overrides **QSM algorithm**,
 **Unwrap**, and **Background**. Select **Custom algorithm controls** to use those
-three selection boxes. The custom default is ROMEO, iSMV, and HD-QSM.
+three selection boxes. The custom default is ROMEO, HARPERELLA, and WH-QSM.
 
 Treat these measurements as results from the scanner test used for this adapter,
 not as universal rankings. Lower inter-scanner error and runtime are better.
@@ -253,7 +275,7 @@ voxels enter those calculations.
 
 | QSM algorithm | Method |
 | --- | --- |
-| `default` | Use the OpenRecon default, HD-QSM. |
+| `default` | Use the OpenRecon default, WH-QSM. |
 | `whqsm` | Weak-Harmonic QSM. |
 | `hdqsm` | Hybrid data-fidelity QSM. |
 | `rts` | Rapid Two-Step inversion. |
@@ -294,7 +316,7 @@ voxels enter those calculations.
 
 | Background algorithm | Method |
 | --- | --- |
-| `default` | Use the OpenRecon default, iSMV. |
+| `default` | Use the OpenRecon default, HARPERELLA. |
 | `vsharp` | Variable-kernel SHARP. |
 | `pdf` | Projection onto Dipole Fields. |
 | `lbv` | Laplacian Boundary Value. |
