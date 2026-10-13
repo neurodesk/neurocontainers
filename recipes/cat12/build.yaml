@@ -1,6 +1,6 @@
 # this template file builds cat12, new versions here: https://github.com/ChristianGaser/cat12/releases
 name: cat12
-version: "26.0.0.rc3"
+version: "26.0.0"
 
 copyright:
   - license: GPL-2.0
@@ -13,7 +13,7 @@ architectures:
   - x86_64
 
 variables:
-  upstream_version: "26.0.rc3"
+  upstream_version: "26.0"
   matlab_version: 2023b
   matlab_runtime_version: R2023b
   matlab_mcr_root: "/opt/mcr/{{ context.matlab_runtime_version }}"
