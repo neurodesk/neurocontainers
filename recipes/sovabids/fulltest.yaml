@@ -106,8 +106,27 @@ tests:
 
   - name: VS Code launcher forwards command arguments
     description: Verify the deployed editor reports its version without opening a GUI or requiring a home directory.
-    command: HOME=/proc/sovabids-no-home code --no-sandbox --user-data-dir "${output_dir}/vscode" --version
-    expected_output_contains: "x64"
+    command: |
+      python - <<'PY'
+      import os
+      import platform
+      import subprocess
+      env = dict(os.environ)
+      env.pop("HOME", None)
+      result = subprocess.run(
+          ["code", "--no-sandbox", "--user-data-dir", "${output_dir}/vscode", "--version"],
+          env=env, text=True, capture_output=True, check=True,
+      )
+      lines = result.stdout.strip().splitlines()
+      machine = platform.machine()
+      assert machine in ("x86_64", "aarch64"), machine
+      expected_arch = {"x86_64": "x64", "aarch64": "arm64"}[machine]
+      assert len(lines) == 3 and lines[2] == expected_arch, (result.stdout, result.stderr)
+      assert lines[0] and len(lines[1]) == 40, result.stdout
+      print("VS Code native launcher forwards arguments without a home directory:", expected_arch)
+      PY
+    expected_output_contains: "VS Code native launcher forwards arguments without a home directory:"
+    expected_exit_code: 0
 
   # ==========================================================================
   # BASIC FUNCTIONALITY AND VERSION CHECKS

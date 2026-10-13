@@ -16,12 +16,19 @@ variables:
   mne_bids_pipeline_commit: "d811935b8397749f86d86f54f1685224bbfebf3a"
   bidscoin_commit: "72fde8bb1534b72238d9b8c4cf53e44b09d73879"
   sovabids_tag: "v0.4.7"
+  vscode_installer:
+    try:
+      - value: vscode_deb
+        condition: arch == "x86_64"
+      - value: vscode_deb_arm64
+        condition: arch == "aarch64"
 
 name: sovabids
 version: "0.4.7"
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   container_version: "sovabids"
@@ -148,6 +155,13 @@ auto_update:
     target:
       file: vscode_deb
 
+  - id: vscode-arm64
+    dependency: true
+    method: http_digest
+    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-arm64
+    target:
+      file: vscode_deb_arm64
+
   - id: bids-validator
     dependency: true
     method: pypi
@@ -188,6 +202,9 @@ build:
         - mesa-utils
         - libgl1-mesa-glx
         - spyder
+    - condition: arch == "aarch64"
+      install:
+        - build-essential
     - copy: sovabids.yml /opt/sovabids.yml
     - template:
         name: miniconda
@@ -210,11 +227,26 @@ build:
           flask=={{ context.flask_version }}
           uvicorn=={{ context.uvicorn_version }}
           httpx=={{ context.httpx_version }}
-          git+https://github.com/yjmantilla/bidscoin.git@{{ context.bidscoin_commit }}
+          {{ 'git+https://github.com/yjmantilla/bidscoin.git@' + context.bidscoin_commit if arch == 'x86_64' else '' }}
           git+https://github.com/yjmantilla/sovabids.git@{{ context.sovabids_tag }}
+    # Ubuntu supplies native PyQt5 for ARM64. Its Python3.10 packages match
+    # the conversion environment; keep the existing x86 pip dependency path.
+    - condition: arch == "aarch64"
+      run:
+        - >-
+          site_packages=$(/opt/miniconda/envs/sovabids/bin/python -c
+          'import site; print(site.getsitepackages()[0])'); printf '%s\n'
+          /usr/lib/python3/dist-packages > "$site_packages/ubuntu-system-packages.pth"
+        - >-
+          /opt/miniconda/envs/sovabids/bin/python -m pip install --no-cache-dir
+          matplotlib ruamel.yaml coloredlogs multiecho nibabel pydeface drmaa debugpy
+          numpy=={{ context.numpy_version }} pandas=={{ context.pandas_version }}
+        - >-
+          /opt/miniconda/envs/sovabids/bin/python -m pip install --no-cache-dir
+          --no-deps git+https://github.com/yjmantilla/bidscoin.git@{{ context.bidscoin_commit }}
     - run:
         - /opt/miniconda/envs/sovabids/bin/python -m pip check
-        - cp {{ get_file("vscode_deb") }} vscode.deb
+        - cp {{ get_file(context.vscode_installer) }} vscode.deb
         - apt install --yes ./vscode.deb
         - rm -rf ./vscode.deb
         - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --no-sandbox --install-extension ms-python.python && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --no-sandbox --install-extension ms-python.vscode-pylance && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --no-sandbox --install-extension ms-toolsai.jupyter && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --no-sandbox --install-extension ms-toolsai.jupyter-keymap && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --no-sandbox --install-extension ms-toolsai.jupyter-renderers
@@ -268,6 +300,11 @@ files:
   - name: vscode_deb
     url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
     sha256: "d0ff4f7702957d897d2e06956f8d42a08250c5df8339de3bec8190e56f726277"
+    condition: arch == "x86_64"
+  - name: vscode_deb_arm64
+    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-arm64
+    sha256: "873d5dac55b7cdb4f0af7172187ae3cc1709f6250331524ad41f1136589e62f2"
+    condition: arch == "aarch64"
   - name: mne_bids_pipeline_main_tar_gz
     url: https://github.com/mne-tools/mne-bids-pipeline/archive/{{ context.mne_bids_pipeline_commit }}.tar.gz
 
