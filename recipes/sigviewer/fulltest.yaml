@@ -118,7 +118,13 @@ setup:
                     dialog = wait_for(lambda item: item[2])
                     assert dialog[1] != "Select Channels", ("Invalid input was accepted", dialog)
                     press(dialog, "Return")
-                    window = wait_for(lambda item: item[1] == "SigViewer" and not item[2])
+                    if len(sys.argv) > 2 and sys.argv[2] == "":
+                        # BioSigReader shows its missing-file warning, then the
+                        # factory's default-handler branch reports "non-exist".
+                        dialog = wait_for(lambda item: item[1] == "File Opening" and item[2])
+                        press(dialog, "Return")
+                    window = wait_for(lambda item: item[1] == "SigViewer" and not item[2]
+                                      and not any(candidate[2] for candidate in windows()))
                 elif mode == "startup":
                     window = wait_for(lambda item: item[1] == "SigViewer" and not item[2])
                 else:
