@@ -26,12 +26,21 @@ auto_update:
       variable: terastitcher_source_commit
 build:
   kind: neurodocker
-  base-image: "{{ 'fedora:35' if arch == 'x86_64' else 'ubuntu:24.04' }}"
-  pkg-manager: "{{ 'yum' if arch == 'x86_64' else 'apt' }}"
+  base-image: ubuntu:24.04
+  pkg-manager: apt
 
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - ca-certificates
+        - findutils
+        - libgomp1
+        - libstdc++6
+        - ncurses-bin
+        - python3
+        - zlib1g
 
     - workdir: /opt/terastitcher-{{ context.upstream_version }}
 
@@ -54,14 +63,18 @@ build:
     - condition: arch == "aarch64"
       run:
         - tar -xzf {{ get_file("terastitcher_source_tar_gz") }}
-        - cmake -S /tmp/TeraStitcher-{{ context.terastitcher_source_commit }}/src -B /tmp/terastitcher-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=11 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_INSTALL_PREFIX=/opt/terastitcher-{{ context.upstream_version }} -DWITH_UTILITY_MODULE_volumeconverter=ON -DWITH_UTILITY_MODULE_teraconverter=ON -DWITH_UTILITY_MODULE_mdatagenerator=ON
+        - cmake -S /tmp/TeraStitcher-{{ context.terastitcher_source_commit }}/src -B /tmp/terastitcher-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=11 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_INSTALL_PREFIX=/opt/terastitcher-{{ context.upstream_version }} -DWITH_UTILITY_MODULE_volumeconverter=ON -DWITH_UTILITY_MODULE_teraconverter=ON -DWITH_UTILITY_MODULE_mdatagenerator=ON -DWITH_UTILITY_MODULE_mergedisplacements=ON -DWITH_UTILITY_MODULE_terastitcher2=ON
         - cmake --build /tmp/terastitcher-build --parallel
         - cmake --install /tmp/terastitcher-build
         - cp /opt/terastitcher-{{ context.upstream_version }}/bin/terastitcher /opt/terastitcher-{{ context.upstream_version }}/
         - cp /opt/terastitcher-{{ context.upstream_version }}/bin/teraconverter /opt/terastitcher-{{ context.upstream_version }}/
         - cp /opt/terastitcher-{{ context.upstream_version }}/bin/mdatagenerator /opt/terastitcher-{{ context.upstream_version }}/
+        - cp /opt/terastitcher-{{ context.upstream_version }}/bin/mergedisplacements /opt/terastitcher-{{ context.upstream_version }}/
+        - cp /tmp/terastitcher-build/bin/terastitcher2 /opt/terastitcher-{{ context.upstream_version }}/
+        - cp -r /tmp/TeraStitcher-{{ context.terastitcher_source_commit }}/src/utils/pyscripts /opt/terastitcher-{{ context.upstream_version }}/pyscripts
+        - cp /tmp/TeraStitcher-{{ context.terastitcher_source_commit }}/LICENSE.txt /tmp/TeraStitcher-{{ context.terastitcher_source_commit }}/DESCRIPTION.txt /tmp/TeraStitcher-{{ context.terastitcher_source_commit }}/README.md /opt/terastitcher-{{ context.upstream_version }}/
         - /opt/terastitcher-{{ context.upstream_version }}/terastitcher --version | grep -F "{{ context.arm64_stitcher_version }}"
-        - chmod a+rx /opt/terastitcher-{{ context.upstream_version }}/terastitcher /opt/terastitcher-{{ context.upstream_version }}/teraconverter /opt/terastitcher-{{ context.upstream_version }}/mdatagenerator
+        - chmod a+rx /opt/terastitcher-{{ context.upstream_version }}/terastitcher /opt/terastitcher-{{ context.upstream_version }}/teraconverter /opt/terastitcher-{{ context.upstream_version }}/mdatagenerator /opt/terastitcher-{{ context.upstream_version }}/mergedisplacements /opt/terastitcher-{{ context.upstream_version }}/terastitcher2
         - rm -rf /tmp/TeraStitcher-{{ context.terastitcher_source_commit }} /tmp/terastitcher-build /opt/terastitcher-{{ context.upstream_version }}/bin
 
     - environment:

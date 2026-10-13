@@ -58,7 +58,7 @@ tests:
     expected_output_contains: "mdatagenerator"
 
   - name: Native executable architecture and source version
-    description: Require actual ELF machine headers for all three deployed native utilities and the architecture-specific upstream stitcher version
+    description: Require actual ELF machine headers for all five deployed native utilities and the architecture-specific upstream stitcher version
     command: |
       set -euo pipefail
       case "$(uname -m)" in
@@ -66,7 +66,7 @@ tests:
         x86_64) machine=62; expected="${upstream_version}" ;;
         *) exit 1 ;;
       esac
-      for tool in terastitcher teraconverter mdatagenerator; do
+      for tool in terastitcher teraconverter mdatagenerator mergedisplacements terastitcher2; do
         binary=$(command -v "$tool")
         test "$(od -An -v -tx1 -N4 "$binary" | xargs)" = "7f 45 4c 46"
         test "$(od -An -v -tu2 -j18 -N2 "$binary" | xargs)" = "$machine"
@@ -128,6 +128,32 @@ tests:
     expected_output_contains: Exact subvolume extraction exact pixels and volume header verified
     expected_exit_code: 0
     timeout: 120
+
+  - name: Additional stitching utilities are runnable
+    description: Require the two additional portable-distribution utilities on both architectures without removing existing scientific commands
+    command: |
+      set -euo pipefail
+      output=$(mergedisplacements --help 2>&1)
+      printf '%s\n' "$output"
+      printf '%s\n' "$output" | grep -F mergedisplacements
+      output=$(terastitcher2 --help 2>&1)
+      printf '%s\n' "$output"
+      printf '%s\n' "$output" | grep -F terastitcher2
+      echo "Additional native stitching utilities passed"
+    expected_output_contains: Additional native stitching utilities passed
+    expected_exit_code: 0
+
+  - name: Distributed workflow scripts are preserved
+    description: Require the original parallel-workflow scripts and license documentation from the official matching distribution
+    command: |
+      set -euo pipefail
+      for resource in pyscripts/Parastitcher.py pyscripts/LQP_HE.py LICENSE.txt DESCRIPTION.txt README.md; do
+        test -s "/opt/terastitcher-${upstream_version}/$resource"
+      done
+      command -v python3
+      echo "Official workflow resources preserved"
+    expected_output_contains: Official workflow resources preserved
+    expected_exit_code: 0
 
 upstream_version: 1.11.10
 
