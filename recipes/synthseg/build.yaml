@@ -242,6 +242,8 @@ build:
         - cp {{ get_file("nifti2mrd.py") }} /opt/code/python-ismrmrd-server/nifti2mrd.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - cp {{ get_file("brainquant.py") }} /opt/code/python-ismrmrd-server/brainquant.py
+        - cp {{ get_file("brainquant_norms.json") }} /opt/code/python-ismrmrd-server/brainquant_norms.json
         - mkdir -p /tmp/share/debug
         - chmod 1777 /tmp/share /tmp/share/debug
 
@@ -292,6 +294,10 @@ files:
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
+  - name: brainquant.py
+    filename: brainquant.py
+  - name: brainquant_norms.json
+    filename: brainquant_norms.json
 
   - name: mri_synthseg
     url: "https://raw.githubusercontent.com/freesurfer/freesurfer/v8.2.0/mri_synthseg/mri_synthseg"

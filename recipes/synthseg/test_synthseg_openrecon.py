@@ -168,6 +168,7 @@ def _helpers():
             "OPENRECON_REFORMAT_DOWNSAMPLE_ENV",
             "OPENRECON_SEGMENT_SOURCE_GEOMETRY_SERIES_SUFFIX",
             "OPENRECON_SERIES_SUFFIX",
+            "LABEL_PRODUCTS",
             "SCANNER_PARTITION_INDEX",
             "SCANNER_WRITE_UNSAFE_META_KEYS",
             "SOURCE_PARENT_REFERENCE_META_KEYS",
@@ -282,6 +283,7 @@ def _openrecon_helpers():
         [
             "_openrecon_run_name",
             "_resolve_openrecon_parcellation",
+            "_resolve_openrecon_choice",
             "_parse_model_list",
             "_safe_path_component",
             "iter_openrecon_parameter_combinations",
@@ -289,6 +291,9 @@ def _openrecon_helpers():
         assignments=[
             "OPENRECON_DEFAULTS",
             "OPENRECON_PARCELLATIONS",
+            "OPENRECON_VOLUME_OUTPUTS",
+            "OPENRECON_RESLICES",
+            "OPENRECON_CHOICES",
             "OPENRECON_COMBINATION_PARAMETER_VALUES",
             "OPENRECON_MODEL_DEFAULT",
             "OPENRECON_MODEL_VALUES",
@@ -437,6 +442,7 @@ def test_openrecon_defaults_match_the_scanner_label():
     label_ids = [parameter["id"] for parameter in label["parameters"]]
     assert len(label_ids) == len(set(label_ids)), "duplicate parameter ids in label"
     assert set(label_ids) == set(helpers["OPENRECON_DEFAULTS"])
+    # The Siemens OpenRecon UI accepts at most 14 parameter entries.
     assert len(label_ids) == 14
     assert "ssdebugthresholdsegment" in label_ids
 
@@ -503,12 +509,40 @@ def test_parameter_matrix_only_emits_runnable_combinations():
         if parameters["ssmodel"] == "robust":
             assert parameters["ssfast"] is True
 
+    assert {config["parameters"]["ssvolumes"] for _, config in combinations} == set(
+        helpers["OPENRECON_VOLUME_OUTPUTS"]
+    )
+
     robust_names = {
         name
         for name, config in combinations
         if config["parameters"]["ssmodel"] == "robust"
     }
     assert all("_fast1" in name for name in robust_names)
+
+
+@pytest.mark.parametrize("parameter, choice, expected", [
+    ("ssvolumes", "none", (False, None)),
+    ("ssvolumes", "log", (True, None)),
+    ("ssvolumes", "report", (True, "header")),
+    ("ssvolumes", "Report_Female", (True, "female")),
+    ("ssvolumes", "report_male", (True, "male")),
+    ("ssvolumes", True, (True, None)),
+    ("ssvolumes", "false", (False, None)),
+    ("ssreslice", "sagittal", (True, False)),
+    ("ssreslice", "both", (True, True)),
+    ("ssreslice", False, (False, False)),
+])
+def test_shared_choices_resolve_scanner_and_saved_configs(parameter, choice, expected):
+    resolve = _openrecon_helpers()["_resolve_openrecon_choice"]
+    assert resolve(parameter, choice) == expected
+
+
+@pytest.mark.parametrize("parameter", ["ssvolumes", "ssreslice"])
+def test_shared_choices_reject_unknown_values(parameter):
+    resolve = _openrecon_helpers()["_resolve_openrecon_choice"]
+    with pytest.raises(ValueError, match=f"Invalid {parameter} choice"):
+        resolve(parameter, "report_other")
 
 
 def _inference_helpers():
@@ -709,7 +743,18 @@ def process_runtime(monkeypatch, tmp_path):
     glasser = np.where(base == 3, 7, np.where(base == 42, 189, 0)).astype(np.int16)
     maps = dict(synthseg=base, desikan=desikan, glasser_approx=glasser)
 
+    import brainquant
+    from test_brainquant import SAMPLE_VOLUMES_MM3, _fixture_norms, _write_vol_csv
+
+    norms_path = tmp_path / 'brainquant_norms.json'
+    norms_path.write_text(json.dumps(_fixture_norms()))
+    monkeypatch.setattr(brainquant, 'NORMS_PATH', norms_path)
+    commands = []
+
     def inference(command, output_dir):
+        commands.append(command)
+        if '--vol' in command:
+            _write_vol_csv(Path(command[command.index('--vol') + 1]), SAMPLE_VOLUMES_MM3, '--parc' in command)
         affine = nib.load(command[command.index('--i') + 1]).affine
         labels = desikan if '--parc' in command else base
         nib.save(nib.Nifti1Image(labels, affine), command[command.index('--o') + 1])
@@ -738,6 +783,7 @@ def process_runtime(monkeypatch, tmp_path):
         meta['ImageType'], meta['ImageTypeValue4'] = 'ORIGINAL\\PRIMARY\\M\\ND', 'ND'
         image.attribute_string = meta.serialize()
         images.append(image)
+    helpers['inference_commands'] = commands
     return helpers, images, maps
 
 
@@ -753,7 +799,7 @@ def test_process_image_returns_base_and_selected_products(process_runtime, choic
     helpers, sources, maps = process_runtime
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc=choice,
                                  sendoriginal=extras, sssegmentheader=segment_header,
-                                 ssreslicesagittal=extras, ssreslicecoronal=extras)}
+                                 ssreslice='both' if extras else 'none')}
     outputs = helpers['process_image'](sources, None, config, None)
     series = {}
     for image in outputs:
@@ -839,3 +885,87 @@ def test_missing_source_type_uses_each_product_identity(process_runtime):
         product = meta['LabelProduct']
         assert meta['ImageType'] == f'DERIVED\\PRIMARY\\SEGMENTATION\\{product}_source_image_header'
         assert meta['ImageTypeValue4'] == f'{product}_source_image_header'
+
+
+def _series_by_index(outputs):
+    import ismrmrd
+    series = {}
+    for image in outputs:
+        series.setdefault(image.getHead().image_series_index, []).append(image)
+    return {index: (images, ismrmrd.Meta.deserialize(images[0].attribute_string))
+            for index, images in series.items()}
+
+
+def _mrd_header(birth='1961-03-02', gender='F', study='2025-03-01'):
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        subjectInformation=SimpleNamespace(patientBirthdate=birth, patientGender=gender),
+        studyInformation=SimpleNamespace(studyDate=study),
+    )
+
+
+@pytest.mark.parametrize('extras', [False, True])
+def test_brainquant_report_is_the_last_distinct_series(process_runtime, caplog, extras):
+    import logging
+    helpers, sources, _ = process_runtime
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssparc='desikan',
+                                 sendoriginal=extras, ssreslice='sagittal' if extras else 'none')}
+    with caplog.at_level(logging.INFO):
+        outputs = helpers['process_image'](sources, None, config, _mrd_header())
+    series = _series_by_index(outputs)
+    last_index = max(series)
+    images, meta = series[last_index]
+    assert list(series) == list(range(2, last_index + 1))
+    assert meta['SeriesDescription'] == 't1w_brainquant'
+    assert meta['SeriesNumberRangeNameUID'] == 't1w_brainquant'
+    assert meta['ImageTypeValue4'] == 'brainquant'
+    assert 'LUTFileName' not in meta and 'LabelProduct' not in meta
+    assert meta['Keep_image_geometry'] == '0'
+    assert len({m['SeriesInstanceUID'] for _, m in series.values()}) == len(series)
+    assert [m.get('LabelProduct') for _, m in series.values() if m.get('LabelProduct')
+            and not m.get('SynthSegReformatOrientation')] == ['synthseg', 'desikan']
+    assert len(images) == 1
+    pages = images[0].data[0]
+    assert pages.shape[0] == 2 and pages.shape[1] >= 1024 and pages.shape[2] >= 1024
+    for page in pages:
+        assert page.max() <= 4095
+        assert 0.005 < float(np.mean(page < 2048)) < 0.5
+    helpers['_validate_synthseg_output_contract'](outputs, {1}, {'series_description': 't1w'}, 'test')
+    assert '--vol' in helpers['inference_commands'][-1]
+    assert 'age=63 (source header) sex=female (source header)' in caplog.text
+    structures = re.findall(r'SYNTHSEG_BRAINQUANT structure=(\S+) volume_ml=', caplog.text)
+    assert structures[0] == 'hippocampus_left' and len(structures) == 10
+    assert 'structure=hippocampus_left volume_ml=3.900 ' in caplog.text
+
+
+def test_brainquant_off_leaves_outputs_and_command_unchanged(process_runtime):
+    helpers, sources, _ = process_runtime
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssquantage=40)}
+    outputs = helpers['process_image'](sources, None, config, _mrd_header())
+    series = _series_by_index(outputs)
+    assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
+    assert '--vol' not in helpers['inference_commands'][-1]
+
+
+def test_brainquant_is_skipped_with_debug_threshold_segmentation(process_runtime, caplog):
+    import logging
+    helpers, sources, _ = process_runtime
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssdebugthresholdsegment=True)}
+    with caplog.at_level(logging.WARNING):
+        outputs = helpers['process_image'](sources, None, config, None)
+    series = _series_by_index(outputs)
+    assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
+    assert 'brain volume report is skipped' in caplog.text
+
+
+def test_brainquant_failure_omits_only_the_report(process_runtime, tmp_path, caplog):
+    import logging
+    import brainquant
+    helpers, sources, _ = process_runtime
+    brainquant.NORMS_PATH = tmp_path / 'missing_norms.json'
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report')}
+    with caplog.at_level(logging.ERROR):
+        outputs = helpers['process_image'](sources, None, config, None)
+    series = _series_by_index(outputs)
+    assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
+    assert 'omitting the report series' in caplog.text

@@ -124,10 +124,17 @@
     },
     {
       "id": "ssvolumes",
-      "label": { "en": "Report region volumes" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Compute per-structure volumes in mm3 and write them to the reconstruction log as CSV." }
+      "label": { "en": "Region volumes" },
+      "type": "choice",
+      "values": [
+        { "id": "none", "name": { "en": "None" } },
+        { "id": "log", "name": { "en": "Log CSV" } },
+        { "id": "report", "name": { "en": "Log CSV and report (sex from header)" } },
+        { "id": "report_female", "name": { "en": "Log CSV and report (female reference)" } },
+        { "id": "report_male", "name": { "en": "Log CSV and report (male reference)" } }
+      ],
+      "default": "none",
+      "information": { "en": "Log CSV writes per-structure volumes in mm3 to the reconstruction log. The report options also append a brain volume report series that plots core structure volumes against age-normative percentile curves from the IXI cohort, with a percentile table. Research use only. Not for diagnostic use. The report is skipped with debug threshold segmentation and with SynthSeg 1.0." }
     },
     {
       "id": "ssqc",
@@ -144,18 +151,17 @@
       "information": { "en": "Send the label map in a source-geometry 2D segmentation-header format so scanner post-processing treats it as a segmentation stream. When disabled, the label map keeps the source image header identity and post-processing stays on the original stream." }
     },
     {
-      "id": "ssreslicesagittal",
-      "label": { "en": "Sagittal reformat" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Send an additional sagittal 3D reformat of the label map." }
-    },
-    {
-      "id": "ssreslicecoronal",
-      "label": { "en": "Coronal reformat" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Send an additional coronal 3D reformat of the label map." }
+      "id": "ssreslice",
+      "label": { "en": "Label map reformats" },
+      "type": "choice",
+      "values": [
+        { "id": "none", "name": { "en": "None" } },
+        { "id": "sagittal", "name": { "en": "Sagittal" } },
+        { "id": "coronal", "name": { "en": "Coronal" } },
+        { "id": "both", "name": { "en": "Sagittal and coronal" } }
+      ],
+      "default": "none",
+      "information": { "en": "Send additional sagittal, coronal, or both 3D reformats of the SynthSeg and Desikan label maps." }
     },
     {
       "id": "ssdebugthresholdsegment",
@@ -163,6 +169,15 @@
       "type": "boolean",
       "default": false,
       "information": { "en": "Skip SynthSeg inference and create a simple threshold-based segmentation for send-path debugging." }
+    },
+    {
+      "id": "ssquantage",
+      "label": { "en": "Report age (years)" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 120,
+      "default": 0,
+      "information": { "en": "Patient age for the brain volume report. Use 0 to compute the age from the birth date and study date in the scanner header." }
     }
   ]
 }

@@ -54,6 +54,9 @@ SYNTHSEG_REFORMAT_ORIENTATION_META_KEY = "SynthSegReformatOrientation"
 SYNTHSEG_REFORMAT_SLICE_INDEX_META_KEY = "SynthSegReformatSliceIndex"
 SYNTHSEG_REFORMAT_SLICE_COUNT_META_KEY = "SynthSegReformatSliceCount"
 LABEL_PRODUCTS = ("synthseg", "desikan", "glasser_approx")
+BRAINQUANT_PRODUCT = "brainquant"
+OUTPUT_PRODUCTS = LABEL_PRODUCTS + (BRAINQUANT_PRODUCT,)
+BRAINQUANT_MAX_AGE = 120
 SYNTHSEG_SEGMENTATION_LABEL = "synthseg"
 SYNTHSEG_SEGMENTATION_TYPE_TOKEN = SYNTHSEG_SEGMENTATION_LABEL.upper()
 SYNTHSEG_SOURCE_IMAGE_HEADER_FALLBACK_TYPE = (
@@ -114,12 +117,12 @@ OPENRECON_DEFAULTS = {
     "ssusegpu": False,
     "sscrop": 0,
     "ssthreads": 8,
-    "ssvolumes": False,
+    "ssvolumes": "none",
     "ssqc": False,
     "sssegmentheader": False,
-    "ssreslicesagittal": False,
-    "ssreslicecoronal": False,
+    "ssreslice": "none",
     "ssdebugthresholdsegment": False,
+    "ssquantage": 0,
 }
 OPENRECON_DEFAULT_TEST_CONFIG = {
     "parameters": OPENRECON_DEFAULTS.copy(),
@@ -128,30 +131,58 @@ OPENRECON_DEFAULT_TEST_CONFIG = {
 OPENRECON_COMBINATION_PARAMETER_VALUES = {
     "ssparc": ("none", "desikan", "glasser", "both"),
     "ssfast": (False, True),
-    "ssvolumes": (False, True),
+    "ssvolumes": ("none", "log", "report", "report_female", "report_male"),
     "ssqc": (False, True),
 }
 
 
+# The Siemens OpenRecon UI accepts at most 14 parameter entries, so related
+# options share one choice. Each table maps a choice to the resolved options and
+# names the choice that a legacy boolean `true` selects.
 OPENRECON_PARCELLATIONS = {
     "none": (False, False),
     "desikan": (True, False),
     "glasser": (False, True),
     "both": (True, True),
 }
+# (write the volume CSV to the log, brain volume report sex or None for no report)
+OPENRECON_VOLUME_OUTPUTS = {
+    "none": (False, None),
+    "log": (True, None),
+    "report": (True, "header"),
+    "report_female": (True, "female"),
+    "report_male": (True, "male"),
+}
+# (sagittal reformat, coronal reformat)
+OPENRECON_RESLICES = {
+    "none": (False, False),
+    "sagittal": (True, False),
+    "coronal": (False, True),
+    "both": (True, True),
+}
+OPENRECON_CHOICES = {
+    "ssparc": (OPENRECON_PARCELLATIONS, "desikan"),
+    "ssvolumes": (OPENRECON_VOLUME_OUTPUTS, "log"),
+    "ssreslice": (OPENRECON_RESLICES, "both"),
+}
+
+
+def _resolve_openrecon_choice(parameter: str, choice: str | bool):
+    choices, legacy_true = OPENRECON_CHOICES[parameter]
+    if isinstance(choice, bool):
+        choice = legacy_true if choice else "none"
+    elif isinstance(choice, str):
+        choice = choice.strip().lower()
+        choice = {"false": "none", "true": legacy_true}.get(choice, choice)
+    if not isinstance(choice, str) or choice not in choices:
+        raise ValueError(
+            f"Invalid {parameter} choice {choice!r}; expected {', '.join(choices)}"
+        )
+    return choices[choice]
 
 
 def _resolve_openrecon_parcellation(choice: str | bool) -> tuple[bool, bool]:
-    if isinstance(choice, bool):
-        choice = "desikan" if choice else "none"
-    elif isinstance(choice, str):
-        choice = choice.strip().lower()
-        choice = {"false": "none", "true": "desikan"}.get(choice, choice)
-    if not isinstance(choice, str) or choice not in OPENRECON_PARCELLATIONS:
-        raise ValueError(
-            f"Invalid ssparc choice {choice!r}; expected none, desikan, glasser, or both"
-        )
-    return OPENRECON_PARCELLATIONS[choice]
+    return _resolve_openrecon_choice("ssparc", choice)
 
 
 def _log_array_summary(label: str, data: np.ndarray) -> None:
@@ -1567,8 +1598,8 @@ def _build_synthseg_grouping(source_parent_grouping, fallback_series_name, suffi
 
 
 def _build_openrecon_output_identity(source_identity, orientation=None, series_index=None, *, product="synthseg"):
-    if product not in LABEL_PRODUCTS:
-        raise ValueError(f"Unknown label product {product!r}")
+    if product not in OUTPUT_PRODUCTS:
+        raise ValueError(f"Unknown output product {product!r}")
     orientation = _first_non_empty_text(orientation).lower()
     base_series_description = _build_synthseg_series_name(
         source_identity.get("series_description", ""),
@@ -1797,6 +1828,7 @@ def _stamp_synthseg_output_image(
         # no palette data, which is invalid.
         if "LUTFileName" in tmp_meta:
             del tmp_meta["LUTFileName"]
+    if not original_passthrough_identity and output_identity["display_token"] in LABEL_PRODUCTS:
         tmp_meta["LabelProduct"] = output_identity["display_token"]
     tmp_meta["DataRole"] = "Image" if source_image_header_identity else data_role
     tmp_meta["ImageProcessingHistory"] = processing_history
@@ -2627,7 +2659,7 @@ def iter_openrecon_parameter_combinations(
             f"{model}"
             f"_parc-{parameters['ssparc']}"
             f"_fast{int(parameters['ssfast'])}"
-            f"_vol{int(parameters['ssvolumes'])}"
+            f"_vol-{parameters['ssvolumes']}"
             f"_qc{int(parameters['ssqc'])}"
         )
         parameters[OPENRECON_OUTPUT_NAME_PARAM] = name
@@ -3702,6 +3734,83 @@ def process_raw(group, connection, config, metadata):
     return imagesOut
 
 
+def _render_brainquant_pages(volumes_csv_path: Path, metadata, *, age: int, sex: str, model: str, fast: bool):
+    import brainquant
+
+    norms = brainquant.load_norms(brainquant.NORMS_PATH)
+    subject = brainquant.resolve_subject(metadata, age, sex)
+    logging.info(
+        "SynthSeg brain volume report subject: age=%s (source %s) sex=%s (source %s); "
+        "comparing with the %s reference model",
+        subject.age if subject.age is not None else "unknown", subject.age_source,
+        subject.sex or "unknown", subject.sex_source, subject.model_key,
+    )
+    footnotes = ()
+    if model != OPENRECON_MODEL_DEFAULT or not fast:
+        footnotes = (
+            f"This run used ssmodel={model} with fast mode {'on' if fast else 'off'}. The reference was "
+            "fitted with SynthSeg 2.0 in fast mode, so volumes may be shifted relative to it.",
+        )
+    report = brainquant.assess(norms, brainquant.read_volumes(volumes_csv_path), subject, footnotes)
+    for result in report.results:
+        logging.info(
+            "SYNTHSEG_BRAINQUANT %s",
+            " ".join(f"{key}={value}" for key, value in brainquant.log_fields(result).items()),
+        )
+    return brainquant.render_pages(report)
+
+
+def _build_brainquant_report_image(pages, source_image, source_identity, series_index):
+    # Same explicit-volume layout as the MuscleMap metrics report that scanners
+    # already display: one image with the pages stacked at 1 mm, at the origin
+    # with identity directions, each page pre-rotated by 180 degrees so the
+    # scanner viewer shows it upright.
+    volume = np.stack([np.rot90(page, 2) for page in pages]).astype(np.uint16)
+    page_count, height, width = volume.shape
+    image = ismrmrd.Image.from_array(volume, transpose=False)
+    header = source_image.getHead()
+    header.data_type = image.data_type
+    header.matrix_size = (width, height, page_count)
+    header.field_of_view = (float(width), float(height), float(page_count))
+    header.position = (0.0, 0.0, 0.0)
+    header.read_dir = (1.0, 0.0, 0.0)
+    header.phase_dir = (0.0, 1.0, 0.0)
+    header.slice_dir = (0.0, 0.0, 1.0)
+    image.setHead(header)
+    identity = _build_openrecon_output_identity(
+        source_identity, series_index=series_index, product=BRAINQUANT_PRODUCT,
+    )
+    extra_meta = {
+        "partition_count": "1",
+        "slice_count": str(page_count),
+        "NumberOfSlices": str(page_count),
+        "ImagesInAcquisition": str(page_count),
+        "WindowCenter": "2048",
+        "WindowWidth": "4096",
+        **_explicit_header_geometry_meta(header),
+    }
+    _stamp_synthseg_output_image(
+        image,
+        source_image,
+        identity,
+        source_identity,
+        series_index,
+        0,
+        source_identity.get("source_type_token", ""),
+        ["PYTHON", "SYNTHSEG", "BRAINQUANT"],
+        extra_meta=extra_meta,
+        keep_image_geometry=0,
+        patch_minihead=False,
+        data_role="Segmentation",
+    )
+    logging.info(
+        "Built SynthSeg brain volume report as one explicit-volume image with %d page(s): "
+        "series_index=%d series=%s",
+        page_count, series_index, identity["series_description"],
+    )
+    return image
+
+
 def _load_label_volume(path: Path, expected_shape: tuple[int, ...]) -> np.ndarray:
     if not path.is_file():
         raise FileNotFoundError(f"Missing required label product: {path}")
@@ -3943,22 +4052,22 @@ def process_image(images, connection, config, metadata):
         )
         threads = OPENRECON_DEFAULTS["ssthreads"]
 
-    write_volumes = boolean_checker(
+    write_volumes, brainquant_sex = _resolve_openrecon_choice(
         "ssvolumes",
-        default_val=OPENRECON_DEFAULTS["ssvolumes"],
+        mrdhelper.get_json_config_param(
+            config, "ssvolumes", default=OPENRECON_DEFAULTS["ssvolumes"], type='str'
+        ),
     )
     write_qc = boolean_checker("ssqc", default_val=OPENRECON_DEFAULTS["ssqc"])
     if write_qc and model == "v1":
         # --qc uses the 2.0 QC label set, which mri_synthseg swaps out under --v1.
         logging.info("QC scores are reported with the SynthSeg 1.0 label set.")
 
-    reslice_sagittal = boolean_checker(
-        "ssreslicesagittal",
-        default_val=OPENRECON_DEFAULTS["ssreslicesagittal"],
-    )
-    reslice_coronal = boolean_checker(
-        "ssreslicecoronal",
-        default_val=OPENRECON_DEFAULTS["ssreslicecoronal"],
+    reslice_sagittal, reslice_coronal = _resolve_openrecon_choice(
+        "ssreslice",
+        mrdhelper.get_json_config_param(
+            config, "ssreslice", default=OPENRECON_DEFAULTS["ssreslice"], type='str'
+        ),
     )
     output_geometry = SYNTHSEG_OUTPUT_GEOMETRY_2D
     debug_threshold_segment = boolean_checker(
@@ -3967,6 +4076,30 @@ def process_image(images, connection, config, metadata):
     )
     if glasser_enabled and debug_threshold_segment:
         raise ValueError("Glasser parcellation requires real SynthSeg segmentation; disable ssdebugthresholdsegment")
+    brainquant_age = int(
+        mrdhelper.get_json_config_param(
+            config, "ssquantage", default=OPENRECON_DEFAULTS["ssquantage"], type='int',
+        )
+    )
+    if not 0 <= brainquant_age <= BRAINQUANT_MAX_AGE:
+        logging.warning(
+            "Invalid ssquantage %s requested. Reading the age from the MRD header instead.",
+            brainquant_age,
+        )
+        brainquant_age = 0
+    brainquant_enabled = brainquant_sex is not None
+    if brainquant_enabled and debug_threshold_segment:
+        logging.warning(
+            "The brain volume report is requested with ssdebugthresholdsegment; the debug threshold "
+            "segmentation reports no volumes, so the brain volume report is skipped."
+        )
+        brainquant_enabled = False
+    elif brainquant_enabled and model == "v1":
+        logging.warning(
+            "The brain volume report is requested with SynthSeg 1.0, which reports no total intracranial "
+            "volume; the brain volume report is skipped."
+        )
+        brainquant_enabled = False
     segmentation_header = boolean_checker(
         "sssegmentheader",
         default_val=OPENRECON_DEFAULTS["sssegmentheader"],
@@ -4031,7 +4164,7 @@ def process_image(images, connection, config, metadata):
         "parcellation=%s fast=%s use_gpu=%s autocrop=%s crop_size=%s "
         "threads=%s volumes_csv=%s qc_csv=%s "
         "outputgeometry=%s segmentation_send_order=%s "
-        "debug_threshold_segment=%s "
+        "debug_threshold_segment=%s brainquant=%s "
         "reslice_sagittal=%s reslice_coronal=%s",
         run_name,
         model,
@@ -4047,6 +4180,7 @@ def process_image(images, connection, config, metadata):
         output_geometry,
         SYNTHSEG_SEGMENT_SEND_ORDER,
         debug_threshold_segment,
+        brainquant_enabled,
         reslice_sagittal,
         reslice_coronal,
     )
@@ -4159,6 +4293,22 @@ def process_image(images, connection, config, metadata):
             imagesOut.extend(reformatted)
             reformat_images.extend(reformatted)
 
+    report_images = []
+    if brainquant_enabled:
+        try:
+            pages = _render_brainquant_pages(
+                volumes_csv_path, metadata, age=brainquant_age, sex=brainquant_sex,
+                model=model, fast=fast,
+            )
+            report_images.append(
+                _build_brainquant_report_image(
+                    pages, ordered_images[0], source_identity, next(series_indices),
+                )
+            )
+        except Exception:
+            logging.exception("SynthSeg brain volume report failed; omitting the report series")
+        imagesOut.extend(report_images)
+
     if segmentation_header:
         segment_header_geometry = "2d_segment_header"
         postprocessing_target = "segment_2d_source_geometry"
@@ -4181,10 +4331,12 @@ def process_image(images, connection, config, metadata):
     )
     logging.info("SYNTHSEG_OPENRECON_POSTPROCESSING target=%s", postprocessing_target)
     logging.info(
-        "Sending %d original image(s), %d segmentation image(s), and %d reformat image(s)",
+        "Sending %d original image(s), %d segmentation image(s), %d reformat image(s), "
+        "and %d brain volume report image(s)",
         len(original_output_images),
         len(segmentation_images),
         len(reformat_images),
+        len(report_images),
     )
 
     _validate_synthseg_output_contract(
