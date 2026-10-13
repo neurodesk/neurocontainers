@@ -687,6 +687,71 @@ tests:
     command: cat /README.md
     expected_output_contains: "vesselvio"
 
+
+  - name: Analytical anisotropic vessel graph features
+    description: Construct three native vessel graphs and verify every segment length, radius, cylindrical volume, lateral surface area, tortuosity and whole-network result against independent geometry
+    timeout: 240
+    command: |
+      env -u HOME NUMBA_NUM_THREADS=2 OMP_NUM_THREADS=2 python - <<'PYTHON'
+      import json
+      import sys
+      from pathlib import Path
+      import numpy as np
+      sys.path.insert(0, '/opt/vesselvio-${upstream_version}')
+      from library import graph_processing as graph_tools
+      from library import feature_extraction as features
+      from library import image_processing as images
+
+      # Three disjoint straight centerlines aligned with different voxel axes.
+      # The declared physical voxel sizes are x=4,y=3,z=2.
+      points = np.array([[0, 0, i] for i in range(8)] +
+                        [[10, i, 0] for i in range(8)] +
+                        [[30+i, 0, 0] for i in range(8)], dtype=np.int64)
+      radii = np.repeat([1.5, 2.0, 0.75], 8)
+      resolution = images.prep_resolution([4.0, 3.0, 2.0])
+      np.testing.assert_array_equal(resolution, [2.0, 3.0, 4.0])
+      minima = np.array([5, 7, 11], dtype=np.int64)
+      graph = graph_tools.create_graph((40, 10, 10), radii.copy(), radii.copy(), points.copy(), minima)
+      assert graph.vcount() == 24 and graph.ecount() == 21
+      assert len(graph.components()) == 3
+      assert sorted(graph.degree()) == [1]*6 + [2]*18
+      np.testing.assert_array_equal(graph.vs['v_coords'], points+minima)
+      original_coords = np.array(graph.vs['v_coords']).copy()
+      original_radii = np.array(graph.vs['v_radius']).copy()
+      original_resolution = resolution.copy()
+
+      # Run the application's actual spline/segment processing and result collection.
+      actual = features.vgraph_analysis(graph, resolution, True, False, 3, None)
+      expected = [
+          np.pi*np.array([63.0, 84.0, 7.875]),
+          np.pi*np.array([84.0, 84.0, 21.0]),
+          np.array([28.0, 21.0, 14.0]),
+          np.ones(3),
+          np.array([1.5, 2.0, 0.75]),
+          np.array([1.5, 2.0, 0.75]),
+          np.array([1.5, 2.0, 0.75]),
+          np.zeros(3),
+      ]
+      # New double-precision oracle; allow only accumulated arithmetic rounding.
+      rounding = 64*np.finfo(np.float64).eps
+      for values, reference in zip(actual, expected):
+          assert values.shape == (3,) and np.isfinite(values).all()
+          np.testing.assert_allclose(values, reference, rtol=rounding, atol=rounding)
+      network, segments = features.feature_input(graph, resolution, 'analytic-centerlines', save_seg_results=True)
+      np.testing.assert_allclose(network[3:6], [154.875*np.pi, 63.0, 189.0*np.pi], rtol=rounding, atol=rounding)
+      assert network[6:9] == [0, 6, 3]
+      assert len(segments) == 3 and all(len(row) == 9 for row in segments)
+      for row, volume, length, area, radius in zip(segments, expected[0], expected[2], expected[1], expected[4]):
+          np.testing.assert_allclose(row[1:], [volume, length, area, 1.0, radius, radius, radius, 0.0], rtol=rounding, atol=rounding)
+      np.testing.assert_array_equal(graph.vs['v_coords'], original_coords)
+      np.testing.assert_array_equal(graph.vs['v_radius'], original_radii)
+      np.testing.assert_array_equal(resolution, original_resolution)
+      Path('${output_dir}/analytic-vessel-metrics.json').write_text(json.dumps({'network':network,'segments':segments}, indent=2))
+      print('VesselVio native graph construction, anisotropic lengths, cylinder geometry and network results match analytical values')
+      PYTHON
+    expected_output_contains: VesselVio native graph construction, anisotropic lengths, cylinder geometry and network results match analytical values
+    expected_exit_code: 0
+
 cleanup:
   script: |
     #!/usr/bin/env bash
