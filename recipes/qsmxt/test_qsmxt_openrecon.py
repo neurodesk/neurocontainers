@@ -1860,7 +1860,12 @@ def test_ep3d_dual_polarity_averages_repetitions_into_one_echo(tmp_path, monkeyp
 
     assert seen["magnitude"].shape == (4, 3, 2, 4)
     np.testing.assert_allclose(seen["magnitude"][0, 0, 1, :], [1001, 1101, 1201, 1301])
-    np.testing.assert_allclose(seen["phase"][0, 0, 1, :], [-np.pi + 1 * np.pi / 256 + k * 100 * np.pi / 256 for k in range(4)], rtol=0, atol=1e-5)
+    np.testing.assert_allclose(
+        seen["phase"][0, 0, 1, :],
+        [(1 + 100 * k) * np.pi / 2048 for k in range(4)],
+        rtol=0,
+        atol=1e-5,
+    )
     assert seen["denoise"] is True
     assert result["n_echoes"] == 1
     magnitude = nib.load(str(result["magnitude_paths"][0]))
@@ -1883,15 +1888,22 @@ def test_ep3d_dual_polarity_rejects_a_single_repetition(tmp_path):
 @pytest.mark.parametrize(
     ("counts", "expected"),
     [
-        ([0, 2048, 4095], [-np.pi, 0.0, np.pi - 2 * np.pi / 4096]),
-        ([-4096, 0, 4094], [-np.pi, 0.0, np.pi - 4 * np.pi / 8192]),
+        ([0, 1024, 3072], [0.0, np.pi / 2, -np.pi / 2]),
+        ([1000, 1512, 3000], [1000 * np.pi / 2048, 1512 * np.pi / 2048, 3000 * np.pi / 2048 - 2 * np.pi]),
         ([-3.0, 0.5, 3.1], [-3.0, 0.5, 3.1]),
     ],
 )
-def test_phase_to_radians_maps_one_count_cycle_to_two_pi(counts, expected):
+def test_phase_to_radians_uses_fixed_count_cycle(counts, expected):
     np.testing.assert_allclose(
-        qsmxt._phase_to_radians(np.array(counts, dtype=np.float32)), expected, atol=1e-5
+        qsmxt._phase_to_radians(np.array(counts, dtype=np.float32), 4096.0),
+        expected,
+        atol=1e-5,
     )
+
+
+def test_phase_to_radians_rejects_phase_wider_than_one_cycle():
+    with pytest.raises(ValueError, match="set phasewrap"):
+        qsmxt._phase_to_radians(np.array([-4096.0, 4094.0]), 4096.0)
 
 
 def test_openrecon_config_choices_load_ep3d_modules():

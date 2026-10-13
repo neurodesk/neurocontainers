@@ -665,7 +665,10 @@ def _ep3d_dual_polarity_average(magnitude_images, phase_images, work_dir, settin
         magnitude_path,
     )
     nib.save(
-        nib.Nifti1Image(_phase_to_radians(np.stack(phase_4d, axis=-1)), reference_affine),
+        nib.Nifti1Image(
+            _phase_to_radians(np.stack(phase_4d, axis=-1), settings["phase_wrap"]),
+            reference_affine,
+        ),
         phase_path,
     )
     averaged = _run_ep3d_preprocessing(magnitude_path, phase_path, work_dir, settings)
@@ -691,19 +694,24 @@ def _repetition_image_groups(images):
     return _group_images_by_ordered_key(ordered, [volume_key(image) for image in ordered])
 
 
-def _phase_to_radians(phase_volume):
-    """Map scanner phase counts onto [-pi, pi); radians pass through.
+def _phase_to_radians(phase_volume, phase_wrap):
+    """Map scanner phase counts onto [-pi, pi] with ``phase_wrap`` counts per cycle.
 
-    The count span is rounded up to a power of two so both raw 0..4095 and
-    DICOM-rescaled -4096..4094 phase map one full cycle onto 2*pi.
+    Radian input passes through. The period is fixed rather than inferred
+    from the data range, so phase that does not span the full encoding keeps
+    its scale.
     """
     phase = np.asarray(phase_volume, dtype=np.float32)
     finite = phase[np.isfinite(phase)]
     if finite.size == 0 or (-np.pi <= finite.min() and finite.max() <= np.pi):
         return phase
-    data_min = float(finite.min())
-    cycle = 2.0 ** np.ceil(np.log2(float(finite.max()) - data_min + 1.0))
-    return ((phase - data_min) / cycle * 2.0 * np.pi - np.pi).astype(np.float32)
+    span = float(finite.max() - finite.min())
+    if span > phase_wrap:
+        raise ValueError(
+            f"Phase spans {span:.6g} counts, more than one {phase_wrap:.6g}-count "
+            "cycle; set phasewrap to the scanner's counts per 2*pi"
+        )
+    return np.angle(np.exp(1j * phase * (2.0 * np.pi / phase_wrap))).astype(np.float32)
 
 
 def _run_ep3d_preprocessing(magnitude_path, phase_path, work_dir, settings):

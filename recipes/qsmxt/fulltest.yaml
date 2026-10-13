@@ -758,7 +758,8 @@ tests:
               * np.exp(1j * nib.load(result["phase_paths"][0]).get_fdata())
           )
           core = inside & (x**2 / 0.8 + y**2 / 0.8 + z**2 / 0.7 < 0.6)
-          residual = np.angle(averaged * np.conj(truth))[core]
+          difference = averaged * np.conj(truth)
+          residual = np.angle(difference * np.exp(-1j * np.angle(difference[core].sum())))[core]
           single = np.angle(volumes[0] * np.conj(truth))[core]
           naive = np.mean(volumes, axis=0)
           magnitude_error = np.median(np.abs(np.abs(averaged[core]) - magnitude[core]) / magnitude[core])
