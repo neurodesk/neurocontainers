@@ -371,7 +371,9 @@ def resolve_image_digest(reference: str) -> str:
     """Resolve the manifest digest a registry serves for a public name:tag."""
     name, _, tag = reference.rpartition(":")
     registry, separator, repository = name.partition("/")
-    if not separator or not ("." in registry or ":" in registry or registry == "localhost"):
+    if not separator or not (
+        "." in registry or ":" in registry or registry == "localhost"
+    ):
         registry, repository = "docker.io", name
     if registry == "index.docker.io":
         registry = "docker.io"
@@ -384,7 +386,9 @@ def resolve_image_digest(reference: str) -> str:
 
     def head() -> str:
         request = urllib.request.Request(url, headers=headers, method="HEAD")
-        with REGISTRY_OPENER.open(request, timeout=REGISTRY_TIMEOUT_SECONDS) as response:
+        with REGISTRY_OPENER.open(
+            request, timeout=REGISTRY_TIMEOUT_SECONDS
+        ) as response:
             return response.headers.get("Docker-Content-Digest", "")
 
     try:
@@ -393,7 +397,9 @@ def resolve_image_digest(reference: str) -> str:
         except urllib.error.HTTPError as error:
             if error.code != 401:
                 raise
-            challenge = parse_bearer_challenge(error.headers.get("WWW-Authenticate", ""))
+            challenge = parse_bearer_challenge(
+                error.headers.get("WWW-Authenticate", "")
+            )
             realm = urllib.parse.urlsplit(challenge.get("realm", ""))
             if (
                 realm.scheme != "https"
@@ -418,7 +424,9 @@ def resolve_image_digest(reference: str) -> str:
             )
             digest = head()
     except (urllib.error.URLError, KeyError, ValueError, OSError) as error:
-        raise RuntimeError(f"Cannot resolve the digest of {reference}: {error}") from error
+        raise RuntimeError(
+            f"Cannot resolve the digest of {reference}: {error}"
+        ) from error
     if not DIGEST_PATTERN.fullmatch(digest):
         raise RuntimeError(f"Registry returned no usable digest for {reference}")
     return digest

@@ -929,6 +929,9 @@ def test_prepare_recipe_rejects_a_dated_tag_hidden_in_a_variable(
 def test_registry_redirects_keep_the_head_method(code: int) -> None:
     import urllib.request
 
+    if code == 308 and sys.version_info < (3, 11):
+        pytest.skip("urllib follows 308 redirects from Python 3.11")
+
     request = urllib.request.Request(
         "https://ghcr.io/v2/demo/manifests/1", method="HEAD"
     )
