@@ -1,13 +1,95 @@
 name: emuses
 version: 1.3.0
 
+test_data:
+  output_dir: test_output/emuses
+
+setup:
+  script: |
+    set -euo pipefail
+    mkdir -p ${output_dir}
+    cat > "${output_dir}/functional-check.py" <<'PYEMUSES'
+    from pathlib import Path
+    import tempfile
+    import numpy as np
+    from sklearn.metrics import adjusted_rand_score
+    from emuses.tools.UMAP_utils import train_and_save_umap_optim_with_nested_clustering, load_umap_model, compute_spread
+    from emuses.tools.clustering_utils import load_hdbscan_model
+    from emuses.tools.emuses_utils import rescale_embedding
+
+    # Exact application-level scaling/spread oracles, independent of model fitting.
+    rectangle = np.array([[0.,0.],[0.,4.],[2.,0.],[2.,4.]])
+    np.testing.assert_allclose(rescale_embedding(rectangle),rectangle/4,rtol=0,atol=0)
+    assert compute_spread(rectangle,normalized=False)==5
+    assert compute_spread(rectangle,normalized=True)==1
+
+    rng = np.random.default_rng(20261013)
+    labels = np.repeat(np.arange(3),24)
+    centers = np.array([[-8.,-8.,0.,0.],[8.,-8.,0.,0.],[0.,8.,0.,0.]])
+    x = centers[labels] + rng.normal(scale=0.1,size=(72,4))
+    original = x.copy()
+    config = {'param':{'umap':{'n_neighbors':{'value':8},'min_dist':{'value':0.1},'n_components':{'value':2},'metric':{'value':'euclidean'}},
+                       'hdbscan':{'min_cluster_size':{'value':8},'min_samples':{'value':4}}},
+              'metrics':{'umap':{'spread':{'weight':1.}},'hdbscan':{'cluster_persistence':{'weight':1.}}}}
+    with tempfile.TemporaryDirectory(prefix='emuses-functional-') as scratch:
+        folder = Path(scratch)
+        result = train_and_save_umap_optim_with_nested_clustering(x,folder,config,n_trials=1,n_inner_trials=1,
+                     n_jobs=1,inner_n_jobs=1,random_state=42,clusterer_random_state=42,
+                     core_dist_n_jobs=1)
+        model, embedding, _, embedding_path, clusterer, assigned, _, label_path, input_path = result
+        assert embedding.shape==(72,2) and assigned.shape==(72,)
+        assert np.isfinite(embedding).all() and np.all(np.ptp(embedding,axis=0)>0)
+        # Well-separated toy clusters should survive the real UMAP+HDBSCAN stage.
+        accuracy = adjusted_rand_score(labels,assigned)
+        assert accuracy>0.9, (accuracy,assigned)
+        np.testing.assert_array_equal(np.load(embedding_path),embedding)
+        np.testing.assert_array_equal(np.load(label_path),assigned)
+        np.testing.assert_array_equal(np.load(input_path),original)
+        np.testing.assert_array_equal(x,original)
+        restored, model_path = load_umap_model(folder,model_name='best_umap_model')
+        restored_clusterer, cluster_path = load_hdbscan_model(folder)
+        assert restored is not None and Path(model_path).is_file()
+        assert restored_clusterer is not None and Path(cluster_path).is_file()
+        np.testing.assert_array_equal(restored.embedding_,embedding)
+        np.testing.assert_array_equal(restored_clusterer.labels_,assigned)
+        transformed = restored.transform(x[:4]+0.001)
+        assert transformed.shape==(4,2) and np.isfinite(transformed).all()
+        assert (folder/'best_trial_info.json').is_file() and (folder/'parameter_search_log.json').is_file()
+        assert (folder/'best_clustering.html').stat().st_size>0
+        assert (folder/'optimization_history.html').stat().st_size>0
+        print('EMUSES actual UMAP/HDBSCAN model, artifacts and reload verified; adjusted Rand',accuracy)
+    PYEMUSES
+
 tests:
   - name: EMUSES CLI help
     description: Verify the EMUSES command is installed and shows the Typer help banner.
-    command: emuses --help 2>&1 | head -40
+    command: emuses --help 2>&1
     expected_output_contains: "EMUSES pipeline"
 
   - name: EMUSES Python imports
     description: Verify the installed package and representative runtime dependencies import.
     command: python -c "import emuses, nibabel, nilearn, sklearn, umap; print('emuses imports ok')"
     expected_output_contains: "emuses imports ok"
+
+  - name: EMUSES pinned runtime dependency closure
+    description: Require the packaged version, official native PyTorch version and consistent installed scientific dependencies.
+    command: |
+      set -euo pipefail
+      python -m pip check
+      python - <<'PYPACKAGE'
+      from importlib.metadata import version
+      import torch
+      assert version('emuses') == '${version}'
+      assert version('torch') == '2.7.1'
+      assert torch.ones(2, device='cpu').sum().item() == 2
+      print('EMUSES runtime dependencies verified')
+      PYPACKAGE
+    expected_output_contains: EMUSES runtime dependencies verified
+
+  - name: EMUSES actual UMAP and HDBSCAN model persistence
+    description: Fit the real nested UMAP/HDBSCAN stage to72 points in three separated groups; require accurate labels, finite embedding and transforms, unchanged input, persisted models/data/plots and successful model reload, with HOME unset.
+    command: |
+      set -euo pipefail
+      env -u HOME MPLBACKEND=Agg MPLCONFIGDIR="${output_dir}/matplotlib" NUMBA_CACHE_DIR="${output_dir}/numba" OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 NUMBA_NUM_THREADS=1 python "${output_dir}/functional-check.py"
+    expected_output_contains: EMUSES actual UMAP/HDBSCAN model, artifacts and reload verified
+    timeout: 360

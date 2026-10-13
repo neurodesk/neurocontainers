@@ -7,6 +7,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 variables:
   install_path: /opt/{{ context.name }}-{{ context.version }}
@@ -25,7 +26,6 @@ build:
         DEBIAN_FRONTEND: noninteractive
         EMUSES_DEPLOYMENT_MODE: local
         EMUSES_JOB_STORAGE: /tmp/emuses/jobs
-        HOME: /tmp
         MPLCONFIGDIR: /tmp/matplotlib-emuses
         NUMBA_CACHE_DIR: /tmp/numba-emuses
         TORCH_HOME: /tmp/torch-emuses
@@ -41,6 +41,14 @@ build:
         - python -m pip install --no-cache-dir --upgrade pip setuptools wheel pip-tools
         - mkdir -p "{{ context.install_path }}" /tmp/emuses-src /tmp/emuses/jobs
         - tar -xzf {{ get_file("emuses_source") }} --strip-components=1 -C /tmp/emuses-src
+        # The released x86-compiled lock flattened PyTorch's platform markers.
+        # Restore those exact official markers for the ARM CPU wheel; every
+        # other scientific dependency pin and the complete x86 lock stay intact.
+        - >-
+          if [ "$(uname -m)" = "aarch64" ]; then
+          sed -i -E '/^(nvidia-|triton==)/d; /^[[:space:]]+#/d'
+          /tmp/emuses-src/requirements-prod.txt;
+          fi
         - pip-sync /tmp/emuses-src/requirements-prod.txt
         - python -m pip install --no-cache-dir --no-deps /tmp/emuses-src
         - cp -a /tmp/emuses-src/README.md "{{ context.install_path }}/README.md"
