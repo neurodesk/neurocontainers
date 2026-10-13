@@ -4,6 +4,7 @@ variables:
   autoreject_version: "0.5.1"
   mne_bids_version: "0.20.0"
   mnelab_version: 1.5.4
+  pyedflib_version: "0.1.42"
   vscode_version: "1.141.0"
   vscode_platform:
     try:
@@ -55,6 +56,12 @@ auto_update:
     target:
       variable: mnelab_version
       fulltest_variable: mnelab_version
+  - id: pyedflib
+    dependency: true
+    method: pypi
+    package: pyedflib
+    target:
+      variable: pyedflib_version
   - id: vscode
     dependency: true
     method: webpage
@@ -160,6 +167,10 @@ build:
         env_name: mne-extended
         mamba: "true"
         yaml_file: /opt/mne-extended.yml
+    # conda-forge has no Linux ARM64 pyEDFlib package; use its official wheel.
+    - run: |
+        /opt/miniconda/envs/mne-extended/bin/python -m pip install --no-cache-dir --only-binary=:all: --no-deps 'pyedflib=={{ context.pyedflib_version }}'
+      condition: arch == "aarch64"
     - run:
         - /opt/miniconda/envs/mne-extended/bin/python -c "import autoreject; import mne; import mne_bids; import mnelab"
         - /opt/miniconda/envs/mne-extended/bin/python -m pip check
@@ -284,7 +295,7 @@ files:
       - pybv
       - scikit-learn
       - pyxdf
-      - pyEDFlib
+      - {{ 'pyEDFlib' if arch == 'x86_64' else 'pip' }}
       - neurokit2
       - autoreject={{ context.autoreject_version }}
       - coloredlogs
