@@ -22,6 +22,7 @@ variables:
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
   openrecon_ismrmrd_version: "1.14.2"
   upstream_version: "9.22.0"
+  mni_template_sha256: 0585cd056bf5ccfb8bf97a5f6a66082d4e7caad525718fc11e40d80a827fcb92
   model_revision: 31b08225f3adf2d732dafad4e3c5a94c350ef51b
   ep3d_preprocessing_commit: 8062dc1a6e368f3d1c329c50dbea42c8fdc5c3e8
   nipype_version: "1.12.0"
@@ -172,6 +173,8 @@ build:
         - install -m 644 {{ get_file("chi-sepnet.onnx") }} /opt/qsmxt/models/chi-sepnet.onnx
         - install -m 644 {{ get_file("r2primenet.onnx") }} /opt/qsmxt/models/r2primenet.onnx
         - install -m 644 {{ get_file("hd-bet.onnx") }} /opt/qsmxt/models/hd-bet.onnx
+        - mkdir -p /opt/qsmxt/test-data
+        - install -m 644 {{ get_file("MNI152_T1_2mm.nii.gz") }} /opt/qsmxt/test-data/MNI152_T1_2mm.nii.gz
         - install -m 644 {{ get_file("synthseg.onnx") }} /opt/qsmxt/models/synthseg.onnx
         - install -m 644 {{ get_file("models.sha256") }} /opt/qsmxt/models/models.sha256
         - cd /opt/qsmxt/models && sha256sum -c models.sha256
@@ -333,6 +336,9 @@ readme: |-
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzUlEQVRIS+2WbUxbZRTHf+Wl0BVBNssKwWyZQBiic2wRjMwo4mLIRBxxuCiMl4QXI8QSWMAgJpIOp58GsiUkBBgZYEwMRLYhGEfc1mbyokF5iwYmiqvAgHYgg9J7vb06oHZMol93Pz7neZ7fOf/zf06uIiPTLLLJz8MDXlhUsmTe5AFpm+I+4N/E2lCipaVZTDeMzM2NoFJp0PjtR6sNdejBhGWEwamvEcQVwjTP8LDPo048J4AoChgNxxkerEWUDq7/tP6R6J9rwnpLwSljMkPTVxziD3pqeXZnCofDilC6quSYE+Dq5bcZHqolMzOT3NxcgoKCmJ2dpaWlhaKiIlTiNnyU2zFZB6mqqiIhIQGr1Up/fz+pqamYTcucPvQTCoXCGXBzup+Wzw6g0+koKCiQIQaDQZJGS1lZGQEBAURHRyMIAnV1dajVanJycuTLoqKi6OjoIHZHFsl7Tq5W5lBB97X3GBz4mMnJSVJSUujsNPBI8BEmf/8G89z3jI2NkZ2dTVtbmxTrpLGxkdraWjRbdsiQyYXrnIi9yi7fiLsDOr84io/3L/T19eEhvao9e48Tsa8Yi2WMT5ufoKamhpmZGQoLC8nKypIlS0tLo6urC7W7L1tVAXx4sHtVHqceXPj8ECEhLjQ3N+Pv78/TB04RujsVm22Juho/ysvL8fPzIyMjQ84wKSmJ0tJSFhcXKSkpob29Hd1TjUQGvrJWwZu5a6Pi4vk38FJfp7e3F09PTyL2F/Jk5DuSPKOca9grV2CXr7i4mOdDjnHpxwbJogJxcXE0NDSQmJjIrwPzfPTy5TVA4JdDq7PIcraKhXNn5EuSk5NpN1zDK/41lga+RejvlnuQnp4uN9Mt0B/Px8NY+OoK4m2pQqnpo6OjvH9Cz46LTWsA5YUfVgHC6AgrbyXKLsrPz5elMBqNslx6vR6NRkNMTIzsInu2PT09mEwmQkNDaW1tlR3VMTyA75kP7g6wr66c1iO0NckWzcvLIzg4GKVSKbvFDp13c2Fleob6+npZGm9vb8bHx6moqKCyshJ1dgqqhBc3BohSdrbqkwjnPwHbXy+5urqa8PBwYmNjsQVsZ3niBuLibcex4OaK6tWXUB874rCuWC/R+oh4y4w40Iet5SxuQ9/Jvre7JT4+HjFkF1teP4xgtiBM3cTloa24P7YbV80251m0EeDOTnHeglV3FCZ+djisjNrHA+/qULi63HOgbliBQzW/jSNcasNdeq1ertP88bd0dohb0M7/D7hzg1rKVus+zNTyP/S/B2JTFdwHbPq35b/04E9NtswA67fKiwAAAABJRU5ErkJggg==
 
 files:
+  - name: MNI152_T1_2mm.nii.gz
+    url: https://git.fmrib.ox.ac.uk/fsl/data_standard/-/raw/f6db877e56047a1ad91fd9b28d38654376087029/MNI152_T1_2mm.nii.gz
+    sha256: "{{ context.mni_template_sha256 }}"
   - name: qsmxt.py
     filename: qsmxt.py
   - name: ep3d_preproc.py

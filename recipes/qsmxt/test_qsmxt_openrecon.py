@@ -308,6 +308,12 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
                     raise SystemExit(f"qsmxt OpenRecon should pass {{flag}} {{expected}}")
                 if flag_index + 1 >= len(sys.argv) or sys.argv[flag_index + 1] != expected:
                     raise SystemExit(f"qsmxt OpenRecon should pass {{flag}} {{expected}}")
+            try:
+                mask_index = sys.argv.index("--mask")
+            except ValueError:
+                raise SystemExit("qsmxt OpenRecon must pass --mask")
+            if sys.argv[mask_index + 1] != "magnitude,hd-bet,close:1,fill-holes:0":
+                raise SystemExit("qsmxt OpenRecon must pass the default HD-BET section")
             bids = Path(sys.argv[2])
             output = Path(sys.argv[3])
             phase = sorted(bids.glob("sub-*/anat/*_echo-1_part-phase_MEGRE.nii.gz"))[0]
@@ -335,7 +341,7 @@ def test_openrecon_defaults_select_rts_romeo_and_vsharp():
     assert settings["qsm_algorithm"] == "rts"
     assert settings["unwrapping_algorithm"] == "romeo"
     assert settings["bf_algorithm"] == "vsharp"
-    assert settings["mask_preset"] == "bet"
+    assert settings["mask_preset"] == "hd-bet"
     assert settings["masking_input"] == "magnitude"
     assert settings["bet_fractional_intensity"] == 0.5
     assert settings["mask_cleanup"] == "close-fill"
@@ -817,7 +823,7 @@ def test_openrecon_pipeline_preset_reaches_qsmxt_command(preset, tmp_path, monke
         else:
             assert command[command.index(flag) + 1] == expected
     assert command[command.index("--mask") + 1] == (
-        "magnitude,bet:0.5,close:1,fill-holes:0"
+        "magnitude,hd-bet,close:1,fill-holes:0"
     )
     assert kwargs["cwd"] == str(bids_dir)
 
@@ -935,12 +941,8 @@ def test_openrecon_label_exposes_processing_defaults():
         value["id"] for value in parameters["bfalgorithm"]["values"]
     }
     assert "resharp" in bf_algorithms
-    assert parameters["maskpreset"]["default"] == "bet"
-    assert {value["id"] for value in parameters["maskpreset"]["values"]} == {
-        "bet",
-        "robust-threshold",
-        "combined",
-    }
+    assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "hd-bet"
+    assert tuple(value["id"] for value in parameters["maskpreset"]["values"]) == qsmxt.MASK_PRESETS
     assert parameters["maskinginput"]["default"] == "magnitude"
     assert parameters["betfractionalintensity"]["default"] == 0.5
     assert len(label["parameters"]) == len(parameters) == 14
@@ -2369,6 +2371,7 @@ def test_homogeneity_config_rejects_invalid_choice(value, monkeypatch):
 
 
 @pytest.mark.parametrize("preset,sections", [
+    ("hd-bet", ["magnitude,hd-bet,close:1,fill-holes:0"]),
     ("bet", ["magnitude,bet:0.5,close:1,fill-holes:0"]),
     ("robust-threshold", ["magnitude,threshold:otsu,close:1,fill-holes:0"]),
     ("combined", ["magnitude,bet:0.5,close:1,fill-holes:0",
@@ -2381,4 +2384,71 @@ def test_mask_defaults_close_and_fill_each_section(preset, sections):
 
 def test_legacy_mask_cleanup_none_retains_close_fill_default():
     settings = qsmxt._settings_from_config({"parameters": {"maskcleanup": "none"}})
-    assert qsmxt._mask_sections(settings) == ["magnitude,bet:0.5,close:1,fill-holes:0"]
+    assert qsmxt._mask_sections(settings) == ["magnitude,hd-bet,close:1,fill-holes:0"]
+
+
+@pytest.mark.parametrize("module_name", ["qsmxt", "qsmxt_ep3d", "qsmxt_ep3d_denoise"])
+@pytest.mark.parametrize("params", [{}, {"maskpreset": ""}, {"maskpreset": "hd-bet"}])
+def test_hdbet_default_reaches_all_config_commands(
+    module_name, params, tmp_path, monkeypatch,
+):
+    import importlib
+
+    received = {}
+    if module_name == "qsmxt":
+        config = {"parameters": params}
+    else:
+        module = importlib.import_module(module_name)
+        monkeypatch.setattr(
+            qsmxt, "process",
+            lambda connection, config, metadata: received.update(config=config),
+        )
+        module.process(FakeConnection([]), {"parameters": params}, FakeMetadata())
+        config = received["config"]
+    settings = qsmxt._settings_from_config(config, FakeMetadata())
+    settings["qsmxt_binary"] = "/opt/qsmxt/qsmxt"
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        return qsmxt.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", fake_run)
+    qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
+    command = commands[0]
+    for flag, expected in (
+        ("--mask", "magnitude,hd-bet,close:1,fill-holes:0"),
+        ("--qsm-algorithm", "rts"),
+        ("--unwrapping-algorithm", "romeo"),
+        ("--bf-algorithm", "vsharp"),
+        ("--homogeneity-sigma-mm", "7"),
+        ("--homogeneity-nbox", "3"),
+    ):
+        assert command[command.index(flag) + 1] == expected
+    assert command.count("--mask") == 1
+    assert "--mask-preset" not in command
+    assert "--inhomogeneity-correction" in command
+
+
+def test_hdbet_does_not_use_bet_or_threshold_controls():
+    settings = qsmxt._settings_from_config({"parameters": {
+        "maskpreset": "hd-bet",
+        "betfractionalintensity": 0.2,
+        "maskinginput": "phase-quality",
+        "maskthresholdmethod": "percentile",
+        "maskthresholdpercentile": 90,
+    }})
+    assert qsmxt._mask_sections(settings) == [
+        "magnitude,hd-bet,close:1,fill-holes:0",
+    ]
+
+
+@pytest.mark.parametrize("preset", ["HD-BET", "unknown", [], {}])
+def test_invalid_mask_preset_fails_before_launch(preset, tmp_path, monkeypatch):
+    def unexpected_run(*args, **kwargs):
+        pytest.fail("invalid mask choice launched QSMxT")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", unexpected_run)
+    with pytest.raises(ValueError, match="maskpreset"):
+        settings = qsmxt._settings_from_config({"parameters": {"maskpreset": preset}})
+        qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)

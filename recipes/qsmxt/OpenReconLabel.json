@@ -202,12 +202,13 @@
       "label": { "en": "Mask preset" },
       "type": "choice",
       "values": [
-        { "id": "bet", "name": { "en": "BET (recommended)" } },
+        { "id": "bet", "name": { "en": "BET" } },
         { "id": "robust-threshold", "name": { "en": "Robust threshold" } },
-        { "id": "combined", "name": { "en": "BET + threshold union" } }
+        { "id": "combined", "name": { "en": "BET + threshold union" } },
+        { "id": "hd-bet", "name": { "en": "HD-BET" } }
       ],
-      "default": "bet",
-      "information": { "en": "BET is the default because it follows the magnitude brain boundary and is less vulnerable to phase-quality dropouts in single-echo 7 T data. Combined unions BET and threshold masks." }
+      "default": "hd-bet",
+      "information": { "en": "HD-BET extracts the brain from magnitude using the packaged model, with closing and hole filling. Combined unions BET and threshold masks." }
     },
     {
       "id": "maskinginput",
