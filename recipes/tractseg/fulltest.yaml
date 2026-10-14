@@ -16,6 +16,8 @@
 name: tractseg
 version: "2.9.0"
 upstream_version: "2.9"
+arm_torch_version: "2.4.1"
+arm_numpy_version: "1.26.4"
 
 required_files:
   - dataset: ds000001
@@ -42,6 +44,25 @@ setup:
     #!/usr/bin/env bash
     set -e
     mkdir -p test_output
+    python3 - <<'PYTHON'
+    import hashlib
+    import io
+    from pathlib import Path
+    import tarfile
+    import urllib.request
+    root=Path('test_output/tractseg-reference');root.mkdir(exist_ok=True)
+    url='https://codeload.github.com/MIC-DKFZ/TractSeg/tar.gz/c73bc2f437113a68b5170cc0dcc89e18b1d87bd5'
+    with urllib.request.urlopen(url,timeout=120) as response: data=response.read()
+    assert hashlib.sha256(data).hexdigest()=='7c7253340923a3e5e85a986891fb9d6ef0ff87cad0c6557c882b3f09b4ceac38'
+    with tarfile.open(fileobj=io.BytesIO(data),mode='r:gz') as archive:
+        for member in archive.getmembers():
+            if not member.isfile(): continue
+            relative=member.name.partition('/tests/reference_files/')[2]
+            if relative=='peaks.nii.gz' or (relative.startswith('bundle_segmentations/') and relative.endswith('.nii.gz')):
+                destination=root/relative;destination.parent.mkdir(parents=True,exist_ok=True)
+                with archive.extractfile(member) as source: destination.write_bytes(source.read())
+    assert len(list((root/'bundle_segmentations').glob('*.nii.gz')))==72
+    PYTHON
 
 tests:
   # ==========================================================================
@@ -805,6 +826,79 @@ tests:
       print("All pretrained models resolve without home or network access")
       PYTHON
     expected_output_contains: All pretrained models resolve without home or network access
+
+  - name: Native CPU tensor and package closure
+    command: |
+      python -m pip check
+      python - <<'PYTHON'
+      import importlib.metadata as md
+      import platform
+      import numpy as np
+      import torch
+      assert md.version('TractSeg')=='${upstream_version}'
+      if platform.machine()=='aarch64':
+          assert md.version('torch').split('+')[0]=='${arm_torch_version}'
+          assert md.version('numpy')=='${arm_numpy_version}' and torch.version.cuda is None
+      values=np.arange(12,dtype=np.float32).reshape(3,4)
+      np.testing.assert_array_equal(torch.from_numpy(values).sum(dim=1).numpy(),[6,22,38])
+      print('Native TractSeg dependency closure and NumPy CPU tensor bridge verified')
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: Native TractSeg dependency closure and NumPy CPU tensor bridge verified
+    timeout: 120
+
+  - name: Full pretrained 72-bundle segmentation against official references
+    description: >-
+      Run the released default three-orientation pretrained CPU segmentation
+      on the complete official73x87x73 nine-component peak image. Preserve
+      every voxel of all72 released binary reference masks, their physical
+      grids and all input/checkpoint bytes. This follows the upstream v2.9
+      exact-mask regression oracle; no unit-test model or synthetic network.
+    command: |
+      python - <<'PYTHON'
+      import hashlib
+      import json
+      import os
+      from pathlib import Path
+      import subprocess
+      import tempfile
+      import nibabel as nib
+      import numpy as np
+      from tractseg.data import dataset_specific_utils
+      from tractseg.libs.system_config import SystemConfig
+      def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+      root=Path('${output_dir}/tractseg-reference').resolve();source=root/'peaks.nii.gz'
+      assert sha(source)=='efa40d532bc2c8e9d08cdc9c24941f28880addce07a47d14cbe0d2166c238692'
+      image=nib.load(source);assert image.shape==(73,87,73,9)
+      names=dataset_specific_utils.get_bundle_names('All')[1:];assert len(names)==72
+      fixtures=[source]+[root/'bundle_segmentations'/(name+'.nii.gz') for name in names]
+      before={str(p):sha(p) for p in fixtures}
+      weights=sorted(Path(SystemConfig.WEIGHTS_DIR).glob('*.npz'));assert len(weights)==9
+      weight_hashes={p.name:sha(p) for p in weights}
+      with tempfile.TemporaryDirectory(prefix='tractseg-trained-') as scratch:
+          output=Path(scratch)/'output'
+          env=dict(os.environ,CUDA_VISIBLE_DEVICES='',OMP_NUM_THREADS='2',MKL_NUM_THREADS='2')
+          subprocess.run(['TractSeg','-i',str(source),'-o',str(output),'--nr_cpus','2'],env=env,check=True,timeout=3000)
+          actual=output/'bundle_segmentations'
+          assert {p.name for p in actual.glob('*.nii.gz')}=={name+'.nii.gz' for name in names}
+          counts={}
+          for name in names:
+              result=nib.load(actual/(name+'.nii.gz'));reference=nib.load(root/'bundle_segmentations'/(name+'.nii.gz'))
+              data=np.asanyarray(result.dataobj);target=np.asanyarray(reference.dataobj)
+              assert data.shape==target.shape==image.shape[:3]
+              assert np.isfinite(data).all() and set(np.unique(data)).issubset({0,1})
+              np.testing.assert_array_equal(data,target,err_msg=name+' official released mask')
+              np.testing.assert_array_equal(result.affine,image.affine)
+              np.testing.assert_array_equal(result.header.get_zooms(),image.header.get_zooms()[:3])
+              counts[name]=int(data.sum());assert counts[name]>0,name
+          assert {str(p):sha(p) for p in fixtures}==before
+          assert {p.name:sha(p) for p in weights}==weight_hashes
+          print('Full trained TractSeg official72-mask regression passed '+json.dumps({'shape':list(image.shape),'bundle_voxels':counts,'unchanged_models':len(weights)},sort_keys=True))
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: Full trained TractSeg official72-mask regression passed
+    timeout: 3300
+
 
 cleanup:
   script: |

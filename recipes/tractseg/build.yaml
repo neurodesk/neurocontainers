@@ -1,10 +1,13 @@
 variables:
   upstream_version: "2.9"
+  arm_torch_version: "2.4.1"
+  arm_numpy_version: "1.26.4"
 
 name: tractseg
 version: "2.9.0"
 architectures:
   - x86_64
+  - aarch64
 copyright:
   - license: Apache-2.0
     url: https://github.com/MIC-DKFZ/TractSeg/blob/master/LICENSE
@@ -18,6 +21,22 @@ auto_update:
       target:
         variable: upstream_version
         fulltest_variable: upstream_version
+    - id: arm-cpu-torch
+      dependency: true
+      method: pypi
+      package: torch
+      version_regex: '^(?P<version>2\.4\.\d+)$'
+      target:
+        variable: arm_torch_version
+        fulltest_variable: arm_torch_version
+    - id: arm-numpy-abi
+      dependency: true
+      method: pypi
+      package: numpy
+      version_regex: '^(?P<version>1\.26\.\d+)$'
+      target:
+        variable: arm_numpy_version
+        fulltest_variable: arm_numpy_version
 
 files:
   - name: pretrained_weights_tract_segmentation_xtract_v1.npz
@@ -45,13 +64,35 @@ build:
   base-image: ubuntu:22.04
   pkg-manager: apt
   directives:
-    - template:
+    - condition: arch == "aarch64"
+      install:
+        - qtbase5-dev
+        - libqt5opengl5-dev
+        - libqt5svg5-dev
+        - libgl1-mesa-dev
+        - libglu1-mesa-dev
+    - condition: arch == "x86_64"
+      template:
         name: mrtrix3
         version: 3.0.4
         libtiff_package: libtiff5
-    - template:
+    - condition: arch == "aarch64"
+      template:
+        name: mrtrix3
+        method: source
+        version: 3.0.4
+        libtiff_package: libtiff5
+        configure_options: ""
+    - condition: arch == "x86_64"
+      template:
         name: miniconda
         version: py37_23.1.0-1
+        install_path: /opt/miniconda
+        mamba: true
+    - condition: arch == "aarch64"
+      template:
+        name: miniconda
+        version: py311_24.9.2-0
         install_path: /opt/miniconda
         mamba: true
     - install:
@@ -71,8 +112,13 @@ build:
         - pip install TractSeg=={{ context.upstream_version }}
     - run:
         - pip install -q wheel scipy nilearn matplotlib scikit-image nibabel dipy fury joblib seaborn cython
-    - run:
+    - condition: arch == "x86_64"
+      run:
         - pip install -q torch==1.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+    - condition: arch == "aarch64"
+      run:
+        # Torch2.4 ARM wheels use the NumPy1 ABI. Preserve the x86 stack.
+        - pip install -q "numpy=={{ context.arm_numpy_version }}" "torch=={{ context.arm_torch_version }}"
     - environment:
         TRACTSEG_WEIGHTS_DIR: /opt/miniconda/share/TractSeg/weights
     - run:
@@ -86,9 +132,15 @@ build:
         - install -m 0644 {{ get_file("pretrained_weights_peak_regression_part2_v2.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_peak_regression_part2_v2.npz"
         - install -m 0644 {{ get_file("pretrained_weights_peak_regression_part3_v2.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_peak_regression_part3_v2.npz"
         - install -m 0644 {{ get_file("pretrained_weights_peak_regression_part4_v2.npz") }} "$TRACTSEG_WEIGHTS_DIR/pretrained_weights_peak_regression_part4_v2.npz"
-    - template:
+    - condition: arch == "x86_64"
+      template:
         name: fsl
         version: 6.0.7.16
+        libtiff_package: libtiff5
+    - condition: arch == "aarch64"
+      template:
+        name: fsl
+        version: 6.0.7.22
         libtiff_package: libtiff5
     - user: jovyan
     - deploy:
