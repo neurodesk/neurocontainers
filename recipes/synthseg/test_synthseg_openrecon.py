@@ -647,6 +647,7 @@ def test_label_products_keep_pixels_geometry_and_distinct_scanner_identity(segme
     source.setHead(head)
     source_meta = helpers['FakeMeta'].deserialize(source.attribute_string)
     source_meta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
+    source_meta['SegmentPostProcessing'] = '1'
     source.attribute_string = source_meta.serialize()
     source_identity = {'series_description': 'source_t1w', 'parent_grouping': 'source_group',
                        'series_uid': '1.2.3', 'sop_uid': '1.2.3.4', 'source_type_token': 'ND'}

@@ -1817,6 +1817,10 @@ def _stamp_synthseg_output_image(
     tmp_meta["DicomImageType"] = output_dicom_image_type
     if source_geometry_identity and segment_scanner_postprocessing:
         tmp_meta["ExamDataRole"] = exam_data_role
+        # Like OpenMSK: the child role replaces any inherited marker, which
+        # the output contract rejects on segment streams.
+        if SYNTHSEG_SEGMENT_POSTPROCESSING_META_KEY in tmp_meta:
+            del tmp_meta[SYNTHSEG_SEGMENT_POSTPROCESSING_META_KEY]
     elif source_geometry_identity:
         for key in (
             "ExamDataRole",
