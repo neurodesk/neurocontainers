@@ -72,6 +72,7 @@ build:
         - libxext6
         - libxmu6
         - libxrender1
+        - libxss1
         - libxt6
         - locales
         - perl
