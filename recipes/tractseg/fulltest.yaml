@@ -16,8 +16,8 @@
 name: tractseg
 version: "2.9.0"
 upstream_version: "2.9"
-arm_torch_version: "2.4.1"
-arm_numpy_version: "1.26.4"
+arm_torch_version: "2.6.0"
+arm_numpy_version: "2.2.6"
 
 required_files:
   - dataset: ds000001
@@ -829,8 +829,8 @@ tests:
 
   - name: Native CPU tensor and package closure
     command: |
-      python -m pip check
-      python - <<'PYTHON'
+      /opt/miniconda/bin/python -m pip check
+      /opt/miniconda/bin/python - <<'PYTHON'
       import importlib.metadata as md
       import platform
       import numpy as np
@@ -855,7 +855,7 @@ tests:
       grids and all input/checkpoint bytes. This follows the upstream v2.9
       exact-mask regression oracle; no unit-test model or synthetic network.
     command: |
-      python - <<'PYTHON'
+      /opt/miniconda/bin/python - <<'PYTHON'
       import hashlib
       import json
       import os
