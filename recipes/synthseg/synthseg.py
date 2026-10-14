@@ -1792,7 +1792,11 @@ def _stamp_synthseg_output_image(
         )
 
     if not original_passthrough_identity:
-        tmp_meta["LUTFileName"] = "MicroDeltaHotMetal.pal"
+        # No LUTFileName, not even one inherited from the source: the scanner
+        # then writes the label frames as Enhanced MR with PALETTE COLOR but
+        # no palette data, which is invalid.
+        if "LUTFileName" in tmp_meta:
+            del tmp_meta["LUTFileName"]
         tmp_meta["LabelProduct"] = output_identity["display_token"]
     tmp_meta["DataRole"] = "Image" if source_image_header_identity else data_role
     tmp_meta["ImageProcessingHistory"] = processing_history

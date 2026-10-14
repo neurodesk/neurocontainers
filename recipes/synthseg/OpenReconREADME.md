@@ -191,12 +191,13 @@ Questions can also be posted in the Neurodesk discussion forum at
 https://github.com/orgs/neurodesk/discussions or sent via
 https://neurodesk.org/contact/.
 
-## Scanner display colours and approximate Glasser parcels
+## Label display and approximate Glasser parcels
 
 Derived SynthSeg label images, sagittal/coronal reformats and optional Glasser
-images request `LUTFileName=MicroDeltaHotMetal.pal`, the scanner-provided display
-palette used by OpenMSK. The wrapper preserves every integer label value.
-The palette controls display colours. It does not assign anatomical names.
+images are greyscale label maps, windowed over the label range. The wrapper
+preserves every integer label value. They do not request a scanner palette:
+with `LUTFileName` set, the scanner exports the labels as Enhanced MR with
+`PALETTE COLOR` but no palette data, which is not valid DICOM.
 SynthSeg names use `/opt/freesurfer-synthseg/FreeSurferColorLUT.txt`.
 Glasser names use `/opt/glasser/labels.txt`.
 
