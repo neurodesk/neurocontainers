@@ -61,7 +61,7 @@ segmentation is visible without manual windowing.
 | CPU threads | `ssthreads` | integer | `8` | TensorFlow inter/intra-op thread count. Valid GUI range: 1 to 64. |
 | Report region volumes | `ssvolumes` | boolean | `false` | Compute per-structure volumes in mm3 and write them to the reconstruction log as CSV. |
 | Report QC scores | `ssqc` | boolean | `false` | Run the automated QC network and write per-structure QC scores to the reconstruction log as CSV. |
-| Segmentation header | `sssegmentheader` | boolean | `true` | Use the `openreconi2iexample` 2D segmentation-header delivery mode so scanner post-processing targets the segmentation stream. Only this mode requests the scanner colour palette. |
+| Segmentation header | `sssegmentheader` | boolean | `true` | Use the `openreconi2iexample` 2D segmentation-header delivery mode so scanner post-processing targets the segmentation stream. |
 | Sagittal reformat | `ssreslicesagittal` | boolean | `false` | Send a sagittal 3D reformat of each SynthSeg and Desikan label map. |
 | Coronal reformat | `ssreslicecoronal` | boolean | `false` | Send a coronal 3D reformat of each SynthSeg and Desikan label map. |
 | Debug threshold segmentation | `ssdebugthresholdsegment` | boolean | `false` | Skip SynthSeg inference and use the simple threshold segmentation from `openreconi2iexample` to exercise the send path quickly. |
@@ -144,7 +144,10 @@ source-geometry segmentation-header stream with `DataRole = Segmentation`,
 `SegmentSourceGeometry = 1`, `SegmentOutputGeometry = 2d`,
 `SequenceDescriptionAdditional = openrecon`, no `SegmentSourceImageHeader`,
 scanner post-processing child-role metadata matching the segmentation
-`image_series_index`, and no `ImageTypeValue3`.
+`image_series_index`, and no `ImageTypeValue3`. `ImageType` is
+`DERIVED\PRIMARY\SEGMENTATION\<product>_seg` with the short product tokens
+`synthseg`, `desikan` and `glasser`, because the scanner truncates `ImageType`
+values longer than 16 characters.
 
 Scanner logs include the resolved options on a single
 `OpenRecon SynthSeg options: ...` line, a `SynthSeg label map: ...` line with the
@@ -193,16 +196,12 @@ https://neurodesk.org/contact/.
 
 ## Label display and approximate Glasser parcels
 
-Like OpenMSK, label images sent in the segmentation-header mode (the default)
-and all sagittal/coronal reformats request `LUTFileName=MicroDeltaHotMetal.pal`,
-the scanner-provided display palette, and are windowed over the label range.
-The wrapper preserves every integer label value. The palette controls display
-colours. It does not assign anatomical names.
-
-With `sssegmentheader` disabled, native label images keep the source image
-header and are returned as greyscale without a palette. On such images the
-scanner exports `LUTFileName` as Enhanced MR with `PALETTE COLOR` but no palette
-data, which is not valid DICOM.
+Derived SynthSeg label images, sagittal/coronal reformats and optional Glasser
+images are greyscale label maps, windowed over the label range. The wrapper
+preserves every integer label value. They do not request a scanner palette: with
+`LUTFileName` set, in either delivery mode, the scanner exports the labels as
+Enhanced MR with `PALETTE COLOR` but no palette data, plus a separate
+presentation state, and cannot open the series.
 SynthSeg names use `/opt/freesurfer-synthseg/FreeSurferColorLUT.txt`.
 Glasser names use `/opt/glasser/labels.txt`.
 
