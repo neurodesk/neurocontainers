@@ -97,23 +97,25 @@ tests:
   description: Use the candidate CVMFS client and official public key to mount the real Neurodesk catalog with a private writable
     cache. Require actual module files and Lmod catalog listing; host FUSE is an explicit prerequisite and is never skipped.
   command: "python - <<'PYTHON'\nimport hashlib\nimport os\nfrom pathlib import Path\nimport subprocess\nimport tempfile\n\
-    import time\nassert Path('/dev/fuse').exists(), 'Real CVMFS operation requires the native runner to expose /dev/fuse;\
-    \ feature is unverified without it'\nwith tempfile.TemporaryDirectory(prefix='neurocommand-cvmfs-') as scratch:\n    root=Path(scratch);mount=root/'mount';cache=root/'cache';mount.mkdir();cache.mkdir()\n\
-    \    config=root/'private.conf'\n    config.write_text('CVMFS_CACHE_BASE='+str(cache)+'\nCVMFS_RELOAD_SOCKETS='+str(cache)+'\n\
-    CVMFS_USYSLOG='+str(root/'client.log')+'\nCVMFS_CLAIM_OWNERSHIP=yes\nCVMFS_HTTP_PROXY=DIRECT\nCVMFS_TIMEOUT=20\nCVMFS_TIMEOUT_DIRECT=20\n\
-    ')\n    configs='/etc/cvmfs/default.conf:/etc/cvmfs/config.d/neurodesk.ardc.edu.au.conf:/etc/cvmfs/default.local:'+str(config)\n\
+    import time\n\nassert Path('/dev/fuse').exists(), 'Real CVMFS operation requires the native runner to expose /dev/fuse'\n\
+    with tempfile.TemporaryDirectory(prefix='neurocommand-cvmfs-') as scratch:\n    root=Path(scratch);mount=root/'mount';cache=root/'cache';mount.mkdir();cache.mkdir()\n\
+    \    config=root/'private.conf'\n    config.write_text('\\n'.join([\n        'CVMFS_CACHE_BASE='+str(cache), 'CVMFS_RELOAD_SOCKETS='+str(cache),\n\
+    \        'CVMFS_USYSLOG='+str(root/'client.log'), 'CVMFS_CLAIM_OWNERSHIP=yes',\n        'CVMFS_HTTP_PROXY=DIRECT', 'CVMFS_TIMEOUT=20',\
+    \ 'CVMFS_TIMEOUT_DIRECT=20', ''\n    ]))\n    configs='/etc/cvmfs/default.conf:/etc/cvmfs/config.d/neurodesk.ardc.edu.au.conf:/etc/cvmfs/default.local:'+str(config)\n\
     \    with (root/'mount.log').open('w') as log:\n        process=subprocess.Popen(['cvmfs2','-f','-o','config='+configs,'neurodesk.ardc.edu.au',str(mount)],stdout=log,stderr=subprocess.STDOUT)\n\
     \        try:\n            deadline=time.monotonic()+120\n            while not os.path.ismount(mount) and process.poll()\
-    \ is None and time.monotonic()<deadline:time.sleep(.5)\n            assert os.path.ismount(mount),(process.poll(),(root/'mount.log').read_text(),(root/'client.log').read_text()\
+    \ is None and time.monotonic()<deadline:\n                time.sleep(.5)\n            assert os.path.ismount(mount),(process.poll(),(root/'mount.log').read_text(),(root/'client.log').read_text()\
     \ if (root/'client.log').exists() else '')\n            modules=mount/'neurodesk-modules';assert modules.is_dir()\n  \
-    \          module=next(modules.rglob('*.lua'));payload=module.read_bytes();assert len(payload)>32 and b'\0' not in payload\n\
-    \            env=dict(os.environ,MODULEPATH=str(modules))\n            result=subprocess.run(['bash','-c','source /usr/share/lmod/lmod/init/bash;\
-    \ module --terse avail'],env=env,capture_output=True,text=True,check=True,timeout=90)\n            assert (result.stdout+result.stderr).strip()\n\
-    \            print('Native CVMFS mounted signed Neurodesk catalog and read module',str(module.relative_to(mount)),hashlib.sha256(payload).hexdigest(),flush=True)\n\
-    \        finally:\n            unmount=None\n            if os.path.ismount(mount):unmount=subprocess.run(['fusermount3','-u',str(mount)],capture_output=True,text=True)\n\
+    \          module=next(p for p in modules.rglob('*.lua') if not any(part.startswith('.') for part in p.relative_to(modules).parts))\n\
+    \            payload=module.read_bytes();assert len(payload)>32 and 0 not in payload\n            env=dict(os.environ,MODULEPATH=str(modules))\n\
+    \            result=subprocess.run(['bash','-c','source /usr/share/lmod/lmod/init/bash; module --terse avail'],env=env,capture_output=True,text=True,check=True,timeout=90)\n\
+    \            expected_module=str(module.relative_to(modules)).removesuffix('.lua')\n            assert expected_module\
+    \ in result.stdout+result.stderr,(expected_module,result.stdout,result.stderr)\n            print('Native CVMFS mounted\
+    \ signed Neurodesk catalog and read module',str(module.relative_to(mount)),hashlib.sha256(payload).hexdigest(),flush=True)\n\
+    \        finally:\n            unmount=None\n            if os.path.ismount(mount):\n                unmount=subprocess.run(['fusermount3','-u',str(mount)],capture_output=True,text=True)\n\
     \            if process.poll() is None:process.terminate()\n            try:process.wait(timeout=15)\n            except\
     \ subprocess.TimeoutExpired:process.kill();process.wait(timeout=15)\n            if unmount is not None:assert unmount.returncode==0,(unmount.stdout,unmount.stderr)\n\
-    print('Real native CVMFS and Neurodesk module catalog operation verified')\nPYTHON\n"
+    print('Real native CVMFS and Neurodesk module catalog operation verified')\n\nPYTHON\n"
   expected_output_contains: Real native CVMFS and Neurodesk module catalog operation verified
   expected_exit_code: 0
   timeout: 300
