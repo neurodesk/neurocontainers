@@ -10,7 +10,7 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 
 name: spm25
-version: 25.01.02
+version: 26.10.01
 
 required_files:
   - dataset: ds000001
