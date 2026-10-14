@@ -1,0 +1,42 @@
+name: freesurfer6
+version: 6.0.0
+upstream_version: 6.0.0
+
+tests:
+  - name: recon-all reports the upstream version
+    description: Verify the reconstruction driver belongs to the requested release.
+    command: recon-all -version
+    expected_output_contains: "v${upstream_version}"
+
+  - name: runtime launchers are available
+    description: Verify the main CLI and segmentation entrypoints are exposed.
+    command: >-
+      command -v recon-all && command -v mri_convert && command -v mri_info &&
+      command -v freeview && command -v segmentSF_T1.sh && command -v segmentBS.sh
+    expected_exit_code: 0
+
+  - name: reference templates and MATLAB runtime are installed
+    description: Verify runtime assets are readable from the installed software directory.
+    command: >-
+      test -r "$FREESURFER_HOME/FreeSurferColorLUT.txt" &&
+      test -r "$FREESURFER_HOME/subjects/fsaverage/mri/orig.mgz" &&
+      test -r "$FREESURFER_HOME/average/RB_all_2016-05-10.vc700.gca" &&
+      test -r "$FS_LICENSE" &&
+      test -r "$FREESURFER_HOME/MCRv80/runtime/glnxa64/libmwmclmcrrt.so.8.0"
+    expected_exit_code: 0
+
+  - name: convert and inspect a reference volume
+    description: Exercise image conversion and metadata reading with the bundled fsaverage volume.
+    command: |
+      set -eu
+      test_dir=$(mktemp -d)
+      trap 'rm -rf "$test_dir"' EXIT
+      mri_convert "$FREESURFER_HOME/subjects/fsaverage/mri/orig.mgz" "$test_dir/orig.nii.gz"
+      test -s "$test_dir/orig.nii.gz"
+      mri_info --dim "$test_dir/orig.nii.gz"
+    expected_output_contains: "256 256 256"
+
+  - name: Freeview starts with a virtual display
+    description: Check the bundled GUI loads its libraries and exits through its scripting interface.
+    command: xvfb-run -a freeview -quit
+    expected_exit_code: 0
