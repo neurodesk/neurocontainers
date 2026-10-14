@@ -180,8 +180,10 @@ licensed CC BY-SA 3.0.
 The shipped norms use 561 healthy IXI adults aged 20 to 86 from three scanners,
 with the scanner effect averaged out. In five-fold cross-validation, 87.5% to
 90% of held-out subjects fall inside each structure's 5th-95th band, against
-the nominal 90%. `fit_brainquant_norms.py` documents how to reproduce the fit, and
-`brainquant_ixi_volumes.csv` holds the per-subject volumes it was fitted to.
+the nominal 90%. Across the three IXI scanners the mean z score shifts by up
+to 0.47, so expect offsets of that size on a new scanner. The model, its
+validation and its limitations are described in
+https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/synthseg/BRAINQUANT_NORMS.md
 
 Age is the number of whole years from the header birth date to the study date.
 If either date is missing, the age is unknown unless `ssquantage` sets it. Sex comes from the header
