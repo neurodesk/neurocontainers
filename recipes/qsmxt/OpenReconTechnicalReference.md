@@ -7,7 +7,7 @@ For scanner setup and usage, see the [user guide](OpenReconREADME.md).
 
 This OpenRecon adapter receives reconstructed ISMRMRD image messages, separates
 the magnitude and phase series, writes a temporary BIDS MEGRE dataset, runs the
-QSMxT v9 Rust binary, and sends selected derivatives back as derived MRD image
+QSMxT v10.0.0 Rust binary, and sends selected derivatives back as derived MRD image
 series.
 
 The **Input images** control defaults to **Prefer distortion corrected**.
