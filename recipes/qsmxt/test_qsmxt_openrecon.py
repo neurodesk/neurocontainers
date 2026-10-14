@@ -923,9 +923,12 @@ def test_openrecon_label_exposes_processing_defaults():
         parameter["id"]: parameter for parameter in label["parameters"]
     }
 
-    assert "pipelinepreset" not in parameters
+    assert parameters["pipelinepreset"]["default"] == "custom"
+    assert [value["id"] for value in parameters["pipelinepreset"]["values"]] == [
+        "custom", *qsmxt.ALGORITHM_PIPELINE_PRESETS,
+    ]
     assert parameters["twopass"]["default"] is False
-    assert parameters["motioncorrection"]["default"] is False
+    assert "motioncorrection" not in parameters
     assert parameters["qsmreference"]["default"] == "mean"
     assert parameters["vsharpgrid"]["default"] == "native"
     assert parameters["swiunwrapping"]["default"] == "laplacian"
@@ -944,6 +947,23 @@ def test_openrecon_label_exposes_processing_defaults():
     assert tuple(value["id"] for value in parameters["maskpreset"]["values"]) == qsmxt.MASK_PRESETS
     assert "maskinginput" not in parameters
     assert "betfractionalintensity" not in parameters
+    assert list(parameters) == [
+        "config",
+        "inputseries",
+        "sendoutputs",
+        "inhomogeneitycorrection",
+        "maskpreset",
+        "pipelinepreset",
+        "unwrappingalgorithm",
+        "bfalgorithm",
+        "qsmalgorithm",
+        "vsharpgrid",
+        "twopass",
+        "qsmreference",
+        "sourceseparation",
+        "swiunwrapping",
+    ]
+    assert parameters["qsmalgorithm"]["label"]["en"] == "Dipole inversion"
     assert len(label["parameters"]) == len(parameters) == 14
     assert "maskcleanup" not in parameters
     correction = parameters["inhomogeneitycorrection"]
@@ -2274,7 +2294,90 @@ def test_phase_to_radians_rejects_phase_wider_than_one_cycle():
         qsmxt._phase_to_radians(np.array([-4096.0, 4094.0]), 4096.0)
 
 
-def test_openrecon_config_choices_load_ep3d_modules():
+@pytest.mark.parametrize("module_name", ["qsmxt", "qsmxt_gre_motion"])
+@pytest.mark.parametrize("shape", ["bare", "nested", "json"])
+@pytest.mark.parametrize("motion,reference", [(None, None), (False, "last"), (True, "2")])
+def test_gre_configs_apply_motion_policy_without_mutation(
+    module_name, shape, motion, reference, tmp_path, monkeypatch,
+):
+    import copy
+    import importlib
+
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    params = {
+        "qsmxtbinary": str(_fake_qsmxt_binary(tmp_path)),
+        "echotimesms": "10,20", "qsmreference": "none",
+        "twopass": True, "inhomogeneitycorrection": "fine",
+    }
+    if motion is not None:
+        params["motioncorrection"] = motion
+    if reference is not None:
+        params["motionreference"] = reference
+    config = params if shape == "bare" else {"parameters": params}
+    if shape == "json":
+        config = json.dumps(config)
+    before = copy.deepcopy(config)
+    seen = []
+    run = qsmxt._run_qsmxt
+
+    def capture(bids, output, settings):
+        seen.append((settings.copy(), qsmxt._qsmxt_command(bids, output, settings)))
+        run(bids, output, settings)
+
+    monkeypatch.setattr(qsmxt, "_run_qsmxt", capture)
+    connection = FakeConnection(_input_images())
+    importlib.import_module(module_name).process(connection, config, FakeMetadata())
+    assert connection.closed and not connection.logs
+    assert len(connection.sent_batches) == 3
+    assert config == before
+    assert len(seen) == 1
+    settings, command = seen[0]
+    expected_motion = module_name == "qsmxt_gre_motion" or motion is True
+    assert settings["motion_correction"] is expected_motion
+    assert settings["motion_reference"] == (reference or "first")
+    assert settings["qsm_reference"] == "none"
+    assert settings["two_pass"] is True
+    assert settings["inhomogeneity_correction"] == "fine"
+    assert settings["ep3d_dual_polarity"] is False
+    assert settings["ep3d_denoise"] is False
+    assert ("--motion-correction" in command) is expected_motion
+    if expected_motion:
+        assert command[command.index("--motion-reference") + 1] == (reference or "first")
+    else:
+        assert "--motion-reference" not in command
+    assert "--two-pass" in command
+    assert command[command.index("--homogeneity-nbox") + 1] == "15"
+
+
+def test_gre_motion_config_keeps_unrelated_advanced_epi_flags(monkeypatch):
+    import qsmxt_gre_motion
+
+    config = {"parameters": {"motioncorrection": False, "ep3ddualpolarity": True,
+                             "ep3ddenoise": True, "motionreference": "last"}}
+    received = {}
+    monkeypatch.setattr(qsmxt, "process", lambda connection, config, metadata: received.update(config))
+    qsmxt_gre_motion.process(FakeConnection([]), config, FakeMetadata())
+    settings = qsmxt._settings_from_config(received)
+    assert settings["motion_correction"] is True
+    assert settings["motion_reference"] == "last"
+    assert settings["ep3d_dual_polarity"] is True
+    assert settings["ep3d_denoise"] is True
+    assert config["parameters"]["motioncorrection"] is False
+
+
+@pytest.mark.parametrize("reference", ["0", "bad"])
+def test_gre_motion_config_preserves_reference_validation(reference, monkeypatch):
+    import qsmxt_gre_motion
+
+    def normalize(connection, config, metadata):
+        qsmxt._settings_from_config(config, metadata)
+
+    monkeypatch.setattr(qsmxt, "process", normalize)
+    with pytest.raises(ValueError, match="motionreference"):
+        qsmxt_gre_motion.process(FakeConnection([]), {"motionreference": reference}, FakeMetadata())
+
+
+def test_openrecon_config_choices_load_all_modules():
     label_path = Path(qsmxt.__file__).with_name("OpenReconLabel.json")
     config = next(
         parameter
@@ -2283,6 +2386,7 @@ def test_openrecon_config_choices_load_ep3d_modules():
     )
     assert [value["id"] for value in config["values"]] == [
         "qsmxt",
+        "qsmxt_gre_motion",
         "qsmxt_ep3d",
         "qsmxt_ep3d_denoise",
     ]
@@ -2294,8 +2398,9 @@ def test_openrecon_config_choices_load_ep3d_modules():
     ("module_name", "denoise"),
     [("qsmxt_ep3d", False), ("qsmxt_ep3d_denoise", True)],
 )
+@pytest.mark.parametrize("shape", ["bare", "nested", "json"])
 def test_ep3d_configs_enable_preprocessing_and_keep_user_controls(
-    module_name, denoise, monkeypatch
+    module_name, denoise, shape, monkeypatch
 ):
     import importlib
 
@@ -2307,13 +2412,18 @@ def test_ep3d_configs_enable_preprocessing_and_keep_user_controls(
         lambda connection, config, metadata: received.update(config=config),
     )
 
-    module.process(
-        FakeConnection([]),
-        {"parameters": {"config": module_name, "qsmalgorithm": "rts"}},
-        FakeMetadata(),
-    )
+    params = {"config": module_name, "qsmalgorithm": "rts",
+              "motioncorrection": True, "motionreference": "last"}
+    config = params if shape == "bare" else {"parameters": params}
+    if shape == "json":
+        config = json.dumps(config)
+    before = json.dumps(config, sort_keys=True)
+    module.process(FakeConnection([]), config, FakeMetadata())
+    assert json.dumps(config, sort_keys=True) == before
 
     settings = qsmxt._settings_from_config(received["config"], FakeMetadata())
+    assert settings["motion_correction"] is True
+    assert settings["motion_reference"] == "last"
     assert settings["ep3d_dual_polarity"] is True
     assert settings["ep3d_denoise"] is denoise
     assert settings["qsm_algorithm"] == "rts"
@@ -2386,7 +2496,7 @@ def test_legacy_mask_cleanup_none_retains_close_fill_default():
     assert qsmxt._mask_sections(settings) == ["magnitude,threshold:otsu,close:1,fill-holes:0"]
 
 
-@pytest.mark.parametrize("module_name", ["qsmxt", "qsmxt_ep3d", "qsmxt_ep3d_denoise"])
+@pytest.mark.parametrize("module_name", ["qsmxt", "qsmxt_gre_motion", "qsmxt_ep3d", "qsmxt_ep3d_denoise"])
 @pytest.mark.parametrize("params", [{}, {"maskpreset": ""}, {"maskpreset": "robust-threshold"}])
 def test_robust_threshold_default_reaches_all_config_commands(
     module_name, params, tmp_path, monkeypatch,

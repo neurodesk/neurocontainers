@@ -521,16 +521,40 @@ tests:
           "maskpreset",
           "inhomogeneitycorrection",
           "twopass",
-          "motioncorrection",
+          "pipelinepreset",
           "qsmreference",
           "vsharpgrid",
           "swiunwrapping",
       }
       assert expected == parameter_ids, f"Missing: {expected - parameter_ids}; unexpected: {parameter_ids - expected}"
       parameters = {parameter["id"]: parameter for parameter in data["parameters"]}
+      assert list(parameters) == [
+          "config",
+          "inputseries",
+          "sendoutputs",
+          "inhomogeneitycorrection",
+          "maskpreset",
+          "pipelinepreset",
+          "unwrappingalgorithm",
+          "bfalgorithm",
+          "qsmalgorithm",
+          "vsharpgrid",
+          "twopass",
+          "qsmreference",
+          "sourceseparation",
+          "swiunwrapping",
+      ]
+      assert parameters["qsmalgorithm"]["label"]["en"] == "Dipole inversion"
       import sys
       sys.path.insert(0, "/opt/code/python-ismrmrd-server")
       import qsmxt
+      assert parameters["pipelinepreset"]["default"] == "custom"
+      assert [value["id"] for value in parameters["pipelinepreset"]["values"]] == ["custom", *qsmxt.ALGORITHM_PIPELINE_PRESETS]
+      assert parameters["config"]["default"] == "qsmxt"
+      assert [value["id"] for value in parameters["config"]["values"]] == ["qsmxt", "qsmxt_gre_motion", "qsmxt_ep3d", "qsmxt_ep3d_denoise"]
+      import importlib
+      for value in parameters["config"]["values"]:
+          assert callable(importlib.import_module(value["id"]).process)
       assert parameters["sourceseparation"]["default"] == "off"
       assert {value["id"] for value in parameters["sourceseparation"]["values"]} == set(qsmxt.SOURCE_SEPARATION_METHODS)
       assert parameters["qsmalgorithm"]["default"] == "rts"
@@ -551,7 +575,7 @@ tests:
       assert "maskcleanup" not in parameter_ids
       assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "robust-threshold"
       assert tuple(value["id"] for value in parameters["maskpreset"]["values"]) == qsmxt.MASK_PRESETS
-      for parameter_id in ("twopass", "motioncorrection"):
+      for parameter_id in ("twopass",):
           assert parameters[parameter_id]["type"] == "boolean"
           assert parameters[parameter_id]["default"] is False
       assert parameters["qsmreference"]["type"] == "string"
@@ -578,6 +602,49 @@ tests:
       assert "sendoriginal" not in parameter_ids
       assert "minip" not in parameter_ids
       print(label)
+      PY
+
+
+  - name: GRE echo alignment configuration
+    description: Verify the installed GRE motion configuration forces alignment and preserves advanced settings
+    script: |
+      set -euo pipefail
+      PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import copy
+      import json
+      from pathlib import Path
+      from unittest.mock import patch
+
+      import qsmxt
+      import qsmxt_gre_motion
+
+      for shape in ("bare", "nested", "json"):
+          parameters = {"motioncorrection": False, "motionreference": "last",
+                        "qsmreference": "none", "inhomogeneitycorrection": "fine"}
+          config = parameters if shape == "bare" else {"parameters": parameters}
+          if shape == "json":
+              config = json.dumps(config)
+          before = copy.deepcopy(config)
+          received = []
+          with patch.object(qsmxt, "process", side_effect=lambda connection, config, metadata: received.append(config)):
+              qsmxt_gre_motion.process(None, config, None)
+          assert config == before
+          settings = qsmxt._settings_from_config(received[0])
+          assert settings["motion_correction"] is True
+          assert settings["motion_reference"] == "last"
+          assert settings["qsm_reference"] == "none"
+          assert settings["inhomogeneity_correction"] == "fine"
+          command = qsmxt._qsmxt_command(Path("bids"), Path("output"), settings)
+          assert "--motion-correction" in command
+          assert command[command.index("--motion-reference") + 1] == "last"
+          assert command[command.index("--homogeneity-nbox") + 1] == "15"
+      received = []
+      with patch.object(qsmxt, "process", side_effect=lambda connection, config, metadata: received.append(config)):
+          qsmxt_gre_motion.process(None, {}, None)
+      assert qsmxt._settings_from_config(received[0])["motion_reference"] == "first"
+      assert qsmxt._settings_from_config({})["motion_correction"] is False
+      assert qsmxt._settings_from_config({"motioncorrection": True})["motion_correction"] is True
+      print("Installed GRE echo alignment configuration verified")
       PY
 
   - name: OpenRecon bridge imports and display scaling
