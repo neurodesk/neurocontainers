@@ -1,8 +1,8 @@
 variables:
-  upstream_version: "2.9"
+  upstream_version: "2.10"
 
 name: tractseg
-version: "2.9.0"
+version: "2.10.0"
 architectures:
   - x86_64
 copyright:
