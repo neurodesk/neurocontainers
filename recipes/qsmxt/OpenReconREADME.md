@@ -8,7 +8,7 @@ The package supports single-echo and multi-echo data, a choice of reconstruction
 
 Use a plain gradient-echo (GRE) sequence with both magnitude and **unfiltered phase** reconstruction enabled. Filtered phase from an SWI sequence is not a suitable input. Magnitude and phase images must have matching echoes and the same distortion-correction setting.
 
-An [example Siemens 3 T GRE protocol](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/gre_qsm.pro) is available as a starting point. It acquires five echoes at 5, 10, 15, 20, and 25 ms. Review the acquisition and safety settings on your scanner before use. The example saves WH-QSM, HARPERELLA, and Robust threshold masking instead of the package defaults RTS, V-SHARP, and HD-BET. Check the OpenRecon algorithm and mask controls after loading it.
+An [example Siemens 3 T GRE protocol](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/gre_qsm.pro) is available as a starting point. It acquires five echoes at 5, 10, 15, 20, and 25 ms. Review the acquisition and safety settings on your scanner before use. The example saves WH-QSM, HARPERELLA, and Robust threshold masking instead of the package defaults RTS, V-SHARP, and Robust threshold. Check the OpenRecon algorithm and mask controls after loading it.
 
 ## Run a reconstruction
 
@@ -16,8 +16,8 @@ With the QSMxT package installed in OpenRecon:
 
 1. Select **qsmxt** as the reconstruction package. Leave **config** set to **standard GRE**.
 2. Set **Input images** to match your acquisition. The default is **Distortion corrected**.
-3. For an initial reconstruction, leave **Pipeline preset** on **Custom algorithm controls** with **QSM algorithm** set to **RTS**, **Unwrap** to **ROMEO**, and **Background** to **V-SHARP**.
-4. Leave **Mask preset** on **HD-BET** to identify the brain from the magnitude image.
+3. Leave **QSM algorithm** set to **RTS**, **Unwrap** to **ROMEO**, and **Background** to **V-SHARP**.
+4. Leave **Mask preset** on **Robust threshold** to threshold the combined magnitude image.
 5. Leave **Output maps** on **QSM**. The source magnitude and phase series are always returned to the scanner database.
 6. Run the acquisition with OpenRecon enabled. When reconstruction finishes, look for the **QSMxT QSM** series alongside the original images.
 
@@ -98,33 +98,37 @@ parts per billion. Divide rescaled DICOM values by 1000 to obtain ppm.
 
 ## Change the reconstruction method
 
-Use **Pipeline preset** to choose a predefined combination of processing methods. The menu also includes complete reconstruction methods such as QSMART, TGV, AutoQSM, NeXtQSM, iQSM, and iQSM+. Packaged deep-learning methods work offline and run on the CPU.
+Choose **QSM algorithm**, **Unwrap**, and **Background** independently. The defaults are RTS, ROMEO, and V-SHARP. **iLSQR** is also available in **QSM algorithm**. Packaged deep-learning methods run on the CPU with local models.
 
-A preset overrides **QSM algorithm**, **Unwrap**, and **Background**. To choose those stages yourself, select **Custom algorithm controls**:
-
-- **Unwrap** removes phase jumps. The OpenRecon default is ROMEO.
-- **Background** removes background-field contributions. The default is V-SHARP.
-- **QSM algorithm** calculates susceptibility. The default is RTS.
-
-With **Custom algorithm controls**, **Default (RTS)** uses RTS, **Default (ROMEO)** uses
-ROMEO, and **Default (V-SHARP)** uses V-SHARP. Any other **Pipeline preset** overrides all three
-choices, even if you change their displayed values. Reconstruction time and results depend on
-the method, acquisition, and available hardware. See the [QSMxT algorithm
-reference](https://qsmxt.github.io/QSMxT/reference/algorithms/) for descriptions of the
-methods. The upstream command-line defaults differ from the OpenRecon defaults listed here.
+Reconstruction time and results depend on the method, acquisition, and hardware. The upstream command-line defaults differ from the explicit OpenRecon defaults. Pipeline presets remain available through advanced `pipelinepreset` configuration.
 
 ## Adjust the brain mask
 
 The mask defines the region included in reconstruction. To inspect its coverage alongside the QSM map, select **All available** under **Output maps**.
 
-Start with **HD-BET**. It extracts the brain from magnitude with the packaged model, then applies closing and hole filling. This default does not add signal erosion.
+Start with **Robust threshold**. It uses Otsu thresholding of combined magnitude, then closes small gaps and fills holes. It adds no dilation or erosion. **HD-BET**, **BET**, and **BET + threshold union** remain alternatives in **Mask preset**.
 
-For the **BET** alternative, lower **BET threshold** from its default of **0.5** if the mask excludes brain tissue.
+Threshold input, threshold method, BET fractional intensity, percentile cutoff, and pipeline presets remain advanced configuration options. They no longer occupy scanner controls. See the [technical reference](OpenReconTechnicalReference.md) for their keys and defaults.
 
-For threshold-based masking, choose **Robust threshold** or **BET + threshold union** under **Mask preset**. The union includes regions selected by either method. **Threshold input** selects the image used for thresholding, and **Threshold method** selects Otsu or Percentile. **Mask percentile** sets the cutoff when you choose Percentile, with a default of **65%**.
+## Enable two-pass QSM or multiecho motion correction
 
-Masks automatically close small gaps and fill holes, without dilation or erosion.
-Mask settings apply independently of the pipeline preset.
+Set **Two-pass QSM** on to reconstruct a second time using a reliable phase-quality mask. QSMxT keeps the reliable mask unfilled and uses ordinary-pass values for its holes. The returned QSM map is the combined result. The intermediate single-pass map is not returned as the main QSM series.
+
+Set **Multiecho motion correction** on to align GRE echoes using magnitude anatomy and transform the complex signal. The first echo is the default reference. This is separate from the repetition correction in the dual-polarity EPI configuration. Both controls default to off.
+
+## Reference QSM to an anatomical region
+
+**QSM reference** defaults to `mean`. Set it to `none` to preserve the unreferenced map, or enter any packaged SynthSeg v1 region or FreeSurfer label id. Examples include `thalamus`, `left-thalamus`, `ventricles`, `4,43`, and `left-thalamus,right-caudate`.
+
+A region reference runs packaged SynthSeg on combined magnitude anatomy. QSMxT subtracts the mean susceptibility within the selected region and reconstructed support from the whole supported map. Unknown names, unsupported ids, and empty intersections fail. `ventricles` covers labels 4, 5, 14, 15, 43, and 44. `csf` is a different SynthSeg v2 label whose public weights are unavailable in this package. The [technical reference](OpenReconTechnicalReference.md#anatomical-reference-regions) lists every v1 region.
+
+## Process contiguous 2D stacks
+
+**V-SHARP grid** defaults to **Native**. **Finest voxel** and **Isotropic** select the working grid for background removal while retaining the acquired output geometry. **SWI unwrapping** defaults to **Laplacian**. Select **Slice Laplacian** for slice-wise SWI phase unwrapping independently of the QSM unwrap algorithm.
+
+Supply acquired `SliceThickness` and `MRAcquisitionType` in MRD image metadata or user parameters. Advanced `slicethicknessmm` and `acquisitiontype` can supply explicit overrides. The adapter retains measured slice spacing, validates consistent metadata, and rejects nonuniform 2D positions. QSMxT rejects gaps by default. Advanced `ignoreslicegap` explicitly overrides gap refusal and produces a warning. When thickness is absent, the adapter warns that gap checking is unavailable. Thickness is never inferred from affine spacing or slab field of view.
+
+These controls expose native 2D processing. The smoke tests use synthetic stacks and MNI anatomy. They do not establish scanner-specific reconstruction quality.
 
 ## Adjust homogeneity correction
 
