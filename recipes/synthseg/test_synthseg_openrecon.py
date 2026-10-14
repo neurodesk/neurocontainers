@@ -933,7 +933,8 @@ def test_brainquant_report_is_the_last_distinct_series(process_runtime, caplog, 
         assert 0.005 < float(np.mean(page < 2048)) < 0.5
     helpers['_validate_synthseg_output_contract'](outputs, {1}, {'series_description': 't1w'}, 'test')
     assert '--vol' in helpers['inference_commands'][-1]
-    assert 'age=63 (source header) sex=female (source header)' in caplog.text
+    subject_lines = [r.getMessage() for r in caplog.records if 'report subject' in r.getMessage()]
+    assert subject_lines == ['SynthSeg brain volume report subject: age source=header sex source=header']
     structures = re.findall(r'SYNTHSEG_BRAINQUANT structure=(\S+) volume_ml=', caplog.text)
     assert structures[0] == 'hippocampus_left' and len(structures) == 10
     assert 'structure=hippocampus_left volume_ml=3.900 ' in caplog.text
