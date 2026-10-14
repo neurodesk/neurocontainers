@@ -443,8 +443,7 @@ def test_openrecon_defaults_match_the_scanner_label():
     assert len(label_ids) == len(set(label_ids)), "duplicate parameter ids in label"
     assert set(label_ids) == set(helpers["OPENRECON_DEFAULTS"])
     # The Siemens OpenRecon UI accepts at most 14 parameter entries.
-    assert len(label_ids) == 14
-    assert "ssdebugthresholdsegment" in label_ids
+    assert len(label_ids) <= 14
 
     for parameter in label["parameters"]:
         default = helpers["OPENRECON_DEFAULTS"][parameter["id"]]
@@ -947,10 +946,10 @@ def test_brainquant_off_leaves_outputs_and_command_unchanged(process_runtime):
     assert '--vol' not in helpers['inference_commands'][-1]
 
 
-def test_brainquant_is_skipped_with_debug_threshold_segmentation(process_runtime, caplog):
+def test_brainquant_is_skipped_with_synthseg_v1(process_runtime, caplog):
     import logging
     helpers, sources, _ = process_runtime
-    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssdebugthresholdsegment=True)}
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssmodel='v1')}
     with caplog.at_level(logging.WARNING):
         outputs = helpers['process_image'](sources, None, config, None)
     series = _series_by_index(outputs)

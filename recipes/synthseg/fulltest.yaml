@@ -140,7 +140,6 @@ tests:
       assert parameters[\"ssparc\"][\"type\"] == \"choice\"
       assert parameters[\"ssparc\"][\"default\"] == \"none\"
       assert {value[\"id\"] for value in parameters[\"ssparc\"][\"values\"]} == {\"none\", \"desikan\", \"glasser\", \"both\"}
-      assert \"ssdebugthresholdsegment\" in parameters
       assert {value[\"id\"] for value in parameters[\"ssvolumes\"][\"values\"]} == {\"none\", \"log\", \"report\", \"report_female\", \"report_male\"}
       assert parameters[\"ssquantage\"][\"default\"] == 0
       assert Path(\"/opt/code/python-ismrmrd-server/OpenReconREADME.md\").stat().st_size > 0

@@ -63,7 +63,6 @@ segmentation is visible without manual windowing.
 | Report QC scores | `ssqc` | boolean | `false` | Run the automated QC network and write per-structure QC scores to the reconstruction log as CSV. |
 | Segmentation header | `sssegmentheader` | boolean | `false` | Use the `openreconi2iexample` 2D segmentation-header delivery mode so scanner post-processing targets the segmentation stream. |
 | Label map reformats | `ssreslice` | choice | `none` | `none`, `sagittal`, `coronal` or `both`. Send 3D reformats of each SynthSeg and Desikan label map. |
-| Debug threshold segmentation | `ssdebugthresholdsegment` | boolean | `false` | Skip SynthSeg inference and use the simple threshold segmentation from `openreconi2iexample` to exercise the send path quickly. |
 | Report age (years) | `ssquantage` | integer | `0` | Patient age for the brain volume report. `0` computes whole years from the header birth date to the study date. Valid GUI range: 0 to 120. |
 
 The Siemens OpenRecon UI accepts at most 14 parameters, so related options
@@ -119,12 +118,6 @@ positive size up to the next multiple of 32. FreeSurfer restores cropped
 predictions to the original image shape, but anatomy outside a manual crop is
 returned as background. Start with a crop large enough to contain the full
 brain across the expected scanner positioning.
-
-`ssdebugthresholdsegment` is a diagnostic flag. When enabled, the wrapper still
-receives and sorts the source images, but skips the `mri_synthseg` command and
-creates a simple threshold plus largest-component mask using the same logic as
-`openreconi2iexample`. In that mode the returned pixel values are 12-bit
-intensities rather than FreeSurfer label indices.
 
 The OpenRecon label declares GPU support and requests at least 1 GPU, 10048 MB
 GPU memory, 40096 MB system memory, and 8 CPU cores.
@@ -200,8 +193,7 @@ charts show the patient volume as a horizontal line and the percentiles read
 is marked "outside reference age range".
 
 A footnote warns that volumes may be shifted when `ssmodel` is not `synthseg`
-or when `ssfast` is off. The report is skipped with a warning when
-`ssdebugthresholdsegment` is on, because there are no volumes, and with
+or when `ssfast` is off. The report is skipped with a warning with
 `ssmodel=v1`, because SynthSeg 1.0 reports no total intracranial volume. If the
 norms file is missing or the report fails to render, the wrapper logs the
 exception and omits only the report series.
@@ -284,8 +276,6 @@ to the base SynthSeg cortical grey matter.
 `ssthreads` controls the registration CPU thread count.
 Registration adds processing time. A registration failure logs the exception,
 omits Glasser and retains the original and SynthSeg outputs.
-`ssparc=glasser` or `ssparc=both` with `ssdebugthresholdsegment` is rejected because the atlas needs
-a real anatomical segmentation.
 
 These are approximate volumetric parcel boundaries. They are not a replacement
 for individual-subject HCP surface parcellation. Registration and cortical

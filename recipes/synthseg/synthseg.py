@@ -121,7 +121,6 @@ OPENRECON_DEFAULTS = {
     "ssqc": False,
     "sssegmentheader": False,
     "ssreslice": "none",
-    "ssdebugthresholdsegment": False,
     "ssquantage": 0,
 }
 OPENRECON_DEFAULT_TEST_CONFIG = {
@@ -215,114 +214,6 @@ def _log_directory_contents(label: str, path: Path) -> None:
 
     entries = sorted(child.name for child in path.iterdir())
     logging.info("%s contents (%s): %s", label, path, entries)
-
-
-def _simple_threshold_segmentation_volume(input_yxz: np.ndarray, max_val: int) -> np.ndarray:
-    data = np.asarray(input_yxz)
-    if np.iscomplexobj(data):
-        data = np.abs(data)
-    data = np.asarray(data, dtype=np.float32)
-    if data.ndim == 2:
-        data = data[:, :, None]
-    if data.ndim != 3:
-        raise ValueError(
-            "Debug threshold segmentation expects a 2D or 3D input volume, "
-            f"got shape {data.shape}"
-        )
-
-    threshold = _bright_foreground_threshold(data)
-    foreground = data >= threshold
-    foreground &= np.isfinite(data)
-    segmentation_zyx = _largest_connected_component_per_plane(
-        foreground.transpose((2, 0, 1))
-    )
-    segmentation_yxz = segmentation_zyx.transpose((1, 2, 0))
-    logging.warning(
-        "Using debug simple threshold segmentation: threshold=%.6g "
-        "foreground_voxels=%d kept_voxels=%d",
-        float(threshold),
-        int(np.count_nonzero(foreground)),
-        int(np.count_nonzero(segmentation_yxz)),
-    )
-    return (segmentation_yxz.astype(np.int16) * int(max_val)).astype(np.int16)
-
-
-def _bright_foreground_threshold(data: np.ndarray) -> float:
-    finite_values = np.asarray(data, dtype=np.float32)
-    finite_values = finite_values[np.isfinite(finite_values)]
-    if finite_values.size == 0:
-        return np.inf
-
-    data_min = float(np.min(finite_values))
-    data_max = float(np.max(finite_values))
-    if data_max <= data_min:
-        return np.inf
-
-    background = float(np.percentile(finite_values, 50))
-    upper = float(np.percentile(finite_values, 95))
-    if upper <= background:
-        upper = data_max
-
-    threshold = background + 0.5 * (upper - background)
-    if threshold >= data_max:
-        threshold = background + 0.5 * (data_max - background)
-    return threshold
-
-
-def _largest_connected_component_per_plane(mask: np.ndarray) -> np.ndarray:
-    mask = np.asarray(mask, dtype=bool)
-    if mask.ndim < 2:
-        return _largest_connected_component_2d(mask.reshape(1, -1)).reshape(mask.shape)
-
-    result = np.zeros(mask.shape, dtype=bool)
-    planes = mask.reshape((-1,) + mask.shape[-2:])
-    result_planes = result.reshape((-1,) + mask.shape[-2:])
-    for index, plane in enumerate(planes):
-        result_planes[index] = _largest_connected_component_2d(plane)
-    return result
-
-
-def _largest_connected_component_2d(mask: np.ndarray) -> np.ndarray:
-    mask = np.asarray(mask, dtype=bool)
-    height, width = mask.shape
-    foreground = mask.ravel()
-    foreground_indices = np.flatnonzero(foreground)
-    if foreground_indices.size == 0:
-        return np.zeros(mask.shape, dtype=bool)
-
-    visited = np.zeros(foreground.size, dtype=bool)
-    best_component = []
-    for seed in foreground_indices:
-        if visited[seed]:
-            continue
-
-        component = []
-        stack = [int(seed)]
-        visited[seed] = True
-        while stack:
-            current = stack.pop()
-            component.append(current)
-            row, col = divmod(current, width)
-            neighbors = []
-            if row > 0:
-                neighbors.append(current - width)
-            if row + 1 < height:
-                neighbors.append(current + width)
-            if col > 0:
-                neighbors.append(current - 1)
-            if col + 1 < width:
-                neighbors.append(current + 1)
-            for neighbor in neighbors:
-                if foreground[neighbor] and not visited[neighbor]:
-                    visited[neighbor] = True
-                    stack.append(neighbor)
-
-        if len(component) > len(best_component):
-            best_component = component
-
-    result = np.zeros(foreground.size, dtype=bool)
-    result[best_component] = True
-    return result.reshape(mask.shape)
 
 
 def compute_nifti_affine(image_header, voxel_size):
@@ -4070,12 +3961,6 @@ def process_image(images, connection, config, metadata):
         ),
     )
     output_geometry = SYNTHSEG_OUTPUT_GEOMETRY_2D
-    debug_threshold_segment = boolean_checker(
-        "ssdebugthresholdsegment",
-        default_val=OPENRECON_DEFAULTS["ssdebugthresholdsegment"],
-    )
-    if glasser_enabled and debug_threshold_segment:
-        raise ValueError("Glasser parcellation requires real SynthSeg segmentation; disable ssdebugthresholdsegment")
     brainquant_age = int(
         mrdhelper.get_json_config_param(
             config, "ssquantage", default=OPENRECON_DEFAULTS["ssquantage"], type='int',
@@ -4088,13 +3973,7 @@ def process_image(images, connection, config, metadata):
         )
         brainquant_age = 0
     brainquant_enabled = brainquant_sex is not None
-    if brainquant_enabled and debug_threshold_segment:
-        logging.warning(
-            "The brain volume report is requested with ssdebugthresholdsegment; the debug threshold "
-            "segmentation reports no volumes, so the brain volume report is skipped."
-        )
-        brainquant_enabled = False
-    elif brainquant_enabled and model == "v1":
+    if brainquant_enabled and model == "v1":
         logging.warning(
             "The brain volume report is requested with SynthSeg 1.0, which reports no total intracranial "
             "volume; the brain volume report is skipped."
@@ -4150,21 +4029,13 @@ def process_image(images, connection, config, metadata):
     )
     logging.info("Using SynthSeg workspace %s", work_dir)
 
-    # Determine max value (12 or 16 bit)
-    BitsStored = 12
-    # if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-    #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
-    maxVal = 2**BitsStored - 1
-
-    model_paths = []
-    if not debug_threshold_segment:
-        model_paths = _resolve_synthseg_models(model, parcellation, write_qc)
+    model_paths = _resolve_synthseg_models(model, parcellation, write_qc)
     logging.info(
         "OpenRecon SynthSeg options: run_name=%s model=%s model_files=%s "
         "parcellation=%s fast=%s use_gpu=%s autocrop=%s crop_size=%s "
         "threads=%s volumes_csv=%s qc_csv=%s "
         "outputgeometry=%s segmentation_send_order=%s "
-        "debug_threshold_segment=%s brainquant=%s "
+        "brainquant=%s "
         "reslice_sagittal=%s reslice_coronal=%s",
         run_name,
         model,
@@ -4179,7 +4050,6 @@ def process_image(images, connection, config, metadata):
         write_qc,
         output_geometry,
         SYNTHSEG_SEGMENT_SEND_ORDER,
-        debug_threshold_segment,
         brainquant_enabled,
         reslice_sagittal,
         reslice_coronal,
@@ -4199,56 +4069,33 @@ def process_image(images, connection, config, metadata):
         except OSError as exc:
             logging.warning("Could not read the SynthSeg %s CSV: %s", label, exc)
 
-    if debug_threshold_segment:
-        logging.warning(
-            "ssdebugthresholdsegment is enabled; skipping SynthSeg model "
-            "execution and using the openreconi2iexample-style simple threshold "
-            "segmentation instead."
-        )
-        volume_yxz = _simple_threshold_segmentation_volume(data, maxVal)
-        debug_output_data = np.asarray(volume_yxz).transpose((1, 0, 2))
-        debug_img = nib.nifti1.Nifti1Image(debug_output_data, affine)
-        debug_img.header.set_xyzt_units(xyz="mm", t="sec")
-        debug_img.header.set_dim_info(freq=1, phase=0, slice=2)
-        debug_img.set_qform(affine, code=1)
-        debug_img.set_sform(affine, code=1)
-        nib.save(debug_img, str(output_path))
-        logging.info(
-            "Saved debug threshold segmentation to %s with shape=%s dtype=%s",
-            output_path,
-            debug_img.shape,
-            debug_img.get_data_dtype(),
-        )
-        print('Debug threshold processing done')
+    _run_synthseg_command(
+        _build_synthseg_command(
+            input_path,
+            desikan_path if parcellation else output_path,
+            base_output_path=output_path if parcellation else None,
+            model=model,
+            fast=fast,
+            parcellation=parcellation,
+            use_gpu=use_gpu,
+            threads=threads,
+            autocrop=autocrop,
+            crop_size=crop_size,
+            volumes_csv_path=volumes_csv_path if write_volumes else None,
+            qc_csv_path=qc_csv_path if write_qc else None,
+        ),
+        output_dir,
+    )
+    if write_volumes:
+        log_csv_output("region volume", volumes_csv_path)
+    if write_qc:
+        log_csv_output("QC score", qc_csv_path)
 
-    else:
-        _run_synthseg_command(
-            _build_synthseg_command(
-                input_path,
-                desikan_path if parcellation else output_path,
-                base_output_path=output_path if parcellation else None,
-                model=model,
-                fast=fast,
-                parcellation=parcellation,
-                use_gpu=use_gpu,
-                threads=threads,
-                autocrop=autocrop,
-                crop_size=crop_size,
-                volumes_csv_path=volumes_csv_path if write_volumes else None,
-                qc_csv_path=qc_csv_path if write_qc else None,
-            ),
-            output_dir,
-        )
-        if write_volumes:
-            log_csv_output("region volume", volumes_csv_path)
-        if write_qc:
-            log_csv_output("QC score", qc_csv_path)
-
-        print('Processing done')
-        volume_yxz = _load_label_volume(output_path, data_nifti.shape)
+    print('Processing done')
+    volume_yxz = _load_label_volume(output_path, data_nifti.shape)
 
     products: list[tuple[str, np.ndarray]] = [("synthseg", volume_yxz)]
-    if parcellation and not debug_threshold_segment:
+    if parcellation:
         products.append(("desikan", _load_label_volume(desikan_path, data_nifti.shape)))
     if glasser_enabled:
         try:

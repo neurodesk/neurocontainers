@@ -88,7 +88,7 @@
         { "id": "both", "name": { "en": "Both" } }
       ],
       "default": "none",
-      "information": { "en": "The base SynthSeg segmentation is always returned. Desikan-Killiany adds a separate cortical parcel series. Approximate Glasser registers a volumetric atlas on CPU and adds a separate parcel series. Both returns all three label products. Glasser is incompatible with debug threshold segmentation; registration failure retains the other outputs." }
+      "information": { "en": "The base SynthSeg segmentation is always returned. Desikan-Killiany adds a separate cortical parcel series. Approximate Glasser registers a volumetric atlas on CPU and adds a separate parcel series. Both returns all three label products. A Glasser registration failure retains the other outputs." }
     },
     {
       "id": "ssfast",
@@ -134,7 +134,7 @@
         { "id": "report_male", "name": { "en": "Log CSV and report (male reference)" } }
       ],
       "default": "none",
-      "information": { "en": "Log CSV writes per-structure volumes in mm3 to the reconstruction log. The report options also append a brain volume report series that plots core structure volumes against age-normative percentile curves from the IXI cohort, with a percentile table. Research use only. Not for diagnostic use. The report is skipped with debug threshold segmentation and with SynthSeg 1.0." }
+      "information": { "en": "Log CSV writes per-structure volumes in mm3 to the reconstruction log. The report options also append a brain volume report series that plots core structure volumes against age-normative percentile curves from the IXI cohort, with a percentile table. Research use only. Not for diagnostic use. The report is skipped with SynthSeg 1.0." }
     },
     {
       "id": "ssqc",
@@ -162,13 +162,6 @@
       ],
       "default": "none",
       "information": { "en": "Send additional sagittal, coronal, or both 3D reformats of the SynthSeg and Desikan label maps." }
-    },
-    {
-      "id": "ssdebugthresholdsegment",
-      "label": { "en": "Debug threshold segmentation" },
-      "type": "boolean",
-      "default": false,
-      "information": { "en": "Skip SynthSeg inference and create a simple threshold-based segmentation for send-path debugging." }
     },
     {
       "id": "ssquantage",
