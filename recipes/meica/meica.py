@@ -35,8 +35,8 @@ DEFAULT_CPUS = 24
 OPENRECON_WORK_ROOT = Path("/tmp/share/meica_openrecon")
 OUTPUT_SERIES_START = 200
 OUTPUT_SPECS = {
-    "dr2s": ("MEICA_DR2S", "ME-ICA denoised BOLD-like apparent dR2*"),
-    "t2s": ("MEICA_T2S", "ME-ICA T2* map"),
+    "dr2s": ("MEICA_DR2S", "MEICA denoised BOLD dR2*"),
+    "t2s": ("MEICA_T2S", "MEICA T2* map"),
 }
 OUTPUT_UNITS = {"dr2s": "1/s", "t2s": "ms"}
 SIGNED_OUTPUTS = {"dr2s"}
@@ -74,7 +74,9 @@ def process(connection, config, metadata):
 
         settings = _settings(config)
         if settings["send_original"] and images:
-            connection.send_image([_original_passthrough(image) for image in images])
+            connection.send_image([
+                _original_passthrough(image, metadata) for image in images
+            ])
         OPENRECON_WORK_ROOT.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix="run_", dir=str(OPENRECON_WORK_ROOT)
@@ -545,6 +547,10 @@ def _select_bold_images(images: list[ismrmrd.Image]) -> list[ismrmrd.Image]:
 def _input_exclusion_reason(image: ismrmrd.Image) -> str | None:
     if not _is_magnitude(image):
         return "non-magnitude"
+    return _scanner_image_role(image)
+
+
+def _scanner_image_role(image: ismrmrd.Image) -> str | None:
     meta = _meta(image)
     description = str(_meta_first(meta, "SequenceDescription") or "")
     if "sbref" in description.lower():
@@ -558,12 +564,8 @@ def _input_exclusion_reason(image: ismrmrd.Image) -> str | None:
         for token in re.split(r"[\s\\,]+", str(value))
     }
     # Siemens keeps CMRR's NOISE marker in its base64 XProtocol minihead.
-    encoded = _meta_first(meta, "IceMiniHead")
-    if encoded:
-        try:
-            minihead = base64.b64decode(str(encoded)).decode("utf-8")
-        except (ValueError, UnicodeError):
-            minihead = ""
+    minihead = _decode_minihead(meta)
+    if minihead:
         if not description:
             match = re.search(
                 r'<ParamString\."SequenceDescription">\s*\{\s*"([^"]*)"',
@@ -833,8 +835,7 @@ def _derived_meta(
     meta["Keep_image_geometry"] = "1"
     meta["DataRole"] = ["Image", "Quantitative"]
     meta["ImageProcessingHistory"] = ["MEICA", "OPENRECON"]
-    meta["SequenceDescription"] = description
-    meta["SeriesDescription"] = description
+    _set_series_label(meta, description, series_index)
     meta["SeriesNumber"] = str(series_index)
     meta["ImageType"] = ["DERIVED", "PRIMARY", "M", role]
     meta["ImageTypeValue4"] = role
@@ -861,12 +862,89 @@ def _derived_meta(
     return meta
 
 
-def _original_passthrough(image):
+def _original_passthrough(image: ismrmrd.Image, metadata=None) -> ismrmrd.Image:
     original = copy.deepcopy(image)
     meta = _meta(original)
+    source_name = ""
+    for key in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
+        source_name = str(_meta_first(meta, key) or "")
+        if source_name:
+            break
+    if not source_name:
+        minihead = _decode_minihead(meta)
+        match = re.search(
+            r'<ParamString\."SequenceDescription">\s*\{\s*"([^"]*)"', minihead
+        )
+        if match:
+            source_name = match.group(1)
+    component = {
+        int(getattr(ismrmrd, "IMTYPE_MAGNITUDE", 1)): "magnitude",
+        int(getattr(ismrmrd, "IMTYPE_PHASE", 2)): "phase",
+        int(getattr(ismrmrd, "IMTYPE_REAL", 3)): "real",
+        int(getattr(ismrmrd, "IMTYPE_IMAG", 4)): "imaginary",
+    }.get(int(image.getHead().image_type), "magnitude")
+    role = {"reference": "SBRef ", "noise": "noise "}.get(
+        _scanner_image_role(image), ""
+    )
+    echo = _original_echo_number(image, metadata)
+    description = f"MEICA original {role}{component} te{echo}"
+    if source_name:
+        description += f"_{source_name}"
+    _set_series_label(meta, description, int(image.getHead().image_series_index))
     meta["Keep_image_geometry"] = "1"
     original.attribute_string = meta.serialize()
     return original
+
+
+def _original_echo_number(image: ismrmrd.Image, metadata) -> int:
+    echo_time = _image_echo_time_ms(image)
+    for index, time in enumerate(_metadata_echo_times_ms(metadata), 1):
+        if echo_time is not None and np.isclose(echo_time, time):
+            return index
+    number = _echo_number(image)
+    if number is not None and number > 0:
+        return number
+    return int(image.getHead().contrast) + 1
+
+
+def _decode_minihead(meta: ismrmrd.Meta) -> str:
+    encoded = _meta_first(meta, "IceMiniHead")
+    if not encoded:
+        return ""
+    try:
+        return base64.b64decode(str(encoded)).decode("utf-8")
+    except (ValueError, UnicodeError):
+        return ""
+
+
+def _set_series_label(
+    meta: ismrmrd.Meta, description: str, series_index: int
+) -> None:
+    description = description.replace('"', "'").replace("\r", " ").replace("\n", " ")
+    source_group = _meta_first(meta, "SeriesNumberRangeNameUID") or ""
+    grouping = f"{source_group}_{description}_{series_index}"
+    # Reserve ten of DICOM LO's 64 characters for the scanner's _openrecon suffix.
+    description = description[:54]
+    labels = {
+        "SeriesDescription": description,
+        "SequenceDescription": description,
+        "ProtocolName": description,
+        "SeriesNumberRangeNameUID": grouping,
+    }
+    meta.update(labels)
+    meta["SequenceDescriptionAdditional"] = "openrecon"
+    minihead = _decode_minihead(meta)
+    if minihead:
+        for key, value in labels.items():
+            pattern = rf'(<ParamString\."{key}">\s*\{{\s*)"?[^"}}]*"?(\s*\}})'
+            minihead, count = re.subn(
+                pattern,
+                lambda match: f'{match.group(1)}"{value}"{match.group(2)}',
+                minihead,
+            )
+            if not count:
+                minihead += f'\n<ParamString."{key}">{{ "{value}" }}\n'
+        meta["IceMiniHead"] = base64.b64encode(minihead.encode()).decode()
 
 
 def _meta(image):
