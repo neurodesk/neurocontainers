@@ -365,7 +365,7 @@ tests:
     description: >-
       Run both official trained HRNet and MobileNet detector checkpoints through
       the released CPU video pipeline on three lossless identical real-dog frames.
-      Require all36 bodyparts, finite coordinates/confidences, actual positive
+      Require all39 named bodyparts, finite coordinates/confidences, actual positive
       in-frame predictions, HDF rows and a decodable three-frame labeled video.
       Preserve all fixture/checkpoint bytes. No random model, stub detections,
       biological accuracy, temporal tracking, adaptation training or GPU claim.
@@ -421,14 +421,18 @@ tests:
           files=list(output.glob('*.h5'));assert len(files)==1
           result=pd.read_hdf(files[0]);assert len(result)==3
           assert result.columns.nlevels==4 and set(result.columns.get_level_values('coords'))=={'x','y','likelihood'}
-          assert len(set(result.columns.get_level_values('bodyparts')))==36
+          import yaml
+      from deeplabcut.pose_estimation_pytorch.modelzoo.utils import get_super_animal_project_config_path
+      metadata=yaml.safe_load(get_super_animal_project_config_path('superanimal_quadruped').read_text())
+      bodyparts=metadata['bodyparts'];assert len(bodyparts)==39
+      assert list(dict.fromkeys(result.columns.get_level_values('bodyparts')))==bodyparts
           points=result.xs('likelihood',level='coords',axis=1).to_numpy()
           x=result.xs('x',level='coords',axis=1).to_numpy();y=result.xs('y',level='coords',axis=1).to_numpy()
           assert np.isfinite(points).all() and np.isfinite(x).all() and np.isfinite(y).all()
           assert (points>=0).all() and (points<=1).all() and (points>.1).any(axis=1).all()
           valid=(points>.1)&(x>=0)&(x<width)&(y>=0)&(y<height)
           assert valid.any(axis=1).all()
-          rendered=list(output.glob('*_labeled.mp4'));assert len(rendered)==1
+          rendered=list(output.glob('*_labeled_before_adapt.mp4'));assert len(rendered)==1
           capture=cv2.VideoCapture(str(rendered[0]));rendered_frames=0
           while True:
               ok,image=capture.read()
@@ -437,7 +441,7 @@ tests:
           capture.release();assert rendered_frames==3
           assert digest(video)==input_hash and digest(source)==expected_image
           assert all(digest(root/name)==expected for name,expected in assets)
-          print('Actual pretrained DeepLabCut pose video pipeline passed '+json.dumps({'frames':3,'shape':[height,width],'bodyparts':36,'confident_in_frame_points':valid.sum(axis=1).tolist(),'likelihood_range':[float(points.min()),float(points.max())],'unchanged_checkpoints':dict(assets),'image_sha256':expected_image,'model_revision':revision,'scope':'Three identical real-animal frames; coordinate runtime and HDF/annotated-video contracts, no biological accuracy or temporal-tracking claim'},sort_keys=True))
+          print('Actual pretrained DeepLabCut pose video pipeline passed '+json.dumps({'frames':3,'shape':[height,width],'bodyparts':len(bodyparts),'confident_in_frame_points':valid.sum(axis=1).tolist(),'likelihood_range':[float(points.min()),float(points.max())],'unchanged_checkpoints':dict(assets),'image_sha256':expected_image,'model_revision':revision,'scope':'Three identical real-animal frames; coordinate runtime and HDF/annotated-video contracts, no biological accuracy or temporal-tracking claim'},sort_keys=True))
       PYTHON
     expected_exit_code: 0
     expected_output_contains: Actual pretrained DeepLabCut pose video pipeline passed

@@ -113,6 +113,7 @@ build:
   directives:
     - install:
         - libegl1
+        - libglib2.0-0t64
         - libgl1
         - libopengl0
         - libxkbcommon-x11-0
