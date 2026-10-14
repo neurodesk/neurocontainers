@@ -512,26 +512,25 @@ tests:
       parameter_ids = {parameter["id"] for parameter in data["parameters"]}
       expected = {
           "config",
+          "inputseries",
           "sendoutputs",
           "sourceseparation",
-          "maskthresholdpercentile",
-          "pipelinepreset",
           "qsmalgorithm",
           "unwrappingalgorithm",
           "bfalgorithm",
           "maskpreset",
+          "inhomogeneitycorrection",
+          "twopass",
+          "motioncorrection",
+          "qsmreference",
+          "vsharpgrid",
+          "swiunwrapping",
       }
-      assert expected <= parameter_ids
+      assert expected == parameter_ids, f"Missing: {expected - parameter_ids}; unexpected: {parameter_ids - expected}"
       parameters = {parameter["id"]: parameter for parameter in data["parameters"]}
-      pipeline_preset = parameters["pipelinepreset"]
-      assert pipeline_preset["type"] == "choice"
-      assert pipeline_preset["default"] == "custom"
       import sys
       sys.path.insert(0, "/opt/code/python-ismrmrd-server")
       import qsmxt
-      assert {value["id"] for value in pipeline_preset["values"]} == {
-          "custom", *qsmxt.ALGORITHM_PIPELINE_PRESETS,
-      }
       assert parameters["sourceseparation"]["default"] == "off"
       assert {value["id"] for value in parameters["sourceseparation"]["values"]} == set(qsmxt.SOURCE_SEPARATION_METHODS)
       assert parameters["qsmalgorithm"]["default"] == "rts"
@@ -550,17 +549,33 @@ tests:
       ]
       assert len(data["parameters"]) == len(parameters) == 14
       assert "maskcleanup" not in parameter_ids
-      assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "hd-bet"
+      assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "robust-threshold"
       assert tuple(value["id"] for value in parameters["maskpreset"]["values"]) == qsmxt.MASK_PRESETS
-      assert parameters["maskinginput"]["default"] == "magnitude"
-      assert parameters["betfractionalintensity"]["default"] == 0.5
+      for parameter_id in ("twopass", "motioncorrection"):
+          assert parameters[parameter_id]["type"] == "boolean"
+          assert parameters[parameter_id]["default"] is False
+      assert parameters["qsmreference"]["type"] == "string"
+      assert parameters["qsmreference"]["default"] == "mean"
+      assert parameters["vsharpgrid"]["default"] == "native"
+      assert {value["id"] for value in parameters["vsharpgrid"]["values"]} == {"native", "finest", "isotropic"}
+      assert parameters["swiunwrapping"]["default"] == "laplacian"
+      assert {value["id"] for value in parameters["swiunwrapping"]["values"]} == {"laplacian", "laplacian-slice", "romeo"}
+      defaults = {key: parameter["default"] for key, parameter in parameters.items()}
+      settings = qsmxt._settings_from_config({"parameters": defaults})
+      assert settings["two_pass"] is settings["motion_correction"] is False
+      assert settings["qsm_reference"] == "mean"
+      assert settings["vsharp_grid"] == "native"
+      assert settings["swi_unwrapping"] == "laplacian"
+      assert settings["pipeline_preset"] == "custom"
+      assert settings["masking_input"] == "magnitude"
+      assert settings["bet_fractional_intensity"] == 0.5
+      assert settings["mask_threshold_percentile"] == 65.0
       correction = parameters["inhomogeneitycorrection"]
       assert correction["default"] == qsmxt.DEFAULT_HOMOGENEITY_PROFILE == "standard"
       assert correction["label"]["en"] == "Homogeneity correction"
       assert {value["id"] for value in correction["values"]} == set(qsmxt.HOMOGENEITY_PROFILES)
       assert [value["name"]["en"] for value in correction["values"]] == ["Off", "Standard", "Fine"]
       assert "sendoriginal" not in parameter_ids
-      assert parameters["maskthresholdpercentile"]["default"] == 65.0
       assert "minip" not in parameter_ids
       print(label)
       PY
