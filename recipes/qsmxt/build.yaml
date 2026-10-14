@@ -235,6 +235,7 @@ build:
 
     - run:
         - install -m 644 {{ get_file("verify_v10_runtime.py") }} /opt/qsmxt/verify_v10_runtime.py
+        - install -m 644 {{ get_file("verify_output_echoes.py") }} /opt/qsmxt/verify_output_echoes.py
 
     - boutique:
         name: qsmxt
@@ -354,6 +355,8 @@ readme: |-
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzUlEQVRIS+2WbUxbZRTHf+Wl0BVBNssKwWyZQBiic2wRjMwo4mLIRBxxuCiMl4QXI8QSWMAgJpIOp58GsiUkBBgZYEwMRLYhGEfc1mbyokF5iwYmiqvAgHYgg9J7vb06oHZMol93Pz7neZ7fOf/zf06uIiPTLLLJz8MDXlhUsmTe5AFpm+I+4N/E2lCipaVZTDeMzM2NoFJp0PjtR6sNdejBhGWEwamvEcQVwjTP8LDPo048J4AoChgNxxkerEWUDq7/tP6R6J9rwnpLwSljMkPTVxziD3pqeXZnCofDilC6quSYE+Dq5bcZHqolMzOT3NxcgoKCmJ2dpaWlhaKiIlTiNnyU2zFZB6mqqiIhIQGr1Up/fz+pqamYTcucPvQTCoXCGXBzup+Wzw6g0+koKCiQIQaDQZJGS1lZGQEBAURHRyMIAnV1dajVanJycuTLoqKi6OjoIHZHFsl7Tq5W5lBB97X3GBz4mMnJSVJSUujsNPBI8BEmf/8G89z3jI2NkZ2dTVtbmxTrpLGxkdraWjRbdsiQyYXrnIi9yi7fiLsDOr84io/3L/T19eEhvao9e48Tsa8Yi2WMT5ufoKamhpmZGQoLC8nKypIlS0tLo6urC7W7L1tVAXx4sHtVHqceXPj8ECEhLjQ3N+Pv78/TB04RujsVm22Juho/ysvL8fPzIyMjQ84wKSmJ0tJSFhcXKSkpob29Hd1TjUQGvrJWwZu5a6Pi4vk38FJfp7e3F09PTyL2F/Jk5DuSPKOca9grV2CXr7i4mOdDjnHpxwbJogJxcXE0NDSQmJjIrwPzfPTy5TVA4JdDq7PIcraKhXNn5EuSk5NpN1zDK/41lga+RejvlnuQnp4uN9Mt0B/Px8NY+OoK4m2pQqnpo6OjvH9Cz46LTWsA5YUfVgHC6AgrbyXKLsrPz5elMBqNslx6vR6NRkNMTIzsInu2PT09mEwmQkNDaW1tlR3VMTyA75kP7g6wr66c1iO0NckWzcvLIzg4GKVSKbvFDp13c2Fleob6+npZGm9vb8bHx6moqKCyshJ1dgqqhBc3BohSdrbqkwjnPwHbXy+5urqa8PBwYmNjsQVsZ3niBuLibcex4OaK6tWXUB874rCuWC/R+oh4y4w40Iet5SxuQ9/Jvre7JT4+HjFkF1teP4xgtiBM3cTloa24P7YbV80251m0EeDOTnHeglV3FCZ+djisjNrHA+/qULi63HOgbliBQzW/jSNcasNdeq1ertP88bd0dohb0M7/D7hzg1rKVus+zNTyP/S/B2JTFdwHbPq35b/04E9NtswA67fKiwAAAABJRU5ErkJggg==
 
 files:
+  - name: verify_output_echoes.py
+    filename: verify_output_echoes.py
   - name: verify_v10_runtime.py
     filename: verify_v10_runtime.py
   - name: MNI152_T1_2mm.nii.gz

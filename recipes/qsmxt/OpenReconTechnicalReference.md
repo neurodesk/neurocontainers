@@ -59,7 +59,15 @@ debugging, but they are not shown in the scanner UI. Voxel geometry comes from
 the MRD image stream.
 
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
-QSMxT derivatives that exist after the run. The original magnitude and phase
+compatible QSMxT derivatives that exist after the run. Below three selected
+echoes, All omits implicit T2*/R2* requests and logs the count. GRE uses aligned
+echo groups after `maxechoes`. EPI repetitions yield one averaged echo. Each
+DC or ND pair resolves independently. Explicit `t2star` or `r2star` selections,
+or `dot2starmap=true` or `dor2starmap=true`, fail below three echoes before
+reconstruction or EPI preprocessing, including when combined with All. False
+advanced flags do not cancel an explicit map selection.
+
+The original magnitude and phase
 source series are sent back before the derived output, including unselected DC
 and ND variants. The same source-name filter excludes ROMEO phase, mask, and B0,
 sensitivity-corrected magnitude, CLEAR-SWI, and CLEAR-SWI mIP companions from

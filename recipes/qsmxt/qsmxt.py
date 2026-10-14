@@ -360,12 +360,13 @@ def process(connection, config, metadata):
                         settings,
                         input_pair=input_pair,
                     )
-                    _run_qsmxt(bids_dir, output_dir, settings)
+                    pair_settings = conversion["settings"]
+                    _run_qsmxt(bids_dir, output_dir, pair_settings)
                     _log_qsmxt_nifti_diagnostics(output_dir)
                     output_specs = _find_qsmxt_outputs(
                         output_dir,
                         conversion,
-                        settings,
+                        pair_settings,
                     )
                     output_images.extend(
                         _build_output_images(
@@ -438,8 +439,10 @@ def write_bids_dataset(
         int(phase_group["key"][0]),
         phase_group["order"],
     )
+    requested_outputs = settings["send_outputs"]
     preprocessed_volume = None
     if settings["ep3d_dual_polarity"]:
+        settings = _settings_for_echo_count(settings, 1)
         magnitude_echo_groups, phase_echo_groups, preprocessed_volume = (
             _ep3d_dual_polarity_average(
                 magnitude_group["images"],
@@ -464,6 +467,13 @@ def write_bids_dataset(
         raise ValueError("Source separation requires at least 3 GRE magnitude/phase echoes")
     magnitude_echo_groups = magnitude_echo_groups[:n_echoes]
     phase_echo_groups = phase_echo_groups[:n_echoes]
+    if not settings["ep3d_dual_polarity"]:
+        settings = _settings_for_echo_count(settings, n_echoes)
+    if settings["send_outputs"] != requested_outputs:
+        logging.info(
+            "QSMxT All omits T2*/R2* for %d selected echo(s); at least 3 are required",
+            n_echoes,
+        )
 
     logging.info(
         "Derived QSMxT echo groups: magnitude=%d group size(s)=%s, "
@@ -619,6 +629,7 @@ def write_bids_dataset(
     )
     source_geometry_images = _sorted_stack_images(magnitude_echo_groups[0])
     return {
+        "settings": settings,
         "bids_dir": bids_dir,
         "anat_dir": anat_dir,
         "subject": "01",
@@ -3206,6 +3217,29 @@ def _coerce_bool(value, default=False):
 def _append_optional_arg(cmd, flag, value):
     if value:
         cmd.extend([flag, str(value)])
+
+
+def _settings_for_echo_count(settings, n_echoes):
+    resolved = settings.copy()
+    if n_echoes >= 3:
+        return resolved
+    selected = _selected_output_ids(settings["send_outputs"])
+    all_outputs = str(settings["send_outputs"] or "qsm").strip().lower() == "all"
+    explicit = [
+        output for output in ("t2star", "r2star")
+        if settings[f"do_{output}map"] or (not all_outputs and output in selected)
+    ]
+    if explicit:
+        raise ValueError(
+            f"Requested {', '.join(explicit)} requires at least 3 echoes; "
+            f"this pair has {n_echoes} selected echo(s). "
+            "Choose qsm, swi, or smwi and disable dot2starmap/dor2starmap."
+        )
+    if all_outputs:
+        resolved["send_outputs"] = ",".join(
+            output for output in selected if output not in {"t2star", "r2star"}
+        )
+    return resolved
 
 
 def _selected_output_ids(value):

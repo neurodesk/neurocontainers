@@ -2222,7 +2222,7 @@ def test_ep3d_dual_polarity_averages_repetitions_into_one_echo(tmp_path, monkeyp
 
     monkeypatch.setattr(qsmxt, "_run_ep3d_preprocessing", fake_preprocessing)
     settings = qsmxt._settings_from_config(
-        {"parameters": {"ep3ddualpolarity": "true", "ep3ddenoise": "true"}},
+        {"parameters": {"ep3ddualpolarity": "true", "ep3ddenoise": "true", "sendoutputs": "all"}},
         FakeMetadata(),
     )
 
@@ -2240,6 +2240,9 @@ def test_ep3d_dual_polarity_averages_repetitions_into_one_echo(tmp_path, monkeyp
     )
     assert seen["denoise"] is True
     assert result["n_echoes"] == 1
+    assert "t2star" not in qsmxt._selected_output_ids(result["settings"]["send_outputs"])
+    assert "r2star" not in qsmxt._selected_output_ids(result["settings"]["send_outputs"])
+    assert settings["send_outputs"] == "all"
     magnitude = nib.load(str(result["magnitude_paths"][0]))
     assert magnitude.shape == (4, 3, 2)
     np.testing.assert_allclose(magnitude.get_fdata()[0, 0, :], [1150, 1151])
@@ -2664,7 +2667,8 @@ def test_main_qsm_selection_excludes_two_pass_intermediate(tmp_path):
 
 
 @pytest.mark.parametrize("max_echoes", [1, 2, 3])
-def test_all_outputs_follow_selected_echo_count(tmp_path, max_echoes):
+def test_all_outputs_follow_selected_echo_count(tmp_path, max_echoes, caplog):
+    caplog.set_level(logging.INFO)
     settings = qsmxt._settings_from_config(
         {"parameters": {"sendoutputs": " All ", "maxechoes": max_echoes,
                         "echotimesms": "6,12,18,24,30"}}, FakeMetadata(),
@@ -2673,10 +2677,90 @@ def test_all_outputs_follow_selected_echo_count(tmp_path, max_echoes):
     conversion = qsmxt.write_bids_dataset(
         _scanner_echo_slice_images(), FakeMetadata(), tmp_path / "bids", settings,
     )
-    pair_settings = conversion.get("settings", settings)
+    pair_settings = conversion["settings"]
     command = qsmxt._qsmxt_command(tmp_path / "bids", tmp_path / "out", pair_settings)
     assert ("--do-t2starmap" in command) is (max_echoes >= 3), command
     assert ("--do-r2starmap" in command) is (max_echoes >= 3), command
     assert conversion["n_echoes"] == max_echoes
+    if max_echoes < 3:
+        assert set(qsmxt._selected_output_ids(pair_settings["send_outputs"])) == {
+            "qsm", "mask", "magnitude", "swi", "paramagnetic", "diamagnetic",
+            "separated-total", "smwi-paramagnetic", "smwi-diamagnetic",
+        }
+        assert f"All omits T2*/R2* for {max_echoes} selected echo(s)" in caplog.text
+    else:
+        assert pair_settings["send_outputs"] == " All "
+        assert "All omits" not in caplog.text
     assert pair_settings is not settings
+    assert settings == before
+
+
+@pytest.mark.parametrize("params", [
+    {"sendoutputs": "t2star", "dot2starmap": False},
+    {"sendoutputs": "r2star", "dor2starmap": False},
+    {"dot2starmap": True}, {"dor2starmap": True},
+    {"sendoutputs": "all", "dot2starmap": True},
+    {"sendoutputs": "all", "dor2starmap": True},
+])
+@pytest.mark.parametrize("epi", [False, True])
+def test_explicit_relaxometry_rejected_before_processing(tmp_path, monkeypatch, params, epi):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unsupported map request reached preprocessing or native execution")
+
+    monkeypatch.setattr(qsmxt, "_ep3d_dual_polarity_average", unexpected)
+    monkeypatch.setattr(qsmxt, "_run_qsmxt", unexpected)
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    parameters = dict(params, ep3ddualpolarity=epi, echotimesms="10,20")
+    images = _dual_polarity_images() if epi else _input_images()
+    connection = FakeConnection(images)
+    qsmxt.process(connection, {"parameters": parameters}, FakeMetadata())
+    assert connection.closed
+    assert len(connection.logs) == 1
+    error = connection.logs[0][1]
+    assert "requires at least 3 echoes" in error
+    assert f"this pair has {1 if epi else 2} selected echo(s)" in error
+    assert "Choose qsm, swi, or smwi" in error
+    assert not connection.sent_batches
+
+
+def test_both_pairs_resolve_outputs_independently(tmp_path, monkeypatch):
+    images = []
+    for series, name, kind, count in (
+        (1, "gre_qsm", ismrmrd.IMTYPE_MAGNITUDE, 1),
+        (2, "gre_qsm", ismrmrd.IMTYPE_PHASE, 1),
+        (3, "gre_qsm_ND", ismrmrd.IMTYPE_MAGNITUDE, 3),
+        (4, "gre_qsm_ND", ismrmrd.IMTYPE_PHASE, 3),
+    ):
+        for echo in range(1, count + 1):
+            images.append(_image(series, echo, name, np.full((2, 3, 4), 1000), kind,
+                                 meta_values={"EchoNumber": str(echo)}))
+    settings = qsmxt._settings_from_config({"parameters": {
+        "sendoutputs": "all", "inputseries": "both", "echotimesms": "6,12,18",
+        "qsmxtbinary": str(_fake_qsmxt_binary(tmp_path)),
+    }}, FakeMetadata())
+    before = settings.copy()
+    launched, discovered = [], []
+    run, find = qsmxt._run_qsmxt, qsmxt._find_qsmxt_outputs
+
+    def capture_run(bids, output, resolved):
+        launched.append(resolved)
+        run(bids, output, resolved)
+
+    def capture_find(output, conversion, resolved):
+        discovered.append(resolved)
+        return find(output, conversion, resolved)
+
+    monkeypatch.setattr(qsmxt, "_settings_from_config", lambda *args: settings)
+    monkeypatch.setattr(qsmxt, "_run_qsmxt", capture_run)
+    monkeypatch.setattr(qsmxt, "_find_qsmxt_outputs", capture_find)
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    connection = FakeConnection(images)
+    qsmxt.process(connection, {}, FakeMetadata())
+    assert connection.closed and not connection.logs
+    assert len(launched) == len(discovered) == 2
+    assert all(a is b for a, b in zip(launched, discovered))
+    assert launched[0] is not launched[1]
+    assert all(resolved is not settings for resolved in launched)
+    assert "t2star" not in qsmxt._selected_output_ids(launched[0]["send_outputs"])
+    assert launched[1]["send_outputs"] == "all"
     assert settings == before

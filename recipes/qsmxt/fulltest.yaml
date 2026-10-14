@@ -952,7 +952,7 @@ tests:
           assert magnitude_error < 0.05 < naive_error
 
           output = Path(work) / "out"
-          subprocess.run(["qsmxt", "run", str(bids), str(output), "--force"], check=True, capture_output=True)
+          qsmxt._run_qsmxt(bids, output, result["settings"])
           chimaps = list(output.rglob("*_Chimap.nii*"))
           assert chimaps and np.isfinite(nib.load(chimaps[0]).get_fdata()).all()
       print("3D EPI dual polarity motion correction, phase matching, averaging and QSMxT verified")
@@ -967,3 +967,8 @@ tests:
     description: Run packaged SynthSeg v1 with a 128-voxel crop on MNI anatomy, independently of custom segmentation reference tests
     command: python /opt/qsmxt/verify_v10_runtime.py --segmentation
     expected_output_contains: Packaged offline SynthSeg v1 produced all 32 labels including ventricles on MNI anatomy
+
+  - name: All outputs follow effective echo count
+    description: Run the real MRD adapter and native engine for one, two, and three echoes and verify returned maps
+    command: PYTHONPATH=/opt/code/python-ismrmrd-server python /opt/qsmxt/verify_output_echoes.py
+    expected_output_contains: All returns compatible maps at one and two echoes and retains T2*/R2* at three echoes

@@ -88,7 +88,7 @@
         { "id": "r2star", "name": { "en": "R2 star" } }
       ],
       "default": "qsm",
-      "information": { "en": "Select which QSMxT derivatives to send back to OpenRecon. SMWI returns paramagnetic and diamagnetic images weighted by the QSM map. Source separation adds its maps when enabled. Original magnitude and phase images are always returned." }
+      "information": { "en": "Select which QSMxT derivatives to send back to OpenRecon. All available omits T2*/R2* below three selected echoes. Selecting T2*/R2* explicitly requires at least three echoes. EPI repetitions produce one echo. SMWI returns paramagnetic and diamagnetic images weighted by the QSM map. Source separation adds its maps when enabled. Original magnitude and phase images are always returned." }
     },
     {
       "id": "inhomogeneitycorrection",
