@@ -110,7 +110,7 @@ The mask defines the region included in reconstruction. To inspect its coverage 
 
 Start with **Robust threshold**. It uses Otsu thresholding of combined magnitude, then closes small gaps and fills holes. It adds no dilation or erosion. **HD-BET**, **BET**, and **BET + threshold union** remain alternatives in **Mask preset**.
 
-Threshold input, threshold method, BET fractional intensity, percentile cutoff, and pipeline presets remain advanced configuration options. They no longer occupy scanner controls. See the [technical reference](OpenReconTechnicalReference.md) for their keys and defaults.
+Threshold input, threshold method, BET fractional intensity, percentile cutoff, and pipeline presets remain advanced configuration options. They no longer occupy scanner controls. See the [technical reference](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/OpenReconTechnicalReference.md) for their keys and defaults.
 
 ## Enable two-pass QSM or multiecho motion correction
 
@@ -122,7 +122,7 @@ Set **Multiecho motion correction** on to align GRE echoes using magnitude anato
 
 **QSM reference** defaults to `mean`. Set it to `none` to preserve the unreferenced map, or enter any packaged SynthSeg v1 region or FreeSurfer label id. Examples include `thalamus`, `left-thalamus`, `ventricles`, `4,43`, and `left-thalamus,right-caudate`.
 
-A region reference runs packaged SynthSeg on combined magnitude anatomy. QSMxT subtracts the mean susceptibility within the selected region and reconstructed support from the whole supported map. Unknown names, unsupported ids, and empty intersections fail. `ventricles` covers labels 4, 5, 14, 15, 43, and 44. `csf` is a different SynthSeg v2 label whose public weights are unavailable in this package. The [technical reference](OpenReconTechnicalReference.md#anatomical-reference-regions) lists every v1 region.
+A region reference runs packaged SynthSeg on combined magnitude anatomy. QSMxT subtracts the mean susceptibility within the selected region and reconstructed support from the whole supported map. Unknown names, unsupported ids, and empty intersections fail. `ventricles` covers labels 4, 5, 14, 15, 43, and 44. `csf` is a different SynthSeg v2 label whose public weights are unavailable in this package. The [technical reference](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/OpenReconTechnicalReference.md#anatomical-reference-regions) lists every v1 region.
 
 ## Process contiguous 2D stacks
 
