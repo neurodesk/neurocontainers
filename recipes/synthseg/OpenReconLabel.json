@@ -140,7 +140,7 @@
       "id": "sssegmentheader",
       "label": { "en": "Segmentation header" },
       "type": "boolean",
-      "default": false,
+      "default": true,
       "information": { "en": "Send the label map in a source-geometry 2D segmentation-header format so scanner post-processing treats it as a segmentation stream. When disabled, the label map keeps the source image header identity and post-processing stays on the original stream." }
     },
     {
