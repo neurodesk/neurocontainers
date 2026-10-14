@@ -3631,11 +3631,11 @@ def _render_brainquant_pages(volumes_csv_path: Path, metadata, *, age: int, sex:
 
     norms = brainquant.load_norms(brainquant.NORMS_PATH)
     subject = brainquant.resolve_subject(metadata, age, sex)
+    # Age and sex stay on the report image; the log records only where they
+    # came from, so reconstruction logs carry no patient demographics.
     logging.info(
-        "SynthSeg brain volume report subject: age=%s (source %s) sex=%s (source %s); "
-        "comparing with the %s reference model",
-        subject.age if subject.age is not None else "unknown", subject.age_source,
-        subject.sex or "unknown", subject.sex_source, subject.model_key,
+        "SynthSeg brain volume report subject: age source=%s sex source=%s",
+        subject.age_source, subject.sex_source,
     )
     footnotes = ()
     if model != OPENRECON_MODEL_DEFAULT or not fast:

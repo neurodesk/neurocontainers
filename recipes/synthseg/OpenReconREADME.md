@@ -188,8 +188,9 @@ https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/synthseg/BRAINQUA
 Age is the number of whole years from the header birth date to the study date.
 If either date is missing, the age is unknown unless `ssquantage` sets it. Sex comes from the header
 patient sex. A nonzero `ssquantage` overrides the header age, and
-`report_female` or `report_male` override the header sex. The wrapper logs
-the resolved age, sex and source of each. If the sex is unknown, the report uses
+`report_female` or `report_male` override the header sex. The report page
+shows the age and sex. The log records only their sources (header, GUI or
+unknown), not the values. If the sex is unknown, the report uses
 the combined female and male model and says so. If the age is unknown, the
 charts show the patient volume as a horizontal line and the percentiles read
 `n/a`. An age outside the reference range is still compared, and every chart
