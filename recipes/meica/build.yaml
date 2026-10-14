@@ -87,6 +87,8 @@ build:
         - mkdir -p /opt/meica/me-ica
         - tar -xzf {{ get_file("meica_source") }} -C /opt/meica/me-ica --strip-components=1
         - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_skullstrip_patch") }}
+        - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_thread_coefficients_patch") }}
+        - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_script_exit_status_patch") }}
         - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_parallel_echoes_patch") }}
         - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_tedana_threads_patch") }}
         - tar -xzf {{ get_file("meica_afni_runtime") }} -C /opt/meica/me-ica
@@ -203,6 +205,10 @@ files:
     filename: meica-skullstrip-fallback
   - name: meica_skullstrip_patch
     filename: meica-skullstrip-fallback.patch
+  - name: meica_thread_coefficients_patch
+    filename: meica-thread-shared-coefficients.patch
+  - name: meica_script_exit_status_patch
+    filename: meica-script-exit-status.patch
   - name: meica_allineate_chunks
     filename: meica-allineate-chunks
   - name: meica_parallel_echoes_patch

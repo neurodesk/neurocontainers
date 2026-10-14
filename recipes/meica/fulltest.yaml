@@ -63,6 +63,69 @@ tests:
       test -x "${MEICA_AFNI_RUNTIME}/bin/3dinfo"
       test -x "${MEICA_AFNI_RUNTIME}/utils/dcm2niix"
 
+  - name: Parallel TE fits run without POSIX shared memory
+    description: OpenRecon caps /dev/shm at 64 MB, so tedana's threaded coefficient fit must keep its voxel matrix in process memory
+    script: |
+      set -euo pipefail
+      cd "${MEICA_REPO}"
+      OMP_NUM_THREADS=4 /opt/meica/venv/bin/python - <<'PY'
+      from multiprocessing import shared_memory
+
+      def refuse(*args, **kwargs):
+          raise AssertionError("POSIX shared memory is bounded by /dev/shm")
+
+      shared_memory.SharedMemory = refuse
+
+      import numpy as np
+      from libmeica.utils import lstsq
+
+      assert lstsq.get_coeffs is lstsq._get_coeffs_para
+      rng = np.random.default_rng(0)
+      data = rng.normal(100.0, 1.0, size=(40, 40, 30, 120)).astype(np.float32)
+      mask = np.ones(data.shape[:3], dtype=bool)
+      mask[:5] = False
+      design = rng.normal(size=(120, 3))
+      betas = lstsq.get_coeffs(data, mask, design, add_const=True)
+      expected = np.linalg.lstsq(
+          np.hstack([design, np.ones((120, 1))]), data[mask].T, rcond=None
+      )[0][:-1].T
+      assert np.allclose(betas[mask], expected, atol=1e-3)
+      assert np.all(betas[~mask] == 0)
+      print("threaded coefficient fit matches least squares")
+      PY
+
+  - name: ME-ICA reports a failing pipeline script
+    description: A failure inside the generated ME-ICA shell script must give a nonzero exit instead of silently missing outputs
+    script: |
+      set -euo pipefail
+      work="${output_dir}/script-failure"
+      mkdir -p "${work}/bin"
+      printf '#!/bin/sh\nexit 7\n' > "${work}/bin/bash"
+      chmod +x "${work}/bin/bash"
+      WORK="${work}" /opt/meica/venv/bin/python - <<'PY'
+      import os
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+
+      rng = np.random.default_rng(0)
+      for echo in (1, 2, 3):
+          data = rng.uniform(100, 200, size=(8, 8, 6, 25)).astype(np.float32)
+          image = nib.Nifti1Image(data, np.diag([3.0, 3.0, 3.0, 1.0]))
+          image.header.set_xyzt_units("mm", "sec")
+          image.header["pixdim"][4] = 2.0
+          nib.save(image, Path(os.environ["WORK"]) / f"echo-{echo}.nii.gz")
+      PY
+      cd "${work}"
+      status=0
+      PATH="${work}/bin:${PATH}" /opt/meica/venv/bin/python "${MEICA_REPO}/meica.py" \
+        -d echo-1.nii.gz echo-2.nii.gz echo-3.nii.gz -e 12 28 44 \
+        --prefix failing --OVERWRITE_NOWAIT > meica.log 2>&1 || status=$?
+      cat meica.log
+      grep -q 'Executing script file' meica.log
+      test "${status}" -eq 7
+
   - name: Functional phantom skull stripping fallback
     description: Fill the complete nonzero phantom envelope when functional 3dSkullStrip fails
     script: |

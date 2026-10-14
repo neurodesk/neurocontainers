@@ -1,0 +1,12 @@
+diff --git a/meica.py b/meica.py
+--- a/meica.py
++++ b/meica.py
+@@ -1529,4 +1529,7 @@
+ if not options.script_only:
+     # should add suffixes for only so we don't overwrite origina _meica...sh file
+     print("++ Executing script file: _meica_%s.sh" % (SETNAME))
+-    system("bash _meica_%s.sh" % SETNAME)
++    script_status = subprocess.call(["bash", "_meica_%s.sh" % SETNAME])
++    if script_status != 0:
++        print("** ME-ICA script _meica_%s.sh failed with exit code %d" % (SETNAME, script_status))
++        sys.exit(script_status)
