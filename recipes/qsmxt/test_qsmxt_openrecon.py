@@ -2661,3 +2661,22 @@ def test_main_qsm_selection_excludes_two_pass_intermediate(tmp_path):
         nib.save(nib.Nifti1Image(np.ones((2, 3, 4)), np.eye(4)), path)
     specs = qsmxt._find_qsmxt_outputs(tmp_path, {"subject": "01"}, qsmxt._settings_from_config({}))
     assert [(output_id, path) for output_id, _, path in specs] == [("qsm", primary)]
+
+
+@pytest.mark.parametrize("max_echoes", [1, 2, 3])
+def test_all_outputs_follow_selected_echo_count(tmp_path, max_echoes):
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"sendoutputs": " All ", "maxechoes": max_echoes,
+                        "echotimesms": "6,12,18,24,30"}}, FakeMetadata(),
+    )
+    before = settings.copy()
+    conversion = qsmxt.write_bids_dataset(
+        _scanner_echo_slice_images(), FakeMetadata(), tmp_path / "bids", settings,
+    )
+    pair_settings = conversion.get("settings", settings)
+    command = qsmxt._qsmxt_command(tmp_path / "bids", tmp_path / "out", pair_settings)
+    assert ("--do-t2starmap" in command) is (max_echoes >= 3), command
+    assert ("--do-r2starmap" in command) is (max_echoes >= 3), command
+    assert conversion["n_echoes"] == max_echoes
+    assert pair_settings is not settings
+    assert settings == before
