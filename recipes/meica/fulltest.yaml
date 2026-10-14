@@ -94,6 +94,26 @@ tests:
       print("threaded coefficient fit matches least squares")
       PY
 
+  - name: Chunked 3dAllineate matches a single 3dAllineate call
+    description: Parallel time chunks, including single-volume chunks that carry no time axis, must reproduce the voxels and TR of one 3dAllineate run
+    script: |
+      set -euo pipefail
+      source "${MEICA_AFNI_RUNTIME_ACTIVATE}"
+      work="${output_dir}/allineate-chunks"
+      mkdir -p "${work}"
+      cd "${work}"
+      3dcalc -a jRandomDataset:16,16,8,6 -expr 'a+100' -prefix ts+orig
+      3drefit -TR 2.5 ts+orig
+      for shift in 0 0.1 0.2 0.3 0.4 0.5; do echo "1 0 0 ${shift} 0 1 0 0.2 0 0 1 0"; done > motion.aff12.1D
+      3dcalc -a 'ts+orig[0]' -expr a -prefix base.nii
+      align=(-final wsinc5 -cubic -float -1Dmatrix_apply motion.aff12.1D -base base.nii -input ts+orig)
+      OMP_NUM_THREADS=1 3dAllineate "${align[@]}" -prefix single.nii
+      OMP_NUM_THREADS=8 meica-allineate-chunks "${align[@]}" -prefix chunked.nii
+      test "$(3dinfo -nt chunked.nii)" = 6
+      test "$(3dinfo -tr chunked.nii)" = "$(3dinfo -tr single.nii)"
+      test "$(3dinfo -tr chunked.nii)" = 2.500000
+      test "$(3dBrickStat -max '3dcalc( -a single.nii -b chunked.nii -expr abs(a-b) )' | tr -d ' ')" = 0
+
   - name: ME-ICA reports a failing pipeline script
     description: A failure inside the generated ME-ICA shell script must give a nonzero exit instead of silently missing outputs
     script: |
