@@ -16,9 +16,9 @@ An [example Siemens 3 T GRE protocol](https://github.com/neurodesk/neurocontaine
 
 With the QSMxT package installed in OpenRecon:
 
-1. Select **qsmxt** as the reconstruction package. Leave **config** set to **standard GRE**.
+1. Select **qsmxt** as the reconstruction package. Leave **Config** set to **standard GRE**.
 2. Set **Input images** to match your acquisition. The default is **Distortion corrected**.
-3. Leave **QSM algorithm** set to **RTS**, **Unwrap** to **ROMEO**, and **Background** to **V-SHARP**.
+3. Leave **Pipeline preset** on **Custom algorithm controls**. Leave **Dipole inversion** set to **RTS**, **Unwrap** to **ROMEO**, and **Background** to **V-SHARP**.
 4. Leave **Mask preset** on **Robust threshold** to threshold the combined magnitude image.
 5. Leave **Output maps** on **QSM**. The source magnitude and phase series are always returned to the scanner database.
 6. Run the acquisition with OpenRecon enabled. When reconstruction finishes, look for the **QSMxT QSM** series alongside the original images.
@@ -46,7 +46,7 @@ geometry.
 
 ## Process dual-polarity 3D EPI data
 
-Set **config** to **3D EPI dual polarity QSM** for a single-TE 3D EPI acquisition that repeats the volume with alternating readout polarity. The package needs at least two repetitions in both the magnitude and the phase series.
+Set **Config** to **3D EPI dual polarity QSM** for a single-TE 3D EPI acquisition that repeats the volume with alternating readout polarity. The package needs at least two repetitions in both the magnitude and the phase series.
 
 Before QSMxT runs, the repetitions are combined with the basic preprocessing pipeline from [ep3d-highres-preprocessing](https://github.com/mrphysics-bonn/ep3d-highres-preprocessing):
 
@@ -100,9 +100,13 @@ parts per billion. Divide rescaled DICOM values by 1000 to obtain ppm.
 
 ## Change the reconstruction method
 
-Choose **QSM algorithm**, **Unwrap**, and **Background** independently. The defaults are RTS, ROMEO, and V-SHARP. **iLSQR** is also available in **QSM algorithm**. Packaged deep-learning methods run on the CPU with local models.
+Leave **Pipeline preset** on **Custom algorithm controls** to choose **Unwrap**, **Background**, and **Dipole inversion** independently. The default stages are ROMEO, V-SHARP, and RTS. **iLSQR** is also available in **Dipole inversion**. Packaged deep-learning methods run on the CPU with local models.
 
-Reconstruction time and results depend on the method, acquisition, and hardware. The upstream command-line defaults differ from the explicit OpenRecon defaults. Pipeline presets remain available through advanced `pipelinepreset` configuration.
+Reconstruction time and results depend on the method, acquisition, and hardware. The upstream command-line defaults differ from the explicit OpenRecon defaults.
+
+**Pipeline preset** also offers ten historical stage combinations and six complete methods. Named presets override the three individual stage controls.
+
+Complete methods ignore stages they replace, even when those controls show other choices. QSMART, TGV, AutoQSM, NeXtQSM, iQSM, and iQSM+ handle background removal internally. iQSM and iQSM+ also replace field mapping. TGV takes single-echo phase directly, but uses field mapping for multi-echo input. Historical measurements do not validate QSMxT 10 or your acquisition.
 
 ## Adjust the brain mask
 
@@ -110,13 +114,16 @@ The mask defines the region included in reconstruction. To inspect its coverage 
 
 Start with **Robust threshold**. It uses Otsu thresholding of combined magnitude, then closes small gaps and fills holes. It adds no dilation or erosion. **HD-BET**, **BET**, and **BET + threshold union** remain alternatives in **Mask preset**.
 
-Threshold input, threshold method, BET fractional intensity, percentile cutoff, and pipeline presets remain advanced configuration options. They no longer occupy scanner controls. See the [technical reference](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/OpenReconTechnicalReference.md) for their keys and defaults.
+Threshold input, threshold method, BET fractional intensity, and percentile cutoff remain advanced configuration options. They no longer occupy scanner controls. See the [technical reference](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/OpenReconTechnicalReference.md) for their keys and defaults.
 
-## Enable two-pass QSM or multiecho motion correction
+## Enable two-pass QSM or echo motion alignment
 
 Set **Two-pass QSM** on to reconstruct a second time using a reliable phase-quality mask. QSMxT keeps the reliable mask unfilled and uses ordinary-pass values for its holes. The returned QSM map is the combined result. The intermediate single-pass map is not returned as the main QSM series.
 
-Set **Multiecho motion correction** on to align GRE echoes using magnitude anatomy and transform the complex signal. The first echo is the default reference. This is separate from the repetition correction in the dual-polarity EPI configuration. Both controls default to off.
+Set **Config** to **standard GRE + echo motion alignment** to align GRE echoes using magnitude anatomy and transform the complex signal. This configuration always enables alignment, even if advanced `motioncorrection` is false.
+
+The first echo is the default reference. Advanced `motionreference` can select `last` or a positive echo index. Standard GRE continues to accept advanced `motioncorrection` and `motionreference`. Echo alignment is separate from EPI repetition correction.
+The default Config remains standard GRE. Two-pass QSM defaults to off.
 
 ## Reference QSM to an anatomical region
 
@@ -148,12 +155,12 @@ These controls expose native 2D processing. The smoke tests use synthetic stacks
 ## Adjust homogeneity correction
 
 **Homogeneity correction** corrects magnitude intensity inhomogeneity for masks, combined magnitude, and SMWI.
-**Standard** is the default. It uses 7 mm smoothing and 3 local segmentation boxes per dimension.
-**Fine** uses the same 7 mm smoothing and 15 boxes per dimension for comparison.
+**Standard** is the default. It uses 7 mm smoothing and 3 tissue-estimation boxes per axis.
+**Fine** uses the same 7 mm smoothing and 15 tissue-estimation boxes per axis for comparison.
 SMWI uses the corrected combined magnitude image. CLEAR-SWI uses the individual echo magnitudes and applies its own receive-sensitivity correction independently of this control.
 The box count controls local segmentation, not the number of smoothing passes.
 Select **Off** to disable this magnitude correction. CLEAR-SWI retains its internal correction.
-Compare the profiles on your acquisition before choosing a setting.
+Fine has not been shown to improve 7 T reconstruction quality. Compare the profiles on your acquisition before choosing a setting.
 
 ## Citation
 Stewart, Ashley Wilton, Simon Daniel Robinson, Kieran O’Brien, et al. “QSMxT: Robust Masking and Artifact Reduction for Quantitative Susceptibility Mapping.” Magnetic Resonance in Medicine 87, no. 3 (2022): 1289–300. https://doi.org/10.1002/mrm.29048.
