@@ -122,13 +122,26 @@ Set **Multiecho motion correction** on to align GRE echoes using magnitude anato
 
 **QSM reference** defaults to `mean`. Set it to `none` to preserve the unreferenced map, or enter any packaged SynthSeg v1 region or FreeSurfer label id. Examples include `thalamus`, `left-thalamus`, `ventricles`, `4,43`, and `left-thalamus,right-caudate`.
 
-A region reference runs packaged SynthSeg on combined magnitude anatomy. QSMxT subtracts the mean susceptibility within the selected region and reconstructed support from the whole supported map. Unknown names, unsupported ids, and empty intersections fail. `ventricles` covers labels 4, 5, 14, 15, 43, and 44. `csf` is a different SynthSeg v2 label whose public weights are unavailable in this package. The [technical reference](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/OpenReconTechnicalReference.md#anatomical-reference-regions) lists every v1 region.
+A region reference runs packaged SynthSeg on combined magnitude anatomy.
+QSMxT subtracts the mean susceptibility within the selected region and
+reconstructed support from the whole supported map. Unknown names, unsupported
+ids, and empty intersections fail. `ventricles` covers labels 4, 5, 14, 15, 43,
+and 44. `csf` is a different SynthSeg v2 label whose public weights are unavailable
+in this package. The
+[technical reference](https://github.com/neurodesk/neurocontainers/blob/main/recipes/qsmxt/OpenReconTechnicalReference.md#anatomical-reference-regions)
+lists every v1 region.
 
 ## Process contiguous 2D stacks
 
 **V-SHARP grid** defaults to **Native**. **Finest voxel** and **Isotropic** select the working grid for background removal while retaining the acquired output geometry. **SWI unwrapping** defaults to **Laplacian**. Select **Slice Laplacian** for slice-wise SWI phase unwrapping independently of the QSM unwrap algorithm.
 
-Supply acquired `SliceThickness` and `MRAcquisitionType` in MRD image metadata or user parameters. Advanced `slicethicknessmm` and `acquisitiontype` can supply explicit overrides. The adapter retains measured slice spacing, validates consistent metadata, and rejects nonuniform 2D positions. QSMxT rejects gaps by default. Advanced `ignoreslicegap` explicitly overrides gap refusal and produces a warning. When thickness is absent, the adapter warns that gap checking is unavailable. Thickness is never inferred from affine spacing or slab field of view.
+Supply acquired `SliceThickness` and `MRAcquisitionType` in MRD image metadata or
+user parameters. Advanced `slicethicknessmm` and `acquisitiontype` can supply
+explicit overrides. The adapter retains measured slice spacing, validates
+consistent metadata, and rejects nonuniform 2D positions. QSMxT rejects gaps by
+default. Advanced `ignoreslicegap` explicitly overrides gap refusal and produces
+a warning. When thickness is absent, the adapter warns that gap checking is
+unavailable. Thickness is never inferred from affine spacing or slab field of view.
 
 These controls expose native 2D processing. The smoke tests use synthetic stacks and MNI anatomy. They do not establish scanner-specific reconstruction quality.
 
