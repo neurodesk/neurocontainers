@@ -1,12 +1,136 @@
 name: neurocommand
 version: 1.0.0
-
 tests:
-  - name: apptainer available
-    description: Verify the container launcher used by NeuroCommand is installed.
-    command: apptainer --version
-    expected_output_contains: apptainer version
-  - name: cvmfs client available
-    description: Verify the CVMFS client used for NeuroDesk modules is installed.
-    command: command -v cvmfs_config
-    expected_output_contains: cvmfs_config
+- name: apptainer available
+  description: Verify the container launcher used by NeuroCommand is installed.
+  command: apptainer --version
+  expected_output_contains: apptainer version
+- name: cvmfs client available
+  description: Verify the CVMFS client used for NeuroDesk modules is installed.
+  command: command -v cvmfs_config
+  expected_output_contains: cvmfs_config
+- name: clone and retrieve real annex content offline
+  description: Retrieve an annexed binary from a local dataset clone and require exact bytes and matching content keys
+  command: 'set -euo pipefail
+
+    task_dir=$(mktemp -d "${output_dir}/annex.XXXXXX")
+
+    task_dir=$(cd "$task_dir" && pwd)
+
+    datalad create "$task_dir/source"
+
+    python - "$task_dir/source/signal.bin" <<''PYTHON''
+
+    import sys
+
+    from pathlib import Path
+
+    Path(sys.argv[1]).write_bytes(bytes(range(256)) * 256)
+
+    PYTHON
+
+    # Force annex storage so this tests content retrieval, not plain Git data.
+
+    git -C "$task_dir/source" annex add --force-large signal.bin
+
+    (cd "$task_dir/source" && datalad save -m ''Add deterministic binary signal'' signal.bin)
+
+    source_key=$(git -C "$task_dir/source" annex lookupkey signal.bin)
+
+    test -n "$source_key"
+
+    datalad clone "$task_dir/source" "$task_dir/clone"
+
+    clone_key=$(git -C "$task_dir/clone" annex lookupkey signal.bin)
+
+    test "$source_key" = "$clone_key"
+
+    # A normal clone has the annex pointer, but has not fetched its content.
+
+    test ! -f "$task_dir/clone/signal.bin"
+
+    (cd "$task_dir/clone" && datalad get signal.bin)
+
+    cmp "$task_dir/source/signal.bin" "$task_dir/clone/signal.bin"
+
+    python - "$task_dir/clone/signal.bin" <<''PYTHON''
+
+    import sys
+
+    from pathlib import Path
+
+    data = Path(sys.argv[1]).read_bytes()
+
+    assert data == bytes(range(256)) * 256
+
+    assert len(data) == 65536
+
+    PYTHON
+
+    echo ''Offline annex clone and exact signal retrieval verified''
+
+    '
+  expected_output_contains: Offline annex clone and exact signal retrieval verified
+  expected_exit_code: 0
+  timeout: 120
+- name: build and execute a native nested SIF
+  description: Pack a minimal local rootfs and verify its marker and CPU architecture through nested unprivileged execution
+  command: "set -euo pipefail\ntask_dir=$(mktemp -d \"${output_dir}/nested.XXXXXX\")\nrootfs=\"$task_dir/rootfs\"\nmkdir -p\
+    \ \"$rootfs\"/{etc,proc,sys,dev,tmp,var/tmp,root}\n# Copy native executables and their resolved shared libraries. This\
+    \ uses\n# the tested image itself and cannot accidentally fetch another image.\nfor executable in /bin/sh \"$(command\
+    \ -v uname)\"; do\n  cp -L --parents \"$executable\" \"$rootfs\"\n  ldd \"$executable\" > \"$task_dir/ldd.txt\"\n  awk\
+    \ '/=> \\// {print $3} /^[[:space:]]*\\// {print $1}' \"$task_dir/ldd.txt\" > \"$task_dir/libraries.txt\"\n  test -s \"\
+    $task_dir/libraries.txt\"\n  while IFS= read -r library; do\n    test -f \"$library\"\n    cp -L --parents \"$library\"\
+    \ \"$rootfs\"\n  done < \"$task_dir/libraries.txt\"\ndone\nprintf 'nested native execution\\n' > \"$rootfs/etc/neurocontainers-nested\"\
+    \n# Outer Apptainer binds must not be propagated to the nested runtime.\nunset APPTAINER_BIND APPTAINER_BINDPATH SINGULARITY_BIND\
+    \ SINGULARITY_BINDPATH\nexport APPTAINER_CACHEDIR=\"$task_dir/cache\"\nexport APPTAINER_TMPDIR=\"$task_dir/tmp\"\nmkdir\
+    \ -p \"$APPTAINER_CACHEDIR\" \"$APPTAINER_TMPDIR\"\napptainer build --disable-cache --mksquashfs-args '-processors 2'\
+    \ \"$task_dir/nested.sif\" \"$rootfs\"\ntest -s \"$task_dir/nested.sif\"\napptainer sif list \"$task_dir/nested.sif\"\
+    \ > \"$task_dir/sif-list.txt\"\ngrep -q 'FS (Squashfs' \"$task_dir/sif-list.txt\"\n# Separate PID namespaces require unmasked\
+    \ /proc on the host runner.\napptainer exec --userns --contain --no-home --cleanenv --pwd / \"$task_dir/nested.sif\" /bin/sh\
+    \ -c \\\n  'IFS= read -r marker < /etc/neurocontainers-nested; printf \"%s\\n\" \"$marker\"; uname -m' > \"$task_dir/actual.txt\"\
+    \nprintf 'nested native execution\\n%s\\n' \"$(uname -m)\" > \"$task_dir/expected.txt\"\ncmp \"$task_dir/expected.txt\"\
+    \ \"$task_dir/actual.txt\"\necho 'Native nested SIF construction and execution verified'\n"
+  expected_output_contains: Native nested SIF construction and execution verified
+  timeout: 300
+- name: Real private CVMFS mount and Neurodesk module access
+  description: Use the candidate CVMFS client and official public key to mount the real Neurodesk catalog with a private writable
+    cache. Require actual module files and Lmod catalog listing; host FUSE is an explicit prerequisite and is never skipped.
+  command: "python - <<'PYTHON'\nimport hashlib\nimport os\nfrom pathlib import Path\nimport subprocess\nimport tempfile\n\
+    import time\nassert Path('/dev/fuse').exists(), 'Real CVMFS operation requires the native runner to expose /dev/fuse;\
+    \ feature is unverified without it'\nwith tempfile.TemporaryDirectory(prefix='neurocommand-cvmfs-') as scratch:\n    root=Path(scratch);mount=root/'mount';cache=root/'cache';mount.mkdir();cache.mkdir()\n\
+    \    config=root/'private.conf'\n    config.write_text('CVMFS_CACHE_BASE='+str(cache)+'\nCVMFS_RELOAD_SOCKETS='+str(cache)+'\n\
+    CVMFS_USYSLOG='+str(root/'client.log')+'\nCVMFS_CLAIM_OWNERSHIP=yes\nCVMFS_HTTP_PROXY=DIRECT\nCVMFS_TIMEOUT=20\nCVMFS_TIMEOUT_DIRECT=20\n\
+    ')\n    configs='/etc/cvmfs/default.conf:/etc/cvmfs/config.d/neurodesk.ardc.edu.au.conf:/etc/cvmfs/default.local:'+str(config)\n\
+    \    with (root/'mount.log').open('w') as log:\n        process=subprocess.Popen(['cvmfs2','-f','-o','config='+configs,'neurodesk.ardc.edu.au',str(mount)],stdout=log,stderr=subprocess.STDOUT)\n\
+    \        try:\n            deadline=time.monotonic()+120\n            while not os.path.ismount(mount) and process.poll()\
+    \ is None and time.monotonic()<deadline:time.sleep(.5)\n            assert os.path.ismount(mount),(process.poll(),(root/'mount.log').read_text(),(root/'client.log').read_text()\
+    \ if (root/'client.log').exists() else '')\n            modules=mount/'neurodesk-modules';assert modules.is_dir()\n  \
+    \          module=next(modules.rglob('*.lua'));payload=module.read_bytes();assert len(payload)>32 and b'\0' not in payload\n\
+    \            env=dict(os.environ,MODULEPATH=str(modules))\n            result=subprocess.run(['bash','-c','source /usr/share/lmod/lmod/init/bash;\
+    \ module --terse avail'],env=env,capture_output=True,text=True,check=True,timeout=90)\n            assert (result.stdout+result.stderr).strip()\n\
+    \            print('Native CVMFS mounted signed Neurodesk catalog and read module',str(module.relative_to(mount)),hashlib.sha256(payload).hexdigest(),flush=True)\n\
+    \        finally:\n            unmount=None\n            if os.path.ismount(mount):unmount=subprocess.run(['fusermount3','-u',str(mount)],capture_output=True,text=True)\n\
+    \            if process.poll() is None:process.terminate()\n            try:process.wait(timeout=15)\n            except\
+    \ subprocess.TimeoutExpired:process.kill();process.wait(timeout=15)\n            if unmount is not None:assert unmount.returncode==0,(unmount.stdout,unmount.stderr)\n\
+    print('Real native CVMFS and Neurodesk module catalog operation verified')\nPYTHON\n"
+  expected_output_contains: Real native CVMFS and Neurodesk module catalog operation verified
+  expected_exit_code: 0
+  timeout: 300
+test_data:
+  output_dir: test_output/neurocommand
+setup:
+  script: 'set -e
+
+    mkdir -p ${output_dir}
+
+    '
+env_setup: 'export GIT_AUTHOR_NAME="Neurocommand Test"
+
+  export GIT_AUTHOR_EMAIL="neurocommand@example.invalid"
+
+  export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME"
+
+  export GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
+
+  '
