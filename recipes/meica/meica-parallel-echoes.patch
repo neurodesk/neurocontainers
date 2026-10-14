@@ -1,0 +1,24 @@
+--- a/meica.py
++++ b/meica.py
+@@ -231,10 +231,10 @@
+ if para_mode:
+     para_echo_indicator = "&"
+     omp_threads_line = (
+-        f"OMP_NUM_THREADS={max(1, round(int(options.cpus) / len(options.tes)))}"
++        f"OMP_NUM_THREADS={max(1, round(int(options.cpus) / len(tes)))}"
+     )
+     omp_threads_line_dspk = (
+-        f"OMP_NUM_THREADS={min(4, max(1, round(int(options.cpus) / len(options.tes))))}"
++        f"OMP_NUM_THREADS={min(4, max(1, round(int(options.cpus) / len(tes))))}"
+     )
+ omp_threads_line_dspk_max = f"OMP_NUM_THREADS={min(int(options.cpus), 4)}"
+ omp_threads_half = max(round(float(options.cpus) / 2), 1)
+@@ -994,7 +994,7 @@
+         % dsin
+     )
+     sl.append(
+-        "%s 3dAllineate -final %s -%s -float -1Dmatrix_apply %s_vrwmat.aff12.1D -base eBvrmask%s -input  %s_ts+orig -prefix ./%s_in%s"
++        "%s meica-allineate-chunks -final %s -%s -float -1Dmatrix_apply %s_vrwmat.aff12.1D -base eBvrmask%s -input  %s_ts+orig -prefix ./%s_in%s"
+         % (
+             omp_threads_line,
+             align_interp_final,

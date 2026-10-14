@@ -87,6 +87,8 @@ build:
         - mkdir -p /opt/meica/me-ica
         - tar -xzf {{ get_file("meica_source") }} -C /opt/meica/me-ica --strip-components=1
         - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_skullstrip_patch") }}
+        - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_parallel_echoes_patch") }}
+        - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_tedana_threads_patch") }}
         - tar -xzf {{ get_file("meica_afni_runtime") }} -C /opt/meica/me-ica
         - python3 -m venv /opt/meica/venv
         - /opt/meica/venv/bin/pip install --no-cache-dir --upgrade pip
@@ -109,6 +111,8 @@ build:
         - chmod +x /usr/local/bin/meica.py
         - cp {{ get_file("meica_skullstrip_fallback") }} /usr/local/bin/meica-skullstrip-fallback
         - chmod +x /usr/local/bin/meica-skullstrip-fallback
+        - cp {{ get_file("meica_allineate_chunks") }} /usr/local/bin/meica-allineate-chunks
+        - chmod +x /usr/local/bin/meica-allineate-chunks
         - cp {{ get_file("meica_openrecon") }} /opt/code/python-ismrmrd-server/meica.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
@@ -199,6 +203,12 @@ files:
     filename: meica-skullstrip-fallback
   - name: meica_skullstrip_patch
     filename: meica-skullstrip-fallback.patch
+  - name: meica_allineate_chunks
+    filename: meica-allineate-chunks
+  - name: meica_parallel_echoes_patch
+    filename: meica-parallel-echoes.patch
+  - name: meica_tedana_threads_patch
+    filename: meica-tedana-threads.patch
   - name: meica_openrecon
     filename: meica.py
   - name: OpenReconLabel.json

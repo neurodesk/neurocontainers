@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Run 3dAllineate -1Dmatrix_apply over time chunks in parallel.
+# 3dAllineate's OpenMP stops scaling at about 3 threads, so ME-ICA's per-echo
+# OMP_NUM_THREADS budget is spent on single-threaded chunk processes instead.
+set -euo pipefail
+
+input=""
+matrix=""
+prefix=""
+passthrough=()
+arguments=("$@")
+
+while (( $# > 0 )); do
+    case "$1" in
+        -input)
+            input="$2"
+            shift 2
+            ;;
+        -1Dmatrix_apply)
+            matrix="$2"
+            shift 2
+            ;;
+        -prefix)
+            prefix="$2"
+            shift 2
+            ;;
+        *)
+            passthrough+=("$1")
+            shift
+            ;;
+    esac
+done
+
+jobs="${OMP_NUM_THREADS:-$(nproc)}"
+
+if [[ -z "${input}" || -z "${matrix}" || -z "${prefix}" || "${input}${matrix}" == *[\[\{]* ]]; then
+    exec 3dAllineate "${arguments[@]}"
+fi
+
+volumes="$(3dinfo -nt "${input}")"
+matrix_rows="$(grep -cv '^[[:space:]]*\(#\|$\)' "${matrix}")"
+if (( jobs < 2 || volumes < 2 || matrix_rows != volumes )); then
+    exec 3dAllineate "${arguments[@]}"
+fi
+(( jobs > volumes )) && jobs="${volumes}"
+
+workdir="$(mktemp -d "./meica-allineate.XXXXXX")"
+trap 'rm -rf -- "${workdir}"' EXIT
+
+chunk_size=$(( (volumes + jobs - 1) / jobs ))
+pids=()
+parts=()
+for (( first = 0; first < volumes; first += chunk_size )); do
+    last=$(( first + chunk_size - 1 ))
+    (( last >= volumes )) && last=$(( volumes - 1 ))
+    part="${workdir}/chunk_$(printf '%06d' "${first}").nii"
+    OMP_NUM_THREADS=1 3dAllineate "${passthrough[@]}" \
+        -1Dmatrix_apply "${matrix}{${first}..${last}}" \
+        -input "${input}[${first}..${last}]" \
+        -prefix "${part}" &
+    pids+=("$!")
+    parts+=("${part}")
+done
+
+status=0
+for pid in "${pids[@]}"; do
+    wait "${pid}" || status=$?
+done
+(( status == 0 )) || exit "${status}"
+
+3dTcat -prefix "${prefix}" "${parts[@]}"
