@@ -1,5 +1,5 @@
 name: qsmxt
-version: "9.22.0"
+version: "10.0.0"
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
@@ -21,7 +21,10 @@ variables:
   openrecon_python_tools_commit: "17fe6fbf1bb645112e2ad0023eb4f42afb36421e"
   openrecon_siemens_commit: "055eefc09dfa77fbf11fff85979dea9ef2879ba5"
   openrecon_ismrmrd_version: "1.14.2"
-  upstream_version: "9.22.0"
+  upstream_version: "10.0.0"
+  qsmxt_x86_64_sha256: 16ca20256672da4b5234791973de3ba83289650add2bcbd13c584c7a8cb15605
+  qsmxt_aarch64_url: https://github.com/QSMxT/QSMxT/releases/download/v10.0.0/qsmxt-v10.0.0-aarch64-unknown-linux-gnu.tar.gz
+  qsmxt_aarch64_sha256: 7e8a644330cade07632f9b7fba7b8d14fbb83e88e75cacb796f9920e99e48b60
   mni_template_sha256: 0585cd056bf5ccfb8bf97a5f6a66082d4e7caad525718fc11e40d80a827fcb92
   model_revision: 31b08225f3adf2d732dafad4e3c5a94c350ef51b
   ep3d_preprocessing_commit: 8062dc1a6e368f3d1c329c50dbea42c8fdc5c3e8
@@ -42,13 +45,25 @@ auto_update:
   method: sources
   sources:
   - id: qsmxt
-    method: github_release
+    method: github_release_asset
+    asset: qsmxt-v{version}-x86_64-unknown-linux-gnu.tar.gz
     repo: QSMxT/QSMxT
     version_regex: v?(?P<version>\d+\.\d+\.\d+)
     target:
       variable: upstream_version
       value: version
       fulltest_variable: upstream_version
+      variables:
+        qsmxt_x86_64_sha256: sha256
+  - id: qsmxt_aarch64
+    dependency: true
+    method: github_release_asset
+    repo: QSMxT/QSMxT
+    asset: qsmxt-v{version}-aarch64-unknown-linux-gnu.tar.gz
+    target:
+      variable: qsmxt_aarch64_url
+      variables:
+        qsmxt_aarch64_sha256: sha256
   - id: openrecon_ismrmrd
     dependency: true
     method: github_release
@@ -125,7 +140,7 @@ auto_update:
 
 build:
   kind: neurodocker
-  # QSMxT v9 is a single self-contained Rust binary (https://github.com/QSMxT/QSMxT).
+  # QSMxT v10 is a single self-contained Rust binary (https://github.com/QSMxT/QSMxT).
   # The release archive bundles a pinned dcm2niix for DICOM -> BIDS conversion.
   # ubuntu:24.04 provides glibc >= 2.39, which the prebuilt binary requires.
   base-image: ubuntu:24.04
@@ -218,6 +233,9 @@ build:
         - mkdir -p /tmp/share/qsmxt_openrecon /tmp/share/qsmxt_models
         - chmod 1777 /tmp/share /tmp/share/qsmxt_openrecon /tmp/share/qsmxt_models
 
+    - run:
+        - install -m 644 {{ get_file("verify_v10_runtime.py") }} /opt/qsmxt/verify_v10_runtime.py
+
     - boutique:
         name: qsmxt
         description: Inspect the installed QSMxT version or command help.
@@ -306,7 +324,7 @@ readme: |-
 
   QSMxT is an end-to-end software toolbox for Quantitative Susceptibility Mapping
   (QSM). This container packages upstream QSMxT {{ context.upstream_version }}.
-  Version 9 is a ground-up reimplementation in Rust: a single
+  QSMxT is implemented in Rust as a single
   self-contained binary that reconstructs QSM from BIDS datasets, converts DICOMs
   to BIDS, and includes an interactive TUI. A pinned dcm2niix is bundled.
 
@@ -336,6 +354,8 @@ readme: |-
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzUlEQVRIS+2WbUxbZRTHf+Wl0BVBNssKwWyZQBiic2wRjMwo4mLIRBxxuCiMl4QXI8QSWMAgJpIOp58GsiUkBBgZYEwMRLYhGEfc1mbyokF5iwYmiqvAgHYgg9J7vb06oHZMol93Pz7neZ7fOf/zf06uIiPTLLLJz8MDXlhUsmTe5AFpm+I+4N/E2lCipaVZTDeMzM2NoFJp0PjtR6sNdejBhGWEwamvEcQVwjTP8LDPo048J4AoChgNxxkerEWUDq7/tP6R6J9rwnpLwSljMkPTVxziD3pqeXZnCofDilC6quSYE+Dq5bcZHqolMzOT3NxcgoKCmJ2dpaWlhaKiIlTiNnyU2zFZB6mqqiIhIQGr1Up/fz+pqamYTcucPvQTCoXCGXBzup+Wzw6g0+koKCiQIQaDQZJGS1lZGQEBAURHRyMIAnV1dajVanJycuTLoqKi6OjoIHZHFsl7Tq5W5lBB97X3GBz4mMnJSVJSUujsNPBI8BEmf/8G89z3jI2NkZ2dTVtbmxTrpLGxkdraWjRbdsiQyYXrnIi9yi7fiLsDOr84io/3L/T19eEhvao9e48Tsa8Yi2WMT5ufoKamhpmZGQoLC8nKypIlS0tLo6urC7W7L1tVAXx4sHtVHqceXPj8ECEhLjQ3N+Pv78/TB04RujsVm22Juho/ysvL8fPzIyMjQ84wKSmJ0tJSFhcXKSkpob29Hd1TjUQGvrJWwZu5a6Pi4vk38FJfp7e3F09PTyL2F/Jk5DuSPKOca9grV2CXr7i4mOdDjnHpxwbJogJxcXE0NDSQmJjIrwPzfPTy5TVA4JdDq7PIcraKhXNn5EuSk5NpN1zDK/41lga+RejvlnuQnp4uN9Mt0B/Px8NY+OoK4m2pQqnpo6OjvH9Cz46LTWsA5YUfVgHC6AgrbyXKLsrPz5elMBqNslx6vR6NRkNMTIzsInu2PT09mEwmQkNDaW1tlR3VMTyA75kP7g6wr66c1iO0NckWzcvLIzg4GKVSKbvFDp13c2Fleob6+npZGm9vb8bHx6moqKCyshJ1dgqqhBc3BohSdrbqkwjnPwHbXy+5urqa8PBwYmNjsQVsZ3niBuLibcex4OaK6tWXUB874rCuWC/R+oh4y4w40Iet5SxuQ9/Jvre7JT4+HjFkF1teP4xgtiBM3cTloa24P7YbV80251m0EeDOTnHeglV3FCZ+djisjNrHA+/qULi63HOgbliBQzW/jSNcasNdeq1ertP88bd0dohb0M7/D7hzg1rKVus+zNTyP/S/B2JTFdwHbPq35b/04E9NtswA67fKiwAAAABJRU5ErkJggg==
 
 files:
+  - name: verify_v10_runtime.py
+    filename: verify_v10_runtime.py
   - name: MNI152_T1_2mm.nii.gz
     url: https://git.fmrib.ox.ac.uk/fsl/data_standard/-/raw/f6db877e56047a1ad91fd9b28d38654376087029/MNI152_T1_2mm.nii.gz
     sha256: "{{ context.mni_template_sha256 }}"
@@ -441,8 +461,10 @@ files:
     filename: OpenReconREADME.md
   - name: qsmxt_x86_64_tar_gz
     url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.upstream_version }}/qsmxt-v{{ context.upstream_version }}-x86_64-unknown-linux-gnu.tar.gz
+    sha256: "{{ context.qsmxt_x86_64_sha256 }}"
   - name: qsmxt_aarch64_tar_gz
-    url: https://github.com/QSMxT/QSMxT/releases/download/v{{ context.upstream_version }}/qsmxt-v{{ context.upstream_version }}-aarch64-unknown-linux-gnu.tar.gz
+    url: "{{ context.qsmxt_aarch64_url }}"
+    sha256: "{{ context.qsmxt_aarch64_sha256 }}"
   - name: models.sha256
     filename: models.sha256
   - name: bfrnet.onnx

@@ -1,5 +1,6 @@
 name: qsmxt
-version: "9.22.0"
+version: "10.0.0"
+upstream_version: "10.0.0"
 
 test_data:
   output_dir: test_output
@@ -40,7 +41,7 @@ setup:
     if "--mask" not in sys.argv:
         raise SystemExit("qsmxt OpenRecon must pass --mask")
     mask_index = sys.argv.index("--mask")
-    expected_mask = "magnitude,hd-bet,close:1,fill-holes:0"
+    expected_mask = "magnitude,threshold:otsu,close:1,fill-holes:0"
     if mask_index + 1 >= len(sys.argv) or sys.argv[mask_index + 1] != expected_mask:
         raise SystemExit(f"qsmxt OpenRecon should pass --mask {expected_mask}")
 
@@ -875,4 +876,12 @@ tests:
       print("3D EPI dual polarity motion correction, phase matching, averaging and QSMxT verified")
       PYCODE
 
-upstream_version: 9.22.0
+  - name: native QSMxT 10 reconstruction features
+    description: Exercise iLSQR, two-pass, echo motion, anisotropic slice SWI, gap refusal, and ROI reference arithmetic
+    command: python /opt/qsmxt/verify_v10_runtime.py
+    expected_output_contains: Native named ventricular and numeric union references subtract the actual ROI mean
+
+  - name: offline SynthSeg anatomy and ventricular labels
+    description: Run packaged SynthSeg v1 with a 128-voxel crop on MNI anatomy, independently of custom segmentation reference tests
+    command: python /opt/qsmxt/verify_v10_runtime.py --segmentation
+    expected_output_contains: Packaged offline SynthSeg v1 produced all 32 labels including ventricles on MNI anatomy
