@@ -70,6 +70,7 @@ build:
     - git-annex
     - tree
     - sudo
+    - util-linux
   - condition: arch == "aarch64"
     install:
     - build-essential
@@ -179,7 +180,8 @@ deploy:
   path:
   - /opt/miniconda/bin
 apptainer_args:
-- --fuse
+- --bind
+- /dev/fuse
 readme: '----------------------------------
 
   ## neurocommand/{{ context.version }} ##
@@ -190,14 +192,16 @@ readme: '----------------------------------
   NeuroDesk software ecosystem via CVMFS.
 
 
-  CVMFS is automatically mounted and the module system is initialized at startup.
+  CVMFS access requires a host FUSE device and suitable mount permissions. Private mounts inside a container use unprivileged
+  user and mount namespaces, with a writable private cache; see https://cvmfs.readthedocs.io/en/2.14/cpt-configure/. The module
+  system is included.
 
 
   ```bash
 
   # Run with FUSE support (required for CVMFS)
 
-  apptainer run --fuse neurocommand.sif
+  apptainer exec --bind /dev/fuse neurocommand.sif unshare --user --map-root-user --mount --fork /bin/bash
 
 
   # List available modules

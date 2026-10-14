@@ -94,13 +94,15 @@ tests:
   expected_output_contains: Native nested SIF construction and execution verified
   timeout: 300
 - name: Real private CVMFS mount and Neurodesk module access
-  description: Use the candidate CVMFS client and official public key to mount the real Neurodesk catalog with a private writable
-    cache. Require actual module files and Lmod catalog listing; host FUSE is an explicit prerequisite and is never skipped.
-  command: "python - <<'PYTHON'\nimport hashlib\nimport os\nfrom pathlib import Path\nimport subprocess\nimport tempfile\n\
-    import time\n\nassert Path('/dev/fuse').exists(), 'Real CVMFS operation requires the native runner to expose /dev/fuse'\n\
-    with tempfile.TemporaryDirectory(prefix='neurocommand-cvmfs-') as scratch:\n    root=Path(scratch);mount=root/'mount';cache=root/'cache';mount.mkdir();cache.mkdir()\n\
-    \    config=root/'private.conf'\n    config.write_text('\\n'.join([\n        'CVMFS_CACHE_BASE='+str(cache), 'CVMFS_RELOAD_SOCKETS='+str(cache),\n\
-    \        'CVMFS_USYSLOG='+str(root/'client.log'), 'CVMFS_CLAIM_OWNERSHIP=yes',\n        'CVMFS_HTTP_PROXY=DIRECT', 'CVMFS_TIMEOUT=20',\
+  description: Use a private unprivileged user/mount namespace, as supported by CVMFS on modern Linux, for the candidate client
+    and official signed Neurodesk catalog. Require actual module files and Lmod listing; FUSE and namespace capability are
+    never skipped.
+  command: "unshare --user --map-root-user --mount --fork python - <<'PYTHON'\nimport hashlib\nimport os\nfrom pathlib import\
+    \ Path\nimport subprocess\nimport tempfile\nimport time\n\nassert Path('/dev/fuse').exists(), 'Real CVMFS operation requires\
+    \ the native runner to expose /dev/fuse'\nwith tempfile.TemporaryDirectory(prefix='neurocommand-cvmfs-') as scratch:\n\
+    \    root=Path(scratch);mount=root/'mount';cache=root/'cache';mount.mkdir();cache.mkdir()\n    config=root/'private.conf'\n\
+    \    config.write_text('\\n'.join([\n        'CVMFS_CACHE_BASE='+str(cache), 'CVMFS_RELOAD_SOCKETS='+str(cache),\n   \
+    \     'CVMFS_USYSLOG='+str(root/'client.log'), 'CVMFS_CLAIM_OWNERSHIP=yes',\n        'CVMFS_HTTP_PROXY=DIRECT', 'CVMFS_TIMEOUT=20',\
     \ 'CVMFS_TIMEOUT_DIRECT=20', ''\n    ]))\n    configs='/etc/cvmfs/default.conf:/etc/cvmfs/config.d/neurodesk.ardc.edu.au.conf:/etc/cvmfs/default.local:'+str(config)\n\
     \    with (root/'mount.log').open('w') as log:\n        process=subprocess.Popen(['cvmfs2','-f','-o','config='+configs,'neurodesk.ardc.edu.au',str(mount)],stdout=log,stderr=subprocess.STDOUT)\n\
     \        try:\n            deadline=time.monotonic()+120\n            while not os.path.ismount(mount) and process.poll()\
