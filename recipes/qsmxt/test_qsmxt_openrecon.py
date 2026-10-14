@@ -399,6 +399,22 @@ def test_select_magnitude_phase_pairs_matches_requested_distortion_variant():
     assert [int(group["key"][0]) for group in non_corrected[0]["groups"]] == [1, 2]
 
 
+def test_default_selects_nd_when_preferred_input_is_missing(caplog):
+    images = [image for image in _dual_input_images() if image.image_series_index in (1, 2)]
+    settings = qsmxt._settings_from_config({}, FakeMetadata())
+    with caplog.at_level(logging.WARNING):
+        pairs = qsmxt._select_magnitude_phase_pairs(
+            qsmxt._group_images_by_series(images), settings["input_series"],
+        )
+    assert len(pairs) == 1
+    assert pairs[0]["variant"] == "non-distortion-corrected"
+    assert pairs[0]["short_label"] == "ND"
+    assert [group["name"] for group in pairs[0]["groups"]] == ["gre_qsm_ND", "gre_qsm_ND"]
+    assert "No magnitude image series found for distortion-corrected" in caplog.text
+    assert "gre_qsm_ND" in caplog.text
+    assert settings["input_series"] == "distortion-corrected"
+
+
 def test_select_magnitude_phase_pairs_rejects_incomplete_both_selection():
     groups = qsmxt._group_images_by_series(_input_images())
 
