@@ -17,7 +17,7 @@ An [example Siemens 3 T GRE protocol](https://github.com/neurodesk/neurocontaine
 With the QSMxT package installed in OpenRecon:
 
 1. Select **qsmxt** as the reconstruction package. Leave **Config** set to **standard GRE**.
-2. Set **Input images** to match your acquisition. The default is **Distortion corrected**.
+2. Set **Input images** to match your acquisition. The default is **Prefer distortion corrected**.
 3. Leave **Pipeline preset** on **Custom algorithm controls**. Leave **Dipole inversion** set to **RTS**, **Unwrap** to **ROMEO**, and **Background** to **V-SHARP**.
 4. Leave **Mask preset** on **Robust threshold** to threshold the combined magnitude image.
 5. Leave **Output maps** on **QSM**. The source magnitude and phase series are always returned to the scanner database.
@@ -29,9 +29,11 @@ With the QSMxT package installed in OpenRecon:
 
 | Option | When to use it |
 | --- | --- |
-| Distortion corrected | Process the corrected magnitude and phase images. This is the default. |
+| Prefer distortion corrected | Prefer the corrected pair; use a complete ND pair if a preferred component is missing. This is the default. |
 | Not distortion corrected (ND) | Process the magnitude and phase series marked `ND`. |
 | Both | Compare corrected and uncorrected results. Both magnitude/phase pairs must be available. |
+
+Series without a separate `ND` name token use the preferred slot, including unmarked acquisitions. This naming convention does not verify physical distortion correction. The default falls back only when a preferred magnitude or phase component is missing. Ambiguous inputs, incompatible echoes or geometry, and reconstruction errors do not trigger fallback. Explicit ND and Both remain strict. Fallback results carry `ND` labels.
 
 **Both** returns separate `DC` and `ND` result series and takes roughly twice as long as processing one pair. If reconstruction reports missing input images, check that both magnitude and unfiltered phase are available for the selected correction setting.
 

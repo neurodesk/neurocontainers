@@ -415,6 +415,117 @@ def test_default_selects_nd_when_preferred_input_is_missing(caplog):
     assert settings["input_series"] == "distortion-corrected"
 
 
+@pytest.mark.parametrize("preferred_series", [3, 4])
+def test_incomplete_preferred_pair_falls_back_without_mixing(preferred_series):
+    images = [image for image in _dual_input_images()
+              if image.image_series_index in (1, 2, preferred_series)]
+    pair = qsmxt._select_magnitude_phase_pairs(
+        qsmxt._group_images_by_series(images), "distortion-corrected",
+    )[0]
+    assert pair["short_label"] == "ND"
+    assert [int(group["key"][0]) for group in pair["groups"]] == [1, 2]
+
+
+def test_default_nd_fallback_writes_selected_magnitude(tmp_path):
+    images = [image for image in _dual_input_images() if image.image_series_index in (1, 2)]
+    settings = qsmxt._settings_from_config({}, FakeMetadata())
+    result = qsmxt.write_bids_dataset(images, FakeMetadata(), tmp_path / "bids", settings)
+    assert len(result["magnitude_paths"]) == 2
+    np.testing.assert_allclose(nib.load(result["magnitude_paths"][0]).get_fdata(), 1001)
+    assert settings["input_series"] == "distortion-corrected"
+
+
+@pytest.mark.parametrize("selection,indices", [
+    ("both", (1, 2)), ("both", (3, 4)),
+    ("non-distortion-corrected", (3, 4)), ("distortion-corrected", (3,)),
+])
+def test_missing_pairs_remain_strict(selection, indices, caplog):
+    images = [image for image in _dual_input_images() if image.image_series_index in indices]
+    with pytest.raises(ValueError, match="No (magnitude|phase) image series"):
+        qsmxt._select_magnitude_phase_pairs(qsmxt._group_images_by_series(images), selection)
+    assert "falling back" not in caplog.text
+
+
+def test_ambiguous_preferred_pair_does_not_fall_back(caplog):
+    images = _dual_input_images()
+    images.extend([
+        _image(5, 1, "other_M", np.ones((2, 3, 4))),
+        _image(6, 1, "other_P", np.ones((2, 3, 4)), image_type=ismrmrd.IMTYPE_PHASE),
+    ])
+    with pytest.raises(ValueError, match="Ambiguous distortion-corrected"):
+        qsmxt._select_magnitude_phase_pairs(
+            qsmxt._group_images_by_series(images), "distortion-corrected",
+        )
+    assert "falling back" not in caplog.text
+
+
+def test_preferred_phase_inference_runs_before_nd_fallback():
+    images = _dual_input_images()
+    for image in images:
+        if image.image_series_index == 4:
+            header = image.getHead()
+            header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+            image.setHead(header)
+    pair = qsmxt._select_magnitude_phase_pairs(
+        qsmxt._group_images_by_series(images), "distortion-corrected",
+    )[0]
+    assert pair["short_label"] == "DC"
+    assert {int(group["key"][0]) for group in pair["groups"]} == {3, 4}
+
+
+@pytest.mark.parametrize("processed_nd", [False, True])
+def test_processed_products_cannot_supply_fallback_components(processed_nd):
+    images = _dual_input_images()
+    for image in images:
+        if image.image_series_index == 4 or (processed_nd and image.image_series_index == 2):
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            meta["SequenceDescription"] = "gre_Romeo_P" + (
+                "_ND" if image.image_series_index == 2 else ""
+            )
+            image.attribute_string = meta.serialize()
+    groups = qsmxt._group_images_by_series(images)
+    if processed_nd:
+        with pytest.raises(ValueError, match="No phase.*non-distortion-corrected"):
+            qsmxt._select_magnitude_phase_pairs(groups, "distortion-corrected")
+    else:
+        assert qsmxt._select_magnitude_phase_pairs(groups, "distortion-corrected")[0]["short_label"] == "ND"
+
+
+@pytest.mark.parametrize("failure", ["echo", "geometry"])
+def test_invalid_preferred_pair_does_not_use_valid_nd(tmp_path, failure, caplog):
+    images = _dual_input_images()
+    if failure == "echo":
+        images = [image for image in images
+                  if not (image.image_series_index == 4 and image.image_index == 2)]
+    else:
+        for image in images:
+            if image.image_series_index == 4:
+                header = image.getHead()
+                _set_header_vector(header, "position", [5.0, 0.0, 0.0])
+                image.setHead(header)
+    settings = qsmxt._settings_from_config({}, FakeMetadata())
+    with pytest.raises(ValueError, match="[Ee]cho|[Gg]eometry|[Aa]ffine"):
+        qsmxt.write_bids_dataset(images, FakeMetadata(), tmp_path / "bids", settings)
+    assert "falling back" not in caplog.text
+
+
+def test_native_failure_does_not_retry_nd(tmp_path, monkeypatch):
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    attempted = []
+
+    def fail_native(bids_dir, output_dir, settings):
+        attempted.append(bids_dir.parent.name)
+        raise RuntimeError("native reconstruction failed")
+
+    monkeypatch.setattr(qsmxt, "_run_qsmxt", fail_native)
+    connection = FakeConnection(_dual_input_images())
+    qsmxt.process(connection, {}, FakeMetadata())
+    assert connection.closed
+    assert attempted == ["dc"]
+    assert connection.sent_batches == []
+    assert "native reconstruction failed" in connection.logs[0][1]
+
+
 def test_select_magnitude_phase_pairs_rejects_incomplete_both_selection():
     groups = qsmxt._group_images_by_series(_input_images())
 

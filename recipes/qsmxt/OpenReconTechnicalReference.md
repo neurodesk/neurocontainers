@@ -10,17 +10,23 @@ the magnitude and phase series, writes a temporary BIDS MEGRE dataset, runs the
 QSMxT v9 Rust binary, and sends selected derivatives back as derived MRD image
 series.
 
-The **Input images** control selects distortion-corrected images, images marked
-`ND` (not distortion corrected), or both. Distortion-corrected input is the
-default. **Both** runs QSMxT once per magnitude/phase pair and returns distinct
+The **Input images** control defaults to **Prefer distortion corrected**.
+It selects the preferred magnitude and phase pair, or a complete `ND` pair when
+a preferred component is missing. Explicit ND selection remains strict.
+**Both** runs QSMxT once per magnitude/phase pair and returns distinct
 `DC` and `ND` output series. It takes roughly twice as long as processing one
 pair.
 
 The wrapper classifies phase data from MRD image type metadata, DICOM image type
 metadata, or source series names such as `phase`, `pha`, or `_Pha`. It recognizes
 `ND` only as a separate, case-insensitive name token, so magnitude and phase are
-always paired within the same distortion-correction variant. A missing or
-ambiguous requested pair fails explicitly instead of selecting by arrival order.
+always paired within the same distortion-correction variant. Unmarked series use
+the preferred slot; names do not verify physical correction. Only missing
+components permit default selection to fall back, after processed-product
+filtering and phase inference. Ambiguity, echo alignment, geometry, and native
+reconstruction errors propagate without retry. Both requires both complete
+pairs. A successful fallback logs the missing component and selected ND source
+names, and returns ND-labelled results without changing the requested setting.
 
 Within each correction variant, source selection excludes the known processed
 series suffixes `Romeo_Mask`, `Romeo_P`, `Romeo_B0`,
