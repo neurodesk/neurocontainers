@@ -151,17 +151,18 @@
       "information": { "en": "Send the label map in a source-geometry 2D segmentation-header format so scanner post-processing treats it as a segmentation stream. When disabled, the label map keeps the source image header identity and post-processing stays on the original stream." }
     },
     {
-      "id": "ssreslice",
-      "label": { "en": "Label map reformats" },
-      "type": "choice",
-      "values": [
-        { "id": "none", "name": { "en": "None" } },
-        { "id": "sagittal", "name": { "en": "Sagittal" } },
-        { "id": "coronal", "name": { "en": "Coronal" } },
-        { "id": "both", "name": { "en": "Sagittal and coronal" } }
-      ],
-      "default": "none",
-      "information": { "en": "Send additional sagittal, coronal, or both 3D reformats of the SynthSeg and Desikan label maps." }
+      "id": "ssreslicesagittal",
+      "label": { "en": "Sagittal reformat" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Send an additional sagittal 3D reformat of the label map." }
+    },
+    {
+      "id": "ssreslicecoronal",
+      "label": { "en": "Coronal reformat" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Send an additional coronal 3D reformat of the label map." }
     },
     {
       "id": "ssquantage",

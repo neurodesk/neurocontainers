@@ -106,7 +106,7 @@ for header in (False, True):
         config = {'parameters': dict(
             synthseg.OPENRECON_DEFAULTS,
             ssparc=choice, sendoriginal=True, sssegmentheader=header,
-            ssreslice='both',
+            ssreslicesagittal=True, ssreslicecoronal=True,
         )}
         before = len(inferences)
         outputs = synthseg.process_image(images, None, config, None)

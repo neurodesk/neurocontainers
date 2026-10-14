@@ -248,7 +248,7 @@ def whole_years(birth: date, on: date) -> int:
     return on.year - birth.year - ((on.month, on.day) < (birth.month, birth.day))
 
 
-def resolve_subject(metadata, gui_age: int, gui_sex: str, today: date | None = None) -> Subject:
+def resolve_subject(metadata, gui_age: int, gui_sex: str) -> Subject:
     """Resolve age and sex from the MRD XML header, overridden by GUI values.
 
     ``gui_age`` 0 and ``gui_sex`` "header" defer to the header. The header may
@@ -260,8 +260,10 @@ def resolve_subject(metadata, gui_age: int, gui_sex: str, today: date | None = N
         age, age_source = int(gui_age), "GUI"
     else:
         birth = _header_date(getattr(subject_info, "patientBirthdate", None))
-        on = _header_date(getattr(study_info, "studyDate", None)) or today or date.today()
-        age = whole_years(birth, on) if birth is not None and birth <= on else None
+        # Without a study date the acquisition age is unknown; the processing
+        # date would overstate it whenever an old exam is reprocessed.
+        on = _header_date(getattr(study_info, "studyDate", None))
+        age = whole_years(birth, on) if birth is not None and on is not None and birth <= on else None
         age_source = "header" if age is not None else "unknown"
     if gui_sex in ("female", "male"):
         sex, sex_source = gui_sex, "GUI"

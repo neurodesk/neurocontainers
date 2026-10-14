@@ -1,5 +1,4 @@
 import copy
-from datetime import date
 import json
 import math
 import os
@@ -233,14 +232,14 @@ def _header(birth=None, gender=None, study=None):
     (_header("1960-05-17", "F", "2024-05-16"), 0, "header", (63, "female", "header", "header")),
     (_header("1960-05-17", "M", "2024-05-17"), 0, "header", (64, "male", "header", "header")),
     (_header("1960-05-17", "O", "2024-05-17"), 0, "header", (64, None, "header", "unknown")),
-    (_header("1960-05-17", "F", None), 0, "header", (65, "female", "header", "header")),
+    (_header("1960-05-17", "F", None), 0, "header", (None, "female", "unknown", "header")),
     (_header("1960-05-17", "F", "2024-05-17"), 30, "male", (30, "male", "GUI", "GUI")),
     (_header(None, None, "2024-05-17"), 0, "header", (None, None, "unknown", "unknown")),
     (None, 0, "header", (None, None, "unknown", "unknown")),
     (None, 41, "female", (41, "female", "GUI", "GUI")),
 ])
 def test_subject_resolution_from_header_and_gui(header, gui_age, gui_sex, expected):
-    subject = brainquant.resolve_subject(header, gui_age, gui_sex, today=date(2025, 6, 1))
+    subject = brainquant.resolve_subject(header, gui_age, gui_sex)
     assert (subject.age, subject.sex, subject.age_source, subject.sex_source) == expected
 
 

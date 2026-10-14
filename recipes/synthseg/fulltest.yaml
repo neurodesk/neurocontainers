@@ -136,7 +136,7 @@ tests:
       assert parameters[\"ssusegpu\"][\"default\"] is False
       assert parameters[\"sscrop\"][\"default\"] == 0
       assert len(label[\"parameters\"]) <= 14
-      assert len(parameters) == 14
+      assert len(parameters) == len(label[\"parameters\"])
       assert parameters[\"ssparc\"][\"type\"] == \"choice\"
       assert parameters[\"ssparc\"][\"default\"] == \"none\"
       assert {value[\"id\"] for value in parameters[\"ssparc\"][\"values\"]} == {\"none\", \"desikan\", \"glasser\", \"both\"}

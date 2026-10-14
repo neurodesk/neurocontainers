@@ -292,7 +292,6 @@ def _openrecon_helpers():
             "OPENRECON_DEFAULTS",
             "OPENRECON_PARCELLATIONS",
             "OPENRECON_VOLUME_OUTPUTS",
-            "OPENRECON_RESLICES",
             "OPENRECON_CHOICES",
             "OPENRECON_COMBINATION_PARAMETER_VALUES",
             "OPENRECON_MODEL_DEFAULT",
@@ -528,16 +527,13 @@ def test_parameter_matrix_only_emits_runnable_combinations():
     ("ssvolumes", "report_male", (True, "male")),
     ("ssvolumes", True, (True, None)),
     ("ssvolumes", "false", (False, None)),
-    ("ssreslice", "sagittal", (True, False)),
-    ("ssreslice", "both", (True, True)),
-    ("ssreslice", False, (False, False)),
 ])
 def test_shared_choices_resolve_scanner_and_saved_configs(parameter, choice, expected):
     resolve = _openrecon_helpers()["_resolve_openrecon_choice"]
     assert resolve(parameter, choice) == expected
 
 
-@pytest.mark.parametrize("parameter", ["ssvolumes", "ssreslice"])
+@pytest.mark.parametrize("parameter", ["ssvolumes"])
 def test_shared_choices_reject_unknown_values(parameter):
     resolve = _openrecon_helpers()["_resolve_openrecon_choice"]
     with pytest.raises(ValueError, match=f"Invalid {parameter} choice"):
@@ -798,7 +794,7 @@ def test_process_image_returns_base_and_selected_products(process_runtime, choic
     helpers, sources, maps = process_runtime
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc=choice,
                                  sendoriginal=extras, sssegmentheader=segment_header,
-                                 ssreslice='both' if extras else 'none')}
+                                 ssreslicesagittal=extras, ssreslicecoronal=extras)}
     outputs = helpers['process_image'](sources, None, config, None)
     series = {}
     for image in outputs:
@@ -908,7 +904,7 @@ def test_brainquant_report_is_the_last_distinct_series(process_runtime, caplog, 
     import logging
     helpers, sources, _ = process_runtime
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssparc='desikan',
-                                 sendoriginal=extras, ssreslice='sagittal' if extras else 'none')}
+                                 sendoriginal=extras, ssreslicesagittal=extras)}
     with caplog.at_level(logging.INFO):
         outputs = helpers['process_image'](sources, None, config, _mrd_header())
     series = _series_by_index(outputs)
@@ -955,6 +951,27 @@ def test_brainquant_is_skipped_with_synthseg_v1(process_runtime, caplog):
     series = _series_by_index(outputs)
     assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
     assert 'brain volume report is skipped' in caplog.text
+
+
+def test_brainquant_report_rejected_by_output_contract_keeps_other_outputs(process_runtime, caplog):
+    import logging
+    helpers, sources, _ = process_runtime
+    build_report = helpers['_build_brainquant_report_image']
+
+    def report_reusing_source_series(pages, source_image, source_identity, series_index):
+        report = build_report(pages, source_image, source_identity, series_index)
+        head = report.getHead()
+        head.image_series_index = source_image.getHead().image_series_index
+        report.setHead(head)
+        return report
+
+    helpers['_build_brainquant_report_image'] = report_reusing_source_series
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report')}
+    with caplog.at_level(logging.ERROR):
+        outputs = helpers['process_image'](sources, None, config, _mrd_header())
+    series = _series_by_index(outputs)
+    assert [meta['SeriesDescription'] for _, meta in series.values()] == ['t1w_original', 't1w_synthseg']
+    assert 'omitting the report series' in caplog.text
 
 
 def test_brainquant_failure_omits_only_the_report(process_runtime, tmp_path, caplog):

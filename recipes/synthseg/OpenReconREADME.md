@@ -62,7 +62,8 @@ segmentation is visible without manual windowing.
 | Region volumes | `ssvolumes` | choice | `none` | `none`, `log`, `report`, `report_female` or `report_male`. `log` writes per-structure volumes in mm3 to the reconstruction log as CSV. The `report` options also return the brain volume report series (research use only). `report` takes the patient sex from the header; `report_female` and `report_male` override it. Saved configs with `true` select `log`. |
 | Report QC scores | `ssqc` | boolean | `false` | Run the automated QC network and write per-structure QC scores to the reconstruction log as CSV. |
 | Segmentation header | `sssegmentheader` | boolean | `false` | Use the `openreconi2iexample` 2D segmentation-header delivery mode so scanner post-processing targets the segmentation stream. |
-| Label map reformats | `ssreslice` | choice | `none` | `none`, `sagittal`, `coronal` or `both`. Send 3D reformats of each SynthSeg and Desikan label map. |
+| Sagittal reformat | `ssreslicesagittal` | boolean | `false` | Send a sagittal 3D reformat of each SynthSeg and Desikan label map. |
+| Coronal reformat | `ssreslicecoronal` | boolean | `false` | Send a coronal 3D reformat of each SynthSeg and Desikan label map. |
 | Report age (years) | `ssquantage` | integer | `0` | Patient age for the brain volume report. `0` computes whole years from the header birth date to the study date. Valid GUI range: 0 to 120. |
 
 The Siemens OpenRecon UI accepts at most 14 parameters, so related options
@@ -182,8 +183,8 @@ with the scanner effect averaged out. In five-fold cross-validation, 87.5% to
 the nominal 90%. `fit_brainquant_norms.py` documents how to reproduce the fit, and
 `brainquant_ixi_volumes.csv` holds the per-subject volumes it was fitted to.
 
-Age is the number of whole years from the header birth date to the study date,
-or to the current date if the study date is missing. Sex comes from the header
+Age is the number of whole years from the header birth date to the study date.
+If either date is missing, the age is unknown unless `ssquantage` sets it. Sex comes from the header
 patient sex. A nonzero `ssquantage` overrides the header age, and
 `report_female` or `report_male` override the header sex. The wrapper logs
 the resolved age, sex and source of each. If the sex is unknown, the report uses

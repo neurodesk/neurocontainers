@@ -120,7 +120,8 @@ OPENRECON_DEFAULTS = {
     "ssvolumes": "none",
     "ssqc": False,
     "sssegmentheader": False,
-    "ssreslice": "none",
+    "ssreslicesagittal": False,
+    "ssreslicecoronal": False,
     "ssquantage": 0,
 }
 OPENRECON_DEFAULT_TEST_CONFIG = {
@@ -152,17 +153,9 @@ OPENRECON_VOLUME_OUTPUTS = {
     "report_female": (True, "female"),
     "report_male": (True, "male"),
 }
-# (sagittal reformat, coronal reformat)
-OPENRECON_RESLICES = {
-    "none": (False, False),
-    "sagittal": (True, False),
-    "coronal": (False, True),
-    "both": (True, True),
-}
 OPENRECON_CHOICES = {
     "ssparc": (OPENRECON_PARCELLATIONS, "desikan"),
     "ssvolumes": (OPENRECON_VOLUME_OUTPUTS, "log"),
-    "ssreslice": (OPENRECON_RESLICES, "both"),
 }
 
 
@@ -3954,11 +3947,13 @@ def process_image(images, connection, config, metadata):
         # --qc uses the 2.0 QC label set, which mri_synthseg swaps out under --v1.
         logging.info("QC scores are reported with the SynthSeg 1.0 label set.")
 
-    reslice_sagittal, reslice_coronal = _resolve_openrecon_choice(
-        "ssreslice",
-        mrdhelper.get_json_config_param(
-            config, "ssreslice", default=OPENRECON_DEFAULTS["ssreslice"], type='str'
-        ),
+    reslice_sagittal = boolean_checker(
+        "ssreslicesagittal",
+        default_val=OPENRECON_DEFAULTS["ssreslicesagittal"],
+    )
+    reslice_coronal = boolean_checker(
+        "ssreslicecoronal",
+        default_val=OPENRECON_DEFAULTS["ssreslicecoronal"],
     )
     output_geometry = SYNTHSEG_OUTPUT_GEOMETRY_2D
     brainquant_age = int(
@@ -4140,22 +4135,6 @@ def process_image(images, connection, config, metadata):
             imagesOut.extend(reformatted)
             reformat_images.extend(reformatted)
 
-    report_images = []
-    if brainquant_enabled:
-        try:
-            pages = _render_brainquant_pages(
-                volumes_csv_path, metadata, age=brainquant_age, sex=brainquant_sex,
-                model=model, fast=fast,
-            )
-            report_images.append(
-                _build_brainquant_report_image(
-                    pages, ordered_images[0], source_identity, next(series_indices),
-                )
-            )
-        except Exception:
-            logging.exception("SynthSeg brain volume report failed; omitting the report series")
-        imagesOut.extend(report_images)
-
     if segmentation_header:
         segment_header_geometry = "2d_segment_header"
         postprocessing_target = "segment_2d_source_geometry"
@@ -4177,6 +4156,36 @@ def process_image(images, connection, config, metadata):
         reslice_coronal,
     )
     logging.info("SYNTHSEG_OPENRECON_POSTPROCESSING target=%s", postprocessing_target)
+    _validate_synthseg_output_contract(
+        imagesOut,
+        source_series_indices,
+        source_identity,
+        "processed image output",
+    )
+
+    report_images = []
+    if brainquant_enabled:
+        # The report is optional, so it must pass the output contract on its
+        # own; a failure anywhere here drops only the report series.
+        try:
+            pages = _render_brainquant_pages(
+                volumes_csv_path, metadata, age=brainquant_age, sex=brainquant_sex,
+                model=model, fast=fast,
+            )
+            report_image = _build_brainquant_report_image(
+                pages, ordered_images[0], source_identity, next(series_indices),
+            )
+            _validate_synthseg_output_contract(
+                imagesOut + [report_image],
+                source_series_indices,
+                source_identity,
+                "processed image output with brain volume report",
+            )
+            report_images.append(report_image)
+        except Exception:
+            logging.exception("SynthSeg brain volume report failed; omitting the report series")
+        imagesOut.extend(report_images)
+
     logging.info(
         "Sending %d original image(s), %d segmentation image(s), %d reformat image(s), "
         "and %d brain volume report image(s)",
@@ -4184,13 +4193,6 @@ def process_image(images, connection, config, metadata):
         len(segmentation_images),
         len(reformat_images),
         len(report_images),
-    )
-
-    _validate_synthseg_output_contract(
-        imagesOut,
-        source_series_indices,
-        source_identity,
-        "processed image output",
     )
 
     return imagesOut
