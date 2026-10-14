@@ -183,6 +183,12 @@ age. The reference is the IXI cohort, segmented with SynthSeg 2.0 in fast mode;
 the cohort size, sex split and age range are printed on every page. IXI data are
 licensed CC BY-SA 3.0.
 
+The shipped norms use 561 healthy IXI adults aged 20 to 86 from three scanners,
+with the scanner effect averaged out. In five-fold cross-validation, 87.5% to
+90% of held-out subjects fall inside each structure's 5th-95th band, against
+the nominal 90%. `fit_brainquant_norms.py` documents how to reproduce the fit, and
+`brainquant_ixi_volumes.csv` holds the per-subject volumes it was fitted to.
+
 Age is the number of whole years from the header birth date to the study date,
 or to the current date if the study date is missing. Sex comes from the header
 patient sex. A nonzero `ssquantage` overrides the header age, and
