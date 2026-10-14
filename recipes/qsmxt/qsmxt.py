@@ -2282,6 +2282,10 @@ def _input_variant_from_series_name(name):
     return DISTORTION_CORRECTED
 
 
+class _MissingInputSeries(ValueError):
+    pass
+
+
 def _select_magnitude_phase_pairs(groups, selection):
     if selection not in INPUT_SERIES_CHOICES:
         choices = ", ".join(INPUT_SERIES_CHOICES)
@@ -2289,22 +2293,34 @@ def _select_magnitude_phase_pairs(groups, selection):
             f"unknown inputseries {selection!r}; expected {choices}"
         )
 
-    requested_variants = (
+    candidate_variants = (
         [DISTORTION_CORRECTED, NON_DISTORTION_CORRECTED]
-        if selection == "both"
+        if selection in ("both", DISTORTION_CORRECTED)
         else [selection]
     )
     pairs = []
-    for variant in requested_variants:
+    missing_preferred = None
+    for variant in candidate_variants:
         variant_groups = [
             group
             for group in groups
             if _input_variant_from_series_name(group["name"]) == variant
         ]
-        magnitude_group, phase_group = _select_magnitude_phase_groups(
-            variant_groups,
-            variant,
-        )
+        try:
+            magnitude_group, phase_group = _select_magnitude_phase_groups(
+                variant_groups, variant,
+            )
+        except _MissingInputSeries as error:
+            if selection != DISTORTION_CORRECTED or variant != DISTORTION_CORRECTED:
+                raise
+            missing_preferred = error
+            continue
+        if missing_preferred is not None:
+            logging.warning(
+                "%s; falling back to non-distortion-corrected input: "
+                "magnitude=%r, phase=%r",
+                missing_preferred, magnitude_group["name"], phase_group["name"],
+            )
         pairs.append(
             {
                 "variant": variant,
@@ -2314,6 +2330,8 @@ def _select_magnitude_phase_pairs(groups, selection):
                 "groups": (magnitude_group, phase_group),
             }
         )
+        if selection != "both":
+            break
     return pairs
 
 
@@ -2372,12 +2390,12 @@ def _select_magnitude_phase_groups(groups, variant):
         )
 
     if not magnitude_groups:
-        raise ValueError(
+        raise _MissingInputSeries(
             f"No magnitude image series found for {variant} input; "
             f"available series: {_available_series_summary(groups)}"
         )
     if not phase_groups:
-        raise ValueError(
+        raise _MissingInputSeries(
             f"No phase image series found for {variant} input; "
             f"available series: {_available_series_summary(groups)}"
         )

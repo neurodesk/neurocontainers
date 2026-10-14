@@ -972,3 +972,8 @@ tests:
     description: Run the real MRD adapter and native engine for one, two, and three echoes and verify returned maps
     command: PYTHONPATH=/opt/code/python-ismrmrd-server python /opt/qsmxt/verify_output_echoes.py
     expected_output_contains: All returns compatible maps at one and two echoes and retains T2*/R2* at three echoes
+
+  - name: Preferred input falls back to ND
+    description: Verify native MRD fallback, preferred and unmarked inputs, selection errors, and original returns
+    command: PYTHONPATH=/opt/code/python-ismrmrd-server python /opt/qsmxt/verify_output_echoes.py --nd-fallback
+    expected_output_contains: ND fallback returns finite nonzero maps with actual input labels and preserves originals

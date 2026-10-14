@@ -108,10 +108,81 @@ def verify(binary, root):
     print("All returns compatible maps at one and two echoes and retains T2*/R2* at three echoes")
 
 
+def verify_nd_fallback(binary, root):
+    bids, _, _ = fixture(root / "fixture")
+    metadata = SimpleNamespace(
+        acquisitionSystemInformation=SimpleNamespace(systemFieldStrength_T=3.0),
+        measurementInformation=SimpleNamespace(protocolName="gre_qsm"),
+        sequenceParameters=SimpleNamespace(TE=[6.0]),
+    )
+
+    def sources(name, offset):
+        images = input_images(bids, 1)
+        for image in images:
+            header = image.getHead()
+            header.image_series_index += offset
+            image.setHead(header)
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            meta["SequenceDescription"] = name
+            image.attribute_string = meta.serialize()
+        return images
+
+    nd = sources("gre_qsm_ND", 0)
+    dc = sources("gre_qsm_DC", 2)
+    unmarked = sources("gre_qsm", 4)
+    incomplete = [image for image in dc if image.image_type == ismrmrd.IMTYPE_MAGNITUDE]
+    cases = (
+        ("ND-only default", nd, {}, "ND", None),
+        ("ND-only explicit", nd, {"inputseries": "non-distortion-corrected"}, "ND", None),
+        ("incomplete preferred", incomplete + nd, {}, "ND", None),
+        ("complete preferred", nd + dc, {}, "DC", None),
+        ("unmarked preferred", nd + unmarked, {}, "DC", None),
+        ("ambiguous preferred", nd + dc + sources("other", 6), {}, None, "Ambiguous"),
+        ("no usable pair", incomplete, {}, None, "No magnitude image series"),
+    )
+    previous_root = qsmxt.OPENRECON_WORK_ROOT
+    try:
+        qsmxt.OPENRECON_WORK_ROOT = root / "adapter"
+        for name, images, parameters, label, error in cases:
+            originals = [image.data.copy() for image in images]
+            connection = Connection(images)
+            qsmxt.process(connection, {"parameters": {
+                "qsmxtbinary": binary, **parameters,
+            }}, metadata)
+            assert connection.closed, name
+            derived = []
+            returned_originals = []
+            for image in connection.returned:
+                description = str(ismrmrd.Meta.deserialize(image.attribute_string).get("SequenceDescription"))
+                if description.startswith("QSMxT "):
+                    derived.append((description, image.data))
+                else:
+                    returned_originals.append(image)
+            if error:
+                assert error in "\n".join(connection.errors), (name, connection.errors)
+                assert not derived, name
+            else:
+                assert not connection.errors, (name, connection.errors)
+                assert {description for description, _ in derived} == {f"QSMxT QSM {label}"}, name
+                data = np.asarray([data for _, data in derived])
+                assert np.isfinite(data).all() and np.any(data != 0), name
+                assert len(returned_originals) == len(images), name
+                for original, returned in zip(originals, returned_originals):
+                    np.testing.assert_array_equal(returned.data, original, err_msg=name)
+            print(f"{name}: verified", flush=True)
+    finally:
+        qsmxt.OPENRECON_WORK_ROOT = previous_root
+    print("ND fallback returns finite nonzero maps with actual input labels and preserves originals")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", default="/opt/qsmxt/qsmxt")
+    parser.add_argument("--nd-fallback", action="store_true")
     arguments = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
     with tempfile.TemporaryDirectory(prefix="qsmxt-output-echoes-") as temporary:
-        verify(arguments.binary, Path(temporary))
+        if arguments.nd_fallback:
+            verify_nd_fallback(arguments.binary, Path(temporary))
+        else:
+            verify(arguments.binary, Path(temporary))

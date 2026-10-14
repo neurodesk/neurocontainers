@@ -66,12 +66,12 @@
       "label": { "en": "Input images" },
       "type": "choice",
       "values": [
-        { "id": "distortion-corrected", "name": { "en": "Distortion corrected" } },
+        { "id": "distortion-corrected", "name": { "en": "Prefer distortion corrected" } },
         { "id": "non-distortion-corrected", "name": { "en": "Not distortion corrected (ND)" } },
         { "id": "both", "name": { "en": "Both" } }
       ],
       "default": "distortion-corrected",
-      "information": { "en": "Choose the magnitude and phase images used by QSMxT. ND matches source series containing a separate ND name token. Both runs QSMxT twice and returns separately named DC and ND results." }
+      "information": { "en": "Prefer a complete corrected magnitude and phase pair; if either component is missing, use a complete ND pair. Unmarked series use the preferred slot; names do not verify physical correction. ND matches a separate ND name token. Explicit ND and Both require their selected pairs. Both returns separate DC and ND results." }
     },
     {
       "id": "sendoutputs",
