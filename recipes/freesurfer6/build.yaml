@@ -70,6 +70,7 @@ build:
         - libglu1-mesa
         - libsm6
         - libxext6
+        - libxft2
         - libxmu6
         - libxrender1
         - libxss1
@@ -123,7 +124,7 @@ build:
         MNI_PERL5LIB: "{{ context.install_path }}/mni/share/perl5"
         PERL5LIB: "{{ context.install_path }}/mni/share/perl5"
         PATH: "{{ context.install_path }}/bin:{{ context.install_path }}/fsfast/bin:{{ context.install_path }}/tktools:{{ context.install_path }}/mni/bin:$PATH"
-        LD_LIBRARY_PATH: "{{ context.install_path }}/lib/qt/lib:{{ context.install_path }}/lib/vtk:$LD_LIBRARY_PATH"
+        LD_LIBRARY_PATH: "{{ context.install_path }}/lib/qt/lib:{{ context.install_path }}/lib/vtk/lib/vtk-5.6:$LD_LIBRARY_PATH"
         QT_X11_NO_MITSHM: "1"
         DEPLOY_ENV_FREESURFER_HOME: "BASEPATH{{ context.install_path }}"
         DEPLOY_TEST_MAX_PATH_FILES: "60"

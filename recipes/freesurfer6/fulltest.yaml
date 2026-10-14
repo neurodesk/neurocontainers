@@ -37,6 +37,14 @@ tests:
     expected_output_contains: "256 256 256"
 
   - name: Freeview starts with a virtual display
-    description: Check the bundled GUI loads its libraries and exits through its scripting interface.
-    command: xvfb-run -a freeview -quit
+    description: Check GUI library resolution and startup with a virtual display supporting legacy GLX contexts.
+    command: |
+      set -eu
+      library_report=$(ldd "$FREESURFER_HOME/bin/freeview.bin")
+      printf '%s\n' "$library_report"
+      if printf '%s\n' "$library_report" | grep -q 'not found'; then
+        exit 1
+      fi
+      LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a \
+        -s "-screen 0 1280x1024x24 +iglx" freeview -quit
     expected_exit_code: 0
