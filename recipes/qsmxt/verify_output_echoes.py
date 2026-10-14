@@ -1,5 +1,3 @@
-"""Verify All through MRD conversion, native reconstruction, and scanner return."""
-
 import argparse
 import logging
 import tempfile
