@@ -1,5 +1,3 @@
-"""OpenRecon GRE configuration with echo motion alignment enabled."""
-
 import qsmxt
 
 
