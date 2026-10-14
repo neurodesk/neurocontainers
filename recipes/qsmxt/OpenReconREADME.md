@@ -4,6 +4,8 @@ QSMxT OpenRecon creates quantitative susceptibility maps from MRI magnitude and 
 
 The package supports single-echo and multi-echo data, a choice of reconstruction methods, adjustable brain masks, and optional SWI, SMWI, T2*, and R2* maps. You can process distortion-corrected images, non-distortion-corrected images, or both.
 
+This package uses QSMxT 10.0.0. SWI now uses CLEAR-SWI across every echo, and V-SHARP no longer deconvolves by default. Together with the masking changes, these settings change the results relative to QSMxT 9.22.0.
+
 ## Prepare your acquisition
 
 Use a plain gradient-echo (GRE) sequence with both magnitude and **unfiltered phase** reconstruction enabled. Filtered phase from an SWI sequence is not a suitable input. Magnitude and phase images must have matching echoes and the same distortion-correction setting.
@@ -132,12 +134,12 @@ These controls expose native 2D processing. The smoke tests use synthetic stacks
 
 ## Adjust homogeneity correction
 
-**Homogeneity correction** corrects magnitude intensity inhomogeneity.
+**Homogeneity correction** corrects magnitude intensity inhomogeneity for masks, combined magnitude, and SMWI.
 **Standard** is the default. It uses 7 mm smoothing and 3 local segmentation boxes per dimension.
 **Fine** uses the same 7 mm smoothing and 15 boxes per dimension for comparison.
-SWI and SMWI use the corrected magnitude image.
+SMWI uses the corrected combined magnitude image. CLEAR-SWI uses the individual echo magnitudes and applies its own receive-sensitivity correction independently of this control.
 The box count controls local segmentation, not the number of smoothing passes.
-Select **Off** to disable correction.
+Select **Off** to disable this magnitude correction. CLEAR-SWI retains its internal correction.
 Compare the profiles on your acquisition before choosing a setting.
 
 ## Citation

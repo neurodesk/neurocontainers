@@ -140,7 +140,6 @@ auto_update:
 
 build:
   kind: neurodocker
-  # QSMxT v10 is a single self-contained Rust binary (https://github.com/QSMxT/QSMxT).
   # The release archive bundles a pinned dcm2niix for DICOM -> BIDS conversion.
   # ubuntu:24.04 provides glibc >= 2.39, which the prebuilt binary requires.
   base-image: ubuntu:24.04

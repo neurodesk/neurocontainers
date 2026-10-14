@@ -194,7 +194,7 @@
         { "id": "fine", "name": { "en": "Fine" } }
       ],
       "default": "standard",
-      "information": { "en": "Correct magnitude intensity inhomogeneity. Standard uses 7 mm smoothing and 3 local segmentation boxes per dimension. Fine uses 7 mm smoothing and 15 boxes per dimension for comparison. The corrected magnitude is used for SWI and SMWI. Off disables correction." }
+      "information": { "en": "Correct magnitude for masks and SMWI. Standard uses 7 mm smoothing and 3 local segmentation boxes per dimension. Fine uses 7 mm smoothing and 15 boxes per dimension. Off disables this correction. CLEAR-SWI applies its own receive-sensitivity correction independently." }
     },
     {
       "id": "twopass",

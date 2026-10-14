@@ -1,5 +1,3 @@
-"""Exercise native reconstruction and ROI arithmetic on reproducible MRI fixtures."""
-
 import argparse
 import ctypes
 import errno

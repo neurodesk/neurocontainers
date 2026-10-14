@@ -114,7 +114,7 @@ change.
 QSMxT computes T2* from multi-echo magnitude data inside its reconstruction mask.
 The [v10.0.0 pipeline](https://github.com/QSMxT/QSMxT/blob/v10.0.0/src/pipeline/runner.rs)
 requires at least three echoes and calls the
-[QSM.rs v0.38.0 ARLO estimator](https://github.com/astewartau/QSM.rs/blob/v0.38.0/src/utils/r2star.rs),
+[QSM.rs v0.39.0 ARLO estimator](https://github.com/astewartau/QSM.rs/blob/v0.39.0/src/utils/r2star.rs),
 with a log-linear fallback for rejected estimates. The ARLO calculation assumes
 equally spaced echo times. The pipeline writes R2* in inverse seconds and takes
 `T2* = 1 / R2*` for positive rates inside the mask, otherwise zero. Small positive
@@ -368,6 +368,9 @@ one profile for magnitude intensity correction.
 Enabled profiles pass `--inhomogeneity-correction`, `--homogeneity-sigma-mm 7`, and
 `--homogeneity-nbox 3` or `--homogeneity-nbox 15` to QSMxT.
 Off passes only `--no-inhomogeneity-correction`, without numeric homogeneity flags.
+These settings affect masking, combined magnitude, and SMWI. Version 10 CLEAR-SWI
+reads individual echo magnitudes and applies its own receive-sensitivity correction
+independently of this profile, including when the profile is Off.
 The box count controls local segmentation, not smoothing passes. Fine provides a
 comparison setting. Its effect on a particular acquisition requires image review.
 Historical Boolean values and Boolean strings map true to Standard and false to
@@ -479,9 +482,9 @@ ROMEO and Laplacian rows measure field mapping, including echo handling,
 rather than unwrapping alone. HARPERELLA, iHARPERELLA, and iQFM benchmark
 joint unwrapping/background removal. QSMART refers to QSM.rs, not MATLAB.
 
-TFI is benchmarked from the true total field. The packaged QSMxT `run` dispatcher
-still applies the selected background-removal stage before TFI; its GUI
-selection therefore does not reproduce that isolated TFI benchmark.
+TFI is benchmarked from the true total field. QSMxT 10 also supplies the total
+field to TFI. These tables are a historical benchmark snapshot; they do not
+measure the packaged QSMxT 10 pipeline or its new defaults.
 
 Regenerate these tables with `python3 recipes/qsmxt/update_benchmarks.py`.
 Use `--refresh` to fetch new results or `--check` to check the committed
