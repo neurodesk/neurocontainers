@@ -136,17 +136,17 @@ adapter; for example, `t2_swi_tra_wave4_2mm` does not provide the required
 unfiltered phase data and should not be used for QSMxT. Start from a plain GRE
 sequence instead, and enable both phase and magnitude reconstruction.
 
-OpenRecon selects WH-QSM with ROMEO and HARPERELLA explicitly:
+OpenRecon selects RTS with ROMEO and V-SHARP explicitly:
 
 ```text
-qsmxt run <bids_dir> --qsm-algorithm whqsm --unwrapping-algorithm romeo --bf-algorithm harperella
+qsmxt run <bids_dir> --qsm-algorithm rts --unwrapping-algorithm romeo --bf-algorithm vsharp --mask magnitude,hd-bet,close:1,fill-holes:0
 ```
 
 The OpenRecon wrapper also supplies the output directory and resource settings.
-Its custom-pipeline defaults are ROMEO phase unwrapping, HARPERELLA background-field
-removal, WH-QSM inversion, and BET magnitude masking. BET uses a 0.5 fractional
-intensity threshold, closing radius 1, and automatic hole filling. This differs
-from the upstream QSMxT inversion default, which is RTS. The QSM map is the only
+Its custom-pipeline defaults are ROMEO phase unwrapping, V-SHARP background-field
+removal, RTS inversion, and HD-BET magnitude masking. HD-BET uses the packaged
+model with its normal patch size and TTA disabled, closing radius 1, and automatic
+hole filling. The adapter adds no signal erosion. The QSM map is the only
 derived output returned by default. The source magnitude and phase series
 are always stored alongside it.
 
@@ -209,7 +209,7 @@ within the 16-character DICOM limit.
 The **Pipeline preset** selection box contains ten scanner-tested combinations
 and six complete-method presets. A pipeline preset overrides **QSM algorithm**,
 **Unwrap**, and **Background**. Select **Custom algorithm controls** to use those
-three selection boxes. The custom default is ROMEO, HARPERELLA, and WH-QSM.
+three selection boxes. The custom default is ROMEO, V-SHARP, and RTS.
 
 Treat these measurements as results from the scanner test used for this adapter,
 not as universal rankings. Lower inter-scanner error and runtime are better.
@@ -282,7 +282,7 @@ voxels enter those calculations.
 
 | QSM algorithm | Method |
 | --- | --- |
-| `default` | Use the OpenRecon default, WH-QSM. |
+| `default` | Use the OpenRecon default, RTS. |
 | `whqsm` | Weak-Harmonic QSM. |
 | `hdqsm` | Hybrid data-fidelity QSM. |
 | `rts` | Rapid Two-Step inversion. |
@@ -323,7 +323,7 @@ voxels enter those calculations.
 
 | Background algorithm | Method |
 | --- | --- |
-| `default` | Use the OpenRecon default, HARPERELLA. |
+| `default` | Use the OpenRecon default, V-SHARP. |
 | `vsharp` | Variable-kernel SHARP. |
 | `pdf` | Projection onto Dipole Fields. |
 | `lbv` | Laplacian Boundary Value. |
@@ -337,7 +337,8 @@ voxels enter those calculations.
 
 | Mask preset | Method |
 | --- | --- |
-| `bet` | Brain Extraction Tool masking of magnitude. This is the OpenRecon default. |
+| `hd-bet` | HD-BET extraction from magnitude using the packaged model. This is the OpenRecon default. |
+| `bet` | Brain Extraction Tool masking of magnitude. |
 | `robust-threshold` | Otsu or percentile thresholding of the selected magnitude or phase-quality input. |
 | `combined` | Union of independently generated BET and threshold masks. |
 

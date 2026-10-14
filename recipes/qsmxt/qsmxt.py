@@ -160,7 +160,8 @@ QSM_WINDOW_LOW_PERCENTILE = 1.0
 QSM_WINDOW_HIGH_PERCENTILE = 99.0
 QSM_WINDOW_MIN_NONZERO_VOXELS = 100
 QSM_DICOM_PPB_PER_PPM = 1000.0
-DEFAULT_MASK_PRESET = "bet"
+MASK_PRESETS = ("bet", "robust-threshold", "combined", "hd-bet")
+DEFAULT_MASK_PRESET = "hd-bet"
 DEFAULT_MASKING_INPUT = "magnitude"
 DEFAULT_BET_FRACTIONAL_INTENSITY = 0.5
 DEFAULT_MASK_CLEANUP = "close-fill"
@@ -1995,12 +1996,14 @@ def _mask_sections(settings):
     refinement_suffix = "" if not refinements else "," + ",".join(refinements)
 
     preset = settings["mask_preset"]
-    if preset not in {"bet", "robust-threshold", "combined"}:
+    if preset not in MASK_PRESETS:
         raise ValueError(
-            f"unknown maskpreset {preset!r}; expected bet, robust-threshold, or combined"
+            f"unknown maskpreset {preset!r}; expected {', '.join(MASK_PRESETS)}"
         )
 
     sections = []
+    if preset == "hd-bet":
+        sections.append(f"magnitude,hd-bet{refinement_suffix}")
     if preset in {"bet", "combined"}:
         bet_fraction = _format_display_number(
             settings["bet_fractional_intensity"]
