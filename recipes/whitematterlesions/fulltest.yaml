@@ -1,0 +1,83 @@
+# White matter lesions container tests
+#
+# The host setup downloads the web app's pinned example, a clinical 2D FLAIR
+# (1 x 1 x 2.3 mm, oblique) from the MSLesSeg test set. The real runs take about
+# 90 s each with one fold on 8 CPU threads.
+
+name: whitematterlesions
+version: "0.2.20261009"
+default_timeout: 1800
+
+test_data:
+  output_dir: test_output/whitematterlesions
+  flair: test_output/whitematterlesions/MSLesSeg_P57_T1_FLAIR.nii.gz
+
+setup:
+  host_script: |
+    set -e
+    mkdir -p "${output_dir}"
+    curl -fsSL -o "${flair}" https://huggingface.co/datasets/neurodeskorg/webapps/resolve/d16b3a04f7b7799420bbcd4ab3c7890b11d7f700/white-matter-lesions/examples/MSLesSeg_P57_T1_FLAIR.nii.gz
+    echo "179472456b8591364c0a1d4912d95c69e2b5743c87a9397aa9409fb58436f70c  ${flair}" | sha256sum -c -
+
+tests:
+  - name: FLAMeS release installed
+    description: Verify the web app's standalone release matches the container version and finds all six models.
+    command: |
+      head -n 1 /opt/flames/README.txt
+      flames self-check 2>/dev/null
+    expected_output_contains:
+      - "FLAMeS white matter lesions ${version} for linux-x64"
+      - '"count":6'
+
+  - name: OpenRecon assets and adapter import
+    description: Verify the scanner label and MRD reconstruction module are installed.
+    command: |
+      cd /opt/code/python-ismrmrd-server && python3 -c "
+      import json
+      import whitematterlesions
+      label = json.load(open('OpenReconLabel.json'))
+      assert label['general']['id'] == 'whitematterlesions'
+      assert callable(whitematterlesions.process)
+      print('whitematterlesions OpenRecon assets ok')
+      "
+    expected_output_contains: "whitematterlesions OpenRecon assets ok"
+
+  - name: OpenRecon mock transport tests
+    description: Send MRD images through the adapter and verify geometry, output series, metadata and error reporting.
+    command: |
+      cd /opt/code/python-ismrmrd-server && python3 -m unittest -v test_whitematterlesions_openrecon 2>&1
+    expected_output_contains: "OK (skipped=1)"
+
+  - name: FLAMeS reproduces the web app result
+    description: Segment the example FLAIR and compare with the browser result recorded by the web app's end-to-end test.
+    command: |
+      rm -rf "${output_dir}/cli"
+      flames "${flair}" "${output_dir}/cli" 2>/dev/null > "${output_dir}/cli.json"
+      python3 -c "
+      import json
+      import nibabel as nib
+      import numpy as np
+      report = json.load(open('${output_dir}/cli.json'))
+      mask = nib.load('${output_dir}/cli/MSLesSeg_P57_T1_FLAIR_lesions.nii')
+      probability = nib.load('${output_dir}/cli/MSLesSeg_P57_T1_FLAIR_lesion_probability.nii')
+      source = nib.load('${flair}')
+      assert mask.shape == source.shape and np.allclose(mask.affine, source.affine)
+      p = np.asarray(probability.dataobj)
+      assert np.isfinite(p).all() and p.min() >= 0 and p.max() <= 1
+      assert np.array_equal(np.asarray(mask.dataobj) > 0, p > 0.5)
+      assert abs(report['count'] - 90) <= 2, report['count']
+      assert abs(report['totalMl'] - 31.50) <= 0.315, report['totalMl']
+      rows = open('${output_dir}/cli/MSLesSeg_P57_T1_FLAIR_lesions.tsv').read().splitlines()
+      assert len(rows) == report['count'] + 1
+      print('FLAMeS matches the web app:', report['count'], 'lesions', round(report['totalMl'], 2), 'ml')
+      "
+    expected_output_contains: "FLAMeS matches the web app"
+
+  - name: Scanner path matches a direct FLAMeS run
+    description: Slice the oblique FLAIR into MRD images, run the adapter with real FLAMeS, and compare its mask series with the direct command.
+    command: |
+      export WHITEMATTERLESIONS_TEST_FLAIR="$(realpath '${flair}')"
+      cd /opt/code/python-ismrmrd-server && python3 -m unittest -v test_whitematterlesions_openrecon.WhiteMatterLesionsOpenReconTests.test_scanner_path_matches_a_direct_flames_run 2>&1
+    expected_output_contains:
+      - "scanner path against direct flames: Dice"
+      - "OK"
