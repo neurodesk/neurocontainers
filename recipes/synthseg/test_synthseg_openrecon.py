@@ -183,6 +183,7 @@ def _helpers():
             "SYNTHSEG_SEGMENT_SOURCE_GEOMETRY_META_KEY",
             "SYNTHSEG_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY",
             "SYNTHSEG_SEGMENTATION_LABEL",
+            "SYNTHSEG_SEGMENTATION_LUT",
             "SYNTHSEG_SEGMENTATION_TYPE_TOKEN",
             "SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE",
             "SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4",
@@ -257,7 +258,7 @@ def test_reformat_outputs_use_2d_segmentation_header_contract():
         assert head.image_series_index == 4
         assert head.image_index == index + 1
         assert head.slice == index
-        assert "LUTFileName" not in meta
+        assert meta["LUTFileName"] == "MicroDeltaHotMetal.pal"
         assert meta["DataRole"] == "Segmentation"
         assert meta["Keep_image_geometry"] == "1"
         assert meta["SegmentSourceGeometry"] == "1"
@@ -675,6 +676,7 @@ def test_label_products_keep_pixels_geometry_and_distinct_scanner_identity(segme
     source.setHead(head)
     source_meta = helpers['FakeMeta'].deserialize(source.attribute_string)
     source_meta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
+    source_meta['SegmentPostProcessing'] = '1'
     source.attribute_string = source_meta.serialize()
     source_identity = {'series_description': 'source_t1w', 'parent_grouping': 'source_group',
                        'series_uid': '1.2.3', 'sop_uid': '1.2.3.4', 'source_type_token': 'ND'}
@@ -693,7 +695,7 @@ def test_label_products_keep_pixels_geometry_and_distinct_scanner_identity(segme
         meta = helpers['FakeMeta'].deserialize(image.attribute_string)
         np.testing.assert_array_equal(image.data[0, 0], labels[:, :, 0])
         np.testing.assert_array_equal(image.getHead().position, source.getHead().position)
-        assert 'LUTFileName' not in meta
+        assert meta.get('LUTFileName') == ('MicroDeltaHotMetal.pal' if segmentation_header else None)
         assert meta['SeriesDescription'] == f'source_t1w_{product}'
         assert meta['SeriesNumberRangeNameUID'] == f'source_group_{product}'
         if segmentation_header:
@@ -803,12 +805,15 @@ def test_process_image_returns_base_and_selected_products(process_runtime, choic
     native = [(images, meta) for images, meta in zip(series.values(), metas)
               if meta.get('LabelProduct') and not meta.get('SynthSegReformatOrientation')]
     assert [meta['LabelProduct'] for _, meta in native] == products
+    for meta in metas:
+        if meta.get('SynthSegReformatOrientation'):
+            assert meta['LUTFileName'] == 'MicroDeltaHotMetal.pal'
     for images, meta in native:
         product = meta['LabelProduct']
         np.testing.assert_array_equal(np.stack([image.data[0, 0].T for image in images], axis=-1), maps[product])
         assert meta['SeriesDescription'] == f't1w_{product}'
         assert meta['SeriesNumberRangeNameUID'] == f't1w_{product}'
-        assert 'LUTFileName' not in meta
+        assert meta.get('LUTFileName') == ('MicroDeltaHotMetal.pal' if segment_header else None)
         if product == 'glasser_approx':
             assert meta['WindowWidth'] == '361'
         expected_type = f'DERIVED\\PRIMARY\\SEGMENTATION\\{product}_source_geometry' if segment_header else 'ORIGINAL\\PRIMARY\\M\\ND'
@@ -873,7 +878,8 @@ def test_missing_source_type_uses_each_product_identity(process_runtime):
         del meta['ImageType']
         del meta['ImageTypeValue4']
         source.attribute_string = meta.serialize()
-    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='both', sendoriginal=False)}
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssparc='both', sendoriginal=False,
+                                 sssegmentheader=False)}
     outputs = helpers['process_image'](sources, None, config, None)
     for image in outputs:
         meta = ismrmrd.Meta.deserialize(image.attribute_string)

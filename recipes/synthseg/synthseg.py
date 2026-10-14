@@ -105,6 +105,7 @@ SYNTHSEG_QC_MODEL_FILE = "synthseg_qc_2.0.h5"
 # into int16 without rescaling. Keeping the raw indices is what makes the
 # FreeSurferColorLUT lookup meaningful on the scanner.
 SYNTHSEG_MAX_LABEL_VALUE = 32767
+SYNTHSEG_SEGMENTATION_LUT = "MicroDeltaHotMetal.pal"
 
 # Keep this overview aligned with recipes/synthseg/OpenReconLabel.json.
 # Tests can import it to build a minimal OpenRecon config payload.
@@ -119,7 +120,7 @@ OPENRECON_DEFAULTS = {
     "ssthreads": 8,
     "ssvolumes": "none",
     "ssqc": False,
-    "sssegmentheader": False,
+    "sssegmentheader": True,
     "ssreslicesagittal": False,
     "ssreslicecoronal": False,
     "ssquantage": 0,
@@ -1707,12 +1708,15 @@ def _stamp_synthseg_output_image(
         )
 
     if not original_passthrough_identity:
-        # No LUTFileName, not even one inherited from the source: the scanner
-        # then writes the label frames as Enhanced MR with PALETTE COLOR but
-        # no palette data, which is invalid.
+        # Like OpenMSK, only segmentation-header label images request the
+        # scanner palette. On source-image-header images the scanner writes
+        # Enhanced MR with PALETTE COLOR but no palette data, which is
+        # invalid, so drop any palette inherited from the source there.
         if "LUTFileName" in tmp_meta:
             del tmp_meta["LUTFileName"]
     if not original_passthrough_identity and output_identity["display_token"] in LABEL_PRODUCTS:
+        if segment_source_geometry_identity:
+            tmp_meta["LUTFileName"] = SYNTHSEG_SEGMENTATION_LUT
         tmp_meta["LabelProduct"] = output_identity["display_token"]
     tmp_meta["DataRole"] = "Image" if source_image_header_identity else data_role
     tmp_meta["ImageProcessingHistory"] = processing_history
@@ -1729,6 +1733,10 @@ def _stamp_synthseg_output_image(
     tmp_meta["DicomImageType"] = output_dicom_image_type
     if source_geometry_identity and segment_scanner_postprocessing:
         tmp_meta["ExamDataRole"] = exam_data_role
+        # Like OpenMSK: the child role replaces any inherited marker, which
+        # the output contract rejects on segment streams.
+        if SYNTHSEG_SEGMENT_POSTPROCESSING_META_KEY in tmp_meta:
+            del tmp_meta[SYNTHSEG_SEGMENT_POSTPROCESSING_META_KEY]
     elif source_geometry_identity:
         for key in (
             "ExamDataRole",
