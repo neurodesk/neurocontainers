@@ -1,4 +1,11 @@
 variables:
+  arm_fsl_version: "6.0.7.22"
+  r_pic_flag:
+    try:
+    - value: -fpic
+      condition: arch=="x86_64"
+    - value: -fPIC
+      condition: arch=="aarch64"
   upstream_commit: f88183050862becbf53769b1866c48dcf8840efe
 
 name: mimosa
@@ -8,6 +15,7 @@ copyright:
   url: https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
 architectures:
 - x86_64
+- aarch64
 structured_readme:
   description: Trains and makes predictions from the 'MIMoSA' method
   example: mimosa_model
@@ -53,6 +61,14 @@ auto_update:
     ref: HEAD
     target:
       variable: upstream_commit
+  - id: arm-fsl
+    dependency: true
+    method: webpage
+    url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/manifest.json
+    version_regex: '"latest"\s*:\s*"(?P<version>\d+(?:\.\d+)+)"'
+    target:
+      variable: arm_fsl_version
+      fulltest_variable: arm_fsl_version
 
 build:
   kind: neurodocker
@@ -62,6 +78,11 @@ build:
   - template:
       name: fsl
       version: 6.0.7.16
+    condition: arch=="x86_64"
+  - template:
+      name: fsl
+      version: "{{ context.arm_fsl_version }}"
+    condition: arch=="aarch64"
 
   # ----------------------------------------------------------------------
   # System libraries.
@@ -101,7 +122,7 @@ build:
   # otherwise neurodocker will prepend `&&` to every R line and break it.
   - run:
       # Step 1: relax gcc-13 strictness for ITKR's bundled HDF5.
-      - mkdir -p /root/.R && printf '%s\n' 'CFLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXXFLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX11FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX14FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX17FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' > /root/.R/Makevars
+      - mkdir -p /root/.R && printf '%s\n' 'CFLAGS = -O2 -g {{ context.r_pic_flag }} -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXXFLAGS = -O2 -g {{ context.r_pic_flag }} -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX11FLAGS = -O2 -g {{ context.r_pic_flag }} -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX14FLAGS = -O2 -g {{ context.r_pic_flag }} -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX17FLAGS = -O2 -g {{ context.r_pic_flag }} -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' > /root/.R/Makevars
       - SCHEME=https && CRAN_BASE="${SCHEME}://cloud.r-project.org" && wget -qO- "${CRAN_BASE}/bin/linux/ubuntu/marutter_pubkey.asc" | tee /etc/apt/trusted.gpg.d/cran_ubuntu_key.asc && echo "deb ${CRAN_BASE}/bin/linux/ubuntu noble-cran40/" > /etc/apt/sources.list.d/cran-r40.list && apt-get update -qq && apt-get install -y --no-install-recommends r-base r-base-dev && R --version | head -1
       # Step 2: bootstrap CRAN packages from Posit PM binaries (skips source compile of fs/sass/RNifti/etc).
       - R --slave -e "options(repos = c(CRAN = Sys.getenv('R_REPOS')), HTTPUserAgent = sprintf('R/%s R (%s)', getRversion(), paste(getRversion(), R.version['platform'], R.version['arch'], R.version['os'])), timeout = as.integer(Sys.getenv('R_DEFAULT_INTERNET_TIMEOUT', 600)), Ncpus = max(1L, parallel::detectCores() - 1L)); install.packages(c('remotes', 'devtools', 'dplyr', 'magrittr', 'rlist', 'fs', 'sass', 'bslib', 'rmarkdown', 'rticles', 'RNifti', 'oro.nifti', 'fslr', 'neurobase', 'WhiteStripe', 'matrixStats', 'R.matlab', 'abind', 'R.utils', 'neuroim', 'plyr', 'stapler', 'RcppEigen')); for (p in c('remotes', 'fs', 'rmarkdown', 'RNifti', 'oro.nifti', 'fslr', 'neurobase', 'WhiteStripe', 'matrixStats', 'R.matlab', 'abind', 'R.utils', 'neuroim', 'plyr', 'stapler', 'magrittr', 'RcppEigen')) if (!requireNamespace(p, quietly = TRUE)) stop('CRAN install failed for ', p); cat('CRAN bootstrap OK\\n')"
