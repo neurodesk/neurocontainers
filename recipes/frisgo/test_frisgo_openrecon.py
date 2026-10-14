@@ -63,12 +63,12 @@ def image(repetition=0, slice_index=0, **counters):
 class FrisgoOpenReconTests(unittest.TestCase):
     def test_selected_modes_match_direct_laynii_and_preserve_geometry(self):
         cases = [
-            ("frisgo", ["-tshift"], "Tshift", "frisgo", "LN2_FRISGO_TSHIFT"),
-            ({"algorithm": "spline", "lowpasswindow": "ignored"}, ["-tshift"], "Tshift", "frisgo", "LN2_FRISGO_TSHIFT"),
-            ({"parameters": {"algorithm": "simple"}}, ["-simple"], "frisgo-simple", "frisgo_simple", "LN2_FRISGO_SIMPLE"),
-            (json.dumps({"algorithm": "runwise"}), ["-runwise"], "frisgo-runwise", "frisgo_runwise", "LN2_FRISGO_RUNWISE"),
-            ({"algorithm": "lpass"}, ["-lpass", "40"], "frisgo-lpass", "frisgo_lpass", "LN2_FRISGO_LPASS_WINDOW_TR=40"),
-            (json.dumps({"parameters": {"algorithm": "lpass", "lowpasswindow": "12.5"}}), ["-lpass", "12.5"], "frisgo-lpass", "frisgo_lpass", "LN2_FRISGO_LPASS_WINDOW_TR=12.5"),
+            ("frisgo", ["-tshift"], "Tshift", "frisgo", "LN2_FRISGO_TSHIFT", "FRISGO spline"),
+            ({"algorithm": "spline", "lowpasswindow": "ignored"}, ["-tshift"], "Tshift", "frisgo", "LN2_FRISGO_TSHIFT", "FRISGO spline"),
+            ({"parameters": {"algorithm": "simple"}}, ["-simple"], "frisgo-simple", "frisgo_simple", "LN2_FRISGO_SIMPLE", "FRISGO simple"),
+            (json.dumps({"algorithm": "runwise"}), ["-runwise"], "frisgo-runwise", "frisgo_runwise", "LN2_FRISGO_RUNWISE", "FRISGO runwise"),
+            ({"algorithm": "lpass"}, ["-lpass", "40"], "frisgo-lpass", "frisgo_lpass", "LN2_FRISGO_LPASS_WINDOW_TR=40", "FRISGO lpass window=40TR"),
+            (json.dumps({"parameters": {"algorithm": "lpass", "lowpasswindow": "12.5"}}), ["-lpass", "12.5"], "frisgo-lpass", "frisgo_lpass", "LN2_FRISGO_LPASS_WINDOW_TR=12.5", "FRISGO lpass window=12.5TR"),
         ]
         images = []
         rng = np.random.default_rng(7)
@@ -83,7 +83,7 @@ class FrisgoOpenReconTests(unittest.TestCase):
             replacement.attribute_string = source.attribute_string
             images.append(replacement)
         series = frisgo.assemble_time_series(images)
-        for config, arguments, suffix, label, history in cases:
+        for config, arguments, suffix, label, history, comment in cases:
             with self.subTest(config=config), tempfile.TemporaryDirectory() as work:
                 direct = nib.Nifti1Image(series.volume(), series.affine())
                 direct.header.set_zooms((1, 1, 1, series.repetition_time))
@@ -110,6 +110,7 @@ class FrisgoOpenReconTests(unittest.TestCase):
                     meta = ismrmrd.Meta.deserialize(corrected.attribute_string)
                     self.assertEqual(meta["SeriesDescription"], f"BOLD-{label}")
                     self.assertEqual(meta["ImageProcessingHistory"], ["PYTHON", "LAYNII", history])
+                    self.assertEqual((meta["ImageComment"], meta["ImageComments"]), (comment, comment))
 
     def test_gui_options_match_runtime_modes(self):
         label = json.loads(Path(__file__).with_name("OpenReconLabel.json").read_text())
@@ -291,6 +292,7 @@ class FrisgoOpenReconTests(unittest.TestCase):
             '  <ParamString."SeriesInstanceUID"> { "1.2.3" }\n'
             '  <ParamString."SOPInstanceUID"> { "1.2.3.4" }\n'
             '  <ParamString."ImageTypeValue3"> { "M" }\n'
+            '  <ParamString."ImageComments"> { "source comment" }\n'
             '  <ParamLong."NumberInSeries"> { 99 }\n'
             '}\n<ParamMap."CONTROL">\n{\n'
             '  <ParamLong."ChronSliceNo"> { 2 }\n'
@@ -317,6 +319,8 @@ class FrisgoOpenReconTests(unittest.TestCase):
                 )
             self.assertEqual(frisgo.i2i._minihead_long_value(minihead, "NumberInSeries"), 1)
             self.assertEqual(frisgo.i2i._minihead_long_value(minihead, "ChronSliceNo"), 2)
+        for name in ("ImageComment", "ImageComments"):
+            self.assertEqual(frisgo.i2i._minihead_string_value(minihead, name), "FRISGO spline")
             frisgo._validate_outputs([output])
 
 
