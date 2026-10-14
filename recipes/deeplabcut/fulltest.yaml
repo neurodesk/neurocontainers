@@ -394,6 +394,8 @@ tests:
       revision='1ad30fb80cd666f1e5c91578d1cf63bccfa84f80'
       with tempfile.TemporaryDirectory(prefix='dlc-trained-pose-') as directory:
           root=Path(directory)
+          os.environ['TORCH_HOME']=str(root/'torch-cache')
+          os.environ['XDG_CACHE_HOME']=str(root/'cache')
           for filename,expected in assets:
               url='https://huggingface.co/mwmathis/DeepLabCutModelZoo-SuperAnimal-Quadruped/resolve/'+revision+'/'+filename
               with urllib.request.urlopen(url,timeout=180) as response,(root/filename).open('wb') as stream:
@@ -422,10 +424,10 @@ tests:
           result=pd.read_hdf(files[0]);assert len(result)==3
           assert result.columns.nlevels==4 and set(result.columns.get_level_values('coords'))=={'x','y','likelihood'}
           import yaml
-      from deeplabcut.pose_estimation_pytorch.modelzoo.utils import get_super_animal_project_config_path
-      metadata=yaml.safe_load(get_super_animal_project_config_path('superanimal_quadruped').read_text())
-      bodyparts=metadata['bodyparts'];assert len(bodyparts)==39
-      assert list(dict.fromkeys(result.columns.get_level_values('bodyparts')))==bodyparts
+          from deeplabcut.pose_estimation_pytorch.modelzoo.utils import get_super_animal_project_config_path
+          metadata=yaml.safe_load(get_super_animal_project_config_path('superanimal_quadruped').read_text())
+          bodyparts=metadata['bodyparts'];assert len(bodyparts)==39
+          assert list(dict.fromkeys(result.columns.get_level_values('bodyparts')))==bodyparts
           points=result.xs('likelihood',level='coords',axis=1).to_numpy()
           x=result.xs('x',level='coords',axis=1).to_numpy();y=result.xs('y',level='coords',axis=1).to_numpy()
           assert np.isfinite(points).all() and np.isfinite(x).all() and np.isfinite(y).all()
