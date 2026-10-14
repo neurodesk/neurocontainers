@@ -5,6 +5,8 @@ copyright:
   url: https://github.com/Aswendt-Lab/AIDAmri/blob/v2.0/LICENSE
 - license: BSD-3-Clause
   url: https://github.com/KCL-BMEIS/niftyreg/blob/master/LICENSE.txt
+- license: CC-BY-NC-SA-4.0
+  url: https://github.com/frankyeh/DSI-Studio/blob/master/LICENSE
 architectures:
 - x86_64
 - aarch64
@@ -16,7 +18,8 @@ variables:
   niftyreg_arm_source_dir: niftyreg-{{ context.niftyreg_arm_version }}
   fsl_version: 5.0.11
   fsl_arm_version: 6.0.7.22
-  dsi_version: 2026.7.25
+  dsi_x86_version: 2026.7.25
+  dsi_arm_version: 2026.7.25
   upstream_version: '3.0'
 auto_update:
   container_version: aidamri
@@ -34,6 +37,15 @@ auto_update:
     repo: KCL-BMEIS/niftyreg
     target:
       variable: niftyreg_arm_version
+  - id: x86-dsi-studio
+    dependency: true
+    method: github_release_asset
+    repo: frankyeh/DSI-Studio
+    asset: dsi_studio_ubuntu2204_cpu.zip
+    target:
+      file: dsi_studio_x86_zip
+      variables:
+        dsi_x86_version: version
   - id: arm-dsi-studio
     dependency: true
     method: github_release_asset
@@ -42,7 +54,7 @@ auto_update:
     target:
       file: dsi_studio_arm_zip
       variables:
-        dsi_version: version
+        dsi_arm_version: version
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -213,11 +225,11 @@ files:
   url: https://github.com/Aswendt-Lab/AIDAmri/archive/v{{ context.upstream_version }}.tar.gz
 - name: dsi_studio_x86_zip
   condition: arch == "x86_64"
-  url: https://github.com/frankyeh/DSI-Studio/releases/download/{{ context.dsi_version }}/dsi_studio_ubuntu2204_cpu.zip
+  url: https://github.com/frankyeh/DSI-Studio/releases/download/{{ context.dsi_x86_version }}/dsi_studio_ubuntu2204_cpu.zip
   sha256: 184a5d7999937850f8a1267a3c3df496de8d2d0c04c3d981f8565a5054a37160
 - name: dsi_studio_arm_zip
   condition: arch == "aarch64"
-  url: https://github.com/frankyeh/DSI-Studio/releases/download/{{ context.dsi_version }}/dsi_studio_ubuntu2204_cpu_arm64.zip
+  url: https://github.com/frankyeh/DSI-Studio/releases/download/{{ context.dsi_arm_version }}/dsi_studio_ubuntu2204_cpu_arm64.zip
   sha256: 20e8d403ea28ec9fd545fac974225b3d3099259aa2eac2a066688076c7dc1deb
 - name: niftyreg_tar
   condition: arch == "x86_64"
