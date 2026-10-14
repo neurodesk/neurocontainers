@@ -99,32 +99,6 @@
       "information": { "en": "Add paramagnetic, diamagnetic, and separated-total susceptibility maps. Requires at least three GRE magnitude and unfiltered phase echoes. R2*-QSM needs equally spaced echoes. No spin-echo acquisition is needed." }
     },
     {
-      "id": "pipelinepreset",
-      "label": { "en": "Pipeline preset" },
-      "type": "choice",
-      "values": [
-        { "id": "custom", "name": { "en": "Custom algorithm controls" } },
-        { "id": "romeo-resharp-rts", "name": { "en": "1. ROMEO + RESHARP + RTS" } },
-        { "id": "romeo-ismv-hdqsm", "name": { "en": "2. ROMEO + iSMV + HD-QSM" } },
-        { "id": "romeo-resharp-tikhonov", "name": { "en": "3. ROMEO + RESHARP + Tikhonov" } },
-        { "id": "romeo-resharp-tv", "name": { "en": "4. ROMEO + RESHARP + TV (ADMM)" } },
-        { "id": "romeo-resharp-hdqsm", "name": { "en": "5. ROMEO + RESHARP + HD-QSM" } },
-        { "id": "romeo-ismv-rts", "name": { "en": "6. ROMEO + iSMV + RTS" } },
-        { "id": "romeo-ismv-whqsm", "name": { "en": "7. ROMEO + iSMV + WH-QSM" } },
-        { "id": "romeo-sharp-whqsm", "name": { "en": "8. ROMEO + SHARP + WH-QSM" } },
-        { "id": "romeo-resharp-whqsm", "name": { "en": "9. ROMEO + RESHARP + WH-QSM" } },
-        { "id": "romeo-sharp-tikhonov", "name": { "en": "10. ROMEO + SHARP + Tikhonov" } },
-        { "id": "qsmart", "name": { "en": "QSMART full pipeline (ROMEO + QSMART)" } },
-        { "id": "tgv", "name": { "en": "TGV full pipeline" } },
-        { "id": "autoqsm", "name": { "en": "AutoQSM full pipeline (ROMEO + AutoQSM)" } },
-        { "id": "nextqsm", "name": { "en": "NeXtQSM full pipeline (ROMEO + NeXtQSM)" } },
-        { "id": "iqsm", "name": { "en": "iQSM full pipeline (phase to QSM)" } },
-        { "id": "iqsm-plus", "name": { "en": "iQSM+ full pipeline (phase to QSM)" } }
-      ],
-      "default": "custom",
-      "information": { "en": "Select a scanner-tested combination or a complete reconstruction method. Any preset other than Custom overrides the QSM algorithm, Unwrap, and Background choices. Complete methods handle their own background removal; iQSM and iQSM+ also handle unwrapping. Select Custom to choose individual stages." }
-    },
-    {
       "id": "qsmalgorithm",
       "label": { "en": "QSM algorithm" },
       "type": "choice",
@@ -163,7 +137,7 @@
         { "id": "iqsm-plus", "name": { "en": "iQSM+" } }
       ],
       "default": "rts",
-      "information": { "en": "Used only with the Custom pipeline preset. Default uses RTS. Any other Pipeline preset overrides this choice." }
+      "information": { "en": "Select the reconstruction algorithm. Advanced pipelinepreset configuration can override this choice." }
     },
     {
       "id": "unwrappingalgorithm",
@@ -175,7 +149,7 @@
         { "id": "laplacian", "name": { "en": "Laplacian" } }
       ],
       "default": "romeo",
-      "information": { "en": "Used only with the Custom pipeline preset. Default uses ROMEO. Any other Pipeline preset overrides this choice." }
+      "information": { "en": "Select the reconstruction algorithm. Advanced pipelinepreset configuration can override this choice." }
     },
     {
       "id": "bfalgorithm",
@@ -195,7 +169,7 @@
         { "id": "iqfm", "name": { "en": "iQFM" } }
       ],
       "default": "vsharp",
-      "information": { "en": "Used only with the Custom pipeline preset. Default uses V-SHARP. Any other Pipeline preset overrides this choice." }
+      "information": { "en": "Select the reconstruction algorithm. Advanced pipelinepreset configuration can override this choice." }
     },
     {
       "id": "maskpreset",
@@ -207,51 +181,8 @@
         { "id": "combined", "name": { "en": "BET + threshold union" } },
         { "id": "hd-bet", "name": { "en": "HD-BET" } }
       ],
-      "default": "hd-bet",
-      "information": { "en": "HD-BET extracts the brain from magnitude using the packaged model, with closing and hole filling. Combined unions BET and threshold masks." }
-    },
-    {
-      "id": "maskinginput",
-      "label": { "en": "Threshold input" },
-      "type": "choice",
-      "values": [
-        { "id": "magnitude", "name": { "en": "Combined magnitude" } },
-        { "id": "magnitude-first", "name": { "en": "First-echo magnitude" } },
-        { "id": "magnitude-last", "name": { "en": "Last-echo magnitude" } },
-        { "id": "phase-quality", "name": { "en": "Phase quality" } }
-      ],
-      "default": "magnitude",
-      "information": { "en": "Input used by Robust threshold and the threshold part of Combined. Magnitude is safer for single-echo acquisitions; phase quality is most useful with multiple echoes." }
-    },
-    {
-      "id": "betfractionalintensity",
-      "label": { "en": "BET threshold" },
-      "type": "double",
-      "minimum": 0.0,
-      "maximum": 1.0,
-      "default": 0.5,
-      "information": { "en": "BET fractional intensity threshold. Lower values create a larger mask." }
-    },
-    {
-      "id": "maskthresholdmethod",
-      "label": { "en": "Threshold method" },
-      "type": "choice",
-      "values": [
-        { "id": "otsu", "name": { "en": "Otsu" } },
-        { "id": "percentile", "name": { "en": "Percentile" } }
-      ],
-      "default": "otsu",
-      "information": { "en": "Threshold generator used by Robust threshold and Combined. Set the cutoff with Mask percentile." }
-    },
-    {
-      "id": "maskthresholdpercentile",
-      "label": { "en": "Mask percentile" },
-      "type": "double",
-      "minimum": 0.0,
-      "maximum": 100.0,
-      "default": 65.0,
-      "unit": { "en": "%" },
-      "information": { "en": "Percentile cutoff when Threshold method is Percentile." }
+      "default": "robust-threshold",
+      "information": { "en": "Robust threshold uses Otsu on combined magnitude, with closing and hole filling. Combined unions BET and threshold masks. HD-BET uses the packaged brain extraction model." }
     },
     {
       "id": "inhomogeneitycorrection",
@@ -263,7 +194,52 @@
         { "id": "fine", "name": { "en": "Fine" } }
       ],
       "default": "standard",
-      "information": { "en": "Correct magnitude intensity inhomogeneity. Standard uses 7 mm smoothing and 3 local segmentation boxes per dimension. Fine uses 7 mm smoothing and 15 boxes per dimension for comparison. The corrected magnitude is used for SWI and SMWI. Off disables correction." }
+      "information": { "en": "Correct magnitude for masks and SMWI. Standard uses 7 mm smoothing and 3 local segmentation boxes per dimension. Fine uses 7 mm smoothing and 15 boxes per dimension. Off disables this correction. CLEAR-SWI applies its own receive-sensitivity correction independently." }
+    },
+    {
+      "id": "twopass",
+      "label": {"en": "Two-pass QSM"},
+      "type": "boolean",
+      "default": false,
+      "information": {"en": "Reconstruct on a reliable phase-quality mask and use the ordinary pass to fill unreliable regions."}
+    },
+    {
+      "id": "motioncorrection",
+      "label": {"en": "Multiecho motion correction"},
+      "type": "boolean",
+      "default": false,
+      "information": {"en": "Rigidly align GRE echoes using magnitude and apply transforms to the complex signal. Separate from dual polarity repetition preprocessing."}
+    },
+    {
+      "id": "qsmreference",
+      "label": {"en": "QSM reference"},
+      "type": "string",
+      "default": "mean",
+      "information": {"en": "Mean, none, any SynthSeg v1 region name or label id, or comma-separated union. Examples include ventricles, left-thalamus, and 4,43. Region references run packaged SynthSeg on magnitude anatomy."}
+    },
+    {
+      "id": "vsharpgrid",
+      "label": {"en": "V-SHARP grid"},
+      "type": "choice",
+      "default": "native",
+      "information": {"en": "Choose the grid for background field removal. Native preserves acquired anisotropic resolution. Isotropic spacing can be set in advanced configuration."},
+      "values": [
+        {"id": "native", "name": {"en": "Native"}},
+        {"id": "finest", "name": {"en": "Finest voxel"}},
+        {"id": "isotropic", "name": {"en": "Isotropic"}}
+      ]
+    },
+    {
+      "id": "swiunwrapping",
+      "label": {"en": "SWI unwrapping"},
+      "type": "choice",
+      "default": "laplacian",
+      "information": {"en": "Choose SWI phase unwrapping independently of QSM. Slice Laplacian supports contiguous 2D stacks."},
+      "values": [
+        {"id": "laplacian", "name": {"en": "Laplacian"}},
+        {"id": "laplacian-slice", "name": {"en": "Slice Laplacian"}},
+        {"id": "romeo", "name": {"en": "ROMEO"}}
+      ]
     }
   ]
 }

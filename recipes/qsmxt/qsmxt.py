@@ -161,7 +161,7 @@ QSM_WINDOW_HIGH_PERCENTILE = 99.0
 QSM_WINDOW_MIN_NONZERO_VOXELS = 100
 QSM_DICOM_PPB_PER_PPM = 1000.0
 MASK_PRESETS = ("bet", "robust-threshold", "combined", "hd-bet")
-DEFAULT_MASK_PRESET = "hd-bet"
+DEFAULT_MASK_PRESET = "robust-threshold"
 DEFAULT_MASKING_INPUT = "magnitude"
 DEFAULT_BET_FRACTIONAL_INTENSITY = 0.5
 DEFAULT_MASK_CLEANUP = "close-fill"
@@ -511,6 +511,14 @@ def write_bids_dataset(
 
     phase_paths = []
     magnitude_paths = []
+    acquisition_geometry = _acquisition_geometry_sidecar(
+        [image for group in magnitude_echo_groups + phase_echo_groups for image in group],
+        metadata,
+        settings,
+    )
+    if acquisition_geometry.get("MRAcquisitionType") == "2D":
+        for group in magnitude_echo_groups + phase_echo_groups:
+            _validate_2d_stack_positions(group)
     resolved_b0_dir = None
     resolved_b0_dir_source = None
     for echo_index in range(n_echoes):
@@ -577,6 +585,7 @@ def write_bids_dataset(
         nib.save(nib.Nifti1Image(phase_volume.astype(np.float32), phase_affine), phase_path)
 
         sidecar = {
+            **acquisition_geometry,
             "EchoTime": echo_times[echo_index],
             "MagneticFieldStrength": field_strength,
             "B0_dir": list(b0_dir),
@@ -628,6 +637,56 @@ def write_bids_dataset(
         "input_variant": input_pair["variant"],
         "input_short_label": input_pair["short_label"],
     }
+
+
+def _acquisition_geometry_sidecar(images, metadata, settings):
+    values = {"SliceThickness": [], "MRAcquisitionType": []}
+    for image in images:
+        meta = _meta_from_image(image)
+        for key in values:
+            value = _meta_text(meta, key)
+            if value:
+                values[key].append(value)
+    user_parameters = getattr(metadata, "userParameters", None)
+    for kind in ("userParameterDouble", "userParameterString"):
+        for parameter in getattr(user_parameters, kind, []) or []:
+            if parameter.name in values:
+                values[parameter.name].append(str(parameter.value))
+    if settings["slice_thickness_mm"] is not None:
+        values["SliceThickness"] = [str(settings["slice_thickness_mm"])]
+    if settings["acquisition_type"]:
+        values["MRAcquisitionType"] = [settings["acquisition_type"]]
+    sidecar = {"SliceEncodingDirection": "k"}
+    thicknesses = [float(value) for value in values["SliceThickness"]]
+    if thicknesses:
+        if any(not np.isfinite(value) or value <= 0 for value in thicknesses):
+            raise ValueError("SliceThickness metadata must be positive and finite")
+        if not np.allclose(thicknesses, thicknesses[0], rtol=0, atol=1e-4):
+            raise ValueError("Inconsistent SliceThickness metadata across magnitude/phase echoes")
+        sidecar["SliceThickness"] = thicknesses[0]
+    else:
+        logging.warning(
+            "SliceThickness metadata unavailable. Supply independent acquired thickness "
+            "in image metadata or MRD userParameters to enable QSMxT slice-gap checking."
+        )
+    acquisition_types = {value.strip().upper() for value in values["MRAcquisitionType"]}
+    if acquisition_types:
+        if not acquisition_types <= {"2D", "3D"} or len(acquisition_types) != 1:
+            raise ValueError("MRAcquisitionType metadata must consistently identify 2D or 3D")
+        sidecar["MRAcquisitionType"] = acquisition_types.pop()
+    return sidecar
+
+
+def _validate_2d_stack_positions(images):
+    if len(images) < 2 or any(int(image.getHead().matrix_size[2]) != 1 for image in images):
+        return
+    ordered = sorted(images, key=_stack_image_sort_key)
+    positions = np.asarray([image.getHead().position for image in ordered], dtype=float)
+    steps = np.diff(positions, axis=0)
+    if not np.isfinite(steps).all() or np.linalg.norm(steps[0]) <= 0:
+        raise ValueError("2D slice stacks require distinct finite scanner positions")
+    if not np.allclose(steps, steps[0], rtol=0.01, atol=1e-4):
+        raise ValueError("Nonuniform 2D slice positions cannot be represented by a NIfTI affine")
 
 
 def _ep3d_dual_polarity_average(magnitude_images, phase_images, work_dir, settings):
@@ -768,14 +827,9 @@ def _run_ep3d_preprocessing(magnitude_path, phase_path, work_dir, settings):
     return json.loads(outputs_path.read_text())
 
 
-def _run_qsmxt(bids_dir, output_dir, settings):
-    binary = (
-        settings["qsmxt_binary"]
-        or os.environ.get("QSMXT_BINARY")
-        or DEFAULT_QSMXT_BINARY
-    )
+def _qsmxt_command(bids_dir, output_dir, settings):
     cmd = [
-        binary,
+        settings["qsmxt_binary"],
         "run",
         str(bids_dir),
         str(output_dir),
@@ -790,6 +844,18 @@ def _run_qsmxt(bids_dir, output_dir, settings):
     for mask_section in _mask_sections(settings):
         cmd.extend(["--mask", mask_section])
     _append_optional_arg(cmd, "--qsm-reference", settings["qsm_reference"])
+    cmd.extend(["--vsharp-grid", settings["vsharp_grid"]])
+    cmd.extend(["--swi-unwrapping", settings["swi_unwrapping"]])
+    for setting, flag in (
+        ("two_pass", "--two-pass"),
+        ("motion_correction", "--motion-correction"),
+        ("ignore_slice_gap", "--ignore-slice-gap"),
+    ):
+        if settings[setting]:
+            cmd.append(flag)
+    if settings["motion_correction"]:
+        cmd.extend(["--motion-reference", settings["motion_reference"]])
+    _append_optional_arg(cmd, "--vsharp-grid-spacing", settings["vsharp_isotropic_spacing"])
     # Auto-enable the generation flags for any derivative the user selected in
     # sendoutputs; otherwise the map is requested but never produced by QSMxT.
     selected = _selected_output_ids(settings["send_outputs"])
@@ -819,6 +885,11 @@ def _run_qsmxt(bids_dir, output_dir, settings):
             "--homogeneity-nbox", str(homogeneity.nbox),
         ])
 
+    return cmd
+
+
+def _run_qsmxt(bids_dir, output_dir, settings):
+    cmd = _qsmxt_command(bids_dir, output_dir, settings)
     logging.info("Running QSMxT: %s", " ".join(cmd))
     started_at = time.monotonic()
     result = subprocess.run(
@@ -865,7 +936,7 @@ def _find_qsmxt_outputs(output_dir, conversion, settings):
                 for candidate in derivative_anat_dir.glob(f"*_{suffix}.nii*")
                 if output_id != "qsm" or not any(
                     f"_desc-{descriptor}_" in candidate.name
-                    for descriptor in ("paramagnetic", "diamagnetic", "total")
+                    for descriptor in ("paramagnetic", "diamagnetic", "total", "singlepass")
                 )
             }
         )
@@ -1894,7 +1965,11 @@ def _settings_from_config(config, metadata=None):
         "b0_dir_override": configured_b0_dir,
         "b0_dir_source": b0_dir_source,
         "phase_wrap": _config_float(params, "phasewrap", 4096.0),
-        "qsmxt_binary": _config_text(params, "qsmxtbinary", ""),
+        "qsmxt_binary": (
+            _config_text(params, "qsmxtbinary", "")
+            or os.environ.get("QSMXT_BINARY")
+            or DEFAULT_QSMXT_BINARY
+        ),
         "pipeline_preset": pipeline_preset,
         **algorithm_settings,
         "mask_preset": (
@@ -1943,7 +2018,22 @@ def _settings_from_config(config, metadata=None):
             0,
             _config_int(params, "maskerode", mask_cleanup_defaults["erode"]),
         ),
-        "qsm_reference": _optional_choice(params, "qsmreference"),
+        "qsm_reference": _reference_spec(params),
+        "two_pass": _config_bool(params, "twopass", False),
+        "motion_correction": _config_bool(params, "motioncorrection", False),
+        "motion_reference": _motion_reference(params),
+        "vsharp_grid": _validated_choice(
+            params, "vsharpgrid", "native", ("native", "finest", "isotropic"),
+        ),
+        "vsharp_isotropic_spacing": _positive_optional_float(params, "vsharpisotropicspacing"),
+        "swi_unwrapping": _validated_choice(
+            params, "swiunwrapping", "laplacian", ("laplacian", "laplacian-slice", "romeo"),
+        ),
+        "ignore_slice_gap": _config_bool(params, "ignoreslicegap", False),
+        "slice_thickness_mm": _positive_optional_float(params, "slicethicknessmm"),
+        "acquisition_type": _validated_choice(
+            params, "acquisitiontype", "", ("", "2d", "3d"),
+        ).upper(),
         "no_qsm": no_qsm,
         "do_swi": _config_bool(params, "doswi", False),
         "do_t2starmap": _config_bool(params, "dot2starmap", False),
@@ -1952,6 +2042,42 @@ def _settings_from_config(config, metadata=None):
         "ep3d_dual_polarity": _config_bool(params, "ep3ddualpolarity", False),
         "ep3d_denoise": _config_bool(params, "ep3ddenoise", False),
     }
+
+
+def _validated_choice(params, key, default, choices):
+    value = _config_text(params, key, default).lower()
+    if value not in choices:
+        raise ValueError(f"unknown {key} {value!r}; expected {', '.join(choices)}")
+    return value
+
+
+def _positive_optional_float(params, key):
+    if params.get(key) in (None, ""):
+        return None
+    try:
+        value = float(params[key])
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{key} must be a positive finite number") from error
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError(f"{key} must be a positive finite number")
+    return value
+
+
+def _motion_reference(params):
+    value = _config_text(params, "motionreference", "first").lower()
+    if value not in ("first", "last") and not (value.isdecimal() and int(value) > 0):
+        raise ValueError("motionreference must be first, last, or a positive echo number")
+    return value
+
+
+def _reference_spec(params):
+    value = _config_text(params, "qsmreference", "mean").lower()
+    tokens = [token.strip() for token in value.split(",")]
+    if any(not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", token) for token in tokens):
+        raise ValueError("qsmreference requires a region name, label id, or comma-separated union")
+    if len(tokens) > 1 and any(token in ("mean", "none") for token in tokens):
+        raise ValueError("qsmreference mean and none cannot be combined with regions")
+    return ",".join(tokens)
 
 
 def _algorithm_settings(params):

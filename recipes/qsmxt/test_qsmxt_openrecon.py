@@ -312,8 +312,8 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
                 mask_index = sys.argv.index("--mask")
             except ValueError:
                 raise SystemExit("qsmxt OpenRecon must pass --mask")
-            if sys.argv[mask_index + 1] != "magnitude,hd-bet,close:1,fill-holes:0":
-                raise SystemExit("qsmxt OpenRecon must pass the default HD-BET section")
+            if sys.argv[mask_index + 1] != "magnitude,threshold:otsu,close:1,fill-holes:0":
+                raise SystemExit("qsmxt OpenRecon must pass the default robust-threshold section")
             bids = Path(sys.argv[2])
             output = Path(sys.argv[3])
             phase = sorted(bids.glob("sub-*/anat/*_echo-1_part-phase_MEGRE.nii.gz"))[0]
@@ -341,7 +341,7 @@ def test_openrecon_defaults_select_rts_romeo_and_vsharp():
     assert settings["qsm_algorithm"] == "rts"
     assert settings["unwrapping_algorithm"] == "romeo"
     assert settings["bf_algorithm"] == "vsharp"
-    assert settings["mask_preset"] == "hd-bet"
+    assert settings["mask_preset"] == "robust-threshold"
     assert settings["masking_input"] == "magnitude"
     assert settings["bet_fractional_intensity"] == 0.5
     assert settings["mask_cleanup"] == "close-fill"
@@ -823,7 +823,7 @@ def test_openrecon_pipeline_preset_reaches_qsmxt_command(preset, tmp_path, monke
         else:
             assert command[command.index(flag) + 1] == expected
     assert command[command.index("--mask") + 1] == (
-        "magnitude,hd-bet,close:1,fill-holes:0"
+        "magnitude,threshold:otsu,close:1,fill-holes:0"
     )
     assert kwargs["cwd"] == str(bids_dir)
 
@@ -923,13 +923,12 @@ def test_openrecon_label_exposes_processing_defaults():
         parameter["id"]: parameter for parameter in label["parameters"]
     }
 
-    pipeline_preset = parameters["pipelinepreset"]
-    assert pipeline_preset["type"] == "choice"
-    assert pipeline_preset["default"] == "custom"
-    assert [value["id"] for value in pipeline_preset["values"]] == [
-        "custom",
-        *qsmxt.ALGORITHM_PIPELINE_PRESETS,
-    ]
+    assert "pipelinepreset" not in parameters
+    assert parameters["twopass"]["default"] is False
+    assert parameters["motioncorrection"]["default"] is False
+    assert parameters["qsmreference"]["default"] == "mean"
+    assert parameters["vsharpgrid"]["default"] == "native"
+    assert parameters["swiunwrapping"]["default"] == "laplacian"
     assert parameters["qsmalgorithm"]["default"] == "rts"
     qsm_algorithms = {
         value["id"] for value in parameters["qsmalgorithm"]["values"]
@@ -941,10 +940,10 @@ def test_openrecon_label_exposes_processing_defaults():
         value["id"] for value in parameters["bfalgorithm"]["values"]
     }
     assert "resharp" in bf_algorithms
-    assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "hd-bet"
+    assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "robust-threshold"
     assert tuple(value["id"] for value in parameters["maskpreset"]["values"]) == qsmxt.MASK_PRESETS
-    assert parameters["maskinginput"]["default"] == "magnitude"
-    assert parameters["betfractionalintensity"]["default"] == 0.5
+    assert "maskinginput" not in parameters
+    assert "betfractionalintensity" not in parameters
     assert len(label["parameters"]) == len(parameters) == 14
     assert "maskcleanup" not in parameters
     correction = parameters["inhomogeneitycorrection"]
@@ -954,7 +953,7 @@ def test_openrecon_label_exposes_processing_defaults():
     assert {value["id"] for value in correction["values"]} == set(qsmxt.HOMOGENEITY_PROFILES)
     assert [value["name"]["en"] for value in correction["values"]] == ["Off", "Standard", "Fine"]
     assert "sendoriginal" not in parameters
-    assert parameters["maskthresholdpercentile"]["default"] == 65.0
+    assert "maskthresholdpercentile" not in parameters
     assert "voxelsizemm" not in parameters
 
 
@@ -2384,12 +2383,12 @@ def test_mask_defaults_close_and_fill_each_section(preset, sections):
 
 def test_legacy_mask_cleanup_none_retains_close_fill_default():
     settings = qsmxt._settings_from_config({"parameters": {"maskcleanup": "none"}})
-    assert qsmxt._mask_sections(settings) == ["magnitude,hd-bet,close:1,fill-holes:0"]
+    assert qsmxt._mask_sections(settings) == ["magnitude,threshold:otsu,close:1,fill-holes:0"]
 
 
 @pytest.mark.parametrize("module_name", ["qsmxt", "qsmxt_ep3d", "qsmxt_ep3d_denoise"])
-@pytest.mark.parametrize("params", [{}, {"maskpreset": ""}, {"maskpreset": "hd-bet"}])
-def test_hdbet_default_reaches_all_config_commands(
+@pytest.mark.parametrize("params", [{}, {"maskpreset": ""}, {"maskpreset": "robust-threshold"}])
+def test_robust_threshold_default_reaches_all_config_commands(
     module_name, params, tmp_path, monkeypatch,
 ):
     import importlib
@@ -2417,7 +2416,7 @@ def test_hdbet_default_reaches_all_config_commands(
     qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
     command = commands[0]
     for flag, expected in (
-        ("--mask", "magnitude,hd-bet,close:1,fill-holes:0"),
+        ("--mask", "magnitude,threshold:otsu,close:1,fill-holes:0"),
         ("--qsm-algorithm", "rts"),
         ("--unwrapping-algorithm", "romeo"),
         ("--bf-algorithm", "vsharp"),
@@ -2452,3 +2451,103 @@ def test_invalid_mask_preset_fails_before_launch(preset, tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="maskpreset"):
         settings = qsmxt._settings_from_config({"parameters": {"maskpreset": preset}})
         qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
+
+
+@pytest.mark.parametrize("reference", ["none", "ventricles", "left-thalamus", "4,43", "right-caudate,4"])
+def test_v10_reference_and_independent_controls_reach_native_command(reference, tmp_path):
+    settings = qsmxt._settings_from_config({"parameters": {
+        "qsmreference": reference, "twopass": True, "motioncorrection": True,
+        "motionreference": "last", "vsharpgrid": "isotropic", "vsharpisotropicspacing": 1.2,
+        "swiunwrapping": "laplacian-slice", "ignoreslicegap": True,
+    }})
+    command = qsmxt._qsmxt_command(tmp_path, tmp_path / "output", settings)
+    for flag, value in [
+        ("--qsm-reference", reference), ("--motion-reference", "last"),
+        ("--vsharp-grid", "isotropic"), ("--vsharp-grid-spacing", "1.2"),
+        ("--swi-unwrapping", "laplacian-slice"),
+        ("--mask", "magnitude,threshold:otsu,close:1,fill-holes:0"),
+    ]:
+        assert command[command.index(flag) + 1] == value
+    assert {"--two-pass", "--motion-correction", "--ignore-slice-gap"} <= set(command)
+    assert "--two-pass-mask" not in command
+
+
+@pytest.mark.parametrize("params", [
+    {"qsmreference": ""}, {"qsmreference": "4,,43"}, {"qsmreference": "mean,4"},
+    {"vsharpgrid": "coarsest"}, {"swiunwrapping": "slice"}, {"motionreference": "0"},
+    {"slicethicknessmm": "invalid"}, {"vsharpisotropicspacing": -1},
+])
+def test_v10_boundary_rejects_malformed_configuration(params):
+    with pytest.raises(ValueError):
+        qsmxt._settings_from_config({"parameters": params})
+
+
+def test_v10_default_command_keeps_optional_processing_off(tmp_path):
+    command = qsmxt._qsmxt_command(tmp_path, tmp_path / "out", qsmxt._settings_from_config({}))
+    assert command[command.index("--qsm-reference") + 1] == "mean"
+    assert command[command.index("--vsharp-grid") + 1] == "native"
+    assert command[command.index("--swi-unwrapping") + 1] == "laplacian"
+    assert not {"--two-pass", "--motion-correction", "--ignore-slice-gap"} & set(command)
+
+
+def test_acquired_geometry_uses_explicit_thickness_and_rejects_conflicts():
+    image = _image(1, 1, "GRE", np.ones((1, 3, 4)), meta_values={
+        "SliceThickness": "2", "MRAcquisitionType": "2D",
+    })
+    settings = qsmxt._settings_from_config({})
+    assert qsmxt._acquisition_geometry_sidecar([image], FakeMetadata(), settings) == {
+        "SliceThickness": 2.0, "MRAcquisitionType": "2D", "SliceEncodingDirection": "k",
+    }
+    conflicting = _image(1, 2, "GRE", np.ones((1, 3, 4)), meta_values={"SliceThickness": "3"})
+    with pytest.raises(ValueError, match="Inconsistent SliceThickness"):
+        qsmxt._acquisition_geometry_sidecar([image, conflicting], FakeMetadata(), settings)
+    override = qsmxt._settings_from_config({"parameters": {"slicethicknessmm": 1.5}})
+    assert qsmxt._acquisition_geometry_sidecar([image, conflicting], FakeMetadata(), override)["SliceThickness"] == 1.5
+
+
+def test_unknown_acquired_thickness_is_not_inferred_from_image_fov(caplog):
+    image = _image(1, 1, "GRE", np.ones((1, 3, 4)))
+    sidecar = qsmxt._acquisition_geometry_sidecar([image], FakeMetadata(), qsmxt._settings_from_config({}))
+    assert sidecar == {"SliceEncodingDirection": "k"}
+    assert "Supply independent acquired thickness" in caplog.text
+
+
+def test_2d_nonuniform_positions_fail_instead_of_averaging_spacing():
+    images = [_image(1, i, "GRE", np.ones((1, 3, 4))) for i in range(3)]
+    for image, z in zip(images, [0, 2, 4]):
+        header = image.getHead()
+        _set_header_vector(header, "position", [0, 0, z])
+        image.setHead(header)
+    qsmxt._validate_2d_stack_positions(images)
+    header = images[-1].getHead()
+    _set_header_vector(header, "position", [0, 0, 5])
+    images[-1].setHead(header)
+    with pytest.raises(ValueError, match="Nonuniform 2D"):
+        qsmxt._validate_2d_stack_positions(images)
+
+
+def test_geometry_sidecars_preserve_independent_thickness_without_changing_pitch(tmp_path):
+    images = _input_images()
+    for image in images:
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        meta["SliceThickness"] = "0.8"
+        meta["MRAcquisitionType"] = "2D"
+        image.attribute_string = meta.serialize()
+    result = qsmxt.write_bids_dataset(images, FakeMetadata(), tmp_path / "bids", qsmxt._settings_from_config({}))
+    for path in result["phase_paths"] + result["magnitude_paths"]:
+        sidecar = json.loads(qsmxt._nifti_sidecar_path(path).read_text())
+        assert sidecar["SliceThickness"] == 0.8
+        assert sidecar["MRAcquisitionType"] == "2D"
+        assert sidecar["SliceEncodingDirection"] == "k"
+        assert nib.load(path).header.get_zooms()[2] == 1.0
+
+
+def test_main_qsm_selection_excludes_two_pass_intermediate(tmp_path):
+    output = tmp_path / "derivatives" / "qsmxt" / "sub-01" / "anat"
+    output.mkdir(parents=True)
+    primary = output / "sub-01_Chimap.nii.gz"
+    single = output / "sub-01_desc-singlepass_Chimap.nii.gz"
+    for path in (primary, single):
+        nib.save(nib.Nifti1Image(np.ones((2, 3, 4)), np.eye(4)), path)
+    specs = qsmxt._find_qsmxt_outputs(tmp_path, {"subject": "01"}, qsmxt._settings_from_config({}))
+    assert [(output_id, path) for output_id, _, path in specs] == [("qsm", primary)]
