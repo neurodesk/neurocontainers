@@ -1,6 +1,8 @@
 name: deeplabcut
 version: 3.0.2
 tensorflow_version: 2.15.1
+arm_torch_version: "2.6.0"
+arm_torchvision_version: "0.21.0"
 default_timeout: 60
 tests:
   - name: deeplabcut imports
@@ -303,3 +305,140 @@ tests:
   - name: TensorFlow reports the expected version
     command: python -c 'from importlib.metadata import version; assert version("tensorflow") == "${tensorflow_version}"'
     expected_exit_code: 0
+
+  - name: Native TensorFlow and PyTorch CPU operations and package closure
+    command: |
+      python - <<'PYTHON'
+      import importlib.metadata as md
+      import platform
+      import subprocess
+      import sys
+      import numpy as np
+      import tensorflow as tf
+      import torch
+      import torchvision
+      if platform.machine()=='aarch64':
+          assert torch.__version__=='${arm_torch_version}+cpu' and torch.version.cuda is None
+          assert md.version('torchvision').split('+')[0]=='${arm_torchvision_version}'
+          assert md.version('tensorflow-cpu-aws')=='${tensorflow_version}'
+      values=np.arange(12,dtype=np.float32).reshape(3,4)
+      np.testing.assert_array_equal(torch.from_numpy(values).sum(dim=1).numpy(),[6,22,38])
+      with tf.device('/CPU:0'):
+          x=tf.Variable([1.0,2.0,3.0])
+          with tf.GradientTape() as tape: loss=tf.reduce_sum(x*x)
+          np.testing.assert_array_equal(tape.gradient(loss,x).numpy(),[2,4,6])
+      boxes=torch.tensor([[0.,0.,2.,2.],[0.,0.,2.,2.],[5.,5.,6.,6.]])
+      np.testing.assert_array_equal(torchvision.ops.nms(boxes,torch.tensor([.9,.8,.7]),.5).numpy(),[0,2])
+      subprocess.run([sys.executable,'-m','pip','check'],check=True)
+      print('Both CPU learning backends, native detection operators and package closure passed')
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: Both CPU learning backends, native detection operators and package closure passed
+    timeout: 180
+
+  - name: Installed DeepLabCut GUI creates an offscreen project window
+    command: |
+      QT_QPA_PLATFORM=offscreen python - <<'PYTHON'
+      import os
+      import sys
+      import tempfile
+      with tempfile.TemporaryDirectory(prefix='dlc-gui-') as directory:
+          os.environ['XDG_CONFIG_HOME']=directory
+          os.environ['XDG_CACHE_HOME']=directory
+          from PySide6.QtWidgets import QApplication
+          from deeplabcut.gui.window import MainWindow
+          app=QApplication([])
+          stdout,stderr=sys.stdout,sys.stderr
+          window=MainWindow(app)
+          window.show();app.processEvents()
+          assert window.isVisible() and window.centralWidget() is not None
+          assert window.width()>0 and window.height()>0
+          window.close();app.processEvents()
+          sys.stdout,sys.stderr=stdout,stderr
+      print('DeepLabCut project GUI created and closed on the native architecture')
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: DeepLabCut project GUI created and closed on the native architecture
+    timeout: 120
+
+  - name: Actual pretrained SuperAnimal detection pose HDF and labeled video
+    description: >-
+      Run both official trained HRNet and MobileNet detector checkpoints through
+      the released CPU video pipeline on three lossless identical real-dog frames.
+      Require all36 bodyparts, finite coordinates/confidences, actual positive
+      in-frame predictions, HDF rows and a decodable three-frame labeled video.
+      Preserve all fixture/checkpoint bytes. No random model, stub detections,
+      biological accuracy, temporal tracking, adaptation training or GPU claim.
+    command: |
+      python - <<'PYTHON'
+      import hashlib
+      import json
+      import os
+      from pathlib import Path
+      import tempfile
+      import urllib.request
+      import cv2
+      import numpy as np
+      import pandas as pd
+      import torch
+      from deeplabcut.modelzoo.video_inference import video_inference_superanimal
+
+      def digest(path):
+          h=hashlib.sha256()
+          with path.open('rb') as stream:
+              for chunk in iter(lambda:stream.read(1024*1024),b''):h.update(chunk)
+          return h.hexdigest()
+      assets=[
+      ('superanimal_quadruped_hrnet_w32.pt','a42e58d56bb32f8b4f4fe17ea9ed9511cebc7b7949ac56b97fa6f3a49587c31e'),
+      ('superanimal_quadruped_fasterrcnn_mobilenet_v3_large_fpn.pt','aac3d9dcd9f1082bd3dd17a277f12b588cdd242859bf0a45b2cf7c4ca1229df5')]
+      revision='1ad30fb80cd666f1e5c91578d1cf63bccfa84f80'
+      with tempfile.TemporaryDirectory(prefix='dlc-trained-pose-') as directory:
+          root=Path(directory)
+          for filename,expected in assets:
+              url='https://huggingface.co/mwmathis/DeepLabCutModelZoo-SuperAnimal-Quadruped/resolve/'+revision+'/'+filename
+              with urllib.request.urlopen(url,timeout=180) as response,(root/filename).open('wb') as stream:
+                  while chunk:=response.read(1024*1024):stream.write(chunk)
+              assert digest(root/filename)==expected
+          source=root/'dog1.jpg'
+          url='https://raw.githubusercontent.com/pytorch/vision/7af698794eded568735f9519593603c1ec889eba/gallery/assets/dog1.jpg'
+          with urllib.request.urlopen(url,timeout=120) as response:source.write_bytes(response.read())
+          expected_image='828986ba0cdd909e3f6029d357938efba67d236350f724224b2e45cf0af0841f'
+          assert digest(source)==expected_image
+          frame=cv2.imread(str(source));assert frame is not None
+          height,width=frame.shape[:2];video=root/'animal.avi'
+          writer=cv2.VideoWriter(str(video),cv2.VideoWriter_fourcc(*'FFV1'),5,(width,height));assert writer.isOpened()
+          for _ in range(3):writer.write(frame)
+          writer.release()
+          capture=cv2.VideoCapture(str(video));count=0
+          while True:
+              ok,decoded=capture.read()
+              if not ok:break
+              np.testing.assert_array_equal(decoded,frame);count+=1
+          capture.release();assert count==3
+          input_hash=digest(video);torch.set_num_threads(2)
+          output=root/'output'
+          video_inference_superanimal([str(video)],'superanimal_quadruped','hrnet_w32',detector_name='fasterrcnn_mobilenet_v3_large_fpn',device='cpu',max_individuals=1,dest_folder=output,customized_pose_checkpoint=str(root/assets[0][0]),customized_detector_checkpoint=str(root/assets[1][0]))
+          files=list(output.glob('*.h5'));assert len(files)==1
+          result=pd.read_hdf(files[0]);assert len(result)==3
+          assert result.columns.nlevels==4 and set(result.columns.get_level_values('coords'))=={'x','y','likelihood'}
+          assert len(set(result.columns.get_level_values('bodyparts')))==36
+          points=result.xs('likelihood',level='coords',axis=1).to_numpy()
+          x=result.xs('x',level='coords',axis=1).to_numpy();y=result.xs('y',level='coords',axis=1).to_numpy()
+          assert np.isfinite(points).all() and np.isfinite(x).all() and np.isfinite(y).all()
+          assert (points>=0).all() and (points<=1).all() and (points>.1).any(axis=1).all()
+          valid=(points>.1)&(x>=0)&(x<width)&(y>=0)&(y<height)
+          assert valid.any(axis=1).all()
+          rendered=list(output.glob('*_labeled.mp4'));assert len(rendered)==1
+          capture=cv2.VideoCapture(str(rendered[0]));rendered_frames=0
+          while True:
+              ok,image=capture.read()
+              if not ok:break
+              assert image.shape[:2]==frame.shape[:2];rendered_frames+=1
+          capture.release();assert rendered_frames==3
+          assert digest(video)==input_hash and digest(source)==expected_image
+          assert all(digest(root/name)==expected for name,expected in assets)
+          print('Actual pretrained DeepLabCut pose video pipeline passed '+json.dumps({'frames':3,'shape':[height,width],'bodyparts':36,'confident_in_frame_points':valid.sum(axis=1).tolist(),'likelihood_range':[float(points.min()),float(points.max())],'unchanged_checkpoints':dict(assets),'image_sha256':expected_image,'model_revision':revision,'scope':'Three identical real-animal frames; coordinate runtime and HDF/annotated-video contracts, no biological accuracy or temporal-tracking claim'},sort_keys=True))
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: Actual pretrained DeepLabCut pose video pipeline passed
+    timeout: 1800

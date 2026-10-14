@@ -3,9 +3,25 @@ version: 3.0.2
 variables:
   tensorflow_version: 2.15.1
   pytables_version: 3.10.1
+  upstream_version: "3.0.2"
+  arm_torch_version: "2.6.0"
+  arm_torchvision_version: "0.21.0"
+  torch_package:
+    try:
+      - value: "torch=={{ context.arm_torch_version }}+cpu"
+        condition: arch == "aarch64"
+      - value: torch
+        condition: arch == "x86_64"
+  torchvision_package:
+    try:
+      - value: "torchvision=={{ context.arm_torchvision_version }}"
+        condition: arch == "aarch64"
+      - value: torchvision
+        condition: arch == "x86_64"
 
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: DeepLabCut is a toolbox for state-of-the-art markerless pose estimation of animals performing various behaviors. As long as you can see (label) what you want to track, you can use this toolbox, as it is animal and object agnostic.
   example: |-
@@ -50,14 +66,57 @@ structured_readme:
         year={2024},
         volume={15}}
 auto_update:
-  method: pypi
-  package: deeplabcut
+  method: sources
+  container_version: deeplabcut
+  sources:
+    - id: deeplabcut
+      method: pypi
+      package: deeplabcut
+      target:
+        variable: upstream_version
+    - id: arm-cpu-torch
+      dependency: true
+      method: pypi
+      package: torch
+      version_regex: '^(?P<version>2\.6\.\d+)$'
+      target:
+        variable: arm_torch_version
+        fulltest_variable: arm_torch_version
+    - id: arm-torchvision
+      dependency: true
+      method: pypi
+      package: torchvision
+      version_regex: '^(?P<version>0\.21\.\d+)$'
+      target:
+        variable: arm_torchvision_version
+        fulltest_variable: arm_torchvision_version
+    - id: tensorflow
+      dependency: true
+      method: pypi
+      package: tensorflow
+      version_regex: '^(?P<version>2\.15\.\d+)$'
+      target:
+        variable: tensorflow_version
+        fulltest_variable: tensorflow_version
+    - id: pytables
+      dependency: true
+      method: pypi
+      package: tables
+      version_regex: '^(?P<version>3\.10\.\d+)$'
+      target:
+        variable: pytables_version
 
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - install:
+        - libegl1
+        - libgl1
+        - libopengl0
+        - libxkbcommon-x11-0
+        - libxcb-cursor0
     - file:
         name: deeplabcut_env.yaml
         contents: |
@@ -76,9 +135,12 @@ build:
             - ffmpeg
             - pytables=={{ context.pytables_version }}
             - pip:
-              - torch
-              - torchvision
-              - deeplabcut[gui,modelzoo,tf]=={{ context.version }}
+              {% if arch == 'aarch64' %}
+              - --extra-index-url https://download.pytorch.org/whl/cpu
+              {% endif %}
+              - {{ context.torch_package }}
+              - {{ context.torchvision_package }}
+              - deeplabcut[gui,modelzoo,tf]=={{ context.upstream_version }}
               - tensorflow=={{ context.tensorflow_version }}
               - wandb==0.17.9
     - copy: deeplabcut_env.yaml /opt/deeplabcut_env.yaml
