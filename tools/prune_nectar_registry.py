@@ -6,14 +6,17 @@ builds listed in neurocommand's apps.json, so every other artifact only
 consumes the project's storage quota. Artifacts pushed within ``--min-age-days``
 are kept so an in-flight build or promotion staging tag is never removed.
 
-Runs as a dry run unless ``--apply`` is given. Deleting needs
-``NECTAR_REGISTRY_USERNAME`` and ``NECTAR_REGISTRY_PASSWORD``.
+Runs as a dry run unless ``--apply`` is given. A dry run prints a plan hash;
+``--apply --expect-plan <hash>`` deletes only if the recomputed plan matches
+that reviewed dry run. Deleting needs ``NECTAR_REGISTRY_USERNAME`` and
+``NECTAR_REGISTRY_PASSWORD``.
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import sys
@@ -178,6 +181,12 @@ def load_apps(source: str) -> dict:
         return json.load(handle)
 
 
+def plan_hash(plan: Plan) -> str:
+    """Identify the deletion set so an apply run can match a reviewed dry run."""
+    refs = sorted(f"{a.repository}@{a.digest}" for a in plan.delete)
+    return hashlib.sha256("\n".join(refs).encode()).hexdigest()[:16]
+
+
 def gib(artifacts: Iterable[Artifact]) -> float:
     return sum(artifact.size for artifact in artifacts) / 1024**3
 
@@ -223,10 +232,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-age-days", type=non_negative_int, default=14)
     parser.add_argument("--report", help="Write the full plan as JSON")
     parser.add_argument("--apply", action="store_true", help="Delete artifacts")
+    parser.add_argument(
+        "--expect-plan",
+        default="",
+        help="Plan hash from the reviewed dry run; --apply aborts on a mismatch",
+    )
     args = parser.parse_args(argv)
 
     username = os.environ.get("NECTAR_REGISTRY_USERNAME", "")
     password = os.environ.get("NECTAR_REGISTRY_PASSWORD", "")
+    if args.apply and not args.expect_plan:
+        parser.error("--apply needs --expect-plan with the reviewed dry run's hash")
     if args.apply and not (username and password):
         parser.error(
             "--apply needs NECTAR_REGISTRY_USERNAME and NECTAR_REGISTRY_PASSWORD"
@@ -257,9 +273,17 @@ def main(argv: list[str] | None = None) -> int:
     if plan.published_missing:
         print(f"{len(plan.published_missing)} published builds are missing from Nectar")
 
+    print(f"Plan hash: {plan_hash(plan)}")
+
     if not args.apply:
-        print("Dry run: nothing deleted. Pass --apply to delete.")
+        print("Dry run: nothing deleted. Pass --apply --expect-plan <hash> to delete.")
         return 0
+    if plan_hash(plan) != args.expect_plan:
+        print(
+            f"::error::The plan changed since review (hash {plan_hash(plan)}, "
+            f"expected {args.expect_plan}). Review a new dry run before applying."
+        )
+        return 1
     if not published or len(plan.delete) > MAX_DELETE_FRACTION * len(artifacts):
         print(
             f"::error::Refusing to delete {len(plan.delete)} of {len(artifacts)} "
