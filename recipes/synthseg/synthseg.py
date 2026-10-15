@@ -54,6 +54,9 @@ SYNTHSEG_REFORMAT_ORIENTATION_META_KEY = "SynthSegReformatOrientation"
 SYNTHSEG_REFORMAT_SLICE_INDEX_META_KEY = "SynthSegReformatSliceIndex"
 SYNTHSEG_REFORMAT_SLICE_COUNT_META_KEY = "SynthSegReformatSliceCount"
 LABEL_PRODUCTS = ("synthseg", "desikan", "glasser_approx")
+BRAINQUANT_PRODUCT = "brainquant"
+OUTPUT_PRODUCTS = LABEL_PRODUCTS + (BRAINQUANT_PRODUCT,)
+BRAINQUANT_MAX_AGE = 120
 SYNTHSEG_SEGMENTATION_LABEL = "synthseg"
 SYNTHSEG_SEGMENTATION_TYPE_TOKEN = SYNTHSEG_SEGMENTATION_LABEL.upper()
 # ImageType values are DICOM CS, at most 16 characters. The scanner truncates
@@ -109,12 +112,12 @@ OPENRECON_DEFAULTS = {
     "ssusegpu": False,
     "sscrop": 0,
     "ssthreads": 8,
-    "ssvolumes": False,
+    "ssvolumes": "none",
     "ssqc": False,
     "sssegmentheader": True,
     "ssreslicesagittal": False,
     "ssreslicecoronal": False,
-    "ssdebugthresholdsegment": False,
+    "ssquantage": 0,
 }
 OPENRECON_DEFAULT_TEST_CONFIG = {
     "parameters": OPENRECON_DEFAULTS.copy(),
@@ -123,30 +126,50 @@ OPENRECON_DEFAULT_TEST_CONFIG = {
 OPENRECON_COMBINATION_PARAMETER_VALUES = {
     "ssparc": ("none", "desikan", "glasser", "both"),
     "ssfast": (False, True),
-    "ssvolumes": (False, True),
+    "ssvolumes": ("none", "log", "report", "report_female", "report_male"),
     "ssqc": (False, True),
 }
 
 
+# The Siemens OpenRecon UI accepts at most 14 parameter entries, so related
+# options share one choice. Each table maps a choice to the resolved options and
+# names the choice that a legacy boolean `true` selects.
 OPENRECON_PARCELLATIONS = {
     "none": (False, False),
     "desikan": (True, False),
     "glasser": (False, True),
     "both": (True, True),
 }
+# (write the volume CSV to the log, brain volume report sex or None for no report)
+OPENRECON_VOLUME_OUTPUTS = {
+    "none": (False, None),
+    "log": (True, None),
+    "report": (True, "header"),
+    "report_female": (True, "female"),
+    "report_male": (True, "male"),
+}
+OPENRECON_CHOICES = {
+    "ssparc": (OPENRECON_PARCELLATIONS, "desikan"),
+    "ssvolumes": (OPENRECON_VOLUME_OUTPUTS, "log"),
+}
+
+
+def _resolve_openrecon_choice(parameter: str, choice: str | bool):
+    choices, legacy_true = OPENRECON_CHOICES[parameter]
+    if isinstance(choice, bool):
+        choice = legacy_true if choice else "none"
+    elif isinstance(choice, str):
+        choice = choice.strip().lower()
+        choice = {"false": "none", "true": legacy_true}.get(choice, choice)
+    if not isinstance(choice, str) or choice not in choices:
+        raise ValueError(
+            f"Invalid {parameter} choice {choice!r}; expected {', '.join(choices)}"
+        )
+    return choices[choice]
 
 
 def _resolve_openrecon_parcellation(choice: str | bool) -> tuple[bool, bool]:
-    if isinstance(choice, bool):
-        choice = "desikan" if choice else "none"
-    elif isinstance(choice, str):
-        choice = choice.strip().lower()
-        choice = {"false": "none", "true": "desikan"}.get(choice, choice)
-    if not isinstance(choice, str) or choice not in OPENRECON_PARCELLATIONS:
-        raise ValueError(
-            f"Invalid ssparc choice {choice!r}; expected none, desikan, glasser, or both"
-        )
-    return OPENRECON_PARCELLATIONS[choice]
+    return _resolve_openrecon_choice("ssparc", choice)
 
 
 def _log_array_summary(label: str, data: np.ndarray) -> None:
@@ -179,114 +202,6 @@ def _log_directory_contents(label: str, path: Path) -> None:
 
     entries = sorted(child.name for child in path.iterdir())
     logging.info("%s contents (%s): %s", label, path, entries)
-
-
-def _simple_threshold_segmentation_volume(input_yxz: np.ndarray, max_val: int) -> np.ndarray:
-    data = np.asarray(input_yxz)
-    if np.iscomplexobj(data):
-        data = np.abs(data)
-    data = np.asarray(data, dtype=np.float32)
-    if data.ndim == 2:
-        data = data[:, :, None]
-    if data.ndim != 3:
-        raise ValueError(
-            "Debug threshold segmentation expects a 2D or 3D input volume, "
-            f"got shape {data.shape}"
-        )
-
-    threshold = _bright_foreground_threshold(data)
-    foreground = data >= threshold
-    foreground &= np.isfinite(data)
-    segmentation_zyx = _largest_connected_component_per_plane(
-        foreground.transpose((2, 0, 1))
-    )
-    segmentation_yxz = segmentation_zyx.transpose((1, 2, 0))
-    logging.warning(
-        "Using debug simple threshold segmentation: threshold=%.6g "
-        "foreground_voxels=%d kept_voxels=%d",
-        float(threshold),
-        int(np.count_nonzero(foreground)),
-        int(np.count_nonzero(segmentation_yxz)),
-    )
-    return (segmentation_yxz.astype(np.int16) * int(max_val)).astype(np.int16)
-
-
-def _bright_foreground_threshold(data: np.ndarray) -> float:
-    finite_values = np.asarray(data, dtype=np.float32)
-    finite_values = finite_values[np.isfinite(finite_values)]
-    if finite_values.size == 0:
-        return np.inf
-
-    data_min = float(np.min(finite_values))
-    data_max = float(np.max(finite_values))
-    if data_max <= data_min:
-        return np.inf
-
-    background = float(np.percentile(finite_values, 50))
-    upper = float(np.percentile(finite_values, 95))
-    if upper <= background:
-        upper = data_max
-
-    threshold = background + 0.5 * (upper - background)
-    if threshold >= data_max:
-        threshold = background + 0.5 * (data_max - background)
-    return threshold
-
-
-def _largest_connected_component_per_plane(mask: np.ndarray) -> np.ndarray:
-    mask = np.asarray(mask, dtype=bool)
-    if mask.ndim < 2:
-        return _largest_connected_component_2d(mask.reshape(1, -1)).reshape(mask.shape)
-
-    result = np.zeros(mask.shape, dtype=bool)
-    planes = mask.reshape((-1,) + mask.shape[-2:])
-    result_planes = result.reshape((-1,) + mask.shape[-2:])
-    for index, plane in enumerate(planes):
-        result_planes[index] = _largest_connected_component_2d(plane)
-    return result
-
-
-def _largest_connected_component_2d(mask: np.ndarray) -> np.ndarray:
-    mask = np.asarray(mask, dtype=bool)
-    height, width = mask.shape
-    foreground = mask.ravel()
-    foreground_indices = np.flatnonzero(foreground)
-    if foreground_indices.size == 0:
-        return np.zeros(mask.shape, dtype=bool)
-
-    visited = np.zeros(foreground.size, dtype=bool)
-    best_component = []
-    for seed in foreground_indices:
-        if visited[seed]:
-            continue
-
-        component = []
-        stack = [int(seed)]
-        visited[seed] = True
-        while stack:
-            current = stack.pop()
-            component.append(current)
-            row, col = divmod(current, width)
-            neighbors = []
-            if row > 0:
-                neighbors.append(current - width)
-            if row + 1 < height:
-                neighbors.append(current + width)
-            if col > 0:
-                neighbors.append(current - 1)
-            if col + 1 < width:
-                neighbors.append(current + 1)
-            for neighbor in neighbors:
-                if foreground[neighbor] and not visited[neighbor]:
-                    visited[neighbor] = True
-                    stack.append(neighbor)
-
-        if len(component) > len(best_component):
-            best_component = component
-
-    result = np.zeros(foreground.size, dtype=bool)
-    result[best_component] = True
-    return result.reshape(mask.shape)
 
 
 def compute_nifti_affine(image_header, voxel_size):
@@ -1569,8 +1484,8 @@ def _build_synthseg_grouping(source_parent_grouping, fallback_series_name, suffi
 
 
 def _build_openrecon_output_identity(source_identity, orientation=None, series_index=None, *, product="synthseg"):
-    if product not in LABEL_PRODUCTS:
-        raise ValueError(f"Unknown label product {product!r}")
+    if product not in OUTPUT_PRODUCTS:
+        raise ValueError(f"Unknown output product {product!r}")
     orientation = _first_non_empty_text(orientation).lower()
     base_series_description = _build_synthseg_series_name(
         source_identity.get("series_description", ""),
@@ -1805,6 +1720,7 @@ def _stamp_synthseg_output_image(
         # state, and the scanner cannot open them.
         if "LUTFileName" in tmp_meta:
             del tmp_meta["LUTFileName"]
+    if not original_passthrough_identity and output_identity["display_token"] in LABEL_PRODUCTS:
         tmp_meta["LabelProduct"] = output_identity["display_token"]
     tmp_meta["DataRole"] = "Image" if source_image_header_identity else data_role
     tmp_meta["ImageProcessingHistory"] = processing_history
@@ -2641,7 +2557,7 @@ def iter_openrecon_parameter_combinations(
             f"{model}"
             f"_parc-{parameters['ssparc']}"
             f"_fast{int(parameters['ssfast'])}"
-            f"_vol{int(parameters['ssvolumes'])}"
+            f"_vol-{parameters['ssvolumes']}"
             f"_qc{int(parameters['ssqc'])}"
         )
         parameters[OPENRECON_OUTPUT_NAME_PARAM] = name
@@ -3716,6 +3632,83 @@ def process_raw(group, connection, config, metadata):
     return imagesOut
 
 
+def _render_brainquant_pages(volumes_csv_path: Path, metadata, *, age: int, sex: str, model: str, fast: bool):
+    import brainquant
+
+    norms = brainquant.load_norms(brainquant.NORMS_PATH)
+    subject = brainquant.resolve_subject(metadata, age, sex)
+    # Age and sex stay on the report image; the log records only where they
+    # came from, so reconstruction logs carry no patient demographics.
+    logging.info(
+        "SynthSeg brain volume report subject: age source=%s sex source=%s",
+        subject.age_source, subject.sex_source,
+    )
+    footnotes = ()
+    if model != OPENRECON_MODEL_DEFAULT or not fast:
+        footnotes = (
+            f"This run used ssmodel={model} with fast mode {'on' if fast else 'off'}. The reference was "
+            "fitted with SynthSeg 2.0 in fast mode, so volumes may be shifted relative to it.",
+        )
+    report = brainquant.assess(norms, brainquant.read_volumes(volumes_csv_path), subject, footnotes)
+    for result in report.results:
+        logging.info(
+            "SYNTHSEG_BRAINQUANT %s",
+            " ".join(f"{key}={value}" for key, value in brainquant.log_fields(result).items()),
+        )
+    return brainquant.render_pages(report)
+
+
+def _build_brainquant_report_image(pages, source_image, source_identity, series_index):
+    # Same explicit-volume layout as the MuscleMap metrics report that scanners
+    # already display: one image with the pages stacked at 1 mm, at the origin
+    # with identity directions, each page pre-rotated by 180 degrees so the
+    # scanner viewer shows it upright.
+    volume = np.stack([np.rot90(page, 2) for page in pages]).astype(np.uint16)
+    page_count, height, width = volume.shape
+    image = ismrmrd.Image.from_array(volume, transpose=False)
+    header = source_image.getHead()
+    header.data_type = image.data_type
+    header.matrix_size = (width, height, page_count)
+    header.field_of_view = (float(width), float(height), float(page_count))
+    header.position = (0.0, 0.0, 0.0)
+    header.read_dir = (1.0, 0.0, 0.0)
+    header.phase_dir = (0.0, 1.0, 0.0)
+    header.slice_dir = (0.0, 0.0, 1.0)
+    image.setHead(header)
+    identity = _build_openrecon_output_identity(
+        source_identity, series_index=series_index, product=BRAINQUANT_PRODUCT,
+    )
+    extra_meta = {
+        "partition_count": "1",
+        "slice_count": str(page_count),
+        "NumberOfSlices": str(page_count),
+        "ImagesInAcquisition": str(page_count),
+        "WindowCenter": "2048",
+        "WindowWidth": "4096",
+        **_explicit_header_geometry_meta(header),
+    }
+    _stamp_synthseg_output_image(
+        image,
+        source_image,
+        identity,
+        source_identity,
+        series_index,
+        0,
+        source_identity.get("source_type_token", ""),
+        ["PYTHON", "SYNTHSEG", "BRAINQUANT"],
+        extra_meta=extra_meta,
+        keep_image_geometry=0,
+        patch_minihead=False,
+        data_role="Segmentation",
+    )
+    logging.info(
+        "Built SynthSeg brain volume report as one explicit-volume image with %d page(s): "
+        "series_index=%d series=%s",
+        page_count, series_index, identity["series_description"],
+    )
+    return image
+
+
 def _load_label_volume(path: Path, expected_shape: tuple[int, ...]) -> np.ndarray:
     if not path.is_file():
         raise FileNotFoundError(f"Missing required label product: {path}")
@@ -3957,9 +3950,11 @@ def process_image(images, connection, config, metadata):
         )
         threads = OPENRECON_DEFAULTS["ssthreads"]
 
-    write_volumes = boolean_checker(
+    write_volumes, brainquant_sex = _resolve_openrecon_choice(
         "ssvolumes",
-        default_val=OPENRECON_DEFAULTS["ssvolumes"],
+        mrdhelper.get_json_config_param(
+            config, "ssvolumes", default=OPENRECON_DEFAULTS["ssvolumes"], type='str'
+        ),
     )
     write_qc = boolean_checker("ssqc", default_val=OPENRECON_DEFAULTS["ssqc"])
     if write_qc and model == "v1":
@@ -3975,12 +3970,24 @@ def process_image(images, connection, config, metadata):
         default_val=OPENRECON_DEFAULTS["ssreslicecoronal"],
     )
     output_geometry = SYNTHSEG_OUTPUT_GEOMETRY_2D
-    debug_threshold_segment = boolean_checker(
-        "ssdebugthresholdsegment",
-        default_val=OPENRECON_DEFAULTS["ssdebugthresholdsegment"],
+    brainquant_age = int(
+        mrdhelper.get_json_config_param(
+            config, "ssquantage", default=OPENRECON_DEFAULTS["ssquantage"], type='int',
+        )
     )
-    if glasser_enabled and debug_threshold_segment:
-        raise ValueError("Glasser parcellation requires real SynthSeg segmentation; disable ssdebugthresholdsegment")
+    if not 0 <= brainquant_age <= BRAINQUANT_MAX_AGE:
+        logging.warning(
+            "Invalid ssquantage %s requested. Reading the age from the MRD header instead.",
+            brainquant_age,
+        )
+        brainquant_age = 0
+    brainquant_enabled = brainquant_sex is not None
+    if brainquant_enabled and model == "v1":
+        logging.warning(
+            "The brain volume report is requested with SynthSeg 1.0, which reports no total intracranial "
+            "volume; the brain volume report is skipped."
+        )
+        brainquant_enabled = False
     segmentation_header = boolean_checker(
         "sssegmentheader",
         default_val=OPENRECON_DEFAULTS["sssegmentheader"],
@@ -4031,21 +4038,13 @@ def process_image(images, connection, config, metadata):
     )
     logging.info("Using SynthSeg workspace %s", work_dir)
 
-    # Determine max value (12 or 16 bit)
-    BitsStored = 12
-    # if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-    #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
-    maxVal = 2**BitsStored - 1
-
-    model_paths = []
-    if not debug_threshold_segment:
-        model_paths = _resolve_synthseg_models(model, parcellation, write_qc)
+    model_paths = _resolve_synthseg_models(model, parcellation, write_qc)
     logging.info(
         "OpenRecon SynthSeg options: run_name=%s model=%s model_files=%s "
         "parcellation=%s fast=%s use_gpu=%s autocrop=%s crop_size=%s "
         "threads=%s volumes_csv=%s qc_csv=%s "
         "outputgeometry=%s segmentation_send_order=%s "
-        "debug_threshold_segment=%s "
+        "brainquant=%s "
         "reslice_sagittal=%s reslice_coronal=%s",
         run_name,
         model,
@@ -4060,7 +4059,7 @@ def process_image(images, connection, config, metadata):
         write_qc,
         output_geometry,
         SYNTHSEG_SEGMENT_SEND_ORDER,
-        debug_threshold_segment,
+        brainquant_enabled,
         reslice_sagittal,
         reslice_coronal,
     )
@@ -4079,56 +4078,33 @@ def process_image(images, connection, config, metadata):
         except OSError as exc:
             logging.warning("Could not read the SynthSeg %s CSV: %s", label, exc)
 
-    if debug_threshold_segment:
-        logging.warning(
-            "ssdebugthresholdsegment is enabled; skipping SynthSeg model "
-            "execution and using the openreconi2iexample-style simple threshold "
-            "segmentation instead."
-        )
-        volume_yxz = _simple_threshold_segmentation_volume(data, maxVal)
-        debug_output_data = np.asarray(volume_yxz).transpose((1, 0, 2))
-        debug_img = nib.nifti1.Nifti1Image(debug_output_data, affine)
-        debug_img.header.set_xyzt_units(xyz="mm", t="sec")
-        debug_img.header.set_dim_info(freq=1, phase=0, slice=2)
-        debug_img.set_qform(affine, code=1)
-        debug_img.set_sform(affine, code=1)
-        nib.save(debug_img, str(output_path))
-        logging.info(
-            "Saved debug threshold segmentation to %s with shape=%s dtype=%s",
-            output_path,
-            debug_img.shape,
-            debug_img.get_data_dtype(),
-        )
-        print('Debug threshold processing done')
+    _run_synthseg_command(
+        _build_synthseg_command(
+            input_path,
+            desikan_path if parcellation else output_path,
+            base_output_path=output_path if parcellation else None,
+            model=model,
+            fast=fast,
+            parcellation=parcellation,
+            use_gpu=use_gpu,
+            threads=threads,
+            autocrop=autocrop,
+            crop_size=crop_size,
+            volumes_csv_path=volumes_csv_path if write_volumes else None,
+            qc_csv_path=qc_csv_path if write_qc else None,
+        ),
+        output_dir,
+    )
+    if write_volumes:
+        log_csv_output("region volume", volumes_csv_path)
+    if write_qc:
+        log_csv_output("QC score", qc_csv_path)
 
-    else:
-        _run_synthseg_command(
-            _build_synthseg_command(
-                input_path,
-                desikan_path if parcellation else output_path,
-                base_output_path=output_path if parcellation else None,
-                model=model,
-                fast=fast,
-                parcellation=parcellation,
-                use_gpu=use_gpu,
-                threads=threads,
-                autocrop=autocrop,
-                crop_size=crop_size,
-                volumes_csv_path=volumes_csv_path if write_volumes else None,
-                qc_csv_path=qc_csv_path if write_qc else None,
-            ),
-            output_dir,
-        )
-        if write_volumes:
-            log_csv_output("region volume", volumes_csv_path)
-        if write_qc:
-            log_csv_output("QC score", qc_csv_path)
-
-        print('Processing done')
-        volume_yxz = _load_label_volume(output_path, data_nifti.shape)
+    print('Processing done')
+    volume_yxz = _load_label_volume(output_path, data_nifti.shape)
 
     products: list[tuple[str, np.ndarray]] = [("synthseg", volume_yxz)]
-    if parcellation and not debug_threshold_segment:
+    if parcellation:
         products.append(("desikan", _load_label_volume(desikan_path, data_nifti.shape)))
     if glasser_enabled:
         try:
@@ -4194,18 +4170,43 @@ def process_image(images, connection, config, metadata):
         reslice_coronal,
     )
     logging.info("SYNTHSEG_OPENRECON_POSTPROCESSING target=%s", postprocessing_target)
-    logging.info(
-        "Sending %d original image(s), %d segmentation image(s), and %d reformat image(s)",
-        len(original_output_images),
-        len(segmentation_images),
-        len(reformat_images),
-    )
-
     _validate_synthseg_output_contract(
         imagesOut,
         source_series_indices,
         source_identity,
         "processed image output",
+    )
+
+    report_images = []
+    if brainquant_enabled:
+        # The report is optional, so it must pass the output contract on its
+        # own; a failure anywhere here drops only the report series.
+        try:
+            pages = _render_brainquant_pages(
+                volumes_csv_path, metadata, age=brainquant_age, sex=brainquant_sex,
+                model=model, fast=fast,
+            )
+            report_image = _build_brainquant_report_image(
+                pages, ordered_images[0], source_identity, next(series_indices),
+            )
+            _validate_synthseg_output_contract(
+                imagesOut + [report_image],
+                source_series_indices,
+                source_identity,
+                "processed image output with brain volume report",
+            )
+            report_images.append(report_image)
+        except Exception:
+            logging.exception("SynthSeg brain volume report failed; omitting the report series")
+        imagesOut.extend(report_images)
+
+    logging.info(
+        "Sending %d original image(s), %d segmentation image(s), %d reformat image(s), "
+        "and %d brain volume report image(s)",
+        len(original_output_images),
+        len(segmentation_images),
+        len(reformat_images),
+        len(report_images),
     )
 
     return imagesOut
