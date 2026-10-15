@@ -9,17 +9,34 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 variables:
   # Version of the model weights baked into the image. Bumping this is a
   # deliberate act: the build asserts the archive Zenodo serves matches, so new
   # upstream weights fail the build here instead of silently changing results.
   weights_version: "1.0.2"
-  venv: /opt/gliomoda-0.0.4
+  upstream_version: "0.0.4"
+  arm_torch_version: "2.6.0"
+  venv: /opt/gliomoda-{{ context.upstream_version }}
 
 auto_update:
-  method: pypi
-  package: gliomoda
+  method: sources
+  container_version: gliomoda
+  sources:
+    - id: gliomoda
+      method: pypi
+      package: gliomoda
+      target:
+        variable: upstream_version
+        fulltest_variable: upstream_version
+    - id: arm_torch
+      dependency: true
+      method: pypi
+      package: torch
+      target:
+        variable: arm_torch_version
+        fulltest_variable: arm_torch_version
 
 build:
   kind: neurodocker
@@ -50,12 +67,11 @@ build:
     - run:
         - python3 -m venv "${VENV}"
         - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
-        # CUDA wheels: these are GPU inference tools and the default index
-        # already resolves to CUDA builds, so pin the index explicitly rather
-        # than letting the resolver choose a different one on a rebuild.
-        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir
-          --extra-index-url https://download.pytorch.org/whl/cu124 torch
-        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "gliomoda=={{ context.version }}"
+        # Install and set permissions in one layer. A later chmod of a
+        # previous Torch layer copies large libraries into the new layer.
+        # Preserve the x86 CUDA index and the pinned official ARM CPU wheel.
+        - . "${VENV}/bin/activate" && case "$(uname -m)" in aarch64) python -m pip install --no-cache-dir "torch=={{ context.arm_torch_version }}+cpu" --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple ;; x86_64) python -m pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu124 torch ;; *) echo "Unsupported CPU architecture" >&2; exit 1 ;; esac
+        - . "${VENV}/bin/activate" && python -m pip install --no-cache-dir "gliomoda=={{ context.upstream_version }}"
         # Import at build time so a broken resolve fails here rather than on
         # first use; read the version from distribution metadata because these
         # packages do not all define __version__.
