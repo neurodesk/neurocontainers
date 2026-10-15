@@ -126,6 +126,27 @@ class FakeFlames:
         )
 
 
+class CoarseFlames(FakeFlames):
+    """Writes its outputs on a grid twice as coarse in-plane, as FLAMeS does for fine FLAIR."""
+
+    def __call__(self, input_path, output_dir, model, skull_stripped):
+        source = nib.load(str(input_path))
+        volume = np.asarray(source.dataobj)
+        nx, ny, nz = volume.shape
+        coarse = volume.reshape(nx // 2, 2, ny // 2, 2, nz).mean(axis=(1, 3))
+        affine = source.affine @ np.array(
+            [[2, 0, 0, 0.5], [0, 2, 0, 0.5], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float
+        )
+        output_dir.mkdir()
+        mask_path = output_dir / "flair_lesions.nii"
+        probability_path = output_dir / "flair_lesion_probability.nii"
+        nib.save(nib.Nifti1Image((coarse > 800).astype(np.uint8), affine), mask_path)
+        nib.save(nib.Nifti1Image((coarse / 1000).astype(np.float32), affine), probability_path)
+        return wml.FlamesResult(
+            mask_path, probability_path, output_dir / "flair_lesions.tsv", 1, 0.5, {}
+        )
+
+
 class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
     def setUp(self):
         workspace = tempfile.TemporaryDirectory()
@@ -212,6 +233,24 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
             overlay_meta = ismrmrd.Meta.deserialize(overlay.attribute_string)
             self.assertEqual(overlay_meta["RescaleSlope"], "2")
         self.assertTrue(outline.any() and (outline != (volume > 800)).any())
+
+    def test_outputs_on_a_coarser_flames_grid_return_on_the_source_slices(self):
+        volume = np.full((20, 16, 6), 100, dtype=np.int16)
+        volume[4:10, 6:12, 2:5] = 950
+        sources = nifti_to_mrd_images(volume, oblique_affine())
+        connection = RecordingConnection(sources)
+        config = {"parameters": {"wmlprobability": True, "sendoriginal": False}}
+        with mock.patch.object(wml, "run_flames", CoarseFlames()):
+            wml.process(connection, config, None)
+
+        self.assertEqual(connection.logs[-1][0], constants.MRD_LOGGING_INFO, connection.logs)
+        series = connection.series()
+        source_at = images_by_position(sources)
+        for mask, probability in zip(series[5], series[6]):
+            source_plane = np.squeeze(source_at[tuple(np.round(mask.getHead().position, 3))].data)
+            self.assertEqual(np.squeeze(mask.data).shape, source_plane.shape)
+            np.testing.assert_array_equal(np.squeeze(mask.data), source_plane > 800)
+            self.assertTrue((np.squeeze(probability.data)[source_plane > 800] > 500).all())
 
     def test_rounded_positions_of_a_long_fine_series_are_accepted(self):
         # Rounded to 0.001 mm, 0.9995 mm steps alternate between 0.999 and 1.000.
