@@ -84,9 +84,7 @@ def plan_deletions(
             recent.append(artifact)
         else:
             delete.append(artifact)
-    repositories = {artifact.repository for artifact in keep + recent + delete}
-    missing = sorted(ref for ref in published - present if ref[0] in repositories)
-    return Plan(keep, recent, delete, missing)
+    return Plan(keep, recent, delete, sorted(published - present))
 
 
 class Harbor:

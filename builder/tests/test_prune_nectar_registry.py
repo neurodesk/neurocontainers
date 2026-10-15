@@ -50,7 +50,7 @@ def test_only_published_or_recent_builds_survive() -> None:
     assert plan.keep == [current]
     assert plan.recent == [in_flight]
     assert plan.delete == [older_build, retired_version, untagged]
-    assert plan.published_missing == []
+    assert plan.published_missing == [("napari_arm64_0.9.2", "20261013")]
 
 
 def test_reports_published_builds_absent_from_the_registry() -> None:
@@ -59,7 +59,10 @@ def test_reports_published_builds_absent_from_the_registry() -> None:
         prune.published_images(APPS),
         NOW,
     )
-    assert plan.published_missing == [("napari_arm64_0.9.2", "20261013")]
+    assert plan.published_missing == [
+        ("napari_0.9.2", "20261013"),
+        ("napari_arm64_0.9.2", "20261013"),
+    ]
 
 
 class FakeHarbor:
