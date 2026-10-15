@@ -245,12 +245,19 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
 
         self.assertEqual(connection.logs[-1][0], constants.MRD_LOGGING_INFO, connection.logs)
         series = connection.series()
+        self.assertEqual([len(series[index]) for index in (5, 6)], [len(sources)] * 2)
         source_at = images_by_position(sources)
         for mask, probability in zip(series[5], series[6]):
-            source_plane = np.squeeze(source_at[tuple(np.round(mask.getHead().position, 3))].data)
-            self.assertEqual(np.squeeze(mask.data).shape, source_plane.shape)
+            source = source_at[tuple(np.round(mask.getHead().position, 3))]
+            source_plane = np.squeeze(source.data)
             np.testing.assert_array_equal(np.squeeze(mask.data), source_plane > 800)
-            self.assertTrue((np.squeeze(probability.data)[source_plane > 800] > 500).all())
+            if source.getHead().slice == 3:
+                # MRD planes are (y, x). Linear interpolation from the 2x grid:
+                # interior and background keep their values, and the lesion corner
+                # (x=4, y=6) sits 3/4 inside along both axes:
+                # 0.5625 * 950 + 0.4375 * 100 = 578.
+                plane = np.squeeze(probability.data)
+                self.assertEqual((plane[8, 6], plane[0, 0], plane[6, 4]), (950, 100, 578))
 
     def test_rounded_positions_of_a_long_fine_series_are_accepted(self):
         # Rounded to 0.001 mm, 0.9995 mm steps alternate between 0.999 and 1.000.
@@ -311,7 +318,10 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
             reference = Path(directory) / "reference"
             subprocess.run([wml.FLAMES, flair.get_filename(), str(reference)], check=True)
             reference_mask = next(reference.glob("*_lesions.nii"))
-            expected = np.asarray(nib.load(str(reference_mask)).dataobj) > 0
+            # FLAMeS writes a FLAIR finer than its grid on the resampled grid.
+            expected = wml.on_source_grid(
+                reference_mask, flair.affine, flair.shape, order=0
+            ) > 0
 
         connection = RecordingConnection(nifti_to_mrd_images(volume, flair.affine))
         wml.process(connection, {"parameters": {"sendoriginal": False}}, None)
