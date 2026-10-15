@@ -378,11 +378,32 @@ def original_series(ordered, series_index: int) -> list:
     return output
 
 
+def on_source_grid(
+    path: Path, affine: np.ndarray, shape: tuple[int, ...], order: int
+) -> np.ndarray:
+    """Return a FLAMeS output on the source grid.
+
+    FLAMeS downsamples a FLAIR finer than its 1 x 0.9 x 0.9 mm grid and writes
+    its outputs on that coarser grid, so they are resampled back through the
+    two affines.
+    """
+
+    output = nib.load(str(path))
+    data = np.asarray(output.dataobj, dtype=np.float32)
+    if data.shape == tuple(shape) and np.allclose(output.affine, affine, atol=1e-3):
+        return data
+    source_to_output = np.linalg.inv(output.affine) @ affine
+    return ndimage.affine_transform(
+        data, source_to_output[:3, :3], offset=source_to_output[:3, 3],
+        output_shape=tuple(shape), order=order, mode="nearest",
+    )
+
+
 def segmentation_series(
-    result: FlamesResult, ordered, volume_xyz: np.ndarray, first_series_index: int,
-    send_probability: bool,
+    result: FlamesResult, ordered, volume_xyz: np.ndarray, affine: np.ndarray,
+    first_series_index: int, send_probability: bool,
 ) -> list[tuple[str, list]]:
-    mask = np.asarray(nib.load(str(result.mask)).dataobj) > 0
+    mask = on_source_grid(result.mask, affine, volume_xyz.shape, order=0) > 0
     summary = (
         f"FLAMeS: {result.lesion_count} lesions, {result.volume_ml:.2f} ml; "
         f"{RESEARCH_WARNING}"
@@ -404,7 +425,7 @@ def segmentation_series(
         )),
     ]
     if send_probability:
-        probability = np.asarray(nib.load(str(result.probability)).dataobj, dtype=np.float32)
+        probability = on_source_grid(result.probability, affine, volume_xyz.shape, order=1)
         series.append(("lesion probability", volume_to_mrd_series(
             np.rint(np.clip(probability, 0, 1) * PROBABILITY_SCALE).astype(np.int16),
             ordered, first_series_index + 2, "_lesion_probability",
@@ -469,7 +490,7 @@ def process(connection, config, metadata):
 
             result = run_flames(input_path, run_dir / "flames", model, skull_stripped)
             outputs = segmentation_series(
-                result, ordered, volume_xyz, next_series_index, send_probability
+                result, ordered, volume_xyz, affine, next_series_index, send_probability
             )
             pending.extend(outputs)
             next_series_index += len(outputs)
