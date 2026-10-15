@@ -355,7 +355,8 @@ tests:
               assert library.is_file(),str(library)
               linkage=subprocess.run(['ldd',str(library)],capture_output=True,text=True,check=True)
               assert 'not found' not in linkage.stdout+linkage.stderr,(str(library),linkage.stdout,linkage.stderr)
-          from PySide6.QtWidgets import QApplication
+          from PySide6.QtCore import QTimer
+          from PySide6.QtWidgets import QApplication, QMessageBox
           from deeplabcut.gui.window import MainWindow
           app=QApplication([])
           stdout,stderr=sys.stdout,sys.stderr
@@ -363,7 +364,18 @@ tests:
           window.show();app.processEvents()
           assert window.isVisible() and window.centralWidget() is not None
           assert window.width()>0 and window.height()>0
+          confirmed=[]
+          def accept_quit():
+              dialog=app.activeModalWidget()
+              assert isinstance(dialog,QMessageBox) and dialog.isVisible()
+              button=dialog.button(QMessageBox.Yes)
+              assert button is not None and button.isEnabled()
+              confirmed.append(True)
+              button.click()
+          QTimer.singleShot(50,accept_quit)
           window.close();app.processEvents()
+          assert confirmed==[True] and not window.isVisible() and window._closing
+          assert window.receiver.wait(1000)
           sys.stdout,sys.stderr=stdout,stderr
       print('DeepLabCut project GUI created and closed on the native architecture')
       PYTHON
