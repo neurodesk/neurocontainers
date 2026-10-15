@@ -29,6 +29,11 @@ from builder.update_sources import validate_update_config
 
 ARCHITECTURES = ["x86_64", "aarch64"]
 
+NESTED_TEST_DIRECTIVE_ERROR = (
+    "The 'test' build directive is not supported because the builder never "
+    "ran it. Put runtime tests in recipes/<name>/fulltest.yaml."
+)
+
 # Categories from the UI - this should match CATEGORIES in the UI
 CATEGORIES = [
     "functional imaging",
@@ -677,12 +682,6 @@ class FileDirective:
 
 
 @attrs.define
-class TestDirective:
-    test: Union[BuiltinTest, ScriptTest] = attrs.field()
-    condition: Optional[str] = attrs.field(default=None)
-
-
-@attrs.define
 class EntrypointDirective:
     entrypoint: str = attrs.field(validator=validate_non_empty_string)
     condition: Optional[str] = attrs.field(default=None)
@@ -922,12 +921,7 @@ def parse_directive_from_dict(directive_dict: Dict[str, Any]) -> Any:
         file_info = FileInfo(**directive_dict["file"])
         return FileDirective(condition=condition, file=file_info)
     elif "test" in directive_dict:
-        test_data = directive_dict["test"]
-        if "builtin" in test_data:
-            test_obj = BuiltinTest(**test_data)
-        else:
-            test_obj = ScriptTest(**test_data)
-        return TestDirective(condition=condition, test=test_obj)
+        raise ValueError(NESTED_TEST_DIRECTIVE_ERROR)
     elif "include" in directive_dict:
         return IncludeDirective(condition=condition, include=directive_dict["include"])
     elif "entrypoint" in directive_dict:

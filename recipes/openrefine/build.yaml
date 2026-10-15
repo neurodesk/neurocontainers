@@ -44,31 +44,6 @@ build:
     - run:
         - chmod +x /usr/local/bin/openrefine /usr/local/bin/refine
 
-    - test:
-        name: check OpenRefine web server
-        script: |
-          #!/usr/bin/env bash
-          set -euo pipefail
-
-          expected_version="$(awk '/^version:/{print $2; exit}' /build.yaml)"
-          openrefine --version | grep "${expected_version}"
-          export OPENREFINE_DATA_DIR="$(mktemp -d)"
-          openrefine start > /tmp/openrefine-test.log 2>&1 &
-          pid="$!"
-          trap 'kill "$pid" 2>/dev/null || true' EXIT
-
-          for _ in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:3333/ >/dev/null; then
-              kill "$pid" 2>/dev/null || true
-              wait "$pid" 2>/dev/null || true
-              exit 0
-            fi
-            sleep 1
-          done
-
-          cat /tmp/openrefine-test.log
-          exit 1
-
 deploy:
   bins:
     - openrefine

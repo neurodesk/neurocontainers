@@ -95,9 +95,6 @@ build:
           - python
     - environment:
         PATH: /opt/miniconda/envs/deeplabcut/bin:$PATH
-    - test:
-        name: Simple Exec Test
-        script: python -c "import deeplabcut"
 copyright:
   - license: LGPL-3.0-only
     url: https://www.gnu.org/licenses/lgpl-3.0-standalone.html

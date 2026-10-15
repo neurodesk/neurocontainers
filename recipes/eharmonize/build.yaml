@@ -78,9 +78,6 @@ build:
         path: []
         bins:
           - eharmonize
-    - test:
-        name: Basic Test
-        script: eharmonize --help
 readme: |-
   ----------------------------------
   ## eharmonize/1.0.0 ##

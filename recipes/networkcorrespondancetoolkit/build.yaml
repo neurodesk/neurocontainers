@@ -153,27 +153,6 @@ build:
           - python3
           - python
 
-    - test:
-        name: NCT Test
-        executable: python3
-        script: |
-          import cbig_network_correspondence as cnc
-          import os
-
-          os.makedirs('./NCTexample/example_results', exist_ok=True)
-
-          atlas_names_list = ["EG17","MG360J12"]
-          example = cnc.load_example
-          # the example config file
-          print(example.example_config)
-          # the path to the example data
-          print(example.example_nii)
-          ref_params = cnc.compute_overlap_with_atlases.DataParams(example.example_config, example.example_nii)
-          cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"./NCTexample/example_results")
-
-          print("NCT test ran successfully")
-
-
 files:
   - name: prepare_data.py
     filename: prepare_data.py

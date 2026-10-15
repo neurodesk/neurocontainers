@@ -65,9 +65,6 @@ build:
         bins:
           - spm25
           - run_spm25.sh
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
   add-default-template: false
 categories:
   - functional imaging
