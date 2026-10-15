@@ -59,18 +59,13 @@ OUTPUT_PRODUCTS = LABEL_PRODUCTS + (BRAINQUANT_PRODUCT,)
 BRAINQUANT_MAX_AGE = 120
 SYNTHSEG_SEGMENTATION_LABEL = "synthseg"
 SYNTHSEG_SEGMENTATION_TYPE_TOKEN = SYNTHSEG_SEGMENTATION_LABEL.upper()
-SYNTHSEG_SOURCE_IMAGE_HEADER_FALLBACK_TYPE = (
-    f"DERIVED\\PRIMARY\\SEGMENTATION\\{SYNTHSEG_SEGMENTATION_LABEL}_source_image_header"
-)
-SYNTHSEG_SOURCE_IMAGE_HEADER_FALLBACK_VALUE4 = (
-    f"{SYNTHSEG_SEGMENTATION_LABEL}_source_image_header"
-)
-SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE = (
-    f"DERIVED\\PRIMARY\\SEGMENTATION\\{SYNTHSEG_SEGMENTATION_LABEL}_source_geometry"
-)
-SYNTHSEG_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4 = (
-    f"{SYNTHSEG_SEGMENTATION_LABEL}_source_geometry"
-)
+# ImageType values are DICOM CS, at most 16 characters. The scanner truncates
+# longer ones, e.g. synthseg_source_geometry was exported as synthseg_source_.
+SEGMENT_IMAGE_TYPE_PRODUCT_TOKENS = {
+    "synthseg": "synthseg",
+    "desikan": "desikan",
+    "glasser_approx": "glasser",
+}
 SYNTHSEG_ORIGINAL_LABEL = "original"
 SYNTHSEG_ORIGINAL_TYPE_TOKEN = SYNTHSEG_ORIGINAL_LABEL.upper()
 SYNTHSEG_SCANNER_MIP_IMAGE_TYPE_VALUE3 = "M"
@@ -105,7 +100,6 @@ SYNTHSEG_QC_MODEL_FILE = "synthseg_qc_2.0.h5"
 # into int16 without rescaling. Keeping the raw indices is what makes the
 # FreeSurferColorLUT lookup meaningful on the scanner.
 SYNTHSEG_MAX_LABEL_VALUE = 32767
-SYNTHSEG_SEGMENTATION_LUT = "MicroDeltaHotMetal.pal"
 
 # Keep this overview aligned with recipes/synthseg/OpenReconLabel.json.
 # Tests can import it to build a minimal OpenRecon config payload.
@@ -1253,17 +1247,24 @@ def _patch_ice_minihead(
     return current_text, changed
 
 
+def _segment_image_type_value4(product, suffix):
+    """ImageTypeValue4 for a label product: ``seg`` for segmentation-header
+    images, ``hdr`` for the source-image-header fallback."""
+    return f"{SEGMENT_IMAGE_TYPE_PRODUCT_TOKENS[product]}_{suffix}"
+
+
 def _source_postprocessing_image_type_identity(source_meta, minihead_text, *, product="synthseg"):
+    fallback_value4 = _segment_image_type_value4(product, "hdr")
     image_type = (
         _get_meta_text(source_meta, "ImageType")
         or _extract_minihead_string_value(minihead_text, "ImageType")
-        or f"DERIVED\\PRIMARY\\SEGMENTATION\\{product}_source_image_header"
+        or f"DERIVED\\PRIMARY\\SEGMENTATION\\{fallback_value4}"
     )
     dicom_image_type = _get_meta_text(source_meta, "DicomImageType") or image_type
     image_type_value4_tokens = (
         _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4")
         or _get_meta_values(source_meta, "ImageTypeValue4")
-        or [f"{product}_source_image_header"]
+        or [fallback_value4]
     )
     return image_type, dicom_image_type, image_type_value4_tokens
 
@@ -1697,7 +1698,12 @@ def _stamp_synthseg_output_image(
         output_dicom_image_type = source_dicom_image_type
         output_image_type_value4 = source_image_type_value4
     elif segment_source_geometry_identity:
-        output_image_type_value4 = f"{output_identity['display_token']}_source_geometry"
+        output_image_type_value4 = _segment_image_type_value4(
+            output_identity["display_token"]
+            if output_identity["display_token"] in LABEL_PRODUCTS
+            else "synthseg",
+            "seg",
+        )
         output_image_type = f"DERIVED\\PRIMARY\\SEGMENTATION\\{output_image_type_value4}"
         output_dicom_image_type = output_image_type
     if source_geometry_identity and segment_scanner_postprocessing:
@@ -1708,15 +1714,13 @@ def _stamp_synthseg_output_image(
         )
 
     if not original_passthrough_identity:
-        # Like OpenMSK, only segmentation-header label images request the
-        # scanner palette. On source-image-header images the scanner writes
-        # Enhanced MR with PALETTE COLOR but no palette data, which is
-        # invalid, so drop any palette inherited from the source there.
+        # No LUTFileName, not even one inherited from the source. In either
+        # delivery mode the scanner writes the label series as Enhanced MR with
+        # PALETTE COLOR but no palette data, plus a separate presentation
+        # state, and the scanner cannot open them.
         if "LUTFileName" in tmp_meta:
             del tmp_meta["LUTFileName"]
     if not original_passthrough_identity and output_identity["display_token"] in LABEL_PRODUCTS:
-        if segment_source_geometry_identity:
-            tmp_meta["LUTFileName"] = SYNTHSEG_SEGMENTATION_LUT
         tmp_meta["LabelProduct"] = output_identity["display_token"]
     tmp_meta["DataRole"] = "Image" if source_image_header_identity else data_role
     tmp_meta["ImageProcessingHistory"] = processing_history
@@ -2242,7 +2246,9 @@ def _validate_synthseg_output_contract(
             product = _get_meta_text(meta_obj, "LabelProduct") or "synthseg"
             if product not in LABEL_PRODUCTS:
                 errors.append(f"image {index}: unknown label product {product!r}")
-            expected_value4 = f"{product}_source_geometry"
+            expected_value4 = _segment_image_type_value4(
+                product if product in LABEL_PRODUCTS else "synthseg", "seg"
+            )
             expected_image_type = f"DERIVED\\PRIMARY\\SEGMENTATION\\{expected_value4}"
             image_type = _get_meta_text(meta_obj, "ImageType")
             dicom_image_type = _get_meta_text(meta_obj, "DicomImageType")

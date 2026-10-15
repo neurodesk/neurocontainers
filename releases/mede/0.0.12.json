@@ -1,7 +1,7 @@
 {
   "apps": {
     "mede 0.0.12": {
-      "version": "20260521",
+      "version": "20261013",
       "exec": "",
       "apptainer_args": []
     }

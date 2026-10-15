@@ -7,20 +7,26 @@ For scanner setup and usage, see the [user guide](OpenReconREADME.md).
 
 This OpenRecon adapter receives reconstructed ISMRMRD image messages, separates
 the magnitude and phase series, writes a temporary BIDS MEGRE dataset, runs the
-QSMxT v9 Rust binary, and sends selected derivatives back as derived MRD image
+QSMxT v10.0.0 Rust binary, and sends selected derivatives back as derived MRD image
 series.
 
-The **Input images** control selects distortion-corrected images, images marked
-`ND` (not distortion corrected), or both. Distortion-corrected input is the
-default. **Both** runs QSMxT once per magnitude/phase pair and returns distinct
+The **Input images** control defaults to **Prefer distortion corrected**.
+It selects the preferred magnitude and phase pair, or a complete `ND` pair when
+a preferred component is missing. Explicit ND selection remains strict.
+**Both** runs QSMxT once per magnitude/phase pair and returns distinct
 `DC` and `ND` output series. It takes roughly twice as long as processing one
 pair.
 
 The wrapper classifies phase data from MRD image type metadata, DICOM image type
 metadata, or source series names such as `phase`, `pha`, or `_Pha`. It recognizes
 `ND` only as a separate, case-insensitive name token, so magnitude and phase are
-always paired within the same distortion-correction variant. A missing or
-ambiguous requested pair fails explicitly instead of selecting by arrival order.
+always paired within the same distortion-correction variant. Unmarked series use
+the preferred slot; names do not verify physical correction. Only missing
+components permit default selection to fall back, after processed-product
+filtering and phase inference. Ambiguity, echo alignment, geometry, and native
+reconstruction errors propagate without retry. Both requires both complete
+pairs. A successful fallback logs the missing component and selected ND source
+names, and returns ND-labelled results without changing the requested setting.
 
 Within each correction variant, source selection excludes the known processed
 series suffixes `Romeo_Mask`, `Romeo_P`, `Romeo_B0`,
@@ -59,7 +65,15 @@ debugging, but they are not shown in the scanner UI. Voxel geometry comes from
 the MRD image stream.
 
 Default output is the QSM map (`Chimap`). Enable `sendoutputs=all` to return all
-QSMxT derivatives that exist after the run. The original magnitude and phase
+compatible QSMxT derivatives that exist after the run. Below three selected
+echoes, All omits implicit T2*/R2* requests and logs the count. GRE uses aligned
+echo groups after `maxechoes`. EPI repetitions yield one averaged echo. Each
+DC or ND pair resolves independently. Explicit `t2star` or `r2star` selections,
+or `dot2starmap=true` or `dor2starmap=true`, fail below three echoes before
+reconstruction or EPI preprocessing, including when combined with All. False
+advanced flags do not cancel an explicit map selection.
+
+The original magnitude and phase
 source series are sent back before the derived output, including unselected DC
 and ND variants. The same source-name filter excludes ROMEO phase, mask, and B0,
 sensitivity-corrected magnitude, CLEAR-SWI, and CLEAR-SWI mIP companions from
@@ -205,13 +219,14 @@ within the 16-character DICOM limit.
 
 ## Pipeline presets
 
-Advanced `pipelinepreset` configuration retains ten previously measured combinations
-and six complete-method presets. It overrides **QSM algorithm**, **Unwrap**, and
-**Background**. The scanner controls select these three stages independently by
-default, using ROMEO, V-SHARP, and RTS.
+The scanner **Pipeline preset** control exposes Custom, ten historically measured
+combinations, and six complete-method presets. Advanced `pipelinepreset` uses the
+same choices. Named presets override **Unwrap**, **Background**, and **Dipole
+inversion**. Custom uses those stage controls independently, with defaults ROMEO,
+V-SHARP, and RTS.
 
-Treat these measurements as results from the scanner test used for this adapter,
-not as universal rankings. Lower inter-scanner error and runtime are better.
+These historical measurements are not validation of QSMxT 10 or the current
+scanner package. Lower inter-scanner error and runtime are better.
 Inter-scanner error measures disagreement between the tested scanner outputs.
 Higher [XSIM](https://doi.org/10.1002/mrm.30271), a structural-similarity metric
 tuned for QSM, is better. Runtime will vary with the acquisition and host
@@ -279,7 +294,7 @@ phase jumps, background-field removal isolates the local tissue field, and QSM
 inversion estimates susceptibility from that field. The mask defines which
 voxels enter those calculations.
 
-| QSM algorithm | Method |
+| Dipole inversion | Method |
 | --- | --- |
 | `default` | Use the OpenRecon default, RTS. |
 | `whqsm` | Weak-Harmonic QSM. |
@@ -359,7 +374,7 @@ Numeric overrides can disable individual refinements.
 The scanner control **Homogeneity correction** (`inhomogeneitycorrection`) selects
 one profile for magnitude intensity correction.
 
-| Profile | Smoothing sigma | Local segmentation boxes per dimension |
+| Profile | Smoothing sigma | Tissue-estimation boxes per axis |
 | --- | --- | --- |
 | `standard` (default) | 7 mm | 3 |
 | `fine` | 7 mm | 15 |
@@ -371,8 +386,9 @@ Off passes only `--no-inhomogeneity-correction`, without numeric homogeneity fla
 These settings affect masking, combined magnitude, and SMWI. Version 10 CLEAR-SWI
 reads individual echo magnitudes and applies its own receive-sensitivity correction
 independently of this profile, including when the profile is Off.
-The box count controls local segmentation, not smoothing passes. Fine provides a
-comparison setting. Its effect on a particular acquisition requires image review.
+The box count controls tissue estimation, not smoothing passes. Fine provides a
+comparison setting. Fine has not been shown to improve 7 T reconstruction quality.
+Its effect on a particular acquisition requires image review.
 Historical Boolean values and Boolean strings map true to Standard and false to
 Off. Numeric Boolean inputs keep their previous true/false interpretation.
 Missing, null, and blank values select Standard. Profile IDs ignore case and
@@ -494,7 +510,13 @@ tables against `qsmci-in-silico-2019.json`. The snapshot records source hashes.
 
 ## Native version 10 controls
 
-The scanner label retains 14 controls. `twopass` and `motioncorrection` are independent booleans, both false by default. `qsmreference` is a string with default `mean`. `vsharpgrid` accepts `native`, `finest`, or `isotropic`, with default `native`. `swiunwrapping` accepts `laplacian`, `laplacian-slice`, or `romeo`, with default `laplacian`.
+The scanner label retains 14 controls. **Pipeline preset** defaults to Custom.
+**Config** offers standard GRE, standard GRE + echo motion alignment, and the two
+EPI modes. The GRE alignment module copies parsed parameters and forces
+`motioncorrection: true`, including when the caller supplies false. It preserves
+`motionreference` and unrelated advanced options without changing caller data.
+Standard GRE still accepts advanced `motioncorrection`, which defaults to false.
+`twopass` is a scanner boolean with default false. `qsmreference` is a string with default `mean`. `vsharpgrid` accepts `native`, `finest`, or `isotropic`, with default `native`. `swiunwrapping` accepts `laplacian`, `laplacian-slice`, or `romeo`, with default `laplacian`.
 
 Advanced `motionreference` accepts `first`, `last`, or a positive 1-based echo index. Advanced `vsharpisotropicspacing` is a positive spacing in millimeters passed as `--vsharp-grid-spacing`. The native reliable-pass mask remains unfilled. Ordinary close/fill mask refinements do not apply to that mask. Main QSM output discovery excludes `desc-singlepass` alongside source-separation maps.
 

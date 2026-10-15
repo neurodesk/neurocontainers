@@ -360,12 +360,13 @@ def process(connection, config, metadata):
                         settings,
                         input_pair=input_pair,
                     )
-                    _run_qsmxt(bids_dir, output_dir, settings)
+                    pair_settings = conversion["settings"]
+                    _run_qsmxt(bids_dir, output_dir, pair_settings)
                     _log_qsmxt_nifti_diagnostics(output_dir)
                     output_specs = _find_qsmxt_outputs(
                         output_dir,
                         conversion,
-                        settings,
+                        pair_settings,
                     )
                     output_images.extend(
                         _build_output_images(
@@ -438,8 +439,10 @@ def write_bids_dataset(
         int(phase_group["key"][0]),
         phase_group["order"],
     )
+    requested_outputs = settings["send_outputs"]
     preprocessed_volume = None
     if settings["ep3d_dual_polarity"]:
+        settings = _settings_for_echo_count(settings, 1)
         magnitude_echo_groups, phase_echo_groups, preprocessed_volume = (
             _ep3d_dual_polarity_average(
                 magnitude_group["images"],
@@ -464,6 +467,13 @@ def write_bids_dataset(
         raise ValueError("Source separation requires at least 3 GRE magnitude/phase echoes")
     magnitude_echo_groups = magnitude_echo_groups[:n_echoes]
     phase_echo_groups = phase_echo_groups[:n_echoes]
+    if not settings["ep3d_dual_polarity"]:
+        settings = _settings_for_echo_count(settings, n_echoes)
+    if settings["send_outputs"] != requested_outputs:
+        logging.info(
+            "QSMxT All omits T2*/R2* for %d selected echo(s); at least 3 are required",
+            n_echoes,
+        )
 
     logging.info(
         "Derived QSMxT echo groups: magnitude=%d group size(s)=%s, "
@@ -619,6 +629,7 @@ def write_bids_dataset(
     )
     source_geometry_images = _sorted_stack_images(magnitude_echo_groups[0])
     return {
+        "settings": settings,
         "bids_dir": bids_dir,
         "anat_dir": anat_dir,
         "subject": "01",
@@ -2271,6 +2282,10 @@ def _input_variant_from_series_name(name):
     return DISTORTION_CORRECTED
 
 
+class _MissingInputSeries(ValueError):
+    pass
+
+
 def _select_magnitude_phase_pairs(groups, selection):
     if selection not in INPUT_SERIES_CHOICES:
         choices = ", ".join(INPUT_SERIES_CHOICES)
@@ -2278,22 +2293,34 @@ def _select_magnitude_phase_pairs(groups, selection):
             f"unknown inputseries {selection!r}; expected {choices}"
         )
 
-    requested_variants = (
+    candidate_variants = (
         [DISTORTION_CORRECTED, NON_DISTORTION_CORRECTED]
-        if selection == "both"
+        if selection in ("both", DISTORTION_CORRECTED)
         else [selection]
     )
     pairs = []
-    for variant in requested_variants:
+    missing_preferred = None
+    for variant in candidate_variants:
         variant_groups = [
             group
             for group in groups
             if _input_variant_from_series_name(group["name"]) == variant
         ]
-        magnitude_group, phase_group = _select_magnitude_phase_groups(
-            variant_groups,
-            variant,
-        )
+        try:
+            magnitude_group, phase_group = _select_magnitude_phase_groups(
+                variant_groups, variant,
+            )
+        except _MissingInputSeries as error:
+            if selection != DISTORTION_CORRECTED or variant != DISTORTION_CORRECTED:
+                raise
+            missing_preferred = error
+            continue
+        if missing_preferred is not None:
+            logging.warning(
+                "%s; falling back to non-distortion-corrected input: "
+                "magnitude=%r, phase=%r",
+                missing_preferred, magnitude_group["name"], phase_group["name"],
+            )
         pairs.append(
             {
                 "variant": variant,
@@ -2303,6 +2330,8 @@ def _select_magnitude_phase_pairs(groups, selection):
                 "groups": (magnitude_group, phase_group),
             }
         )
+        if selection != "both":
+            break
     return pairs
 
 
@@ -2361,12 +2390,12 @@ def _select_magnitude_phase_groups(groups, variant):
         )
 
     if not magnitude_groups:
-        raise ValueError(
+        raise _MissingInputSeries(
             f"No magnitude image series found for {variant} input; "
             f"available series: {_available_series_summary(groups)}"
         )
     if not phase_groups:
-        raise ValueError(
+        raise _MissingInputSeries(
             f"No phase image series found for {variant} input; "
             f"available series: {_available_series_summary(groups)}"
         )
@@ -3206,6 +3235,29 @@ def _coerce_bool(value, default=False):
 def _append_optional_arg(cmd, flag, value):
     if value:
         cmd.extend([flag, str(value)])
+
+
+def _settings_for_echo_count(settings, n_echoes):
+    resolved = settings.copy()
+    if n_echoes >= 3:
+        return resolved
+    selected = _selected_output_ids(settings["send_outputs"])
+    all_outputs = str(settings["send_outputs"] or "qsm").strip().lower() == "all"
+    explicit = [
+        output for output in ("t2star", "r2star")
+        if settings[f"do_{output}map"] or (not all_outputs and output in selected)
+    ]
+    if explicit:
+        raise ValueError(
+            f"Requested {', '.join(explicit)} requires at least 3 echoes; "
+            f"this pair has {n_echoes} selected echo(s). "
+            "Choose qsm, swi, or smwi and disable dot2starmap/dor2starmap."
+        )
+    if all_outputs:
+        resolved["send_outputs"] = ",".join(
+            output for output in selected if output not in {"t2star", "r2star"}
+        )
+    return resolved
 
 
 def _selected_output_ids(value):

@@ -130,8 +130,8 @@ for header in (False, True):
             uids.add(uid)
             product = meta.get('LabelProduct')
             if product:
-                palette = header or meta.get('SynthSegReformatOrientation')
-                assert meta.get('LUTFileName') == ('MicroDeltaHotMetal.pal' if palette else None)
+                assert 'LUTFileName' not in meta
+                assert all(len(value) <= 16 for value in meta['ImageType'].split('\\'))
                 if not meta.get('SynthSegReformatOrientation'):
                     products.setdefault(product, []).append(image)
         assert set(products) == expected_products, (choice, products.keys())

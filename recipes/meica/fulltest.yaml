@@ -236,7 +236,7 @@ tests:
       PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import meica, ismrmrd, nibabel, numpy; print(meica.__file__)" | grep -x /opt/code/python-ismrmrd-server/meica.py
 
   - name: OpenRecon bridge processes multi-echo time series
-    description: Process packed and slice-wise MRD echoes, exclude scanner reference/noise images, preserve originals on failure, and return quantitative uint16 dR2* and T2* series
+    description: Process multi-echo MRD images, label original echoes and derived results, exclude reference/noise inputs, and preserve originals on failure
     timeout: 180
     script: |
       set -euo pipefail
@@ -245,6 +245,7 @@ tests:
       import copy
       import os
       from pathlib import Path
+      import re
 
       import ismrmrd
       import nibabel as nib
@@ -331,7 +332,19 @@ tests:
           assert original.getHead() == source.getHead()
           meta = ismrmrd.Meta.deserialize(original.attribute_string)
           assert meta["Keep_image_geometry"] == "1"
-          assert meta["SequenceDescription"] == "multi_echo_epi"
+          echo = int(source.getHead().contrast) + 1
+          expected_label = f"MEICA original magnitude te{echo}_multi_echo_epi"
+          for key in ("SequenceDescription", "SeriesDescription", "ProtocolName"):
+              assert meta[key] == expected_label, (key, meta)
+          assert meta["SequenceDescriptionAdditional"] == "openrecon"
+          source_meta = ismrmrd.Meta.deserialize(source.attribute_string)
+          assert source_meta["SequenceDescription"] == "multi_echo_epi"
+
+      original_groups = {
+          ismrmrd.Meta.deserialize(image.attribute_string)["SeriesNumberRangeNameUID"]
+          for image in originals
+      }
+      assert len(original_groups) == 3
 
       by_role = {}
       for derived in connection.sent[1:]:
@@ -344,6 +357,14 @@ tests:
           assert len({int(image.getHead().image_series_index) for image in derived}) == 1
           for image in derived:
               meta = ismrmrd.Meta.deserialize(image.attribute_string)
+              expected_label = {
+                  "MEICA_DR2S": "MEICA denoised BOLD dR2*",
+                  "MEICA_T2S": "MEICA T2* map",
+              }[meta["ImageTypeValue4"]]
+              for key in ("SequenceDescription", "SeriesDescription", "ProtocolName"):
+                  assert meta[key] == expected_label, (key, meta)
+              assert meta["SequenceDescriptionAdditional"] == "openrecon"
+              assert meta["SeriesNumberRangeNameUID"] not in original_groups
               assert meta["Keep_image_geometry"] == "1"
               assert "IceMiniHead" not in meta
               assert image.data.dtype == np.uint16
@@ -481,11 +502,12 @@ tests:
           for echo in range(1, 4)
           for slice_index in range(3)
       ]
-      phase = copy.deepcopy(bold[0])
-      header = phase.getHead()
-      header.image_type = ismrmrd.IMTYPE_PHASE
-      phase.setHead(header)
-      scanner_images = references + bold + noise + [phase]
+      phases = copy.deepcopy(references + bold + noise)
+      for image in phases:
+          header = image.getHead()
+          header.image_type = ismrmrd.IMTYPE_PHASE
+          image.setHead(header)
+      scanner_images = references + bold + noise + phases
       settings = meica._settings({})
       conversion = meica.write_meica_inputs(
           scanner_images, Metadata(),
@@ -561,6 +583,62 @@ tests:
       assert len(scanner.sent[1]) == 6
       assert len(scanner.sent[2]) == 3
       for original, source in zip(scanner.sent[0], scanner_images):
+          assert np.array_equal(original.data, source.data)
+          assert original.getHead() == source.getHead()
+          meta = ismrmrd.Meta.deserialize(original.attribute_string)
+          echo = int(source.getHead().contrast) + 1
+          component = (
+              "phase" if source.getHead().image_type == ismrmrd.IMTYPE_PHASE
+              else "magnitude"
+          )
+          source_meta = ismrmrd.Meta.deserialize(source.attribute_string)
+          is_reference = int(source.getHead().image_series_index) < 20
+          is_noise = int(source.getHead().repetition) == 2
+          role = "SBRef " if is_reference else "noise " if is_noise else ""
+          source_name = "multi_echo_epi_SBRef" if is_reference else "multi_echo_epi"
+          prefix = f"MEICA original {role}{component} te{echo}"
+          expected_label = f"{prefix}_{source_name}"[:54]
+          assert meta["SeriesDescription"] == expected_label, meta
+          assert meta["SequenceDescriptionAdditional"] == "openrecon"
+          assert len(meta["SeriesDescription"] + "_openrecon") <= 64
+          if "IceMiniHead" in source_meta:
+              minihead = base64.b64decode(meta["IceMiniHead"]).decode()
+              for key in (
+                  "SequenceDescription", "SeriesDescription", "ProtocolName",
+                  "SeriesNumberRangeNameUID",
+              ):
+                  values = re.findall(
+                      rf'<ParamString\."{key}">\s*\{{\s*"([^"]*)"', minihead
+                  )
+                  assert values == [meta[key]], (key, values, meta[key])
+              if is_noise:
+                  assert '{ "NOISE" }' in minihead
+
+      # Processing role, component and echo each define a stable scanner group.
+      scanner_groups = {
+          ismrmrd.Meta.deserialize(image.attribute_string)["SeriesNumberRangeNameUID"]
+          for image in scanner.sent[0]
+      }
+      assert len(scanner_groups) == 18
+
+      # Echo identity remains explicit when contrast counters are absent.
+      long_source_name = "func-bold_task-motor_acq-cmrr2d3echo2mm_run-1"
+      for key, value in (
+          ("EchoNumber", "3"), ("EchoNo", "3"), ("EchoIndex", "3"),
+          ("EchoTime", "40"), ("EchoTime", "0.04"),
+      ):
+          source = copy.deepcopy(bold[0])
+          meta = ismrmrd.Meta.deserialize(source.attribute_string)
+          meta["SequenceDescription"] = long_source_name
+          meta["SeriesNumberRangeNameUID"] = "source-motor-run-1"
+          meta[key] = value
+          source.attribute_string = meta.serialize()
+          original = meica._original_passthrough(source, Metadata())
+          returned_meta = ismrmrd.Meta.deserialize(original.attribute_string)
+          expected_label = f"MEICA original magnitude te3_{long_source_name}"[:54]
+          assert returned_meta["SequenceDescription"] == expected_label
+          assert len(returned_meta["SequenceDescription"] + "_openrecon") == 64
+          assert "source-motor-run-1" in returned_meta["SeriesNumberRangeNameUID"]
           assert np.array_equal(original.data, source.data)
           assert original.getHead() == source.getHead()
 
