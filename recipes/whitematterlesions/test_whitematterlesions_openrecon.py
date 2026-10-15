@@ -126,6 +126,23 @@ class FakeFlames:
         )
 
 
+class DownsamplingFakeFlames(FakeFlames):
+    """As `flames` 0.3 on fine input: outputs on a grid twice as coarse in-plane."""
+
+    def __call__(self, input_path, output_dir, model, skull_stripped):
+        result = super().__call__(input_path, output_dir, model, skull_stripped)
+        source = nib.load(str(input_path))
+        lesions = (np.asarray(source.dataobj) > 800).astype(np.float32)
+        nx, ny, nz = lesions.shape
+        coarse = lesions.reshape(nx // 2, 2, ny // 2, 2, nz).mean(axis=(1, 3))
+        affine = source.affine.copy()
+        affine[:3, :2] *= 2
+        affine[:3, 3] += 0.5 * (source.affine[:3, 0] + source.affine[:3, 1])
+        nib.save(nib.Nifti1Image(coarse.astype(np.float32), affine), result.probability)
+        nib.save(nib.Nifti1Image((coarse > 0.5).astype(np.uint8), affine), result.mask)
+        return result
+
+
 class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
     def setUp(self):
         workspace = tempfile.TemporaryDirectory()
@@ -243,6 +260,25 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "does not lie on the series grid"):
                     wml.mrd_series_to_volume(images)
 
+    def test_outputs_on_a_coarser_flames_grid_return_on_the_source_slices(self):
+        volume = np.zeros((20, 16, 6), dtype=np.int16)
+        volume[4:10, 6:12, 2:5] = 950
+        sources = nifti_to_mrd_images(volume, oblique_affine())
+        connection = RecordingConnection(sources)
+        config = {"parameters": {"wmlprobability": True}}
+        with mock.patch.object(wml, "run_flames", DownsamplingFakeFlames()):
+            wml.process(connection, config, None)
+        self.assertEqual(connection.logs[-1][0], constants.MRD_LOGGING_INFO)
+        series = connection.series()
+        self.assertEqual(sorted(series), [4, 5, 6, 7])
+        source_at = images_by_position(sources)
+        mask = np.zeros(volume.shape, dtype=bool)
+        for image in series[6]:
+            source = source_at[tuple(np.round(image.getHead().position, 3))]
+            self.assertEqual(np.squeeze(image.data).shape, np.squeeze(source.data).shape)
+            mask[:, :, source.getHead().slice] = np.squeeze(image.data).T > 0
+        self.assertGreater(dice(mask, volume > 800), 0.8)
+
     def test_default_run_omits_the_probability_map(self):
         connection = RecordingConnection(nifti_to_mrd_images(phantom(), oblique_affine()))
         with mock.patch.object(wml, "run_flames", FakeFlames()):
@@ -258,9 +294,35 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
             with mock.patch.object(wml, "FLAMES", str(failing)):
                 wml.process(connection, {}, None)
         self.assertTrue(connection.closed)
-        self.assertEqual(connection.image_batches, [])
         self.assertEqual(connection.logs[-1][0], constants.MRD_LOGGING_ERROR)
         self.assertIn("SynthStrip found no brain", connection.logs[-1][1])
+        # The originals were sent before FLAMeS ran, so the scanner still gets them.
+        series = connection.series()
+        self.assertEqual(sorted(series), [4])
+        meta = ismrmrd.Meta.deserialize(series[4][0].attribute_string)
+        self.assertEqual(meta["SeriesDescription"], "t2_flair_tra_original")
+
+    def test_originals_are_sent_before_flames_runs(self):
+        connection = RecordingConnection(nifti_to_mrd_images(phantom(), oblique_affine()))
+        fake = FakeFlames()
+
+        def flames(*args):
+            self.assertEqual(sorted(connection.series()), [4])
+            return fake(*args)
+
+        with mock.patch.object(wml, "run_flames", flames):
+            wml.process(connection, {}, None)
+        self.assertEqual(sorted(connection.series()), [4, 5, 6])
+
+    def test_without_sendoriginal_a_failure_returns_nothing(self):
+        def flames(*args):
+            raise RuntimeError("FLAMeS failed")
+
+        connection = RecordingConnection(nifti_to_mrd_images(phantom(), oblique_affine()))
+        with mock.patch.object(wml, "run_flames", flames):
+            wml.process(connection, {"parameters": {"sendoriginal": False}}, None)
+        self.assertEqual(connection.image_batches, [])
+        self.assertIn("FLAMeS failed", connection.logs[-1][1])
 
     @unittest.skipUnless(
         os.environ.get("WHITEMATTERLESIONS_TEST_FLAIR"), "no FLAIR NIfTI supplied"
