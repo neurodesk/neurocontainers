@@ -850,10 +850,11 @@ tests:
   - name: Full pretrained 72-bundle segmentation against official references
     description: >-
       Run the released default three-orientation pretrained CPU segmentation
-      on the complete official73x87x73 nine-component peak image. Preserve
-      every voxel of all72 released binary reference masks, their physical
-      grids and all input/checkpoint bytes. This follows the upstream v2.9
-      exact-mask regression oracle; no unit-test model or synthetic network.
+      on the complete official73x87x73 nine-component peak image. Require all72
+      default binary outputs and physical grids, then additionally run the
+      published single-orientation regression mode and preserve every voxel
+      of its72 official references. Keep all input/checkpoint bytes unchanged;
+      no unit-test model, synthetic network or relaxed reference tolerance.
     command: |
       /opt/miniconda/bin/python - <<'PYTHON'
       import hashlib
@@ -887,13 +888,29 @@ tests:
               data=np.asanyarray(result.dataobj);target=np.asanyarray(reference.dataobj)
               assert data.shape==target.shape==image.shape[:3]
               assert np.isfinite(data).all() and set(np.unique(data)).issubset({0,1})
-              np.testing.assert_array_equal(data,target,err_msg=name+' official released mask')
               np.testing.assert_array_equal(result.affine,image.affine)
               np.testing.assert_array_equal(result.header.get_zooms(),image.header.get_zooms()[:3])
               counts[name]=int(data.sum());assert counts[name]>0,name
+          # Upstream tests.sh generates these references with --single_orientation.
+          # Keep the default three-orientation operation above as well.
+          single_output=Path(scratch)/'official-single-orientation'
+          subprocess.run(['TractSeg','-i',str(source),'-o',str(single_output),'--single_orientation','--nr_cpus','2'],env=env,check=True,timeout=3000)
+          single_actual=single_output/'bundle_segmentations'
+          assert {p.name for p in single_actual.glob('*.nii.gz')}=={name+'.nii.gz' for name in names}
+          single_counts={}
+          for name in names:
+              result=nib.load(single_actual/(name+'.nii.gz'))
+              reference=nib.load(root/'bundle_segmentations'/(name+'.nii.gz'))
+              data=np.asanyarray(result.dataobj);target=np.asanyarray(reference.dataobj)
+              assert data.shape==target.shape==image.shape[:3]
+              assert np.isfinite(data).all() and set(np.unique(data)).issubset({0,1})
+              np.testing.assert_array_equal(data,target,err_msg=name+' official single-orientation reference')
+              np.testing.assert_array_equal(result.affine,image.affine)
+              np.testing.assert_array_equal(result.header.get_zooms(),image.header.get_zooms()[:3])
+              single_counts[name]=int(data.sum());assert single_counts[name]>0,name
           assert {str(p):sha(p) for p in fixtures}==before
           assert {p.name:sha(p) for p in weights}==weight_hashes
-          print('Full trained TractSeg official72-mask regression passed '+json.dumps({'shape':list(image.shape),'bundle_voxels':counts,'unchanged_models':len(weights)},sort_keys=True))
+          print('Full trained TractSeg official72-mask regression passed '+json.dumps({'shape':list(image.shape),'default_three_orientation_voxels':counts,'official_single_orientation_voxels':single_counts,'exact_reference_mode':'single_orientation','unchanged_models':len(weights)},sort_keys=True))
       PYTHON
     expected_exit_code: 0
     expected_output_contains: Full trained TractSeg official72-mask regression passed
