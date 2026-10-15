@@ -345,6 +345,16 @@ tests:
       with tempfile.TemporaryDirectory(prefix='dlc-gui-') as directory:
           os.environ['XDG_CONFIG_HOME']=directory
           os.environ['XDG_CACHE_HOME']=directory
+          import importlib.util
+          from pathlib import Path
+          import subprocess
+          package=Path(importlib.util.find_spec('PySide6').origin).parent
+          libraries=[package/'Qt'/'lib'/('libQt6'+name+'.so.6') for name in ['Core','Gui','Widgets']]
+          libraries+=[package/'Qt'/'plugins'/'platforms'/'libqxcb.so']
+          for library in libraries:
+              assert library.is_file(),str(library)
+              linkage=subprocess.run(['ldd',str(library)],capture_output=True,text=True,check=True)
+              assert 'not found' not in linkage.stdout+linkage.stderr,(str(library),linkage.stdout,linkage.stderr)
           from PySide6.QtWidgets import QApplication
           from deeplabcut.gui.window import MainWindow
           app=QApplication([])

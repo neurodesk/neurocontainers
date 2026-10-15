@@ -118,6 +118,21 @@ build:
         - libopengl0
         - libxkbcommon-x11-0
         - libxcb-cursor0
+        # Qt's published Linux font/X11 runtime requirements.
+        - libfreetype6
+        - libfontconfig1
+        - fonts-dejavu-core
+        - libdbus-1-3
+        - libsm6
+        - libice6
+        - libx11-xcb1
+        - libxrender1
+        - libxcb-icccm4
+        - libxcb-keysyms1
+        - libxcb-randr0
+        - libxcb-shape0
+        - libxcb-sync1
+        - libxcb-xfixes0
     - file:
         name: deeplabcut_env.yaml
         contents: |
