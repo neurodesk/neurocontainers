@@ -28,7 +28,8 @@ env:
 
 jobs:
   prune:
-    if: github.repository == 'neurodesk/neurocontainers'
+    # Run only main's reviewed copy of the script with registry credentials.
+    if: github.repository == 'neurodesk/neurocontainers' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     concurrency:
