@@ -266,7 +266,8 @@ factors are in `brainquant_strip_correction.json`.
 | Left / right thalamus | 1.015 / 1.016 | 0.010 / 0.016 |
 | CSF | 1.075 | 0.035 |
 
-Most other structures change by under 1%. The correction assumes that AHEAD's
+Most other structures change by under 1%. The small, noisier pallidum and
+accumbens shift by up to 3.1%. The correction assumes that AHEAD's
 mask behaves like SynthStrip's. AHEAD was skull-stripped with its own pipeline,
 and any difference between the two masks stays in the reference as a bias.
 

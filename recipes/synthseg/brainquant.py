@@ -23,6 +23,8 @@ ULTRA_HIGH_FIELD_T = 5.0
 MODEL_KEYS = ("female", "male", "all")
 PAGE_PIXELS = 1024
 PIXEL_MAX = 4095
+# Left and right page margin for report text, as a fraction of the page width.
+TEXT_MARGIN = 0.02
 LOW_PERCENTILE = 5.0
 HIGH_PERCENTILE = 95.0
 
@@ -398,20 +400,37 @@ def _figure():
     return figure
 
 
+def _wrap(figure, line: str, fontsize: float, fontweight: str = "normal") -> list[str]:
+    """Break a line at spaces so each piece fits between the page margins."""
+    renderer = figure.canvas.get_renderer()
+    limit = figure.bbox.width * (1.0 - 2 * TEXT_MARGIN)
+    pieces, current = [], ""
+    for word in line.split(" "):
+        candidate = f"{current} {word}" if current else word
+        probe = figure.text(0, 0, candidate, fontsize=fontsize, fontweight=fontweight)
+        fits = probe.get_window_extent(renderer).width <= limit
+        probe.remove()
+        if fits or not current:
+            current = candidate
+        else:
+            pieces.append(current)
+            current = word
+    return pieces + [current]
+
+
 def _write_text(figure, report: Report, page_title: str) -> tuple[float, float]:
     """Draw header and footer; return the free vertical band (bottom, top)."""
     header = _header_lines(report, page_title)
     y = 0.985
     for index, line in enumerate(header):
-        figure.text(
-            0.02, y, line, ha="left", va="top",
-            fontsize=15 if index == 0 else 10.5,
-            fontweight="bold" if index in (0, len(header) - 1) else "normal",
-        )
-        y -= 0.032 if index == 0 else 0.024
-    footer = _footer_lines(report)
+        fontsize = 15 if index == 0 else 10.5
+        fontweight = "bold" if index in (0, len(header) - 1) else "normal"
+        for piece in _wrap(figure, line, fontsize, fontweight):
+            figure.text(TEXT_MARGIN, y, piece, ha="left", va="top", fontsize=fontsize, fontweight=fontweight)
+            y -= 0.032 if index == 0 else 0.024
+    footer = [piece for line in _footer_lines(report) for piece in _wrap(figure, line, 9.5)]
     for index, line in enumerate(footer):
-        figure.text(0.02, 0.012 + 0.022 * (len(footer) - 1 - index), line, ha="left", va="bottom", fontsize=9.5)
+        figure.text(TEXT_MARGIN, 0.012 + 0.022 * (len(footer) - 1 - index), line, ha="left", va="bottom", fontsize=9.5)
     return 0.012 + 0.022 * len(footer), y
 
 

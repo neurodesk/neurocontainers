@@ -307,3 +307,20 @@ def test_shipped_references_share_structures_and_name_field_strength():
     assert [(s.id, s.columns) for s in ixi.structures] == [(s.id, s.columns) for s in seven_tesla.structures]
     assert (ixi.reference.field_strength, seven_tesla.reference.field_strength) == ("1.5 T and 3 T", "7 T")
     assert ixi.icv_column == seven_tesla.icv_column
+
+
+@pytest.mark.parametrize("norms_path", [brainquant.NORMS_PATH, brainquant.NORMS_7T_PATH])
+def test_report_text_stays_inside_the_page(norms_path):
+    norms = brainquant.load_norms(norms_path)
+    volumes = dict(SAMPLE_VOLUMES_MM3)
+    footnotes = (
+        f"The {norms.reference.cohort} reference was chosen because the scanner field strength is 6.98 T.",
+        "This run used ssmodel=robust with fast mode on. The reference was fitted with SynthSeg 2.0 in "
+        "fast mode, so volumes may be shifted relative to it.",
+    )
+    report = brainquant.assess(norms, volumes, brainquant.resolve_subject(None, 90, "header"), footnotes)
+    for page in brainquant.render_pages(report):
+        # Clipped text leaves ink in the rightmost columns of the header and footer bands.
+        rows = page.shape[0]
+        bands = np.concatenate([page[: rows // 6], page[-rows // 8:]])
+        assert not np.any(bands[:, -6:] < brainquant.PIXEL_MAX * 0.5)
