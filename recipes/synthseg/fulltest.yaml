@@ -177,7 +177,8 @@ tests:
 
   - name: Brain volume report renders from the real volume CSV
     description: >-
-      Load the shipped IXI and 7 T norms as chosen by field strength, read the
+      Load the shipped IXI and 7 T norms, fast and normal mode, as chosen by
+      field strength and mode, read the
       --vol CSV written by the real network above and render both report pages,
       so the norms' column names must match what mri_synthseg writes.
     command: |
@@ -187,8 +188,10 @@ tests:
 
       volumes = brainquant.read_volumes("${output_dir}/synthseg/t1w_volumes.csv")
       subject = brainquant.resolve_subject(None, 30, "female")
-      for field_strength, cohort in ((2.89, "IXI"), (6.98, "AHEAD")):
-          norms_path, _ = brainquant.select_norms(field_strength)
+      for field_strength, fast, cohort in (
+          (2.89, True, "IXI"), (6.98, True, "AHEAD"), (2.89, False, "IXI"), (6.98, False, "AHEAD"),
+      ):
+          norms_path, _ = brainquant.select_norms(field_strength, fast)
           norms = brainquant.load_norms(norms_path)
           assert norms.reference.cohort == cohort, norms.reference
           report = brainquant.assess(norms, volumes, subject)

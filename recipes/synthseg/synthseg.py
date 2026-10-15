@@ -3635,7 +3635,7 @@ def process_raw(group, connection, config, metadata):
 def _render_brainquant_pages(volumes_csv_path: Path, metadata, *, age: int, sex: str, model: str, fast: bool):
     import brainquant
 
-    norms_path, reference_reason = brainquant.select_norms(brainquant.header_field_strength(metadata))
+    norms_path, reference_reason = brainquant.select_norms(brainquant.header_field_strength(metadata), fast)
     norms = brainquant.load_norms(norms_path)
     logging.info(
         "SynthSeg brain volume report reference: %s (%s), chosen because %s",
@@ -3649,10 +3649,10 @@ def _render_brainquant_pages(volumes_csv_path: Path, metadata, *, age: int, sex:
         subject.age_source, subject.sex_source,
     )
     footnotes = (f"The {norms.reference.cohort} reference was chosen because {reference_reason}.",)
-    if model != OPENRECON_MODEL_DEFAULT or not fast:
+    if model != OPENRECON_MODEL_DEFAULT:
         footnotes += (
-            f"This run used ssmodel={model} with fast mode {'on' if fast else 'off'}. The reference was "
-            "fitted with SynthSeg 2.0 in fast mode, so volumes may be shifted relative to it.",
+            f"This run used ssmodel={model}. The reference was fitted with SynthSeg 2.0, "
+            "so volumes may be shifted relative to it.",
         )
     report = brainquant.assess(norms, brainquant.read_volumes(volumes_csv_path), subject, footnotes)
     for result in report.results:
