@@ -378,6 +378,10 @@ def original_series(ordered, series_index: int) -> list:
     return output
 
 
+def on_grid(image, affine: np.ndarray, shape: tuple[int, ...]) -> bool:
+    return image.shape == tuple(shape) and np.allclose(image.affine, affine, atol=1e-3)
+
+
 def on_source_grid(
     path: Path, affine: np.ndarray, shape: tuple[int, ...], order: int
 ) -> np.ndarray:
@@ -390,7 +394,7 @@ def on_source_grid(
 
     output = nib.load(str(path))
     data = np.asarray(output.dataobj, dtype=np.float32)
-    if data.shape == tuple(shape) and np.allclose(output.affine, affine, atol=1e-3):
+    if on_grid(output, affine, shape):
         return data
     source_to_output = np.linalg.inv(output.affine) @ affine
     return ndimage.affine_transform(
@@ -404,7 +408,7 @@ def segmentation_series(
     first_series_index: int, send_probability: bool,
 ) -> tuple[list[tuple[str, list]], FlamesResult]:
     mask = on_source_grid(result.mask, affine, volume_xyz.shape, order=0) > 0
-    if nib.load(str(result.mask)).shape != volume_xyz.shape:
+    if not on_grid(nib.load(str(result.mask)), affine, volume_xyz.shape):
         # Resampled from the coarser FLAMeS grid: describe the mask the scanner receives.
         _, count = ndimage.label(mask, structure=np.ones((3, 3, 3)))
         voxel_ml = abs(np.linalg.det(affine[:3, :3])) / 1000
