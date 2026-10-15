@@ -177,27 +177,29 @@ tests:
 
   - name: Brain volume report renders from the real volume CSV
     description: >-
-      Load the shipped IXI norms, read the --vol CSV written by the real network
-      above and render both report pages, so the norms' column names must match
-      what mri_synthseg writes.
+      Load the shipped IXI and 7 T norms as chosen by field strength, read the
+      --vol CSV written by the real network above and render both report pages,
+      so the norms' column names must match what mri_synthseg writes.
     command: |
       PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
       import numpy as np
       import brainquant
 
-      norms = brainquant.load_norms(brainquant.NORMS_PATH)
-      assert norms.reference.cohort == "IXI", norms.reference
       volumes = brainquant.read_volumes("${output_dir}/synthseg/t1w_volumes.csv")
       subject = brainquant.resolve_subject(None, 30, "female")
-      report = brainquant.assess(norms, volumes, subject)
-      assert all(result.percentile is not None for result in report.results)
-      pages = brainquant.render_pages(report)
-      assert len(pages) == 2
-      for page in pages:
-          assert page.dtype == np.uint16 and min(page.shape) >= 1024 and page.max() <= 4095
-          assert 0.005 < float(np.mean(page < 2048)) < 0.5
-      for result in report.results:
-          print(brainquant.log_fields(result))
+      for field_strength, cohort in ((2.89, "IXI"), (6.98, "AHEAD")):
+          norms_path, _ = brainquant.select_norms(field_strength)
+          norms = brainquant.load_norms(norms_path)
+          assert norms.reference.cohort == cohort, norms.reference
+          report = brainquant.assess(norms, volumes, subject)
+          assert all(result.percentile is not None for result in report.results)
+          pages = brainquant.render_pages(report)
+          assert len(pages) == 2
+          for page in pages:
+              assert page.dtype == np.uint16 and min(page.shape) >= 1024 and page.max() <= 4095
+              assert 0.005 < float(np.mean(page < 2048)) < 0.5
+          for result in report.results:
+              print(cohort, brainquant.log_fields(result))
       print("brain volume report ok:", len(report.results), "structures")
       PY
     expected_output_contains: brain volume report ok

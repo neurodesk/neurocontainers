@@ -23,8 +23,9 @@ MRD/LPS geometry to a NIfTI RAS volume. It then runs `flames` on that volume.
 The outputs come back on the source slices, with the source geometry.
 
 `flames` downsamples a FLAIR finer than 1 × 0.9 × 0.9 mm, such as a 0.4 mm 3D
-acquisition, to that grid and segments it there. The adapter interpolates the
-probability back onto the source slices and recomputes the mask from it at 0.5.
+acquisition, to that grid and segments it there. The adapter resamples the mask
+(nearest neighbour) and the probability (linear) back onto the source slices. The
+lesion count and volume are then recomputed from the returned mask.
 
 ## Outputs
 

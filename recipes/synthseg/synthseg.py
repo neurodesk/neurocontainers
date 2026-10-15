@@ -3635,7 +3635,12 @@ def process_raw(group, connection, config, metadata):
 def _render_brainquant_pages(volumes_csv_path: Path, metadata, *, age: int, sex: str, model: str, fast: bool):
     import brainquant
 
-    norms = brainquant.load_norms(brainquant.NORMS_PATH)
+    norms_path, reference_reason = brainquant.select_norms(brainquant.header_field_strength(metadata))
+    norms = brainquant.load_norms(norms_path)
+    logging.info(
+        "SynthSeg brain volume report reference: %s (%s), chosen because %s",
+        norms.reference.cohort, norms_path.name, reference_reason,
+    )
     subject = brainquant.resolve_subject(metadata, age, sex)
     # Age and sex stay on the report image; the log records only where they
     # came from, so reconstruction logs carry no patient demographics.
@@ -3643,9 +3648,9 @@ def _render_brainquant_pages(volumes_csv_path: Path, metadata, *, age: int, sex:
         "SynthSeg brain volume report subject: age source=%s sex source=%s",
         subject.age_source, subject.sex_source,
     )
-    footnotes = ()
+    footnotes = (f"The {norms.reference.cohort} reference was chosen because {reference_reason}.",)
     if model != OPENRECON_MODEL_DEFAULT or not fast:
-        footnotes = (
+        footnotes += (
             f"This run used ssmodel={model} with fast mode {'on' if fast else 'off'}. The reference was "
             "fitted with SynthSeg 2.0 in fast mode, so volumes may be shifted relative to it.",
         )

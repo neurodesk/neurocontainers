@@ -379,32 +379,23 @@ def original_series(ordered, series_index: int) -> list:
 
 
 def on_source_grid(
-    result: FlamesResult, shape: tuple, affine: np.ndarray
-) -> tuple[np.ndarray, np.ndarray, FlamesResult]:
-    """The lesion mask, probability and summary on the scanner's grid.
+    path: Path, affine: np.ndarray, shape: tuple[int, ...], order: int
+) -> np.ndarray:
+    """Return a FLAMeS output on the source grid.
 
-    `flames` downsamples input finer than its 1 x 0.9 x 0.9 mm grid and writes its
-    outputs there. The probability is then interpolated back linearly, with edges
-    clamped as `flames` resamples, and the mask is that probability above 0.5, the
-    threshold `flames` itself applies. Lesion count (26-connected, as `flames`
-    counts) and volume are recomputed from that mask, so they describe what the
-    scanner receives.
+    FLAMeS downsamples a FLAIR finer than its 1 x 0.9 x 0.9 mm grid and writes
+    its outputs on that coarser grid, so they are resampled back through the
+    two affines.
     """
-    probability_image = nib.load(str(result.probability))
-    probability = np.asarray(probability_image.dataobj, dtype=np.float32)
-    if probability.shape == tuple(shape):
-        mask = np.asarray(nib.load(str(result.mask)).dataobj) > 0
-        return mask, probability, result
-    source_to_flames = np.linalg.inv(probability_image.affine) @ affine
-    probability = ndimage.affine_transform(
-        probability, source_to_flames[:3, :3], source_to_flames[:3, 3],
-        output_shape=tuple(shape), order=1, mode="nearest",
-    )
-    mask = probability > 0.5
-    _, count = ndimage.label(mask, structure=np.ones((3, 3, 3)))
-    voxel_ml = abs(np.linalg.det(affine[:3, :3])) / 1000
-    return mask, probability, replace(
-        result, lesion_count=int(count), volume_ml=float(mask.sum() * voxel_ml)
+
+    output = nib.load(str(path))
+    data = np.asarray(output.dataobj, dtype=np.float32)
+    if data.shape == tuple(shape) and np.allclose(output.affine, affine, atol=1e-3):
+        return data
+    source_to_output = np.linalg.inv(output.affine) @ affine
+    return ndimage.affine_transform(
+        data, source_to_output[:3, :3], offset=source_to_output[:3, 3],
+        output_shape=tuple(shape), order=order, mode="nearest",
     )
 
 
@@ -412,7 +403,14 @@ def segmentation_series(
     result: FlamesResult, ordered, volume_xyz: np.ndarray, affine: np.ndarray,
     first_series_index: int, send_probability: bool,
 ) -> tuple[list[tuple[str, list]], FlamesResult]:
-    mask, probability, result = on_source_grid(result, volume_xyz.shape, affine)
+    mask = on_source_grid(result.mask, affine, volume_xyz.shape, order=0) > 0
+    if nib.load(str(result.mask)).shape != volume_xyz.shape:
+        # Resampled from the coarser FLAMeS grid: describe the mask the scanner receives.
+        _, count = ndimage.label(mask, structure=np.ones((3, 3, 3)))
+        voxel_ml = abs(np.linalg.det(affine[:3, :3])) / 1000
+        result = replace(
+            result, lesion_count=int(count), volume_ml=float(mask.sum() * voxel_ml)
+        )
     summary = (
         f"FLAMeS: {result.lesion_count} lesions, {result.volume_ml:.2f} ml; "
         f"{RESEARCH_WARNING}"
@@ -434,6 +432,7 @@ def segmentation_series(
         )),
     ]
     if send_probability:
+        probability = on_source_grid(result.probability, affine, volume_xyz.shape, order=1)
         series.append(("lesion probability", volume_to_mrd_series(
             np.rint(np.clip(probability, 0, 1) * PROBABILITY_SCALE).astype(np.int16),
             ordered, first_series_index + 2, "_lesion_probability",

@@ -176,15 +176,23 @@ from counting label voxels.
 
 Each structure's log volume is adjusted to a reference total intracranial
 volume and compared with a sex-specific model whose median and spread vary with
-age. The reference is the IXI cohort, segmented with SynthSeg 2.0 in fast mode;
-the cohort size, sex split and age range are printed on every page. IXI data are
-licensed CC BY-SA 3.0.
+age. The reference depends on the scanner field strength in the MRD header.
+Below 5 T, or when the header has no field strength, it is the IXI cohort
+(1.5 T and 3 T, CC BY-SA 3.0). At 5 T and above it is the AHEAD 7 T cohort
+(CC BY 4.0). On 7 T images SynthSeg measures the cortex much larger, so a 7 T
+scan compared with IXI would be flagged above the 95th percentile. The cohort,
+its field strength, size, sex split and age range are printed on every page,
+and a footnote states why that reference was chosen. Both references were
+segmented with SynthSeg 2.0 in fast mode.
 
 The shipped norms use 561 healthy IXI adults aged 20 to 86 from three scanners,
 with the scanner effect averaged out. In five-fold cross-validation, 87.5% to
 90% of held-out subjects fall inside each structure's 5th-95th band, against
 the nominal 90%. Across the three IXI scanners the mean z score shifts by up
-to 0.47, so expect offsets of that size on a new scanner. The model, its
+to 0.47, so expect offsets of that size on a new scanner. The 7 T reference has
+105 AHEAD adults aged 18 to 80, with ages published in bins. Its images are
+skull-stripped and corrected to whole-head volumes. About 87% of held-out
+healthy subjects fall inside its 5th-95th band. The model, its
 validation and its limitations are described in
 https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/synthseg/BRAINQUANT_NORMS.md
 
