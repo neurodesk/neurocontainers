@@ -360,23 +360,27 @@ tests:
           from deeplabcut.gui.window import MainWindow
           app=QApplication([])
           stdout,stderr=sys.stdout,sys.stderr
-          window=MainWindow(app)
-          window.show();app.processEvents()
-          assert window.isVisible() and window.centralWidget() is not None
-          assert window.width()>0 and window.height()>0
-          confirmed=[]
-          def accept_quit():
-              dialog=app.activeModalWidget()
-              assert isinstance(dialog,QMessageBox) and dialog.isVisible()
-              button=dialog.button(QMessageBox.Yes)
-              assert button is not None and button.isEnabled()
-              confirmed.append(True)
-              button.click()
-          QTimer.singleShot(50,accept_quit)
-          window.close();app.processEvents()
-          assert confirmed==[True] and not window.isVisible() and window._closing
-          assert window.receiver.wait(1000)
-          sys.stdout,sys.stderr=stdout,stderr
+          try:
+              window=MainWindow(app)
+              window.receiver.start()
+              window.show();app.processEvents()
+              assert window.receiver.isRunning()
+              assert window.isVisible() and window.centralWidget() is not None
+              assert window.width()>0 and window.height()>0
+              confirmed=[]
+              def accept_quit():
+                  dialog=app.activeModalWidget()
+                  assert isinstance(dialog,QMessageBox) and dialog.isVisible()
+                  button=dialog.button(QMessageBox.Yes)
+                  assert button is not None and button.isEnabled()
+                  confirmed.append(True)
+                  button.click()
+              QTimer.singleShot(50,accept_quit)
+              window.close();app.processEvents()
+              assert confirmed==[True] and not window.isVisible() and window._closing
+              assert window.receiver.wait(1000) and not window.receiver.isRunning()
+          finally:
+              sys.stdout,sys.stderr=stdout,stderr
       print('DeepLabCut project GUI created and closed on the native architecture')
       PYTHON
     expected_exit_code: 0
