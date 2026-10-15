@@ -320,6 +320,46 @@ class TopoFitOpenReconTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn("no UNI-DEN contrast", errors[0])
 
+    def test_originals_are_sent_before_topofit_runs_and_survive_its_failure(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            topofit.WORKSPACE = Path(temporary_directory)
+            connection = RecordingConnection(_mrd_volume())
+            sent_before_run = []
+
+            def failing_workflow(*args, **kwargs):
+                sent_before_run.extend(
+                    int(image.image_series_index)
+                    for batch in connection.image_batches
+                    for image in batch
+                )
+                raise RuntimeError("TopoFit failed")
+
+            with mock.patch.object(
+                topofit, "run_topofit_workflow", side_effect=failing_workflow
+            ):
+                topofit.process(connection, {}, metadata=None)
+
+        self.assertTrue(connection.closed)
+        self.assertEqual(set(sent_before_run), {8})
+        outputs = [image for batch in connection.image_batches for image in batch]
+        self.assertEqual(len(outputs), 8)
+        self.assertEqual({int(image.image_series_index) for image in outputs}, {8})
+        description = ismrmrd.Meta.deserialize(outputs[0].attribute_string)["SeriesDescription"]
+        self.assertTrue(description.endswith("_original"), description)
+        self.assertIn("TopoFit failed", connection.logs[-1][1])
+
+    def test_without_sendoriginal_a_failure_returns_nothing(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            topofit.WORKSPACE = Path(temporary_directory)
+            connection = RecordingConnection(_mrd_volume())
+            with mock.patch.object(
+                topofit, "run_topofit_workflow", side_effect=RuntimeError("TopoFit failed")
+            ):
+                topofit.process(connection, {"parameters": {"sendoriginal": False}}, metadata=None)
+
+        self.assertEqual(connection.image_batches, [])
+        self.assertIn("TopoFit failed", connection.logs[-1][1])
+
     def test_mrd_series_returns_source_grid_qc_and_manifest(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             topofit.WORKSPACE = Path(temporary_directory)
