@@ -278,6 +278,20 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
             self.assertEqual(np.squeeze(image.data).shape, np.squeeze(source.data).shape)
             mask[:, :, source.getHead().slice] = np.squeeze(image.data).T > 0
         self.assertGreater(dice(mask, volume > 800), 0.8)
+        # The summary describes the returned mask, not the coarse one flames counted.
+        voxel_ml = abs(np.linalg.det(oblique_affine()[:3, :3])) / 1000
+        self.assertIn(f"1 lesions, {mask.sum() * voxel_ml:.2f} ml", connection.logs[-1][1])
+
+    def test_lesions_on_the_edge_of_a_coarser_grid_are_kept(self):
+        volume = np.zeros((20, 16, 6), dtype=np.int16)
+        volume[0:4, 0:4, :] = 950
+        connection = RecordingConnection(nifti_to_mrd_images(volume, oblique_affine()))
+        with mock.patch.object(wml, "run_flames", DownsamplingFakeFlames()):
+            wml.process(connection, {}, None)
+        mask = np.zeros(volume.shape, dtype=bool)
+        for image in connection.series()[6]:
+            mask[:, :, image.getHead().slice] = np.squeeze(image.data).T > 0
+        self.assertTrue(mask[0, 0].all(), "edge voxels were zeroed")
 
     def test_default_run_omits_the_probability_map(self):
         connection = RecordingConnection(nifti_to_mrd_images(phantom(), oblique_affine()))
