@@ -278,3 +278,24 @@ def test_report_pages_render_legible_grayscale(norms, age):
         from matplotlib.image import imsave
 
         imsave(preview, np.hstack(pages), cmap="gray", vmin=0, vmax=brainquant.PIXEL_MAX)
+
+
+@pytest.mark.parametrize("field_strength, expected", [
+    (None, "brainquant_norms.json"),
+    (1.5, "brainquant_norms.json"),
+    (2.89, "brainquant_norms.json"),
+    (6.98, "brainquant_norms_7t.json"),
+    (9.4, "brainquant_norms_7t.json"),
+])
+def test_reference_is_selected_by_field_strength(field_strength, expected):
+    path, reason = brainquant.select_norms(field_strength)
+    assert path.name == expected
+    assert ("not in the header" in reason) == (field_strength is None)
+
+
+def test_field_strength_reads_real_mrd_header_types():
+    xsd = pytest.importorskip("ismrmrd.xsd")
+    header = SimpleNamespace(acquisitionSystemInformation=xsd.acquisitionSystemInformationType(systemFieldStrength_T=6.98))
+    assert brainquant.header_field_strength(header) == pytest.approx(6.98)
+    assert brainquant.header_field_strength(SimpleNamespace(acquisitionSystemInformation=None)) is None
+    assert brainquant.header_field_strength(None) is None

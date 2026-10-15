@@ -17,6 +17,9 @@ from scipy.special import ndtr, ndtri
 
 NORMS_SCHEMA = "neurodesk.synthseg.brainquant.norms/1"
 NORMS_PATH = Path(__file__).with_name("brainquant_norms.json")
+NORMS_7T_PATH = Path(__file__).with_name("brainquant_norms_7t.json")
+# Scanners at or above this field strength are compared with the 7 T reference.
+ULTRA_HIGH_FIELD_T = 5.0
 MODEL_KEYS = ("female", "male", "all")
 PAGE_PIXELS = 1024
 PIXEL_MAX = 4095
@@ -70,6 +73,7 @@ class Reference:
     age_min: float
     age_max: float
     synthseg: str
+    field_strength: str = ""
 
 
 @dataclass(frozen=True)
@@ -197,6 +201,7 @@ def parse_norms(raw: dict) -> Norms:
                 age_min=_number(reference["age_min"], "reference.age_min"),
                 age_max=_number(reference["age_max"], "reference.age_max"),
                 synthseg=str(reference["synthseg"]),
+                field_strength=str(reference.get("field_strength", "")),
             ),
             age_center=_number(raw["age_center"], "age_center"),
             age_scale=_number(raw["age_scale"], "age_scale"),
@@ -213,6 +218,25 @@ def parse_norms(raw: dict) -> Norms:
 
 def load_norms(path: str | Path) -> Norms:
     return parse_norms(json.loads(Path(path).read_text(encoding="utf-8")))
+
+
+def header_field_strength(metadata) -> float | None:
+    """Scanner field strength in tesla from the MRD XML header, if present."""
+    system = getattr(metadata, "acquisitionSystemInformation", None)
+    value = getattr(system, "systemFieldStrength_T", None)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) and value > 0 else None
+
+
+def select_norms(field_strength_t: float | None) -> tuple[Path, str]:
+    """Pick the reference for the scanner and say why, for the report footnote."""
+    if field_strength_t is None:
+        return NORMS_PATH, "the scanner field strength is not in the header"
+    reason = f"the scanner field strength is {field_strength_t:g} T"
+    return (NORMS_7T_PATH if field_strength_t >= ULTRA_HIGH_FIELD_T else NORMS_PATH), reason
 
 
 def read_volumes(path: str | Path) -> dict[str, float]:
@@ -341,7 +365,8 @@ def _header_lines(report: Report, page_title: str) -> list[str]:
         lines.append("Sex unknown: compared with the combined female and male reference.")
     return lines + [
         (
-            f"Reference: {reference.cohort} (n={reference.subjects}, {reference.female} F / {reference.male} M, "
+            f"Reference: {reference.cohort}{f' {reference.field_strength}' if reference.field_strength else ''} "
+            f"(n={reference.subjects}, {reference.female} F / {reference.male} M, "
             f"age {reference.age_min:g}-{reference.age_max:g} y, {_license_text(reference.license)}), "
             f"{reference.synthseg}."
         ),
