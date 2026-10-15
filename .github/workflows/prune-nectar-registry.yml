@@ -1,0 +1,59 @@
+name: Prune Nectar registry
+
+# Deletes Nectar Harbor artifacts that neurocommand's apps.json no longer
+# serves, freeing the ssdsorg project's storage quota. Dry run by default; the
+# plan is uploaded as an artifact so it can be reviewed before applying.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete the planned artifacts (otherwise only report them)
+        type: boolean
+        default: false
+      min_age_days:
+        description: Keep artifacts pushed within this many days
+        type: number
+        default: 14
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prune-nectar-registry
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  prune:
+    if: github.repository == 'neurodesk/neurocontainers'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Plan and prune
+        env:
+          APPLY: ${{ inputs.apply }}
+          MIN_AGE_DAYS: ${{ inputs.min_age_days }}
+          NECTAR_REGISTRY_USERNAME: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME }}
+          NECTAR_REGISTRY_PASSWORD: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
+        run: |
+          args=(--min-age-days "${MIN_AGE_DAYS}" --report nectar-prune-plan.json)
+          if [ "${APPLY}" = "true" ]; then
+            args+=(--apply)
+          fi
+          python tools/prune_nectar_registry.py "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload plan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nectar-prune-plan
+          path: nectar-prune-plan.json
+          if-no-files-found: ignore
