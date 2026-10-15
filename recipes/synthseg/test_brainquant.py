@@ -299,3 +299,11 @@ def test_field_strength_reads_real_mrd_header_types():
     assert brainquant.header_field_strength(header) == pytest.approx(6.98)
     assert brainquant.header_field_strength(SimpleNamespace(acquisitionSystemInformation=None)) is None
     assert brainquant.header_field_strength(None) is None
+
+
+def test_shipped_references_share_structures_and_name_field_strength():
+    ixi = brainquant.load_norms(brainquant.NORMS_PATH)
+    seven_tesla = brainquant.load_norms(brainquant.NORMS_7T_PATH)
+    assert [(s.id, s.columns) for s in ixi.structures] == [(s.id, s.columns) for s in seven_tesla.structures]
+    assert (ixi.reference.field_strength, seven_tesla.reference.field_strength) == ("1.5 T and 3 T", "7 T")
+    assert ixi.icv_column == seven_tesla.icv_column

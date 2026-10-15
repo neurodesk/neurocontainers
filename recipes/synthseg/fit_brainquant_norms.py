@@ -20,6 +20,10 @@ then, with the per-subject CSVs concatenated under one header:
     python fit_brainquant_norms.py fit brainquant_ixi_volumes.csv brainquant_norms.json
 
 trim needs nibabel, assemble needs pandas and xlrd, fit needs numpy and scipy.
+
+The 7 T reference (brainquant_norms_7t.json) is built from the AHEAD cohort with
+assemble-ahead, strip-correction and fit --cohort ahead; BRAINQUANT_NORMS.md
+lists the steps.
 """
 
 from __future__ import annotations
@@ -74,6 +78,7 @@ COHORTS = {
         "license": "CC-BY-SA-3.0",
         "field_strength": "1.5 T and 3 T",
         "synthseg": SYNTHSEG_SETTINGS,
+        "pooled_sex": False,
     },
     "ahead": {
         "cohort": "AHEAD",
@@ -81,6 +86,11 @@ COHORTS = {
         "license": "CC-BY-4.0",
         "field_strength": "7 T",
         "synthseg": f"{SYNTHSEG_SETTINGS} on skull-stripped images, corrected to whole-head volumes",
+        # 105 subjects with binned ages: one fit with a sex offset held out
+        # better than separate per-sex fits.
+        "pooled_sex": True,
+        # The published bins span 18 to 80, wider than the bin midpoints.
+        "age_range": (18.0, 80.0),
     },
 }
 # AHEAD publishes age only in these bins; each subject takes the bin midpoint.
@@ -140,10 +150,12 @@ def assemble_ahead(volumes_csv: Path, participants_csv: Path, out_csv: Path) -> 
         records = list(csv.DictReader(handle))
     rows = []
     for record in records:
-        participant = participants[record["subject"]]
+        # SynthSeg names the row after the image, e.g. sub-0000_ses-1_acq-wb_mod-t1w_...
+        subject = record["subject"].split("_")[0]
+        participant = participants[subject]
         low, high = AHEAD_AGE_BINS[participant["Group"]]
         rows.append({
-            "subject": record["subject"], "site": "AHEAD",
+            "subject": subject, "site": "AHEAD",
             "sex": {"f": "female", "m": "male"}[participant["Sex"]],
             "age": (low + high + 1) / 2, "age_bin": participant["Group"], "exclude": "",
             **{name: record[name] for name in record if name != "subject"},
@@ -172,7 +184,10 @@ def strip_correction(whole_csv: Path, stripped_csv: Path, out_json: Path) -> Non
         print(f"{column:34} whole/stripped {math.exp(values['log_ratio']):.4f}  sd {values['sd']:.4f}")
 
 
-def _fit_model(age: np.ndarray, log_volume: np.ndarray, log_icv_ratio: np.ndarray, site: np.ndarray) -> dict:
+def _fit_model(
+    age: np.ndarray, log_volume: np.ndarray, log_icv_ratio: np.ndarray, site: np.ndarray,
+    female: np.ndarray | None = None,
+) -> dict:
     a = (age - AGE_CENTER) / AGE_SCALE
     sites = sorted(set(site))
     # Sum-to-zero site contrasts make the intercept the unweighted mean over
@@ -180,7 +195,9 @@ def _fit_model(age: np.ndarray, log_volume: np.ndarray, log_icv_ratio: np.ndarra
     contrasts = np.column_stack([
         (site == name).astype(float) - (site == sites[-1]).astype(float) for name in sites[:-1]
     ]) if len(sites) > 1 else np.empty((len(a), 0))
-    design = np.column_stack([np.ones_like(a), a, a * a, log_icv_ratio, contrasts])
+    # A centred sex column keeps the intercept midway between the sexes.
+    sex_column = np.empty((len(a), 0)) if female is None else (female - 0.5)[:, None]
+    design = np.column_stack([np.ones_like(a), a, a * a, log_icv_ratio, contrasts, sex_column])
     beta, *_ = np.linalg.lstsq(design, log_volume, rcond=None)
     residual_sd = float(np.std(log_volume - design @ beta))
 
@@ -205,11 +222,25 @@ def _fit_model(age: np.ndarray, log_volume: np.ndarray, log_icv_ratio: np.ndarra
     if gradient_norm > 1e-2:
         raise RuntimeError(f"maximum likelihood fit did not converge: {result.message} (|grad|={gradient_norm:.2g})")
     params = result.x
-    return {
+    model = {
         "mu": [float(value) for value in params[:3]],
         "icv_slope": float(params[3]),
         "log_sigma": [float(params[-2]), float(params[-1])],
     }
+    if female is not None:
+        model["sex_offset"] = float(params[design.shape[1] - 1])
+    return model
+
+
+def _pooled_sex_models(age, log_volume, log_icv_ratio, site, sex) -> dict:
+    """One fit with a sex offset, expanded into the female, male and all models."""
+    pooled = _fit_model(age, log_volume, log_icv_ratio, site, female=(sex == "female").astype(float))
+    offset = pooled.pop("sex_offset")
+    models = {"all": pooled}
+    for sex_key, sign in (("female", 0.5), ("male", -0.5)):
+        b0, b1, b2 = pooled["mu"]
+        models[sex_key] = {**pooled, "mu": [b0 + sign * offset, b1, b2]}
+    return models
 
 
 def _z_scores(model: dict, age: np.ndarray, log_volume: np.ndarray, log_icv_ratio: np.ndarray) -> np.ndarray:
@@ -238,11 +269,15 @@ def fit(table_csv: Path, out_json: Path, cohort: str = "ixi", correction_json: P
     print(f"{'structure':24} {'sex':6} {'n':>4} {'in 5-95':>8} {'young':>6} {'mid':>6} {'old':>6}")
     for structure_id, title, columns in STRUCTURES:
         log_volume = np.log(np.array([sum(float(row[column]) for column in columns) for row in rows]))
-        models = {}
+        models = (
+            _pooled_sex_models(age, log_volume, log_icv_ratio, site, sex)
+            if COHORTS[cohort]["pooled_sex"] else {}
+        )
         for sex_key in SEXES:
             keep = np.ones(len(rows), bool) if sex_key == "all" else sex == sex_key
-            model = _fit_model(age[keep], log_volume[keep], log_icv_ratio[keep], site[keep])
-            models[sex_key] = model
+            if sex_key not in models:
+                models[sex_key] = _fit_model(age[keep], log_volume[keep], log_icv_ratio[keep], site[keep])
+            model = models[sex_key]
             inside = np.abs(_z_scores(model, age[keep], log_volume[keep], log_icv_ratio[keep])) <= stats.norm.ppf(0.95)
             tertiles = np.array_split(np.argsort(age[keep]), 3)
             print(
@@ -251,6 +286,7 @@ def fit(table_csv: Path, out_json: Path, cohort: str = "ixi", correction_json: P
             )
         structures.append({"id": structure_id, "title": title, "columns": columns, "models": models})
 
+    age_range = COHORTS[cohort].get("age_range") or (round(float(age.min()), 1), round(float(age.max()), 1))
     norms = {
         "schema": SCHEMA,
         "reference": {
@@ -259,8 +295,8 @@ def fit(table_csv: Path, out_json: Path, cohort: str = "ixi", correction_json: P
             "female": int((sex == "female").sum()),
             "male": int((sex == "male").sum()),
             "sites": sorted(set(site)),
-            "age_min": round(float(age.min()), 1),
-            "age_max": round(float(age.max()), 1),
+            "age_min": age_range[0],
+            "age_max": age_range[1],
             "synthseg": COHORTS[cohort]["synthseg"],
         },
         "age_center": AGE_CENTER,
