@@ -14,7 +14,7 @@ import os
 import subprocess
 import traceback
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import constants
@@ -378,6 +378,10 @@ def original_series(ordered, series_index: int) -> list:
     return output
 
 
+def on_grid(image, affine: np.ndarray, shape: tuple[int, ...]) -> bool:
+    return image.shape == tuple(shape) and np.allclose(image.affine, affine, atol=1e-3)
+
+
 def on_source_grid(
     path: Path, affine: np.ndarray, shape: tuple[int, ...], order: int
 ) -> np.ndarray:
@@ -390,7 +394,7 @@ def on_source_grid(
 
     output = nib.load(str(path))
     data = np.asarray(output.dataobj, dtype=np.float32)
-    if data.shape == tuple(shape) and np.allclose(output.affine, affine, atol=1e-3):
+    if on_grid(output, affine, shape):
         return data
     source_to_output = np.linalg.inv(output.affine) @ affine
     return ndimage.affine_transform(
@@ -402,8 +406,15 @@ def on_source_grid(
 def segmentation_series(
     result: FlamesResult, ordered, volume_xyz: np.ndarray, affine: np.ndarray,
     first_series_index: int, send_probability: bool,
-) -> list[tuple[str, list]]:
+) -> tuple[list[tuple[str, list]], FlamesResult]:
     mask = on_source_grid(result.mask, affine, volume_xyz.shape, order=0) > 0
+    if not on_grid(nib.load(str(result.mask)), affine, volume_xyz.shape):
+        # Resampled from the coarser FLAMeS grid: describe the mask the scanner receives.
+        _, count = ndimage.label(mask, structure=np.ones((3, 3, 3)))
+        voxel_ml = abs(np.linalg.det(affine[:3, :3])) / 1000
+        result = replace(
+            result, lesion_count=int(count), volume_ml=float(mask.sum() * voxel_ml)
+        )
     summary = (
         f"FLAMeS: {result.lesion_count} lesions, {result.volume_ml:.2f} ml; "
         f"{RESEARCH_WARNING}"
@@ -432,7 +443,7 @@ def segmentation_series(
             "LESION_PROBABILITY", f"Lesion probability x{PROBABILITY_SCALE}; {summary}",
             display_max=PROBABILITY_SCALE,
         )))
-    return series
+    return series, result
 
 
 def _send_images(connection, images, label: str) -> None:
@@ -471,10 +482,18 @@ def process(connection, config, metadata):
         )
 
         next_series_index = max(series) + 1
-        pending: list[tuple[str, list]] = []
-        summaries = []
+        # The originals go back before FLAMeS runs, as OpenMSK does, so the scanner
+        # keeps them when segmentation fails.
+        volumes = []
         for source_series_index, images in sorted(series.items()):
             ordered, volume_xyz, affine = mrd_series_to_volume(images)
+            volumes.append((source_series_index, ordered, volume_xyz, affine))
+            if send_original:
+                _send_images(connection, original_series(ordered, next_series_index), "original")
+                next_series_index += 1
+
+        summaries = []
+        for source_series_index, ordered, volume_xyz, affine in volumes:
             run_dir = WORKSPACE / f"series-{source_series_index}-{uuid.uuid4().hex}"
             run_dir.mkdir(parents=True)
             input_path = run_dir / "flair.nii.gz"
@@ -484,15 +503,13 @@ def process(connection, config, metadata):
             nifti.set_sform(affine, code=1)
             nib.save(nifti, str(input_path))
 
-            if send_original:
-                pending.append(("original", original_series(ordered, next_series_index)))
-                next_series_index += 1
-
             result = run_flames(input_path, run_dir / "flames", model, skull_stripped)
-            outputs = segmentation_series(
+            outputs, result = segmentation_series(
                 result, ordered, volume_xyz, affine, next_series_index, send_probability
             )
-            pending.extend(outputs)
+            # Sent per series, so a later series' failure cannot discard these.
+            for label, images in outputs:
+                _send_images(connection, images, label)
             next_series_index += len(outputs)
             summaries.append(f"{result.lesion_count} lesions, {result.volume_ml:.2f} ml")
             logging.info(
@@ -502,8 +519,6 @@ def process(connection, config, metadata):
                 result.table, json.dumps(result.provenance),
             )
 
-        for label, images in pending:
-            _send_images(connection, images, label)
         connection.send_logging(
             constants.MRD_LOGGING_INFO,
             f"FLAMeS completed: {'; '.join(summaries)}. {RESEARCH_WARNING}",
