@@ -75,6 +75,9 @@ class FakeHarbor:
     def artifacts(self, repository: str) -> list[prune.Artifact]:
         return list(self.store[repository])
 
+    def artifact(self, repository: str, digest: str) -> prune.Artifact | None:
+        return next((a for a in self.store[repository] if a.digest == digest), None)
+
     def delete_artifact(self, item: prune.Artifact) -> None:
         self.store[item.repository].remove(item)
 
@@ -123,3 +126,36 @@ def test_negative_retention_window_is_rejected(tmp_path) -> None:
         prune.main(
             ["--apps-json", str(tmp_path / "unused.json"), "--min-age-days", "-1"]
         )
+
+
+def test_a_fresh_tag_on_an_old_digest_counts_as_recent() -> None:
+    item = {
+        "digest": "sha256:abc",
+        "push_time": "2026-05-18T00:00:00Z",
+        "tags": [
+            {"name": "20260518", "push_time": "2026-05-18T00:00:00Z"},
+            {"name": "candidate-new", "push_time": "2026-10-14T00:00:00Z"},
+        ],
+    }
+    parsed = prune.parse_artifact("openadscpu_1.0.0", item)
+    plan = prune.plan_deletions([parsed], set(), NOW - timedelta(days=14))
+    assert plan.recent == [parsed]
+
+
+def test_apply_skips_an_artifact_tagged_after_planning(tmp_path, monkeypatch) -> None:
+    apps_path = tmp_path / "apps.json"
+    apps_path.write_text(json.dumps(APPS))
+    current = artifact("napari_0.9.2", "latest", "20261013")
+    retired = artifact("napari_0.8.0", "20260814")
+    fake = FakeHarbor({"napari_0.9.2": [current], "napari_0.8.0": [retired]})
+    retagged = prune.Artifact(
+        retired.repository, retired.digest, ("20260814", "latest"), 10, OLD
+    )
+    # A promotion tags the digest between planning and deletion.
+    monkeypatch.setattr(fake, "artifact", lambda repository, digest: retagged)
+    monkeypatch.setattr(prune, "Harbor", lambda *args: fake)
+    monkeypatch.setenv("NECTAR_REGISTRY_USERNAME", "robot")
+    monkeypatch.setenv("NECTAR_REGISTRY_PASSWORD", "secret")
+
+    assert prune.main(["--apps-json", str(apps_path), "--apply"]) == 0
+    assert fake.store["napari_0.8.0"] == [retired]

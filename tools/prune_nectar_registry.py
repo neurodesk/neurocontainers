@@ -87,6 +87,25 @@ def plan_deletions(
     return Plan(keep, recent, delete, sorted(published - present))
 
 
+def parse_artifact(repository: str, item: dict) -> Artifact:
+    """Build an Artifact from Harbor's JSON.
+
+    Tags carry their own push times: re-tagging an old digest, as a promotion
+    does, makes the artifact recent even though the digest is old.
+    """
+    tags = item.get("tags") or []
+    times = [item["push_time"]] + [
+        tag["push_time"] for tag in tags if tag.get("push_time")
+    ]
+    return Artifact(
+        repository=repository,
+        digest=item["digest"],
+        tags=tuple(tag["name"] for tag in tags),
+        size=int(item.get("size") or 0),
+        pushed=max(datetime.fromisoformat(t.replace("Z", "+00:00")) for t in times),
+    )
+
+
 class Harbor:
     def __init__(self, api: str, project: str, username: str = "", password: str = ""):
         self.api = api.rstrip("/")
@@ -132,16 +151,17 @@ class Harbor:
 
     def artifacts(self, repository: str) -> list[Artifact]:
         path = f"{self._repository_path(repository)}/artifacts?with_tag=true"
-        return [
-            Artifact(
-                repository=repository,
-                digest=item["digest"],
-                tags=tuple(tag["name"] for tag in item.get("tags") or []),
-                size=int(item.get("size") or 0),
-                pushed=datetime.fromisoformat(item["push_time"].replace("Z", "+00:00")),
-            )
-            for item in self._pages(path)
-        ]
+        return [parse_artifact(repository, item) for item in self._pages(path)]
+
+    def artifact(self, repository: str, digest: str) -> Artifact | None:
+        path = f"{self._repository_path(repository)}/artifacts/{digest}?with_tag=true"
+        try:
+            item, _ = self._request("GET", path)
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return None
+            raise
+        return parse_artifact(repository, item)
 
     def delete_artifact(self, artifact: Artifact) -> None:
         self._request(
@@ -213,13 +233,14 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     published = published_images(load_apps(args.apps_json))
+    started = datetime.now(timezone.utc)
     harbor = Harbor(args.api, args.project, username, password)
     artifacts = [
         artifact
         for repository in harbor.repositories()
         for artifact in harbor.artifacts(repository)
     ]
-    cutoff = datetime.now(timezone.utc) - timedelta(days=args.min_age_days)
+    cutoff = started - timedelta(days=args.min_age_days)
     plan = plan_deletions(artifacts, published, cutoff)
     if args.report:
         write_report(plan, args.report)
@@ -247,8 +268,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    failures = 0
+    failures = changed = 0
     for artifact in plan.delete:
+        # A build or promotion may tag this digest after planning; re-read it
+        # right before deleting so a fresh tag is never removed with it.
+        current = harbor.artifact(artifact.repository, artifact.digest)
+        if current is None:
+            continue
+        if current.tags != artifact.tags or current.pushed >= started:
+            changed += 1
+            print(
+                f"Skipping {artifact.repository}@{artifact.digest}: changed since planning"
+            )
+            continue
         try:
             harbor.delete_artifact(artifact)
         except urllib.error.HTTPError as error:
@@ -258,7 +290,10 @@ def main(argv: list[str] | None = None) -> int:
             )
     # Empty repositories are left in place: they use no storage, and deleting
     # one could race a concurrent push into it.
-    print(f"Deleted {len(plan.delete) - failures} artifacts; {failures} failed")
+    deleted = len(plan.delete) - failures - changed
+    print(
+        f"Deleted {deleted} artifacts; {changed} changed since planning; {failures} failed"
+    )
     return 1 if failures else 0
 
 
