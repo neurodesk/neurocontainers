@@ -1,5 +1,5 @@
 name: mritools
-version: 4.9.0
+version: 4.9.1
 
 variables:
   julia_version: 1.10.12
