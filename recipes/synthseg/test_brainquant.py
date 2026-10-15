@@ -278,3 +278,49 @@ def test_report_pages_render_legible_grayscale(norms, age):
         from matplotlib.image import imsave
 
         imsave(preview, np.hstack(pages), cmap="gray", vmin=0, vmax=brainquant.PIXEL_MAX)
+
+
+@pytest.mark.parametrize("field_strength, expected", [
+    (None, "brainquant_norms.json"),
+    (1.5, "brainquant_norms.json"),
+    (2.89, "brainquant_norms.json"),
+    (6.98, "brainquant_norms_7t.json"),
+    (9.4, "brainquant_norms_7t.json"),
+])
+def test_reference_is_selected_by_field_strength(field_strength, expected):
+    path, reason = brainquant.select_norms(field_strength)
+    assert path.name == expected
+    assert ("not in the header" in reason) == (field_strength is None)
+
+
+def test_field_strength_reads_real_mrd_header_types():
+    xsd = pytest.importorskip("ismrmrd.xsd")
+    header = SimpleNamespace(acquisitionSystemInformation=xsd.acquisitionSystemInformationType(systemFieldStrength_T=6.98))
+    assert brainquant.header_field_strength(header) == pytest.approx(6.98)
+    assert brainquant.header_field_strength(SimpleNamespace(acquisitionSystemInformation=None)) is None
+    assert brainquant.header_field_strength(None) is None
+
+
+def test_shipped_references_share_structures_and_name_field_strength():
+    ixi = brainquant.load_norms(brainquant.NORMS_PATH)
+    seven_tesla = brainquant.load_norms(brainquant.NORMS_7T_PATH)
+    assert [(s.id, s.columns) for s in ixi.structures] == [(s.id, s.columns) for s in seven_tesla.structures]
+    assert (ixi.reference.field_strength, seven_tesla.reference.field_strength) == ("1.5 T and 3 T", "7 T")
+    assert ixi.icv_column == seven_tesla.icv_column
+
+
+@pytest.mark.parametrize("norms_path", [brainquant.NORMS_PATH, brainquant.NORMS_7T_PATH])
+def test_report_text_stays_inside_the_page(norms_path):
+    norms = brainquant.load_norms(norms_path)
+    volumes = dict(SAMPLE_VOLUMES_MM3)
+    footnotes = (
+        f"The {norms.reference.cohort} reference was chosen because the scanner field strength is 6.98 T.",
+        "This run used ssmodel=robust with fast mode on. The reference was fitted with SynthSeg 2.0 in "
+        "fast mode, so volumes may be shifted relative to it.",
+    )
+    report = brainquant.assess(norms, volumes, brainquant.resolve_subject(None, 90, "header"), footnotes)
+    for page in brainquant.render_pages(report):
+        # Clipped text leaves ink in the rightmost columns of the header and footer bands.
+        rows = page.shape[0]
+        bands = np.concatenate([page[: rows // 6], page[-rows // 8:]])
+        assert not np.any(bands[:, -6:] < brainquant.PIXEL_MAX * 0.5)

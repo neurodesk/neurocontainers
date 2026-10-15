@@ -749,6 +749,11 @@ def process_runtime(monkeypatch, tmp_path):
     norms_path = tmp_path / 'brainquant_norms.json'
     norms_path.write_text(json.dumps(_fixture_norms()))
     monkeypatch.setattr(brainquant, 'NORMS_PATH', norms_path)
+    norms_7t = _fixture_norms()
+    norms_7t['reference'].update(cohort='AHEAD', field_strength='7 T')
+    norms_7t_path = tmp_path / 'brainquant_norms_7t.json'
+    norms_7t_path.write_text(json.dumps(norms_7t))
+    monkeypatch.setattr(brainquant, 'NORMS_7T_PATH', norms_7t_path)
     commands = []
 
     def inference(command, output_dir):
@@ -899,12 +904,29 @@ def _series_by_index(outputs):
             for index, images in series.items()}
 
 
-def _mrd_header(birth='1961-03-02', gender='F', study='2025-03-01'):
+def _mrd_header(birth='1961-03-02', gender='F', study='2025-03-01', field_strength=None):
     from types import SimpleNamespace
     return SimpleNamespace(
         subjectInformation=SimpleNamespace(patientBirthdate=birth, patientGender=gender),
         studyInformation=SimpleNamespace(studyDate=study),
+        acquisitionSystemInformation=SimpleNamespace(systemFieldStrength_T=field_strength),
     )
+
+
+@pytest.mark.parametrize('field_strength, cohort, reason', [
+    (6.98, 'AHEAD', 'the scanner field strength is 6.98 T'),
+    (2.89, 'IXI', 'the scanner field strength is 2.89 T'),
+    (None, 'IXI', 'the scanner field strength is not in the header'),
+])
+def test_brainquant_reference_follows_scanner_field_strength(process_runtime, caplog, field_strength, cohort, reason):
+    import logging
+    helpers, sources, _ = process_runtime
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report')}
+    with caplog.at_level(logging.INFO):
+        outputs = helpers['process_image'](sources, None, config, _mrd_header(field_strength=field_strength))
+    assert _series_by_index(outputs)[max(_series_by_index(outputs))][1]['SeriesDescription'] == 't1w_brainquant'
+    assert f'report reference: {cohort} ' in caplog.text
+    assert f'chosen because {reason}' in caplog.text
 
 
 @pytest.mark.parametrize('extras', [False, True])

@@ -11,15 +11,19 @@ architectures:
 structured_readme:
   description: This toolbox was used to explore the network correspondence between networks across different atlases.
   example: |
+    import shutil
+    from pathlib import Path
     import cbig_network_correspondence as cnc
 
     atlas_names_list = ["EG17","MG360J12"]
     example = cnc.load_example
-    # the example config file
-    print(example.example_config)
-    # the path to the example data
-    print(example.example_nii)
-    ref_params = cnc.compute_overlap_with_atlases.DataParams(example.example_config, example.example_nii)
+    # NCT writes temporary files next to its input data, and the container image
+    # is read-only, so copy the example config and data to a writable directory.
+    work = Path("./NCTexample")
+    work.mkdir(exist_ok=True)
+    config = shutil.copy(example.example_config, work)
+    nii = shutil.copy(example.example_nii, work)
+    ref_params = cnc.compute_overlap_with_atlases.DataParams(config, nii)
     cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"./NCTexample/example_results")
   documentation: https://github.com/rubykong/cbig_network_correspondence
   citation: "Kong, R., Spreng, R. N., Xue, A., Betzel, R. F., Cohen, J. R., Damoiseaux, J. S., De Brigard, F., Eickhoff, S. B., Fornito, A., Gratton, C., Gordon, E. M., Holmes, A. J., Laird, A. R., Larson-Prior, L., Nickerson, L. D., Pinho, A. L., Razi, A., Sadaghiani, S., Shine, J. M.,…Uddin, L. Q. (2025). A network correspondence toolbox for quantitative evaluation of novel neuroimaging results. Nat Commun, 16(1), 2930. https://doi.org/10.1038/s41467-025-58176-9 "
@@ -32,15 +36,19 @@ readme: |-
 
   Example:
   ```
+  import shutil
+  from pathlib import Path
   import cbig_network_correspondence as cnc
 
   atlas_names_list = ["EG17","MG360J12"]
   example = cnc.load_example
-  # the example config file
-  print(example.example_config)
-  # the path to the example data
-  print(example.example_nii)
-  ref_params = cnc.compute_overlap_with_atlases.DataParams(example.example_config, example.example_nii)
+  # NCT writes temporary files next to its input data, and the container image
+  # is read-only, so copy the example config and data to a writable directory.
+  work = Path("./NCTexample")
+  work.mkdir(exist_ok=True)
+  config = shutil.copy(example.example_config, work)
+  nii = shutil.copy(example.example_nii, work)
+  ref_params = cnc.compute_overlap_with_atlases.DataParams(config, nii)
   cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"./NCTexample/example_results")
   ```
 

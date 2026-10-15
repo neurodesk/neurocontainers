@@ -126,6 +126,27 @@ class FakeFlames:
         )
 
 
+class CoarseFlames(FakeFlames):
+    """Writes its outputs on a grid twice as coarse in-plane, as FLAMeS does for fine FLAIR."""
+
+    def __call__(self, input_path, output_dir, model, skull_stripped):
+        source = nib.load(str(input_path))
+        volume = np.asarray(source.dataobj)
+        nx, ny, nz = volume.shape
+        coarse = volume.reshape(nx // 2, 2, ny // 2, 2, nz).mean(axis=(1, 3))
+        affine = source.affine @ np.array(
+            [[2, 0, 0, 0.5], [0, 2, 0, 0.5], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=float
+        )
+        output_dir.mkdir()
+        mask_path = output_dir / "flair_lesions.nii"
+        probability_path = output_dir / "flair_lesion_probability.nii"
+        nib.save(nib.Nifti1Image((coarse > 800).astype(np.uint8), affine), mask_path)
+        nib.save(nib.Nifti1Image((coarse / 1000).astype(np.float32), affine), probability_path)
+        return wml.FlamesResult(
+            mask_path, probability_path, output_dir / "flair_lesions.tsv", 1, 0.5, {}
+        )
+
+
 class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
     def setUp(self):
         workspace = tempfile.TemporaryDirectory()
@@ -213,6 +234,31 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
             self.assertEqual(overlay_meta["RescaleSlope"], "2")
         self.assertTrue(outline.any() and (outline != (volume > 800)).any())
 
+    def test_outputs_on_a_coarser_flames_grid_return_on_the_source_slices(self):
+        volume = np.full((20, 16, 6), 100, dtype=np.int16)
+        volume[4:10, 6:12, 2:5] = 950
+        sources = nifti_to_mrd_images(volume, oblique_affine())
+        connection = RecordingConnection(sources)
+        config = {"parameters": {"wmlprobability": True, "sendoriginal": False}}
+        with mock.patch.object(wml, "run_flames", CoarseFlames()):
+            wml.process(connection, config, None)
+
+        self.assertEqual(connection.logs[-1][0], constants.MRD_LOGGING_INFO, connection.logs)
+        series = connection.series()
+        self.assertEqual([len(series[index]) for index in (5, 6)], [len(sources)] * 2)
+        source_at = images_by_position(sources)
+        for mask, probability in zip(series[5], series[6]):
+            source = source_at[tuple(np.round(mask.getHead().position, 3))]
+            source_plane = np.squeeze(source.data)
+            np.testing.assert_array_equal(np.squeeze(mask.data), source_plane > 800)
+            if source.getHead().slice == 3:
+                # MRD planes are (y, x). Linear interpolation from the 2x grid:
+                # interior and background keep their values, and the lesion corner
+                # (x=4, y=6) sits 3/4 inside along both axes:
+                # 0.5625 * 950 + 0.4375 * 100 = 578.
+                plane = np.squeeze(probability.data)
+                self.assertEqual((plane[8, 6], plane[0, 0], plane[6, 4]), (950, 100, 578))
+
     def test_rounded_positions_of_a_long_fine_series_are_accepted(self):
         # Rounded to 0.001 mm, 0.9995 mm steps alternate between 0.999 and 1.000.
         affine = np.diag([1.0, 1.0, 0.9995, 1.0])
@@ -272,7 +318,10 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
             reference = Path(directory) / "reference"
             subprocess.run([wml.FLAMES, flair.get_filename(), str(reference)], check=True)
             reference_mask = next(reference.glob("*_lesions.nii"))
-            expected = np.asarray(nib.load(str(reference_mask)).dataobj) > 0
+            # FLAMeS writes a FLAIR finer than its grid on the resampled grid.
+            expected = wml.on_source_grid(
+                reference_mask, flair.affine, flair.shape, order=0
+            ) > 0
 
         connection = RecordingConnection(nifti_to_mrd_images(volume, flair.affine))
         wml.process(connection, {"parameters": {"sendoriginal": False}}, None)

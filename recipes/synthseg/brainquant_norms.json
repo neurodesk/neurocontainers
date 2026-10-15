@@ -4,6 +4,7 @@
     "cohort": "IXI",
     "url": "https://brain-development.org/ixi-dataset/",
     "license": "CC-BY-SA-3.0",
+    "field_strength": "1.5 T and 3 T",
     "subjects": 561,
     "female": 311,
     "male": 250,

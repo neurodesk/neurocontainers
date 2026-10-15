@@ -17,9 +17,14 @@ from scipy.special import ndtr, ndtri
 
 NORMS_SCHEMA = "neurodesk.synthseg.brainquant.norms/1"
 NORMS_PATH = Path(__file__).with_name("brainquant_norms.json")
+NORMS_7T_PATH = Path(__file__).with_name("brainquant_norms_7t.json")
+# Scanners at or above this field strength are compared with the 7 T reference.
+ULTRA_HIGH_FIELD_T = 5.0
 MODEL_KEYS = ("female", "male", "all")
 PAGE_PIXELS = 1024
 PIXEL_MAX = 4095
+# Left and right page margin for report text, as a fraction of the page width.
+TEXT_MARGIN = 0.02
 LOW_PERCENTILE = 5.0
 HIGH_PERCENTILE = 95.0
 
@@ -70,6 +75,7 @@ class Reference:
     age_min: float
     age_max: float
     synthseg: str
+    field_strength: str = ""
 
 
 @dataclass(frozen=True)
@@ -197,6 +203,7 @@ def parse_norms(raw: dict) -> Norms:
                 age_min=_number(reference["age_min"], "reference.age_min"),
                 age_max=_number(reference["age_max"], "reference.age_max"),
                 synthseg=str(reference["synthseg"]),
+                field_strength=str(reference.get("field_strength", "")),
             ),
             age_center=_number(raw["age_center"], "age_center"),
             age_scale=_number(raw["age_scale"], "age_scale"),
@@ -213,6 +220,25 @@ def parse_norms(raw: dict) -> Norms:
 
 def load_norms(path: str | Path) -> Norms:
     return parse_norms(json.loads(Path(path).read_text(encoding="utf-8")))
+
+
+def header_field_strength(metadata) -> float | None:
+    """Scanner field strength in tesla from the MRD XML header, if present."""
+    system = getattr(metadata, "acquisitionSystemInformation", None)
+    value = getattr(system, "systemFieldStrength_T", None)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) and value > 0 else None
+
+
+def select_norms(field_strength_t: float | None) -> tuple[Path, str]:
+    """Pick the reference for the scanner and say why, for the report footnote."""
+    if field_strength_t is None:
+        return NORMS_PATH, "the scanner field strength is not in the header"
+    reason = f"the scanner field strength is {field_strength_t:g} T"
+    return (NORMS_7T_PATH if field_strength_t >= ULTRA_HIGH_FIELD_T else NORMS_PATH), reason
 
 
 def read_volumes(path: str | Path) -> dict[str, float]:
@@ -341,7 +367,8 @@ def _header_lines(report: Report, page_title: str) -> list[str]:
         lines.append("Sex unknown: compared with the combined female and male reference.")
     return lines + [
         (
-            f"Reference: {reference.cohort} (n={reference.subjects}, {reference.female} F / {reference.male} M, "
+            f"Reference: {reference.cohort}{f' {reference.field_strength}' if reference.field_strength else ''} "
+            f"(n={reference.subjects}, {reference.female} F / {reference.male} M, "
             f"age {reference.age_min:g}-{reference.age_max:g} y, {_license_text(reference.license)}), "
             f"{reference.synthseg}."
         ),
@@ -373,20 +400,37 @@ def _figure():
     return figure
 
 
+def _wrap(figure, line: str, fontsize: float, fontweight: str = "normal") -> list[str]:
+    """Break a line at spaces so each piece fits between the page margins."""
+    renderer = figure.canvas.get_renderer()
+    limit = figure.bbox.width * (1.0 - 2 * TEXT_MARGIN)
+    pieces, current = [], ""
+    for word in line.split(" "):
+        candidate = f"{current} {word}" if current else word
+        probe = figure.text(0, 0, candidate, fontsize=fontsize, fontweight=fontweight)
+        fits = probe.get_window_extent(renderer).width <= limit
+        probe.remove()
+        if fits or not current:
+            current = candidate
+        else:
+            pieces.append(current)
+            current = word
+    return pieces + [current]
+
+
 def _write_text(figure, report: Report, page_title: str) -> tuple[float, float]:
     """Draw header and footer; return the free vertical band (bottom, top)."""
     header = _header_lines(report, page_title)
     y = 0.985
     for index, line in enumerate(header):
-        figure.text(
-            0.02, y, line, ha="left", va="top",
-            fontsize=15 if index == 0 else 10.5,
-            fontweight="bold" if index in (0, len(header) - 1) else "normal",
-        )
-        y -= 0.032 if index == 0 else 0.024
-    footer = _footer_lines(report)
+        fontsize = 15 if index == 0 else 10.5
+        fontweight = "bold" if index in (0, len(header) - 1) else "normal"
+        for piece in _wrap(figure, line, fontsize, fontweight):
+            figure.text(TEXT_MARGIN, y, piece, ha="left", va="top", fontsize=fontsize, fontweight=fontweight)
+            y -= 0.032 if index == 0 else 0.024
+    footer = [piece for line in _footer_lines(report) for piece in _wrap(figure, line, 9.5)]
     for index, line in enumerate(footer):
-        figure.text(0.02, 0.012 + 0.022 * (len(footer) - 1 - index), line, ha="left", va="bottom", fontsize=9.5)
+        figure.text(TEXT_MARGIN, 0.012 + 0.022 * (len(footer) - 1 - index), line, ha="left", va="bottom", fontsize=9.5)
     return 0.012 + 0.022 * len(footer), y
 
 
