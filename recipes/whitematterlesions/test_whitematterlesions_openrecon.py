@@ -347,8 +347,13 @@ class WhiteMatterLesionsOpenReconTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             reference = Path(directory) / "reference"
             subprocess.run([wml.FLAMES, flair.get_filename(), str(reference)], check=True)
-            reference_mask = next(reference.glob("*_lesions.nii"))
-            expected = np.asarray(nib.load(str(reference_mask)).dataobj) > 0
+            # flames writes a fine input's outputs on its coarser grid; compare on the source grid.
+            direct = wml.FlamesResult(
+                next(reference.glob("*_lesions.nii")),
+                next(reference.glob("*_lesion_probability.nii")),
+                next(reference.glob("*_lesions.tsv")), 0, 0.0, {},
+            )
+            expected, _, _ = wml.on_source_grid(direct, volume.shape, flair.affine)
 
         connection = RecordingConnection(nifti_to_mrd_images(volume, flair.affine))
         wml.process(connection, {"parameters": {"sendoriginal": False}}, None)
