@@ -66,6 +66,26 @@ STRUCTURES = (
 )
 TRIM_MARGIN_MM = 15.0
 SUBJECT_PATTERN = re.compile(r"IXI(?P<id>\d+)-(?P<site>[A-Za-z]+)-\d+-T1")
+SYNTHSEG_SETTINGS = "SynthSeg 2.0, fast mode, FreeSurfer 8.2.0 mri_synthseg --vol"
+COHORTS = {
+    "ixi": {
+        "cohort": "IXI",
+        "url": "https://brain-development.org/ixi-dataset/",
+        "license": "CC-BY-SA-3.0",
+        "field_strength": "1.5 T and 3 T",
+        "synthseg": SYNTHSEG_SETTINGS,
+    },
+    "ahead": {
+        "cohort": "AHEAD",
+        "url": "https://doi.org/10.21942/uva.10007840",
+        "license": "CC-BY-4.0",
+        "field_strength": "7 T",
+        "synthseg": f"{SYNTHSEG_SETTINGS} on skull-stripped images, corrected to whole-head volumes",
+    },
+}
+# AHEAD publishes age only in these bins; each subject takes the bin midpoint.
+AHEAD_AGE_BINS = {"18-30": (18, 30), "31-40": (31, 40), "41-50": (41, 50),
+                  "51-60": (51, 60), "61-70": (61, 70), "71-80": (71, 80)}
 
 
 def trim(image_path: Path, mask_path: Path, out_path: Path) -> None:
@@ -110,6 +130,46 @@ def assemble(volumes_csv: Path, demographics_xls: Path, out_csv: Path) -> None:
         writer.writerows(rows)
     excluded = sum(1 for row in rows if row["exclude"])
     print(f"assembled {len(rows)} subjects, {excluded} excluded")
+
+
+def assemble_ahead(volumes_csv: Path, participants_csv: Path, out_csv: Path) -> None:
+    """Join AHEAD SynthSeg volumes with participants.csv; age is the bin midpoint."""
+    with participants_csv.open(newline="") as handle:
+        participants = {row["ScanName"]: row for row in csv.DictReader(handle)}
+    with volumes_csv.open(newline="") as handle:
+        records = list(csv.DictReader(handle))
+    rows = []
+    for record in records:
+        participant = participants[record["subject"]]
+        low, high = AHEAD_AGE_BINS[participant["Group"]]
+        rows.append({
+            "subject": record["subject"], "site": "AHEAD",
+            "sex": {"f": "female", "m": "male"}[participant["Sex"]],
+            "age": (low + high + 1) / 2, "age_bin": participant["Group"], "exclude": "",
+            **{name: record[name] for name in record if name != "subject"},
+        })
+    with out_csv.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"assembled {len(rows)} AHEAD subjects")
+
+
+def strip_correction(whole_csv: Path, stripped_csv: Path, out_json: Path) -> None:
+    """Per-column log ratio of whole-head to skull-stripped SynthSeg volumes of the same scans."""
+    def read(path: Path) -> dict[str, dict[str, float]]:
+        with path.open(newline="") as handle:
+            return {row.pop("subject"): {k: float(v) for k, v in row.items()} for row in csv.DictReader(handle)}
+    whole, stripped = read(whole_csv), read(stripped_csv)
+    subjects = sorted(whole.keys() & stripped.keys())
+    columns = [column for column in whole[subjects[0]] if column in stripped[subjects[0]]]
+    correction = {}
+    for column in columns:
+        ratio = np.log([whole[s][column] / stripped[s][column] for s in subjects])
+        correction[column] = {"log_ratio": float(ratio.mean()), "sd": float(ratio.std(ddof=1))}
+    out_json.write_text(json.dumps({"subjects": subjects, "columns": correction}, indent=2) + "\n")
+    for column, values in correction.items():
+        print(f"{column:34} whole/stripped {math.exp(values['log_ratio']):.4f}  sd {values['sd']:.4f}")
 
 
 def _fit_model(age: np.ndarray, log_volume: np.ndarray, log_icv_ratio: np.ndarray, site: np.ndarray) -> dict:
@@ -160,9 +220,15 @@ def _z_scores(model: dict, age: np.ndarray, log_volume: np.ndarray, log_icv_rati
     return (adjusted - (b0 + b1 * a + b2 * a * a)) / sigma
 
 
-def fit(table_csv: Path, out_json: Path) -> None:
+def fit(table_csv: Path, out_json: Path, cohort: str = "ixi", correction_json: Path | None = None) -> None:
     with table_csv.open(newline="") as handle:
         rows = [row for row in csv.DictReader(handle) if not row["exclude"]]
+    if correction_json is not None:
+        # Scale skull-stripped volumes to what SynthSeg reports on the whole head.
+        correction = json.loads(correction_json.read_text())["columns"]
+        for row in rows:
+            for column, values in correction.items():
+                row[column] = str(float(row[column]) * math.exp(values["log_ratio"]))
     age = np.array([float(row["age"]) for row in rows])
     sex = np.array([row["sex"] for row in rows])
     site = np.array([row["site"] for row in rows])
@@ -188,16 +254,14 @@ def fit(table_csv: Path, out_json: Path) -> None:
     norms = {
         "schema": SCHEMA,
         "reference": {
-            "cohort": "IXI",
-            "url": "https://brain-development.org/ixi-dataset/",
-            "license": "CC-BY-SA-3.0",
+            **{key: COHORTS[cohort][key] for key in ("cohort", "url", "license", "field_strength")},
             "subjects": len(rows),
             "female": int((sex == "female").sum()),
             "male": int((sex == "male").sum()),
             "sites": sorted(set(site)),
             "age_min": round(float(age.min()), 1),
             "age_max": round(float(age.max()), 1),
-            "synthseg": "SynthSeg 2.0, fast mode, FreeSurfer 8.2.0 mri_synthseg --vol",
+            "synthseg": COHORTS[cohort]["synthseg"],
         },
         "age_center": AGE_CENTER,
         "age_scale": AGE_SCALE,
@@ -218,16 +282,28 @@ def main() -> None:
     assemble_parser = commands.add_parser("assemble")
     for name in ("volumes_csv", "demographics_xls", "out_csv"):
         assemble_parser.add_argument(name, type=Path)
+    ahead_parser = commands.add_parser("assemble-ahead")
+    for name in ("volumes_csv", "participants_csv", "out_csv"):
+        ahead_parser.add_argument(name, type=Path)
+    correction_parser = commands.add_parser("strip-correction")
+    for name in ("whole_csv", "stripped_csv", "out_json"):
+        correction_parser.add_argument(name, type=Path)
     fit_parser = commands.add_parser("fit")
     fit_parser.add_argument("table_csv", type=Path)
     fit_parser.add_argument("out_json", type=Path)
+    fit_parser.add_argument("--cohort", choices=sorted(COHORTS), default="ixi")
+    fit_parser.add_argument("--strip-correction", type=Path)
     args = parser.parse_args()
     if args.command == "trim":
         trim(args.image, args.mask, args.out)
     elif args.command == "assemble":
         assemble(args.volumes_csv, args.demographics_xls, args.out_csv)
+    elif args.command == "assemble-ahead":
+        assemble_ahead(args.volumes_csv, args.participants_csv, args.out_csv)
+    elif args.command == "strip-correction":
+        strip_correction(args.whole_csv, args.stripped_csv, args.out_json)
     else:
-        fit(args.table_csv, args.out_json)
+        fit(args.table_csv, args.out_json, args.cohort, args.strip_correction)
 
 
 if __name__ == "__main__":
