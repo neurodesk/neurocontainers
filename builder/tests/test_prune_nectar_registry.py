@@ -68,7 +68,6 @@ def test_reports_published_builds_absent_from_the_registry() -> None:
 class FakeHarbor:
     def __init__(self, artifacts: dict[str, list[prune.Artifact]]):
         self.store = artifacts
-        self.deleted_repositories: list[str] = []
 
     def repositories(self) -> list[str]:
         return list(self.store)
@@ -78,12 +77,6 @@ class FakeHarbor:
 
     def delete_artifact(self, item: prune.Artifact) -> None:
         self.store[item.repository].remove(item)
-
-    def delete_repository_if_empty(self, repository: str) -> bool:
-        if self.store[repository]:
-            return False
-        self.deleted_repositories.append(repository)
-        return True
 
 
 @pytest.mark.parametrize("apply", [False, True])
@@ -102,7 +95,6 @@ def test_main_deletes_only_with_apply(tmp_path, monkeypatch, apply: bool) -> Non
 
     assert fake.store["napari_0.9.2"] == [current]
     assert fake.store["napari_0.8.0"] == ([] if apply else [retired])
-    assert fake.deleted_repositories == (["napari_0.8.0"] if apply else [])
 
 
 def test_apply_requires_credentials(tmp_path, monkeypatch) -> None:

@@ -149,12 +149,6 @@ class Harbor:
             f"{self._repository_path(artifact.repository)}/artifacts/{artifact.digest}",
         )
 
-    def delete_repository_if_empty(self, repository: str) -> bool:
-        if self.artifacts(repository):
-            return False
-        self._request("DELETE", self._repository_path(repository))
-        return True
-
 
 def load_apps(source: str) -> dict:
     if source.startswith(("http://", "https://")):
@@ -262,16 +256,9 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"::warning::{artifact.repository}@{artifact.digest}: HTTP {error.code}"
             )
-    emptied = 0
-    for repository in sorted({artifact.repository for artifact in plan.delete}):
-        try:
-            emptied += harbor.delete_repository_if_empty(repository)
-        except urllib.error.HTTPError as error:
-            print(f"::warning::repository {repository}: HTTP {error.code}")
-    print(
-        f"Deleted {len(plan.delete) - failures} artifacts and {emptied} empty "
-        f"repositories; {failures} deletions failed"
-    )
+    # Empty repositories are left in place: they use no storage, and deleting
+    # one could race a concurrent push into it.
+    print(f"Deleted {len(plan.delete) - failures} artifacts; {failures} failed")
     return 1 if failures else 0
 
 
