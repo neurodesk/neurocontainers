@@ -93,13 +93,6 @@ build:
         - Rscript {{ get_file("fix_lqt_node_columns") }} /opt/LQT/R/get_patient_sspl.R
         - R CMD INSTALL /opt/LQT
         - R --slave -e 'library(LQT); stopifnot(length(getNamespaceExports("LQT")) > 0)'
-    - test:
-        name: verify_r_installation
-        script: |-
-          # Test R installation
-          R --version
-          echo "Testing R package installation..."
-          R --slave -e 'library(LQT); stopifnot(length(getNamespaceExports("LQT")) > 0)'
 files:
   - name: fix_lqt_node_columns
     contents: |

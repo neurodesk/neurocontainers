@@ -98,11 +98,6 @@ build:
     - run:
         - apptainer --version
 
-    - test:
-        name: check apptainer version
-        script: |
-          apptainer --version
-
     - deploy:
         bins:
           - apptainer

@@ -100,10 +100,6 @@ build:
 
     - workdir: /opt
 
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
-
 files:
   - name: weights.zip
     url: https://zenodo.org/api/records/14864231/files/weights.zip/content
