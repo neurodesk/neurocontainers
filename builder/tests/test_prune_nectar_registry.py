@@ -107,3 +107,24 @@ def test_apply_requires_credentials(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("NECTAR_REGISTRY_PASSWORD", raising=False)
     with pytest.raises(SystemExit):
         prune.main(["--apps-json", str(tmp_path / "unused.json"), "--apply"])
+
+
+def test_apply_refuses_to_delete_most_of_the_registry(tmp_path, monkeypatch) -> None:
+    """An empty or truncated apps.json must not wipe the registry."""
+    apps_path = tmp_path / "apps.json"
+    apps_path.write_text("{}")
+    images = [artifact("napari_0.9.2", "20261013"), artifact("napari_0.8.0", "latest")]
+    fake = FakeHarbor({a.repository: [a] for a in images})
+    monkeypatch.setattr(prune, "Harbor", lambda *args: fake)
+    monkeypatch.setenv("NECTAR_REGISTRY_USERNAME", "robot")
+    monkeypatch.setenv("NECTAR_REGISTRY_PASSWORD", "secret")
+
+    assert prune.main(["--apps-json", str(apps_path), "--apply"]) == 1
+    assert all(fake.store.values())
+
+
+def test_negative_retention_window_is_rejected(tmp_path) -> None:
+    with pytest.raises(SystemExit):
+        prune.main(
+            ["--apps-json", str(tmp_path / "unused.json"), "--min-age-days", "-1"]
+        )

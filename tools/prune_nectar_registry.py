@@ -30,6 +30,8 @@ APPS_JSON_URL = (
     "https://raw.githubusercontent.com/neurodesk/neurocommand/main/neurodesk/apps.json"
 )
 PAGE_SIZE = 100
+# A truncated or empty apps.json would mark nearly every image for deletion.
+MAX_DELETE_FRACTION = 0.5
 
 
 @dataclass(frozen=True)
@@ -194,12 +196,19 @@ def write_report(plan: Plan, path: str) -> None:
         )
 
 
+def non_negative_int(value: str) -> int:
+    days = int(value)
+    if days < 0:
+        raise argparse.ArgumentTypeError("must not be negative")
+    return days
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apps-json", default=APPS_JSON_URL)
     parser.add_argument("--api", default=HARBOR_API)
     parser.add_argument("--project", default=PROJECT)
-    parser.add_argument("--min-age-days", type=int, default=14)
+    parser.add_argument("--min-age-days", type=non_negative_int, default=14)
     parser.add_argument("--report", help="Write the full plan as JSON")
     parser.add_argument("--apply", action="store_true", help="Delete artifacts")
     args = parser.parse_args(argv)
@@ -238,6 +247,13 @@ def main(argv: list[str] | None = None) -> int:
     if not args.apply:
         print("Dry run: nothing deleted. Pass --apply to delete.")
         return 0
+    if not published or len(plan.delete) > MAX_DELETE_FRACTION * len(artifacts):
+        print(
+            f"::error::Refusing to delete {len(plan.delete)} of {len(artifacts)} "
+            f"artifacts: more than {MAX_DELETE_FRACTION:.0%}, or apps.json lists "
+            "no images. Check apps.json before pruning."
+        )
+        return 1
 
     failures = 0
     for artifact in plan.delete:
