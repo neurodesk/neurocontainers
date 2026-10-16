@@ -103,15 +103,6 @@ build:
     - run:
         - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); if (!requireNamespace('remotes', quietly = TRUE)) install.packages('remotes'); remotes::install_github('martin3141/spant@v{{ context.version }}', dependencies = TRUE, upgrade = 'never', build_vignettes = FALSE); cat('Installed spant from GitHub\n') "
         - Rscript -e 'library(spant); stopifnot(as.character(packageVersion("spant")) == "{{ context.version }}"); library(rmarkdown); stopifnot(pandoc_available())'
-    - test:
-        name: verify_r_installation
-        script: |-
-          R --version
-          Rscript - <<'RS'
-          library(spant)
-          stopifnot(as.character(packageVersion("spant")) == "{{ context.version }}")
-          cat("Package version:", as.character(packageVersion("spant")), "\n")
-          RS
 
 deploy:
   bins:

@@ -1,0 +1,113 @@
+--- a/libmeica/fastica.py
++++ b/libmeica/fastica.py
+@@ -1,4 +1,6 @@
++import os
+ import warnings
++from concurrent.futures import ThreadPoolExecutor
+ 
+ import numpy as np
+ import sklearn.decomposition._fastica as _fastica_mod
+@@ -8,6 +10,7 @@
+ 
+ _ORIGINAL_ICA_PAR = _fastica_mod._ica_par
+ _sym_decorrelation = _fastica_mod._sym_decorrelation
++_ROW_WISE_NONLINEARITIES = (_fastica_mod._logcosh, _fastica_mod._exp, _fastica_mod._cube)
+ 
+ INITIAL_TOL_OK = 0.1
+ CHECK_STEPS_OK = 150
+@@ -46,6 +49,36 @@
+             return False
+ 
+ 
++def _n_threads():
++    try:
++        return max(1, int(os.environ.get("OMP_NUM_THREADS", "")))
++    except ValueError:
++        return os.cpu_count() or 1
++
++
++def _row_blocked(g, executor, n_blocks):
++    """Apply a row-wise FastICA nonlinearity to row blocks in parallel.
++
++    numpy releases the GIL in ufuncs, and each row is computed exactly as in
++    the serial call, so results are bit-identical.
++    """
++    if executor is None or g not in _ROW_WISE_NONLINEARITIES:
++        return g
++
++    def blocked(x, fun_args):
++        bounds = np.linspace(0, x.shape[0], n_blocks + 1).astype(int)
++        gx = np.empty_like(x)
++        g_x = np.empty(x.shape[0], dtype=x.dtype)
++
++        def run(start, stop):
++            gx[start:stop], g_x[start:stop] = g(x[start:stop], fun_args)
++
++        list(executor.map(run, bounds[:-1], bounds[1:]))
++        return gx, g_x
++
++    return blocked
++
++
+ # ------------------------------------------------------------
+ # Deterministic Dynamic ICA
+ # ------------------------------------------------------------
+@@ -66,6 +99,10 @@
+     Initial matrix and restarts all drawn from rng.
+     """
+ 
++    n_threads = _n_threads()
++    executor = ThreadPoolExecutor(n_threads) if n_threads > 1 else None
++    g = _row_blocked(g, executor, n_threads)
++
+     done = False
+     min_restart_lim = 50 * tol
+     p_ = float(X.shape[1])
+@@ -128,6 +165,9 @@
+ 
+         # Continue outer loop if restart triggered
+ 
++    if executor is not None:
++        executor.shutdown()
++
+     if not done:
+         warnings.warn(
+             "FastICA did not converge. Consider increasing "
+--- a/libmeica/fitmodels.py
++++ b/libmeica/fitmodels.py
+@@ -125,15 +125,14 @@
+ 
+     print("Evaluating TE-Dependence of PCA", end="", flush=True)
+ 
++    WTS_t2s = unmask(WTS, mask)[t2s != 0]
+     for i in range(nc):
+         # size of B is (nc, nx*ny*nz)
+         # with flush_after(*mmap_list):
+         B = np.atleast_3d(betamask)[:, :, i].transpose()
+         alpha = (np.abs(B) ** 2).sum(axis=0)
+         varex[i] = (tsoc_B[:, i] ** 2).sum() / totvar * 100.0
+-        varex_norm[i] = (
+-            (unmask(WTS, mask)[t2s != 0][:, i] ** 2).sum() / totvar_norm * 100.0
+-        )
++        varex_norm[i] = (WTS_t2s[:, i] ** 2).sum() / totvar_norm * 100.0
+ 
+         # S0 Model
+         coeffs_S0 = (B * X1).sum(axis=0) / (X1**2).sum(axis=0)
+@@ -335,15 +334,14 @@
+ 
+     print("Evaluating TE-Dependence of ICA components", end="", flush=True)
+ 
++    WTS_t2s = unmask(WTS, mask)[t2s != 0]
+     for i in range(nc):
+         # size of B is (nc, nx*ny*nz)
+         # with flush_after(*mmap_list):
+         B = np.atleast_3d(betamask)[:, :, i].transpose()
+         alpha = (np.abs(B) ** 2).sum(axis=0)
+         varex[i] = (tsoc_B[:, i] ** 2).sum() / totvar * 100.0
+-        varex_norm[i] = (
+-            (unmask(WTS, mask)[t2s != 0][:, i] ** 2).sum() / totvar_norm * 100.0
+-        )
++        varex_norm[i] = (WTS_t2s[:, i] ** 2).sum() / totvar_norm * 100.0
+ 
+         # S0 Model
+         coeffs_S0 = (B * X1).sum(axis=0) / (X1**2).sum(axis=0)

@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "root_arm64 6.24.06": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "root"
+}

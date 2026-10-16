@@ -53,9 +53,6 @@ build:
         - echo 'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi' >> /neurodocker/startup.sh
         - chmod +x /neurodocker/startup.sh
     - entrypoint: /neurodocker/startup.sh
-    - test:
-        name: Show rsHRF help
-        script: rsHRF --help
 deploy:
   bins:
     - rsHRF

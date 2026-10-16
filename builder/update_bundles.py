@@ -94,7 +94,10 @@ def validate_bundle(config: dict) -> None:
         asset = config.get("asset")
         if (
             not isinstance(asset, str)
-            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*", asset)
+            or asset.count("{version}") > 1
+            or not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9._+-]*", asset.replace("{version}", "0")
+            )
             or asset in {"TODO", "TBD", "PLACEHOLDER"}
         ):
             raise ValueError(
@@ -365,10 +368,11 @@ def _github_release_asset(
         isinstance(asset, dict) for asset in assets
     ):
         raise ValueError("GitHub release assets must be an array of objects")
-    matches = [asset for asset in assets if asset.get("name") == config["asset"]]
+    name = config["asset"].replace("{version}", release.version)
+    matches = [asset for asset in assets if asset.get("name") == name]
     if len(matches) != 1:
         raise ValueError(
-            f"expected one release asset named {config['asset']}, found {len(matches)}"
+            f"expected one release asset named {name}, found {len(matches)}"
         )
     asset = matches[0]
     size, published_digest = asset.get("size"), asset.get("digest")
@@ -384,7 +388,7 @@ def _github_release_asset(
         or not re.fullmatch(r"sha256:[a-f0-9]{64}", published_digest)
     ):
         raise ValueError("GitHub asset has an invalid published SHA256 digest")
-    url = f"https://github.com/{repo}/releases/download/{tag}/{quote(config['asset'], safe='')}"
+    url = f"https://github.com/{repo}/releases/download/{tag}/{quote(name, safe='')}"
     digest, size = _download(
         session,
         url,

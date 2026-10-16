@@ -62,7 +62,9 @@ Low-pass and Run-wise require two.
 
 Nondefault corrected series end in `frisgo_simple`, `frisgo_lpass` or
 `frisgo_runwise`. Processing history records the algorithm and effective
-low-pass window. Missing settings retain Spline defaults. Invalid algorithms
+low-pass window. `ImageComment` and `ImageComments` of every corrected image
+name the method: `FRISGO spline`, `FRISGO simple`, `FRISGO runwise` or
+`FRISGO lpass window=<window>TR`. Missing settings retain Spline defaults. Invalid algorithms
 or active low-pass windows skip correction and log the cause; requested
 originals are still returned. Other algorithms ignore the low-pass window.
 

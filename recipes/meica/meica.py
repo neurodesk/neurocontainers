@@ -7,11 +7,13 @@ BOLD-like apparent dR2* series and T2* map as scanner-displayable MRD images.
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import logging
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import traceback
@@ -33,8 +35,8 @@ DEFAULT_CPUS = 24
 OPENRECON_WORK_ROOT = Path("/tmp/share/meica_openrecon")
 OUTPUT_SERIES_START = 200
 OUTPUT_SPECS = {
-    "dr2s": ("MEICA_DR2S", "ME-ICA denoised BOLD-like apparent dR2*"),
-    "t2s": ("MEICA_T2S", "ME-ICA T2* map"),
+    "dr2s": ("MEICA_DR2S", "MEICA denoised BOLD dR2*"),
+    "t2s": ("MEICA_T2S", "MEICA T2* map"),
 }
 OUTPUT_UNITS = {"dr2s": "1/s", "t2s": "ms"}
 SIGNED_OUTPUTS = {"dr2s"}
@@ -70,25 +72,23 @@ def process(connection, config, metadata):
             else:
                 logging.info("Ignoring unsupported MRD message %s", type(item).__name__)
 
-        magnitude_images = [image for image in images if _is_magnitude(image)]
-        if not magnitude_images:
-            raise ValueError("ME-ICA requires reconstructed magnitude image messages")
-
         settings = _settings(config)
+        if settings["send_original"] and images:
+            connection.send_image([
+                _original_passthrough(image, metadata) for image in images
+            ])
         OPENRECON_WORK_ROOT.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix="run_", dir=str(OPENRECON_WORK_ROOT)
         ) as work_name:
             work_dir = Path(work_name)
             conversion = write_meica_inputs(
-                magnitude_images, metadata, work_dir / "input", settings
+                images, metadata, work_dir / "input", settings
             )
             _run_meica(conversion, work_dir / "output", settings)
             selected = _find_outputs(work_dir / "output")
             output_images = _outputs_to_mrd(selected, conversion, images)
 
-        if settings["send_original"]:
-            connection.send_image([_original_passthrough(image) for image in images])
         for series in output_images:
             connection.send_image(series)
     except Exception:
@@ -102,6 +102,9 @@ def process(connection, config, metadata):
 def write_meica_inputs(images, metadata, input_dir, settings):
     """Write one four-dimensional NIfTI dataset for each detected echo."""
     input_dir.mkdir(parents=True, exist_ok=True)
+    images = _select_bold_images(images)
+    if not images:
+        raise ValueError("ME-ICA requires reconstructed magnitude fMRI image messages")
     echo_groups = _group_echo_images(images)
     if len(echo_groups) < 3:
         raise ValueError(
@@ -117,8 +120,14 @@ def write_meica_inputs(images, metadata, input_dir, settings):
     for echo_index, group in enumerate(echo_groups):
         time_groups = _group_echo_into_timepoints(group)
         volumes = []
-        for time_group in time_groups:
+        for time_index, time_group in enumerate(time_groups):
             volume, affine = _images_to_volume(time_group)
+            if volumes and volume.shape != volumes[0].shape:
+                raise ValueError(
+                    f"ME-ICA echo {echo_index + 1}, time point {time_index + 1} "
+                    f"has volume shape {volume.shape}; expected {volumes[0].shape} "
+                    f"from {len(time_groups[0])} slice images"
+                )
             volumes.append(volume)
         data = np.stack(volumes, axis=3).astype(np.float32)
 
@@ -382,14 +391,19 @@ def _group_echo_into_timepoints(images):
         return [[image] for image in sorted(images, key=_image_time_sort_key)]
 
     candidate_keys = [_time_identity(image) for image in images]
+    use_slice_index = any(int(image.getHead().slice) != 0 for image in images)
     if len(set(candidate_keys)) > 1:
         groups = {}
         for image, key in zip(images, candidate_keys):
             groups.setdefault(key, []).append(image)
-        return [groups[key] for key in sorted(groups)]
+        timepoints = [groups[key] for key in sorted(groups)]
+        _validate_timepoint_slices(timepoints, use_slice_index=use_slice_index)
+        return timepoints
 
     ordered = sorted(images, key=_image_index_sort_key)
-    slice_ids = [_slice_identity(image) for image in ordered]
+    slice_ids = [
+        _slice_identity(image, use_slice_index=use_slice_index) for image in ordered
+    ]
     slice_count = len(set(slice_ids))
     if slice_count <= 1:
         return [[image] for image in ordered]
@@ -397,10 +411,38 @@ def _group_echo_into_timepoints(images):
         raise ValueError(
             f"Cannot divide {len(ordered)} images into {slice_count}-slice time points"
         )
-    return [
+    timepoints = [
         ordered[index:index + slice_count]
         for index in range(0, len(ordered), slice_count)
     ]
+    _validate_timepoint_slices(timepoints, use_slice_index=use_slice_index)
+    return timepoints
+
+
+def _validate_timepoint_slices(
+    timepoints: list[list[ismrmrd.Image]], *, use_slice_index: bool
+) -> None:
+    expected = {
+        _slice_identity(image, use_slice_index=use_slice_index)
+        for image in timepoints[0]
+    }
+    for index, timepoint in enumerate(timepoints):
+        identities = [
+            _slice_identity(image, use_slice_index=use_slice_index)
+            for image in timepoint
+        ]
+        actual = set(identities)
+        if len(identities) != len(actual):
+            raise ValueError(
+                f"ME-ICA time point {index + 1} contains duplicate slice images; "
+                "reference images or multiple source series may share its repetition"
+            )
+        if actual != expected:
+            raise ValueError(
+                f"ME-ICA time point {index + 1} has {len(actual)} slices; "
+                f"expected {len(expected)} with matching slice identities "
+                f"({len(expected - actual)} missing, {len(actual - expected)} unexpected)"
+            )
 
 
 def _images_to_volume(images):
@@ -485,6 +527,73 @@ def _is_magnitude(image):
     return image_type in (0, int(getattr(ismrmrd, "IMTYPE_MAGNITUDE", 1)))
 
 
+def _select_bold_images(images: list[ismrmrd.Image]) -> list[ismrmrd.Image]:
+    """Keep magnitude fMRI images, excluding reference and noise images."""
+    selected = []
+    excluded = {}
+    for image in images:
+        reason = _input_exclusion_reason(image)
+        if reason is None:
+            selected.append(image)
+        else:
+            excluded[reason] = excluded.get(reason, 0) + 1
+    logging.info(
+        "Selected %d ME-ICA fMRI images; excluded image counts: %s",
+        len(selected), excluded,
+    )
+    return selected
+
+
+def _input_exclusion_reason(image: ismrmrd.Image) -> str | None:
+    if not _is_magnitude(image):
+        return "non-magnitude"
+    return _scanner_image_role(image)
+
+
+def _scanner_image_role(image: ismrmrd.Image) -> str | None:
+    meta = _meta(image)
+    description = str(_meta_first(meta, "SequenceDescription") or "")
+    if "sbref" in description.lower():
+        return "reference"
+    value4 = meta.get("ImageTypeValue4", [])
+    if not isinstance(value4, (list, tuple)):
+        value4 = [value4]
+    tokens = {
+        token.upper()
+        for value in value4
+        for token in re.split(r"[\s\\,]+", str(value))
+    }
+    # Siemens keeps CMRR's NOISE marker in its base64 XProtocol minihead.
+    minihead = _decode_minihead(meta)
+    if minihead:
+        if not description:
+            match = re.search(
+                r'<ParamString\."SequenceDescription">\s*\{\s*"([^"]*)"',
+                minihead,
+            )
+            if match and "sbref" in match.group(1).lower():
+                return "reference"
+        match = re.search(r'<ParamArray\."ImageTypeValue4">\s*\{', minihead)
+        if match:
+            start = match.end()
+            depth = 1
+            for end in range(start, len(minihead)):
+                depth += (minihead[end] == "{") - (minihead[end] == "}")
+                if depth == 0:
+                    tokens.update(
+                        token.upper()
+                        for token in re.findall(
+                            r'\{\s*"([^"]+)"\s*\}', minihead[start:end]
+                        )
+                    )
+                    break
+    if "SBREF" in tokens:
+        return "reference"
+    if "NOISE" in tokens:
+        return "noise"
+    return None
+
+
 def _is_packed_volume(image):
     return _image_to_volume(image).shape[2] > 1
 
@@ -512,8 +621,6 @@ def _image_echo_time_ms(image):
     dicom_json = _meta_first(meta, "DicomJson")
     if dicom_json:
         try:
-            import base64
-
             parsed = json.loads(base64.b64decode(str(dicom_json)).decode("utf-8"))
             value = parsed.get("00180081", {}).get("Value", [None])[0]
             return float(value) if value is not None else None
@@ -562,17 +669,23 @@ def _image_index_sort_key(image):
     return (int(image.getHead().image_index), _slice_identity(image))
 
 
-def _slice_identity(image):
+def _slice_identity(image, *, use_slice_index=True):
     header = image.getHead()
-    slice_index = int(getattr(header, "slice", 0))
-    if slice_index:
-        return (0, slice_index)
+    if use_slice_index:
+        return (0, int(getattr(header, "slice", 0)))
     position = tuple(round(float(value), 5) for value in header.position)
     return (1, position)
 
 
 def _ordered_slices(images):
-    return sorted(images, key=lambda image: (_slice_identity(image), int(image.getHead().image_index)))
+    use_slice_index = any(int(image.getHead().slice) != 0 for image in images)
+    return sorted(
+        images,
+        key=lambda image: (
+            _slice_identity(image, use_slice_index=use_slice_index),
+            int(image.getHead().image_index),
+        ),
+    )
 
 
 def _affine_from_image(image, shape_xyz):
@@ -722,8 +835,7 @@ def _derived_meta(
     meta["Keep_image_geometry"] = "1"
     meta["DataRole"] = ["Image", "Quantitative"]
     meta["ImageProcessingHistory"] = ["MEICA", "OPENRECON"]
-    meta["SequenceDescription"] = description
-    meta["SeriesDescription"] = description
+    _set_series_label(meta, description, series_index)
     meta["SeriesNumber"] = str(series_index)
     meta["ImageType"] = ["DERIVED", "PRIMARY", "M", role]
     meta["ImageTypeValue4"] = role
@@ -750,12 +862,89 @@ def _derived_meta(
     return meta
 
 
-def _original_passthrough(image):
+def _original_passthrough(image: ismrmrd.Image, metadata=None) -> ismrmrd.Image:
     original = copy.deepcopy(image)
     meta = _meta(original)
+    source_name = ""
+    for key in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
+        source_name = str(_meta_first(meta, key) or "")
+        if source_name:
+            break
+    if not source_name:
+        minihead = _decode_minihead(meta)
+        match = re.search(
+            r'<ParamString\."SequenceDescription">\s*\{\s*"([^"]*)"', minihead
+        )
+        if match:
+            source_name = match.group(1)
+    component = {
+        int(getattr(ismrmrd, "IMTYPE_MAGNITUDE", 1)): "magnitude",
+        int(getattr(ismrmrd, "IMTYPE_PHASE", 2)): "phase",
+        int(getattr(ismrmrd, "IMTYPE_REAL", 3)): "real",
+        int(getattr(ismrmrd, "IMTYPE_IMAG", 4)): "imaginary",
+    }.get(int(image.getHead().image_type), "magnitude")
+    role = {"reference": "SBRef ", "noise": "noise "}.get(
+        _scanner_image_role(image), ""
+    )
+    echo = _original_echo_number(image, metadata)
+    description = f"MEICA original {role}{component} te{echo}"
+    if source_name:
+        description += f"_{source_name}"
+    _set_series_label(meta, description, int(image.getHead().image_series_index))
     meta["Keep_image_geometry"] = "1"
     original.attribute_string = meta.serialize()
     return original
+
+
+def _original_echo_number(image: ismrmrd.Image, metadata) -> int:
+    echo_time = _image_echo_time_ms(image)
+    for index, time in enumerate(_metadata_echo_times_ms(metadata), 1):
+        if echo_time is not None and np.isclose(echo_time, time):
+            return index
+    number = _echo_number(image)
+    if number is not None and number > 0:
+        return number
+    return int(image.getHead().contrast) + 1
+
+
+def _decode_minihead(meta: ismrmrd.Meta) -> str:
+    encoded = _meta_first(meta, "IceMiniHead")
+    if not encoded:
+        return ""
+    try:
+        return base64.b64decode(str(encoded)).decode("utf-8")
+    except (ValueError, UnicodeError):
+        return ""
+
+
+def _set_series_label(
+    meta: ismrmrd.Meta, description: str, series_index: int
+) -> None:
+    description = description.replace('"', "'").replace("\r", " ").replace("\n", " ")
+    source_group = _meta_first(meta, "SeriesNumberRangeNameUID") or ""
+    grouping = f"{source_group}_{description}_{series_index}"
+    # Reserve ten of DICOM LO's 64 characters for the scanner's _openrecon suffix.
+    description = description[:54]
+    labels = {
+        "SeriesDescription": description,
+        "SequenceDescription": description,
+        "ProtocolName": description,
+        "SeriesNumberRangeNameUID": grouping,
+    }
+    meta.update(labels)
+    meta["SequenceDescriptionAdditional"] = "openrecon"
+    minihead = _decode_minihead(meta)
+    if minihead:
+        for key, value in labels.items():
+            pattern = rf'(<ParamString\."{key}">\s*\{{\s*)"?[^"}}]*"?(\s*\}})'
+            minihead, count = re.subn(
+                pattern,
+                lambda match: f'{match.group(1)}"{value}"{match.group(2)}',
+                minihead,
+            )
+            if not count:
+                minihead += f'\n<ParamString."{key}">{{ "{value}" }}\n'
+        meta["IceMiniHead"] = base64.b64encode(minihead.encode()).decode()
 
 
 def _meta(image):

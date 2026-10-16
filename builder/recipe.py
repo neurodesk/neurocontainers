@@ -30,7 +30,7 @@ from .ir import (
 from .staging import CopySource, DeclaredFile, StagingPlan, declared_file_from_mapping
 from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
-from .validation import validate_recipe_dict
+from .validation import NESTED_TEST_DIRECTIVE_ERROR, validate_recipe_dict
 from .cache import DEFAULT_TIMEOUT_SECONDS, DEFAULT_USER_AGENT
 from .config import ARCHITECTURE_ALIASES as ARCHITECTURE_ALIASES, canonical_architecture
 from .variants import select_concrete_variant, variant_specs as variant_specs
@@ -616,7 +616,7 @@ def compile_recipe(
                 definition.add(Run("mkdir -p /boutique"))
                 definition.add(Copy((filename,), f"/boutique/{filename}"))
             elif "test" in directive:
-                return
+                raise ValueError(NESTED_TEST_DIRECTIVE_ERROR)
             else:
                 raise ValueError(f"unsupported directive: {directive}")
         finally:

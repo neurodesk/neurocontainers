@@ -788,6 +788,41 @@ tests:
     expected_exit_code: 0
     timeout: 420
 
+  - name: slicereport renders a QC montage with the bundled FSL tools
+    description: Run slicereport on a synthetic BIDS image so the bundled FSL slicer and pngappend produce a nonblank multi-slice montage and sub-report
+    command: |
+      python - <<'PYTHON'
+      from pathlib import Path
+      import json
+      import subprocess
+      import numpy as np
+      import nibabel as nib
+      from PIL import Image
+
+      bids = Path('${output_dir}') / 'slicereport-phantom'
+      anat = bids / 'sub-01' / 'anat'
+      anat.mkdir(parents=True, exist_ok=True)
+      (bids / 'dataset_description.json').write_text(json.dumps({'Name': 'Synthetic sphere', 'BIDSVersion': '1.9.0'}))
+      x, y, z = np.mgrid[:40, :48, :36]
+      sphere = (((x - 20) ** 2 + (y - 24) ** 2 + (z - 18) ** 2) < 150).astype(np.float32) * 100
+      nib.save(nib.Nifti1Image(sphere, np.eye(4)), anat / 'sub-01_T1w.nii.gz')
+      report = bids / 'qc'
+      result = subprocess.run(['slicereport', str(bids), 'anat/*_T1w*', '-r', str(report)], text=True, capture_output=True, timeout=180)
+      print(result.stdout, result.stderr)
+      assert result.returncode == 0, result.returncode
+      assert (report / 'slicereport.errors').read_text().strip() == ''
+      assert (report / 'index.html').is_file()
+      assert (report / 'sub-01' / 'sub-01_desc-subreport_T1w.png').is_file()
+      # The default report appends nine slicer views into one horizontal strip.
+      montage = np.asarray(Image.open(report / 'sub-01' / 'sub-01_T1w.png').convert('L'))
+      assert montage.shape[1] > 3 * montage.shape[0], montage.shape
+      assert montage.max() > 0, 'montage is blank'
+      print('slicereport rendered a nonblank montage with slicer and pngappend')
+      PYTHON
+    expected_output_contains: slicereport rendered a nonblank montage with slicer and pngappend
+    expected_exit_code: 0
+    timeout: 240
+
 cleanup:
   script: |
     #!/usr/bin/env bash

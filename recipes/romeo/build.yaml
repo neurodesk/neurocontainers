@@ -1,5 +1,9 @@
 name: romeo
-version: 3.2.8
+version: 4.9.0
+
+variables:
+  compilemri_version: 4.9.0
+  julia_version: 1.10.12
 
 copyright:
   - license: MIT
@@ -7,10 +11,40 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
-  method: github_release
-  repo: korbinian90/ROMEO
+  method: sources
+  container_version: compilemri
+  sources:
+  - id: compilemri
+    method: github_release
+    repo: korbinian90/CompileMRI.jl
+    target:
+      variable: compilemri_version
+    assets:
+      v: mritools_linux_x64_[0-9.]+\.tar\.gz
+  - id: compilemri_source_digest
+    dependency: true
+    method: http_digest
+    url: https://github.com/korbinian90/CompileMRI.jl/archive/refs/tags/v{{ context.compilemri_version
+      }}.tar.gz
+    target:
+      file: compilemri_source
+  - id: julia
+    dependency: true
+    method: webpage
+    url: https://julialang-s3.julialang.org/bin/versions.json
+    version_regex: '"(?P<version>1\.10\.\d+)"\s*:\s*\{'
+    target:
+      variable: julia_version
+  - id: julia_digest
+    dependency: true
+    method: http_digest
+    url: https://julialang-s3.julialang.org/bin/linux/aarch64/1.10/julia-{{ context.julia_version
+      }}-linux-aarch64.tar.gz
+    target:
+      file: julia
 
 build:
   kind: neurodocker
@@ -23,10 +57,26 @@ build:
         - curl
         - ca-certificates
 
+    - condition: arch == "aarch64"
+      install:
+        - build-essential
+        - git
+
     - workdir: /opt/romeo-{{ context.version }}/
 
-    - run:
-        - tar -xz -C /opt/romeo-{{ context.version }}/ --strip-components 1 -f {{ get_file("romeo_linux_3_2_8_tar_gz") }}
+    - condition: arch == "x86_64"
+      run:
+        - tar -xz -C /opt/romeo-{{ context.version }}/ --strip-components 1 -f {{ get_file("v") }}
+
+    - condition: arch == "aarch64"
+      run:
+        - mkdir -p /opt/romeo-{{ context.version }}/source
+        - tar -xz -C /opt/romeo-{{ context.version }}/source --strip-components 1 -f {{ get_file("compilemri_source") }}
+        - tar -xz -C /opt -f {{ get_file("julia") }}
+        - /opt/julia-{{ context.julia_version }}/bin/julia --project=/opt/romeo-{{ context.version }}/source -e 'using Pkg; Pkg.instantiate(); Pkg.build("CompileMRI")'
+        - /opt/julia-{{ context.julia_version }}/bin/julia --project=/opt/romeo-{{ context.version }}/source -e 'using CompileMRI; CompileMRI.compile("/tmp/romeo-compiled")'
+        - cp -a /tmp/romeo-compiled/. /opt/romeo-{{ context.version }}/
+        - rm -rf /opt/romeo-{{ context.version }}/source /opt/julia-{{ context.julia_version }} /tmp/romeo-compiled
 
     - environment:
         PATH: /opt/romeo-{{ context.version }}/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
@@ -73,5 +123,14 @@ categories:
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBIWXMAAC4jAAAuIwF4pT92AAADHklEQVRoge2Wv07rMBTGv1zdrbD2AToYsYAEYmkGhIPUgYUFap6AIexMZgBVnTJWAql9AMyOwgBSJYJYWMpWlE4wlBG1c+5g4evmD6S6g8WVf5vtk/P5s49P6yRJgp/ML9Mb+FesAdNYA6axBkxjDZjGGjCNNWAaa8A01oBprAHTWAOmsQZM89eA53lLS0uO4ziO43neycnJ+/t7Kvrq6uro6EiGHRwc9Hq96XSaipEZBoNBVszzPMdxer1eKjjFfIrJJwAYY1EURVEkhCCEEELG47EKCIIAAOc8DMMoioIgkDFxHKuYKIpkWs55MksYhnKp2+3miirmUpwxQClNbSUIAj2XEELfUxzHhBBK6WQy0b+ilBJCUgY455TSrAFdVKekYqEBfSaO49xDTZJECKHLKNsAwjBUYZPJhBDS7XZTeYoMlFcsfMSj0QjAzs4OgKenJwCu62bDNjc3AZyfn8vh29sbgN3dXUKIKicA19fXw+Fwa2uLUqrPF1Fe8Xfu94PBoN1uM8YODw8BPD8/A2g0GtnIarVKKX19fZXDj48PALVardlsXl5enp6eyvl+v88Yq9VquRkeHh7UcGFhYWVlpbziTAnp+L6v6kzWbvY2s6uySJLPJyurSNaDvHRKqV4z2f3J1fKKMyWkGgLnvNPp3N/fy/nl5eWsUko1NdNoNFQVyXpYX18v+lbf3O3t7XyKRe+JMaaG8lz1BqcYj8cAfN/Png3nXPYi3/dzA7KiivKKhY94e3v77u5O/h5tbGwAUI1cp9/v4/Nhpc7Gdd3hcHhzc9PpdFSA7ArfModi0WHI21fdinOOgq7MGFMzqRKXq4QQ9ZzUI/n6Bsor5nchAPV6Xdrd29sDcHx8/PLysr+/zzl3XXdxcfHx8fHi4mJtba3VaqmvqtWq/gek2WyenZ1xziuVip58NBqpjpTqQgBWV1crlUpJxa8Ow/d9/fCSJBFCqAqhlAoh9NVsEr0X6Tegijv37PTS/1bRKcryU/iP/k7/UKwB01gDprEGTGMNmMYaMI01YBprwDTWgGmsAdNYA6axBkxjDZjmD/3zZajTfmT5AAAAAElFTkSuQmCC
 
 files:
-  - name: romeo_linux_3_2_8_tar_gz
-    url: https://github.com/korbinian90/ROMEO/releases/download/v{{ context.version }}/romeo_linux_{{ context.version }}.tar.gz
+  - name: v
+    condition: arch == "x86_64"
+    url: https://github.com/korbinian90/CompileMRI.jl/releases/download/v{{ context.compilemri_version }}/mritools_linux_x64_{{ context.compilemri_version }}.tar.gz
+  - name: compilemri_source
+    condition: arch == "aarch64"
+    url: https://github.com/korbinian90/CompileMRI.jl/archive/refs/tags/v{{ context.compilemri_version }}.tar.gz
+    sha256: 0810bc99b08536757330f8dc52e5abb8acc22dd99fda6aaea91a74fe2b826fe5
+  - name: julia
+    condition: arch == "aarch64"
+    url: https://julialang-s3.julialang.org/bin/linux/aarch64/1.10/julia-{{ context.julia_version }}-linux-aarch64.tar.gz
+    sha256: cc257b21967049642bfe17de1aff7dae17477eba4f423f98cb400c002080e5a2

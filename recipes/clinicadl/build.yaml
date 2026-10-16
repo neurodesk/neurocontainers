@@ -108,14 +108,6 @@ build:
           - clinica
     - environment:
         PATH: /opt/miniconda/envs/clinicadlEnv/bin:/opt/miniconda/envs/clinicaEnv/bin:$PATH
-    - test:
-        name: testScript
-        script: |-
-          #!/bin/bash
-          clinica --version
-          python -c 'from clinicadl.train import Trainer; print(Trainer)'
-          fslmaths --version
-          recon-all --version
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA3BJREFUSEu1lV1MU2cYx39HKhcGloEVqJkSCdkyPhLINgxkQEKmmLlkGUOo4vwY29zGQvTCzGUXA5Wwm8mNCXd4wYIX3pTtZjAvCFm2mDpGBUOWoPQUpqnWUvFAoYdzavp2nLWHtqsxnqRp3tO3z////J73fR7p408D4XA4TOwHiFtv/GZ+H1nruh75SrpfOvnJYjjdgMmEUhmQTrT7UwokcpjKkHm/EIh18LwBI7FiDUjHTvrSRpQOc3MthUBytuusrgaQkMiwZCFJGSkPQyID0kcnHpoQaShPZDzyzyzMX6OyspBAIMDs7GNee/00uh7CeeOMwBB53tp7GdvO/cAWQzwO0dHjDwxEuq7hf+RiynWewcGLNDQ0GIFUVaWjo4Nfrz+mcLeXsbExamtrWVPtmwRiiUhtx7xGBsGgl8mJC1wZ+Iq6ujo6Ozvp7++npKSEoaEhysrKqKjYS07ONiEQ2RNca6XA9k7yDP4T0PF6/2D27++Q5SkGBgZob2/nlV3voWmrqKFJRkdH6enpwefzxQi0UGDbFycQl8Hho/cFIl1Xkd3D5O+4jsPhEHiWlAPsLmxCUeaZuPk1j3xOgay+vt4QWFk9lJ6ApoW4O3uVN99wCyylpaXkWs+xI+9tQmt+brkuMu9xJBTIL4giSniK7G33RA00TcUjO9DXf8TpdNLd3c0vozspsDWgKB4mJ77h0g8dDA8PxyFaDjazIZCop0mtR/75F5GG1/sbN37/gmBwEZfLxbsHz7KnqI3FxWnyrDcFlpqaGjIzMw1EC/eKyc2tAimawVbLS2Rlv4okZYq11HJ4wTimEad//fktfZdOYbfb6evro7e3l/LycuFcURRsNptRg66uLqanp42jPDMzg7JcSVHxl1gs2eJeCIGN1CKFnvf8xK3Jc4yPj1NVVWX82e/309jYiFveSmlJNAPzMzIywmenBuMFmls9cb0oFFpCdl9jynUBq9VKdXW1cDk3N0defj3brdXM3P5+U/CNF7sK2ygq+pwMS3YUUUTA3It0fZ0nS3cIBG4TXLlPOKyRlV3MyzkVqKrCyrIHPRwdNBjDSiywxNRAIPqwRX6x7brpkHtTu45tVub2+6zzQvqgeS5pu050cVLN7oQXzSzwf0M8nYzietH7TXeeCZH5tppH5KaJlkjgeWa02cBT7D1jbdy4T7UAAAAASUVORK5CYII=
 readme: |-
   ----------------------------------

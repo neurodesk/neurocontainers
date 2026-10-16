@@ -298,9 +298,9 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
             if nprocs_index + 1 >= len(sys.argv) or sys.argv[nprocs_index + 1] != "24":
                 raise SystemExit("qsmxt OpenRecon should pass --n-procs 24")
             for flag, expected in (
-                ("--qsm-algorithm", "hdqsm"),
+                ("--qsm-algorithm", "rts"),
                 ("--unwrapping-algorithm", "romeo"),
-                ("--bf-algorithm", "ismv"),
+                ("--bf-algorithm", "vsharp"),
             ):
                 try:
                     flag_index = sys.argv.index(flag)
@@ -308,6 +308,12 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
                     raise SystemExit(f"qsmxt OpenRecon should pass {{flag}} {{expected}}")
                 if flag_index + 1 >= len(sys.argv) or sys.argv[flag_index + 1] != expected:
                     raise SystemExit(f"qsmxt OpenRecon should pass {{flag}} {{expected}}")
+            try:
+                mask_index = sys.argv.index("--mask")
+            except ValueError:
+                raise SystemExit("qsmxt OpenRecon must pass --mask")
+            if sys.argv[mask_index + 1] != "magnitude,threshold:otsu,close:1,fill-holes:0":
+                raise SystemExit("qsmxt OpenRecon must pass the default robust-threshold section")
             bids = Path(sys.argv[2])
             output = Path(sys.argv[3])
             phase = sorted(bids.glob("sub-*/anat/*_echo-1_part-phase_MEGRE.nii.gz"))[0]
@@ -326,16 +332,16 @@ def _fake_qsmxt_binary(tmp_path, affine_offset=None):
     return fake
 
 
-def test_openrecon_defaults_select_hdqsm_romeo_and_ismv():
+def test_openrecon_defaults_select_rts_romeo_and_vsharp():
     assert qsmxt.QSMXT_DERIVATIVE_ROOT == Path("derivatives/qsmxt")
 
     settings = qsmxt._settings_from_config({}, FakeMetadata())
 
     assert settings["pipeline_preset"] == "custom"
-    assert settings["qsm_algorithm"] == "hdqsm"
+    assert settings["qsm_algorithm"] == "rts"
     assert settings["unwrapping_algorithm"] == "romeo"
-    assert settings["bf_algorithm"] == "ismv"
-    assert settings["mask_preset"] == "bet"
+    assert settings["bf_algorithm"] == "vsharp"
+    assert settings["mask_preset"] == "robust-threshold"
     assert settings["masking_input"] == "magnitude"
     assert settings["bet_fractional_intensity"] == 0.5
     assert settings["mask_cleanup"] == "close-fill"
@@ -393,11 +399,482 @@ def test_select_magnitude_phase_pairs_matches_requested_distortion_variant():
     assert [int(group["key"][0]) for group in non_corrected[0]["groups"]] == [1, 2]
 
 
+def test_default_selects_nd_when_preferred_input_is_missing(caplog):
+    images = [image for image in _dual_input_images() if image.image_series_index in (1, 2)]
+    settings = qsmxt._settings_from_config({}, FakeMetadata())
+    with caplog.at_level(logging.WARNING):
+        pairs = qsmxt._select_magnitude_phase_pairs(
+            qsmxt._group_images_by_series(images), settings["input_series"],
+        )
+    assert len(pairs) == 1
+    assert pairs[0]["variant"] == "non-distortion-corrected"
+    assert pairs[0]["short_label"] == "ND"
+    assert [group["name"] for group in pairs[0]["groups"]] == ["gre_qsm_ND", "gre_qsm_ND"]
+    assert "No magnitude image series found for distortion-corrected" in caplog.text
+    assert "gre_qsm_ND" in caplog.text
+    assert settings["input_series"] == "distortion-corrected"
+
+
+@pytest.mark.parametrize("preferred_series", [3, 4])
+def test_incomplete_preferred_pair_falls_back_without_mixing(preferred_series):
+    images = [image for image in _dual_input_images()
+              if image.image_series_index in (1, 2, preferred_series)]
+    pair = qsmxt._select_magnitude_phase_pairs(
+        qsmxt._group_images_by_series(images), "distortion-corrected",
+    )[0]
+    assert pair["short_label"] == "ND"
+    assert [int(group["key"][0]) for group in pair["groups"]] == [1, 2]
+
+
+def test_default_nd_fallback_writes_selected_magnitude(tmp_path):
+    images = [image for image in _dual_input_images() if image.image_series_index in (1, 2)]
+    settings = qsmxt._settings_from_config({}, FakeMetadata())
+    result = qsmxt.write_bids_dataset(images, FakeMetadata(), tmp_path / "bids", settings)
+    assert len(result["magnitude_paths"]) == 2
+    np.testing.assert_allclose(nib.load(result["magnitude_paths"][0]).get_fdata(), 1001)
+    assert settings["input_series"] == "distortion-corrected"
+
+
+@pytest.mark.parametrize("selection,indices", [
+    ("both", (1, 2)), ("both", (3, 4)),
+    ("non-distortion-corrected", (3, 4)), ("distortion-corrected", (3,)),
+])
+def test_missing_pairs_remain_strict(selection, indices, caplog):
+    images = [image for image in _dual_input_images() if image.image_series_index in indices]
+    with pytest.raises(ValueError, match="No (magnitude|phase) image series"):
+        qsmxt._select_magnitude_phase_pairs(qsmxt._group_images_by_series(images), selection)
+    assert "falling back" not in caplog.text
+
+
+def test_ambiguous_preferred_pair_does_not_fall_back(caplog):
+    images = _dual_input_images()
+    images.extend([
+        _image(5, 1, "other_M", np.ones((2, 3, 4))),
+        _image(6, 1, "other_P", np.ones((2, 3, 4)), image_type=ismrmrd.IMTYPE_PHASE),
+    ])
+    with pytest.raises(ValueError, match="Ambiguous distortion-corrected"):
+        qsmxt._select_magnitude_phase_pairs(
+            qsmxt._group_images_by_series(images), "distortion-corrected",
+        )
+    assert "falling back" not in caplog.text
+
+
+def test_preferred_phase_inference_runs_before_nd_fallback():
+    images = _dual_input_images()
+    for image in images:
+        if image.image_series_index == 4:
+            header = image.getHead()
+            header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+            image.setHead(header)
+    pair = qsmxt._select_magnitude_phase_pairs(
+        qsmxt._group_images_by_series(images), "distortion-corrected",
+    )[0]
+    assert pair["short_label"] == "DC"
+    assert {int(group["key"][0]) for group in pair["groups"]} == {3, 4}
+
+
+@pytest.mark.parametrize("processed_nd", [False, True])
+def test_processed_products_cannot_supply_fallback_components(processed_nd):
+    images = _dual_input_images()
+    for image in images:
+        if image.image_series_index == 4 or (processed_nd and image.image_series_index == 2):
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            meta["SequenceDescription"] = "gre_Romeo_P" + (
+                "_ND" if image.image_series_index == 2 else ""
+            )
+            image.attribute_string = meta.serialize()
+    groups = qsmxt._group_images_by_series(images)
+    if processed_nd:
+        with pytest.raises(ValueError, match="No phase.*non-distortion-corrected"):
+            qsmxt._select_magnitude_phase_pairs(groups, "distortion-corrected")
+    else:
+        assert qsmxt._select_magnitude_phase_pairs(groups, "distortion-corrected")[0]["short_label"] == "ND"
+
+
+@pytest.mark.parametrize("failure", ["echo", "geometry"])
+def test_invalid_preferred_pair_does_not_use_valid_nd(tmp_path, failure, caplog):
+    images = _dual_input_images()
+    if failure == "echo":
+        images = [image for image in images
+                  if not (image.image_series_index == 4 and image.image_index == 2)]
+    else:
+        for image in images:
+            if image.image_series_index == 4:
+                header = image.getHead()
+                _set_header_vector(header, "position", [5.0, 0.0, 0.0])
+                image.setHead(header)
+    settings = qsmxt._settings_from_config({}, FakeMetadata())
+    with pytest.raises(ValueError, match="[Ee]cho|[Gg]eometry|[Aa]ffine"):
+        qsmxt.write_bids_dataset(images, FakeMetadata(), tmp_path / "bids", settings)
+    assert "falling back" not in caplog.text
+
+
+def test_native_failure_does_not_retry_nd(tmp_path, monkeypatch):
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    attempted = []
+
+    def fail_native(bids_dir, output_dir, settings):
+        attempted.append(bids_dir.parent.name)
+        raise RuntimeError("native reconstruction failed")
+
+    monkeypatch.setattr(qsmxt, "_run_qsmxt", fail_native)
+    connection = FakeConnection(_dual_input_images())
+    qsmxt.process(connection, {}, FakeMetadata())
+    assert connection.closed
+    assert attempted == ["dc"]
+    assert connection.sent_batches == []
+    assert "native reconstruction failed" in connection.logs[0][1]
+
+
 def test_select_magnitude_phase_pairs_rejects_incomplete_both_selection():
     groups = qsmxt._group_images_by_series(_input_images())
 
     with pytest.raises(ValueError, match="non-distortion-corrected"):
         qsmxt._select_magnitude_phase_pairs(groups, "both")
+
+
+def _clearqsm_input_images():
+    images = []
+    for series_index, suffix, image_type, echoes, base_value in (
+        (1, "Romeo_Mask", ismrmrd.IMTYPE_MAGNITUDE, 1, 1),
+        (2, "Aspire_P", ismrmrd.IMTYPE_PHASE, 5, 2000),
+        (3, "Romeo_P", ismrmrd.IMTYPE_PHASE, 5, 3000),
+        (4, "Romeo_B0", ismrmrd.IMTYPE_PHASE, 1, 2048),
+        (5, "sensitivity_corrected_mag", ismrmrd.IMTYPE_MAGNITUDE, 1, 800),
+        (6, "CLEAR-SWI_mIP", ismrmrd.IMTYPE_MAGNITUDE, 1, 500),
+        (7, "CLEAR-SWI", ismrmrd.IMTYPE_MAGNITUDE, 1, 600),
+        (8, "Aspire_M", ismrmrd.IMTYPE_MAGNITUDE, 5, 1000),
+    ):
+        for echo in range(1, echoes + 1):
+            images.append(
+                _image(
+                    series_index,
+                    echo,
+                    f"anat-MEGRE_acq-clearQsm_07mm_{suffix}",
+                    np.full((2, 3, 4), base_value + echo, dtype=np.float32),
+                    image_type=image_type,
+                    meta_values={
+                        "EchoNumber": str(echo),
+                        "ImageType": "DERIVED\\PRIMARY\\" + (
+                            "P" if image_type == ismrmrd.IMTYPE_PHASE else "M"
+                        ),
+                    },
+                )
+            )
+    return images
+
+
+@pytest.mark.parametrize("reverse_arrival", [False, True])
+def test_write_bids_dataset_selects_source_pair_among_clearqsm_products(
+    tmp_path, reverse_arrival,
+):
+    images = _clearqsm_input_images()
+    if reverse_arrival:
+        images.reverse()
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"echotimesms": "5,10,15,20,25"}},
+        FakeMetadata(),
+    )
+
+    conversion = qsmxt.write_bids_dataset(
+        images, FakeMetadata(), tmp_path / "bids", settings,
+    )
+
+    assert conversion["n_echoes"] == 5
+    assert {qsmxt._source_series_name(image) for image in conversion["magnitude_images"]} == {
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_M",
+    }
+    assert {qsmxt._source_series_name(image) for image in conversion["phase_images"]} == {
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_P",
+    }
+    for echo, (magnitude_path, phase_path) in enumerate(
+        zip(conversion["magnitude_paths"], conversion["phase_paths"]), start=1,
+    ):
+        magnitude = nib.load(str(magnitude_path))
+        phase = nib.load(str(phase_path))
+        assert magnitude.shape == phase.shape == (4, 3, 2)
+        np.testing.assert_array_equal(magnitude.get_fdata(), 1000 + echo)
+        np.testing.assert_array_equal(phase.get_fdata(), 2000 + echo)
+
+
+def test_select_source_pair_rejects_multiple_complete_families():
+    images = []
+    for series_index, name, image_type in (
+        (1, "gre_first_M", ismrmrd.IMTYPE_MAGNITUDE),
+        (2, "gre_first_P", ismrmrd.IMTYPE_PHASE),
+        (3, "gre_second_M", ismrmrd.IMTYPE_MAGNITUDE),
+        (4, "gre_second_P", ismrmrd.IMTYPE_PHASE),
+    ):
+        images.append(
+            _image(series_index, 1, name, np.ones((2, 3, 4)), image_type=image_type)
+        )
+
+    with pytest.raises(ValueError, match="Ambiguous distortion-corrected input"):
+        qsmxt._select_magnitude_phase_pairs(
+            qsmxt._group_images_by_series(images), "distortion-corrected",
+        )
+
+
+def test_select_source_pair_uses_unique_complete_family():
+    images = [
+        _image(1, 1, "gre_other_M", np.ones((2, 3, 4))),
+        _image(2, 1, "gre_source_M", np.ones((2, 3, 4))),
+        _image(3, 1, "gre_source_P", np.ones((2, 3, 4)), image_type=ismrmrd.IMTYPE_PHASE),
+    ]
+
+    pair = qsmxt._select_magnitude_phase_pairs(
+        qsmxt._group_images_by_series(images), "distortion-corrected",
+    )[0]
+
+    assert [group["name"] for group in pair["groups"]] == [
+        "gre_source_M", "gre_source_P",
+    ]
+
+
+def test_select_source_pair_rejects_duplicate_family_members():
+    images = [
+        _image(1, 1, "gre_M", np.ones((2, 3, 4))),
+        _image(2, 1, "gre_M", np.ones((2, 3, 4))),
+        _image(3, 1, "gre_P", np.ones((2, 3, 4)), image_type=ismrmrd.IMTYPE_PHASE),
+    ]
+
+    with pytest.raises(ValueError, match="Ambiguous distortion-corrected input"):
+        qsmxt._select_magnitude_phase_pairs(
+            qsmxt._group_images_by_series(images), "distortion-corrected",
+        )
+
+
+def test_select_source_pair_preserves_names_containing_product_like_tokens():
+    images = [
+        _image(1, 1, "gre_Romeo_Pilot_M", np.ones((2, 3, 4))),
+        _image(2, 1, "gre_Romeo_Pilot_P", np.ones((2, 3, 4)), image_type=ismrmrd.IMTYPE_PHASE),
+    ]
+
+    pair = qsmxt._select_magnitude_phase_pairs(
+        qsmxt._group_images_by_series(images), "distortion-corrected",
+    )[0]
+
+    assert [group["name"] for group in pair["groups"]] == [
+        "gre_Romeo_Pilot_M", "gre_Romeo_Pilot_P",
+    ]
+
+
+def test_select_source_pair_handles_clearqsm_products_in_both_correction_variants():
+    non_corrected = _clearqsm_input_images()
+    for image in non_corrected:
+        header = image.getHead()
+        header.image_series_index += 10
+        image.setHead(header)
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        meta["SequenceDescription"] += "_ND"
+        image.attribute_string = meta.serialize()
+
+    pairs = qsmxt._select_magnitude_phase_pairs(
+        qsmxt._group_images_by_series(_clearqsm_input_images() + non_corrected), "both",
+    )
+
+    assert [pair["short_label"] for pair in pairs] == ["DC", "ND"]
+    assert [group["name"] for group in pairs[0]["groups"]] == [
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_M",
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_P",
+    ]
+    assert [group["name"] for group in pairs[1]["groups"]] == [
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_M_ND",
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_P_ND",
+    ]
+
+
+def test_select_source_pair_rejects_processed_only_input():
+    images = [
+        _image(1, 1, "gre_Romeo_Mask", np.ones((2, 3, 4))),
+        _image(2, 1, "gre_Romeo_P", np.ones((2, 3, 4)), image_type=ismrmrd.IMTYPE_PHASE),
+    ]
+
+    with pytest.raises(ValueError, match="No (magnitude|phase).*series"):
+        qsmxt._select_magnitude_phase_pairs(
+            qsmxt._group_images_by_series(images), "distortion-corrected",
+        )
+
+
+@pytest.mark.parametrize(
+    "magnitude_echoes,phase_echoes", [([1, 2, 3], [1, 2]), ([1, 3], [1, 2])],
+)
+@pytest.mark.parametrize("max_echoes", [0, 1])
+def test_write_bids_dataset_rejects_incompatible_source_echoes(
+    tmp_path, magnitude_echoes, phase_echoes, max_echoes,
+):
+    images = []
+    for series_index, name, image_type, echoes in (
+        (1, "gre_M", ismrmrd.IMTYPE_MAGNITUDE, magnitude_echoes),
+        (2, "gre_P", ismrmrd.IMTYPE_PHASE, phase_echoes),
+    ):
+        for index, echo in enumerate(echoes, start=1):
+            images.append(
+                _image(
+                    series_index, index, name, np.full((2, 3, 4), 1000 + echo),
+                    image_type=image_type, meta_values={"EchoNumber": str(echo)},
+                )
+            )
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"maxechoes": str(max_echoes)}}, FakeMetadata(),
+    )
+
+    with pytest.raises(ValueError, match="[Ee]cho"):
+        qsmxt.write_bids_dataset(images, FakeMetadata(), tmp_path / "bids", settings)
+
+
+@pytest.mark.parametrize("explicit_pair", [False, True])
+def test_write_bids_dataset_rejects_source_affine_mismatch(tmp_path, explicit_pair):
+    images = _input_images()
+    for image in images:
+        if image.image_type == ismrmrd.IMTYPE_PHASE:
+            header = image.getHead()
+            _set_header_vector(header, "position", [5.0, 0.0, 0.0])
+            image.setHead(header)
+    settings = qsmxt._settings_from_config({}, FakeMetadata())
+    pair = qsmxt._select_magnitude_phase_pairs(
+        qsmxt._group_images_by_series(images), "distortion-corrected",
+    )[0] if explicit_pair else None
+
+    with pytest.raises(ValueError, match="[Gg]eometry|[Aa]ffine"):
+        qsmxt.write_bids_dataset(
+            images, FakeMetadata(), tmp_path / "bids", settings, input_pair=pair,
+        )
+
+
+@pytest.mark.parametrize("identity_namespace", ["EchoNumber", "contrast"])
+def test_write_bids_dataset_aligns_source_echo_identities(tmp_path, identity_namespace):
+    images = []
+    for series_index, name, image_type, echoes, base_value in (
+        (1, "gre_M", ismrmrd.IMTYPE_MAGNITUDE, [3, 1, 2], 1000),
+        (2, "gre_P", ismrmrd.IMTYPE_PHASE, [2, 3, 1], 2000),
+    ):
+        for image_index, echo in enumerate(echoes, start=1):
+            images.append(
+                _image(
+                    series_index, image_index, name,
+                    np.full((2, 3, 4), base_value + echo), image_type=image_type,
+                    meta_values={"EchoNumber": str(echo)} if identity_namespace == "EchoNumber" else {},
+                    header_values={"contrast": echo - 1} if identity_namespace == "contrast" else {},
+                )
+            )
+    settings = qsmxt._settings_from_config({}, FakeMetadata())
+
+    conversion = qsmxt.write_bids_dataset(
+        images, FakeMetadata(), tmp_path / "bids", settings,
+    )
+
+    assert conversion["n_echoes"] == 3
+    for echo, (magnitude_path, phase_path) in enumerate(
+        zip(conversion["magnitude_paths"], conversion["phase_paths"]), start=1,
+    ):
+        np.testing.assert_array_equal(nib.load(str(magnitude_path)).get_fdata(), 1000 + echo)
+        np.testing.assert_array_equal(nib.load(str(phase_path)).get_fdata(), 2000 + echo)
+
+
+@pytest.mark.parametrize("corrected_suffix", ["", "_DC"])
+def test_process_clearqsm_products_returns_only_genuine_original_series(
+    tmp_path, monkeypatch, corrected_suffix,
+):
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    images = []
+    for suffix, series_offset in ((corrected_suffix, 0), ("_ND", 10)):
+        for image in _clearqsm_input_images():
+            header = image.getHead()
+            header.image_series_index += series_offset
+            image.setHead(header)
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            meta["SequenceDescription"] += suffix
+            image.attribute_string = meta.serialize()
+            images.append(image)
+    connection = FakeConnection(images)
+
+    qsmxt.process(
+        connection,
+        {"parameters": {"qsmxtbinary": str(_fake_qsmxt_binary(tmp_path))}},
+        FakeMetadata(),
+    )
+
+    assert connection.closed is True
+    assert connection.logs == []
+    assert len(connection.sent_batches) == 5
+    expected_names = {
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_M" + corrected_suffix,
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_P" + corrected_suffix,
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_M_ND",
+        "anat-MEGRE_acq-clearQsm_07mm_Aspire_P_ND",
+    }
+    sources = {
+        (meta["SequenceDescription"], meta["EchoNumber"]): image
+        for image in images
+        for meta in [ismrmrd.Meta.deserialize(image.attribute_string)]
+        if meta["SequenceDescription"] in expected_names
+    }
+    originals = [image for batch in connection.sent_batches[:-1] for image in batch]
+    assert len(originals) == 20
+    returned_keys = set()
+    for original in originals:
+        meta = ismrmrd.Meta.deserialize(original.attribute_string)
+        assert meta["SeriesDescription"].endswith("_original")
+        key = (meta["SeriesDescription"].removesuffix("_original"), meta["EchoNumber"])
+        returned_keys.add(key)
+        source = sources[key]
+        np.testing.assert_array_equal(original.data, source.data)
+        for field in ("matrix_size", "field_of_view", "position", "read_dir", "phase_dir", "slice_dir"):
+            np.testing.assert_array_equal(
+                getattr(original.getHead(), field), getattr(source.getHead(), field),
+            )
+        assert original.getHead().contrast == source.getHead().contrast
+    assert returned_keys == set(sources)
+    assert len(connection.sent_batches[-1]) == 2
+    for image in connection.sent_batches[-1]:
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        assert meta["QSMxTOutput"] == "qsm"
+        assert np.count_nonzero(image.data) == image.data.size
+
+
+@pytest.mark.parametrize("companion_name", ["gre_Romeo_Mask", "gre_other_M"])
+def test_process_rejects_invalid_original_metadata_only_for_genuine_sources(
+    tmp_path, monkeypatch, companion_name,
+):
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    companion = _image(
+        100, 1, companion_name, np.ones((2, 3, 4)),
+        meta_values={"SliceNo": "2", "NumberOfSlices": "2"},
+    )
+    connection = FakeConnection(_input_images() + [companion])
+
+    qsmxt.process(
+        connection,
+        {"parameters": {"qsmxtbinary": str(_fake_qsmxt_binary(tmp_path))}},
+        FakeMetadata(),
+    )
+
+    assert connection.closed is True
+    if companion_name == "gre_other_M":
+        assert connection.sent_batches == []
+        assert len(connection.logs) == 1
+        assert "Invalid qsmxt original passthrough contract" in connection.logs[0][1]
+        assert "SliceNo 2 outside [0..2)" in connection.logs[0][1]
+        return
+
+    assert connection.logs == []
+    assert len(connection.sent_batches) == 3
+    originals = [image for batch in connection.sent_batches[:-1] for image in batch]
+    assert len(originals) == 4
+    assert {
+        ismrmrd.Meta.deserialize(image.attribute_string)["SeriesDescription"]
+        for image in originals
+    } == {"gre_qsm_original", "gre_qsm_Pha_original"}
+    for original, source in zip(originals, connection.images[:4]):
+        np.testing.assert_array_equal(original.data, source.data)
+    assert {int(image.getHead().image_series_index) for image in originals}.isdisjoint(
+        {1, 2, 100},
+    )
+    assert len(connection.sent_batches[-1]) == 2
+    for image in connection.sent_batches[-1]:
+        assert ismrmrd.Meta.deserialize(image.attribute_string)["QSMxTOutput"] == "qsm"
+        assert np.count_nonzero(image.data) == image.data.size
 
 
 def test_openrecon_pipeline_presets_select_all_three_algorithms():
@@ -473,7 +950,7 @@ def test_openrecon_pipeline_preset_reaches_qsmxt_command(preset, tmp_path, monke
         else:
             assert command[command.index(flag) + 1] == expected
     assert command[command.index("--mask") + 1] == (
-        "magnitude,bet:0.5,close:1,fill-holes:0"
+        "magnitude,threshold:otsu,close:1,fill-holes:0"
     )
     assert kwargs["cwd"] == str(bids_dir)
 
@@ -568,40 +1045,62 @@ def test_openrecon_processing_defaults_can_be_overridden():
 
 def test_openrecon_label_exposes_processing_defaults():
     label_path = Path(qsmxt.__file__).with_name("OpenReconLabel.json")
+    label = qsmxt.json.loads(label_path.read_text())
     parameters = {
-        parameter["id"]: parameter
-        for parameter in qsmxt.json.loads(label_path.read_text())["parameters"]
+        parameter["id"]: parameter for parameter in label["parameters"]
     }
 
-    pipeline_preset = parameters["pipelinepreset"]
-    assert pipeline_preset["type"] == "choice"
-    assert pipeline_preset["default"] == "custom"
-    assert [value["id"] for value in pipeline_preset["values"]] == [
-        "custom",
-        *qsmxt.ALGORITHM_PIPELINE_PRESETS,
+    assert parameters["pipelinepreset"]["default"] == "custom"
+    assert [value["id"] for value in parameters["pipelinepreset"]["values"]] == [
+        "custom", *qsmxt.ALGORITHM_PIPELINE_PRESETS,
     ]
-    assert parameters["qsmalgorithm"]["default"] == "hdqsm"
+    assert parameters["twopass"]["default"] is False
+    assert "motioncorrection" not in parameters
+    assert parameters["qsmreference"]["default"] == "mean"
+    assert parameters["vsharpgrid"]["default"] == "native"
+    assert parameters["swiunwrapping"]["default"] == "laplacian"
+    assert parameters["qsmalgorithm"]["default"] == "rts"
     qsm_algorithms = {
         value["id"] for value in parameters["qsmalgorithm"]["values"]
     }
     assert {"hdqsm", "whqsm"} <= qsm_algorithms
     assert parameters["unwrappingalgorithm"]["default"] == "romeo"
-    assert parameters["bfalgorithm"]["default"] == "ismv"
+    assert parameters["bfalgorithm"]["default"] == "vsharp"
     bf_algorithms = {
         value["id"] for value in parameters["bfalgorithm"]["values"]
     }
     assert "resharp" in bf_algorithms
-    assert parameters["maskpreset"]["default"] == "bet"
-    assert {value["id"] for value in parameters["maskpreset"]["values"]} == {
-        "bet",
-        "robust-threshold",
-        "combined",
-    }
-    assert parameters["maskinginput"]["default"] == "magnitude"
-    assert parameters["betfractionalintensity"]["default"] == 0.5
-    assert parameters["maskcleanup"]["default"] == "close-fill"
+    assert parameters["maskpreset"]["default"] == qsmxt.DEFAULT_MASK_PRESET == "robust-threshold"
+    assert tuple(value["id"] for value in parameters["maskpreset"]["values"]) == qsmxt.MASK_PRESETS
+    assert "maskinginput" not in parameters
+    assert "betfractionalintensity" not in parameters
+    assert list(parameters) == [
+        "config",
+        "inputseries",
+        "sendoutputs",
+        "inhomogeneitycorrection",
+        "maskpreset",
+        "pipelinepreset",
+        "unwrappingalgorithm",
+        "bfalgorithm",
+        "qsmalgorithm",
+        "vsharpgrid",
+        "twopass",
+        "qsmreference",
+        "sourceseparation",
+        "swiunwrapping",
+    ]
+    assert parameters["qsmalgorithm"]["label"]["en"] == "Dipole inversion"
+    assert len(label["parameters"]) == len(parameters) == 14
+    assert "maskcleanup" not in parameters
+    correction = parameters["inhomogeneitycorrection"]
+    assert correction["type"] == "choice"
+    assert correction["label"]["en"] == "Homogeneity correction"
+    assert correction["default"] == qsmxt.DEFAULT_HOMOGENEITY_PROFILE == "standard"
+    assert {value["id"] for value in correction["values"]} == set(qsmxt.HOMOGENEITY_PROFILES)
+    assert [value["name"]["en"] for value in correction["values"]] == ["Off", "Standard", "Fine"]
     assert "sendoriginal" not in parameters
-    assert parameters["maskthresholdpercentile"]["default"] == 65.0
+    assert "maskthresholdpercentile" not in parameters
     assert "voxelsizemm" not in parameters
 
 
@@ -1850,7 +2349,7 @@ def test_ep3d_dual_polarity_averages_repetitions_into_one_echo(tmp_path, monkeyp
 
     monkeypatch.setattr(qsmxt, "_run_ep3d_preprocessing", fake_preprocessing)
     settings = qsmxt._settings_from_config(
-        {"parameters": {"ep3ddualpolarity": "true", "ep3ddenoise": "true"}},
+        {"parameters": {"ep3ddualpolarity": "true", "ep3ddenoise": "true", "sendoutputs": "all"}},
         FakeMetadata(),
     )
 
@@ -1868,6 +2367,9 @@ def test_ep3d_dual_polarity_averages_repetitions_into_one_echo(tmp_path, monkeyp
     )
     assert seen["denoise"] is True
     assert result["n_echoes"] == 1
+    assert "t2star" not in qsmxt._selected_output_ids(result["settings"]["send_outputs"])
+    assert "r2star" not in qsmxt._selected_output_ids(result["settings"]["send_outputs"])
+    assert settings["send_outputs"] == "all"
     magnitude = nib.load(str(result["magnitude_paths"][0]))
     assert magnitude.shape == (4, 3, 2)
     np.testing.assert_allclose(magnitude.get_fdata()[0, 0, :], [1150, 1151])
@@ -1922,7 +2424,90 @@ def test_phase_to_radians_rejects_phase_wider_than_one_cycle():
         qsmxt._phase_to_radians(np.array([-4096.0, 4094.0]), 4096.0)
 
 
-def test_openrecon_config_choices_load_ep3d_modules():
+@pytest.mark.parametrize("module_name", ["qsmxt", "qsmxt_gre_motion"])
+@pytest.mark.parametrize("shape", ["bare", "nested", "json"])
+@pytest.mark.parametrize("motion,reference", [(None, None), (False, "last"), (True, "2")])
+def test_gre_configs_apply_motion_policy_without_mutation(
+    module_name, shape, motion, reference, tmp_path, monkeypatch,
+):
+    import copy
+    import importlib
+
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    params = {
+        "qsmxtbinary": str(_fake_qsmxt_binary(tmp_path)),
+        "echotimesms": "10,20", "qsmreference": "none",
+        "twopass": True, "inhomogeneitycorrection": "fine",
+    }
+    if motion is not None:
+        params["motioncorrection"] = motion
+    if reference is not None:
+        params["motionreference"] = reference
+    config = params if shape == "bare" else {"parameters": params}
+    if shape == "json":
+        config = json.dumps(config)
+    before = copy.deepcopy(config)
+    seen = []
+    run = qsmxt._run_qsmxt
+
+    def capture(bids, output, settings):
+        seen.append((settings.copy(), qsmxt._qsmxt_command(bids, output, settings)))
+        run(bids, output, settings)
+
+    monkeypatch.setattr(qsmxt, "_run_qsmxt", capture)
+    connection = FakeConnection(_input_images())
+    importlib.import_module(module_name).process(connection, config, FakeMetadata())
+    assert connection.closed and not connection.logs
+    assert len(connection.sent_batches) == 3
+    assert config == before
+    assert len(seen) == 1
+    settings, command = seen[0]
+    expected_motion = module_name == "qsmxt_gre_motion" or motion is True
+    assert settings["motion_correction"] is expected_motion
+    assert settings["motion_reference"] == (reference or "first")
+    assert settings["qsm_reference"] == "none"
+    assert settings["two_pass"] is True
+    assert settings["inhomogeneity_correction"] == "fine"
+    assert settings["ep3d_dual_polarity"] is False
+    assert settings["ep3d_denoise"] is False
+    assert ("--motion-correction" in command) is expected_motion
+    if expected_motion:
+        assert command[command.index("--motion-reference") + 1] == (reference or "first")
+    else:
+        assert "--motion-reference" not in command
+    assert "--two-pass" in command
+    assert command[command.index("--homogeneity-nbox") + 1] == "15"
+
+
+def test_gre_motion_config_keeps_unrelated_advanced_epi_flags(monkeypatch):
+    import qsmxt_gre_motion
+
+    config = {"parameters": {"motioncorrection": False, "ep3ddualpolarity": True,
+                             "ep3ddenoise": True, "motionreference": "last"}}
+    received = {}
+    monkeypatch.setattr(qsmxt, "process", lambda connection, config, metadata: received.update(config))
+    qsmxt_gre_motion.process(FakeConnection([]), config, FakeMetadata())
+    settings = qsmxt._settings_from_config(received)
+    assert settings["motion_correction"] is True
+    assert settings["motion_reference"] == "last"
+    assert settings["ep3d_dual_polarity"] is True
+    assert settings["ep3d_denoise"] is True
+    assert config["parameters"]["motioncorrection"] is False
+
+
+@pytest.mark.parametrize("reference", ["0", "bad"])
+def test_gre_motion_config_preserves_reference_validation(reference, monkeypatch):
+    import qsmxt_gre_motion
+
+    def normalize(connection, config, metadata):
+        qsmxt._settings_from_config(config, metadata)
+
+    monkeypatch.setattr(qsmxt, "process", normalize)
+    with pytest.raises(ValueError, match="motionreference"):
+        qsmxt_gre_motion.process(FakeConnection([]), {"motionreference": reference}, FakeMetadata())
+
+
+def test_openrecon_config_choices_load_all_modules():
     label_path = Path(qsmxt.__file__).with_name("OpenReconLabel.json")
     config = next(
         parameter
@@ -1931,6 +2516,7 @@ def test_openrecon_config_choices_load_ep3d_modules():
     )
     assert [value["id"] for value in config["values"]] == [
         "qsmxt",
+        "qsmxt_gre_motion",
         "qsmxt_ep3d",
         "qsmxt_ep3d_denoise",
     ]
@@ -1942,8 +2528,9 @@ def test_openrecon_config_choices_load_ep3d_modules():
     ("module_name", "denoise"),
     [("qsmxt_ep3d", False), ("qsmxt_ep3d_denoise", True)],
 )
+@pytest.mark.parametrize("shape", ["bare", "nested", "json"])
 def test_ep3d_configs_enable_preprocessing_and_keep_user_controls(
-    module_name, denoise, monkeypatch
+    module_name, denoise, shape, monkeypatch
 ):
     import importlib
 
@@ -1955,14 +2542,352 @@ def test_ep3d_configs_enable_preprocessing_and_keep_user_controls(
         lambda connection, config, metadata: received.update(config=config),
     )
 
-    module.process(
-        FakeConnection([]),
-        {"parameters": {"config": module_name, "qsmalgorithm": "rts"}},
-        FakeMetadata(),
-    )
+    params = {"config": module_name, "qsmalgorithm": "rts",
+              "motioncorrection": True, "motionreference": "last"}
+    config = params if shape == "bare" else {"parameters": params}
+    if shape == "json":
+        config = json.dumps(config)
+    before = json.dumps(config, sort_keys=True)
+    module.process(FakeConnection([]), config, FakeMetadata())
+    assert json.dumps(config, sort_keys=True) == before
 
     settings = qsmxt._settings_from_config(received["config"], FakeMetadata())
+    assert settings["motion_correction"] is True
+    assert settings["motion_reference"] == "last"
     assert settings["ep3d_dual_polarity"] is True
     assert settings["ep3d_denoise"] is denoise
     assert settings["qsm_algorithm"] == "rts"
     assert qsmxt._settings_from_config({}, FakeMetadata())["ep3d_dual_polarity"] is False
+
+
+@pytest.mark.parametrize("params,nbox", [
+    ({}, 3), ({"inhomogeneitycorrection": None}, 3),
+    ({"inhomogeneitycorrection": " "}, 3),
+    ({"inhomogeneitycorrection": "standard"}, 3),
+    ({"inhomogeneitycorrection": "fine"}, 15),
+    ({"inhomogeneitycorrection": " FiNe "}, 15),
+    ({"inhomogeneitycorrection": "off"}, None),
+    ({"inhomogeneitycorrection": True}, 3),
+    ({"inhomogeneitycorrection": False}, None),
+    ({"inhomogeneitycorrection": 1}, 3),
+    ({"inhomogeneitycorrection": 0}, None),
+    ({"inhomogeneitycorrection": 1.0}, 3),
+    ({"inhomogeneitycorrection": 0.0}, None),
+    *[({"inhomogeneitycorrection": value}, 3)
+      for value in ("true", "1", "yes", "y", "on", " TRUE ")],
+    *[({"inhomogeneitycorrection": value}, None)
+      for value in ("false", "0", "no", "n", " OFF ")],
+])
+def test_homogeneity_config_reaches_command(params, nbox, tmp_path, monkeypatch):
+    settings = qsmxt._settings_from_config({"parameters": params})
+    commands = []
+
+    def capture(command, **kwargs):
+        commands.append(command)
+        return qsmxt.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", capture)
+    qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
+    command = commands[0]
+    assert command.count("--inhomogeneity-correction") == (nbox is not None)
+    assert command.count("--no-inhomogeneity-correction") == (nbox is None)
+    if nbox is None:
+        assert "--homogeneity-sigma-mm" not in command
+        assert "--homogeneity-nbox" not in command
+    else:
+        assert command[command.index("--homogeneity-sigma-mm") + 1] == "7"
+        assert command[command.index("--homogeneity-nbox") + 1] == str(nbox)
+
+
+@pytest.mark.parametrize("value", ["fnie", "2", [], {}])
+def test_homogeneity_config_rejects_invalid_choice(value, monkeypatch):
+    def unexpected_run(*args, **kwargs):
+        pytest.fail("invalid correction choice launched QSMxT")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", unexpected_run)
+    with pytest.raises(ValueError, match="inhomogeneitycorrection.*off.*standard.*fine"):
+        qsmxt._settings_from_config({"parameters": {"inhomogeneitycorrection": value}})
+
+
+@pytest.mark.parametrize("preset,sections", [
+    ("hd-bet", ["magnitude,hd-bet,close:1,fill-holes:0"]),
+    ("bet", ["magnitude,bet:0.5,close:1,fill-holes:0"]),
+    ("robust-threshold", ["magnitude,threshold:otsu,close:1,fill-holes:0"]),
+    ("combined", ["magnitude,bet:0.5,close:1,fill-holes:0",
+                  "magnitude,threshold:otsu,close:1,fill-holes:0"]),
+])
+def test_mask_defaults_close_and_fill_each_section(preset, sections):
+    settings = qsmxt._settings_from_config({"parameters": {"maskpreset": preset}})
+    assert qsmxt._mask_sections(settings) == sections
+
+
+def test_legacy_mask_cleanup_none_retains_close_fill_default():
+    settings = qsmxt._settings_from_config({"parameters": {"maskcleanup": "none"}})
+    assert qsmxt._mask_sections(settings) == ["magnitude,threshold:otsu,close:1,fill-holes:0"]
+
+
+@pytest.mark.parametrize("module_name", ["qsmxt", "qsmxt_gre_motion", "qsmxt_ep3d", "qsmxt_ep3d_denoise"])
+@pytest.mark.parametrize("params", [{}, {"maskpreset": ""}, {"maskpreset": "robust-threshold"}])
+def test_robust_threshold_default_reaches_all_config_commands(
+    module_name, params, tmp_path, monkeypatch,
+):
+    import importlib
+
+    received = {}
+    if module_name == "qsmxt":
+        config = {"parameters": params}
+    else:
+        module = importlib.import_module(module_name)
+        monkeypatch.setattr(
+            qsmxt, "process",
+            lambda connection, config, metadata: received.update(config=config),
+        )
+        module.process(FakeConnection([]), {"parameters": params}, FakeMetadata())
+        config = received["config"]
+    settings = qsmxt._settings_from_config(config, FakeMetadata())
+    settings["qsmxt_binary"] = "/opt/qsmxt/qsmxt"
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        return qsmxt.subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", fake_run)
+    qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
+    command = commands[0]
+    for flag, expected in (
+        ("--mask", "magnitude,threshold:otsu,close:1,fill-holes:0"),
+        ("--qsm-algorithm", "rts"),
+        ("--unwrapping-algorithm", "romeo"),
+        ("--bf-algorithm", "vsharp"),
+        ("--homogeneity-sigma-mm", "7"),
+        ("--homogeneity-nbox", "3"),
+    ):
+        assert command[command.index(flag) + 1] == expected
+    assert command.count("--mask") == 1
+    assert "--mask-preset" not in command
+    assert "--inhomogeneity-correction" in command
+
+
+def test_hdbet_does_not_use_bet_or_threshold_controls():
+    settings = qsmxt._settings_from_config({"parameters": {
+        "maskpreset": "hd-bet",
+        "betfractionalintensity": 0.2,
+        "maskinginput": "phase-quality",
+        "maskthresholdmethod": "percentile",
+        "maskthresholdpercentile": 90,
+    }})
+    assert qsmxt._mask_sections(settings) == [
+        "magnitude,hd-bet,close:1,fill-holes:0",
+    ]
+
+
+@pytest.mark.parametrize("preset", ["HD-BET", "unknown", [], {}])
+def test_invalid_mask_preset_fails_before_launch(preset, tmp_path, monkeypatch):
+    def unexpected_run(*args, **kwargs):
+        pytest.fail("invalid mask choice launched QSMxT")
+
+    monkeypatch.setattr(qsmxt.subprocess, "run", unexpected_run)
+    with pytest.raises(ValueError, match="maskpreset"):
+        settings = qsmxt._settings_from_config({"parameters": {"maskpreset": preset}})
+        qsmxt._run_qsmxt(tmp_path, tmp_path / "output", settings)
+
+
+@pytest.mark.parametrize("reference", ["none", "ventricles", "left-thalamus", "4,43", "right-caudate,4"])
+def test_v10_reference_and_independent_controls_reach_native_command(reference, tmp_path):
+    settings = qsmxt._settings_from_config({"parameters": {
+        "qsmreference": reference, "twopass": True, "motioncorrection": True,
+        "motionreference": "last", "vsharpgrid": "isotropic", "vsharpisotropicspacing": 1.2,
+        "swiunwrapping": "laplacian-slice", "ignoreslicegap": True,
+    }})
+    command = qsmxt._qsmxt_command(tmp_path, tmp_path / "output", settings)
+    for flag, value in [
+        ("--qsm-reference", reference), ("--motion-reference", "last"),
+        ("--vsharp-grid", "isotropic"), ("--vsharp-grid-spacing", "1.2"),
+        ("--swi-unwrapping", "laplacian-slice"),
+        ("--mask", "magnitude,threshold:otsu,close:1,fill-holes:0"),
+    ]:
+        assert command[command.index(flag) + 1] == value
+    assert {"--two-pass", "--motion-correction", "--ignore-slice-gap"} <= set(command)
+    assert "--two-pass-mask" not in command
+
+
+@pytest.mark.parametrize("params", [
+    {"qsmreference": ""}, {"qsmreference": "4,,43"}, {"qsmreference": "mean,4"},
+    {"vsharpgrid": "coarsest"}, {"swiunwrapping": "slice"}, {"motionreference": "0"},
+    {"slicethicknessmm": "invalid"}, {"vsharpisotropicspacing": -1},
+])
+def test_v10_boundary_rejects_malformed_configuration(params):
+    with pytest.raises(ValueError):
+        qsmxt._settings_from_config({"parameters": params})
+
+
+def test_v10_default_command_keeps_optional_processing_off(tmp_path):
+    command = qsmxt._qsmxt_command(tmp_path, tmp_path / "out", qsmxt._settings_from_config({}))
+    assert command[command.index("--qsm-reference") + 1] == "mean"
+    assert command[command.index("--vsharp-grid") + 1] == "native"
+    assert command[command.index("--swi-unwrapping") + 1] == "laplacian"
+    assert not {"--two-pass", "--motion-correction", "--ignore-slice-gap"} & set(command)
+
+
+def test_acquired_geometry_uses_explicit_thickness_and_rejects_conflicts():
+    image = _image(1, 1, "GRE", np.ones((1, 3, 4)), meta_values={
+        "SliceThickness": "2", "MRAcquisitionType": "2D",
+    })
+    settings = qsmxt._settings_from_config({})
+    assert qsmxt._acquisition_geometry_sidecar([image], FakeMetadata(), settings) == {
+        "SliceThickness": 2.0, "MRAcquisitionType": "2D", "SliceEncodingDirection": "k",
+    }
+    conflicting = _image(1, 2, "GRE", np.ones((1, 3, 4)), meta_values={"SliceThickness": "3"})
+    with pytest.raises(ValueError, match="Inconsistent SliceThickness"):
+        qsmxt._acquisition_geometry_sidecar([image, conflicting], FakeMetadata(), settings)
+    override = qsmxt._settings_from_config({"parameters": {"slicethicknessmm": 1.5}})
+    assert qsmxt._acquisition_geometry_sidecar([image, conflicting], FakeMetadata(), override)["SliceThickness"] == 1.5
+
+
+def test_unknown_acquired_thickness_is_not_inferred_from_image_fov(caplog):
+    image = _image(1, 1, "GRE", np.ones((1, 3, 4)))
+    sidecar = qsmxt._acquisition_geometry_sidecar([image], FakeMetadata(), qsmxt._settings_from_config({}))
+    assert sidecar == {"SliceEncodingDirection": "k"}
+    assert "Supply independent acquired thickness" in caplog.text
+
+
+def test_2d_nonuniform_positions_fail_instead_of_averaging_spacing():
+    images = [_image(1, i, "GRE", np.ones((1, 3, 4))) for i in range(3)]
+    for image, z in zip(images, [0, 2, 4]):
+        header = image.getHead()
+        _set_header_vector(header, "position", [0, 0, z])
+        image.setHead(header)
+    qsmxt._validate_2d_stack_positions(images)
+    header = images[-1].getHead()
+    _set_header_vector(header, "position", [0, 0, 5])
+    images[-1].setHead(header)
+    with pytest.raises(ValueError, match="Nonuniform 2D"):
+        qsmxt._validate_2d_stack_positions(images)
+
+
+def test_geometry_sidecars_preserve_independent_thickness_without_changing_pitch(tmp_path):
+    images = _input_images()
+    for image in images:
+        meta = ismrmrd.Meta.deserialize(image.attribute_string)
+        meta["SliceThickness"] = "0.8"
+        meta["MRAcquisitionType"] = "2D"
+        image.attribute_string = meta.serialize()
+    result = qsmxt.write_bids_dataset(images, FakeMetadata(), tmp_path / "bids", qsmxt._settings_from_config({}))
+    for path in result["phase_paths"] + result["magnitude_paths"]:
+        sidecar = json.loads(qsmxt._nifti_sidecar_path(path).read_text())
+        assert sidecar["SliceThickness"] == 0.8
+        assert sidecar["MRAcquisitionType"] == "2D"
+        assert sidecar["SliceEncodingDirection"] == "k"
+        assert nib.load(path).header.get_zooms()[2] == 1.0
+
+
+def test_main_qsm_selection_excludes_two_pass_intermediate(tmp_path):
+    output = tmp_path / "derivatives" / "qsmxt" / "sub-01" / "anat"
+    output.mkdir(parents=True)
+    primary = output / "sub-01_Chimap.nii.gz"
+    single = output / "sub-01_desc-singlepass_Chimap.nii.gz"
+    for path in (primary, single):
+        nib.save(nib.Nifti1Image(np.ones((2, 3, 4)), np.eye(4)), path)
+    specs = qsmxt._find_qsmxt_outputs(tmp_path, {"subject": "01"}, qsmxt._settings_from_config({}))
+    assert [(output_id, path) for output_id, _, path in specs] == [("qsm", primary)]
+
+
+@pytest.mark.parametrize("max_echoes", [1, 2, 3])
+def test_all_outputs_follow_selected_echo_count(tmp_path, max_echoes, caplog):
+    caplog.set_level(logging.INFO)
+    settings = qsmxt._settings_from_config(
+        {"parameters": {"sendoutputs": " All ", "maxechoes": max_echoes,
+                        "echotimesms": "6,12,18,24,30"}}, FakeMetadata(),
+    )
+    before = settings.copy()
+    conversion = qsmxt.write_bids_dataset(
+        _scanner_echo_slice_images(), FakeMetadata(), tmp_path / "bids", settings,
+    )
+    pair_settings = conversion["settings"]
+    command = qsmxt._qsmxt_command(tmp_path / "bids", tmp_path / "out", pair_settings)
+    assert ("--do-t2starmap" in command) is (max_echoes >= 3), command
+    assert ("--do-r2starmap" in command) is (max_echoes >= 3), command
+    assert conversion["n_echoes"] == max_echoes
+    if max_echoes < 3:
+        assert set(qsmxt._selected_output_ids(pair_settings["send_outputs"])) == {
+            "qsm", "mask", "magnitude", "swi", "paramagnetic", "diamagnetic",
+            "separated-total", "smwi-paramagnetic", "smwi-diamagnetic",
+        }
+        assert f"All omits T2*/R2* for {max_echoes} selected echo(s)" in caplog.text
+    else:
+        assert pair_settings["send_outputs"] == " All "
+        assert "All omits" not in caplog.text
+    assert pair_settings is not settings
+    assert settings == before
+
+
+@pytest.mark.parametrize("params", [
+    {"sendoutputs": "t2star", "dot2starmap": False},
+    {"sendoutputs": "r2star", "dor2starmap": False},
+    {"dot2starmap": True}, {"dor2starmap": True},
+    {"sendoutputs": "all", "dot2starmap": True},
+    {"sendoutputs": "all", "dor2starmap": True},
+])
+@pytest.mark.parametrize("epi", [False, True])
+def test_explicit_relaxometry_rejected_before_processing(tmp_path, monkeypatch, params, epi):
+    def unexpected(*args, **kwargs):
+        pytest.fail("Unsupported map request reached preprocessing or native execution")
+
+    monkeypatch.setattr(qsmxt, "_ep3d_dual_polarity_average", unexpected)
+    monkeypatch.setattr(qsmxt, "_run_qsmxt", unexpected)
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    parameters = dict(params, ep3ddualpolarity=epi, echotimesms="10,20")
+    images = _dual_polarity_images() if epi else _input_images()
+    connection = FakeConnection(images)
+    qsmxt.process(connection, {"parameters": parameters}, FakeMetadata())
+    assert connection.closed
+    assert len(connection.logs) == 1
+    error = connection.logs[0][1]
+    assert "requires at least 3 echoes" in error
+    assert f"this pair has {1 if epi else 2} selected echo(s)" in error
+    assert "Choose qsm, swi, or smwi" in error
+    assert not connection.sent_batches
+
+
+def test_both_pairs_resolve_outputs_independently(tmp_path, monkeypatch):
+    images = []
+    for series, name, kind, count in (
+        (1, "gre_qsm", ismrmrd.IMTYPE_MAGNITUDE, 1),
+        (2, "gre_qsm", ismrmrd.IMTYPE_PHASE, 1),
+        (3, "gre_qsm_ND", ismrmrd.IMTYPE_MAGNITUDE, 3),
+        (4, "gre_qsm_ND", ismrmrd.IMTYPE_PHASE, 3),
+    ):
+        for echo in range(1, count + 1):
+            images.append(_image(series, echo, name, np.full((2, 3, 4), 1000), kind,
+                                 meta_values={"EchoNumber": str(echo)}))
+    settings = qsmxt._settings_from_config({"parameters": {
+        "sendoutputs": "all", "inputseries": "both", "echotimesms": "6,12,18",
+        "qsmxtbinary": str(_fake_qsmxt_binary(tmp_path)),
+    }}, FakeMetadata())
+    before = settings.copy()
+    launched, discovered = [], []
+    run, find = qsmxt._run_qsmxt, qsmxt._find_qsmxt_outputs
+
+    def capture_run(bids, output, resolved):
+        launched.append(resolved)
+        run(bids, output, resolved)
+
+    def capture_find(output, conversion, resolved):
+        discovered.append(resolved)
+        return find(output, conversion, resolved)
+
+    monkeypatch.setattr(qsmxt, "_settings_from_config", lambda *args: settings)
+    monkeypatch.setattr(qsmxt, "_run_qsmxt", capture_run)
+    monkeypatch.setattr(qsmxt, "_find_qsmxt_outputs", capture_find)
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    connection = FakeConnection(images)
+    qsmxt.process(connection, {}, FakeMetadata())
+    assert connection.closed and not connection.logs
+    assert len(launched) == len(discovered) == 2
+    assert all(a is b for a, b in zip(launched, discovered))
+    assert launched[0] is not launched[1]
+    assert all(resolved is not settings for resolved in launched)
+    assert "t2star" not in qsmxt._selected_output_ids(launched[0]["send_outputs"])
+    assert launched[1]["send_outputs"] == "all"
+    assert settings == before

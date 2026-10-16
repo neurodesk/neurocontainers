@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "mricron_arm64 1.2.20211006": {
+      "version": "20261013",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "structural imaging",
+    "data organisation"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "mricron"
+}

@@ -1,7 +1,7 @@
 {
   "apps": {
     "flames 1.0.0": {
-      "version": "20260612",
+      "version": "20261014",
       "exec": "",
       "apptainer_args": []
     }

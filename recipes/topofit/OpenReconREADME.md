@@ -40,7 +40,8 @@ intensity 4095. The surface thickness control sets the in-plane dilation
 radius. A value of zero keeps only the projected vertices. A value of one
 retains the previous width. OpenRecon sends that volume back as
 `<source>_topofit_qc`. When **Keep original images** is enabled, a restamped
-`<source>_original` series is sent first.
+`<source>_original` series is sent first, before TopoFit runs, so the scanner keeps
+it even when reconstruction fails.
 
 When **Find cortical patches** is enabled, the workflow searches the middle
 of the cortical ribbon: `white + 0.5 * (pial - white)`.
@@ -123,7 +124,7 @@ hemispheres; 3 marks overlap. The mask keeps the source shape and affine.
 
 | GUI label | Parameter | Default | Meaning |
 | --- | --- | --- | --- |
-| Keep original images | `sendoriginal` | `true` | Return a restamped input series before QC. |
+| Keep original images | `sendoriginal` | `true` | Return a restamped input series before TopoFit runs. |
 | Inference device | `tfdevice` | `cuda` | Run on the scanner GPU or use CPU for compatibility testing. |
 | TopoFit model | `tfmodel` | `t1w_1mm` | Select the T1w or synthetic pretrained model. |
 | Conform input | `tfconform` | `true` | Resample internally to the model grid. |

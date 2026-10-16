@@ -50,9 +50,6 @@ build:
     - environment:
         DEVANALYSEPATH: /opt/MRSI-Metabolic-Connectome
         PATH: /opt/miniconda/envs/mrsitooldemo_env/bin:$PATH
-    - test:
-        name: Basic Test Script
-        script: python $DEVANALYSEPATH/experiments/Preprocessing/registration_mrsi_to_t1.py --help
 readme: |-
   ----------------------------------
   ## mrsimetabolicconnectome/1.0.0 ##

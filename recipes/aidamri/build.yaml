@@ -1,137 +1,242 @@
 name: aidamri
-version: "3.0.0"
-
+version: 3.0.0
 copyright:
-  - license: GPL-3.0-only
-    url: https://github.com/Aswendt-Lab/AIDAmri/blob/v2.0/LICENSE
-  - license: BSD-3-Clause
-    url: https://github.com/KCL-BMEIS/niftyreg/blob/master/LICENSE.txt
-
+- license: GPL-3.0-only
+  url: https://github.com/Aswendt-Lab/AIDAmri/blob/v2.0/LICENSE
+- license: BSD-3-Clause
+  url: https://github.com/KCL-BMEIS/niftyreg/blob/master/LICENSE.txt
+- license: CC-BY-NC-SA-4.0
+  url: https://github.com/frankyeh/DSI-Studio/blob/master/LICENSE
 architectures:
-  - x86_64
-
+- x86_64
+- aarch64
 variables:
-  upstream_version: "3.0"
   niftyreg_version: 1.4.0
   niftyreg_revision: 83d8d1182ed4c227ce4764f1fdab3b1797eecd8d
+  niftyreg_arm_version: 2.0.0
+  niftyreg_arm_revision: v{{ context.niftyreg_arm_version }}
+  niftyreg_arm_source_dir: niftyreg-{{ context.niftyreg_arm_version }}
   fsl_version: 5.0.11
-
+  fsl_arm_version: 6.0.7.22
+  dsi_x86_version: 2026.7.25
+  dsi_arm_version: 2026.7.25
+  upstream_version: '3.0'
 auto_update:
-  version_variable: "upstream_version"
-  method: github_release
-  repo: Aswendt-Lab/AIDAmri
-
+  container_version: aidamri
+  method: sources
+  sources:
+  - id: aidamri
+    method: github_release
+    repo: Aswendt-Lab/AIDAmri
+    target:
+      variable: upstream_version
+      fulltest_variable: upstream_version
+  - id: arm-niftyreg
+    dependency: true
+    method: github_release
+    repo: KCL-BMEIS/niftyreg
+    target:
+      variable: niftyreg_arm_version
+  - id: x86-dsi-studio
+    dependency: true
+    method: github_release_asset
+    repo: frankyeh/DSI-Studio
+    asset: dsi_studio_ubuntu2204_cpu.zip
+    target:
+      file: dsi_studio_x86_zip
+      variables:
+        dsi_x86_version: version
+  - id: arm-dsi-studio
+    dependency: true
+    method: github_release_asset
+    repo: frankyeh/DSI-Studio
+    asset: dsi_studio_ubuntu2204_cpu_arm64.zip
+    target:
+      file: dsi_studio_arm_zip
+      variables:
+        dsi_arm_version: version
 build:
   kind: neurodocker
-  base-image: ubuntu:20.04
+  base-image: ubuntu:22.04
   pkg-manager: apt
   directives:
-    - install:
-        - ca-certificates
-        - cmake
-        - make
-        - g++
-        - libgomp1
-        - bc
-        - dc
-        - file
-        - libfontconfig1
-        - libfreetype6
-        - libgl1-mesa-dev
-        - libgl1-mesa-dri
-        - libglu1-mesa-dev
-        - libice6
-        - libopenblas0
-        - libxcursor1
-        - libxft2
-        - libxinerama1
-        - libxrandr2
-        - libxrender1
-        - libxt6
-        - nano
-        - python3
-        - sudo
-        - wget
-
-    - workdir: /opt
-
-    - run:
-        - tar -xzf {{ get_file("aidamri_tar") }} -C /opt
-        - mv AIDAmri-{{ context.upstream_version }} aidamri-{{ context.upstream_version }}
-        - find /opt/aidamri-{{ context.upstream_version }} -name '.DS_Store' -delete
-        - find /opt/aidamri-{{ context.upstream_version }} -name '.~lock.*' -delete
-        - echo /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu_1804/dsi-studio/dsi_studio > /opt/aidamri-{{ context.upstream_version }}/bin/3.2_DTIConnectivity/dsi_studioPath.txt
-
-    - workdir: /opt/niftyreg-builder
-
-    - run:
-        - tar -xzf {{ get_file("niftyreg_tar") }} -C /opt/niftyreg-builder
-        - mv niftyreg-{{ context.niftyreg_revision }} src
-        - mkdir build
-        - cmake -S src -B build -D CMAKE_INSTALL_PREFIX=/opt/aidamri-{{ context.upstream_version }}/NiftyReg
-        - cd build
-        - make
-        - make install
-        - rm -rf /opt/niftyreg-builder
-
-    - run:
-        - mkdir -p /opt/fsl-{{ context.fsl_version }}
-        - tar -xzf {{ get_file("fsl_tar") }} -C /opt/fsl-{{ context.fsl_version }} --strip-components 1 --exclude='data'
-        - bash /opt/fsl-{{ context.fsl_version }}/etc/fslconf/fslpython_install.sh -f /opt/fsl-{{ context.fsl_version }}
-        - rm -f /opt/fsl-{{ context.fsl_version }}/bin/fslpython
-
-    - template:
-        name: miniconda
-        version: 4.7.12.1
-        conda_install: python=3.6
-        pip_install: nipype==1.1.2 lmfit==0.9.11 progressbar2==3.38.0 nibabel
-
-    - environment:
-        FSLDIR: /opt/fsl-{{ context.fsl_version }}
-        FSLMULTIFILEQUIT: "TRUE"
-        FSLOUTPUTTYPE: NIFTI_GZ
-        FSLTCLSH: /opt/fsl-{{ context.fsl_version }}/bin/fsltclsh
-        FSLWISH: /opt/fsl-{{ context.fsl_version }}/bin/fslwish
-        TOOLBOX_PATH: /opt/aidamri-{{ context.upstream_version }}/
-        PATH: /opt/aidamri-{{ context.upstream_version }}:/opt/aidamri-{{ context.upstream_version }}/bin:/opt/aidamri-{{ context.upstream_version }}/NiftyReg/bin:/opt/fsl-{{ context.fsl_version }}/bin:$PATH
-
+  - install:
+    - ca-certificates
+    - cmake
+    - make
+    - g++
+    - unzip
+    - libgomp1
+    - bc
+    - dc
+    - file
+    - git
+    - libfontconfig1
+    - libfreetype6
+    - libgl1-mesa-dev
+    - libgl1-mesa-dri
+    - libglu1-mesa-dev
+    - libice6
+    - libopenblas0
+    - libqt6charts6-dev
+    - libxcursor1
+    - libxft2
+    - libxinerama1
+    - libxrandr2
+    - libxrender1
+    - libxt6
+    - nano
+    - python3
+    - sudo
+    - wget
+  - condition: arch == "aarch64"
+    install:
+    - libpng-dev
+  - condition: arch == "aarch64"
+    template:
+      name: fsl
+      version: '{{ context.fsl_arm_version }}'
+      install_path: /opt/fsl-{{ context.fsl_version }}
+  - workdir: /opt
+  - run:
+    - tar -xzf {{ get_file("aidamri_tar") }} -C /opt
+    - mv AIDAmri-{{ context.upstream_version }} aidamri-{{ context.upstream_version }}
+    - find /opt/aidamri-{{ context.upstream_version }} -name '.DS_Store' -delete
+    - find /opt/aidamri-{{ context.upstream_version }} -name '.~lock.*' -delete
+  - condition: arch == "x86_64"
+    run:
+    - mkdir -p /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204
+    - unzip -q {{ get_file("dsi_studio_x86_zip") }} -d /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204
+    - mv /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204/dsi-studio-cpu /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204/dsi-studio
+    - chmod -R a+rX /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204
+    - chmod a+rx /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204/dsi-studio/dsi_studio
+    - echo /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204/dsi-studio/dsi_studio > /opt/aidamri-{{ context.upstream_version
+      }}/bin/3.2_DTIConnectivity/dsi_studioPath.txt
+  - condition: arch == "aarch64"
+    run:
+    - mkdir -p /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204
+    - unzip -q {{ get_file("dsi_studio_arm_zip") }} -d /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204
+    - mv /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204/dsi-studio-cpu /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204/dsi-studio
+    - chmod -R a+rX /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204
+    - chmod a+rx /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204/dsi-studio/dsi_studio
+    - echo /opt/aidamri-{{ context.upstream_version }}/bin/dsi_studio_ubuntu2204/dsi-studio/dsi_studio > /opt/aidamri-{{ context.upstream_version
+      }}/bin/3.2_DTIConnectivity/dsi_studioPath.txt
+  - workdir: /opt/niftyreg-builder
+  - condition: arch == "x86_64"
+    run:
+    - tar -xzf {{ get_file("niftyreg_tar") }} -C /opt/niftyreg-builder
+    - mv niftyreg-{{ context.niftyreg_revision }} src
+    - mkdir build
+    - cmake -S src -B build -D CMAKE_INSTALL_PREFIX=/opt/aidamri-{{ context.upstream_version }}/NiftyReg
+    - cd build
+    - make
+    - make install
+    - rm -rf /opt/niftyreg-builder
+  - condition: arch == "aarch64"
+    run:
+    - tar -xzf {{ get_file("niftyreg_arm_tar") }} -C /opt/niftyreg-builder
+    - mv {{ context.niftyreg_arm_source_dir }} src
+    - git -C src init
+    - git -C src config user.email neurocontainers@example.invalid
+    - git -C src config user.name NeuroContainers
+    - git -C src commit --allow-empty -m "Import NiftyReg {{ context.niftyreg_arm_version }}"
+    - git -C src tag {{ context.niftyreg_arm_revision }}
+    - mkdir build
+    - cmake -S src -B build -D CMAKE_INSTALL_PREFIX=/opt/aidamri-{{ context.upstream_version }}/NiftyReg -D USE_SSE=OFF -D CMAKE_C_COMPILER=/usr/bin/gcc
+      -D CMAKE_CXX_COMPILER=/usr/bin/g++
+    - cd build
+    - make
+    - make install
+    - rm -rf /opt/niftyreg-builder
+  - condition: arch == "x86_64"
+    run:
+    - mkdir -p /opt/fsl-{{ context.fsl_version }}
+    - tar -xzf {{ get_file("fsl_tar") }} -C /opt/fsl-{{ context.fsl_version }} --strip-components 1 --exclude='data'
+    - bash /opt/fsl-{{ context.fsl_version }}/etc/fslconf/fslpython_install.sh -f /opt/fsl-{{ context.fsl_version }}
+    - rm -f /opt/fsl-{{ context.fsl_version }}/bin/fslpython
+  - condition: arch == "x86_64"
+    template:
+      name: miniconda
+      version: 4.7.12.1
+      arch: x86_64
+      install_path: /opt/miniconda-4.7.12.1
+      conda_install: python=3.6
+      pip_install: nipype==1.1.2 lmfit==0.9.11 progressbar2==3.38.0 nibabel
+  - condition: arch == "aarch64"
+    template:
+      name: miniconda
+      version: py39_24.7.1-0
+      arch: aarch64
+      install_path: /opt/miniconda-4.7.12.1
+      conda_install: python=3.10
+      pip_install: nipype==1.7.0 traits==6.4.3 lmfit==1.0.3 progressbar33==2.4 nibabel
+  - environment:
+      FSLDIR: /opt/fsl-{{ context.fsl_version }}
+      FSLMULTIFILEQUIT: 'TRUE'
+      FSLOUTPUTTYPE: NIFTI_GZ
+      FSLTCLSH: /opt/fsl-{{ context.fsl_version }}/bin/fsltclsh
+      FSLWISH: /opt/fsl-{{ context.fsl_version }}/bin/fslwish
+      TOOLBOX_PATH: /opt/aidamri-{{ context.upstream_version }}/
+      PATH: /opt/aidamri-{{ context.upstream_version }}:/opt/aidamri-{{ context.upstream_version }}/bin:/opt/aidamri-{{ context.upstream_version }}/NiftyReg/bin:/opt/fsl-{{
+        context.fsl_version }}/bin:$PATH
 deploy:
   path:
-    - /opt/aidamri-{{ context.upstream_version }}/bin
-    - /opt/aidamri-{{ context.upstream_version }}/NiftyReg/bin
-    - /opt/fsl-{{ context.fsl_version }}/bin
-    - /opt/miniconda-4.7.12.1/bin
-
+  - /opt/aidamri-{{ context.upstream_version }}/bin
+  - /opt/aidamri-{{ context.upstream_version }}/NiftyReg/bin
+  - /opt/fsl-{{ context.fsl_version }}/bin
+  - /opt/miniconda-4.7.12.1/bin
 categories:
-  - "rodent imaging"
-  - "structural imaging"
-  - "diffusion imaging"
-  - "functional imaging"
-
+- rodent imaging
+- structural imaging
+- diffusion imaging
+- functional imaging
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB/klEQVR4nO1ay23DMAx1ii7QwIdO0AJdpxsEPWeEHjJCz0Y3yDo5eIaiK7QnA4JgWeQT6efAfMdElvieSOrHw9Pz61+3YzywDWAjBGAbwEYIwDaAjRCAbQAbIQDbADYe1xzscr2J236+v7naMuHgvRXWkC7BUwwXASxIl2AthrkANfJf37/VPs6n4+L/liKYCVAiLiFcQ0kQCyFMBJgjb0E8x5wQrSI0CbAW8RyWQsD7ABb50jho4oU8IB9sLeJzyL1B6wnNO0EmeYvx1R6Qzj46+Dj0xf9ePn6gPlNP0HiBaivcssFZIl1qh4pxud7EIsAhIJ39cejF5Fu+Rb1RHAKI65eMX5pZ5JsU2lBwOw3mRKQE0nZpH+PQwyGxBFEIaGcfJZ8j/04SDql9kpxl7gGaJCZpO/0+tbX2BNMbITTZMcepCoCu+9bxqulPEwamIeCRpLz73/2laAjANoAN92tx5AyQwzO37N4Ddi+AewhIDz7eS2gJVQ9IT1S1+/qtQHMi3H0IhACSRvcUBtoLkfAAacN78ALkZhheBs+nY/OdvOXSh06KKgTWqtpohcZOdQ7YYiigjyKdRRJki9A6Pvw8znwd7gyfyGEPmBtsLW+wrA+ICpGoEYoqsagTjEpRt94z7LJWeOuI4zDbADZCALYBbIQAbAPYCAHYBrDxD1sR7q5+M2ntAAAAAElFTkSuQmCC
+readme: '----------------------------------
 
-readme: |
-  ----------------------------------
   ## aidamri/{{ context.version }} ##
+
   The Atlas-based Processing Pipeline for functional and structural MRI data
+
   (AIDAmri) was developed for automated processing of mouse brain MRI.
+
   AIDAmri works with T2-weighted MRI (T2w), diffusion weighted MRI or
+
   diffusion tensor imaging (DTI) and resting-state functional MRI (fMRI). The
+
   Allen Mouse Brain Reference Atlas (ARA, CCF v3) is registered on each of
+
   these MRI data sets and is used to analyse regions of interest.
+
 
   More documentation can be found here: https://github.com/Aswendt-Lab/AIDAmri
 
-  To run container outside of this environment: ml aidamri/{{ context.version }}
 
-  License: GPL-3.0-only, https://github.com/Aswendt-Lab/AIDAmri/blob/v{{ context.version }}/LICENSE
+  To run container outside of this environment: ml aidamri/{{ context.upstream_version }}
+
+
+  License: GPL-3.0-only, https://github.com/Aswendt-Lab/AIDAmri/blob/v{{ context.upstream_version }}/LICENSE
+
 
   ----------------------------------
 
+  '
 files:
-  - name: aidamri_tar
-    url: https://github.com/Aswendt-Lab/AIDAmri/archive/v{{ context.upstream_version }}.tar.gz
-  - name: niftyreg_tar
-    url: https://github.com/KCL-BMEIS/niftyreg/archive/{{ context.niftyreg_revision }}.tar.gz
-  - name: fsl_tar
-    url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fsl-{{ context.fsl_version }}-centos6_64.tar.gz
+- name: aidamri_tar
+  url: https://github.com/Aswendt-Lab/AIDAmri/archive/v{{ context.upstream_version }}.tar.gz
+- name: dsi_studio_x86_zip
+  condition: arch == "x86_64"
+  url: https://github.com/frankyeh/DSI-Studio/releases/download/{{ context.dsi_x86_version }}/dsi_studio_ubuntu2204_cpu.zip
+  sha256: 184a5d7999937850f8a1267a3c3df496de8d2d0c04c3d981f8565a5054a37160
+- name: dsi_studio_arm_zip
+  condition: arch == "aarch64"
+  url: https://github.com/frankyeh/DSI-Studio/releases/download/{{ context.dsi_arm_version }}/dsi_studio_ubuntu2204_cpu_arm64.zip
+  sha256: 20e8d403ea28ec9fd545fac974225b3d3099259aa2eac2a066688076c7dc1deb
+- name: niftyreg_tar
+  condition: arch == "x86_64"
+  url: https://github.com/KCL-BMEIS/niftyreg/archive/{{ context.niftyreg_revision }}.tar.gz
+- name: niftyreg_arm_tar
+  condition: arch == "aarch64"
+  url: https://github.com/KCL-BMEIS/niftyreg/archive/refs/tags/{{ context.niftyreg_arm_revision }}.tar.gz
+- name: fsl_tar
+  condition: arch == "x86_64"
+  url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fsl-{{ context.fsl_version }}-centos6_64.tar.gz

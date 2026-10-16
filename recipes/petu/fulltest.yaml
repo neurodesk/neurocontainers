@@ -1,5 +1,8 @@
 name: petu
 version: 0.0.7
+upstream_version: "0.0.7"
+arm_torch_version: "2.6.0"
+weights_version: "1.0.0"
 
 tests:
   - name: package imports
@@ -75,3 +78,123 @@ tests:
     command: |
       bash -c 'grep -c "^DEPLOY_BINS=\"petu\"$" /dev/null 2>/dev/null; echo "deploy-bins=$DEPLOY_BINS"'
     expected_output_contains: "deploy-bins=petu"
+
+  - name: Native CPU model dependency closure
+    command: |
+      python - <<'PYTHON'
+      import importlib.metadata as md
+      import platform
+      import subprocess
+      import sys
+      import blosc2
+      import numpy as np
+      import torch
+      assert md.version('petu')=='${upstream_version}'
+      assert md.version('nnunetv2')=='2.5.2'
+      if platform.machine()=='aarch64':
+          assert torch.__version__=='${arm_torch_version}+cpu' and torch.version.cuda is None
+      values=np.arange(12,dtype=np.float32).reshape(3,4)
+      np.testing.assert_array_equal(torch.from_numpy(values).sum(dim=1).numpy(),[6,22,38])
+      array=np.arange(1024,dtype=np.int32)
+      np.testing.assert_array_equal(blosc2.unpack_array(blosc2.pack_array(array)),array)
+      subprocess.run([sys.executable,'-m','pip','check'],check=True)
+      print('PeTu CPU dependency closure and native tensor bridge passed')
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: PeTu CPU dependency closure and native tensor bridge passed
+
+  - name: Analytical three-component probability and dust processing
+    command: |
+      python - <<'PYTHON'
+      from pathlib import Path
+      import tempfile
+      import nibabel as nib
+      import numpy as np
+      from petu.model_handler import ModelHandler
+      with tempfile.TemporaryDirectory(prefix='petu-probability-') as directory:
+          root=Path(directory)
+          probabilities=np.array([[[[0.25,0.5,0.75],[0.8,0.1,0.6]],[[0.0,1.0,0.3],[0.7,0.4,0.5]]]]*3,dtype=np.float32)
+          affine=np.diag([1.0,2.0,3.0,1.0]);affine[:3,3]=[5,-8,11]
+          nib.save(nib.Nifti1Image(np.zeros((3,2,2),dtype=np.uint8),affine),root/'result.nii.gz')
+          np.savez_compressed(root/'result.npz',probabilities=probabilities)
+          handler=ModelHandler.__new__(ModelHandler)
+          *masks,saved_affine=handler.threshold_probabilities(root)
+          assert len(masks)==3
+          for mask,probability in zip(masks,probabilities):
+              np.testing.assert_array_equal(mask,(probability.transpose(2,1,0)>0.5).astype(np.int8))
+          np.testing.assert_array_equal(saved_affine,affine)
+          specks=np.zeros((9,9,9),dtype=np.int8);specks[1:3,1:3,1:3]=1;specks[7,7,7]=1
+          expected=specks.copy();expected[7,7,7]=0
+          handler.remove_dust(specks,threshold=2,connectivity=26)
+          np.testing.assert_array_equal(specks,expected)
+      print('All three PeTu threshold masks and connected-component filtering exact')
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: All three PeTu threshold masks and connected-component filtering exact
+
+  - name: Full trained four-modality PeTu MRI inference
+    description: >-
+      Run the actual default bundled four-modality nnU-Net model on complete
+      public240x240x155 BraTS images with unchanged inputs/checkpoints/default
+      augmentation. Assert all three binary masks and physical grids. This
+      adult skull-stripped runtime example does not validate paediatric
+      accuracy, optic-nerve anatomy or the recommended clinical population.
+    command: |
+      python - <<'PYTHON'
+      import hashlib
+      import json
+      import os
+      from pathlib import Path
+      import subprocess
+      import tempfile
+      import urllib.request
+      import petu
+      import nibabel as nib
+      import numpy as np
+
+      def digest(path):
+          h=hashlib.sha256()
+          with path.open('rb') as handle:
+              for chunk in iter(lambda:handle.read(1024*1024),b''): h.update(chunk)
+          return h.hexdigest()
+      fixtures = [{'modality': 't1c', 'url': 'https://raw.githubusercontent.com/BrainLesion/tutorials/99c5841fe8985e4004d3d5394ca9590a914e24e7/BraTS/data/segmentation/BraTS-GLI-00001-000/BraTS-GLI-00001-000-t1c.nii.gz', 'sha256': '4399faadcc45c8a4541313cdf88aced7d835ed59ac3078d950e0eac293d603f5'}, {'modality': 't2f', 'url': 'https://raw.githubusercontent.com/BrainLesion/tutorials/99c5841fe8985e4004d3d5394ca9590a914e24e7/BraTS/data/segmentation/BraTS-GLI-00001-000/BraTS-GLI-00001-000-t2f.nii.gz', 'sha256': '82aed8546af5e6d8d94fd91c56227abdcf6120130390d1556c4342a208980604'}, {'modality': 't1n', 'url': 'https://raw.githubusercontent.com/BrainLesion/tutorials/99c5841fe8985e4004d3d5394ca9590a914e24e7/BraTS/data/segmentation/BraTS-GLI-00001-000/BraTS-GLI-00001-000-t1n.nii.gz', 'sha256': 'e860924b936e301ddeba20409fbb59dde322475cb49328f1b46a9235c792e73e'}, {'modality': 't2w', 'url': 'https://raw.githubusercontent.com/BrainLesion/tutorials/99c5841fe8985e4004d3d5394ca9590a914e24e7/BraTS/data/segmentation/BraTS-GLI-00001-000/BraTS-GLI-00001-000-t2w.nii.gz', 'sha256': '4cd389cc57d12134a30a898c66532228126b9a7d0600ee578e82a32144528b51'}]
+      weights=Path(petu.__file__).parent/'weights'/'weights_v${weights_version}'
+      files=sorted(p for p in weights.rglob('*') if p.is_file())
+      assert files and sum(p.stat().st_size for p in files)>2000*1e6
+      model=weights/'t1c_fla_t1_t2'
+      for relative in ['dataset.json','plans.json','fold_all/checkpoint_final.pth']:
+          assert (model/relative).is_file(),relative
+      before={str(p.relative_to(weights)):digest(p) for p in files}
+      with tempfile.TemporaryDirectory(prefix='petu-full-mri-') as directory:
+          root=Path(directory);inputs={}
+          for fixture in fixtures:
+              destination=root/(fixture['modality']+'.nii.gz')
+              with urllib.request.urlopen(fixture['url'],timeout=120) as response:
+                  destination.write_bytes(response.read())
+              assert digest(destination)==fixture['sha256']
+              inputs[fixture['modality']]=destination
+          images={k:nib.load(p) for k,p in inputs.items()}
+          reference=images['t1c']
+          assert all(im.shape==(240,240,155) for im in images.values())
+          for im in images.values(): np.testing.assert_array_equal(im.affine,reference.affine)
+          outputs={label:root/(label+'.nii.gz') for label in ['et','cc','t2h']}
+          command=['petu','--device','cpu','--threads','2','-t1c',str(inputs['t1c']),'-fla',str(inputs['t2f']),'-t1',str(inputs['t1n']),'-t2',str(inputs['t2w'])]
+          for label,path in outputs.items(): command+=['--'+label,str(path)]
+          env=dict(os.environ,CUDA_VISIBLE_DEVICES='',OMP_NUM_THREADS='2',MKL_NUM_THREADS='2',nnUNet_compile='false')
+          subprocess.run(command,env=env,check=True,timeout=7200)
+          counts={}
+          for label,path in outputs.items():
+              image=nib.load(path);data=np.asanyarray(image.dataobj)
+              assert data.shape==(240,240,155) and np.isfinite(data).all()
+              assert set(np.unique(data)).issubset({0,1})
+              np.testing.assert_array_equal(image.affine,reference.affine)
+              np.testing.assert_array_equal(image.header.get_zooms(),reference.header.get_zooms())
+              counts[label]=int(data.sum());assert counts[label]<data.size
+          assert sum(counts.values())>0
+          assert {k:digest(p) for k,p in inputs.items()}=={f['modality']:f['sha256'] for f in fixtures}
+          assert {str(p.relative_to(weights)):digest(p) for p in files}==before
+          print('Full trained PeTu MRI inference passed '+json.dumps({'shape':[240,240,155],'component_voxels':counts,'unchanged_weight_files':len(files),'input_sha256':{k:digest(p) for k,p in inputs.items()},'mode':'t1c-fla-t1-t2','weights_version':'${weights_version}','scope':'Adult skull-stripped BraTS runtime example; paediatric accuracy unverified'},sort_keys=True))
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: Full trained PeTu MRI inference passed
+    timeout: 7500

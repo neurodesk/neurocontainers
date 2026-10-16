@@ -351,39 +351,6 @@ build:
 
     - workdir: /opt
 
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
-
-    - test:
-        name: Test HyperMapp3r CLI and models
-        script: |
-          #!/bin/bash
-          set -e
-          hypermapper --help
-          hypermapper seg_wmh --help
-          python -c "import tensorflow, keras; print(tensorflow.__version__, keras.__version__)"
-          for m in wmh_mcdp_multi wmh_mcdp_224iso_multi wmh_mcdp_contrast; do
-            test -f {{ context.hypermapper_dir }}/models/${m}_model.json \
-              || { echo "ERROR: missing ${m}_model.json"; exit 1; }
-          done
-          command -v antsRegistration
-          command -v c3d
-
-    - test:
-        name: Test HyperMapp3r end-to-end on bundled test case
-        script: |
-          #!/bin/bash
-          set -e
-          # The repository ships a small T1/FLAIR/mask test case.
-          workdir=$(mktemp -d)
-          cp {{ context.hypermapper_dir }}/data/test_case/*.nii.gz "$workdir"/
-          cd "$workdir"
-          hypermapper seg_wmh -t1 t1.nii.gz -fl fl.nii.gz -m mask.nii.gz -id multi
-          ls -la "$workdir"
-          test -n "$(find "$workdir" -name '*wmh*.nii.gz' -newer t1.nii.gz)" \
-            || { echo "ERROR: no WMH segmentation produced"; exit 1; }
-
 deploy:
   bins:
     - hypermapper

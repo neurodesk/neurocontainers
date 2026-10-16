@@ -1,4 +1,10 @@
 variables:
+  base_image:
+    try:
+      - value: ubuntu:16.04
+        condition: arch == "x86_64"
+      - value: ubuntu:18.04
+        condition: arch == "aarch64"
   upstream_commit: ec5a62cf2ffb347c752293e6234b7c89cebe711d
 
 name: wftfi
@@ -6,6 +12,7 @@ version: 1.0.0
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   container_version: false
@@ -17,10 +24,11 @@ auto_update:
     ref: HEAD
     target:
       variable: upstream_commit
+      fulltest_variable: upstream_commit
 
 build:
   kind: neurodocker
-  base-image: ubuntu:16.04
+  base-image: "{{ context.base_image }}"
   pkg-manager: apt
 
   directives:
