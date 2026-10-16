@@ -328,6 +328,15 @@ def process(connection, config, metadata):
             logging.warning("No image messages received; closing without output")
             return
 
+        # The originals go back before QSMxT runs, as OpenMSK does, so the scanner
+        # keeps them when reconstruction fails.
+        original_images = _build_original_passthrough_images(input_images)
+        logging.info(
+            "Sending %d restamped original image(s) before QSMxT runs",
+            len(original_images),
+        )
+        _send_images_by_series(connection, original_images)
+
         settings = _settings_from_config(config, metadata)
         OPENRECON_WORK_ROOT.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
@@ -343,9 +352,8 @@ def process(connection, config, metadata):
             )
             used_series = {
                 int(image.getHead().image_series_index)
-                for image in input_images
+                for image in input_images + original_images
             }
-            output_images = []
             for input_pair in input_pairs:
                 variant = input_pair["variant"]
                 run_dir = work_dir / input_pair["short_label"].lower()
@@ -368,34 +376,25 @@ def process(connection, config, metadata):
                         conversion,
                         pair_settings,
                     )
-                    output_images.extend(
-                        _build_output_images(
-                            output_specs,
-                            conversion,
-                            input_images,
-                            used_series=used_series,
-                        )
+                    output_images = _build_output_images(
+                        output_specs,
+                        conversion,
+                        input_images,
+                        used_series=used_series,
                     )
                 except Exception as error:
                     raise RuntimeError(
                         f"QSMxT failed for {variant} input: {error}"
                     ) from error
-
-        original_images = _build_original_passthrough_images(
-            input_images,
-            reserved_images=output_images,
-        )
-        logging.info(
-            "Sending %d restamped original image(s) before QSMxT outputs",
-            len(original_images),
-        )
-        _send_images_by_series(connection, original_images)
-
-        if output_images:
-            _validate_output_images(output_images, input_images)
-            _send_images_by_series(connection, output_images)
-        else:
-            logging.warning("QSMxT completed but no requested output files were found")
+                # Sent per input pair, so a later pair's failure cannot discard these.
+                if output_images:
+                    _validate_output_images(output_images, input_images)
+                    _send_images_by_series(connection, output_images)
+                else:
+                    logging.warning(
+                        "QSMxT completed for %s input but no requested output files were found",
+                        variant,
+                    )
 
     except Exception:
         message = traceback.format_exc()
@@ -1032,10 +1031,8 @@ def _build_output_images(
     return output_images
 
 
-def _build_original_passthrough_images(input_images, reserved_images=None):
+def _build_original_passthrough_images(input_images):
     used_series = {int(image.getHead().image_series_index) for image in input_images}
-    for image in reserved_images or []:
-        used_series.add(int(image.getHead().image_series_index))
 
     output_images = []
     for group_index, group_images in enumerate(_passthrough_source_groups(input_images)):

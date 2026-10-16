@@ -53,6 +53,14 @@ class FakeConnection:
         self.closed = True
 
 
+def _sent_series_descriptions(connection):
+    return {
+        ismrmrd.Meta.deserialize(image.attribute_string)["SeriesDescription"]
+        for batch in connection.sent_batches
+        for image in batch
+    }
+
+
 def _set_header_vector(header, field_name, values):
     target = getattr(header, field_name)
     for index, value in enumerate(values):
@@ -522,7 +530,10 @@ def test_native_failure_does_not_retry_nd(tmp_path, monkeypatch):
     qsmxt.process(connection, {}, FakeMetadata())
     assert connection.closed
     assert attempted == ["dc"]
-    assert connection.sent_batches == []
+    assert len(connection.sent_batches) == 4
+    assert _sent_series_descriptions(connection) == {
+        "gre_qsm_original", "gre_qsm_ND_original",
+    }
     assert "native reconstruction failed" in connection.logs[0][1]
 
 
@@ -2011,6 +2022,30 @@ def test_process_sends_restamped_originals_before_derived_output(tmp_path, monke
     assert derived_meta["QSMxTOutput"] == "qsm"
 
 
+def test_originals_are_sent_before_qsmxt_runs_and_survive_its_failure(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setattr(qsmxt, "OPENRECON_WORK_ROOT", tmp_path / "work")
+    connection = FakeConnection(_input_images())
+    sent_before_run = []
+
+    def failing_run(*args, **kwargs):
+        sent_before_run.extend(
+            ismrmrd.Meta.deserialize(batch[0].attribute_string)["SeriesDescription"]
+            for batch in connection.sent_batches
+        )
+        raise RuntimeError("QSMxT exited with status 1")
+
+    monkeypatch.setattr(qsmxt, "_run_qsmxt", failing_run)
+    qsmxt.process(connection, {"parameters": {"echotimesms": "10,20"}}, FakeMetadata())
+
+    assert connection.closed is True
+    assert sent_before_run == ["gre_qsm_original", "gre_qsm_Pha_original"]
+    assert [len(batch) for batch in connection.sent_batches] == [2, 2]
+    assert len(connection.logs) == 1
+    assert "QSMxT exited with status 1" in connection.logs[0][1]
+
+
 def test_process_handles_scanner_echo_slice_stream_with_original_passthrough(
     tmp_path,
     monkeypatch,
@@ -2847,7 +2882,10 @@ def test_explicit_relaxometry_rejected_before_processing(tmp_path, monkeypatch, 
     assert "requires at least 3 echoes" in error
     assert f"this pair has {1 if epi else 2} selected echo(s)" in error
     assert "Choose qsm, swi, or smwi" in error
-    assert not connection.sent_batches
+    assert connection.sent_batches
+    assert all(
+        name.endswith("_original") for name in _sent_series_descriptions(connection)
+    )
 
 
 def test_both_pairs_resolve_outputs_independently(tmp_path, monkeypatch):
