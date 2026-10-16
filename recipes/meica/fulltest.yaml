@@ -63,6 +63,89 @@ tests:
       test -x "${MEICA_AFNI_RUNTIME}/bin/3dinfo"
       test -x "${MEICA_AFNI_RUNTIME}/utils/dcm2niix"
 
+  - name: Parallel TE fits run without POSIX shared memory
+    description: OpenRecon caps /dev/shm at 64 MB, so tedana's threaded coefficient fit must keep its voxel matrix in process memory
+    script: |
+      set -euo pipefail
+      cd "${MEICA_REPO}"
+      OMP_NUM_THREADS=4 /opt/meica/venv/bin/python - <<'PY'
+      from multiprocessing import shared_memory
+
+      def refuse(*args, **kwargs):
+          raise AssertionError("POSIX shared memory is bounded by /dev/shm")
+
+      shared_memory.SharedMemory = refuse
+
+      import numpy as np
+      from libmeica.utils import lstsq
+
+      assert lstsq.get_coeffs is lstsq._get_coeffs_para
+      rng = np.random.default_rng(0)
+      data = rng.normal(100.0, 1.0, size=(40, 40, 30, 120)).astype(np.float32)
+      mask = np.ones(data.shape[:3], dtype=bool)
+      mask[:5] = False
+      design = rng.normal(size=(120, 3))
+      betas = lstsq.get_coeffs(data, mask, design, add_const=True)
+      expected = np.linalg.lstsq(
+          np.hstack([design, np.ones((120, 1))]), data[mask].T, rcond=None
+      )[0][:-1].T
+      assert np.allclose(betas[mask], expected, atol=1e-3)
+      assert np.all(betas[~mask] == 0)
+      print("threaded coefficient fit matches least squares")
+      PY
+
+  - name: Chunked 3dAllineate matches a single 3dAllineate call
+    description: Parallel time chunks, including single-volume chunks that carry no time axis, must reproduce the voxels and TR of one 3dAllineate run
+    script: |
+      set -euo pipefail
+      source "${MEICA_AFNI_RUNTIME_ACTIVATE}"
+      work="${output_dir}/allineate-chunks"
+      mkdir -p "${work}"
+      cd "${work}"
+      3dcalc -a jRandomDataset:16,16,8,6 -expr 'a+100' -prefix ts+orig
+      3drefit -TR 2.5 ts+orig
+      for shift in 0 0.1 0.2 0.3 0.4 0.5; do echo "1 0 0 ${shift} 0 1 0 0.2 0 0 1 0"; done > motion.aff12.1D
+      3dcalc -a 'ts+orig[0]' -expr a -prefix base.nii
+      align=(-final wsinc5 -cubic -float -1Dmatrix_apply motion.aff12.1D -base base.nii -input ts+orig)
+      OMP_NUM_THREADS=1 3dAllineate "${align[@]}" -prefix single.nii
+      OMP_NUM_THREADS=8 meica-allineate-chunks "${align[@]}" -prefix chunked.nii
+      test "$(3dinfo -nt chunked.nii)" = 6
+      test "$(3dinfo -tr chunked.nii)" = "$(3dinfo -tr single.nii)"
+      test "$(3dinfo -tr chunked.nii)" = 2.500000
+      test "$(3dBrickStat -max '3dcalc( -a single.nii -b chunked.nii -expr abs(a-b) )' | tr -d ' ')" = 0
+
+  - name: ME-ICA reports a failing pipeline script
+    description: A failure inside the generated ME-ICA shell script must give a nonzero exit instead of silently missing outputs
+    script: |
+      set -euo pipefail
+      work="${output_dir}/script-failure"
+      mkdir -p "${work}/bin"
+      printf '#!/bin/sh\nexit 7\n' > "${work}/bin/bash"
+      chmod +x "${work}/bin/bash"
+      WORK="${work}" /opt/meica/venv/bin/python - <<'PY'
+      import os
+      from pathlib import Path
+
+      import nibabel as nib
+      import numpy as np
+
+      rng = np.random.default_rng(0)
+      for echo in (1, 2, 3):
+          data = rng.uniform(100, 200, size=(8, 8, 6, 25)).astype(np.float32)
+          image = nib.Nifti1Image(data, np.diag([3.0, 3.0, 3.0, 1.0]))
+          image.header.set_xyzt_units("mm", "sec")
+          image.header["pixdim"][4] = 2.0
+          nib.save(image, Path(os.environ["WORK"]) / f"echo-{echo}.nii.gz")
+      PY
+      cd "${work}"
+      status=0
+      PATH="${work}/bin:${PATH}" /opt/meica/venv/bin/python "${MEICA_REPO}/meica.py" \
+        -d echo-1.nii.gz echo-2.nii.gz echo-3.nii.gz -e 12 28 44 \
+        --prefix failing --OVERWRITE_NOWAIT > meica.log 2>&1 || status=$?
+      cat meica.log
+      grep -q 'Executing script file' meica.log
+      test "${status}" -eq 7
+
   - name: Functional phantom skull stripping fallback
     description: Fill the complete nonzero phantom envelope when functional 3dSkullStrip fails
     script: |
@@ -153,15 +236,19 @@ tests:
       PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import meica, ismrmrd, nibabel, numpy; print(meica.__file__)" | grep -x /opt/code/python-ismrmrd-server/meica.py
 
   - name: OpenRecon bridge processes multi-echo time series
-    description: Convert three packed MRD echoes to NIfTI, run a fake ME-ICA command, and return quantitative uint16 series that DICOM rescaling decodes to dR2* and T2*
+    description: Process multi-echo MRD images, label original echoes and derived results, exclude reference/noise inputs, and preserve originals on failure
     timeout: 180
     script: |
       set -euo pipefail
       FAKE_MEICA="${fake_meica}" OUTPUT_DIR="${output_dir}" PYTHONPATH=/opt/code/python-ismrmrd-server python - <<'PY'
+      import base64
+      import copy
       import os
       from pathlib import Path
+      import re
 
       import ismrmrd
+      import nibabel as nib
       import numpy as np
       import meica
 
@@ -245,7 +332,19 @@ tests:
           assert original.getHead() == source.getHead()
           meta = ismrmrd.Meta.deserialize(original.attribute_string)
           assert meta["Keep_image_geometry"] == "1"
-          assert meta["SequenceDescription"] == "multi_echo_epi"
+          echo = int(source.getHead().contrast) + 1
+          expected_label = f"MEICA original magnitude te{echo}_multi_echo_epi"
+          for key in ("SequenceDescription", "SeriesDescription", "ProtocolName"):
+              assert meta[key] == expected_label, (key, meta)
+          assert meta["SequenceDescriptionAdditional"] == "openrecon"
+          source_meta = ismrmrd.Meta.deserialize(source.attribute_string)
+          assert source_meta["SequenceDescription"] == "multi_echo_epi"
+
+      original_groups = {
+          ismrmrd.Meta.deserialize(image.attribute_string)["SeriesNumberRangeNameUID"]
+          for image in originals
+      }
+      assert len(original_groups) == 3
 
       by_role = {}
       for derived in connection.sent[1:]:
@@ -258,6 +357,14 @@ tests:
           assert len({int(image.getHead().image_series_index) for image in derived}) == 1
           for image in derived:
               meta = ismrmrd.Meta.deserialize(image.attribute_string)
+              expected_label = {
+                  "MEICA_DR2S": "MEICA denoised BOLD dR2*",
+                  "MEICA_T2S": "MEICA T2* map",
+              }[meta["ImageTypeValue4"]]
+              for key in ("SequenceDescription", "SeriesDescription", "ProtocolName"):
+                  assert meta[key] == expected_label, (key, meta)
+              assert meta["SequenceDescriptionAdditional"] == "openrecon"
+              assert meta["SeriesNumberRangeNameUID"] not in original_groups
               assert meta["Keep_image_geometry"] == "1"
               assert "IceMiniHead" not in meta
               assert image.data.dtype == np.uint16
@@ -333,6 +440,236 @@ tests:
       assert meta["MEICADisplayClippedVoxels"] == "1"
       assert 0 < int(meta["WindowCenter"]) < 500
       print("returned quantitative uint16 dR2* and T2* ME-ICA MRD series")
+
+      # Scanner streams include SBRef images with the same first repetition
+      # as the fMRI series, and CMRR can append acquisitions marked NOISE.
+      def scanner_slice(echo, repetition, slice_index, role="bold"):
+          value = 100 * echo + 10 * repetition + slice_index
+          if role != "bold":
+              value = 9999
+          image = ismrmrd.Image.from_array(
+              np.full((1, 3, 4), value, dtype=np.float32), transpose=False
+          )
+          header = image.getHead()
+          header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+          header.image_series_index = 10 + echo if role == "reference" else 20 + echo
+          header.contrast = echo - 1
+          header.repetition = repetition
+          header.slice = slice_index
+          header.image_index = 1 + repetition * 9 + (echo - 1) * 3 + slice_index
+          set_vector(header.field_of_view, [8.0, 6.0, 2.0])
+          set_vector(header.position, [0.0, 0.0, 2.0 * slice_index])
+          set_vector(header.read_dir, [1.0, 0.0, 0.0])
+          set_vector(header.phase_dir, [0.0, 1.0, 0.0])
+          set_vector(header.slice_dir, [0.0, 0.0, 1.0])
+          image.setHead(header)
+          meta = ismrmrd.Meta()
+          meta["SequenceDescription"] = (
+              "multi_echo_epi_SBRef" if role == "reference" else "multi_echo_epi"
+          )
+          if role == "noise":
+              minihead = '''<ParamArray."ImageTypeValue4">
+              {
+                  <DefaultSize> 4
+                  <Default> <ParamString."">{ }
+                  { "MB" }{ "TE3" }{ "NOISE" }{ "DIS2D" }
+              }
+              <ParamLong."AcquisitionNumber">{ 3 }
+              '''
+              meta["IceMiniHead"] = base64.b64encode(minihead.encode()).decode()
+          image.attribute_string = meta.serialize()
+          return image
+
+      bold = [
+          scanner_slice(echo, repetition, slice_index)
+          for repetition in range(2)
+          for echo in range(1, 4)
+          for slice_index in range(3)
+      ]
+      references = [
+          scanner_slice(echo, 0, slice_index, "reference")
+          for echo in range(1, 4)
+          for slice_index in range(3)
+      ]
+      # Some streams expose the reference label only in the minihead.
+      meta = ismrmrd.Meta.deserialize(references[0].attribute_string)
+      del meta["SequenceDescription"]
+      minihead = '<ParamString."SequenceDescription">{ "multi_echo_epi_SBRef" }'
+      meta["IceMiniHead"] = base64.b64encode(minihead.encode()).decode()
+      references[0].attribute_string = meta.serialize()
+      noise = [
+          scanner_slice(echo, 2, slice_index, "noise")
+          for echo in range(1, 4)
+          for slice_index in range(3)
+      ]
+      phases = copy.deepcopy(references + bold + noise)
+      for image in phases:
+          header = image.getHead()
+          header.image_type = ismrmrd.IMTYPE_PHASE
+          image.setHead(header)
+      scanner_images = references + bold + noise + phases
+      settings = meica._settings({})
+      conversion = meica.write_meica_inputs(
+          scanner_images, Metadata(),
+          Path(os.environ["OUTPUT_DIR"]) / "scanner-inputs", settings,
+      )
+      for echo, path in enumerate(conversion["datasets"], 1):
+          nifti = nib.load(path)
+          assert nifti.shape == (4, 3, 3, 2), nifti.shape
+          for repetition in range(2):
+              for slice_index in range(3):
+                  assert np.all(
+                      nifti.get_fdata()[:, :, slice_index, repetition]
+                      == 100 * echo + 10 * repetition + slice_index
+                  )
+          assert np.allclose(nifti.affine[:3, 2], [0.0, 0.0, 2.0])
+          assert np.allclose(nifti.affine[:3, 3], [-3.0, -2.0, 0.0])
+
+      # Streams without repetition counters still group by image order.
+      zero_counters = copy.deepcopy(bold)
+      for image in zero_counters:
+          header = image.getHead()
+          header.repetition = 0
+          image.setHead(header)
+      fallback = meica.write_meica_inputs(
+          zero_counters, Metadata(),
+          Path(os.environ["OUTPUT_DIR"]) / "scanner-fallback-inputs", settings,
+      )
+      for baseline, actual in zip(conversion["datasets"], fallback["datasets"]):
+          assert np.array_equal(nib.load(baseline).get_fdata(), nib.load(actual).get_fdata())
+
+      # Slice indices remain stable when the scanner updates volume positions.
+      moving = copy.deepcopy(bold)
+      for image in moving:
+          header = image.getHead()
+          header.position[0] += 0.5 * header.repetition
+          image.setHead(header)
+      for counters in (True, False):
+          if not counters:
+              for image in moving:
+                  header = image.getHead()
+                  header.repetition = 0
+                  image.setHead(header)
+          shifted = meica.write_meica_inputs(
+              moving, Metadata(),
+              Path(os.environ["OUTPUT_DIR"]) / f"scanner-moving-{counters}", settings,
+          )
+          for baseline, actual in zip(conversion["datasets"], shifted["datasets"]):
+              assert np.array_equal(
+                  nib.load(baseline).get_fdata(), nib.load(actual).get_fdata()
+              )
+
+      # Without slice indices, fixed positions provide the slice identities.
+      position_only = copy.deepcopy(bold)
+      for image in position_only:
+          header = image.getHead()
+          header.slice = 0
+          image.setHead(header)
+      positions = meica.write_meica_inputs(
+          position_only, Metadata(),
+          Path(os.environ["OUTPUT_DIR"]) / "scanner-position-inputs", settings,
+      )
+      for baseline, actual in zip(conversion["datasets"], positions["datasets"]):
+          assert np.array_equal(nib.load(baseline).get_fdata(), nib.load(actual).get_fdata())
+
+      scanner = Connection(scanner_images)
+      meica.process(
+          scanner, {"meicabinary": os.environ["FAKE_MEICA"]}, Metadata()
+      )
+      assert scanner.closed
+      assert not scanner.logs, scanner.logs
+      assert len(scanner.sent) == 3
+      assert len(scanner.sent[0]) == len(scanner_images)
+      assert len(scanner.sent[1]) == 6
+      assert len(scanner.sent[2]) == 3
+      for original, source in zip(scanner.sent[0], scanner_images):
+          assert np.array_equal(original.data, source.data)
+          assert original.getHead() == source.getHead()
+          meta = ismrmrd.Meta.deserialize(original.attribute_string)
+          echo = int(source.getHead().contrast) + 1
+          component = (
+              "phase" if source.getHead().image_type == ismrmrd.IMTYPE_PHASE
+              else "magnitude"
+          )
+          source_meta = ismrmrd.Meta.deserialize(source.attribute_string)
+          is_reference = int(source.getHead().image_series_index) < 20
+          is_noise = int(source.getHead().repetition) == 2
+          role = "SBRef " if is_reference else "noise " if is_noise else ""
+          source_name = "multi_echo_epi_SBRef" if is_reference else "multi_echo_epi"
+          prefix = f"MEICA original {role}{component} te{echo}"
+          expected_label = f"{prefix}_{source_name}"[:54]
+          assert meta["SeriesDescription"] == expected_label, meta
+          assert meta["SequenceDescriptionAdditional"] == "openrecon"
+          assert len(meta["SeriesDescription"] + "_openrecon") <= 64
+          if "IceMiniHead" in source_meta:
+              minihead = base64.b64decode(meta["IceMiniHead"]).decode()
+              for key in (
+                  "SequenceDescription", "SeriesDescription", "ProtocolName",
+                  "SeriesNumberRangeNameUID",
+              ):
+                  values = re.findall(
+                      rf'<ParamString\."{key}">\s*\{{\s*"([^"]*)"', minihead
+                  )
+                  assert values == [meta[key]], (key, values, meta[key])
+              if is_noise:
+                  assert '{ "NOISE" }' in minihead
+
+      # Processing role, component and echo each define a stable scanner group.
+      scanner_groups = {
+          ismrmrd.Meta.deserialize(image.attribute_string)["SeriesNumberRangeNameUID"]
+          for image in scanner.sent[0]
+      }
+      assert len(scanner_groups) == 18
+
+      # Echo identity remains explicit when contrast counters are absent.
+      long_source_name = "func-bold_task-motor_acq-cmrr2d3echo2mm_run-1"
+      for key, value in (
+          ("EchoNumber", "3"), ("EchoNo", "3"), ("EchoIndex", "3"),
+          ("EchoTime", "40"), ("EchoTime", "0.04"),
+      ):
+          source = copy.deepcopy(bold[0])
+          meta = ismrmrd.Meta.deserialize(source.attribute_string)
+          meta["SequenceDescription"] = long_source_name
+          meta["SeriesNumberRangeNameUID"] = "source-motor-run-1"
+          meta[key] = value
+          source.attribute_string = meta.serialize()
+          original = meica._original_passthrough(source, Metadata())
+          returned_meta = ismrmrd.Meta.deserialize(original.attribute_string)
+          expected_label = f"MEICA original magnitude te3_{long_source_name}"[:54]
+          assert returned_meta["SequenceDescription"] == expected_label
+          assert len(returned_meta["SequenceDescription"] + "_openrecon") == 64
+          assert "source-motor-run-1" in returned_meta["SeriesNumberRangeNameUID"]
+          assert np.array_equal(original.data, source.data)
+          assert original.getHead() == source.getHead()
+
+      # Invalid input must report the slice problem and still return originals.
+      incomplete = bold[:-1]
+      failed = Connection(incomplete)
+      meica.process(
+          failed, {"meicabinary": os.environ["FAKE_MEICA"]}, Metadata()
+      )
+      assert failed.closed
+      assert failed.logs and "slice" in failed.logs[0][1].lower(), failed.logs
+      assert len(failed.sent) == 1
+      assert len(failed.sent[0]) == len(incomplete)
+      failed_derived_only = Connection(incomplete)
+      meica.process(
+          failed_derived_only,
+          {"meicabinary": os.environ["FAKE_MEICA"], "sendoriginal": False},
+          Metadata(),
+      )
+      assert failed_derived_only.closed and failed_derived_only.logs
+      assert not failed_derived_only.sent
+
+      # Matching slice counts alone must not accept a duplicated plane.
+      duplicate = Connection(bold[:-1] + [bold[-2]])
+      meica.process(
+          duplicate, {"meicabinary": os.environ["FAKE_MEICA"]}, Metadata()
+      )
+      assert duplicate.closed
+      assert duplicate.logs and "duplicate slice" in duplicate.logs[0][1]
+      assert len(duplicate.sent) == 1
+      print("processed scanner slices without SBRef/noise contamination")
       PY
 
 upstream_version: 4.0.1

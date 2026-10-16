@@ -87,6 +87,10 @@ build:
         - mkdir -p /opt/meica/me-ica
         - tar -xzf {{ get_file("meica_source") }} -C /opt/meica/me-ica --strip-components=1
         - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_skullstrip_patch") }}
+        - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_thread_coefficients_patch") }}
+        - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_script_exit_status_patch") }}
+        - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_parallel_echoes_patch") }}
+        - patch -d /opt/meica/me-ica -p1 < {{ get_file("meica_tedana_threads_patch") }}
         - tar -xzf {{ get_file("meica_afni_runtime") }} -C /opt/meica/me-ica
         - python3 -m venv /opt/meica/venv
         - /opt/meica/venv/bin/pip install --no-cache-dir --upgrade pip
@@ -109,6 +113,8 @@ build:
         - chmod +x /usr/local/bin/meica.py
         - cp {{ get_file("meica_skullstrip_fallback") }} /usr/local/bin/meica-skullstrip-fallback
         - chmod +x /usr/local/bin/meica-skullstrip-fallback
+        - cp {{ get_file("meica_allineate_chunks") }} /usr/local/bin/meica-allineate-chunks
+        - chmod +x /usr/local/bin/meica-allineate-chunks
         - cp {{ get_file("meica_openrecon") }} /opt/code/python-ismrmrd-server/meica.py
         - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
         - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
@@ -174,7 +180,12 @@ readme: |-
   OpenRecon always returns the denoised BOLD-like apparent dR2* series and the
   T2* map (`dr2s_epi` and `t2s_epi`); there is no scanner output selector. It
   also returns the original echo images by default. Disable `sendoriginal` to
-  return only the derived ME-ICA series. Derived outputs are 12-bit `uint16`
+  return only the derived ME-ICA series. Series names start with `MEICA original`
+  and identify the image component, echo, and SBRef or noise role. Derived series
+  are named `MEICA denoised BOLD dR2*` and `MEICA T2* map`.
+  SBRef and NOISE images are excluded
+  from fMRI processing. Original images are sent before processing and remain
+  available if ME-ICA fails. Derived outputs are 12-bit `uint16`
   pixels with DICOM rescaling back to dR2* in `s^-1` and T2* in `ms`.
 
   Documentation: https://github.com/ME-ICA/me-ica
@@ -197,6 +208,16 @@ files:
     filename: meica-skullstrip-fallback
   - name: meica_skullstrip_patch
     filename: meica-skullstrip-fallback.patch
+  - name: meica_thread_coefficients_patch
+    filename: meica-thread-shared-coefficients.patch
+  - name: meica_script_exit_status_patch
+    filename: meica-script-exit-status.patch
+  - name: meica_allineate_chunks
+    filename: meica-allineate-chunks
+  - name: meica_parallel_echoes_patch
+    filename: meica-parallel-echoes.patch
+  - name: meica_tedana_threads_patch
+    filename: meica-tedana-threads.patch
   - name: meica_openrecon
     filename: meica.py
   - name: OpenReconLabel.json

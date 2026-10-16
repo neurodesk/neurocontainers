@@ -1,5 +1,17 @@
 variables:
   upstream_commit: b3699e951ba929d5822bd98a8b65414f075f02a8
+  ants_bin:
+    try:
+      - value: /opt/ants-2.4.3
+        condition: arch == "x86_64"
+      - value: /opt/ants-2.4.3/bin
+        condition: arch == "aarch64"
+  miniconda_installer:
+    try:
+      - value: Miniconda3-py310_25.5.1-0-Linux-x86_64.sh
+        condition: arch == "x86_64"
+      - value: Miniconda3-py310_25.5.1-0-Linux-aarch64.sh
+        condition: arch == "aarch64"
 
 name: pals
 version: 2.0.1
@@ -10,6 +22,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 readme: |
   ## PALS - Pipeline for Analyzing Lesions After Stroke {{ context.version }}
@@ -17,6 +30,8 @@ readme: |
   PALS is a flexible, scalable toolbox for image processing and quality analysis
   of stroke lesion MRI data. It is the preprocessing pipeline associated with the
   ATLAS v2.0 dataset (Liew et al., 2022, *Scientific Data*).
+
+  ARM64 builds the same official ANTs2.4.3 from source; x86_64 keeps its existing binary archive. Native preprocessing and the exact lesion-overlap calculation are exercised in the runtime suite. Synthetic and template-based fixtures establish execution and output contracts, without establishing clinical accuracy.
 
   ### Pipeline steps
 
@@ -71,13 +86,16 @@ readme: |
   https://github.com/npnl/PALS
 
 files:
-  - name: miniconda.sh
+  - name: Miniconda3-py310_25.5.1-0-Linux-x86_64.sh
     url: https://repo.anaconda.com/miniconda/Miniconda3-py310_25.5.1-0-Linux-x86_64.sh
     sha256: aa8cbd6aa7ef85d0528616d2dffce8bd0b51924e7ddd18734ede6c1c63c462d0
+  - name: Miniconda3-py310_25.5.1-0-Linux-aarch64.sh
+    url: https://repo.anaconda.com/miniconda/Miniconda3-py310_25.5.1-0-Linux-aarch64.sh
+    sha256: 6886af5e5db79dfb4429cde937b6f806d02b0e98dd11249c74917661fc7b1f4b
   - name: presets.json
     contents: |
       {
-          "ants_path": "/opt/ants-2.4.3",
+          "ants_path": "{{ context.ants_bin }}",
           "fsl_path": "/opt/miniconda/bin",
           "rois_path": "/opt/pals-2.0.1/ROIs",
           "template_directory": "/opt/pals-2.0.1/templates"
@@ -114,14 +132,21 @@ build:
         - libgomp1
  
     # ── ANTs 2.4.3 ───────────────────────────────────────────────────────────
-    - template:
+    - condition: arch == "x86_64"
+      template:
         name: ants
         version: 2.4.3
         method: binaries
+    - condition: arch == "aarch64"
+      template:
+        name: ants
+        version: 2.4.3
+        method: source
+        make_opts: -j2
  
     # ── Miniconda (manual install to avoid conda tos bug) ────────────────────
     - run:
-        - cp {{ get_file("miniconda.sh") }} /tmp/miniconda.sh
+        - cp {{ get_file(context.miniconda_installer) }} /tmp/miniconda.sh
         - bash /tmp/miniconda.sh -b -p /opt/miniconda
         - /opt/miniconda/bin/conda tos accept
         - rm -f /tmp/miniconda.sh
@@ -141,6 +166,9 @@ build:
         - git clone https://github.com/npnl/PALS /opt/pals-2.0.1 && git -C /opt/pals-2.0.1 checkout {{ context.upstream_commit }}
         - grep -iv matplotlib /opt/pals-2.0.1/requirements.txt | /opt/miniconda/bin/pip install --no-cache-dir -r /dev/stdin
  
+    - run:
+        - /opt/miniconda/bin/python -m pip check
+
     - copy:
       - presets.json
       - /opt/pals-2.0.1/presets.json
@@ -149,12 +177,12 @@ build:
         FSLDIR: /opt/miniconda
         FSLOUTPUTTYPE: NIFTI_GZ
         PALS_DIR: /opt/pals-2.0.1
-        PATH: /opt/pals-2.0.1:/opt/ants-2.4.3:/opt/miniconda/bin:$PATH
+        PATH: /opt/pals-2.0.1:{{ context.ants_bin }}:/opt/miniconda/bin:$PATH
  
 deploy:
   path:
     - /opt/pals-2.0.1
-    - /opt/ants-2.4.3
+    - "{{ context.ants_bin }}"
     - /opt/miniconda/bin
   bins:
     - python

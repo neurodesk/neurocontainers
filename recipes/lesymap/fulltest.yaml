@@ -1,5 +1,5 @@
 # lesymap container test suite
-# Tests for LESYMAP v0.0.0.9222 - Lesion to Symptom Mapping in R
+# Tests for LESYMAP v0.0.0.9221 - Lesion to Symptom Mapping in R
 #
 # LESYMAP maps the specific brain areas responsible for cognitive deficits
 # by taking a series of lesion maps and a vector of behavioral scores.

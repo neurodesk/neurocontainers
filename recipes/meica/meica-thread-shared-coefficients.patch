@@ -1,0 +1,128 @@
+diff --git a/libmeica/utils/lstsq.py b/libmeica/utils/lstsq.py
+--- a/libmeica/utils/lstsq.py
++++ b/libmeica/utils/lstsq.py
+@@ -4,7 +4,6 @@
+ import sys
+ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+ from contextlib import contextmanager
+-from multiprocessing import shared_memory
+ 
+ import numpy as np
+ from scipy.linalg import solve_triangular
+@@ -36,21 +35,13 @@
+     (
+         start,
+         end,
+-        shm_names,
+-        shapes,
++        mdata,
++        Q,
++        R,
++        out,
+         nb,
+     ) = args
+ 
+-    shm_mdata = shared_memory.SharedMemory(name=shm_names["mdata"])
+-    shm_Q = shared_memory.SharedMemory(name=shm_names["Q"])
+-    shm_R = shared_memory.SharedMemory(name=shm_names["R"])
+-    shm_out = shared_memory.SharedMemory(name=shm_names["out"])
+-
+-    mdata = np.ndarray(shapes["mdata"], dtype=np.float32, buffer=shm_mdata.buf)
+-    Q = np.ndarray(shapes["Q"], dtype=np.float32, buffer=shm_Q.buf)
+-    R = np.ndarray(shapes["R"], dtype=np.float32, buffer=shm_R.buf)
+-    out = np.ndarray(shapes["out"], dtype=np.float32, buffer=shm_out.buf)
+-
+     mchunk = mdata[:, start:end]
+ 
+     # print("Worker starting", start, end)
+@@ -62,11 +53,6 @@
+ 
+     out[start:end, :] = beta.T
+ 
+-    shm_mdata.close()
+-    shm_Q.close()
+-    shm_R.close()
+-    shm_out.close()
+-
+ 
+ def _get_executor(n_jobs):
+     return ThreadPoolExecutor(max_workers=n_jobs)
+@@ -113,7 +99,6 @@
+     if n_jobs is None:
+         n_jobs = _get_n_jobs()
+ 
+-    # ---- Mask directly into shared memory buffer ----
+     masked = fmask(data, mask).transpose().astype(np.float32)
+     nt, Nm = masked.shape
+ 
+@@ -135,20 +120,10 @@
+ 
+     nc = Q.shape[1] - nb
+ 
+-    # ---- Shared memory allocations ----
+-    shm_mdata = shared_memory.SharedMemory(create=True, size=masked.nbytes)
+-    shm_Q = shared_memory.SharedMemory(create=True, size=Q.nbytes)
+-    shm_R = shared_memory.SharedMemory(create=True, size=R.nbytes)
+-    shm_out = shared_memory.SharedMemory(create=True, size=Nm * nc * 4)
+-
+-    mdata_sh = np.ndarray((nt, Nm), dtype=np.float32, buffer=shm_mdata.buf)
+-    Q_sh = np.ndarray(Q.shape, dtype=np.float32, buffer=shm_Q.buf)
+-    R_sh = np.ndarray(R.shape, dtype=np.float32, buffer=shm_R.buf)
+-    out_sh = np.ndarray((Nm, nc), dtype=np.float32, buffer=shm_out.buf)
+-
+-    mdata_sh[:] = masked
+-    Q_sh[:] = Q
+-    R_sh[:] = R
++    # Worker threads share these arrays; POSIX shared memory would be
++    # bounded by /dev/shm, which containers often cap at 64 MB.
++    mdata_sh = np.ascontiguousarray(masked)
++    out_sh = np.empty((Nm, nc), dtype=np.float32)
+ 
+     # ---- Chunking ----
+     # Use 2x cores for better load balance
+@@ -162,25 +137,7 @@
+         if start >= Nm:
+             break
+ 
+-        tasks.append(
+-            (
+-                start,
+-                end,
+-                {
+-                    "mdata": shm_mdata.name,
+-                    "Q": shm_Q.name,
+-                    "R": shm_R.name,
+-                    "out": shm_out.name,
+-                },
+-                {
+-                    "mdata": (nt, Nm),
+-                    "Q": Q.shape,
+-                    "R": R.shape,
+-                    "out": (Nm, nc),
+-                },
+-                nb,
+-            )
+-        )
++        tasks.append((start, end, mdata_sh, Q, R, out_sh, nb))
+ 
+     # _ensure_linux_fork()
+ 
+@@ -194,17 +151,7 @@
+         with _get_executor(n_jobs) as ex:
+             list(ex.map(_worker_voxel_block, tasks))
+ 
+-    tmpbetas = out_sh.copy()
+-
+-    # ---- Cleanup ----
+-    shm_mdata.close()
+-    shm_mdata.unlink()
+-    shm_Q.close()
+-    shm_Q.unlink()
+-    shm_R.close()
+-    shm_R.unlink()
+-    shm_out.close()
+-    shm_out.unlink()
++    tmpbetas = out_sh
+ 
+     # ---- Output ----
+     if betas5d is not None:

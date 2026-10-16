@@ -1,5 +1,6 @@
 name: aidamri
 version: "3.0.0"
+upstream_version: "3.0"
 
 test_data:
   output_dir: test_output/aidamri
@@ -48,4 +49,82 @@ tests:
       bash -lc "find /opt/aidamri-${upstream_version}/bin -name '.DS_Store' -o -name '.~lock.*' | wc -l"
     expected_output_contains: "0"
 
-upstream_version: '3.0'
+
+  - name: AIDAmri diffusion baseline averaging
+    description: >-
+      Run AIDAmri's released averageb0 operation on a complete synthetic DWI,
+      with two low-b and two excluded diffusion-weighted volumes. Assert every
+      output voxel, physical grid and immutable input bytes. Uses its documented
+      default averaging mode; no atlas registration or clinical claim.
+    command: |
+      /opt/miniconda-4.7.12.1/bin/python - <<'PYTHON'
+      import hashlib
+      import importlib.util
+      from pathlib import Path
+      import tempfile
+      import nibabel as nib
+      import numpy as np
+      spec=importlib.util.spec_from_file_location('aidamri_averageb0','/opt/aidamri-${upstream_version}/bin/2.2_DTIPreProcessing/averageb0.py')
+      module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+      with tempfile.TemporaryDirectory(prefix='aidamri-b0-') as scratch:
+          root=Path(scratch);source=root/'diffusion.nii.gz';bvals=root/'diffusion.bval'
+          base=np.arange(20*24*28,dtype=np.float32).reshape(20,24,28)
+          values=np.stack([base,base+1000,base+4,base+9000],axis=3)
+          affine=np.diag([-.25,-.5,-.75,1]);affine[:3,3]=[3,5,7]
+          nib.save(nib.Nifti1Image(values,affine),str(source));np.savetxt(str(bvals),[0,1000,50,100])
+          before=[hashlib.sha256(p.read_bytes()).hexdigest() for p in [source,bvals]]
+          output=Path(module.averageb0(str(source)))
+          assert output.is_file() and output.name=='diffusionB0mean.nii.gz'
+          image=nib.load(str(output));result=np.asanyarray(image.dataobj)
+          assert result.shape==(20,24,28) and result.dtype==np.float32
+          np.testing.assert_array_equal(result,base+2)
+          np.testing.assert_array_equal(image.affine,affine)
+          assert [hashlib.sha256(p.read_bytes()).hexdigest() for p in [source,bvals]]==before
+      print('AIDAmri real DWI averaging preserved every13440 expected voxel and physical grid')
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: AIDAmri real DWI averaging preserved every13440 expected voxel and physical grid
+    timeout: 120
+
+  - name: AIDAmri analytical fMRI connectivity matrices
+    description: >-
+      Call the released primary correlation writer with six known samples and
+      three nonconstant ROI signals. Require the complete Pearson, exact
+      six-sample two-sided p-value and Fisher-z matrices plus saved ROI labels.
+      The64-epsilon bound covers double precision arithmetic, not model error.
+    command: |
+      /opt/miniconda-4.7.12.1/bin/python - <<'PYTHON'
+      import importlib.util
+      from pathlib import Path
+      import tempfile
+      import numpy as np
+      import scipy.io
+      spec=importlib.util.spec_from_file_location('aidamri_correlation','/opt/aidamri-${upstream_version}/bin/3.3_fMRIActivity/correlate_matrix.py')
+      module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+      x=np.array([-1,-1,0,0,1,1],dtype=float);y=np.array([-1,1,0,0,1,-1],dtype=float)
+      data=np.column_stack([x,y,3*x+4*y]);before=data.copy()
+      labels=['roi_x','roi_y','roi_mix']
+      expected=np.array([[0,0,.6],[0,0,.8],[.6,.8,0]],dtype=float)
+      pvalues=np.array([[0,1,.208],[1,0,.056],[.208,.056,0]],dtype=float)
+      fisher=np.array([[0,0,.5*np.log(4)],[0,0,.5*np.log(9)],[.5*np.log(4),.5*np.log(9),0]],dtype=float)
+      with tempfile.TemporaryDirectory(prefix='aidamri-connectivity-') as scratch:
+          paths=[str(Path(scratch)/(name+'.mat')) for name in ['pearson','pvalue','fisher']]
+          module.calculate_p_corr_matrix(data,labels,paths)
+          for path,target in zip(paths,[expected,pvalues,fisher]):
+              result=scipy.io.loadmat(path)
+              assert result['matrix'].shape==(3,3) and np.isfinite(result['matrix']).all()
+              np.testing.assert_allclose(result['matrix'],target,rtol=0,atol=64*np.finfo(float).eps)
+              assert [str(label).strip() for label in result['label'].ravel()]==labels,result['label']
+          np.testing.assert_array_equal(data,before)
+      print('AIDAmri primary Pearson p-value Fisher-z and saved ROI-label oracles passed')
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: AIDAmri primary Pearson p-value Fisher-z and saved ROI-label oracles passed
+    timeout: 120
+
+  - name: Architecture matched DSI Studio actually starts
+    command: |
+      /opt/aidamri-${upstream_version}/bin/dsi_studio_ubuntu2204/dsi-studio/dsi_studio --version
+    expected_output_contains: DSI Studio (
+    expected_exit_code: 0
+    timeout: 120

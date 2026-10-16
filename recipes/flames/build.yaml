@@ -1,4 +1,14 @@
 variables:
+  miniforge_version: "26.7.2-0"
+  torch_version: "2.5.1"
+  torchvision_version: "0.20.1"
+  numpy_version: "1.26.4"
+  conda_arch:
+    try:
+      - value: x86_64
+        condition: arch=="x86_64"
+      - value: aarch64
+        condition: arch=="aarch64"
   model_commit: ea055aec0f55baa15d984c4fe92035aaa21c7b5c
   hdbet_commit: ae160681324d524db3578e4135bf781f8206e146
   nnunetv2_version: 2.8.1
@@ -10,6 +20,7 @@ copyright:
     url: https://huggingface.co/spaces/FrancescoLR/FLAMeS/tree/main
 architectures:
   - x86_64
+  - aarch64
 auto_update:
   container_version: false
   method: sources
@@ -34,6 +45,38 @@ auto_update:
     package: nnunetv2
     target:
       variable: nnunetv2_version
+      fulltest_variable: nnunetv2_version
+
+  - id: miniforge
+    dependency: true
+    method: github_release
+    repo: conda-forge/miniforge
+    target:
+      variable: miniforge_version
+  - id: torch
+    dependency: true
+    method: pypi
+    package: torch
+    version_regex: '^(?P<version>2[.][0-5][.][0-9]+)$'
+    target:
+      variable: torch_version
+      fulltest_variable: torch_version
+  - id: torchvision
+    dependency: true
+    method: pypi
+    package: torchvision
+    version_regex: '^(?P<version>0[.](?:1[6-9]|20)[.][0-9]+)$'
+    target:
+      variable: torchvision_version
+      fulltest_variable: torchvision_version
+  - id: numpy
+    dependency: true
+    method: pypi
+    package: numpy
+    version_regex: '^(?P<version>1[.][0-9]+[.][0-9]+)$'
+    target:
+      variable: numpy_version
+      fulltest_variable: numpy_version
 
 build:
   kind: neurodocker
@@ -42,8 +85,8 @@ build:
   directives:
     # --- conda installer ---
     - file:
-        name: Miniforge3_Linux_x86_64_sh
-        url: https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+        name: miniforge_installer
+        url: https://github.com/conda-forge/miniforge/releases/download/{{ context.miniforge_version }}/Miniforge3-Linux-{{ context.conda_arch }}.sh
     # --- FLAMeS nnU-Netv2 model weights (Dataset004_WML) ---
     - file:
         name: flames_model_zip
@@ -76,18 +119,25 @@ build:
     - workdir: /opt
     # --- conda env ---
     - run:
-        - cp {{ get_file("Miniforge3_Linux_x86_64_sh") }} Miniforge3-Linux-x86_64.sh
-        - bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
+        - cp {{ get_file("miniforge_installer") }} Miniforge3-Linux.sh
+        - bash Miniforge3-Linux.sh -b -p /opt/miniforge3
         - /opt/miniforge3/bin/conda create -y -n flames python=3.11
     - environment:
         PATH: /opt/miniforge3/envs/flames/bin:/opt/flames/bin:${PATH}
         nnUNet_results: /opt/flames/model
+        MPLCONFIGDIR: /tmp/mpl-flames
+        XDG_CACHE_HOME: /tmp/cache-flames
+        PYTHONNOUSERSITE: "1"
         nnUNet_raw: /tmp/nnunet_raw
         nnUNet_preprocessed: /tmp/nnunet_preprocessed
     # --- python deps: CPU torch + nnU-Netv2 + IO libs ---
     - run:
-        - pip install --timeout 600 torch torchvision --index-url https://download.pytorch.org/whl/cpu
-        - pip install --timeout 600 nnunetv2=={{ context.nnunetv2_version }} nibabel "scipy>=1.9.0" matplotlib "numpy<2"
+        # HD-BET1.0 uses legacy torch.load and Python's imp module. Python3.11,
+        # Torch2.5 and NumPy1 preserve that official checkpoint/runtime contract.
+        # nnU-Net2.8.1 explicitly accepts torch>=2.1.2 (except2.9) and NumPy>=1.24.
+        - pip install --timeout 600 "torch=={{ context.torch_version }}" "torchvision=={{ context.torchvision_version }}"
+          --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
+        - pip install --timeout 600 nnunetv2=={{ context.nnunetv2_version }} nibabel "scipy>=1.9.0" matplotlib "numpy=={{ context.numpy_version }}"
     # --- install model weights ---
     - run:
         - mkdir -p /opt/flames/model
@@ -108,6 +158,7 @@ build:
         - cp {{ get_file("4_model") }} /opt/hd-bet_params/4.model
         - sed -i "s|os.path.join(os.path.expanduser('~'), 'hd-bet_params')|'/opt/hd-bet_params'|" /opt/hdbet/HD_BET/paths.py
         - pip install -e /opt/hdbet
+        - pip check
     # --- FLAMeS wrapper CLI ---
     # Staged as a file (NOT a heredoc) because Neurodocker joins run-directive
     # lines with ` && `, which corrupts heredoc bodies -> "unterminated heredoc".
@@ -139,11 +190,15 @@ build:
           [ -z "$IN" ] && usage
           [ -z "$OUT" ] && usage
           mkdir -p "$OUT"
-          TMP=$(mktemp -d); IN_DIR="$TMP/in"; mkdir -p "$IN_DIR"
+          TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+          IN_DIR="$TMP/in"; mkdir -p "$IN_DIR"
           FLAIR="$IN"
           if [ "$STRIP" -eq 1 ]; then
             echo "[flames] skull-stripping with HD-BET..."
-            hd-bet -i "$IN" -o "$TMP/brain.nii.gz" -device "$DEVICE" --disable_tta
+            # The pinned HD-BET1.0 accepts -tta 0 and integer GPU IDs.
+            BET_DEVICE="$DEVICE"; [ "$DEVICE" = cuda ] && BET_DEVICE=0
+            hd-bet -i "$IN" -o "$TMP/brain.nii.gz" -device "$BET_DEVICE" -tta 0
+            test -s "$TMP/brain.nii.gz"
             FLAIR="$TMP/brain.nii.gz"
           fi
           cp "$FLAIR" "$IN_DIR/case_0000.nii.gz"
@@ -156,16 +211,14 @@ build:
             mv "$OUT/case.nii.gz" "$OUT/${base}_LesionMask.nii.gz"
             echo "[flames] done -> $OUT/${base}_LesionMask.nii.gz"
           else
-            echo "[flames] WARNING: expected output case.nii.gz not found; check $OUT"
+            echo "[flames] ERROR: expected output case.nii.gz not found; check $OUT" >&2
+            exit 1
           fi
           rm -rf "$TMP"
     - run:
         - mkdir -p /opt/flames/bin
         - cp {{ get_file("flames_cli") }} /opt/flames/bin/flames
         - chmod +x /opt/flames/bin/flames
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
 categories:
   - image segmentation
   - machine learning

@@ -51,13 +51,6 @@ build:
         path: []
         bins:
           - clinica
-    - test:
-        name: testScript
-        script: |-
-          #!/bin/bash
-          clinica --version
-          fslmaths --version
-          recon-all --version
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA5VJREFUSEuVlklME1Ecxr/HFBE6UEtFJAKCRlFRrAUUUWk0IRgSThDlIAnhoHGJS1yiXj3h1YPGmBiXuMQlKhBCkIOiYjFiRNRE1qIotVq7GW2xM+a90rGdeaC2aTKZefN+/+97/6Xk+L21sizLiP4BgCTJ+O4OYqYogMSBPaef6HWhCRn+b0GIqTqAxD6LrCfH7pawN9UQKSTBMfwDySYdElN0mgDoet/XILzOINIXJgJEGwDdlxy9s2ZKgP2VD/EJBBmL9JDpd1JpROGHN378CkrIWq5XAJIkxShlgNgXwwuogqEeD4swf2MqhHgSo2IiEMKr+9+QMkeHHHMyA0TvE7kmR24XT6lg+IUPbztd2LAtA3qjLgyejJCCOy+NI299CuabxaktogAemSqggI5z77F5TzYy8pLoSbEoaQJ8eO1H++mPsNanxwA0Fh2+VaQBhH5JeNflRuspO4uafkq3pqOgIhU0mfo6XHh8xaE827R9LhYUi9xsI4duFmoskkIyA5DBfLS0tMDn86GgbB6s9RlMBbWmu20YJpMJ1dXVcM9+EgOIdoQcvGHhKuh/6oYwXIDm5mYWaUnpaqStG2dR2u+LePn8DbtfU1MDl/ERcov1fAXRgAiZKogG+P1+puTE2Z2IE4C9W06itrYWoihyATEKDlw3cy3qf+qBbiSsoKmpCVarFQaDgUXtcDhgs9lQVVXFAF+Nncgt+qPgrwB6yP02D+JHVjJARUUF2traYLFY4Ha7MTQ0hPLycrS3tzPAl1kUkIQ4gShprNTB/msrNYVGLRqgALuZAbKystDb24vW1lZ4PB7U1dUhOzsbLpcrDDA8RE5RknIGMQr2XS3QWEQVDNi8mDH6B9DY2IjKykoEAgF0dXWhoaFBATgND5BTGFagbppk75UVfEC3FwmjqxQFaWlp6OnpYWdQVlaGvr4+BfA5hQISNQAKYwB1JTMF3V7MsJtZ9mRmZmJsbAxerxeCIECv18NoNDIArQMntagwkZ+mey7ncxUMPvOh48wnpVqnu1hfb8J8y0y+RRSgVkB7jXs8AJ9zgvUdNi8kGc6Rn6AJMDs3AQST9wHoU+OQPIc2w3Cvip4vZPelZdx2rT4sNmC+hIGiSVA2Ujc3DWDXxaUai3gTLvIi7bLq8TjderLzwhJuu1Y2VE0onjLewFIKTQ3gSebNi38NgOw4v/i/LFL/OVB7rik0HmA6yX/bUB3Ab9gvR72mBXL6AAAAAElFTkSuQmCC
 readme: |-
   ----------------------------------

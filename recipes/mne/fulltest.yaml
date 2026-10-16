@@ -1,7 +1,7 @@
 name: mne
 version: 1.13.2
 mne_version: "1.13.2"
-vscode_version: "1.141.0"
+vscode_version: "1.141.1"
 
 test_data:
   output_dir: test_output

@@ -1,6 +1,10 @@
 name: flames
 version: 1.0.0
 default_timeout: 120
+torch_version: "2.5.1"
+torchvision_version: "0.20.1"
+numpy_version: "1.26.4"
+nnunetv2_version: "2.8.1"
 
 tests:
   - name: FLAMeS runtime entrypoints
@@ -109,3 +113,137 @@ tests:
       test "$nnUNet_preprocessed" = "/tmp/nnunet_preprocessed"
       echo "runtime-paths-ok"
     expected_output_contains: "runtime-paths-ok"
+
+  - name: Native CPU dependency closure
+    description: Verify pinned legacy checkpoint-compatible Torch and nnU-Net dependencies, real pooling and compiled torchvision NMS.
+    timeout: 300
+    command: |
+      python - <<'PY'
+      import importlib.metadata as md
+      import subprocess
+      import sys
+      import torch
+      import torchvision
+      import numpy as np
+      assert torch.__version__.split('+')[0] == '${torch_version}', torch.__version__
+      assert torchvision.__version__.split('+')[0] == '${torchvision_version}', torchvision.__version__
+      assert np.__version__ == '${numpy_version}'
+      assert md.version('nnunetv2') == '${nnunetv2_version}'
+      assert torch.version.cuda is None and not torch.cuda.is_available()
+      x = torch.arange(8, dtype=torch.float32).reshape(1, 1, 2, 2, 2)
+      assert torch.nn.functional.avg_pool3d(x, kernel_size=2).item() == 3.5
+      # Exercise torchvision's compiled extension, rather than merely importing it.
+      boxes = torch.tensor([[0., 0., 10., 10.], [1., 1., 9., 9.], [20., 20., 30., 30.]])
+      assert torchvision.ops.nms(boxes, torch.tensor([.9, .8, .7]), .5).tolist() == [0, 2]
+      subprocess.run([sys.executable, '-m', 'pip', 'check'], check=True)
+      print('native FLAMeS CPU dependency closure passed', torch.__version__, torchvision.__version__, np.__version__)
+      PY
+    expected_exit_code: 0
+    expected_output_contains: native FLAMeS CPU dependency closure passed
+
+  - name: Full trained MS lesion segmentation with skull stripping
+    description: Run the actual five-model HD-BET and default five-fold FLAMeS workflow on a complete public MS FLAIR image. Keep full size, all models and default FLAMeS augmentation. Assert binary nonempty output, physical grid, overlap with a known lesion and unchanged source/reference/model assets. Report observed Dice without claiming clinical accuracy.
+    timeout: 14600
+    command: |
+      python - <<'PY'
+      import hashlib
+      import json
+      import os
+      from pathlib import Path
+      import signal
+      import subprocess
+      import tempfile
+      import time
+      import urllib.request
+
+      import nibabel as nib
+      import numpy as np
+
+
+      def digest(path):
+          h = hashlib.sha256()
+          with path.open('rb') as handle:
+              for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                  h.update(chunk)
+          return h.hexdigest()
+
+
+      fixtures = [{'kind': 'flair', 'url': 'https://raw.githubusercontent.com/muschellij2/open_ms_data/65704901f60650824565aa5a4818611aa89716f4/cross_sectional/MNI/patient01/FLAIR_N4_noneck_reduced_winsor_regtoFLAIR_brain_N4_regtoMNI.nii.gz', 'sha256': '312253bbc7cea9adcd78a98c66e18ba1253b1a2183f31492f6a9f9ce5086e745'}, {'kind': 'reference', 'url': 'https://raw.githubusercontent.com/muschellij2/open_ms_data/65704901f60650824565aa5a4818611aa89716f4/cross_sectional/MNI/patient01/GOLD_STANDARD_N4_noneck_reduced_winsor_regtoFLAIR_regtoMNI.nii.gz', 'sha256': 'f35bd723ac2af1b179522f53de48e45ce485c5864e4f6954d24d684140ba0533'}]
+      model_root = Path('/opt/flames/model')
+      model = model_root / 'Dataset004_WML/nnUNetTrainer_8000epochs__nnUNetPlans__3d_fullres'
+      for fold in range(5):
+          assert (model / f'fold_{fold}/checkpoint_final.pth').is_file()
+      assert json.loads((model / 'dataset.json').read_text())['labels'] == {'background': 0, 'Lesion': 1}
+      assets = [p for root in (model_root, Path('/opt/hd-bet_params')) for p in root.rglob('*') if p.is_file()]
+      before_models = {str(p): digest(p) for p in assets}
+      assert len(list(Path('/opt/hd-bet_params').glob('*.model'))) == 5
+
+      with tempfile.TemporaryDirectory(prefix='flames-real-ms-') as directory:
+          root = Path(directory)
+          paths = {}
+          for item in fixtures:
+              path = root / (item['kind'] + '.nii.gz')
+              with urllib.request.urlopen(item['url'], timeout=120) as response, path.open('wb') as handle:
+                  while chunk := response.read(1024 * 1024):
+                      handle.write(chunk)
+              assert digest(path) == item['sha256'], item['kind']
+              paths[item['kind']] = path
+          image = nib.load(paths['flair'])
+          reference = nib.load(paths['reference'])
+          assert image.shape == reference.shape == (182, 218, 182)
+          np.testing.assert_array_equal(image.affine, reference.affine)
+          np.testing.assert_array_equal(image.header.get_zooms(), (1, 1, 1))
+          assert np.isfinite(np.asarray(image.dataobj)).all()
+          known_lesions = np.asarray(reference.dataobj) > 0
+          assert np.count_nonzero(known_lesions) > 0
+          before_inputs = {kind: digest(path) for kind, path in paths.items()}
+          env = dict(os.environ)
+          for variable in ('HOME', 'XDG_CACHE_HOME', 'MPLCONFIGDIR'):
+              target = root / variable.lower()
+              target.mkdir()
+              env[variable] = str(target)
+          env.update(OMP_NUM_THREADS='2', MKL_NUM_THREADS='2', OPENBLAS_NUM_THREADS='2')
+          output = root / 'output'
+          command = ['flames', '-i', str(paths['flair']), '-o', str(output), '--device', 'cpu', '--skull-strip']
+          started = time.monotonic()
+          process = subprocess.Popen(command, env=env, start_new_session=True)
+          try:
+              code = process.wait(timeout=14400)
+          except subprocess.TimeoutExpired:
+              os.killpg(process.pid, signal.SIGTERM)
+              try:
+                  process.wait(timeout=20)
+              except subprocess.TimeoutExpired:
+                  os.killpg(process.pid, signal.SIGKILL)
+                  process.wait()
+              raise
+          assert code == 0, code
+          result_path = output / 'flair_LesionMask.nii.gz'
+          assert result_path.is_file() and result_path.stat().st_size > 0
+          result = nib.load(result_path)
+          assert result.shape == image.shape
+          # This derives from NIfTI float32 spatial storage, not prediction accuracy.
+          bound = 8 * np.finfo(np.float32).eps * max(1, np.abs(image.affine).max())
+          np.testing.assert_allclose(result.affine, image.affine, rtol=0, atol=bound)
+          np.testing.assert_array_equal(result.header.get_zooms(), image.header.get_zooms())
+          labels = np.asarray(result.dataobj)
+          assert np.isfinite(labels).all()
+          assert set(np.unique(labels).tolist()) <= {0, 1}
+          foreground = labels == 1
+          count = int(np.count_nonzero(foreground))
+          assert 0 < count < labels.size
+          intersection = int(np.count_nonzero(foreground & known_lesions))
+          assert intersection > 0, 'No predicted voxel intersects any known MS lesion'
+          dice = 2 * intersection / (count + np.count_nonzero(known_lesions))
+          assert before_inputs == {kind: digest(path) for kind, path in paths.items()}
+          assert before_models == {str(p): digest(p) for p in assets}
+          print('full FLAMeS CPU MS workflow passed', json.dumps({
+              'shape': list(result.shape), 'lesion_voxels': count,
+              'reference_overlap_voxels': intersection, 'observed_dice': float(dice),
+              'seconds': round(time.monotonic() - started, 2),
+              'unchanged_model_files': len(assets), 'skull_strip': True,
+              'folds': [0, 1, 2, 3, 4], 'input_sha256': before_inputs,
+          }, sort_keys=True))
+      PY
+    expected_exit_code: 0
+    expected_output_contains: full FLAMeS CPU MS workflow passed

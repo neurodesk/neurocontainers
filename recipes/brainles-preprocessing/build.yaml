@@ -71,6 +71,7 @@ build:
         - wget
         - ca-certificates
         - unzip
+        - libgomp1
 
     - condition: arch == "aarch64"
       install:
@@ -103,8 +104,6 @@ build:
         - ln -sf /usr/lib/aarch64-linux-gnu/libstdc++.so.6 /opt/miniconda-py311_24.9.2-0/envs/brainles/lib/libstdc++.so.6
 
     - run:
-        # Core library. antspyx (registration) + SimpleITK ship self-contained
-        # manylinux wheels, so no extra system libraries are needed on x86_64.
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -m pip install --no-cache-dir brainles-preprocessing=={{ context.upstream_version }}
         - /opt/miniconda-py311_24.9.2-0/envs/brainles/bin/python -c "import brainles_preprocessing; print('brainles-preprocessing OK')"
 

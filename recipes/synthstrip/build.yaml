@@ -8,6 +8,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   method: github_tags
@@ -30,6 +31,7 @@ build:
     - run:
         - python3 -m pip install --no-cache-dir 'numpy<2' surfa
         - python3 -m pip install --no-cache-dir torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+        - python3 -m pip check
 
     - run:
         - mkdir -p /freesurfer/models

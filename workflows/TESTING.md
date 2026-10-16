@@ -4,7 +4,7 @@ This document describes how container tests are defined, executed locally, and a
 
 ## Test Definitions and Tooling
 
-- **Test sources** live beside each recipe in `recipes/<name>/fulltest.yaml`. `test.yaml`, `test.sh`, and embedded `build.yaml` tests are no longer supported recipe test formats.
+- **Test sources** live beside each recipe in `recipes/<name>/fulltest.yaml`. `test.yaml` and `test.sh` are no longer supported, and the builder rejects a `test` directive inside `build.directives`. A legacy top-level `tests:` block in `build.yaml` is read only when `workflows/container_tester.py` runs without `--test-config`, from the image's embedded `/build.yaml`.
 - **`builder/run_tests.py`** is the fulltest executor. Release PR testing invokes it through `workflows/release_test_runner.py`, which also runs the builtin deploy bins/path check.
 - **`builder/release_artifact.py`** decides which SIF a fulltest runs against. See [Release Artifact Resolution](#release-artifact-resolution) below.
 - **`workflows/container_tester.py`** still provides runtime selection, release container downloads, Docker-to-SIF conversion, and the builtin deploy check. It is not the fulltest YAML executor. Key flags you will see in CI:

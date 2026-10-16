@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "lesymap 0.0.0.9221": {
+      "version": "20261014",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "workflows",
+    "statistics"
+  ]
+}
