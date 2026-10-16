@@ -29,13 +29,13 @@ variables:
   petu_version: 0.0.7
   gliomoda_version: 0.0.4
   antspyx_version: 0.6.3
-  auxiliary_version: "0.4.2"
+  auxiliary_version: "0.4.3"
   brainles_hd_bet_version: 0.0.11
   ttictoc_version: 0.5.6
-  typer_version: "0.27.2"
+  typer_version: "0.27.3"
   tqdm_version: "4.70.1"
   brainles_aurora_version: 0.2.7
-  brainles_preprocessing_version: "0.6.13"
+  brainles_preprocessing_version: "0.6.14"
 
 auto_update:
   container_version: false
@@ -171,7 +171,7 @@ build:
         # the only case that ever crashed. Asserted here as well as in the
         # fulltest because it is the whole point of the previous step.
         - >-
-          python -c "from brainles_preprocessing.utils import zenodo as z; asked=[]; z.ZenodoRecord._get_metadata_and_archive_url=lambda self: (asked.append(1), ({'version':'99.0.0'},''))[1]; p=z.fetch_atlases(); assert p.name.endswith('_v{{ context.atlas_version }}'), p; assert not asked, 'zenodo queried at run time'; print('atlas pin survives an upstream version bump')"
+          python -c "from brainles_preprocessing.utils import zenodo as z; asked=[]; z.ZenodoRecord._get_metadata_and_files=lambda self: (asked.append(1), ({'version':'99.0.0'},[]))[1]; p=z.fetch_atlases(); assert p.name.endswith('_v{{ context.atlas_version }}'), p; assert not asked, 'zenodo queried at run time'; print('atlas pin survives an upstream version bump')"
         # panoptica up to 2.1.6 built its instance-label lookup with the dtype
         # of the connected-components array, so multi-lesion evaluations failed
         # once reference plus unmatched predicted instances exceeded 255. Fixed

@@ -420,6 +420,12 @@ readme: |-
   on a Siemens scanner. See `recipes/synthseg/OpenReconREADME.md` for the
   scanner parameters and output contract.
 
+  OpenRecon brain-volume reports select reference norms by scanner field
+  strength and SynthSeg mode. Below 5 T, or when field strength is missing,
+  reports use IXI; at 5 T and above, they use the AHEAD 7 T cohort. Each cohort
+  has separate reference norms for fast and normal mode, matched to the mode
+  used for segmentation.
+
   More documentation: https://surfer.nmr.mgh.harvard.edu/fswiki/SynthSeg
 
   To run applications outside of this container: ml synthseg/{{ context.version }}

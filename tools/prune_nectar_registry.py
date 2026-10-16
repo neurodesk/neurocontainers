@@ -112,6 +112,7 @@ def parse_artifact(repository: str, item: dict) -> Artifact:
 class Harbor:
     def __init__(self, api: str, project: str, username: str = "", password: str = ""):
         self.api = api.rstrip("/")
+        self.registry = self.api.removesuffix("/api/v2.0")
         self.project = project
         self.auth = (
             "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode()
@@ -120,10 +121,10 @@ class Harbor:
         )
 
     def _request(self, method: str, path: str) -> tuple[object, dict]:
+        # The project is public, so the REST API is read anonymously: under
+        # OIDC, Harbor's REST API rejects the CLI secret that deletes need.
         request = urllib.request.Request(f"{self.api}{path}", method=method)
         request.add_header("Accept", "application/json")
-        if self.auth:
-            request.add_header("Authorization", self.auth)
         with urllib.request.urlopen(request, timeout=60) as response:
             body = response.read()
             return (json.loads(body) if body else None), dict(response.headers)
@@ -167,10 +168,21 @@ class Harbor:
         return parse_artifact(repository, item)
 
     def delete_artifact(self, artifact: Artifact) -> None:
-        self._request(
-            "DELETE",
-            f"{self._repository_path(artifact.repository)}/artifacts/{artifact.digest}",
+        # Deletes go through the registry API, whose token service accepts an
+        # OIDC user's CLI secret. Deleting the manifest removes all its tags.
+        name = f"{self.project}/{artifact.repository}"
+        query = urllib.parse.urlencode(
+            {"service": "harbor-registry", "scope": f"repository:{name}:delete"}
         )
+        request = urllib.request.Request(f"{self.registry}/service/token?{query}")
+        request.add_header("Authorization", self.auth or "")
+        with urllib.request.urlopen(request, timeout=60) as response:
+            token = json.load(response)["token"]
+        request = urllib.request.Request(
+            f"{self.registry}/v2/{name}/manifests/{artifact.digest}", method="DELETE"
+        )
+        request.add_header("Authorization", f"Bearer {token}")
+        urllib.request.urlopen(request, timeout=60).close()
 
 
 def load_apps(source: str) -> dict:
