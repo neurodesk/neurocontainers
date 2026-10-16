@@ -543,7 +543,11 @@ build:
     - run:
         - HOME=/root bash {{ get_file("tinytex_install") }}
         - mv /root/.TinyTeX /opt/TinyTeX
-        - tlmgr_path="$(echo /opt/TinyTeX/bin/*/tlmgr)"; "$tlmgr_path" option sys_bin /usr/local/bin >/dev/null; "$tlmgr_path" path add >/dev/null; "$tlmgr_path" install tcolorbox parskip caption float geometry amsmath amsfonts latex upquote eurosym fontspec unicode-math fancyvrb grffile adjustbox hyperref titling tools booktabs enumitem ulem soul jknapltx rsfs graphics iftex xcolor pdfcol
+        - tlmgr_path="$(echo /opt/TinyTeX/bin/*/tlmgr)"
+        - '"$tlmgr_path" option sys_bin /usr/local/bin >/dev/null'
+        - '"$tlmgr_path" path add >/dev/null'
+        - '"$tlmgr_path" update --self'
+        - '"$tlmgr_path" install tcolorbox parskip caption float geometry amsmath amsfonts latex upquote eurosym fontspec unicode-math fancyvrb grffile adjustbox hyperref titling tools booktabs enumitem ulem soul jknapltx rsfs graphics iftex xcolor pdfcol'
         - rm -rf /root/.cache /root/.local
 
     - run:
