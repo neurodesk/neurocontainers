@@ -53,6 +53,7 @@ jobs:
           NECTAR_REGISTRY_USERNAME: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME }}
           NECTAR_REGISTRY_PASSWORD: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
         run: |
+          set -o pipefail
           args=(--min-age-days "${MIN_AGE_DAYS}" --report nectar-prune-plan.json)
           if [ "${APPLY}" = "true" ]; then
             args+=(--apply --expect-plan "${PLAN_HASH}")
