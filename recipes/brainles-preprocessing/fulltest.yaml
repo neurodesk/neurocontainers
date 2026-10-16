@@ -123,6 +123,7 @@ tests:
       import json
       import os
       import platform
+      import re
       import resource
       import threading
       import time
@@ -144,20 +145,130 @@ tests:
               torch_threads=torch.get_num_threads(), **details,
           )), flush=True)
 
+      def telemetry_read(path, limit=1024):
+          sample = {'path': str(path), 'limit_bytes': limit}
+          try:
+              with pathlib.Path(path).open('rb') as stream:
+                  data = stream.read(limit + 1)
+              sample.update(status='truncated' if len(data) > limit else 'ok',
+                            raw=data[:limit].decode('utf-8', errors='replace'))
+          except (OSError, ValueError) as error:
+              sample.update(status='unavailable', error=type(error).__name__,
+                            errno=getattr(error, 'errno', None))
+          return sample
+
+
+      def cgroup_resources():
+          membership = telemetry_read('/proc/self/cgroup', 16384)
+          mountinfo = telemetry_read('/proc/self/mountinfo', 65536)
+          result = dict(membership=membership,
+                        mountinfo={k: v for k, v in mountinfo.items() if k != 'raw'},
+                        visibility='Visible cgroup v2 mount only; hidden ancestors and namespace '
+                                   'root are not established. Raw samples are not atomic or '
+                                   'global effective limits.',
+                        max_levels=16, levels=[], v2_mounts=[], mounts_capped=False)
+          if membership['status'] != 'ok' or mountinfo['status'] != 'ok':
+              return dict(result, status='unavailable_resolution_inputs')
+          entries = [line.split(':', 2) for line in membership['raw'].splitlines()]
+          if any(len(entry) != 3 or not entry[0].isdigit() for entry in entries):
+              return dict(result, status='malformed_membership')
+          unified = [entry[2] for entry in entries if entry[:2] == ['0', '']]
+          result['other_hierarchies'] = 'unsupported' if any(e[0] != '0' for e in entries) else 'none'
+          if not unified:
+              return dict(result, status='unsupported_or_missing_v2_membership')
+          if len(unified) != 1:
+              return dict(result, status='malformed_membership')
+          member = pathlib.PurePosixPath(unified[0])
+          if not member.is_absolute() or '..' in member.parts or '\x00' in str(member):
+              return dict(result, status='unresolved_membership_namespace_path')
+          candidates = []
+          unsupported = 0
+          for line in mountinfo['raw'].splitlines():
+              before, separator, after = line.partition(' - ')
+              filesystem = after.split()
+              if not separator or not filesystem or filesystem[0] != 'cgroup2':
+                  continue
+              fields = before.split()
+              if len(fields) < 6 or len(filesystem) < 3:
+                  return dict(result, status='malformed_v2_mountinfo')
+              root, point = [pathlib.PurePosixPath(re.sub(
+                  r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), value)) for value in fields[3:5]]
+              if len(result['v2_mounts']) < 8:
+                  result['v2_mounts'].append(dict(id=fields[0], root=str(root), point=str(point)))
+              else:
+                  result['mounts_capped'] = True
+              if any(not p.is_absolute() or '..' in p.parts or '\x00' in str(p) for p in [root, point]):
+                  unsupported += 1
+                  continue
+              if member == root or root in member.parents:
+                  candidates.append((root, point, fields[0]))
+          result['unsupported_mount_paths'] = unsupported
+          result['matching_mounts'] = len(candidates)
+          if not candidates:
+              return dict(result, status='unresolved_v2_mount_or_namespace')
+          root, point, mount_id = min(candidates, key=lambda m: (len(m[0].parts), str(m[1])))
+          result['mount'] = dict(id=mount_id, root=str(root), point=str(point),
+                                 selection='widest matching visible root')
+          current = point / member.relative_to(root)
+          result['leaf'] = str(current)
+          counters = ['cpu.max', 'cpu.stat', 'cpu.pressure', 'cpuset.cpus',
+                      'cpuset.cpus.effective', 'cpuset.mems.effective', 'memory.max',
+                      'memory.high', 'memory.current', 'memory.events',
+                      'memory.events.local', 'memory.swap.max', 'memory.swap.current',
+                      'memory.pressure']
+          for _ in range(result['max_levels']):
+              result['levels'].append(dict(path=str(current), counters={
+                  name: telemetry_read(current / name) for name in counters}))
+              if current == point:
+                  return dict(result, status='sampled_to_visible_mount_root')
+              current = current.parent
+          return dict(result, status='ancestor_depth_limit', next_unsampled_ancestor=str(current))
+
+
+      def loaded_libraries():
+          sample = telemetry_read('/proc/self/maps', 262144)
+          raw = sample.pop('raw', '')
+          sample.update(paths=[], max_paths=64, max_path_bytes=16384, paths_capped=False)
+          prefixes = ('libtorch', 'libc10', 'libgomp', 'libomp', 'libiomp',
+                      'libmkl', 'libopenblas', 'libscipy_openblas', 'libblas',
+                      'libcblas', 'liblapack', 'libdnnl', 'libmkldnn')
+          seen = set()
+          path_bytes = 0
+          lines = raw.splitlines()
+          if sample['status'] == 'truncated':
+              lines = lines[:-1]
+          for line in lines:
+              fields = line.split(None, 5)
+              if len(fields) != 6 or not fields[5].startswith('/'):
+                  continue
+              path = fields[5]
+              name = path.rsplit('/', 1)[-1].lower()
+              if not name.startswith(prefixes) or '.so' not in name or path in seen:
+                  continue
+              size = len(path.encode('utf-8'))
+              if len(seen) == sample['max_paths'] or path_bytes + size > sample['max_path_bytes']:
+                  sample['paths_capped'] = True
+                  break
+              seen.add(path)
+              path_bytes += size
+              sample['paths'].append(path)
+          sample['scope'] = 'Filtered mapped paths only; absence does not exclude a provider or static linkage.'
+          return sample
+
+
       def resources():
-          paths = ['cpu.max', 'cpu.stat', 'memory.max', 'memory.current',
-                   'memory.events', 'memory.swap.current', 'memory.pressure']
-          counters = {}
-          for name in paths:
-              path = pathlib.Path('/sys/fs/cgroup') / name
-              if path.is_file():
-                  counters[name] = path.read_text().strip()
-          process = [line for line in pathlib.Path('/proc/self/status').read_text().splitlines()
-                     if line.startswith(('VmRSS:', 'VmSwap:', 'Threads:', 'Cpus_allowed_list:'))]
-          memory = [line for line in pathlib.Path('/proc/meminfo').read_text().splitlines()
-                    if line.startswith(('MemTotal:', 'MemAvailable:', 'SwapTotal:', 'SwapFree:'))]
-          report('resources', load=os.getloadavg(), cgroup=counters, process=process,
-                 memory=memory, cgroup_path=pathlib.Path('/proc/self/cgroup').read_text().strip())
+          process = telemetry_read('/proc/self/status', 16384)
+          memory = telemetry_read('/proc/meminfo', 16384)
+          for sample, prefixes in [(process, ('VmRSS:', 'VmSwap:', 'Threads:', 'Cpus_allowed_list:')),
+                                   (memory, ('MemTotal:', 'MemAvailable:', 'SwapTotal:', 'SwapFree:'))]:
+              sample['lines'] = [line for line in sample.pop('raw', '').splitlines()
+                                 if line.startswith(prefixes)]
+          try:
+              load = os.getloadavg()
+          except OSError as error:
+              load = dict(status='unavailable', error=type(error).__name__)
+          report('resources', load=load, cgroup=cgroup_resources(), process=process,
+                 memory=memory, loaded_libraries=loaded_libraries())
 
       finished = threading.Event()
       def heartbeat():
