@@ -280,17 +280,21 @@ def test_report_pages_render_legible_grayscale(norms, age):
         imsave(preview, np.hstack(pages), cmap="gray", vmin=0, vmax=brainquant.PIXEL_MAX)
 
 
-@pytest.mark.parametrize("field_strength, expected", [
-    (None, "brainquant_norms.json"),
-    (1.5, "brainquant_norms.json"),
-    (2.89, "brainquant_norms.json"),
-    (6.98, "brainquant_norms_7t.json"),
-    (9.4, "brainquant_norms_7t.json"),
+@pytest.mark.parametrize("field_strength, fast, expected", [
+    (None, True, "brainquant_norms.json"),
+    (1.5, True, "brainquant_norms.json"),
+    (2.89, True, "brainquant_norms.json"),
+    (6.98, True, "brainquant_norms_7t.json"),
+    (9.4, True, "brainquant_norms_7t.json"),
+    (None, False, "brainquant_norms_normal.json"),
+    (2.89, False, "brainquant_norms_normal.json"),
+    (5.0, False, "brainquant_norms_7t_normal.json"),
 ])
-def test_reference_is_selected_by_field_strength(field_strength, expected):
-    path, reason = brainquant.select_norms(field_strength)
+def test_reference_is_selected_by_field_strength_and_mode(field_strength, fast, expected):
+    path, reason = brainquant.select_norms(field_strength, fast)
     assert path.name == expected
     assert ("not in the header" in reason) == (field_strength is None)
+    assert reason.endswith("fast mode" if fast else "normal mode")
 
 
 def test_field_strength_reads_real_mrd_header_types():
@@ -301,17 +305,19 @@ def test_field_strength_reads_real_mrd_header_types():
     assert brainquant.header_field_strength(None) is None
 
 
-def test_shipped_references_share_structures_and_name_field_strength():
-    ixi = brainquant.load_norms(brainquant.NORMS_PATH)
-    seven_tesla = brainquant.load_norms(brainquant.NORMS_7T_PATH)
-    assert [(s.id, s.columns) for s in ixi.structures] == [(s.id, s.columns) for s in seven_tesla.structures]
-    assert (ixi.reference.field_strength, seven_tesla.reference.field_strength) == ("1.5 T and 3 T", "7 T")
-    assert ixi.icv_column == seven_tesla.icv_column
+def test_shipped_references_share_structures_and_match_their_cohort_and_mode():
+    shipped = {key: brainquant.load_norms(brainquant.norms_path(*key)) for key in brainquant.NORMS_FILES}
+    layouts = {tuple((s.id, s.columns) for s in norms.structures) for norms in shipped.values()}
+    assert len(layouts) == 1
+    for (cohort, fast), norms in shipped.items():
+        assert norms.reference.cohort == {"ixi": "IXI", "ahead": "AHEAD"}[cohort]
+        assert norms.reference.field_strength == {"ixi": "1.5 T and 3 T", "ahead": "7 T"}[cohort]
+        assert ("fast mode" if fast else "normal mode") in norms.reference.synthseg
 
 
-@pytest.mark.parametrize("norms_path", [brainquant.NORMS_PATH, brainquant.NORMS_7T_PATH])
-def test_report_text_stays_inside_the_page(norms_path):
-    norms = brainquant.load_norms(norms_path)
+@pytest.mark.parametrize("key", list(brainquant.NORMS_FILES))
+def test_report_text_stays_inside_the_page(key):
+    norms = brainquant.load_norms(brainquant.norms_path(*key))
     volumes = dict(SAMPLE_VOLUMES_MM3)
     footnotes = (
         f"The {norms.reference.cohort} reference was chosen because the scanner field strength is 6.98 T.",

@@ -746,14 +746,13 @@ def process_runtime(monkeypatch, tmp_path):
     import brainquant
     from test_brainquant import SAMPLE_VOLUMES_MM3, _fixture_norms, _write_vol_csv
 
-    norms_path = tmp_path / 'brainquant_norms.json'
-    norms_path.write_text(json.dumps(_fixture_norms()))
-    monkeypatch.setattr(brainquant, 'NORMS_PATH', norms_path)
-    norms_7t = _fixture_norms()
-    norms_7t['reference'].update(cohort='AHEAD', field_strength='7 T')
-    norms_7t_path = tmp_path / 'brainquant_norms_7t.json'
-    norms_7t_path.write_text(json.dumps(norms_7t))
-    monkeypatch.setattr(brainquant, 'NORMS_7T_PATH', norms_7t_path)
+    norms_dir = tmp_path / 'norms'
+    norms_dir.mkdir()
+    for (cohort, fast), name in brainquant.NORMS_FILES.items():
+        norms = _fixture_norms()
+        norms['reference'].update(cohort={'ixi': 'IXI', 'ahead': 'AHEAD'}[cohort])
+        (norms_dir / name).write_text(json.dumps(norms))
+    monkeypatch.setattr(brainquant, 'NORMS_DIR', norms_dir)
     commands = []
 
     def inference(command, output_dir):
@@ -919,20 +918,21 @@ def _mrd_header(birth='1961-03-02', gender='F', study='2025-03-01', field_streng
     )
 
 
-@pytest.mark.parametrize('field_strength, cohort, reason', [
-    (6.98, 'AHEAD', 'the scanner field strength is 6.98 T'),
-    (2.89, 'IXI', 'the scanner field strength is 2.89 T'),
-    (None, 'IXI', 'the scanner field strength is not in the header'),
+@pytest.mark.parametrize('field_strength, fast, norms_file, reason', [
+    (6.98, True, 'brainquant_norms_7t.json', 'the scanner field strength is 6.98 T and SynthSeg ran in fast mode'),
+    (6.98, False, 'brainquant_norms_7t_normal.json', 'the scanner field strength is 6.98 T and SynthSeg ran in normal mode'),
+    (2.89, True, 'brainquant_norms.json', 'the scanner field strength is 2.89 T and SynthSeg ran in fast mode'),
+    (2.89, False, 'brainquant_norms_normal.json', 'the scanner field strength is 2.89 T and SynthSeg ran in normal mode'),
+    (None, False, 'brainquant_norms_normal.json', 'the scanner field strength is not in the header and SynthSeg ran in normal mode'),
 ])
-def test_brainquant_reference_follows_scanner_field_strength(process_runtime, caplog, field_strength, cohort, reason):
+def test_brainquant_reference_follows_field_strength_and_mode(process_runtime, caplog, field_strength, fast, norms_file, reason):
     import logging
     helpers, sources, _ = process_runtime
-    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report')}
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssfast=fast)}
     with caplog.at_level(logging.INFO):
         outputs = _session_outputs(helpers, sources, config, _mrd_header(field_strength=field_strength))
     assert _series_by_index(outputs)[max(_series_by_index(outputs))][1]['SeriesDescription'] == 't1w_brainquant'
-    assert f'report reference: {cohort} ' in caplog.text
-    assert f'chosen because {reason}' in caplog.text
+    assert f'({norms_file}), chosen because {reason}' in caplog.text
 
 
 @pytest.mark.parametrize('extras', [False, True])
@@ -1015,7 +1015,7 @@ def test_brainquant_failure_omits_only_the_report(process_runtime, tmp_path, cap
     import logging
     import brainquant
     helpers, sources, _ = process_runtime
-    brainquant.NORMS_PATH = tmp_path / 'missing_norms.json'
+    brainquant.NORMS_DIR = tmp_path / 'missing_norms'
     config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report')}
     with caplog.at_level(logging.ERROR):
         outputs = _session_outputs(helpers, sources, config, None)
