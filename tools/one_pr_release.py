@@ -114,8 +114,33 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def recipe_fingerprint(recipe: str) -> str:
+def recipe_fingerprint(recipe: str, revision: str | None = None) -> str:
     """Hash every file and relative path in a recipe directory."""
+    if revision is not None:
+        data = load_recipe(recipe, revision)
+        prefix = f"recipes/{recipe}/"
+        paths = run_git(
+            "ls-tree", "-r", "--name-only", revision, "--", prefix
+        ).splitlines()
+        inputs = [(path, path.removeprefix(prefix)) for path in sorted(paths)]
+        for root in SharedInputs.from_recipe(data).roots:
+            paths = run_git(
+                "ls-tree", "-r", "--name-only", revision, "--", root
+            ).splitlines()
+            if not paths:
+                raise RuntimeError(f"Missing shared build input at {revision}: {root}")
+            inputs.extend((path, path) for path in sorted(paths))
+        digest = hashlib.sha256()
+        for path, relative in inputs:
+            contents = subprocess.run(
+                ["git", "show", f"{revision}:{path}"],
+                cwd=REPO_ROOT,
+                check=True,
+                capture_output=True,
+            ).stdout
+            digest.update(relative.encode() + b"\0" + contents + b"\0")
+        return digest.hexdigest()
+
     recipe_dir = REPO_ROOT / "recipes" / recipe
     if not (recipe_dir / "build.yaml").is_file():
         raise RuntimeError(f"Missing recipe: {recipe_dir / 'build.yaml'}")
@@ -289,8 +314,13 @@ def build_date(recipe: str, revision: str = "HEAD") -> str:
     return value
 
 
-def load_recipe(recipe: str) -> dict[str, Any]:
+def load_recipe(recipe: str, revision: str | None = None) -> dict[str, Any]:
     """Load a recipe build file and require a mapping at its root."""
+    if revision is not None:
+        data = load_recipe_at(revision, recipe)
+        if data is None:
+            raise RuntimeError(f"Missing recipe at {revision}: {recipe}")
+        return data
     path = REPO_ROOT / "recipes" / recipe / "build.yaml"
     try:
         contents = path.read_text(encoding="utf-8")
@@ -305,13 +335,15 @@ def load_recipe(recipe: str) -> dict[str, Any]:
     return data
 
 
-def resolve_variant(recipe: str, variant: str) -> dict[str, Any]:
+def resolve_variant(
+    recipe: str, variant: str, revision: str | None = None
+) -> dict[str, Any]:
     """Return the declared concrete identity for a recipe variant selector.
 
     The selector reaches promotion inside an untrusted candidate manifest, so it
     is always resolved against the merged recipe rather than trusted as a name.
     """
-    data = load_recipe(recipe)
+    data = load_recipe(recipe, revision)
     for spec in concrete_variant_specs(data):
         if str(spec["variant"]) == variant:
             return spec
@@ -328,9 +360,10 @@ def inspect_recipe(
     head_sha: str,
     variant: str = "",
     candidate_build_date: str | None = None,
+    revision: str | None = None,
 ) -> dict[str, str]:
     """Derive safe candidate names and release identifiers for a recipe variant."""
-    data = load_recipe(recipe)
+    data = load_recipe(recipe, revision)
     if "version" not in data:
         raise RuntimeError(f"Recipe {recipe} build.yaml is missing a version field")
     version = str(data["version"])
@@ -339,7 +372,7 @@ def inspect_recipe(
             f"Recipe {recipe} has an invalid version {version!r}; "
             "use only letters, numbers, dots, underscores, and hyphens"
         )
-    spec = resolve_variant(recipe, variant)
+    spec = resolve_variant(recipe, variant, revision)
     container = validate_recipe_identifier(str(spec["name"]))
     date = (
         candidate_build_date
@@ -827,8 +860,14 @@ def verify_published_metadata(
     expected_head_sha: str,
     expected_pr_number: int,
     expected_merge_sha: str | None = None,
+    *,
+    exclude_superseded: bool = False,
 ) -> list[dict[str, Any]]:
     """Revalidate small promotion metadata after large artifacts are published."""
+    if exclude_superseded and expected_merge_sha is None:
+        raise RuntimeError("Selecting current metadata requires the trusted merge SHA")
+    if expected_merge_sha is not None:
+        run_git("merge-base", "--is-ancestor", expected_merge_sha, "HEAD")
     try:
         manifests = json.loads(manifests_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -839,6 +878,8 @@ def verify_published_metadata(
         raise RuntimeError("Published manifests must be a non-empty JSON array")
 
     containers: set[str] = set()
+    current = []
+    superseded = []
     for manifest in manifests:
         if not isinstance(manifest, dict):
             raise RuntimeError("Each published manifest must be a JSON object")
@@ -864,21 +905,24 @@ def verify_published_metadata(
             expected_head_sha,
             variant,
             manifest.get("build_date"),
+            revision=expected_merge_sha,
         )
         if manifest.get("head_sha") != expected_head_sha:
             raise RuntimeError(f"Published head SHA mismatch for {container}")
         if manifest.get("pr_number") != expected_pr_number:
             raise RuntimeError(f"Published PR number mismatch for {container}")
-        fingerprint_changed = manifest.get("recipe_fingerprint") != recipe_fingerprint(
-            recipe
-        )
-        source_only_change = (
-            expected_merge_sha is not None
-            and recipe_changes_since_merge_are_source_only(recipe, expected_merge_sha)
-        )
-        if fingerprint_changed and not source_only_change:
+        for field in ("recipe_fingerprint", "docker_sha256", "sif_sha256"):
+            value = manifest.get(field)
+            if (
+                not isinstance(value, str)
+                or re.fullmatch(r"[0-9a-f]{64}", value) is None
+            ):
+                raise RuntimeError(f"Invalid published {field} for {container}")
+        if manifest["recipe_fingerprint"] != recipe_fingerprint(
+            recipe, expected_merge_sha
+        ):
             raise RuntimeError(
-                f"Merged recipe differs from published candidate: {container}"
+                f"Trusted recipe differs from published candidate: {container}"
             )
 
         expected_release_json = f"{expected_info['version']}.json"
@@ -916,7 +960,7 @@ def verify_published_metadata(
         expected_release = release_data(
             container,
             expected_info["version"],
-            load_recipe(recipe),
+            load_recipe(recipe, expected_merge_sha),
             expected_info["build_date"],
             expected_info["architecture"],
             variant,
@@ -924,7 +968,62 @@ def verify_published_metadata(
         )
         if actual_release != expected_release:
             raise RuntimeError(f"Published release JSON mismatch for {container}")
-    return manifests
+
+        fingerprint_changed = manifest["recipe_fingerprint"] != recipe_fingerprint(
+            recipe
+        )
+        source_only_change = (
+            expected_merge_sha is not None
+            and recipe_changes_since_merge_are_source_only(recipe, expected_merge_sha)
+        )
+        if fingerprint_changed and not source_only_change:
+            if not exclude_superseded:
+                raise RuntimeError(
+                    f"Merged recipe differs from published candidate: {container}"
+                )
+            superseded.append(container)
+            continue
+        expected_current_release = release_data(
+            container,
+            expected_info["version"],
+            load_recipe(recipe),
+            expected_info["build_date"],
+            expected_info["architecture"],
+            variant,
+            source_recipe=recipe,
+        )
+        if actual_release != expected_current_release:
+            raise RuntimeError(f"Published release JSON mismatch for {container}")
+        existing_path = REPO_ROOT / "releases" / container / expected_release_json
+        if existing_path.exists():
+            try:
+                existing = json.loads(existing_path.read_text(encoding="utf-8"))
+                dates = [app["version"] for app in existing["apps"].values()]
+                if not dates or any(
+                    not isinstance(date, str) or not BUILD_DATE_PATTERN.fullmatch(date)
+                    for date in dates
+                ):
+                    raise ValueError("invalid release build dates")
+            except (
+                OSError,
+                UnicodeError,
+                ValueError,
+                KeyError,
+                TypeError,
+                AttributeError,
+            ) as error:
+                raise RuntimeError(
+                    f"Invalid existing release metadata: {existing_path}"
+                ) from error
+            if max(dates) > expected_info["build_date"]:
+                if not exclude_superseded:
+                    raise RuntimeError(f"Newer release already exists for {container}")
+                superseded.append(container)
+                continue
+        current.append(manifest)
+    for container in superseded:
+        print(f"Excluded superseded candidate: {container}")
+    return current
 
 
 def command_dive_gate(args: argparse.Namespace) -> None:
@@ -946,6 +1045,22 @@ def command_verify_metadata(args: argparse.Namespace) -> None:
         args.pr_number,
         args.merge_sha,
     )
+
+
+def command_select_current_metadata(args: argparse.Namespace) -> None:
+    """Validate every staged record before selecting the still-current subset."""
+    manifests = verify_published_metadata(
+        Path(args.bundle),
+        Path(args.manifests),
+        args.head_sha,
+        args.pr_number,
+        args.merge_sha,
+        exclude_superseded=True,
+    )
+    Path(args.output).write_text(
+        json.dumps(manifests, indent=2) + "\n", encoding="utf-8"
+    )
+    write_output({"containers": json.dumps([item["container"] for item in manifests])})
 
 
 def command_materialize(args: argparse.Namespace) -> None:
@@ -1021,6 +1136,15 @@ def parser() -> argparse.ArgumentParser:
     verify_metadata.add_argument("--merge-sha", required=True)
     verify_metadata.add_argument("--pr-number", required=True, type=int)
     verify_metadata.set_defaults(func=command_verify_metadata)
+
+    select_metadata = subparsers.add_parser("select-current-metadata")
+    select_metadata.add_argument("--bundle", required=True)
+    select_metadata.add_argument("--manifests", required=True)
+    select_metadata.add_argument("--head-sha", required=True)
+    select_metadata.add_argument("--merge-sha", required=True)
+    select_metadata.add_argument("--pr-number", required=True, type=int)
+    select_metadata.add_argument("--output", required=True)
+    select_metadata.set_defaults(func=command_select_current_metadata)
 
     materialize = subparsers.add_parser("materialize")
     materialize.add_argument("--bundle", required=True)

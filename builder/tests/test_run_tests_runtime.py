@@ -145,7 +145,7 @@ def test_unexpected_execution_failure_is_contained_with_traceback(
     def fail_execution(*args, **kwargs):
         raise RuntimeError("runtime failed unexpectedly")
 
-    monkeypatch.setattr(run_tests.subprocess, "run", fail_execution)
+    monkeypatch.setattr(run_tests, "_execute_test_script", fail_execution)
     result = run_tests.run_single_test(
         {"name": "broken", "script": "true"}, None, {}, tmp_path
     )
@@ -210,11 +210,11 @@ def test_timeout_preserves_real_process_output_and_cleans_scripts(tmp_path) -> N
 def test_timeout_decodes_output_and_uses_suite_default(
     tmp_path, monkeypatch, output
 ) -> None:
-    def timeout_execution(command, **kwargs):
-        assert kwargs["timeout"] == 31
-        raise subprocess.TimeoutExpired(command, 31, output=output, stderr=output)
+    def timeout_execution(script, container, variables, work, timeout):
+        assert timeout == 31
+        raise subprocess.TimeoutExpired(script, timeout, output=output, stderr=output)
 
-    monkeypatch.setattr(run_tests.subprocess, "run", timeout_execution)
+    monkeypatch.setattr(run_tests, "_execute_test_script", timeout_execution)
     result = run_tests.run_single_test(
         {"command": "true"}, None, {}, tmp_path, default_timeout=31
     )
@@ -464,15 +464,15 @@ def test_container_setup_and_tests_share_the_output_directory(
     work.mkdir()
     fallback = tmp_path / "runtime-default"
     fallback.mkdir()
-    real_run = subprocess.run
+    real_popen = subprocess.Popen
 
     def runtime_run(command, **kwargs):
         # Model a runtime whose default cwd differs from the host subprocess cwd.
         cwd = command[command.index("--pwd") + 1] if "--pwd" in command else fallback
         payload = command[command.index("image.sif") + 1 :]
-        return real_run(payload, **{**kwargs, "cwd": cwd})
+        return real_popen(payload, **{**kwargs, "cwd": cwd})
 
-    monkeypatch.setattr(run_tests.subprocess, "run", runtime_run)
+    monkeypatch.setattr(run_tests.subprocess, "Popen", runtime_run)
     error = run_tests._run_setup_in_container(
         "mkdir -p output\nprintf fixture > output/input", "image.sif", work, {}
     )
@@ -500,12 +500,13 @@ def test_setup_preserves_container_software_and_binds_host_data(
     work.mkdir()
     data.mkdir()
     commands = []
+    real_popen = subprocess.Popen
 
     def runtime_run(command, **kwargs):
         commands.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        return real_popen(["true"], **kwargs)
 
-    monkeypatch.setattr(run_tests.subprocess, "run", runtime_run)
+    monkeypatch.setattr(run_tests.subprocess, "Popen", runtime_run)
     variables = {"tool_dir": "/opt/tool", "input": str(data / "image.nii")}
     error = run_tests._run_setup_in_container("true", "image.sif", work, variables)
     assert error is None
@@ -536,7 +537,7 @@ def test_real_container_root_is_readonly_and_workspace_is_writable(
     tmp_path, monkeypatch
 ):
     image = str(Path(os.environ["NEUROCONTAINERS_TEST_SIF"]).resolve())
-    real_run = subprocess.run
+    real_popen = subprocess.Popen
     checked = []
 
     def check_root(command, **kwargs):
@@ -549,14 +550,14 @@ case ",$options," in
 esac
 exec "$@"
 """
-        result = real_run(
+        result = real_popen(
             [*command[:payload], "bash", "-c", probe, "root-probe", *command[payload:]],
             **kwargs,
         )
         checked.append(result)
         return result
 
-    monkeypatch.setattr(run_tests.subprocess, "run", check_root)
+    monkeypatch.setattr(run_tests.subprocess, "Popen", check_root)
     health = run_tests._run_container_health_check(Path(image), tmp_path, {})
     assert health.passed, health.stderr or health.message
     error = run_tests._run_setup_in_container(

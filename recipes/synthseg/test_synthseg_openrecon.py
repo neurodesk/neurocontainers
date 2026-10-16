@@ -918,21 +918,26 @@ def _mrd_header(birth='1961-03-02', gender='F', study='2025-03-01', field_streng
     )
 
 
-@pytest.mark.parametrize('field_strength, fast, norms_file, reason', [
-    (6.98, True, 'brainquant_norms_7t.json', 'the scanner field strength is 6.98 T and SynthSeg ran in fast mode'),
-    (6.98, False, 'brainquant_norms_7t_normal.json', 'the scanner field strength is 6.98 T and SynthSeg ran in normal mode'),
-    (2.89, True, 'brainquant_norms.json', 'the scanner field strength is 2.89 T and SynthSeg ran in fast mode'),
-    (2.89, False, 'brainquant_norms_normal.json', 'the scanner field strength is 2.89 T and SynthSeg ran in normal mode'),
-    (None, False, 'brainquant_norms_normal.json', 'the scanner field strength is not in the header and SynthSeg ran in normal mode'),
+@pytest.mark.parametrize('field_strength, model, fast, norms_file, reason', [
+    (6.98, 'synthseg', True, 'brainquant_norms_7t.json', 'the scanner field strength is 6.98 T and SynthSeg ran in fast mode'),
+    (6.98, 'synthseg', False, 'brainquant_norms_7t_normal.json', 'the scanner field strength is 6.98 T and SynthSeg ran in normal mode'),
+    (2.89, 'synthseg', True, 'brainquant_norms.json', 'the scanner field strength is 2.89 T and SynthSeg ran in fast mode'),
+    (2.89, 'synthseg', False, 'brainquant_norms_normal.json', 'the scanner field strength is 2.89 T and SynthSeg ran in normal mode'),
+    (None, 'synthseg', False, 'brainquant_norms_normal.json', 'the scanner field strength is not in the header and SynthSeg ran in normal mode'),
+    # mri_synthseg forces fast mode for SynthSeg-robust, so ssfast=False still gets the fast norms.
+    (2.89, 'robust', False, 'brainquant_norms.json', 'the scanner field strength is 2.89 T and SynthSeg ran in fast mode'),
 ])
-def test_brainquant_reference_follows_field_strength_and_mode(process_runtime, caplog, field_strength, fast, norms_file, reason):
+def test_brainquant_reference_follows_field_strength_and_mode(
+        process_runtime, caplog, field_strength, model, fast, norms_file, reason):
     import logging
     helpers, sources, _ = process_runtime
-    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssfast=fast)}
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssmodel=model, ssfast=fast)}
     with caplog.at_level(logging.INFO):
         outputs = _session_outputs(helpers, sources, config, _mrd_header(field_strength=field_strength))
     assert _series_by_index(outputs)[max(_series_by_index(outputs))][1]['SeriesDescription'] == 't1w_brainquant'
     assert f'({norms_file}), chosen because {reason}' in caplog.text
+    command = helpers['inference_commands'][-1]
+    assert ('--fast' in command or '--robust' in command) == ('_normal' not in norms_file)
 
 
 @pytest.mark.parametrize('extras', [False, True])
@@ -1102,12 +1107,62 @@ def _sent_series(connection):
     }
 
 
+@pytest.mark.parametrize("send_original", [False, True])
+@pytest.mark.parametrize("extras", [False, True])
+def test_session_keeps_output_series_unique_across_inputs(
+    process_runtime, monkeypatch, tmp_path, send_original, extras,
+):
+    import ismrmrd
+
+    helpers, _, _ = process_runtime
+    adapter = _import_synthseg(monkeypatch)
+    monkeypatch.setattr(adapter, "debugFolder", str(tmp_path))
+    for name in ("_run_synthseg_command", "_resolve_synthseg_models"):
+        monkeypatch.setattr(adapter, name, helpers[name])
+    descriptions = ("MP2RAGE_UNI-DEN_ND", "MP2RAGE_UNI-DEN")
+    connection = _RecordingConnection(
+        _mrd_series(4, descriptions[0]) + _mrd_series(7, descriptions[1]),
+    )
+    config = {"parameters": dict(
+        adapter.OPENRECON_DEFAULTS, ssparc="both", sendoriginal=send_original,
+        ssreslicesagittal=extras, ssreslicecoronal=extras,
+        ssvolumes="report" if extras else "none", ssquantage=40,
+    )}
+
+    adapter.process(connection, config, None)
+
+    assert connection.closed
+    assert connection.logs == []
+    series = {}
+    for batch in connection.sent:
+        for image in batch:
+            series.setdefault(int(image.getHead().image_series_index), []).append(image)
+    for index, images in series.items():
+        metas = [ismrmrd.Meta.deserialize(image.attribute_string) for image in images]
+        names = {meta["SeriesDescription"] for meta in metas}
+        assert len(names) == 1, f"Output series {index} merged distinct products: {names}"
+        assert len({meta["SeriesInstanceUID"] for meta in metas}) == 1
+    assert min(series) > 7
+    suffixes = ["synthseg", "desikan", "glasser_approx"]
+    if send_original:
+        suffixes.append("original")
+    if extras:
+        suffixes.extend([
+            "synthseg_sagittal", "synthseg_coronal",
+            "desikan_sagittal", "desikan_coronal", "brainquant",
+        ])
+    assert set(_sent_series(connection).values()) == {
+        f"{description}_{suffix}" for description in descriptions for suffix in suffixes
+    }
+    assert len(series) == len(descriptions) * len(suffixes)
+
+
 def test_originals_of_every_series_are_sent_before_synthseg_and_survive_its_failure(monkeypatch):
     adapter = _import_synthseg(monkeypatch)
     connection = _RecordingConnection(_mrd_series(1, "first") + _mrd_series(5, "second"))
     sent_before_run = []
 
-    def failing_process_image(images, connection_, config, metadata):
+    def failing_process_image(images, connection_, config, metadata, **kwargs):
         sent_before_run.append(_sent_series(connection))
         raise RuntimeError("SynthSeg failed")
 
@@ -1115,8 +1170,8 @@ def test_originals_of_every_series_are_sent_before_synthseg_and_survive_its_fail
     adapter.process(connection, {"parameters": {}}, None)
 
     assert connection.closed
-    assert sent_before_run == [{2: "first_original", 6: "second_original"}]
-    assert _sent_series(connection) == {2: "first_original", 6: "second_original"}
+    assert sent_before_run == [{6: "first_original", 7: "second_original"}]
+    assert _sent_series(connection) == {6: "first_original", 7: "second_original"}
     assert [len(batch) for batch in connection.sent] == [2, 2]
     assert "SynthSeg failed" in connection.logs[-1][1]
 
@@ -1125,7 +1180,7 @@ def test_without_sendoriginal_a_synthseg_failure_returns_nothing(monkeypatch):
     adapter = _import_synthseg(monkeypatch)
     connection = _RecordingConnection(_mrd_series(1, "first"))
     monkeypatch.setattr(
-        adapter, "process_image", lambda *args: (_ for _ in ()).throw(RuntimeError("SynthSeg failed")),
+        adapter, "process_image", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("SynthSeg failed")),
     )
     adapter.process(connection, {"parameters": {"sendoriginal": False}}, None)
 

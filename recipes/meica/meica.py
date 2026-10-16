@@ -17,6 +17,7 @@ import re
 import subprocess
 import tempfile
 import traceback
+import uuid
 
 import ismrmrd
 import nibabel as nib
@@ -47,6 +48,18 @@ SCANNER_DISPLAY_PADDING_VALUE = 0
 SCANNER_DISPLAY_SCALE_FACTORS = (1000000.0, 100000.0, 10000.0, 1000.0, 100.0, 10.0, 1.0)
 SCANNER_DISPLAY_SCALE_PERCENTILE = 99.9
 SCANNER_WINDOW_PERCENTILE = {"dr2s": 99.0, "t2s": 95.0}
+# Multi-frame parent references that tie an image to its source DICOM object.
+SOURCE_PARENT_REFERENCE_META_KEYS = {
+    "DicomEngineDimString",
+    "MFInstanceNumber",
+    "MultiFrameSOPInstanceUID",
+    "PSMultiFrameSOPInstanceUID",
+    "PSSeriesInstanceUID",
+}
+SOURCE_PARENT_REFERENCE_META_PREFIXES = (
+    "ReferencedGSPS",
+    "ReferencedImageSequence",
+)
 SOURCE_SCALING_META_KEYS = (
     "PixelPaddingRangeLimit",
     "PixelPaddingValue",
@@ -891,9 +904,64 @@ def _original_passthrough(image: ismrmrd.Image, metadata=None) -> ismrmrd.Image:
     if source_name:
         description += f"_{source_name}"
     _set_series_label(meta, description, int(image.getHead().image_series_index))
+    _set_original_uids(meta, image)
     meta["Keep_image_geometry"] = "1"
     original.attribute_string = meta.serialize()
     return original
+
+
+def _set_original_uids(meta: ismrmrd.Meta, image: ismrmrd.Image) -> None:
+    """Give a relabelled original its own series and instance UIDs.
+
+    Relabelling splits one source acquisition into a series per echo and role.
+    If those series kept the source UIDs, the scanner's DicomWriter would join
+    frames from different series to one multi-frame parent and abort the
+    measurement after the first frame.
+    """
+    minihead = _decode_minihead(meta)
+    source_series_uid = _source_uid(meta, minihead, "SeriesInstanceUID")
+    source_sop_uid = _source_uid(meta, minihead, "SOPInstanceUID")
+    for key in list(meta.keys()):
+        if key in SOURCE_PARENT_REFERENCE_META_KEYS or key.startswith(
+            SOURCE_PARENT_REFERENCE_META_PREFIXES
+        ):
+            del meta[key]
+    grouping = str(_meta_first(meta, "SeriesNumberRangeNameUID") or "")
+    series_uid = _uid("meica-original-series", source_series_uid, grouping)
+    head = image.getHead()
+    sop_uid = _uid(
+        "meica-original-instance", series_uid, source_sop_uid,
+        *(int(getattr(head, field)) for field in (
+            "slice", "contrast", "phase", "repetition", "set", "average",
+            "image_index",
+        )),
+    )
+    uids = {"SeriesInstanceUID": series_uid, "SOPInstanceUID": sop_uid}
+    meta.update(uids)
+    if minihead:
+        for key, value in uids.items():
+            pattern = rf'(<ParamString\."{key}">\s*\{{\s*)"?[^"}}]*"?(\s*\}})'
+            minihead, count = re.subn(
+                pattern,
+                lambda match: f'{match.group(1)}"{value}"{match.group(2)}',
+                minihead,
+            )
+            if not count:
+                minihead += f'\n<ParamString."{key}">{{ "{value}" }}\n'
+        meta["IceMiniHead"] = base64.b64encode(minihead.encode()).decode()
+
+
+def _source_uid(meta: ismrmrd.Meta, minihead: str, key: str) -> str:
+    value = str(_meta_first(meta, key) or "")
+    if value or not minihead:
+        return value
+    match = re.search(rf'<ParamString\."{key}">\s*\{{\s*"([^"]*)"', minihead)
+    return match.group(1) if match else ""
+
+
+def _uid(*parts) -> str:
+    seed = "|".join(str(part) for part in parts)
+    return f"2.25.{uuid.uuid5(uuid.NAMESPACE_URL, seed).int}"
 
 
 def _original_echo_number(image: ismrmrd.Image, metadata) -> int:
