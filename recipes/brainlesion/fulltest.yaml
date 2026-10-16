@@ -446,8 +446,8 @@ tests:
       asked = []
       def bumped(self):
           asked.append(1)
-          return ({"version": "99.0.0"}, "https://example.invalid/archive.zip")
-      zenodo.ZenodoRecord._get_metadata_and_archive_url = bumped
+          return ({"version": "99.0.0"}, [])
+      zenodo.ZenodoRecord._get_metadata_and_files = bumped
 
       got = zenodo.fetch_atlases()
       assert got == baked[0], (got, baked[0])
@@ -458,6 +458,7 @@ tests:
       zenodo.requests.get = lambda *a, **k: (_ for _ in ()).throw(
           requests.exceptions.ConnectionError("no network")
       )
+      zenodo.ZenodoRecord.clear_cache()
       assert zenodo.fetch_atlases() == baked[0]
       print("atlas-survives-version-bump")
       PY
