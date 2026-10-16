@@ -22,6 +22,7 @@ import ismrmrd
 import mrdhelper
 import nibabel as nib
 import numpy as np
+from PIL import Image as PILImage, ImageDraw, ImageFont
 from scipy import ndimage
 
 WORKSPACE = Path(
@@ -48,6 +49,14 @@ class FlamesResult:
     lesion_count: int
     volume_ml: float
     provenance: dict
+
+
+@dataclass(frozen=True)
+class LesionMetric:
+    lesion: int
+    voxels: int
+    volume_ml: float
+    centroid_ras_mm: tuple[float, float, float]
 
 
 def run_flames(
@@ -308,6 +317,9 @@ def _stamp_output(
 ) -> None:
     header = copy.copy(source.getHead())
     header.data_type = output.data_type
+    # setHead resizes the pixel buffer, so retain the output's actual shape.
+    header.matrix_size[:] = output.getHead().matrix_size[:]
+    header.channels = output.getHead().channels
     header.image_type = ismrmrd.IMTYPE_MAGNITUDE
     header.image_series_index = series_index
     header.image_index = image_index + 1
@@ -403,18 +415,154 @@ def on_source_grid(
     )
 
 
+def lesion_metrics(mask: np.ndarray, affine: np.ndarray) -> list[LesionMetric]:
+    """Measure 26-connected lesions on the mask returned to the scanner."""
+
+    labels, count = ndimage.label(mask, structure=np.ones((3, 3, 3)))
+    if count == 0:
+        return []
+    voxels = np.bincount(labels.ravel())[1:]
+    centroids = ndimage.center_of_mass(mask, labels, range(1, count + 1))
+    ras = nib.affines.apply_affine(affine, centroids)
+    voxel_ml = abs(np.linalg.det(affine[:3, :3])) / 1000
+    return [
+        LesionMetric(index + 1, int(size), float(size * voxel_ml), tuple(center))
+        for index, (size, center) in enumerate(zip(voxels, ras))
+    ]
+
+
+def render_metrics_report_pages(metrics: list[LesionMetric]) -> list[np.ndarray]:
+    """Render all lesion rows, including a summary page for an empty mask."""
+
+    width = height = 1024
+    margin, line_height, table_top = 32, 28, 228
+    rows_per_page = (height - table_top - margin) // line_height - 1
+    page_count = max(1, (len(metrics) + rows_per_page - 1) // rows_per_page)
+    font = ImageFont.truetype(
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 18
+    )
+    columns = (32, 112, 260, 440, 620, 800)
+    headers = ("Lesion", "Voxels", "Volume (ml)", "R (mm)", "A (mm)", "S (mm)")
+    total_ml = sum(row.volume_ml for row in metrics)
+    pages = []
+    for page in range(page_count):
+        image = PILImage.new("L", (width, height), 0)
+        draw = ImageDraw.Draw(image)
+        start = page * rows_per_page
+        rows = metrics[start : start + rows_per_page]
+        titles = [
+            "FLAMeS white matter lesion metrics",
+            f"Lesions: {len(metrics)}    Total volume: {total_ml:.3f} ml",
+            "Measurements: returned scanner mask, 26-connected lesions",
+            "Centroids: scanner RAS coordinates in mm",
+            RESEARCH_WARNING,
+            f"Page {page + 1}/{page_count}    "
+            f"Lesions {start + 1 if rows else 0}-{start + len(rows)} of {len(metrics)}",
+        ]
+        for index, title in enumerate(titles):
+            draw.text((margin, margin + index * line_height), title, font=font, fill=255)
+        for x, title in zip(columns, headers):
+            draw.text((x, table_top), title, font=font, fill=255)
+        draw.line(
+            (margin, table_top + line_height, width - margin, table_top + line_height),
+            fill=160,
+        )
+        for index, row in enumerate(rows, start=1):
+            values = (
+                str(row.lesion), str(row.voxels), f"{row.volume_ml:.6f}",
+                *(f"{value:.2f}" for value in row.centroid_ras_mm),
+            )
+            for x, value in zip(columns, values):
+                draw.text(
+                    (x, table_top + index * line_height + 4), value, font=font, fill=255
+                )
+        if not rows:
+            draw.text(
+                (margin, table_top + line_height + 4), "No lesions detected",
+                font=font, fill=255,
+            )
+        # Match MuscleMap and OpenMSK's scanner-tested table orientation.
+        pages.append(np.rot90(np.asarray(image, dtype=np.uint16) * 16, 2).copy())
+    return pages
+
+
+def metrics_report_series(
+    metrics: list[LesionMetric], source, series_index: int, summary: str,
+) -> list:
+    """Pack report pages into one canonical explicit MRD volume for DICOM output."""
+
+    pages = np.stack(render_metrics_report_pages(metrics))
+    image = ismrmrd.Image.from_array(pages, transpose=False)
+    description = _derived_description(source, "_lesion_metrics")
+    series_uid = f"2.25.{uuid.uuid4().int}"
+    _stamp_output(
+        image, source, series_index, 0, series_uid, description,
+        "LESION_METRICS", summary, display_max=4080,
+    )
+    header = image.getHead()
+    page_count, height, width = pages.shape
+    header.matrix_size[:] = (width, height, page_count)
+    header.field_of_view[:] = (width, height, page_count)
+    header.position[:] = (0, 0, 0)
+    header.read_dir[:] = (1, 0, 0)
+    header.phase_dir[:] = (0, 1, 0)
+    header.slice_dir[:] = (0, 0, 1)
+    header.slice = header.contrast = 0
+    image.setHead(header)
+
+    meta = _meta_from_image(image)
+    for key in list(meta.keys()):
+        if key in {
+            "IceMiniHead", "DicomJson", "DicomEngineDimString", "MFInstanceNumber",
+            "SegmentSourceGeometry", "SegmentOutputGeometry", "SegmentPostProcessing",
+            "SegmentPostProcessingChildRole", "ExamDataRole",
+        } or key.startswith("ReferencedGSPS"):
+            del meta[key]
+    image_type = "DERIVED\\PRIMARY\\M\\WML_METRICS"
+    meta.update({
+        "DataRole": "Segmentation",
+        "Keep_image_geometry": "0",
+        "SequenceDescription": description,
+        "ProtocolName": description,
+        "SeriesNumberRangeNameUID": f"WML_METRICS_{series_index}",
+        "SOPInstanceUID": f"2.25.{uuid.uuid4().int}",
+        "ImageType": image_type,
+        "DicomImageType": image_type,
+        "ImageTypeValue3": "M",
+        "ImageTypeValue4": "WML_METRICS",
+        "ComplexImageComponent": "MAGNITUDE",
+        "partition_count": "1",
+        "slice_count": str(page_count),
+        "NumberOfSlices": str(page_count),
+        "ImagesInAcquisition": str(page_count),
+        "LesionMetricsRows": str(len(metrics)),
+        "WindowCenter": "2040",
+        "WindowWidth": "4080",
+    })
+    for key in (
+        "Actual3DImagePartNumber", "AnatomicalPartitionNo", "AnatomicalSliceNo",
+        "ChronSliceNo", "SliceNo", "IsmrmrdSliceNo",
+    ):
+        meta[key] = "0"
+    meta["NumberInSeries"] = "1"
+    for key, vector in (
+        ("ImageRowDir", header.read_dir), ("ImageColumnDir", header.phase_dir),
+        ("ImageSliceNormDir", header.slice_dir), ("SlicePosLightMarker", header.position),
+    ):
+        meta[key] = [f"{value:.18f}" for value in vector]
+    image.attribute_string = meta.serialize()
+    return [image]
+
+
 def segmentation_series(
     result: FlamesResult, ordered, volume_xyz: np.ndarray, affine: np.ndarray,
     first_series_index: int, send_probability: bool,
 ) -> tuple[list[tuple[str, list]], FlamesResult]:
     mask = on_source_grid(result.mask, affine, volume_xyz.shape, order=0) > 0
-    if not on_grid(nib.load(str(result.mask)), affine, volume_xyz.shape):
-        # Resampled from the coarser FLAMeS grid: describe the mask the scanner receives.
-        _, count = ndimage.label(mask, structure=np.ones((3, 3, 3)))
-        voxel_ml = abs(np.linalg.det(affine[:3, :3])) / 1000
-        result = replace(
-            result, lesion_count=int(count), volume_ml=float(mask.sum() * voxel_ml)
-        )
+    metrics = lesion_metrics(mask, affine)
+    result = replace(
+        result, lesion_count=len(metrics), volume_ml=sum(row.volume_ml for row in metrics)
+    )
     summary = (
         f"FLAMeS: {result.lesion_count} lesions, {result.volume_ml:.2f} ml; "
         f"{RESEARCH_WARNING}"
@@ -443,6 +591,9 @@ def segmentation_series(
             "LESION_PROBABILITY", f"Lesion probability x{PROBABILITY_SCALE}; {summary}",
             display_max=PROBABILITY_SCALE,
         )))
+    series.append(("lesion metrics", metrics_report_series(
+        metrics, ordered[0], first_series_index + len(series), summary,
+    )))
     return series, result
 
 
