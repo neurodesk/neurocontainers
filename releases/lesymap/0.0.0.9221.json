@@ -1,12 +1,13 @@
 {
   "apps": {
-    "exploreasl 1.11.0": {
-      "version": "20260514",
+    "lesymap 0.0.0.9221": {
+      "version": "20261014",
       "exec": "",
       "apptainer_args": []
     }
   },
   "categories": [
-    "workflows"
+    "workflows",
+    "statistics"
   ]
 }

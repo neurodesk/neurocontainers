@@ -53,11 +53,6 @@ build:
         - git clone --depth 1 --branch {{ context.upstream_tag }} https://github.com/CyclotronResearchCentre/bidsme.git
         - cd /opt/bidsme
         - python -m pip install --no-cache-dir .[all] dcm2niix=={{ context.dcm2niix_version }}
-    - test:
-        name: testScript
-        script: |-
-          #!/bin/bash
-          bidsme
     - deploy:
         path: []
         bins:

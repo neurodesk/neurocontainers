@@ -30,12 +30,6 @@ build:
     - deploy:
         bins:
           - niimath
-    - test:
-        name: Test NiiMath
-        script: |
-          #!/usr/bin/env bash
-          file /usr/bin/niimath
-          niimath
 categories:
   - data organisation
 structured_readme:

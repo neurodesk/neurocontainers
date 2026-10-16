@@ -3483,6 +3483,15 @@ def process(connection, config, metadata):
                 skipped_passthrough_images,
             )
 
+        # The originals go back before SynthSeg runs, as OpenMSK does, so the scanner
+        # keeps them when segmentation fails.
+        for images in imageGroups.values():
+            _send_images_by_series(
+                connection,
+                _build_original_output_images(images, config),
+                "restamped originals before SynthSeg",
+            )
+
         for series_index, images in imageGroups.items():
             logging.info(
                 "Processing buffered SynthSeg image series after input drain: "
@@ -3635,7 +3644,12 @@ def process_raw(group, connection, config, metadata):
 def _render_brainquant_pages(volumes_csv_path: Path, metadata, *, age: int, sex: str, model: str, fast: bool):
     import brainquant
 
-    norms = brainquant.load_norms(brainquant.NORMS_PATH)
+    norms_path, reference_reason = brainquant.select_norms(brainquant.header_field_strength(metadata))
+    norms = brainquant.load_norms(norms_path)
+    logging.info(
+        "SynthSeg brain volume report reference: %s (%s), chosen because %s",
+        norms.reference.cohort, norms_path.name, reference_reason,
+    )
     subject = brainquant.resolve_subject(metadata, age, sex)
     # Age and sex stay on the report image; the log records only where they
     # came from, so reconstruction logs carry no patient demographics.
@@ -3643,9 +3657,9 @@ def _render_brainquant_pages(volumes_csv_path: Path, metadata, *, age: int, sex:
         "SynthSeg brain volume report subject: age source=%s sex source=%s",
         subject.age_source, subject.sex_source,
     )
-    footnotes = ()
+    footnotes = (f"The {norms.reference.cohort} reference was chosen because {reference_reason}.",)
     if model != OPENRECON_MODEL_DEFAULT or not fast:
-        footnotes = (
+        footnotes += (
             f"This run used ssmodel={model} with fast mode {'on' if fast else 'off'}. The reference was "
             "fitted with SynthSeg 2.0 in fast mode, so volumes may be shifted relative to it.",
         )
@@ -3722,6 +3736,44 @@ def _load_label_volume(path: Path, expected_shape: tuple[int, ...]) -> np.ndarra
     return labels.transpose((1, 0, 2)).astype(np.int16)
 
 
+def _send_original_enabled(config):
+    option = mrdhelper.get_json_config_param(
+        config,
+        "sendoriginal",
+        OPENRECON_DEFAULTS["sendoriginal"],
+        type='bool',
+    )
+    if isinstance(option, str):
+        return option.strip().lower() in ("1", "true", "yes", "on")
+    return bool(option)
+
+
+def _build_original_output_images(images, config):
+    if not images or not _send_original_enabled(config):
+        return []
+    unsorted_head = [image.getHead() for image in images]
+    slice_sort_indices, _, _ = _slice_sort_indices(unsorted_head)
+    ordered_images = [images[index] for index in slice_sort_indices]
+    source_identity = _resolve_source_series_identity(_meta_from_image(images[0]))
+    source_series_indices = [
+        int(getattr(image_header, "image_series_index", 0))
+        for image_header in unsorted_head
+    ]
+    original_images = _build_synthseg_original_images(
+        [_clone_mrd_image(image) for image in ordered_images],
+        ordered_images,
+        source_identity,
+        max(source_series_indices) + 1,
+    )
+    _validate_synthseg_output_contract(
+        original_images,
+        source_series_indices,
+        source_identity,
+        "restamped originals",
+    )
+    return original_images
+
+
 def process_image(images, connection, config, metadata):
     if len(images) == 0:
         return []
@@ -3733,14 +3785,10 @@ def process_image(images, connection, config, metadata):
         else:
             return bool(option)
 
-    send_original = boolean_checker(
-        "sendoriginal",
-        default_val=OPENRECON_DEFAULTS["sendoriginal"],
-    )
+    # process() sends the originals before any series runs; this only reserves
+    # their series index.
+    send_original = _send_original_enabled(config)
     called_from_raw = traceback.extract_stack()[-2].name == "process_raw"
-    original_images = []
-    if send_original and not called_from_raw:
-        original_images = [_clone_mrd_image(image) for image in images]
     logging.info("sendoriginal resolved to %s", send_original)
 
     source_identity = _resolve_source_series_identity(_meta_from_image(images[0]))
@@ -3812,18 +3860,6 @@ def process_image(images, connection, config, metadata):
         sorted(set(source_series_indices)),
     )
     imagesOut = []
-    original_output_images = []
-    if original_series_index is not None:
-        ordered_original_images = [
-            original_images[index] for index in slice_sort_indices
-        ]
-        original_output_images = _build_synthseg_original_images(
-            ordered_original_images,
-            ordered_images,
-            source_identity,
-            original_series_index,
-        )
-        imagesOut.extend(original_output_images)
 
     _log_slice_geometry(
         "Sorted SynthSeg source",
@@ -4201,9 +4237,8 @@ def process_image(images, connection, config, metadata):
         imagesOut.extend(report_images)
 
     logging.info(
-        "Sending %d original image(s), %d segmentation image(s), %d reformat image(s), "
+        "Sending %d segmentation image(s), %d reformat image(s), "
         "and %d brain volume report image(s)",
-        len(original_output_images),
         len(segmentation_images),
         len(reformat_images),
         len(report_images),

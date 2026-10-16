@@ -207,6 +207,27 @@ target:
     upstream_version: version
 ```
 
+An `http_digest` URL may use `{{ context.variable }}` for scalar recipe variables.
+Put any source that updates those variables **before** the digest source. The URL
+uses the pins staged by those earlier observations, including a newly selected
+commit, so the archive checksum and recipe/fulltest commit update together.
+Literal URLs retain their existing behavior. Unknown variables, cyclic aliases,
+and references to the current or a later source's targets fail before downloading
+the archive; failed observations leave both recipe and fulltest unchanged.
+For example, follow a `github_commit` source targeting `source_commit` with:
+
+```yaml
+- id: source_archive_digest
+  method: http_digest
+  url: https://github.com/example/tool/archive/{{ context.source_commit }}.tar.gz
+  target:
+    file: source_archive
+```
+
+Keep the declared file's URL bound to the same `context.source_commit` and its
+current verified `sha256`. URL rendering does not advance installed pins or change
+the container's current image inputs by itself.
+
 LibreOffice uses `libreoffice_release` with a variable target for its four-part
 `upstream_version` and `target.variables` mappings for `x86_64_sha256` and
 `aarch64_sha256`. The provider selects a three-part release from the official

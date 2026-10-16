@@ -38,7 +38,8 @@ stream uses the `openrecon` suffix to mirror `openreconi2iexample`.
 
 By default, OpenRecon returns restamped original images first as
 `<source>_original`, then sends one segmentation-header 2D SynthSeg label image
-per source image.
+per source image. The originals of every input series go back before SynthSeg
+runs, so the scanner keeps them when segmentation fails.
 
 **Pixel values are FreeSurfer label indices, not intensities.** They are passed
 through unscaled so they can be looked up in
@@ -52,7 +53,7 @@ segmentation is visible without manual windowing.
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `synthseg` | Selects the MRD server configuration. The available GUI option is `synthseg`. |
-| Keep original images | `sendoriginal` | boolean | `true` | Return restamped original images first, before the `synthseg` label map. Disable this to return only the derived SynthSeg series. |
+| Keep original images | `sendoriginal` | boolean | `true` | Return restamped original images before SynthSeg runs. Disable this to return only the derived SynthSeg series. |
 | SynthSeg model | `ssmodel` | choice | `synthseg` | Trained network used for segmentation: `synthseg` (SynthSeg 2.0), `robust` (SynthSeg-robust 2.0) or `v1` (SynthSeg 1.0). |
 | Cortical parcellation | `ssparc` | choice | `none` | Choose `none`, `desikan`, `glasser`, or `both`. Always return the base SynthSeg map. Add separate Desikan-Killiany, approximate Glasser, or both parcel series. |
 | Fast mode | `ssfast` | boolean | `true` | Bypass topological refinement and left/right flipping for a faster prediction. |
@@ -176,15 +177,23 @@ from counting label voxels.
 
 Each structure's log volume is adjusted to a reference total intracranial
 volume and compared with a sex-specific model whose median and spread vary with
-age. The reference is the IXI cohort, segmented with SynthSeg 2.0 in fast mode;
-the cohort size, sex split and age range are printed on every page. IXI data are
-licensed CC BY-SA 3.0.
+age. The reference depends on the scanner field strength in the MRD header.
+Below 5 T, or when the header has no field strength, it is the IXI cohort
+(1.5 T and 3 T, CC BY-SA 3.0). At 5 T and above it is the AHEAD 7 T cohort
+(CC BY 4.0). On 7 T images SynthSeg measures the cortex much larger, so a 7 T
+scan compared with IXI would be flagged above the 95th percentile. The cohort,
+its field strength, size, sex split and age range are printed on every page,
+and a footnote states why that reference was chosen. Both references were
+segmented with SynthSeg 2.0 in fast mode.
 
 The shipped norms use 561 healthy IXI adults aged 20 to 86 from three scanners,
 with the scanner effect averaged out. In five-fold cross-validation, 87.5% to
 90% of held-out subjects fall inside each structure's 5th-95th band, against
 the nominal 90%. Across the three IXI scanners the mean z score shifts by up
-to 0.47, so expect offsets of that size on a new scanner. The model, its
+to 0.47, so expect offsets of that size on a new scanner. The 7 T reference has
+105 AHEAD adults aged 18 to 80, with ages published in bins. Its images are
+skull-stripped and corrected to whole-head volumes. About 87% of held-out
+healthy subjects fall inside its 5th-95th band. The model, its
 validation and its limitations are described in
 https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/synthseg/BRAINQUANT_NORMS.md
 

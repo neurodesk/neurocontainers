@@ -75,6 +75,18 @@ tests:
     command: error_check_rabies.py --help 2>&1
     expected_output_contains: "Parser to handle testing"
 
+  - name: Upstream token-data pipeline check (complete)
+    description: Run RABIES' own end-to-end check, which runs preprocess, confound_correction and analysis on generated token data
+    timeout: 1800
+    command: |
+      set -euo pipefail
+      rm -rf ${output_dir}/error_check_complete
+      mkdir -p ${output_dir}/error_check_complete
+      error_check_rabies.py --complete --output_dir ${output_dir}/error_check_complete > ${output_dir}/error_check_complete.log 2>&1 || { tail -50 ${output_dir}/error_check_complete.log; exit 1; }
+      echo "RABIES complete token-data check passed"
+    expected_output_contains: "RABIES complete token-data check passed"
+    expected_exit_code: 0
+
   # ==========================================================================
   # ANTs TOOLS (Primary registration backend)
   # ==========================================================================

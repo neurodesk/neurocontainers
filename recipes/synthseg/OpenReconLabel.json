@@ -134,7 +134,7 @@
         { "id": "report_male", "name": { "en": "Log CSV and report (male reference)" } }
       ],
       "default": "none",
-      "information": { "en": "Log CSV writes per-structure volumes in mm3 to the reconstruction log. The report options also append a brain volume report series that plots core structure volumes against age-normative percentile curves from the IXI cohort, with a percentile table. Research use only. Not for diagnostic use. The report is skipped with SynthSeg 1.0." }
+      "information": { "en": "Log CSV writes per-structure volumes in mm3 to the reconstruction log. The report options also append a brain volume report series that plots core structure volumes against age-normative percentile curves, with a percentile table. The reference is chosen from the scanner field strength: IXI (1.5 T and 3 T) below 5 T, AHEAD (7 T) at 5 T and above. Research use only. Not for diagnostic use. The report is skipped with SynthSeg 1.0." }
     },
     {
       "id": "ssqc",
