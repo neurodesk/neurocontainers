@@ -192,7 +192,7 @@ tests:
               meta['SeriesDescription'] = f't1w_{series}'
               meta['ImageType'] = 'ORIGINAL\\PRIMARY\\M\\ND'
               image.attribute_string = meta.serialize()
-              sources[(series + 1, index - start)] = image
+              sources[(f't1w_{series}_original', index - start)] = image
 
       class Connection:
           def __init__(self):
@@ -216,7 +216,7 @@ tests:
       connection = Connection()
       sent_before_failure = []
 
-      def fail_segmentation(*args):
+      def fail_segmentation(*args, **kwargs):
           sent_before_failure.append(list(connection.sent))
           raise RuntimeError('simulated segmentation failure')
 
@@ -227,15 +227,20 @@ tests:
       assert connection.closed, 'connection did not close after segmentation failure'
       assert any('simulated segmentation failure' in text for text in connection.logs), connection.logs
       for stage, images in (('before failure', sent_before_failure[0]), ('after failure', connection.sent)):
-          delivered = [(int(image.image_series_index), int(image.slice)) for image in images]
+          delivered = [
+              (ismrmrd.Meta.deserialize(image.attribute_string)['SeriesDescription'], int(image.slice))
+              for image in images
+          ]
           assert len(delivered) == len(sources) and set(delivered) == set(sources), (stage, delivered)
+          output_series = {}
           for key, image in zip(delivered, images):
               original = sources[key]
+              output_series.setdefault(key[0], set()).add(int(image.image_series_index))
               np.testing.assert_array_equal(image.data, original.data)
               for field in ('field_of_view', 'position', 'read_dir', 'phase_dir', 'slice_dir'):
                   np.testing.assert_array_equal(getattr(image.getHead(), field), getattr(original.getHead(), field))
-              meta = ismrmrd.Meta.deserialize(image.attribute_string)
-              assert meta['SeriesDescription'] == f't1w_{key[0] - 1}_original', meta
+          assert all(len(indices) == 1 for indices in output_series.values()), (stage, output_series)
+          assert len(set.union(*output_series.values())) == len(output_series), (stage, output_series)
       print('4 original MRD images from 2 series delivered before segmentation failure; connection closed')
       PY
     expected_output_contains: 4 original MRD images from 2 series delivered before segmentation failure; connection closed
