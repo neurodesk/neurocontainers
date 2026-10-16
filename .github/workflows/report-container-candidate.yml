@@ -466,25 +466,85 @@ jobs:
             const identityMarker = `<!-- container-release-identity: ${identityText} -->`;
 
             let promotionRun = null;
+            let promotionEvidenceMissing = false;
+            let finalizationVerified = true;
             if (pr.merged_at && pr.merge_commit_sha) {
-              const workflows = await github.rest.actions.listRepoWorkflows({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-              });
-              const promotionWorkflow = workflows.data.workflows.find(
-                workflow => workflow.path === '.github/workflows/promote-container-candidate.yml'
-              );
-              if (promotionWorkflow) {
-                const response = await github.rest.actions.listWorkflowRuns({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  workflow_id: promotionWorkflow.id,
-                  head_sha: pr.merge_commit_sha,
-                  per_page: 20,
+              const repository = `${context.repo.owner}/${context.repo.repo}`;
+              const workflowPath = '.github/workflows/promote-container-candidate.yml';
+              const trusted = item =>
+                item.repository?.full_name === repository &&
+                item.head_repository?.full_name === repository &&
+                item.path === workflowPath && item.head_branch === 'main' &&
+                Number.isSafeInteger(item.id) && item.id > 0 &&
+                Number.isSafeInteger(item.run_attempt) && item.run_attempt > 0 &&
+                /^[0-9a-f]{40}$/.test(item.head_sha);
+              const started = item => Date.parse(item.run_started_at || item.created_at) || 0;
+              try {
+                const promotionRuns = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                  ...context.repo, workflow_id: 'promote-container-candidate.yml', per_page: 100,
                 });
-                promotionRun = response.data.workflow_runs.find(
-                  item => item.head_sha === pr.merge_commit_sha
-                ) || null;
+                const matching = promotionRuns.filter(item =>
+                  trusted(item) && item.event === 'push' && item.head_sha === pr.merge_commit_sha
+                );
+                for (const item of promotionRuns) {
+                  if (!trusted(item) || item.event !== 'workflow_dispatch' ||
+                      Date.parse(item.created_at) < Date.parse(pr.merged_at)) continue;
+                  try {
+                    const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                      ...context.repo, run_id: item.id, per_page: 100,
+                    });
+                    const identities = artifacts.filter(artifact =>
+                      artifact.name.startsWith('promotion-identity-') && artifact.expired === false
+                    );
+                    const records = identities.map(artifact => {
+                      const fields = artifact.name.match(
+                        /^promotion-identity-v1-([1-9][0-9]*)-([0-9a-f]{40})-([0-9a-f]{40})-(0|[1-9][0-9]*)-([1-9][0-9]*)$/
+                      );
+                      if (!fields ||
+                          artifact.workflow_run?.id !== item.id ||
+                          artifact.workflow_run?.head_sha !== item.head_sha ||
+                          artifact.workflow_run?.head_branch !== 'main') return null;
+                      const [, number, head, merge, source, attempt] = fields;
+                      if (![number, source, attempt].every(value => Number.isSafeInteger(Number(value))) ||
+                          Number(attempt) > item.run_attempt) return null;
+                      return {number: Number(number), head, merge, source: Number(source)};
+                    });
+                    if (!records.length || records.some(record => !record) ||
+                        new Set(records.map(record => JSON.stringify(record))).size !== 1) {
+                      promotionEvidenceMissing = true;
+                      continue;
+                    }
+                    const [identity] = records;
+                    if (identity.number !== issue_number || identity.head !== pr.head.sha ||
+                        identity.merge !== pr.merge_commit_sha) continue;
+                    if (identity.source) {
+                      const {data: source} = await github.rest.actions.getWorkflowRun({
+                        ...context.repo, run_id: identity.source,
+                      });
+                      if (!trusted(source) || source.id !== identity.source ||
+                          source.event !== 'push' || source.head_sha !== identity.merge) {
+                        promotionEvidenceMissing = true;
+                        continue;
+                      }
+                    }
+                    matching.push(item);
+                  } catch (error) {
+                    promotionEvidenceMissing = true;
+                    core.warning(`Cannot verify promotion association for run ${item.id}: ${error.message}`);
+                  }
+                }
+                matching.sort((a, b) => started(b) - started(a) || b.id - a.id || b.run_attempt - a.run_attempt);
+                promotionRun = matching[0] || null;
+                if (promotionRun?.event === 'workflow_dispatch' && promotionRun.conclusion === 'success') {
+                  finalizationVerified = false;
+                  const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                    ...context.repo, run_id: promotionRun.id, filter: 'latest', per_page: 100,
+                  });
+                  finalizationVerified = jobs.some(job => job.name === 'finalize' && job.conclusion === 'success');
+                }
+              } catch (error) {
+                promotionEvidenceMissing = true;
+                core.warning(`Cannot fully reconcile promotion status: ${error.message}`);
               }
             }
 
@@ -504,10 +564,14 @@ jobs:
               statusHeading = `## ✅ ${identityText} passed — review and merge PR #${issue_number}`;
               actionLine = '**Action required:** Review the changes and merge the PR. Publishing starts automatically and reuses these exact candidates without rebuilding them.';
             } else if (promotionRun?.conclusion === 'success') {
-              statusHeading = `## ✅ ${identityText} promotion completed`;
-              actionLine = 'The promotion run lists the finalized containers. Candidates superseded by later merges are excluded.';
+              statusHeading = finalizationVerified
+                ? `## ✅ ${identityText} promotion completed`
+                : `## ⚠️ ${identityText} promotion finished; finalization is unverified`;
+              actionLine = finalizationVerified
+                ? 'The promotion run lists the finalized containers. Candidates superseded by later merges are excluded.'
+                : 'Inspect the promotion run. A successful workflow without a verified finalizer does not establish publication.';
               promotionLine = `**Promotion:** [run ${promotionRun.run_number}](${promotionRun.html_url}) — success`;
-            } else if (promotionRun?.status === 'in_progress' || promotionRun?.status === 'queued') {
+            } else if (promotionRun && promotionRun.status !== 'completed') {
               statusHeading = `## 🚀 ${identityText} passed — promotion is running`;
               actionLine = '**Action required:** None. The PR is merged; monitor the promotion run below.';
               promotionLine = `**Promotion:** [run ${promotionRun.run_number}](${promotionRun.html_url}) — ${promotionRun.status}`;
@@ -520,9 +584,16 @@ jobs:
                 '[staged recovery](https://github.com/neurodesk/neurocontainers/blob/main/workflows/ONE_PR_RELEASES.md#concurrent-merges-and-staged-recovery). ' +
                 'A superseded candidate cannot be recovered by blindly repeating publication.';
               promotionLine = `**Promotion:** [run ${promotionRun.run_number}](${promotionRun.html_url}) — ${promotionRun.conclusion || promotionRun.status}`;
+            } else if (promotionEvidenceMissing) {
+              statusHeading = `## ⚠️ ${identityText} passed; promotion status is unverified`;
+              actionLine = 'Inspect the promotion workflow. No matching operation could be verified from the available evidence.';
             } else {
               statusHeading = `## ⏳ ${identityText} passed and PR #${issue_number} is merged — promotion pending`;
               actionLine = '**Action required:** None yet. Automatic promotion should start from the merge commit and reuse these exact candidates.';
+            }
+            if (promotionEvidenceMissing) {
+              actionLine += '\n\n**Reporting note:** Only verified promotion associations are shown. ' +
+                'Recovery runs with missing or invalid retained identity cannot be reconciled.';
             }
 
             const proofLines = [];
