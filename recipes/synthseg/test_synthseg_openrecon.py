@@ -912,21 +912,26 @@ def _mrd_header(birth='1961-03-02', gender='F', study='2025-03-01', field_streng
     )
 
 
-@pytest.mark.parametrize('field_strength, fast, norms_file, reason', [
-    (6.98, True, 'brainquant_norms_7t.json', 'the scanner field strength is 6.98 T and SynthSeg ran in fast mode'),
-    (6.98, False, 'brainquant_norms_7t_normal.json', 'the scanner field strength is 6.98 T and SynthSeg ran in normal mode'),
-    (2.89, True, 'brainquant_norms.json', 'the scanner field strength is 2.89 T and SynthSeg ran in fast mode'),
-    (2.89, False, 'brainquant_norms_normal.json', 'the scanner field strength is 2.89 T and SynthSeg ran in normal mode'),
-    (None, False, 'brainquant_norms_normal.json', 'the scanner field strength is not in the header and SynthSeg ran in normal mode'),
+@pytest.mark.parametrize('field_strength, model, fast, norms_file, reason', [
+    (6.98, 'synthseg', True, 'brainquant_norms_7t.json', 'the scanner field strength is 6.98 T and SynthSeg ran in fast mode'),
+    (6.98, 'synthseg', False, 'brainquant_norms_7t_normal.json', 'the scanner field strength is 6.98 T and SynthSeg ran in normal mode'),
+    (2.89, 'synthseg', True, 'brainquant_norms.json', 'the scanner field strength is 2.89 T and SynthSeg ran in fast mode'),
+    (2.89, 'synthseg', False, 'brainquant_norms_normal.json', 'the scanner field strength is 2.89 T and SynthSeg ran in normal mode'),
+    (None, 'synthseg', False, 'brainquant_norms_normal.json', 'the scanner field strength is not in the header and SynthSeg ran in normal mode'),
+    # mri_synthseg forces fast mode for SynthSeg-robust, so ssfast=False still gets the fast norms.
+    (2.89, 'robust', False, 'brainquant_norms.json', 'the scanner field strength is 2.89 T and SynthSeg ran in fast mode'),
 ])
-def test_brainquant_reference_follows_field_strength_and_mode(process_runtime, caplog, field_strength, fast, norms_file, reason):
+def test_brainquant_reference_follows_field_strength_and_mode(
+        process_runtime, caplog, field_strength, model, fast, norms_file, reason):
     import logging
     helpers, sources, _ = process_runtime
-    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssfast=fast)}
+    config = {'parameters': dict(helpers['OPENRECON_DEFAULTS'], ssvolumes='report', ssmodel=model, ssfast=fast)}
     with caplog.at_level(logging.INFO):
         outputs = helpers['process_image'](sources, None, config, _mrd_header(field_strength=field_strength))
     assert _series_by_index(outputs)[max(_series_by_index(outputs))][1]['SeriesDescription'] == 't1w_brainquant'
     assert f'({norms_file}), chosen because {reason}' in caplog.text
+    command = helpers['inference_commands'][-1]
+    assert ('--fast' in command or '--robust' in command) == ('_normal' not in norms_file)
 
 
 @pytest.mark.parametrize('extras', [False, True])
