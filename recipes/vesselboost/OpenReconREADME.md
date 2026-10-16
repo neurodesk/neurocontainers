@@ -16,14 +16,15 @@ When `vbsegmentationmips` is enabled, the source-geometry segmentation stream
 uses the `openrecon` suffix to mirror `openreconi2iexample`.
 By default, OpenRecon returns restamped original MRA images first as
 `<source>_original`, then sends one source-image-header 2D VesselBoost
-segmentation image per source image.
+segmentation image per source image. The originals of every input series go back
+before VesselBoost runs, so the scanner keeps them when segmentation fails.
 
 ## GUI Parameters
 
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `vesselboost` | Selects the MRD server configuration. The available GUI option is `vesselboost`. |
-| Keep original images | `sendoriginal` | boolean | `true` | Return restamped original MRA images first, before the `vesselboost` output. Disable this to return only derived VesselBoost output series. |
+| Keep original images | `sendoriginal` | boolean | `true` | Return restamped original MRA images before VesselBoost runs. Disable this to return only derived VesselBoost output series. |
 | Debug threshold segmentation | `vbdebugthresholdsegment` | boolean | `false` | Skip VesselBoost inference and use the simple threshold segmentation from `openreconi2iexample` to exercise the send path quickly. |
 | Gaussian blending | `vbuseblending` | boolean | `false` | Experimental option that enables Gaussian blending across inference patches. This can smooth patch boundaries, but substantially increases runtime. |
 | Blend overlap % | `vboverlap` | integer | `50` | Patch overlap percentage used only when Gaussian blending is enabled. Valid GUI range: 0 to 99. |

@@ -38,6 +38,8 @@ if [[ -z "${input}" || -z "${matrix}" || -z "${prefix}" || "${input}${matrix}" =
 fi
 
 volumes="$(3dinfo -nt "${input}")"
+# A single-volume chunk has no time axis, so 3dTcat would fall back to TR=1.
+repetition_time="$(3dinfo -tr "${input}")"
 matrix_rows="$(grep -cv '^[[:space:]]*\(#\|$\)' "${matrix}")"
 if (( jobs < 2 || volumes < 2 || matrix_rows != volumes )); then
     exec 3dAllineate "${arguments[@]}"
@@ -68,4 +70,4 @@ for pid in "${pids[@]}"; do
 done
 (( status == 0 )) || exit "${status}"
 
-3dTcat -prefix "${prefix}" "${parts[@]}"
+3dTcat -tr "${repetition_time}" -prefix "${prefix}" "${parts[@]}"

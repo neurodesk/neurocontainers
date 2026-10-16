@@ -1,5 +1,6 @@
 name: clinica
 version: 0.12.0
+freesurfer_version: "7.4.1"
 default_timeout: 60
 env_setup: |
   assert_linked() {
@@ -172,6 +173,9 @@ tests:
   - name: recon-all target exists
     command: test -e "$(readlink -f "$(command -v recon-all)")"
     expected_exit_code: 0
+  - name: FreeSurfer reports the installed version
+    command: recon-all --version
+    expected_output_contains: "${freesurfer_version}"
   - name: mri_convert resolves on PATH
     command: command -v mri_convert
     expected_exit_code: 0

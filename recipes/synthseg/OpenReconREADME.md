@@ -33,12 +33,13 @@ The main derived output is named `<source>_synthseg`, where `<source>` is the
 incoming source `SeriesDescription` or, when that is absent, the incoming
 `SequenceDescription`. If neither source name is available, the fallback name is
 `synthseg`. Most returned scanner series use `OR` as the short OpenRecon suffix.
-When `sssegmentheader` is enabled, the source-geometry segmentation stream uses
-the `openrecon` suffix to mirror `openreconi2iexample`.
+With `sssegmentheader` enabled (the default), the source-geometry segmentation
+stream uses the `openrecon` suffix to mirror `openreconi2iexample`.
 
 By default, OpenRecon returns restamped original images first as
-`<source>_original`, then sends one source-image-header 2D SynthSeg label image
-per source image.
+`<source>_original`, then sends one segmentation-header 2D SynthSeg label image
+per source image. The originals of every input series go back before SynthSeg
+runs, so the scanner keeps them when segmentation fails.
 
 **Pixel values are FreeSurfer label indices, not intensities.** They are passed
 through unscaled so they can be looked up in
@@ -52,19 +53,22 @@ segmentation is visible without manual windowing.
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `synthseg` | Selects the MRD server configuration. The available GUI option is `synthseg`. |
-| Keep original images | `sendoriginal` | boolean | `true` | Return restamped original images first, before the `synthseg` label map. Disable this to return only the derived SynthSeg series. |
+| Keep original images | `sendoriginal` | boolean | `true` | Return restamped original images before SynthSeg runs. Disable this to return only the derived SynthSeg series. |
 | SynthSeg model | `ssmodel` | choice | `synthseg` | Trained network used for segmentation: `synthseg` (SynthSeg 2.0), `robust` (SynthSeg-robust 2.0) or `v1` (SynthSeg 1.0). |
 | Cortical parcellation | `ssparc` | choice | `none` | Choose `none`, `desikan`, `glasser`, or `both`. Always return the base SynthSeg map. Add separate Desikan-Killiany, approximate Glasser, or both parcel series. |
 | Fast mode | `ssfast` | boolean | `true` | Bypass topological refinement and left/right flipping for a faster prediction. |
 | Use GPU | `ssusegpu` | boolean | `false` | Run inference on the reconstruction GPU. CPU inference is the default to avoid GPU memory exhaustion. |
 | Crop mode or size | `sscrop` | integer | `0` | Use `-1` to disable cropping, `0` to crop automatically to the non-zero bounding box, or a positive voxel size to crop every RAS axis. Positive values are rounded up to a multiple of 32. |
 | CPU threads | `ssthreads` | integer | `8` | TensorFlow inter/intra-op thread count. Valid GUI range: 1 to 64. |
-| Report region volumes | `ssvolumes` | boolean | `false` | Compute per-structure volumes in mm3 and write them to the reconstruction log as CSV. |
+| Region volumes | `ssvolumes` | choice | `none` | `none`, `log`, `report`, `report_female` or `report_male`. `log` writes per-structure volumes in mm3 to the reconstruction log as CSV. The `report` options also return the brain volume report series (research use only). `report` takes the patient sex from the header; `report_female` and `report_male` override it. Saved configs with `true` select `log`. |
 | Report QC scores | `ssqc` | boolean | `false` | Run the automated QC network and write per-structure QC scores to the reconstruction log as CSV. |
-| Segmentation header | `sssegmentheader` | boolean | `false` | Use the `openreconi2iexample` 2D segmentation-header delivery mode so scanner post-processing targets the segmentation stream. |
+| Segmentation header | `sssegmentheader` | boolean | `true` | Use the `openreconi2iexample` 2D segmentation-header delivery mode so scanner post-processing targets the segmentation stream. |
 | Sagittal reformat | `ssreslicesagittal` | boolean | `false` | Send a sagittal 3D reformat of each SynthSeg and Desikan label map. |
 | Coronal reformat | `ssreslicecoronal` | boolean | `false` | Send a coronal 3D reformat of each SynthSeg and Desikan label map. |
-| Debug threshold segmentation | `ssdebugthresholdsegment` | boolean | `false` | Skip SynthSeg inference and use the simple threshold segmentation from `openreconi2iexample` to exercise the send path quickly. |
+| Report age (years) | `ssquantage` | integer | `0` | Patient age for the brain volume report. `0` computes whole years from the header birth date to the study date. Valid GUI range: 0 to 120. |
+
+The Siemens OpenRecon UI accepts at most 14 parameters, so related options
+share one choice parameter.
 
 ## Model Combinations
 
@@ -117,34 +121,31 @@ predictions to the original image shape, but anatomy outside a manual crop is
 returned as background. Start with a crop large enough to contain the full
 brain across the expected scanner positioning.
 
-`ssdebugthresholdsegment` is a diagnostic flag. When enabled, the wrapper still
-receives and sorts the source images, but skips the `mri_synthseg` command and
-creates a simple threshold plus largest-component mask using the same logic as
-`openreconi2iexample`. In that mode the returned pixel values are 12-bit
-intensities rather than FreeSurfer label indices.
-
 The OpenRecon label declares GPU support and requests at least 1 GPU, 10048 MB
 GPU memory, 40096 MB system memory, and 8 CPU cores.
 
 Returned images are always emitted as new scanner-visible series. Restamped
 originals are sent first with `Keep_image_geometry = 1` and a patched source
 `IceMiniHead`, so scanner-side processing stays attached to the original
-geometry. By default, the SynthSeg label map follows as a separate
+geometry. With `sssegmentheader` disabled, the SynthSeg label map follows as a separate
 source-image-header 2D stream with `Keep_image_geometry = 1`,
 `DataRole = Image`, `SegmentSourceGeometry = 1`, `SegmentSourceImageHeader = 1`,
 `SegmentOutputGeometry = 2d`, the scanner post-processing child role, and the
-source `ImageType`, `DicomImageType`, and `ImageTypeValue4` identity. In normal
+source `ImageType`, `DicomImageType`, and `ImageTypeValue4` identity. In this
 mode, the segment stream strips `ImageTypeValue3` from MRD metadata and
 `IceMiniHead` so Siemens functors that select `ImageTypeValue3 = M` stay
 attached to the original stream.
 
-When `sssegmentheader` is enabled, SynthSeg instead mirrors the
+With `sssegmentheader` enabled (the default), SynthSeg instead mirrors the
 `openreconi2iexample` `2d_segment_header` path: the label map is sent as a 2D
 source-geometry segmentation-header stream with `DataRole = Segmentation`,
 `SegmentSourceGeometry = 1`, `SegmentOutputGeometry = 2d`,
 `SequenceDescriptionAdditional = openrecon`, no `SegmentSourceImageHeader`,
 scanner post-processing child-role metadata matching the segmentation
-`image_series_index`, and no `ImageTypeValue3`.
+`image_series_index`, and no `ImageTypeValue3`. `ImageType` is
+`DERIVED\PRIMARY\SEGMENTATION\<product>_seg` with the short product tokens
+`synthseg`, `desikan` and `glasser`, because the scanner truncates `ImageType`
+values longer than 16 characters.
 
 Scanner logs include the resolved options on a single
 `OpenRecon SynthSeg options: ...` line, a `SynthSeg label map: ...` line with the
@@ -152,6 +153,69 @@ distinct label values that were returned, a
 `SYNTHSEG_OPENRECON_POSTPROCESSING target=...` marker, and one
 `SYNTHSEG_OPENRECON_BATCH ...` marker before every MRD image send. Region volume
 and QC CSVs, when requested, are written to the reconstruction log in full.
+
+## Brain volume report
+
+Research use only. Not for diagnostic use.
+
+Set `ssvolumes` to `report`, `report_female` or `report_male` to append one
+report series, `<source>_brainquant`, after all label products and reformats. It has its own series number, grouping and UIDs.
+The series is one grayscale image with two 1024 x 1024 pages:
+
+1. One chart per structure. Each chart shows the 5th-95th and 25th-75th
+   percentile bands and the median of the reference cohort against age, and
+   the patient's volume as a dot. The title gives the patient percentile.
+2. A table with the raw volume, the ICV-adjusted volume, the z score, the
+   percentile and a flag for values below the 5th or above the 95th percentile.
+
+The structures are the left and right hippocampus, amygdala and thalamus, the
+lateral ventricles (including the inferior lateral ventricles), cortical grey
+matter, cerebral white matter and the whole brain (all SynthSeg 2.0 tissue
+labels and the brain stem, without ventricles or CSF). Volumes come from the
+`mri_synthseg --vol` CSV, which sums the soft segmentation posteriors, not
+from counting label voxels.
+
+Each structure's log volume is adjusted to a reference total intracranial
+volume and compared with a sex-specific model whose median and spread vary with
+age. The reference depends on the scanner field strength in the MRD header.
+Below 5 T, or when the header has no field strength, it is the IXI cohort
+(1.5 T and 3 T, CC BY-SA 3.0). At 5 T and above it is the AHEAD 7 T cohort
+(CC BY 4.0). On 7 T images SynthSeg measures the cortex much larger, so a 7 T
+scan compared with IXI would be flagged above the 95th percentile. The cohort,
+its field strength, size, sex split and age range are printed on every page,
+and a footnote states why that reference was chosen. Both references were
+segmented with SynthSeg 2.0 in fast mode.
+
+The shipped norms use 561 healthy IXI adults aged 20 to 86 from three scanners,
+with the scanner effect averaged out. In five-fold cross-validation, 87.5% to
+90% of held-out subjects fall inside each structure's 5th-95th band, against
+the nominal 90%. Across the three IXI scanners the mean z score shifts by up
+to 0.47, so expect offsets of that size on a new scanner. The 7 T reference has
+105 AHEAD adults aged 18 to 80, with ages published in bins. Its images are
+skull-stripped and corrected to whole-head volumes. About 87% of held-out
+healthy subjects fall inside its 5th-95th band. The model, its
+validation and its limitations are described in
+https://github.com/NeuroDesk/neurocontainers/blob/main/recipes/synthseg/BRAINQUANT_NORMS.md
+
+Age is the number of whole years from the header birth date to the study date.
+If either date is missing, the age is unknown unless `ssquantage` sets it. Sex comes from the header
+patient sex. A nonzero `ssquantage` overrides the header age, and
+`report_female` or `report_male` override the header sex. The report page
+shows the age and sex. The log records only their sources (header, GUI or
+unknown), not the values. If the sex is unknown, the report uses
+the combined female and male model and says so. If the age is unknown, the
+charts show the patient volume as a horizontal line and the percentiles read
+`n/a`. An age outside the reference range is still compared, and every chart
+is marked "outside reference age range".
+
+A footnote warns that volumes may be shifted when `ssmodel` is not `synthseg`
+or when `ssfast` is off. The report is skipped with a warning with
+`ssmodel=v1`, because SynthSeg 1.0 reports no total intracranial volume. If the
+norms file is missing or the report fails to render, the wrapper logs the
+exception and omits only the report series.
+
+The log has one `SYNTHSEG_BRAINQUANT structure=... volume_ml=... adjusted_ml=...
+z=... percentile=...` line per structure.
 
 ## Citation
 
@@ -195,9 +259,10 @@ https://neurodesk.org/contact/.
 
 Derived SynthSeg label images, sagittal/coronal reformats and optional Glasser
 images are greyscale label maps, windowed over the label range. The wrapper
-preserves every integer label value. They do not request a scanner palette:
-with `LUTFileName` set, the scanner exports the labels as Enhanced MR with
-`PALETTE COLOR` but no palette data, which is not valid DICOM.
+preserves every integer label value. They do not request a scanner palette: with
+`LUTFileName` set, in either delivery mode, the scanner exports the labels as
+Enhanced MR with `PALETTE COLOR` but no palette data, plus a separate
+presentation state, and cannot open the series.
 SynthSeg names use `/opt/freesurfer-synthseg/FreeSurferColorLUT.txt`.
 Glasser names use `/opt/glasser/labels.txt`.
 
@@ -228,8 +293,6 @@ to the base SynthSeg cortical grey matter.
 `ssthreads` controls the registration CPU thread count.
 Registration adds processing time. A registration failure logs the exception,
 omits Glasser and retains the original and SynthSeg outputs.
-`ssparc=glasser` or `ssparc=both` with `ssdebugthresholdsegment` is rejected because the atlas needs
-a real anatomical segmentation.
 
 These are approximate volumetric parcel boundaries. They are not a replacement
 for individual-subject HCP surface parcellation. Registration and cortical

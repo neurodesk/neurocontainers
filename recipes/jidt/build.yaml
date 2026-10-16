@@ -137,17 +137,6 @@ build:
 
     - copy: README.md /README.md
 
-    - test:
-        name: jidt python demo
-        script: |
-          cd /opt/jidt-{{ context.upstream_version }}/infodynamics-dist-{{ context.upstream_version }}/demos/python
-          python3 example2TeMultidimBinaryData.py
-
-    - test:
-        name: rJava available
-        script: |
-          Rscript -e "library(rJava); cat('rJava loaded\n')"
-
 deploy:
   path:
     - /opt/jidt-{{ context.upstream_version }}

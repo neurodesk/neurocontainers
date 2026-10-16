@@ -180,7 +180,10 @@ readme: |-
   OpenRecon always returns the denoised BOLD-like apparent dR2* series and the
   T2* map (`dr2s_epi` and `t2s_epi`); there is no scanner output selector. It
   also returns the original echo images by default. Disable `sendoriginal` to
-  return only the derived ME-ICA series. SBRef and NOISE images are excluded
+  return only the derived ME-ICA series. Series names start with `MEICA original`
+  and identify the image component, echo, and SBRef or noise role. Derived series
+  are named `MEICA denoised BOLD dR2*` and `MEICA T2* map`.
+  SBRef and NOISE images are excluded
   from fMRI processing. Original images are sent before processing and remain
   available if ME-ICA fails. Derived outputs are 12-bit `uint16`
   pixels with DICOM rescaling back to dR2* in `s^-1` and T2* in `ms`.

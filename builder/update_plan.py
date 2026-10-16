@@ -10,6 +10,8 @@ from pathlib import Path, PurePosixPath
 from typing import Mapping
 
 import yaml
+from jinja2 import StrictUndefined, TemplateError
+from jinja2.sandbox import SandboxedEnvironment
 from packaging.version import InvalidVersion, Version
 
 from .versioning import container_version
@@ -80,6 +82,68 @@ def source_config(source: dict) -> dict:
         for key, value in source.items()
         if key not in {"id", "target", "dependency"}
     }
+
+
+def _http_digest_config(
+    source: dict, staged_recipe: dict, pending_variables: set[str]
+) -> dict:
+    """Resolve a digest URL only against pins observed earlier in this plan."""
+    config = source_config(source)
+    if config["method"] != "http_digest" or not any(
+        token in config["url"] for token in ("{{", "{%", "{#")
+    ):
+        return config
+
+    variables = staged_recipe.get("variables") or {}
+    environment = SandboxedEnvironment(undefined=StrictUndefined)
+    resolved: dict[str, str] = {}
+    visiting: set[str] = set()
+
+    class Context:
+        def __getattr__(self, key: str) -> str:
+            return resolve(key)
+
+        def __getitem__(self, key: str) -> str:
+            return resolve(key)
+
+    def render(value: str) -> str:
+        result = environment.from_string(value).render(context=Context())
+        if any(token in result for token in ("{{", "{%", "{#")):
+            raise ValueError("context contains an unresolved template")
+        return result
+
+    def resolve(key: str) -> str:
+        if key in pending_variables:
+            raise ValueError(
+                f"context.{key} has not been observed yet; "
+                "put its source before this digest (no forward/self references)"
+            )
+        if key in visiting:
+            raise ValueError(f"cyclic context variable: context.{key}")
+        if key not in variables:
+            raise ValueError(f"unknown context variable: context.{key}")
+        if key not in resolved:
+            value = variables[key]
+            if type(value) not in (str, int, float):
+                raise ValueError(f"context.{key} must be a scalar recipe variable")
+            visiting.add(key)
+            try:
+                resolved[key] = render(str(value))
+            finally:
+                visiting.remove(key)
+        return resolved[key]
+
+    try:
+        config["url"] = render(config["url"])
+    except (TemplateError, ValueError) as exc:
+        raise ValueError(
+            f"{source['id']}: cannot resolve http_digest URL: {exc}"
+        ) from exc
+    # Revalidate after substitution, before any request (including credentials).
+    from .update_observations import validate_source
+
+    validate_source(config)
+    return config
 
 
 def validate_sources_config(config: dict) -> None:
@@ -451,7 +515,8 @@ def plan_sources(
     updated, suite_updated = original, suite_original
     changes, urls = [], []
     triggered = False
-    for source in recipe["auto_update"].get("sources", []):
+    sources = recipe["auto_update"].get("sources", [])
+    for source_index, source in enumerate(sources):
         before_recipe, before_suite = updated, suite_updated
         target = source["target"]
         current = (
@@ -459,11 +524,22 @@ def plan_sources(
             if "variable" in target
             else None
         )
+        # A later observation's baseline must not select an archive for this plan.
+        pending_variables = {
+            variable
+            for remaining in sources[source_index:]
+            for variable in (
+                remaining["target"].get("variable"),
+                *remaining["target"].get("variables", {}),
+            )
+            if variable is not None
+        }
+        config = _http_digest_config(source, yaml.safe_load(updated), pending_variables)
         observation = (
             observations[source["id"]]
             if observations is not None
             else observe_source(
-                source_config(source),
+                config,
                 github_session,
                 current=current,
             )

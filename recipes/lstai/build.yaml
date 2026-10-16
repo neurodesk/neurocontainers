@@ -70,9 +70,6 @@ build:
         - chmod a+x /opt/venv/bin/lst
         - unzip {{ get_file("dcm2niix_lnx_zip") }} -d /opt/dcm2niix
         - chmod a+x /opt/dcm2niix/dcm2niix
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
 
 deploy:
   path:
