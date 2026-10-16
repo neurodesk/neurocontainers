@@ -13,7 +13,7 @@
 # compute resources. This test suite focuses on component tools and quick checks.
 
 name: fmriprep
-version: 25.2.6
+version: 25.2.7
 
 required_files:
   - dataset: ds000001
@@ -251,11 +251,27 @@ tests:
       - output_exists: ${output_dir}/fsl/t1w_brain_s_skull.nii.gz
 
   - name: FSL bet robust mode
-    description: Run robust brain extraction (dc command missing from container)
-    command: bet ${t1w} test_output/fsl/t1w_brain_robust -R -f 0.5 2>&1
+    description: Verify robust brain extraction produces a finite nonempty brain with unchanged geometry
+    command: |
+      bet ${t1w} test_output/fsl/t1w_brain_robust -R -f 0.5 &&
+      python - "${t1w}" test_output/fsl/t1w_brain_robust.nii.gz <<'PY'
+      import sys
+
+      import nibabel as nib
+      import numpy as np
+
+      source = nib.load(sys.argv[1])
+      brain = nib.load(sys.argv[2])
+      data = np.asarray(brain.dataobj)
+      assert brain.shape == source.shape, "Brain dimensions changed"
+      assert np.allclose(brain.affine, source.affine), "Brain affine changed"
+      assert np.isfinite(data).all(), "Brain contains nonfinite values"
+      brain_voxels = np.count_nonzero(data)
+      source_voxels = np.count_nonzero(np.asarray(source.dataobj))
+      assert 0 < brain_voxels < source_voxels, (brain_voxels, source_voxels)
+      print(f"Robust BET validated: {brain_voxels} brain voxels from {source_voxels} source voxels")
+      PY
     depends_on: FSL bet basic extraction
-    ignore_exit_code: true
-    expected_output_contains: "bet"
 
   # ==========================================================================
   # FSL TOOLS - FAST SEGMENTATION
