@@ -7,6 +7,7 @@ name: megnet
 version: "1.1.0"
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: MEGNET pipelines for MEG (MEGIN and KIT) data analysis
   example: megnet main_MEGNET_preprocess_tasks.py --config_file /data/config.yaml
@@ -22,6 +23,7 @@ auto_update:
     package: PyQt5
     target:
       variable: pyqt5_version
+      fulltest_variable: pyqt5_version
   - id: meegkit
     dependency: true
     method: pypi
@@ -50,8 +52,14 @@ build:
         conda_opts: "-c conda-forge"
         installed: false
     - install: git libgl1 libglib2.0-0t64 libxkbcommon-x11-0
-    - run:
+    - condition: arch == "x86_64"
+      run:
         - python -m pip install --no-cache-dir meegkit=={{ context.meegkit_version }} PyQt5=={{ context.pyqt5_version }}
+    - condition: arch == "aarch64"
+      run:
+        - conda install --yes --channel conda-forge pyqt={{ context.pyqt5_version }}
+        - python -m pip install --no-cache-dir meegkit=={{ context.meegkit_version }}
+    - run:
         - python -m pip check
     - run:
         - git clone https://github.com/miao-cao/MEGNET_pipeline.git && git -C /MEGNET_pipeline checkout {{ context.upstream_commit }}

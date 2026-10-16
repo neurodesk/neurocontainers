@@ -207,6 +207,27 @@ target:
     upstream_version: version
 ```
 
+An `http_digest` URL may use `{{ context.variable }}` for scalar recipe variables.
+Put any source that updates those variables **before** the digest source. The URL
+uses the pins staged by those earlier observations, including a newly selected
+commit, so the archive checksum and recipe/fulltest commit update together.
+Literal URLs retain their existing behavior. Unknown variables, cyclic aliases,
+and references to the current or a later source's targets fail before downloading
+the archive; failed observations leave both recipe and fulltest unchanged.
+For example, follow a `github_commit` source targeting `source_commit` with:
+
+```yaml
+- id: source_archive_digest
+  method: http_digest
+  url: https://github.com/example/tool/archive/{{ context.source_commit }}.tar.gz
+  target:
+    file: source_archive
+```
+
+Keep the declared file's URL bound to the same `context.source_commit` and its
+current verified `sha256`. URL rendering does not advance installed pins or change
+the container's current image inputs by itself.
+
 LibreOffice uses `libreoffice_release` with a variable target for its four-part
 `upstream_version` and `target.variables` mappings for `x86_64_sha256` and
 `aarch64_sha256`. The provider selects a three-part release from the official
@@ -282,6 +303,12 @@ held and ships with the next version update. This applies to every file source
 that reports a version. Missing, duplicate or incomplete assets fail the check. Do not
 combine an independent release selector with a `releases/latest` digest source;
 those selectors can resolve different releases.
+
+When the asset filename contains the release version, write `{version}` in its
+place, for example `asset: flames-{version}-linux-x64.tar.gz`. The provider
+substitutes the version parsed from the selected tag, after any `version_regex`,
+so a repository that publishes several tag families can still pin one family's
+asset and digest. The filename may contain one placeholder.
 
 Snapshot hashing uses conditional HTTP requests when the server supplies an ETag
 or Last-Modified value. Only an explicit `304 Not Modified` reuses the previous
@@ -450,3 +477,16 @@ numeric version. It rejects other suffixes, including prereleases and dated buil
 suffixes. The `version` parameter keeps the exact source-container version;
 `openrecon_version` supplies the scanner version when they differ. Build dates
 belong in the source image tag, not in the scanner version.
+
+A scanner version never regresses during sync. When `params.sh` already publishes
+a higher scanner version than the projection, because a maintainer released a
+scanner package ahead of the container, the sync keeps it and notes this in the PR;
+a maintainer bumps it when a rebuild should install as a new scanner package.
+
+When `baseDockerImage` pins a digest (`name:tag@sha256:...`), the sync advances the
+dated tag and resolves the digest that the registry serves for the new tag. The
+reference must expand to a literal `name:tag` from `params.sh` assignments. When the
+release metadata or the digest cannot be resolved, the sync fails without opening a
+PR, so a stale digest is never kept and the pin is never silently dropped. The sync
+also refuses `params.sh` files that assign `version`, `openrecon_version` or
+`baseDockerImage` more than once, because it could not rewrite the effective value.

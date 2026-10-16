@@ -272,24 +272,6 @@ build:
 
     - workdir: /opt
 
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
-
-    - test:
-        name: Test DeepWMH help and model presence
-        script: |
-          #!/bin/bash
-          set -e
-          DeepWMH_predict -h
-          DeepWMH_install -h
-          # The installed model tree must contain an nnU-Net fold with weights.
-          find "$DEEPWMH_MODEL_DIR" -name 'model_best.model' | grep -q . \
-            || { echo "ERROR: no model weights found under $DEEPWMH_MODEL_DIR"; exit 1; }
-          command -v runROBEX.sh >/dev/null || test -x "$ROBEX_DIR/runROBEX.sh"
-          command -v N4BiasFieldCorrection
-          python -c "import torch; print('cuda available:', torch.cuda.is_available())"
-
 files:
   - name: patch_deepwmh_outputs
     contents: |

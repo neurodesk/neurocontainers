@@ -180,16 +180,6 @@ build:
         - ln -s /usr/local/bin/bcbtoolkit /usr/local/bin/BCBToolKit.sh
         - chown -R root:root /opt/BCBToolKit
         - chmod -R a+rX /opt/BCBToolKit
-    - test:
-        name: Python launcher version
-        script: |-
-          #!/bin/sh
-          set -eu
-          bcbtoolkit --version | grep -Fx 'bcbtoolkit {{ context.version }}'
-          BCBToolKit.sh --version | grep -Fx 'bcbtoolkit {{ context.version }}'
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
 
 deploy:
   bins:

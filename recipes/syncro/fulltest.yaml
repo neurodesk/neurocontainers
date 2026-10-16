@@ -17,6 +17,13 @@
 
 name: syncro
 version: "0.2.0"
+numpy_version: 1.26.4
+tensorflow_version: 2.21.0
+arm_torch_version: 2.1.2
+arm_antspyx_version: 0.5.4
+synthstrip_script_sha256: fa18eb301568dc7c99bd9f69805545a7ce6d68e3fa3e1775c68053c9069cc4a1
+synthstrip_model_sha256: 37417f802196186441aae3e7f385d94f8a98c64a88acaeaa2723af995c653e33
+synthstrip_nocsf_model_sha256: 62bf01137c45b5f0cc04d59dbaed5b9ac138b3f25b766c062a7c1a0d696ecb28
 
 required_files:
   - dataset: ds000001
@@ -38,6 +45,19 @@ setup:
     mkdir -p test_output/syncro_options
     mkdir -p test_output/syncro_lesion
     mkdir -p test_output/syncro_multiimage
+    python3 - <<'PYTHON'
+    from pathlib import Path
+    import hashlib,json
+    models=sorted(p for p in Path('/freesurfer/models').glob('*') if p.is_file() and p.suffix in ['.pt','.h5'])
+    assert any(p.suffix=='.h5' for p in models) and len(models)>=3
+    paths=models+[Path('${t1w}'),Path('${t2}')]
+    def digest(p):
+     h=hashlib.sha256()
+     with p.open('rb') as f:
+      for block in iter(lambda:f.read(1048576),b''):h.update(block)
+     return h.hexdigest()
+    Path('test_output/syncro-input-hashes.json').write_text(json.dumps({str(p):digest(p) for p in paths}))
+    PYTHON
 
 tests:
   # ==========================================================================
@@ -75,11 +95,11 @@ tests:
   - name: SynthStrip help
     description: Verify SynthStrip displays help
     command: mri_synthstrip --help 2>&1
-    ignore_exit_code: true
     expected_output_contains:
       - "skull-stripping"
       - "--image"
       - "--mask"
+    expected_exit_code: 1
 
   - name: SynthStrip skull stripping
     description: Run SynthStrip on T1w image to extract brain
@@ -312,18 +332,20 @@ tests:
   # ==========================================================================
   - name: Missing input file error
     description: Verify appropriate error for non-existent input
-    command: SYNcro.py nonexistent_file.nii.gz 2>&1 || true
+    command: SYNcro.py nonexistent_file.nii.gz 2>&1
     expected_output_contains: "Error"
+    expected_exit_code: 1
 
   - name: Invalid output directory
     description: Verify appropriate error for unwritable directory
-    command: SYNcro.py ${t1w} -d /nonexistent/path/that/does/not/exist 2>&1 || true
-    ignore_exit_code: true
+    command: SYNcro.py ${t1w} -d /nonexistent/path/that/does/not/exist 2>&1
     expected_output_contains: "Write access required"
 
   # ==========================================================================
   # MNI TEMPLATE VERIFICATION
   # ==========================================================================
+    expected_exit_code: 1
+
   - name: MNI template exists in container
     description: Verify MNI152 template is bundled in container
     command: "bash -lc 'ls -la /opt/MNI152_T1_1mm_brain.nii.gz'"
@@ -387,6 +409,79 @@ tests:
     command: "bash -lc 'python3 -c \"\nimport nibabel as nib\nimport numpy as np\n\n# Load normalized output and template\noutput = nib.load('\"'\"'test_output/syncro_basic/wbt1sub-01_T1w.nii.gz'\"'\"')\ntemplate = nib.load('\"'\"'/opt/MNI152_T1_1mm_brain.nii.gz'\"'\"')\n\nout_data = output.get_fdata()\ntpl_data = template.get_fdata()\n\n# Basic sanity checks\nassert out_data.shape == tpl_data.shape, '\"'\"'Shapes must match'\"'\"'\n\n# Check that output has reasonable intensity range\nout_nonzero = out_data[out_data > 0]\nassert len(out_nonzero) > 0, '\"'\"'Output should have nonzero voxels'\"'\"'\n\n# Calculate overlap with template brain region\ntpl_mask = tpl_data > 0\nout_mask = out_data > 0\noverlap = np.sum(tpl_mask & out_mask) / np.sum(tpl_mask | out_mask)\nprint(f'\"'\"'Dice-like overlap with template: {overlap:.3f}'\"'\"')\n\n# Overlap should be reasonable (> 0.5 for brain region)\nassert overlap > 0.4, f'\"'\"'Overlap too low: {overlap}'\"'\"'\nprint('\"'\"'Registration quality check passed'\"'\"')\n\"'"
     depends_on: Basic T1w normalization
     expected_output_contains: "quality check passed"
+
+  - name: Native CPU frameworks and official model closure
+    command: |
+      set -eu
+      python3 - <<'PYTHON'
+      from pathlib import Path
+      import hashlib,platform,shutil,subprocess
+      from importlib.metadata import version
+      import torch,tensorflow as tf,numpy as np,ants,surfa
+      assert version('numpy')=='${numpy_version}' and version('tensorflow')=='${tensorflow_version}'
+      assert not torch.cuda.is_available()
+      assert torch.ones(9,device='cpu').sum().item()==9
+      with tf.device('/CPU:0'):
+       actual=tf.linalg.matmul(tf.ones((8,8)),tf.ones((8,8))).numpy()
+      np.testing.assert_array_equal(actual,np.full((8,8),8.))
+      for name,want in [('synthstrip.1.pt','${synthstrip_model_sha256}'),('synthstrip.nocsf.1.pt','${synthstrip_nocsf_model_sha256}')]:
+       assert hashlib.sha256((Path('/freesurfer/models')/name).read_bytes()).hexdigest()==want
+      if platform.machine()=='aarch64':
+       assert version('torch').split('+')[0]=='${arm_torch_version}' and version('antspyx')=='${arm_antspyx_version}'
+       assert hashlib.sha256(Path(shutil.which('mri_synthstrip')).read_bytes()).hexdigest()=='${synthstrip_script_sha256}'
+      image=ants.from_numpy(np.arange(315,dtype=np.float32).reshape(7,9,5))
+      np.testing.assert_array_equal(ants.resample_image_to_target(image,image,interp_type='linear').numpy(),image.numpy())
+      subprocess.run(['python3','-m','pip','check'],check=True)
+      print('Actual SYNcro native CPU TensorFlow/PyTorch/ANTs and official model closure verified')
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: "Actual SYNcro native CPU TensorFlow/PyTorch/ANTs"
+    timeout: 120
+  - name: Complete trained normalization and lesion image contracts
+    command: |
+      set -eu
+      python3 - <<'PYTHON'
+      from pathlib import Path
+      import hashlib,json
+      import nibabel as nib
+      import numpy as np
+      root=Path('test_output')
+      def image(path):
+       obj=nib.as_closest_canonical(nib.load(path));data=obj.get_fdata()
+       assert np.isfinite(data).all(),path
+       return obj,data
+      original,raw=image('${t1w}');brain,values=image(root/'t1w_brain.nii.gz');mask,binary=image(root/'t1w_brain_mask.nii.gz')
+      assert raw.shape==values.shape==binary.shape and np.isin(binary,[0,1]).all() and 0<binary.sum()<binary.size
+      for obj in [brain,mask]:np.testing.assert_allclose(obj.affine,original.affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(original.affine).max(),1))
+      expected=np.where(binary>0,raw,min(float(raw.min()),0.))
+      np.testing.assert_allclose(values,expected,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(expected).max(),1))
+      sdt,distances=image(root/'t1w_sdt.nii.gz');repeat,second=image(root/'t1w_brain_sdt.nii.gz')
+      assert distances.shape==raw.shape and distances.min()<0<distances.max()
+      np.testing.assert_allclose(sdt.affine,original.affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(original.affine).max(),1))
+      np.testing.assert_array_equal(second,values)
+      template,_=image('/opt/MNI152_T1_1mm_brain.nii.gz')
+      for directory in ['syncro_basic','syncro_lesion','syncro_multiimage']:
+       folder=root/directory
+       assert (folder/'wbt1sub-01_T1w.nii.gz').is_file()
+       outputs=sorted(folder.glob('w*.nii.gz'));assert outputs
+       for path in outputs:
+        obj,data=image(path);assert obj.shape==template.shape and np.count_nonzero(data)>0
+        np.testing.assert_allclose(obj.affine,template.affine,rtol=0,atol=4*np.finfo(np.float32).eps*max(abs(template.affine).max(),1))
+      for directory,names in [('syncro_lesion',['synthetic_lesion']),('syncro_multiimage',['synthetic_lesion','synthetic_pathology'])]:
+       for name in names:
+        _,labels=image(root/directory/('w'+name+'.nii.gz'))
+        assert np.isin(labels,[0,1]).all() and 0<labels.sum()<labels.size
+      for path,want in json.loads((root/'syncro-input-hashes.json').read_text()).items():
+       h=hashlib.sha256()
+       with Path(path).open('rb') as f:
+        for block in iter(lambda:f.read(1048576),b''):h.update(block)
+       assert h.hexdigest()==want,('Input or trained checkpoint changed',path)
+      print('Actual full SYNcro SynthSR/SynthStrip/ANTs normalization and lesion/multiple-image outputs preserve physical grids, every masked voxel, distance-transform capability and all input/checkpoint hashes')
+      PYTHON
+    expected_exit_code: 0
+    expected_output_contains: "Actual full SYNcro SynthSR/SynthStrip/ANTs"
+    timeout: 120
+
 
 cleanup:
   script: |

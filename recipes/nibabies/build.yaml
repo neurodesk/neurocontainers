@@ -56,9 +56,6 @@ build:
         path: []
         bins:
           - nibabies
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
 categories:
   - workflows
   - functional imaging

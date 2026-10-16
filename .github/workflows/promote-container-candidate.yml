@@ -28,6 +28,13 @@ on:
         description: Validate signing in isolated staging without finalizing a release
         default: false
         type: boolean
+      runner:
+        description: Runner pool for publishing the tested candidate
+        default: neurodesk-syd-arcrunner-neurocontainers
+        type: choice
+        options:
+          - neurodesk-syd-arcrunner-neurocontainers
+          - blacksmith-8vcpu-ubuntu-2404
 
 permissions: {}
 
@@ -83,13 +90,21 @@ jobs:
               });
               pr = response.data;
             } else {
-              const response = await github.rest.repos.listPullRequestsAssociatedWithCommit({
-                owner: context.repo.owner, repo: context.repo.repo,
-                commit_sha: context.sha,
-              });
-              const merged = response.data.filter(item =>
-                item.merged_at && item.base.ref === 'main'
-              );
+              // GitHub can deliver the merge push before this association is
+              // visible. Do not permanently skip a tested recipe on that race.
+              let merged = [];
+              for (let attempt = 1; attempt <= 6; attempt++) {
+                const response = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  commit_sha: context.sha,
+                });
+                merged = response.data.filter(item =>
+                  item.merged_at && item.base.ref === 'main'
+                );
+                if (merged.length > 0 || attempt === 6) break;
+                core.info(`Merge association for ${context.sha} is not visible; retrying (${attempt}/6)`);
+                await new Promise(resolve => setTimeout(resolve, 10000));
+              }
               const exact = merged.filter(item => item.merge_commit_sha === context.sha);
               if (exact.length === 1) {
                 pr = exact[0];
@@ -234,7 +249,7 @@ jobs:
       github.event_name == 'workflow_dispatch' && inputs.signing_acceptance &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
-    runs-on: neurodesk-syd-arcrunner-neurocontainers
+    runs-on: ${{ inputs.runner == 'blacksmith-8vcpu-ubuntu-2404' && 'blacksmith-8vcpu-ubuntu-2404' || 'neurodesk-syd-arcrunner-neurocontainers' }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -424,7 +439,7 @@ jobs:
       !inputs.signing_acceptance &&
       needs.resolve.outputs.should_promote == 'true' &&
       needs.resolve.outputs.recipes != '[]'
-    runs-on: neurodesk-syd-arcrunner-neurocontainers
+    runs-on: ${{ inputs.runner == 'blacksmith-8vcpu-ubuntu-2404' && 'blacksmith-8vcpu-ubuntu-2404' || 'neurodesk-syd-arcrunner-neurocontainers' }}
     timeout-minutes: 720
     strategy:
       fail-fast: false

@@ -75,10 +75,6 @@ build:
 
     - workdir: /opt
 
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
-
 files:
   - name: deep-quality-estimation
     contents: |

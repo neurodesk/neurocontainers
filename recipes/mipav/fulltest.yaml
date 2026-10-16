@@ -1,5 +1,6 @@
 name: mipav
 version: "11.3.3"
+upstream_version: 11.3.3
 
 test_data:
   output_dir: test_output/mipav
@@ -17,7 +18,7 @@ tests:
 
   - name: Native Java runtime available
     description: Verify the installed MIPAV Java runtime executes on this architecture
-    command: /usr/local/mipav/jre/bin/java -version 2>&1 | sed -n '1,3p'
+    command: /usr/local/mipav/jre/bin/java -version 2>&1
     expected_output_contains: "OpenJDK Runtime Environment"
 
   - name: MIPAV application files present
@@ -63,9 +64,123 @@ tests:
       export HOME="${output_dir}/home"
       export _JAVA_OPTIONS="-Duser.home=${output_dir}/home"
       mkdir -p "$HOME"
-      timeout 12 mipav -version 2>&1 | sed -n '1,35p' || true
+      log="${output_dir}/mipav-native-loader.log"
+      set +e
+      timeout 12s xvfb-run -a mipav >"$log" 2>&1
+      status=$?
+      set -e
+      cat "$log"
+      if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then exit "$status"; fi
+      if grep -Ei "UnsatisfiedLinkError|NoClassDefFoundError|Could not initialize|AWTError|Cannot open display|segmentation fault" "$log"; then exit 1; fi
       test -d "${output_dir}/home/mipav/native_library_tmpdir"
       echo "mipav startup reached native loader"
     expected_output_contains: "mipav startup reached native loader"
     timeout: 30
-upstream_version: 11.3.3
+
+  - name: Actual image processing, NIfTI roundtrip and viewer rendering
+    description: Verify every analytical voxel through MIPAV algorithms and file IO, then render the actual reloaded image in its native viewer.
+    command: |
+      set -eu
+      work=$(mktemp -d "${output_dir}/image.XXXXXX")
+      export HOME="$work/home"
+      export _JAVA_OPTIONS="-Duser.home=$HOME"
+      mkdir -p "$HOME/mipav/plugins"
+      cat > "$work/PlugInArmImageProof.java" <<'JAVA'
+      import gov.nih.mipav.plugins.PlugInGeneric;
+      import gov.nih.mipav.model.structures.ModelImage;
+      import gov.nih.mipav.model.structures.ModelStorageBase;
+      import gov.nih.mipav.model.algorithms.AlgorithmThresholdDual;
+      import gov.nih.mipav.model.algorithms.utilities.AlgorithmImageMath;
+      import gov.nih.mipav.model.file.FileIO;
+      import gov.nih.mipav.model.file.FileUtility;
+      import gov.nih.mipav.model.file.FileWriteOptions;
+      import gov.nih.mipav.view.ViewJFrameImage;
+      import gov.nih.mipav.view.ViewUserInterface;
+      import java.awt.Component;
+      import java.awt.Point;
+      import java.awt.Rectangle;
+      import java.awt.Robot;
+      import java.awt.image.BufferedImage;
+      import java.io.File;
+      import java.nio.file.Files;
+      import java.security.MessageDigest;
+      import java.util.Arrays;
+      import java.util.HashSet;
+      import javax.imageio.ImageIO;
+      import javax.swing.SwingUtilities;
+
+      public class PlugInArmImageProof implements PlugInGeneric {
+          static void require(boolean value, String message) {
+              if (!value) throw new AssertionError(message);
+          }
+          static void pixels(ModelImage image, float[] expected) throws Exception {
+              require(Arrays.equals(image.getExtents(), new int[]{13,11,9}), "Image dimensions changed");
+              float[] data = new float[expected.length];
+              image.exportData(0, data.length, data);
+              require(Arrays.equals(data, expected), "Actual MIPAV image voxel values differ");
+          }
+          static ModelImage roundtrip(FileIO io, ModelImage image, File root, String name, float[] expected) throws Exception {
+              FileWriteOptions options = new FileWriteOptions(name, root.getAbsolutePath()+File.separator, true);
+              options.setFileType(FileUtility.NIFTI); options.setOptionsSet(true);
+              options.setBeginSlice(0); options.setEndSlice(8);
+              io.writeImage(image, options, false, false);
+              require(new File(root,name).length()>352, "NIfTI output missing");
+              ModelImage read = io.readImage(name, root.getAbsolutePath()+File.separator);
+              require(read!=null,"MIPAV failed to read its NIfTI output");
+              pixels(read,expected);
+              float[] spacing=read.getFileInfo(0).getResolutions();
+              require(spacing[0]==1.5f && spacing[1]==2f && spacing[2]==2.5f,"Physical voxel spacing changed");
+              return read;
+          }
+          public void run() {
+              new Thread(() -> {
+                  try { prove(); System.out.println("Actual MIPAV1287-voxel arithmetic, inclusive threshold, NIfTI roundtrip and rendered image verified"); System.exit(0); }
+                  catch (Throwable failure) { failure.printStackTrace(); System.exit(1); }
+              }, "mipav-image-proof").start();
+          }
+          static void prove() throws Exception {
+              File root=Files.createTempDirectory(new File(System.getProperty("user.home")).toPath(),"proof-").toFile();
+              ModelImage input=new ModelImage(ModelStorageBase.FLOAT,new int[]{13,11,9},"analytical-input");
+              float[] original=new float[13*11*9],added=new float[original.length],binary=new float[original.length];
+              for(int i=0;i<original.length;i++) { original[i]=(i%31)-15; added[i]=original[i]+7.25f; binary[i]=(original[i]>=-2 && original[i]<=3)?1:0; }
+              input.importData(0,original,true);
+              for(int z=0;z<9;z++) input.getFileInfo(z).setResolutions(new float[]{1.5f,2f,2.5f});
+              FileIO io=new FileIO();io.setQuiet(true);
+              ModelImage source=roundtrip(io,input,root,"source.nii",original);
+              byte[] before=MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(new File(root,"source.nii").toPath()));
+              ModelImage math=(ModelImage)source.clone();
+              AlgorithmImageMath addition=new AlgorithmImageMath(math,AlgorithmImageMath.ADD,7.25,0,0,AlgorithmImageMath.CLIP,true);
+              addition.run();require(addition.isCompleted(),"MIPAV image arithmetic incomplete");pixels(math,added);
+              ModelImage mask=(ModelImage)source.clone();
+              AlgorithmThresholdDual threshold=new AlgorithmThresholdDual(mask,new float[]{-2,3},0,AlgorithmThresholdDual.UNSIGNED_BYTE_TYPE,true,false);
+              threshold.run();require(threshold.isCompleted(),"MIPAV threshold incomplete");pixels(mask,binary);
+              roundtrip(io,mask,root,"mask.nii",binary);
+              ModelImage read=roundtrip(io,math,root,"added.nii",added);
+              pixels(source,original);
+              require(Arrays.equals(before,MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(new File(root,"source.nii").toPath()))),"Source image bytes changed");
+              read.setImageName("MIPAV analytical1287 proof");
+              final ViewJFrameImage[] frame=new ViewJFrameImage[1];
+              SwingUtilities.invokeAndWait(() -> { ViewUserInterface.getReference().setAppFrameVisible(true); frame[0]=new ViewJFrameImage(read); frame[0].setVisible(true); });
+              Thread.sleep(2000);
+              Robot robot=new Robot();robot.waitForIdle();
+              Component component=frame[0].getComponentImage();
+              require(frame[0].isShowing() && frame[0].getImageA()==read && frame[0].getTitle().contains("analytical1287"),"Real named image viewer not mapped");
+              Point position=component.getLocationOnScreen();
+              require(component.getWidth()>=5 && component.getHeight()>=5,"Image viewport is empty");
+              BufferedImage screen=robot.createScreenCapture(new Rectangle(position.x,position.y,component.getWidth(),component.getHeight()));
+              HashSet<Integer> colors=new HashSet<>();
+              for(int y=0;y<screen.getHeight();y++) for(int x=0;x<screen.getWidth();x++) colors.add(screen.getRGB(x,y));
+              require(colors.size()>=8,"Actual image viewport is blank");
+              require(ImageIO.write(screen,"PNG",new File(root,"rendered.png")),"Image screenshot write failed");
+              pixels(read,added);
+          }
+      }
+      JAVA
+      classpath=/usr/local/mipav
+      find /usr/local/mipav -type f -name '*.jar' -print > "$work/jars.txt"
+      while IFS= read -r jar; do classpath="$classpath:$jar"; done < "$work/jars.txt"
+      javac --release 11 -classpath "$classpath" -d "$HOME/mipav/plugins" "$work/PlugInArmImageProof.java"
+      timeout 90s xvfb-run -a mipav -hide -p PlugInArmImageProof
+    expected_exit_code: 0
+    expected_output_contains: "Actual MIPAV1287-voxel arithmetic"
+    timeout: 120

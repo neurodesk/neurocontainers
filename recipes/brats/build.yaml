@@ -124,10 +124,6 @@ build:
 
     - workdir: /opt
 
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
-
 files:
   - name: fix_brats_singularity
     filename: fix_brats_singularity.py

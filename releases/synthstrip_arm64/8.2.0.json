@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "synthstrip_arm64 8.2.0": {
+      "version": "20261014",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging"
+  ],
+  "variant": "arm64",
+  "architecture": "aarch64",
+  "recipe": "synthstrip"
+}

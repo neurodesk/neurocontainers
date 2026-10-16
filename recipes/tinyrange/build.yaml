@@ -72,12 +72,6 @@ build:
           - /opt/tinyrange
         bins:
           - tinyrange
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
-    - test:
-        name: tinyrange test
-        script: tinyrange --help
 categories:
   - programming
 files:

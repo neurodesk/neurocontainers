@@ -1,7 +1,7 @@
 {
   "apps": {
     "openadscpu 1.0.0": {
-      "version": "20260518",
+      "version": "20261014",
       "exec": "",
       "apptainer_args": []
     }
