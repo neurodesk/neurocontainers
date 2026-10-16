@@ -33,6 +33,165 @@ setup:
     #!/usr/bin/env bash
     set -e
     mkdir -p test_output
+    cat > test_output/diagnose_pydeface.py <<'PYTHON'
+    """Temporary PR #3580 fulltest observer. It does not change FLIRT arguments."""
+
+    import hashlib
+    import json
+    import os
+    from pathlib import Path
+    import platform
+    import runpy
+    import shutil
+    import subprocess
+    import sys
+    import threading
+    import time
+
+    import nibabel as nib
+    import numpy as np
+    from nipype.interfaces.fsl import FLIRT
+
+
+    started = time.monotonic()
+    lock = threading.Lock()
+    stop = threading.Event()
+    trace = Path("test_output") / f"pydeface-diagnostic-{os.getpid()}.jsonl"
+    stream = trace.open("a", buffering=1)
+
+
+    def emit(event, **fields):
+        record = json.dumps(dict(event=event, time=time.time(),
+                                 elapsed=time.monotonic() - started, **fields))
+        with lock:
+            stream.write(record + "\n")
+            print("[DEBUG-pydeface-3580] " + record, file=sys.stderr, flush=True)
+
+
+    def read(path):
+        try:
+            return Path(path).read_text()
+        except OSError as error:
+            return str(error)
+
+
+    cgroups = {Path("/sys/fs/cgroup")}
+    for line in read("/proc/self/cgroup").splitlines():
+        if line.startswith("0::"):
+            group = (Path("/sys/fs/cgroup") / line[3:].lstrip("/")).resolve()
+            while group.is_relative_to("/sys/fs/cgroup"):
+                cgroups.add(group)
+                group = group.parent
+
+    seen = set()
+
+
+    def stat(path):
+        value = path.read_text()
+        fields = value[value.rindex(")") + 2:].split()
+        return dict(pid=int(path.parent.name), ppid=int(fields[1]),
+                    name=value[value.index("(") + 1:value.rindex(")")], state=fields[0],
+                    cpu_seconds=(int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK"),
+                    threads=int(fields[17]), start_ticks=int(fields[19]),
+                    rss_bytes=int(fields[21]) * os.sysconf("SC_PAGE_SIZE"))
+
+
+    def sample():
+        processes = {}
+        for path in Path("/proc").glob("[0-9]*/stat"):
+            try:
+                item = stat(path)
+                processes[item["pid"]] = item
+            except (OSError, ValueError):
+                continue
+        owned = {os.getpid()}
+        while descendants := {pid for pid, item in processes.items()
+                              if item["ppid"] in owned and pid not in owned}:
+            owned.update(descendants)
+        for pid, item in processes.items():
+            if pid not in owned and item["name"] != "flirt":
+                continue
+            root = Path(f"/proc/{pid}")
+            try:
+                threads = sorted((stat(p) for p in (root / "task").glob("*/stat")),
+                                 key=lambda t: t["cpu_seconds"], reverse=True)
+                emit("process", **item, owned=pid in owned,
+                     argv=read(root / "cmdline").split("\0"),
+                     busiest_threads=threads[:8], wchan=read(root / "wchan"),
+                     io=read(root / "io"))
+                if item["name"] == "flirt" and pid not in seen:
+                    seen.add(pid)
+                    executable = (root / "exe").resolve(strict=True)
+                    emit("flirt_binary", pid=pid, executable=str(executable),
+                         sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
+                         libraries=sorted({line.split()[-1] for line in read(root / "maps").splitlines()
+                                           if ".so" in line}))
+                    for command in (["file", str(executable)], ["ldd", str(executable)]):
+                        result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+                        emit("binary_inspection", command=command, code=result.returncode,
+                             stdout=result.stdout, stderr=result.stderr)
+            except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+                emit("process_unavailable", pid=pid, error=str(error))
+        emit("resources", load=os.getloadavg(), cgroup={
+            str(group / name): read(group / name)
+            for group in sorted(cgroups)
+            for name in ("cpu.max", "cpu.stat", "cpu.pressure", "cpuset.cpus.effective",
+                         "memory.current", "memory.max", "memory.events", "memory.pressure")
+            if (group / name).exists()
+        })
+
+
+    def heartbeat():
+        while not stop.wait(15):
+            sample()
+
+
+    original_run = FLIRT._run_interface
+
+
+    def traced_run(self, runtime):
+        command = self.cmdline
+        geometry = {}
+        for name in ("in_file", "reference"):
+            path = getattr(self.inputs, name)
+            image = nib.load(path)
+            geometry[name] = dict(path=str(path), shape=image.shape,
+                                  zooms=[float(v) for v in image.header.get_zooms()],
+                                  affine=image.affine.tolist())
+        emit("flirt_start", command=command, geometry=geometry)
+        stage_start = time.monotonic()
+        try:
+            result = original_run(self, runtime)
+            emit("flirt_end", command=command, seconds=time.monotonic() - stage_start,
+                 code=result.returncode)
+            return result
+        except BaseException as error:
+            emit("flirt_error", command=command, error=repr(error))
+            raise
+
+
+    emit("start", argv=sys.argv, architecture=platform.machine(),
+         cpu_count=os.cpu_count(), affinity=sorted(os.sched_getaffinity(0)),
+         cpuinfo=read("/proc/cpuinfo").split("\n\n")[0],
+         cgroup_membership=read("/proc/self/cgroup"),
+         environment={k: v for k, v in os.environ.items() if k in (
+             "PATH", "FSLDIR", "FSLOUTPUTTYPE", "LD_LIBRARY_PATH", "OMP_NUM_THREADS",
+             "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS",
+             "ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS", "OMP_DYNAMIC", "OMP_WAIT_POLICY")})
+    for metadata in sorted((Path(os.environ["FSLDIR"]) / "conda-meta").glob("*.json")):
+        package = json.loads(metadata.read_text())
+        if any(word in package["name"] for word in ("flirt", "blas", "lapack", "libgomp", "libgcc", "libstdc")):
+            emit("fsl_package", **{k: package.get(k) for k in ("name", "version", "build", "sha256", "depends")})
+    np.show_config()
+    sample()
+    FLIRT._run_interface = traced_run
+    threading.Thread(target=heartbeat, daemon=True).start()
+    try:
+        runpy.run_path(shutil.which("pydeface"), run_name="__main__")
+    finally:
+        stop.set()
+        emit("end")
+    PYTHON
 
 tests:
   # ==========================================================================
@@ -52,6 +211,9 @@ tests:
   # BASIC DEFACING OPERATIONS
   # ==========================================================================
   - name: Basic defacing with default output
+    env_setup: &registration_diagnostics |
+      export PYTHONUNBUFFERED=1
+      pydeface() { python -u test_output/diagnose_pydeface.py "$@"; }
     description: Deface T1w image with corratio cost (default mutualinfo is too slow)
     command: pydeface ${t1w} --outfile test_output/t1w_defaced_default.nii.gz --cost corratio --verbose
     timeout: 300
@@ -78,6 +240,7 @@ tests:
   # COST FUNCTION OPTIONS
   # ==========================================================================
   - name: Defacing with mutualinfo cost
+    env_setup: *registration_diagnostics
     description: Test defacing with mutual information cost function (default, slow)
     command: pydeface ${t1w} --outfile test_output/t1w_defaced_mutualinfo.nii.gz --cost mutualinfo --verbose
     timeout: 600
@@ -99,6 +262,7 @@ tests:
       - output_exists: ${output_dir}/t1w_defaced_normcorr.nii.gz
 
   - name: Defacing with normmi cost
+    env_setup: *registration_diagnostics
     description: Test defacing with normalized mutual information cost function
     command: pydeface ${t1w} --outfile test_output/t1w_defaced_normmi.nii.gz --cost normmi --verbose
     timeout: 300
@@ -144,6 +308,7 @@ tests:
   # DEFACING DIFFERENT IMAGE TYPES
   # ==========================================================================
   - name: Deface T2 image
+    env_setup: *registration_diagnostics
     description: Deface inplane T2 image
     command: pydeface ${t2} --outfile test_output/t2_defaced.nii.gz --verbose
     timeout: 300
@@ -548,6 +713,13 @@ tests:
       print('Actual PyDeface registration and mask application agree at every voxel with unchanged input and spatial geometry')
       PYTHON
     expected_output_contains: Actual PyDeface registration and mask application agree at every voxel with unchanged input and spatial geometry
+    expected_exit_code: 0
+
+  - name: Native ARM diagnosis requires review
+    description: Temporary failure gate until the native registration evidence is reviewed and diagnostics are removed
+    command: |
+      echo "DIAGNOSTICBLOCKED PR 3580 native ARM registration is not repaired or approved"
+      exit 1
     expected_exit_code: 0
 
 cleanup:
