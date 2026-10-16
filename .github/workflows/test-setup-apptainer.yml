@@ -1,0 +1,46 @@
+name: Test Apptainer setup
+
+on:
+  pull_request:
+    paths:
+      - '.github/actions/setup-apptainer/**'
+      - '.github/workflows/test-setup-apptainer.yml'
+      - 'builder/tests/test_setup_apptainer.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/actions/setup-apptainer/**'
+      - '.github/workflows/test-setup-apptainer.yml'
+      - 'builder/tests/test_setup_apptainer.py'
+
+permissions:
+  contents: read
+
+jobs:
+  native-smoke:
+    name: Apptainer setup (${{ matrix.architecture }})
+    runs-on: ${{ github.repository == 'neurodesk/neurocontainers' && (matrix.architecture == 'aarch64' && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'blacksmith-8vcpu-ubuntu-2404') || (matrix.architecture == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-22.04') }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install Apptainer
+        id: apptainer
+        uses: ./.github/actions/setup-apptainer
+        with:
+          apptainer-version: 1.4.3
+      - name: Check output and execute a tiny native SIF
+        env:
+          INSTALLED_VERSION: ${{ steps.apptainer.outputs.apptainer-version }}
+          EXPECTED_ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          test "$INSTALLED_VERSION" = '1.4.3'
+          test "$(apptainer --version)" = "apptainer version $INSTALLED_VERSION"
+          test "$(uname -m)" = "$EXPECTED_ARCHITECTURE"
+          sudo apt-get install -y --no-install-recommends busybox-static
+          bash .github/actions/setup-apptainer/smoke-test.sh

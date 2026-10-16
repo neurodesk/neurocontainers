@@ -246,7 +246,10 @@ tests:
   command: 3dSkullStrip -input ${t1w} -push_to_edge -prefix test_output/t1w_brain_edge.nii.gz
   validate:
   - output_exists: ${output_dir}/t1w_brain_edge.nii.gz
-  timeout: 300
+  - same_dimensions:
+    - ${t1w}
+    - ${output_dir}/t1w_brain_edge.nii.gz
+  timeout: 900
 - name: 3dmask_tool - dilate
   description: Dilate an existing mask
   command: 3dmask_tool -input test_output/bold_mask.nii.gz -dilate_input 2 -prefix test_output/mask_dilated.nii.gz

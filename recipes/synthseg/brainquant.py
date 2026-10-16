@@ -16,8 +16,16 @@ import numpy as np
 from scipy.special import ndtr, ndtri
 
 NORMS_SCHEMA = "neurodesk.synthseg.brainquant.norms/1"
-NORMS_PATH = Path(__file__).with_name("brainquant_norms.json")
-NORMS_7T_PATH = Path(__file__).with_name("brainquant_norms_7t.json")
+NORMS_DIR = Path(__file__).parent
+# One reference per cohort and SynthSeg mode: normal mode (flip averaging and
+# topological refinement) measures some structures several percent differently
+# from fast mode, so each mode is compared with norms segmented the same way.
+NORMS_FILES = {
+    ("ixi", True): "brainquant_norms.json",
+    ("ahead", True): "brainquant_norms_7t.json",
+    ("ixi", False): "brainquant_norms_normal.json",
+    ("ahead", False): "brainquant_norms_7t_normal.json",
+}
 # Scanners at or above this field strength are compared with the 7 T reference.
 ULTRA_HIGH_FIELD_T = 5.0
 MODEL_KEYS = ("female", "male", "all")
@@ -233,12 +241,17 @@ def header_field_strength(metadata) -> float | None:
     return value if math.isfinite(value) and value > 0 else None
 
 
-def select_norms(field_strength_t: float | None) -> tuple[Path, str]:
-    """Pick the reference for the scanner and say why, for the report footnote."""
+def norms_path(cohort: str, fast: bool) -> Path:
+    return NORMS_DIR / NORMS_FILES[(cohort, fast)]
+
+
+def select_norms(field_strength_t: float | None, fast: bool) -> tuple[Path, str]:
+    """Pick the reference for the scanner and SynthSeg mode and say why, for the report footnote."""
+    mode = f"SynthSeg ran in {'fast' if fast else 'normal'} mode"
     if field_strength_t is None:
-        return NORMS_PATH, "the scanner field strength is not in the header"
-    reason = f"the scanner field strength is {field_strength_t:g} T"
-    return (NORMS_7T_PATH if field_strength_t >= ULTRA_HIGH_FIELD_T else NORMS_PATH), reason
+        return norms_path("ixi", fast), f"the scanner field strength is not in the header and {mode}"
+    cohort = "ahead" if field_strength_t >= ULTRA_HIGH_FIELD_T else "ixi"
+    return norms_path(cohort, fast), f"the scanner field strength is {field_strength_t:g} T and {mode}"
 
 
 def read_volumes(path: str | Path) -> dict[str, float]:

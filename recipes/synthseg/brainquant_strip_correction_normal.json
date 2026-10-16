@@ -1,0 +1,158 @@
+{
+  "subjects": [
+    "IXI002-Guys-0828-T1",
+    "IXI042-Guys-0725-T1",
+    "IXI072-HH-2324-T1",
+    "IXI102-HH-1416-T1",
+    "IXI134-Guys-0780-T1",
+    "IXI167-HH-1569-T1",
+    "IXI199-Guys-0802-T1",
+    "IXI231-IOP-0866-T1",
+    "IXI263-HH-1684-T1",
+    "IXI297-Guys-0886-T1",
+    "IXI328-HH-2295-T1",
+    "IXI363-HH-2050-T1",
+    "IXI394-Guys-0940-T1",
+    "IXI424-IOP-0991-T1",
+    "IXI453-HH-2214-T1",
+    "IXI485-HH-2180-T1",
+    "IXI517-IOP-1144-T1",
+    "IXI551-Guys-1065-T1",
+    "IXI586-HH-2451-T1",
+    "IXI619-Guys-1099-T1"
+  ],
+  "columns": {
+    "total intracranial": {
+      "log_ratio": 0.012299243809329384,
+      "sd": 0.007353662958680278
+    },
+    "left cerebral white matter": {
+      "log_ratio": 0.0024240871768506605,
+      "sd": 0.00319935635234555
+    },
+    "left cerebral cortex": {
+      "log_ratio": -0.008780634740013405,
+      "sd": 0.005400053923469301
+    },
+    "left lateral ventricle": {
+      "log_ratio": 0.0015121582751410542,
+      "sd": 0.004388450545617345
+    },
+    "left inferior lateral ventricle": {
+      "log_ratio": -0.009848998807745524,
+      "sd": 0.008383304536727072
+    },
+    "left cerebellum white matter": {
+      "log_ratio": -0.002810901441130262,
+      "sd": 0.00983672508036463
+    },
+    "left cerebellum cortex": {
+      "log_ratio": -0.019733414194563526,
+      "sd": 0.010765724446194051
+    },
+    "left thalamus": {
+      "log_ratio": 0.008024468869182655,
+      "sd": 0.010760519482639558
+    },
+    "left caudate": {
+      "log_ratio": 0.004761632448955364,
+      "sd": 0.004500400697049012
+    },
+    "left putamen": {
+      "log_ratio": 0.005185936921738236,
+      "sd": 0.005562069033946524
+    },
+    "left pallidum": {
+      "log_ratio": 0.03268766266197849,
+      "sd": 0.07857585639089913
+    },
+    "3rd ventricle": {
+      "log_ratio": 0.006762941526308561,
+      "sd": 0.014376652974687478
+    },
+    "4th ventricle": {
+      "log_ratio": -0.012540492482815163,
+      "sd": 0.015105779218237112
+    },
+    "brain-stem": {
+      "log_ratio": -0.0002273971101446547,
+      "sd": 0.009547503378078293
+    },
+    "left hippocampus": {
+      "log_ratio": 0.004337031444303438,
+      "sd": 0.004974489673804198
+    },
+    "left amygdala": {
+      "log_ratio": -0.007133839787208973,
+      "sd": 0.013861141293426792
+    },
+    "csf": {
+      "log_ratio": 0.06604822170348681,
+      "sd": 0.030909405826660803
+    },
+    "left accumbens area": {
+      "log_ratio": 0.026349358975311838,
+      "sd": 0.018511708787415412
+    },
+    "left ventral DC": {
+      "log_ratio": -0.0014542461381334886,
+      "sd": 0.016891549215361013
+    },
+    "right cerebral white matter": {
+      "log_ratio": 0.001638614941200987,
+      "sd": 0.0038531972143300507
+    },
+    "right cerebral cortex": {
+      "log_ratio": -0.008781898456671372,
+      "sd": 0.004070969736715184
+    },
+    "right lateral ventricle": {
+      "log_ratio": 0.004161611921346639,
+      "sd": 0.008402464426838719
+    },
+    "right inferior lateral ventricle": {
+      "log_ratio": -0.006076481656423841,
+      "sd": 0.012981538146540792
+    },
+    "right cerebellum white matter": {
+      "log_ratio": -0.005766880265588598,
+      "sd": 0.010762441458553573
+    },
+    "right cerebellum cortex": {
+      "log_ratio": -0.024037369806580677,
+      "sd": 0.012387772053944025
+    },
+    "right thalamus": {
+      "log_ratio": 0.022488256510517755,
+      "sd": 0.014216831481535486
+    },
+    "right caudate": {
+      "log_ratio": 0.00504855849281524,
+      "sd": 0.004426608265868514
+    },
+    "right putamen": {
+      "log_ratio": 0.005231687534688184,
+      "sd": 0.005535838938806684
+    },
+    "right pallidum": {
+      "log_ratio": 0.010628656048788255,
+      "sd": 0.052486631370834584
+    },
+    "right hippocampus": {
+      "log_ratio": 0.010006802258265345,
+      "sd": 0.008197449485457663
+    },
+    "right amygdala": {
+      "log_ratio": -0.0064535508273496425,
+      "sd": 0.010946183896147987
+    },
+    "right accumbens area": {
+      "log_ratio": 0.01891468647911037,
+      "sd": 0.013595133732342966
+    },
+    "right ventral DC": {
+      "log_ratio": 0.004043960680331017,
+      "sd": 0.01750381410880585
+    }
+  }
+}

@@ -38,7 +38,8 @@ stream uses the `openrecon` suffix to mirror `openreconi2iexample`.
 
 By default, OpenRecon returns restamped original images first as
 `<source>_original`, then sends one segmentation-header 2D SynthSeg label image
-per source image.
+per source image. The originals of every input series go back before SynthSeg
+runs, so the scanner keeps them when segmentation fails.
 
 **Pixel values are FreeSurfer label indices, not intensities.** They are passed
 through unscaled so they can be looked up in
@@ -52,7 +53,7 @@ segmentation is visible without manual windowing.
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `synthseg` | Selects the MRD server configuration. The available GUI option is `synthseg`. |
-| Keep original images | `sendoriginal` | boolean | `true` | Return restamped original images first, before the `synthseg` label map. Disable this to return only the derived SynthSeg series. |
+| Keep original images | `sendoriginal` | boolean | `true` | Return restamped original images before SynthSeg runs. Disable this to return only the derived SynthSeg series. |
 | SynthSeg model | `ssmodel` | choice | `synthseg` | Trained network used for segmentation: `synthseg` (SynthSeg 2.0), `robust` (SynthSeg-robust 2.0) or `v1` (SynthSeg 1.0). |
 | Cortical parcellation | `ssparc` | choice | `none` | Choose `none`, `desikan`, `glasser`, or `both`. Always return the base SynthSeg map. Add separate Desikan-Killiany, approximate Glasser, or both parcel series. |
 | Fast mode | `ssfast` | boolean | `true` | Bypass topological refinement and left/right flipping for a faster prediction. |

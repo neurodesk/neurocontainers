@@ -1,5 +1,5 @@
 name: Setup Apptainer
-description: Install a pinned Apptainer release package without a JavaScript action runtime.
+description: Install and verify an exact Apptainer release on native Linux runners.
 
 inputs:
   apptainer-version:
@@ -14,53 +14,16 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Set up Go for the native ARM64 build
+      if: runner.os == 'Linux' && runner.arch == 'ARM64'
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.25.1'
+        cache: false
     - name: Install Apptainer
       id: install
       shell: bash
-      run: |
-        set -euo pipefail
-
-        version="${{ inputs.apptainer-version }}"
-        if [[ "$(uname -s)" != "Linux" ]]; then
-          echo "Apptainer is only supported on Linux runners." >&2
-          exit 1
-        fi
-
-        arch="$(dpkg --print-architecture)"
-        case "$arch" in
-          amd64|arm64) ;;
-          *)
-            echo "Apptainer ${version} release packages are not configured for ${arch} runners." >&2
-            exit 1
-            ;;
-        esac
-
-        cache_dir="${RUNNER_TEMP:-/tmp}/apptainer/${version}/${arch}"
-        deb_path="${cache_dir}/apptainer.deb"
-        mkdir -p "$cache_dir"
-
-        if [[ "$arch" == "arm64" ]]; then
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends software-properties-common
-          sudo add-apt-repository -y ppa:apptainer/ppa
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends apptainer
-        else
-          if [[ ! -s "$deb_path" ]]; then
-            url="https://github.com/apptainer/apptainer/releases/download/v${version}/apptainer_${version}_${arch}.deb"
-            curl \
-              --fail \
-              --show-error \
-              --location \
-              --retry 5 \
-              --retry-delay 5 \
-              --retry-all-errors \
-              "$url" \
-              -o "$deb_path"
-          fi
-
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends "$deb_path"
-        fi
-
-        echo "apptainer-version=$version" >> "$GITHUB_OUTPUT"
+      env:
+        APPTAINER_VERSION: ${{ inputs.apptainer-version }}
+        GH_TOKEN: ${{ github.token }}
+      run: bash "${{ github.action_path }}/install.sh"
