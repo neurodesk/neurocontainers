@@ -21,6 +21,26 @@ with archive.open("rb") as stream:
 assert h.hexdigest() == manifest["docker_sha256"]
 subprocess.run(["docker", "load", "--input", str(archive)], check=True)
 tag = manifest["candidate_tag"]
+inventory_script = Path("tools/fs6_runtime_inventory.py").resolve()
+with (out / "runtime-tree.json").open("w") as stream:
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "-v",
+            str(inventory_script) + ":/fs6_runtime_inventory.py:ro",
+            tag,
+            "python",
+            "/fs6_runtime_inventory.py",
+        ],
+        stdout=stream,
+        check=True,
+        timeout=1200,
+    )
+(out / "candidate-manifest.json").write_text(json.dumps(manifest, indent=2))
 for filename, cmd in [
     ("docker-version.json", ["docker", "version", "--format", "{{json .}}"]),
     ("image-inspect.json", ["docker", "image", "inspect", tag]),
