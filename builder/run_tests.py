@@ -33,6 +33,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import tempfile
 import traceback
@@ -367,13 +368,34 @@ def _execute_test_script(
             command.extend(["-B", bind])
         command.append(str(container_path))
     command.extend(["bash", str(script_path)])
-    return subprocess.run(
+    if os.name != "posix":
+        return subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=work_dir,
+        )
+
+    with subprocess.Popen(
         command,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=timeout,
         cwd=work_dir,
-    )
+        start_new_session=True,
+    ) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except BaseException:
+            # The launcher may have exited while descendants still hold the pipes.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            # Keep TimeoutExpired's partial output; draining pipes can block.
+            raise
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def _evaluate_file_assertions(

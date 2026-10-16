@@ -56,12 +56,31 @@ def process_tree(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "container",
+    [
+        None,
+        pytest.param(
+            os.environ.get("NEUROCONTAINERS_TEST_SIF"),
+            marks=pytest.mark.skipif(
+                not os.environ.get("NEUROCONTAINERS_TEST_SIF"),
+                reason="requires an Apptainer image in NEUROCONTAINERS_TEST_SIF",
+            ),
+        ),
+    ],
+    ids=["local", "container"],
+)
+@pytest.mark.parametrize(
     ("parent_action", "redirect"),
-    [("wait", ""), ("wait", ">/dev/null 2>&1"), ("exit 0", ""), ('kill -TERM "$$"', "")],
+    [
+        ("wait", ""),
+        ("wait", ">/dev/null 2>&1"),
+        ("exit 0", ""),
+        ('kill -TERM "$$"', ""),
+    ],
     ids=["waiting-parent", "closed-output", "exited-parent", "signaled-parent"],
 )
 def test_timeout_stops_child_and_grandchild_before_next_test(
-    tmp_path, process_tree, parent_action, redirect
+    tmp_path, process_tree, parent_action, redirect, container
 ) -> None:
     result = run_tests.run_single_test(
         {
@@ -73,7 +92,7 @@ def test_timeout_stops_child_and_grandchild_before_next_test(
             ),
             "timeout": 1,
         },
-        None,
+        container,
         {},
         tmp_path,
     )
@@ -90,7 +109,7 @@ def test_timeout_stops_child_and_grandchild_before_next_test(
     }
     os.write(process_tree, b"continue\n")
     following = run_tests.run_single_test(
-        {"command": "sleep 0.1; printf next-test"}, None, {}, tmp_path
+        {"command": "sleep 0.1; printf next-test"}, container, {}, tmp_path
     )
     assert following.passed
     assert following.stdout == "next-test"
@@ -144,7 +163,9 @@ def test_timeout_does_not_stop_an_independent_concurrent_test(tmp_path) -> None:
             try:
                 deadline = time.monotonic() + 5
                 while not (tmp_path / "ready").exists():
-                    assert time.monotonic() < deadline, "concurrent command did not start"
+                    assert time.monotonic() < deadline, (
+                        "concurrent command did not start"
+                    )
                     time.sleep(0.01)
                 failed = run_tests.run_single_test(
                     {"command": "exec sleep 10", "timeout": 0.1},
