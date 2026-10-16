@@ -15,10 +15,10 @@ copyright:
     url: https://www.bic.mni.mcgill.ca/ServicesAtlases/ICBM152NLin2009
   - license: Apache-2.0
     url: https://github.com/ANTsX/ANTsPy/blob/master/LICENSE
-  # brainquant_norms.json is fitted to SynthSeg volumes of the IXI cohort.
+  # brainquant_norms.json and brainquant_norms_normal.json are fitted to SynthSeg volumes of the IXI cohort.
   - license: CC-BY-SA-3.0
     url: https://brain-development.org/ixi-dataset/
-  # brainquant_norms_7t.json is fitted to SynthSeg volumes of the AHEAD 7 T cohort.
+  # brainquant_norms_7t.json and brainquant_norms_7t_normal.json are fitted to SynthSeg volumes of the AHEAD 7 T cohort.
   - license: CC-BY-4.0
     url: https://doi.org/10.21942/uva.10007840
 
@@ -251,6 +251,8 @@ build:
         - cp {{ get_file("brainquant.py") }} /opt/code/python-ismrmrd-server/brainquant.py
         - cp {{ get_file("brainquant_norms.json") }} /opt/code/python-ismrmrd-server/brainquant_norms.json
         - cp {{ get_file("brainquant_norms_7t.json") }} /opt/code/python-ismrmrd-server/brainquant_norms_7t.json
+        - cp {{ get_file("brainquant_norms_normal.json") }} /opt/code/python-ismrmrd-server/brainquant_norms_normal.json
+        - cp {{ get_file("brainquant_norms_7t_normal.json") }} /opt/code/python-ismrmrd-server/brainquant_norms_7t_normal.json
         - mkdir -p /tmp/share/debug
         - chmod 1777 /tmp/share /tmp/share/debug
 
@@ -307,6 +309,10 @@ files:
     filename: brainquant_norms.json
   - name: brainquant_norms_7t.json
     filename: brainquant_norms_7t.json
+  - name: brainquant_norms_normal.json
+    filename: brainquant_norms_normal.json
+  - name: brainquant_norms_7t_normal.json
+    filename: brainquant_norms_7t_normal.json
 
   - name: mri_synthseg
     url: "https://raw.githubusercontent.com/freesurfer/freesurfer/v8.2.0/mri_synthseg/mri_synthseg"

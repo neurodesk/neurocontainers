@@ -24,6 +24,10 @@ trim needs nibabel, assemble needs pandas and xlrd, fit needs numpy and scipy.
 The 7 T reference (brainquant_norms_7t.json) is built from the AHEAD cohort with
 assemble-ahead, strip-correction and fit --cohort ahead; BRAINQUANT_NORMS.md
 lists the steps.
+
+The normal-mode references (brainquant_norms_normal.json and
+brainquant_norms_7t_normal.json) repeat every step without --fast and pass
+--mode normal to fit.
 """
 
 from __future__ import annotations
