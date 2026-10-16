@@ -12,6 +12,7 @@ jupyterlab_widgets_version: 3.0.17
 nb_conda_kernels_version: 2.5.1
 nextflow_tag: "v26.10.0"
 nf_test_version: 0.9.5
+snakemake_version: "9.27.0"
 default_timeout: 120
 
 test_data:
@@ -513,13 +514,14 @@ tests:
   - name: Python workflow packages are installed
     description: Verify key Python workflow/Jupyter packages are installed
     command: |
+      set -euo pipefail
+      /opt/snakemake/bin/python -c "import snakemake"
       python3 - <<'PY'
       import importlib.util
 
       packages = [
           "datalad",
           "nipype",
-          "snakemake",
           "jupyter_server_proxy",
           "jupyterlmod",
           "notebook_intelligence",
@@ -529,6 +531,45 @@ tests:
       print("python-workflow-packages-ok")
       PY
     expected_output_contains: "python-workflow-packages-ok"
+
+  - name: Python environments have consistent dependencies
+    description: Check every installed distribution in the Jupyter and Snakemake environments.
+    command: |
+      set -euo pipefail
+      /opt/conda/bin/python -m pip check
+      /opt/snakemake/bin/python -m pip check
+    expected_output_contains: "No broken requirements found."
+
+  - name: Conda creates an offline environment
+    description: Verify Conda reports its state and creates a writable user environment without network access.
+    command: |
+      set -euo pipefail
+      scratch=$(mktemp -d)
+      trap 'rm -rf "$scratch"' EXIT
+      conda info --json > "$scratch/info.json"
+      /opt/conda/bin/python -c 'import json, sys; assert json.load(open(sys.argv[1]))["conda_version"]' "$scratch/info.json"
+      conda create --offline --yes --no-default-packages --prefix "$scratch/env"
+      test -f "$scratch/env/conda-meta/history"
+      conda run --prefix "$scratch/env" /bin/sh -c 'printf conda-environment-ok'
+    expected_output_contains: "conda-environment-ok"
+
+  - name: Snakemake runs a local workflow
+    description: Execute the tracked Snakemake CLI and verify the workflow output.
+    command: |
+      set -euo pipefail
+      scratch=$(mktemp -d)
+      trap 'rm -rf "$scratch"' EXIT
+      cd "$scratch"
+      snakemake --version > version.txt
+      grep -Fx "${snakemake_version}" version.txt
+      cat > Snakefile <<'SNAKE'
+      rule smoke:
+          output: "message.txt"
+          shell: "printf 'neurodesktop-snakemake-ok\\n' > {output}"
+      SNAKE
+      snakemake --cores 1 --snakefile Snakefile
+      grep -Fx "neurodesktop-snakemake-ok" message.txt
+    expected_output_contains: "neurodesktop-snakemake-ok"
 
   - name: Notebook PDF export works
     description: Verify bundled TinyTeX supports nbconvert PDF export
